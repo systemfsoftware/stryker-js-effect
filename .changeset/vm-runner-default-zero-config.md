@@ -3,4 +3,6 @@
 "@systemfsoftware/stryker-js-plugin-interface": major
 ---
 
-The in-process `vm` runner is now the default `testRunner`. With no `testRunner` and no `testFiles` configured, the vm runner asks Vitest which files are tests. It runs exactly the files `vitest run` would, including your config's `include`, `exclude`, and `includeSource`, or Vitest's defaults when there is no config file. A run that loads no test files, or whose initial run registers zero tests, now fails the dry run with an error naming the `vm` runner and pointing at `testFiles`, instead of reporting a successful run where every mutant survives. Projects that relied on the previous default shelling out to a test command must set `testRunner: 'command'` (or `'vitest'`) to keep that behaviour.
+`testRunner: 'vm'` runs Vitest itself on Vitest's isolated `threads` pool instead of an in-process reimplementation, and stays the default `testRunner`. It reports the same test ids, outcomes and per-mutant verdicts as `vitest run`, so a project whose Vitest config enables browser mode is refused at startup with a message naming `testRunner: 'vitest'`.
+
+Stryker no longer discovers test files for `vm`: Vitest selects them from your config, as it does for `testRunner: 'vitest'`. A run that loads no test files fails the dry run naming `testFiles`.

@@ -45,7 +45,7 @@
     "@opentelemetry/sdk-metrics": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-vm-harness": "workspace:^"
+    "@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^"
   },
   "peerDependencies": {
     "effect": "catalog:"

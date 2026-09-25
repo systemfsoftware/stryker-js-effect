@@ -5,7 +5,6 @@
 "@systemfsoftware/stryker-js-plugin-runtime": patch
 "@systemfsoftware/stryker-js-typescript-checker": patch
 "@systemfsoftware/stryker-js-vitest-runner": patch
-"@systemfsoftware/stryker-vm-harness": patch
 "@systemfsoftware/stryker-test-contribution": minor
 ---
 

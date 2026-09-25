@@ -20,7 +20,7 @@ import {
   withTimeout,
 } from './pooled-test-runner.handle.js'
 import type { PooledTestRunnerError } from './TestRunner.schema.js'
-import { isVmRunner, vmTestRunner } from './VmRunner.blueprint.js'
+import { testRunnerConfigOf } from './VmRunner.blueprint.js'
 import { makeWorkerClient } from './worker-client.blueprint.js'
 import type { WorkerBootError } from './Worker.schema.js'
 import type { IdGeneratorShape } from './Worker.service.js'
@@ -87,21 +87,22 @@ const scopedOf = (
   params: ChildProcessTestRunnerParams,
 ): Effect.Effect<PooledTestRunner, PooledTestRunnerError, Scope.Scope | WorkerLauncher> =>
   Effect.gen(function*() {
-    const runnerName = Match.value(params.options.testRunner).pipe(
+    const options = { ...params.options, testRunner: testRunnerConfigOf(params.options.testRunner) }
+    const runnerName = Match.value(options.testRunner).pipe(
       Match.when(Options.isCustomTestRunner, (runner) => runner.plugin),
       Match.orElse((name) => name),
     )
-    const execArgv = Match.value(params.options.testRunner).pipe(
+    const execArgv = Match.value(options.testRunner).pipe(
       Match.when(Options.isCustomTestRunner, (runner) =>
         Match.value(runner.nodeArgs).pipe(
-          Match.when(Match.undefined, () => params.options.testRunnerNodeArgs),
+          Match.when(Match.undefined, () => options.testRunnerNodeArgs),
           Match.orElse((args) => args),
         )),
-      Match.orElse(() => params.options.testRunnerNodeArgs),
+      Match.orElse(() => options.testRunnerNodeArgs),
     )
     const client = yield* makeWorkerClient({
       rpcs: Plugin.TestRunnerRpcs,
-      options: params.options,
+      options,
       entrypoint: params.workerEntrypoint,
       workingDirectory: params.sandboxWorkingDirectory,
       execArgv: [...execArgv],
@@ -149,16 +150,6 @@ type InProcessRunnerEffects = Effect.Effect<
 const inProcessRunner = (context: TestRunnerBuildContext): Option.Option<InProcessRunnerEffects> =>
   Match.value(context.options.testRunner).pipe(
     Match.when(isCommandRunner, () => Option.some(commandRunnerEffect(context))),
-    Match.when(
-      isVmRunner,
-      () =>
-        Option.some(
-          vmTestRunner({
-            testFiles: context.testFiles,
-            sandboxWorkingDirectory: context.sandboxWorkingDirectory,
-          }),
-        ),
-    ),
     Match.orElse(() => Option.none()),
   )
 

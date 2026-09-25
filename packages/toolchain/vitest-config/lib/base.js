@@ -58,10 +58,6 @@ const guardExemptions = {
   '@systemfsoftware/stryker-ignorer-angular': ignorerTester,
   '@systemfsoftware/stryker-ignorer-effect-schema-declarations': ignorerTester,
   '@systemfsoftware/stryker-ignorer-in-source-vitest-block': ignorerTester,
-  '@systemfsoftware/stryker-vm-harness': {
-    projects: '*',
-    registrar: "the vm harness runs user-project sandbox suites in-process on the host's vitest it and expect",
-  },
 }
 
 /**

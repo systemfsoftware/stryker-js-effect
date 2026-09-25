@@ -220,11 +220,24 @@ const createVitestConfig = (input: VitestRuntimeInput) => ({
     Option.map(Option.fromNullishOr(input.vitestOptions.dir), (dir) => input.projectRoot + '/' + dir),
     { onNone: () => ({}), onSome: (dir) => ({ dir }) },
   ),
+  ...Option.match(
+    Option.fromNullishOr(input.vitestOptions.pool),
+    { onNone: () => ({}), onSome: (pool) => ({ pool }) },
+  ),
   bail: input.bail,
   onConsoleLog: () => false,
   silent: true,
   reporters: [{ onInit(_vitest: Vitest) {} }],
 })
+
+const BROWSER_REFUSAL =
+  "the vm runner runs Vitest's isolated `threads` pool, which cannot run browser-mode projects; set `testRunner: 'vitest'` to run them"
+
+const browserRefusalOf = (driver: Vitest): Option.Option<string> =>
+  Option.liftPredicate(
+    driver.config.browser.enabled || driver.projects.some((project) => project.config.browser.enabled),
+    (enabled) => enabled,
+  ).pipe(Option.as(BROWSER_REFUSAL))
 
 const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
   Effect.gen(function*() {
@@ -247,6 +260,11 @@ const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRu
           plugins: [sandboxSelfPlugin(aliases)],
         }),
       catch: (cause) => failRuntime('init')(cause),
+    })
+    const refusal = input.vitestOptions.pool === undefined ? Option.none<string>() : browserRefusalOf(driver)
+    yield* Option.match(refusal, {
+      onNone: () => Effect.void,
+      onSome: (reason) => Effect.fail(failRuntime('init')(reason)),
     })
     return make({ driver, projectRoot: input.projectRoot, localSetupFile, namespace: input.namespace })
   })

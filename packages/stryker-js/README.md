@@ -2,8 +2,8 @@
 
 The modern mutation testing framework for JavaScript and TypeScript.
 A ground-up, breaking-change fork of `@stryker-mutator/core` built with Effect 4:
-provides the `stryker` executable, in-process `vm` and isolated Vitest runners,
-and the typed `./config` authoring surface.
+provides the `stryker` executable, the `vm` and `vitest` test runners, and the
+typed `./config` authoring surface.
 
 ## Install
 
@@ -54,10 +54,13 @@ pnpm exec stryker run
 
 ## Zero-Plugin Built-in Runners
 
-The `vm` runner is the default: with no `testRunner` and no `testFiles`
-configured, it discovers `*.test` / `*.spec` files itself and runs them. It loads
-your suites through your project's `vitest`, so `vitest` must be installed.
-Set `testFiles` explicitly, or pick one of the runners below, to take control.
+The `vm` runner is the default and needs no plugin packages: `testRunner: 'vm'`
+runs Vitest itself, on Vitest's isolated `threads` pool, through the project's
+own `vitest` install (`vitest` must be installed). With no `testFiles`
+configured, Vitest selects the test files from your config, exactly as
+`vitest run` does. The runner reports the same test ids, outcomes and
+per-mutant verdicts as `vitest run`. Set `testFiles` explicitly, or pick one of
+the runners below, to take control.
 
 ### 1. Shell Command Runner (`testRunner: 'command'`)
 
@@ -75,9 +78,13 @@ export default defineConfig({
 })
 ```
 
-### 2. In-Process `vm` Runner (`testRunner: 'vm'`)
+### 2. The `vm` Runner (`testRunner: 'vm'`)
 
-Runs Vitest suites in-process, in one worker thread per test runner, loading each test file as native ESM through Node's module hooks. No child process and no bundler step. Each file gets its own module state by default; your `vitest.config.*` (environment, setup files, globals, projects) is picked up through your project's `vitest` install. Vitest browser-mode suites are refused with an error naming `testRunner: 'vitest'`; pick the `vitest` runner for those.
+Runs the Vitest runner on Vitest's isolated `threads` pool. Each test file keeps
+Vitest's own per-file isolation, and module mocking, snapshots, environments,
+setup files, projects and custom transforms behave as they do under
+`vitest run`. A Vitest config that enables browser mode is refused with an
+error naming `testRunner: 'vitest'`; pick the `vitest` runner for those.
 
 ```ts
 import { defineConfig } from '@systemfsoftware/stryker-js/config'
@@ -88,6 +95,10 @@ export default defineConfig({
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
 })
 ```
+
+Suites that need Vitest's `forks` pool (for example `process.chdir`, or native
+addons that are not thread-safe) use `testRunner: 'vitest'` with the
+`@systemfsoftware/stryker-js-vitest-runner` plugin instead.
 
 ## Configuration API (`@systemfsoftware/stryker-js/config`)
 

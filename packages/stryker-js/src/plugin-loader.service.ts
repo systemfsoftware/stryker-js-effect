@@ -29,6 +29,7 @@ import { PluginLoadRefusedError } from './PluginsError.schema.js'
 import { importModule } from './run/load-config.cell.js'
 import { PackageManifestFields } from './run/package-manifest.schema.js'
 import { selectPackageEntry, SelectPackageEntryCommand } from './run/select-package-entry.workflow.js'
+import { isVmRunner, vmRunnerPluginUrl } from './VmRunner.blueprint.js'
 
 const NO_IGNORERS: readonly Ignorer[] = []
 
@@ -517,6 +518,7 @@ export const pluginUrlsFromOptions = (options: Options.StrykerOptions): readonly
   ...options.ignorers,
   ...Match.value(options.testRunner).pipe(
     Match.when(Options.isCustomTestRunner, (runner) => [runner.plugin]),
+    Match.when(isVmRunner, () => [vmRunnerPluginUrl()]),
     Match.orElse(() => []),
   ),
   ...options.checkers.map((checker) => checker.plugin),

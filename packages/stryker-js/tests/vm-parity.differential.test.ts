@@ -1,4 +1,3 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Differential } from '@systemfsoftware/differential-spec'
 import { Configuration, Engine, Plugin, Worker } from '@systemfsoftware/stryker-js'
 import type { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -8,9 +7,9 @@ import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Scope from 'effect/Scope'
 import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
@@ -33,21 +32,6 @@ const INTERRUPT_AFTER_MS = 280_000
 const MUTANT_RUN_BOUND_MS = 5_000
 const MUTANT_KILL_GRACE = Duration.seconds(1)
 const BASELINE_RUN_BOUND_MS = 60_000
-
-const workerCanary = Layer.succeed(
-  Worker.WorkerLauncher,
-  Worker.WorkerLauncher.of({
-    spawn: () => Effect.die(new Error('a worker was launched for a vm-parity dry run')),
-  }),
-)
-
-const spawnerCanary = Layer.succeed(
-  ChildProcessSpawner.ChildProcessSpawner,
-  ChildProcessSpawner.make(() => Effect.die(new Error('a child process was spawned for a vm-parity dry run'))),
-)
-
-const stubPortsLayer = Layer.merge(spawnerCanary, workerCanary)
-const sandboxFileLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 interface Location {
   readonly line: number
@@ -232,16 +216,27 @@ const contextFor = (defaults: Options.StrykerOptions, directory: string): Plugin
   testFiles: [],
 })
 
+const vmChildRunner = (
+  context: Plugin.TestRunnerBuildContext,
+): Effect.Effect<Plugin.PooledTestRunner, Plugin.PooledTestRunnerError, Scope.Scope | Worker.WorkerLauncher> =>
+  Plugin.makeChildProcessTestRunner({
+    options: context.options,
+    fileDescriptions: context.fileDescriptions,
+    sandboxWorkingDirectory: context.sandboxWorkingDirectory,
+    workerEntrypoint: new URL('./main.mjs', Plugin.vmRunnerPluginUrl()).href,
+    idGenerator: context.idGenerator,
+  })
+
 const withVmRunner = <A, R>(
   directory: string,
   use: (runner: Plugin.PooledTestRunner) => Effect.Effect<A, never, R>,
 ): Effect.Effect<A, never, R> =>
   Effect.gen(function*() {
     const defaults = yield* Configuration.createDefaultOptions
-    const neverSpawned = Effect.die(new Error('the child-process runner was built for a vm-parity dry run'))
-    return yield* Effect.flatMap(Plugin.buildTestRunner(contextFor(defaults, directory), neverSpawned), use)
+    const context = contextFor(defaults, directory)
+    return yield* Effect.flatMap(Plugin.buildTestRunner(context, vmChildRunner(context)), use)
   }).pipe(
-    Effect.provide(Layer.mergeAll(sandboxFileLayer, stubPortsLayer)),
+    Effect.provide(Engine.nodePlatformLayer),
     Effect.scoped,
     Effect.orDie,
   )
