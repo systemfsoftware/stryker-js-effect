@@ -44,7 +44,8 @@
   },
   "dependencies": {
     "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^"
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
@@ -60,7 +61,6 @@
     "@systemfsoftware/vitest": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
-    "effect": "catalog:",
     "oxlint": "catalog:",
     "rimraf": "catalog:",
     "tsdown": "catalog:",

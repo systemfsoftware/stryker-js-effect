@@ -1343,6 +1343,9 @@ importers:
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.117
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
@@ -1383,9 +1386,6 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.13.3
-      effect:
-        specifier: 'catalog:'
-        version: 4.0.0-rc.117
       oxlint:
         specifier: 'catalog:'
         version: 1.82.0(oxlint-tsgolint@7.0.2001)
