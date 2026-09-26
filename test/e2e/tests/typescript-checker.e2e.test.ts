@@ -1,10 +1,9 @@
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Effect } from 'effect'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
-import { decodeStream, terminalEvent, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
+import { decodeStream, runIdsIn, terminalEvent, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
 import {
   FIXTURE_URL,
-  runIdsIn,
   verifyBrokenCheckerError,
   verifyDiskReport,
   verifyDiskStream,

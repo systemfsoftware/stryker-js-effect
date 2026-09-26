@@ -5,7 +5,12 @@ import { Effect } from 'effect'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import type { SandboxForkFailure } from '../src/Harness/harness-failure.schema.js'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
-import { decodeStream, MachineStreamError, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
+import {
+  decodeStream,
+  MachineStreamError,
+  reportedMutantsOf,
+  verdictEvent,
+} from './__fixtures__/machine-stream.fixture.js'
 
 const VM_VITEST_ORACLE = {
   killed: 7,
@@ -42,11 +47,6 @@ interface ReportMutant {
 interface MutationReport {
   readonly files: Record<string, { readonly mutants: ReadonlyArray<ReportMutant> }>
 }
-
-const reportedOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
-  events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
-    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
 
 const mutantsOf = (report: MutationReport): ReadonlyArray<ReportMutant> =>
   Object.values(report.files).flatMap((file) => file.mutants)
@@ -146,7 +146,7 @@ Feature('Running a vitest-syntax suite through the in-memory runner')
         Then('the tallies match the vitest-runner oracle')((s, expect) => verifyCounts(expect, s.verdict)),
         When('the reported mutants of the decoded stream are read')(
           'reported',
-          (s) => Effect.succeed(reportedOf(s.events)),
+          (s) => Effect.succeed(reportedMutantsOf(s.events)),
         ),
         Then('every reported mutant lands in the vitest-runner oracle tally')((s, expect) =>
           verifyMutantTally(expect, s.reported)

@@ -12,7 +12,7 @@ import {
 } from '../scripts/oracle/normalize.js'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { E2eHarnessLive } from './__fixtures__/e2e-harness.fixture.js'
-import { decodeStream, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
+import { decodeStream, reportedMutantsOf, runIdsIn, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
 import { strykerLifecycleContract } from './__fixtures__/stryker-trace.fixture.js'
 import { TraceObservationLive } from './__fixtures__/trace-observation.fixture.js'
 
@@ -122,16 +122,6 @@ const countedSumOf = (counts: RunEvent.VerdictReached['counts']): number =>
   counts.noCoverage +
   counts.ignored +
   counts.pending
-
-const reportedMutantsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
-  events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
-    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
-
-const runIdsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
-  events
-    .map((event) => ('runId' in event && typeof event.runId === 'string' ? String(event.runId) : undefined))
-    .filter((runId): runId is string => runId !== undefined)
 
 const verifyStreamAndExit = (
   expect: Expect,
@@ -293,7 +283,7 @@ Feature('Running the enterprise mutation lifecycle through the packed CLI', { ti
         ),
         When('the run ids carried by the decoded stream are read')(
           'runIds',
-          (s) => Effect.succeed(runIdsOf(s.events)),
+          (s) => Effect.succeed(runIdsIn(s.events)),
         ),
         Then('every event carries the verdict run id')((s, expect) =>
           verifyRunIdConsistency(expect, s.runIds, s.verdict)

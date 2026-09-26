@@ -3,6 +3,7 @@ import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import { Effect, Schema } from 'effect'
 import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
+import { reportedMutantsOf } from './machine-stream.fixture.js'
 
 export const FIXTURE_URL = new URL('../../testResources/typescript-checker-fixture', import.meta.url)
 export const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
@@ -31,16 +32,6 @@ const kindsOutsideOf = (
   kinds: ReadonlyArray<string>,
   allowed: ReadonlyArray<string>,
 ): ReadonlyArray<string> => kinds.filter((kind) => !allowed.includes(kind))
-
-const reportedMutantsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
-  events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
-    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
-
-export const runIdsIn = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
-  events
-    .map((event) => ('runId' in event && typeof event.runId === 'string' ? String(event.runId) : undefined))
-    .filter((runId): runId is string => runId !== undefined)
 
 const statusSuffixCount = (mutants: ReadonlyArray<string>, suffix: string): number =>
   mutants.filter((mutant) => mutant.endsWith(suffix)).length

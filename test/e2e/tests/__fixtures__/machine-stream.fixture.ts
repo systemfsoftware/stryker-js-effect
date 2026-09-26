@@ -44,6 +44,16 @@ export const verdictOrUndefined = (events: ReadonlyArray<RunEvent.RunEvent>): Ve
   return terminal !== undefined && terminal._tag === 'verdict' ? terminal : undefined
 }
 
+export const reportedMutantsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
+  events
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
+    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
+
+export const runIdsIn = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
+  events
+    .map((event) => ('runId' in event && typeof event.runId === 'string' ? String(event.runId) : undefined))
+    .filter((runId): runId is string => runId !== undefined)
+
 export const verdictEvent = (
   events: ReadonlyArray<RunEvent.RunEvent>,
 ): Effect.Effect<VerdictEvent, MachineStreamError> =>

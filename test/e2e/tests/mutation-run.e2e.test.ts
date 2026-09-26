@@ -4,7 +4,13 @@ import type { Check, Expect } from '@systemfsoftware/vitest'
 import { Effect } from 'effect'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
-import { decodeStream, MachineStreamError, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
+import {
+  decodeStream,
+  MachineStreamError,
+  reportedMutantsOf,
+  runIdsIn,
+  verdictEvent,
+} from './__fixtures__/machine-stream.fixture.js'
 
 const CALC_FIXTURE_ORACLE = {
   killed: 7,
@@ -44,16 +50,6 @@ const terminalIndexesIn = (kinds: ReadonlyArray<string>): ReadonlyArray<number> 
     .map((kind, index) => ({ index, kind }))
     .filter((entry) => TERMINAL_RUN_KINDS.includes(entry.kind))
     .map((entry) => entry.index)
-
-const reportedMutants = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
-  events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
-    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
-
-const runIdsIn = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
-  events
-    .map((event) => ('runId' in event && typeof event.runId === 'string' ? String(event.runId) : undefined))
-    .filter((runId): runId is string => runId !== undefined)
 
 const countedSumOf = (counts: RunEvent.VerdictReached['counts']): number =>
   counts.killed + counts.survived + counts.timeout + counts.compileErrors +
@@ -163,7 +159,7 @@ Feature('Running one mutation run through the packed CLI')
         ),
         When('the reported mutants of the decoded stream are read')(
           'reported',
-          (s) => Effect.succeed(reportedMutants(s.events)),
+          (s) => Effect.succeed(reportedMutantsOf(s.events)),
         ),
         Then('every reported mutant is counted in the verdict')((s, expect) =>
           verifyReportedAndActionableMutants(expect, s.reported, s.verdict)
