@@ -35,14 +35,13 @@ export const spawnThread = (options: PoolOptions): PoolThread => {
     MutableRef.set(deathCause, cause)
     MutableRef.set(died, true)
   }
-  worker.on('error', (cause) => recordDeath(errorOf(cause)))
-  worker.on('exit', () => recordDeath(undefined))
-  const boot = worker.start().then(
-    () => undefined,
-    (cause) => {
-      recordDeath(errorOf(cause))
-    },
-  )
+  const guard = (): void => {
+    worker.on('error', (cause) => recordDeath(errorOf(cause)))
+    worker.on('exit', () => recordDeath(undefined))
+  }
+  const boot = worker.start().then(guard, (cause) => {
+    recordDeath(errorOf(cause))
+  })
   return { worker, boot, died, deathCause, stopping }
 }
 
@@ -98,40 +97,28 @@ export const stopThread: {
 
 export interface StandbyWorkerPool {
   readonly name: string
-  readonly claim: (options: PoolOptions) => Effect.Effect<PoolThread, StandbyThreadDied>
+  readonly claim: (options: PoolOptions) => Effect.Effect<PoolThread>
   readonly release: (thread: PoolThread) => Effect.Effect<void, StandbyThreadStopFailed>
 }
 
 export const standbyPoolRunner = (pool: StandbyWorkerPool): PoolRunnerInitializer => ({
   name: pool.name,
   createPoolWorker: (options) => {
-    let claimed: PoolThread | undefined
-    let starting: Promise<void> | undefined
-    const workerOf = (): PoolWorker => {
-      if (claimed === undefined) {
-        throw new Error('[stryker-js-vitest-runner]: the standby worker was used before it started')
-      }
-      return claimed.worker
-    }
+    const thread = Effect.runSync(pool.claim(options))
     return {
       name: pool.name,
       on: (event, callback) => {
-        workerOf().on(event, callback)
+        thread.worker.on(event, callback)
       },
       off: (event, callback) => {
-        workerOf().off(event, callback)
+        thread.worker.off(event, callback)
       },
       send: (message) => {
-        workerOf().send(message)
+        thread.worker.send(message)
       },
-      deserialize: (data) => workerOf().deserialize(data),
-      start: () => {
-        starting ??= Effect.runPromise(pool.claim(options)).then((thread) => {
-          claimed = thread
-        })
-        return starting
-      },
-      stop: () => claimed === undefined ? Promise.resolve() : Effect.runPromise(pool.release(claimed)),
+      deserialize: (data) => thread.worker.deserialize(data),
+      start: () => Effect.runPromise(startThread(thread)),
+      stop: () => Effect.runPromise(pool.release(thread)),
     }
   },
 })

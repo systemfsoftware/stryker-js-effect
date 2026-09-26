@@ -15,7 +15,6 @@ import {
   spawnThread,
   standbyPoolRunner,
   type StandbyThreadStage,
-  startThread,
   stopThread,
 } from './drivers/vitest-pool.js'
 import { type StandbyThreadStopFailed } from './StandbyThreadsPool.schema.js'
@@ -142,7 +141,6 @@ export const claim = Effect.fn('vitest.standby_pool.claim')(function*(
     onNone: () => claimedSlotOf(pool, options),
   })
   yield* Effect.flatMap(acquireSlot(pool, options, 'spare'), (slot) => registerSlot(pool, slot))
-  yield* startThread(claimed.thread)
   return claimed.thread
 })
 
