@@ -8,7 +8,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { decodeMerge, writeEncoded } from '../merge-reports.parts.js'
+import { decodeMerge, writeEncoded } from '../merge-reports.cell.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
 import { RunMutantTested } from '../run-event.schema.js'
 

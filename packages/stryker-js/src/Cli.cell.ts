@@ -29,8 +29,7 @@ import {
   runEffectOf,
   type StrykerCliInvocation,
 } from './Cli.parts.js'
-import { mergeReportsCell } from './merge-reports.cell.js'
-import { type MergeReportsInvocation } from './merge-reports.parts.js'
+import { mergeReportsCell, type MergeReportsInvocation } from './merge-reports.cell.js'
 import { OutputModeProbe } from './output-mode-probe.service.js'
 import { MachineConsole } from './reporting/machine-console.service.js'
 import { ErrorEnvelope, RunExitCode } from './reporting/run-failure.schema.js'
