@@ -22,7 +22,6 @@ import type { RunEvent } from '../run-event.schema.js'
 import { RunMutantTested } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
-import { ChildProcessCrashedError } from '../Worker.schema.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import { isMutantStatus, toReportedMutant, type ValidMutantStatus } from './mutation-test-plan.cell.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
@@ -218,10 +217,7 @@ const readMutantRun = Effect.fnUntraced(function*(input: RunOnePlanArgs) {
     }),
   )
   return {
-    status: result.status,
-    timedOut: result.status === 'timeout',
     wallClockTimeout: invalidatesRunnerPool(result.status, reasonOf(result)),
-    hitLimitReason: S.is(TestRunner.HitLimitReasonText)(reasonOf(result)),
     args: input,
     runner,
     result,
@@ -238,28 +234,16 @@ const settleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
   return reported
 })
 
-const invalidateMutantRunSlot = Effect.fnUntraced(function*(raw: MutantRunRaw) {
-  return yield* invalidateSlot(
-    raw.args.testRunnerPool,
-    raw.runner,
-    ChildProcessCrashedError.make({
-      pid: 0,
-      exit: { _tag: 'Signal', signal: 'SIGKILL' },
-      cause: 'wall-clock timeout',
-    }),
-  )
-})
-
-const stopMutantRunWallClock = Effect.fnUntraced(function*(_raw: MutantRunRaw) {
-  return yield* StageError.make({ stage: 'mutationTest', reason: TestRunner.WallClockTimeoutReason.literal })
+const recycleAndSettleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
+  yield* Pool.invalidate(raw.args.testRunnerPool, raw.runner)
+  return yield* settleMutantRun(raw)
 })
 
 const mutantRunCell = Sandwich.named('stryker.mutant_run')(readMutantRun)
   .decide(interpretMutantRun)
   .write({
     MutantRunSettled: (_decision, raw) => settleMutantRun(raw),
-    MutantRunPoolInvalidated: (_decision, raw) => invalidateMutantRunSlot(raw),
-    MutantRunWallClockStopped: (_decision, raw) => stopMutantRunWallClock(raw),
+    MutantRunPoolInvalidated: (_decision, raw) => recycleAndSettleMutantRun(raw),
     CommandRejected: ({ issue }) =>
       Effect.fail(StageError.make({ stage: 'mutationTest', reason: `mutant run command rejected: ${issue}` })),
   })

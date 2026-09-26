@@ -16,20 +16,10 @@ export class MutantRunPoolInvalidated
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
-export class MutantRunWallClockStopped extends S.TaggedClass<MutantRunWallClockStopped>()(
-  'MutantRunWallClockStopped',
-  {},
-) {
-  readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
-}
-
-export type MutantRunOutcome = MutantRunSettled | MutantRunPoolInvalidated | MutantRunWallClockStopped
+export type MutantRunOutcome = MutantRunSettled | MutantRunPoolInvalidated
 
 export class MutantRunObservation extends S.Class<MutantRunObservation>('MutantRunObservation')({
-  status: S.String,
-  timedOut: S.Boolean,
   wallClockTimeout: S.Boolean,
-  hitLimitReason: S.Boolean,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -37,16 +27,12 @@ export class MutantRunObservation extends S.Class<MutantRunObservation>('MutantR
 const decide = (command: MutantRunObservation): Result.Result<MutantRunOutcome, never> =>
   Boolean.match(command.wallClockTimeout, {
     onTrue: () => Result.succeed(MutantRunPoolInvalidated.make({})),
-    onFalse: () =>
-      Boolean.match(Boolean.and(command.timedOut, Boolean.not(command.hitLimitReason)), {
-        onTrue: () => Result.succeed(MutantRunWallClockStopped.make({})),
-        onFalse: () => Result.succeed(MutantRunSettled.make({})),
-      }),
+    onFalse: () => Result.succeed(MutantRunSettled.make({})),
   })
 
 export const interpretMutantRun = Workflow.make({
   command: MutantRunObservation,
-  decision: S.Union([MutantRunSettled, MutantRunPoolInvalidated, MutantRunWallClockStopped]),
+  decision: S.Union([MutantRunSettled, MutantRunPoolInvalidated]),
   error: S.Never,
   decide,
 })
