@@ -160,15 +160,16 @@ const materializeDecision = Effect.fnUntraced(function*(
   decision: EncodedPlannedDecision,
   command: MutantTestPlanCommand,
 ): Effect.fn.Return<Mutant.TestPlan, StageError> {
-  const mutant = Option.getOrUndefined(Record.get(mutantsByIdOf(command.mutants), decision.mutantId))
-  if (mutant === undefined) {
-    return yield* Effect.die(
-      UnknownPlannedMutant.make({
-        mutantId: decision.mutantId,
-        message: `planner returned an unknown mutant id: ${decision.mutantId}`,
-      }),
-    )
-  }
+  const mutant = yield* Option.match(Record.get(mutantsByIdOf(command.mutants), decision.mutantId), {
+    onNone: () =>
+      Effect.die(
+        UnknownPlannedMutant.make({
+          mutantId: decision.mutantId,
+          message: `planner returned an unknown mutant id: ${decision.mutantId}`,
+        }),
+      ),
+    onSome: Effect.succeed,
+  })
   return yield* Effect.fromResult(
     materializeMutantPlans(MaterializeMutantPlanCommand.make({ mutant, plan: plannedPlanOf(mutant, decision) })),
   ).pipe(Effect.map((materialized) => materialized.plan))
