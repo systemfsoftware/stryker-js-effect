@@ -195,7 +195,6 @@ const readPrepare = Effect.fn('stryker.prepare.gather')(function*(
     mode: env.resolvedMode.mode,
     reporters: [...options.reporters],
     fileCount: pipe(command.project.files, MutableHashMap.size),
-    availableReporters: [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name),
     env,
     queue,
     options,

@@ -132,7 +132,7 @@ const isEntryIncluded = (ignorePatterns: readonly string[], entry: DirectoryEntr
       isDirectory: entry.isDirectory,
     }),
   )
-  return Result.isSuccess(decision) && S.is(EntryIncluded)(decision.success)
+  return Option.exists(Result.getSuccess(decision), S.is(EntryIncluded))
 }
 
 const resolveInputFileNames = (

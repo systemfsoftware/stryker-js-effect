@@ -85,7 +85,7 @@ const matcherMatches = (matcher: FileMatcher, pathService: Path.Path, fileName: 
       resolvedFileName: pathService.resolve(fileName).replace(/\\/g, '/'),
     }),
   )
-  return Result.isSuccess(decision) && S.is(FileMatched)(decision.success)
+  return Option.exists(Result.getSuccess(decision), S.is(FileMatched))
 }
 
 const makeDisableTypeChecksPreprocessor = (

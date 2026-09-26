@@ -64,15 +64,16 @@ const defaultedTotal = (availableParallelism: number) =>
 
 const percentageDetails = (text: string, availableParallelism: number) =>
   Option.match(percentageOf(text), {
-    onSome: (percentage) => ({
-      total: percentageTotal(percentage, availableParallelism),
-      isPercentage: true,
-      announcement: Option.some(
-        `Computed concurrency ${
-          percentageTotal(percentage, availableParallelism)
-        } from "${text}" based on ${availableParallelism} available parallelism.`,
-      ),
-    }),
+    onSome: (percentage) => {
+      const total = percentageTotal(percentage, availableParallelism)
+      return {
+        total,
+        isPercentage: true,
+        announcement: Option.some(
+          `Computed concurrency ${total} from "${text}" based on ${availableParallelism} available parallelism.`,
+        ),
+      }
+    },
     onNone: () => ({
       total: defaultedTotal(availableParallelism),
       isPercentage: false,

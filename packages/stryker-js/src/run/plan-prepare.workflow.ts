@@ -10,7 +10,6 @@ export class PrepareDecoded extends S.Class<PrepareDecoded>('PrepareDecoded')({
   mode: S.Literals(['human', 'machine']),
   reporters: S.Array(S.String),
   fileCount: S.Finite,
-  availableReporters: S.Array(S.String),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     mode: 'stryker.prepare.mode',

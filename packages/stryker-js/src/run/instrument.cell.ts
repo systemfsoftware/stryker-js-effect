@@ -87,10 +87,10 @@ const mergeInstrumentedFile = (input: { readonly project: Project; readonly file
   const files = MutableHashMap.fromIterable(input.project.files)
   MutableHashMap.set(files, input.file.name, input.file)
   const filesToMutate = MutableHashMap.fromIterable(input.project.filesToMutate)
-  const settable = [filesToMutate].filter(() => input.file.mutate !== false)
-  settable.forEach((target) => MutableHashMap.set(target, input.file.name, input.file))
-  const removable = [filesToMutate].filter(() => input.file.mutate === false)
-  removable.forEach((target) => MutableHashMap.remove(target, input.file.name))
+  Boolean.match(input.file.mutate === false, {
+    onTrue: () => MutableHashMap.remove(filesToMutate, input.file.name),
+    onFalse: () => MutableHashMap.set(filesToMutate, input.file.name, input.file),
+  })
   return { ...input.project, files, filesToMutate }
 }
 
@@ -235,7 +235,7 @@ const projectOf = (seeds: readonly ProjectFile[]): Project => {
 const updatedContentOf = (updates: Map<string, string>, file: ProjectFile) =>
   Option.getOrElse(Option.fromUndefinedOr(updates.get(file.name)), () => file.content)
 
-const untouchedApartFromContent = (updates: Map<string, string>, file: ProjectFile, after: ProjectFile): boolean =>
+const untouchedApartFromContent = (file: ProjectFile, after: ProjectFile): boolean =>
   after.mutate === file.mutate && after.originalContent === file.originalContent
 
 const contentApplied = (updates: Map<string, string>, file: ProjectFile, after: ProjectFile): boolean =>
@@ -250,7 +250,7 @@ const filesMatchReference = (
   initial.every((file) =>
     Option.match(MutableHashMap.get(folded.files, file.name), {
       onNone: () => false,
-      onSome: (after) => contentApplied(updates, file, after) && untouchedApartFromContent(updates, file, after),
+      onSome: (after) => contentApplied(updates, file, after) && untouchedApartFromContent(file, after),
     })
   )
 

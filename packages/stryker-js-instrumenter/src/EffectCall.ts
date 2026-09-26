@@ -165,8 +165,6 @@ type ImportContribution =
   }
   | { readonly kind: 'pipe'; readonly local: string }
 
-const importTableFor = (program: Program): ImportTable => buildImportTable(program)
-
 const buildImportTable = (program: Program): ImportTable =>
   Arr.reduce(
     Arr.flatMap(Arr.filter(program.body, isImportDeclaration), importContributions),
@@ -314,7 +312,7 @@ const resolveEffectCallDataFirst = (
   node: Node,
   context: MutatorContext,
 ): Option.Option<ResolvedEffectCall> =>
-  Option.flatMap(programOf(context), (program) => resolveIn(node, context, importTableFor(program)))
+  Option.flatMap(programOf(context), (program) => resolveIn(node, context, buildImportTable(program)))
 
 export const resolveEffectCall: {
   (node: Node, context: MutatorContext): Option.Option<ResolvedEffectCall>

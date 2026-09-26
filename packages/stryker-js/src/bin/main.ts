@@ -240,8 +240,9 @@ const strykerProgram = Effect.gen(function*() {
           restore(Command.runWith(command, { version: cliPkgJson.version })(args).pipe(Effect.provide(machineConsole))),
         )
         const conclusionCommand = RunOutcomeCommand.fromExit({ exit, argv: args })
+        const outcome = classifyRunOutcome(conclusionCommand)
         const classified = Result.getOrElse(
-          classifyRunOutcome(conclusionCommand),
+          outcome,
           (interrupted) => interrupted,
         )
         const machineConsoleService = yield* MachineConsole
@@ -261,13 +262,12 @@ const strykerProgram = Effect.gen(function*() {
           'stryker.run.error': errorText,
         })
         return yield* concludeRunCell.run({
-          exit,
-          argv: args,
           mode,
           stream,
           basePath: host.basePath,
           pathService,
           runEvents,
+          concluded: { command: conclusionCommand, outcome, error: errorText },
         })
       }),
     )

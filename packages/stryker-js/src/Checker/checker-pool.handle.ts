@@ -181,19 +181,22 @@ const runConfiguredCheckers = (
 ): Effect.Effect<CheckedPlans, StageError | CheckerCrash> =>
   Effect.flatMap(
     Pool.use(pool, (slot) => Effect.succeed(slot.map(({ checkerName }) => checkerName))),
-    (checkerNames) =>
-      Effect.reduce(
+    (checkerNames) => {
+      const failedChecks: (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[] = []
+      const checkedPlans: CheckedPlans = { passedPlans: plans, failedChecks }
+      return Effect.reduce(
         checkerNames,
-        (): CheckedPlans => ({ passedPlans: plans, failedChecks: [] }),
+        () => checkedPlans,
         (acc, checkerName, checkerIndex) =>
           Effect.map(
             stepOneChecker(pool, checkerIndex, checkerName, acc.passedPlans),
-            (split) => ({
-              passedPlans: split.passedPlans,
-              failedChecks: [...acc.failedChecks, ...split.failedChecks],
-            }),
+            (split) => {
+              failedChecks.push(...split.failedChecks)
+              return { passedPlans: split.passedPlans, failedChecks }
+            },
           ),
-      ),
+      )
+    },
   )
 
 export const checkPlans = Effect.fn('stryker.checker_pool.check_plans')(function*(

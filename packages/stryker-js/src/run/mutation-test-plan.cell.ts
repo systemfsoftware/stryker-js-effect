@@ -127,6 +127,10 @@ const planCommandOf = (
 const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
   Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant] as const))
 
+type MutantTestPlanRaw = MutantTestPlanCommand & {
+  readonly mutantsById: Record<string, Mutant.Mutant>
+}
+
 const readPlanCommand = Effect.fn('stryker.mutation_test.plan.read')(function*(input: MutationTestPlanInput) {
   const sandboxFileByName: Record<string, string> = Object.fromEntries(
     yield* sandboxFilesOf({
@@ -134,7 +138,7 @@ const readPlanCommand = Effect.fn('stryker.mutation_test.plan.read')(function*(i
       fileNames: [...MutableHashMap.keys(input.project.filesToMutate)],
     }),
   )
-  return planCommandOf(
+  const command = planCommandOf(
     input.mutants,
     input.testCoverage,
     input.options,
@@ -142,6 +146,7 @@ const readPlanCommand = Effect.fn('stryker.mutation_test.plan.read')(function*(i
     undefined,
     sandboxFileByName,
   )
+  return Object.assign(command, { mutantsById: mutantsByIdOf(command.mutants) })
 })
 
 type EncodedPlannedDecision = typeof PlannedRunMutant.Encoded | typeof PlannedEarlyResultMutant.Encoded
@@ -158,9 +163,9 @@ const plannedPlanOf = (
 
 const materializeDecision = Effect.fnUntraced(function*(
   decision: EncodedPlannedDecision,
-  command: MutantTestPlanCommand,
+  command: MutantTestPlanRaw,
 ): Effect.fn.Return<Mutant.TestPlan, StageError> {
-  const mutant = yield* Option.match(Record.get(mutantsByIdOf(command.mutants), decision.mutantId), {
+  const mutant = yield* Option.match(Record.get(command.mutantsById, decision.mutantId), {
     onNone: () =>
       Effect.die(
         UnknownPlannedMutant.make({

@@ -135,13 +135,18 @@ const claimedIdentities = (
   )
 
 const testIdsByRelativeFileOf = (testCoverage: TestCoverage, basePath: string) =>
-  [...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName).reduce<Record<string, string[]>>(
-    (accumulator, result) => {
-      const file = relativeFileOfTest(result, basePath)
-      const ids = Option.getOrElse(Record.get(accumulator, file), (): string[] => [])
-      return { ...accumulator, [file]: [...ids, result.id] }
-    },
-    {},
+  Object.fromEntries(
+    [...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName).reduce(
+      (accumulator, result) => {
+        const file = relativeFileOfTest(result, basePath)
+        return MutableHashMap.set(
+          accumulator,
+          file,
+          [...Option.getOrElse(MutableHashMap.get(accumulator, file), (): string[] => []), result.id],
+        )
+      },
+      MutableHashMap.empty<string, string[]>(),
+    ),
   )
 
 const coveredFilesOfTests = (

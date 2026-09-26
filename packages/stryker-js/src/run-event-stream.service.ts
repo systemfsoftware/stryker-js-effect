@@ -291,7 +291,10 @@ const emitHelpEnvelope = (stream: RunEventStream, help: string): Effect.Effect<v
   )
 
 const helpPayload = (ok: RunOk, captured: string): Option.Option<string> =>
-  Option.filter(Option.some(captured), () => ok.help || captured.length > 0)
+  Boolean.match(ok.help || captured.length > 0, {
+    onTrue: () => Option.some(captured),
+    onFalse: () => Option.none<string>(),
+  })
 
 const emitNullScoreVerdictFromDefaults = Effect.fn('stryker.runEventStream.nullScoreVerdict')(function*(
   stream: RunEventStream,

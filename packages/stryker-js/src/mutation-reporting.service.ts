@@ -177,10 +177,6 @@ const reportMutant = (
     }),
   ).pipe(Effect.orDie)
 
-const checkStatusToMutantStatus = (
-  _status: Exclude<Checker.CheckStatus, 'passed'>,
-): InstrumenterMutant.RunMutantResult['status'] => 'CompileError'
-
 const reportMutantStatus = (
   mutant: InstrumenterMutant.MutantTestCoverage,
   status: InstrumenterMutant.RunMutantResult['status'],
@@ -190,7 +186,7 @@ const reportMutantStatus = (
 const reportCheckFailure = (
   mutant: InstrumenterMutant.MutantTestCoverage,
   result: Exclude<Checker.CheckResult, Checker.PassedCheckResult>,
-) => reportMutantStatus(mutant, checkStatusToMutantStatus(result.status), result.reason)
+) => reportMutantStatus(mutant, 'CompileError', result.reason)
 
 const reasonedOutcomeOf = (reason: string | undefined) =>
   Option.match(Option.fromNullishOr(reason), {

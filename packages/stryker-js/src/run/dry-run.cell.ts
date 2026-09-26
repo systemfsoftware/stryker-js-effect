@@ -163,13 +163,11 @@ const withOriginalFileNames = (
   prev: InstrumentDone,
 ): readonly TestRunner.TestResult[] => tests.map((test) => withOriginalFileName(test, prev))
 
-const ZERO = 0
-
 const testsByIdOf = (result: Readonly<TestRunner.CompleteDryRunResult>) =>
   MutableHashMap.fromIterable(result.tests.map((test) => [test.id, test] as const))
 
 const coveredMutantIdsOf = (coverage: Mutant.CoverageData) =>
-  Object.entries(coverage).filter(([, count]) => count > ZERO).map(([mutantId]) => mutantId)
+  Object.entries(coverage).filter(([, count]) => count > 0).map(([mutantId]) => mutantId)
 
 const testsByMutantIdOf = (
   mutantCoverage: Mutant.Coverage,
@@ -205,7 +203,7 @@ const hitsByMutantIdOf = (mutantCoverage: Mutant.Coverage) =>
           MutableHashMap.set(
             acc,
             mutantId,
-            Option.getOrElse(MutableHashMap.get(acc, mutantId), () => ZERO) + count,
+            Option.getOrElse(MutableHashMap.get(acc, mutantId), () => 0) + count,
           ),
         hitsByMutantId,
       ),

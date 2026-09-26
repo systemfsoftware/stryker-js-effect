@@ -74,13 +74,17 @@ const buildPluginLoadPlan = (entries: readonly PluginLoaderEntry[]): PluginLoadP
     (): readonly PluginShadowing[] => [],
   )
 
-  const pluginsByKind = winningDeclarations.reduce<HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>>(
+  const pluginsByKind = winningDeclarations.reduce<HashMap.HashMap<PluginKind, PluginDescriptor[]>>(
     (map, declaration) =>
-      Option.match(HashMap.get(map, declaration.plugin.kind), {
-        onNone: () => HashMap.set(map, declaration.plugin.kind, [declaration.plugin]),
-        onSome: (existing) => HashMap.set(map, declaration.plugin.kind, [...existing, declaration.plugin]),
-      }),
-    HashMap.empty<PluginKind, readonly PluginDescriptor[]>(),
+      HashMap.modifyAt(map, declaration.plugin.kind, (existing) =>
+        Option.match(existing, {
+          onNone: () => Option.some([declaration.plugin]),
+          onSome: (plugins) => {
+            plugins.push(declaration.plugin)
+            return Option.some(plugins)
+          },
+        })),
+    HashMap.empty<PluginKind, PluginDescriptor[]>(),
   )
 
   const pluginSources = winningDeclarations.map((declaration): PluginSource =>

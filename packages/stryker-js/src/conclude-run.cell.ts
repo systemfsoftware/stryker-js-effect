@@ -1,32 +1,29 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import * as Effect from 'effect/Effect'
-import type * as Exit from 'effect/Exit'
-import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 
-import { classifyRunOutcome, RunExit } from './classify-run-outcome.workflow.js'
+import { RunExit, type RunOutcomeDecision, type RunOutcomeError } from './classify-run-outcome.workflow.js'
 import type { ResolvedMode } from './output-mode.schema.js'
-import {
-  FailedRunOutcomeSchema,
-  planRunConclusion,
-  type PlanRunConclusionCommand,
-} from './plan-run-conclusion.workflow.js'
-import { MachineConsole } from './reporting/machine-console.service.js'
-import { ErrorEnvelope, RunExitCode } from './reporting/run-failure.schema.js'
+import { planRunConclusion, type PlanRunConclusionCommand } from './plan-run-conclusion.workflow.js'
+import { RunExitCode } from './reporting/run-failure.schema.js'
 import type { RunEventDrain, RunEventStream, RunEventStreamPort } from './run-event-stream.service.js'
 import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
 
-export interface RunConclusionInput<E = unknown> {
-  readonly exit: Exit.Exit<void, E>
-  readonly argv: readonly string[]
+export interface RunConclusion {
+  readonly command: RunOutcomeCommand
+  readonly outcome: Result.Result<RunOutcomeDecision, RunOutcomeError>
+  readonly error: string
+}
+
+export interface RunConclusionInput {
   readonly mode: ResolvedMode
   readonly stream: RunEventStream
   readonly basePath: string
   readonly pathService: Path.Path
   readonly runEvents: RunEventStreamPort
+  readonly concluded: RunConclusion
 }
 
 export type RunConclusionRaw = (typeof PlanRunConclusionCommand)['Encoded'] & {
@@ -51,39 +48,18 @@ const encodedCommandOf = (
   diagnostic: command.diagnostic,
 })
 
-const SPAN_ERROR_LIMIT = 1024
-const TRUNCATION_SUFFIX = '…[truncated]'
-
-const truncateForSpan = (text: string): string => {
-  const over = Math.max(0, text.length - SPAN_ERROR_LIMIT)
-  const suffix = TRUNCATION_SUFFIX.slice(0, Math.min(over, 1) * TRUNCATION_SUFFIX.length)
-  return text.slice(0, SPAN_ERROR_LIMIT) + suffix
-}
-
 const readConclusion = Effect.fn('stryker.run_conclusion.read')(function*(
   input: RunConclusionInput,
-): Effect.fn.Return<RunConclusionRaw, never, RunEventDrain | MachineConsole> {
-  const machineConsole = yield* MachineConsole
-  const command = RunOutcomeCommand.fromExit({ exit: input.exit, argv: input.argv })
-  const outcome = classifyRunOutcome(command)
-  const classified = Result.getOrElse(outcome, (interrupted) => interrupted)
-  const failed = Option.liftPredicate(S.is(FailedRunOutcomeSchema))(classified)
-  const error = Option.getOrElse(
-    Option.map(
-      failed,
-      (failure) =>
-        truncateForSpan(ErrorEnvelope.fromOutcome({ error: failure, captured: machineConsole.read() }).error),
-    ),
-    () => '',
-  )
+): Effect.fn.Return<RunConclusionRaw, never, RunEventDrain> {
+  const classified = Result.getOrElse(input.concluded.outcome, (interrupted) => interrupted)
   yield* input.stream.open
   return {
     _tag: 'PlanRunConclusionCommand' as const,
-    command: encodedCommandOf(command),
+    command: encodedCommandOf(input.concluded.command),
     machine: input.mode.mode === 'machine',
     exitCode: RunExitCode.fromOutcome(classified).code,
     outcome: classified._tag,
-    error,
+    error: input.concluded.error,
     conclusion: input,
   }
 })
@@ -91,12 +67,12 @@ const readConclusion = Effect.fn('stryker.run_conclusion.read')(function*(
 export const concludeRunCell = Sandwich.named('stryker.run.conclude')(readConclusion)
   .decide(planRunConclusion)
   .write({
-    RunConclusionEmittedOk: (decision, raw) =>
+    RunConclusionEmittedOk: (_decision, raw) =>
       Effect.andThen(
         raw.conclusion.runEvents.emitMachineModeOutput({
           stream: raw.conclusion.stream,
           mode: raw.conclusion.mode,
-          outcome: classifyRunOutcome(decision.command),
+          outcome: raw.conclusion.concluded.outcome,
           basePath: raw.conclusion.basePath,
           pathService: raw.conclusion.pathService,
         }),
@@ -107,7 +83,7 @@ export const concludeRunCell = Sandwich.named('stryker.run.conclude')(readConclu
         raw.conclusion.runEvents.emitMachineModeOutput({
           stream: raw.conclusion.stream,
           mode: raw.conclusion.mode,
-          outcome: classifyRunOutcome(decision.command),
+          outcome: raw.conclusion.concluded.outcome,
           basePath: raw.conclusion.basePath,
           pathService: raw.conclusion.pathService,
         }),

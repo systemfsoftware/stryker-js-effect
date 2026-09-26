@@ -43,8 +43,6 @@ export interface RunContext {
   readonly pathService: Path.Path
 }
 
-export const emptyRunResults: readonly Mutant.RunMutantResult[] = []
-
 export interface ReportingInputArgs {
   readonly prev: DryRunDone
   readonly env: RunEnvironmentShape

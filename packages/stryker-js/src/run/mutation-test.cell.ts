@@ -34,7 +34,6 @@ import { readIncrementalReuse } from './incremental-reuse.cell.js'
 import {
   announceSettledMutant,
   checkpointMutationResults,
-  emptyRunResults,
   reportingInputOf,
   type RunContext,
   runOnePlan,
@@ -58,6 +57,8 @@ export interface MutationTestDone {
 
 type MutationTestRaw = typeof MutationTestCommand.Encoded & {
   readonly prev: DryRunDone
+  readonly plannableMutants: readonly Mutant.Mutant[]
+  readonly droppedMutants: readonly Mutant.Mutant[]
 }
 
 const writeMutationTestNoTests = Effect.fn('stryker.mutation_test.no_tests')(function*() {
@@ -78,8 +79,8 @@ const writeMutationTestDryRunOnly = Effect.fn('stryker.mutation_test.dry_run_onl
 const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
   const prev = raw.prev
   const testRunnerCapacity = prev.concurrency.testRunners + prev.concurrency.checkers
-  const { dropped, plannable: plannableMutants } = partitionPlannable(prev.mutants)
-  yield* reportDroppedMutants(dropped)
+  const plannableMutants = raw.plannableMutants
+  yield* reportDroppedMutants(raw.droppedMutants)
   yield* phaseEntered('mutation-test')
   const idGenerator = yield* IdGenerator
   const env = yield* RunEnvironment
@@ -180,8 +181,11 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
         { concurrency: Math.max(1, testRunnerCapacity) },
       ).pipe(
         Stream.runFold(
-          (): readonly Mutant.RunMutantResult[] => emptyRunResults,
-          (acc, result) => [...acc, result],
+          (): Mutant.RunMutantResult[] => [],
+          (acc, result) => {
+            acc.push(result)
+            return acc
+          },
         ),
       ),
   )
@@ -221,7 +225,7 @@ const writeMutationTestOutcome = ({
     'mutationTest',
     {
       mutantCount: raw.prev.mutants.length,
-      skippedMutantCount: partitionPlannable(raw.prev.mutants).dropped.length,
+      skippedMutantCount: raw.droppedMutants.length,
       testCount: raw.prev.dryRunResult.tests.length,
     },
     () => outcome,
@@ -233,6 +237,7 @@ export const mutationTestCell = Sandwich.named(
   Effect.gen(function*() {
     yield* Scope.Scope
     const prev = command
+    const { dropped, plannable } = partitionPlannable(prev.mutants)
     const raw: MutationTestRaw = {
       _tag: 'MutationTestCommand',
       dryRunOnly: prev.options.dryRunOnly,
@@ -240,6 +245,8 @@ export const mutationTestCell = Sandwich.named(
       testCount: prev.dryRunResult.tests.length,
       isZero: prev.dryRunResult.tests.length === 0,
       prev,
+      plannableMutants: plannable,
+      droppedMutants: dropped,
     }
     return raw
   })

@@ -58,7 +58,9 @@ const fromTestId = (id: string) => {
   return { file, name: name.join('#') }
 }
 
-const canonicalOf = (path: string) => Option.getOrElse(S.decodeOption(Mutant.CanonicalFileName)(path), () => path)
+const canonicalFileNameOf = S.decodeOption(Mutant.CanonicalFileName)
+
+const canonicalOf = (path: string) => Option.getOrElse(canonicalFileNameOf(path), () => path)
 
 const normalizeTestId = (id: string, projectRoot: string, pathService: Path.Path) => {
   const { file, name } = fromTestId(id)
