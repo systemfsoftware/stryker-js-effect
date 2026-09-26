@@ -39,6 +39,11 @@ export const terminalEvent = (
 
 export type VerdictEvent = Extract<RunEvent.RunEvent, { readonly _tag: 'verdict' }>
 
+export const verdictOrUndefined = (events: ReadonlyArray<RunEvent.RunEvent>): VerdictEvent | undefined => {
+  const terminal = events.at(-1)
+  return terminal !== undefined && terminal._tag === 'verdict' ? terminal : undefined
+}
+
 export const verdictEvent = (
   events: ReadonlyArray<RunEvent.RunEvent>,
 ): Effect.Effect<VerdictEvent, MachineStreamError> =>
