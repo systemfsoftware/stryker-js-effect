@@ -1,10 +1,11 @@
-import { RunEvent } from '@systemfsoftware/stryker-js'
-import { it } from '@systemfsoftware/vitest'
+import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import type { RunEvent } from '@systemfsoftware/stryker-js'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import { Effect } from 'effect'
-import * as S from 'effect/Schema'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { bddStep, prepareFixture } from './__fixtures__/microvm-harness.js'
+import type { SandboxForkFailure } from '../src/Harness/harness-failure.schema.js'
+import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
+import { decodeStream, MachineStreamError, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
 
 const VM_VITEST_ORACLE = {
   killed: 7,
@@ -21,23 +22,6 @@ const VM_VITEST_ORACLE = {
 } as const
 
 const VM_FIXTURE_URL = new URL('../testResources/vm-vitest-fixture', import.meta.url)
-
-const parseEventStream = async (stdout: string): Promise<ReadonlyArray<RunEvent.RunEvent>> =>
-  Promise.all(
-    stdout
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith('{') && line.endsWith('}'))
-      .map((line) => S.decodeUnknownPromise(RunEvent.RunEventWireLine)(line)),
-  )
-
-const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent => {
-  const event = events.at(-1)
-  if (event === undefined) {
-    throw new Error('stdout carries no events')
-  }
-  return event
-}
 
 const tallyOf = (
   keys: ReadonlyArray<string>,
@@ -57,6 +41,24 @@ interface ReportMutant {
 
 interface MutationReport {
   readonly files: Record<string, { readonly mutants: ReadonlyArray<ReportMutant> }>
+}
+
+const reportedOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
+  events
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
+    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
+
+const mutantsOf = (report: MutationReport): ReadonlyArray<ReportMutant> =>
+  Object.values(report.files).flatMap((file) => file.mutants)
+
+const killedAddMutantOf = (report: MutationReport): ReportMutant => {
+  const addMutant = mutantsOf(report).find((mutant) =>
+    mutant.mutatorName === 'ArithmeticOperator' && mutant.status === 'Killed'
+  )
+  if (addMutant === undefined) {
+    throw new Error('report carries no killed ArithmeticOperator mutant')
+  }
+  return addMutant
 }
 
 const verifyReachesVerdict = (expect: Expect, run: ExecResult): Check => expect(run.exitCode).toBe(0)
@@ -82,19 +84,14 @@ const verifyCounts = (expect: Expect, verdict: RunEvent.VerdictReached): Check =
     timeout: 0,
   })
 
-const verifyMutantTally = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
-  const reported = events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
-    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
-
-  return expect({
+const verifyMutantTally = (expect: Expect, reported: ReadonlyArray<string>): Check =>
+  expect({
     reportedCount: reported.length,
     tally: tallyOf(Object.keys(VM_VITEST_ORACLE.mutantStatusTally), reported),
   }).toStrictEqual({
     reportedCount: 11,
     tally: VM_VITEST_ORACLE.mutantStatusTally,
   })
-}
 
 const verifyReportAttribution = (
   expect: Expect,
@@ -123,53 +120,52 @@ const verifyReportAttribution = (
   })
 }
 
-it.live('running a vitest-syntax suite through the in-memory runner', function*({ expect }) {
-  const fixture = yield* bddStep(
-    'Given',
-    'a fixture whose suite is written against vitest and verified in memory',
-    prepareFixture(VM_FIXTURE_URL, 'vm-vitest-fixture'),
-  )
-  const run = yield* bddStep(
-    'When',
-    'the CLI is executed with the in-memory runner',
-    Effect.promise(() => fixture.run(['run'])),
-  )
-  const events = yield* Effect.promise(() => parseEventStream(run.stdout))
-  const terminal = lastEvent(events)
-  if (terminal._tag !== 'verdict') {
-    throw new Error(`Expected terminal verdict event, received: ${terminal._tag}`)
-  }
+const Feature = makeFeature({ it })
 
-  yield* bddStep('Then', 'the run reaches a verdict with every mutant classified', verifyReachesVerdict(expect, run))
-  yield* bddStep(
-    'And',
-    'the tallies match the vitest-runner oracle',
-    verifyCounts(expect, terminal),
+Feature('Running a vitest-syntax suite through the in-memory runner')
+  .withLayer(E2eHarnessLive)
+  .live(
+    'boots a warm microVM per scenario and runs the packed CLI, exporting host and worker spans to the Grafana LGTM collector',
   )
-  yield* bddStep(
-    'And',
-    'every reported mutant lands in the vitest-runner oracle tally',
-    verifyMutantTally(expect, events),
-  )
-  const reportFile = terminal.reportFile
-  if (reportFile === null || reportFile === '') {
-    throw new Error('verdict carries no report file reference')
-  }
-  const reportText = yield* bddStep(
-    'And',
-    'the report attributes every kill to a concrete test',
-    Effect.promise(() => fixture.readFile(reportFile)),
-  )
-  const report = JSON.parse(reportText) as MutationReport
-  const mutants = Object.values(report.files).flatMap((file) => file.mutants)
-  const addMutant = mutants.find((mutant) => mutant.mutatorName === 'ArithmeticOperator' && mutant.status === 'Killed')
-  if (addMutant === undefined) {
-    throw new Error('report carries no killed ArithmeticOperator mutant')
-  }
-
-  yield* bddStep(
-    'And',
-    'the report names a killer for every kill and none for a survivor',
-    verifyReportAttribution(expect, mutants, addMutant),
-  )
-})
+  .body(({ scenario }) => {
+    scenario(
+      'The in-memory runner reports the vitest-runner oracle verdict',
+      Gherkin.Do.pipe(
+        When('the CLI runs in machine mode against a fixture whose suite is written against vitest')(
+          'run',
+          () => runStryker({ fixture: VM_FIXTURE_URL, label: 'vm-vitest-fixture', args: ['run'] }),
+        ),
+        Then('the run reaches a verdict with every mutant classified')((s, expect) =>
+          verifyReachesVerdict(expect, s.run.output.result)
+        ),
+        When('the stdout event stream decodes to run events')(
+          'events',
+          (s) => decodeStream(s.run.output.result.stdout),
+        ),
+        When('the terminal verdict of the decoded stream is read')('verdict', (s) => verdictEvent(s.events)),
+        Then('the tallies match the vitest-runner oracle')((s, expect) => verifyCounts(expect, s.verdict)),
+        When('the reported mutants of the decoded stream are read')(
+          'reported',
+          (s) => Effect.succeed(reportedOf(s.events)),
+        ),
+        Then('every reported mutant lands in the vitest-runner oracle tally')((s, expect) =>
+          verifyMutantTally(expect, s.reported)
+        ),
+        When('the mutation report the verdict points at is read and decoded')(
+          'report',
+          (s): Effect.Effect<MutationReport, MachineStreamError | SandboxForkFailure> => {
+            const reportFile = s.verdict.reportFile
+            if (reportFile === null || reportFile === '') {
+              return Effect.fail(
+                new MachineStreamError({ line: '', detail: 'verdict carries no report file reference' }),
+              )
+            }
+            return Effect.map(s.run.output.readFile(reportFile), (text) => JSON.parse(text) as MutationReport)
+          },
+        ),
+        Then('the report names a killer for every kill and none for a survivor')((s, expect) =>
+          verifyReportAttribution(expect, mutantsOf(s.report), killedAddMutantOf(s.report))
+        ),
+      ),
+    )
+  })

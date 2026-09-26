@@ -1,35 +1,29 @@
-import { RunEvent } from '@systemfsoftware/stryker-js'
-import { it } from '@systemfsoftware/vitest'
+import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import type { RunEvent } from '@systemfsoftware/stryker-js'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import { Effect } from 'effect'
-import * as S from 'effect/Schema'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { bddStep, prepareFixture } from './__fixtures__/microvm-harness.js'
+import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
+import { decodeStream, terminalEvent } from './__fixtures__/machine-stream.fixture.js'
 
 const FAILING_DRY_RUN_RUNTIME_ERROR_CODE = 3
 const FAILING_FIXTURE_URL = new URL('../testResources/failing-fixture', import.meta.url)
 const FAILING_TEST_NAME = 'isEven reports three as even'
 
-const parseEventStream = (stdout: string): ReadonlyArray<RunEvent.RunEvent> =>
-  stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('{') && line.endsWith('}'))
-    .map((line) => S.decodeUnknownSync(RunEvent.RunEventWireLine)(line))
-
-const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent => {
-  const event = events.at(-1)
-  if (event === undefined) {
-    throw new Error('stdout carries no events')
-  }
-  return event
-}
-
 const verifyFailingDryRunExit = (expect: Expect, run: ExecResult): Check =>
   expect(run.exitCode).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
 
-const verifyTypedErrorDocument = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
-  const terminal = lastEvent(events)
+const verifyStreamCleanliness = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check =>
+  expect({
+    hasEvents: events.length > 0,
+    everyTagIsAString: events.every((event) => typeof event._tag === 'string'),
+  }).toStrictEqual({ hasEvents: true, everyTagIsAString: true })
+
+const verifyTypedErrorDocument = (
+  expect: Expect,
+  terminal: RunEvent.RunEvent,
+  events: ReadonlyArray<RunEvent.RunEvent>,
+): Check => {
   const errorDocument: RunEvent.RunFailed | undefined = terminal._tag === 'error' ? terminal : undefined
   const tags = events.map((event) => event._tag)
 
@@ -50,47 +44,46 @@ const verifyTypedErrorDocument = (expect: Expect, events: ReadonlyArray<RunEvent
   })
 }
 
-const verifyStreamCleanliness = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check =>
+const verifyErrorDocumentNamesTheFailingTest = (expect: Expect, errorText: string): Check =>
   expect({
-    hasEvents: events.length > 0,
-    everyTagIsAString: events.every((event) => typeof event._tag === 'string'),
-  }).toStrictEqual({ hasEvents: true, everyTagIsAString: true })
-
-const verifyErrorDocumentNamesTheFailingTest = (
-  expect: Expect,
-  events: ReadonlyArray<RunEvent.RunEvent>,
-): Check => {
-  const terminal = lastEvent(events)
-  const errorText = terminal._tag === 'error' ? terminal.error : ''
-  return expect({
     namesFailingTest: errorText.includes(FAILING_TEST_NAME),
     carriesFailureMessage: /\S/.test(errorText) && errorText.includes('expected'),
   }).toStrictEqual({ namesFailingTest: true, carriesFailureMessage: true })
-}
 
-it.live('failing a run at the process boundary', function*({ expect }) {
-  const fixture = yield* bddStep(
-    'Given',
-    'a fixture configured to fail during dry run',
-    prepareFixture(FAILING_FIXTURE_URL, 'failing-fixture'),
-  )
-  const run = yield* bddStep(
-    'When',
-    'the CLI is executed in machine mode',
-    Effect.promise(() => fixture.run(['run'])),
-  )
-  const events = parseEventStream(run.stdout)
+const Feature = makeFeature({ it })
 
-  yield* bddStep('Then', 'the process exits with the failing dry run code', verifyFailingDryRunExit(expect, run))
-  yield* bddStep(
-    'And',
-    'the run emits a structured error document and no verdict',
-    verifyTypedErrorDocument(expect, events),
+Feature('Failing a mutation run at the process boundary')
+  .withLayer(E2eHarnessLive)
+  .live(
+    'boots a warm microVM per scenario and runs the packed CLI, exporting host and worker spans to the Grafana LGTM collector',
   )
-  yield* bddStep(
-    'And',
-    'the error document names the failing test with its failure message',
-    verifyErrorDocumentNamesTheFailingTest(expect, events),
-  )
-  yield* bddStep('And', 'every machine event is a tagged record', verifyStreamCleanliness(expect, events))
-})
+  .body(({ scenario }) => {
+    scenario(
+      'A dry-run failure reports an error document instead of a verdict',
+      Gherkin.Do.pipe(
+        When('the CLI runs in machine mode against a fixture configured to fail during dry run')(
+          'run',
+          () => runStryker({ fixture: FAILING_FIXTURE_URL, label: 'failing-fixture', args: ['run'] }),
+        ),
+        Then('the process exits with the failing dry run code')((s, expect) =>
+          verifyFailingDryRunExit(expect, s.run.output.result)
+        ),
+        When('the stdout event stream decodes to run events')(
+          'events',
+          (s) => decodeStream(s.run.output.result.stdout),
+        ),
+        Then('every machine event is a tagged record')((s, expect) => verifyStreamCleanliness(expect, s.events)),
+        When('the terminal event of the decoded stream is read')('terminal', (s) => terminalEvent(s.events)),
+        Then('the run emits a structured error document and no verdict')((s, expect) =>
+          verifyTypedErrorDocument(expect, s.terminal, s.events)
+        ),
+        When('the failure text carried by the error document is read')(
+          'errorText',
+          (s) => Effect.succeed(s.terminal._tag === 'error' ? s.terminal.error : ''),
+        ),
+        Then('the error document names the failing test with its failure message')((s, expect) =>
+          verifyErrorDocumentNamesTheFailingTest(expect, s.errorText)
+        ),
+      ),
+    )
+  })
