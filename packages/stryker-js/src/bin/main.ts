@@ -33,7 +33,7 @@ import { inheritableCompileCacheDirectory } from './enable-compile-cache.js'
 
 import { checkNodeVersion, CheckNodeVersionCommand } from '../check-node-version.workflow.js'
 import { classifyRunOutcome, RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
-import { concludeRunCell } from '../conclude-run.cell.js'
+import { concludeRunCell, runOutcomeCommandOf } from '../conclude-run.cell.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
@@ -42,7 +42,6 @@ import { ErrorEnvelope, RunExitCode } from '../reporting/run-failure.schema.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
 import { type CliEnvironment } from '../run-request.cell.js'
 import { RunEnvironment } from '../run/RunEnvironment.service.js'
-import { RunOutcomeCommand } from '../RunOutcomeCommand.schema.js'
 import { makeStrykerCommand } from './cli-command.js'
 import { UnsupportedNodeVersion } from './main.schema.js'
 
@@ -239,7 +238,7 @@ const strykerProgram = Effect.gen(function*() {
         const exit = yield* Effect.exit(
           restore(Command.runWith(command, { version: cliPkgJson.version })(args).pipe(Effect.provide(machineConsole))),
         )
-        const conclusionCommand = RunOutcomeCommand.fromExit({ exit, argv: args })
+        const conclusionCommand = runOutcomeCommandOf({ exit, argv: args })
         const outcome = classifyRunOutcome(conclusionCommand)
         const classified = Result.getOrElse(
           outcome,
