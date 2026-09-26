@@ -83,10 +83,10 @@ const toRunnerFailure =
  * `Pool.invalidate` and the crash-retry combinator can only act on a failure they
  * can see.
  */
-const scopedOf = (
+const scopedOf: (
   params: ChildProcessTestRunnerParams,
-): Effect.Effect<PooledTestRunner, PooledTestRunnerError, Scope.Scope | WorkerLauncher> =>
-  Effect.gen(function*() {
+) => Effect.Effect<PooledTestRunner, PooledTestRunnerError, Scope.Scope | WorkerLauncher> = Effect.fnUntraced(
+  function*(params: ChildProcessTestRunnerParams) {
     const options = { ...params.options, testRunner: testRunnerConfigOf(params.options.testRunner) }
     const runnerName = Match.value(options.testRunner).pipe(
       Match.when(Options.isCustomTestRunner, (runner) => runner.plugin),
@@ -121,7 +121,8 @@ const scopedOf = (
       mutantRun: (options: Mutant.MutantRunOptions) =>
         client.mutantRun({ options }).pipe(Effect.mapError(toRunnerFailure(runnerName, 'mutantRun'))),
     })
-  })
+  },
+)
 
 const TestRunners = Blueprint.make<ChildProcessTestRunnerParams>()(TypeId).steps({
   steps: {},
@@ -152,6 +153,17 @@ const inProcessRunner = (context: TestRunnerBuildContext): Option.Option<InProce
     Match.when(isCommandRunner, () => Option.some(commandRunnerEffect(context))),
     Match.orElse(() => Option.none()),
   )
+
+const decorateChildRunner = Effect.fnUntraced(function*<ChildRunnerError>(
+  context: TestRunnerBuildContext,
+  childProcessRunner: Effect.Effect<PooledTestRunner, ChildRunnerError, Scope.Scope | WorkerLauncher>,
+) {
+  const base: PooledTestRunner = yield* childProcessRunner
+  const timed = withTimeout(base)
+  const limited = yield* withMaxReuse(context.options, context.retire)(timed)
+  const reloading = yield* withEnvironmentReload(context.retire)(limited)
+  return withRetry(reloading)
+})
 
 export const buildTestRunner: {
   <ChildRunnerError>(
@@ -199,13 +211,6 @@ export const buildTestRunner: {
         PooledTestRunner,
         PooledTestRunnerError | ChildRunnerError,
         ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | WorkerLauncher
-      > =>
-        Effect.gen(function*() {
-          const base: PooledTestRunner = yield* childProcessRunner
-          const timed = withTimeout(base)
-          const limited = yield* withMaxReuse(context.options, context.retire)(timed)
-          const reloading = yield* withEnvironmentReload(context.retire)(limited)
-          return withRetry(reloading)
-        }),
+      > => decorateChildRunner(context, childProcessRunner),
     }),
 )
