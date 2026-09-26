@@ -14,7 +14,7 @@ import type { MergeReportsRequest } from './Cli.schema.js'
 import { DuplicatePackageLabel, MergeReportPartsCommand, MissingPackages } from './merge-report-parts.workflow.js'
 import { MergeReportsFailed, PartMetaSchema } from './merge-reports.schema.js'
 import type { OutputMode } from './output-mode.schema.js'
-import { reportFromStream } from './report-from-stream.steps.js'
+import { reportFromStream, ReportFromStreamAbsent, ReportFromStreamCommand } from './report-from-stream.workflow.js'
 import { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
 
 const PART_MARKER = 'mutation-part.json'
@@ -142,10 +142,23 @@ const decodedPart = (bytes: {
               onSome: (report) => ({ part: Option.some({ ...base, report }), unreadable: false }),
             }),
           onNone: () =>
-            Option.match(Option.flatMap(Option.fromNullishOr(bytes.streamText), reportFromStream), {
-              onNone: () => ({ part: Option.some(base), unreadable: false }),
-              onSome: (report) => ({ part: Option.some({ ...base, incomplete: true, report }), unreadable: false }),
-            }),
+            Match.value(
+              Option.match(Option.fromNullishOr(bytes.streamText), {
+                onNone: () => ReportFromStreamAbsent.make({}),
+                onSome: (text) =>
+                  Result.match(reportFromStream(ReportFromStreamCommand.make({ text })), {
+                    onFailure: (refused) => refused,
+                    onSuccess: (decision) => decision,
+                  }),
+              }),
+            ).pipe(
+              Match.tag('ReportFromStreamRebuilt', ({ report }) => ({
+                part: Option.some({ ...base, incomplete: true, report }),
+                unreadable: false,
+              })),
+              Match.tag('ReportFromStreamAbsent', () => ({ part: Option.some(base), unreadable: false })),
+              Match.exhaustive,
+            ),
         })
       },
     },

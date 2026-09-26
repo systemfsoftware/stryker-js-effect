@@ -23,6 +23,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import * as Stream from 'effect/Stream'
 
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
 import type { FormatIdentity } from './IncrementalDiff.schema.js'
@@ -328,73 +329,78 @@ const reportTestOf = (test: TestRunner.TestResult, remap: TestIdRemap) =>
     onSome: (start) => ({ id: remap.testId(test.id), name: test.name, location: { start } }),
   })
 
-const groupMutants = (input: FileResultsInput): HashMap.HashMap<string, MutantGroup> =>
-  Arr.reduce(
-    input.mutants,
-    HashMap.empty<string, MutantGroup>(),
-    (accumulator, mutant) =>
-      Option.match(HashMap.get(input.reportNames, mutant.fileName), {
-        onNone: () => accumulator,
-        onSome: (reportName) => {
-          const mapped = reportMutantOf(mutant, input.remap)
-          return Option.match(HashMap.get(accumulator, reportName), {
-            onNone: () => HashMap.set(accumulator, reportName, { sourceFileName: mutant.fileName, mutants: [mapped] }),
-            onSome: (existing) =>
-              HashMap.set(accumulator, reportName, {
-                sourceFileName: existing.sourceFileName,
-                mutants: [...existing.mutants, mapped],
-              }),
-          })
-        },
-      }),
+const groupMutants = (input: FileResultsInput): Effect.Effect<HashMap.HashMap<string, MutantGroup>> =>
+  Stream.fromIterable(input.mutants).pipe(
+    Stream.runFold(
+      () => HashMap.empty<string, MutantGroup>(),
+      (accumulator, mutant) =>
+        Option.match(HashMap.get(input.reportNames, mutant.fileName), {
+          onNone: () => accumulator,
+          onSome: (reportName) => {
+            const mapped = reportMutantOf(mutant, input.remap)
+            return Option.match(HashMap.get(accumulator, reportName), {
+              onNone: () =>
+                HashMap.set(accumulator, reportName, { sourceFileName: mutant.fileName, mutants: [mapped] }),
+              onSome: (existing) =>
+                HashMap.set(accumulator, reportName, {
+                  sourceFileName: existing.sourceFileName,
+                  mutants: [...existing.mutants, mapped],
+                }),
+            })
+          },
+        }),
+    ),
   )
 
-const groupTests = (input: TestFilesInput): HashMap.HashMap<string, TestGroup> =>
-  Arr.reduce(
-    input.tests,
-    HashMap.empty<string, TestGroup>(),
-    (accumulator, test) =>
-      Option.match(Option.fromUndefinedOr(test.fileName), {
-        onNone: () => accumulator,
-        onSome: (testFileName) =>
-          Option.match(HashMap.get(input.reportNames, testFileName), {
-            onNone: () => accumulator,
-            onSome: (reportName) => {
-              const mapped = reportTestOf(test, input.remap)
-              return Option.match(HashMap.get(accumulator, reportName), {
-                onNone: () => HashMap.set(accumulator, reportName, { sourceFileName: testFileName, tests: [mapped] }),
-                onSome: (existing) =>
-                  HashMap.set(accumulator, reportName, {
-                    sourceFileName: existing.sourceFileName,
-                    tests: [...existing.tests, mapped],
-                  }),
-              })
-            },
-          }),
-      }),
+const groupTests = (input: TestFilesInput): Effect.Effect<HashMap.HashMap<string, TestGroup>> =>
+  Stream.fromIterable(input.tests).pipe(
+    Stream.runFold(
+      () => HashMap.empty<string, TestGroup>(),
+      (accumulator, test) =>
+        Option.match(Option.fromUndefinedOr(test.fileName), {
+          onNone: () => accumulator,
+          onSome: (testFileName) =>
+            Option.match(HashMap.get(input.reportNames, testFileName), {
+              onNone: () => accumulator,
+              onSome: (reportName) => {
+                const mapped = reportTestOf(test, input.remap)
+                return Option.match(HashMap.get(accumulator, reportName), {
+                  onNone: () => HashMap.set(accumulator, reportName, { sourceFileName: testFileName, tests: [mapped] }),
+                  onSome: (existing) =>
+                    HashMap.set(accumulator, reportName, {
+                      sourceFileName: existing.sourceFileName,
+                      tests: [...existing.tests, mapped],
+                    }),
+                })
+              },
+            }),
+        }),
+    ),
   )
 
-const assembleFileResults = (input: FileResultsInput): Report.FileResultDictionary =>
-  Object.fromEntries(
-    Arr.flatMap([...groupMutants(input)], ([reportName, group]) =>
-      Option.match(HashMap.get(input.sources, group.sourceFileName), {
-        onNone: (): ReadonlyArray<readonly [string, Report.FileResult]> => [],
-        onSome: (source): ReadonlyArray<readonly [string, Report.FileResult]> => [
-          [reportName, { ...source, mutants: group.mutants }],
-        ],
-      })),
-  )
+const assembleFileResults = (input: FileResultsInput): Effect.Effect<Report.FileResultDictionary> =>
+  Effect.map(groupMutants(input), (grouped) =>
+    Object.fromEntries(
+      Arr.flatMap([...grouped], ([reportName, group]) =>
+        Option.match(HashMap.get(input.sources, group.sourceFileName), {
+          onNone: (): ReadonlyArray<readonly [string, Report.FileResult]> => [],
+          onSome: (source): ReadonlyArray<readonly [string, Report.FileResult]> => [
+            [reportName, { ...source, mutants: group.mutants }],
+          ],
+        })),
+    ))
 
-const assembleTestFiles = (input: TestFilesInput): Report.TestFileDefinitionDictionary =>
-  Object.fromEntries(
-    Arr.flatMap([...groupTests(input)], ([reportName, group]) =>
-      Option.match(HashMap.get(input.testSources, group.sourceFileName), {
-        onNone: (): ReadonlyArray<readonly [string, Report.TestFile]> => [],
-        onSome: (source): ReadonlyArray<readonly [string, Report.TestFile]> => [
-          [reportName, { ...source, tests: group.tests }],
-        ],
-      })),
-  )
+const assembleTestFiles = (input: TestFilesInput): Effect.Effect<Report.TestFileDefinitionDictionary> =>
+  Effect.map(groupTests(input), (grouped) =>
+    Object.fromEntries(
+      Arr.flatMap([...grouped], ([reportName, group]) =>
+        Option.match(HashMap.get(input.testSources, group.sourceFileName), {
+          onNone: (): ReadonlyArray<readonly [string, Report.TestFile]> => [],
+          onSome: (source): ReadonlyArray<readonly [string, Report.TestFile]> => [
+            [reportName, { ...source, tests: group.tests }],
+          ],
+        })),
+    ))
 
 const readMutatedSources =
   (deps: MutationReportingDeps, input: MutationReportingInput) => (fileNames: readonly string[]) =>
@@ -469,11 +475,9 @@ const assembleReport =
           })
         ),
       )
-      return {
-        files: assembleFileResults({ sources, reportNames, mutants: results, remap }),
-        testFiles: assembleTestFiles({ testSources, reportNames, tests, remap }),
-        identities,
-      }
+      const files = yield* assembleFileResults({ sources, reportNames, mutants: results, remap })
+      const testFiles = yield* assembleTestFiles({ testSources, reportNames, tests, remap })
+      return { files, testFiles, identities }
     })
 
 const manifestVersionOf = (deps: Pick<MutationReportingDeps, 'fs' | 'path'>) => (specifier: string) =>

@@ -371,8 +371,8 @@ const adoptMode = (state: FramingState, openResolved: ResolvedModeInput) =>
       }),
   })
 
-export const makeRunEventStream = (resolved: ResolvedModeInput) =>
-  Effect.gen(function*() {
+export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
+  function*(resolved: ResolvedModeInput) {
     const stdio = yield* Stdio.Stdio
     const drain = yield* RunEventDrain
     const startedAt = yield* Clock.currentTimeMillis
@@ -474,4 +474,5 @@ export const makeRunEventStream = (resolved: ResolvedModeInput) =>
         })
       }),
     }
-  })
+  },
+)

@@ -8,7 +8,6 @@ import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as Stream from 'effect/Stream'
 
-import { progressStep, renderTick } from './progress-report.steps.js'
 import { type ProgressState, type ProgressTally, renderProgressReport } from './render-progress-report.workflow.js'
 import { ReporterOutput } from './reporter-output.service.js'
 
@@ -38,11 +37,12 @@ const readProgressStep = (input: {
   readonly state: ProgressState
   readonly event: Reporter.ReporterEvent | undefined
 }) =>
-  Effect.gen(function*() {
-    const now = yield* Clock.currentTimeMillis
-    const step = progressStep({ state: input.state, event: input.event, now })
-    return { _tag: 'ProgressReportCommand' as const, kind: step.kind, state: step.state, now }
-  })
+  Effect.map(Clock.currentTimeMillis, (now) => ({
+    _tag: 'ProgressReportCommand' as const,
+    state: input.state,
+    event: input.event,
+    now,
+  }))
 
 const writeChunk = (chunk: string) =>
   Effect.flatMap(ReporterOutput, (output) => Effect.ignore(output.write('stdout', [chunk])))
@@ -50,9 +50,9 @@ const writeChunk = (chunk: string) =>
 export const progressReportCell = Sandwich.named('stryker.report.progress')(readProgressStep)
   .decide(renderProgressReport)
   .write({
-    ProgressBarTick: (tick, raw) => Effect.as(writeChunk(renderTick(tick)), raw.state),
-    ProgressLineBreak: (_lineBreak, raw) => Effect.as(writeChunk('\n'), raw.state),
-    ProgressChunkSuppressed: (_suppressed, raw) => Effect.succeed(raw.state),
+    ProgressBarTick: ({ chunk, state }) => Effect.as(writeChunk(chunk), state),
+    ProgressLineBreak: ({ chunk, state }) => Effect.as(writeChunk(chunk), state),
+    ProgressChunkSuppressed: ({ state }) => Effect.succeed(state),
     CommandRejected: ({ issue }) => Effect.fail(failAsProgress(issue)),
   })
 

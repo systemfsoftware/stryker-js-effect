@@ -13,7 +13,8 @@ import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
-import * as Queue from 'effect/Queue'
+import * as PubSub from 'effect/PubSub'
+import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
@@ -29,20 +30,25 @@ import type { WorkerLauncher } from './WorkerLauncher.service.js'
 
 export const REPORTER_STREAM_QUEUE_BOUND = 256
 
-type ReporterStreamState = 'streaming' | 'terminal' | 'detached'
-
-interface ReporterStreamLatch {
-  state: ReporterStreamState
-}
-
 interface ReporterAttachment {
   readonly name: string
-  readonly inbox: Queue.Queue<Reporter.ReporterEvent, Cause.Done>
-  readonly queue: Queue.Queue<Reporter.ReporterEvent, Cause.Done>
-  readonly latch: ReporterStreamLatch
-  readonly emitter: Fiber.Fiber<void>
+  readonly channel: PubSub.PubSub<Reporter.ReporterEvent>
+  readonly terminalSeen: Ref.Ref<boolean>
+  readonly detached: Ref.Ref<boolean>
   readonly consumer: Fiber.Fiber<void, Reporter.ReporterFailed | Cause.YieldableError>
 }
+
+interface ReporterChannelPorts {
+  readonly channel: PubSub.PubSub<Reporter.ReporterEvent>
+  readonly terminalSeen: Ref.Ref<boolean>
+  readonly detached: Ref.Ref<boolean>
+}
+
+const portsOf = (attachment: ReporterAttachment): ReporterChannelPorts => ({
+  channel: attachment.channel,
+  terminalSeen: attachment.terminalSeen,
+  detached: attachment.detached,
+})
 
 const ReporterStageTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ReporterStage')
 
@@ -115,65 +121,36 @@ export const validateReporterNames: {
   })
 })
 
-export const acquireReporterIterator = <A>(
-  events: AsyncIterable<A>,
-): Effect.Effect<AsyncIterator<A>, never, Scope.Scope> =>
-  Effect.acquireRelease(
-    Effect.sync(() => events[Symbol.asyncIterator]()),
-    (iterator) => Effect.promise(() => Promise.resolve(iterator.return?.()).then(() => undefined)).pipe(Effect.ignore),
+const reporterEvents = (ports: ReporterChannelPorts): AsyncIterable<Reporter.ReporterEvent> => {
+  const stream = Stream.fromPubSub(ports.channel).pipe(
+    Stream.tap((event) =>
+      Boolean.match(isTerminalReportEvent(event), {
+        onTrue: () => Effect.asVoid(Ref.set(ports.terminalSeen, true)),
+        onFalse: () => Effect.void,
+      })
+    ),
   )
-
-interface EmitterPorts {
-  readonly inbox: Queue.Queue<Reporter.ReporterEvent, Cause.Done>
-  readonly queue: Queue.Queue<Reporter.ReporterEvent, Cause.Done>
-  readonly latch: ReporterStreamLatch
+  const iterable = Stream.toAsyncIterable(stream)
+  let iterator: AsyncIterator<Reporter.ReporterEvent> | undefined
+  return {
+    [Symbol.asyncIterator]: () => {
+      iterator ??= iterable[Symbol.asyncIterator]()
+      return iterator
+    },
+  }
 }
 
-const detach = (ports: EmitterPorts): Effect.Effect<void> =>
+const detach = (ports: ReporterChannelPorts): Effect.Effect<void> =>
   Effect.gen(function*() {
-    ports.latch.state = 'detached'
-    yield* Queue.shutdown(ports.queue)
-    yield* Queue.shutdown(ports.inbox)
+    yield* Ref.set(ports.detached, true)
+    yield* PubSub.shutdown(ports.channel)
   })
 
-const markDetachedEffect = (ports: EmitterPorts): Effect.Effect<void> =>
-  Boolean.match(ports.latch.state === 'terminal', {
-    onTrue: () => Effect.void,
-    onFalse: () => detach(ports),
-  })
-
-const pumpEmitter = (ports: EmitterPorts): Effect.Effect<void> =>
-  Stream.fromQueue(ports.inbox).pipe(
-    Stream.runForEach((event) => Effect.asVoid(Queue.offer(ports.queue, event))),
-    Effect.ensuring(Effect.asVoid(Queue.end(ports.queue))),
+const markDetachedEffect = (ports: ReporterChannelPorts): Effect.Effect<void> =>
+  Effect.flatMap(
+    Ref.get(ports.terminalSeen),
+    (terminal) => Boolean.match(terminal, { onTrue: () => Effect.void, onFalse: () => detach(ports) }),
   )
-
-const closedIteratorResult: IteratorResult<Reporter.ReporterEvent> = { done: true, value: undefined }
-
-const isYielded = (
-  result: IteratorResult<Reporter.ReporterEvent>,
-): result is IteratorYieldResult<Reporter.ReporterEvent> => result.done !== true
-
-const yieldedOf = (
-  result: IteratorResult<Reporter.ReporterEvent>,
-): Option.Option<IteratorYieldResult<Reporter.ReporterEvent>> => Option.filter(Option.some(result), isYielded)
-
-const declaresTerminalReport = (result: IteratorResult<Reporter.ReporterEvent>): boolean =>
-  Option.match(yieldedOf(result), {
-    onNone: () => false,
-    onSome: (yielded) => isTerminalReportEvent(yielded.value),
-  })
-
-const closeIterator = <V = unknown>(
-  iterator: AsyncIterator<Reporter.ReporterEvent>,
-  value: V,
-): Promise<IteratorResult<Reporter.ReporterEvent>> => {
-  const finish: AsyncIterator<Reporter.ReporterEvent>['return'] | undefined = iterator.return?.bind(iterator)
-  return Match.value(finish).pipe(
-    Match.when(undefined, () => Promise.resolve(closedIteratorResult)),
-    Match.orElse((close) => close(value)),
-  )
-}
 
 export const attachReporterFactories: {
   (
@@ -190,31 +167,13 @@ export const attachReporterFactories: {
   (inputs: readonly AttachReporterInput[], options: Options.StrykerOptions, init: Reporter.ReporterInit) =>
     Effect.forEach(inputs, (input) =>
       Effect.gen(function*() {
-        const inbox = yield* Queue.bounded<Reporter.ReporterEvent, Cause.Done>(REPORTER_STREAM_QUEUE_BOUND)
-        const queue = yield* Queue.bounded<Reporter.ReporterEvent, Cause.Done>(REPORTER_STREAM_QUEUE_BOUND)
-        const latch: ReporterStreamLatch = { state: 'streaming' }
-        const events = Stream.toAsyncIterable(Stream.fromQueue(queue))
-        const iterator = yield* acquireReporterIterator(events)
-        const ports: EmitterPorts = { inbox, queue, latch }
-        const singleUse: AsyncIterable<Reporter.ReporterEvent> = {
-          [Symbol.asyncIterator]: () => {
-            const observe = (result: IteratorResult<Reporter.ReporterEvent>): IteratorResult<Reporter.ReporterEvent> =>
-              Boolean.match(declaresTerminalReport(result), {
-                onTrue: () => {
-                  latch.state = 'terminal'
-                  return result
-                },
-                onFalse: () => result,
-              })
-            return {
-              next: () => iterator.next().then(observe),
-              return: (value) => closeIterator(iterator, value),
-            }
-          },
-        }
+        const channel = yield* PubSub.bounded<Reporter.ReporterEvent>(REPORTER_STREAM_QUEUE_BOUND)
+        const terminalSeen = yield* Ref.make(false)
+        const detached = yield* Ref.make(false)
+        const ports: ReporterChannelPorts = { channel, terminalSeen, detached }
         const consumer = Effect.flatten(
           Effect.try({
-            try: () => input.factory(options, init)(singleUse),
+            try: () => input.factory(options, init)(reporterEvents(ports)),
             catch: (reason) =>
               ReporterFactoryThrew.make({
                 reporterName: input.name,
@@ -224,13 +183,11 @@ export const attachReporterFactories: {
           }),
         ).pipe(Effect.ensuring(markDetachedEffect(ports)))
         const consumerFiber = yield* Effect.forkScoped(consumer)
-        const emitter = yield* Effect.forkScoped(pumpEmitter(ports))
         const attachment: ReporterAttachment = {
           name: input.name,
-          inbox,
-          queue,
-          latch,
-          emitter,
+          channel,
+          terminalSeen,
+          detached,
           consumer: consumerFiber,
         }
         return attachment
@@ -294,10 +251,15 @@ export const spawnReporterWorker = (
   })
 
 const warnEventDropped = (attachment: ReporterAttachment): Effect.Effect<void> =>
-  Boolean.match(attachment.latch.state === 'detached', {
-    onTrue: () => Effect.void,
-    onFalse: () => Effect.logWarning(`Reporter "${attachment.name}" stream closed before an event could be delivered.`),
-  })
+  Effect.flatMap(
+    Ref.get(attachment.detached),
+    (detached) =>
+      Boolean.match(detached, {
+        onTrue: () => Effect.void,
+        onFalse: () =>
+          Effect.logWarning(`Reporter "${attachment.name}" stream closed before an event could be delivered.`),
+      }),
+  )
 
 const REPORTER_STALL_TIMEOUT = Duration.seconds(30)
 
@@ -306,15 +268,13 @@ const detachStalledReporter = (attachment: ReporterAttachment): Effect.Effect<vo
     `Reporter "${attachment.name}" did not drain its events for ${
       Duration.toSeconds(REPORTER_STALL_TIMEOUT)
     } seconds and was detached; exit code unchanged.`,
-  ).pipe(
-    Effect.andThen(() =>
-      markDetachedEffect({ inbox: attachment.inbox, queue: attachment.queue, latch: attachment.latch })
-    ),
-  )
+  ).pipe(Effect.andThen(() => markDetachedEffect(portsOf(attachment))))
 
-const offerToInbox = (attachment: ReporterAttachment, event: Reporter.ReporterEvent): Effect.Effect<void> =>
+const offerToChannel = (attachment: ReporterAttachment, event: Reporter.ReporterEvent): Effect.Effect<void> =>
   Effect.gen(function*() {
-    const offered = yield* Queue.offer(attachment.inbox, event).pipe(Effect.timeoutOption(REPORTER_STALL_TIMEOUT))
+    const offered = yield* PubSub.publish(attachment.channel, event).pipe(
+      Effect.timeoutOption(REPORTER_STALL_TIMEOUT),
+    )
     return yield* Option.match(offered, {
       onNone: () => detachStalledReporter(attachment),
       onSome: (accepted) =>
@@ -326,10 +286,11 @@ const offerToInbox = (attachment: ReporterAttachment, event: Reporter.ReporterEv
   })
 
 const deliverReporterEvent = (attachment: ReporterAttachment, event: Reporter.ReporterEvent): Effect.Effect<void> =>
-  Boolean.match(attachment.latch.state === 'detached', {
-    onTrue: () => Effect.void,
-    onFalse: () => offerToInbox(attachment, event),
-  })
+  Effect.flatMap(
+    Ref.get(attachment.detached),
+    (detached) =>
+      Boolean.match(detached, { onTrue: () => Effect.void, onFalse: () => offerToChannel(attachment, event) }),
+  )
 
 export const offerReporterEvent: {
   (event: Reporter.ReporterEvent): (stage: ReporterStage) => Effect.Effect<void, never>
@@ -401,10 +362,14 @@ const settleFailedAttachment = <E = unknown>(
   attachment: ReporterAttachment,
   cause: Cause.Cause<E>,
 ): Effect.Effect<ReporterDrainOutcome, never, never> =>
-  Boolean.match(attachment.latch.state === 'terminal', {
-    onTrue: () => failedOutcome(attachment, cause),
-    onFalse: () => detachedOutcome(attachment, cause),
-  })
+  Effect.flatMap(
+    Ref.get(attachment.terminalSeen),
+    (terminal) =>
+      Boolean.match(terminal, {
+        onTrue: () => failedOutcome(attachment, cause),
+        onFalse: () => detachedOutcome(attachment, cause),
+      }),
+  )
 
 const settleAttachment = (attachment: ReporterAttachment): Effect.Effect<ReporterDrainOutcome, never, never> =>
   Effect.gen(function*() {
@@ -439,10 +404,7 @@ export const closeReporterStage = (
 ): Effect.Effect<ReporterDrainSummary, never, never> =>
   Effect.flatMap(stageAttachments(stage), (attachments) =>
     Effect.gen(function*() {
-      yield* Effect.forEach(attachments, (attachment) => Queue.end(attachment.inbox), { discard: true })
-      yield* Effect.forEach(attachments, (attachment) => attachment.emitter.pipe(Fiber.join, Effect.exit), {
-        discard: true,
-      })
+      yield* Effect.forEach(attachments, (attachment) => PubSub.shutdown(attachment.channel), { discard: true })
       const outcomes = yield* Effect.forEach(attachments, settleAttachment, { concurrency: 'unbounded' })
       return { terminalFailed: outcomes.flatMap((outcome) => failedReporterNames(outcome)) }
     }))
