@@ -92,3 +92,16 @@ export class MutantNotApplied extends S.TaggedError<MutantNotApplied>()('MutantN
   fileName: S.String,
   mutatorName: S.String,
 }) {}
+
+export class NodeWithoutSpan extends S.TaggedError<NodeWithoutSpan>()('NodeWithoutSpan', {
+  fileName: S.String,
+}) {}
+
+export class MutantsUnplaced extends S.TaggedError<MutantsUnplaced>()('MutantsUnplaced', {
+  fileName: S.String,
+  detail: S.String,
+}) {}
+
+export class PlacementRefused extends S.TaggedError<PlacementRefused>()('PlacementRefused', {
+  message: S.String,
+}) {}

@@ -11,8 +11,8 @@
  * binding for that module (R2).
  *
  * Pure. One expression per decision, no I/O, no throwing. The import table is
- * built once per Program and memoised in a WeakMap, because every visited node
- * asks for it and a file's imports never change mid-parse (KTD4).
+ * rebuilt from the Program's import declarations on demand, so no parsed file
+ * is retained across calls and no module state outlives a single decision.
  */
 import type {
   Argument,
@@ -165,16 +165,7 @@ type ImportContribution =
   }
   | { readonly kind: 'pipe'; readonly local: string }
 
-const importTables = new WeakMap<Program, ImportTable>()
-
-const importTableFor = (program: Program): ImportTable =>
-  Option.getOrElse(Option.fromNullishOr(importTables.get(program)), () => rememberImportTable(program))
-
-function rememberImportTable(program: Program): ImportTable {
-  const table = buildImportTable(program)
-  importTables.set(program, table)
-  return table
-}
+const importTableFor = (program: Program): ImportTable => buildImportTable(program)
 
 const buildImportTable = (program: Program): ImportTable =>
   Arr.reduce(

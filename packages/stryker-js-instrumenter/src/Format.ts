@@ -6,7 +6,7 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { type Ast, type JSAst, type ScriptAst, type ScriptFormat, type TSAst, type TsxAst } from './Ast.schema.js'
+import { type Ast, type ScriptAst, type ScriptFormat } from './Ast.schema.js'
 import {
   type EmbeddedFormatEntry,
   type EntryForFormat,
@@ -33,25 +33,17 @@ import { disableTypeCheckingInScript, prefixWithNoCheck, tsDirectiveLikeRegEx } 
 
 export type { EmbeddedFormatEntry, EntryForFormat, FormatClaim, FormatEntry, FormatRegistry, ScriptFormatEntry }
 
-const requireScriptAst = (ast: Ast): ScriptAst => {
-  if (ast.format === 'embedded') {
-    return rejectAst(ast, 'a script')
-  }
-  return ast
-}
+const scriptAstError = (ast: Ast): InstrumentError =>
+  InstrumentError.make({
+    message: `Expected a script AST, received the "${ast.format}" format`,
+    cause: undefined,
+  })
 
-const requireJsAst = (ast: Ast): JSAst => (ast.format === 'js' ? ast : rejectAst(ast, 'a js script'))
-
-const requireTsFamilyAst = (ast: Ast): TSAst | TsxAst =>
+const scriptAstOf = (ast: Ast): Option.Option<ScriptAst> =>
   Match.value(ast).pipe(
-    Match.when({ format: 'ts' }, (ts) => ts),
-    Match.when({ format: 'tsx' }, (tsx) => tsx),
-    Match.orElse((other) => rejectAst(other, 'a ts script')),
+    Match.when({ format: 'embedded' }, () => Option.none<ScriptAst>()),
+    Match.orElse((script) => Option.some(script)),
   )
-
-function rejectAst(ast: Ast, expected: string): never {
-  throw new Error(`Expected ${expected} AST, received the "${ast.format}" format`)
-}
 
 export const extensionOf = (fileName: string): string => {
   const dot = fileName.lastIndexOf('.')
@@ -118,9 +110,17 @@ const scriptHooks = (
   scriptFormat: ScriptFormat,
 ): Pick<ScriptFormatEntry, 'parse' | 'transform' | 'print' | 'disableTypeChecks'> => ({
   parse: (text, fileName, _context) => parseScriptFormat(scriptFormat, text, fileName),
-  transform: (ast, mutantCollector, context) => transformScript(requireScriptAst(ast), mutantCollector, context),
+  transform: (ast, mutantCollector, context) =>
+    Option.match(scriptAstOf(ast), {
+      onNone: () => Effect.fail(scriptAstError(ast)),
+      onSome: (script) => transformScript(script, mutantCollector, context),
+    }),
   print: (ast, context) => printScriptAst(ast, context),
-  disableTypeChecks: (ast) => Effect.succeed(disableTypeCheckingInScript(requireScriptAst(ast))),
+  disableTypeChecks: (ast) =>
+    Option.match(scriptAstOf(ast), {
+      onNone: () => Effect.fail(scriptAstError(ast)),
+      onSome: (script) => Effect.succeed(disableTypeCheckingInScript(script)),
+    }),
 })
 
 const parseScriptFormat = (
@@ -136,7 +136,14 @@ const parseScriptFormat = (
   )
 
 const printScriptAst = (ast: Ast, context: PrinterContext): string =>
-  ast.format === 'js' ? jsPrint(requireJsAst(ast), context) : tsPrint(requireTsFamilyAst(ast), context)
+  Match.value(ast).pipe(
+    Match.when({ format: 'js' }, (js) => jsPrint(js, context)),
+    Match.when({ format: 'ts' }, (ts) => tsPrint(ts, context)),
+    Match.when({ format: 'tsx' }, (tsx) => tsPrint(tsx, context)),
+    Match.orElse(printNothingForEmbeddedAst),
+  )
+
+const printNothingForEmbeddedAst = (): string => ''
 
 const SCRIPT_ENTRIES: readonly ScriptFormatEntry[] = [
   {

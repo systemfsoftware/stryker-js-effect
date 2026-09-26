@@ -1,5 +1,6 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -81,11 +82,10 @@ function eqNode(a: Node, b: Node): boolean {
 }
 
 function nodeIdentity(node: Node): string | undefined {
-  const span = spanOf(node)
-  if (span === undefined) {
-    return undefined
-  }
-  return `${node.type}:${span.start}:${span.end}`
+  return Option.match(Option.fromNullishOr(spanOf(node)), {
+    onNone: () => undefined,
+    onSome: (span) => `${node.type}:${span.start}:${span.end}`,
+  })
 }
 
 export interface Mutable {
@@ -172,20 +172,20 @@ function hasReplaced(root: Node, original: Node, replacement: Node): boolean {
   let applied = false
   traverse(make(root), {
     enter(path) {
-      if (!applied) {
-        applied = replaceFirstMatch(path, original, replacement)
-      }
+      applied = applied || replaceFirstMatch(path, original, replacement)
     },
   })
   return applied
 }
 
 function replaceFirstMatch(path: TraversePath, original: Node, replacement: Node): boolean {
-  if (eqNode(path.node, original) === false) {
-    return false
-  }
-  path.replaceWith(replacement)
-  return true
+  return Match.value(eqNode(path.node, original)).pipe(
+    Match.when(false, () => false),
+    Match.orElse(() => {
+      path.replaceWith(replacement)
+      return true
+    }),
+  )
 }
 
 export interface MutatorContext {
@@ -237,17 +237,14 @@ export interface MutatorOptions {
  * quantifier removal ahead of class negation.
  */
 function mutateRegexPattern(pattern: string, flags: string | undefined): readonly string[] {
-  if (pattern.length === 0) {
-    return []
-  }
-  return parseRegexMutants(pattern, orDefault(flags, ''))
+  return pattern.length === 0 ? [] : parseRegexMutants(pattern, orDefault(flags, ''))
 }
 
 function parseRegexMutants(pattern: string, flags: string): readonly string[] {
   try {
     const groups = collectSplices(pattern, flags)
-    groups.rest.sort((a, b) => a.start - b.start || a.priority - b.priority)
-    return [...groups.bol, ...groups.eol, ...groups.rest].map((splice) => spliceText(pattern, splice))
+    const rest = groups.rest.toSorted((a, b) => a.start - b.start || a.priority - b.priority)
+    return [...groups.bol, ...groups.eol, ...rest].map((splice) => spliceText(pattern, splice))
   } catch {
     return []
   }
@@ -345,11 +342,12 @@ function negationMarker(negate: boolean): string {
 
 function collectCharacterClass(characterClass: AST.CharacterClass, groups: SpliceGroups): void {
   const pos = characterClass.start + 1
-  if (characterClass.negate) {
-    groups.rest.push({ start: pos, end: pos + 1, text: '', priority: 1 })
-  } else {
-    groups.rest.push({ start: pos, end: pos, text: '^', priority: 1 })
-  }
+  groups.rest.push(
+    Match.value(characterClass.negate).pipe(
+      Match.when(true, () => ({ start: pos, end: pos + 1, text: '', priority: 1 })),
+      Match.orElse(() => ({ start: pos, end: pos, text: '^', priority: 1 })),
+    ),
+  )
 }
 
 function collectCharacterSet(characterSet: AST.CharacterSet, groups: SpliceGroups): void {
@@ -380,17 +378,11 @@ function classSplice(characterSet: AST.CharacterSet): PrioritizedSplice {
 /** `\d`-style sets invert by letter case, `\p{}` by `p`/`P`. */
 function invertedMarker(marker: string): string {
   const propertyMarker = PROPERTY_MARKERS[marker]
-  if (propertyMarker !== undefined) {
-    return propertyMarker
-  }
-  return invertLetterCase(marker)
+  return propertyMarker === undefined ? invertLetterCase(marker) : propertyMarker
 }
 
 function invertLetterCase(letter: string): string {
-  if (letter === letter.toUpperCase()) {
-    return letter.toLowerCase()
-  }
-  return letter.toUpperCase()
+  return letter === letter.toUpperCase() ? letter.toLowerCase() : letter.toUpperCase()
 }
 
 function collectQuantifier(quantifier: AST.Quantifier, groups: SpliceGroups): void {
@@ -399,16 +391,16 @@ function collectQuantifier(quantifier: AST.Quantifier, groups: SpliceGroups): vo
 
 function anchorRemoval(assertion: AST.Assertion, pattern: string): Splice | undefined {
   const splice = { start: assertion.start, end: assertion.end, text: '' }
-  if (spliceText(pattern, splice).length === 0) {
-    return undefined
-  }
-  return splice
+  return spliceText(pattern, splice).length === 0 ? undefined : splice
 }
 
 function pushWhen<T>(list: T[], splice: T | undefined): void {
-  if (splice !== undefined) {
-    list.push(splice)
-  }
+  Option.match(Option.fromNullishOr(splice), {
+    onNone: () => undefined,
+    onSome: (present) => {
+      list.push(present)
+    },
+  })
 }
 
 function spliceText(pattern: string, splice: Splice): string {
@@ -492,10 +484,7 @@ function isStringConcatenation(node: BinaryExpression): boolean {
 
 /** A chained `a + b + c` carries its value on the innermost left operand's right side. */
 function outerLeftOperand(node: BinaryExpression): Node {
-  if (node.left.type === 'BinaryExpression') {
-    return node.left.right
-  }
-  return node.left
+  return node.left.type === 'BinaryExpression' ? node.left.right : node.left
 }
 
 type ArrayConstructorCall = (CallExpression | NewExpression) & {
@@ -514,10 +503,7 @@ function isArrayExpression(node: Node): node is ArrayExpression {
 }
 
 function arrayDeclarationReplacement(array: ArrayExpression): Expression {
-  if (array.elements.length > 0) {
-    return arrayExpression([])
-  }
-  return arrayExpression([stringLiteral('Stryker was here')])
+  return array.elements.length > 0 ? arrayExpression([]) : arrayExpression([stringLiteral('Stryker was here')])
 }
 
 function isArrayConstructorCall(node: Node): node is ArrayConstructorCall {
@@ -534,17 +520,14 @@ function isArrayIdentifier(node: Node): node is IdentifierReference & { name: 'A
 
 function arrayConstructorReplacement(construct: ArrayConstructorCall): Expression {
   const mutatedCallArgs = constructorArguments(construct.arguments)
-  if (construct.type === 'NewExpression') {
-    return newExpression(cloneNode(construct.callee), mutatedCallArgs)
-  }
-  return callExpression(cloneNode(construct.callee), mutatedCallArgs)
+  const callee = cloneNode(construct.callee)
+  return construct.type === 'NewExpression'
+    ? newExpression(callee, mutatedCallArgs)
+    : callExpression(callee, mutatedCallArgs)
 }
 
 function constructorArguments(args: ReadonlyArray<Expression | SpreadElement>): Expression[] {
-  if (args.length > 0) {
-    return []
-  }
-  return [arrayExpression([])]
+  return args.length > 0 ? [] : [arrayExpression([])]
 }
 
 const arrowFunctionMutator: Mutator = (node) =>
@@ -595,10 +578,7 @@ function isStringLiteral(value: unknown): value is StringLiteral {
 }
 
 function hasStringValue<A = unknown>(value: A): boolean {
-  if (!Predicate.hasProperty(value, 'value')) {
-    return false
-  }
-  return typeof value['value'] === 'string'
+  return Predicate.hasProperty(value, 'value') && typeof value['value'] === 'string'
 }
 
 const stringAssignmentTypes = Object.freeze(['&&=', '||=', '??='])
@@ -721,10 +701,7 @@ function hasSuperInChildren(node: object): boolean {
 }
 
 function containsSuperInValue<A = unknown>(value: A): boolean {
-  if (Array.isArray(value)) {
-    return value.some(containsSuperCall)
-  }
-  return containsSuperCall(value)
+  return Array.isArray(value) ? value.some(containsSuperCall) : containsSuperCall(value)
 }
 
 const booleanLiteralMutator: Mutator = (node) =>
@@ -952,11 +929,18 @@ const baseReplacements: Record<string, string | null> = {
 
 const noReverseReplacements = ['getUTCDate', 'setUTCDate']
 
-const replacements = new Map<string, string | null>(Object.entries(baseReplacements))
-for (const [key, value] of Object.entries(baseReplacements)) {
-  if (value !== null && !noReverseReplacements.includes(key)) {
-    replacements.set(value, key)
-  }
+const isReversible = (key: string, value: string | null): value is string =>
+  value !== null && !noReverseReplacements.includes(key)
+
+const reverseReplacements: Record<string, string> = Object.fromEntries(
+  Object.entries(baseReplacements).flatMap(
+    ([key, value]): ReadonlyArray<readonly [string, string]> => (isReversible(key, value) ? [[value, key]] : []),
+  ),
+)
+
+const replacements: Record<string, string | null> = {
+  ...baseReplacements,
+  ...reverseReplacements,
 }
 
 interface NamedMember extends StaticMemberExpression {
@@ -997,7 +981,9 @@ function methodMutation(call: CallExpression): MethodMutation | undefined {
 }
 
 function mutationFor(call: CallExpression, callee: NamedMember): MethodMutation | undefined {
-  return Match.value(replacements.get(callee.property.name)).pipe(
+  const methodName = callee.property.name
+  const replacement = Object.hasOwn(replacements, methodName) ? replacements[methodName] : undefined
+  return Match.value(replacement).pipe(
     Match.when(undefined, () => undefined),
     Match.orElse((newName) => ({ call, callee, newName })),
   )
@@ -1148,10 +1134,10 @@ const stringLiteralMutator: Mutator = (node, context) =>
 
 function templateMutants(template: TemplateLiteral): readonly Node[] {
   const first = template.quasis[0]
-  if (first === undefined) {
-    return NO_MUTANTS
-  }
-  return [emptyOrPlaceholderTemplate(template, first)]
+  return Option.match(Option.fromNullishOr(first), {
+    onNone: () => NO_MUTANTS,
+    onSome: (present) => [emptyOrPlaceholderTemplate(template, present)],
+  })
 }
 
 function emptyOrPlaceholderTemplate(template: TemplateLiteral, first: TemplateElement): Node {
@@ -1160,10 +1146,7 @@ function emptyOrPlaceholderTemplate(template: TemplateLiteral, first: TemplateEl
 }
 
 function replacementText(isEmpty: boolean): string {
-  if (isEmpty) {
-    return PLACEHOLDER
-  }
-  return ''
+  return isEmpty ? PLACEHOLDER : ''
 }
 
 function isValidParent(child: Node, context: MutatorContext): boolean {

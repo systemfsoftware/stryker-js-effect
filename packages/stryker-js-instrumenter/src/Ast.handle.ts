@@ -15,7 +15,6 @@ import type {
   TemplateElement,
   VariableDeclarator,
 } from '@systemfsoftware/stryker-ignorer-interface'
-import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
@@ -510,8 +509,6 @@ const pushComment = (
   })
 }
 
-export type AstWalker = (root: Program | Node, visitors: WalkVisitors) => void
-
 interface WalkContext {
   readonly key: string | null
   readonly index: number | null
@@ -525,82 +522,47 @@ type WalkedNode = Node & AstNodeRecord
 
 type NodeField = AstNodeRecord[string]
 
-type NodeList = readonly Node[] | readonly AstNodeRecord[]
-
-interface NodeWalkVisitors {
-  readonly enter: (node: WalkedNode, context: WalkContext, controls: WalkControls) => void
-  readonly leave: (node: WalkedNode, context: WalkContext) => void
-}
-
 const WALK_SKIPPED_KEYS: Readonly<Record<string, true>> = { type: true, start: true, end: true }
 
-const walkNodes = (root: Program | Node, visitors: NodeWalkVisitors): void =>
-  visitIfNode(root, { key: null, index: null }, visitors)
-
-const visitNode = (node: WalkedNode, context: WalkContext, visitors: NodeWalkVisitors): void => {
-  const state = { skipped: false }
-  visitors.enter(node, context, {
-    skip: () => {
-      state.skipped = true
-    },
-  })
-  Boolean.match(state.skipped, {
-    onTrue: () => undefined,
-    onFalse: () => visitChildren(node, visitors),
-  })
-  visitors.leave(node, context)
+interface ChildSlot {
+  readonly key: string
+  readonly index: number | null
+  readonly node: WalkedNode
 }
 
-const visitChildren = (node: WalkedNode, visitors: NodeWalkVisitors): void =>
-  Object.keys(node).forEach((key) =>
-    Boolean.match(WALK_SKIPPED_KEYS[key] === true, {
-      onTrue: () => undefined,
-      onFalse: () => visitSlot(node[key], key, visitors),
-    })
-  )
+const isChildList = (value: NodeField): value is readonly Node[] => Array.isArray(value)
 
-const isChildList = (value: NodeField): value is NodeList => Array.isArray(value)
+const childSlotsOf = (node: WalkedNode): readonly ChildSlot[] =>
+  Object.keys(node).flatMap((key) => (WALK_SKIPPED_KEYS[key] === true ? [] : childSlotsAt(key, node[key])))
 
-const visitSlot = (value: NodeField, key: string, visitors: NodeWalkVisitors): void =>
-  Option.match(Option.filter(Option.some(value), isChildList), {
-    onSome: (items) => items.forEach((item, index) => visitIfNode(item, { key, index }, visitors)),
-    onNone: () => visitIfNode(value, { key, index: null }, visitors),
-  })
+const childSlotsAt = (key: string, value: NodeField): readonly ChildSlot[] =>
+  isChildList(value) ? listSlotsAt(key, value) : singleSlotAt(key, value)
 
-const visitIfNode = <A = unknown>(value: A, context: WalkContext, visitors: NodeWalkVisitors): void =>
+const listSlotsAt = (key: string, value: readonly Node[]): readonly ChildSlot[] =>
+  value.flatMap((item, index) => (isAstNode(item) ? [{ key, index, node: item }] : []))
+
+const singleSlotAt = (key: string, value: NodeField): readonly ChildSlot[] =>
   Option.match(Option.filter(Option.some(value), isAstNode), {
-    onNone: () => undefined,
-    onSome: (child) => visitNode(child, context, visitors),
+    onNone: () => [],
+    onSome: (node) => [{ key, index: null, node }],
   })
 
-export interface WalkVisitors {
-  readonly enter?: (node: Program | Node, ancestors: readonly (Program | Node)[]) => void
-  readonly leave?: (node: Program | Node, ancestors: readonly (Program | Node)[]) => void
+const asWalkedNode = (value: Program | Node): Option.Option<WalkedNode> => Option.filter(Option.some(value), isAstNode)
+
+export interface AstChild {
+  readonly key: string
+  readonly index: number | null
+  readonly node: Node
 }
 
-const walker: AstWalker = (root, visitors) => {
-  const ancestors: Array<Program | Node> = []
-  walkNodes(root, {
-    enter(node) {
-      visitors.enter?.(node, [...ancestors])
-      ancestors.push(node)
-    },
-    leave(node) {
-      ancestors.pop()
-      visitors.leave?.(node, [...ancestors])
-    },
+export const childNodes = (node: Node): readonly AstChild[] =>
+  Option.match(asWalkedNode(node), {
+    onNone: () => [],
+    onSome: (walked) =>
+      childSlotsOf(walked)
+        .filter((slot) => !isCommentKey(slot.key))
+        .map((slot): AstChild => ({ key: slot.key, index: slot.index, node: slot.node })),
   })
-}
-
-const collectNodes = (root: Program | Node): NodeEntry[] => {
-  const out: NodeEntry[] = []
-  walker(root, {
-    enter(node) {
-      appendEntry(node, out)
-    },
-  })
-  return out
-}
 
 export interface NodeEntry {
   readonly node: Program | Node
@@ -608,14 +570,17 @@ export interface NodeEntry {
   readonly end: number
 }
 
-const appendEntry = (node: Program | Node, out: NodeEntry[]): void => {
-  Option.match(Option.fromNullishOr(spanOf(node)), {
-    onNone: () => undefined,
-    onSome: (span) => {
-      out.push({ node, start: span.start, end: span.end })
-    },
+const collectNodes = (root: Program | Node): readonly NodeEntry[] =>
+  Option.toArray(nodeEntryOf(root)).concat(childEntriesOf(root))
+
+const childEntriesOf = (root: Program | Node): readonly NodeEntry[] =>
+  Option.match(asWalkedNode(root), {
+    onNone: () => [],
+    onSome: (node) => childSlotsOf(node).flatMap((slot) => collectNodes(slot.node)),
   })
-}
+
+const nodeEntryOf = (node: Program | Node): Option.Option<NodeEntry> =>
+  Option.map(Option.fromNullishOr(spanOf(node)), (span) => ({ node, start: span.start, end: span.end }))
 
 export interface AstNodeRecord {
   readonly [k: string]:
@@ -656,13 +621,46 @@ const COMMENT_KEYS: Readonly<Record<string, true>> = { leadingComments: true, tr
 
 const isCommentKey = <A = unknown>(key: A): boolean => typeof key === 'string' && COMMENT_KEYS[key] === true
 
-const walkTraverse = (root: Program | Node, stack: TraversePath[], visitors: TraverseVisitors): void => {
-  walkNodes(root, {
-    enter(node, context, controls) {
-      readPath(stack, node, controls, context, visitors)
+const walkTraverse = (root: Program | Node, visitors: TraverseVisitors): void =>
+  Option.match(asWalkedNode(root), {
+    onNone: () => undefined,
+    onSome: (node) => traverseNode(node, null, { key: null, index: null }, visitors),
+  })
+
+interface SkipControls extends WalkControls {
+  readonly skipped: () => boolean
+}
+
+const skipControls = (): SkipControls => {
+  let skipped = false
+  return {
+    skipped: () => skipped,
+    skip: () => {
+      skipped = true
     },
-    leave(_node, context) {
-      closePath(stack, context, visitors)
+  }
+}
+
+const traverseNode = (
+  node: WalkedNode,
+  parentPath: TraversePath | null,
+  context: WalkContext,
+  visitors: TraverseVisitors,
+): void => {
+  Boolean.match(isCommentKey(context.key), {
+    onTrue: () => undefined,
+    onFalse: () => {
+      const controls = skipControls()
+      const path = createPath(node, parentPath, controls, context)
+      notify(visitors.enter, path)
+      Boolean.match(controls.skipped(), {
+        onTrue: () => undefined,
+        onFalse: () =>
+          childSlotsOf(node).forEach((slot) =>
+            traverseNode(slot.node, path, { key: slot.key, index: slot.index }, visitors)
+          ),
+      })
+      notify(visitors.exit, path)
     },
   })
 }
@@ -672,33 +670,8 @@ export const traverse: {
   (self: AstHandle, visitors: TraverseVisitors): void
 } = dual(
   2,
-  (self: AstHandle, visitors: TraverseVisitors): void => walkTraverse(self.root, [], visitors),
+  (self: AstHandle, visitors: TraverseVisitors): void => walkTraverse(self.root, visitors),
 )
-
-const readPath = (
-  stack: TraversePath[],
-  node: Node,
-  controls: WalkControls,
-  context: WalkContext,
-  visitors: TraverseVisitors,
-): void => {
-  Boolean.match(isCommentKey(context.key), {
-    onTrue: () => undefined,
-    onFalse: () => {
-      const current = createPath(node, parentOf(stack), controls, context)
-      stack.push(current)
-      notify(visitors.enter, current)
-    },
-  })
-}
-
-const closePath = (stack: TraversePath[], context: WalkContext, visitors: TraverseVisitors): void =>
-  Boolean.match(isCommentKey(context.key), {
-    onTrue: () => undefined,
-    onFalse: () => notify(visitors.exit, stack.pop()),
-  })
-
-const parentOf = (stack: ReadonlyArray<TraversePath>): TraversePath | null => Option.getOrNull(Arr.last(stack))
 
 const notify = (visitor: TraverseVisitor | undefined, path: TraversePath | undefined): void =>
   Option.match(Option.all({ visitor: Option.fromNullishOr(visitor), path: Option.fromNullishOr(path) }), {
