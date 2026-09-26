@@ -21,6 +21,10 @@
   dir: packages/ignorers/angular
   intents:
     - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-ignorer-angular@0.1.2":
+  dir: packages/ignorers/angular
+  intents:
+    - sparkly-feet-own
 "@systemfsoftware/stryker-ignorer-effect-schema-declarations@0.1.0":
   dir: packages/ignorers/effect-schema-declarations
   intents:
@@ -31,6 +35,10 @@
   dir: packages/ignorers/effect-schema-declarations
   intents:
     - effect-rc116-and-toolchain-bump
+"@systemfsoftware/stryker-ignorer-effect-schema-declarations@0.2.0":
+  dir: packages/ignorers/effect-schema-declarations
+  intents:
+    - ignorer-schema-declaration-coverage
 "@systemfsoftware/stryker-ignorer-in-source-vitest-block@0.1.0":
   dir: packages/ignorers/in-source-vitest-block
   intents:
@@ -109,6 +117,19 @@
   dir: packages/stryker-js-html-reporter
   intents:
     - systemfsoftware-latest-packages
+"@systemfsoftware/stryker-js-html-reporter@5.0.3":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - sparkly-feet-own
+"@systemfsoftware/stryker-js-instrumenter@10.0.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - error-text-renderers-are-functions
+    - instrumented-file-names-are-canonical
+    - mutant-ids-are-decimal
+    - mutant-status-vocabulary
+    - source-locations-are-one-based
+    - sparkly-feet-own
 "@systemfsoftware/stryker-js-instrumenter@7.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -151,6 +172,20 @@
   dir: packages/stryker-js-instrumenter
   intents:
     - systemfsoftware-latest-packages
+"@systemfsoftware/stryker-js-plugin-interface@10.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - exit-codes-are-typed
+    - metrics-are-built-by-a-function
+    - mutant-ids-are-decimal
+    - mutant-status-vocabulary
+    - mutant-tested-carries-domain-names
+    - negative-free-counts
+    - plugin-boundary-values-are-typed
+    - source-locations-are-one-based
+    - sparkly-feet-own
+    - test-ids-are-one-value
+    - thresholds-are-one-schema
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -225,10 +260,18 @@
   dir: packages/stryker-js-plugin-runtime
   intents:
     - systemfsoftware-latest-packages
+"@systemfsoftware/stryker-js-plugin-runtime@6.0.3":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - sparkly-feet-own
 "@systemfsoftware/stryker-js-svelte@0.0.0":
   dir: packages/frameworks/svelte
   intents:
     - stryker-js-svelte-debut
+"@systemfsoftware/stryker-js-svelte@0.0.1":
+  dir: packages/frameworks/svelte
+  intents:
+    - sparkly-feet-own
 "@systemfsoftware/stryker-js-typescript-checker@6.0.0":
   dir: packages/stryker-js-typescript-checker
   intents:
@@ -270,6 +313,12 @@
   dir: packages/stryker-js-typescript-checker
   intents:
     - typescript-checker-checks-affected-files
+"@systemfsoftware/stryker-js-typescript-checker@8.0.0":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - checker-tsconfig-document-declared
+    - source-locations-are-one-based
+    - sparkly-feet-own
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -319,6 +368,12 @@
     - vitest-runner-file-failures
     - vitest-runner-pool-option
     - vm-runner-mutation-wall-time
+"@systemfsoftware/stryker-js-vitest-runner@8.0.0":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - negative-free-counts
+    - sparkly-feet-own
+    - test-ids-are-one-value
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -385,6 +440,25 @@
   dir: packages/stryker-js
   intents:
     - run-error-span-attribute
+"@systemfsoftware/stryker-js@13.0.0":
+  dir: packages/stryker-js
+  intents:
+    - checker-tsconfig-document-declared
+    - child-exit-codes-are-posix
+    - engine-schemas-declared-once
+    - exit-codes-are-typed
+    - mutant-ids-are-decimal
+    - mutant-status-vocabulary
+    - node-version-gate-removed
+    - one-output-mode-vocabulary
+    - plugin-failures-are-one-union
+    - report-file-names-are-one-value
+    - run-event-stream-carries-the-domain-mutant
+    - source-locations-are-one-based
+    - sparkly-feet-own
+    - test-ids-are-one-value
+    - thresholds-are-one-schema
+    - wall-clock-timeout-reports-timeout
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
