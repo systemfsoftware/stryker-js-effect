@@ -40,7 +40,7 @@ import type {
 } from './Ast.handle.js'
 import { MutantNotApplied } from './Instrument.schema.js'
 import type { Location } from './Location.schema.js'
-import { Mutant as ApiMutant } from './Mutant.schema.js'
+import { Mutant as ApiMutant, type MutantId } from './Mutant.schema.js'
 import type { PlannedMutant } from './plan-mutants.workflow.js'
 
 import { dual } from 'effect/Function'
@@ -94,7 +94,7 @@ export interface Mutable {
   replacement: Node
 }
 export interface Mutant extends Mutable {
-  readonly id: string
+  readonly id: MutantId
   readonly fileName: string
   readonly original: Node
   readonly location: Location

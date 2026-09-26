@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
 

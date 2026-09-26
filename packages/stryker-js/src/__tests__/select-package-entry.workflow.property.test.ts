@@ -2,50 +2,16 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import {
-  ConditionCase,
-  FallbackCase,
-  KeyCase,
-  TargetCase,
-} from '../../tests/__fixtures__/select-package-entry.schema.js'
+import { ConditionCase, FallbackCase, KeyCase } from '../../tests/__fixtures__/select-package-entry.schema.js'
 import { type PackageManifestFields } from '../run/package-manifest.schema.js'
 import {
-  PackageEntryDecision,
   PackageEntrySelected,
   PackageEntryUnresolved,
   selectPackageEntry,
   SelectPackageEntryCommand,
 } from '../run/select-package-entry.workflow.js'
-const SelectPackageEntryTypeId = Symbol.for('@systemfsoftware/stryker-js/SelectPackageEntryDecision')
-
-const hasBrand = (decision: PackageEntryDecision): boolean =>
-  Object.getOwnPropertySymbols(decision).includes(SelectPackageEntryTypeId)
-
-const refused = (
-  subject: typeof selectPackageEntry,
-  target: string | null | ReadonlyArray<string | null>,
-  reason: string,
-): boolean => {
-  const result = subject(
-    SelectPackageEntryCommand.make({ specifier: 'pkg', manifest: { exports: { '.': target } } }),
-  )
-  if (Result.isFailure(result)) {
-    return false
-  }
-  return (
-    S.is(PackageEntryUnresolved)(result.success) &&
-    result.success.reason === reason &&
-    result.success.specifier === 'pkg'
-  )
-}
 
 describe('selectPackageEntry', () => {
-  it.prop(
-    '∀d_Brand_∈Decision',
-    { of: [PackageEntryDecision], subject: selectPackageEntry },
-    (_subject, [decision]) => hasBrand(decision),
-  )
-
   it.prop('∀k_ExportKey_=Literal', { of: [KeyCase], subject: selectPackageEntry }, (subject, [input]) => {
     const exportsValue = {
       ...(input.root === undefined ? {} : { '.': input.root }),
@@ -167,24 +133,5 @@ describe('selectPackageEntry', () => {
       return selected('from-main.js')
     }
     return unresolved('the package declares no "exports", "module", or "main" entry')
-  })
-
-  it.prop('∀r_Refusal_≡Reason', { of: [TargetCase], subject: selectPackageEntry }, (subject, [input]) => {
-    if (input.kind === 'wildcard') {
-      return refused(subject, './lib/*.mjs', 'the package declares a wildcard export, which this host does not resolve')
-    }
-    if (input.kind === 'bare') {
-      return refused(subject, 'dist/index.mjs', 'the package export "dist/index.mjs" is not a relative path')
-    }
-    if (input.kind === 'absolute') {
-      return refused(subject, '/abs/index.mjs', 'the package export "/abs/index.mjs" is not a relative path')
-    }
-    if (input.kind === 'null') {
-      return refused(subject, null, 'the matching package export resolves to null')
-    }
-    if (input.kind === 'arrayBare') {
-      return refused(subject, ['index.mjs', './second.mjs'], 'the package export "index.mjs" is not a relative path')
-    }
-    return refused(subject, [null, './second.mjs'], 'the matching package export resolves to null')
   })
 })

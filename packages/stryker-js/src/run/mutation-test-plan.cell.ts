@@ -169,7 +169,7 @@ const materializeDecision = Effect.fnUntraced(function*(
     onNone: () =>
       Effect.die(
         UnknownPlannedMutant.make({
-          mutantId: decision.mutantId,
+          mutantId: Mutant.MutantId.make(decision.mutantId),
           message: `planner returned an unknown mutant id: ${decision.mutantId}`,
         }),
       ),

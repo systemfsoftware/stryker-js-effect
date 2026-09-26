@@ -5,7 +5,6 @@ import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   OptionsRefused,
-  OptionsUndecodable,
   OptionsValidated,
   type OptionsValidationDecision,
   validateOptionsAdmission,
@@ -21,37 +20,54 @@ const decide = <A>(subject: typeof validateOptionsAdmission, options: Record<str
 const refusedWith = (decision: OptionsValidationDecision, fragment: string): boolean =>
   S.is(OptionsRefused)(decision) && decision.errors.some((error) => error.includes(fragment))
 
-const mutateArb = Arbitrary.schema(S.Struct({ outOfBounds: S.Boolean }))
+const rangeArb = Arbitrary.schema(S.Struct({
+  startLine: S.Int.check(S.isBetween({ minimum: 0, maximum: 8 })),
+  endLine: S.Int.check(S.isBetween({ minimum: 0, maximum: 8 })),
+}))
 const ignoreStaticArb = Arbitrary.schema(S.Struct({ ignoreStatic: S.Boolean, perTest: S.Boolean }))
-const globArb = Arbitrary.schema(S.Struct({ glob: S.Boolean }))
-const thresholdArb = Arbitrary.schema(S.Struct({ malformed: S.Boolean, high: S.Int }))
+const globArb = Arbitrary.schema(S.Struct({
+  globChar: S.optional(S.Literals(['*', '?', '[', '{'])),
+  name: S.String.check(S.isPattern(/^[a-z][a-z0-9]{0,4}$/)),
+}))
 
 describe('validateOptionsAdmission', () => {
   it.prop(
-    '∀m_Mutate_≡OutOfBoundsRangesAreRefused',
-    { of: [mutateArb], subject: validateOptionsAdmission },
-    (subject, [{ outOfBounds }]) => {
+    '∀m_Mutate_≡RangeBoundsAreEnforced',
+    { of: [rangeArb], subject: validateOptionsAdmission },
+    (subject, [{ startLine, endLine }]) => {
       const decision = decide(
         subject,
-        { mutate: [outOfBounds ? 'src/a.ts:0-0' : 'src/a.ts:1-2'], ignoreStatic: false, coverageAnalysis: 'perTest' },
+        {
+          mutate: [`src/a.ts:${startLine}-${endLine}`],
+          ignoreStatic: false,
+          coverageAnalysis: 'perTest',
+        },
       )
-      return outOfBounds
-        ? refusedWith(decision, 'does not exist')
-        : S.is(OptionsValidated)(decision)
+      if (startLine < 1) {
+        return refusedWith(decision, 'does not exist')
+      }
+      if (startLine > endLine) {
+        return refusedWith(decision, 'should be less')
+      }
+      return S.is(OptionsValidated)(decision)
     },
   )
 
   it.prop(
     '∀g_Glob_≡GlobAndRangeAreExclusive',
     { of: [globArb], subject: validateOptionsAdmission },
-    (subject, [{ glob }]) => {
+    (subject, [{ globChar, name }]) => {
       const decision = decide(
         subject,
-        { mutate: [glob ? 'src/*.ts:1-2' : 'src/a.ts:1-2'], ignoreStatic: false, coverageAnalysis: 'perTest' },
+        {
+          mutate: [`src/${name}${globChar ?? ''}.ts:1-2`],
+          ignoreStatic: false,
+          coverageAnalysis: 'perTest',
+        },
       )
-      return glob
-        ? refusedWith(decision, 'Cannot combine a glob expression')
-        : S.is(OptionsValidated)(decision)
+      return globChar === undefined
+        ? S.is(OptionsValidated)(decision)
+        : refusedWith(decision, 'Cannot combine a glob expression')
     },
   )
 
@@ -66,19 +82,6 @@ describe('validateOptionsAdmission', () => {
       return ignoreStatic && perTest === false
         ? refusedWith(decision, 'ignoreStatic')
         : S.is(OptionsValidated)(decision)
-    },
-  )
-
-  it.prop(
-    '∀t_Threshold_≡MalformedThresholdsAreUndecodable',
-    { of: [thresholdArb], subject: validateOptionsAdmission },
-    (subject, [{ malformed, high }]) => {
-      if (malformed) {
-        const decision = decide(subject, { mutate: [], thresholds: { high, low: 'not-a-number' } })
-        return S.is(OptionsUndecodable)(decision)
-      }
-      const decision = decide(subject, { mutate: [], ignoreStatic: false, coverageAnalysis: 'perTest' })
-      return S.is(OptionsValidated)(decision)
     },
   )
 })

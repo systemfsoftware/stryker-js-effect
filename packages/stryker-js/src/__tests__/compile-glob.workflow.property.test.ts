@@ -12,7 +12,9 @@ const pathArb = Arbitrary.array(segmentArb, { minLength: 1, maxLength: 4 }).pipe
   Arbitrary.map((segments) => `/${segments.join('/')}`),
 )
 
-const metacharacterArb = Arbitrary.schema(S.Literals(['+', '(', ')', '$', '^', '|', '.']))
+const escapedLiteralArb = Arbitrary.schema(
+  S.String.check(S.isPattern(/^[a-z0-9\\^$.|()+]{1,4}$/)),
+)
 
 const caseArb = Arbitrary.schema(S.Boolean)
 
@@ -57,11 +59,16 @@ describe('compileGlob', () => {
   )
 
   it.prop(
-    '∀m_Metacharacter_≡EscapedToItsLiteral',
-    { of: [metacharacterArb], subject: compileGlob },
-    (subject, [metacharacter]) =>
-      accepted(subject(command(`a${metacharacter}b`, false)), `a${metacharacter}b`) &&
-      !accepted(subject(command(`a${metacharacter}b`, false)), 'axb'),
+    '∀s_LiteralMetacharacter_≡EscapedToItselfOnly',
+    { of: [escapedLiteralArb], subject: compileGlob },
+    (subject, [literal]) => {
+      const pattern = `x${literal}y`
+      const decoy = `x${literal[0] === 'z' ? 'q' : 'z'}${literal.slice(1)}y`
+      return (
+        accepted(subject(command(pattern, false)), pattern) &&
+        !accepted(subject(command(pattern, false)), decoy)
+      )
+    },
   )
 
   it.prop(

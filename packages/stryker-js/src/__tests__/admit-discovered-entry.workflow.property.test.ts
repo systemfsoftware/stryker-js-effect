@@ -29,11 +29,8 @@ describe('admitDiscoveredEntry', () => {
   )
 
   it.prop(
-    '∀d_Directory_≡ExcludedDirectoryPatternExcludes',
-    {
-      of: [Arbitrary.schema(S.Literals(['node_modules', 'dist', '.git', '.stryker-tmp', '.cache']))],
-      subject: admitDiscoveredEntry,
-    },
+    '∀d_Directory_≡MatchingDirectoryPatternExcludes',
+    { of: [segmentArb], subject: admitDiscoveredEntry },
     (subject, [name]) => {
       const command = DiscoveredEntryCommand.make({
         ignorePatterns: [name],

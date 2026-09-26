@@ -13,7 +13,14 @@ import {
   NoConfigFile,
 } from '../run/discover-config-file.workflow.js'
 
-const commandArb = Arbitrary.schema(ConfigDiscoveryCommand)
+const absentCommandArb = Arbitrary.schema(
+  S.Struct({
+    context: S.Literals(['cli', 'extends']),
+    legacyPresent: S.optional(S.String),
+  }),
+).pipe(
+  Arbitrary.map(({ context, legacyPresent }) => ConfigDiscoveryCommand.make({ context, legacyPresent })),
+)
 
 const requestedCommandArb = Arbitrary.all({
   context: Arbitrary.schema(S.Literals(['cli', 'extends'])),
@@ -70,15 +77,13 @@ describe('discoverConfigFile', () => {
   )
 
   it.prop(
-    '∀c_Empty_≡AbsentRequestedAndDiscoveredIsNoConfig',
-    { of: [commandArb], subject: discoverConfigFile },
+    '∀c_Empty_≡AbsentRequestedAndDiscoveredRefusesLegacyOrNone',
+    { of: [absentCommandArb], subject: discoverConfigFile },
     (subject, [command]) => {
-      if (command.requested !== undefined || command.discovered !== undefined) {
-        return true
-      }
       const decision = subject(command).pipe(Result.getOrElse((neverError) => neverError))
-      return S.is(NoConfigFile)(decision) ||
-        (S.is(ConfigFileRefused)(decision) && decision.file === command.legacyPresent)
+      return command.legacyPresent === undefined
+        ? S.is(NoConfigFile)(decision)
+        : S.is(ConfigFileRefused)(decision) && decision.file === command.legacyPresent
     },
   )
 })

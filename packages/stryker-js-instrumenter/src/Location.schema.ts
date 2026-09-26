@@ -117,11 +117,14 @@ if (import.meta.vitest !== void 0) {
   const { Schema } = await import('effect')
   const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
 
-  const FRAGMENTS = S.Literals(['\r\n', '\r', '\n', '\u2028', '\u2029', 'a', ''])
+  const SegmentSchema = Schema.Struct({
+    content: Schema.String,
+    terminator: Schema.Literals(['\r\n', '\r', '\n', '\u2028', '\u2029']),
+  })
 
   const textArbitrary = Arbitrary.map(
-    Arbitrary.array(Arbitrary.schema(FRAGMENTS)),
-    (fragments) => fragments.join(''),
+    Arbitrary.array(Arbitrary.schema(SegmentSchema)),
+    (segments) => segments.map((segment) => `${segment.content}${segment.terminator}`).join(''),
   )
 
   const offsetWithin = (text: string, draw: number): number =>
@@ -132,9 +135,22 @@ if (import.meta.vitest !== void 0) {
     (text) => Arbitrary.map(Arbitrary.schema(Schema.Int), (draw) => ({ text, offset: offsetWithin(text, draw) })),
   )
 
-  const terminatorEndsOf = (
-    text: string,
-  ): ReadonlyArray<number> => [0, ...[...text.matchAll(LINE_TERMINATOR)].map((match) => endOfMatch(match))]
+  const terminatorEndsOf = (text: string): ReadonlyArray<number> => {
+    const endsAfter = (offset: number): ReadonlyArray<number> =>
+      Boolean.match(offset >= text.length, {
+        onTrue: () => [],
+        onFalse: () => {
+          const isCrLf = text.startsWith('\r\n', offset)
+          const width = Boolean.match(isCrLf, { onTrue: () => 2, onFalse: () => 1 })
+          const ends = Boolean.match(isCrLf || '\n\r\u2028\u2029'.includes(text.charAt(offset)), {
+            onTrue: () => [offset + width],
+            onFalse: () => [],
+          })
+          return [...ends, ...endsAfter(offset + width)]
+        },
+      })
+    return [0, ...endsAfter(0)]
+  }
 
   const comparePositions = (a: Position, b: Position): number => {
     const lineDelta = a.line - b.line
@@ -149,11 +165,9 @@ if (import.meta.vitest !== void 0) {
 
   it.prop(
     '∀text_CrlfLines_=UnixLines',
-    { of: [Arbitrary.array(Arbitrary.schema(FRAGMENTS))], subject: lineStartsOf },
-    (subject, [fragments]) => {
-      const text = fragments.join('')
-      return subject(text).lineStarts.join(',') === subject(text.replaceAll('\r\n', ' \n')).lineStarts.join(',')
-    },
+    { of: [textArbitrary], subject: lineStartsOf },
+    (subject, [text]) =>
+      subject(text).lineStarts.join(',') === subject(text.replaceAll('\r\n', ' \n')).lineStarts.join(','),
   )
 
   it.prop(

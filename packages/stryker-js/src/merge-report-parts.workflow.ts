@@ -148,7 +148,6 @@ const uniqueIds = (label: string, ids: readonly string[] | undefined): readonly 
 
 const rewrittenMutant = (label: string, mutant: Report.MutantResult): Report.MutantResult => ({
   ...mutant,
-  id: uniqueId(label, mutant.id),
   killedBy: uniqueIds(label, mutant.killedBy),
   coveredBy: uniqueIds(label, mutant.coveredBy),
 })

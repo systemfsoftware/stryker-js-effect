@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'

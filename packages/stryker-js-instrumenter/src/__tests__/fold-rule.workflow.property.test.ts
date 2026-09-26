@@ -2,12 +2,8 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 
 import { type LocatedDirective, LocatedDirectiveSchema } from '../directives/directive.schema.js'
-import { type FoldedRule, foldRule, FoldRuleCommand } from '../directives/fold-rule.workflow.js'
+import { foldRule, FoldRuleCommand } from '../directives/fold-rule.workflow.js'
 import { planMutants, PlanMutantsCommand } from '../plan-mutants.workflow.js'
-
-const RuleFoldTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-instrumenter/RuleFold')
-
-const hasBrand = (folded: FoldedRule): boolean => Object.getOwnPropertySymbols(folded).includes(RuleFoldTypeId)
 
 const acted = (located: LocatedDirective, action: 'disable' | 'restore'): LocatedDirective => ({
   ...located,
@@ -51,15 +47,6 @@ const silencingReason = (
 }
 
 describe('foldRule', () => {
-  it.prop(
-    '∀c_Directive_∈BrandedFold',
-    { of: [LocatedDirectiveSchema], subject: foldRule },
-    (subject, [directive]) => {
-      const decided = subject(FoldRuleCommand.make({ rule: [], directive }))
-      return Result.isSuccess(decided) && hasBrand(decided.success)
-    },
-  )
-
   it.prop(
     '∀d_Restore_≡FoldedOntoTheEmptyRuleSilencesNoNameItNames',
     { of: [LocatedDirectiveSchema], subject: foldRule },

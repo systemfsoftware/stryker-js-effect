@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -324,10 +325,10 @@ export class VitestMutantRunCommand extends S.TaggedClass<VitestMutantRunCommand
   hitCount: S.optional(S.Finite),
   hitLimit: S.optional(S.Finite),
   reportAllKillers: S.Boolean,
-  activeMutantId: S.String,
+  activeMutantId: Mutant.MutantId,
   activeMutantFileName: S.String,
   timeoutTrapFile: S.optional(S.String),
-  timeoutTrapMutantId: S.optional(S.String),
+  timeoutTrapMutantId: S.optional(Mutant.MutantId),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     activeMutantId: 'stryker.vitest.active_mutant_id',

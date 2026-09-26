@@ -76,3 +76,5 @@ export const IncrementalReportSchema = S.StructWithRest(
   }),
   [S.Record(S.String, S.Unknown)],
 )
+
+export type IncrementalReport = S.Schema.Type<typeof IncrementalReportSchema>

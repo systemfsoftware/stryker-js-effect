@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { SchemaGetter, SchemaTransformation } from 'effect'
@@ -30,7 +31,7 @@ export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
 }) {}
 
 export class RunMutantTested extends S.TaggedClass<RunMutantTested>()('mutant', {
-  id: S.String,
+  id: Mutant.MutantId,
   status: Mutant.MutantStatusSchema,
   file: S.String,
   location: Mutant.LocationSchema,
@@ -82,7 +83,7 @@ const VerdictThresholds = VerdictThresholdsValuesSchema.pipe(
 )
 
 const VerdictMutant = S.Struct({
-  id: S.String,
+  id: Mutant.MutantId,
   file: S.String,
   location: Mutant.LocationSchema,
   mutator: S.String,

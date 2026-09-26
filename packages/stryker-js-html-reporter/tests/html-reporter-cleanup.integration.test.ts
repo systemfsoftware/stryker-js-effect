@@ -2,6 +2,7 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -75,7 +76,7 @@ const reportFixture = (): Report.MutationTestResult => ({
       source: `export const marker = '${MARKER}'`,
       mutants: [
         {
-          id: '0',
+          id: Mutant.MutantId.make('0'),
           mutatorName: 'BlockStatement',
           status: 'Killed',
           location: { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } },

@@ -86,7 +86,9 @@ const malformedCompilerOptionsDocument = (): Arbitrary.Arbitrary<{ readonly comp
   )
 
 const unparseableText = (): Arbitrary.Arbitrary<string> =>
-  Arbitrary.schema(S.Literals(['{', '[', '"unterminated', '{"references":}']))
+  Arbitrary.schema(S.Union([scalarSchema(), S.Record(S.String, scalarSchema())])).pipe(
+    Arbitrary.map((value) => `${JSON.stringify(value)}#`),
+  )
 
 describe('parseTsconfigText', (it) => {
   it.prop(

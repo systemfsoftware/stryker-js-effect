@@ -1,9 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -21,7 +22,7 @@ export const ProgressTallySchema = S.Struct({
   mutants: S.Finite,
   total: S.Finite,
   ticks: S.Finite,
-  ticksByMutantId: S.Record(S.String, S.Finite),
+  ticksByMutantId: S.Record(Mutant.MutantId, S.Finite),
   timing: ProgressTimingSchema,
   capabilities: ProgressCapabilitiesSchema,
   startedAt: S.Finite,
@@ -175,7 +176,7 @@ const advance = (state: ProgressState, event: Reporter.ReporterEvent, now: numbe
       state: planReadyState(state, planReady, now),
     })),
     Match.tag('mutantTested', (tested) =>
-      Option.match(Option.fromNullishOr(state.tally.ticksByMutantId[tested.id]), {
+      Option.match(Record.get(state.tally.ticksByMutantId, tested.id), {
         onNone: (): ProgressStep => ({ kind: 'skip', state }),
         onSome: (ticks) => ({
           kind: 'tick' as const,

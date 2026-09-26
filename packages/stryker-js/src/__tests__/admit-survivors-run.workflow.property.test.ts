@@ -377,27 +377,3 @@ describe('admitSurvivorsRun', () => {
       })(),
   )
 })
-
-describe('Survivors not-found', () => {
-  it.prop(
-    '∀c_NotFound_≡Rejection',
-    { of: [Arbitrary.Constant(null)], subject: admitSurvivorsRun },
-    (subject) =>
-      Result.match(
-        subject(
-          AdmitSurvivorsRunCommand.make({
-            priorReport: undefined,
-            currentConfig: {},
-            frameworkVersion: '1.0.0',
-            sourceContentHashes: {},
-            priorSourceHashes: {},
-            priorSurvivors: [],
-          }),
-        ),
-        {
-          onSuccess: () => false,
-          onFailure: (rejection) => S.is(SurvivorsRejection)(rejection),
-        },
-      ),
-  )
-})

@@ -3,6 +3,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   interpretVitestMutantRun,
@@ -13,10 +14,8 @@ import {
 } from '../interpret-vitest-mutant-run.workflow.js'
 import { VitestMutantRunCommand } from '../vitest-run-command.schema.js'
 
-const VITEST_MUTANT_RUN_FAMILY = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestMutantRun')
-
-const carriesFamilyBrand = (decision: object): boolean =>
-  Reflect.get(decision, VITEST_MUTANT_RUN_FAMILY) === VITEST_MUTANT_RUN_FAMILY
+const anotherThan = (id: Mutant.MutantId): Mutant.MutantId =>
+  id === '0' ? Mutant.MutantId.make('1') : Mutant.MutantId.make('0')
 
 const commandWith = (
   input: VitestMutantRunCommand,
@@ -27,10 +26,10 @@ const commandWith = (
     readonly hitCount: number | undefined
     readonly hitLimit: number | undefined
     readonly reportAllKillers?: boolean
-    readonly activeMutantId?: string
+    readonly activeMutantId?: Mutant.MutantId
     readonly activeMutantFileName?: string
     readonly timeoutTrapFile?: string | undefined
-    readonly timeoutTrapMutantId?: string | undefined
+    readonly timeoutTrapMutantId?: Mutant.MutantId | undefined
   },
 ): VitestMutantRunCommand =>
   VitestMutantRunCommand.make({
@@ -88,7 +87,7 @@ describe('interpretVitestMutantRun', (it) => {
       )
       const reasonPrefixed = result.success.reason !== undefined &&
         result.success.reason.startsWith(TestRunner.HitLimitReasonPrefix.literal)
-      return carriesFamilyBrand(result.success) && result.success.tests.length === 0 && reasonReached && reasonPrefixed
+      return result.success.tests.length === 0 && reasonReached && reasonPrefixed
     },
   )
 
@@ -107,7 +106,7 @@ describe('interpretVitestMutantRun', (it) => {
       const result = subject(commandWith(input, {
         hitCount,
         hitLimit,
-        activeMutantId: 'a.ts#trap',
+        activeMutantId: Mutant.MutantId.make('7'),
         activeMutantFileName: 'tests/a.ts',
         timeoutTrapFile: 'a.ts',
         timeoutTrapMutantId: undefined,
@@ -118,7 +117,7 @@ describe('interpretVitestMutantRun', (it) => {
       if (!S.is(MutantTimeout)(result.success)) {
         return false
       }
-      return carriesFamilyBrand(result.success) && result.success.tests.length === 0
+      return result.success.tests.length === 0
     },
   )
 
@@ -137,7 +136,7 @@ describe('interpretVitestMutantRun', (it) => {
       const result = subject(commandWith(input, {
         hitCount,
         hitLimit,
-        activeMutantId: `${input.activeMutantId}-finite`,
+        activeMutantId: anotherThan(input.activeMutantId),
         timeoutTrapMutantId: input.activeMutantId,
       }))
       if (!Result.isSuccess(result)) {
@@ -192,7 +191,7 @@ describe('interpretVitestMutantRun', (it) => {
         tests: [failed],
         hitCount: hitLimit + extra,
         hitLimit,
-        activeMutantId: `${input.activeMutantId}-finite`,
+        activeMutantId: anotherThan(input.activeMutantId),
         timeoutTrapMutantId: input.activeMutantId,
       }))
       if (!Result.isSuccess(result)) {
@@ -221,7 +220,6 @@ describe('interpretVitestMutantRun', (it) => {
         return false
       }
       return (
-        carriesFamilyBrand(result.success) &&
         result.success.tests.length === 0 &&
         result.success.errorMessage === `An error occurred outside of a test run: ${input.externalErrorText}`
       )
@@ -259,9 +257,6 @@ describe('interpretVitestMutantRun', (it) => {
         return false
       }
       if (!S.is(MutantKilled)(result.success)) {
-        return false
-      }
-      if (!carriesFamilyBrand(result.success)) {
         return false
       }
       const tests = testsIn(result.success.tests)
@@ -302,9 +297,6 @@ describe('interpretVitestMutantRun', (it) => {
         return false
       }
       if (!S.is(MutantSurvived)(result.success)) {
-        return false
-      }
-      if (!carriesFamilyBrand(result.success)) {
         return false
       }
       const tests = testsIn(result.success.tests)

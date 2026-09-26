@@ -25,8 +25,8 @@ export const TestResultSchema = S.Union([
 ])
 
 export const MutantCoverageSchema = S.Struct({
-  perTest: S.Record(S.String, S.Record(S.String, S.Finite)),
-  static: S.Record(S.String, S.Finite),
+  perTest: S.Record(S.String, S.Record(Mutant.MutantId, S.Finite)),
+  static: S.Record(Mutant.MutantId, S.Finite),
 })
 
 export const DryRunResultSchema = S.Union([

@@ -1,5 +1,5 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
@@ -26,7 +26,7 @@ type RunAnswers = CheckMutantsAnswer['results']
 
 const refuse = (
   options: {
-    readonly mutantIds: readonly string[]
+    readonly mutantIds: readonly Mutant.MutantId[]
     readonly cause: CompilerError | DryRunCompileErrors | NodeNotInGraph
   },
 ): Checker.CheckerFailed =>

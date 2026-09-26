@@ -14,27 +14,32 @@ const isSafeKey = (id: string) => !Object.hasOwn(Object.prototype, id)
 
 const commandArb = Arbitrary.schema(CheckerCommand).pipe(
   Arbitrary.filter((command) =>
-    command.requestedIds.every(isSafeKey) &&
     Object.keys(command.answers ?? {}).every(isSafeKey) &&
     (command.idGroups ?? []).flat().every(isSafeKey)
   ),
 )
 
+const requestedIdSetOf = (command: CheckerCommand): ReadonlySet<string> => new Set(command.requestedIds)
+
 const submittedIdsOf = (command: CheckerCommand) =>
   command.phase === 'group' ? (command.idGroups ?? []).flat() : Object.keys(command.answers ?? {})
 
-const unrequestedIdsOf = (command: CheckerCommand) =>
-  submittedIdsOf(command).filter((id) => !command.requestedIds.includes(id))
+const unrequestedIdsOf = (command: CheckerCommand) => {
+  const requested = requestedIdSetOf(command)
+  return submittedIdsOf(command).filter((id) => !requested.has(id))
+}
 
-const missingIdsOf = (command: CheckerCommand) =>
-  command.requestedIds.filter((id) => !submittedIdsOf(command).includes(id))
+const missingIdsOf = (command: CheckerCommand) => {
+  const submitted = new Set(submittedIdsOf(command))
+  return command.requestedIds.filter((id) => !submitted.has(id))
+}
 
 const breached = (command: CheckerCommand) => unrequestedIdsOf(command).length > 0 || missingIdsOf(command).length > 0
 
 const expectedGroups = (command: CheckerCommand) => (command.idGroups ?? []).map((group) => [...group])
 
 const expectedPairs = (command: CheckerCommand) => {
-  const requested = new Set(command.requestedIds)
+  const requested = requestedIdSetOf(command)
   return Object.entries(command.answers ?? {})
     .filter(([id]) => requested.has(id))
     .map(([id, result]) => ({ id, result }))

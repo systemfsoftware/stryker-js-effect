@@ -17,7 +17,13 @@ const pathArb = Arbitrary.array(segmentArb, { minLength: 1, maxLength: 4 }).pipe
 
 const listedExtensionArb = Arbitrary.schema(S.Literals(LISTED_EXTENSIONS))
 
-const unlistedExtensionArb = Arbitrary.schema(S.Literals(['md', 'json', 'txt', 'css']))
+const listedExtensionLookup: Record<string, true> = Object.fromEntries(
+  LISTED_EXTENSIONS.map((extension) => [extension, true]),
+)
+
+const unlistedExtensionArb = Arbitrary.schema(S.String.check(S.isPattern(/^[a-z]{1,4}$/))).pipe(
+  Arbitrary.filter((extension) => !(extension in listedExtensionLookup)),
+)
 
 const baseSegmentArb = Arbitrary.schema(S.String.check(S.isPattern(/^[a-z][a-z0-9]{0,4}$/)))
 

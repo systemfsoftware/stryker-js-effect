@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'

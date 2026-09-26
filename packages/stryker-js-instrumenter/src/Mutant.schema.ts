@@ -15,7 +15,7 @@ export const MutantStatusSchema = S.Literals([
 ])
 export type MutantStatus = typeof MutantStatusSchema.Type
 
-export const MutantId = S.NonEmptyString.pipe(S.brand('MutantId'))
+export const MutantId = S.String.check(S.isPattern(/^(0|[1-9][0-9]*)$/)).pipe(S.brand('MutantId'))
 export type MutantId = typeof MutantId.Type
 
 export const MutatorName = S.NonEmptyString.pipe(S.brand('MutatorName'))
@@ -73,8 +73,8 @@ export const MutantRunOptionsSchema = S.Struct({
 })
 
 export const MutantCoverageSchema = S.Struct({
-  perTest: S.Record(S.String, S.Record(S.String, HitCount)),
-  static: S.Record(S.String, HitCount),
+  perTest: S.Record(S.String, S.Record(MutantId, HitCount)),
+  static: S.Record(MutantId, HitCount),
 })
 export type MutantCoverage = typeof MutantCoverageSchema.Type
 

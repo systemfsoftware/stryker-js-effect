@@ -71,7 +71,7 @@ const staticCoverageCountOf = (staticCoverage: Record<string, number> | undefine
 const hasCoverageForPlan = (staticCoverage: Record<string, number> | undefined): boolean =>
   Option.isSome(Option.fromUndefinedOr(staticCoverage))
 
-const mutantIsStatic = (command: MutantTestPlanCommand, mutantId: string) =>
+const mutantIsStatic = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId) =>
   staticCoverageCountOf(command.staticCoverage, mutantId) > 0
 
 const calculateTotalTimeForIds = (testIds: readonly string[], testTimeById: Record<string, number>) =>
@@ -197,7 +197,7 @@ const planForStaticallyCovered = (
   })
 }
 
-const mutantIsCovered = (command: MutantTestPlanCommand, mutantId: string) =>
+const mutantIsCovered = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId) =>
   Option.match(Record.get(command.testsByMutantId, mutantId), {
     onNone: () => mutantIsStatic(command, mutantId),
     onSome: (tests) => Boolean.or(tests.length > 0, mutantIsStatic(command, mutantId)),

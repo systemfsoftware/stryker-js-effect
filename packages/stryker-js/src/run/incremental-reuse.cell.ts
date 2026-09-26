@@ -1,6 +1,6 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { type Format, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
@@ -15,6 +15,7 @@ import {
 } from '../incremental-diff.workflow.js'
 import type { FormatIdentity } from '../IncrementalDiff.schema.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
+import type { IncrementalReport } from '../IncrementalReport.schema.js'
 import { RelativeNormalizedFileName } from '../matching.schema.js'
 import { identityOf } from '../mutation-reporting.service.js'
 import { ProjectFiles } from '../project-files.service.js'
@@ -93,17 +94,17 @@ const rememberedOf = (mutant: Mutant.Mutant, entry: RememberedMutantResult) =>
     ([reportLocation, status]) => rememberedResultOf(mutant, entry, reportLocation, status),
   )
 
-const previousFilesOf = (report: Report.MutationTestResult | undefined): S.Schema.Type<typeof PreviousFilesSchema> =>
+const previousFilesOf = (report: IncrementalReport | undefined): S.Schema.Type<typeof PreviousFilesSchema> =>
   Option.getOrElse(
     Option.flatMap(
       Option.fromUndefinedOr(report),
-      (present) => S.decodeUnknownOption(PreviousFilesSchema)(present.files),
+      (present) => S.decodeOption(PreviousFilesSchema)(present.files),
     ),
     (): S.Schema.Type<typeof PreviousFilesSchema> => ({}),
   )
 
 const previousTestFilesOf = (
-  report: Report.MutationTestResult | undefined,
+  report: IncrementalReport | undefined,
 ): S.Schema.Type<typeof PreviousTestFilesSchema> =>
   Option.getOrElse(
     Option.flatMap(
@@ -169,7 +170,7 @@ const relativeFileByMutantIdOf = (mutants: readonly Mutant.Mutant[], basePath: s
 const incrementalDiffCommandOf = (
   currentMutants: readonly Mutant.Mutant[],
   testCoverage: TestCoverage,
-  incrementalReport: Report.MutationTestResult | undefined,
+  incrementalReport: IncrementalReport | undefined,
   currentRelativeFiles: Record<string, string>,
   basePath: string,
   force: boolean,

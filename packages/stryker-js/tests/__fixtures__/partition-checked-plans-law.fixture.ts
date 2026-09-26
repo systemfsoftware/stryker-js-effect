@@ -6,7 +6,7 @@ export const CheckedEntry = S.Struct({ mutantId: Mutant.MutantId, result: Checke
 export type CheckedEntry = typeof CheckedEntry.Type
 
 export const CheckedHistoryEntry = S.Struct({
-  mutantId: S.Literals(['m-a', 'm-b', 'm-c']),
+  mutantId: S.Literals(['1', '2', '3']),
   outcome: S.Literals(['passed', 'compileError-a', 'compileError-b']),
 })
 export type CheckedHistoryEntry = typeof CheckedHistoryEntry.Type

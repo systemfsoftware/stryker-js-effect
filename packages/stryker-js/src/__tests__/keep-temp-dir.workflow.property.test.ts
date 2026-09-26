@@ -1,6 +1,7 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import {
   keepTempDir,
@@ -20,9 +21,9 @@ const fateOf = (decision: KeepTempDirOutcome): 'kept' | 'removed' =>
 describe('keepTempDir', () => {
   it.prop(
     '∀a_Always_≡Removed',
-    { of: [KeepTempDirCommand], subject: keepTempDir },
-    (subject, [command]) => {
-      const always = KeepTempDirCommand.make({ cleanTempDir: KeepTempDirAlways.make({}), failed: command.failed })
+    { of: [S.Boolean], subject: keepTempDir },
+    (subject, [failed]) => {
+      const always = KeepTempDirCommand.make({ cleanTempDir: KeepTempDirAlways.make({}), failed })
       return Result.match(subject(always), {
         onFailure: () => false,
         onSuccess: (decision) => fateOf(decision) === 'removed',
@@ -32,15 +33,15 @@ describe('keepTempDir', () => {
 
   it.prop(
     '∀f_OnFailure_≡KeptIffFailed',
-    { of: [KeepTempDirCommand], subject: keepTempDir },
-    (subject, [command]) => {
+    { of: [S.Boolean], subject: keepTempDir },
+    (subject, [failed]) => {
       const onFailure = KeepTempDirCommand.make({
-        cleanTempDir: KeepTempDirOnFailure.make({ failed: command.failed }),
-        failed: command.failed,
+        cleanTempDir: KeepTempDirOnFailure.make({ failed }),
+        failed,
       })
       return Result.match(subject(onFailure), {
         onFailure: () => false,
-        onSuccess: (decision) => (command.failed ? fateOf(decision) === 'kept' : fateOf(decision) === 'removed'),
+        onSuccess: (decision) => (failed ? fateOf(decision) === 'kept' : fateOf(decision) === 'removed'),
       })
     },
   )

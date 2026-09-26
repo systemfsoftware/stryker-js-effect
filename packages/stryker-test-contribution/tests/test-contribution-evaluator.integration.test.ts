@@ -11,6 +11,7 @@
  * or no EvaluatorFailed where breaking expected).
  */
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Evaluator, Options, type Plugin, type Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { strykerPlugins, TestContributionEvaluator } from '@systemfsoftware/stryker-test-contribution'
 import * as Cause from 'effect/Cause'
@@ -26,7 +27,7 @@ const Feature = makeFeature({ it })
 
 const LOCATION = { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } }
 
-const kernelMutant = (id: string, killedBy?: string[], coveredBy?: string[]): Report.MutantResult => ({
+const kernelMutant = (id: Mutant.MutantId, killedBy?: string[], coveredBy?: string[]): Report.MutantResult => ({
   id,
   status: 'Killed',
   mutatorName: 'BooleanLiteral',
@@ -35,7 +36,7 @@ const kernelMutant = (id: string, killedBy?: string[], coveredBy?: string[]): Re
 })
 
 const reportWithToothlessKernelFile = (
-  mutants: Report.MutantResult[] = [kernelMutant('m1', ['t1'], ['t1', 't2'])],
+  mutants: Report.MutantResult[] = [kernelMutant(Mutant.MutantId.make('1'), ['t1'], ['t1', 't2'])],
 ): Report.MutationTestResult => ({
   schemaVersion: '2',
   thresholds: { high: 80, low: 60 },
@@ -160,7 +161,10 @@ Feature('test-contribution evaluator plugin')
           (s) =>
             exitOf(
               s.evaluator,
-              reportWithToothlessKernelFile([kernelMutant('m1', ['t1']), kernelMutant('m2', ['t2'])]),
+              reportWithToothlessKernelFile([
+                kernelMutant(Mutant.MutantId.make('1'), ['t1']),
+                kernelMutant(Mutant.MutantId.make('2'), ['t2']),
+              ]),
             ),
         ),
         Then('the evaluation succeeds with null')((s, expect) =>

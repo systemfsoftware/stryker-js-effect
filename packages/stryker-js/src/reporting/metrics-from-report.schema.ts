@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'

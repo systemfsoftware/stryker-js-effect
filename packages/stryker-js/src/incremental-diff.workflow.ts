@@ -23,12 +23,12 @@ type IncrementalDiffTypeId = typeof IncrementalDiffTypeId
 
 export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand>()('IncrementalDiffCommand', {
   currentMutants: S.Array(Mutant.Mutant),
-  relativeFileByMutantId: S.Record(S.String, S.String),
+  relativeFileByMutantId: S.Record(Mutant.MutantId, S.String),
   previousFiles: PreviousFilesSchema,
   previousTestFiles: PreviousTestFilesSchema,
   currentRelativeFiles: S.Record(S.String, S.String),
   testIdsByRelativeFile: S.Record(S.String, S.Array(S.String)),
-  coveringTestFilesByMutantId: S.Record(S.String, S.Array(S.String)),
+  coveringTestFilesByMutantId: S.Record(Mutant.MutantId, S.Array(S.String)),
   identitiesByFile: S.Record(S.String, FormatIdentitySchema),
   force: S.Boolean,
 }) {

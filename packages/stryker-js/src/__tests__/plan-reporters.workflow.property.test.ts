@@ -5,10 +5,12 @@ import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { HumanReporters, MachineReporters, planReporters, ReporterPlanCommand } from '../run/plan-reporters.workflow.js'
 
-const reporterNameArb = Arbitrary.schema(
-  S.Literals(['clear-text', 'progress', 'progress-stream', 'json', 'html']),
-)
-const configuredArb = Arbitrary.array(reporterNameArb, { maxLength: 5 })
+const specialNameArb = Arbitrary.schema(S.Literals(['clear-text', 'progress', 'progress-stream']))
+
+const configuredArb = Arbitrary.all([
+  Arbitrary.schema(S.Array(S.String)),
+  Arbitrary.array(specialNameArb, { maxLength: 3 }),
+]).pipe(Arbitrary.map(([names, special]) => [...names, ...special]))
 
 const reportersOf = (plan: typeof planReporters, mode: 'human' | 'machine', configured: readonly string[]) => {
   const result = plan(ReporterPlanCommand.make({ configured: [...configured], mode }))
@@ -24,7 +26,8 @@ describe('planReporters', () => {
       if (decision === undefined || !S.is(HumanReporters)(decision)) {
         return false
       }
-      const expected = [...new Set(configured.map((name) => (name === 'progress-stream' ? 'clear-text' : name)))]
+      const aliased = configured.map((name) => (name === 'progress-stream' ? 'clear-text' : name))
+      const expected = aliased.filter((name, index) => aliased.indexOf(name) === index)
       return JSON.stringify([...decision.reporters]) === JSON.stringify(expected)
     },
   )

@@ -15,11 +15,6 @@ import {
 } from '../check-mutants.workflow.js'
 import { CheckMutantsInput } from '../CheckMutants.schema.js'
 
-const CHECK_MUTANTS_FAMILY = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/CheckMutants')
-
-const carriesFamilyBrand = (decision: object): boolean =>
-  Reflect.get(decision, CHECK_MUTANTS_FAMILY) === CHECK_MUTANTS_FAMILY
-
 const setsEqual = (left: ReadonlySet<string>, right: ReadonlySet<string>): boolean =>
   left.size === right.size && [...left].every((value) => right.has(value))
 
@@ -84,7 +79,7 @@ const ambiguousGroupInputArb: Arbitrary.Arbitrary<CheckMutantsInput> = Arbitrary
 
 describe('checkMutants', (it) => {
   it.prop(
-    '∀i_Decision_≡PartitionedAndBranded',
+    '∀i_Decision_≡Partitioned',
     { of: [CheckMutantsInput], subject: checkMutants },
     (subject, [input]) => {
       const result = subject(input)
@@ -93,9 +88,6 @@ describe('checkMutants', (it) => {
           S.is(DiagnosticWithoutFileError)(result.failure) ||
           S.is(DiagnosticInUnrelatedFileError)(result.failure)
         )
-      }
-      if (!carriesFamilyBrand(result.success)) {
-        return false
       }
       const ids = new Set(input.mutants.map((mutant) => mutant.id))
       const keys = new Set(Object.keys(result.success.results))
@@ -126,9 +118,6 @@ describe('checkMutants', (it) => {
     if (!S.is(CheckFinished)(result.success)) {
       return false
     }
-    if (!carriesFamilyBrand(result.success)) {
-      return false
-    }
     const ids = new Set(input.mutants.map((mutant) => mutant.id))
     return (
       setsEqual(new Set(Object.keys(result.success.results)), ids) &&
@@ -145,9 +134,6 @@ describe('checkMutants', (it) => {
       return false
     }
     if (!S.is(RetestRequired)(result.success)) {
-      return false
-    }
-    if (!carriesFamilyBrand(result.success)) {
       return false
     }
     const expected = new Set(input.mutants.map((mutant) => mutant.id))

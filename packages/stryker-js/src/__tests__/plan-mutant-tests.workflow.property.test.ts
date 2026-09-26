@@ -19,16 +19,16 @@ import {
 
 const smallNonNegativeArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 1000 })))
 
-const testsOf = (command: MutantTestPlanCommand, id: string) =>
+const testsOf = (command: MutantTestPlanCommand, id: Mutant.MutantId) =>
   Option.getOrElse(Record.get(command.testsByMutantId, id), (): readonly string[] => [])
 
-const staticCountOf = (command: MutantTestPlanCommand, id: string) =>
+const staticCountOf = (command: MutantTestPlanCommand, id: Mutant.MutantId) =>
   Option.getOrElse(
     Option.flatMap(Option.fromUndefinedOr(command.staticCoverage), (coverage) => Record.get(coverage, id)),
     () => 0,
   )
 
-const hitsOf = (command: MutantTestPlanCommand, id: string) =>
+const hitsOf = (command: MutantTestPlanCommand, id: Mutant.MutantId) =>
   Option.getOrUndefined(Record.get(command.hitsByMutantId, id))
 
 const scenarioArb: Arbitrary.Arbitrary<MutantTestPlanCommand> = Arbitrary.schema(

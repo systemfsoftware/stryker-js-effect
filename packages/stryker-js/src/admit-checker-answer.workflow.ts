@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
@@ -29,7 +30,7 @@ export type CheckerContractBroken = CheckerAnsweredUnrequested | CheckerSkippedR
 
 export class CheckerCommand extends S.TaggedClass<CheckerCommand>()('CheckerCommand', {
   checkerName: S.String,
-  requestedIds: S.Array(S.String),
+  requestedIds: S.Array(Mutant.MutantId),
   phase: S.Literals(['check', 'group']),
   idGroups: S.String.pipe(S.Array, S.Array, S.optional),
   answers: S.optional(S.Record(S.String, Checker.CheckResultSchema)),

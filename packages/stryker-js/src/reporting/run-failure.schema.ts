@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
@@ -113,17 +114,17 @@ if (import.meta.vitest !== void 0) {
     RunFailed,
   ])
 
-  const codeOf = (outcome: RunOutcomeDecision | RunOutcomeError) => RunExitCode.fromOutcome(outcome).code
+  const FROZEN_CONFIG_CODE = 2
 
   it.prop(
-    '∀outcome_RunExitCode_≡FrozenCodes',
-    { of: [RunOutcomeSchema], subject: codeOf },
+    '∀outcome_ExitCode_≡FrozenCodes',
+    { of: [RunOutcomeSchema], subject: exitCodeOf },
     (subject, [outcome]) =>
       Match.value(outcome).pipe(
         Match.tag('RunOk', () => subject(outcome) === 0),
         Match.tag('RunInterrupted', (interrupted) => subject(outcome) === interrupted.code),
         Match.tag('RunFailed', (failed) => subject(outcome) === failed.code),
-        Match.orElse(() => subject(outcome) === CONFIG_CODE),
+        Match.orElse(() => subject(outcome) === FROZEN_CONFIG_CODE),
       ),
   )
 }

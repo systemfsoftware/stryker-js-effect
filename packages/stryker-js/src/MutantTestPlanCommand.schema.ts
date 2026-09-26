@@ -7,9 +7,9 @@ export class MutantTestPlanCommand extends S.TaggedClass<MutantTestPlanCommand>(
   timeOverheadMS: S.Finite,
   timeSpentAllTests: S.Finite,
   globalTestFilter: S.String.pipe(S.Array, S.optional),
-  hitsByMutantId: S.Record(S.String, S.Finite),
-  staticCoverage: S.optional(S.Record(S.String, S.Finite)),
-  testsByMutantId: S.Record(S.String, S.Array(S.String)),
+  hitsByMutantId: S.Record(Mutant.MutantId, S.Finite),
+  staticCoverage: S.optional(S.Record(Mutant.MutantId, S.Finite)),
+  testsByMutantId: S.Record(Mutant.MutantId, S.Array(S.String)),
   testTimeById: S.Record(S.String, S.Finite),
   options: S.Struct({
     disableBail: S.Boolean,

@@ -2,6 +2,7 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import {
@@ -31,7 +32,7 @@ const commandOf = (spec: CommandSpec): JudgeTestContribution =>
           language: 'typescript',
           source: 'export const a = 1\n',
           mutants: spec.mutants.map((mutant, index): Report.MutantResult => ({
-            id: `m${index}`,
+            id: Mutant.MutantId.make(`${index}`),
             status: mutant.status,
             mutatorName: 'BooleanLiteral',
             location: LOCATION,

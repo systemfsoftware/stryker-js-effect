@@ -24,7 +24,7 @@ const batchesFor = (fileNames: ReadonlyArray<string>) => {
   return S.is(DiagnosticBatchesPlanned)(decision) ? decision.batches : []
 }
 
-const boundarySizes = () => S.Literals([0, 1, 63, 64, 65, 127, 128, 129, 200])
+const sizeSchema = () => S.Int.check(S.isBetween({ minimum: 0, maximum: 200 }))
 
 const boundaryNames = () => S.Array(S.String).check(S.isMinLength(1), S.isMaxLength(8))
 
@@ -58,7 +58,7 @@ describe('planDiagnosticBatches', (it) => {
 
   it.prop(
     '∀size_Batches_≡FullChunksExceptLast',
-    { of: [boundarySizes(), boundaryNames()], subject: boundaryBatchesFor },
+    { of: [sizeSchema(), boundaryNames()], subject: boundaryBatchesFor },
     (subject, [size, names]) => {
       const fileNames = boundaryInputOf(size, names)
       const batches = subject(size, names)

@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'

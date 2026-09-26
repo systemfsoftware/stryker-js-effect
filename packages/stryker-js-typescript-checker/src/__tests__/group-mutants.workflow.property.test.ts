@@ -53,7 +53,7 @@ const mutantWireOf = (id: string, fileName: string): Checker.CheckerMutantWire =
   })
 
 const mutantsOf = (fileIndexes: ReadonlyArray<number>) =>
-  Arr.map(fileIndexes, (index, position) => mutantWireOf(`mutant-${position}`, fileNameOf(index)))
+  Arr.map(fileIndexes, (index, position) => mutantWireOf(`${position}`, fileNameOf(index)))
 
 const groupsOf = (result: Result.Result<ReadonlyArray<MutantGroup>, never>): ReadonlyArray<ReadonlyArray<string>> =>
   Result.match(result, {

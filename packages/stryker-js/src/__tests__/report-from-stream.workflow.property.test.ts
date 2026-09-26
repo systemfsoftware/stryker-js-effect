@@ -3,6 +3,7 @@ import * as Arr from 'effect/Array'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   reportFromStream,
@@ -16,6 +17,8 @@ const STREAM_HEADER = '{"_tag":"stream"}'
 const TORN_LINE = '{"_tag":"mutant","id":'
 
 const lineOf = S.encodeOption(S.fromJsonString(RunMutantTested))
+
+const recordFreeTextArb = Arbitrary.schema(S.String).pipe(Arbitrary.filter((text) => !text.includes('{')))
 
 type RebuiltReport = typeof ReportFromStreamRebuilt.Type.report
 
@@ -79,10 +82,7 @@ describe('reportFromStream', () => {
 
   it.prop(
     '∀t_NoMutantRecords_≡Absent',
-    {
-      of: [S.Union([S.Literal(''), S.Literal('garbage\n'), S.Literal(`${STREAM_HEADER}\n`)])],
-      subject: reportFromStream,
-    },
+    { of: [recordFreeTextArb], subject: reportFromStream },
     (subject, [text]) =>
       Result.match(subject(ReportFromStreamCommand.make({ text })), {
         onFailure: () => false,

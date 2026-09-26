@@ -5,7 +5,7 @@ import * as S from 'effect/Schema'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('UndescribableMutant', {
-  id: S.String,
+  id: Mutant.MutantId,
   fileName: S.String,
   reason: S.String,
 }) {

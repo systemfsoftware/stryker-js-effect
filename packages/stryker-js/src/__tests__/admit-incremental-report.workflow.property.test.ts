@@ -38,16 +38,16 @@ describe('admitIncrementalReport', () => {
 
   it.prop(
     '∀r_Missing_≡Discard',
-    { of: [Arbitrary.Constant(undefined)], subject: admitIncrementalReport },
-    (subject, [report]) => {
+    { of: [Arbitrary.schema(S.String)], subject: admitIncrementalReport },
+    (subject, [expectedVersion]) => {
       const result = subject(
-        AdmitIncrementalReportCommand.make({ report, expectedVersion: EXPECTED_VERSION }),
+        AdmitIncrementalReportCommand.make({ report: undefined, expectedVersion }),
       )
       return (
         Result.isSuccess(result) &&
         S.is(IncrementalReportDiscard)(result.success) &&
         result.success.actual === undefined &&
-        result.success.expected === EXPECTED_VERSION
+        result.success.expected === expectedVersion
       )
     },
   )

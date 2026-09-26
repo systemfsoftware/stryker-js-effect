@@ -53,7 +53,7 @@ const MODULE_ARB: Arbitrary.Arbitrary<ModuleSpec> = Arbitrary.all({
         label,
         testIds,
         mutants: specs.map((spec, index) => ({
-          id: `m${index}`,
+          id: `${index}`,
           status: spec.status,
           killingIds: testIds.slice(0, spec.reach),
         })),
@@ -72,7 +72,7 @@ const reportOf = (spec: ModuleSpec): Report.MutationTestResult => ({
       language: 'typescript',
       source: 'const marker = true',
       mutants: spec.mutants.map((mutant) => ({
-        id: mutant.id,
+        id: Mutant.MutantId.make(mutant.id),
         mutatorName: 'BooleanLiteral',
         replacement: 'false',
         status: mutant.status,
@@ -149,7 +149,7 @@ describe('mergeReportParts', () => {
   )
 
   it.prop(
-    '∀cs_Modules_≡MergedKeysCarryTheModuleThatOwnsThem',
+    '∀cs_Modules_≡MergedFileKeysCarryModuleWithDecimalIds',
     { of: [DISTINCT_MODULES_ARB], subject: mergeReportParts },
     (subject, [specs]) => {
       const merged = mergedOf(subject(commandOf(specs)))
@@ -158,11 +158,10 @@ describe('mergeReportParts', () => {
       }
       const labels = new Set(specs.map((spec) => spec.label))
       const entries = Object.entries(merged.report.files)
+      const ids = entries.flatMap(([, file]) => file.mutants.map((mutant) => mutant.id))
       return entries.length === specs.length &&
-        entries.every(([key, file]) =>
-          labels.has(key.slice(0, key.indexOf('/'))) &&
-          file.mutants.every((mutant) => mutant.id.startsWith(`${key.slice(0, key.indexOf('/'))}_`))
-        )
+        entries.every(([key]) => labels.has(key.slice(0, key.indexOf('/')))) &&
+        ids.every((id) => S.is(Mutant.MutantId)(id))
     },
   )
 

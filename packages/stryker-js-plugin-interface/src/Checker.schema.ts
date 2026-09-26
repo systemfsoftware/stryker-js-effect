@@ -21,7 +21,7 @@ export const CheckResultSchema = S.Union([
 export class CheckerFailed extends S.TaggedError<CheckerFailed>()('CheckerFailed', {
   cause: S.String,
   checkerName: S.String,
-  mutantIds: S.Array(S.String),
+  mutantIds: S.Array(Mutant.MutantId),
 }) {}
 
 export interface FailedCheckResult {

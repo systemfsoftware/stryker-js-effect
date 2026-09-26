@@ -1,6 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { type Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -51,14 +51,16 @@ const readJsonReport = (input: {
     }),
   )
 
-const jsonBytesOf = (report: Report.MutationTestResult): Effect.Effect<string, Reporter.ReporterFailed> =>
+const jsonBytesOf = (
+  report: typeof Report.MutationTestResultSchema.Encoded,
+): Effect.Effect<string, Reporter.ReporterFailed> =>
   S.encodeEffect(S.fromJsonString(S.Unknown, { space: 0 }))(report).pipe(
     Effect.mapError(failAsJsonReporter),
   )
 
 const writeJsonReport = Effect.fn('stryker.report.json.write')(function*(
   rendered: {
-    readonly report: Report.MutationTestResult
+    readonly report: typeof Report.MutationTestResultSchema.Encoded
     readonly announceFileName: Option.Option<string>
   },
   raw: { readonly options: Options.StrykerOptions },

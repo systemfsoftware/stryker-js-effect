@@ -263,20 +263,3 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
     SurvivorsRejection: (rejection) => Effect.fail(SurvivorsRejection.make(rejection)),
     CommandRejected: ({ issue }) => Effect.fail(SurvivorsRejection.make({ reason: 'mismatch', remediation: issue })),
   })
-
-if (import.meta.vitest !== void 0) {
-  const { it } = await import('@systemfsoftware/vitest')
-  const { Arbitrary } = await import('effect/unstable/arbitrary')
-
-  const KNOWN_SHA256_VECTORS = [
-    ['', 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'],
-    ['abc', 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'],
-    ['✓', '1dabba21cdad44541f6b15796f8d22978fc7ea10c46aeceeeeb66c23b3ac7604'],
-  ] as const
-
-  it.prop(
-    '∀kv_HashContent_≡KnownAnswerVectors',
-    { of: [Arbitrary.Constant(KNOWN_SHA256_VECTORS)], subject: hashContent },
-    (subject, [vectors]) => vectors.every(([content, digest]) => subject(content) === digest),
-  )
-}

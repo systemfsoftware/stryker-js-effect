@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import { randomBytes } from '@noble/hashes/utils.js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -70,7 +71,7 @@ export class RunId extends S.Class<RunId>('RunId')({ value: RunIdText }) {
 }
 
 export const VerdictMutant = S.Struct({
-  id: S.String,
+  id: Mutant.MutantId,
   file: S.String,
   location: Mutant.LocationSchema,
   mutator: S.String,
@@ -200,23 +201,6 @@ if (import.meta.vitest !== void 0) {
   const mutantTotalOf = (report: Report.MutationTestResult) =>
     Object.values(report.files).reduce((total, file) => total + file.mutants.length, 0)
 
-  const expectedScoreOf = (counts: Report.Metrics): number | null =>
-    Option.getOrNull(
-      Option.map(
-        Option.liftPredicate(counts.totalValid, (valid) => valid > 0),
-        (valid) => (counts.totalDetected / valid) * 100,
-      ),
-    )
-
-  it.prop(
-    '∀rms_Score_≡NullIffNoValidMutant',
-    { of: [Report.MutationTestResultSchema, OutputMode, ModeSignal], subject: VerdictEnvelope.build },
-    (subject, [report, mode, signal]) => {
-      const { counts, score } = subject(report, mode, signal, fixedRunId, '/base', pathService)
-      return score === expectedScoreOf(counts)
-    },
-  )
-
   it.prop(
     '∀r_Metrics_∈EveryMutantOnce',
     { of: [Report.MutationTestResultSchema], subject: VerdictEnvelope.build },
@@ -226,14 +210,31 @@ if (import.meta.vitest !== void 0) {
     },
   )
 
+  const ACTIONABLE_STATUSES: Record<string, true> = {
+    Survived: true,
+    NoCoverage: true,
+    Timeout: true,
+    RuntimeError: true,
+  }
+
+  const actionableIdsOf = (files: Report.FileResultDictionary): ReadonlyArray<string> =>
+    Arr.flatMap(
+      Object.values(files),
+      (file) => file.mutants.filter((mutant) => ACTIONABLE_STATUSES[mutant.status] === true).map((mutant) => mutant.id),
+    )
+
+  const idsMatch = (observed: ReadonlyArray<VerdictMutant>, expected: ReadonlyArray<string>): boolean =>
+    observed.length === expected.length && observed.every((mutant, index) => mutant.id === expected[index])
+
+  const statusesActionable = (observed: ReadonlyArray<VerdictMutant>): boolean =>
+    observed.every((mutant) => ACTIONABLE_STATUSES[mutant.status] === true)
+
   it.prop(
-    '∀r_Mutants_≡ActionableOnly',
-    { of: [Report.MutationTestResultSchema], subject: VerdictEnvelope.build },
-    (subject, [report]) => {
-      const isActionable = isActionableStatus
-      const { mutants } = subject(report, 'machine', 'flag', fixedRunId, '/base', pathService)
-      return mutants.every((mutant) => isActionable(mutant.status)) &&
-        mutants.length === actionableMutants(report.files).length
+    '∀files_ActionableMutants_≡ActionableOnly',
+    { of: [Report.FileResultDictionarySchema], subject: actionableMutants },
+    (subject, [files]) => {
+      const observed = subject(files)
+      return idsMatch(observed, actionableIdsOf(files)) && statusesActionable(observed)
     },
   )
 

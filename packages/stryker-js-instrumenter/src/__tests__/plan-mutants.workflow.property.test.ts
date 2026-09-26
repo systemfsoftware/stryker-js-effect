@@ -4,16 +4,11 @@ import * as S from 'effect/Schema'
 
 import { type LocatedDirective, LocatedDirectiveSchema } from '../directives/directive.schema.js'
 import {
-  type MutantPlan,
   MutantsFullyIgnored,
   MutantWithoutLocation,
   planMutants,
   PlanMutantsCommand,
 } from '../plan-mutants.workflow.js'
-
-const MutantPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-instrumenter/MutantPlan')
-
-const hasBrand = (plan: MutantPlan): boolean => Object.getOwnPropertySymbols(plan).includes(MutantPlanTypeId)
 
 const reasonFromRule = (rule: readonly LocatedDirective[], mutatorName: string, line: number): string | undefined => {
   const lower = mutatorName.toLowerCase()
@@ -40,15 +35,6 @@ const silencingReason = (command: PlanMutantsCommand, mutatorName: string): stri
 }
 
 describe('planMutants', () => {
-  it.prop(
-    '∀c_Command_∈BrandedPlan',
-    { of: [PlanMutantsCommand], subject: planMutants },
-    (subject, [command]) => {
-      const planned = subject(command)
-      return Result.isSuccess(planned) ? hasBrand(planned.success) : S.is(MutantWithoutLocation)(planned.failure)
-    },
-  )
-
   it.prop(
     '∀c_Command_≡IdsRunFromTheFoldState',
     { of: [PlanMutantsCommand], subject: planMutants },

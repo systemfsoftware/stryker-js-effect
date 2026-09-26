@@ -215,7 +215,7 @@ describe('checker pool', () => {
     { of: [S.Int], subject: checkPlans },
     (subject, [seed]) =>
       Effect.gen(function*() {
-        const plans = groupPlansOf('g', seed)
+        const plans = groupPlansOf('1', seed)
         const checker = checkerServiceOf({
           group: (_checkerName, mutants) => Effect.succeed(singletonGroups(mutants)),
           check: (_checkerName, mutants) =>
@@ -234,7 +234,7 @@ describe('checker pool', () => {
     { of: [S.Int], subject: checkPlans },
     (subject, [seed]) =>
       Effect.gen(function*() {
-        const plans = groupPlansOf('f', seed)
+        const plans = groupPlansOf('2', seed)
         const inFlight = yield* Ref.make(0)
         const peak = yield* Ref.make(0)
         const slotNumbers = yield* Ref.make<ReadonlyArray<number>>([])
@@ -271,7 +271,7 @@ describe('checker pool', () => {
     { of: [S.Literals(['OutOfMemoryError', 'ChildProcessCrashedError'])], subject: checkPlans },
     (subject, [crashTag]) =>
       Effect.gen(function*() {
-        const plans = [runPlanOf('a', 1)]
+        const plans = [runPlanOf('0', 1)]
         const acquires = yield* Ref.make(0)
         const slotNumbers = yield* Ref.make<ReadonlyArray<number>>([])
         const secondTag = crashTag === 'OutOfMemoryError' ? 'ChildProcessCrashedError' : 'OutOfMemoryError'
@@ -315,7 +315,7 @@ describe('checker pool', () => {
     },
     (subject, [breachTag]) =>
       Effect.gen(function*() {
-        const plans = [runPlanOf('a', 1)]
+        const plans = [runPlanOf('0', 1)]
         const checker = checkerServiceOf({
           group: (_checkerName, mutants) => Effect.succeed(singletonGroups(mutants)),
           check: () =>
@@ -324,7 +324,11 @@ describe('checker pool', () => {
                 'CheckerFailed',
                 () =>
                   Effect.fail(
-                    Checker.CheckerFailed.make({ cause: 'the checker refused', checkerName: 'c', mutantIds: ['a'] }),
+                    Checker.CheckerFailed.make({
+                      cause: 'the checker refused',
+                      checkerName: 'c',
+                      mutantIds: [Mutant.MutantId.make('0')],
+                    }),
                   ),
               ),
               Match.when('CheckerAnsweredUnrequested', () => Effect.succeed({ 'not-requested': { status: 'passed' } })),

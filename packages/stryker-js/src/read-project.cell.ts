@@ -1,6 +1,6 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Equivalence from 'effect/Equivalence'
@@ -17,7 +17,7 @@ import * as Stream from 'effect/Stream'
 import { admitDiscoveredEntry, DiscoveredEntryCommand, EntryIncluded } from './admit-discovered-entry.workflow.js'
 import { admitIncrementalReport, AdmitIncrementalReportCommand } from './admit-incremental-report.workflow.js'
 import { defaultOptions } from './config/default-options.js'
-import { IncrementalReportSchema } from './IncrementalReport.schema.js'
+import { type IncrementalReport, IncrementalReportSchema } from './IncrementalReport.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFilesDiscovered, ProjectSelectionCommand, selectProjectFiles } from './select-project-files.workflow.js'
 import { StrykerPackage } from './stryker-package.schema.js'
@@ -327,7 +327,7 @@ const addProjectFile = (
 
 const makeProject = (
   fileDescriptions: Instrument.FileDescriptions,
-  incrementalReport?: Report.MutationTestResult,
+  incrementalReport?: IncrementalReport,
   testFiles: readonly string[] = [],
 ): Project => {
   const files: MutableHashMap.MutableHashMap<string, ProjectFile> = MutableHashMap.empty<string, ProjectFile>()
@@ -341,7 +341,7 @@ export const projectOf = ({
   report,
 }: {
   readonly command: ReadProjectCommand
-  readonly report: Report.MutationTestResult | undefined
+  readonly report: IncrementalReport | undefined
 }): ReadProjectDone => ({
   options: command.options,
   targetMutatePatterns: command.targetMutatePatterns,

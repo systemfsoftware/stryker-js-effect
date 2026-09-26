@@ -6,11 +6,6 @@ import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { DryRunComplete, DryRunExternalError, interpretVitestDryRun } from '../interpret-vitest-dry-run.workflow.js'
 import { VitestDryRunCommand } from '../vitest-run-command.schema.js'
 
-const VITEST_DRY_RUN_FAMILY = Symbol.for('@systemfsoftware/stryker-js-vitest-runner/VitestDryRun')
-
-const carriesFamilyBrand = (decision: object): boolean =>
-  Reflect.get(decision, VITEST_DRY_RUN_FAMILY) === VITEST_DRY_RUN_FAMILY
-
 const withTests = (
   input: VitestDryRunCommand,
   tests: readonly TestRunner.TestResult[],
@@ -50,7 +45,7 @@ describe('interpretVitestDryRun', (it) => {
       if (!S.is(DryRunComplete)(result.success)) {
         return false
       }
-      return carriesFamilyBrand(result.success) && result.success.tests.some((test) => test.id === failed.id)
+      return result.success.tests.some((test) => test.id === failed.id)
     },
   )
 
@@ -71,10 +66,7 @@ describe('interpretVitestDryRun', (it) => {
       if (!S.is(DryRunExternalError)(result.success)) {
         return false
       }
-      return (
-        carriesFamilyBrand(result.success) &&
-        result.success.errorMessage === `An error occurred outside of a test run: ${input.externalErrorText}`
-      )
+      return result.success.errorMessage === `An error occurred outside of a test run: ${input.externalErrorText}`
     },
   )
 })

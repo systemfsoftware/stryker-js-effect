@@ -1,3 +1,4 @@
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect } from 'effect'
 import * as S from 'effect/Schema'
 
@@ -11,7 +12,7 @@ export const VitestRunnerOptionsSchema = S.Struct({
   configFile: S.optional(S.String),
   pool: S.optional(S.Literal('threads')),
   timeoutTrapFile: S.optional(S.String),
-  timeoutTrapMutantId: S.optional(S.String),
+  timeoutTrapMutantId: S.optional(Mutant.MutantId),
 })
 
 export type VitestRunnerOptions = S.Schema.Type<typeof VitestRunnerOptionsSchema>

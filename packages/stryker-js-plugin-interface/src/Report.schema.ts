@@ -5,7 +5,7 @@ import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { NonNegativeFinite, NonNegativeInt, Percentage } from './Metrics.schema.js'
 
 export const MutantResultSchema = S.Struct({
-  id: S.String,
+  id: Mutant.MutantId,
   mutatorName: S.String,
   status: Mutant.MutantStatusSchema,
   location: Mutant.LocationSchema,

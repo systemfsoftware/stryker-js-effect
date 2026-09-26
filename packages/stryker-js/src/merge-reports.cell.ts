@@ -15,6 +15,7 @@ import * as Stream from 'effect/Stream'
 import type { MergeReportsRequest } from './Cli.schema.js'
 import {
   DuplicatePackageLabel,
+  MergedReports,
   mergeReportParts,
   MergeReportPartsCommand,
   MergeSurvivor as MergeSurvivorSchema,
@@ -404,15 +405,12 @@ const readMerge = Effect.fn('stryker.merge_reports.gather')(function*(request: M
 })
 
 const writeMergedReports = Effect.fn('stryker.merge_reports.write_merged')(function*(
-  merged: {
-    readonly rows: readonly VerdictRow[]
-    readonly survivors: readonly Survivor[]
-    readonly report: MutationReport
-  },
+  merged: typeof MergedReports.Encoded,
   raw: MergeCommand,
 ) {
+  const report = yield* S.decodeEffect(Report.MutationTestResultSchema)(merged.report).pipe(Effect.orDie)
   return yield* writeEncoded({
-    body: encodeMerge({ decoded: raw, rows: merged.rows, survivors: merged.survivors, report: merged.report }),
+    body: encodeMerge({ decoded: raw, rows: merged.rows, survivors: merged.survivors, report }),
     raw,
   })
 })

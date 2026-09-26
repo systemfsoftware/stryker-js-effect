@@ -88,7 +88,7 @@ type CheckerWireEncoded = typeof Plugin.CheckerRequest.Encoded
 type CheckerMutantEncoded = CheckerWireEncoded['mutants'][number]
 
 const identityEncoded: CheckerMutantEncoded = {
-  id: 'mutant-1',
+  id: '1',
   fileName: 'src/core.ts',
   mutatorName: 'ArithmeticOperator',
   replacement: '-',
@@ -113,7 +113,7 @@ Feature('Verifying mutants through an external checker worker')
           'response',
           (s) => {
             const mutant: Checker.CheckerMutantWire = {
-              id: Mutant.MutantId.make('mutant-1'),
+              id: Mutant.MutantId.make('1'),
               fileName: Mutant.CanonicalFileName.make('src/core.ts'),
               mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
               replacement: '-',
@@ -135,7 +135,7 @@ Feature('Verifying mutants through an external checker worker')
           Effect.gen(function*() {
             const received = yield* Ref.get(s.harness.receivedRef)
             return {
-              status: s.response['mutant-1']?.status,
+              status: s.response['1']?.status,
               receivedCount: received.length,
               received: received.map((mutant) => ({
                 id: mutant.id,
@@ -150,7 +150,7 @@ Feature('Verifying mutants through an external checker worker')
               receivedCount: 1,
               received: [
                 {
-                  id: 'mutant-1',
+                  id: '1',
                   fileName: 'src/core.ts',
                   replacement: '-',
                   location: { start: { line: 10, column: 5 }, end: { line: 10, column: 6 } },

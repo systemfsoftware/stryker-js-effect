@@ -1,60 +1,73 @@
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
-  type ProgressBarState,
   ProgressBarTick,
   ProgressChunkSuppressed,
   ProgressLineBreak,
   ProgressReportCommand,
   type ProgressState,
-  type ProgressTally,
   renderProgressReport,
 } from '../render-progress-report.workflow.js'
 import { MetricsResultFromReport } from '../reporting/metrics-from-report.schema.js'
 
-const tallyOf = (over: Partial<ProgressTally> = {}): ProgressTally => ({
-  survived: 0,
-  timedOut: 0,
-  tested: 0,
-  mutants: 1,
-  total: 10,
-  ticks: 0,
-  ticksByMutantId: {},
-  timing: { net: 0, overhead: 0 },
-  capabilities: { reloadEnvironment: false },
-  startedAt: 0,
-  ...over,
+const countArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 1000 })))
+const widthArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 200 })))
+const tickArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 1000 })))
+const ticksByMutantIdArb = Arbitrary.schema(S.Record(Mutant.MutantId, S.Int))
+const textArb = Arbitrary.schema(S.String)
+const nowArb = Arbitrary.schema(S.Int)
+
+const tallyArb = Arbitrary.all({
+  survived: countArb,
+  timedOut: countArb,
+  tested: countArb,
+  mutants: countArb,
+  total: countArb,
+  ticks: countArb,
+  ticksByMutantId: ticksByMutantIdArb,
+  timing: Arbitrary.all({ net: countArb, overhead: countArb }),
+  capabilities: Arbitrary.schema(S.Struct({ reloadEnvironment: S.Boolean })),
+  startedAt: countArb,
 })
 
-const barOf = (over: Partial<ProgressBarState> = {}): ProgressBarState => ({
-  format: 'Mutation testing  [:bar] :percent :tested/:mutants',
-  total: 10,
-  curr: 0,
-  width: 10,
-  complete: '=',
-  incomplete: ' ',
-  ...over,
+const barArb = Arbitrary.all({
+  format: textArb,
+  total: countArb,
+  curr: countArb,
+  width: widthArb,
+  complete: textArb,
+  incomplete: textArb,
 })
 
-const stateOf = (bar: ProgressBarState | null, over: Partial<ProgressTally> = {}): ProgressState => ({
-  tally: tallyOf(over),
-  bar,
+const nullableBarArb = Arbitrary.all([Arbitrary.schema(S.Boolean), barArb]).pipe(
+  Arbitrary.map(([absent, bar]) => (absent ? null : bar)),
+)
+
+const mutantTestedArb = Arbitrary.schema(Reporter.MutantTested)
+
+const planDescriptorArb = Arbitrary.all({
+  mutantId: Arbitrary.schema(Mutant.MutantId),
+  plan: Arbitrary.schema(S.Literals(['EarlyResult', 'Run'])),
+  netTime: countArb,
+  reloadEnvironment: Arbitrary.schema(S.Boolean),
 })
 
-const testedMutant = (id: string, completed: number) =>
-  Reporter.MutantTested.make({
-    id,
-    status: 'Killed',
-    file: 'src/a.ts',
-    location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
-    mutator: 'EqualityOperator',
-    replacement: '!=',
-    completed,
-    total: 10,
-  })
+const planReadyArb = Arbitrary.all({
+  total: countArb,
+  plans: Arbitrary.array(planDescriptorArb, { maxLength: 4 }),
+}).pipe(Arbitrary.map(({ total, plans }) => Reporter.MutationTestingPlanReady.make({ total, plans })))
+
+const dryRunArb = Arbitrary.schema(Reporter.DryRunCompleted)
+
+const sameJson = <Value>(left: Value, right: Value): boolean => JSON.stringify(left) === JSON.stringify(right)
+
+const commandOf = (state: ProgressState, now: number, event: Reporter.ReporterEvent | undefined) =>
+  ProgressReportCommand.make({ state, now, event })
 
 const emptyReport = () =>
   Reporter.MutationTestReportReady.make({
@@ -62,107 +75,161 @@ const emptyReport = () =>
     metrics: MetricsResultFromReport.fromFiles({}),
   })
 
-const commandOf = (state: ProgressState, now: number, event: Reporter.ReporterEvent | undefined) =>
-  ProgressReportCommand.make({ state, now, event })
+const finalizeCommandArb = Arbitrary.all([tallyArb, nullableBarArb, nowArb]).pipe(
+  Arbitrary.map(([tally, bar, now]) => commandOf({ tally, bar }, now, undefined)),
+)
+
+const unknownMutantCommandArb = Arbitrary.all([mutantTestedArb, tallyArb, nullableBarArb, nowArb]).pipe(
+  Arbitrary.map(([event, tally, bar, now]) => {
+    const ticksByMutantId = Object.fromEntries(
+      Object.entries(tally.ticksByMutantId).filter(([id]) => id !== event.id),
+    )
+    return commandOf({ tally: { ...tally, ticksByMutantId }, bar }, now, event)
+  }),
+)
+
+const knownMutantCommandArb = Arbitrary.all([
+  mutantTestedArb,
+  tickArb,
+  tallyArb,
+  barArb,
+  nowArb,
+]).pipe(
+  Arbitrary.map(([event, ticks, tally, bar, now]) =>
+    commandOf(
+      { tally: { ...tally, ticksByMutantId: { ...tally.ticksByMutantId, [event.id]: ticks } }, bar },
+      now,
+      event,
+    )
+  ),
+)
+
+const reportReadyCommandArb = Arbitrary.all([tallyArb, nullableBarArb, nowArb]).pipe(
+  Arbitrary.map(([tally, bar, now]) => commandOf({ tally, bar }, now, emptyReport())),
+)
+
+const dryRunCommandArb = Arbitrary.all([dryRunArb, tallyArb, nullableBarArb, nowArb]).pipe(
+  Arbitrary.map(([event, tally, bar, now]) => commandOf({ tally, bar }, now, event)),
+)
+
+const planReadyCommandArb = Arbitrary.all([planReadyArb, tallyArb, nullableBarArb, nowArb]).pipe(
+  Arbitrary.map(([event, tally, bar, now]) => commandOf({ tally, bar }, now, event)),
+)
 
 describe('renderProgressReport', () => {
   it.prop(
-    '∀n_NullBarFinalize_≡Suppressed',
-    { of: [S.Int], subject: renderProgressReport },
-    (subject, [now]) => {
-      const result = subject(commandOf(stateOf(null), now, undefined))
-      return Result.isSuccess(result) && S.is(ProgressChunkSuppressed)(result.success) &&
-        result.success.state.bar === null
-    },
-  )
-
-  it.prop(
-    '∀n_IncompleteBarFinalize_≡LineBreak',
-    { of: [S.Int], subject: renderProgressReport },
-    (subject, [now]) => {
-      const result = subject(commandOf(stateOf(barOf({ curr: 1 })), now, undefined))
-      return Result.isSuccess(result) && S.is(ProgressLineBreak)(result.success) &&
+    '∀s_FinalizeState_≡SuppressedUnlessBarIncomplete',
+    { of: [finalizeCommandArb], subject: renderProgressReport },
+    (subject, [command]) => {
+      const result = subject(command)
+      if (!Result.isSuccess(result)) {
+        return false
+      }
+      const bar = command.state.bar
+      if (bar === null || bar.curr >= bar.total) {
+        return S.is(ProgressChunkSuppressed)(result.success) && sameJson(result.success.state, command.state)
+      }
+      return S.is(ProgressLineBreak)(result.success) &&
         result.success.chunk === '\n' &&
-        result.success.state.bar?.curr === 1
+        sameJson(result.success.state, command.state)
     },
   )
 
   it.prop(
-    '∀n_CompleteBarFinalize_≡Suppressed',
-    { of: [S.Int], subject: renderProgressReport },
-    (subject, [now]) => {
-      const result = subject(commandOf(stateOf(barOf({ curr: 10, total: 10 })), now, undefined))
-      return Result.isSuccess(result) && S.is(ProgressChunkSuppressed)(result.success) &&
-        result.success.state.bar?.curr === 10
-    },
+    '∀e_UnknownMutant_≡SuppressedAndStateUnchanged',
+    { of: [unknownMutantCommandArb], subject: renderProgressReport },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (decision) => S.is(ProgressChunkSuppressed)(decision) && sameJson(decision.state, command.state),
+      }),
   )
 
   it.prop(
-    '∀n_UnknownMutant_≡Suppressed',
-    { of: [S.Int], subject: renderProgressReport },
-    (subject, [now]) => {
-      const result = subject(commandOf(stateOf(barOf()), now, testedMutant('unknown', 1)))
-      return Result.isSuccess(result) && S.is(ProgressChunkSuppressed)(result.success) &&
-        result.success.state.tally.ticks === 0
-    },
+    '∀e_KnownMutant_≡TickAdvancesTallyAndBar',
+    { of: [knownMutantCommandArb], subject: renderProgressReport },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (decision) => {
+          const event = command.event
+          const bar = command.state.bar
+          if (
+            !S.is(Reporter.MutantTested)(event) ||
+            !S.is(ProgressBarTick)(decision) ||
+            bar === null
+          ) {
+            return false
+          }
+          const plannedTicks = command.state.tally.ticksByMutantId[event.id]
+          if (typeof plannedTicks !== 'number') {
+            return false
+          }
+          const survived = event.status === 'Survived' ? 1 : 0
+          const timedOut = event.status === 'Timeout' ? 1 : 0
+          return decision.state.tally.ticks === command.state.tally.ticks + plannedTicks &&
+            decision.state.tally.tested === event.completed &&
+            decision.state.tally.survived === command.state.tally.survived + survived &&
+            decision.state.tally.timedOut === command.state.tally.timedOut + timedOut &&
+            decision.state.bar !== null &&
+            decision.state.bar.curr === bar.curr + plannedTicks
+        },
+      }),
   )
 
   it.prop(
-    '∀n_KnownMutant_≡TickAdvancesTally',
-    { of: [S.Int, S.Int.check(S.isGreaterThanOrEqualTo(1))], subject: renderProgressReport },
-    (subject, [now, ticks]) => {
-      const state = stateOf(barOf(), { ticksByMutantId: { 'm-1': ticks } })
-      const result = subject(commandOf(state, now, testedMutant('m-1', 2)))
-      return Result.isSuccess(result) && S.is(ProgressBarTick)(result.success) &&
-        result.success.state.tally.ticks === ticks &&
-        result.success.state.tally.tested === 2 &&
-        result.success.state.bar?.curr === ticks
-    },
+    '∀e_ReportReady_≡SuppressedAndStateUnchanged',
+    { of: [reportReadyCommandArb], subject: renderProgressReport },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (decision) => S.is(ProgressChunkSuppressed)(decision) && sameJson(decision.state, command.state),
+      }),
   )
 
   it.prop(
-    '∀n_ReportReady_≡Suppressed',
-    { of: [S.Int], subject: renderProgressReport },
-    (subject, [now]) => {
-      const result = subject(commandOf(stateOf(barOf()), now, emptyReport()))
-      return Result.isSuccess(result) && S.is(ProgressChunkSuppressed)(result.success) &&
-        result.success.state.bar?.curr === 0
-    },
+    '∀e_DryRunCompleted_≡RecordsTimingAndCapabilities',
+    { of: [dryRunCommandArb], subject: renderProgressReport },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (decision) => {
+          const event = command.event
+          if (!S.is(Reporter.DryRunCompleted)(event)) {
+            return false
+          }
+          return S.is(ProgressChunkSuppressed)(decision) &&
+            sameJson(decision.state.tally.timing, event.timing) &&
+            decision.state.tally.capabilities.reloadEnvironment === event.capabilities.reloadEnvironment &&
+            sameJson(decision.state.bar, command.state.bar) &&
+            decision.state.tally.ticks === command.state.tally.ticks
+        },
+      }),
   )
 
   it.prop(
-    '∀n_DryRunCompleted_≡RecordsTiming',
-    { of: [S.Int], subject: renderProgressReport },
-    (subject, [now]) => {
-      const event = Reporter.DryRunCompleted.make({
-        timing: { net: 7, overhead: 3 },
-        capabilities: { reloadEnvironment: true },
-        testCount: 2,
-        tests: [],
-      })
-      const result = subject(commandOf(stateOf(barOf()), now, event))
-      return Result.isSuccess(result) && S.is(ProgressChunkSuppressed)(result.success) &&
-        result.success.state.tally.timing.net === 7 &&
-        result.success.state.tally.capabilities.reloadEnvironment
-    },
-  )
-
-  it.prop(
-    '∀n_PlanReady_≡BarFromRunPlans',
-    { of: [S.Int, S.Int.check(S.isGreaterThanOrEqualTo(1))], subject: renderProgressReport },
-    (subject, [now, netTime]) => {
-      const event = Reporter.MutationTestingPlanReady.make({
-        total: 2,
-        plans: [
-          { mutantId: 'm-1', plan: 'Run', netTime, reloadEnvironment: false },
-          { mutantId: 'm-2', plan: 'EarlyResult', netTime: 99, reloadEnvironment: false },
-        ],
-      })
-      const result = subject(commandOf(stateOf(barOf()), now, event))
-      return Result.isSuccess(result) && S.is(ProgressChunkSuppressed)(result.success) &&
-        result.success.state.tally.mutants === 1 &&
-        result.success.state.bar?.total === netTime &&
-        result.success.state.tally.startedAt === now
-    },
+    '∀e_PlanReady_≡BarKeyedByRunPlans',
+    { of: [planReadyCommandArb], subject: renderProgressReport },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (decision) => {
+          const event = command.event
+          const bar = decision.state.bar
+          if (!S.is(Reporter.MutationTestingPlanReady)(event) || bar === null) {
+            return false
+          }
+          const runIds = event.plans.filter((plan) => plan.plan === 'Run').map((plan) => plan.mutantId)
+          const keys = Object.keys(decision.state.tally.ticksByMutantId)
+          const uniqueRunIds = runIds.filter((id, index) => runIds.indexOf(id) === index)
+          const total = Object.values(decision.state.tally.ticksByMutantId).reduce((sum, ticks) => sum + ticks, 0)
+          return S.is(ProgressChunkSuppressed)(decision) &&
+            JSON.stringify([...keys].sort()) === JSON.stringify([...uniqueRunIds].sort()) &&
+            decision.state.tally.mutants === keys.length &&
+            decision.state.tally.startedAt === command.now &&
+            bar.total === total &&
+            bar.curr === 0
+        },
+      }),
   )
 })

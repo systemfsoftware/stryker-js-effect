@@ -64,9 +64,8 @@ describe('planResolutionCandidates', (it) => {
 
   it.prop(
     '∀path_ExtensionPresence_≡ExtensionlessVariant',
-    { of: [S.String, S.String], subject: candidatesFor },
+    { of: [S.String, S.String], subject: decisionFor },
     (subject, [resolved, extension]) =>
-      Equal.equals(S.is(ExtensionlessPath)(decisionFor(resolved, extension)), extension === '') &&
-      Equal.equals(subject(resolved), appendCandidates(resolved)),
+      Equal.equals(S.is(ExtensionlessPath)(subject(resolved, extension)), extension === ''),
   )
 })

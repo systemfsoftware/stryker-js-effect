@@ -40,6 +40,17 @@ const testFilesOf = (select: typeof selectProjectFiles, command: ProjectSelectio
 
 describe('selectProjectFiles', () => {
   it.prop(
+    '∀c_EmptyInputs_≡NoneDiscovered',
+    { of: [ProjectSelectionCommand], subject: selectProjectFiles },
+    (subject, [command]) =>
+      command.inputFileNames.length > 0 ||
+      Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (decision) => S.is(ProjectFilesNoneDiscovered)(decision),
+      }),
+  )
+
+  it.prop(
     '∀fs_Selection_≡ExclusionRefusesExcludedFiles',
     { of: [Arbitrary.all({ a: segmentArb, b: segmentArb, c: segmentArb })], subject: selectProjectFiles },
     (subject, [draw]) => {
@@ -128,18 +139,6 @@ describe('selectProjectFiles', () => {
         }),
       )
       return testFiles !== undefined && [...testFiles].sort().join('\n') === [testFile].sort().join('\n')
-    },
-  )
-
-  it.prop(
-    '∀p_EmptyInput_≡NoneDiscovered',
-    { of: [Arbitrary.Constant('/')], subject: selectProjectFiles },
-    (subject, [basePath]) => {
-      const decision = decisionOf(
-        subject,
-        ProjectSelectionCommand.make({ inputFileNames: [], mutatePatterns: [], testFilePatterns: [], basePath }),
-      )
-      return decision !== undefined && S.is(ProjectFilesNoneDiscovered)(decision)
     },
   )
 })

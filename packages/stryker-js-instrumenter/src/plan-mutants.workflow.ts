@@ -4,6 +4,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type { Position } from './Location.schema.js'
+import { MutantId } from './Mutant.schema.js'
 
 import { type LocatedDirective, LocatedDirectiveSchema, type UnusedDirective } from './directives/directive.schema.js'
 import { NodePositionSchema, SourceLineSchema } from './Instrument.schema.js'
@@ -22,7 +23,7 @@ export const MutantCandidateSchema = S.Struct({
 export type MutantCandidate = typeof MutantCandidateSchema.Type
 
 const PlannedMutantSchema = S.Struct({
-  id: S.String,
+  id: MutantId,
   mutatorName: S.String,
   replacementCode: S.String,
   location: LocationSchema,
@@ -198,7 +199,7 @@ const plannedMutant = (
       Result.fail(MutantWithoutLocation.make({ fileName: command.fileName, mutatorName: candidate.mutatorName })),
     onSome: (location) =>
       Result.succeed({
-        id: `${command.firstIndex + index}`,
+        id: PlannedMutantSchema.fields.id.make(`${command.firstIndex + index}`),
         mutatorName: candidate.mutatorName,
         replacementCode: candidate.replacementCode,
         location: shiftedLocation(location, command.offset),

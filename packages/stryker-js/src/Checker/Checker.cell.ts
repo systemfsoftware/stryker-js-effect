@@ -45,7 +45,7 @@ const compileErrorAnswersOf = (undescribable: readonly UndescribableMutant[]) =>
 
 const singletonGroupsOf = (undescribable: readonly UndescribableMutant[]) => undescribable.map((mutant) => [mutant.id])
 
-const undescribableIdsOf = (undescribable: readonly UndescribableMutant[]) =>
+const undescribableIdsOf = (undescribable: readonly UndescribableMutant[]): ReadonlySet<string> =>
   new Set(undescribable.map((mutant) => mutant.id))
 
 interface WireLookup {
@@ -203,7 +203,7 @@ const commandFailed = (issue: string, input: CheckRaw) =>
   Checker.CheckerFailed.make({
     cause: issue,
     checkerName: input.checkerName,
-    mutantIds: input.requestedIds,
+    mutantIds: input.plans.map((plan) => plan.mutant.id),
   })
 
 const checkCell = Sandwich.named('stryker.checker.check_plans')(readCheckCommand)

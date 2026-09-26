@@ -5,18 +5,10 @@ import * as S from 'effect/Schema'
 import {
   MutantKindMismatch,
   NoPlacerClaimsNode,
-  type PlacementDecision,
   type PlacementFacts,
   placeMutants,
   PlaceMutantsCommand,
 } from '../place-mutants.workflow.js'
-
-const PlacementDecisionTypeId: unique symbol = Symbol.for(
-  '@systemfsoftware/stryker-js-instrumenter/PlacementDecision',
-)
-
-const hasBrand = (site: PlacementDecision): boolean =>
-  Object.getOwnPropertySymbols(site).includes(PlacementDecisionTypeId)
 
 const claimingFamily = (facts: PlacementFacts): 'expression' | 'statement' | 'switch-case' | undefined => {
   if (facts.isExpression && facts.expressionIsValid) {
@@ -32,17 +24,6 @@ const claimingFamily = (facts: PlacementFacts): 'expression' | 'statement' | 'sw
 }
 
 describe('placeMutants', () => {
-  it.prop(
-    '∀c_Command_∈BrandedPlacement',
-    { of: [PlaceMutantsCommand], subject: placeMutants },
-    (subject, [command]) => {
-      const decided = subject(command)
-      return Result.isSuccess(decided)
-        ? hasBrand(decided.success)
-        : S.is(NoPlacerClaimsNode)(decided.failure) || S.is(MutantKindMismatch)(decided.failure)
-    },
-  )
-
   it.prop(
     '∀c_Command_≡SitedOrRefused',
     { of: [PlaceMutantsCommand], subject: placeMutants },

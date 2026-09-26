@@ -1,5 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Plugin as StrykerPlugin, RunEvent, type Worker as StrykerWorker } from '@systemfsoftware/stryker-js'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options, type Plugin, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
@@ -33,7 +34,7 @@ const markerReport = (): Report.MutationTestResult => ({
       source: 'export const marker = true',
       mutants: [
         {
-          id: '0',
+          id: Mutant.MutantId.make('0'),
           mutatorName: 'BooleanLiteral',
           replacement: 'false',
           status: 'Killed',
@@ -51,7 +52,7 @@ const metricsFixture = (report: Report.MutationTestResult) => RunEvent.MetricsRe
 
 const killedMutant = (index: number, total: number): Reporter.MutantTested =>
   Reporter.MutantTested.make({
-    id: String(index),
+    id: Mutant.MutantId.make(String(index)),
     status: 'Killed',
     file: MARKER_FILE,
     location,
@@ -72,7 +73,7 @@ const completedRun = (): readonly Reporter.ReporterEvent[] => {
     }),
     Reporter.MutationTestingPlanReady.make({
       total: 1,
-      plans: [{ mutantId: '0', plan: 'Run', netTime: 1, reloadEnvironment: false }],
+      plans: [{ mutantId: Mutant.MutantId.make('0'), plan: 'Run', netTime: 1, reloadEnvironment: false }],
     }),
     killedMutant(1, 1),
     Reporter.MutationTestReportReady.make({ report, metrics: metricsFixture(report) }),

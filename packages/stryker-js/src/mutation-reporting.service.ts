@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import { Format, Mutant as InstrumenterMutant } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type Checker,

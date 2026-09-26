@@ -1,3 +1,4 @@
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
 export const PriorReportDocument = S.Struct({
@@ -9,7 +10,7 @@ export const PriorReportDocument = S.Struct({
       source: S.String,
       mutants: S.Array(
         S.Struct({
-          id: S.String,
+          id: Mutant.MutantId,
           mutatorName: S.String,
           replacement: S.optional(S.String),
           status: S.String,

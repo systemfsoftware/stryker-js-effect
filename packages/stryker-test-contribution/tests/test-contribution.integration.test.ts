@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Judge, TestContribution } from '@systemfsoftware/stryker-test-contribution'
 import * as Effect from 'effect/Effect'
@@ -13,7 +13,7 @@ const Feature = makeFeature({ it })
 const LOCATION = { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } }
 
 const mutantOf = (
-  id: string,
+  id: Mutant.MutantId,
   status: Mutant.MutantStatus,
   killedBy?: string[],
   coveredBy?: string[],
@@ -74,8 +74,8 @@ const defaultSuffixes: readonly string[] = Judge.JudgeTestContribution.defaultRe
 const earnsAndIdleReport = (): Pick<Report.MutationTestResult, 'files' | 'testFiles'> =>
   reportOf(
     [
-      mutantOf('m1', 'Killed', ['t1', 't2'], ['t1', 't2']),
-      mutantOf('m2', 'Killed', ['t1'], ['t1']),
+      mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1', 't2'], ['t1', 't2']),
+      mutantOf(Mutant.MutantId.make('2'), 'Killed', ['t1'], ['t1']),
     ],
     { 'earns.property.test.ts': ['t1'], 'idle.property.test.ts': ['t2'] },
   )
@@ -88,7 +88,7 @@ Feature('Judging test contribution under the test-contribution gate')
       Gherkin.Do.pipe(
         Given('a mutant killed by one file and another file covering nothing')('report', () =>
           Effect.succeed(
-            reportOf([mutantOf('m1', 'Killed', ['t1'])], {
+            reportOf([mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'])], {
               'a.property.test.ts': ['t1'],
               'b.property.test.ts': ['t2'],
             }),
@@ -111,7 +111,7 @@ Feature('Judging test contribution under the test-contribution gate')
       Gherkin.Do.pipe(
         Given('a report killed jointly by two files')('report', () =>
           Effect.succeed(
-            reportOf([mutantOf('m1', 'Killed', ['t1', 't2'])], {
+            reportOf([mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1', 't2'])], {
               'a.property.test.ts': ['t1'],
               'b.property.test.ts': ['t2'],
             }),
@@ -134,7 +134,9 @@ Feature('Judging test contribution under the test-contribution gate')
       Gherkin.Do.pipe(
         Given('a kill whose co-killer is not in any test file')('report', () =>
           Effect.succeed(
-            reportOf([mutantOf('m1', 'Killed', ['t1', 'ghost'])], { 'a.property.test.ts': ['t1'] }),
+            reportOf([mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1', 'ghost'])], {
+              'a.property.test.ts': ['t1'],
+            }),
           )),
         When('contribution is computed per file')(
           'contribution',
@@ -153,7 +155,10 @@ Feature('Judging test contribution under the test-contribution gate')
       Gherkin.Do.pipe(
         Given('a timeout mutant with a recorded killing test')(
           'report',
-          () => Effect.succeed(reportOf([mutantOf('m1', 'Timeout', ['t1'])], { 'a.property.test.ts': ['t1'] })),
+          () =>
+            Effect.succeed(
+              reportOf([mutantOf(Mutant.MutantId.make('1'), 'Timeout', ['t1'])], { 'a.property.test.ts': ['t1'] }),
+            ),
         ),
         When('contribution is computed per file')(
           'contribution',
@@ -172,7 +177,7 @@ Feature('Judging test contribution under the test-contribution gate')
       Gherkin.Do.pipe(
         Given('a report with a surviving mutant')('report', () =>
           Effect.succeed(
-            reportOf([mutantOf('m1', 'Survived', ['t1'])], { 'a.property.test.ts': ['t1'] }),
+            reportOf([mutantOf(Mutant.MutantId.make('1'), 'Survived', ['t1'])], { 'a.property.test.ts': ['t1'] }),
           )),
         When('contribution is computed per file')(
           'contribution',
@@ -191,7 +196,8 @@ Feature('Judging test contribution under the test-contribution gate')
       Gherkin.Do.pipe(
         Given('a killed mutant with no recorded killing test')(
           'report',
-          () => Effect.succeed(reportOf([mutantOf('m1', 'Killed')], { 'a.property.test.ts': ['t1'] })),
+          () =>
+            Effect.succeed(reportOf([mutantOf(Mutant.MutantId.make('1'), 'Killed')], { 'a.property.test.ts': ['t1'] })),
         ),
         When('contribution is computed per file')(
           'contribution',
@@ -248,7 +254,7 @@ Feature('Judging test contribution under the test-contribution gate')
           'a report with a file that killed nothing at all',
         )('report', () =>
           Effect.succeed(
-            reportOf([mutantOf('m1', 'Killed', ['t1'], ['t1', 't2'])], {
+            reportOf([mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1', 't2'])], {
               'earns.property.test.ts': ['t1'],
               'idle.property.test.ts': ['t2'],
             }),
@@ -270,7 +276,10 @@ Feature('Judging test contribution under the test-contribution gate')
           'a file covering a timeout whose killing test was never named',
         )('report', () =>
           Effect.succeed(
-            reportOf([mutantOf('m1', 'Killed', ['t1'], ['t1']), mutantOf('m2', 'Timeout', [], ['t2'])], {
+            reportOf([
+              mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1']),
+              mutantOf(Mutant.MutantId.make('2'), 'Timeout', [], ['t2']),
+            ], {
               'earns.property.test.ts': ['t1'],
               'hangs.property.test.ts': ['t2'],
             }),
@@ -291,7 +300,10 @@ Feature('Judging test contribution under the test-contribution gate')
         )('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1', 't3']), mutantOf('m2', 'Timeout', [], ['t2'])],
+              [
+                mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1', 't3']),
+                mutantOf(Mutant.MutantId.make('2'), 'Timeout', [], ['t2']),
+              ],
               {
                 'earns.property.test.ts': ['t1'],
                 'hangs.property.test.ts': ['t2'],
@@ -316,7 +328,10 @@ Feature('Judging test contribution under the test-contribution gate')
           'a timeout mutant whose killedBy is absent rather than an empty array',
         )('report', () =>
           Effect.succeed(
-            reportOf([mutantOf('m1', 'Killed', ['t1'], ['t1']), mutantOf('m2', 'Timeout', undefined, ['t2'])], {
+            reportOf([
+              mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1']),
+              mutantOf(Mutant.MutantId.make('2'), 'Timeout', undefined, ['t2']),
+            ], {
               'earns.property.test.ts': ['t1'],
               'hangs.property.test.ts': ['t2'],
             }),
@@ -336,7 +351,7 @@ Feature('Judging test contribution under the test-contribution gate')
       Gherkin.Do.pipe(
         Given('an idle file that does not match the configured suffixes')('report', () =>
           Effect.succeed(
-            reportOf([mutantOf('m1', 'Killed', ['t1'], ['t1', 't2'])], {
+            reportOf([mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1', 't2'])], {
               'earns.property.test.ts': ['t1'],
               'idle.integration.test.ts': ['t2'],
             }),
@@ -354,7 +369,7 @@ Feature('Judging test contribution under the test-contribution gate')
       Gherkin.Do.pipe(
         Given('a report with several accused files out of order')('report', () =>
           Effect.succeed(
-            reportOf([mutantOf('m1', 'Killed', ['t1'], ['t1', 't2', 't3'])], {
+            reportOf([mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1', 't2', 't3'])], {
               'earns.property.test.ts': ['t1'],
               'zebra.property.test.ts': ['t2'],
               'alpha.property.test.ts': ['t3'],
@@ -399,8 +414,8 @@ Feature('Judging test contribution under the test-contribution gate')
           Effect.succeed(
             reportOf(
               [
-                mutantOf('m1', 'Killed', ['t1'], ['t1']),
-                mutantOf('m2', 'Killed', ['t2'], ['t2']),
+                mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1']),
+                mutantOf(Mutant.MutantId.make('2'), 'Killed', ['t2'], ['t2']),
               ],
               {
                 'earns.property.test.ts': ['t1'],
@@ -448,7 +463,7 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report whose files carry no configured suffix')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1'])],
+              [mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1'])],
               { 'plain.test.ts': ['t1'] },
             ),
           )),
@@ -472,7 +487,10 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report with only zero-kill workflow files and bail on')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1']), mutantOf('m2', 'Killed', ['t1'], ['t1'])],
+              [
+                mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1']),
+                mutantOf(Mutant.MutantId.make('2'), 'Killed', ['t1'], ['t1']),
+              ],
               {
                 'sole.workflow.property.test.ts': ['t1'],
                 'idle.workflow.property.test.ts': ['t2'],
@@ -502,7 +520,7 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report with killed mutants but no credited killer')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed'), mutantOf('m2', 'Timeout')],
+              [mutantOf(Mutant.MutantId.make('1'), 'Killed'), mutantOf(Mutant.MutantId.make('2'), 'Timeout')],
               { 'unjudged.property.test.ts': ['t1'] },
             ),
           )),
@@ -526,7 +544,7 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report with no in-scope test files')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1'])],
+              [mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1'])],
               { 'plain.test.ts': ['t1'] },
             ),
           )),
@@ -549,7 +567,10 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report with two mutants both killed by the same file')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1']), mutantOf('m2', 'Killed', ['t1'])],
+              [
+                mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1']),
+                mutantOf(Mutant.MutantId.make('2'), 'Killed', ['t1']),
+              ],
               { 'busy.property.test.ts': ['t1'] },
             ),
           )),
@@ -571,7 +592,7 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report with one file matching only one of several suffixes')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1', 't2'])],
+              [mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1', 't2'])],
               {
                 'earns.property.test.ts': ['t1'],
                 'idle.law.test.ts': ['t2'],
@@ -600,7 +621,7 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report with no file matching any configured suffix')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1'])],
+              [mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1'])],
               { 'plain.test.ts': ['t1'] },
             ),
           )),
@@ -640,7 +661,7 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report with two idle files')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1', 't2', 't3'])],
+              [mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1', 't2', 't3'])],
               {
                 'earns.property.test.ts': ['t1'],
                 'beta.property.test.ts': ['t2'],
@@ -666,7 +687,7 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report whose only tests are schema property tests')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1', 't2'])],
+              [mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1', 't2'])],
               {
                 'earns.schema.property.test.ts': ['t1'],
                 'idle.schema.property.test.ts': ['t2'],
@@ -687,7 +708,7 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report with a workflow property test among schema ones')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1', 't2'])],
+              [mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1', 't2'])],
               {
                 'earns.workflow.property.test.ts': ['t1'],
                 'idle.workflow.property.test.ts': ['t2'],
@@ -710,7 +731,7 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report with only schema property tests and a custom suffix list')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1', 't2'])],
+              [mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1', 't2'])],
               {
                 'earns.schema.property.test.ts': ['t1'],
                 'idle.schema.property.test.ts': ['t2'],
@@ -737,7 +758,7 @@ Feature('Judging test contribution under the test-contribution gate')
           'report',
           () =>
             Effect.succeed(
-              reportOf([mutantOf('m1', 'Killed', ['ghost'], ['t1'])], {
+              reportOf([mutantOf(Mutant.MutantId.make('1'), 'Killed', ['ghost'], ['t1'])], {
                 'a.property.test.ts': ['t1'],
                 'b.property.test.ts': ['t2'],
               }),
@@ -771,8 +792,8 @@ Feature('Judging test contribution under the test-contribution gate')
             Effect.succeed(
               reportOf(
                 [
-                  mutantOf('m1', 'Killed', ['t1'], ['t1']),
-                  mutantOf('m2', 'Killed', ['ghost'], ['t2']),
+                  mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1']),
+                  mutantOf(Mutant.MutantId.make('2'), 'Killed', ['ghost'], ['t2']),
                 ],
                 {
                   'earns.property.test.ts': ['t1'],
@@ -803,8 +824,8 @@ Feature('Judging test contribution under the test-contribution gate')
           Effect.succeed(
             reportOf(
               [
-                mutantOf('m1', 'Killed', ['t1', 't2'], ['t1', 't2']),
-                mutantOf('m2', 'Killed', ['t1', 't2'], ['t1', 't2']),
+                mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1', 't2'], ['t1', 't2']),
+                mutantOf(Mutant.MutantId.make('2'), 'Killed', ['t1', 't2'], ['t1', 't2']),
               ],
               {
                 'a.property.test.ts': ['t1'],
@@ -843,9 +864,9 @@ Feature('Judging test contribution under the test-contribution gate')
             Effect.succeed(
               reportOf(
                 [
-                  mutantOf('m1', 'Killed', ['t1', 't3'], ['t1', 't3']),
-                  mutantOf('m2', 'Killed', ['t2', 't3'], ['t2', 't3']),
-                  mutantOf('m3', 'Killed', ['t3'], ['t3']),
+                  mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1', 't3'], ['t1', 't3']),
+                  mutantOf(Mutant.MutantId.make('2'), 'Killed', ['t2', 't3'], ['t2', 't3']),
+                  mutantOf(Mutant.MutantId.make('3'), 'Killed', ['t3'], ['t3']),
                 ],
                 {
                   'a.property.test.ts': ['t1'],
@@ -883,7 +904,7 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report with one auditable idle file and one unauditable idle file')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1', 't2'])],
+              [mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1', 't2'])],
               {
                 'earns.property.test.ts': ['t1'],
                 'auditable.property.test.ts': ['t2'],
@@ -924,7 +945,7 @@ Feature('Judging test contribution under the test-contribution gate')
           () =>
             Effect.succeed(
               reportOf(
-                [mutantOf('m1', 'Killed', ['t1'], ['t1'])],
+                [mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1'])],
                 {
                   'earns.property.test.ts': ['t1'],
                   'unauditable.property.test.ts': ['t3'],
@@ -953,7 +974,10 @@ Feature('Judging test contribution under the test-contribution gate')
         Given('a report whose only in-scope idle file covers only an Ignored mutant')('report', () =>
           Effect.succeed(
             reportOf(
-              [mutantOf('m1', 'Killed', ['t1'], ['t1']), mutantOf('m2', 'Ignored', [], ['t2'])],
+              [
+                mutantOf(Mutant.MutantId.make('1'), 'Killed', ['t1'], ['t1']),
+                mutantOf(Mutant.MutantId.make('2'), 'Ignored', [], ['t2']),
+              ],
               {
                 'earns.property.test.ts': ['t1'],
                 'ignored-cover.property.test.ts': ['t2'],
