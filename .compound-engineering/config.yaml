@@ -1,3 +1,4 @@
 packs:
   - source: https://github.com/systemfsoftware/systemfsoftware/tree/main/compound-packs/cell-architecture
   - source: https://github.com/systemfsoftware/systemfsoftware/tree/main/compound-packs/boundary-testing
+  - source: https://github.com/systemfsoftware/systemfsoftware/tree/main/compound-packs/schema-laws
