@@ -1,15 +1,16 @@
-const assert = require('node:assert/strict')
+import { expect, test } from 'vitest'
 
-const { isZero, makeMoney } = require('./core.ts')
-const { chargeTax, formatInvoice } = require('./service.ts')
+import { isZero, makeMoney } from './core.js'
+import { chargeTax, formatInvoice } from './service.js'
 
-const zero = makeMoney(0, 'USD')
-assert.equal(isZero(zero), true)
+test('a zero amount is zero', () => {
+  expect(isZero(makeMoney(0, 'USD'))).toBe(true)
+})
 
-const net = makeMoney(100, 'USD')
-const total = chargeTax(net, 0.2)
-assert.equal(total.amount, 120)
-assert.equal(total.currency, 'USD')
+test('chargeTax adds the rate to the net amount', () => {
+  expect(chargeTax(makeMoney(100, 'USD'), 0.2)).toEqual(makeMoney(120, 'USD'))
+})
 
-const usd = makeMoney(42, 'USD')
-assert.equal(formatInvoice(usd), '$42.00')
+test('formatInvoice prints dollars with two decimals', () => {
+  expect(formatInvoice(makeMoney(42, 'USD'))).toBe('$42.00')
+})
