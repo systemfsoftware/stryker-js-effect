@@ -496,6 +496,23 @@ const initFromEnvironment = (): Effect.Effect<Reporter.ReporterInit | undefined>
     (init) => Option.getOrUndefined(Option.filter(Option.some(init), hasTraceFields)),
   )
 
+export const environmentParentContext: Effect.Effect<Option.Option<Trace.TraceContextParts>> = Effect.gen(
+  function*() {
+    const traceparent = yield* Config.String('TRACEPARENT').pipe(Effect.option)
+    const tracestate = yield* Config.String('TRACESTATE').pipe(Effect.option)
+    return Option.map(
+      Option.flatMap(traceparent, S.decodeOption(Trace.Traceparent)),
+      (parts): Trace.TraceContextParts => ({
+        ...parts,
+        ...Option.match(Option.flatMap(tracestate, S.decodeOption(Trace.Tracestate)), {
+          onNone: () => ({}),
+          onSome: (traceState) => ({ traceState }),
+        }),
+      }),
+    )
+  },
+)
+
 export const currentReporterInit = Effect.fn('stryker.reporterStream.currentReporterInit')(
   function*(span?: PhaseSpan) {
     const fromEnvironment = yield* initFromEnvironment()
