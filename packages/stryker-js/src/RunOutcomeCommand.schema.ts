@@ -48,29 +48,44 @@ const visitReachableValue = <A>(
   depth: number,
   seen: WeakSet<object>,
   visit: (node: object) => void,
-): void => {
-  if (isReachableValue(value, depth, seen)) {
-    seen.add(value)
-    visit(value)
-    causeChildrenOf(value).forEach((child) => visitReachableValue(child, depth + 1, seen, visit))
-  }
-}
+): void =>
+  Option.match(
+    Option.liftPredicate(
+      value,
+      (candidate): candidate is A & object => isReachableValue(candidate, depth, seen),
+    ),
+    {
+      onSome: (reachable) => {
+        seen.add(reachable)
+        visit(reachable)
+        causeChildrenOf(reachable).forEach((child) => visitReachableValue(child, depth + 1, seen, visit))
+      },
+      onNone: () => undefined,
+    },
+  )
 
 const findReachableValue = <A, B>(
   value: A,
   depth: number,
   seen: WeakSet<object>,
   read: (node: object) => Option.Option<B>,
-): Option.Option<B> => {
-  if (!isReachableValue(value, depth, seen)) {
-    return Option.none()
-  }
-  seen.add(value)
-  return Option.orElse(
-    read(value),
-    () => Arr.findFirst(causeChildrenOf(value), (child) => findReachableValue(child, depth + 1, seen, read)),
+): Option.Option<B> =>
+  Option.match(
+    Option.liftPredicate(
+      value,
+      (candidate): candidate is A & object => isReachableValue(candidate, depth, seen),
+    ),
+    {
+      onSome: (reachable) => {
+        seen.add(reachable)
+        return Option.orElse(
+          read(reachable),
+          () => Arr.findFirst(causeChildrenOf(reachable), (child) => findReachableValue(child, depth + 1, seen, read)),
+        )
+      },
+      onNone: () => Option.none(),
+    },
   )
-}
 
 const causePayloadOf = <E>(reason: Cause.Reason<E>): E | object | undefined =>
   Cause.isFailReason(reason) ? reason.error : objectPayloadOf(reason)
@@ -87,19 +102,21 @@ const failurePayloads = <A, E>(exit: Exit.Exit<A, E>): ReadonlyArray<E | object 
     (): ReadonlyArray<E | object | undefined> => [],
   )
 
-const exitClassOf = <A>(value: A): Plugin.ExitClass | undefined => {
-  if (!hasExitClass(value)) {
-    return undefined
-  }
-  return Option.getOrUndefined(asExitClass(value.exitClass))
-}
+const exitClassOf = <A>(value: A): Plugin.ExitClass | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(
+      Option.liftPredicate(value, hasExitClass),
+      (carrier) => asExitClass(carrier.exitClass),
+    ),
+  )
 
-const appendExitClass = (value: object, out: Array<Plugin.ExitClass>): void => {
-  const declared = exitClassOf(value)
-  if (declared !== undefined) {
-    out.push(declared)
-  }
-}
+const appendExitClass = (value: object, out: Array<Plugin.ExitClass>): void =>
+  Option.match(Option.fromUndefinedOr(exitClassOf(value)), {
+    onSome: (declared) => {
+      out.push(declared)
+    },
+    onNone: () => undefined,
+  })
 
 const collectExitClasses = <A, E>(exit: Exit.Exit<A, E>): Array<Plugin.ExitClass> => {
   const out: Array<Plugin.ExitClass> = []

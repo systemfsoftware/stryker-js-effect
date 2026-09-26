@@ -21,6 +21,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
@@ -31,15 +32,17 @@ import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 import { inheritableCompileCacheDirectory } from './enable-compile-cache.js'
 
 import { checkNodeVersion, CheckNodeVersionCommand } from '../check-node-version.workflow.js'
-import { RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
+import { classifyRunOutcome, RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
 import { concludeRunCell } from '../conclude-run.cell.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
+import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
-import { RunExitCode } from '../reporting/run-failure.schema.js'
+import { ErrorEnvelope, RunExitCode } from '../reporting/run-failure.schema.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
 import { type CliEnvironment } from '../run-request.cell.js'
 import { RunEnvironment } from '../run/RunEnvironment.service.js'
+import { RunOutcomeCommand } from '../RunOutcomeCommand.schema.js'
 import { makeStrykerCommand } from './cli-command.js'
 import { UnsupportedNodeVersion } from './main.schema.js'
 
@@ -174,6 +177,12 @@ const cliLayer = Layer.mergeAll(
 
 const USAGE_EXIT_CODE = RunExitCode.fromOutcome(RunParseFailed.make({})).code
 
+const SPAN_ERROR_LIMIT = 1024
+const TRUNCATION_SUFFIX = '…[truncated]'
+
+const boundedErrorText = (text: string): string =>
+  text.length > SPAN_ERROR_LIMIT ? text.slice(0, SPAN_ERROR_LIMIT) + TRUNCATION_SUFFIX : text
+
 const strykerProgram = Effect.gen(function*() {
   const stdio = yield* Stdio.Stdio
   const version = globalThis.process.version
@@ -193,11 +202,13 @@ const strykerProgram = Effect.gen(function*() {
   })
   const outputMode = yield* OutputModeProbe
   const detected = yield* Effect.result(outputMode.detectMode)
-  if (Result.isFailure(detected)) {
-    yield* Console.error(detected.failure.message)
-    return yield* RunExit.make({ code: USAGE_EXIT_CODE })
-  }
-  const mode = detected.success
+  const mode = yield* Result.match(detected, {
+    onFailure: (failure) =>
+      Console.error(failure.message).pipe(
+        Effect.andThen(Effect.fail(RunExit.make({ code: USAGE_EXIT_CODE }))),
+      ),
+    onSuccess: (success) => Effect.succeed(success),
+  })
   const runEvents = yield* RunEventStreamPort
   const stream = yield* runEvents.createRunEventStream(mode)
   const noColor = yield* Config.String('NO_COLOR').pipe(Effect.option)
@@ -223,20 +234,43 @@ const strykerProgram = Effect.gen(function*() {
     onFalse: () => Layer.empty,
   })
   return yield* Effect.uninterruptibleMask((restore) =>
-    Effect.gen(function*() {
-      const exit = yield* Effect.exit(
-        restore(Command.runWith(command, { version: cliPkgJson.version })(args).pipe(Effect.provide(machineConsole))),
-      )
-      return yield* concludeRunCell.run({
-        exit,
-        argv: args,
-        mode,
-        stream,
-        basePath: host.basePath,
-        pathService,
-        runEvents,
-      })
-    })
+    Effect.withSpan('stryker.cli.run')(
+      Effect.gen(function*() {
+        const exit = yield* Effect.exit(
+          restore(Command.runWith(command, { version: cliPkgJson.version })(args).pipe(Effect.provide(machineConsole))),
+        )
+        const conclusionCommand = RunOutcomeCommand.fromExit({ exit, argv: args })
+        const classified = Result.getOrElse(
+          classifyRunOutcome(conclusionCommand),
+          (interrupted) => interrupted,
+        )
+        const machineConsoleService = yield* MachineConsole
+        const errorText = Option.getOrElse(
+          Option.map(
+            Option.liftPredicate(S.is(FailedRunOutcomeSchema))(classified),
+            (failure) =>
+              boundedErrorText(
+                ErrorEnvelope.fromOutcome({ error: failure, captured: machineConsoleService.read() }).error,
+              ),
+          ),
+          () => '',
+        )
+        yield* Effect.annotateCurrentSpan({
+          'stryker.run.outcome': classified._tag,
+          'stryker.run.exit_code': RunExitCode.fromOutcome(classified).code,
+          'stryker.run.error': errorText,
+        })
+        return yield* concludeRunCell.run({
+          exit,
+          argv: args,
+          mode,
+          stream,
+          basePath: host.basePath,
+          pathService,
+          runEvents,
+        })
+      }),
+    )
   )
 })
 

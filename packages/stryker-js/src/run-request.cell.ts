@@ -73,20 +73,19 @@ const progressStreamFileName = (options: Options.PartialStrykerOptions): string 
     () => RunEventDrain.DefaultProgressStreamFile,
   )
 
-const readRunRequest = (
+const readRunRequest = Effect.fn('stryker.run_request.gather')(function*(
   invocation: CliInvocation,
-): Effect.Effect<CliRead, CliError.CliError, Command.Environment | RunEventDrain> =>
-  Effect.gen(function*() {
-    const drain = yield* RunEventDrain
-    yield* drain.setProgressStreamFile(progressStreamFileName(invocation.options))
-    yield* invocation.environment.stream.open
-    return {
-      _tag: invocation.route._tag,
-      route: invocation.route.route,
-      environment: invocation.environment,
-      options: invocation.options,
-    }
-  })
+): Effect.fn.Return<CliRead, CliError.CliError, Command.Environment | RunEventDrain> {
+  const drain = yield* RunEventDrain
+  yield* drain.setProgressStreamFile(progressStreamFileName(invocation.options))
+  yield* invocation.environment.stream.open
+  return {
+    _tag: invocation.route._tag,
+    route: invocation.route.route,
+    environment: invocation.environment,
+    options: invocation.options,
+  }
+})
 
 const routeCell = Sandwich.named('stryker.run_request')(readRunRequest)
   .decide(routeCliRequest)

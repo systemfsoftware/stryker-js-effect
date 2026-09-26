@@ -364,37 +364,41 @@ const readStrykerOptions = (config: RunParsedConfig): Options.PartialStrykerOpti
 export const makeStrykerCommand = (environment: CliEnvironment) => {
   const runCommand = Command.make('run', runConfig, (config) => {
     const configFile = Option.getOrUndefined(config.configFile)
-    if (isUnknownArgument(configFile)) {
-      return Console.error(`Received unknown argument: '${configFile}'`).pipe(
-        Effect.andThen(Effect.failSync(() => CliError.UnexpectedArgument.make({ arguments: [configFile] }))),
-      )
-    }
-    return runRequestCell.run({
-      route: CliRouteCommand.make({ route: { _tag: 'run', survivors: config.survivors === true } }),
-      options: readStrykerOptions(config),
-      environment,
-    }).pipe(Effect.provideService(Console.Console, environment.console), Effect.asVoid)
+    return Option.match(Option.filter(Option.fromUndefinedOr(configFile), isUnknownArgument), {
+      onSome: (unknown) =>
+        Console.error(`Received unknown argument: '${unknown}'`).pipe(
+          Effect.andThen(Effect.failSync(() => CliError.UnexpectedArgument.make({ arguments: [unknown] }))),
+        ),
+      onNone: () =>
+        runRequestCell.run({
+          route: CliRouteCommand.make({ route: { _tag: 'run', survivors: config.survivors === true } }),
+          options: readStrykerOptions(config),
+          environment,
+        }).pipe(Effect.provideService(Console.Console, environment.console), Effect.asVoid),
+    })
   }).pipe(Command.withDescription('Run mutation testing'))
 
   const mergeReportsCommand = Command.make(
     'merge-reports',
     { ...mergeReportsOptions, ...formatOptions },
     (config) =>
-      Effect.gen(function*() {
-        const fromEnvironment = yield* Config.String('PACKAGES').pipe(Effect.option)
-        yield* runRequestCell.run({
-          route: CliRouteCommand.make({
-            route: {
-              _tag: 'merge-reports',
-              parts: config.parts,
-              out: config.out,
-              packages: Option.getOrUndefined(config.packages) ?? Option.getOrUndefined(fromEnvironment),
-            },
-          }),
-          options: {},
-          environment,
-        }).pipe(Effect.provideService(Console.Console, environment.console), Effect.asVoid)
-      }),
+      Config.String('PACKAGES').pipe(
+        Effect.option,
+        Effect.flatMap((fromEnvironment) =>
+          runRequestCell.run({
+            route: CliRouteCommand.make({
+              route: {
+                _tag: 'merge-reports',
+                parts: config.parts,
+                out: config.out,
+                packages: Option.getOrUndefined(config.packages) ?? Option.getOrUndefined(fromEnvironment),
+              },
+            }),
+            options: {},
+            environment,
+          }).pipe(Effect.provideService(Console.Console, environment.console), Effect.asVoid)
+        ),
+      ),
   ).pipe(Command.withDescription('Merge per-package mutation reports into one report'))
 
   const root = Command

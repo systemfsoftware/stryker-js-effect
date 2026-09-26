@@ -29,6 +29,7 @@ import type { ReadProjectDone } from '../read-project.cell.js'
 import {
   attachReporterFactories,
   currentReporterInit,
+  type PhaseSpan,
   type ReporterStage,
   validateReporterNames,
   withPhaseSpan,
@@ -110,174 +111,175 @@ const buildMergedSchema = <A = unknown>(
     core,
   )
 
-const readPrepare = (command: ReadProjectDone): Effect.Effect<
+const readPrepare = Effect.fn('stryker.prepare.gather')(function*(
+  command: ReadProjectDone,
+): Effect.fn.Return<
   PrepareRaw,
   StageError,
   Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
-> =>
-  Effect.gen(function*() {
-    yield* Scope.Scope
-    const env = yield* RunEnvironment
-    const queue = yield* RunEvents
-    const coreSchema: ValidationSchemaDocument = forkCoreSchema
-    const configured = command.options
-    const plannedReporters = planReporters(
-      ReporterPlanCommand.make({ configured: [...configured.reporters], mode: env.resolvedMode.mode }),
-    )
-    const resolvedReporters = Option.getOrElse(
-      Option.map(Result.getSuccess(plannedReporters), (decision) => [...decision.reporters]),
-      () => [...configured.reporters],
-    )
-    const options: Options.StrykerOptions = {
-      ...configured,
-      reporters: resolvedReporters,
-      allowConsoleColors: env.allowConsoleColors,
-      clearTextReporter: {
-        ...configured.clearTextReporter,
-        allowColor: env.allowConsoleColors,
-      },
-    }
-    const descriptors: readonly string[] = pluginUrlsFromOptions(options)
-    const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
-      Effect.tapError((error) =>
-        Effect.gen(function*() {
-          const failedAt = yield* Clock.currentTimeMillis
-          const events = yield* pluginLoadFailureEvents(error, failedAt - env.runStartedAt)
-          yield* Effect.forEach(events, (event) => Queue.offer(queue, event), { discard: true })
-        })
-      ),
-      Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
-    )
-    const registry = Format.registerEntries(
-      Format.coreFormatRegistry,
-      loaded.frameworks.map(({ moduleName, framework }) => Format.frameworkEntryOf(moduleName, framework)),
-    )
-    yield* reportPluginLoad(queue, loaded, registry)
-    const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)
-    const record = { ...options }
-    yield* validateOptions(record, mergedSchema).pipe(
-      Effect.mapError(
-        (cause) =>
+> {
+  yield* Scope.Scope
+  const env = yield* RunEnvironment
+  const queue = yield* RunEvents
+  const coreSchema: ValidationSchemaDocument = forkCoreSchema
+  const configured = command.options
+  const plannedReporters = planReporters(
+    ReporterPlanCommand.make({ configured: [...configured.reporters], mode: env.resolvedMode.mode }),
+  )
+  const resolvedReporters = Option.getOrElse(
+    Option.map(Result.getSuccess(plannedReporters), (decision) => [...decision.reporters]),
+    () => [...configured.reporters],
+  )
+  const options: Options.StrykerOptions = {
+    ...configured,
+    reporters: resolvedReporters,
+    allowConsoleColors: env.allowConsoleColors,
+    clearTextReporter: {
+      ...configured.clearTextReporter,
+      allowColor: env.allowConsoleColors,
+    },
+  }
+  const descriptors: readonly string[] = pluginUrlsFromOptions(options)
+  const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
+    Effect.tapError((error) =>
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((failedAt) => pluginLoadFailureEvents(error, failedAt - env.runStartedAt)),
+        Effect.flatMap((events) => Effect.forEach(events, (event) => Queue.offer(queue, event), { discard: true })),
+      )
+    ),
+    Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
+  )
+  const registry = Format.registerEntries(
+    Format.coreFormatRegistry,
+    loaded.frameworks.map(({ moduleName, framework }) => Format.frameworkEntryOf(moduleName, framework)),
+  )
+  yield* reportPluginLoad(queue, loaded, registry)
+  const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)
+  const record = { ...options }
+  yield* validateOptions(record, mergedSchema).pipe(
+    Effect.mapError(
+      (cause) =>
+        StageError.make({
+          stage: 'prepare',
+          reason: 'Failed to revalidate options with plugin schema',
+          cause,
+        }),
+    ),
+  )
+  const ignorers: readonly Ignorer[] = loaded.ignorers
+
+  const builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory> = {
+    ...(yield* Reporter).builtin,
+    ...env.builtinReporters,
+  }
+  const pluginReporterDescriptors = Option.getOrElse(
+    HashMap.get(loaded.pluginsByKind, 'Reporter'),
+    () => NO_PLUGIN_DESCRIPTORS,
+  )
+  const reporterChoicesByName = HashMap.fromIterable<string, ReporterChoice>([
+    ...Object.entries(builtinReporterFactories).map(
+      ([name, factory]) => [name.toLowerCase(), { name, builtinFactory: Option.some(factory) }] as const,
+    ),
+    ...pluginReporterDescriptors.map(
+      (descriptor) =>
+        [
+          descriptor.name.toLowerCase(),
+          { name: descriptor.name, builtinFactory: Option.none<InterfaceReporter.ReporterFactory>() },
+        ] as const,
+    ),
+  ])
+  const frameworkClaimants = yield* installedFrameworkClaimants(env.basePath)
+  const now = yield* Clock.currentTimeMillis
+  return {
+    now,
+    mode: env.resolvedMode.mode,
+    reporters: [...options.reporters],
+    fileCount: pipe(command.project.files, MutableHashMap.size),
+    availableReporters: [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name),
+    env,
+    queue,
+    options,
+    loaded,
+    project: command.project,
+    ignorers,
+    formatRegistry: registry,
+    builtinReporterFactories,
+    reporterChoicesByName,
+    frameworkClaimants,
+  }
+})
+
+const applyPrepare = Effect.fn('stryker.prepare.apply')(function*(
+  span: PhaseSpan,
+  reporters: readonly string[],
+  raw: PrepareRaw,
+): Effect.fn.Return<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> {
+  const mutateCount = pipe(raw.project.filesToMutate, MutableHashMap.size)
+  yield* announceSummary({
+    env: raw.env,
+    summary: `Found ${mutateCount} of ${pipe(raw.project.files, MutableHashMap.size)} file(s) to be mutated.`,
+  })
+  yield* validateReporterNames(
+    raw.options.reporters,
+    [...HashMap.values(raw.reporterChoicesByName)].map((choice) => choice.name),
+  ).pipe(
+    Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
+  )
+  const admission = admitNonEmptyProject(
+    NonEmptyProjectCommand.make({ fileCount: pipe(raw.project.files, MutableHashMap.size) }),
+  )
+  const emptyAdmission = Option.filter(Result.getSuccess(admission), S.is(ProjectEmpty))
+  const emptyProjectGuard: Result.Result<void, StageError> = Option.getOrElse(
+    Option.map(
+      emptyAdmission,
+      (): Result.Result<void, StageError> =>
+        Result.fail(
           StageError.make({
             stage: 'prepare',
-            reason: 'Failed to revalidate options with plugin schema',
-            cause,
+            reason: 'No input files found.',
+            cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
           }),
-      ),
-    )
-    const ignorers: readonly Ignorer[] = loaded.ignorers
-
-    const builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory> = {
-      ...(yield* Reporter).builtin,
-      ...env.builtinReporters,
-    }
-    const pluginReporterDescriptors = Option.getOrElse(
-      HashMap.get(loaded.pluginsByKind, 'Reporter'),
-      () => NO_PLUGIN_DESCRIPTORS,
-    )
-    const reporterChoicesByName = HashMap.fromIterable<string, ReporterChoice>([
-      ...Object.entries(builtinReporterFactories).map(
-        ([name, factory]) => [name.toLowerCase(), { name, builtinFactory: Option.some(factory) }] as const,
-      ),
-      ...pluginReporterDescriptors.map(
-        (descriptor) =>
-          [
-            descriptor.name.toLowerCase(),
-            { name: descriptor.name, builtinFactory: Option.none<InterfaceReporter.ReporterFactory>() },
-          ] as const,
-      ),
-    ])
-    const frameworkClaimants = yield* installedFrameworkClaimants(env.basePath)
-    const now = yield* Clock.currentTimeMillis
-    return {
-      now,
-      mode: env.resolvedMode.mode,
-      reporters: [...options.reporters],
-      fileCount: pipe(command.project.files, MutableHashMap.size),
-      availableReporters: [...HashMap.values(reporterChoicesByName)].map((choice) => choice.name),
-      env,
-      queue,
-      options,
-      loaded,
-      project: command.project,
-      ignorers,
-      formatRegistry: registry,
-      builtinReporterFactories,
-      reporterChoicesByName,
-      frameworkClaimants,
-    }
-  })
+        ),
+    ),
+    (): Result.Result<void, StageError> => Result.succeed(undefined),
+  )
+  yield* Effect.fromResult(emptyProjectGuard)
+  const temporaryDirectoryPath = yield* Effect.map(
+    Layer.build(TemporaryDirectory.layer(raw.options)),
+    (temporaryDirectory) => Context.get(temporaryDirectory, TemporaryDirectory).path,
+  ).pipe(
+    Effect.mapError((cause) =>
+      StageError.make({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
+    ),
+  )
+  const reporterInputs = yield* reporterInputsOf(
+    reporters,
+    raw.reporterChoicesByName,
+    raw.loaded,
+    raw.env.basePath,
+    raw.options,
+  )
+  const reporterInit = yield* currentReporterInit(span)
+  const reporterStage = yield* attachReporterFactories(reporterInputs, raw.options, reporterInit)
+  const { now } = raw
+  yield* Queue.offer(raw.queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - raw.env.runStartedAt }))
+  return {
+    project: raw.project,
+    loadedPlugins: raw.loaded,
+    ignorers: raw.ignorers,
+    formatRegistry: raw.formatRegistry,
+    options: raw.options,
+    temporaryDirectoryPath,
+    reporterStage,
+    frameworkClaimants: raw.frameworkClaimants,
+  }
+})
 
 const writePrepare = (
   reporters: readonly string[],
   raw: PrepareRaw,
 ): Effect.Effect<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
-  withPhaseSpan(
-    'prepare',
-    {},
-    (span) =>
-      Effect.gen(function*() {
-        const mutateCount = pipe(raw.project.filesToMutate, MutableHashMap.size)
-        yield* announceSummary({
-          env: raw.env,
-          summary: `Found ${mutateCount} of ${pipe(raw.project.files, MutableHashMap.size)} file(s) to be mutated.`,
-        })
-        yield* validateReporterNames(
-          raw.options.reporters,
-          [...HashMap.values(raw.reporterChoicesByName)].map((choice) => choice.name),
-        ).pipe(
-          Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
-        )
-        const admission = admitNonEmptyProject(
-          NonEmptyProjectCommand.make({ fileCount: pipe(raw.project.files, MutableHashMap.size) }),
-        )
-        const emptyAdmission = Option.filter(Result.getSuccess(admission), S.is(ProjectEmpty))
-        const emptyProjectGuard: Result.Result<void, StageError> = Option.getOrElse(
-          Option.map(
-            emptyAdmission,
-            (): Result.Result<void, StageError> =>
-              Result.fail(
-                StageError.make({
-                  stage: 'prepare',
-                  reason: 'No input files found.',
-                  cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
-                }),
-              ),
-          ),
-          (): Result.Result<void, StageError> => Result.succeed(undefined),
-        )
-        yield* Effect.fromResult(emptyProjectGuard)
-        const temporaryDirectoryPath = yield* Effect.map(
-          Layer.build(TemporaryDirectory.layer(raw.options)),
-          (temporaryDirectory) => Context.get(temporaryDirectory, TemporaryDirectory).path,
-        ).pipe(
-          Effect.mapError((cause) =>
-            StageError.make({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
-          ),
-        )
-        const reporterInputs = yield* reporterInputsOf(
-          reporters,
-          raw.reporterChoicesByName,
-          raw.loaded,
-          raw.env.basePath,
-          raw.options,
-        )
-        const reporterInit = yield* currentReporterInit(span)
-        const reporterStage = yield* attachReporterFactories(reporterInputs, raw.options, reporterInit)
-        const { now } = raw
-        yield* Queue.offer(raw.queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - raw.env.runStartedAt }))
-        return {
-          project: raw.project,
-          loadedPlugins: raw.loaded,
-          ignorers: raw.ignorers,
-          formatRegistry: raw.formatRegistry,
-          options: raw.options,
-          temporaryDirectoryPath,
-          reporterStage,
-          frameworkClaimants: raw.frameworkClaimants,
-        }
-      }),
-  )
+  withPhaseSpan('prepare', {}, (span) => applyPrepare(span, reporters, raw))
 
 export const prepareCell: Cell.Cell<
   ReadProjectDone,

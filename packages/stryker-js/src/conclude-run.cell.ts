@@ -60,32 +60,33 @@ const truncateForSpan = (text: string): string => {
   return text.slice(0, SPAN_ERROR_LIMIT) + suffix
 }
 
-const readConclusion = (
+const readConclusion = Effect.fn('stryker.run_conclusion.read')(function*(
   input: RunConclusionInput,
-): Effect.Effect<RunConclusionRaw, never, RunEventDrain | MachineConsole> =>
-  Effect.gen(function*() {
-    const machineConsole = yield* MachineConsole
-    const command = RunOutcomeCommand.fromExit({ exit: input.exit, argv: input.argv })
-    const outcome = classifyRunOutcome(command)
-    const classified = Result.getOrElse(outcome, (interrupted) => interrupted)
-    const failed = Option.liftPredicate(S.is(FailedRunOutcomeSchema))(classified)
-    const error = Option.getOrElse(
-      Option.map(failed, (failure) =>
-        truncateForSpan(ErrorEnvelope.fromOutcome({ error: failure, captured: machineConsole.read() }).error)),
-      () =>
-        '',
-    )
-    yield* input.stream.open
-    return {
-      _tag: 'PlanRunConclusionCommand' as const,
-      command: encodedCommandOf(command),
-      machine: input.mode.mode === 'machine',
-      exitCode: RunExitCode.fromOutcome(classified).code,
-      outcome: classified._tag,
-      error,
-      conclusion: input,
-    }
-  })
+): Effect.fn.Return<RunConclusionRaw, never, RunEventDrain | MachineConsole> {
+  const machineConsole = yield* MachineConsole
+  const command = RunOutcomeCommand.fromExit({ exit: input.exit, argv: input.argv })
+  const outcome = classifyRunOutcome(command)
+  const classified = Result.getOrElse(outcome, (interrupted) => interrupted)
+  const failed = Option.liftPredicate(S.is(FailedRunOutcomeSchema))(classified)
+  const error = Option.getOrElse(
+    Option.map(
+      failed,
+      (failure) =>
+        truncateForSpan(ErrorEnvelope.fromOutcome({ error: failure, captured: machineConsole.read() }).error),
+    ),
+    () => '',
+  )
+  yield* input.stream.open
+  return {
+    _tag: 'PlanRunConclusionCommand' as const,
+    command: encodedCommandOf(command),
+    machine: input.mode.mode === 'machine',
+    exitCode: RunExitCode.fromOutcome(classified).code,
+    outcome: classified._tag,
+    error,
+    conclusion: input,
+  }
+})
 
 export const concludeRunCell = Sandwich.named('stryker.run.conclude')(readConclusion)
   .decide(planRunConclusion)

@@ -314,16 +314,21 @@ const putFile = Effect.fn('stryker.merge_reports.put_file')(function*(
 const toStream = (events: readonly Reporter.ReporterEvent[]): AsyncIterable<Reporter.ReporterEvent> =>
   Stream.toAsyncIterable(Stream.fromIterable([...events]))
 
+const renderHtmlReport = Effect.fn('stryker.merge_reports.render_html')(function*(
+  fileName: string,
+  report: MutationReport,
+  options: Options.StrykerOptions,
+) {
+  const metrics = MetricsResultFromReport.fromFiles(report.files)
+  yield* HtmlReporter.makeHtmlReporter(options, {})(
+    toStream([Reporter.MutationTestReportReady.make({ report, metrics })]),
+  ).pipe(Effect.catchCause(() => failReason(`cannot write the html report at ${fileName}`)))
+})
+
 const writeHtml = Effect.fn('stryker.merge_reports.write_html')(function*(fileName: string, report: MutationReport) {
   return yield* Option.match(S.decodeOption(Options.StrykerOptionsSchema)({ htmlReporter: { fileName } }), {
     onNone: () => failReason(`cannot configure the html report at ${fileName}`),
-    onSome: (options) =>
-      Effect.gen(function*() {
-        const metrics = MetricsResultFromReport.fromFiles(report.files)
-        yield* HtmlReporter.makeHtmlReporter(options, {})(
-          toStream([Reporter.MutationTestReportReady.make({ report, metrics })]),
-        ).pipe(Effect.catchCause(() => failReason(`cannot write the html report at ${fileName}`)))
-      }),
+    onSome: (options) => renderHtmlReport(fileName, report, options),
   })
 })
 

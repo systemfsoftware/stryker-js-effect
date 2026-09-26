@@ -34,6 +34,31 @@ export interface InstrumentDone extends PrepareDone {
   }
 }
 
+const reportSkippedFiles = Effect.fn('stryker.instrument.report-skips')(
+  function*(input: {
+    readonly skipped: readonly Instrument.InstrumentFileSkip[]
+    readonly claimants: readonly FrameworkClaimant[]
+  }) {
+    const files = input.skipped.map((skip) =>
+      Result.match(
+        explainFileSkip(
+          ExplainFileSkipCommand.make({ extension: skip.extension, claimants: [...input.claimants] }),
+        ),
+        {
+          onFailure: absurd<SkippedFileRow>,
+          onSuccess: (explained): SkippedFileRow => ({
+            file: skip.file,
+            extension: skip.extension,
+            reason: explained.reason,
+          }),
+        },
+      )
+    )
+    const queue = yield* RunEvents
+    yield* Queue.offer(queue, SkippedReported.make({ files }))
+  },
+)
+
 const offerSkipsIfAny = Effect.fn('stryker.instrument.offer-skips')(
   function*(input: {
     readonly skipped: readonly Instrument.InstrumentFileSkip[]
@@ -41,26 +66,7 @@ const offerSkipsIfAny = Effect.fn('stryker.instrument.offer-skips')(
   }) {
     yield* Boolean.match(input.skipped.length === 0, {
       onTrue: () => Effect.void,
-      onFalse: () =>
-        Effect.gen(function*() {
-          const files = input.skipped.map((skip) =>
-            Result.match(
-              explainFileSkip(
-                ExplainFileSkipCommand.make({ extension: skip.extension, claimants: [...input.claimants] }),
-              ),
-              {
-                onFailure: absurd<SkippedFileRow>,
-                onSuccess: (explained): SkippedFileRow => ({
-                  file: skip.file,
-                  extension: skip.extension,
-                  reason: explained.reason,
-                }),
-              },
-            )
-          )
-          const queue = yield* RunEvents
-          yield* Queue.offer(queue, SkippedReported.make({ files }))
-        }),
+      onFalse: () => reportSkippedFiles(input),
     })
   },
 )
@@ -101,11 +107,7 @@ const enteringInstrumentPhase = <A, E, R>(raw: InstrumentRaw, body: Effect.Effec
   withPhaseSpan(
     'instrument',
     { fileCount: raw.filesToMutate.length },
-    () =>
-      Effect.gen(function*() {
-        yield* phaseEntered('instrument')
-        return yield* body
-      }),
+    () => Effect.andThen(phaseEntered('instrument'), body),
   )
 
 const writeInstrument = (raw: InstrumentRaw) =>
@@ -143,6 +145,63 @@ const withInstrumentedFiles = (
       ),
   )
 
+const readInstrument = Effect.fn('stryker.instrument.gather')(function*(
+  command: PrepareDone & {
+    readonly concurrency: { readonly testRunners: number; readonly checkers: number }
+  },
+) {
+  yield* Scope.Scope
+  const env = yield* RunEnvironment
+
+  const files = yield* ProjectFiles
+  const filesToMutate = yield* Effect.map(
+    files.readAll(MutableHashMap.values(command.project.filesToMutate)),
+    (readFiles) => readFiles.map(([file, content]) => ({ content, mutate: file.mutate, name: file.name })),
+  ).pipe(
+    Effect.mapError((cause) =>
+      StageError.make({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
+    ),
+  )
+
+  const instrumentResult = yield* Instrument.instrument(filesToMutate, {
+    ignorers: [...command.ignorers],
+    excludedMutations: [...command.options.mutator.excludedMutations],
+    optInMutations: [...command.options.mutator.optInMutations],
+  }, command.formatRegistry).pipe(
+    Effect.mapError((cause) => StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
+  )
+
+  const instrumentedProject = withInstrumentedFiles(command.project, instrumentResult.files)
+
+  const directories = sandboxDirectoriesOf({ command, basePath: env.basePath })
+  const sandbox = yield* makeSandbox({
+    options: command.options,
+    project: instrumentedProject,
+    workingDirectory: directories.workingDirectory,
+    backupDirectory: directories.backupDirectory,
+    basePath: env.basePath,
+    formatRegistry: command.formatRegistry,
+  }).pipe(
+    Effect.mapError((cause) =>
+      StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
+    ),
+  )
+
+  const raw: InstrumentRaw = {
+    _tag: 'InstrumentCommand',
+    fileCount: filesToMutate.length,
+    inPlace: command.options.inPlace,
+    pluginCount: command.loadedPlugins.pluginModulePaths.length,
+    prev: command,
+    filesToMutate,
+    instrumentResult,
+    instrumentedProject,
+    sandbox,
+    concurrency: command.concurrency,
+  }
+  return raw
+})
+
 export const instrumentCell: Cell.Cell<
   PrepareDone & { readonly concurrency: { readonly testRunners: number; readonly checkers: number } },
   InstrumentDone,
@@ -154,62 +213,7 @@ export const instrumentCell: Cell.Cell<
   | FileSystem.FileSystem
   | Path.Path
   | ChildProcessSpawner.ChildProcessSpawner
-> = Sandwich.named('stryker.instrument')((
-  command: PrepareDone & {
-    readonly concurrency: { readonly testRunners: number; readonly checkers: number }
-  },
-) =>
-  Effect.gen(function*() {
-    yield* Scope.Scope
-    const env = yield* RunEnvironment
-
-    const files = yield* ProjectFiles
-    const filesToMutate = yield* Effect.map(
-      files.readAll(MutableHashMap.values(command.project.filesToMutate)),
-      (readFiles) => readFiles.map(([file, content]) => ({ content, mutate: file.mutate, name: file.name })),
-    ).pipe(
-      Effect.mapError((cause) =>
-        StageError.make({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
-      ),
-    )
-
-    const instrumentResult = yield* Instrument.instrument(filesToMutate, {
-      ignorers: [...command.ignorers],
-      excludedMutations: [...command.options.mutator.excludedMutations],
-      optInMutations: [...command.options.mutator.optInMutations],
-    }, command.formatRegistry).pipe(
-      Effect.mapError((cause) => StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
-    )
-
-    const instrumentedProject = withInstrumentedFiles(command.project, instrumentResult.files)
-
-    const directories = sandboxDirectoriesOf({ command, basePath: env.basePath })
-    const sandbox = yield* makeSandbox({
-      options: command.options,
-      project: instrumentedProject,
-      workingDirectory: directories.workingDirectory,
-      backupDirectory: directories.backupDirectory,
-      basePath: env.basePath,
-      formatRegistry: command.formatRegistry,
-    }).pipe(Effect.mapError((cause) =>
-      StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
-    ))
-
-    const raw: InstrumentRaw = {
-      _tag: 'InstrumentCommand',
-      fileCount: filesToMutate.length,
-      inPlace: command.options.inPlace,
-      pluginCount: command.loadedPlugins.pluginModulePaths.length,
-      prev: command,
-      filesToMutate,
-      instrumentResult,
-      instrumentedProject,
-      sandbox,
-      concurrency: command.concurrency,
-    }
-    return raw
-  })
-).decide(planInstrumentation).write({
+> = Sandwich.named('stryker.instrument')(readInstrument).decide(planInstrumentation).write({
   InPlaceInstrument: (_decision, raw) => writeInstrument(raw),
   EphemeralInstrument: (_decision, raw) => writeInstrument(raw),
   CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'instrument', reason: issue })),
