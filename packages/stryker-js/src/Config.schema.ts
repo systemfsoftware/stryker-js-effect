@@ -2,7 +2,13 @@ import * as S from 'effect/Schema'
 
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 
+export const SupportedConfigFileExtensions = S.Literals(['ts', 'mts', 'js', 'mjs'])
+
+export const LegacyConfigFileExtensions = S.Literals(['json', 'cjs'])
+
 export const ConfigDocumentSchema = S.Record(S.String, S.Unknown)
+
+export type ConfigDocument = typeof ConfigDocumentSchema.Type
 
 export const ImportedModuleSchema = S.Struct({
   default: S.optional(S.Unknown),
@@ -35,27 +41,6 @@ export const ExtendsStepStateSchema = S.Struct({
 export type ExtendsStepState = typeof ExtendsStepStateSchema.Type
 
 export type ExtendsRefusalReason = 'cycle' | 'non-string-extends'
-
-export class ExtendsStepDone extends S.TaggedClass<ExtendsStepDone>()('done', {
-  options: ConfigDocumentSchema,
-}) {}
-
-export class ExtendsStepRead extends S.TaggedClass<ExtendsStepRead>()('read', {
-  path: S.String,
-  state: ExtendsStepStateSchema,
-}) {}
-
-export class ExtendsStepResolve extends S.TaggedClass<ExtendsStepResolve>()('resolve', {
-  specifier: S.String,
-  state: ExtendsStepStateSchema,
-}) {}
-
-export class ExtendsStepRefused extends S.TaggedClass<ExtendsStepRefused>()('refused', {
-  reason: S.Literals(['cycle', 'non-string-extends']),
-  file: S.String,
-}) {}
-
-export type ExtendsStepDecision = ExtendsStepDone | ExtendsStepRead | ExtendsStepResolve | ExtendsStepRefused
 
 export const survivorsPriorReport = S.optionalKey(
   S.String.pipe(
