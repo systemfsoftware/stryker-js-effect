@@ -1,7 +1,7 @@
 import type { Schema } from 'effect'
 import * as Context from 'effect/Context'
 import * as Option from 'effect/Option'
-import type * as Rpc from 'effect/unstable/rpc/Rpc'
+import * as Rpc from 'effect/unstable/rpc/Rpc'
 import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware'
 
 import type { TraceContextParts } from './TraceContext.schema.js'
@@ -20,11 +20,4 @@ export type TracedRpc<
   Payload extends Schema.Top = Schema.Void,
   Success extends Schema.Top = Schema.Void,
   Error extends Schema.Top = Schema.Never,
-> = Rpc.Rpc<
-  Tag,
-  Payload,
-  Success,
-  Error,
-  typeof TraceContextMiddleware,
-  RpcMiddleware.ApplyServices<typeof TraceContextMiddleware['Identifier'], never>
->
+> = Rpc.AddMiddleware<Rpc.Rpc<Tag, Payload, Success, Error>, typeof TraceContextMiddleware>

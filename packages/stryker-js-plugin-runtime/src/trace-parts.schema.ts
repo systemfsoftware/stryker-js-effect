@@ -4,6 +4,10 @@ import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 import { Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 
+export class TraceContextUnavailable extends S.TaggedError<TraceContextUnavailable>()('TraceContextUnavailable', {
+  reason: S.Literals(['invalid-span-context', 'undecodable-parts']),
+}) {}
+
 const CURRENT_VERSION = '00'
 const SAMPLED_FLAG = 0x01
 
