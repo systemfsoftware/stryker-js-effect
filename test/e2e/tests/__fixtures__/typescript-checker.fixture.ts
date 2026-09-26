@@ -1,7 +1,7 @@
-import { RunEvent } from '@systemfsoftware/stryker-js'
+import type { RunEvent } from '@systemfsoftware/stryker-js'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Check, Expect } from '@systemfsoftware/vitest'
-import * as S from 'effect/Schema'
+import { Effect, Schema } from 'effect'
 import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
 
 export const FIXTURE_URL = new URL('../../testResources/typescript-checker-fixture', import.meta.url)
@@ -21,21 +21,6 @@ export const RUN_EVENT_KINDS: ReadonlyArray<string> = [
   'help',
 ]
 
-export const parseEventStream = (stdout: string): ReadonlyArray<RunEvent.RunEvent> =>
-  stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('{') && line.endsWith('}'))
-    .map((line) => S.decodeUnknownSync(RunEvent.RunEventWireLine)(line))
-
-export const lastEvent = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.RunEvent => {
-  const event = events.at(-1)
-  if (event === undefined) {
-    throw new Error('stdout carries no events')
-  }
-  return event
-}
-
 const terminalIndexesIn = (kinds: ReadonlyArray<string>): ReadonlyArray<number> =>
   kinds
     .map((kind, index) => ({ index, kind }))
@@ -52,7 +37,7 @@ const reportedMutantsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyAr
     .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
     .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
 
-const runIdsIn = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
+export const runIdsIn = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
   events
     .map((event) => ('runId' in event && typeof event.runId === 'string' ? String(event.runId) : undefined))
     .filter((runId): runId is string => runId !== undefined)
@@ -99,10 +84,10 @@ export const verifyMutantStreamAndActionables = (
   expect: Expect,
   events: ReadonlyArray<RunEvent.RunEvent>,
   verdict: RunEvent.VerdictReached,
+  runIds: ReadonlyArray<string>,
 ): Check => {
   const reportedMutants = reportedMutantsOf(events)
   const actionable = verdict.mutants.map((mutant) => `${mutant.mutator}:${mutant.status}`)
-  const runIds = runIdsIn(events)
 
   return expect({
     reportedCount: reportedMutants.length,
@@ -131,9 +116,9 @@ export const verifyBrokenCheckerError = (
   expect: Expect,
   run: ExecResult,
   events: ReadonlyArray<RunEvent.RunEvent>,
+  terminal: RunEvent.RunEvent,
 ): Check => {
   const kinds = events.map((event) => event._tag)
-  const terminal = lastEvent(events)
   const errorDocument: RunEvent.RunFailed | undefined = terminal._tag === 'error' ? terminal : undefined
 
   return expect({
@@ -151,20 +136,27 @@ export const verifyBrokenCheckerError = (
   })
 }
 
-export const verifyDiskReport = (expect: Expect, run: ExecResult, reportText: string): Check => {
-  const report = S.decodeUnknownSync(S.fromJsonString(Report.MutationTestResultSchema))(reportText)
-  const fileEntry = report.files['src/order.ts']
+export const verifyDiskReport = (
+  expect: Expect,
+  run: ExecResult,
+  reportText: string,
+): Effect.Effect<Check, Schema.SchemaError> =>
+  Effect.map(
+    Schema.decodeUnknownEffect(Schema.fromJsonString(Report.MutationTestResultSchema))(reportText),
+    (report) => {
+      const fileEntry = report.files['src/order.ts']
 
-  return expect({
-    exitCode: run.exitCode,
-    schemaVersion: report.schemaVersion,
-    fileStatuses: fileEntry === undefined ? undefined : fileEntry.mutants.map((mutant) => mutant.status).toSorted(),
-  }).toStrictEqual({
-    exitCode: 0,
-    schemaVersion: '1.0',
-    fileStatuses: ['CompileError', 'CompileError', 'CompileError', 'CompileError', 'Killed', 'Killed', 'Survived'],
-  })
-}
+      return expect({
+        exitCode: run.exitCode,
+        schemaVersion: report.schemaVersion,
+        fileStatuses: fileEntry === undefined ? undefined : fileEntry.mutants.map((mutant) => mutant.status).toSorted(),
+      }).toStrictEqual({
+        exitCode: 0,
+        schemaVersion: '1.0',
+        fileStatuses: ['CompileError', 'CompileError', 'CompileError', 'CompileError', 'Killed', 'Killed', 'Survived'],
+      })
+    },
+  )
 
 export const verifyDiskStream = (
   expect: Expect,
