@@ -13,6 +13,7 @@ import * as CliError from 'effect/unstable/cli/CliError'
 import * as Command from 'effect/unstable/cli/Command'
 import {
   classifyRunOutcome,
+  type FailedRunOutcome,
   RunExit,
   type RunOutcomeDecision,
   type RunOutcomeError,
@@ -127,16 +128,23 @@ const EXPORTABLE_SPAN_ERROR_LIMIT = 1024
 
 const USAGE_EXIT_CODE = RunExitCode.fromOutcome(RunParseFailed.make({})).code
 
+const truncatedForSpan = (text: string): string =>
+  Bool.match(text.length > EXPORTABLE_SPAN_ERROR_LIMIT, {
+    onTrue: () => `${text.slice(0, EXPORTABLE_SPAN_ERROR_LIMIT)}…[truncated]`,
+    onFalse: () => text,
+  })
+
+const exportableErrorText = (failure: FailedRunOutcome, captured: string): string =>
+  truncatedForSpan(ErrorEnvelope.fromOutcome({ error: failure, captured }).error)
+
 const errorTextOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>, captured: string) =>
   Result.match(result, {
-    onSuccess: () => '',
-    onFailure: (failure) => {
-      const text = ErrorEnvelope.fromOutcome({ error: failure, captured }).error
-      return Match.value(text.length > EXPORTABLE_SPAN_ERROR_LIMIT).pipe(
-        Match.when(true, () => `${text.slice(0, EXPORTABLE_SPAN_ERROR_LIMIT)}…[truncated]`),
-        Match.orElse(() => text),
-      )
-    },
+    onSuccess: (decision) =>
+      Match.value(decision).pipe(
+        Match.tag('RunOk', () => ''),
+        Match.orElse((failed) => exportableErrorText(failed, captured)),
+      ),
+    onFailure: (failure) => exportableErrorText(failure, captured),
   })
 
 export const strykerCliEffect = (options: StrykerCliEffectOptions): Effect.Effect<

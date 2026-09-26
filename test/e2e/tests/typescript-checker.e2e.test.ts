@@ -144,13 +144,13 @@ const verifyBrokenCheckerError = (
     lastKind: kinds.at(-1),
     carriesVerdict: kinds.includes('verdict'),
     terminalTag: terminal._tag,
-    errorMatchesDiagnostic: /non-existent-tsconfig\.json|Cannot read|failed/i.test(errorDocument?.error ?? ''),
+    errorNamesTsconfig: (errorDocument?.error ?? '').includes('non-existent-tsconfig.json'),
   }).toStrictEqual({
     exitCodeIsZero: false,
     lastKind: 'error',
     carriesVerdict: false,
     terminalTag: 'error',
-    errorMatchesDiagnostic: true,
+    errorNamesTsconfig: true,
   })
 }
 
