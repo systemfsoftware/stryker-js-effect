@@ -1,11 +1,9 @@
 import { Cause, Effect, Exit, Layer, ManagedRuntime } from 'effect'
 
-import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import { Readiness } from '@systemfsoftware/effect-readiness'
 
 import { BakedFixtureCache } from '../../src/Harness/fixture-cache.service.js'
-import { GuestJobs } from '../../src/Harness/guest-job.service.js'
-import { layer as harnessTelemetryLayer } from '../../src/Harness/harness-telemetry.service.js'
+import { HarnessPlatformLive } from '../../src/Harness/harness-layers.js'
 import { tempoBaseUrl } from './tempo-endpoint.js'
 
 const TEMPO_PROBE_PATH = '/ready'
@@ -15,13 +13,7 @@ const LGTM_REMEDIATION = 'pnpm lgtm:up'
 
 const LogSourceStub = Layer.succeed(Readiness.LogSource, { entries: Effect.succeed([]) })
 
-const SetupLive = Layer.mergeAll(
-  GuestJobs.layer,
-  nodeServicesLayer,
-  Readiness.NodeHostProber.layer,
-  harnessTelemetryLayer,
-  LogSourceStub,
-)
+const SetupLive = Layer.merge(HarnessPlatformLive, LogSourceStub)
 
 const tempoEndpointOf = (baseUrl: string): { readonly host: string; readonly port: number } => {
   const parsed = new URL(baseUrl)

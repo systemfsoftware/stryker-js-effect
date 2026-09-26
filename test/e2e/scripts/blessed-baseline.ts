@@ -7,15 +7,12 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
 
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
-import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
-import { Readiness } from '@systemfsoftware/effect-readiness'
 import { RunEvent } from '@systemfsoftware/stryker-js'
 
 import type { BakeOutcome } from '../src/Harness/bake-key.schema.js'
 import { BakedFixtureCache } from '../src/Harness/fixture-cache.service.js'
-import { GuestJobs } from '../src/Harness/guest-job.service.js'
 import { BlessRefused } from '../src/Harness/harness-failure.schema.js'
-import { layer as harnessTelemetryLayer } from '../src/Harness/harness-telemetry.service.js'
+import { HarnessPlatformLive, HarnessServicesLive } from '../src/Harness/harness-layers.js'
 import { StrykerCliRunner } from '../src/Harness/stryker-cli-runner.service.js'
 import {
   type BaselineCounts,
@@ -378,13 +375,6 @@ const blessSlice = (slice: OracleSliceId, verify: boolean) =>
     })
   })
 
-const harnessPlatformLayer = Layer.mergeAll(
-  GuestJobs.layer,
-  nodeServicesLayer,
-  Readiness.NodeHostProber.layer,
-  harnessTelemetryLayer,
-)
-
 const bakedConfigLayer = ConfigProvider.layerAdd(
   Effect.acquireRelease(
     BakedFixtureCache.bakeProgram,
@@ -400,9 +390,9 @@ const bakedConfigLayer = ConfigProvider.layerAdd(
   { asPrimary: true },
 )
 
-const harnessLayer = Layer.mergeAll(BakedFixtureCache.layer, StrykerCliRunner.layer, GuestJobs.layer).pipe(
+const harnessLayer = HarnessServicesLive.pipe(
   Layer.provideMerge(bakedConfigLayer),
-  Layer.provideMerge(harnessPlatformLayer),
+  Layer.provideMerge(HarnessPlatformLive),
 )
 
 const program = Effect.gen(function*() {

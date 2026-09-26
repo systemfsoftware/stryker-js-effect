@@ -1,5 +1,3 @@
-import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
-import { Readiness } from '@systemfsoftware/effect-readiness'
 import { Stimulus } from '@systemfsoftware/trace-spec'
 import { VitestTestContext } from '@systemfsoftware/vitest'
 import { Effect, Layer } from 'effect'
@@ -8,21 +6,12 @@ import type { Scope } from 'effect'
 import { BakedFixtureCache } from '../../src/Harness/fixture-cache.service.js'
 import type { BakePlatform } from '../../src/Harness/fixture-cache.service.js'
 import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
-import { GuestJobs } from '../../src/Harness/guest-job.service.js'
 import type { HarnessError, SandboxForkFailure } from '../../src/Harness/harness-failure.schema.js'
-import { layer as harnessTelemetryLayer } from '../../src/Harness/harness-telemetry.service.js'
+import { HarnessPlatformLive, HarnessServicesLive } from '../../src/Harness/harness-layers.js'
 import { StrykerCliRunner } from '../../src/Harness/stryker-cli-runner.service.js'
 import * as Warm from '../../src/Harness/warm-sandbox.handle.js'
 
-export const E2eHarnessLive = Layer.mergeAll(
-  BakedFixtureCache.layer,
-  StrykerCliRunner.layer,
-  GuestJobs.layer,
-).pipe(
-  Layer.provideMerge(
-    Layer.mergeAll(nodeServicesLayer, Readiness.NodeHostProber.layer, harnessTelemetryLayer),
-  ),
-)
+export const E2eHarnessLive = HarnessServicesLive.pipe(Layer.provideMerge(HarnessPlatformLive))
 
 export interface StrykerRunInput {
   readonly fixture: URL
