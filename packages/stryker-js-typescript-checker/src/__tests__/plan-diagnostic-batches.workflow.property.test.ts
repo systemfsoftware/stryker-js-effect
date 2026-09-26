@@ -1,6 +1,8 @@
 import { describe } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
 import * as Equal from 'effect/Equal'
+import * as HashSet from 'effect/HashSet'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -22,6 +24,16 @@ const batchesFor = (fileNames: ReadonlyArray<string>) => {
   return S.is(DiagnosticBatchesPlanned)(decision) ? decision.batches : []
 }
 
+const boundarySizes = () => S.Literals([0, 1, 63, 64, 65, 127, 128, 129, 200])
+
+const boundaryNames = () => S.Array(S.String).check(S.isMinLength(1), S.isMaxLength(8))
+
+const boundaryInputOf = (size: number, names: ReadonlyArray<string>): ReadonlyArray<string> =>
+  Array.from({ length: size }, (_, index) => names[index % names.length] ?? `src/generated-file-${index}.ts`)
+
+const boundaryBatchesFor = (size: number, names: ReadonlyArray<string>): ReadonlyArray<ReadonlyArray<string>> =>
+  batchesFor(boundaryInputOf(size, names))
+
 const plansBatches = (fileNames: ReadonlyArray<string>) => S.is(DiagnosticBatchesPlanned)(decisionFor(fileNames))
 
 describe('planDiagnosticBatches', (it) => {
@@ -42,5 +54,29 @@ describe('planDiagnosticBatches', (it) => {
     '∀files_Batches_≡VariantByEmptiness',
     { of: [fileNamesSchema()], subject: plansBatches },
     (subject, [fileNames]) => subject(fileNames) === fileNames.length > 0,
+  )
+
+  it.prop(
+    '∀size_Batches_≡FullChunksExceptLast',
+    { of: [boundarySizes(), boundaryNames()], subject: boundaryBatchesFor },
+    (subject, [size, names]) => {
+      const fileNames = boundaryInputOf(size, names)
+      const batches = subject(size, names)
+      const full = Arr.dropRight(batches, 1)
+      return Arr.every(
+        [
+          Equal.equals(Arr.flatten(batches), fileNames),
+          batches.length === Math.ceil(size / BATCH_SIZE),
+          Arr.every(full, (batch) => batch.length === BATCH_SIZE),
+          Option.match(Arr.last(batches), {
+            onNone: () => size === 0,
+            onSome: (batch) => batch.length === size - full.length * BATCH_SIZE,
+          }),
+          HashSet.size(HashSet.fromIterable(Arr.flatten(batches))) ===
+            HashSet.size(HashSet.fromIterable(fileNames)),
+        ],
+        (holds) => holds,
+      )
+    },
   )
 })

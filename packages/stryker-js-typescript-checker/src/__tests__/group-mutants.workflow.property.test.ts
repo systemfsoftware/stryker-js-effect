@@ -84,6 +84,41 @@ const seenNamesOf = (node: NodeDecodedShape): ReadonlyArray<string> => [
 const relatedNodes = (left: NodeDecodedShape, right: NodeDecodedShape): boolean =>
   seenNamesOf(left).includes(right.fileName) || seenNamesOf(right).includes(left.fileName)
 
+const keepSome = <A>(option: Option.Option<A>): Result.Result<A, void> =>
+  Option.match(option, { onNone: () => Result.failVoid, onSome: Result.succeed })
+
+const memberNodesOf = (
+  groups: ReadonlyArray<ReadonlyArray<string>>,
+  mutants: ReadonlyArray<Checker.CheckerMutantWire>,
+  nodes: Record<string, NodeDecodedShape>,
+): ReadonlyArray<ReadonlyArray<NodeDecodedShape>> =>
+  Arr.map(groups, (ids) =>
+    Arr.filterMap(ids, (id) =>
+      keepSome(
+        Option.flatMap(
+          Arr.findFirst(mutants, (mutant) => mutant.id === id),
+          (mutant) => Option.fromUndefinedOr(nodes[mutant.fileName]),
+        ),
+      )))
+
+const everyGroupIndependent = (
+  groups: ReadonlyArray<ReadonlyArray<string>>,
+  mutants: ReadonlyArray<Checker.CheckerMutantWire>,
+  nodes: Record<string, NodeDecodedShape>,
+): boolean =>
+  Arr.every(memberNodesOf(groups, mutants, nodes), (members) =>
+    Arr.every(
+      Arr.flatMap(
+        members,
+        (left, index) =>
+          Arr.map(
+            Arr.drop(members, index + 1),
+            (right): readonly [NodeDecodedShape, NodeDecodedShape] => [left, right],
+          ),
+      ),
+      ([left, right]) => !relatedNodes(left, right),
+    ))
+
 interface Assignment {
   readonly ids: ReadonlyArray<string>
   readonly members: ReadonlyArray<NodeDecodedShape>
@@ -166,5 +201,12 @@ describe('groupMutants', (it) => {
         (anyInside ? Equal.equals(Arr.head(groups), Option.some(outsideIds)) : Equal.equals(groups, singles))
       )
     },
+  )
+
+  it.prop(
+    '∀graph_Group_⊆Independent',
+    { of: [edgesSchema(), fileIndexesSchema()], subject: groupedFor },
+    (subject, [edges, fileIndexes]) =>
+      everyGroupIndependent(subject(edges, fileIndexes, true), mutantsOf(fileIndexes), nodesOfEdges(edges)),
   )
 })
