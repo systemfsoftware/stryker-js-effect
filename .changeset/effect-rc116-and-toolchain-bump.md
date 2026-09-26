@@ -5,7 +5,6 @@
 "@systemfsoftware/stryker-js-plugin-runtime": patch
 "@systemfsoftware/stryker-js-typescript-checker": patch
 "@systemfsoftware/stryker-js-vitest-runner": patch
-"@systemfsoftware/stryker-test-contribution": patch
 "@systemfsoftware/stryker-ignorer-interface": patch
 "@systemfsoftware/stryker-ignorer-angular": patch
 "@systemfsoftware/stryker-ignorer-effect-schema-declarations": patch
