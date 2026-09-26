@@ -381,6 +381,10 @@
     - piped-stdout-stays-human
     - vm-runner-mutation-wall-time
     - vm-runner-runs-vitest
+"@systemfsoftware/stryker-js@12.1.1":
+  dir: packages/stryker-js
+  intents:
+    - run-error-span-attribute
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
