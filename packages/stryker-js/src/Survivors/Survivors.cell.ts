@@ -15,26 +15,35 @@ import {
   admitSurvivorsRun,
   AdmitSurvivorsRunCommand,
   Admitted,
-  NoSurvivors,
   SurvivorsRejection,
 } from '../admit-survivors-run.workflow.js'
 import { ConfigFileUnreadableError } from '../ConfigError.schema.js'
 import { RelativeNormalizedFileName } from '../matching.schema.js'
 import type { OutputMode } from '../output-mode.schema.js'
 import { readConfig } from '../run/load-config.cell.js'
+import type { MutationTestDone } from '../run/mutation-test.cell.js'
+import type { EnginePorts } from '../run/StageServices.service.js'
 import { StrykerPackage } from '../stryker-package.schema.js'
 import { PriorReportDocument, type PriorReportMutant } from './Survivors.schema.js'
+
+export type SurvivorsSettled = void | MutationTestDone
+
+export interface AdmittedRun {
+  readonly admitted: Admitted
+  readonly resolvedOptions: Options.StrykerOptions
+  readonly priorReportPath: string
+}
+
+export interface SurvivorsSettlement {
+  readonly runAdmitted: (run: AdmittedRun) => Effect.Effect<SurvivorsSettled, never, EnginePorts>
+  readonly reportNoSurvivors: (resolvedOptions: Options.StrykerOptions) => Effect.Effect<SurvivorsSettled>
+}
 
 export interface SurvivorsAdmissionInput {
   readonly cliOptions: Options.PartialStrykerOptions
   readonly mode: OutputMode
   readonly basePath: string
-}
-
-export interface SurvivorsAdmissionAnswer {
-  readonly admission: Admitted | NoSurvivors
-  readonly resolvedOptions: Options.StrykerOptions
-  readonly priorReportPath: string
+  readonly settle: SurvivorsSettlement
 }
 
 export const DEFAULT_SURVIVORS_PRIOR_REPORT = 'reports/mutation-report.json'
@@ -226,13 +235,14 @@ const readSurvivorsAdmission = Effect.fn('stryker.survivors_admission.gather')(
     const priorReportPath = priorReportPathOf(resolvedOptions)
     const read = yield* readPriorReport(priorReportPath)
     const sourceContentHashes = yield* currentSourceHashesFor(priorReportFileKeys(read.raw))
-    return yield* survivorsRawOf({
+    const raw = yield* survivorsRawOf({
       read,
       resolvedOptions,
       priorReportPath,
       basePath: input.basePath,
       sourceContentHashes,
     })
+    return { ...raw, settle: input.settle }
   },
 )
 
@@ -240,20 +250,16 @@ export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admissio
   .decide(admitSurvivorsRun)
   .write({
     Admitted: (admitted, raw) =>
-      Effect.map(
+      Effect.flatMap(
         S.decodeEffect(Admitted)(admitted),
-        (admission) => ({
-          admission,
-          resolvedOptions: raw.resolvedOptions,
-          priorReportPath: raw.priorReportPath,
-        }),
+        (decoded) =>
+          raw.settle.runAdmitted({
+            admitted: decoded,
+            resolvedOptions: raw.resolvedOptions,
+            priorReportPath: raw.priorReportPath,
+          }),
       ),
-    NoSurvivors: (_outcome, raw) =>
-      Effect.succeed({
-        admission: NoSurvivors.make(),
-        resolvedOptions: raw.resolvedOptions,
-        priorReportPath: raw.priorReportPath,
-      }),
+    NoSurvivors: (_outcome, raw) => raw.settle.reportNoSurvivors(raw.resolvedOptions),
     SurvivorsRejection: (rejection) => Effect.fail(SurvivorsRejection.make(rejection)),
     CommandRejected: ({ issue }) => Effect.fail(SurvivorsRejection.make({ reason: 'mismatch', remediation: issue })),
   })
