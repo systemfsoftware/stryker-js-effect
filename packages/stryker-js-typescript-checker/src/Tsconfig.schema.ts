@@ -4,7 +4,11 @@ import { Schema as S } from 'effect'
 export class TsConfigParseError extends S.TaggedError<TsConfigParseError>()('TsConfigParseError', {
   file: S.String,
   reason: S.String,
-}) {}
+}) {
+  override get message(): string {
+    return `Could not parse tsconfig file '${this.file}': ${this.reason}`
+  }
+}
 
 export class TsConfigNotFoundError extends S.TaggedError<TsConfigNotFoundError>()(
   'TsConfigNotFoundError',

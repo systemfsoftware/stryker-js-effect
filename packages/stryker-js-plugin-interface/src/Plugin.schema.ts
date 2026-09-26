@@ -47,7 +47,11 @@ export class BoundaryPayloadRejected extends S.TaggedError<BoundaryPayloadReject
     method: S.String,
     cause: S.String,
   },
-) {}
+) {
+  override get message(): string {
+    return `Plugin "${this.pluginName}" rejected the payload for ${this.method}: ${this.cause}`
+  }
+}
 
 export class BoundaryUnrecognizedSignal extends S.TaggedError<BoundaryUnrecognizedSignal>()(
   'BoundaryUnrecognizedSignal',
@@ -56,7 +60,11 @@ export class BoundaryUnrecognizedSignal extends S.TaggedError<BoundaryUnrecogniz
     method: S.String,
     signal: S.String,
   },
-) {}
+) {
+  override get message(): string {
+    return `Plugin "${this.pluginName}" sent an unrecognized signal "${this.signal}" for ${this.method}`
+  }
+}
 
 export const BoundaryErrorSchema = S.Union([
   BoundaryPayloadRejected,

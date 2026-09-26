@@ -22,6 +22,10 @@ export class RunExit extends S.TaggedError<RunExit>()('RunExit', { code: Plugin.
   override get [Runtime.errorExitCode](): number {
     return this.code
   }
+
+  override get message(): string {
+    return `Run exited with code ${this.code}`
+  }
 }
 
 const CONFIG_CODE = 2
@@ -48,6 +52,10 @@ export class RunInterrupted extends S.TaggedError<RunInterrupted>()('RunInterrup
   code: Plugin.ExitCode,
 }) {
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
+
+  override get message(): string {
+    return `Run interrupted by a signal (exit code ${this.code})`
+  }
 }
 
 export class RunParseFailed extends S.TaggedClass<RunParseFailed>()('RunParseFailed', {

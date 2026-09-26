@@ -7,6 +7,10 @@ export class ConfigFileNotFoundError extends S.TaggedError<ConfigFileNotFoundErr
   },
 ) {
   readonly exitClass = 'ConfigError' as const
+
+  override get message(): string {
+    return `Config file not found: ${this.file}`
+  }
 }
 
 export class ConfigFileUnsupportedError extends S.TaggedError<ConfigFileUnsupportedError>()(
@@ -31,6 +35,10 @@ export class ConfigFileUnreadableError extends S.TaggedError<ConfigFileUnreadabl
   },
 ) {
   readonly exitClass = 'ConfigError' as const
+
+  override get message(): string {
+    return `Config file is unreadable: ${this.file}`
+  }
 }
 
 export class ConfigFileInvalidError extends S.TaggedError<ConfigFileInvalidError>()(
@@ -41,6 +49,10 @@ export class ConfigFileInvalidError extends S.TaggedError<ConfigFileInvalidError
   },
 ) {
   readonly exitClass = 'ConfigError' as const
+
+  override get message(): string {
+    return `Invalid config file: ${this.file}`
+  }
 }
 
 export class ConfigFactoryFailed extends S.TaggedError<ConfigFactoryFailed>()('ConfigFactoryFailed', {

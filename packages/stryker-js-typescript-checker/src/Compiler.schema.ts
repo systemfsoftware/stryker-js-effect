@@ -27,14 +27,22 @@ export class HybridFileNotFoundError extends S.TaggedError<HybridFileNotFoundErr
   {
     fileName: S.String,
   },
-) {}
+) {
+  override get message(): string {
+    return `'${this.fileName}' is part of your TypeScript project but could not be found on disk`
+  }
+}
 
 export class HybridMutantOutsideFileError extends S.TaggedError<HybridMutantOutsideFileError>()(
   'HybridMutantOutsideFileError',
   {
     fileName: S.String,
   },
-) {}
+) {
+  override get message(): string {
+    return `A mutant's location falls outside '${this.fileName}'`
+  }
+}
 
 /**
  * Every way the TypeScript compiler can fail while serving a check.

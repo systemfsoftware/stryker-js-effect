@@ -75,7 +75,11 @@ export type MutantPlan = MutantsPlanned | MutantsFullyIgnored
 export class MutantWithoutLocation extends S.TaggedError<MutantWithoutLocation>()('MutantWithoutLocation', {
   fileName: S.String,
   mutatorName: MutatorNameSchema,
-}) {}
+}) {
+  override get message(): string {
+    return `Mutant without a source location: ${this.mutatorName} in ${this.fileName}`
+  }
+}
 
 export type PlanFailure = MutantWithoutLocation
 

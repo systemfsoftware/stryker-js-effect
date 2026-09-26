@@ -12,6 +12,10 @@ export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('U
   static readonly skipped = Metric.counter('stryker.checker.mutants.skipped', {
     description: 'Total number of mutants dropped because they cannot be described to a checker',
   })
+
+  override get message(): string {
+    return `Mutant ${this.id} in ${this.fileName} cannot be described to a checker: ${this.reason}`
+  }
 }
 
 const CheckerMutant = S.toType(Checker.CheckerMutantWire)

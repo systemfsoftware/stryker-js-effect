@@ -90,4 +90,8 @@ export class ReporterFailed extends S.TaggedError<ReporterFailed>()('ReporterFai
   cause: S.String,
   event: ReporterEventKind,
   reporterName: S.String,
-}) {}
+}) {
+  override get message(): string {
+    return `Reporter "${this.reporterName}" failed while handling ${this.event}: ${this.cause}`
+  }
+}

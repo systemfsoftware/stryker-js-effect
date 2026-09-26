@@ -1,11 +1,11 @@
 diff --git a/CHANGELOG.md b/CHANGELOG.md
 deleted file mode 100644
-index 926d54a79ef78e33aaf17c0e9e5d07b8eda9f9d0..0000000000000000000000000000000000000000
+index 6f94ec95cb539196ca96e3f449fa668be0ec890c..0000000000000000000000000000000000000000
 diff --git a/dist/index.mjs b/dist/index.mjs
-index 12b3da214408110f624f28eac4f8da7ece629023..80afbbe2c617470a9a5b313590378d0a0057f3cb 100644
+index 5721d607741518d66dfda1194937721d48907ed3..16045e4759e3d17f975dced826a4a425732efa13 100644
 --- a/dist/index.mjs
 +++ b/dist/index.mjs
-@@ -60,6 +60,16 @@ const attemptOn = (run, schedule, oracle) => disagrees(run, oracle) ? {
+@@ -67,6 +67,16 @@ const attemptOn = (run, schedule, oracle) => disagrees(run, oracle) ? {
  	run,
  	schedule
  } : void 0;
@@ -22,7 +22,7 @@ index 12b3da214408110f624f28eac4f8da7ece629023..80afbbe2c617470a9a5b313590378d0a
  const caseRunsOf = (program, seed) => Kernel.run(program).then((order) => {
  	const options = { choose: Kernel.pick({
  		seed,
-@@ -151,7 +161,7 @@ const programOf = (comparison, input) => {
+@@ -158,7 +168,7 @@ const programOf = (comparison, input) => {
  const caseHolds = (comparison, input, seed) => {
  	const program = programOf(comparison, input);
  	if (program === void 0) return Promise.resolve(false);
@@ -31,7 +31,7 @@ index 12b3da214408110f624f28eac4f8da7ece629023..80afbbe2c617470a9a5b313590378d0a
  };
  const renderThrown = (thrown) => {
  	if (thrown instanceof Error) return `${thrown.name}: ${thrown.message}`;
-@@ -182,7 +192,13 @@ const caseReportOf = (comparison, details, described, seed, program, runs) => {
+@@ -189,7 +199,13 @@ const caseReportOf = (comparison, details, described, seed, program, runs) => {
  		isFailure: (run) => disagrees(run, comparison.oracle)
  	}).then((shrunk) => disparityOf(details, described, attempt.schedule, shrunk));
  };

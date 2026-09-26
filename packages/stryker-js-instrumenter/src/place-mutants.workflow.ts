@@ -75,11 +75,19 @@ export class MutantKindMismatch extends S.TaggedError<MutantKindMismatch>()('Mut
   mutantId: MutantId,
   mutatorName: MutatorNameSchema,
   expected: ExpectedKindSchema,
-}) {}
+}) {
+  override get message(): string {
+    return `Expected ${this.expected} for mutant ${this.mutantId} (${this.mutatorName}) in ${this.fileName}`
+  }
+}
 
 export class NoPlacerClaimsNode extends S.TaggedError<NoPlacerClaimsNode>()('NoPlacerClaimsNode', {
   fileName: S.String,
-}) {}
+}) {
+  override get message(): string {
+    return `No placer claims the node in ${this.fileName}`
+  }
+}
 
 export type PlacementRefusal = MutantKindMismatch | NoPlacerClaimsNode | MutantsUnapplied | MutantNotApplied
 

@@ -1,4 +1,5 @@
 import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
 import * as S from 'effect/Schema'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
@@ -6,7 +7,15 @@ import { Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export class TraceContextUnavailable extends S.TaggedError<TraceContextUnavailable>()('TraceContextUnavailable', {
   reason: S.Literals(['invalid-span-context', 'undecodable-parts']),
-}) {}
+}) {
+  override get message(): string {
+    return Match.value(this.reason).pipe(
+      Match.when('invalid-span-context', () => 'Cannot read trace context: the span context is invalid'),
+      Match.when('undecodable-parts', () => 'Cannot read trace context: the trace context parts could not be decoded'),
+      Match.exhaustive,
+    )
+  }
+}
 
 const CURRENT_VERSION = '00'
 const SAMPLED_FLAG = 0x01

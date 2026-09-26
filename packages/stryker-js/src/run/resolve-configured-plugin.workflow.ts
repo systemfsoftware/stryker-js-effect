@@ -34,7 +34,11 @@ export class WorkerSpawnResolved extends S.TaggedClass<WorkerSpawnResolved>()('W
 export class WorkerSpawnMissing extends S.TaggedError<WorkerSpawnMissing>()('WorkerSpawnMissing', {
   reason: S.String,
   descriptor: S.String,
-}) {}
+}) {
+  override get message(): string {
+    return `${this.reason} (${this.descriptor})`
+  }
+}
 
 export class WorkerSpawnCommand extends S.TaggedClass<WorkerSpawnCommand>()('WorkerSpawnCommand', {
   sources: S.Array(PluginSourceSchema),

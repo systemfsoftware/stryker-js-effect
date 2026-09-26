@@ -17,7 +17,11 @@ export class DiagnosticWithoutFileError extends S.TaggedError<DiagnosticWithoutF
   {
     text: S.String,
   },
-) {}
+) {
+  override get message(): string {
+    return `A compiler diagnostic has no file name: ${this.text}`
+  }
+}
 
 export class DiagnosticInUnrelatedFileError extends S.TaggedError<DiagnosticInUnrelatedFileError>()(
   'DiagnosticInUnrelatedFileError',
@@ -25,7 +29,11 @@ export class DiagnosticInUnrelatedFileError extends S.TaggedError<DiagnosticInUn
     text: S.String,
     fileName: S.String,
   },
-) {}
+) {
+  override get message(): string {
+    return `A compiler diagnostic for '${this.fileName}' does not belong to any mutant's file: ${this.text}`
+  }
+}
 
 export type CheckMutantsError = DiagnosticWithoutFileError | DiagnosticInUnrelatedFileError
 
