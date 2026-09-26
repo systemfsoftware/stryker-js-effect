@@ -121,6 +121,10 @@
   dir: packages/stryker-js-html-reporter
   intents:
     - sparkly-feet-own
+"@systemfsoftware/stryker-js-html-reporter@5.0.4":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - systemfsoftware-latest-packages-2026-09-26
 "@systemfsoftware/stryker-js-instrumenter@10.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -130,6 +134,10 @@
     - mutant-status-vocabulary
     - source-locations-are-one-based
     - sparkly-feet-own
+"@systemfsoftware/stryker-js-instrumenter@10.0.1":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - systemfsoftware-latest-packages-2026-09-26
 "@systemfsoftware/stryker-js-instrumenter@7.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -186,6 +194,10 @@
     - sparkly-feet-own
     - test-ids-are-one-value
     - thresholds-are-one-schema
+"@systemfsoftware/stryker-js-plugin-interface@10.0.1":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - systemfsoftware-latest-packages-2026-09-26
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -264,6 +276,10 @@
   dir: packages/stryker-js-plugin-runtime
   intents:
     - sparkly-feet-own
+"@systemfsoftware/stryker-js-plugin-runtime@6.0.4":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - systemfsoftware-latest-packages-2026-09-26
 "@systemfsoftware/stryker-js-svelte@0.0.0":
   dir: packages/frameworks/svelte
   intents:
@@ -319,6 +335,10 @@
     - checker-tsconfig-document-declared
     - source-locations-are-one-based
     - sparkly-feet-own
+"@systemfsoftware/stryker-js-typescript-checker@8.0.1":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - systemfsoftware-latest-packages-2026-09-26
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -374,6 +394,10 @@
     - negative-free-counts
     - sparkly-feet-own
     - test-ids-are-one-value
+"@systemfsoftware/stryker-js-vitest-runner@8.0.1":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - systemfsoftware-latest-packages-2026-09-26
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -459,6 +483,10 @@
     - test-ids-are-one-value
     - thresholds-are-one-schema
     - wall-clock-timeout-reports-timeout
+"@systemfsoftware/stryker-js@13.0.1":
+  dir: packages/stryker-js
+  intents:
+    - systemfsoftware-latest-packages-2026-09-26
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
