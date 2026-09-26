@@ -174,20 +174,20 @@ const incrementalDiffCommandOf = (
   basePath: string,
   force: boolean,
   identitiesByFile: Record<string, FormatIdentity>,
-) =>
-  IncrementalDiffCommand.make({
-    currentMutants: [...currentMutants],
-    relativeFileByMutantId: relativeFileByMutantIdOf(currentMutants, basePath),
-    previousFiles: previousFilesOf(incrementalReport),
-    previousTestFiles: previousTestFilesOf(incrementalReport),
-    currentRelativeFiles,
-    testIdsByRelativeFile: testIdsByRelativeFileOf(testCoverage, basePath),
-    coveringTestFilesByMutantId: coveringTestFilesByMutantIdOf(testCoverage, basePath),
-    identitiesByFile,
-    force,
-  })
+): typeof IncrementalDiffCommand.Encoded => ({
+  _tag: 'IncrementalDiffCommand',
+  currentMutants: [...currentMutants],
+  relativeFileByMutantId: relativeFileByMutantIdOf(currentMutants, basePath),
+  previousFiles: previousFilesOf(incrementalReport),
+  previousTestFiles: previousTestFilesOf(incrementalReport),
+  currentRelativeFiles,
+  testIdsByRelativeFile: testIdsByRelativeFileOf(testCoverage, basePath),
+  coveringTestFilesByMutantId: coveringTestFilesByMutantIdOf(testCoverage, basePath),
+  identitiesByFile,
+  force,
+})
 
-type IncrementalReuseRaw = IncrementalDiffCommand & {
+type IncrementalReuseRaw = typeof IncrementalDiffCommand.Encoded & {
   readonly mutantsById: Record<string, Mutant.Mutant>
 }
 
@@ -204,7 +204,10 @@ const readIncrementalReuseCommand = Effect.fn('stryker.incremental_reuse.read')(
     input.force,
     claimedIdentities(input.project, input.formatRegistry, input.basePath),
   )
-  return Object.assign(command, { mutantsById: mutantsByIdOf(command.currentMutants) })
+  return {
+    ...command,
+    mutantsById: mutantsByIdOf(input.currentMutants),
+  }
 })
 
 export interface IncrementalReusePart {
@@ -214,12 +217,9 @@ export interface IncrementalReusePart {
 
 const mutantToRunPart = Effect.fnUntraced(function*(
   decision: typeof MutantToRun.Encoded,
-  command: IncrementalReuseRaw,
 ): Effect.fn.Return<IncrementalReusePart, never> {
-  return yield* Option.match(Record.get(command.mutantsById, decision.mutant.id), {
-    onNone: () => Effect.succeed<IncrementalReusePart>({ mutants: [], rememberedResults: [] }),
-    onSome: (mutant) => Effect.succeed<IncrementalReusePart>({ mutants: [mutant], rememberedResults: [] }),
-  })
+  const mutant = yield* Effect.orDie(S.decodeEffect(Mutant.Mutant)(decision.mutant))
+  return yield* Effect.succeed<IncrementalReusePart>({ mutants: [mutant], rememberedResults: [] })
 })
 
 const rememberedMutantPart = Effect.fnUntraced(function*(
@@ -239,7 +239,7 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
 const incrementalReuseCell = Sandwich.named('stryker.incremental_reuse')(readIncrementalReuseCommand)
   .decide(incrementalDiff)
   .write({
-    MutantToRun: (decision, command) => mutantToRunPart(decision, command),
+    MutantToRun: (decision) => mutantToRunPart(decision),
     MutantRemembered: (decision, command) => rememberedMutantPart(decision, command),
     CommandRejected: ({ issue }) =>
       Effect.die(StageError.make({ stage: 'mutationTest', reason: `incremental reuse command rejected: ${issue}` })),

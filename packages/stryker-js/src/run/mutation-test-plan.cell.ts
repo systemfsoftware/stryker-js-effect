@@ -104,30 +104,30 @@ const planCommandOf = (
   timeOverheadMS: number,
   globalTestFilter: string[] | undefined,
   sandboxFileByName: Record<string, string>,
-) =>
-  MutantTestPlanCommand.make({
-    mutants: [...mutants],
-    timeOverheadMS,
-    timeSpentAllTests: testCoverage.testsById.pipe(MutableHashMap.values, calculateTotalTime),
-    hitsByMutantId: hitsRecordOf(testCoverage),
-    testsByMutantId: testsByMutantIdRecordOf(testCoverage),
-    testTimeById: testTimeRecordOf(testCoverage),
-    options,
-    sandboxFileByName,
-    ...Option.match(Option.fromNullishOr(testCoverage.staticCoverage), {
-      onNone: () => ({}),
-      onSome: (staticCoverage) => ({ staticCoverage }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(globalTestFilter), {
-      onNone: () => ({}),
-      onSome: (testFilter) => ({ globalTestFilter: testFilter }),
-    }),
-  })
+): typeof MutantTestPlanCommand.Encoded => ({
+  _tag: 'MutantTestPlanCommand',
+  mutants: [...mutants],
+  timeOverheadMS,
+  timeSpentAllTests: testCoverage.testsById.pipe(MutableHashMap.values, calculateTotalTime),
+  hitsByMutantId: hitsRecordOf(testCoverage),
+  testsByMutantId: testsByMutantIdRecordOf(testCoverage),
+  testTimeById: testTimeRecordOf(testCoverage),
+  options,
+  sandboxFileByName,
+  ...Option.match(Option.fromNullishOr(testCoverage.staticCoverage), {
+    onNone: () => ({}),
+    onSome: (staticCoverage) => ({ staticCoverage }),
+  }),
+  ...Option.match(Option.fromUndefinedOr(globalTestFilter), {
+    onNone: () => ({}),
+    onSome: (testFilter) => ({ globalTestFilter: testFilter }),
+  }),
+})
 
 const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
   Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant] as const))
 
-type MutantTestPlanRaw = MutantTestPlanCommand & {
+type MutantTestPlanRaw = typeof MutantTestPlanCommand.Encoded & {
   readonly mutantsById: Record<string, Mutant.Mutant>
 }
 
@@ -146,7 +146,7 @@ const readPlanCommand = Effect.fn('stryker.mutation_test.plan.read')(function*(i
     undefined,
     sandboxFileByName,
   )
-  return Object.assign(command, { mutantsById: mutantsByIdOf(command.mutants) })
+  return { ...command, mutantsById: mutantsByIdOf(input.mutants) }
 })
 
 type EncodedPlannedDecision = typeof PlannedRunMutant.Encoded | typeof PlannedEarlyResultMutant.Encoded

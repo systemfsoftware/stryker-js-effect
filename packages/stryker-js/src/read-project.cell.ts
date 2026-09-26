@@ -288,19 +288,19 @@ export const readProject = Effect.fn('stryker.project.read')(function*(input: Re
   )
   const fs = yield* FileSystem.FileSystem
   const contents = Option.getOrUndefined(yield* incrementalContentsOf(fs, input.options))
-  const command: ReadProjectCommand = Object.assign(
-    AdmitIncrementalReportCommand.make({ report: reportOf(contents), expectedVersion: StrykerPackage.version }),
-    {
-      options: input.options,
-      targetMutatePatterns: input.targetMutatePatterns,
-      basePath: input.basePath,
-      incremental: input.options.incremental,
-      incrementalFile: input.options.incrementalFile,
-      contents,
-      fileDescriptions: decision.fileDescriptions,
-      testFiles: [...decision.testFiles],
-    },
-  )
+  const command: ReadProjectCommand = {
+    _tag: 'AdmitIncrementalReportCommand',
+    report: reportOf(contents),
+    expectedVersion: StrykerPackage.version,
+    options: input.options,
+    targetMutatePatterns: input.targetMutatePatterns,
+    basePath: input.basePath,
+    incremental: input.options.incremental,
+    incrementalFile: input.options.incrementalFile,
+    contents,
+    fileDescriptions: decision.fileDescriptions,
+    testFiles: [...decision.testFiles],
+  }
   return command
 })
 

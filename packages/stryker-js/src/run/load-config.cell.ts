@@ -83,7 +83,12 @@ const readLoadConfig = Effect.fn('stryker.config.load')(function*(input: {
     isDryRun: input.cliOptions['dryRunOnly'] === true,
   })
   const loaded = yield* readConfigDocument({ cliOptions: input.cliOptions, configEnv })
-  return LoadConfigCommand.make({ document: loaded.document, fileFound: loaded.fileFound })
+  const command: typeof LoadConfigCommand.Encoded = {
+    _tag: 'LoadConfigCommand',
+    document: loaded.document,
+    fileFound: loaded.fileFound,
+  }
+  return command
 })
 
 const readRunConfig = Effect.fn('stryker.config.readRun')(function*(input: {
@@ -95,10 +100,11 @@ const readRunConfig = Effect.fn('stryker.config.readRun')(function*(input: {
     cliOptions: input.cliOptions,
     invocation: { command: 'run', mode: env.resolvedMode.mode },
   }).pipe(Effect.tapCause(() => emitPreparePhaseEntered))
-  return Object.assign(raw, {
+  return {
+    ...raw,
     targetMutatePatterns: input.targetMutatePatterns,
     basePath: env.basePath,
-  })
+  }
 })
 
 export const loadConfig = Sandwich.named('stryker.config_read')(readLoadConfig)

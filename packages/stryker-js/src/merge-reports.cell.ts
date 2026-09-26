@@ -20,6 +20,7 @@ import {
   MergeSurvivor as MergeSurvivorSchema,
   MergeVerdictRow as MergeVerdictRowSchema,
   MissingPackages,
+  ReportPart,
 } from './merge-report-parts.workflow.js'
 import { MergeReportsFailed, PartMetaSchema } from './merge-reports.schema.js'
 import type { OutputMode } from './output-mode.schema.js'
@@ -40,7 +41,7 @@ type VerdictRow = S.Schema.Type<typeof MergeVerdictRowSchema>
 type Survivor = S.Schema.Type<typeof MergeSurvivorSchema>
 type MutationReport = S.Schema.Type<typeof Report.MutationTestResultSchema>
 
-type MergeCommand = MergeReportPartsCommand & {
+type MergeCommand = typeof MergeReportPartsCommand.Encoded & {
   readonly out: string
   readonly partsDir: string
   readonly skipped: readonly string[]
@@ -179,11 +180,12 @@ export const decodeMerge = (raw: {
 }) =>
   Result.map(expectedPackages(raw.packagesRaw), (packages) => {
     const reads = raw.bytes.map((bytes) => ({ dir: bytes.dir, ...decodedPart(bytes) }))
+    const parts: ReadonlyArray<S.Schema.Type<typeof ReportPart>> = reads.flatMap((read) => Option.toArray(read.part))
     return {
-      command: MergeReportPartsCommand.make({
-        parts: reads.flatMap((read) => Option.toArray(read.part)),
+      command: {
+        parts,
         expectedPackages: packages,
-      }),
+      },
       skipped: reads.flatMap((read) => Option.match(read.part, { onNone: () => [read.dir], onSome: () => [] })),
       unreadable: reads.flatMap((read) =>
         Match.value(read.unreadable).pipe(
@@ -390,15 +392,14 @@ const readMerge = Effect.fn('stryker.merge_reports.gather')(function*(request: M
   const dirs = yield* collectPartDirs(request.parts)
   const bytes = yield* Effect.forEach(dirs, readPartBytes)
   return yield* Effect.fromResult(decodeMerge({ packagesRaw: request.packages, bytes })).pipe(
-    Effect.map(({ command, skipped, unreadable }) =>
-      Object.assign(command, {
-        out: request.out,
-        partsDir: request.parts,
-        skipped,
-        unreadable,
-        mode: request.mode,
-      })
-    ),
+    Effect.map(({ command, skipped, unreadable }): MergeCommand => ({
+      ...command,
+      out: request.out,
+      partsDir: request.parts,
+      skipped,
+      unreadable,
+      mode: request.mode,
+    })),
   )
 })
 
