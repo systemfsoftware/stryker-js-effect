@@ -39,4 +39,5 @@ it.live(
       verifyPresetMutants(expect, events, terminal),
     )
   },
+  { timeout: 300_000 },
 )

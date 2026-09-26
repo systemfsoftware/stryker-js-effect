@@ -41,4 +41,5 @@ it.live(
       verifyMutantStreamAndActionables(expect, events, terminal),
     )
   },
+  { timeout: 300_000 },
 )

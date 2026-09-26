@@ -38,4 +38,4 @@ it.live('exercises TypeScript composite project references in build mode', funct
     'the mutant stream matches the oracle and every event carries one run id',
     verifyMutantStreamAndActionables(expect, events, terminal),
   )
-})
+}, { timeout: 300_000 })

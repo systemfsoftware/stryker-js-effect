@@ -52,8 +52,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
-    name: e2e (${{ matrix.shard }}/4)
+        include:
+          - shard: lifecycle
+            files: tests/enterprise-mutation-lifecycle.e2e.test.ts
+          - shard: sabotage
+            files: tests/enterprise-monorepo-sabotage.e2e.test.ts
+          - shard: svelte-composite
+            files: tests/svelte-app.e2e.test.ts tests/enterprise-composite-checker.e2e.test.ts
+          - shard: rest-1
+            files: --shard=1/2
+          - shard: rest-2
+            files: --shard=2/2
+    name: e2e (${{ matrix.shard }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -87,7 +97,9 @@ jobs:
       # would suppress the telemetry artifact on exactly the hang scenario it
       # exists for.
       - name: E2E lane
-        run: timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e -- --shard=${{ matrix.shard }}/4
+        run: >-
+          timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e -- ${{ matrix.files }}
+          ${{ startsWith(matrix.shard, 'rest') && '--exclude=tests/enterprise-mutation-lifecycle.e2e.test.ts --exclude=tests/enterprise-monorepo-sabotage.e2e.test.ts --exclude=tests/svelte-app.e2e.test.ts --exclude=tests/enterprise-composite-checker.e2e.test.ts' || '' }}
       - name: Export telemetry
         if: always()
         run: ./test/e2e/scripts/export-traces.ts

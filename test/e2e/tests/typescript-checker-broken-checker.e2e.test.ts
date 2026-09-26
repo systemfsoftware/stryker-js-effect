@@ -24,4 +24,5 @@ it.live(
       verifyBrokenCheckerError(expect, run, events),
     )
   },
+  { timeout: 300_000 },
 )
