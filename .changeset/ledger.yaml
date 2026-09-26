@@ -194,6 +194,10 @@
     - plugin-interface-codecs
     - stryker-js-plugin-interface-bare-package-specifiers
     - vm-runner-default-zero-config
+"@systemfsoftware/stryker-js-plugin-interface@9.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - mutation-score-union
 "@systemfsoftware/stryker-js-plugin-runtime@5.0.0":
   dir: packages/stryker-js-plugin-runtime
   intents:
@@ -262,6 +266,10 @@
   dir: packages/stryker-js-typescript-checker
   intents:
     - systemfsoftware-latest-packages
+"@systemfsoftware/stryker-js-typescript-checker@7.1.2":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - typescript-checker-checks-affected-files
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -303,6 +311,14 @@
   dir: packages/stryker-js-vitest-runner
   intents:
     - systemfsoftware-latest-packages
+"@systemfsoftware/stryker-js-vitest-runner@7.3.0":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - dry-run-without-mutants
+    - vitest-runner-dry-run-reports-every-failure
+    - vitest-runner-file-failures
+    - vitest-runner-pool-option
+    - vm-runner-mutation-wall-time
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -356,6 +372,15 @@
     - restore-config-authoring-helpers
     - stryker-js-effect-required-peer
     - systemfsoftware-latest-packages
+"@systemfsoftware/stryker-js@12.1.0":
+  dir: packages/stryker-js
+  intents:
+    - dry-run-without-mutants
+    - empty-mutate-set-dry-run
+    - merge-reports-rebuilds-streamed-mutants
+    - piped-stdout-stays-human
+    - vm-runner-mutation-wall-time
+    - vm-runner-runs-vitest
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
