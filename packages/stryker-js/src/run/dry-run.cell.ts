@@ -16,6 +16,11 @@ import * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
 import { dryRun, DryRunCommand, DryRunError, DryRunFailed, FailedTestSummary } from '../dry-run.workflow.js'
+import {
+  DryRunObservation,
+  type DryRunObservationDecision,
+  interpretDryRunObservation,
+} from '../interpret-dry-run-observation.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
@@ -101,90 +106,41 @@ const resolveDryRunFiles = Effect.fn('stryker.dry_run.resolve_files')(function*(
   )
 })
 
-type FailedDryRun = Extract<TestRunner.DryRunResult, { readonly status: 'error' }>
-type TimedOutDryRun = Extract<TestRunner.DryRunResult, { readonly status: 'timeout' }>
-
-const isCompleteDryRun = (result: TestRunner.DryRunResult): result is TestRunner.CompleteDryRunResult =>
-  result.status === 'complete'
-
-const isFailedDryRun = (result: TestRunner.DryRunResult): result is FailedDryRun => result.status === 'error'
-
-const failedTestSummariesOf = (
-  tests: readonly TestRunner.TestResult[],
-): readonly FailedTestSummary[] =>
-  tests
-    .filter((test): test is TestRunner.FailedTestResult => test.status === 'failed')
-    .map((test) => FailedTestSummary.make({ name: test.name, failureMessage: test.failureMessage }))
-
-const commandEncodedComplete = (
-  complete: TestRunner.CompleteDryRunResult,
+const dryRunCommandOfDecision = (
+  decision: DryRunObservationDecision,
   allowEmpty: boolean,
-): typeof DryRunCommand.Encoded => ({
-  _tag: 'DryRunCommand',
-  status: 'Complete',
-  testCount: complete.tests.length,
-  failedTestCount: complete.tests.filter((test) => test.status === 'failed').length,
-  failedTests: failedTestSummariesOf(complete.tests),
-  allowEmpty,
-})
-
-const commandEncodedFailed = (
-  failed: FailedDryRun,
-  allowEmpty: boolean,
-): typeof DryRunCommand.Encoded => ({
-  _tag: 'DryRunCommand',
-  status: 'Error',
-  testCount: 0,
-  failedTestCount: 0,
-  failedTests: [],
-  allowEmpty,
-  errorMessage: failed.errorMessage,
-})
-
-const commandEncodedTimedOut = (
-  timedOut: TimedOutDryRun,
-  allowEmpty: boolean,
-): typeof DryRunCommand.Encoded => ({
-  _tag: 'DryRunCommand',
-  status: 'Timeout',
-  testCount: 0,
-  failedTestCount: 0,
-  failedTests: [],
-  allowEmpty,
-  ...Option.match(Option.fromNullishOr(timedOut.reason), {
-    onNone: () => ({}),
-    onSome: (reason) => ({ reason }),
-  }),
-})
-
-const dryRunRaw = (
-  prev: InstrumentDone,
-  rawResult: TestRunner.DryRunResult,
-  capabilities: TestRunner.TestRunnerCapabilities,
-  gross: EffectDuration.Duration,
-): DryRunRaw =>
-  Match.value(rawResult).pipe(
-    Match.when(isCompleteDryRun, (complete) => ({
-      ...commandEncodedComplete(complete, prev.options.allowEmpty),
-      prev,
-      rawResult,
-      capabilities,
-      gross,
+): typeof DryRunCommand.Encoded =>
+  Match.value(decision).pipe(
+    Match.tag('DryRunObservedComplete', ({ testCount, failedTestCount, failedTests }) => ({
+      _tag: 'DryRunCommand' as const,
+      status: 'Complete' as const,
+      testCount,
+      failedTestCount,
+      failedTests,
+      allowEmpty,
     })),
-    Match.when(isFailedDryRun, (failed) => ({
-      ...commandEncodedFailed(failed, prev.options.allowEmpty),
-      prev,
-      rawResult,
-      capabilities,
-      gross,
+    Match.tag('DryRunObservedFailed', ({ errorMessage }) => ({
+      _tag: 'DryRunCommand' as const,
+      status: 'Error' as const,
+      testCount: 0,
+      failedTestCount: 0,
+      failedTests: [],
+      allowEmpty,
+      errorMessage,
     })),
-    Match.orElse((timedOut) => ({
-      ...commandEncodedTimedOut(timedOut, prev.options.allowEmpty),
-      prev,
-      rawResult,
-      capabilities,
-      gross,
+    Match.tag('DryRunObservedTimedOut', ({ reason }) => ({
+      _tag: 'DryRunCommand' as const,
+      status: 'Timeout' as const,
+      testCount: 0,
+      failedTestCount: 0,
+      failedTests: [],
+      allowEmpty,
+      ...Option.match(Option.fromUndefinedOr(reason), {
+        onNone: () => ({}),
+        onSome: (present) => ({ reason: present }),
+      }),
     })),
+    Match.exhaustive,
   )
 
 const totalTestTime = (tests: readonly TestRunner.TestResult[]): number =>
@@ -330,10 +286,12 @@ const completeDryRunResultOf = Effect.fn('stryker.dry_run.complete')(function*(
 
 const completeDryRunPassed = (raw: DryRunRaw) =>
   Match.value(raw.rawResult).pipe(
-    Match.when(isCompleteDryRun, (rawResult) => completeDryRunResultOf(raw, rawResult)),
-    Match.orElse(() =>
-      Effect.fail(StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }))
-    ),
+    Match.discriminator('status')('complete', (rawResult) => completeDryRunResultOf(raw, rawResult)),
+    Match.discriminator('status')('error', () =>
+      Effect.fail(StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }))),
+    Match.discriminator('status')('timeout', () =>
+      Effect.fail(StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }))),
+    Match.exhaustive,
   )
 
 const readDryRun: (command: InstrumentDone) => Effect.Effect<
@@ -417,7 +375,18 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
     ),
   )
 
-  return dryRunRaw(command, rawResult, capabilities, gross)
+  const observation = DryRunObservation.make({
+    dryRunResult: rawResult,
+    allowEmpty: command.options.allowEmpty,
+  })
+  const decision = yield* Effect.fromResult(interpretDryRunObservation(observation))
+  return {
+    ...dryRunCommandOfDecision(decision, command.options.allowEmpty),
+    prev: command,
+    rawResult,
+    capabilities,
+    gross,
+  }
 })
 
 const writeDryRunPassed = Effect.fn('stryker.dry_run.write_passed')(function*(raw: DryRunRaw) {

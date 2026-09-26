@@ -47,12 +47,13 @@ import {
 import type { FormatIdentity } from '../IncrementalDiff.schema.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
 import { RelativeNormalizedFileName } from '../matching.schema.js'
+import { MaterializeMutantPlanCommand, materializeMutantPlans } from '../materialize-mutant-plans.workflow.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
 import { identityOf, MutationReporting } from '../mutation-reporting.service.js'
 import type { MutationReportingInput, MutationReportingService } from '../mutation-reporting.service.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
-import { planMutantTests, type PlannedEarlyResultMutant, type PlannedRunMutant } from '../plan-mutant-tests.workflow.js'
+import { planMutantTests } from '../plan-mutant-tests.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { invalidatesRunnerPool, type PooledTestRunner } from '../pooled-test-runner.handle.js'
@@ -313,77 +314,6 @@ const planCommandOf = (
     }),
   })
 
-const firstDefined = <Value>(first: Value | undefined, second: Value | undefined) =>
-  Option.getOrElse(Option.fromNullishOr(first), () => second)
-
-const materializeMutant = (
-  original: Mutant.Mutant,
-  decided: {
-    readonly status?: Mutant.Mutant['status'] | undefined
-    readonly statusReason?: string | undefined
-    readonly static?: boolean | undefined
-    readonly coveredBy?: readonly string[] | undefined
-  },
-) =>
-  Mutant.Mutant.make({
-    id: original.id,
-    fileName: original.fileName,
-    mutatorName: original.mutatorName,
-    replacement: original.replacement,
-    location: original.location,
-    ...Option.match(Option.fromUndefinedOr(firstDefined(decided.status, original.status)), {
-      onNone: () => ({}),
-      onSome: (status) => ({ status }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(firstDefined(decided.statusReason, original.statusReason)), {
-      onNone: () => ({}),
-      onSome: (statusReason) => ({ statusReason }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(firstDefined(decided.static, original.static)), {
-      onNone: () => ({}),
-      onSome: (isStatic) => ({ static: isStatic }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(firstDefined(decided.coveredBy, original.coveredBy)), {
-      onNone: () => ({}),
-      onSome: (coveredBy) => ({ coveredBy }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(original.testsCompleted), {
-      onNone: () => ({}),
-      onSome: (testsCompleted) => ({ testsCompleted }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(original.description), {
-      onNone: () => ({}),
-      onSome: (description) => ({ description }),
-    }),
-  })
-
-const plannedRunOf = (mutant: Mutant.Mutant, run: PlannedRunMutant): Mutant.RunPlan => ({
-  plan: 'Run',
-  mutant: materializeMutant(mutant, run),
-  netTime: run.netTime,
-  runOptions: {
-    activeMutant: materializeMutant(mutant, run),
-    mutantActivation: run.runOptions.mutantActivation,
-    timeout: run.runOptions.timeout,
-    sandboxFileName: run.runOptions.sandboxFileName,
-    disableBail: run.runOptions.disableBail,
-    reloadEnvironment: run.runOptions.reloadEnvironment,
-    ...Option.match(Option.fromUndefinedOr(run.runOptions.testFilter), {
-      onNone: () => ({}),
-      onSome: (testFilter) => ({ testFilter }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(run.runOptions.hitLimit), {
-      onNone: () => ({}),
-      onSome: (hitLimit) => ({ hitLimit }),
-    }),
-  },
-})
-
-const plannedEarlyOf = (mutant: Mutant.Mutant, early: PlannedEarlyResultMutant): Mutant.EarlyResultPlan => ({
-  plan: 'EarlyResult',
-  mutant: materializeMutant(mutant, early),
-})
-
 const decidePlans = Effect.fn('stryker.mutation_test.decide_plans')(function*(
   input: Readonly<{
     mutants: readonly Mutant.Mutant[]
@@ -407,7 +337,6 @@ const decidePlans = Effect.fn('stryker.mutation_test.decide_plans')(function*(
     input.globalTestFilter,
     input.sandboxFileByName,
   )
-  const byId = mutantsByIdOf(input.mutants)
   return yield* Result.match(planMutantTests(command), {
     onFailure: (failure) =>
       Effect.fail(
@@ -417,21 +346,21 @@ const decidePlans = Effect.fn('stryker.mutation_test.decide_plans')(function*(
           cause: failure,
         }),
       ),
-    onSuccess: (decisions) =>
-      Effect.forEach(decisions, (plan) =>
-        Option.match(Option.fromUndefinedOr(byId.get(plan.mutantId)), {
+    onSuccess: (decisions) => {
+      const byId = mutantsByIdOf(input.mutants)
+      return Effect.forEach(decisions, (decision) =>
+        Option.match(Option.fromUndefinedOr(byId.get(decision.mutantId)), {
           onNone: () =>
             Effect.die(UnknownPlannedMutant.make({
-              mutantId: plan.mutantId,
-              message: `planner returned an unknown mutant id: ${plan.mutantId}`,
+              mutantId: decision.mutantId,
+              message: `planner returned an unknown mutant id: ${decision.mutantId}`,
             })),
           onSome: (mutant) =>
-            Match.value(plan).pipe(
-              Match.tag('PlannedRunMutant', (run) => Effect.succeed(plannedRunOf(mutant, run))),
-              Match.tag('PlannedEarlyResultMutant', (early) => Effect.succeed(plannedEarlyOf(mutant, early))),
-              Match.exhaustive,
-            ),
-        })),
+            Effect.fromResult(
+              materializeMutantPlans(MaterializeMutantPlanCommand.make({ mutant, plan: decision })),
+            ).pipe(Effect.map((materialized) => materialized.plan)),
+        }))
+    },
   })
 })
 
