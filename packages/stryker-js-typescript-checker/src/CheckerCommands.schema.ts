@@ -84,3 +84,12 @@ export class OverrideTsconfigOptionsCommand extends S.TaggedClass<OverrideTsconf
     buildMode: 'stryker.typescript_checker.build_mode',
   } as const
 }
+
+export class ParseTsconfigTextCommand extends S.TaggedClass<ParseTsconfigTextCommand>()(
+  'ParseTsconfigTextCommand',
+  {
+    text: S.String,
+  },
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}

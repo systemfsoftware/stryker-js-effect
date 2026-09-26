@@ -23,6 +23,7 @@ import {
   CaptureAliasSpecifierCommand,
   GroupMutantsCommand,
   OverrideTsconfigOptionsCommand,
+  ParseTsconfigTextCommand,
   PlanDiagnosticBatchesCommand,
   PlanResolutionCandidatesCommand,
   RequestAffectedFilesCommand,
@@ -32,6 +33,7 @@ import type { NodeDecodedShape } from './CheckMutants.schema.js'
 import { type CompilerError, CompilerFailed, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
 import { groupMutants } from './group-mutants.workflow.js'
 import { overrideTsconfigOptions } from './override-tsconfig-options.workflow.js'
+import { parseTsconfigText } from './parse-tsconfig-text.workflow.js'
 import { planDiagnosticBatches } from './plan-diagnostic-batches.workflow.js'
 import { planResolutionCandidates } from './plan-resolution-candidates.workflow.js'
 import { requestAffectedFiles } from './request-affected-files.workflow.js'
@@ -52,7 +54,6 @@ import {
   type TsConfigDocument,
   TsConfigNotFoundError,
   TsConfigParseError,
-  TsConfigText,
 } from './Tsconfig.schema.js'
 
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompiler')
@@ -208,9 +209,12 @@ const parseTsConfig = (
   fileName: string,
   jsonText: string,
 ): Result.Result<TsConfigDocument, TsConfigParseError> =>
-  Result.mapError(
-    S.decodeResult(TsConfigText)(jsonText),
-    (error) => TsConfigParseError.make({ file: fileName, reason: error.message }),
+  parseTsconfigText(ParseTsconfigTextCommand.make({ text: jsonText })).pipe(
+    decided,
+    Match.value,
+    Match.tag('TsconfigParsed', ({ document }) => Result.succeed(document)),
+    Match.tag('TsconfigRefused', ({ reason }) => Result.fail(TsConfigParseError.make({ file: fileName, reason }))),
+    Match.exhaustive,
   )
 
 const tsconfigDeclaresReferences = (fileName: string, jsonText: string) =>
@@ -309,28 +313,37 @@ const enqueueUnseen = (walk: TsConfigWalk, pending: ReadonlyArray<string>): Read
       ),
   )
 
+const readTsConfigText = (
+  rt: TSCompilerRuntime,
+  preRead: HashMap.HashMap<string, string>,
+  fileName: string,
+): Effect.Effect<string, TsConfigNotFoundError> =>
+  Option.match(HashMap.get(preRead, fileName), {
+    onNone: () =>
+      rt.host.readFileString(fileName).pipe(Effect.mapError(() => TsConfigNotFoundError.make({ file: fileName }))),
+    onSome: (jsonText) => Effect.succeed(jsonText),
+  })
+
 const walkTsConfigs = (
   rt: TSCompilerRuntime,
   buildMode: boolean,
   walk: TsConfigWalk,
   pending: ReadonlyArray<string>,
+  preRead: HashMap.HashMap<string, string>,
 ): Effect.Effect<TsConfigWalk, CompilerError> =>
   Option.match(Option.filter(Arr.head(pending), (fileName) => !HashSet.has(walk.processed, fileName)), {
     onNone: () => Effect.succeed(walk),
     onSome: (fileName) =>
-      Effect.flatMap(
-        rt.host.readFileString(fileName).pipe(Effect.mapError(() => TsConfigNotFoundError.make({ file: fileName }))),
-        (jsonText) => {
-          const recorded = recordTsConfig(
-            rt,
-            buildMode,
-            { ...walk, processed: HashSet.add(walk.processed, fileName) },
-            fileName,
-            jsonText,
-          )
-          return walkTsConfigs(rt, buildMode, recorded, enqueueUnseen(recorded, pending.slice(1)))
-        },
-      ),
+      Effect.flatMap(readTsConfigText(rt, preRead, fileName), (jsonText) => {
+        const recorded = recordTsConfig(
+          rt,
+          buildMode,
+          { ...walk, processed: HashSet.add(walk.processed, fileName) },
+          fileName,
+          jsonText,
+        )
+        return walkTsConfigs(rt, buildMode, recorded, enqueueUnseen(recorded, pending.slice(1)), preRead)
+      }),
   })
 
 const snapshotOf = (state: CompilerState) =>
@@ -720,16 +733,11 @@ export const init = Effect.fn('typescript-checker.compiler.init')(function*(
     tsconfigFile,
     allTSConfigFiles: HashSet.fromIterable([tsconfigFile]),
   }))
-  yield* Effect.asVoid(
-    Effect.mapError(
-      rt.host.readFileString(tsconfigFile),
-      () => TsConfigNotFoundError.make({ file: tsconfigFile }),
-    ),
+  const tsconfigText = yield* Effect.mapError(
+    rt.host.readFileString(tsconfigFile),
+    () => TsConfigNotFoundError.make({ file: tsconfigFile }),
   )
-  const buildMode = yield* Effect.map(
-    Effect.option(rt.host.readFileString(tsconfigFile)),
-    (jsonText) => tsconfigDeclaresReferences(tsconfigFile, Option.getOrElse(jsonText, () => '')),
-  )
+  const buildMode = tsconfigDeclaresReferences(tsconfigFile, tsconfigText)
   const walk = yield* walkTsConfigs(
     rt,
     buildMode,
@@ -740,6 +748,7 @@ export const init = Effect.fn('typescript-checker.compiler.init')(function*(
       aliases: [],
     },
     [tsconfigFile],
+    HashMap.fromIterable([[tsconfigFile, tsconfigText] as const]),
   )
   yield* setOverrides(rt.files, walk.overrides)
   yield* SynchronizedRef.update(rt.state, (prev) => ({
