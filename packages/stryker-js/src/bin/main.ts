@@ -25,14 +25,12 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
-import * as Stream from 'effect/Stream'
 import * as CliConfig from 'effect/unstable/cli/CliConfig'
 import * as Command from 'effect/unstable/cli/Command'
 import * as Flag from 'effect/unstable/cli/Flag'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 import { inheritableCompileCacheDirectory } from './enable-compile-cache.js'
 
-import { checkNodeVersion, CheckNodeVersionCommand } from '../check-node-version.workflow.js'
 import { classifyRunOutcome, RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
 import { concludeRunCell, runOutcomeCommandOf } from '../conclude-run.cell.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
@@ -44,7 +42,6 @@ import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run
 import { type CliAnswer, type CliEnvironment } from '../run-request.cell.js'
 import { RunEnvironment } from '../run/RunEnvironment.service.js'
 import { makeStrykerCommand } from './cli-command.js'
-import { UnsupportedNodeVersion } from './main.schema.js'
 
 globalThis.process.title = 'stryker'
 
@@ -185,21 +182,6 @@ const boundedErrorText = (text: string): string =>
 
 const strykerProgram = Effect.gen(function*() {
   const stdio = yield* Stdio.Stdio
-  const version = globalThis.process.version
-  yield* Result.match(checkNodeVersion(CheckNodeVersionCommand.make({ version })), {
-    onFailure: () => Effect.void,
-    onSuccess: (decision) =>
-      Match.value(decision).pipe(
-        Match.tag('NodeVersionSupported', () => Effect.void),
-        Match.tag('NodeVersionRejected', () => {
-          const failure = UnsupportedNodeVersion.make({ version, required: cliPkgJson.engines.node })
-          return Stream.run(Stream.make(`${failure.message}\n`), stdio.stderr()).pipe(
-            Effect.andThen(Effect.fail(failure)),
-          )
-        }),
-        Match.exhaustive,
-      ),
-  })
   const outputMode = yield* OutputModeProbe
   const detected = yield* Effect.result(outputMode.detectMode)
   const mode = yield* Result.match(detected, {
