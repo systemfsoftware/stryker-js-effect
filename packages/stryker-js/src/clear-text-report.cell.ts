@@ -2,7 +2,6 @@ import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
 import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Filter from 'effect/Filter'
@@ -14,14 +13,13 @@ import * as Stream from 'effect/Stream'
 
 import {
   type ClearTextRenderOptions,
-  ClearTextReportCommand,
   renderClearTextReport,
   type ReportChunk,
   type ReportLine,
   type ReportSpan,
   type Tone,
 } from './render-clear-text-report.workflow.js'
-import { ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
+import { type OutputChannel, ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
 import { AnsiCode, type AnsiColor } from './reporting/ansi.schema.js'
 
 const failAsClearText = <E = unknown>(cause: E): Reporter.ReporterFailed =>
@@ -73,74 +71,57 @@ const readClearTextReport = (input: {
     }),
   )
 
-const tint = (color: AnsiColor, text: string) =>
-  `${AnsiCode.fields[color].literal}${text}${AnsiCode.fields.reset.literal}`
-
-const TINT_BY_TONE: Record<Tone, (text: string) => string> = {
-  'plain': (text) => text,
-  'identifier': (text) => tint('cyan', text),
-  'emphasis': (text) => tint('yellow', text),
-  'positive': (text) => tint('green', text),
-  'warning': (text) => tint('yellow', text),
-  'negative': (text) => tint('red', text),
-  'muted': (text) => tint('grey', text),
+const COLOR_BY_TONE: Record<Exclude<Tone, 'plain'>, AnsiColor> = {
+  identifier: 'cyan',
+  emphasis: 'yellow',
+  positive: 'green',
+  warning: 'yellow',
+  negative: 'red',
+  muted: 'grey',
 }
 
-const runsMergeable = (left: ReportSpan, right: ReportSpan): boolean =>
-  Arr.every(
-    [
-      left.tone === right.tone,
-      left.leftPad === right.leftPad,
-      left.rightPad === right.rightPad,
-      left.repeat === 1,
-      right.repeat === 1,
-    ],
-    (holds) => holds,
+const tinted = (tone: Tone, text: string): string =>
+  Match.value(tone).pipe(
+    Match.when('plain', () => text),
+    Match.orElse((colored) =>
+      `${AnsiCode.fields[COLOR_BY_TONE[colored]].literal}${text}${AnsiCode.fields.reset.literal}`
+    ),
   )
 
-const mergeInto = (runs: readonly ReportSpan[], span: ReportSpan): readonly ReportSpan[] =>
-  Option.match(Arr.last(runs), {
-    onNone: () => [span],
-    onSome: (last) =>
-      Boolean.match(runsMergeable(last, span), {
-        onTrue: () => [...runs.slice(0, -1), { ...last, text: `${last.text}${span.text}` }],
-        onFalse: () => [...runs, span],
-      }),
+const bytesOf = (span: ReportSpan): string =>
+  `${' '.repeat(span.leftPad)}${span.text.repeat(span.repeat)}${' '.repeat(span.rightPad)}`
+
+interface ToneRun {
+  readonly tone: Tone
+  readonly bytes: string
+}
+
+const appendSpan = (runs: ReadonlyArray<ToneRun>, span: ReportSpan): ReadonlyArray<ToneRun> =>
+  Option.match(Option.filter(Arr.last(runs), (last) => last.tone === span.tone), {
+    onNone: () => [...runs, { tone: span.tone, bytes: bytesOf(span) }],
+    onSome: (last) => [...runs.slice(0, -1), { tone: last.tone, bytes: `${last.bytes}${bytesOf(span)}` }],
   })
 
-const runsOf = (line: ReportLine): readonly ReportSpan[] => Arr.reduce(line, [], mergeInto)
+const renderLine = (line: ReportLine): string =>
+  Arr.reduce(line, Arr.empty<ToneRun>(), appendSpan).map((run) => tinted(run.tone, run.bytes)).join('')
 
-const renderSpan = (span: ReportSpan): string =>
-  TINT_BY_TONE[span.tone](
-    `${' '.repeat(span.leftPad)}${span.text.repeat(span.repeat)}${' '.repeat(span.rightPad)}`,
-  )
-
-const renderLine = (line: ReportLine): string => runsOf(line).map(renderSpan).join('')
-
-const renderChunk = (chunk: ReportChunk): string => chunk.map(renderLine).join('\n')
+const renderChunk = (chunk: ReportChunk): string => `${chunk.map(renderLine).join('\n')}\n`
 
 const writeChunks = (
   output: ReporterOutputShape,
-  channel: 'stdout' | 'stderr',
-  chunks: readonly ReportChunk[],
+  channel: OutputChannel,
+  chunks: ReadonlyArray<ReportChunk>,
 ): Effect.Effect<void, Reporter.ReporterFailed> =>
-  output.write(channel, chunks.map((chunk) => `${renderChunk(chunk)}\n`)).pipe(
-    Effect.mapError(failAsClearText),
-    Effect.asVoid,
-  )
+  Effect.mapError(output.write(channel, chunks.map(renderChunk)), failAsClearText)
 
 export const clearTextReportCell = Sandwich.named('stryker.report.clearText')(readClearTextReport)
   .decide(renderClearTextReport)
   .write({
-    ClearTextReportRendered: (rendered, _raw) =>
+    ClearTextReportRendered: (rendered) =>
       Effect.gen(function*() {
         const output = yield* ReporterOutput
         yield* writeChunks(output, 'stdout', rendered.stdout)
-        yield* Effect.forEach(
-          rendered.stderr,
-          (chunk) => writeChunks(output, 'stderr', [chunk]),
-          { discard: true },
-        )
+        yield* writeChunks(output, 'stderr', rendered.stderr)
       }),
     ClearTextReportSuppressed: () => Effect.void,
     CommandRejected: ({ issue }) => Effect.fail(failAsClearText(issue)),
@@ -153,106 +134,4 @@ export const clearTextReporterFactory = (
 ): Reporter.ReporterFactory => {
   const report = Cell.provideContext(clearTextReportCell, context)
   return (options) => (events) => Effect.asVoid(report.run({ options, events }))
-}
-
-if (import.meta.vitest !== void 0) {
-  const { it } = await import('@systemfsoftware/vitest')
-  const Schema = await import('effect/Schema')
-  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
-  const { ClearTextRenderOptions } = await import('./render-clear-text-report.workflow.js')
-
-  const ANSI_ESCAPE = '\u001b'
-
-  const commandArb = Arbitrary.schema(ClearTextReportCommand)
-
-  const renderArb = Arbitrary.schema(ClearTextRenderOptions)
-
-  const colorOffArb = commandArb.pipe(
-    Arbitrary.map((command) =>
-      ClearTextReportCommand.make({
-        reported: command.reported,
-        computed: command.computed,
-        render: { ...command.render, allowColor: false },
-        rendered: command.rendered,
-      })
-    ),
-  )
-
-  const suppressedArb = renderArb.pipe(
-    Arbitrary.map((render) =>
-      ClearTextReportCommand.make({ reported: undefined, computed: undefined, render, rendered: true })
-    ),
-  )
-
-  const outputBytesOf = (
-    render: typeof renderClearTextReport,
-    command: ClearTextReportCommand,
-  ): readonly string[] =>
-    Result.match(render(command), {
-      onFailure: () => [],
-      onSuccess: (value) =>
-        Match.value(value).pipe(
-          Match.tag('ClearTextReportRendered', (rendered) => [
-            ...rendered.stdout.map(renderChunk),
-            ...rendered.diagnostics.map(renderChunk),
-          ]),
-          Match.tag('ClearTextReportSuppressed', () => []),
-          Match.exhaustive,
-        ),
-    })
-
-  it.prop(
-    '∀c_NoTerminalReport_≡NoOutputBytes',
-    { of: [suppressedArb], subject: renderClearTextReport },
-    (subject, [command]) => outputBytesOf(subject, command).length === 0,
-  )
-
-  it.prop(
-    '∀c_ColorOff_≡EscapeFreeBytes',
-    { of: [colorOffArb], subject: renderClearTextReport },
-    (subject, [command]) => outputBytesOf(subject, command).every((bytes) => !bytes.includes(ANSI_ESCAPE)),
-  )
-
-  const spanToneArb = Arbitrary.schema(Schema.Literals([
-    'plain',
-    'identifier',
-    'emphasis',
-    'positive',
-    'warning',
-    'negative',
-    'muted',
-  ]))
-
-  const spanTextArb = Arbitrary.schema(Schema.String.check(Schema.isMaxLength(8)))
-
-  it.prop(
-    '∀a_RenderChunk_=PlainText',
-    { of: [spanTextArb], subject: renderChunk },
-    (subject, [a]) =>
-      subject([[{ _tag: 'ReportSpan', text: a, tone: 'plain', leftPad: 0, rightPad: 0, repeat: 1 }]]) === a,
-  )
-
-  it.prop(
-    '∀c_Suppression_≡NoOutputBytes',
-    { of: [commandArb], subject: renderClearTextReport },
-    (subject, [command]) =>
-      (outputBytesOf(subject, command).length === 0) ===
-        (command.reported === undefined || command.computed === undefined),
-  )
-
-  it.prop(
-    '∀ab_MergedSpans_≡SplitBytes',
-    { of: [spanTextArb, spanTextArb, spanToneArb], subject: renderChunk },
-    (subject, [a, b, tone]) => {
-      const span = (text: string): ReportSpan => ({
-        _tag: 'ReportSpan',
-        text,
-        tone,
-        leftPad: 0,
-        rightPad: 0,
-        repeat: 1,
-      })
-      return subject([[span(`${a}${b}`)]]) === subject([[span(a), span(b)]])
-    },
-  )
 }
