@@ -3,7 +3,7 @@ import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 /** A file name the node map can be keyed by: non-empty, and naming an extension. */
-const SourceFileSchema = S.NonEmptyString.pipe(S.check(S.isPattern(/\.[^./\\]+$/)))
+export const SourceFileSchema = S.NonEmptyString.pipe(S.check(S.isPattern(/\.[^./\\]+$/)))
 
 const DiagnosticSchema = S.Struct({
   fileName: S.optional(SourceFileSchema),
@@ -16,7 +16,7 @@ export interface NodeDecodedShape {
   readonly children: readonly NodeDecodedShape[]
 }
 
-const TSFileNodeSchema: S.Codec<NodeDecodedShape, NodeDecodedShape> = S.suspend(() =>
+export const TSFileNodeSchema: S.Codec<NodeDecodedShape, NodeDecodedShape> = S.suspend(() =>
   S.Struct({
     fileName: SourceFileSchema,
     parents: S.Array(TSFileNodeSchema),

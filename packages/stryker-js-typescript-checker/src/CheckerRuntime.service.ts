@@ -77,7 +77,10 @@ const mergeAnswers = (runs: ReadonlyArray<RunAnswers>) =>
     HashMap.empty<string, Checker.CheckResult>(),
   )
 
-const makeChecker = (options: Options.StrykerOptions, compiler: TSCompiler): Checker.Checker['Service'] => {
+const makeChecker = Effect.fn('typescript-checker.runtime.makeChecker')(function*(
+  options: Options.StrykerOptions,
+  compiler: TSCompiler,
+): Effect.fn.Return<Checker.Checker['Service'], Checker.CheckerFailed> {
   const verify = Cell.provideContext(checkCell, Context.make(TypeScriptCompiler, compiler))
 
   const positionOf = (error: Diagnostic) =>
@@ -121,7 +124,7 @@ const makeChecker = (options: Options.StrykerOptions, compiler: TSCompiler): Che
       Match.exhaustive,
     )
 
-  return {
+  const service: Checker.Checker['Service'] = {
     init: init(compiler).pipe(
       Effect.mapError((cause) => refuse({ mutantIds: [], cause })),
       Effect.flatMap((errors) =>
@@ -152,7 +155,10 @@ const makeChecker = (options: Options.StrykerOptions, compiler: TSCompiler): Che
         Effect.mapError((cause) => refuse({ mutantIds: mutants.map((mutant) => mutant.id), cause })),
       ),
   }
-}
+
+  yield* service.init
+  return service
+})
 
 export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRuntimeShape>()(
   '@systemfsoftware/stryker-js-typescript-checker/CheckerRuntime.service/CheckerRuntime',
@@ -164,11 +170,7 @@ export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRunti
       CheckerRuntime,
       Effect.gen(function*() {
         const compiler = yield* TypeScriptCompiler
-        const checker = yield* Effect.gen(function*() {
-          const service = makeChecker(options, compiler)
-          yield* service.init
-          return service
-        }).pipe(
+        const checker = yield* makeChecker(options, compiler).pipe(
           Effect.catchCause((cause) => Effect.fail(cause)),
           Effect.cached,
         )

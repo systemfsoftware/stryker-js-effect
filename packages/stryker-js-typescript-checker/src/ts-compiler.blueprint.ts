@@ -18,7 +18,7 @@ const scopedOf = (
   Effect.gen(function*() {
     const host = yield* FileSystem.FileSystem
     const pathService = yield* Path.Path
-    const compiler = makeTSCompiler(spec, { host, pathService })
+    const compiler = yield* makeTSCompiler(spec, { host, pathService })
     yield* Effect.addFinalizer(() => close(compiler))
     return compiler
   })
