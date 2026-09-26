@@ -12,7 +12,7 @@ import * as Command from 'effect/unstable/cli/Command'
 import * as Flag from 'effect/unstable/cli/Flag'
 
 import { CliRouteCommand } from '../Cli.schema.js'
-import { type CliEnvironment, runRequestCell } from '../run-request.cell.js'
+import { type CliAnswer, type CliEnvironment, runRequestCell } from '../run-request.cell.js'
 
 const createSplitter = (separator: string) => (value: string) => value.split(separator).filter(Boolean)
 
@@ -361,7 +361,10 @@ const readStrykerOptions = (config: RunParsedConfig): Options.PartialStrykerOpti
   }
 }
 
-export const makeStrykerCommand = (environment: CliEnvironment) => {
+export const makeStrykerCommand = ({ environment, recordAnswer }: {
+  readonly environment: CliEnvironment
+  readonly recordAnswer: (answer: CliAnswer) => Effect.Effect<void>
+}) => {
   const runCommand = Command.make('run', runConfig, (config) => {
     const configFile = Option.getOrUndefined(config.configFile)
     return Option.match(Option.filter(Option.fromUndefinedOr(configFile), isUnknownArgument), {
@@ -374,7 +377,7 @@ export const makeStrykerCommand = (environment: CliEnvironment) => {
           route: CliRouteCommand.make({ route: { _tag: 'run', survivors: config.survivors === true } }),
           options: readStrykerOptions(config),
           environment,
-        }).pipe(Effect.provideService(Console.Console, environment.console), Effect.asVoid),
+        }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer)),
     })
   }).pipe(Command.withDescription('Run mutation testing'))
 
@@ -396,7 +399,7 @@ export const makeStrykerCommand = (environment: CliEnvironment) => {
             }),
             options: {},
             environment,
-          }).pipe(Effect.provideService(Console.Console, environment.console), Effect.asVoid)
+          }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer))
         ),
       ),
   ).pipe(Command.withDescription('Merge per-package mutation reports into one report'))

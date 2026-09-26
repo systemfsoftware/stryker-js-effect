@@ -20,6 +20,7 @@ import * as Logger from 'effect/Logger'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
@@ -40,7 +41,7 @@ import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
 import { ErrorEnvelope, RunExitCode } from '../reporting/run-failure.schema.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
-import { type CliEnvironment } from '../run-request.cell.js'
+import { type CliAnswer, type CliEnvironment } from '../run-request.cell.js'
 import { RunEnvironment } from '../run/RunEnvironment.service.js'
 import { makeStrykerCommand } from './cli-command.js'
 import { UnsupportedNodeVersion } from './main.schema.js'
@@ -227,7 +228,8 @@ const strykerProgram = Effect.gen(function*() {
     console: realConsole,
   }
   const args = [...(yield* stdio.args)]
-  const command = makeStrykerCommand(environment)
+  const answer = yield* Ref.make<CliAnswer>(undefined)
+  const command = makeStrykerCommand({ environment, recordAnswer: (recorded) => Ref.set(answer, recorded) })
   const machineConsole = Boolean.match(mode.mode === 'machine', {
     onTrue: () => MachineConsole.captureLayer,
     onFalse: () => Layer.empty,
@@ -236,7 +238,12 @@ const strykerProgram = Effect.gen(function*() {
     Effect.withSpan('stryker.cli.run')(
       Effect.gen(function*() {
         const exit = yield* Effect.exit(
-          restore(Command.runWith(command, { version: cliPkgJson.version })(args).pipe(Effect.provide(machineConsole))),
+          restore(
+            Command.runWith(command, { version: cliPkgJson.version })(args).pipe(
+              Effect.provide(machineConsole),
+              Effect.andThen(Ref.get(answer)),
+            ),
+          ),
         )
         const conclusionCommand = runOutcomeCommandOf({ exit, argv: args })
         const outcome = classifyRunOutcome(conclusionCommand)
