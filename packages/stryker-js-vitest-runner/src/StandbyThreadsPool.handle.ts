@@ -94,7 +94,8 @@ const standbyStage = (state: StandbyThreadState): StandbyThreadStage =>
 
 export const make = Effect.fn('vitest.standby_pool.make')(function*() {
   const slots = yield* SynchronizedRef.make<ReadonlyArray<StandbySlot>>([])
-  const scope = yield* Scope.make()
+  const lifetime = yield* Scope.Scope
+  const scope = yield* Scope.fork(lifetime)
   return StandbyThreadsPool.make({ name: POOL_NAME }, { slots, scope })
 })
 

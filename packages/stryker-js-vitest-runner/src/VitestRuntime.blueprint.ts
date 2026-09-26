@@ -11,6 +11,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
+import * as Scope from 'effect/Scope'
 
 import { onClose } from './drivers/vitest-node.js'
 import {
@@ -209,6 +210,7 @@ export interface VitestRuntimeInput {
   readonly crypto: Crypto.Crypto
   readonly fileSystem: FileSystem.FileSystem
   readonly path: Path.Path
+  readonly lifetime: Scope.Scope
 }
 
 const createVitestConfig = (input: VitestRuntimeInput, standbyThreads: StandbyThreadsPool) => ({
@@ -266,7 +268,7 @@ const openRuntime = Effect.fn('vitest.runtime.open')(function*(
   const { createVitest } = yield* input.resolver(input.projectRoot).pipe(
     Effect.catchDefect((cause) => Effect.fail(failRuntime('init')(cause))),
   )
-  const standbyThreads = yield* makeStandbyThreadsPool()
+  const standbyThreads = yield* makeStandbyThreadsPool().pipe(Scope.provide(input.lifetime))
   const driver = yield* Effect.tryPromise({
     try: () =>
       createVitest('test', createVitestConfig(input, standbyThreads), {
