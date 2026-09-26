@@ -15,7 +15,13 @@ export class CheckerAnsweredUnrequested extends S.TaggedError<CheckerAnsweredUnr
     unrequestedIds: S.Array(S.String),
     requestedIds: S.Array(S.String),
   },
-) {}
+) {
+  override get message(): string {
+    return `Checker "${this.checkerName}" answered about mutants it was not asked about (${this.phase} phase): ${
+      this.unrequestedIds.join(', ')
+    }`
+  }
+}
 
 export class CheckerSkippedRequested extends S.TaggedError<CheckerSkippedRequested>()(
   'CheckerSkippedRequested',
@@ -24,7 +30,13 @@ export class CheckerSkippedRequested extends S.TaggedError<CheckerSkippedRequest
     phase: S.Literals(['check', 'group']),
     missingIds: S.Array(S.String),
   },
-) {}
+) {
+  override get message(): string {
+    return `Checker "${this.checkerName}" skipped requested mutants (${this.phase} phase): ${
+      this.missingIds.join(', ')
+    }`
+  }
+}
 
 export type CheckerContractBroken = CheckerAnsweredUnrequested | CheckerSkippedRequested
 

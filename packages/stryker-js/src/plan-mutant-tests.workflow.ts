@@ -36,11 +36,19 @@ export class PlannedEarlyResultMutant extends S.TaggedClass<PlannedEarlyResultMu
 export class CoveredMutantHitCountMissing extends S.TaggedError<CoveredMutantHitCountMissing>()(
   'CoveredMutantHitCountMissing',
   { missingIds: S.Array(S.String) },
-) {}
+) {
+  override get message(): string {
+    return `Hit count missing for covered mutants: ${this.missingIds.join(', ')}`
+  }
+}
 
 export class MutantTimeoutNotFinite extends S.TaggedError<MutantTimeoutNotFinite>()('MutantTimeoutNotFinite', {
   mutantId: Mutant.MutantId,
-}) {}
+}) {
+  override get message(): string {
+    return `Computed test timeout for mutant ${this.mutantId} is not finite`
+  }
+}
 
 const firstDefined = <Value>(first: Value | undefined, second: Value | undefined) =>
   Option.getOrElse(Option.fromNullishOr(first), () => second)

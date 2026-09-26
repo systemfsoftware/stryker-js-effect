@@ -49,6 +49,10 @@ export class SurvivorsRejection extends S.TaggedError<SurvivorsRejection>()('Sur
   remediation: S.String,
 }) {
   readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId
+
+  override get message(): string {
+    return this.remediation
+  }
 }
 
 const SURVIVORS_RUN_FIRST_REMEDIATION = 'run a full `stryker run` first, then re-run with --survivors'

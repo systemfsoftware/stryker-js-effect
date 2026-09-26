@@ -50,7 +50,11 @@ export class FormatOverrideUnclaimed extends S.TaggedError<FormatOverrideUnclaim
   fileName: S.String,
   formatId: S.String,
   reason: S.String,
-}) {}
+}) {
+  override get message(): string {
+    return `Cannot instrument ${this.fileName}: ${this.reason}`
+  }
+}
 
 const pinOf = (command: FormatResolutionCommand): Option.Option<string> => Option.fromUndefinedOr(command.formatId)
 

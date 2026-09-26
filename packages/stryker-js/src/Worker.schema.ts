@@ -1,5 +1,5 @@
 /// <reference types="vitest/importMeta" />
-import { Schema as S } from 'effect'
+import { Match, Schema as S } from 'effect'
 
 // ---------------------------------------------------------------------------
 // IPC — method call / reply
@@ -51,6 +51,14 @@ export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedE
 ) {
   readonly [WorkerExitTypeId] = WorkerExitTypeId
   readonly exitClass = 'InternalError' as const
+
+  override get message(): string {
+    const exit = Match.valueTags(this.exit, {
+      Code: ({ code }) => `exit code ${code}`,
+      Signal: ({ signal }) => `signal ${signal}`,
+    })
+    return `Worker child process ${this.pid} crashed (${exit})`
+  }
 }
 
 export class OutOfMemoryError extends S.TaggedError<OutOfMemoryError>()('OutOfMemoryError', {
@@ -59,6 +67,10 @@ export class OutOfMemoryError extends S.TaggedError<OutOfMemoryError>()('OutOfMe
 }) {
   readonly [WorkerExitTypeId] = WorkerExitTypeId
   readonly exitClass = 'RuntimeError' as const
+
+  override get message(): string {
+    return `Worker process ${this.pid} ran out of memory (exit code ${this.exitCode})`
+  }
 }
 
 export type WorkerExit = ChildProcessCrashedError | OutOfMemoryError
@@ -72,6 +84,10 @@ export class WorkerBootTimeoutError extends S.TaggedError<WorkerBootTimeoutError
   },
 ) {
   readonly exitClass = 'InternalError' as const
+
+  override get message(): string {
+    return `Worker process ${this.pid} did not boot before the boot window closed`
+  }
 }
 
 if (import.meta.vitest !== void 0) {

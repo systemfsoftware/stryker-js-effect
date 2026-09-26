@@ -23,7 +23,11 @@ export type VitestRunnerOptions = S.Schema.Type<typeof VitestRunnerOptionsSchema
 
 export class CoverageDecodeFailed extends S.TaggedError<CoverageDecodeFailed>()('CoverageDecodeFailed', {
   cause: S.Unknown,
-}) {}
+}) {
+  override get message(): string {
+    return 'Failed to decode coverage data'
+  }
+}
 
 export const ExportEntry = S.Union([S.String, S.Record(S.String, S.Unknown)])
 

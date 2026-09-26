@@ -78,7 +78,11 @@ export class TestRunnerFailed extends S.TaggedError<TestRunnerFailed>()('TestRun
   cause: S.String,
   phase: S.Literals(['capabilities', 'dispose', 'dryRun', 'init', 'mutantRun']),
   runnerName: S.String,
-}) {}
+}) {
+  override get message(): string {
+    return `Test runner "${this.runnerName}" failed during ${this.phase}: ${this.cause}`
+  }
+}
 
 export interface BaseTestResult {
   readonly id: TestId

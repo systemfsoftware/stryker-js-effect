@@ -6,6 +6,10 @@ export class PluginNotFoundError extends S.TaggedError<PluginNotFoundError>()('P
   descriptor: S.String,
 }) {
   readonly exitClass = 'ConfigError' as const
+
+  override get message(): string {
+    return `Plugin "${this.descriptor}" was not found`
+  }
 }
 
 export const PluginLoadFailureReason = S.Union([

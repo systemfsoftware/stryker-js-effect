@@ -78,11 +78,23 @@ export class NoMergedReports extends S.TaggedClass<NoMergedReports>()('NoMergedR
 
 export class DuplicatePackageLabel extends S.TaggedError<DuplicatePackageLabel>()('DuplicatePackageLabel', {
   label: S.String,
-}) {}
+}) {
+  override get message(): string {
+    return `Duplicate package label: ${this.label}`
+  }
+}
 
 export class MissingPackages extends S.TaggedError<MissingPackages>()('MissingPackages', {
   packages: S.Array(S.String),
-}) {}
+}) {
+  override get message(): string {
+    return Match.value(this.packages.length === 0).pipe(
+      Match.when(true, () => 'No mutation report parts were produced'),
+      Match.when(false, () => `No mutation report parts for packages: ${this.packages.join(', ')}`),
+      Match.exhaustive,
+    )
+  }
+}
 
 type Decision = MergedReports | NoMergedReports
 type DecisionError = DuplicatePackageLabel | MissingPackages

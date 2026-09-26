@@ -29,6 +29,10 @@ export class ModeConflictError extends S.TaggedError<ModeConflictError>()('ModeC
   expected: S.String,
 }) {
   readonly [ResolveModeTypeId] = ResolveModeTypeId
+
+  override get message(): string {
+    return `Invalid value "${this.value}" for option "${this.option}": ${this.expected}`
+  }
 }
 
 export class HumanOutput extends S.TaggedClass<HumanOutput>()('HumanOutput', {
