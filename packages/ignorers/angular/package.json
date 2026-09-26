@@ -43,13 +43,13 @@
     "api:update": "api-extractor run --local"
   },
   "dependencies": {
-    "@systemfsoftware/stryker-ignorer-interface": "workspace:^"
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
+    "@systemfsoftware/stryker-ignorer-kit": "workspace:^"
   },
   "devDependencies": {
     "@microsoft/api-extractor": "catalog:",
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/oxlint-ignorer-config": "workspace:^",
-    "@systemfsoftware/stryker-ignorer-kit": "workspace:^",
     "@systemfsoftware/tsconfig": "catalog:",
     "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest": "catalog:",

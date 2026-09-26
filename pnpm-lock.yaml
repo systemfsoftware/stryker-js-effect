@@ -414,6 +414,9 @@ importers:
       '@systemfsoftware/stryker-ignorer-interface':
         specifier: workspace:^
         version: link:../interface
+      '@systemfsoftware/stryker-ignorer-kit':
+        specifier: workspace:^
+        version: link:../kit
     devDependencies:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
@@ -424,9 +427,6 @@ importers:
       '@systemfsoftware/oxlint-ignorer-config':
         specifier: workspace:^
         version: link:../../toolchain/oxlint-ignorer-config
-      '@systemfsoftware/stryker-ignorer-kit':
-        specifier: workspace:^
-        version: link:../kit
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1

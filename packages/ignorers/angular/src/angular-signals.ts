@@ -1,4 +1,11 @@
-import type { CallExpression, Ignorer, MemberExpression, Node } from '@systemfsoftware/stryker-ignorer-interface'
+import type {
+  CallExpression,
+  Ignorer,
+  MemberExpression,
+  Node,
+  ObjectExpression,
+} from '@systemfsoftware/stryker-ignorer-interface'
+import { defineIgnorer } from '@systemfsoftware/stryker-ignorer-kit'
 
 type IdentifierNode = Extract<Node, { readonly type: 'Identifier' }>
 
@@ -22,7 +29,7 @@ const CLASS_FIELD_KINDS: readonly string[] = Object.freeze(['PropertyDefinition'
 const isCallExpression = (node: Node | undefined): node is CallExpression =>
   node !== undefined && node.type === 'CallExpression'
 
-const isObjectExpression = (node: Node) => node.type === 'ObjectExpression'
+const isObjectExpression = (node: Node): node is ObjectExpression => node.type === 'ObjectExpression'
 
 const isIdentifier = (node: Node): node is IdentifierNode => node.type === 'Identifier'
 
@@ -72,21 +79,20 @@ const holdsArgument = (call: CallExpression, node: Node) =>
 
 const isObjectArgumentOf = (node: Node, call: CallExpression) => isObjectExpression(node) && holdsArgument(call, node)
 
-const parentCallOf = (ancestors: readonly Node[], offset: number) => {
-  const parent = ancestors[offset]
-  return isCallExpression(parent) ? parent : undefined
-}
+const holdsObjectArgument = (parent: Node | undefined, node: Node): parent is CallExpression =>
+  isCallExpression(parent) && isObjectArgumentOf(node, parent)
 
-const callOfObjectArgument = (node: Node, call: CallExpression) => isObjectArgumentOf(node, call) ? call : undefined
+const objectArgumentCall = (node: Node, parent: Node | undefined): CallExpression | undefined =>
+  holdsObjectArgument(parent, node) ? parent : undefined
 
-const argumentCallOf = (node: Node, ancestors: readonly Node[], offset: number) => {
-  const call = parentCallOf(ancestors, offset)
-  return call === undefined ? undefined : callOfObjectArgument(node, call)
-}
-
-const ownedCallOf = (node: Node, ancestors: readonly Node[], offset: number, ownsCallSite: OwnsCallSite) => {
-  const call = argumentCallOf(node, ancestors, offset)
-  return ownsCallSite(ancestors[offset + 1]) ? call : undefined
+const ownedCallOf = (
+  node: Node,
+  parent: Node | undefined,
+  owner: Node | undefined,
+  ownsCallSite: OwnsCallSite,
+) => {
+  const call = objectArgumentCall(node, parent)
+  return ownsCallSite(owner) ? call : undefined
 }
 
 const isArgumentAt = (index: number | undefined, call: CallExpression, node: Node) =>
@@ -101,30 +107,35 @@ const isQueryOptionsArgument = (call: CallExpression, node: Node) =>
 const queryOptionsReason = (call: CallExpression, node: Node) =>
   isQueryOptionsArgument(call, node) ? SIGNAL_QUERY_OPTIONS_MSG : undefined
 
-const ioReasonOf = (node: Node, ancestors: readonly Node[], offset: number) => {
-  const call = ownedCallOf(node, ancestors, offset, ownsPropertyDefinitionField)
+const ioReasonFor = (node: Node, parent: Node | undefined, owner: Node | undefined) => {
+  const call = ownedCallOf(node, parent, owner, ownsPropertyDefinitionField)
   return call === undefined ? undefined : ioConfigReason(call, node)
 }
 
-const queryReasonOf = (node: Node, ancestors: readonly Node[], offset: number) => {
-  const call = ownedCallOf(node, ancestors, offset, ownsClassField)
+const queryReasonFor = (node: Node, parent: Node | undefined, owner: Node | undefined) => {
+  const call = ownedCallOf(node, parent, owner, ownsClassField)
   return call === undefined ? undefined : queryOptionsReason(call, node)
 }
 
-const reasonAt = (node: Node, ancestors: readonly Node[], offset: number) =>
-  ioReasonOf(node, ancestors, offset) ?? queryReasonOf(node, ancestors, offset)
+const reasonFor = (node: Node, parent: Node | undefined, owner: Node | undefined) =>
+  ioReasonFor(node, parent, owner) ?? queryReasonFor(node, parent, owner)
 
-const ancestorReason = (node: Node, ancestors: readonly Node[]) =>
-  ancestors.map((ancestor, position) => reasonAt(ancestor, ancestors, position + 1)).find((reason) =>
-    reason !== undefined
+const pointReason = (node: Node, ancestors: readonly Node[]) => reasonFor(node, ancestors[0], ancestors[1])
+
+const ancestorReason = (ancestors: readonly Node[]) =>
+  ancestors.map((ancestor, position) => reasonFor(ancestor, ancestors[position + 1], ancestors[position + 2])).find(
+    (reason) => reason !== undefined,
   )
 
 export const shouldIgnore = (node: Node, ancestors: readonly Node[]): string | undefined =>
-  reasonAt(node, ancestors, 0) ?? ancestorReason(node, ancestors)
+  pointReason(node, ancestors) ?? ancestorReason(ancestors)
 
 export const strykerIgnorers: readonly Ignorer[] = [
-  {
+  defineIgnorer({
     name: 'angular-signals',
-    shouldIgnore,
-  },
+    visitors: {
+      ObjectExpression: (node, ctx) => pointReason(node, ctx.ancestors),
+      onAnyNode: (_node, ctx) => ancestorReason(ctx.ancestors),
+    },
+  }),
 ]
