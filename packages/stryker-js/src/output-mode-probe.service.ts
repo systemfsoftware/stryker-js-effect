@@ -61,10 +61,10 @@ const envToolVars = (): Effect.Effect<Record<string, string>> =>
       Effect.map((value) => [variable, Option.getOrUndefined(value)] as const),
     )).pipe(Effect.map((entries) => definedToolVars(Object.fromEntries(entries))))
 
-const probeInput = (
-  command: FormatFlags,
-): Effect.Effect<ProbeInput, never, Stdio.Stdio> =>
-  Effect.gen(function*() {
+const probeInput = Effect.fn('stryker.outputModeProbe.read')(
+  function*(
+    command: FormatFlags,
+  ): Effect.fn.Return<ProbeInput, never, Stdio.Stdio> {
     const stdio = yield* Stdio.Stdio
     const envMode = yield* Config.String('STRYKER_MODE').pipe(Effect.option)
     const agent = yield* Config.String('AGENT').pipe(Effect.option)
@@ -77,7 +77,8 @@ const probeInput = (
       agent: Option.getOrUndefined(agent),
       toolVars: yield* envToolVars(),
     }
-  })
+  },
+)
 
 const outputModeProbeCell = Sandwich.named('stryker.output_mode_probe')(probeInput)
   .decide(resolveOutputMode)

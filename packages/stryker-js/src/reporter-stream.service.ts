@@ -14,10 +14,10 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as PubSub from 'effect/PubSub'
-import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
+import * as SynchronizedRef from 'effect/SynchronizedRef'
 import type * as RpcClient from 'effect/unstable/rpc/RpcClient'
 import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
@@ -30,24 +30,26 @@ import type { WorkerLauncher } from './WorkerLauncher.service.js'
 
 export const REPORTER_STREAM_QUEUE_BOUND = 256
 
+interface ReporterChannelState {
+  readonly terminalSeen: boolean
+  readonly detached: boolean
+}
+
 interface ReporterAttachment {
   readonly name: string
   readonly channel: PubSub.PubSub<Reporter.ReporterEvent>
-  readonly terminalSeen: Ref.Ref<boolean>
-  readonly detached: Ref.Ref<boolean>
+  readonly state: SynchronizedRef.SynchronizedRef<ReporterChannelState>
   readonly consumer: Fiber.Fiber<void, Reporter.ReporterFailed | Cause.YieldableError>
 }
 
 interface ReporterChannelPorts {
   readonly channel: PubSub.PubSub<Reporter.ReporterEvent>
-  readonly terminalSeen: Ref.Ref<boolean>
-  readonly detached: Ref.Ref<boolean>
+  readonly state: SynchronizedRef.SynchronizedRef<ReporterChannelState>
 }
 
 const portsOf = (attachment: ReporterAttachment): ReporterChannelPorts => ({
   channel: attachment.channel,
-  terminalSeen: attachment.terminalSeen,
-  detached: attachment.detached,
+  state: attachment.state,
 })
 
 const ReporterStageTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ReporterStage')
@@ -125,7 +127,7 @@ const reporterEvents = (ports: ReporterChannelPorts): AsyncIterable<Reporter.Rep
   const stream = Stream.fromPubSub(ports.channel).pipe(
     Stream.tap((event) =>
       Boolean.match(isTerminalReportEvent(event), {
-        onTrue: () => Effect.asVoid(Ref.set(ports.terminalSeen, true)),
+        onTrue: () => SynchronizedRef.update(ports.state, (state) => ({ ...state, terminalSeen: true })),
         onFalse: () => Effect.void,
       })
     ),
@@ -140,17 +142,44 @@ const reporterEvents = (ports: ReporterChannelPorts): AsyncIterable<Reporter.Rep
   }
 }
 
-const detach = (ports: ReporterChannelPorts): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    yield* Ref.set(ports.detached, true)
-    yield* PubSub.shutdown(ports.channel)
-  })
+const detach = Effect.fn('stryker.reporterStream.detach')(function*(ports: ReporterChannelPorts) {
+  yield* SynchronizedRef.update(ports.state, (state) => ({ ...state, detached: true }))
+  yield* PubSub.shutdown(ports.channel)
+})
 
 const markDetachedEffect = (ports: ReporterChannelPorts): Effect.Effect<void> =>
   Effect.flatMap(
-    Ref.get(ports.terminalSeen),
-    (terminal) => Boolean.match(terminal, { onTrue: () => Effect.void, onFalse: () => detach(ports) }),
+    SynchronizedRef.get(ports.state),
+    (state) => Boolean.match(state.terminalSeen, { onTrue: () => Effect.void, onFalse: () => detach(ports) }),
   )
+
+const attachOneReporter = Effect.fn('stryker.reporterStream.attach')(function*(
+  input: AttachReporterInput,
+  options: Options.StrykerOptions,
+  init: Reporter.ReporterInit,
+) {
+  const channel = yield* PubSub.bounded<Reporter.ReporterEvent>(REPORTER_STREAM_QUEUE_BOUND)
+  const state = yield* SynchronizedRef.make<ReporterChannelState>({ terminalSeen: false, detached: false })
+  const ports: ReporterChannelPorts = { channel, state }
+  const consumer = Effect.flatten(
+    Effect.try({
+      try: () => input.factory(options, init)(reporterEvents(ports)),
+      catch: (reason) =>
+        ReporterFactoryThrew.make({
+          reporterName: input.name,
+          message: `Reporter "${input.name}" factory threw: ${String(reason)}`,
+          cause: reason,
+        }),
+    }),
+  ).pipe(Effect.ensuring(markDetachedEffect(ports)))
+  const consumerFiber = yield* Effect.forkScoped(consumer)
+  return {
+    name: input.name,
+    channel,
+    state,
+    consumer: consumerFiber,
+  } satisfies ReporterAttachment
+})
 
 export const attachReporterFactories: {
   (
@@ -165,33 +194,7 @@ export const attachReporterFactories: {
 } = dual(
   3,
   (inputs: readonly AttachReporterInput[], options: Options.StrykerOptions, init: Reporter.ReporterInit) =>
-    Effect.forEach(inputs, (input) =>
-      Effect.gen(function*() {
-        const channel = yield* PubSub.bounded<Reporter.ReporterEvent>(REPORTER_STREAM_QUEUE_BOUND)
-        const terminalSeen = yield* Ref.make(false)
-        const detached = yield* Ref.make(false)
-        const ports: ReporterChannelPorts = { channel, terminalSeen, detached }
-        const consumer = Effect.flatten(
-          Effect.try({
-            try: () => input.factory(options, init)(reporterEvents(ports)),
-            catch: (reason) =>
-              ReporterFactoryThrew.make({
-                reporterName: input.name,
-                message: `Reporter "${input.name}" factory threw: ${String(reason)}`,
-                cause: reason,
-              }),
-          }),
-        ).pipe(Effect.ensuring(markDetachedEffect(ports)))
-        const consumerFiber = yield* Effect.forkScoped(consumer)
-        const attachment: ReporterAttachment = {
-          name: input.name,
-          channel,
-          terminalSeen,
-          detached,
-          consumer: consumerFiber,
-        }
-        return attachment
-      })).pipe(Effect.map(makeReporterStage)),
+    Effect.forEach(inputs, (input) => attachOneReporter(input, options, init)).pipe(Effect.map(makeReporterStage)),
 )
 
 export const REPORTER_EVENT_BATCH_BOUND = 128
@@ -252,9 +255,9 @@ export const spawnReporterWorker = (
 
 const warnEventDropped = (attachment: ReporterAttachment): Effect.Effect<void> =>
   Effect.flatMap(
-    Ref.get(attachment.detached),
-    (detached) =>
-      Boolean.match(detached, {
+    SynchronizedRef.get(attachment.state),
+    (state) =>
+      Boolean.match(state.detached, {
         onTrue: () => Effect.void,
         onFalse: () =>
           Effect.logWarning(`Reporter "${attachment.name}" stream closed before an event could be delivered.`),
@@ -270,26 +273,28 @@ const detachStalledReporter = (attachment: ReporterAttachment): Effect.Effect<vo
     } seconds and was detached; exit code unchanged.`,
   ).pipe(Effect.andThen(() => markDetachedEffect(portsOf(attachment))))
 
-const offerToChannel = (attachment: ReporterAttachment, event: Reporter.ReporterEvent): Effect.Effect<void> =>
-  Effect.gen(function*() {
-    const offered = yield* PubSub.publish(attachment.channel, event).pipe(
-      Effect.timeoutOption(REPORTER_STALL_TIMEOUT),
-    )
-    return yield* Option.match(offered, {
-      onNone: () => detachStalledReporter(attachment),
-      onSome: (accepted) =>
-        Match.value(accepted).pipe(
-          Match.when(true, () => Effect.void),
-          Match.orElse(() => warnEventDropped(attachment)),
-        ),
-    })
+const offerToChannel = Effect.fn('stryker.reporterStream.offerToChannel')(function*(
+  attachment: ReporterAttachment,
+  event: Reporter.ReporterEvent,
+) {
+  const offered = yield* PubSub.publish(attachment.channel, event).pipe(
+    Effect.timeoutOption(REPORTER_STALL_TIMEOUT),
+  )
+  return yield* Option.match(offered, {
+    onNone: () => detachStalledReporter(attachment),
+    onSome: (accepted) =>
+      Match.value(accepted).pipe(
+        Match.when(true, () => Effect.void),
+        Match.orElse(() => warnEventDropped(attachment)),
+      ),
   })
+})
 
 const deliverReporterEvent = (attachment: ReporterAttachment, event: Reporter.ReporterEvent): Effect.Effect<void> =>
   Effect.flatMap(
-    Ref.get(attachment.detached),
-    (detached) =>
-      Boolean.match(detached, { onTrue: () => Effect.void, onFalse: () => offerToChannel(attachment, event) }),
+    SynchronizedRef.get(attachment.state),
+    (state) =>
+      Boolean.match(state.detached, { onTrue: () => Effect.void, onFalse: () => offerToChannel(attachment, event) }),
   )
 
 export const offerReporterEvent: {
@@ -363,35 +368,34 @@ const settleFailedAttachment = <E = unknown>(
   cause: Cause.Cause<E>,
 ): Effect.Effect<ReporterDrainOutcome, never, never> =>
   Effect.flatMap(
-    Ref.get(attachment.terminalSeen),
-    (terminal) =>
-      Boolean.match(terminal, {
+    SynchronizedRef.get(attachment.state),
+    (state) =>
+      Boolean.match(state.terminalSeen, {
         onTrue: () => failedOutcome(attachment, cause),
         onFalse: () => detachedOutcome(attachment, cause),
       }),
   )
 
-const settleAttachment = (attachment: ReporterAttachment): Effect.Effect<ReporterDrainOutcome, never, never> =>
-  Effect.gen(function*() {
-    const settled = yield* attachment.consumer.pipe(
-      Fiber.join,
-      Effect.exit,
-      Effect.timeoutOption(REPORTER_STALL_TIMEOUT),
-    )
-    return yield* Option.match(settled, {
-      onNone: () =>
-        Effect.logWarning(
-          `Reporter "${attachment.name}" did not finish draining for ${
-            Duration.toSeconds(REPORTER_STALL_TIMEOUT)
-          } seconds and was detached; exit code unchanged.`,
-        ).pipe(Effect.as<ReporterDrainOutcome>({ kind: 'detached', name: attachment.name })),
-      onSome: (exit) =>
-        Exit.match(exit, {
-          onSuccess: () => Effect.succeed<ReporterDrainOutcome>({ kind: 'completed', name: attachment.name }),
-          onFailure: (cause) => settleFailedAttachment(attachment, cause),
-        }),
-    })
+const settleAttachment = Effect.fn('stryker.reporterStream.settle')(function*(attachment: ReporterAttachment) {
+  const settled = yield* attachment.consumer.pipe(
+    Fiber.join,
+    Effect.exit,
+    Effect.timeoutOption(REPORTER_STALL_TIMEOUT),
+  )
+  return yield* Option.match(settled, {
+    onNone: () =>
+      Effect.logWarning(
+        `Reporter "${attachment.name}" did not finish draining for ${
+          Duration.toSeconds(REPORTER_STALL_TIMEOUT)
+        } seconds and was detached; exit code unchanged.`,
+      ).pipe(Effect.as<ReporterDrainOutcome>({ kind: 'detached', name: attachment.name })),
+    onSome: (exit) =>
+      Exit.match(exit, {
+        onSuccess: () => Effect.succeed<ReporterDrainOutcome>({ kind: 'completed', name: attachment.name }),
+        onFailure: (cause) => settleFailedAttachment(attachment, cause),
+      }),
   })
+})
 
 const failedReporterNames = (outcome: ReporterDrainOutcome): readonly string[] =>
   Match.value(outcome).pipe(
@@ -399,15 +403,12 @@ const failedReporterNames = (outcome: ReporterDrainOutcome): readonly string[] =
     Match.orElse(() => []),
   )
 
-export const closeReporterStage = (
-  stage: ReporterStage,
-): Effect.Effect<ReporterDrainSummary, never, never> =>
-  Effect.flatMap(stageAttachments(stage), (attachments) =>
-    Effect.gen(function*() {
-      yield* Effect.forEach(attachments, (attachment) => PubSub.shutdown(attachment.channel), { discard: true })
-      const outcomes = yield* Effect.forEach(attachments, settleAttachment, { concurrency: 'unbounded' })
-      return { terminalFailed: outcomes.flatMap((outcome) => failedReporterNames(outcome)) }
-    }))
+export const closeReporterStage = Effect.fn('stryker.reporterStream.closeStage')(function*(stage: ReporterStage) {
+  const attachments = yield* stageAttachments(stage)
+  yield* Effect.forEach(attachments, (attachment) => PubSub.shutdown(attachment.channel), { discard: true })
+  const outcomes = yield* Effect.forEach(attachments, settleAttachment, { concurrency: 'unbounded' })
+  return { terminalFailed: outcomes.flatMap((outcome) => failedReporterNames(outcome)) }
+})
 
 const traceparentInit = (traceparent: string | undefined): Plugin.ReporterInitOptions =>
   Option.match(Option.fromUndefinedOr(traceparent), {
@@ -444,15 +445,14 @@ export interface PhaseSpan {
   readonly sampled: boolean
 }
 
-const environmentTraceInit = (): Effect.Effect<Reporter.ReporterInit> =>
-  Effect.gen(function*() {
-    const traceparent = yield* Config.String('TRACEPARENT').pipe(Effect.option)
-    const tracestate = yield* Config.String('TRACESTATE').pipe(Effect.option)
-    return {
-      ...traceparent.pipe(Option.getOrUndefined, traceparentInit),
-      ...tracestate.pipe(Option.getOrUndefined, tracestateInit),
-    }
-  })
+const environmentTraceInit = Effect.fn('stryker.reporterStream.environmentTraceInit')(function*() {
+  const traceparent = yield* Config.String('TRACEPARENT').pipe(Effect.option)
+  const tracestate = yield* Config.String('TRACESTATE').pipe(Effect.option)
+  return {
+    ...traceparent.pipe(Option.getOrUndefined, traceparentInit),
+    ...tracestate.pipe(Option.getOrUndefined, tracestateInit),
+  }
+})
 
 const initFromEnvironment = (): Effect.Effect<Reporter.ReporterInit | undefined> =>
   Effect.map(
@@ -460,12 +460,13 @@ const initFromEnvironment = (): Effect.Effect<Reporter.ReporterInit | undefined>
     (init) => Option.getOrUndefined(Option.filter(Option.some(init), hasTraceFields)),
   )
 
-export const currentReporterInit = (span?: PhaseSpan): Effect.Effect<Reporter.ReporterInit> =>
-  Effect.gen(function*() {
+export const currentReporterInit = Effect.fn('stryker.reporterStream.currentReporterInit')(
+  function*(span?: PhaseSpan) {
     const fromEnvironment = yield* initFromEnvironment()
     const current = Option.getOrUndefined(yield* Effect.currentSpan.pipe(Effect.option))
     return [initFromPhaseSpan(span), initFromPhaseSpan(current), fromEnvironment].find(Predicate.isNotUndefined) ?? {}
-  })
+  },
+)
 
 export const withPhaseSpan: {
   <A, E, R>(

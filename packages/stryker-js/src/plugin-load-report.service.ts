@@ -139,12 +139,12 @@ export const reportPluginLoad: {
   ): Effect.Effect<void>
 } = dual(
   3,
-  (
-    queue: Queue.Queue<RunEvent, Cause.Done>,
-    loaded: LoadedPlugins,
-    registry: Format.FormatRegistry,
-  ): Effect.Effect<void> =>
-    Effect.gen(function*() {
+  Effect.fn('stryker.pluginLoad.report')(
+    function*(
+      queue: Queue.Queue<RunEvent, Cause.Done>,
+      loaded: LoadedPlugins,
+      registry: Format.FormatRegistry,
+    ): Effect.fn.Return<void> {
       const report = formatReportOf(registry)
       yield* Queue.offer(
         queue,
@@ -157,5 +157,6 @@ export const reportPluginLoad: {
         queue,
         FormatRegistryResolved.make({ rows: [...report.rows] }),
       )
-    }),
+    },
+  ),
 )

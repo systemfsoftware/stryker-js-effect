@@ -110,15 +110,21 @@ const writeChunks = (
 ): Effect.Effect<void, Reporter.ReporterFailed> =>
   Effect.mapError(output.write(channel, chunks.map(renderChunk)), failAsClearText)
 
+const writeClearTextReport = Effect.fn('stryker.report.clearText.write')(
+  function*(rendered: {
+    readonly stdout: ReadonlyArray<ReportChunk>
+    readonly stderr: ReadonlyArray<ReportChunk>
+  }) {
+    const output = yield* ReporterOutput
+    yield* writeChunks(output, 'stdout', rendered.stdout)
+    yield* writeChunks(output, 'stderr', rendered.stderr)
+  },
+)
+
 export const clearTextReportCell = Sandwich.named('stryker.report.clearText')(readClearTextReport)
   .decide(renderClearTextReport)
   .write({
-    ClearTextReportRendered: (rendered) =>
-      Effect.gen(function*() {
-        const output = yield* ReporterOutput
-        yield* writeChunks(output, 'stdout', rendered.stdout)
-        yield* writeChunks(output, 'stderr', rendered.stderr)
-      }),
+    ClearTextReportRendered: (rendered) => writeClearTextReport(rendered),
     ClearTextReportSuppressed: () => Effect.void,
     CommandRejected: ({ issue }) => Effect.fail(failAsClearText(issue)),
   })

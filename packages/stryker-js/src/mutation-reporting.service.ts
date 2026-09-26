@@ -402,133 +402,146 @@ const assembleTestFiles = (input: TestFilesInput): Effect.Effect<Report.TestFile
         })),
     ))
 
-const readMutatedSources =
-  (deps: MutationReportingDeps, input: MutationReportingInput) => (fileNames: readonly string[]) =>
-    Effect.gen(function*() {
-      const { missing, present } = partitionByFile(input.project.files, fileNames)
-      yield* Effect.forEach(
-        missing,
-        (fileName) =>
-          Effect.logWarning(
-            `File "${fileName}" not found in input files, but did receive mutant result for it. This shouldn't happen`,
-          ),
-        { discard: true },
-      )
-      const originals = yield* deps.projectFiles.readAllOriginal(present)
-      const sources = originalSourcesOf(originals)
-      return HashMap.fromIterable(Arr.map(fileNames, (fileName) => {
-        const fileResult: Report.FileResult = {
-          language: determineLanguage(fileName, input.formatRegistry),
-          mutants: [],
-          source: Option.getOrElse(HashMap.get(sources, fileName), () => ''),
-        }
-        return [fileName, fileResult] as const
-      }))
-    })
+const readMutatedSources = Effect.fn('stryker.mutationReporting.readMutatedSources')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  fileNames: readonly string[],
+) {
+  const { missing, present } = partitionByFile(input.project.files, fileNames)
+  yield* Effect.forEach(
+    missing,
+    (fileName) =>
+      Effect.logWarning(
+        `File "${fileName}" not found in input files, but did receive mutant result for it. This shouldn't happen`,
+      ),
+    { discard: true },
+  )
+  const originals = yield* deps.projectFiles.readAllOriginal(present)
+  const sources = originalSourcesOf(originals)
+  return HashMap.fromIterable(Arr.map(fileNames, (fileName) => {
+    const fileResult: Report.FileResult = {
+      language: determineLanguage(fileName, input.formatRegistry),
+      mutants: [],
+      source: Option.getOrElse(HashMap.get(sources, fileName), () => ''),
+    }
+    return [fileName, fileResult] as const
+  }))
+})
 
-const readTestSources =
-  (deps: MutationReportingDeps, input: MutationReportingInput) => (fileNames: readonly string[]) =>
-    Effect.gen(function*() {
-      const { missing, present } = partitionByFile(input.project.files, fileNames)
-      yield* Effect.forEach(
-        missing,
-        (fileName) =>
-          Effect.logWarning(
-            `Test file "${fileName}" not found in input files, but did receive test result for it. This shouldn't happen.`,
-          ),
-        { discard: true },
-      )
-      const originals = yield* deps.projectFiles.readAllOriginal(present)
-      const sources = originalSourcesOf(originals)
-      return HashMap.fromIterable(Arr.map(fileNames, (fileName) =>
-        Option.match(HashMap.get(sources, fileName), {
-          onNone: (): readonly [string, Report.TestFile] => [fileName, { tests: [] }],
-          onSome: (source): readonly [string, Report.TestFile] => [fileName, { tests: [], source }],
-        })))
-    })
+const readTestSources = Effect.fn('stryker.mutationReporting.readTestSources')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  fileNames: readonly string[],
+) {
+  const { missing, present } = partitionByFile(input.project.files, fileNames)
+  yield* Effect.forEach(
+    missing,
+    (fileName) =>
+      Effect.logWarning(
+        `Test file "${fileName}" not found in input files, but did receive test result for it. This shouldn't happen.`,
+      ),
+    { discard: true },
+  )
+  const originals = yield* deps.projectFiles.readAllOriginal(present)
+  const sources = originalSourcesOf(originals)
+  return HashMap.fromIterable(Arr.map(fileNames, (fileName) =>
+    Option.match(HashMap.get(sources, fileName), {
+      onNone: (): readonly [string, Report.TestFile] => [fileName, { tests: [] }],
+      onSome: (source): readonly [string, Report.TestFile] => [fileName, { tests: [], source }],
+    })))
+})
 
-const assembleReport =
-  (deps: MutationReportingDeps, input: MutationReportingInput) =>
-  (results: readonly InstrumenterMutant.RunMutantResult[]) =>
-    Effect.gen(function*() {
-      const tests = [...MutableHashMap.values(input.testCoverage.testsById)]
-      const remap = testIdRemap(Arr.map(tests, (test) => test.id))
-      const mutatedFileNames = uniqueNames(Arr.map(results, (result) => result.fileName))
-      const testFileNames = uniqueNames(Arr.map(tests, (test) => test.fileName))
-      const sources = yield* readMutatedSources(deps, input)(mutatedFileNames)
-      const testSources = yield* readTestSources(deps, input)(testFileNames)
-      const relativeNames = yield* S.decodeEffect(ReportFileNames)(
-        Object.fromEntries(
-          Arr.map([...mutatedFileNames, ...testFileNames], (fileName) =>
-            [
-              fileName,
-              deps.path.relative(input.basePath, fileName),
-            ] as const),
-        ),
-      ).pipe(Effect.orDie)
-      const reportNames = HashMap.fromIterable(Object.entries(relativeNames))
-      const identities = HashMap.fromIterable(
-        mutatedFileNames.flatMap((fileName) =>
-          Option.match(HashMap.get(reportNames, fileName), {
-            onNone: (): ReadonlyArray<readonly [string, Option.Option<FormatIdentity>]> => [],
-            onSome: (reportName) => [[reportName, identityOf(fileName, input.formatRegistry)] as const],
-          })
-        ),
-      )
-      const files = yield* assembleFileResults({ sources, reportNames, mutants: results, remap })
-      const testFiles = yield* assembleTestFiles({ testSources, reportNames, tests, remap })
-      return { files, testFiles, identities }
-    })
+const assembleReport = Effect.fn('stryker.mutationReporting.assembleReport')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  results: readonly InstrumenterMutant.RunMutantResult[],
+) {
+  const tests = [...MutableHashMap.values(input.testCoverage.testsById)]
+  const remap = testIdRemap(Arr.map(tests, (test) => test.id))
+  const mutatedFileNames = uniqueNames(Arr.map(results, (result) => result.fileName))
+  const testFileNames = uniqueNames(Arr.map(tests, (test) => test.fileName))
+  const sources = yield* readMutatedSources(deps, input, mutatedFileNames)
+  const testSources = yield* readTestSources(deps, input, testFileNames)
+  const relativeNames = yield* S.decodeEffect(ReportFileNames)(
+    Object.fromEntries(
+      Arr.map([...mutatedFileNames, ...testFileNames], (fileName) =>
+        [
+          fileName,
+          deps.path.relative(input.basePath, fileName),
+        ] as const),
+    ),
+  ).pipe(Effect.orDie)
+  const reportNames = HashMap.fromIterable(Object.entries(relativeNames))
+  const identities = HashMap.fromIterable(
+    mutatedFileNames.flatMap((fileName) =>
+      Option.match(HashMap.get(reportNames, fileName), {
+        onNone: (): ReadonlyArray<readonly [string, Option.Option<FormatIdentity>]> => [],
+        onSome: (reportName) => [[reportName, identityOf(fileName, input.formatRegistry)] as const],
+      })
+    ),
+  )
+  const files = yield* assembleFileResults({ sources, reportNames, mutants: results, remap })
+  const testFiles = yield* assembleTestFiles({ testSources, reportNames, tests, remap })
+  return { files, testFiles, identities }
+})
 
-const manifestVersionOf = (deps: Pick<MutationReportingDeps, 'fs' | 'path'>) => (specifier: string) =>
-  Effect.gen(function*() {
-    const resolved = yield* Effect.try({
-      try: () => new URL(import.meta.resolve(`${specifier}/package.json`)),
-      catch: (cause) => ManifestUnreadable.make({ specifier, cause }),
-    })
-    const manifestPath = yield* deps.path.fromFileUrl(resolved)
-    const text = yield* deps.fs.readFileString(manifestPath)
-    return Result.match(S.decodeResult(S.fromJsonString(ManifestSchema))(text), {
-      onFailure: () => Option.none<string>(),
-      onSuccess: (manifest) => Option.some(manifest.version ?? ''),
-    })
-  }).pipe(Effect.orElseSucceed(() => Option.none<string>()))
-
-const discoverDependencies = (deps: Pick<MutationReportingDeps, 'fs' | 'path'>) =>
-  Effect.gen(function*() {
-    const pairs = yield* Effect.forEach(
-      MANIFEST_SPECIFIERS,
-      (specifier) => Effect.map(manifestVersionOf(deps)(specifier), (version) => [specifier, version] as const),
-      { concurrency: MANIFEST_CONCURRENCY },
-    )
-    return Object.fromEntries(
-      Arr.flatMap(pairs, ([specifier, version]) =>
-        Option.match(version, {
-          onNone: (): ReadonlyArray<readonly [string, string]> => [],
-          onSome: (present): ReadonlyArray<readonly [string, string]> => [[specifier, present]],
-        })),
-    )
+const manifestVersionOf = Effect.fn('stryker.mutationReporting.manifestVersion')(function*(
+  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
+  specifier: string,
+) {
+  const resolved = yield* Effect.try({
+    try: () => new URL(import.meta.resolve(`${specifier}/package.json`)),
+    catch: (cause) => ManifestUnreadable.make({ specifier, cause }),
   })
+  const manifestPath = yield* deps.path.fromFileUrl(resolved)
+  const text = yield* deps.fs.readFileString(manifestPath)
+  return Result.match(S.decodeResult(S.fromJsonString(ManifestSchema))(text), {
+    onFailure: () => Option.none<string>(),
+    onSuccess: (manifest) => Option.some(manifest.version ?? ''),
+  })
+})
 
-const mutationTestReport =
-  (deps: MutationReportingDeps, input: MutationReportingInput) =>
-  (results: readonly InstrumenterMutant.RunMutantResult[]) =>
-    Effect.gen(function*() {
-      const { files, testFiles, identities } = yield* assembleReport(deps, input)(results)
-      const dependencies = yield* discoverDependencies(deps)
-      return {
-        report: {
-          files,
-          schemaVersion: '1.0',
-          thresholds: input.options.thresholds,
-          testFiles,
-          projectRoot: input.basePath,
-          config: input.options,
-          framework: { ...STRYKER_FRAMEWORK, dependencies },
-        },
-        identities,
-      }
-    })
+const discoverDependencies = Effect.fn('stryker.mutationReporting.discoverDependencies')(function*(
+  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
+) {
+  const pairs = yield* Effect.forEach(
+    MANIFEST_SPECIFIERS,
+    (specifier) =>
+      Effect.map(
+        manifestVersionOf(deps, specifier).pipe(Effect.orElseSucceed((): Option.Option<string> => Option.none())),
+        (version) => [specifier, version] as const,
+      ),
+    { concurrency: MANIFEST_CONCURRENCY },
+  )
+  return Object.fromEntries(
+    Arr.flatMap(pairs, ([specifier, version]) =>
+      Option.match(version, {
+        onNone: (): ReadonlyArray<readonly [string, string]> => [],
+        onSome: (present): ReadonlyArray<readonly [string, string]> => [[specifier, present]],
+      })),
+  )
+})
+
+const mutationTestReport = Effect.fn('stryker.mutationReporting.mutationTestReport')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  results: readonly InstrumenterMutant.RunMutantResult[],
+) {
+  const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
+  const dependencies = yield* discoverDependencies(deps)
+  return {
+    report: {
+      files,
+      schemaVersion: '1.0',
+      thresholds: input.options.thresholds,
+      testFiles,
+      projectRoot: input.basePath,
+      config: input.options,
+      framework: { ...STRYKER_FRAMEWORK, dependencies },
+    },
+    identities,
+  }
+})
 
 const determineExitCode = (input: MutationReportingInput) => (metrics: Report.MetricsResult) => {
   const breaking = input.options.thresholds.break
@@ -595,116 +608,127 @@ const logBroken = (breaking: number | null, percentage: number) =>
     ),
   )
 
-const emitVerdict =
-  (deps: MutationReportingDeps, input: MutationReportingInput) => (report: Report.MutationTestResult) =>
-    Effect.gen(function*() {
-      const envelope = VerdictEnvelope.build(
-        report,
-        input.resolvedMode.mode,
-        input.resolvedMode.signal,
-        input.runId,
-        input.basePath,
-        deps.path,
-      )
-      yield* Queue.offer(
-        deps.events,
-        VerdictReached.make({
-          schemaVersion: envelope.schemaVersion,
-          runId: envelope.runId,
-          mode: envelope.mode,
-          signal: envelope.signal,
-          score: envelope.score,
-          thresholds: envelope.thresholds,
-          reportFile: envelope.reportFile,
-          counts: envelope.counts,
-          mutants: envelope.mutants,
-        }),
-      )
-    })
+const emitVerdict = Effect.fn('stryker.mutationReporting.emitVerdict')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  report: Report.MutationTestResult,
+) {
+  const envelope = VerdictEnvelope.build(
+    report,
+    input.resolvedMode.mode,
+    input.resolvedMode.signal,
+    input.runId,
+    input.basePath,
+    deps.path,
+  )
+  yield* Queue.offer(
+    deps.events,
+    VerdictReached.make({
+      schemaVersion: envelope.schemaVersion,
+      runId: envelope.runId,
+      mode: envelope.mode,
+      signal: envelope.signal,
+      score: envelope.score,
+      thresholds: envelope.thresholds,
+      reportFile: envelope.reportFile,
+      counts: envelope.counts,
+      mutants: envelope.mutants,
+    }),
+  )
+})
 
-const writeIncrementalReport = (
+const writeIncrementalReport = Effect.fn('stryker.mutationReporting.writeIncrementalReport')(function*(
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
   input: MutationReportingInput,
   report: Report.MutationTestResult,
   identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>,
-) =>
-  Effect.gen(function*() {
-    yield* deps.fs.makeDirectory(deps.path.dirname(input.options.incrementalFile), { recursive: true })
-    const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
-      incrementalVersion: StrykerPackage.version,
-      ...report,
-      files: stampFileIdentities(report.files, identities),
-    }).pipe(Effect.orDie)
-    yield* deps.fs.writeFileString(input.options.incrementalFile, json)
-  })
+) {
+  yield* deps.fs.makeDirectory(deps.path.dirname(input.options.incrementalFile), { recursive: true })
+  const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
+    incrementalVersion: StrykerPackage.version,
+    ...report,
+    files: stampFileIdentities(report.files, identities),
+  }).pipe(Effect.orDie)
+  yield* deps.fs.writeFileString(input.options.incrementalFile, json)
+})
 
-const reportAll = (deps: MutationReportingDeps, input: MutationReportingInput) =>
-  Effect.gen(function*() {
-    const { report, identities } = yield* mutationTestReport(deps, input)(input.results)
-    const metrics = MetricsResultFromReport.fromFiles(report.files)
-    yield* offerTerminalReport(input.reporterStage, report, metrics)
-    const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
-    const verdict = yield* determineExitCode(input)(metrics)
-    const finalVerdict = Result.match(
-      classifyExit(
-        ClassifyExitCommand.make({
-          pending: [verdict, terminalDrain].filter((candidate): candidate is Plugin.ExitClass => candidate !== null),
-          score: Report.MutationScore.cases.Unscored.make({}),
-          breakingThreshold: null,
-        }),
-      ),
-      {
-        onFailure: (refused) => refused,
-        onSuccess: (decision) =>
-          Match.value(decision).pipe(
-            Match.tag('ExitVerdictFailed', (): Plugin.ExitClass => 'VerdictFail'),
-            Match.tag('ExitConfigErrored', (): Plugin.ExitClass => 'ConfigError'),
-            Match.tag('ExitRuntimeErrored', (): Plugin.ExitClass => 'RuntimeError'),
-            Match.tag('ExitInternalErrored', (): Plugin.ExitClass => 'InternalError'),
-            Match.orElse((): Plugin.ExitClass | null => null),
-          ),
-      },
-    )
-    yield* emitVerdict(deps, input)(report)
-    yield* Boolean.match(input.options.incremental, {
-      onTrue: () => writeIncrementalReport(deps, input, report, identities),
-      onFalse: () => Effect.void,
-    })
-    return { results: input.results, verdict: finalVerdict } satisfies MutationTestDone
+const reportAll = Effect.fn('stryker.mutationReporting.reportAll')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+) {
+  const { report, identities } = yield* mutationTestReport(deps, input, input.results)
+  const metrics = MetricsResultFromReport.fromFiles(report.files)
+  yield* offerTerminalReport(input.reporterStage, report, metrics)
+  const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
+  const verdict = yield* determineExitCode(input)(metrics)
+  const finalVerdict = Result.match(
+    classifyExit(
+      ClassifyExitCommand.make({
+        pending: [verdict, terminalDrain].filter((candidate): candidate is Plugin.ExitClass => candidate !== null),
+        score: Report.MutationScore.cases.Unscored.make({}),
+        breakingThreshold: null,
+      }),
+    ),
+    {
+      onFailure: (refused) => refused,
+      onSuccess: (decision) =>
+        Match.value(decision).pipe(
+          Match.tag('ExitVerdictFailed', (): Plugin.ExitClass => 'VerdictFail'),
+          Match.tag('ExitConfigErrored', (): Plugin.ExitClass => 'ConfigError'),
+          Match.tag('ExitRuntimeErrored', (): Plugin.ExitClass => 'RuntimeError'),
+          Match.tag('ExitInternalErrored', (): Plugin.ExitClass => 'InternalError'),
+          Match.orElse((): Plugin.ExitClass | null => null),
+        ),
+    },
+  )
+  yield* emitVerdict(deps, input, report)
+  yield* Boolean.match(input.options.incremental, {
+    onTrue: () => writeIncrementalReport(deps, input, report, identities),
+    onFalse: () => Effect.void,
   })
+  return { results: input.results, verdict: finalVerdict } satisfies MutationTestDone
+})
 
-const writeAtomic = (deps: Pick<MutationReportingDeps, 'fs' | 'path'>) => (file: string, content: string) =>
-  Effect.gen(function*() {
-    yield* deps.fs.makeDirectory(deps.path.dirname(file), { recursive: true })
-    const tmp = `${file}.tmp`
-    yield* deps.fs.writeFileString(tmp, content)
-    yield* deps.fs.rename(tmp, file).pipe(
-      Effect.catch(() => deps.fs.copyFile(tmp, file).pipe(Effect.andThen(deps.fs.remove(tmp)))),
-    )
-  })
+const writeAtomic = Effect.fn('stryker.mutationReporting.writeAtomic')(function*(
+  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
+  file: string,
+  content: string,
+) {
+  yield* deps.fs.makeDirectory(deps.path.dirname(file), { recursive: true })
+  const tmp = `${file}.tmp`
+  yield* deps.fs.writeFileString(tmp, content)
+  yield* deps.fs.rename(tmp, file).pipe(
+    Effect.catch(() => deps.fs.copyFile(tmp, file).pipe(Effect.andThen(deps.fs.remove(tmp)))),
+  )
+})
 
-const slimIncrementalReport =
-  (deps: MutationReportingDeps, input: MutationReportingInput) =>
-  (results: readonly InstrumenterMutant.RunMutantResult[]) =>
-    Effect.gen(function*() {
-      const { files, testFiles, identities } = yield* assembleReport(deps, input)(results)
-      return {
-        incrementalVersion: StrykerPackage.version,
-        schemaVersion: '1.0',
-        thresholds: input.options.thresholds,
-        files: stampFileIdentities(files, identities),
-        testFiles,
-      }
-    })
+const slimIncrementalReport = Effect.fn('stryker.mutationReporting.slimIncrementalReport')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  results: readonly InstrumenterMutant.RunMutantResult[],
+) {
+  const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
+  return {
+    incrementalVersion: StrykerPackage.version,
+    schemaVersion: '1.0',
+    thresholds: input.options.thresholds,
+    files: stampFileIdentities(files, identities),
+    testFiles,
+  }
+})
+
+const checkpointIncremental = Effect.fn('stryker.mutationReporting.checkpoint')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+) {
+  const report = yield* slimIncrementalReport(deps, input, input.results)
+  const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(report).pipe(Effect.orDie)
+  yield* writeAtomic(deps, input.options.incrementalFile, json)
+})
 
 const checkpoint = (deps: MutationReportingDeps, input: MutationReportingInput) =>
   Boolean.match(input.options.incremental, {
-    onTrue: () =>
-      Effect.gen(function*() {
-        const report = yield* slimIncrementalReport(deps, input)(input.results)
-        const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(report).pipe(Effect.orDie)
-        yield* writeAtomic(deps)(input.options.incrementalFile, json)
-      }),
+    onTrue: () => checkpointIncremental(deps, input),
     onFalse: () => Effect.void,
   })
 

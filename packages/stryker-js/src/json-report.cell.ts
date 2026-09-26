@@ -56,26 +56,33 @@ const jsonBytesOf = (report: Report.MutationTestResult): Effect.Effect<string, R
     Effect.mapError(failAsJsonReporter),
   )
 
+const writeJsonReport = Effect.fn('stryker.report.json.write')(function*(
+  rendered: {
+    readonly report: Report.MutationTestResult
+    readonly announceFileName: Option.Option<string>
+  },
+  raw: { readonly options: Options.StrykerOptions },
+) {
+  const output = yield* ReporterOutput
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const json = yield* jsonBytesOf(rendered.report)
+  const fileName = path.resolve(raw.options.jsonReporter.fileName)
+  yield* Effect.forEach(
+    Option.toArray(rendered.announceFileName),
+    (name) => Effect.ignore(output.write('stderr', [`Using relative path ${path.normalize(name)}\n`])),
+    { discard: true },
+  )
+  yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(Effect.mapError(failAsJsonReporter))
+  yield* fs.writeFileString(fileName, json).pipe(Effect.mapError(failAsJsonReporter))
+  const url = yield* path.toFileUrl(fileName).pipe(Effect.mapError(failAsJsonReporter))
+  yield* Effect.ignore(output.write('stdout', [`Your report can be found at: ${url.href}\n`]))
+})
+
 export const jsonReportCell = Sandwich.named('stryker.report.json')(readJsonReport)
   .decide(renderJsonReport)
   .write({
-    JsonReportRendered: (rendered, raw) =>
-      Effect.gen(function*() {
-        const output = yield* ReporterOutput
-        const fs = yield* FileSystem.FileSystem
-        const path = yield* Path.Path
-        const json = yield* jsonBytesOf(rendered.report)
-        const fileName = path.resolve(raw.options.jsonReporter.fileName)
-        yield* Effect.forEach(
-          Option.toArray(rendered.announceFileName),
-          (name) => Effect.ignore(output.write('stderr', [`Using relative path ${path.normalize(name)}\n`])),
-          { discard: true },
-        )
-        yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(Effect.mapError(failAsJsonReporter))
-        yield* fs.writeFileString(fileName, json).pipe(Effect.mapError(failAsJsonReporter))
-        const url = yield* path.toFileUrl(fileName).pipe(Effect.mapError(failAsJsonReporter))
-        yield* Effect.ignore(output.write('stdout', [`Your report can be found at: ${url.href}\n`]))
-      }),
+    JsonReportRendered: (rendered, raw) => writeJsonReport(rendered, raw),
     JsonReportSuppressed: () => Effect.void,
     CommandRejected: ({ issue }) => Effect.fail(failAsJsonReporter(issue)),
   })

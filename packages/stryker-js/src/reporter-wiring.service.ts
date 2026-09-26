@@ -24,17 +24,17 @@ export interface ReporterChoice {
   readonly builtinFactory: Option.Option<InterfaceReporter.ReporterFactory>
 }
 
-const spawnPluginReporterFactory = (
-  name: string,
-  loaded: LoadedPlugins,
-  projectBasePath: string,
-  options: Options.StrykerOptions,
-): Effect.Effect<
-  InterfaceReporter.ReporterFactory,
-  StageError,
-  Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
-> =>
-  Effect.gen(function*() {
+const spawnPluginReporterFactory = Effect.fn('stryker.reporterWiring.spawnPluginReporterFactory')(
+  function*(
+    name: string,
+    loaded: LoadedPlugins,
+    projectBasePath: string,
+    options: Options.StrykerOptions,
+  ): Effect.fn.Return<
+    InterfaceReporter.ReporterFactory,
+    StageError,
+    Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
+  > {
     const entry = yield* Effect.mapError(
       Effect.fromResult(
         resolveConfiguredPlugin(
@@ -64,7 +64,8 @@ const spawnPluginReporterFactory = (
       ),
     )
     return reporterWorkerFactory(client)
-  })
+  },
+)
 
 const selectReporterChoices = (names: readonly string[], choicesByName: HashMap.HashMap<string, ReporterChoice>) =>
   Array.map(

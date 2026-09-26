@@ -62,17 +62,20 @@ export const progressReporterFactory = (
   context: Context.Context<ReporterCellServices<typeof progressReportCell>>,
 ): Reporter.ReporterFactory => {
   const step = Cell.provideContext(progressReportCell, context)
-  return () => (events) =>
-    Effect.gen(function*() {
+  const consumeEvent = Effect.fn('stryker.report.progress.consumeEvent')(function*(
+    state: Ref.Ref<ProgressState>,
+    event: Reporter.ReporterEvent,
+  ) {
+    const current = yield* Ref.get(state)
+    const next = yield* step.run({ state: current, event })
+    yield* Ref.set(state, next)
+  })
+  return () =>
+    Effect.fn('stryker.report.progress.consume')(function*(events: AsyncIterable<Reporter.ReporterEvent>) {
       const state = yield* Ref.make<ProgressState>(INITIAL_PROGRESS)
       yield* Stream.runForEach(
         Stream.fromAsyncIterable(events, failAsProgress),
-        (event) =>
-          Effect.gen(function*() {
-            const current = yield* Ref.get(state)
-            const next = yield* step.run({ state: current, event })
-            yield* Ref.set(state, next)
-          }),
+        (event) => consumeEvent(state, event),
       )
       yield* step.run({ state: yield* Ref.get(state), event: undefined })
     })
