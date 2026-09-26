@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -6,9 +7,11 @@ import * as S from 'effect/Schema'
 import {
   type ConfigDocument,
   ConfigDocumentSchema,
+  type ExtendsStepDocument,
   type ExtendsStepState,
   ExtendsStepStateSchema,
 } from '../Config.schema.js'
+import { mergeConfigs } from '../config/merge-config.js'
 
 const RELATIVE_SPECIFIER_PREFIXES: readonly string[] = ['./', '../', '/', '\\']
 
@@ -18,8 +21,10 @@ const isModuleSpecifier = (value: string): boolean =>
 const ExtendsStepDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ExtendsStepDecision')
 type ExtendsStepDecisionTypeId = typeof ExtendsStepDecisionTypeId
 
+const configsMerge = mergeConfigs
+
 export class ExtendsStepDone extends S.TaggedClass<ExtendsStepDone>()('done', {
-  state: ExtendsStepStateSchema,
+  options: ConfigDocumentSchema,
 }) {
   readonly [ExtendsStepDecisionTypeId] = ExtendsStepDecisionTypeId
 }
@@ -41,7 +46,6 @@ export class ExtendsStepResolve extends S.TaggedClass<ExtendsStepResolve>()('res
 export class ExtendsStepRefused extends S.TaggedClass<ExtendsStepRefused>()('refused', {
   reason: S.Literals(['cycle', 'non-string-extends']),
   file: S.String,
-  cause: S.String,
 }) {
   readonly [ExtendsStepDecisionTypeId] = ExtendsStepDecisionTypeId
 }
@@ -56,6 +60,17 @@ export class ExtendsStepCommand extends S.TaggedClass<ExtendsStepCommand>()('Ext
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
+const stripExtends = (document: Options.PartialStrykerOptions): Options.PartialStrykerOptions => {
+  const { extends: _ignored, ...rest } = document
+  return rest
+}
+
+const mergeChainDocuments = (documents: readonly ExtendsStepDocument[]): ConfigDocument =>
+  documents.reduceRight<ConfigDocument>(
+    (merged, entry) => configsMerge(merged, stripExtends(entry.options)),
+    {},
+  )
+
 const nextStateOf = (
   state: ExtendsStepState,
   file: string,
@@ -65,7 +80,8 @@ const nextStateOf = (
   documents: [...state.documents, { path: file, options: document }],
 })
 
-const doneOf = (state: ExtendsStepState): ExtendsStepDecision => ExtendsStepDone.make({ state })
+const doneOf = (state: ExtendsStepState): ExtendsStepDecision =>
+  ExtendsStepDone.make({ options: mergeChainDocuments(state.documents) })
 
 const extendsValueOf = (extendValue: string, state: ExtendsStepState): ExtendsStepDecision =>
   Match.value(isModuleSpecifier(extendValue)).pipe(
@@ -74,15 +90,10 @@ const extendsValueOf = (extendValue: string, state: ExtendsStepState): ExtendsSt
     Match.exhaustive,
   )
 
-const cycleRefusalOf = (file: string): ExtendsStepRefused =>
-  ExtendsStepRefused.make({ reason: 'cycle', file, cause: `Config inheritance cycle detected at "${file}"` })
+const cycleRefusalOf = (file: string): ExtendsStepRefused => ExtendsStepRefused.make({ reason: 'cycle', file })
 
 const nonStringRefusalOf = (file: string): ExtendsStepRefused =>
-  ExtendsStepRefused.make({
-    reason: 'non-string-extends',
-    file,
-    cause: `Invalid config file "${file}". "extends" must be a string`,
-  })
+  ExtendsStepRefused.make({ reason: 'non-string-extends', file })
 
 const advanceStepOf = (command: ExtendsStepCommand): ExtendsStepDecision => {
   const nextState = nextStateOf(command.state, command.file, command.document)

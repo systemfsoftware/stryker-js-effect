@@ -1,8 +1,11 @@
+import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Equal from 'effect/Equal'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { ExtendsStepStateSchema } from '../Config.schema.js'
+import { type ConfigDocument, ExtendsStepStateSchema } from '../Config.schema.js'
+import { mergeConfigs } from '../config/merge-config.js'
 import {
   extendsStep,
   ExtendsStepCommand,
@@ -48,6 +51,19 @@ const cyclicCommandArb = Arbitrary.all({
   ),
 )
 
+interface ChainEntry {
+  readonly path: string
+  readonly options: ConfigDocument
+}
+
+const stripExtends = (document: Options.PartialStrykerOptions): Options.PartialStrykerOptions => {
+  const { extends: _ignored, ...rest } = document
+  return rest
+}
+
+const referenceChainOptions = (documents: readonly ChainEntry[]): ConfigDocument =>
+  documents.reduceRight<ConfigDocument>((merged, entry) => mergeConfigs(merged, stripExtends(entry.options)), {})
+
 describe('extendsStep', () => {
   it.prop(
     '∀c_Visited_≡CycleIsRefused',
@@ -68,7 +84,11 @@ describe('extendsStep', () => {
       }
       const extendValue = command.document['extends']
       if (extendValue === undefined || extendValue === null) {
-        return S.is(ExtendsStepDone)(decision) && decision.state.visited.at(-1) === command.file
+        const expected = referenceChainOptions([
+          ...command.state.documents,
+          { path: command.file, options: { ...command.document } },
+        ])
+        return S.is(ExtendsStepDone)(decision) && Equal.equals(decision.options, expected)
       }
       if (typeof extendValue !== 'string') {
         return S.is(ExtendsStepRefused)(decision) &&
@@ -89,6 +109,21 @@ describe('extendsStep', () => {
       const decision = subject(command)
       if (S.is(ExtendsStepRefused)(decision)) {
         return true
+      }
+      if (S.is(ExtendsStepDone)(decision)) {
+        const marker = { marker: command.file }
+        const appended = subject(
+          ExtendsStepCommand.make({
+            state: command.state,
+            document: { ...command.document, ...marker },
+            file: command.file,
+          }),
+        )
+        const expected = referenceChainOptions([
+          ...command.state.documents,
+          { path: command.file, options: { ...command.document, ...marker } },
+        ])
+        return S.is(ExtendsStepDone)(appended) && Equal.equals(appended.options, expected)
       }
       return decision.state.visited.length === command.state.visited.length + 1 &&
         decision.state.documents.length === command.state.documents.length + 1 &&

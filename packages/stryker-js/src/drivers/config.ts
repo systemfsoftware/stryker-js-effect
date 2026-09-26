@@ -13,13 +13,12 @@ import * as Stream from 'effect/Stream'
 import {
   type ConfigDocument,
   ConfigDocumentSchema,
-  type ExtendsStepDocument,
   type ExtendsStepState,
   ImportedModuleSchema,
   LegacyConfigFileExtensions,
   SupportedConfigFileExtensions,
 } from '../Config.schema.js'
-import { mergeConfig, mergeConfigs } from '../config/merge-config.js'
+import { mergeConfig } from '../config/merge-config.js'
 import type { ConfigEnv } from '../config/stryker-config.schema.js'
 import {
   ConfigFactoryFailed,
@@ -338,17 +337,6 @@ const readExtendsChild = (
   FileSystem.FileSystem | Path.Path
 > => expectedConfigFileOf(configFile, 'extends').pipe(Effect.flatMap((file) => readConfigModule(file, configEnv)))
 
-const stripExtends = (document: Options.PartialStrykerOptions): Options.PartialStrykerOptions => {
-  const { extends: _ignored, ...rest } = document
-  return rest
-}
-
-const mergeChainDocuments = (documents: readonly ExtendsStepDocument[]): ConfigDocument =>
-  documents.reduceRight<ConfigDocument>(
-    (merged, entry) => mergeConfigs(merged, stripExtends(entry.options)),
-    {},
-  )
-
 const resolveExtends = Effect.fn('stryker.config.extends')(function*(
   configFile: string,
   document: ConfigDocument,
@@ -393,12 +381,21 @@ const resolveExtends = Effect.fn('stryker.config.extends')(function*(
     return yield* Match.value(
       extendsStep(ExtendsStepCommand.make({ state, document: currentDocument, file: canonicalFile })),
     ).pipe(
-      Match.tag('done', (decision) => Effect.succeed(mergeChainDocuments(decision.state.documents))),
+      Match.tag('done', (decision) => Effect.succeed(decision.options)),
       Match.tag('read', (decision) => readChild(decision.specifier, decision.state)),
       Match.tag('resolve', (decision) => resolvedChild(decision.specifier, decision.state)),
       Match.tag(
         'refused',
-        (decision) => Effect.fail(ConfigFileInvalidError.make({ file: decision.file, cause: decision.cause })),
+        (decision) =>
+          Effect.fail(
+            ConfigFileInvalidError.make({
+              file: decision.file,
+              cause: Match.value(decision.reason).pipe(
+                Match.when('cycle', () => `Config inheritance cycle detected at "${decision.file}"`),
+                Match.orElse(() => `Invalid config file "${decision.file}". "extends" must be a string`),
+              ),
+            }),
+          ),
       ),
       Match.exhaustive,
     )

@@ -1,65 +1,21 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Boolean } from 'effect'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+
+import { compileGlob, CompileGlobCommand, type CompileGlobDecision } from './compile-glob.workflow.js'
 
 const DiscoveredEntryTypeId = Symbol.for('@systemfsoftware/stryker-js/DiscoveredEntryDecision')
 type DiscoveredEntryTypeId = typeof DiscoveredEntryTypeId
 
-const escapeRegex = (value: string): string => value.replace(/[\\^$.|()+]/g, '\\$&')
+const globExpression = compileGlob
+const compileGlobCommand = CompileGlobCommand
 
-const orEmpty = (value: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(value), () => '')
+const expressionOf = (pattern: boolean | string, caseInsensitive: boolean): CompileGlobDecision =>
+  Result.getOrElse(globExpression(compileGlobCommand.make({ pattern, caseInsensitive })), (neverError) => neverError)
 
-const globSegmentToRegex = (segment: string): string =>
-  Match.value(segment.length === 0).pipe(
-    Match.withReturnType<string>(),
-    Match.when(true, () => ''),
-    Match.orElse(() =>
-      Match.value(segment.charCodeAt(0) - 42).pipe(
-        Match.withReturnType<string>(),
-        Match.when(0, () => {
-          const rest = segment.slice(1)
-          return Boolean.match(rest.startsWith('*'), {
-            onTrue: () => {
-              const afterStars = rest.slice(1)
-              return Boolean.match(afterStars.startsWith('/'), {
-                onTrue: () => `(?:(?:[^/]+/)*)?${globSegmentToRegex(afterStars.slice(1))}`,
-                onFalse: () => `.*${globSegmentToRegex(afterStars)}`,
-              })
-            },
-            onFalse: () => `[^/]*${globSegmentToRegex(rest)}`,
-          })
-        }),
-        Match.when(21, () => `[^/]${globSegmentToRegex(segment.slice(1))}`),
-        Match.when(81, () => {
-          const close = segment.indexOf('}')
-          return Boolean.match(close < 0, {
-            onTrue: () => `${escapeRegex('{')}${globSegmentToRegex(segment.slice(1))}`,
-            onFalse: () => {
-              const alternatives = segment.slice(1, close).split(',').map(globSegmentToRegex).join('|')
-              return `(?:${alternatives})${globSegmentToRegex(segment.slice(close + 1))}`
-            },
-          })
-        }),
-        Match.when(49, () => {
-          const close = segment.indexOf(']', 1)
-          return Boolean.match(close < 0, {
-            onTrue: () => `${escapeRegex('[')}${globSegmentToRegex(segment.slice(1))}`,
-            onFalse: () => `${segment.slice(0, close + 1)}${globSegmentToRegex(segment.slice(close + 1))}`,
-          })
-        }),
-        Match.orElse(() => `${escapeRegex(orEmpty(segment[0]))}${globSegmentToRegex(segment.slice(1))}`),
-      )
-    ),
-  )
-
-const globToRegExp = (pattern: string, caseInsensitive: boolean) =>
-  new RegExp(
-    `^${globSegmentToRegex(pattern)}$`,
-    Boolean.match(caseInsensitive, { onTrue: (): 'i' => 'i', onFalse: (): '' => '' }),
-  )
+const UNMATCHABLE = /(?!)/
 
 interface CompiledIgnoreRule {
   readonly negate: boolean
@@ -67,15 +23,21 @@ interface CompiledIgnoreRule {
   readonly prefix: RegExp
 }
 
+const ruleOf = (negate: boolean, expression: RegExp): CompiledIgnoreRule => ({
+  negate,
+  expression,
+  prefix: new RegExp(expression.source.replace(/\$$/, ''), expression.flags),
+})
+
 const compileIgnoreRule = (pattern: string): CompiledIgnoreRule => {
   const negate = pattern.startsWith('!')
   const body = Boolean.match(negate, { onTrue: () => pattern.slice(1), onFalse: () => pattern })
-  const expression = globToRegExp(body, true)
-  return {
-    negate,
-    expression,
-    prefix: new RegExp(expression.source.replace(/\$$/, ''), expression.flags),
-  }
+  return Match.value(expressionOf(body, true)).pipe(
+    Match.withReturnType<CompiledIgnoreRule>(),
+    Match.tag('GlobMatcher', (matcher) => ruleOf(negate, new RegExp(matcher.source, matcher.flags))),
+    Match.tag('GlobUnmatchable', () => ruleOf(negate, UNMATCHABLE)),
+    Match.exhaustive,
+  )
 }
 
 const matchesDirectoryPartially = (entryPath: string, rule: CompiledIgnoreRule) =>

@@ -1,65 +1,21 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Boolean } from 'effect'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+
+import { compileGlob, CompileGlobCommand, type CompileGlobDecision, type GlobMatcher } from './compile-glob.workflow.js'
 
 const FileMatchTypeId = Symbol.for('@systemfsoftware/stryker-js/FileMatchDecision')
 type FileMatchTypeId = typeof FileMatchTypeId
 
-const escapeRegex = (value: string): string => value.replace(/[\\^$.|()+]/g, '\\$&')
+const globExpression = compileGlob
+const compileGlobCommand = CompileGlobCommand
 
-const orEmpty = (value: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(value), () => '')
+const expressionOf = (pattern: boolean | string, caseInsensitive: boolean): CompileGlobDecision =>
+  Result.getOrElse(globExpression(compileGlobCommand.make({ pattern, caseInsensitive })), (neverError) => neverError)
 
-const globSegmentToRegex = (segment: string): string =>
-  Match.value(segment.length === 0).pipe(
-    Match.withReturnType<string>(),
-    Match.when(true, () => ''),
-    Match.orElse(() =>
-      Match.value(segment.charCodeAt(0) - 42).pipe(
-        Match.withReturnType<string>(),
-        Match.when(0, () => {
-          const rest = segment.slice(1)
-          return Boolean.match(rest.startsWith('*'), {
-            onTrue: () => {
-              const afterStars = rest.slice(1)
-              return Boolean.match(afterStars.startsWith('/'), {
-                onTrue: () => `(?:(?:[^/]+/)*)?${globSegmentToRegex(afterStars.slice(1))}`,
-                onFalse: () => `.*${globSegmentToRegex(afterStars)}`,
-              })
-            },
-            onFalse: () => `[^/]*${globSegmentToRegex(rest)}`,
-          })
-        }),
-        Match.when(21, () => `[^/]${globSegmentToRegex(segment.slice(1))}`),
-        Match.when(81, () => {
-          const close = segment.indexOf('}')
-          return Boolean.match(close < 0, {
-            onTrue: () => `${escapeRegex('{')}${globSegmentToRegex(segment.slice(1))}`,
-            onFalse: () => {
-              const alternatives = segment.slice(1, close).split(',').map(globSegmentToRegex).join('|')
-              return `(?:${alternatives})${globSegmentToRegex(segment.slice(close + 1))}`
-            },
-          })
-        }),
-        Match.when(49, () => {
-          const close = segment.indexOf(']', 1)
-          return Boolean.match(close < 0, {
-            onTrue: () => `${escapeRegex('[')}${globSegmentToRegex(segment.slice(1))}`,
-            onFalse: () => `${segment.slice(0, close + 1)}${globSegmentToRegex(segment.slice(close + 1))}`,
-          })
-        }),
-        Match.orElse(() => `${escapeRegex(orEmpty(segment[0]))}${globSegmentToRegex(segment.slice(1))}`),
-      )
-    ),
-  )
-
-const globToRegExp = (pattern: string, caseInsensitive: boolean) =>
-  new RegExp(
-    `^${globSegmentToRegex(pattern)}$`,
-    Boolean.match(caseInsensitive, { onTrue: (): 'i' => 'i', onFalse: (): '' => '' }),
-  )
+const regexpOf = (matcher: GlobMatcher): RegExp => new RegExp(matcher.source, matcher.flags)
 
 const hasHiddenSegment = (fileName: string) => fileName.split('/').some((entry) => entry.startsWith('.'))
 
@@ -68,18 +24,19 @@ const matcherMatchesResolved = (
   allowHiddenFiles: boolean,
   resolvedFileName: string,
 ): boolean =>
-  Match.value(resolvedPattern).pipe(
+  Match.value(expressionOf(resolvedPattern, false)).pipe(
     Match.withReturnType<boolean>(),
-    Match.when(Match.string, (normalized) =>
+    Match.tag('GlobMatcher', (matcher) =>
       Boolean.match(allowHiddenFiles, {
-        onTrue: () => globToRegExp(normalized, false).test(resolvedFileName),
+        onTrue: () => regexpOf(matcher).test(resolvedFileName),
         onFalse: () =>
           Boolean.match(hasHiddenSegment(resolvedFileName), {
             onTrue: () => false,
-            onFalse: () => globToRegExp(normalized, false).test(resolvedFileName),
+            onFalse: () => regexpOf(matcher).test(resolvedFileName),
           }),
       })),
-    Match.orElse(() => false),
+    Match.tag('GlobUnmatchable', () => false),
+    Match.exhaustive,
   )
 
 export class FileMatchCommand extends S.TaggedClass<FileMatchCommand>()('FileMatchCommand', {
