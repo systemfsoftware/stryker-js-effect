@@ -4,7 +4,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { CheckedEntry } from '../../tests/__fixtures__/partition-checked-plans-law.schema.js'
+import { CheckedEntry } from '../../tests/__fixtures__/partition-checked-plans-law.fixture.js'
 import {
   CheckedPlanFailed,
   CheckedPlanPassed,

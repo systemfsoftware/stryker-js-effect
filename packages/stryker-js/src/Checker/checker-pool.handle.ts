@@ -1,20 +1,17 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
-import type * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type * as Path from 'effect/Path'
 import * as Pool from 'effect/Pool'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
-import type * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { StageError } from '../Run.schema.js'
-import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.cell.js'
 import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
 import {
@@ -126,10 +123,7 @@ const checkGroupsConcurrently = (
       ),
   )
 
-const failedCheckOf = (result: Checker.CheckResult): Option.Option<Checker.FailedCheckResult> =>
-  Option.liftPredicate(result, (candidate) => candidate.status !== 'passed')
-
-const splitCheckedPlans = Effect.fn('stryker.checker_pool.split_checked')(function*(
+export const splitCheckedPlans = Effect.fn('stryker.checker_pool.split_checked')(function*(
   checked: readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResult])[],
 ) {
   const decisions = yield* Effect.fromResult(
@@ -139,27 +133,18 @@ const splitCheckedPlans = Effect.fn('stryker.checker_pool.split_checked')(functi
       }),
     ),
   )
-  const passedPlans = decisions.flatMap((decision, index): readonly Mutant.MutantRunPlan[] =>
+  const passedPlans = decisions.flatMap((decision): readonly Mutant.MutantRunPlan[] =>
     Option.match(Option.liftPredicate(decision, S.is(CheckedPlanPassed)), {
       onNone: () => [],
-      onSome: () => Option.toArray(Option.map(Option.fromUndefinedOr(checked[index]), ([plan]) => plan)),
+      onSome: (passed) => Option.toArray(Option.map(Array.get(checked, passed.entryIndex), ([plan]) => plan)),
     })
   )
   const failedChecks = decisions.flatMap(
-    (decision, index): readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[] =>
+    (decision): readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[] =>
       Option.match(Option.liftPredicate(decision, S.is(CheckedPlanFailed)), {
         onNone: () => [],
-        onSome: () =>
-          Option.toArray(
-            Option.flatMap(
-              Option.fromUndefinedOr(checked[index]),
-              ([plan, result]) =>
-                Option.map(
-                  failedCheckOf(result),
-                  (failedResult): readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult] => [plan, failedResult],
-                ),
-            ),
-          ),
+        onSome: (failed) =>
+          Option.toArray(Option.map(Array.get(checked, failed.entryIndex), ([plan]) => [plan, failed.result] as const)),
       }),
   )
   return { passedPlans, failedChecks }
@@ -209,12 +194,8 @@ export const checkPlans = Effect.fn('stryker.checker_pool.check_plans')(function
   })
 })
 
-export const inOwnScope = Effect.fn('stryker.mutation_test.checker_scope')(function*(
-  acquire: Effect.Effect<
-    CheckerPool | undefined,
-    never,
-    Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | WorkerLauncher | FileSystem.FileSystem | Path.Path
-  >,
+export const inOwnScope = Effect.fn('stryker.mutation_test.checker_scope')(function*<Resources, RAcquire>(
+  acquire: Effect.Effect<Resources, never, Scope.Scope | RAcquire>,
 ) {
   const checkerScope = yield* Scope.make()
   yield* Effect.addFinalizer(() => Scope.close(checkerScope, Exit.void))

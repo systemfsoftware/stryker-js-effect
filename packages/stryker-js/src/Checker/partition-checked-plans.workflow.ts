@@ -8,15 +8,23 @@ import * as S from 'effect/Schema'
 const CheckedPlanTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CheckedPlan')
 type CheckedPlanTypeId = typeof CheckedPlanTypeId
 
+const FailedCheckResultSchema = S.Struct({
+  status: S.Literal('compileError'),
+  reason: S.String,
+})
+
 export class CheckedPlanPassed extends S.TaggedClass<CheckedPlanPassed>()('CheckedPlanPassed', {
   mutantId: Mutant.MutantId,
+  entryIndex: S.Int,
 }) {
   readonly [CheckedPlanTypeId] = CheckedPlanTypeId
 }
 
 export class CheckedPlanFailed extends S.TaggedClass<CheckedPlanFailed>()('CheckedPlanFailed', {
   mutantId: Mutant.MutantId,
+  entryIndex: S.Int,
   reason: S.String,
+  result: FailedCheckResultSchema,
 }) {
   readonly [CheckedPlanTypeId] = CheckedPlanTypeId
 }
@@ -36,16 +44,23 @@ const isFailed = (result: Checker.CheckResult): result is Checker.FailedCheckRes
 
 const failedReasonOf = (failed: Checker.FailedCheckResult): string => failed.reason
 
-const decideCheckedPlan = (mutantId: Mutant.MutantId, result: Checker.CheckResult): CheckedPlanDecision =>
+const decideCheckedPlan = (
+  mutantId: Mutant.MutantId,
+  result: Checker.CheckResult,
+  entryIndex: number,
+): CheckedPlanDecision =>
   Option.match(Option.liftPredicate(result, isFailed), {
-    onNone: () => CheckedPlanPassed.make({ mutantId }),
-    onSome: (failed) => CheckedPlanFailed.make({ mutantId, reason: failedReasonOf(failed) }),
+    onNone: () => CheckedPlanPassed.make({ mutantId, entryIndex }),
+    onSome: (failed) =>
+      CheckedPlanFailed.make({ mutantId, entryIndex, reason: failedReasonOf(failed), result: failed }),
   })
 
 const decide = (
   command: PartitionCheckedPlansCommand,
 ): Result.Result<readonly CheckedPlanDecision[], never> =>
-  Result.succeed(command.checked.map(([mutantId, result]) => decideCheckedPlan(mutantId, result)))
+  Result.succeed(
+    command.checked.map(([mutantId, result], entryIndex) => decideCheckedPlan(mutantId, result, entryIndex)),
+  )
 
 export const partitionCheckedPlans = Workflow.make({
   command: PartitionCheckedPlansCommand,
