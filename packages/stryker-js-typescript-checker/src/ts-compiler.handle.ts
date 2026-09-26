@@ -1,4 +1,3 @@
-import { parse } from '@std/jsonc'
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
@@ -48,10 +47,12 @@ import {
 } from './ts-files.handle.js'
 import {
   PathAliasesSchema,
-  type TsConfig,
+  type TsConfigCompilerOptions,
+  TsConfigCompilerOptionsSchema,
+  type TsConfigDocument,
   TsConfigNotFoundError,
   TsConfigParseError,
-  TsConfigSchema,
+  TsConfigText,
 } from './Tsconfig.schema.js'
 
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompiler')
@@ -203,40 +204,36 @@ const guardTypescriptVersion = (rt: TSCompilerRuntime): Effect.Effect<void, Unsu
       }),
   )
 
-const reasonOfThrown = <A = unknown>(cause: A) =>
-  Match.value(cause).pipe(
-    Match.when(Match.instanceOf(Error), (error) => error.message),
-    Match.orElse(() => 'a non-Error value was thrown'),
-  )
-
-const parseTsConfig = (fileName: string, jsonText: string): Result.Result<TsConfig, TsConfigParseError> =>
-  Result.flatMap(
-    Result.try({
-      try: () => parse(jsonText.replace(/^\uFEFF/, '')),
-      catch: (cause) => TsConfigParseError.make({ file: fileName, reason: reasonOfThrown(cause) }),
-    }),
-    (value) =>
-      Option.match(Option.liftPredicate(value, S.is(TsConfigSchema)), {
-        onSome: (original) => Result.succeed(original),
-        onNone: () =>
-          Result.mapError(
-            S.decodeUnknownResult(TsConfigSchema)(value),
-            (error) => TsConfigParseError.make({ file: fileName, reason: error.message }),
-          ),
-      }),
+const parseTsConfig = (
+  fileName: string,
+  jsonText: string,
+): Result.Result<TsConfigDocument, TsConfigParseError> =>
+  Result.mapError(
+    S.decodeResult(TsConfigText)(jsonText),
+    (error) => TsConfigParseError.make({ file: fileName, reason: error.message }),
   )
 
 const tsconfigDeclaresReferences = (fileName: string, jsonText: string) =>
   Result.match(parseTsConfig(fileName, jsonText), {
     onFailure: () => false,
-    onSuccess: (config) => config.references !== undefined,
+    onSuccess: (config) => config['references'] !== undefined,
   })
 
 const overrideTextOf = (document: OverrideTsconfigOptionsCommand['document'], buildMode: boolean): string =>
   decided(overrideTsconfigOptions(OverrideTsconfigOptionsCommand.make({ document, buildMode }))).text
 
-const referencedProjectsOf = (rt: TSCompilerRuntime, config: TsConfig, fromDirName: string): ReadonlyArray<string> =>
-  Arr.map(config.references ?? [], (reference) => {
+const tsConfigReferencesOf = (config: TsConfigDocument): ReadonlyArray<{ readonly path: string }> =>
+  Option.getOrElse(
+    Option.liftPredicate(config['references'], S.is(S.Array(S.Struct({ path: S.String })))),
+    (): ReadonlyArray<{ readonly path: string }> => [],
+  )
+
+const referencedProjectsOf = (
+  rt: TSCompilerRuntime,
+  config: TsConfigDocument,
+  fromDirName: string,
+): ReadonlyArray<string> =>
+  Arr.map(tsConfigReferencesOf(config), (reference) => {
     const resolved = rt.pathService.resolve(fromDirName, reference.path)
     return normalizeFileName(
       Boolean.match(rt.pathService.basename(resolved).endsWith('.json'), {
@@ -253,19 +250,28 @@ interface TsConfigWalk {
   readonly aliases: ReadonlyArray<PathAlias>
 }
 
+const compilerOptionsOf = (config: TsConfigDocument): TsConfigCompilerOptions =>
+  Option.getOrElse(
+    Option.liftPredicate(config['compilerOptions'], S.is(TsConfigCompilerOptionsSchema)),
+    (): TsConfigCompilerOptions => ({}),
+  )
+
 const aliasEntriesOf = (
-  compilerOptions: TsConfig['compilerOptions'],
+  compilerOptions: TsConfigCompilerOptions,
 ): ReadonlyArray<readonly [string, ReadonlyArray<string>]> =>
   Object.entries(
     Option.getOrElse(
-      Option.flatMap(Option.fromUndefinedOr(compilerOptions), (options) =>
-        S.decodeUnknownOption(PathAliasesSchema)(options['paths'])),
+      S.decodeUnknownOption(PathAliasesSchema)(compilerOptions['paths']),
       (): S.Schema.Type<typeof PathAliasesSchema> => ({}),
     ),
   )
 
-const pathAliasesOf = (pathService: Path.Path, fileName: string, config: TsConfig): ReadonlyArray<PathAlias> =>
-  aliasEntriesOf(config.compilerOptions ?? {}).map(([pattern, targets]): PathAlias => ({
+const pathAliasesOf = (
+  pathService: Path.Path,
+  fileName: string,
+  config: TsConfigDocument,
+): ReadonlyArray<PathAlias> =>
+  aliasEntriesOf(compilerOptionsOf(config)).map(([pattern, targets]): PathAlias => ({
     pattern,
     targets,
     baseDir: pathService.dirname(fileName),
