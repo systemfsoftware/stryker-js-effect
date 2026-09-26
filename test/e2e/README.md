@@ -17,6 +17,8 @@ Local runs need hardware virtualization and nothing else: no Docker daemon, Podm
 - **macOS:** Apple Silicon (Hypervisor.framework).
 - **Inside a rootless podman container** (for example an agent sandbox run as a quadlet): add `AddDevice=/dev/kvm` to the unit's `[Container]` section, plus `GroupAdd=keep-groups` when the host's `/dev/kvm` is `root:kvm` mode `0660`, then `systemctl --user daemon-reload` and restart the unit.
 
+The collector (Grafana LGTM with Tempo) is mandatory: without it, global setup fails naming the remediation.
+
 ```bash
 pnpm test:e2e
 ```
@@ -26,7 +28,7 @@ Without usable virtualization the lane stops in global setup with a `Virtualizat
 Run a specific test:
 
 ```bash
-cd test/e2e && pnpm exec vitest run <path-to-test>
+OTEL_ENABLED=true pnpm --filter @systemfsoftware/stryker-e2e exec vitest run tests/<file>
 ```
 
 ### Fixture cache
@@ -41,17 +43,19 @@ Each test file boots one warm microVM per fixture, copies the baked fixture onto
 
 ## Tracing and telemetry
 
-When `OTEL_ENABLED=true`, test runs export OpenTelemetry traces to an OTLP collector on `http://127.0.0.1:4318`.
+Each test scenario runs the CLI under a trace id it owns, passed to the CLI as `TRACEPARENT`, so the CLI's and its workers' spans land in that trace. Failure annotations name the trace id. The lifecycle feature also judges its run against a declared trace contract over spans read back from Tempo; a Break writes a dump under `test/e2e/artifacts/traces/` (gitignored).
+
+`OTEL_ENABLED` is forced to `true` by global setup; the collector must be available at `OTEL_EXPORTER_OTLP_ENDPOINT` (`http://127.0.0.1:4318`) and Tempo at `TEMPO_URL` (`http://127.0.0.1:3200`). Observation settings (poll interval, settle window, timeout) are configured in `trace-observation.fixture.ts`.
 
 To run with local Grafana LGTM:
 
 ```bash
 pnpm lgtm:up
-OTEL_ENABLED=true pnpm test:e2e
+pnpm test:e2e
 pnpm lgtm:down
 ```
 
-View traces in Grafana (`http://127.0.0.1:3000`) under the `stryker-e2e` service.
+View traces in Grafana (`http://127.0.0.1:3000`) under the `stryker-e2e` service. Query by trace id from a failure annotation to isolate diverging spans.
 
 ### Inspecting CI traces
 
