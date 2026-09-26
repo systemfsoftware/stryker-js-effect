@@ -1,71 +1,18 @@
-import { Cell } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Bool from 'effect/Boolean'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
-import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Path from 'effect/Path'
-import * as Ref from 'effect/Ref'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { SchemaError } from 'effect/Schema'
 import * as Argument from 'effect/unstable/cli/Argument'
 import * as CliError from 'effect/unstable/cli/CliError'
 import * as Command from 'effect/unstable/cli/Command'
 import * as Flag from 'effect/unstable/cli/Flag'
-import { Admitted } from './admit-survivors-run.workflow.js'
-import { type CliRequest, CliRouteCommand } from './Cli.schema.js'
-import {
-  type ConfigFileInvalidError,
-  type ConfigFileNotFoundError,
-  type ConfigFileUnreadableError,
-  type ConfigFileUnsupportedError,
-} from './ConfigError.schema.js'
-import { MergeReportsFailed } from './merge-reports.schema.js'
-import type { ResolvedMode } from './output-mode.schema.js'
-import { MachineConsole } from './reporting/machine-console.service.js'
-import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
-import { type HostServices, type StrykerRun } from './run/host.service.js'
-import type { MutationTestDone } from './run/mutation-test.cell.js'
-import { mutationTestCell } from './run/run-stages.cell.js'
-import { RunEnvironment } from './run/RunEnvironment.service.js'
-import { SurvivorsRejection } from './Survivors/mod.js'
 
-export interface CliEnvironment {
-  readonly mode: ResolvedMode
-  readonly stream: RunEventStream
-  readonly host: HostServices
-  readonly basePath: string
-  readonly pathService: Path.Path
-  readonly runMutationTest: StrykerRun | undefined
-  readonly runEvents: RunEventStreamPort
-}
-
-export interface StrykerCliInvocation {
-  readonly argv: readonly string[]
-  readonly environment: CliEnvironment
-}
-
-export type CliRead = (typeof CliRouteCommand)['Encoded'] & {
-  readonly environment: CliEnvironment
-  readonly options: Options.PartialStrykerOptions
-}
-
-export type CliAnswer = void | MutationTestDone
-
-export type CliFailure =
-  | SchemaError
-  | SurvivorsRejection
-  | ConfigFileNotFoundError
-  | ConfigFileUnreadableError
-  | ConfigFileInvalidError
-  | ConfigFileUnsupportedError
-  | MergeReportsFailed
+import { CliRouteCommand } from '../Cli.schema.js'
+import { type CliEnvironment, runRequestCell } from '../run-request.cell.js'
 
 const createSplitter = (separator: string) => (value: string) => value.split(separator).filter(Boolean)
 
@@ -73,16 +20,6 @@ const splitOnComma = createSplitter(',')
 const splitOnSpace = createSplitter(' ')
 
 const decodePluginFileUrl = S.decodeOption(Options.PluginFileUrl)
-
-const asPluginFileUrls = (specifiers: readonly string[]): Option.Option<readonly string[]> =>
-  Option.all(specifiers.map((specifier) => decodePluginFileUrl(specifier)))
-
-const rejectNonFileUrlPlugin = (flagName: string) => (specifiers: readonly string[]): string => {
-  const rejected = specifiers.filter((specifier) => Option.isNone(decodePluginFileUrl(specifier)))
-  return `--${flagName} takes plugin entrypoints as file URLs or bare package names. Not a plugin specifier: ${
-    rejected.join(', ')
-  }`
-}
 
 const CLEAN_TEMP_DIR_DISABLED = ['false', '0'] as const
 
@@ -99,6 +36,16 @@ const parseConcurrency = (value: string): number | string =>
     Match.when(true, () => Number.parseInt(value, 10)),
     Match.orElse(() => value),
   )
+
+const asPluginFileUrls = (specifiers: readonly string[]): Option.Option<readonly string[]> =>
+  Option.all(specifiers.map((specifier) => decodePluginFileUrl(specifier)))
+
+const rejectNonFileUrlPlugin = (flagName: string) => (specifiers: readonly string[]): string => {
+  const rejected = specifiers.filter((specifier) => Option.isNone(decodePluginFileUrl(specifier)))
+  return `--${flagName} takes plugin entrypoints as file URLs or bare package names. Not a plugin specifier: ${
+    rejected.join(', ')
+  }`
+}
 
 const optional = <A>(option: Flag.Flag<A>) => Flag.optional(option)
 
@@ -358,235 +305,100 @@ const mergeReportsOptions = {
     ),
 }
 
-const makeStrykerCommand = (requestRef: Ref.Ref<Option.Option<CliRequest>>) => {
-  const runCommand = Command.make(
-    'run',
-    runConfig,
-    (config): Effect.Effect<void, CliError.CliError, never> => {
-      const configFile = Option.getOrUndefined(config.configFile)
-      if (isUnknownArgument(configFile)) {
-        return Console.error(`Received unknown argument: '${configFile}'`).pipe(
-          Effect.andThen(Effect.failSync(() => CliError.UnexpectedArgument.make({ arguments: [configFile] }))),
-        )
-      }
-      return Ref.set(
-        requestRef,
-        Option.some({
-          _tag: 'run',
-          options: readStrykerOptions(config),
-          survivors: config.survivors === true,
-        }),
+type ParsedConfigValue<A> = A extends Argument.Argument<infer Value> ? Value
+  : A extends Flag.Flag<infer Value> ? Value
+  : never
+type RunParsedConfig = {
+  readonly [Key in keyof typeof runConfig]: ParsedConfigValue<(typeof runConfig)[Key]>
+}
+
+const readStrykerOptions = (config: RunParsedConfig): Options.PartialStrykerOptions => {
+  const entryOf = <K extends keyof Options.StrykerOptions>(key: K, value: Option.Option<Options.StrykerOptions[K]>) =>
+    Option.match(value, {
+      onNone: () => ({}),
+      onSome: (present) => ({ [key]: present }),
+    })
+  const trueEntryOf = <K extends keyof Options.StrykerOptions>(
+    key: K,
+    value: Options.StrykerOptions[K] | undefined,
+  ) =>
+    Bool.match(value === true, {
+      onTrue: () => ({ [key]: true }),
+      onFalse: () => ({}),
+    })
+  return {
+    ...entryOf('ignorePatterns', config.ignorePatterns),
+    ...trueEntryOf('ignoreStatic', config.ignoreStatic),
+    ...trueEntryOf('incremental', config.incremental),
+    ...trueEntryOf('allowEmpty', config.allowEmpty),
+    ...entryOf('incrementalFile', config.incrementalFile),
+    ...entryOf('progressStreamFile', config.progressStreamFile),
+    ...trueEntryOf('force', config.force),
+    ...entryOf('mutate', config.mutate),
+    ...entryOf('testFiles', config.testFiles),
+    ...entryOf('buildCommand', config.buildCommand),
+    ...trueEntryOf('dryRunOnly', config.dryRunOnly),
+    ...entryOf('checkerNodeArgs', config.checkerNodeArgs),
+    ...entryOf('coverageAnalysis', config.coverageAnalysis),
+    ...entryOf('testRunner', config.testRunner),
+    ...entryOf('testRunnerNodeArgs', config.testRunnerNodeArgs),
+    ...entryOf('reporters', config.reporters),
+    ...entryOf('plugins', config.plugins),
+    ...entryOf('appendPlugins', config.appendPlugins),
+    ...entryOf('timeoutMS', config.timeoutMS),
+    ...entryOf('timeoutFactor', config.timeoutFactor),
+    ...entryOf('dryRunTimeoutMinutes', config.dryRunTimeoutMinutes),
+    ...entryOf('maxConcurrentTestRunners', config.maxConcurrentTestRunners),
+    ...entryOf('concurrency', config.concurrency),
+    ...trueEntryOf('disableBail', config.disableBail),
+    ...entryOf('maxTestRunnerReuse', config.maxTestRunnerReuse),
+    ...entryOf('logLevel', config.logLevel),
+    ...entryOf('fileLogLevel', config.fileLogLevel),
+    ...trueEntryOf('inPlace', config.inPlace),
+    ...entryOf('tempDirName', config.tempDirName),
+    ...entryOf('cleanTempDir', config.cleanTempDir),
+    ...entryOf('configFile', config.configFile),
+  }
+}
+
+export const makeStrykerCommand = (environment: CliEnvironment) => {
+  const runCommand = Command.make('run', runConfig, (config) => {
+    const configFile = Option.getOrUndefined(config.configFile)
+    if (isUnknownArgument(configFile)) {
+      return Console.error(`Received unknown argument: '${configFile}'`).pipe(
+        Effect.andThen(Effect.failSync(() => CliError.UnexpectedArgument.make({ arguments: [configFile] }))),
       )
-    },
-  ).pipe(Command.withDescription('Run mutation testing'))
-
-  type ParsedConfigValue<A> = A extends Argument.Argument<infer Value> ? Value
-    : A extends Flag.Flag<infer Value> ? Value
-    : never
-  type RunParsedConfig = {
-    readonly [Key in keyof typeof runConfig]: ParsedConfigValue<(typeof runConfig)[Key]>
-  }
-
-  const readStrykerOptions = (config: RunParsedConfig): Options.PartialStrykerOptions => {
-    const entryOf = <K extends keyof Options.StrykerOptions>(key: K, value: Option.Option<Options.StrykerOptions[K]>) =>
-      Option.match(value, {
-        onNone: () => ({}),
-        onSome: (present) => ({ [key]: present }),
-      })
-    const trueEntryOf = <K extends keyof Options.StrykerOptions>(
-      key: K,
-      value: Options.StrykerOptions[K] | undefined,
-    ) =>
-      Bool.match(value === true, {
-        onTrue: () => ({ [key]: true }),
-        onFalse: () => ({}),
-      })
-    return {
-      ...entryOf('ignorePatterns', config.ignorePatterns),
-      ...trueEntryOf('ignoreStatic', config.ignoreStatic),
-      ...trueEntryOf('incremental', config.incremental),
-      ...trueEntryOf('allowEmpty', config.allowEmpty),
-      ...entryOf('incrementalFile', config.incrementalFile),
-      ...entryOf('progressStreamFile', config.progressStreamFile),
-      ...trueEntryOf('force', config.force),
-      ...entryOf('mutate', config.mutate),
-      ...entryOf('testFiles', config.testFiles),
-      ...entryOf('buildCommand', config.buildCommand),
-      ...trueEntryOf('dryRunOnly', config.dryRunOnly),
-      ...entryOf('checkerNodeArgs', config.checkerNodeArgs),
-      ...entryOf('coverageAnalysis', config.coverageAnalysis),
-      ...entryOf('testRunner', config.testRunner),
-      ...entryOf('testRunnerNodeArgs', config.testRunnerNodeArgs),
-      ...entryOf('reporters', config.reporters),
-      ...entryOf('plugins', config.plugins),
-      ...entryOf('appendPlugins', config.appendPlugins),
-      ...entryOf('timeoutMS', config.timeoutMS),
-      ...entryOf('timeoutFactor', config.timeoutFactor),
-      ...entryOf('dryRunTimeoutMinutes', config.dryRunTimeoutMinutes),
-      ...entryOf('maxConcurrentTestRunners', config.maxConcurrentTestRunners),
-      ...entryOf('concurrency', config.concurrency),
-      ...trueEntryOf('disableBail', config.disableBail),
-      ...entryOf('maxTestRunnerReuse', config.maxTestRunnerReuse),
-      ...entryOf('logLevel', config.logLevel),
-      ...entryOf('fileLogLevel', config.fileLogLevel),
-      ...trueEntryOf('inPlace', config.inPlace),
-      ...entryOf('tempDirName', config.tempDirName),
-      ...entryOf('cleanTempDir', config.cleanTempDir),
-      ...entryOf('configFile', config.configFile),
     }
-  }
+    return runRequestCell.run({
+      route: CliRouteCommand.make({ route: { _tag: 'run', survivors: config.survivors === true } }),
+      options: readStrykerOptions(config),
+      environment,
+    }).pipe(Effect.provideService(Console.Console, environment.console), Effect.asVoid)
+  }).pipe(Command.withDescription('Run mutation testing'))
 
   const mergeReportsCommand = Command.make(
     'merge-reports',
     { ...mergeReportsOptions, ...formatOptions },
-    (config): Effect.Effect<void, CliError.CliError, never> =>
+    (config) =>
       Effect.gen(function*() {
         const fromEnvironment = yield* Config.String('PACKAGES').pipe(Effect.option)
-        yield* Ref.set(
-          requestRef,
-          Option.some({
-            _tag: 'merge-reports',
-            parts: config.parts,
-            out: config.out,
-            packages: Option.getOrUndefined(config.packages) ?? Option.getOrUndefined(fromEnvironment),
+        yield* runRequestCell.run({
+          route: CliRouteCommand.make({
+            route: {
+              _tag: 'merge-reports',
+              parts: config.parts,
+              out: config.out,
+              packages: Option.getOrUndefined(config.packages) ?? Option.getOrUndefined(fromEnvironment),
+            },
           }),
-        )
+          options: {},
+          environment,
+        }).pipe(Effect.provideService(Console.Console, environment.console), Effect.asVoid)
       }),
   ).pipe(Command.withDescription('Merge per-package mutation reports into one report'))
 
-  const root: Command.Command<
-    'stryker',
-    {},
-    {},
-    CliError.CliError,
-    never
-  > = Command
+  const root = Command
     .make('stryker', {}, (_config) => Effect.fail(CliError.ShowHelp.make({ commandPath: ['stryker'], errors: [] })))
 
-  const strykerCommand = root.pipe(Command.withSubcommands([runCommand, mergeReportsCommand]))
-  return strykerCommand
+  return root.pipe(Command.withSubcommands([runCommand, mergeReportsCommand]))
 }
-
-const EMPTY_OPTIONS: Options.PartialStrykerOptions = {}
-
-const routeOf = (request: Option.Option<CliRequest>): CliRouteCommand =>
-  Option.match(request, {
-    onNone: () => CliRouteCommand.make({ route: { _tag: 'help' } }),
-    onSome: (cliRequest) =>
-      Match.value(cliRequest).pipe(
-        Match.tag('merge-reports', (merge) =>
-          CliRouteCommand.make({
-            route: { _tag: 'merge-reports', parts: merge.parts, out: merge.out, packages: merge.packages },
-          })),
-        Match.tag('run', (run) => CliRouteCommand.make({ route: { _tag: 'run', survivors: run.survivors } })),
-        Match.exhaustive,
-      ),
-  })
-
-const optionsOf = (request: Option.Option<CliRequest>): Options.PartialStrykerOptions =>
-  Option.match(request, {
-    onNone: () => EMPTY_OPTIONS,
-    onSome: (cliRequest) =>
-      Match.value(cliRequest).pipe(
-        Match.tag('merge-reports', () => EMPTY_OPTIONS),
-        Match.tag('run', (run) => run.options),
-        Match.exhaustive,
-      ),
-  })
-
-const progressStreamFileName = (request: Option.Option<CliRequest>): string =>
-  Option.match(request, {
-    onNone: () => RunEventDrain.DefaultProgressStreamFile,
-    onSome: (cliRequest) =>
-      Match.value(cliRequest).pipe(
-        Match.tag('merge-reports', () => RunEventDrain.DefaultProgressStreamFile),
-        Match.tag('run', (runRequest) =>
-          Option.getOrElse(
-            S.decodeUnknownOption(S.NonEmptyString)(runRequest.options['progressStreamFile']),
-            () => RunEventDrain.DefaultProgressStreamFile,
-          )),
-        Match.exhaustive,
-      ),
-  })
-
-export const readCliRoute = (
-  invocation: StrykerCliInvocation,
-): Effect.Effect<
-  CliRead,
-  CliError.CliError,
-  Command.Environment | RunEventDrain | MachineConsole
-> =>
-  Effect.gen(function*() {
-    const requestRef = yield* Ref.make<Option.Option<CliRequest>>(Option.none())
-    const command = makeStrykerCommand(requestRef)
-    const machineConsole = Bool.match(invocation.environment.mode.mode === 'machine', {
-      onTrue: () => MachineConsole.captureLayer,
-      onFalse: () => Layer.empty,
-    })
-    const parsed = yield* Command.runWith(command, { version: cliPkgJson.version })(invocation.argv).pipe(
-      Effect.result,
-      Effect.provide(machineConsole),
-    )
-    const request = yield* Ref.get(requestRef)
-    const drain = yield* RunEventDrain
-    yield* drain.setProgressStreamFile(progressStreamFileName(request))
-    yield* invocation.environment.stream.open
-    return yield* Result.match(parsed, {
-      onFailure: (failure) => Effect.fail(failure),
-      onSuccess: () => {
-        const route = routeOf(request)
-        return Effect.succeed({
-          _tag: route._tag,
-          route: route.route,
-          environment: invocation.environment,
-          options: optionsOf(request),
-        })
-      },
-    })
-  })
-
-const stageRunOf = (environment: CliEnvironment, options: Options.PartialStrykerOptions) =>
-  Layer.build(RunEnvironment.stage(environment.host.env, environment.host.events)).pipe(
-    Effect.flatMap((context) =>
-      Cell.provideContext(mutationTestCell, context).run({
-        cliOptions: options,
-        targetMutatePatterns: undefined,
-      })
-    ),
-    Effect.scoped,
-  )
-
-export const runEffectOf = ({
-  environment,
-  options,
-}: {
-  readonly environment: CliEnvironment
-  readonly options: Options.PartialStrykerOptions
-}) =>
-  Effect.orDie(
-    Option.match(Option.fromUndefinedOr(environment.runMutationTest), {
-      onSome: (run) => run(options, undefined),
-      onNone: () => stageRunOf(environment, options),
-    }),
-  )
-
-export const restrictedOptionsOf = ({
-  resolvedOptions,
-  priorReportPath,
-  admitted,
-}: {
-  readonly resolvedOptions: Options.StrykerOptions
-  readonly priorReportPath: string
-  readonly admitted: Admitted
-}): Options.PartialStrykerOptions & {
-  readonly survivors?: ReadonlyArray<Mutant.Mutant>
-  readonly survivorsPriorReport?: string
-  readonly mutate?: string[]
-  readonly incremental?: boolean
-} => ({
-  ...resolvedOptions,
-  survivors: admitted.survivors,
-  mutate: [...admitted.mutateSpans],
-  survivorsPriorReport: priorReportPath,
-  incremental: false,
-})
