@@ -71,22 +71,18 @@ const readClearTextReport = (input: {
     }),
   )
 
-const COLOR_BY_TONE: Record<Exclude<Tone, 'plain'>, AnsiColor> = {
-  identifier: 'cyan',
-  emphasis: 'yellow',
-  positive: 'green',
-  warning: 'yellow',
-  negative: 'red',
-  muted: 'grey',
-}
+const tint = (color: AnsiColor, text: string): string =>
+  `${AnsiCode.fields[color].literal}${text}${AnsiCode.fields.reset.literal}`
 
-const tinted = (tone: Tone, text: string): string =>
-  Match.value(tone).pipe(
-    Match.when('plain', () => text),
-    Match.orElse((colored) =>
-      `${AnsiCode.fields[COLOR_BY_TONE[colored]].literal}${text}${AnsiCode.fields.reset.literal}`
-    ),
-  )
+const TINT_BY_TONE: Record<Tone, (text: string) => string> = {
+  plain: (text) => text,
+  identifier: (text) => tint('cyan', text),
+  emphasis: (text) => tint('yellow', text),
+  positive: (text) => tint('green', text),
+  warning: (text) => tint('yellow', text),
+  negative: (text) => tint('red', text),
+  muted: (text) => tint('grey', text),
+}
 
 const bytesOf = (span: ReportSpan): string =>
   `${' '.repeat(span.leftPad)}${span.text.repeat(span.repeat)}${' '.repeat(span.rightPad)}`
@@ -103,7 +99,7 @@ const appendSpan = (runs: ReadonlyArray<ToneRun>, span: ReportSpan): ReadonlyArr
   })
 
 const renderLine = (line: ReportLine): string =>
-  Arr.reduce(line, Arr.empty<ToneRun>(), appendSpan).map((run) => tinted(run.tone, run.bytes)).join('')
+  Arr.reduce(line, Arr.empty<ToneRun>(), appendSpan).map((run) => TINT_BY_TONE[run.tone](run.bytes)).join('')
 
 const renderChunk = (chunk: ReportChunk): string => `${chunk.map(renderLine).join('\n')}\n`
 

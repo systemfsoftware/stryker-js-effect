@@ -128,13 +128,14 @@ const EXPORTABLE_SPAN_ERROR_LIMIT = 1024
 
 const USAGE_EXIT_CODE = RunExitCode.fromOutcome(RunParseFailed.make({})).code
 
-const exportableErrorText = (failure: FailedRunOutcome, captured: string): string => {
-  const text = ErrorEnvelope.fromOutcome({ error: failure, captured }).error
-  return Match.value(text.length > EXPORTABLE_SPAN_ERROR_LIMIT).pipe(
-    Match.when(true, () => `${text.slice(0, EXPORTABLE_SPAN_ERROR_LIMIT)}…[truncated]`),
-    Match.orElse(() => text),
-  )
-}
+const truncatedForSpan = (text: string): string =>
+  Bool.match(text.length > EXPORTABLE_SPAN_ERROR_LIMIT, {
+    onTrue: () => `${text.slice(0, EXPORTABLE_SPAN_ERROR_LIMIT)}…[truncated]`,
+    onFalse: () => text,
+  })
+
+const exportableErrorText = (failure: FailedRunOutcome, captured: string): string =>
+  truncatedForSpan(ErrorEnvelope.fromOutcome({ error: failure, captured }).error)
 
 const errorTextOf = (result: Result.Result<RunOutcomeDecision, RunOutcomeError>, captured: string) =>
   Result.match(result, {
