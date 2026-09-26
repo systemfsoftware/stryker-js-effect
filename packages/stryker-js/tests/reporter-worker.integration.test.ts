@@ -1,11 +1,19 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Plugin as StrykerPlugin, RunEvent, type Worker as StrykerWorker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Options, type Plugin, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  Options,
+  type Plugin,
+  type Report,
+  Reporter,
+  TestRunner,
+  Trace,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 
@@ -22,6 +30,7 @@ const Feature = makeFeature({ it })
 const PROJECT_BASE_PATH = '/project'
 const MARKER_FILE = 'src/marker.ts'
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'
+const TRACEPARENT_PARTS = Option.getOrThrow(S.decodeOption(Trace.Traceparent)(TRACEPARENT))
 const LARGE_RUN = StrykerPlugin.REPORTER_EVENT_BATCH_BOUND * 3 + 7
 
 const location = { start: { line: 1, column: 1 }, end: { line: 1, column: 8 } }
@@ -39,24 +48,24 @@ const markerReport = (): Report.MutationTestResult => ({
           replacement: 'false',
           status: 'Killed',
           location,
-          coveredBy: ['0'],
-          killedBy: ['0'],
+          coveredBy: [TestRunner.TestId.make('0')],
+          killedBy: [TestRunner.TestId.make('0')],
         },
       ],
     },
   },
-  thresholds: { high: 80, low: 60 },
+  thresholds: { high: 80, low: 60, break: null },
 })
 
-const metricsFixture = (report: Report.MutationTestResult) => RunEvent.MetricsResultFromReport.fromFiles(report.files)
+const metricsFixture = (report: Report.MutationTestResult) => RunEvent.metricsResultFromFiles(report.files)
 
 const killedMutant = (index: number, total: number): Reporter.MutantTested =>
   Reporter.MutantTested.make({
     id: Mutant.MutantId.make(String(index)),
     status: 'Killed',
-    file: MARKER_FILE,
+    fileName: Mutant.CanonicalFileName.make(MARKER_FILE),
     location,
-    mutator: 'BooleanLiteral',
+    mutatorName: Mutant.MutatorName.make('BooleanLiteral'),
     replacement: null,
     completed: index,
     total,
@@ -220,7 +229,7 @@ Feature('Reporting a mutation run through a reporter plugin process')
             expect(facts).toEqual({
               tags: tagsOf(completedRun()),
               deliverySizes: [completedRun().length],
-              inits: [{ traceparent: TRACEPARENT }],
+              inits: [{ traceparent: TRACEPARENT_PARTS }],
               flushes: 1,
               workingDirectory: PROJECT_BASE_PATH,
               entrypoint: REPORTER_WORKER_ENTRYPOINT,

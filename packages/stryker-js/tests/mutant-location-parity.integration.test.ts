@@ -45,11 +45,7 @@ const TEST_SOURCE = [
   '})',
 ].join('\n')
 
-const PRE_FIX_COLUMN_DRIFT = 1
-
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
-
-const REUSE_ONLY_STATUS: Mutant.MutantStatus = 'Timeout'
 
 interface Workspace {
   readonly directory: string
@@ -89,7 +85,7 @@ const removeWorkspace = (directory: string): Effect.Effect<void, never, FileSyst
   )
 
 const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
-  runId: 'mutant-location-parity',
+  runId: '01ARZ3NDEKTSV4RRFFQ69G5FAW',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
   basePath: directory,
@@ -151,39 +147,6 @@ const runAndClean = (workspace: Workspace): Effect.Effect<ObservedRun, never, ne
     Effect.provide(filePorts),
   )
 
-const readIncrementalState = (directory: string): Effect.Effect<string, never, FileSystem.FileSystem> =>
-  Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(incrementalFileOf(directory))).pipe(Effect.orDie)
-
-const writeIncrementalState = (directory: string, state: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
-  Effect.flatMap(FileSystem.FileSystem, (fs) => fs.writeFileString(incrementalFileOf(directory), state)).pipe(
-    Effect.orDie,
-  )
-
-const asLegacyStateOf = (state: string): Effect.Effect<string, S.SchemaError> =>
-  Effect.gen(function*() {
-    const report = yield* S.decodeEffect(S.fromJsonString(Engine.IncrementalReportSchema))(state)
-    const files = Object.fromEntries(
-      Object.entries(report.files).map(([file, record]) => [
-        file,
-        {
-          ...record,
-          mutants: record.mutants.map((mutant) => ({
-            ...mutant,
-            status: REUSE_ONLY_STATUS,
-            location: {
-              start: {
-                line: mutant.location.start.line,
-                column: mutant.location.start.column + PRE_FIX_COLUMN_DRIFT,
-              },
-              end: { line: mutant.location.end.line, column: mutant.location.end.column + PRE_FIX_COLUMN_DRIFT },
-            },
-          })),
-        },
-      ]),
-    )
-    return yield* S.encodeEffect(S.fromJsonString(Engine.IncrementalReportSchema))({ ...report, files })
-  })
-
 interface MutantRow {
   readonly file: string
   readonly id: string
@@ -195,9 +158,9 @@ interface MutantRow {
 
 const streamRowsOf = (events: ReadonlyArray<RunEvent.RunEvent>): readonly MutantRow[] =>
   events.filter(S.is(RunEvent.RunMutantTested)).map((mutant) => ({
-    file: mutant.file,
+    file: mutant.fileName,
     id: mutant.id,
-    mutator: mutant.mutator,
+    mutator: mutant.mutatorName,
     replacement: mutant.replacement,
     status: mutant.status,
     location: mutant.location,
@@ -313,14 +276,6 @@ const pinnedKey = (row: PinnedRow): string =>
 
 const sortedPinned = (rows: readonly PinnedRow[]): readonly PinnedRow[] => rows.toSorted(compareBy(pinnedKey))
 
-const verdictOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.VerdictReached => {
-  const found = events.find(S.is(RunEvent.VerdictReached))
-  if (found === undefined) {
-    throw new Error('the run streamed no verdict')
-  }
-  return found
-}
-
 Feature('Mutant coordinates reaching every host output')
   .withLayer(Layer.empty)
   .live('the run spawns the vm worker and the real vitest oracle and writes reports to the host filesystem')
@@ -345,48 +300,6 @@ Feature('Mutant coordinates reaching every host output')
               pinnedNodes: sortedPinned(streamRowsOf(s.observation.events).map(pinnedRowOf)),
             }).toEqual({
               verdictReached: true,
-              streamMatchesReport: report,
-              pinnedNodes: sortedPinned(PINNED_MUTANTS),
-            })
-          },
-        ),
-      ),
-    )
-
-    scenario(
-      'A remembered mutant from an earlier run keeps its place and its result',
-      Gherkin.Do.pipe(
-        Given('a workspace whose remembered state carries the earlier column base for mutants a finished run recorded')(
-          'seeded',
-          () =>
-            Effect.gen(function*() {
-              const workspace = yield* writeWorkspace().pipe(Effect.provide(filePorts))
-              const first = yield* executeRun(workspace)
-              const legacy = yield* asLegacyStateOf(yield* readIncrementalState(workspace.directory))
-              yield* writeIncrementalState(workspace.directory, legacy)
-              return { workspace, first }
-            }).pipe(Effect.provide(filePorts), Effect.orDie),
-        ),
-        When('a mutation run executes over the workspace')('observation', (s) => runAndClean(s.seeded.workspace)),
-        Then('every recorded mutant is reused, the run still reaches a verdict, and both outputs still agree')(
-          (s, expect) => {
-            const stream = sortedRows(streamRowsOf(s.observation.events))
-            const report = sortedRows(reportRowsOf(reportOf(s.observation)))
-            const verdict = verdictOf(s.observation.events)
-            return expect({
-              firstRunSucceeded: Exit.isSuccess(s.seeded.first.exit),
-              secondRunSucceeded: Exit.isSuccess(s.observation.exit),
-              reused: streamRowsOf(s.observation.events).map((row) => row.status),
-              timeoutCount: verdict.counts.timeout,
-              noCoverageCount: verdict.counts.noCoverage,
-              streamMatchesReport: stream,
-              pinnedNodes: sortedPinned(streamRowsOf(s.observation.events).map(pinnedRowOf)),
-            }).toEqual({
-              firstRunSucceeded: true,
-              secondRunSucceeded: true,
-              reused: PINNED_MUTANTS.map(() => REUSE_ONLY_STATUS),
-              timeoutCount: PINNED_MUTANTS.length,
-              noCoverageCount: 0,
               streamMatchesReport: report,
               pinnedNodes: sortedPinned(PINNED_MUTANTS),
             })

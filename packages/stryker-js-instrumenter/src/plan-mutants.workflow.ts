@@ -3,30 +3,32 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import type { Position } from './Location.schema.js'
+import { Line, Location, type Position, ScriptOrigin } from './Location.schema.js'
 import { MutantId } from './Mutant.schema.js'
 
-import { type LocatedDirective, LocatedDirectiveSchema, type UnusedDirective } from './directives/directive.schema.js'
-import { NodePositionSchema, SourceLineSchema } from './Instrument.schema.js'
-
-const LocationSchema = S.Struct({ start: NodePositionSchema, end: NodePositionSchema })
+import {
+  type LocatedDirective,
+  LocatedDirectiveSchema,
+  MutatorNameSchema,
+  type UnusedDirective,
+} from './directives/directive.schema.js'
 
 const WILDCARD = 'all'
 const NEXT_LINE = 'next-line'
 
 export const MutantCandidateSchema = S.Struct({
-  mutatorName: S.String,
+  mutatorName: MutatorNameSchema,
   replacementCode: S.String,
-  location: S.optional(LocationSchema),
+  location: S.optional(Location),
   ignorerReason: S.optional(S.String),
 })
 export type MutantCandidate = typeof MutantCandidateSchema.Type
 
 const PlannedMutantSchema = S.Struct({
   id: MutantId,
-  mutatorName: S.String,
+  mutatorName: MutatorNameSchema,
   replacementCode: S.String,
-  location: LocationSchema,
+  location: Location,
   ignoreReason: S.optional(S.String),
 })
 export type PlannedMutant = typeof PlannedMutantSchema.Type
@@ -37,10 +39,10 @@ const MutantCountSchema = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
 export class PlanMutantsCommand extends S.TaggedClass<PlanMutantsCommand>()('PlanMutantsCommand', {
   fileName: S.String,
   firstIndex: MutantCounterSchema,
-  offset: NodePositionSchema,
-  line: SourceLineSchema,
-  mutatorNames: S.Array(S.String),
-  excludedMutations: S.Array(S.String),
+  offset: ScriptOrigin,
+  line: Line,
+  mutatorNames: S.Array(MutatorNameSchema),
+  excludedMutations: S.Array(MutatorNameSchema),
   rule: S.Array(LocatedDirectiveSchema),
   directives: S.Array(LocatedDirectiveSchema),
   candidates: S.Array(MutantCandidateSchema),
@@ -72,7 +74,7 @@ export type MutantPlan = MutantsPlanned | MutantsFullyIgnored
 
 export class MutantWithoutLocation extends S.TaggedError<MutantWithoutLocation>()('MutantWithoutLocation', {
   fileName: S.String,
-  mutatorName: S.String,
+  mutatorName: MutatorNameSchema,
 }) {}
 
 export type PlanFailure = MutantWithoutLocation
@@ -164,27 +166,25 @@ const warningsOf = (command: PlanMutantsCommand): readonly string[] =>
     .map((unused) => unusedDirectiveWarning(unused, command.fileName))
 
 /**
- * Both the node span (`source`) and the region origin (`offset`) are 1-based
- * file coordinates: the region's first line carries its column origin, later
- * lines start at column 1, so the shift adds `offset.line - 1` lines and —
- * only when the node sits on the region's first line — `offset.column`.
+ * The node span (`source`) is a 1-based position inside the embedded script;
+ * the region origin (`offset`) is where that script begins in its host file.
+ * The region's first line carries its column shift, later lines start at
+ * column 1, so the shift adds `offset.line - 1` lines and — only when the node
+ * sits on the region's first line — `offset.columnShift`.
  */
-const columnOffsetOf = (source: Position, offset: Position): number =>
+const columnOffsetOf = (source: Position, offset: ScriptOrigin): number =>
   Match.value(source.line === 1).pipe(
-    Match.when(true, () => offset.column),
+    Match.when(true, () => offset.columnShift),
     Match.when(false, () => 0),
     Match.exhaustive,
   )
 
-const shiftedPosition = (source: Position, offset: Position): Position => ({
+const shiftedPosition = (source: Position, offset: ScriptOrigin): Position => ({
   column: source.column + columnOffsetOf(source, offset),
   line: source.line + offset.line - 1,
 })
 
-const shiftedLocation = (
-  location: typeof LocationSchema.Type,
-  offset: Position,
-): typeof LocationSchema.Type => ({
+const shiftedLocation = (location: Location, offset: ScriptOrigin): Location => ({
   start: shiftedPosition(location.start, offset),
   end: shiftedPosition(location.end, offset),
 })

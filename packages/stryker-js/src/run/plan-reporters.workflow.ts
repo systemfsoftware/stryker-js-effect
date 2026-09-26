@@ -5,12 +5,18 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { OutputMode } from '../output-mode.schema.js'
+import { HumanReporterSchema, ProgressReporterSchema, StreamReporterSchema } from '../reporter-name.schema.js'
+
 const ReporterPlanTypeId = Symbol.for('@systemfsoftware/stryker-js/ReporterPlanDecision')
 type ReporterPlanTypeId = typeof ReporterPlanTypeId
 
-const STREAM_REPORTER = 'progress-stream'
-const HUMAN_REPORTER = 'clear-text'
-const STDOUT_REPORTERS: Readonly<Record<string, true>> = { 'clear-text': true, 'progress': true }
+const STREAM_REPORTER = StreamReporterSchema.literal
+const HUMAN_REPORTER = HumanReporterSchema.literal
+const STDOUT_REPORTERS: Readonly<Record<string, true>> = {
+  [HumanReporterSchema.literal]: true,
+  [ProgressReporterSchema.literal]: true,
+}
 
 const asHumanReporter = (name: string): string =>
   Boolean.match(name === STREAM_REPORTER, { onTrue: () => HUMAN_REPORTER, onFalse: () => name })
@@ -29,7 +35,7 @@ const machineReportersFrom = (configured: readonly string[]): readonly string[] 
 
 export class ReporterPlanCommand extends S.TaggedClass<ReporterPlanCommand>()('ReporterPlanCommand', {
   configured: S.Array(S.String),
-  mode: S.Literals(['human', 'machine']),
+  mode: OutputMode,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     mode: 'stryker.reporter_plan.mode',

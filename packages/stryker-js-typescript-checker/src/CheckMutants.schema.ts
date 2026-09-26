@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
@@ -38,3 +39,22 @@ export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput>()(
 export type MutantDecoded = Checker.CheckerMutantWire
 export type DiagnosticDecoded = S.Schema.Type<typeof DiagnosticSchema>
 export type NodeDecoded = NodeDecodedShape
+
+const accepts = {
+  sourceFile: S.is(SourceFileSchema),
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+
+  const seeds = ['', '.', 'a', 'a.', '/a', 'a/b', 'a/b.', 'file.ts', 'index.d.ts', '.hidden']
+  const isSourceFileName = (value: string): boolean => value !== '' && /\.[^./\\]+$/.test(value)
+
+  it.prop(
+    '∀s_SourceFileRefusal_≡NonEmptyExtension',
+    { of: [S.String], subject: accepts },
+    (subject, [value]) =>
+      Arr.every(Arr.append(seeds, value), (candidate) => subject.sourceFile(candidate) === isSourceFileName(candidate)),
+  )
+}

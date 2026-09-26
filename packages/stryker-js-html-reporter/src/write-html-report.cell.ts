@@ -109,7 +109,7 @@ const failAsHtmlReporter = <A = unknown>(cause: A) =>
   Reporter.ReporterFailed.make({
     reporterName: 'html',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
   })
 
 const drainEvents = (fileName: string, events: AsyncIterable<Reporter.ReporterEvent>) =>

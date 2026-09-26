@@ -8,37 +8,29 @@ import {
   DirectiveDecoded,
   DirectiveMalformed,
 } from '../directives/decode-directive.workflow.js'
-
-const mutatorNameSchema = () => S.String.pipe(S.check(S.isPattern(/^[a-zA-Z]+(?: [a-zA-Z]+)*$/)))
-
-const directiveReasonSchema = () => S.String.pipe(S.check(S.isPattern(/^\S(?:[^\r\n\u2028\u2029]*\S)?$/)))
-
-const commentFormSchema = () =>
-  S.Struct({
-    action: S.Literals(['disable', 'restore']),
-    scope: S.Literals(['block', 'next-line']),
-    mutatorNames: S.Array(mutatorNameSchema()).check(S.isMinLength(1)),
-    reason: S.optional(directiveReasonSchema()),
-  })
+import { type Directive, DirectiveSchema } from '../directives/directive.schema.js'
 
 const commandOf = (text: string): DecodeDirectiveCommand => DecodeDirectiveCommand.make({ commentText: text })
 
+const scopeText = (scope: Directive['scope']): string => scope === 'next-line' ? ' next-line' : ''
+
+const commentOf = (directive: Directive): string =>
+  ` Stryker ${directive.action}${scopeText(directive.scope)} ${directive.mutatorNames.join(',')}:${directive.reason}`
+
 describe('decodeDirective', () => {
   it.prop(
-    '∀f_CommentForm_≡DecodedAsWritten',
-    { of: [commentFormSchema()], subject: decodeDirective },
-    (subject, [form]) => {
-      const scope = form.scope === 'next-line' ? ' next-line' : ''
-      const reason = form.reason === undefined ? '' : `:${form.reason}`
-      const decided = subject(commandOf(` Stryker ${form.action}${scope} ${form.mutatorNames.join(',')}${reason}`))
+    '∀d_Directive_≡DecodedAsWritten',
+    { of: [DirectiveSchema], subject: decodeDirective },
+    (subject, [directive]) => {
+      const decided = subject(commandOf(commentOf(directive)))
       if (!Result.isSuccess(decided) || !S.is(DirectiveDecoded)(decided.success)) {
         return false
       }
-      const directive = decided.success.directive
-      return directive.action === form.action &&
-        directive.scope === form.scope &&
-        directive.mutatorNames.join(',') === form.mutatorNames.join(',') &&
-        (form.reason === undefined || directive.reason === form.reason)
+      const decoded = decided.success.directive
+      return decoded.action === directive.action &&
+        decoded.scope === directive.scope &&
+        decoded.mutatorNames.join(',') === directive.mutatorNames.join(',') &&
+        decoded.reason === directive.reason
     },
   )
 

@@ -37,7 +37,7 @@ import { makeNodePlatformLayer } from '../drivers/node.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
-import { ErrorEnvelope, RunExitCode } from '../reporting/run-failure.schema.js'
+import { errorEnvelopeFromOutcome, runExitCodeFromOutcome } from '../reporting/run-failure.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
 import { type CliAnswer, type CliEnvironment } from '../run-request.cell.js'
 import { RunEnvironment } from '../run/RunEnvironment.service.js'
@@ -172,7 +172,7 @@ const cliLayer = Layer.mergeAll(
   NodeTerminal.layer,
 ).pipe(Layer.provideMerge(nodePlatform))
 
-const USAGE_EXIT_CODE = RunExitCode.fromOutcome(RunParseFailed.make({})).code
+const USAGE_EXIT_CODE = runExitCodeFromOutcome(RunParseFailed.make({})).code
 
 const SPAN_ERROR_LIMIT = 1024
 const TRUNCATION_SUFFIX = '…[truncated]'
@@ -239,14 +239,14 @@ const strykerProgram = Effect.gen(function*() {
             Option.liftPredicate(S.is(FailedRunOutcomeSchema))(classified),
             (failure) =>
               boundedErrorText(
-                ErrorEnvelope.fromOutcome({ error: failure, captured: machineConsoleService.read() }).error,
+                errorEnvelopeFromOutcome({ error: failure, captured: machineConsoleService.read() }).error,
               ),
           ),
           () => '',
         )
         yield* Effect.annotateCurrentSpan({
           'stryker.run.outcome': classified._tag,
-          'stryker.run.exit_code': RunExitCode.fromOutcome(classified).code,
+          'stryker.run.exit_code': runExitCodeFromOutcome(classified).code,
           'stryker.run.error': errorText,
         })
         return yield* concludeRunCell.run({

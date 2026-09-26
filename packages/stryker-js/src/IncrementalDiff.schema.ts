@@ -1,7 +1,5 @@
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
-
-const PositionSchema = S.Struct({ line: S.Finite, column: S.Finite })
-const PreviousLocationSchema = S.Struct({ start: PositionSchema, end: PositionSchema })
 
 export const FormatIdentitySchema = S.Struct({
   formatId: S.String,
@@ -14,8 +12,8 @@ export type FormatIdentity = S.Schema.Type<typeof FormatIdentitySchema>
 const PreviousMutantSchema = S.Struct({
   mutatorName: S.String,
   replacement: S.String,
-  location: PreviousLocationSchema,
-  status: S.String,
+  location: Mutant.Location,
+  status: Mutant.MutantStatusSchema,
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),

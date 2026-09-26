@@ -1,5 +1,5 @@
 /// <reference types="vitest/importMeta" />
-import * as Boolean from 'effect/Boolean'
+import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 export const DetectedStatus = S.Union([S.Literal('Killed'), S.Literal('Timeout')])
@@ -16,6 +16,11 @@ export const MutationScore = S.TaggedUnion({
   Unscored: {},
 })
 export type MutationScore = typeof MutationScore.Type
+
+const scorePercentageOf = (counts: {
+  readonly detected: number
+  readonly counted: number
+}): Option.Option<number> => counts.counted > 0 ? Option.some((counts.detected / counts.counted) * 100) : Option.none()
 
 export class Metrics extends S.Class<Metrics>('Metrics')({
   pending: NonNegativeInt,
@@ -52,35 +57,19 @@ export class Metrics extends S.Class<Metrics>('Metrics')({
   }
 
   get mutationScore(): MutationScore {
-    return scoreOf(this.totalDetected, this.totalValid)
+    return Option.match(scorePercentageOf({ detected: this.totalDetected, counted: this.totalValid }), {
+      onNone: () => MutationScore.cases.Unscored.make({}),
+      onSome: (percentage) => MutationScore.cases.Scored.make({ percentage }),
+    })
   }
 
   get mutationScoreBasedOnCoveredCode(): MutationScore {
-    return scoreOf(this.totalDetected, this.totalCovered)
-  }
-
-  static fromMutants(mutants: readonly { readonly status: string }[]): Metrics {
-    return Metrics.make({
-      pending: metricCountOf(mutants, 'Pending'),
-      killed: metricCountOf(mutants, 'Killed'),
-      timeout: metricCountOf(mutants, 'Timeout'),
-      survived: metricCountOf(mutants, 'Survived'),
-      noCoverage: metricCountOf(mutants, 'NoCoverage'),
-      runtimeErrors: metricCountOf(mutants, 'RuntimeError'),
-      compileErrors: metricCountOf(mutants, 'CompileError'),
-      ignored: metricCountOf(mutants, 'Ignored'),
+    return Option.match(scorePercentageOf({ detected: this.totalDetected, counted: this.totalCovered }), {
+      onNone: () => MutationScore.cases.Unscored.make({}),
+      onSome: (percentage) => MutationScore.cases.Scored.make({ percentage }),
     })
   }
 }
-
-const metricCountOf = (mutants: readonly { readonly status: string }[], status: string) =>
-  mutants.filter((mutant) => mutant.status === status).length
-
-const scoreOf = (detected: number, counted: number): MutationScore =>
-  Boolean.match(counted > 0, {
-    onTrue: () => MutationScore.cases.Scored.make({ percentage: (detected / counted) * 100 }),
-    onFalse: () => MutationScore.cases.Unscored.make({}),
-  })
 
 export const MetricsSchema = Metrics
 
@@ -104,16 +93,17 @@ export const MetricsResultSchema: S.Codec<MetricsResult, MetricsResultEncoded> =
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
+  const Option = await import('effect/Option')
 
   it.prop(
-    '∀dc_MutationScore_≡UnscoredIffNothingCounted',
-    { of: [NonNegativeInt, NonNegativeInt], subject: scoreOf },
+    '∀dc_ScorePercentageOf_≡UnscoredIffNothingCounted',
+    { of: [NonNegativeInt, NonNegativeInt], subject: scorePercentageOf },
     (subject, [first, second]) => {
       const detected = Math.min(first, second)
       const counted = Math.max(first, second)
-      return MutationScore.match(subject(detected, counted), {
-        Unscored: () => counted === 0,
-        Scored: ({ percentage }) => counted > 0 && percentage === (detected / counted) * 100,
+      return Option.match(subject({ detected, counted }), {
+        onNone: () => counted === 0,
+        onSome: (percentage) => counted > 0 && percentage === (detected / counted) * 100,
       })
     },
   )

@@ -50,7 +50,6 @@ import {
 import {
   PathAliasesSchema,
   type TsConfigCompilerOptions,
-  TsConfigCompilerOptionsSchema,
   type TsConfigDocument,
   TsConfigNotFoundError,
   TsConfigParseError,
@@ -227,10 +226,7 @@ const overrideTextOf = (document: OverrideTsconfigOptionsCommand['document'], bu
   decided(overrideTsconfigOptions(OverrideTsconfigOptionsCommand.make({ document, buildMode }))).text
 
 const tsConfigReferencesOf = (config: TsConfigDocument): ReadonlyArray<{ readonly path: string }> =>
-  Option.getOrElse(
-    Option.liftPredicate(config['references'], S.is(S.Array(S.Struct({ path: S.String })))),
-    (): ReadonlyArray<{ readonly path: string }> => [],
-  )
+  Option.getOrElse(Option.fromUndefinedOr(config.references), (): ReadonlyArray<{ readonly path: string }> => [])
 
 const referencedProjectsOf = (
   rt: TSCompilerRuntime,
@@ -255,10 +251,7 @@ interface TsConfigWalk {
 }
 
 const compilerOptionsOf = (config: TsConfigDocument): TsConfigCompilerOptions =>
-  Option.getOrElse(
-    Option.liftPredicate(config['compilerOptions'], S.is(TsConfigCompilerOptionsSchema)),
-    (): TsConfigCompilerOptions => ({}),
-  )
+  Option.getOrElse(Option.fromUndefinedOr(config.compilerOptions), (): TsConfigCompilerOptions => ({}))
 
 const aliasEntriesOf = (
   compilerOptions: TsConfigCompilerOptions,
@@ -368,7 +361,14 @@ const applyMutant = (rt: TSCompilerRuntime, mutant: Checker.CheckerMutantWire): 
       () =>
         Effect.mapError(
           mutateFile(rt.files, resolveFileName(rt, mutant.fileName), mutant),
-          () => CompilerFailed.make({ reason: 'file-not-in-project', subject: mutant.fileName }),
+          (error) =>
+            Match.value(error).pipe(
+              Match.tag('HybridFileNotFoundError', () =>
+                CompilerFailed.make({ reason: 'file-not-in-project', subject: mutant.fileName })),
+              Match.tag('HybridMutantOutsideFileError', () =>
+                CompilerFailed.make({ reason: 'mutant-outside-file', subject: mutant.fileName })),
+              Match.exhaustive,
+            ),
         ),
     ))
 

@@ -1,16 +1,14 @@
-/**
- * Mode type vocabulary shared with the CLI package. Runtime resolution
- * (`resolveMode`) and gate functions (`isProgressEnabled`, `isColorEnabled`)
- * live in the CLI; the `ResolvedMode` fields (`mode`, `signal`,
- * `stdoutIsTTY`) ride along in `VerdictEnvelope` (`verdict-envelope.ts`),
- * so the types stay where the data does.
- */
-export type OutputMode = 'human' | 'machine'
+import * as S from 'effect/Schema'
 
-export type ModeSignal = 'flag' | 'env' | 'tty' | 'agent' | 'tool'
+export const OutputMode = S.Literals(['human', 'machine'])
+export type OutputMode = typeof OutputMode.Type
 
-export interface ResolvedMode {
-  readonly mode: OutputMode
-  readonly signal: ModeSignal
-  readonly stdoutIsTTY: boolean
-}
+export const ModeSignal = S.Literals(['flag', 'env', 'tty', 'agent', 'tool'])
+export type ModeSignal = typeof ModeSignal.Type
+
+export const ResolvedMode = S.Struct({
+  mode: OutputMode,
+  signal: ModeSignal,
+  stdoutIsTTY: S.Boolean,
+})
+export type ResolvedMode = typeof ResolvedMode.Type

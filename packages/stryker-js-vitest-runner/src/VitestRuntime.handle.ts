@@ -52,7 +52,7 @@ interface RunFilterInput {
 }
 
 const causeTextOf = <A>(cause: A): string =>
-  Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => '')
+  Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => '')
 
 export const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E): TestRunner.TestRunnerFailed =>
   TestRunner.TestRunnerFailed.make({

@@ -163,7 +163,7 @@ const removeWorkspace = (directory: string): Effect.Effect<void, never, FileSyst
   )
 
 const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
-  runId: 'framework-run-integration',
+  runId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
   basePath: directory,
@@ -299,7 +299,7 @@ Feature('Framework plugins joining a mutation run')
               .map((phase) => phase.phase)
             return expect({
               runFailed: Exit.isFailure(s.observation.exit),
-              reason: failure?.reason,
+              reason: failure?.reason?._tag,
               code: failure?.code,
               errorNamesPeer: failure?.error.includes('peer-missing') ?? false,
               remediationNamesPeerDependency: failure?.remediation.includes('peer dependency') ?? false,
@@ -361,7 +361,7 @@ Feature('Framework plugins joining a mutation run')
                 const tested = s.observation.events.filter(
                   (event): event is RunEvent.RunMutantTested => S.is(RunEvent.RunMutantTested)(event),
                 )
-                const fromClaimed = tested.find((mutant) => mutant.file.endsWith('widget.fixture'))
+                const fromClaimed = tested.find((mutant) => mutant.fileName.endsWith('widget.fixture'))
                 return expect({
                   runSucceeded: Exit.isSuccess(s.observation.exit),
                   formatOwner: formatRow?.ownerModule,
@@ -468,7 +468,7 @@ Feature('Framework plugins joining a mutation run')
           )
           return expect({
             runFailed: Exit.isFailure(s.observation.exit),
-            reason: failure?.reason,
+            reason: failure?.reason?._tag,
             code: failure?.code,
             errorNamesModule: failure?.error.includes('throws-on-import') ?? false,
           }).toEqual({
@@ -502,7 +502,7 @@ Feature('Framework plugins joining a mutation run')
           )
           return expect({
             runFailed: Exit.isFailure(s.observation.exit),
-            reason: failure?.reason,
+            reason: failure?.reason?._tag,
             code: failure?.code,
             errorNamesModule: failure?.error.includes('malformed') ?? false,
           }).toEqual({
@@ -542,7 +542,7 @@ Feature('Framework plugins joining a mutation run')
               .map((phase) => phase.phase)
             return expect({
               runFailed: Exit.isFailure(s.observation.exit),
-              reason: failure?.reason,
+              reason: failure?.reason?._tag,
               code: failure?.code,
               errorNamesPeer: failure?.error.includes('peer-unrecognized') ?? false,
               remediationNamesRecognition: failure?.remediation.includes('recognizes') ?? false,

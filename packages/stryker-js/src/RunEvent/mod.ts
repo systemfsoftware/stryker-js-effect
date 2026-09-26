@@ -1,7 +1,7 @@
 export type { ModeSignal, OutputMode, ResolvedMode } from '../output-mode.schema.js'
+export { metricsResultFromFiles } from '../reporting/metrics-from-report.js'
 export { MetricsResultFromReport } from '../reporting/metrics-from-report.schema.js'
-export { VerdictEnvelope, VerdictMutant, VerdictThresholds } from '../reporting/verdict-envelope.schema.js'
-export type { VerdictCounts } from '../reporting/verdict-envelope.schema.js'
+export { VerdictEnvelope } from '../reporting/verdict-envelope.schema.js'
 export {
   makeRunEventStream,
   type ResolvedModeInput,
@@ -10,6 +10,8 @@ export {
   type RunEventStream,
 } from '../run-event-stream.service.js'
 export { RunEventWireLine } from '../run-event-wire.schema.js'
+export type { VerdictCounts } from '../run-event.schema.js'
+export { VerdictMutant } from '../run-event.schema.js'
 export {
   FormatClaimShadowingRow,
   FormatRegistryResolved,
@@ -20,7 +22,7 @@ export {
   HelpRendered,
   PhaseEntered,
   PlanKnown,
-  PluginFailureReason,
+  PluginLoadFailureReason,
   PluginsReported,
   RunEvent,
   RunEvents,

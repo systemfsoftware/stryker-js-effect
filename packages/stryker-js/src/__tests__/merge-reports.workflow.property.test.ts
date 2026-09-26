@@ -1,3 +1,5 @@
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Effect from 'effect/Effect'
@@ -20,12 +22,12 @@ const streamLineOf = (mutant: RunMutantTested): Effect.Effect<string> =>
 
 const place = (mutants: ReadonlyArray<RunMutantTested>) =>
   mutants.map((mutant, index) =>
-    RunMutantTested.make({
+    Reporter.MutantTested.make({
       id: mutant.id,
       status: mutant.status,
-      file: `src/file-${index % 3}.ts`,
+      fileName: Mutant.CanonicalFileName.make(`src/file-${index % 3}.ts`),
       location: mutant.location,
-      mutator: mutant.mutator,
+      mutatorName: mutant.mutatorName,
       replacement: mutant.replacement,
       completed: mutant.completed,
       total: mutant.total,
@@ -48,7 +50,7 @@ const partFromMutants = (mutants: ReadonlyArray<RunMutantTested>) =>
 const expectedFiles = (mutants: ReadonlyArray<RunMutantTested>) => {
   const grouped: Record<string, ReadonlyArray<string>> = {}
   for (const mutant of mutants) {
-    grouped[mutant.file] = [...(grouped[mutant.file] ?? []), `${mutant.id}:${mutant.mutator}`]
+    grouped[mutant.fileName] = [...(grouped[mutant.fileName] ?? []), `${mutant.id}:${mutant.mutatorName}`]
   }
   return grouped
 }

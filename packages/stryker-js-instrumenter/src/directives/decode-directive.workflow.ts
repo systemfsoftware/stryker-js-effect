@@ -10,19 +10,6 @@ const DIRECTIVE_PATTERN = /^\s?Stryker (disable|restore)(?: (next-line))? ([a-zA
 const DEFAULT_REASON = 'Ignored using a comment'
 const NEXT_LINE = 'next-line'
 
-export const StrykerCommentSchema = S.Struct({
-  clause: S.Literals([
-    ' Stryker disable',
-    ' Stryker restore',
-    ' Stryker disable next-line',
-    ' Stryker restore next-line',
-    ' Stryker enable',
-    ' nothing',
-  ]),
-  nameLetters: S.Array(S.Literals(['a', 'b', 'Z', ',', ' '])).check(S.isMinLength(1)),
-})
-export type StrykerComment = typeof StrykerCommentSchema.Type
-
 export class DecodeDirectiveCommand extends S.TaggedClass<DecodeDirectiveCommand>()('DecodeDirectiveCommand', {
   commentText: S.String,
 }) {

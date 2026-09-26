@@ -9,12 +9,12 @@ import { bddStep, prepareFixture } from './__fixtures__/microvm-harness.js'
 
 const FIXTURE_URL = new URL('../testResources/typescript-checker-fixture', import.meta.url)
 const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
-const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'verdict']
+const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutantTested', 'verdict']
 const RUN_EVENT_KINDS: ReadonlyArray<string> = [
   'stream',
   'phase',
   'plan',
-  'mutant',
+  'mutantTested',
   'plugins',
   'formats',
   'skipped',
@@ -52,12 +52,12 @@ const kindsOutsideOf = (
 
 const reportedMutantsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
   events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((mutant) => `${mutant.mutator}:${mutant.status}`)
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
+    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
 
 const runIdsIn = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
   events
-    .map((event) => ('runId' in event && typeof event.runId === 'string' ? event.runId : undefined))
+    .map((event) => ('runId' in event && typeof event.runId === 'string' ? String(event.runId) : undefined))
     .filter((runId): runId is string => runId !== undefined)
 
 const statusSuffixCount = (mutants: ReadonlyArray<string>, suffix: string): number =>

@@ -1,8 +1,9 @@
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { dual } from 'effect/Function'
 
 export interface OptionalRunnerFields {
-  killedBy?: string[]
-  coveredBy?: string[]
+  killedBy?: TestRunner.TestId[]
+  coveredBy?: TestRunner.TestId[]
 }
 
 export const optionalRunnerFields: {
@@ -13,10 +14,10 @@ export const optionalRunnerFields: {
   (killedBy: string[] | undefined, coveredBy: string[] | undefined): OptionalRunnerFields => {
     const fields: OptionalRunnerFields = {}
     if (killedBy !== undefined) {
-      fields.killedBy = killedBy
+      fields.killedBy = killedBy.map((id) => TestRunner.TestId.make(id))
     }
     if (coveredBy !== undefined) {
-      fields.coveredBy = coveredBy
+      fields.coveredBy = coveredBy.map((id) => TestRunner.TestId.make(id))
     }
     return fields
   },

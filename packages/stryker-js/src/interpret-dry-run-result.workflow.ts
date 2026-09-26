@@ -20,7 +20,7 @@ export class MutantRunErrored extends S.TaggedClass<MutantRunErrored>()('Error',
 
 export class MutantRunKilled extends S.TaggedClass<MutantRunKilled>()('Killed', {
   failureMessage: S.String,
-  killedBy: S.Array(S.String),
+  killedBy: S.Array(TestRunner.TestId),
   nrOfTests: S.Natural,
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId

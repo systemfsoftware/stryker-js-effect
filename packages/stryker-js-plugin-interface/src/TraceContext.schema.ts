@@ -29,6 +29,7 @@ const TraceparentPartsSchema = S.Struct({
   spanId: SPAN_ID,
   traceFlags: S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 }))),
 })
+export type TraceparentParts = typeof TraceparentPartsSchema.Type
 
 const HEX_VERSION = /^[0-9a-f]{2}$/
 const HEX_TRACE_ID = /^[0-9a-f]{32}$/
@@ -90,4 +91,12 @@ export const Traceparent = S.String.pipe(
     TraceparentPartsSchema,
     SchemaTransformation.makeTransformation({ decode: decodeParts, encode: encodeText }),
   ),
+)
+
+const TRACESTATE_MEMBER = '[a-z][_0-9a-z\\-*/]{0,255}=[\\x20-\\x2b\\x2d-\\x3c\\x3e-\\x7e]{0,255}'
+const TRACESTATE_OWS = '[ \\t]*'
+const TRACESTATE = new RegExp(`^${TRACESTATE_MEMBER}(${TRACESTATE_OWS},${TRACESTATE_OWS}${TRACESTATE_MEMBER}){0,31}$`)
+
+export const Tracestate = S.String.pipe(
+  S.check(S.isPattern(TRACESTATE, { expected: 'a W3C tracestate: comma-separated key=value members' })),
 )

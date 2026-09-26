@@ -1,4 +1,5 @@
 import * as S from 'effect/Schema'
+import { Position } from './Location.schema.js'
 
 export class ParseFailed
   extends S.TaggedError<ParseFailed>('@systemfsoftware/stryker-js-instrumenter/Parser.schema/ParseFailed')(
@@ -6,7 +7,7 @@ export class ParseFailed
     {
       fileName: S.String,
       message: S.String,
-      location: S.Struct({ line: S.Finite, column: S.Finite }),
+      location: Position,
       cause: S.Defect(),
     },
   )

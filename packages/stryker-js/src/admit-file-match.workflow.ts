@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Boolean } from 'effect'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -15,9 +16,18 @@ const compileGlobCommand = CompileGlobCommand
 const expressionOf = (pattern: boolean | string, caseInsensitive: boolean): CompileGlobDecision =>
   Result.getOrElse(globExpression(compileGlobCommand.make({ pattern, caseInsensitive })), (neverError) => neverError)
 
-const regexpOf = (matcher: GlobMatcher): RegExp => new RegExp(matcher.source, matcher.flags)
+const regexpOf = (matcher: GlobMatcher): Option.Option<RegExp> =>
+  Result.getSuccess(Result.try(() => new RegExp(matcher.source, matcher.flags)))
 
-const hasHiddenSegment = (fileName: string) => fileName.split('/').some((entry) => entry.startsWith('.'))
+const matchesGlob = (matcher: GlobMatcher, allowHiddenFiles: boolean, resolvedFileName: string): boolean =>
+  Boolean.match(allowHiddenFiles, {
+    onTrue: () => Option.exists(regexpOf(matcher), (regexp) => regexp.test(resolvedFileName)),
+    onFalse: () =>
+      Boolean.match(hasHiddenSegment(resolvedFileName), {
+        onTrue: () => false,
+        onFalse: () => Option.exists(regexpOf(matcher), (regexp) => regexp.test(resolvedFileName)),
+      }),
+  })
 
 const matcherMatchesResolved = (
   resolvedPattern: boolean | string,
@@ -26,18 +36,12 @@ const matcherMatchesResolved = (
 ): boolean =>
   Match.value(expressionOf(resolvedPattern, false)).pipe(
     Match.withReturnType<boolean>(),
-    Match.tag('GlobMatcher', (matcher) =>
-      Boolean.match(allowHiddenFiles, {
-        onTrue: () => regexpOf(matcher).test(resolvedFileName),
-        onFalse: () =>
-          Boolean.match(hasHiddenSegment(resolvedFileName), {
-            onTrue: () => false,
-            onFalse: () => regexpOf(matcher).test(resolvedFileName),
-          }),
-      })),
+    Match.tag('GlobMatcher', (matcher) => matchesGlob(matcher, allowHiddenFiles, resolvedFileName)),
     Match.tag('GlobUnmatchable', () => false),
     Match.exhaustive,
   )
+
+const hasHiddenSegment = (fileName: string) => fileName.split('/').some((entry) => entry.startsWith('.'))
 
 export class FileMatchCommand extends S.TaggedClass<FileMatchCommand>()('FileMatchCommand', {
   resolvedPattern: S.Union([S.Boolean, S.String]),

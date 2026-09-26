@@ -1,6 +1,6 @@
 import type { EmbeddedDocument, FormatId, FrameworkContext } from '@systemfsoftware/stryker-framework-interface'
 import type { Node, Program } from '@systemfsoftware/stryker-ignorer-interface'
-import type { Position } from './Location.schema.js'
+import type { ScriptOrigin } from './Location.schema.js'
 import type { AstFormat } from './Syntax.schema.js'
 
 export interface SpannedComment {
@@ -8,11 +8,6 @@ export interface SpannedComment {
   readonly value: string
   readonly start: number
   readonly end: number
-}
-
-export interface SourceLocationInFile {
-  end: Position
-  start: Position
 }
 
 export type ScriptFormat = Extract<AstFormat, 'js' | 'ts' | 'tsx'>
@@ -23,7 +18,7 @@ export interface BaseAst {
   originFileName: string
   rawContent: string
   root: Program
-  offset?: Position
+  offset?: ScriptOrigin
 }
 
 export interface EmbeddedAst {

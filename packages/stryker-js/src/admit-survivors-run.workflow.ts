@@ -170,9 +170,7 @@ const reject = (reason: 'no-report' | 'mismatch', detail: string) =>
   )
 
 const spanOf = (survivor: S.Schema.Type<typeof AdmittedSurvivorShape>) =>
-  `${survivor.relativeFileName}:${survivor.location.start.line + 1}:${survivor.location.start.column}-${
-    survivor.location.end.line + 1
-  }:${survivor.location.end.column}`
+  `${survivor.relativeFileName}:${survivor.location.start.line}:${survivor.location.start.column}-${survivor.location.end.line}:${survivor.location.end.column}`
 
 const mutateSpansOf = (survivors: ReadonlyArray<S.Schema.Type<typeof AdmittedSurvivorShape>>) =>
   Arr.dedupe(survivors.map(spanOf))

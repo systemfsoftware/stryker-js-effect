@@ -21,12 +21,12 @@ export namespace Options {
 
 // @public (undocumented)
 export namespace Plugin {
-    export { BoundaryError, BoundaryErrorSchema, BoundaryPayloadRejected, BoundaryUnrecognizedSignal, CheckerCheckResult, CheckerGroupResult, CheckerRequest, CheckerRpcs, ExitClass, ExitCodeFromClass, ReporterAck, ReporterDrained, ReporterEventBatch, ReporterInitOptions, ReporterRpcs, TestRunnerDryRunRequest, TestRunnerMutantRunRequest, TestRunnerRpcs, WorkerEntryUrl, WorkerPluginKind, WorkerPluginSpawn, WorkerPluginSpawnSchema };
+    export { BoundaryError, BoundaryErrorSchema, BoundaryPayloadRejected, BoundaryUnrecognizedSignal, CheckerCheckResult, CheckerGroupResult, CheckerRequest, CheckerRpcs, EvaluatorPluginKind, ExitClass, ExitCode, ExitCodeFromClass, PluginKind, PluginKindSchema, ReporterAck, ReporterDrained, ReporterEventBatch, ReporterInitOptions, ReporterRpcs, TestRunnerDryRunRequest, TestRunnerMutantRunRequest, TestRunnerRpcs, WorkerEntryUrl, WorkerPluginKind, WorkerPluginSpawn, WorkerPluginSpawnSchema };
 }
 
 // @public (undocumented)
 export namespace Report {
-    export { BrandingInformation, BrandingInformationSchema, Dependencies, DependenciesSchema, DetectedStatus, FileResult, FileResultDictionary, FileResultDictionarySchema, FileResultSchema, FrameworkInformation, FrameworkInformationSchema, InvalidStatus, Metrics, MetricsResult, MetricsResultEncoded, MetricsResultSchema, MetricsSchema, MutantResult, MutantResultSchema, MutationScore, MutationTestResult, MutationTestResultSchema, NonNegativeFinite, NonNegativeInt, Percentage, TestDefinition, TestDefinitionSchema, TestFile, TestFileDefinitionDictionary, TestFileDefinitionDictionarySchema, TestFileSchema, Thresholds, ThresholdsSchema, UndetectedStatus, UntestedStatus };
+    export { BrandingInformation, BrandingInformationSchema, Dependencies, DependenciesSchema, DetectedStatus, FileResult, FileResultDictionary, FileResultDictionarySchema, FileResultSchema, FrameworkInformation, FrameworkInformationSchema, InvalidStatus, Metrics, MetricsResult, MetricsResultEncoded, MetricsResultSchema, MetricsSchema, MutantResult, MutantResultSchema, MutationScore, MutationTestResult, MutationTestResultSchema, NonNegativeFinite, NonNegativeInt, OrderedThresholds, Percentage, TestDefinition, TestDefinitionSchema, TestFile, TestFileDefinitionDictionary, TestFileDefinitionDictionarySchema, TestFileSchema, Thresholds, ThresholdsSchema, UndetectedStatus, UntestedStatus, metricsFromMutants };
 }
 
 // @public (undocumented)
@@ -36,12 +36,12 @@ export namespace Reporter {
 
 // @public (undocumented)
 export namespace TestRunner {
-    export { BaseTestResult, CompleteDryRunResult, CoverageAnalysis, CoverageAnalysisSchema, DryRunOptions, DryRunOptionsSchema, DryRunResult, DryRunResultSchema, DryRunStatus, ErrorDryRunResult, ErrorMutantRunResult, FailedTestResult, HitLimitReason, HitLimitReasonPrefix, HitLimitReasonText, KilledMutantRunResult, MutantCoverageSchema, MutantRunResult, MutantRunResultSchema, MutantRunStatus, SkippedTestResult, SuccessTestResult, SurvivedMutantRunResult, TestResult, TestResultSchema, TestRunner, TestRunnerCapabilities, TestRunnerCapabilitiesSchema, TestRunnerFailed, TestRunnerService, TestStatus, TimeoutDryRunResult, TimeoutMutantRunResult, WallClockTimeoutReason };
+    export { BaseTestResult, CompleteDryRunResult, CoverageAnalysis, CoverageAnalysisSchema, DryRunOptions, DryRunOptionsSchema, DryRunResult, DryRunResultSchema, DryRunStatus, ErrorDryRunResult, ErrorMutantRunResult, FailedTestResult, HitLimitReason, HitLimitReasonPrefix, HitLimitReasonText, KilledMutantRunResult, MutantCoverageSchema, MutantRunResult, MutantRunResultSchema, MutantRunStatus, SkippedTestResult, SuccessTestResult, SurvivedMutantRunResult, TestId, TestResult, TestResultSchema, TestRunner, TestRunnerCapabilities, TestRunnerCapabilitiesSchema, TestRunnerFailed, TestRunnerService, TestStatus, TimeoutDryRunResult, TimeoutMutantRunResult, WallClockTimeoutReason };
 }
 
 // @public (undocumented)
 export namespace Trace {
-    export { PropagatedTrace, TraceContextMiddleware, TraceContextParts, TraceContextPartsSchema, TraceContextReference, TracedRpc, Traceparent, TraceparentHeader, TracestateHeader };
+    export { PropagatedTrace, TraceContextMiddleware, TraceContextParts, TraceContextPartsSchema, TraceContextReference, TracedRpc, Traceparent, TraceparentHeader, TraceparentParts, Tracestate, TracestateHeader };
 }
 
 // (No @packageDocumentation comment for this package)

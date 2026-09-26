@@ -81,7 +81,7 @@ const environmentFor = (
   workspace: Workspace,
   slowReporter: Reporter.ReporterFactory,
 ): Engine.RunEnvironmentShape => ({
-  runId: 'slow-reporter-terminal-report',
+  runId: '01ARZ3NDEKTSV4RRFFQ69G5FAX',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
   basePath: workspace.directory,

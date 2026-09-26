@@ -30,11 +30,11 @@ import {
 } from './frame-run-event.workflow.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { MachineConsole } from './reporting/machine-console.service.js'
-import { ErrorEnvelope } from './reporting/run-failure.schema.js'
+import { errorEnvelopeFromOutcome } from './reporting/run-failure.js'
 import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
-import { RunId, VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
+import { buildVerdictEnvelope, generateRunId } from './reporting/verdict-envelope.js'
 import { RunEventWireLine } from './run-event-wire.schema.js'
-import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunStarted, VerdictReached } from './run-event.schema.js'
+import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunId, RunStarted, VerdictReached } from './run-event.schema.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
@@ -204,7 +204,7 @@ const writeStderr = (stdio: Stdio.Stdio, line: string) =>
 
 export interface RunEventStream {
   readonly queue: Queue.Queue<RunEvent, Cause.Done>
-  readonly runId: string
+  readonly runId: RunId
   readonly startedAt: number
   readonly isOpen: Effect.Effect<boolean, never, never>
   readonly ensureOpen: (openResolved: ResolvedModeInput) => Effect.Effect<void, never, never>
@@ -238,7 +238,7 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
     projectRoot: basePath,
     framework: { name: 'StrykerJS', version: StrykerPackage.version },
   }
-  const envelope = VerdictEnvelope.build(
+  const envelope = buildVerdictEnvelope(
     report,
     mode.mode,
     mode.signal,
@@ -267,7 +267,7 @@ const offerFailureEnvelope = (
   failed: FailedRunOutcome,
   captured: string,
 ): Effect.Effect<void> => {
-  const envelope = ErrorEnvelope.fromOutcome({ error: failed, captured })
+  const envelope = errorEnvelopeFromOutcome({ error: failed, captured })
   return Queue.offer(
     stream.queue,
     RunFailed.make({
@@ -403,7 +403,7 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
     const stdio = yield* Stdio.Stdio
     const drain = yield* RunEventDrain
     const startedAt = yield* Clock.currentTimeMillis
-    const runId = RunId.generate(DateTime.makeUnsafe(startedAt)).value
+    const runId = generateRunId(DateTime.makeUnsafe(startedAt))
     const queue = yield* Queue.bounded<RunEvent, Cause.Done>(RunEvent.QUEUE_BOUND)
     const stateRef = yield* Ref.make<FramingState>(initialFramingState(resolved))
     const lifecycleRef = yield* SynchronizedRef.make<RunEventStreamLifecycle>({

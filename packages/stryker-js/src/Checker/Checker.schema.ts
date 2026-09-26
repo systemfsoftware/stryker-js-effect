@@ -6,7 +6,7 @@ import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('UndescribableMutant', {
   id: Mutant.MutantId,
-  fileName: S.String,
+  fileName: Mutant.CanonicalFileName,
   reason: S.String,
 }) {
   static readonly skipped = Metric.counter('stryker.checker.mutants.skipped', {

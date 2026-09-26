@@ -17,9 +17,7 @@ import { interpretMutantRun, MutantRunObservation } from '../interpret-mutant-ru
 import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
 import { invalidatesRunnerPool, type PooledTestRunner } from '../pooled-test-runner.handle.js'
 import { offerReporterEvent } from '../reporter-stream.service.js'
-import { ReportFileName } from '../reporting/report-assembly.schema.js'
 import type { RunEvent } from '../run-event.schema.js'
-import { RunMutantTested } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import type { DryRunDone } from './dry-run.cell.js'
@@ -28,7 +26,7 @@ import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
 export interface PreparedStreamableMutant {
   readonly status: ValidMutantStatus
-  readonly file: string
+  readonly file: Mutant.CanonicalFileName
   readonly location: Mutant.Location
 }
 
@@ -77,13 +75,12 @@ const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, re
     onNone: () => Effect.succeed(Option.none<PreparedStreamableMutant>()),
     onSome: (status) =>
       Effect.map(
-        Effect.all([
-          Effect.orDie(S.decodeEffect(Mutant.ReportLocationFromMutant)(result.location)),
-          Effect.orDie(
-            S.decodeEffect(ReportFileName)(context.pathService.relative(context.env.basePath, result.fileName)),
+        Effect.orDie(
+          S.decodeEffect(Mutant.CanonicalFileName)(
+            context.pathService.relative(context.env.basePath, result.fileName),
           ),
-        ]),
-        ([location, file]) => Option.some({ status, file, location }),
+        ),
+        (file) => Option.some({ status, file, location: result.location }),
       ),
   })
 })
@@ -100,12 +97,12 @@ const offerFinished = Effect.fnUntraced(function*(
         const completed = yield* Ref.updateAndGet(context.completedRef, (n) => n + 1)
         yield* Queue.offer(
           context.progressQueue,
-          RunMutantTested.make({
+          Reporter.MutantTested.make({
             id: result.id,
             status: streamable.status,
-            file: streamable.file,
+            fileName: streamable.file,
             location: streamable.location,
-            mutator: result.mutatorName,
+            mutatorName: result.mutatorName,
             replacement: result.replacement,
             completed,
             total: context.plannedTotal,
@@ -127,9 +124,9 @@ const reportStreamTested = Effect.fnUntraced(function*(
     Reporter.MutantTested.make({
       id: result.id,
       status: prepared.status,
-      file: prepared.file,
+      fileName: prepared.file,
       location: prepared.location,
-      mutator: result.mutatorName,
+      mutatorName: result.mutatorName,
       replacement: result.replacement,
       completed,
       total: context.plannedTotal,

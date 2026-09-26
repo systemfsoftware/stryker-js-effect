@@ -26,9 +26,9 @@ const absPath = (file: string): string => `/work/${file}`
 
 /**
  * The test's own projection of a report's survivors, so the admission's
- * coordinate conversion (report lines and columns are 1-based, mutant
- * locations 0-based) is pinned against an independent oracle instead of
- * mirroring the cell's private helper.
+ * coordinate handling is pinned against an independent oracle instead of
+ * mirroring the cell's private helper. Survivor locations carry the report's
+ * 1-based coordinates unchanged.
  */
 const survivorsOf = (report: Report.MutationTestResult) =>
   Object.entries(report.files).flatMap(([file, fileResult]) =>
@@ -41,8 +41,8 @@ const survivorsOf = (report: Report.MutationTestResult) =>
         mutatorName: Mutant.MutatorName.make(mutant.mutatorName),
         replacement: mutant.replacement ?? mutant.mutatorName,
         location: {
-          start: { line: mutant.location.start.line - 1, column: mutant.location.start.column - 1 },
-          end: { line: mutant.location.end.line - 1, column: mutant.location.end.column - 1 },
+          start: { line: mutant.location.start.line, column: mutant.location.start.column },
+          end: { line: mutant.location.end.line, column: mutant.location.end.column },
         },
       }))
   )
@@ -50,17 +50,10 @@ const survivorsOf = (report: Report.MutationTestResult) =>
 const priorSourceHashesOf = (report: Report.MutationTestResult) =>
   Object.fromEntries(Object.entries(report.files).map(([file, fileResult]) => [file, sha256Hex(fileResult.source)]))
 
-const intIn = (minimum: number, maximum: number) => Arbitrary.schema(S.Int.check(S.isBetween({ minimum, maximum })))
-
 const oneOf2 = <A>(first: Arbitrary.Arbitrary<A>, second: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<A> =>
   Arbitrary.schema(S.Boolean).pipe(Arbitrary.flatMap((pick) => (pick ? first : second)))
 
-const reportPositionArb = Arbitrary.all({
-  line: intIn(1, 200),
-  column: intIn(1, 200),
-})
-
-const reportLocationArb = Arbitrary.all({ start: reportPositionArb, end: reportPositionArb })
+const reportLocationArb: Arbitrary.Arbitrary<Mutant.Location> = Arbitrary.schema(Mutant.Location)
 
 const nonSurvivedStatusArb: Arbitrary.Arbitrary<Mutant.MutantStatus> = Arbitrary.schema(
   S.Literals(['Killed', 'NoCoverage', 'Timeout', 'RuntimeError', 'CompileError', 'Ignored', 'Pending']),
@@ -122,7 +115,11 @@ const reportArb = (
   Arbitrary.all({
     config,
     schemaVersion: Arbitrary.Constant('1'),
-    thresholds: Arbitrary.all({ high: Arbitrary.schema(S.Int), low: Arbitrary.schema(S.Int) }),
+    thresholds: Arbitrary.all({
+      high: Arbitrary.schema(S.Int),
+      low: Arbitrary.schema(S.Int),
+      break: Arbitrary.Constant(null),
+    }),
     framework: Arbitrary.all({
       name: Arbitrary.Constant('stryker'),
       version: Arbitrary.schema(S.String.check(S.isMinLength(1), S.isMaxLength(6))),
@@ -136,7 +133,11 @@ const reportWithoutSurvivorsArb = reportArb(nonSurvivingFilesArb)
 const frameworklessReportArb: Arbitrary.Arbitrary<Report.MutationTestResult> = Arbitrary.all({
   config: cleanConfigArb,
   schemaVersion: Arbitrary.Constant('1'),
-  thresholds: Arbitrary.all({ high: Arbitrary.schema(S.Int), low: Arbitrary.schema(S.Int) }),
+  thresholds: Arbitrary.all({
+    high: Arbitrary.schema(S.Int),
+    low: Arbitrary.schema(S.Int),
+    break: Arbitrary.Constant(null),
+  }),
   files: survivingFilesArb,
 })
 
@@ -293,9 +294,7 @@ describe('admitSurvivorsRun', () => {
         return false
       }
       const expected = survivorsOf(report).map((survivor) =>
-        `${survivor.relativeFileName}:${survivor.location.start.line + 1}:${survivor.location.start.column}-${
-          survivor.location.end.line + 1
-        }:${survivor.location.end.column}`
+        `${survivor.relativeFileName}:${survivor.location.start.line}:${survivor.location.start.column}-${survivor.location.end.line}:${survivor.location.end.column}`
       )
       return expected.length > 0 && stringArrayEquivalence(admission.success.mutateSpans, Arr.dedupe(expected))
     },

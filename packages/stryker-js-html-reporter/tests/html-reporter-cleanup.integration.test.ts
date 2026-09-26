@@ -79,17 +79,17 @@ const reportFixture = (): Report.MutationTestResult => ({
           id: Mutant.MutantId.make('0'),
           mutatorName: 'BlockStatement',
           status: 'Killed',
-          location: { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } },
+          location: { start: { line: 1, column: 1 }, end: { line: 1, column: 11 } },
         },
       ],
     },
   },
-  thresholds: { high: 80, low: 60 },
+  thresholds: { high: 80, low: 60, break: null },
 })
 
 const metricsFixture = (): Report.MetricsResult => ({
   name: 'All files',
-  metrics: Report.Metrics.fromMutants([{ status: 'Killed' }]),
+  metrics: Report.metricsFromMutants([{ status: 'Killed' }]),
   childResults: [],
 })
 

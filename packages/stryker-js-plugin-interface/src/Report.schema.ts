@@ -1,20 +1,21 @@
-import { SchemaGetter, SchemaTransformation } from 'effect'
+import { SchemaGetter } from 'effect'
 import * as S from 'effect/Schema'
 
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { NonNegativeFinite, NonNegativeInt, Percentage } from './Metrics.schema.js'
+import { TestId } from './TestRunner.schema.js'
 
 export const MutantResultSchema = S.Struct({
   id: Mutant.MutantId,
   mutatorName: S.String,
   status: Mutant.MutantStatusSchema,
-  location: Mutant.LocationSchema,
+  location: Mutant.Location,
   replacement: S.optional(S.String),
   description: S.optional(S.String),
   statusReason: S.optional(S.String),
   static: S.optional(S.Boolean),
-  coveredBy: S.String.pipe(S.Array, S.optional),
-  killedBy: S.String.pipe(S.Array, S.optional),
+  coveredBy: S.Array(TestId).pipe(S.optional),
+  killedBy: S.Array(TestId).pipe(S.optional),
   testsCompleted: S.optional(NonNegativeInt),
   duration: S.optional(NonNegativeFinite),
 })
@@ -31,9 +32,9 @@ export const FileResultDictionarySchema = S.Record(S.String, FileResultSchema)
 export type FileResultDictionary = typeof FileResultDictionarySchema.Type
 
 export const TestDefinitionSchema = S.Struct({
-  id: S.String,
+  id: TestId,
   name: S.String,
-  location: S.optional(Mutant.OpenEndLocationSchema),
+  location: S.optional(Mutant.OpenEndLocation),
 })
 export type TestDefinition = typeof TestDefinitionSchema.Type
 
@@ -49,32 +50,38 @@ export type TestFileDefinitionDictionary = typeof TestFileDefinitionDictionarySc
 const ThresholdsValuesSchema = S.Struct({
   high: Percentage,
   low: Percentage,
+  break: S.NullOr(Percentage),
 })
-type ThresholdsValues = S.Schema.Type<typeof ThresholdsValuesSchema>
+type ThresholdsValues = typeof ThresholdsValuesSchema.Type
 
-const isThresholds = (value: unknown): value is ThresholdsValues =>
+const isOrderedThresholds = (value: unknown): value is ThresholdsValues =>
   S.is(ThresholdsValuesSchema)(value) && value.low <= value.high
 
-/**
- * The pair is *built* ordered — a drawn pair is sorted — rather than drawn at
- * random and discarded until it happens to be ordered. The invariant lives on
- * the declaration because a filter over the pair cannot express `low <= high`
- * in the generation-constraint vocabulary, and only a declaration carries a
- * `toCodecArbitrary` derivation. `ThresholdsValuesSchema` stays the wire side, so
- * decoding keeps its field paths.
- */
-const OrderedThresholds = S.declare<ThresholdsValues>(isThresholds, {
-  message: 'expected thresholds where low <= high',
+export const OrderedThresholds = S.declare<ThresholdsValues>(isOrderedThresholds, {
+  message: 'a mutation score threshold pair has low at or below high',
   toCodecArbitrary: () =>
     S.link<ThresholdsValues>()(ThresholdsValuesSchema, {
-      decode: SchemaGetter.transform(({ high, low }) => ({ high: Math.max(high, low), low: Math.min(high, low) })),
+      decode: SchemaGetter.transform(({ break: breaking, high, low }) => ({
+        break: breaking,
+        high: Math.max(high, low),
+        low: Math.min(high, low),
+      })),
       encode: SchemaGetter.transform((thresholds) => thresholds),
     }),
 })
 
-export const ThresholdsSchema = ThresholdsValuesSchema.pipe(
-  S.decodeTo(OrderedThresholds, SchemaTransformation.passthrough()),
-)
+export const ThresholdsSchema = S.declare<ThresholdsValues>(isOrderedThresholds, {
+  message: 'a mutation score threshold pair has low at or below high',
+  toCodecArbitrary: () =>
+    S.link<ThresholdsValues>()(ThresholdsValuesSchema, {
+      decode: SchemaGetter.transform(({ break: breaking, high, low }) => ({
+        break: breaking,
+        high: Math.max(high, low),
+        low: Math.min(low, high),
+      })),
+      encode: SchemaGetter.transform((thresholds) => thresholds),
+    }),
+})
 export type Thresholds = typeof ThresholdsSchema.Type
 
 export const BrandingInformationSchema = S.Struct({

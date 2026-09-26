@@ -20,7 +20,6 @@ import {
   make as makeStandbyThreadsPool,
   type StandbyThreadsPool,
 } from './StandbyThreadsPool.handle.js'
-import { type RawVitestRecord } from './vitest-run-command.schema.js'
 import {
   type ExportEntry,
   PackageManifest,
@@ -28,6 +27,10 @@ import {
   type VitestRunnerOptions,
 } from './VitestRunner.schema.js'
 import { close, failRuntime, make, type VitestRuntime } from './VitestRuntime.handle.js'
+
+export interface RawVitestRecord<A = unknown> {
+  readonly [key: string]: A
+}
 
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
 export type TypeId = typeof TypeId
@@ -169,7 +172,7 @@ export const resolveVitest: VitestResolver = (_dir) => {
         catch: (cause) =>
           resolutionFailure(
             specifier,
-            Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+            Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
           ),
       })
     const vitestNodeUrl = yield* resolveSpecifier('vitest/node')
@@ -178,7 +181,7 @@ export const resolveVitest: VitestResolver = (_dir) => {
       catch: (cause) =>
         resolutionFailure(
           'vitest/node',
-          Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+          Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
         ),
     })
     return yield* Option.match(

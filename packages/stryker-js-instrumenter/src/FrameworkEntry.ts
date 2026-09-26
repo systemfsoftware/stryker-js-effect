@@ -9,20 +9,18 @@ import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as S from 'effect/Schema'
 import { type Program, type Statement } from './Ast.handle.js'
 import { type Ast, type EmbeddedAst, type EmbeddedScript, type ScriptAst } from './Ast.schema.js'
 import { makeScriptParser } from './drivers/oxc-program.js'
-import { ErrorText } from './ErrorText.schema.js'
+import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { EmbeddedFormatEntry, FormatClaim } from './Format.schema.js'
 import { InstrumentError } from './Instrument.schema.js'
 import { instrumentationHeader } from './InstrumentHeader.js'
-import { type LineTable, LineTableFromText, type Position } from './Location.schema.js'
+import { lineStartsOf, originAt } from './Location.js'
+import type { LineStarts } from './Location.schema.js'
 import { ParseFailed } from './Parser.schema.js'
 import { loadOxc } from './Parser.service.js'
 import { printProgram } from './print/SourceText.js'
-
-const toOneBasedOrigin = (origin: Position): Position => ({ line: origin.line + 1, column: origin.column })
 
 interface FrameworkToolkit {
   readonly parseScript: (source: string, scriptFormat: ScriptFormat) => Program
@@ -48,7 +46,7 @@ const embeddedScriptsOf = (
   document: EmbeddedDocument,
   rawContent: string,
   originFileName: string,
-  lineTable: LineTable,
+  lineStarts: LineStarts,
 ): readonly EmbeddedScript[] =>
   document.regions.flatMap((region, index) => {
     const ast: ScriptAst = {
@@ -57,7 +55,7 @@ const embeddedScriptsOf = (
       comments: [],
       rawContent: rawContent.slice(region.start, region.end),
       originFileName,
-      offset: toOneBasedOrigin(lineTable.zeroBasedPositionAt(region.start)),
+      offset: originAt(lineStarts, region.start),
     }
     return [{ region: index, ast }]
   })
@@ -89,7 +87,7 @@ const hookFailure = <A = unknown>(moduleName: string, hook: string, fileName: st
   })
 
 const errorTextOf = <A = unknown>(cause: A): string =>
-  Option.getOrElse(Option.map(ErrorText.fromCause(cause), (text: ErrorText) => text.text), () => '')
+  Option.getOrElse(Option.map(renderedErrorText(cause), (rendered) => rendered.text), () => '')
 
 const runHook = <A>(
   moduleName: string,
@@ -119,7 +117,7 @@ const frameworkEntryOfDataFirst = (moduleName: string, framework: Framework): Em
   ownerVersion: framework.claim.ownerVersion,
   parse: Effect.fn('stryker.instrument.framework_entry.parse')(function*(text: string, fileName: string) {
     const context = frameworkContextOf(yield* loadFrameworkToolkit)
-    const lineTable = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
+    const lineStarts = lineStartsOf(text)
     const result = yield* runHook(moduleName, 'parse', fileName, () => framework.parse(text, context))
     const document = yield* settled(moduleName, fileName, result)
     return {
@@ -129,7 +127,7 @@ const frameworkEntryOfDataFirst = (moduleName: string, framework: Framework): Em
       rawContent: text,
       document,
       context,
-      scripts: embeddedScriptsOf(document, text, fileName, lineTable),
+      scripts: embeddedScriptsOf(document, text, fileName, lineStarts),
     } satisfies EmbeddedAst
   }),
   transform: (ast, mutantCollector, context) =>

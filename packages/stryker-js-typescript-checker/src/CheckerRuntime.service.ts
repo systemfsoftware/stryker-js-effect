@@ -33,8 +33,7 @@ const refuse = (
   Checker.CheckerFailed.make({
     checkerName: 'typescript',
     mutantIds: options.mutantIds,
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(options.cause), (rendered) => rendered.text), () =>
-      ''),
+    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(options.cause), (rendered) => rendered.text), () => ''),
   })
 
 export interface CheckerRuntimeShape {

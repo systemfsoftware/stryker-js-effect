@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Boolean } from 'effect'
 import * as HashMap from 'effect/HashMap'
 import * as HashSet from 'effect/HashSet'
@@ -19,12 +20,7 @@ const mutationRangeSpecifierSchema = MutationRangeSpecifierSchema
 
 const IGNORE_PATTERN_CHARACTER = '!'
 
-type Location = {
-  readonly start: { readonly line: number; readonly column: number }
-  readonly end: { readonly line: number; readonly column: number }
-}
-
-type FileMutate = boolean | readonly Location[]
+type FileMutate = boolean | readonly Mutant.Location[]
 
 type FileDescriptionLike = { readonly mutate: FileMutate }
 
@@ -38,7 +34,7 @@ interface FileSelectionInput {
 }
 
 interface SelectedFiles {
-  readonly fileDescriptions: Record<string, { readonly mutate: boolean | readonly Location[] }>
+  readonly fileDescriptions: Record<string, { readonly mutate: boolean | readonly Mutant.Location[] }>
   readonly testFiles: readonly string[]
 }
 
@@ -176,7 +172,7 @@ const createPureMatcher = (pattern: boolean | string, allowHiddenFiles: boolean,
   )
 
 const rangeListOf = (mutate: FileMutate) =>
-  Option.filter(Option.fromUndefinedOr(mutate), (value): value is readonly Location[] => Array.isArray(value))
+  Option.filter(Option.fromUndefinedOr(mutate), (value): value is readonly Mutant.Location[] => Array.isArray(value))
 
 const unionPair = (first: FileDescriptionLike, second: FileDescriptionLike) => {
   const ranges = Option.all([rangeListOf(first.mutate), rangeListOf(second.mutate)])
@@ -200,7 +196,7 @@ const unionDescription = (first: FileDescriptionLike, second: FileDescriptionLik
     onSome: (defined) => unionPair(first, defined),
   })
 
-const overlapOf = (firstRange: Location, secondRange: Location) => {
+const overlapOf = (firstRange: Mutant.Location, secondRange: Mutant.Location) => {
   const startLine = maxOf(firstRange.start.line, secondRange.start.line)
   const endLine = minOf(firstRange.end.line, secondRange.end.line)
   const startColumn = Boolean.match(firstRange.start.line === startLine, {
@@ -220,9 +216,9 @@ const overlapOf = (firstRange: Location, secondRange: Location) => {
   })
 }
 
-const isLocation = (value: Location | undefined): value is Location => value !== undefined
+const isLocation = (value: Mutant.Location | undefined): value is Mutant.Location => value !== undefined
 
-const overlapRanges = (firstRanges: readonly Location[], secondRanges: readonly Location[]) =>
+const overlapRanges = (firstRanges: readonly Mutant.Location[], secondRanges: readonly Mutant.Location[]) =>
   firstRanges
     .flatMap((firstRange) => secondRanges.map((secondRange) => overlapOf(firstRange, secondRange)))
     .filter(isLocation)
@@ -247,7 +243,7 @@ const columnOf = (column: number | undefined, fallback: number) =>
   Option.getOrElse(Option.fromUndefinedOr(column), () => fallback)
 
 const spanOf = (specifier: MutationRangeSpecifier) => ({
-  start: { line: specifier.startLine, column: columnOf(specifier.startColumn, 0) },
+  start: { line: specifier.startLine, column: columnOf(specifier.startColumn, 1) },
   end: { line: specifier.endLine, column: columnOf(specifier.endColumn, Number.MAX_SAFE_INTEGER) },
 })
 
@@ -399,12 +395,7 @@ const selectFiles = (input: FileSelectionInput): SelectedFiles => ({
   ),
 })
 
-const LocationSchema = S.Struct({
-  start: S.Struct({ line: S.Int, column: S.Int }),
-  end: S.Struct({ line: S.Int, column: S.Int }),
-})
-
-const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(LocationSchema)])
+const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(Mutant.Location)])
 
 const FileDescriptionsSchema = S.Record(S.String, S.Struct({ mutate: MutateDescriptionSchema }))
 

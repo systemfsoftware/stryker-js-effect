@@ -1,72 +1,56 @@
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
-import { DryRunComplete, DryRunExternalError, interpretVitestDryRun } from '../interpret-vitest-dry-run.workflow.js'
+import { DryRunExternalError, interpretVitestDryRun } from '../interpret-vitest-dry-run.workflow.js'
 import { VitestDryRunCommand } from '../vitest-run-command.schema.js'
 
-const withTests = (
-  input: VitestDryRunCommand,
-  tests: readonly TestRunner.TestResult[],
-  externalError: boolean,
-): VitestDryRunCommand =>
+const PROJECT_ROOT = '/project'
+
+const dryRunCommandOf = (input: {
+  readonly tests: readonly TestRunner.TestResult[]
+  readonly hasExternalError: boolean
+  readonly externalErrorText: string
+}): VitestDryRunCommand =>
   VitestDryRunCommand.make({
-    projectRoot: input.projectRoot,
-    tests: [...tests],
-    hasExternalError: externalError,
+    projectRoot: PROJECT_ROOT,
+    tests: input.tests,
+    hasExternalError: input.hasExternalError,
     externalErrorText: input.externalErrorText,
   })
 
 describe('interpretVitestDryRun', (it) => {
   it.prop(
-    '→t_FailedTest_=Complete',
-    {
-      of: [
-        VitestDryRunCommand,
-        S.String.check(S.isMinLength(1), S.isMaxLength(24)),
-        S.String.check(S.isMaxLength(32)),
-      ],
-      subject: interpretVitestDryRun,
-    },
-    (subject, [input, name, message]) => {
-      const failed: TestRunner.FailedTestResult = {
-        id: `tests/a.spec.ts#${name}`,
-        name,
-        timeSpentMs: 5,
-        status: 'failed',
-        failureMessage: message,
-        fileName: 'tests/a.spec.ts',
-      }
-      const result = subject(withTests(input, [...input.tests, failed], true))
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      if (!S.is(DryRunComplete)(result.success)) {
-        return false
-      }
-      return result.success.tests.some((test) => test.id === failed.id)
+    '∀c_DryRunCommand_≡ErrorIffExternalErrorWithoutFailure',
+    { of: [VitestDryRunCommand], subject: interpretVitestDryRun },
+    (subject, [command]) => {
+      const failed = command.tests.some((test) => test.status === 'failed')
+      return Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (outcome) => S.is(DryRunExternalError)(outcome) === (!failed && command.hasExternalError),
+      })
     },
   )
 
   it.prop(
-    '→e_ExternalErrorWithoutFailure_=Error',
-    { of: [VitestDryRunCommand], subject: interpretVitestDryRun },
-    (subject, [input]) => {
-      const result = subject(
-        withTests(
-          input,
-          input.tests.filter((test) => test.status !== 'failed'),
-          true,
-        ),
-      )
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      if (!S.is(DryRunExternalError)(result.success)) {
-        return false
-      }
-      return result.success.errorMessage === `An error occurred outside of a test run: ${input.externalErrorText}`
+    '∀c_DryRunCommand_≡ErrorMessageNamesTheExternalError',
+    {
+      of: [VitestDryRunCommand, S.String.check(S.isMinLength(1), S.isMaxLength(32))],
+      subject: interpretVitestDryRun,
+    },
+    (subject, [command, externalErrorText]) => {
+      const forced = dryRunCommandOf({
+        tests: command.tests.filter((test) => test.status !== 'failed'),
+        hasExternalError: true,
+        externalErrorText,
+      })
+      return Result.match(subject(forced), {
+        onFailure: () => false,
+        onSuccess: (outcome) =>
+          S.is(DryRunExternalError)(outcome) &&
+          outcome.errorMessage === `An error occurred outside of a test run: ${externalErrorText}`,
+      })
     },
   )
 })

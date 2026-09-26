@@ -44,9 +44,9 @@ const verifyResilienceCounts = (
 ): Check => {
   const normalized = verdict === undefined ? undefined : normalizeCounts(verdict.counts)
   const timeouts = events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
     .filter((mutant) => mutant.status === 'Timeout')
-  const trapTimeouts = timeouts.filter((mutant) => mutant.file.includes('nontermination.ts'))
+  const trapTimeouts = timeouts.filter((mutant) => mutant.fileName.includes('nontermination.ts'))
 
   return expect({
     exitCode: run.exitCode,

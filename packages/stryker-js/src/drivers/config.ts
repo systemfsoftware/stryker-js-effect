@@ -265,7 +265,7 @@ const FACTORY_FAILED = "Evaluating the config module's exported factory failed"
 const factoryFailureOf = <A>(cause: A): ConfigFactoryFailed =>
   ConfigFactoryFailed.make({
     cause,
-    message: Option.match(ErrorText.CauseText.fromCause(cause), {
+    message: Option.match(ErrorText.causeTextOf(cause), {
       onNone: () => FACTORY_FAILED,
       onSome: (detail) => `${FACTORY_FAILED}: ${detail.text}`,
     }),

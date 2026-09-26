@@ -46,7 +46,7 @@ const runPlanOf = (id: string, line: number): Mutant.MutantRunPlan => {
     fileName: Mutant.CanonicalFileName.make(`src/${id}.ts`),
     mutatorName: Mutant.MutatorName.make(`${id}-mutator`),
     replacement: '',
-    location: { start: { line, column: 0 }, end: { line, column: 1 } },
+    location: { start: { line, column: 1 }, end: { line, column: 2 } },
   })
   return {
     plan: 'Run',
@@ -69,7 +69,7 @@ const labelledPlanOf = (mutantId: string, netTime: number): Mutant.MutantRunPlan
     fileName: Mutant.CanonicalFileName.make(`src/${mutantId}.ts`),
     mutatorName: Mutant.MutatorName.make(`${mutantId}-mutator`),
     replacement: '',
-    location: { start: { line: netTime + 1, column: 0 }, end: { line: netTime + 1, column: 1 } },
+    location: { start: { line: netTime + 1, column: 1 }, end: { line: netTime + 1, column: 2 } },
   })
   return {
     plan: 'Run',

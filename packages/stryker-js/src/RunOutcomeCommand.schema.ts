@@ -1,29 +1,67 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
+export const RunSucceededClean = S.TaggedStruct('RunSucceededClean', {})
+
+export const RunSucceededVerdict = S.TaggedStruct('RunSucceededVerdict', {
+  exitClass: Plugin.ExitClass,
+  diagnostic: S.NullOr(S.String),
+})
+
+export const RunInterruptedObservation = S.TaggedStruct('RunInterruptedObservation', {})
+
+export const RunHelpObservation = S.TaggedStruct('RunHelpObservation', {
+  errorCount: Report.NonNegativeInt,
+  unrecognized: S.NullOr(S.String),
+})
+
+export const RunCliErrorObservation = S.TaggedStruct('RunCliErrorObservation', {
+  unrecognized: S.NullOr(S.String),
+})
+
+export const RunSurvivorsRejectedObservation = S.TaggedStruct('RunSurvivorsRejectedObservation', {
+  reason: S.Literals(['no-report', 'mismatch']),
+  diagnostic: S.NullOr(S.String),
+})
+
+export const RunSchemaErrorObservation = S.TaggedStruct('RunSchemaErrorObservation', {
+  configDetail: S.NullOr(S.String),
+})
+
+export const RunClassedObservation = S.TaggedStruct('RunClassedObservation', {
+  exitClass: Plugin.ExitClass,
+  configDetail: S.NullOr(S.String),
+  diagnostic: S.NullOr(S.String),
+})
+
+export const RunGenericFailureObservation = S.TaggedStruct('RunGenericFailureObservation', {
+  diagnostic: S.NullOr(S.String),
+})
+
+export const RunOutcomeObservation = S.Union([
+  RunSucceededClean,
+  RunSucceededVerdict,
+  RunInterruptedObservation,
+  RunHelpObservation,
+  RunCliErrorObservation,
+  RunSurvivorsRejectedObservation,
+  RunSchemaErrorObservation,
+  RunClassedObservation,
+  RunGenericFailureObservation,
+])
+export type RunOutcomeObservation = typeof RunOutcomeObservation.Type
+
+export type RunSucceededVerdict = typeof RunSucceededVerdict.Type
+export type RunHelpObservation = typeof RunHelpObservation.Type
+export type RunCliErrorObservation = typeof RunCliErrorObservation.Type
+export type RunSurvivorsRejectedObservation = typeof RunSurvivorsRejectedObservation.Type
+export type RunSchemaErrorObservation = typeof RunSchemaErrorObservation.Type
+export type RunClassedObservation = typeof RunClassedObservation.Type
+export type RunGenericFailureObservation = typeof RunGenericFailureObservation.Type
+
 export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOutcomeCommand', {
-  succeeded: S.Boolean,
-  interrupted: S.Boolean,
-  helpErrorCount: S.optional(S.Finite),
-  cliError: S.Boolean,
-  unrecognized: S.optional(S.String),
-  survivorsReason: S.optional(S.Literals(['no-report', 'mismatch'])),
-  survivorsDiagnostic: S.optional(S.String),
-  schemaError: S.Boolean,
-  successExitClass: S.optional(Plugin.ExitClass),
-  highestExitClass: S.optional(Plugin.ExitClass),
-  configDetail: S.optional(S.String),
-  diagnostic: S.optional(S.String),
+  observation: RunOutcomeObservation,
 }) {
-  static readonly [Workflow.InstrumentationBrand] = {
-    succeeded: 'stryker.run_outcome.succeeded',
-    interrupted: 'stryker.run_outcome.interrupted',
-    helpErrorCount: 'stryker.run_outcome.help_error_count',
-    cliError: 'stryker.run_outcome.cli_error',
-    survivorsReason: 'stryker.run_outcome.survivors_reason',
-    schemaError: 'stryker.run_outcome.schema_error',
-    successExitClass: 'stryker.run_outcome.success_exit_class',
-    highestExitClass: 'stryker.run_outcome.highest_exit_class',
-  } as const
+  static readonly [Workflow.InstrumentationBrand] = {} as const
 }

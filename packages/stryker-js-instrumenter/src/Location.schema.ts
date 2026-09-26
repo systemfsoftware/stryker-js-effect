@@ -1,206 +1,154 @@
 /// <reference types="vitest/importMeta" />
-import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
+import type * as Arr from 'effect/Array'
 import * as Option from 'effect/Option'
+import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
-import * as SGetter from 'effect/SchemaGetter'
+import * as SchemaGetter from 'effect/SchemaGetter'
 
-/**
- * File coordinates in the mutation-testing-report-schema contract: both line
- * and column are 1-based. The first line of a file is line 1, and the first
- * character of a line is column 1. Slicing a source line by one of these
- * positions uses `line - 1` for the line index and `column - 1` for the
- * character offset.
- */
-export const PositionSchema = S.Struct({
-  line: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0))),
-  column: S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0))),
-})
-export type Position = typeof PositionSchema.Type
+export const Offset = S.Int.check(S.isGreaterThanOrEqualTo(0))
+export type Offset = typeof Offset.Type
 
-export const LocationSchema = S.Struct({
-  start: PositionSchema,
-  end: PositionSchema,
-})
-export type Location = typeof LocationSchema.Type
+/** A 1-based line: the first line of a file is line 1. */
+export const Line = S.Int.check(S.isGreaterThanOrEqualTo(1))
+export type Line = typeof Line.Type
 
-export const OpenEndLocationSchema = S.Struct({
-  start: PositionSchema,
-  end: S.optional(PositionSchema),
-})
-export type OpenEndLocation = typeof OpenEndLocationSchema.Type
+/** A 1-based column: the first character of a line is column 1. */
+export const Column = S.Int.check(S.isGreaterThanOrEqualTo(1))
+export type Column = typeof Column.Type
 
-/**
- * A mutant's `location` already speaks the report contract (1-based line and
- * column), so the report's location is that location unchanged.
- */
-export const ReportLocationFromMutant = LocationSchema
+export const Position = S.Struct({ line: Line, column: Column })
+export type Position = typeof Position.Type
 
-const NonNegativeInt = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
-
-export class LineTable extends S.Class<LineTable>('LineTable')({
-  lineStarts: S.NonEmptyArray(NonNegativeInt),
-}) {
-  positionAt(offset: number): Position {
-    return positionOf(this.lineStarts, offset)
-  }
-
-  locationAt(span: { readonly start: number; readonly end: number }): Location {
-    return { start: this.positionAt(span.start), end: this.positionAt(span.end) }
-  }
-
-  zeroBasedPositionAt(offset: number): Position {
-    return zeroBasedPositionOf(this.lineStarts, offset)
-  }
-}
-
-const LINE_TERMINATOR = /\r\n|[\n\r\u2028\u2029]/g
-
-interface LineStarts {
-  readonly lineStarts: readonly [number, ...Array<number>]
-}
-
-const lineStartsOf = (text: string): LineStarts => ({
-  lineStarts: [0, ...[...text.matchAll(LINE_TERMINATOR)].map((match) => endOfMatch(match))],
-})
-
-const endOfMatch = (match: RegExpMatchArray): number => (match.index ?? 0) + match[0].length
-
-const canonicalTextOf = (table: LineStarts): string =>
-  Boolean.match(table.lineStarts.length === 1, {
-    onTrue: () => '',
-    onFalse: () =>
-      `${
-        Arr.zip(table.lineStarts.slice(0, -1), table.lineStarts.slice(1))
-          .map(([start, next]) => ' '.repeat(next - start - 1))
-          .join('\n')
-      }\n`,
-  })
-
-export const LineTableFromText = S.String.pipe(
-  S.decodeTo(LineTable, {
-    decode: SGetter.transform(lineStartsOf),
-    encode: SGetter.transform(canonicalTextOf),
-  }),
+const positionOrder = Order.combine(
+  Order.mapInput(Order.Number, (position: Position) => position.line),
+  Order.mapInput(Order.Number, (position: Position) => position.column),
 )
 
-const middleIndex = (low: number, high: number): number => low + ((high - low) >> 1)
-
-const zeroBasedPositionOf = (lineStarts: Arr.NonEmptyReadonlyArray<number>, offset: number): Position => {
-  const search = (low: number, high: number, start: number): Position =>
-    Boolean.match(low > high, {
-      onTrue: () => ({ line: low - 1, column: offset - start }),
-      onFalse: () =>
-        Option.match(Arr.get(lineStarts, middleIndex(low, high)), {
-          onNone: () => ({ line: low - 1, column: offset - start }),
-          onSome: (found) =>
-            Boolean.match(found === offset, {
-              onTrue: () => ({ line: middleIndex(low, high), column: offset - found }),
-              onFalse: () =>
-                Boolean.match(found < offset, {
-                  onTrue: () => search(middleIndex(low, high) + 1, high, found),
-                  onFalse: () => search(low, middleIndex(low, high) - 1, start),
-                }),
-            }),
-        }),
-    })
-  return search(0, lineStarts.length - 1, 0)
+interface Ends<A> {
+  readonly start: A
+  readonly end: A
 }
 
-const positionOf = (lineStarts: Arr.NonEmptyReadonlyArray<number>, offset: number): Position => {
-  const zeroBased = zeroBasedPositionOf(lineStarts, offset)
-  return { line: zeroBased.line + 1, column: zeroBased.column + 1 }
+const inOrder = <A>(order: Order.Order<A>) => (ends: Ends<A>): Ends<A> => ({
+  start: Order.min(order)(ends.start, ends.end),
+  end: Order.max(order)(ends.start, ends.end),
+})
+
+const notReversed = <A>(order: Order.Order<A>) => (ends: Ends<A>): boolean =>
+  Order.isLessThanOrEqualTo(order)(ends.start, ends.end)
+
+const PositionEnds = S.Struct({ start: Position, end: Position })
+type PositionEnds = typeof PositionEnds.Type
+
+export const Location = S.declare(
+  (value: unknown): value is PositionEnds => S.is(PositionEnds)(value) && notReversed(positionOrder)(value),
+  {
+    expected: 'a location whose end is not before its start',
+    toCodecArbitrary: () =>
+      S.link<PositionEnds>()(PositionEnds, {
+        decode: SchemaGetter.transform(inOrder(positionOrder)),
+        encode: SchemaGetter.transform((ends: PositionEnds) => ends),
+      }),
+  },
+)
+export type Location = typeof Location.Type
+
+const OpenEnds = S.Struct({ start: Position, end: S.optional(Position) })
+type OpenEnds = typeof OpenEnds.Type
+
+const closedEnds = (ends: OpenEnds): Option.Option<PositionEnds> =>
+  Option.map(Option.fromUndefinedOr(ends.end), (end) => ({ start: ends.start, end }))
+
+export const OpenEndLocation = S.declare(
+  (value: unknown): value is OpenEnds =>
+    S.is(OpenEnds)(value) &&
+    Option.match(closedEnds(value), { onNone: () => true, onSome: notReversed(positionOrder) }),
+  {
+    expected: 'a location whose end, when present, is not before its start',
+    toCodecArbitrary: () =>
+      S.link<OpenEnds>()(OpenEnds, {
+        decode: SchemaGetter.transform((ends: OpenEnds) =>
+          Option.getOrElse(Option.map(closedEnds(ends), inOrder(positionOrder)), () => ends)
+        ),
+        encode: SchemaGetter.transform((ends: OpenEnds) => ends),
+      }),
+  },
+)
+export type OpenEndLocation = typeof OpenEndLocation.Type
+
+const OffsetEnds = S.Struct({ start: Offset, end: Offset })
+type OffsetEnds = typeof OffsetEnds.Type
+
+export const Span = S.declare(
+  (value: unknown): value is OffsetEnds => S.is(OffsetEnds)(value) && notReversed(Order.Number)(value),
+  {
+    expected: 'a span whose end is not before its start',
+    toCodecArbitrary: () =>
+      S.link<OffsetEnds>()(OffsetEnds, {
+        decode: SchemaGetter.transform(inOrder(Order.Number)),
+        encode: SchemaGetter.transform((ends: OffsetEnds) => ends),
+      }),
+  },
+)
+export type Span = typeof Span.Type
+
+export const ScriptOrigin = S.Struct({ line: Line, columnShift: Offset })
+export type ScriptOrigin = typeof ScriptOrigin.Type
+
+export type LineStarts = Arr.NonEmptyReadonlyArray<Offset>
+
+const accepts = {
+  offset: S.is(Offset),
+  line: S.is(Line),
+  column: S.is(Column),
+  location: S.is(Location),
+  span: S.is(Span),
 }
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const { Schema } = await import('effect')
-  const Arbitrary = await import('effect/unstable/arbitrary/Arbitrary')
+  const Arr = await import('effect/Array')
 
-  const SegmentSchema = Schema.Struct({
-    content: Schema.String,
-    terminator: Schema.Literals(['\r\n', '\r', '\n', '\u2028', '\u2029']),
-  })
-
-  const textArbitrary = Arbitrary.map(
-    Arbitrary.array(Arbitrary.schema(SegmentSchema)),
-    (segments) => segments.map((segment) => `${segment.content}${segment.terminator}`).join(''),
-  )
-
-  const offsetWithin = (text: string, draw: number): number =>
-    ((draw % (text.length + 1)) + text.length + 1) % (text.length + 1)
-
-  const textWithOffset = Arbitrary.flatMap(
-    textArbitrary,
-    (text) => Arbitrary.map(Arbitrary.schema(Schema.Int), (draw) => ({ text, offset: offsetWithin(text, draw) })),
-  )
-
-  const terminatorEndsOf = (text: string): ReadonlyArray<number> => {
-    const endsAfter = (offset: number): ReadonlyArray<number> =>
-      Boolean.match(offset >= text.length, {
-        onTrue: () => [],
-        onFalse: () => {
-          const isCrLf = text.startsWith('\r\n', offset)
-          const width = Boolean.match(isCrLf, { onTrue: () => 2, onFalse: () => 1 })
-          const ends = Boolean.match(isCrLf || '\n\r\u2028\u2029'.includes(text.charAt(offset)), {
-            onTrue: () => [offset + width],
-            onFalse: () => [],
-          })
-          return [...ends, ...endsAfter(offset + width)]
-        },
-      })
-    return [0, ...endsAfter(0)]
-  }
-
-  const comparePositions = (a: Position, b: Position): number => {
-    const lineDelta = a.line - b.line
-    return lineDelta !== 0 ? lineDelta : a.column - b.column
-  }
+  const seeds = [-1, 0, 1, Number.MAX_SAFE_INTEGER]
+  const withSeeds = (drawn: number): ReadonlyArray<number> => Arr.append(seeds, drawn)
+  const atLeast = (minimum: number) => (n: number): boolean => Number.isSafeInteger(n) && n >= minimum
+  const lexicographic = Order.isLessThanOrEqualTo(Order.Tuple([Order.Number, Order.Number]))
 
   it.prop(
-    '∀text_LineStarts_=TerminatorEnds',
-    { of: [textArbitrary], subject: lineStartsOf },
-    (subject, [text]) => subject(text).lineStarts.join(',') === terminatorEndsOf(text).join(','),
+    '∀n_CoordinateRefusal_≡Bounds',
+    { of: [S.Int], subject: accepts },
+    (subject, [drawn]) =>
+      Arr.every(withSeeds(drawn), (n) =>
+        Arr.every(
+          [
+            subject.offset(n) === atLeast(0)(n),
+            subject.line(n) === atLeast(1)(n),
+            subject.column(n) === atLeast(1)(n),
+          ],
+          (agrees) => agrees,
+        )),
   )
 
   it.prop(
-    '∀text_CrlfLines_=UnixLines',
-    { of: [textArbitrary], subject: lineStartsOf },
-    (subject, [text]) =>
-      subject(text).lineStarts.join(',') === subject(text.replaceAll('\r\n', ' \n')).lineStarts.join(','),
+    '∀p_LocationRefusal_≡EndNotBeforeStart',
+    { of: [S.Int, S.Int, S.Int, S.Int], subject: accepts },
+    (subject, [startLine, startColumn, endLine, drawnEndColumn]) =>
+      Arr.every(withSeeds(drawnEndColumn), (endColumn) =>
+        subject.location({
+          start: { line: startLine, column: startColumn },
+          end: { line: endLine, column: endColumn },
+        }) ===
+          (Arr.every([startLine, startColumn, endLine, endColumn], atLeast(1)) &&
+            lexicographic([startLine, startColumn], [endLine, endColumn]))),
   )
 
   it.prop(
-    '∀sample_Position_≡ConservesOffset',
-    { of: [textWithOffset], subject: zeroBasedPositionOf },
-    (subject, [{ text, offset }]) => {
-      const lineStarts = lineStartsOf(text).lineStarts
-      const position = subject(lineStarts, offset)
-      const start = Option.fromUndefinedOr(lineStarts[position.line])
-      const next = Option.fromUndefinedOr(lineStarts[position.line + 1])
-      return Option.match(start, {
-        onNone: () => false,
-        onSome: (lineStart) =>
-          Arr.every(
-            [
-              lineStart + position.column === offset,
-              position.column >= 0,
-              Option.match(next, { onNone: () => true, onSome: (nextStart) => nextStart > offset }),
-            ],
-            (verdict) => verdict,
-          ),
-      })
-    },
-  )
-
-  it.prop(
-    '∀span_Position_≤End',
-    { of: [textWithOffset, Schema.Int], subject: zeroBasedPositionOf },
-    (subject, [{ text, offset }, draw]) => {
-      const lineStarts = lineStartsOf(text).lineStarts
-      const low = Math.min(offsetWithin(text, draw), offset)
-      const high = Math.max(offsetWithin(text, draw), offset)
-      return comparePositions(subject(lineStarts, low), subject(lineStarts, high)) <= 0
-    },
+    '∀s_SpanRefusal_≡EndNotBeforeStart',
+    { of: [S.Int, S.Int], subject: accepts },
+    (subject, [start, drawnEnd]) =>
+      Arr.every(
+        withSeeds(drawnEnd),
+        (end) => subject.span({ start, end }) === (Arr.every([start, end], atLeast(0)) && start <= end),
+      ),
   )
 }

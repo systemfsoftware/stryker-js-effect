@@ -5,9 +5,11 @@ import type { Framework } from '@systemfsoftware/stryker-framework-interface'
 import type { Ignorer as IgnorerDescriptor, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 
+import { PeerFailureTag } from './PluginsError.schema.js'
+
 export const PluginDescriptorSchema = S.Union([
   S.Struct({ kind: Plugin.WorkerPluginKind, name: S.String, workerEntry: Plugin.WorkerEntryUrl }),
-  S.Struct({ kind: S.Literals(['Evaluator']), name: S.String }),
+  S.Struct({ kind: Plugin.EvaluatorPluginKind, name: S.String }),
 ])
 
 export const PluginModuleSchema = S.Struct({
@@ -103,7 +105,7 @@ export const FrameworkSchema = S.Struct({
 export const FrameworkRefusalSchema = S.Struct({
   kind: S.Literal('FrameworkRefusal'),
   name: S.String,
-  reason: S.Literals(['PeerMissing', 'PeerVersionUnsupported', 'PeerUnrecognized']),
+  reason: PeerFailureTag,
   peer: S.String,
   detail: S.String,
 })
@@ -127,10 +129,10 @@ export const ProjectDependencies = S.Struct({
 
 export const PluginSourceSchema = S.Union([
   S.Struct({ kind: Plugin.WorkerPluginKind, name: S.String, modulePath: S.String, workerEntry: S.String }),
-  S.Struct({ kind: S.Literals(['Evaluator']), name: S.String, modulePath: S.String }),
+  S.Struct({ kind: Plugin.EvaluatorPluginKind, name: S.String, modulePath: S.String }),
 ])
 
-export type PluginKind = Plugin.WorkerPluginKind | 'Evaluator'
+export type PluginKind = Plugin.PluginKind
 
 export interface WorkerPluginDescriptor<K extends Plugin.WorkerPluginKind = Plugin.WorkerPluginKind> {
   readonly kind: K

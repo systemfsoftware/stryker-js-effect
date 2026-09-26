@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Judge, TestContribution } from '@systemfsoftware/stryker-test-contribution'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -35,7 +35,7 @@ const reportOf = (
   testFiles: Object.fromEntries(
     Object.entries(testFiles).map(([fileName, testIds]) => [
       fileName,
-      { tests: testIds.map((id) => ({ id, name: `test ${id}` })) },
+      { tests: testIds.map((id) => ({ id: TestRunner.TestId.make(id), name: `test ${id}` })) },
     ]),
   ),
 })
@@ -53,7 +53,7 @@ const commandOf = (
     report: {
       schemaVersion: '2',
       files: report.files,
-      thresholds: { high: 80, low: 60 },
+      thresholds: { high: 80, low: 60, break: null },
       ...(report.testFiles === undefined ? {} : { testFiles: report.testFiles }),
     },
     suffixes,

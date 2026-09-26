@@ -7,6 +7,7 @@ import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
 import * as S from 'effect/Schema'
 
+import { relativeNormalizedFileName } from '../FileMatcher.js'
 import {
   incrementalDiff,
   IncrementalDiffCommand,
@@ -16,15 +17,13 @@ import {
 import type { FormatIdentity } from '../IncrementalDiff.schema.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
 import type { IncrementalReport } from '../IncrementalReport.schema.js'
-import { RelativeNormalizedFileName } from '../matching.schema.js'
 import { identityOf } from '../mutation-reporting.service.js'
 import { ProjectFiles } from '../project-files.service.js'
 import type { Project } from '../Project.schema.js'
 import { StageError } from '../Run.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 
-const relativeFileNameOf = (fileName: string, basePath: string) =>
-  RelativeNormalizedFileName.fromAbsolute(fileName, basePath).fileName
+const relativeFileNameOf = (fileName: string, basePath: string) => relativeNormalizedFileName(fileName, basePath)
 
 const readCurrentRelativeFiles = Effect.fn('stryker.mutation_test.read_relative_files')(function*(
   project: Project,
@@ -61,8 +60,7 @@ const rememberedCoverage = (entry: RememberedMutantResult): {
 
 const REMEMBERED_REASON = 'Remembered'
 
-const rememberedStatusOf = (entry: RememberedMutantResult) =>
-  S.decodeUnknownEffect(Mutant.MutantStatusSchema)(entry.status)
+const rememberedStatusOf = (entry: RememberedMutantResult) => S.decodeEffect(Mutant.MutantStatusSchema)(entry.status)
 
 const rememberedResultOf = (
   mutant: Mutant.Mutant,
@@ -87,11 +85,8 @@ const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mu
 
 const rememberedOf = (mutant: Mutant.Mutant, entry: RememberedMutantResult) =>
   Effect.map(
-    Effect.all([
-      Effect.orDie(S.decodeEffect(Mutant.ReportLocationFromMutant)(mutant.location)),
-      rememberedStatusOf(entry).pipe(Effect.orDie),
-    ]),
-    ([reportLocation, status]) => rememberedResultOf(mutant, entry, reportLocation, status),
+    rememberedStatusOf(entry).pipe(Effect.orDie),
+    (status) => rememberedResultOf(mutant, entry, mutant.location, status),
   )
 
 const previousFilesOf = (report: IncrementalReport | undefined): S.Schema.Type<typeof PreviousFilesSchema> =>
@@ -119,7 +114,7 @@ type LocatedTestResult = TestRunner.TestResult & { readonly fileName: string }
 const hasTestFileName = (result: TestRunner.TestResult): result is LocatedTestResult => result.fileName !== undefined
 
 const relativeFileOfTest = (result: LocatedTestResult, basePath: string) =>
-  RelativeNormalizedFileName.fromAbsolute(result.fileName, basePath).fileName
+  relativeNormalizedFileName(result.fileName, basePath)
 
 const claimedIdentities = (
   project: Project,

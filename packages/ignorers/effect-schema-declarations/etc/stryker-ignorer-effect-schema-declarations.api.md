@@ -16,7 +16,22 @@ export const ANNOTATION_TEXT_IGNORED: 'annotation documentation value is declara
 export const BRAND_NAME_IGNORED: 'Schema.brand name is identity-only data, not behaviour';
 
 // @public (undocumented)
+export const CHECK_ANNOTATION_OBJECT_IGNORED: 'filter/check annotation object holds documentation and generation hints, not behaviour';
+
+// @public (undocumented)
+export const CHECK_ANNOTATION_TEXT_IGNORED: 'filter/check annotation value is documentation data, not behaviour';
+
+// @public (undocumented)
 export const CLASS_ID_IGNORED: 'Schema.Class identifier is a declaration name, not behaviour';
+
+// @public (undocumented)
+export const DECODING_DEFAULT_IGNORED: 'withDecodingDefault/withConstructorDefault default is config, not behaviour';
+
+// @public (undocumented)
+export const GENERATION_ANNOTATION_IGNORED: 'arbitrary-generation annotation never runs in production, not behaviour';
+
+// @public (undocumented)
+export const LINK_TRANSFORMATION_IGNORED: 'S.link() transformation feeds arbitrary generation only, not production codecs';
 
 // @public (undocumented)
 export const OPTIONAL_DEFAULT_IGNORED: 'optionalWith default value is config, not behaviour';
@@ -31,7 +46,13 @@ export const SYMBOL_DESCRIPTION_IGNORED: 'Symbol.for() brand description is iden
 export const TAGGED_FIELDS_IGNORED: 'TaggedClass/TaggedError field schema is a declaration, not behaviour';
 
 // @public (undocumented)
+export const TAGGED_STRUCT_TAG_IGNORED: 'TaggedStruct _tag is a declaration discriminant, not behaviour';
+
+// @public (undocumented)
 export const TAGGED_TAG_IGNORED: 'TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour';
+
+// @public (undocumented)
+export const TYPE_ID_IGNORED: 'a TypeId constant is a declaration identity, not behaviour';
 
 // (No @packageDocumentation comment for this package)
 

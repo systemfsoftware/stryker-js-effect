@@ -47,7 +47,7 @@ const refusal = RunEvent.RunFailed.make({
   code: 2,
   error: `Failed to load plugin "${frameworkModule}" (PeerMissing)`,
   remediation: 'install the peer dependency the plugin needs',
-  reason: 'PeerMissing',
+  reason: { _tag: 'PeerMissing', peer: frameworkModule },
 })
 
 type ReportEvent =
@@ -115,7 +115,7 @@ Feature('Reporting framework plugins on the machine wire')
         ),
         Then('the failure names the reason, the configuration code, and the remedy')((s, expect) =>
           expect({ reason: s.seen.reason, code: s.seen.code, remediation: s.seen.remediation }).toEqual({
-            reason: 'PeerMissing',
+            reason: { _tag: 'PeerMissing', peer: frameworkModule },
             code: 2,
             remediation: 'install the peer dependency the plugin needs',
           })

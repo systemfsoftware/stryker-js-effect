@@ -4,7 +4,7 @@ import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import {
   DuplicatePackageLabel,
@@ -64,9 +64,11 @@ const MODULE_ARB: Arbitrary.Arbitrary<ModuleSpec> = Arbitrary.all({
 
 const MODULES_ARB = Arbitrary.array(MODULE_ARB, { minLength: 1, maxLength: 3 })
 
+const testIdOf = (id: string): TestRunner.TestId => TestRunner.TestId.make(id)
+
 const reportOf = (spec: ModuleSpec): Report.MutationTestResult => ({
   schemaVersion: '1.0',
-  thresholds: { high: 80, low: 60 },
+  thresholds: { high: 80, low: 60, break: null },
   files: {
     'src/target.ts': {
       language: 'typescript',
@@ -77,13 +79,13 @@ const reportOf = (spec: ModuleSpec): Report.MutationTestResult => ({
         replacement: 'false',
         status: mutant.status,
         location: LOCATION,
-        killedBy: [...mutant.killingIds],
-        coveredBy: [...mutant.killingIds],
+        killedBy: mutant.killingIds.map(testIdOf),
+        coveredBy: mutant.killingIds.map(testIdOf),
       })),
     },
   },
   testFiles: {
-    'src/target.test.ts': { tests: spec.testIds.map((id) => ({ id, name: `test ${id}` })) },
+    'src/target.test.ts': { tests: spec.testIds.map((id) => ({ id: testIdOf(id), name: `test ${id}` })) },
   },
 })
 
@@ -197,7 +199,7 @@ describe('mergeReportParts', () => {
         specs.every((spec) =>
           result.success.rows.some((row) =>
             row.label === spec.label &&
-            row.score === Report.MutationScore.match(Report.Metrics.fromMutants(spec.mutants).mutationScore, {
+            row.score === Report.MutationScore.match(Report.metricsFromMutants(spec.mutants).mutationScore, {
                 Scored: ({ percentage }) => percentage.toFixed(2),
                 Unscored: () => 'n/a',
               })

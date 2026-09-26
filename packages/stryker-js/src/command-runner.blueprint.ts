@@ -1,6 +1,7 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -17,7 +18,7 @@ import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-te
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js/CommandRunner')
 export type TypeId = typeof TypeId
 
-export const ALL_TESTS_ID = 'all'
+export const ALL_TESTS_ID = TestRunner.TestId.make('all')
 export const ALL_TESTS_NAME = 'All tests'
 
 export const isCommandRunner = (name: Options.TestRunnerConfig): name is 'command' =>

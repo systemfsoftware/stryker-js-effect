@@ -34,15 +34,26 @@ Mutants recognized by the ignorer are reported with status `Ignored`, carrying t
 
 ## What It Ignores
 
-| Declaration                               | Example                                                           |
-| ----------------------------------------- | ----------------------------------------------------------------- |
-| Brand descriptions                        | `Symbol.for('UserId')`                                            |
-| `TaggedClass` / `TaggedError` tag strings | `S.TaggedClass<A>()('Placed', { ... })`                           |
-| Schema property declarations              | Property definition schema trees in tagged classes                |
-| `optionalWith` default values             | `S.optionalWith(S.Number, { default: () => 0 })`                  |
-| Documentation annotations                 | `identifier`, `description`, `title`, `documentation`, `examples` |
-| Pure documentation `annotations({ ... })` | `S.annotations({ title: 'Amount' })`                              |
+| Declaration                                               | Example                                                                              |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Brand descriptions                                        | `Symbol.for('UserId')`                                                               |
+| `TaggedClass` / `TaggedError` tag strings                 | `S.TaggedClass<A>()('Placed', { ... })`                                              |
+| `TaggedStruct` tag strings                                | `S.TaggedStruct('PeerMissing', { ... })`                                             |
+| Schema property declarations                              | Property definition schema trees in tagged classes                                   |
+| `optionalWith` default values                             | `S.optionalWith(S.Number, { default: () => 0 })`                                     |
+| `withDecodingDefault` / `withConstructorDefault` defaults | `S.withDecodingDefaultKey(Effect.succeed(true))`                                     |
+| Documentation annotations                                 | `identifier`, `description`, `title`, `documentation`, `examples`                    |
+| Pure documentation `annotations({ ... })`                 | `S.annotations({ title: 'Amount' })`                                                 |
+| Pure documentation `annotate({ ... })`                    | `S.annotate({ identifier: 'PackageExport' })`                                        |
+| Filter/check annotation objects                           | `S.makeFilter(pred, { expected: 'a canonical file' })`                               |
+| Generation-only declaration callbacks                     | `S.declare(pred, { toCodecArbitrary: () => arbitrary })`                             |
+| Arbitrary link transformations                            | `S.link<T>()(S.Null, { decode: …, encode: … })` outside a production `toCodec*` slot |
+| Type identity constants                                   | `const TypeId = '…/StageError' as const`                                             |
+
+## What Stays Graded
+
+Everything a mutant can still change at run time stays live: filter predicates and bounds, patterns, literal vocabularies, struct field sets, codec decode/encode transformations, and any object or string a schema uses to decide acceptance. The ignorer only removes mutants whose position cannot change a decoded value, a routing decision, or an encoded value.
 
 ## License
 
-[Apache-2.0](../../../LICENSE)
+[Apache-2.0](../../LICENSE)

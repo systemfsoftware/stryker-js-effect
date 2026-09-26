@@ -12,7 +12,7 @@
  */
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Evaluator, Options, type Plugin, type Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Evaluator, Options, type Plugin, type Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { strykerPlugins, TestContributionEvaluator } from '@systemfsoftware/stryker-test-contribution'
 import * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
@@ -39,7 +39,7 @@ const reportWithToothlessKernelFile = (
   mutants: Report.MutantResult[] = [kernelMutant(Mutant.MutantId.make('1'), ['t1'], ['t1', 't2'])],
 ): Report.MutationTestResult => ({
   schemaVersion: '2',
-  thresholds: { high: 80, low: 60 },
+  thresholds: { high: 80, low: 60, break: null },
   files: {
     'src/subject.ts': {
       language: 'typescript',
@@ -48,8 +48,8 @@ const reportWithToothlessKernelFile = (
     },
   },
   testFiles: {
-    'earns.kernel.property.test.ts': { tests: [{ id: 't1', name: 'test t1' }] },
-    'idle.kernel.property.test.ts': { tests: [{ id: 't2', name: 'test t2' }] },
+    'earns.kernel.property.test.ts': { tests: [{ id: TestRunner.TestId.make('t1'), name: 'test t1' }] },
+    'idle.kernel.property.test.ts': { tests: [{ id: TestRunner.TestId.make('t2'), name: 'test t2' }] },
   },
 })
 

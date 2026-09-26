@@ -1,7 +1,7 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
+import { lineStartsOf, offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as DateTime from 'effect/DateTime'
@@ -12,7 +12,7 @@ import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'
 import type { FileSystem as TSFileSystem, FileSystemEntries } from 'typescript/unstable/fs'
 
-import { HybridFileNotFoundError } from './Compiler.schema.js'
+import { HybridFileNotFoundError, HybridMutantOutsideFileError } from './Compiler.schema.js'
 
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSFiles')
 export type TypeId = typeof TypeId
@@ -26,7 +26,7 @@ export interface ScriptFile {
   readonly originalContent: string
   readonly content: string
   readonly modifiedTime: DateTime.Utc
-  readonly lineStarts: ReadonlyArray<number>
+  readonly lineStarts: Mutant.LineStarts
 }
 
 interface TSFilesSources {
@@ -64,14 +64,6 @@ const publish = (state: TSFilesState, next: (sources: TSFilesSources) => TSFiles
     state.snapshot.current = next(state.snapshot.current)
   })
 
-const lineStartsOf = (content: string): ReadonlyArray<number> => {
-  const starts: Array<number> = [0]
-  Arr.forEach(content.split('\n'), (line) => {
-    starts.push(Arr.last(starts).pipe(Option.getOrElse(() => 0)) + line.length + 1)
-  })
-  return starts
-}
-
 const makeScriptFile = (content: string, fileName: string, now: DateTime.Utc): ScriptFile => ({
   content,
   fileName,
@@ -86,24 +78,23 @@ const withContent = (file: ScriptFile, content: string, now: DateTime.Utc): Scri
   modifiedTime: now,
 })
 
-const offsetOf = (file: ScriptFile, position: Mutant.Position): number => {
-  const lineIndex = Math.min(position.line - 1, file.lineStarts.length - 1)
-  return (file.lineStarts[lineIndex] ?? 0) + Math.max(0, position.column - 1)
-}
-
 const mutateScriptFile = (
   file: ScriptFile,
   mutant: Pick<Checker.CheckerMutantWire, 'location' | 'replacement'>,
   now: DateTime.Utc,
-): ScriptFile => {
-  const start = offsetOf(file, mutant.location.start)
-  const end = offsetOf(file, mutant.location.end)
-  return withContent(
-    file,
-    file.originalContent.slice(0, start) + mutant.replacement + file.originalContent.slice(end),
-    now,
+): Option.Option<ScriptFile> =>
+  Option.map(
+    Option.all([
+      offsetAt(file.lineStarts, mutant.location.start),
+      offsetAt(file.lineStarts, mutant.location.end),
+    ]),
+    ([start, end]) =>
+      withContent(
+        file,
+        file.originalContent.slice(0, start) + mutant.replacement + file.originalContent.slice(end),
+        now,
+      ),
   )
-}
 
 const resetScriptFile = (file: ScriptFile, now: DateTime.Utc): ScriptFile => ({
   ...file,
@@ -142,33 +133,33 @@ export const mutateFile: {
   (
     fileName: string,
     mutant: Pick<Checker.CheckerMutantWire, 'location' | 'replacement'>,
-  ): (self: TSFiles) => Effect.Effect<void, HybridFileNotFoundError>
+  ): (self: TSFiles) => Effect.Effect<void, HybridFileNotFoundError | HybridMutantOutsideFileError>
   (
     self: TSFiles,
     fileName: string,
     mutant: Pick<Checker.CheckerMutantWire, 'location' | 'replacement'>,
-  ): Effect.Effect<void, HybridFileNotFoundError>
+  ): Effect.Effect<void, HybridFileNotFoundError | HybridMutantOutsideFileError>
 } = dual(
   3,
   Effect.fnUntraced(function*(
     self: TSFiles,
     fileName: string,
     mutant: Pick<Checker.CheckerMutantWire, 'location' | 'replacement'>,
-  ): Effect.fn.Return<void, HybridFileNotFoundError> {
+  ): Effect.fn.Return<void, HybridFileNotFoundError | HybridMutantOutsideFileError> {
     const state = stateOf(self)
     const at = yield* now
     const file = yield* getFile(self, fileName)
     yield* Option.match(file, {
       onNone: () => Effect.fail(HybridFileNotFoundError.make({ fileName })),
       onSome: (found) =>
-        publish(state, (sources) => ({
-          ...sources,
-          files: HashMap.set(
-            sources.files,
-            normalizeFileName(fileName),
-            Option.some(mutateScriptFile(found, mutant, at)),
-          ),
-        })),
+        Option.match(mutateScriptFile(found, mutant, at), {
+          onNone: () => Effect.fail(HybridMutantOutsideFileError.make({ fileName })),
+          onSome: (mutated) =>
+            publish(state, (sources) => ({
+              ...sources,
+              files: HashMap.set(sources.files, normalizeFileName(fileName), Option.some(mutated)),
+            })),
+        }),
     })
   }),
 )

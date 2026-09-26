@@ -97,7 +97,7 @@ const removeWorkspace = (directory: string): Effect.Effect<void, never, FileSyst
   )
 
 const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
-  runId: 'wall-clock-timeout',
+  runId: '01ARZ3NDEKTSV4RRFFQ69G5FAY',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
   basePath: directory,

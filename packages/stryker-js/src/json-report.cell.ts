@@ -20,7 +20,7 @@ const failAsJsonReporter = <E = unknown>(cause: E): Reporter.ReporterFailed =>
   Reporter.ReporterFailed.make({
     reporterName: 'json',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
   })
 
 const reportOf = Filter.make((

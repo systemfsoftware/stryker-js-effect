@@ -4,12 +4,19 @@ import {
   ANNOTATION_OBJECT_IGNORED,
   ANNOTATION_TEXT_IGNORED,
   BRAND_NAME_IGNORED,
+  CHECK_ANNOTATION_OBJECT_IGNORED,
+  CHECK_ANNOTATION_TEXT_IGNORED,
   CLASS_ID_IGNORED,
+  DECODING_DEFAULT_IGNORED,
+  GENERATION_ANNOTATION_IGNORED,
+  LINK_TRANSFORMATION_IGNORED,
   OPTIONAL_DEFAULT_IGNORED,
   strykerIgnorers,
   SYMBOL_DESCRIPTION_IGNORED,
   TAGGED_FIELDS_IGNORED,
+  TAGGED_STRUCT_TAG_IGNORED,
   TAGGED_TAG_IGNORED,
+  TYPE_ID_IGNORED,
 } from '@systemfsoftware/stryker-ignorer-effect-schema-declarations'
 import { testIgnorer } from '@systemfsoftware/stryker-ignorer-kit/tester'
 
@@ -36,6 +43,25 @@ const computedKeyCall = 'S.annotations({ ["identifier"]: "x" })'
 const filterCall = 'S.filter({ identifier: "x" })'
 const displacedCall = 'S.annotations("other", { title: "Hex Bytes" })'
 const secondArgumentCall = 'S.annotations("other", { identifier: "x" })'
+
+const annotatePipeCall = 'S.annotate({ description: "the config path" })'
+const annotateMethodCall = 'S.String.annotate({ identifier: "PackageExport" })'
+const computedAnnotateCall = 'S["annotate"]({ title: "Hex Bytes" })'
+const mixedAnnotateCall = 'S.annotate({ ...base, title: "Hex Bytes" })'
+const makeFilterCall =
+  'S.makeFilter(isCanonicalFile, { expected: "a canonical file", arbitrary: { constraint: { patterns: ["^[a-z]+$"] } } })'
+const declareCall = 'S.declare(isHook, { toCodecArbitrary: () => hookArbitrary })'
+const linkCall =
+  'S.link()(S.Null, { decode: SchemaGetter.transform(() => noop), encode: SchemaGetter.transform(() => null) })'
+const productionCodecLinkCall =
+  'S.declare(isHook, { toCodec: () => S.link()(S.Null, { decode: SchemaGetter.transform(() => noop), encode: SchemaGetter.transform(() => null) }) })'
+const directLinkCall =
+  'S.link(S.Null, { decode: SchemaGetter.transform(() => noop), encode: SchemaGetter.transform(() => null) })'
+const taggedStructCall = "S.TaggedStruct('PeerMissing', { peer: S.String })"
+const decodingDefaultKeyCall = 'S.Boolean.pipe(S.withDecodingDefaultKey(Effect.succeed(true)))'
+const decodingDefaultCall = 'S.String.pipe(S.withDecodingDefault(Effect.succeed("x")))'
+const constructorDefaultCall = 'S.String.pipe(S.withConstructorDefault(Effect.succeed("x")))'
+const typeIdConstant = "const TypeId = '~stryker/mutation-run/StageError' as const"
 
 describe('effect-schema-declarations', () => {
   it('Should_Register_The_Descriptor', function*({ expect }) {
@@ -130,6 +156,94 @@ await testIgnorer(descriptor, {
       code: annotations(descriptionBesideBehaviourObject),
       ignores: [{ text: '"x"', reason: ANNOTATION_TEXT_IGNORED }],
     },
+    {
+      name: 'an `S.annotate` object whose every entry documents',
+      code: annotatePipeCall,
+      ignores: [
+        { text: '{ description: "the config path" }', reason: ANNOTATION_OBJECT_IGNORED },
+        { text: '"the config path"', reason: ANNOTATION_TEXT_IGNORED },
+      ],
+    },
+    {
+      name: 'a `.annotate` method object whose every entry documents',
+      code: annotateMethodCall,
+      ignores: [
+        { text: '{ identifier: "PackageExport" }', reason: ANNOTATION_OBJECT_IGNORED },
+        { text: '"PackageExport"', reason: ANNOTATION_TEXT_IGNORED },
+      ],
+    },
+    {
+      name: 'a `makeFilter` annotation object, its `expected` text, and its `arbitrary` generation hint',
+      code: makeFilterCall,
+      ignores: [
+        {
+          text: '{ expected: "a canonical file", arbitrary: { constraint: { patterns: ["^[a-z]+$"] } } }',
+          reason: CHECK_ANNOTATION_OBJECT_IGNORED,
+        },
+        { text: '"a canonical file"', reason: CHECK_ANNOTATION_TEXT_IGNORED },
+        { text: '{ constraint: { patterns: ["^[a-z]+$"] } }', reason: GENERATION_ANNOTATION_IGNORED },
+        { text: '{ patterns: ["^[a-z]+$"] }', reason: GENERATION_ANNOTATION_IGNORED },
+        { text: '["^[a-z]+$"]', reason: GENERATION_ANNOTATION_IGNORED },
+        { text: '"^[a-z]+$"', reason: GENERATION_ANNOTATION_IGNORED },
+      ],
+    },
+    {
+      name: 'a `declare` annotation object and the `toCodecArbitrary` callback it holds',
+      code: declareCall,
+      ignores: [
+        { text: '{ toCodecArbitrary: () => hookArbitrary }', reason: CHECK_ANNOTATION_OBJECT_IGNORED },
+        { text: '() => hookArbitrary', reason: GENERATION_ANNOTATION_IGNORED },
+      ],
+    },
+    {
+      name: 'a curried `S.link` transformation, which only feeds arbitrary generation',
+      code: linkCall,
+      ignores: [
+        {
+          text: '{ decode: SchemaGetter.transform(() => noop), encode: SchemaGetter.transform(() => null) }',
+          reason: LINK_TRANSFORMATION_IGNORED,
+        },
+        { text: '() => noop', reason: LINK_TRANSFORMATION_IGNORED },
+        { text: '() => null', reason: LINK_TRANSFORMATION_IGNORED },
+      ],
+    },
+    {
+      name: 'a direct `S.link` transformation, the member form of the same declaration',
+      code: directLinkCall,
+      ignores: [
+        {
+          text: '{ decode: SchemaGetter.transform(() => noop), encode: SchemaGetter.transform(() => null) }',
+          reason: LINK_TRANSFORMATION_IGNORED,
+        },
+        { text: '() => noop', reason: LINK_TRANSFORMATION_IGNORED },
+        { text: '() => null', reason: LINK_TRANSFORMATION_IGNORED },
+      ],
+    },
+    {
+      name: 'a `TaggedStruct` tag, which is the same declaration discriminant as a tagged class tag',
+      code: taggedStructCall,
+      ignores: [{ text: "'PeerMissing'", reason: TAGGED_STRUCT_TAG_IGNORED }],
+    },
+    {
+      name: 'a `withDecodingDefaultKey` default effect',
+      code: decodingDefaultKeyCall,
+      ignores: [{ text: 'true', reason: DECODING_DEFAULT_IGNORED }],
+    },
+    {
+      name: 'a `withDecodingDefault` default effect',
+      code: decodingDefaultCall,
+      ignores: [{ text: '"x"', reason: DECODING_DEFAULT_IGNORED }],
+    },
+    {
+      name: 'a `withConstructorDefault` default effect',
+      code: constructorDefaultCall,
+      ignores: [{ text: '"x"', reason: DECODING_DEFAULT_IGNORED }],
+    },
+    {
+      name: 'a `TypeId` constant, which names the declaration identity',
+      code: typeIdConstant,
+      ignores: [{ text: "'~stryker/mutation-run/StageError'", reason: TYPE_ID_IGNORED }],
+    },
   ],
   kept: [
     {
@@ -213,6 +327,85 @@ await testIgnorer(descriptor, {
     {
       name: 'a mixed file with ordinary objects, calls, and no Schema factories keeps everything live',
       code: 'export function load(id: string): Record<string, unknown> {\n  return { id, other: call(id) }\n}',
+    },
+    {
+      name: 'a `makeFilter` predicate stays live while its annotation object is ignored',
+      code: 'S.makeFilter((file) => file.length > 0, { expected: "x" })',
+      keeps: ['(file) => file.length > 0'],
+    },
+    {
+      name: 'a `declare` predicate stays live while its annotation object is ignored',
+      code: 'S.declare((value) => typeof value === "function", { toCodecArbitrary: () => a })',
+      keeps: ['(value) => typeof value === "function"'],
+    },
+    {
+      name: 'the `TaggedStruct` fields object stays live; only its tag is a declaration',
+      code: taggedStructCall,
+      keeps: ['{ peer: S.String }'],
+    },
+    {
+      name: 'a check bounds object stays live; only generation hints are declarations',
+      code: 'S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 })))',
+      keeps: ['{ minimum: 0, maximum: 255 }'],
+    },
+    {
+      name: 'a decode/encode object under a non-link callee stays live',
+      code: 'transform(S.Null, { decode: () => 1, encode: () => 2 })',
+      keeps: ['{ decode: () => 1, encode: () => 2 }'],
+    },
+    {
+      name: 'a link reached from a production codec slot stays live; only arbitrary links are declarations',
+      code: productionCodecLinkCall,
+      keeps: [
+        'S.link()(S.Null, { decode: SchemaGetter.transform(() => noop), encode: SchemaGetter.transform(() => null) })',
+        '() => noop',
+        '() => null',
+      ],
+    },
+    {
+      name: 'an `Effect.succeed` value at a non-default callee stays live',
+      code: 'S.optional(S.String, Effect.succeed(true))',
+      keeps: ['true'],
+    },
+    {
+      name: 'a string constant bound to a name other than `TypeId` stays live',
+      code: "const label = 'x' as const",
+      keeps: ["'x'"],
+    },
+    {
+      name: 'a `TypeId` whose initializer is a call, not the literal, stays live',
+      code: "const TypeId = wrap('~x/StageError')",
+      keeps: ["'~x/StageError'"],
+    },
+    {
+      name: 'a literal initializer bound by a pattern, not a `TypeId` identifier, stays live',
+      code: "const [TypeId] = 'literal'",
+      keeps: ["'literal'"],
+    },
+    {
+      name: 'an `annotate` object spread with a documentation entry stays live as an object',
+      code: mixedAnnotateCall,
+      keeps: ['{ ...base, title: "Hex Bytes" }'],
+    },
+    {
+      name: 'a computed `annotate` member stays live, object and value',
+      code: computedAnnotateCall,
+      keeps: ['{ title: "Hex Bytes" }', '"Hex Bytes"'],
+    },
+    {
+      name: 'a `Schema.Literal` vocabulary value stays live',
+      code: "S.Literal('Framework')",
+      keeps: ["'Framework'"],
+    },
+    {
+      name: 'a `Struct` field set stays live; it decides acceptance',
+      code: 'S.Struct({ peer: S.String })',
+      keeps: ['{ peer: S.String }'],
+    },
+    {
+      name: 'a `makeFilter` annotation object with a non-declaration entry stays live',
+      code: 'S.makeFilter(isCanonical, { toCodec: () => 1 })',
+      keeps: ['{ toCodec: () => 1 }'],
     },
   ],
 })

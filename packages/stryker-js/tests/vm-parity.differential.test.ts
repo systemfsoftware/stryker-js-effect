@@ -59,12 +59,14 @@ const generatedProjects: fc.Arbitrary<GeneratedProject> = fc.record({
   flag: fc.boolean(),
 })
 
-const combineResultOf = (project: GeneratedProject): number =>
-  project.operator === '+'
+const combineResultOf = (project: GeneratedProject): string => {
+  const result = project.operator === '+'
     ? project.left + project.right
     : project.operator === '-'
     ? project.left - project.right
     : project.left * project.right
+  return Object.is(result, -0) ? '-0' : String(result)
+}
 
 const renderGeneratedSubject = (project: GeneratedProject): string =>
   [

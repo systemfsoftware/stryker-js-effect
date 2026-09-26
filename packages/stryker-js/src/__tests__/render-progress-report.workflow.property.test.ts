@@ -13,7 +13,7 @@ import {
   type ProgressState,
   renderProgressReport,
 } from '../render-progress-report.workflow.js'
-import { MetricsResultFromReport } from '../reporting/metrics-from-report.schema.js'
+import { metricsResultFromFiles } from '../reporting/metrics-from-report.js'
 
 const countArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 1000 })))
 const widthArb = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 200 })))
@@ -71,8 +71,8 @@ const commandOf = (state: ProgressState, now: number, event: Reporter.ReporterEv
 
 const emptyReport = () =>
   Reporter.MutationTestReportReady.make({
-    report: { schemaVersion: '1.0', files: {}, thresholds: { high: 100, low: 80 } },
-    metrics: MetricsResultFromReport.fromFiles({}),
+    report: { schemaVersion: '1.0', files: {}, thresholds: { high: 100, low: 80, break: null } },
+    metrics: metricsResultFromFiles({}),
   })
 
 const finalizeCommandArb = Arbitrary.all([tallyArb, nullableBarArb, nowArb]).pipe(

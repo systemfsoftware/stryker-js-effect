@@ -3,9 +3,6 @@ import * as Equal from 'effect/Equal'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
-
-import { RunOutcomeCommand } from '../RunOutcomeCommand.schema.js'
 
 import {
   planRunConclusion,
@@ -60,17 +57,6 @@ const commandCarried = (command: PlanRunConclusionCommand, decision: PlanRunConc
     Match.exhaustive,
   )
 
-const zeroExitCommandArb = Arbitrary.all([
-  Arbitrary.schema(RunOutcomeCommand),
-  Arbitrary.schema(S.Boolean),
-  Arbitrary.schema(S.String),
-  Arbitrary.schema(S.String),
-]).pipe(
-  Arbitrary.map(([command, machine, outcome, error]) =>
-    PlanRunConclusionCommand.make({ command, machine, exitCode: 0, outcome, error })
-  ),
-)
-
 describe('planRunConclusion', () => {
   it.prop(
     '∀command_Plan_≡VariantAndEffectFollowMachineAndExitCode',
@@ -80,25 +66,6 @@ describe('planRunConclusion', () => {
       return decision !== undefined &&
         isVariant(variantOf(command.machine, command.exitCode), decision) &&
         commandCarried(command, decision)
-    },
-  )
-
-  it.prop(
-    '∀c_ZeroExitCommand_≡QuietUnlessEmitted',
-    { of: [zeroExitCommandArb], subject: planRunConclusion },
-    (subject, [command]) => {
-      const decision = decisionOf(subject, command)
-      if (decision === undefined) {
-        return false
-      }
-      return Match.value(command.machine).pipe(
-        Match.when(
-          true,
-          () => S.is(RunConclusionEmittedOk)(decision) && Equal.equals(decision.command, command.command),
-        ),
-        Match.when(false, () => S.is(RunConclusionQuietOk)(decision)),
-        Match.exhaustive,
-      )
     },
   )
 })

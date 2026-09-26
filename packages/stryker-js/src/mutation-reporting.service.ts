@@ -5,7 +5,7 @@ import {
   type Options,
   type Plugin,
   Report,
-  type TestRunner,
+  TestRunner,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -34,10 +34,10 @@ import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js
 import type { Project, ProjectFile } from './Project.schema.js'
 import type { ReporterStage } from './reporter-stream.service.js'
 import { closeReporterStage, offerTerminalReport, terminalDrainClass } from './reporter-stream.service.js'
-import { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
+import { metricsResultFromFiles } from './reporting/metrics-from-report.js'
 import { ReportFileNames } from './reporting/report-assembly.schema.js'
-import { VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
-import type { RunEvent } from './run-event.schema.js'
+import { buildVerdictEnvelope } from './reporting/verdict-envelope.js'
+import { type RunEvent, RunId } from './run-event.schema.js'
 import { RunEvents, VerdictReached } from './run-events.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { StrykerPackage } from './stryker-package.schema.js'
@@ -160,23 +160,22 @@ const reportMutant = (
   status: InstrumenterMutant.RunMutantResult['status'],
   outcome: MutantOutcome = {},
 ) =>
-  Effect.map(
-    S.decodeEffect(InstrumenterMutant.ReportLocationFromMutant)(mutant.location),
-    (location): InstrumenterMutant.RunMutantResult => ({
+  Effect.succeed(
+    ({
       _tag: 'Mutant',
       id: mutant.id,
       fileName: mutant.fileName,
       mutatorName: mutant.mutatorName,
       replacement: mutant.replacement,
-      location,
+      location: mutant.location,
       status,
       coveredBy: mutant.coveredBy,
       static: mutant.static,
       testsCompleted: mutant.testsCompleted,
       description: mutant.description,
       ...outcome,
-    }),
-  ).pipe(Effect.orDie)
+    }) satisfies InstrumenterMutant.RunMutantResult,
+  )
 
 const reportMutantStatus = (
   mutant: InstrumenterMutant.MutantTestCoverage,
@@ -260,15 +259,16 @@ const stampFileIdentities = (
   )
 
 interface TestIdRemap {
-  readonly testId: (id: string) => string
-  readonly testIds: (ids: readonly string[] | undefined) => readonly string[] | undefined
+  readonly testId: (id: TestRunner.TestId) => TestRunner.TestId
+  readonly testIds: (ids: readonly string[] | undefined) => readonly TestRunner.TestId[] | undefined
 }
 
-const testIdRemap = (testIds: readonly string[]): TestIdRemap => {
+const testIdRemap = (testIds: readonly TestRunner.TestId[]): TestIdRemap => {
   const positions = HashMap.fromIterable(
     Arr.map(testIds, (id, position): readonly [string, string] => [id, position.toString()]),
   )
-  const remapId = (id: string): string => Option.getOrElse(HashMap.get(positions, id), () => id)
+  const remapId = (id: string): TestRunner.TestId =>
+    TestRunner.TestId.make(Option.getOrElse(HashMap.get(positions, id), () => id))
   return {
     testId: remapId,
     testIds: (ids) =>
@@ -610,11 +610,11 @@ const emitVerdict = Effect.fn('stryker.mutationReporting.emitVerdict')(function*
   input: MutationReportingInput,
   report: Report.MutationTestResult,
 ) {
-  const envelope = VerdictEnvelope.build(
+  const envelope = buildVerdictEnvelope(
     report,
     input.resolvedMode.mode,
     input.resolvedMode.signal,
-    input.runId,
+    RunId.make(input.runId),
     input.basePath,
     deps.path,
   )
@@ -654,7 +654,7 @@ const reportAll = Effect.fn('stryker.mutationReporting.reportAll')(function*(
   input: MutationReportingInput,
 ) {
   const { report, identities } = yield* mutationTestReport(deps, input, input.results)
-  const metrics = MetricsResultFromReport.fromFiles(report.files)
+  const metrics = metricsResultFromFiles(report.files)
   yield* offerTerminalReport(input.reporterStage, report, metrics)
   const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
   const verdict = yield* determineExitCode(input)(metrics)

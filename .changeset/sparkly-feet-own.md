@@ -10,4 +10,4 @@
 "@systemfsoftware/stryker-ignorer-angular": patch
 ---
 
-Internal rewrite onto the cell architecture: stages are cells over workflows, multi-item work runs as Effect streams, pools and worker transport use scoped Effect resources, and named operations are traced with Effect.fn. The CLI, config, reports, machine stream, plugin contract, and exit codes are unchanged. The Angular ignorer now declares @systemfsoftware/stryker-ignorer-kit as a runtime dependency.
+Stages now run as cells over workflows, multi-item work runs as Effect streams, pools and worker transport use scoped Effect resources, and named operations are traced with Effect.fn. The Angular ignorer now declares @systemfsoftware/stryker-ignorer-kit as a runtime dependency.

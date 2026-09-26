@@ -4,6 +4,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { MutatorNameSchema } from './directives/directive.schema.js'
 import { MutantNotApplied, MutantsUnapplied, type PlacerName, PlacerNameSchema } from './Instrument.schema.js'
 import { MutantId } from './Mutant.schema.js'
 
@@ -23,7 +24,7 @@ const ReplacementFactsSchema = S.Struct({
 
 const PlacedMutantSchema = S.Struct({
   id: MutantId,
-  mutatorName: S.String,
+  mutatorName: MutatorNameSchema,
   replacement: ReplacementFactsSchema,
 })
 export type PlacedMutant = typeof PlacedMutantSchema.Type
@@ -72,7 +73,7 @@ export class MutantKindMismatch extends S.TaggedError<MutantKindMismatch>()('Mut
   fileName: S.String,
   placer: PlacerNameSchema,
   mutantId: MutantId,
-  mutatorName: S.String,
+  mutatorName: MutatorNameSchema,
   expected: ExpectedKindSchema,
 }) {}
 

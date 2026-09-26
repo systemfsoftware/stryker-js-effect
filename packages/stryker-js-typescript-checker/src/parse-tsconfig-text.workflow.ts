@@ -8,7 +8,7 @@ import * as SchemaIssue from 'effect/SchemaIssue'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 import { ParseTsconfigTextCommand } from './CheckerCommands.schema.js'
-import { type TsConfigDocument, TsConfigDocumentSchema, TsConfigSchema } from './Tsconfig.schema.js'
+import { type TsConfigDocument, TsConfigDocumentSchema } from './Tsconfig.schema.js'
 
 const TsconfigTextTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js-typescript-checker/TsconfigText',
@@ -43,7 +43,7 @@ const reasonOfThrown = <A = unknown>(cause: A): string =>
 
 const documentIssueOf = (value: JsonValue): SchemaIssue.Issue =>
   new SchemaIssue.InvalidValue({
-    message: Result.match(S.decodeUnknownResult(TsConfigSchema)(value), {
+    message: Result.match(S.decodeUnknownResult(TsConfigDocumentSchema)(value), {
       onFailure: (error) => error.message,
       onSuccess: () => 'expected a TypeScript configuration object',
     }),
@@ -63,7 +63,7 @@ const parseJsonc = (jsonText: string): Result.Result<JsonValue, SchemaIssue.Issu
   )
 
 const documentOf = (value: JsonValue): Result.Result<TsConfigDocument, SchemaIssue.Issue> =>
-  Option.match(Option.liftPredicate(value, S.is(TsConfigSchema)), {
+  Option.match(Option.liftPredicate(value, S.is(TsConfigDocumentSchema)), {
     onNone: () => Result.fail(documentIssueOf(value)),
     onSome: () =>
       Result.mapError(

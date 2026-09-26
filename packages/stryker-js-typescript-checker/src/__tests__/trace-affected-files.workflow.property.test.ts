@@ -2,108 +2,74 @@ import { describe } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
 import * as Equal from 'effect/Equal'
 import * as HashSet from 'effect/HashSet'
+import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { TraceAffectedFilesCommand } from '../CheckerCommands.schema.js'
-import { DependentFileAffected, MutatedFileAffected, traceAffectedFiles } from '../trace-affected-files.workflow.js'
+import { type AffectedFiles, MutatedFileAffected, traceAffectedFiles } from '../trace-affected-files.workflow.js'
 
-const FILE_INDEX_LIMIT = 4
+const eventsOf = (command: TraceAffectedFilesCommand): AffectedFiles =>
+  Result.match(traceAffectedFiles(command), {
+    onFailure: () => [],
+    onSuccess: (decision) => decision,
+  })
 
-const indexSchema = () => S.Int.check(S.isBetween({ minimum: 0, maximum: FILE_INDEX_LIMIT }))
-const edgesSchema = () => S.Array(S.Tuple([indexSchema(), indexSchema()])).check(S.isMaxLength(6))
-const fileIndexesSchema = () => S.Array(indexSchema()).check(S.isMaxLength(6))
+const affectedNamesOf = (command: TraceAffectedFilesCommand): ReadonlyArray<string> =>
+  Arr.sort(Arr.map(eventsOf(command), (event) => event.fileName), Order.String)
 
-const fileNameOf = (index: number) => `src/file-${index}.ts`
-
-const importsByFileOf = (edges: ReadonlyArray<readonly [number, number]>): Record<string, ReadonlyArray<string>> => {
-  const size = 1 + Arr.reduce(edges, 0, (largest, [child, parent]) => Math.max(largest, child, parent))
-  return Object.fromEntries(
-    Arr.map(Arr.range(0, size - 1), (index) => [
-      fileNameOf(index),
-      Arr.map(Arr.filter(edges, ([, parent]) => parent === index), ([child]) => fileNameOf(child)),
-    ]),
+const edgesOf = (
+  command: TraceAffectedFilesCommand,
+): ReadonlyArray<readonly [string, string]> =>
+  Arr.flatMap(
+    Object.entries(command.importsByFile),
+    ([fileName, imports]) => Arr.map(imports, (imported): readonly [string, string] => [imported, fileName]),
   )
-}
 
-const decide = <A>(result: Result.Result<A, never>): A =>
-  Result.match(result, { onFailure: (refused) => refused, onSuccess: (decision) => decision })
-
-const eventsFor = (edges: ReadonlyArray<readonly [number, number]>, fileIndexes: ReadonlyArray<number>) =>
-  decide(
-    traceAffectedFiles(
-      TraceAffectedFilesCommand.make({
-        importsByFile: importsByFileOf(edges),
-        mutatedFileNames: Arr.map(fileIndexes, fileNameOf),
-      }),
+const referenceAffected = (command: TraceAffectedFilesCommand): ReadonlyArray<string> =>
+  Arr.sort(
+    Arr.fromIterable(
+      Arr.reduce(
+        Arr.range(0, edgesOf(command).length + 1),
+        new Set(command.mutatedFileNames),
+        (affected) =>
+          Arr.reduce(
+            edgesOf(command),
+            affected,
+            (current, [imported, importer]) => current.has(imported) ? new Set([...current, importer]) : current,
+          ),
+      ),
     ),
+    Order.String,
   )
 
-const affectedFor = (edges: ReadonlyArray<readonly [number, number]>, fileIndexes: ReadonlyArray<number>) =>
-  Arr.map(eventsFor(edges, fileIndexes), (event) => event.fileName).sort()
+const seedOf = (command: TraceAffectedFilesCommand): HashSet.HashSet<string> =>
+  HashSet.fromIterable(command.mutatedFileNames)
 
-const propagateDependents = (
-  affected: ReadonlySet<string>,
-  [child, parent]: readonly [number, number],
-): ReadonlySet<string> => affected.has(fileNameOf(child)) ? new Set([...affected, fileNameOf(parent)]) : affected
+const tagLineOf = (fileName: string, mutated: boolean): string => `${fileName}#${mutated ? 'mutated' : 'dependent'}`
 
-const expectedAffected = (
-  edges: ReadonlyArray<readonly [number, number]>,
-  mutatedFileNames: ReadonlyArray<string>,
-): ReadonlyArray<string> => {
-  const seed: ReadonlySet<string> = new Set(mutatedFileNames)
-  return [
-    ...Arr.reduce(Arr.range(0, edges.length + 1), seed, (affected) => Arr.reduce(edges, affected, propagateDependents)),
-  ].sort()
-}
+const observedTagLinesOf = (command: TraceAffectedFilesCommand): ReadonlyArray<string> =>
+  Arr.sort(
+    Arr.map(eventsOf(command), (event) => tagLineOf(event.fileName, S.is(MutatedFileAffected)(event))),
+    Order.String,
+  )
+
+const referenceTagLinesOf = (command: TraceAffectedFilesCommand): ReadonlyArray<string> =>
+  Arr.sort(
+    Arr.map(referenceAffected(command), (fileName) => tagLineOf(fileName, HashSet.has(seedOf(command), fileName))),
+    Order.String,
+  )
 
 describe('traceAffectedFiles', (it) => {
   it.prop(
-    '∀graph_Mutants_≡AffectedDependents',
-    { of: [edgesSchema(), fileIndexesSchema()], subject: affectedFor },
-    (subject, [edges, fileIndexes]) =>
-      Equal.equals(subject(edges, fileIndexes), expectedAffected(edges, Arr.map(fileIndexes, fileNameOf))),
+    '∀command_Affected_≡ReferenceClosure',
+    { of: [TraceAffectedFilesCommand], subject: affectedNamesOf },
+    (subject, [command]) => Equal.equals(subject(command), referenceAffected(command)),
   )
 
   it.prop(
-    '∀graph_Mutants_⊆Affected',
-    { of: [edgesSchema(), fileIndexesSchema()], subject: affectedFor },
-    (subject, [edges, fileIndexes]) => {
-      const affected = subject(edges, fileIndexes)
-      return Arr.every(Arr.map(fileIndexes, fileNameOf), (fileName) => affected.includes(fileName))
-    },
-  )
-
-  it.prop(
-    '∀graph_Mutants_⊆Files∪Mutants',
-    { of: [edgesSchema(), fileIndexesSchema()], subject: affectedFor },
-    (subject, [edges, fileIndexes]) => {
-      const known = new Set([
-        ...Arr.map(Arr.range(0, FILE_INDEX_LIMIT), fileNameOf),
-        ...Arr.map(fileIndexes, fileNameOf),
-      ])
-      return Arr.every(subject(edges, fileIndexes), (fileName) => known.has(fileName))
-    },
-  )
-
-  it.prop(
-    '∀graph_Mutants_≡SeedAndDependentTags',
-    { of: [edgesSchema(), fileIndexesSchema()], subject: eventsFor },
-    (subject, [edges, fileIndexes]) => {
-      const seeds = HashSet.fromIterable(Arr.map(fileIndexes, fileNameOf))
-      const events = subject(edges, fileIndexes)
-      return (
-        Equal.equals(
-          Arr.map(events, (event) => event.fileName).sort(),
-          expectedAffected(edges, Arr.map(fileIndexes, fileNameOf)),
-        ) &&
-        Arr.every(
-          events,
-          (event) =>
-            Equal.equals(S.is(MutatedFileAffected)(event), HashSet.has(seeds, event.fileName)) &&
-            Equal.equals(S.is(DependentFileAffected)(event), !HashSet.has(seeds, event.fileName)),
-        )
-      )
-    },
+    '∀command_Tags_≡ReferenceTagging',
+    { of: [TraceAffectedFilesCommand], subject: observedTagLinesOf },
+    (subject, [command]) => Equal.equals(subject(command), referenceTagLinesOf(command)),
   )
 })

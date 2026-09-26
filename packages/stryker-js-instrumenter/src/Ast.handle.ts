@@ -21,7 +21,8 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import type { SpannedComment } from './Ast.schema.js'
-import type { LineTable } from './Location.schema.js'
+import { locationOf } from './Location.js'
+import type { LineStarts } from './Location.schema.js'
 
 export type * from '@systemfsoftware/stryker-ignorer-interface'
 
@@ -410,19 +411,19 @@ export const switchCase: {
 export const cloneNode = <T extends Node>(node: T): T => structuredClone(node)
 
 export const attachComments: {
-  (comments: ReadonlyArray<SpannedComment>, lineTable: LineTable): (self: AstHandle) => void
-  (self: AstHandle, comments: ReadonlyArray<SpannedComment>, lineTable: LineTable): void
+  (comments: ReadonlyArray<SpannedComment>, lineStarts: LineStarts): (self: AstHandle) => void
+  (self: AstHandle, comments: ReadonlyArray<SpannedComment>, lineStarts: LineStarts): void
 } = dual(
   (args: IArguments): boolean => args.length >= 3,
-  (self: AstHandle, comments: ReadonlyArray<SpannedComment>, lineTable: LineTable): void =>
+  (self: AstHandle, comments: ReadonlyArray<SpannedComment>, lineStarts: LineStarts): void =>
     Boolean.match(comments.length === 0, {
       onTrue: () => undefined,
       onFalse: () => {
         const nodes = collectNodes(self.root).filter((entry) => entry.node !== self.root)
         nodes.sort((a, b) => a.start - b.start)
         const groups = groupComments(nodes, comments)
-        assignComments(groups.leading, lineTable, 'leadingComments')
-        assignComments(groups.trailing, lineTable, 'trailingComments')
+        assignComments(groups.leading, lineStarts, 'leadingComments')
+        assignComments(groups.trailing, lineStarts, 'trailingComments')
       },
     }),
 )
@@ -479,17 +480,14 @@ const precedingStatement = (
 
 const assignComments = (
   map: Map<Program | Node, SpannedComment[]>,
-  lineTable: LineTable,
+  lineStarts: LineStarts,
   field: 'leadingComments' | 'trailingComments',
 ): void =>
   map.forEach((list, node) =>
     Object.assign(node, {
       [field]: list.map((comment) => ({
         ...comment,
-        loc: {
-          start: lineTable.positionAt(comment.start),
-          end: lineTable.positionAt(comment.end),
-        },
+        loc: locationOf(lineStarts, { start: comment.start, end: comment.end }),
       })),
     })
   )

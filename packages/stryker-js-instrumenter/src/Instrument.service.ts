@@ -15,7 +15,7 @@ import {
   type InstrumentFileSkip,
   InstrumentResult as InstrumentResultSchema,
 } from './Instrument.schema.js'
-import type { Mutant as ApiMutant } from './Mutant.schema.js'
+import { CanonicalFileName, type Mutant as ApiMutant } from './Mutant.schema.js'
 import { optInMutators } from './Mutator.service.js'
 
 export interface File extends FileDescription {
@@ -32,7 +32,7 @@ export type { InstrumenterOptions }
 export type { InstrumentFileSkip } from './Instrument.schema.js'
 
 const toSchemaFile = (file: File): S.Schema.Type<typeof FileSchema> => ({
-  name: file.name,
+  name: CanonicalFileName.make(file.name),
   content: file.content,
   mutate: file.mutate,
 })

@@ -211,7 +211,7 @@ const workerStreamErrorOf = <E = unknown>(cause: E): Reporter.ReporterFailed =>
   Reporter.ReporterFailed.make({
     reporterName: 'worker',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
   })
 
 const reporterInitPayload = (init: Reporter.ReporterInit): Plugin.ReporterInitOptions => ({
@@ -233,8 +233,7 @@ export const reporterWorkerFactory =
         Reporter.ReporterFailed.make({
           reporterName: 'worker',
           event: 'mutationTestReportReady',
-          cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () =>
-            ''),
+          cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
         })
       ),
     )
@@ -435,16 +434,28 @@ export const closeReporterStage = Effect.fn('stryker.reporterStream.closeStage')
   return { terminalFailed: outcomes.flatMap((outcome) => failedReporterNames(outcome)) }
 })
 
-const traceparentInit = (traceparent: string | undefined): Plugin.ReporterInitOptions =>
-  Option.match(Option.fromUndefinedOr(traceparent), {
-    onNone: () => ({}),
-    onSome: (present) => ({ traceparent: present }),
-  })
+type TraceparentInit = { readonly traceparent?: Trace.TraceparentParts }
+type TracestateInit = { readonly tracestate?: string }
 
-const tracestateInit = (tracestate: string | undefined): Plugin.ReporterInitOptions =>
+const traceparentInit = (traceparent: string | undefined): TraceparentInit =>
+  Option.match(
+    Option.flatMap(Option.fromUndefinedOr(traceparent), S.decodeOption(Trace.Traceparent)),
+    {
+      onNone: () => ({}),
+      onSome: (present) => ({ traceparent: present }),
+    },
+  )
+
+const tracestateInit = (tracestate: string | undefined): TracestateInit =>
   Option.match(Option.fromUndefinedOr(tracestate), {
     onNone: () => ({}),
     onSome: (present) => ({ tracestate: present }),
+  })
+
+const headerTraceparentInit = (traceparent: string | undefined): { readonly traceparent?: string } =>
+  Option.match(Option.fromUndefinedOr(traceparent), {
+    onNone: () => ({}),
+    onSome: (present) => ({ traceparent: present }),
   })
 
 const hasTraceFields = (init: Reporter.ReporterInit): boolean =>
@@ -474,7 +485,7 @@ const environmentTraceInit = Effect.fn('stryker.reporterStream.environmentTraceI
   const traceparent = yield* Config.String('TRACEPARENT').pipe(Effect.option)
   const tracestate = yield* Config.String('TRACESTATE').pipe(Effect.option)
   return {
-    ...traceparent.pipe(Option.getOrUndefined, traceparentInit),
+    ...traceparent.pipe(Option.getOrUndefined, headerTraceparentInit),
     ...tracestate.pipe(Option.getOrUndefined, tracestateInit),
   }
 })

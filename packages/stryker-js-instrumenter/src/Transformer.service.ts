@@ -5,7 +5,6 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 import {
   type ArrowFunctionExpression,
   arrowFunctionExpression,
@@ -41,11 +40,11 @@ import {
   type VariableDeclarator,
   variableDeclarator,
 } from './Ast.handle.js'
-import { type Ast, type ScriptAst, type SourceLocationInFile, type SpannedComment } from './Ast.schema.js'
+import { type Ast, type ScriptAst, type SpannedComment } from './Ast.schema.js'
 import { decodeDirective, DecodeDirectiveCommand } from './directives/decode-directive.workflow.js'
 import { type Directive, type LocatedDirective } from './directives/directive.schema.js'
 import { foldRule, FoldRuleCommand, type MutantRule } from './directives/fold-rule.workflow.js'
-import { ErrorText } from './ErrorText.schema.js'
+import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { FormatRegistry } from './Format.schema.js'
 import {
   MutantsUnapplied,
@@ -57,7 +56,8 @@ import {
 } from './Instrument.schema.js'
 import { InstrumentError } from './Instrument.schema.js'
 import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.js'
-import { type LineTable, LineTableFromText, type Position } from './Location.schema.js'
+import { lineStartsOf, locationOf, positionAt } from './Location.js'
+import type { LineStarts, Location, Position, ScriptOrigin } from './Location.schema.js'
 import { type MutatorContext, type MutatorEntry, type MutatorOptions } from './Mutator.service.js'
 import {
   applyMutant,
@@ -92,14 +92,14 @@ const comparePositions = (a: Position, b: Position): number => {
   return lineDelta !== 0 ? lineDelta : a.column - b.column
 }
 
-const locationIncluded = (haystack: SourceLocationInFile, needle: SourceLocationInFile): boolean =>
+const locationIncluded = (haystack: Location, needle: Location): boolean =>
   comparePositions(haystack.start, needle.start) <= 0 && comparePositions(haystack.end, needle.end) >= 0
 
-const locationOverlaps = (a: SourceLocationInFile, b: SourceLocationInFile): boolean =>
+const locationOverlaps = (a: Location, b: Location): boolean =>
   comparePositions(a.start, b.end) <= 0 && comparePositions(a.end, b.start) >= 0
 
 const errorTextOf = <A = unknown>(cause: A): string =>
-  Option.getOrElse(Option.map(ErrorText.fromCause(cause), (rendered) => rendered.text), () => '')
+  Option.getOrElse(Option.map(renderedErrorText(cause), (rendered) => rendered.text), () => '')
 
 const traversalFailure = <A = unknown>(cause: A): InstrumentError =>
   InstrumentError.make({
@@ -278,14 +278,14 @@ const placementFailureMessage = (
   node: Node,
   mutants: readonly Mutant[],
   fileName: string,
-  lineTable: LineTable,
+  lineStarts: LineStarts,
   basePath?: string,
 ): string => {
   const message = `${refusalPlacer(refusal)} could not place mutants with type(s): "${
     placementListFormat.format(mutants.map((mutant) => mutant.mutatorName))
   }"`
   return `${
-    placementLocation(node, fileName, lineTable, basePath)
+    placementLocation(node, fileName, lineStarts, basePath)
   } ${message}. Either remove this file from the list of files to be mutated, or exclude the mutator (using \`mutator.excludedMutations\`). Original error: ${
     refusalDetail(refusal)
   }`
@@ -332,11 +332,11 @@ function switchCaseOf(node: Node): Result.Result<Node & SwitchCaseShape, Error> 
 const fileNameWithin = (basePath: string | undefined, fileName: string): string =>
   basePath === undefined ? fileName : relativeTo(basePath, fileName)
 
-function placementLocation(node: Node, fileName: string, lineTable: LineTable, basePath?: string): string {
+function placementLocation(node: Node, fileName: string, lineStarts: LineStarts, basePath?: string): string {
   const relativeFile = fileNameWithin(basePath, fileName)
   const position = Option.map(
     Option.fromNullishOr(spanOf(node)),
-    (span) => lineTable.positionAt(span.start),
+    (span) => positionAt(lineStarts, span.start),
   )
   return Option.match(position, {
     onNone: () => `${relativeFile}:undefined:undefined`,
@@ -689,11 +689,11 @@ interface MutableCandidate {
   readonly data: MutantCandidate
 }
 
-function isMutateRangeList(value: MutateDescription): value is readonly SourceLocationInFile[] {
+function isMutateRangeList(value: MutateDescription): value is readonly Location[] {
   return Array.isArray(value)
 }
 
-const MUTATION_OFFSET: Position = { line: 1, column: 0 }
+const MUTATION_OFFSET: ScriptOrigin = { line: 1, columnShift: 0 }
 
 type InstrumentationRefusal = NodeWithoutSpan | MutantsUnplaced | PlacementRefused | MutantWithoutLocation
 
@@ -723,9 +723,9 @@ interface InstrumentationPlan {
 
 interface PlacementContext {
   readonly fileName: string
-  readonly lineTable: LineTable
+  readonly lineStarts: LineStarts
   readonly mutateDescription: MutateDescription
-  readonly offset: Position
+  readonly offset: ScriptOrigin
   readonly basePath?: string | undefined
   readonly mutatorEntries: readonly MutatorEntry[]
   readonly allMutatorNames: readonly string[]
@@ -822,7 +822,7 @@ const ignorersReasonFor = (
 
 const mutablesFor = (
   frame: NodeFrame,
-  location: SourceLocationInFile,
+  location: Location,
   context: PlacementContext,
 ): readonly MutableCandidate[] => {
   const ancestors = ancestorsOfFrame(frame)
@@ -845,27 +845,27 @@ const mutablesFor = (
   }))
 }
 
-const mutateRangesOf = (mutateDescription: MutateDescription): Option.Option<readonly SourceLocationInFile[]> =>
+const mutateRangesOf = (mutateDescription: MutateDescription): Option.Option<readonly Location[]> =>
   Option.filter(Option.some(mutateDescription), isMutateRangeList)
 
-const isOutsideMutateRanges = (location: SourceLocationInFile, mutateDescription: MutateDescription): boolean =>
+const isOutsideMutateRanges = (location: Location, mutateDescription: MutateDescription): boolean =>
   Option.exists(
     mutateRangesOf(mutateDescription),
     (ranges) => ranges.every((range) => !locationOverlaps(range, location)),
   )
 
-const isInsideMutateRanges = (location: SourceLocationInFile, mutateDescription: MutateDescription): boolean =>
+const isInsideMutateRanges = (location: Location, mutateDescription: MutateDescription): boolean =>
   Option.exists(
     mutateRangesOf(mutateDescription),
     (ranges) => ranges.some((range) => locationIncluded(range, location)),
   )
 
-const shouldMutateAt = (location: SourceLocationInFile, mutateDescription: MutateDescription): boolean =>
+const shouldMutateAt = (location: Location, mutateDescription: MutateDescription): boolean =>
   mutateDescription === true || isInsideMutateRanges(location, mutateDescription)
 
 const shouldSkipNode = (
   frame: NodeFrame,
-  location: SourceLocationInFile,
+  location: Location,
   mutateDescription: MutateDescription,
 ): boolean =>
   [
@@ -879,12 +879,9 @@ const shouldSkipNode = (
 const locationOfNode = (
   frame: NodeFrame,
   context: PlacementContext,
-): Result.Result<SourceLocationInFile, NodeWithoutSpan> =>
+): Result.Result<Location, NodeWithoutSpan> =>
   Option.match(
-    Option.map(Option.fromNullishOr(spanOf(frame.node)), (span) => ({
-      start: context.lineTable.positionAt(span.start),
-      end: context.lineTable.positionAt(span.end),
-    })),
+    Option.map(Option.fromNullishOr(spanOf(frame.node)), (span) => locationOf(context.lineStarts, span)),
     {
       onNone: () => Result.fail(NodeWithoutSpan.make({ fileName: context.fileName })),
       onSome: Result.succeed,
@@ -898,7 +895,7 @@ const refusedPlacement = (
   context: PlacementContext,
 ): PlacementRefused =>
   PlacementRefused.make({
-    message: placementFailureMessage(refusal, node, mutants, context.fileName, context.lineTable, context.basePath),
+    message: placementFailureMessage(refusal, node, mutants, context.fileName, context.lineStarts, context.basePath),
   })
 
 const applyMutantToClaim = (
@@ -991,7 +988,7 @@ const planMutantsAt = (
   frame: NodeFrame,
   candidates: readonly MutableCandidate[],
   directives: readonly LocatedDirective[],
-  location: SourceLocationInFile,
+  location: Location,
   state: FoldState,
   context: PlacementContext,
 ): Result.Result<FoldState, InstrumentationRefusal> => {
@@ -1016,7 +1013,7 @@ const planMutantsAt = (
 
 const candidatesFor = (
   frame: NodeFrame,
-  location: SourceLocationInFile,
+  location: Location,
   context: PlacementContext,
 ): readonly MutableCandidate[] =>
   Match.value(shouldMutateAt(location, context.mutateDescription)).pipe(
@@ -1032,7 +1029,7 @@ const needsPlan = (
 const planAtNode = (
   frame: NodeFrame,
   directives: readonly LocatedDirective[],
-  location: SourceLocationInFile,
+  location: Location,
   state: FoldState,
   context: PlacementContext,
 ): Result.Result<FoldState, InstrumentationRefusal> => {
@@ -1123,7 +1120,7 @@ const foldChildren = (
 const visitFrame = (
   frame: NodeFrame,
   directives: readonly LocatedDirective[],
-  location: SourceLocationInFile,
+  location: Location,
   state: FoldState,
   context: PlacementContext,
 ): Result.Result<FoldState, InstrumentationRefusal> => {
@@ -1189,7 +1186,7 @@ const applyOnePlacement = (
           placement.node,
           placement.applied.map(([mutant]) => mutant),
           context.fileName,
-          context.lineTable,
+          context.lineStarts,
           context.basePath,
         ),
       ),
@@ -1252,13 +1249,13 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn('stryker.i
     mutantCollector: MutantCollector,
     { options, mutateDescription, basePath }: TransformerContext,
   ) {
-    const lineTable = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(rawContent))
-    attachComments(make(root), comments, lineTable)
+    const lineStarts = lineStartsOf(rawContent)
+    attachComments(make(root), comments, lineStarts)
 
     const selection = selectMutators(DEFAULT_MUTATOR_REGISTRY, options.optInMutations)
     const context: PlacementContext = {
       fileName: originFileName,
-      lineTable,
+      lineStarts,
       mutateDescription,
       offset: offset ?? MUTATION_OFFSET,
       basePath,

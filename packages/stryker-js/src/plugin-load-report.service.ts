@@ -47,7 +47,7 @@ export const pluginLoadFailureEvents: {
           code,
           error: error.message,
           remediation: PLUGIN_FAILURE_REMEDIATION[error.reason._tag],
-          reason: error.reason._tag,
+          reason: error.reason,
         }),
       ],
     ),

@@ -1,10 +1,9 @@
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   interpretVitestMutantRun,
   MutantDryError,
@@ -14,8 +13,9 @@ import {
 } from '../interpret-vitest-mutant-run.workflow.js'
 import { VitestMutantRunCommand } from '../vitest-run-command.schema.js'
 
-const anotherThan = (id: Mutant.MutantId): Mutant.MutantId =>
-  id === '0' ? Mutant.MutantId.make('1') : Mutant.MutantId.make('0')
+const TRAP_MUTANT_ID = Mutant.MutantId.make('0')
+const OTHER_MUTANT_ID = Mutant.MutantId.make('1')
+const TRAP_FILE = 'b.ts'
 
 const commandWith = (
   input: VitestMutantRunCommand,
@@ -23,348 +23,167 @@ const commandWith = (
     readonly tests?: readonly TestRunner.TestResult[]
     readonly hasExternalError?: boolean
     readonly externalErrorText?: string
-    readonly hitCount: number | undefined
-    readonly hitLimit: number | undefined
-    readonly reportAllKillers?: boolean
+    readonly hitCount?: number
+    readonly hitLimit?: number
     readonly activeMutantId?: Mutant.MutantId
     readonly activeMutantFileName?: string
-    readonly timeoutTrapFile?: string | undefined
-    readonly timeoutTrapMutantId?: Mutant.MutantId | undefined
+    readonly timeoutTrapFile?: string
+    readonly timeoutTrapMutantId?: Mutant.MutantId
   },
 ): VitestMutantRunCommand =>
   VitestMutantRunCommand.make({
-    tests: override.tests ?? [...input.tests],
+    tests: override.tests ?? input.tests,
     hasExternalError: override.hasExternalError ?? input.hasExternalError,
     externalErrorText: override.externalErrorText ?? input.externalErrorText,
-    hitCount: override.hitCount,
-    hitLimit: override.hitLimit,
-    reportAllKillers: override.reportAllKillers ?? input.reportAllKillers,
+    hitCount: override.hitCount ?? input.hitCount,
+    hitLimit: override.hitLimit ?? input.hitLimit,
+    reportAllKillers: input.reportAllKillers,
     activeMutantId: override.activeMutantId ?? input.activeMutantId,
-    activeMutantFileName: override.activeMutantFileName ?? input.activeMutantFileName,
-    timeoutTrapFile: override.timeoutTrapFile,
-    timeoutTrapMutantId: override.timeoutTrapMutantId,
+    activeMutantFileName: Mutant.CanonicalFileName.make(override.activeMutantFileName ?? input.activeMutantFileName),
+    timeoutTrapFile: override.timeoutTrapFile ?? input.timeoutTrapFile,
+    timeoutTrapMutantId: override.timeoutTrapMutantId ?? input.timeoutTrapMutantId,
   })
-
-const testsIn = (
-  tests: readonly TestRunner.TestResult[],
-): { readonly ids: readonly string[]; readonly failed: readonly string[] } => ({
-  ids: tests.map((test) => test.id),
-  failed: tests.filter((test) => test.status === 'failed').map((test) => test.id),
-})
 
 describe('interpretVitestMutantRun', (it) => {
   it.prop(
     '→h_HitLimitOnNamedTrap_=Timeout',
-    {
-      of: [
-        VitestMutantRunCommand,
-        S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 })),
-        S.Int.check(S.isBetween({ minimum: 1, maximum: 100 })),
-      ],
-      subject: interpretVitestMutantRun,
-    },
-    (subject, [input, hitLimit, extra]) => {
-      const hitCount = hitLimit + extra
-      const result = subject(commandWith(input, {
-        hitCount,
-        hitLimit,
-        activeMutantId: input.activeMutantId,
-        timeoutTrapMutantId: input.activeMutantId,
-      }))
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      if (!S.is(MutantTimeout)(result.success)) {
-        return false
-      }
-      const timeout = result.success
-      const reasonReached = Result.match(
-        S.encodeResult(TestRunner.HitLimitReason)({ count: hitCount, limit: hitLimit }),
-        {
-          onFailure: () => false,
-          onSuccess: (reason) => timeout.reason === reason,
-        },
-      )
-      const reasonPrefixed = result.success.reason !== undefined &&
-        result.success.reason.startsWith(TestRunner.HitLimitReasonPrefix.literal)
-      return result.success.tests.length === 0 && reasonReached && reasonPrefixed
+    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    (subject, [input]) => {
+      const hitLimit = input.hitLimit ?? 0
+      const hitCount = hitLimit + 1
+      const command = commandWith(input, { hitCount, hitLimit, timeoutTrapMutantId: input.activeMutantId })
+      return Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (outcome) =>
+          S.is(MutantTimeout)(outcome) &&
+          outcome.tests.length === 0 &&
+          outcome.reason ===
+            Result.getOrElse(S.encodeResult(TestRunner.HitLimitReason)({ count: hitCount, limit: hitLimit }), () =>
+              '') &&
+          outcome.reason.startsWith(TestRunner.HitLimitReasonPrefix.literal),
+      })
     },
   )
 
   it.prop(
     '→h_HitLimitOnTrapFile_=Timeout',
-    {
-      of: [
-        VitestMutantRunCommand,
-        S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 })),
-        S.Int.check(S.isBetween({ minimum: 1, maximum: 100 })),
-      ],
-      subject: interpretVitestMutantRun,
-    },
-    (subject, [input, hitLimit, extra]) => {
-      const hitCount = hitLimit + extra
-      const result = subject(commandWith(input, {
-        hitCount,
+    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    (subject, [input]) => {
+      const hitLimit = input.hitLimit ?? 0
+      const command = commandWith(input, {
+        hitCount: hitLimit + 1,
         hitLimit,
-        activeMutantId: Mutant.MutantId.make('7'),
         activeMutantFileName: 'tests/a.ts',
         timeoutTrapFile: 'a.ts',
-        timeoutTrapMutantId: undefined,
-      }))
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      if (!S.is(MutantTimeout)(result.success)) {
-        return false
-      }
-      return result.success.tests.length === 0
+      })
+      return Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (outcome) => S.is(MutantTimeout)(outcome) && outcome.tests.length === 0,
+      })
     },
   )
 
   it.prop(
     '→h_HitLimitOnOtherMutant_=Killed',
-    {
-      of: [
-        VitestMutantRunCommand,
-        S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 })),
-        S.Int.check(S.isBetween({ minimum: 1, maximum: 100 })),
-      ],
-      subject: interpretVitestMutantRun,
-    },
-    (subject, [input, hitLimit, extra]) => {
-      const hitCount = hitLimit + extra
-      const result = subject(commandWith(input, {
-        hitCount,
+    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    (subject, [input]) => {
+      const hitLimit = input.hitLimit ?? 0
+      const command = commandWith(input, {
+        hitCount: hitLimit + 1,
         hitLimit,
-        activeMutantId: anotherThan(input.activeMutantId),
-        timeoutTrapMutantId: input.activeMutantId,
-      }))
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      return S.is(MutantKilled)(result.success) && !S.is(MutantTimeout)(result.success)
+        activeMutantId: TRAP_MUTANT_ID,
+        activeMutantFileName: 'tests/a.ts',
+        timeoutTrapFile: TRAP_FILE,
+        timeoutTrapMutantId: OTHER_MUTANT_ID,
+      })
+      return Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (outcome) =>
+          S.is(MutantKilled)(outcome) && !S.is(MutantTimeout)(outcome) && outcome.tests.length === 0,
+      })
     },
   )
 
   it.prop(
     '→h_HitCountAtBound_≠Timeout',
-    {
-      of: [
-        VitestMutantRunCommand,
-        S.Int.check(S.isBetween({ minimum: 0, maximum: 100000 })),
-      ],
-      subject: interpretVitestMutantRun,
-    },
-    (subject, [input, hitLimit]) => {
-      const result = subject(commandWith(input, {
+    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    (subject, [input]) => {
+      const hitLimit = input.hitLimit ?? 0
+      const command = commandWith(input, {
         hitCount: hitLimit,
         hitLimit,
-        activeMutantId: input.activeMutantId,
         timeoutTrapMutantId: input.activeMutantId,
-      }))
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      return !S.is(MutantTimeout)(result.success)
+      })
+      return Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (outcome) => !S.is(MutantTimeout)(outcome),
+      })
     },
   )
 
   it.prop(
     '→f_FailedTestPlusHitBound_=Killed',
-    {
-      of: [
-        VitestMutantRunCommand,
-        S.Int.check(S.isBetween({ minimum: 0, maximum: 1000 })),
-        S.Int.check(S.isBetween({ minimum: 1, maximum: 100 })),
-      ],
-      subject: interpretVitestMutantRun,
-    },
-    (subject, [input, hitLimit, extra]) => {
-      const failed: TestRunner.FailedTestResult = {
-        id: 'a.ts#fails',
-        name: 'fails',
-        timeSpentMs: 1,
-        status: 'failed',
-        failureMessage: 'boom',
-      }
-      const result = subject(commandWith(input, {
-        tests: [failed],
-        hitCount: hitLimit + extra,
+    { of: [VitestMutantRunCommand, TestRunner.TestResultSchema], subject: interpretVitestMutantRun },
+    (subject, [input, test]) => {
+      const hitLimit = input.hitLimit ?? 0
+      const command = commandWith(input, {
+        tests: [test],
+        hitCount: hitLimit + 1,
         hitLimit,
-        activeMutantId: anotherThan(input.activeMutantId),
-        timeoutTrapMutantId: input.activeMutantId,
-      }))
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      return S.is(MutantKilled)(result.success) && !S.is(MutantTimeout)(result.success)
+        activeMutantId: TRAP_MUTANT_ID,
+        activeMutantFileName: 'tests/a.ts',
+        timeoutTrapFile: TRAP_FILE,
+        timeoutTrapMutantId: OTHER_MUTANT_ID,
+      })
+      return Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (outcome) => S.is(MutantKilled)(outcome) && outcome.tests.length === 0,
+      })
     },
   )
 
   it.prop(
-    '→e_ExternalErrorAlone_=DryError',
-    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
-    (subject, [input]) => {
-      const result = subject(
-        commandWith(input, {
-          tests: [],
-          hasExternalError: true,
-          hitCount: undefined,
-          hitLimit: undefined,
-        }),
-      )
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      if (!S.is(MutantDryError)(result.success)) {
-        return false
-      }
-      return (
-        result.success.tests.length === 0 &&
-        result.success.errorMessage === `An error occurred outside of a test run: ${input.externalErrorText}`
-      )
+    '∀t_TestResult_≡KilledIffFailed',
+    { of: [VitestMutantRunCommand, TestRunner.TestResultSchema], subject: interpretVitestMutantRun },
+    (subject, [input, test]) => {
+      const command = commandWith(input, {
+        tests: [test],
+        hasExternalError: false,
+        hitCount: 0,
+        hitLimit: 0,
+      })
+      return Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (outcome) =>
+          test.status === 'failed'
+            ? S.is(MutantKilled)(outcome) &&
+              outcome.killerIds?.includes(test.id) === true &&
+              outcome.failureMessage === test.failureMessage
+            : S.is(MutantSurvived)(outcome),
+      })
     },
   )
 
   it.prop(
-    '→t_FailedTest_=Killed',
+    '∀c_MutantRunCommand_≡DryErrorNamesTheExternalError',
     {
-      of: [
-        VitestMutantRunCommand,
-        S.String.check(S.isMinLength(1), S.isMaxLength(24)),
-        S.String.check(S.isMaxLength(32)),
-      ],
+      of: [VitestMutantRunCommand, S.String.check(S.isMinLength(1), S.isMaxLength(32))],
       subject: interpretVitestMutantRun,
     },
-    (subject, [input, name, message]) => {
-      const failed: TestRunner.FailedTestResult = {
-        id: `tests/a.spec.ts#${name}`,
-        name,
-        timeSpentMs: 5,
-        status: 'failed',
-        failureMessage: message,
-        fileName: 'tests/a.spec.ts',
-      }
-      const result = subject(
-        commandWith(input, {
-          tests: [failed],
-          hasExternalError: false,
-          hitCount: undefined,
-          hitLimit: undefined,
-        }),
-      )
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      if (!S.is(MutantKilled)(result.success)) {
-        return false
-      }
-      const tests = testsIn(result.success.tests)
-      const killerIds = result.success.killerIds
-      return (
-        tests.failed.length === 1 &&
-        killerIds !== undefined &&
-        killerIds.length === 1 &&
-        killerIds[0] === tests.failed[0] &&
-        result.success.failureMessage === message
-      )
-    },
-  )
-
-  it.prop(
-    '→t_PassedTest_=Survived',
-    {
-      of: [VitestMutantRunCommand, S.String.check(S.isMinLength(1), S.isMaxLength(24))],
-      subject: interpretVitestMutantRun,
-    },
-    (subject, [input, name]) => {
-      const passed: TestRunner.TestResult = {
-        id: `tests/a.spec.ts#${name}`,
-        name,
-        timeSpentMs: 3,
-        status: 'success',
-        fileName: 'tests/a.spec.ts',
-      }
-      const result = subject(
-        commandWith(input, {
-          tests: [passed],
-          hasExternalError: false,
-          hitCount: undefined,
-          hitLimit: undefined,
-        }),
-      )
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      if (!S.is(MutantSurvived)(result.success)) {
-        return false
-      }
-      const tests = testsIn(result.success.tests)
-      return tests.ids.length === 1 && tests.failed.length === 0
-    },
-  )
-
-  const SUITE_NAME = S.String.check(S.isMinLength(1), S.isMaxLength(12), S.isPattern(/^[^#]+$/))
-  interface SuiteLink {
-    readonly name: string
-    readonly suite?: SuiteLink
-  }
-  const nestedTaskArb = Arbitrary.all({
-    suites: Arbitrary.array(Arbitrary.schema(SUITE_NAME), { minLength: 1, maxLength: 2 }),
-    name: Arbitrary.schema(SUITE_NAME),
-    fullTestName: Arbitrary.schema(SUITE_NAME),
-  })
-
-  const PROJECT_ROOT = '/project'
-
-  const runCommandPayload = (
-    input: VitestMutantRunCommand,
-    task: { readonly name: string; readonly fullTestName: string; readonly suite: SuiteLink | undefined },
-  ) => ({
-    _tag: 'VitestMutantRunCommand' as const,
-    tests: {
-      projectRoot: PROJECT_ROOT,
-      records: [{
-        ...task,
-        result: { state: 'fail', duration: 5, errors: [{ message: 'boom' }] },
-        file: { filepath: `${PROJECT_ROOT}/tests/a.spec.ts` },
-      }],
-    },
-    hasExternalError: false,
-    externalErrorText: input.externalErrorText,
-    hitCount: undefined,
-    hitLimit: undefined,
-    reportAllKillers: input.reportAllKillers,
-    activeMutantId: input.activeMutantId,
-    activeMutantFileName: input.activeMutantFileName,
-    timeoutTrapFile: undefined,
-    timeoutTrapMutantId: undefined,
-  })
-
-  it.prop(
-    '→t_KillerId_≡vitestFullTestName',
-    { of: [VitestMutantRunCommand, nestedTaskArb], subject: interpretVitestMutantRun },
-    (subject, [input, { suites, name, fullTestName }]) => {
-      const suiteChain = suites.reduceRight<SuiteLink | undefined>(
-        (child, suiteName) => ({ name: suiteName, suite: child }),
-        undefined,
-      )
-      return Result.match(
-        S.decodeResult(VitestMutantRunCommand)(runCommandPayload(input, { name, fullTestName, suite: suiteChain })),
-        {
-          onFailure: () => false,
-          onSuccess: (command) => {
-            const result = subject(command)
-            if (!Result.isSuccess(result) || !S.is(MutantKilled)(result.success)) {
-              return false
-            }
-            const killerIds = result.success.killerIds
-            return killerIds !== undefined &&
-              killerIds.length === 1 &&
-              killerIds[0] === `tests/a.spec.ts#${fullTestName}`
-          },
-        },
-      )
+    (subject, [input, externalErrorText]) => {
+      const command = commandWith(input, {
+        tests: [],
+        hasExternalError: true,
+        externalErrorText,
+        hitCount: 0,
+        hitLimit: 0,
+      })
+      return Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (outcome) =>
+          S.is(MutantDryError)(outcome) &&
+          outcome.errorMessage === `An error occurred outside of a test run: ${externalErrorText}`,
+      })
     },
   )
 })

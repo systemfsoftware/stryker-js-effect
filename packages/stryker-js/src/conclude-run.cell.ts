@@ -3,6 +3,7 @@ import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -18,9 +19,21 @@ import * as CliError from 'effect/unstable/cli/CliError'
 import { RunExit, type RunOutcomeDecision, type RunOutcomeError } from './classify-run-outcome.workflow.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { planRunConclusion, type PlanRunConclusionCommand } from './plan-run-conclusion.workflow.js'
-import { RunExitCode } from './reporting/run-failure.schema.js'
+import { runExitCodeFromOutcome } from './reporting/run-failure.js'
 import type { RunEventDrain, RunEventStream, RunEventStreamPort } from './run-event-stream.service.js'
 import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
+import {
+  RunClassedObservation,
+  RunCliErrorObservation,
+  RunGenericFailureObservation,
+  RunHelpObservation,
+  RunInterruptedObservation,
+  type RunOutcomeObservation,
+  RunSchemaErrorObservation,
+  RunSucceededClean,
+  RunSucceededVerdict,
+  RunSurvivorsRejectedObservation,
+} from './RunOutcomeCommand.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
 import { SurvivorsRejection } from './Survivors/mod.js'
 
@@ -139,7 +152,7 @@ const collectExitClasses = <A, E>(exit: Exit.Exit<A, E>): Array<Plugin.ExitClass
 }
 
 const causeTextOf = <A>(value: A): Option.Option<string> =>
-  Option.map(ErrorText.CauseText.fromCause(hasCause(value) ? value.cause : undefined), (decoded) => decoded.text)
+  Option.map(ErrorText.causeTextOf(hasCause(value) ? value.cause : undefined), (decoded) => decoded.text)
 
 const reasonOf = <A>(value: A): string | undefined => {
   const declared = hasReason(value) ? value.reason : undefined
@@ -295,24 +308,72 @@ const bySeverity: Order.Order<Plugin.ExitClass> = Order.mapInput(
 const highestExitClassOf = (pending: ReadonlyArray<Plugin.ExitClass>): Plugin.ExitClass | undefined =>
   Option.getOrUndefined(Arr.last(Arr.sort(pending, bySeverity)))
 
+const observationOf = <A, E>(
+  { exit, value, survivors, argv }: {
+    readonly exit: Exit.Exit<A, E>
+    readonly value: E | object | undefined
+    readonly survivors: SurvivorsRejection | undefined
+    readonly argv: readonly string[]
+  },
+): RunOutcomeObservation => {
+  const unrecognized = Option.getOrNull(Option.fromUndefinedOr(unrecognizedHintOf(exit, argv)))
+  const configDetail = exit.pipe(firstConfigErrorDetail, Option.fromUndefinedOr, Option.getOrNull)
+  const diagnostic = exit.pipe(describeFailureOf, omitUnknownFailure, Option.fromUndefinedOr, Option.getOrNull)
+
+  return Boolean.match(Exit.isSuccess(exit), {
+    onTrue: () =>
+      exit.pipe(
+        successExitClassOf,
+        Option.fromUndefinedOr,
+        Option.match({
+          onNone: () => RunSucceededClean.make({}),
+          onSome: (exitClass) => RunSucceededVerdict.make({ exitClass, diagnostic }),
+        }),
+      ),
+    onFalse: () =>
+      Boolean.match(hasOnlyInterruptsOf(exit), {
+        onTrue: () => RunInterruptedObservation.make({}),
+        onFalse: () =>
+          Option.match(Option.fromUndefinedOr(helpErrorCountOf(value)), {
+            onSome: (errorCount) => RunHelpObservation.make({ errorCount, unrecognized }),
+            onNone: () =>
+              Boolean.match(carriesCliError(value), {
+                onTrue: () => RunCliErrorObservation.make({ unrecognized }),
+                onFalse: () =>
+                  Option.match(Option.fromUndefinedOr(survivorsReasonOf(survivors)), {
+                    onSome: (reason) =>
+                      RunSurvivorsRejectedObservation.make({
+                        reason,
+                        diagnostic: Option.getOrNull(Option.fromUndefinedOr(survivorsDiagnosticOf(survivors))),
+                      }),
+                    onNone: () =>
+                      Boolean.match(carriesSchemaError(value), {
+                        onTrue: () => RunSchemaErrorObservation.make({ configDetail }),
+                        onFalse: () =>
+                          exit.pipe(
+                            collectExitClasses,
+                            highestExitClassOf,
+                            Option.fromUndefinedOr,
+                            Option.match({
+                              onSome: (exitClass) =>
+                                RunClassedObservation.make({ exitClass, configDetail, diagnostic }),
+                              onNone: () => RunGenericFailureObservation.make({ diagnostic }),
+                            }),
+                          ),
+                      }),
+                  }),
+              }),
+          }),
+      }),
+  })
+}
+
 export const runOutcomeCommandOf = <A, E>(
   { argv, exit }: { readonly exit: Exit.Exit<A, E>; readonly argv: readonly string[] },
 ): RunOutcomeCommand => {
   const value = failureValueOf(exit)
-  const survivors = survivorsRejectionOf(value)
   return RunOutcomeCommand.make({
-    succeeded: Exit.isSuccess(exit),
-    interrupted: hasOnlyInterruptsOf(exit),
-    helpErrorCount: helpErrorCountOf(value),
-    cliError: carriesCliError(value),
-    unrecognized: unrecognizedHintOf(exit, argv),
-    survivorsReason: survivorsReasonOf(survivors),
-    survivorsDiagnostic: survivorsDiagnosticOf(survivors),
-    schemaError: carriesSchemaError(value),
-    successExitClass: successExitClassOf(exit),
-    highestExitClass: exit.pipe(collectExitClasses, highestExitClassOf),
-    configDetail: firstConfigErrorDetail(exit),
-    diagnostic: exit.pipe(describeFailureOf, omitUnknownFailure),
+    observation: observationOf({ exit, value, survivors: survivorsRejectionOf(value), argv }),
   })
 }
 
@@ -338,19 +399,8 @@ export type RunConclusionRaw = (typeof PlanRunConclusionCommand)['Encoded'] & {
 const encodedCommandOf = (
   command: RunOutcomeCommand,
 ): (typeof RunOutcomeCommand)['Encoded'] => ({
-  _tag: command._tag,
-  succeeded: command.succeeded,
-  interrupted: command.interrupted,
-  helpErrorCount: command.helpErrorCount,
-  cliError: command.cliError,
-  unrecognized: command.unrecognized,
-  survivorsReason: command.survivorsReason,
-  survivorsDiagnostic: command.survivorsDiagnostic,
-  schemaError: command.schemaError,
-  successExitClass: command.successExitClass,
-  highestExitClass: command.highestExitClass,
-  configDetail: command.configDetail,
-  diagnostic: command.diagnostic,
+  _tag: 'RunOutcomeCommand',
+  observation: command.observation,
 })
 
 const readConclusion = Effect.fn('stryker.run_conclusion.read')(function*(
@@ -362,7 +412,7 @@ const readConclusion = Effect.fn('stryker.run_conclusion.read')(function*(
     _tag: 'PlanRunConclusionCommand' as const,
     command: encodedCommandOf(input.concluded.command),
     machine: input.mode.mode === 'machine',
-    exitCode: RunExitCode.fromOutcome(classified).code,
+    exitCode: runExitCodeFromOutcome(classified).code,
     outcome: classified._tag,
     error: input.concluded.error,
     conclusion: input,
@@ -408,44 +458,33 @@ export const concludeRunCell = Sandwich.named('stryker.run.conclude')(readConclu
   })
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const Equal = await import('effect/Equal')
 
   const severityOf = (exitClass: Plugin.ExitClass): number => Plugin.ExitClass.literals.indexOf(exitClass)
+
+  const classedKeyOf = (command: RunOutcomeCommand): string =>
+    S.is(RunClassedObservation)(command.observation)
+      ? `${command.observation.exitClass}|${command.observation.configDetail}`
+      : 'not-classed'
+
+  const genericDiagnosticOf = (command: RunOutcomeCommand): string | null =>
+    S.is(RunGenericFailureObservation)(command.observation) ? command.observation.diagnostic : null
 
   it.prop(
     '∀text_RunOutcomeCommand_≡PrimitiveFailureDiagnostic',
     { of: [S.String], subject: runOutcomeCommandOf },
     (subject, [text]) => {
       const command = subject({ exit: Exit.fail(text), argv: [] })
-      const observed = [
-        command.succeeded,
-        command.interrupted,
-        command.cliError,
-        command.helpErrorCount,
-        command.unrecognized,
-        command.highestExitClass,
-        command.configDetail,
-        command.diagnostic,
-      ]
-      const expected = [
-        false,
-        false,
-        false,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        text === UNKNOWN_FAILURE ? undefined : text,
-      ]
-      return observed.every((field, index) => field === expected[index])
+      return genericDiagnosticOf(command) === (text === UNKNOWN_FAILURE ? null : text)
     },
   )
 
   it.prop(
     '∀detail_RunOutcomeCommand_≡ConfigDetail',
     { of: [S.NonEmptyString], subject: runOutcomeCommandOf },
-    (subject, [detail]) =>
-      subject({ exit: Exit.fail({ exitClass: 'ConfigError', reason: detail }), argv: [] }).configDetail === detail,
+    (subject, [detail]) => {
+      const command = subject({ exit: Exit.fail({ exitClass: 'ConfigError', reason: detail }), argv: [] })
+      return classedKeyOf(command) === `ConfigError|${detail}`
+    },
   )
 
   it.prop(
@@ -454,9 +493,10 @@ if (import.meta.vitest !== void 0) {
     (subject, [left, middle, right]) => {
       const exit = Exit.fail({ exitClass: left, cause: { exitClass: middle, cause: { exitClass: right } } })
       const command = subject({ exit, argv: [] })
-      return Equal.equals(
-        Option.map(Option.fromUndefinedOr(command.highestExitClass), severityOf),
-        Option.some(Math.max(severityOf(left), severityOf(middle), severityOf(right))),
+      return (
+        S.is(RunClassedObservation)(command.observation) &&
+        severityOf(command.observation.exitClass) ===
+          Math.max(severityOf(left), severityOf(middle), severityOf(right))
       )
     },
   )

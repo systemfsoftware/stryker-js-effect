@@ -1,22 +1,24 @@
-/// <reference types="vitest/importMeta" />
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
-import { SchemaGetter, SchemaTransformation } from 'effect'
-import * as Option from 'effect/Option'
+import { Plugin, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { SchemaGetter } from 'effect'
 import * as S from 'effect/Schema'
+
+import { ModeSignal, OutputMode } from './output-mode.schema.js'
+import { PluginLoadFailureReason } from './PluginsError.schema.js'
+import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
 
 export const RunPhase = S.Literals(['prepare', 'instrument', 'dry-run', 'mutation-test'])
 export type RunPhase = typeof RunPhase.Type
 
-export const OutputMode = S.Literals(['human', 'machine'])
-export type OutputMode = typeof OutputMode.Type
-
-export const ModeSignal = S.Literals(['flag', 'env', 'tty', 'agent', 'tool'])
-export type ModeSignal = typeof ModeSignal.Type
+export const RunId = S.String.pipe(
+  S.check(S.isPattern(/^[0-9A-HJKMNP-TV-Z]{26}$/)),
+  S.brand('RunId'),
+)
+export type RunId = typeof RunId.Type
 
 export class RunStarted extends S.TaggedClass<RunStarted>()('stream', {
-  schemaVersion: S.String,
-  runId: S.String,
+  schemaVersion: StreamSchemaVersion,
+  runId: RunId,
   mode: OutputMode,
   signal: ModeSignal,
 }) {}
@@ -30,16 +32,53 @@ export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
   total: Report.NonNegativeInt,
 }) {}
 
-export class RunMutantTested extends S.TaggedClass<RunMutantTested>()('mutant', {
-  id: Mutant.MutantId,
+/**
+ * The machine-stream line a tested mutant is published as. Its wire shape is a
+ * published contract: the `mutant` tag and the `file`/`mutator` keys must not
+ * change. The domain event it carries is `Reporter.MutantTested`, so the line is
+ * a codec at the boundary rather than a second declaration of the same event.
+ */
+export interface RunMutantTested extends Reporter.MutantTested {}
+
+const MutantTestedWireSchema = S.TaggedStruct('mutant', {
+  id: S.String,
   status: Mutant.MutantStatusSchema,
   file: S.String,
-  location: Mutant.LocationSchema,
+  location: Mutant.Location,
   mutator: S.String,
   replacement: S.NullOr(S.String),
   completed: Report.NonNegativeInt,
   total: Report.NonNegativeInt,
-}) {}
+})
+
+export const RunMutantTested: S.Codec<RunMutantTested, S.Schema.Type<typeof MutantTestedWireSchema>> =
+  MutantTestedWireSchema
+    .pipe(
+      S.decodeTo(Reporter.MutantTested, {
+        decode: SchemaGetter.transform((line) => ({
+          _tag: 'mutantTested' as const,
+          id: line.id,
+          status: line.status,
+          fileName: line.file,
+          location: line.location,
+          mutatorName: line.mutator,
+          replacement: line.replacement,
+          completed: line.completed,
+          total: line.total,
+        })),
+        encode: SchemaGetter.transform((tested) => ({
+          _tag: 'mutant' as const,
+          id: tested.id,
+          status: tested.status,
+          file: tested.fileName,
+          location: tested.location,
+          mutator: tested.mutatorName,
+          replacement: tested.replacement,
+          completed: tested.completed,
+          total: tested.total,
+        })),
+      }),
+    )
 
 export class Heartbeat extends S.TaggedClass<Heartbeat>()('tick', {
   elapsedMs: Report.NonNegativeFinite,
@@ -47,45 +86,10 @@ export class Heartbeat extends S.TaggedClass<Heartbeat>()('tick', {
   total: S.NullOr(Report.NonNegativeInt),
 }) {}
 
-const VerdictThresholdsValuesSchema = S.Struct({
-  high: Report.Percentage,
-  low: Report.Percentage,
-  break: S.NullOr(Report.Percentage),
-})
-export type VerdictThresholds = typeof VerdictThresholdsValuesSchema.Type
-
-const isVerdictThresholds = (value: unknown): value is VerdictThresholds =>
-  S.is(VerdictThresholdsValuesSchema)(value) && value.low <= value.high
-
-/**
- * The pair is *built* ordered — a drawn pair is sorted — rather than drawn at
- * random and discarded until it happens to be ordered. The invariant lives on
- * the declaration because a filter over the pair cannot express `low <= high`
- * in the generation-constraint vocabulary, and only a declaration carries a
- * `toCodecArbitrary` derivation. The struct stays the wire side, so decoding
- * keeps its field paths.
- */
-const OrderedVerdictThresholds = S.declare<VerdictThresholds>(isVerdictThresholds, {
-  message: 'expected thresholds where low <= high',
-  toCodecArbitrary: () =>
-    S.link<VerdictThresholds>()(VerdictThresholdsValuesSchema, {
-      decode: SchemaGetter.transform(({ break: breaking, high, low }) => ({
-        break: breaking,
-        high: Math.max(high, low),
-        low: Math.min(high, low),
-      })),
-      encode: SchemaGetter.transform((thresholds) => thresholds),
-    }),
-})
-
-const VerdictThresholds = VerdictThresholdsValuesSchema.pipe(
-  S.decodeTo(OrderedVerdictThresholds, SchemaTransformation.passthrough()),
-)
-
-const VerdictMutant = S.Struct({
+export const VerdictMutant = S.Struct({
   id: Mutant.MutantId,
   file: S.String,
-  location: Mutant.LocationSchema,
+  location: Mutant.Location,
   mutator: S.String,
   replacement: S.NullOr(S.String),
   status: Mutant.MutantStatusSchema,
@@ -94,12 +98,12 @@ export type VerdictMutant = typeof VerdictMutant.Type
 
 export type VerdictCounts = Report.Metrics
 export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
-  schemaVersion: S.String,
-  runId: S.String,
+  schemaVersion: StreamSchemaVersion,
+  runId: RunId,
   mode: OutputMode,
   signal: ModeSignal,
   score: S.NullOr(Report.Percentage),
-  thresholds: VerdictThresholds,
+  thresholds: Report.ThresholdsSchema,
   reportFile: S.NullOr(S.String),
   counts: Report.Metrics,
   mutants: S.Array(VerdictMutant),
@@ -153,25 +157,16 @@ export class SkippedReported extends S.TaggedClass<SkippedReported>()('skipped',
   files: S.Array(SkippedFileRow),
 }) {}
 
-export const PluginFailureReason = S.Literals([
-  'PeerMissing',
-  'PeerVersionUnsupported',
-  'PeerUnrecognized',
-  'InvalidContribution',
-  'ImportFailed',
-])
-export type PluginFailureReason = typeof PluginFailureReason.Type
-
 export class RunFailed extends S.TaggedClass<RunFailed>()('error', {
-  schemaVersion: S.String,
-  code: S.Finite,
+  schemaVersion: StreamSchemaVersion,
+  code: Plugin.ExitCode,
   error: S.String,
   remediation: S.String,
-  reason: S.NullOr(PluginFailureReason),
+  reason: S.NullOr(PluginLoadFailureReason),
 }) {}
 
 export class HelpRendered extends S.TaggedClass<HelpRendered>()('help', {
-  schemaVersion: S.String,
+  schemaVersion: StreamSchemaVersion,
   code: S.Literals([0]),
   help: S.String,
 }) {}
@@ -202,7 +197,7 @@ export class RunCommand extends S.TaggedClass<RunCommand>()('RunCommand', {
 
 export class RunOutput extends S.TaggedClass<RunOutput>()('RunOutput', {
   verdictJson: S.String,
-  exitCode: S.Finite,
+  exitCode: Plugin.ExitCode,
 }) {}
 
 export class RunDecodeError extends S.TaggedError<RunDecodeError>()('RunDecodeError', {
@@ -216,37 +211,6 @@ export class RunReadError extends S.TaggedError<RunReadError>()('RunReadError', 
 export class RunWriteError extends S.TaggedError<RunWriteError>()('RunWriteError', {
   message: S.String,
 }) {}
-
-const machineAlphabetOf = (event: Reporter.MutantTested): Option.Option<RunMutantTested> =>
-  Option.flatMap(
-    S.encodeOption(Reporter.MutantTested)(event),
-    (encoded) => S.decodeOption(RunMutantTested)({ ...encoded, _tag: 'mutant' }),
-  )
-
-if (import.meta.vitest !== void 0) {
-  const { it } = await import('@systemfsoftware/vitest')
-
-  const machineFieldsOf = (event: {
-    readonly id: string
-    readonly file: string
-    readonly status: string
-    readonly mutator: string
-    readonly replacement: string | null
-    readonly completed: number
-    readonly total: number
-  }): string =>
-    JSON.stringify([event.id, event.file, event.status, event.mutator, event.replacement, event.completed, event.total])
-
-  it.prop(
-    '∀m_Tested_≡MachineAlphabet',
-    { of: [Reporter.MutantTested], subject: machineAlphabetOf },
-    (subject, [event]) =>
-      Option.match(subject(event), {
-        onNone: () => false,
-        onSome: (runEvent) => machineFieldsOf(runEvent) === machineFieldsOf(event),
-      }),
-  )
-}
 
 export class PlanMutationRunCommand extends S.TaggedClass<PlanMutationRunCommand>()('PlanMutationRunCommand', {
   configMutatePatterns: S.Array(S.String),

@@ -8,7 +8,7 @@ import * as S from 'effect/Schema'
 
 import { RunMutantTested } from './run-event.schema.js'
 
-const STREAM_THRESHOLDS = { high: 100, low: 80 }
+const STREAM_THRESHOLDS = { high: 100, low: 80, break: null }
 
 const ReportFromStreamTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ReportFromStream')
 type ReportFromStreamTypeId = typeof ReportFromStreamTypeId
@@ -32,7 +32,7 @@ export class ReportFromStreamAbsent extends S.TaggedClass<ReportFromStreamAbsent
 const mutantFromStream = (line: RunMutantTested) => {
   const mutant = {
     id: line.id,
-    mutatorName: line.mutator,
+    mutatorName: line.mutatorName,
     status: line.status,
     location: line.location,
   }
@@ -50,7 +50,7 @@ const decodeLineText = S.decodeOption(S.fromJsonString(RunMutantTested))
 const streamLines = (text: string) => text.split('\n').flatMap((raw) => Option.toArray(decodeLineText(raw.trim())))
 
 const rebuiltReport = (text: string): Option.Option<Report.MutationTestResult> => {
-  const grouped = Arr.groupBy(streamLines(text), (line) => line.file)
+  const grouped = Arr.groupBy(streamLines(text), (line) => line.fileName)
   return Option.map(
     Option.liftPredicate(grouped, (files) => !Record.isEmptyRecord(files)),
     (files) => ({

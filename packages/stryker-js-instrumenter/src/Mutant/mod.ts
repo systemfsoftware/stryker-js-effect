@@ -1,5 +1,5 @@
-export { LocationSchema, OpenEndLocationSchema, PositionSchema, ReportLocationFromMutant } from '../Location.schema.js'
-export type { Location, OpenEndLocation, Position } from '../Location.schema.js'
+export { Column, Line, Location, Offset, OpenEndLocation, Position, ScriptOrigin, Span } from '../Location.schema.js'
+export type { LineStarts } from '../Location.schema.js'
 export type {
   Coverage,
   CoverageData,
@@ -16,7 +16,10 @@ export type {
   TestPlan,
 } from '../Mutant.schema.js'
 export {
+  ActionableStatusSchema,
   CanonicalFileName,
+  EphemeralStatusSchema,
+  HitCount,
   InstrumenterContext,
   Mutant,
   MutantActivationSchema,
@@ -26,14 +29,20 @@ export {
   MutantRunOptionsSchema,
   MutantStatusSchema,
   MutatorName,
+  RememberedStatusSchema,
   RunOptionsFields,
+  SurvivorStatusSchema,
 } from '../Mutant.schema.js'
 export type {
+  ActionableStatus,
   CanonicalFileName as CanonicalFileNameValue,
+  EphemeralStatus,
   MutantActivation,
   MutantCoverage,
   MutantFromUnknown as MutantFromUnknownValue,
   MutantId as MutantIdValue,
   MutantStatus,
   MutatorName as MutatorNameValue,
+  RememberedStatus,
+  SurvivorStatus,
 } from '../Mutant.schema.js'

@@ -9,14 +9,6 @@ import { MutationTestResultSchema } from './Report.schema.js'
 import type { StrykerOptions } from './stryker-options.schema.js'
 import { TestResultSchema, TestRunnerCapabilitiesSchema } from './TestRunner.schema.js'
 
-export const ReporterEventKind = S.Literals([
-  'dryRunCompleted',
-  'mutationTestingPlanReady',
-  'mutantTested',
-  'mutationTestReportReady',
-])
-export type ReporterEventKind = typeof ReporterEventKind.Type
-
 export const RunTimingSchema = S.Struct({
   net: NonNegativeFinite,
   overhead: NonNegativeFinite,
@@ -51,9 +43,9 @@ export class MutationTestingPlanReady extends S.TaggedClass<MutationTestingPlanR
 export class MutantTested extends S.TaggedClass<MutantTested>()('mutantTested', {
   id: Mutant.MutantId,
   status: Mutant.MutantStatusSchema,
-  file: S.String,
-  location: Mutant.LocationSchema,
-  mutator: S.String,
+  fileName: Mutant.CanonicalFileName,
+  location: Mutant.Location,
+  mutatorName: Mutant.MutatorName,
   replacement: S.NullOr(S.String),
   completed: NonNegativeInt,
   total: NonNegativeInt,
@@ -72,9 +64,12 @@ export const ReporterEventUnion = S.Union([
   MutationTestingPlanReady,
   MutantTested,
   MutationTestReportReady,
-])
+]).pipe(S.toTaggedUnion('_tag'))
 
-export type ReporterEvent = DryRunCompleted | MutationTestingPlanReady | MutantTested | MutationTestReportReady
+export type ReporterEvent = typeof ReporterEventUnion.Type
+
+export const ReporterEventKind = S.Literals(ReporterEventUnion.discriminants)
+export type ReporterEventKind = typeof ReporterEventKind.Type
 
 const standardReporterEvents = S.toStandardSchemaV1(ReporterEventUnion)
 

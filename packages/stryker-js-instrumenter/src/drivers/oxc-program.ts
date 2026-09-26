@@ -11,7 +11,7 @@ export const makeScriptParser = (oxc: Oxc) => (source: string, scriptFormat: 'js
     throw ParseFailed.make({
       fileName: EMBEDDED_SCRIPT_FILE,
       message: first.message,
-      location: { line: 0, column: 0 },
+      location: { line: 1, column: 1 },
       cause: first,
     })
   }

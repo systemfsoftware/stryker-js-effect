@@ -56,14 +56,6 @@ export class OptionsUndecodable extends S.TaggedClass<OptionsUndecodable>()('Opt
 
 export type OptionsValidationDecision = OptionsValidated | OptionsRefused | OptionsUndecodable
 
-const thresholdErrors = (options: Options.StrykerOptions): readonly string[] =>
-  Match.value(options.thresholds.high < options.thresholds.low).pipe(
-    Match.when(true, (): readonly string[] => [
-      'Config option "thresholds.high" should be higher than "thresholds.low".',
-    ]),
-    Match.orElse((): readonly string[] => []),
-  )
-
 const ignoreStaticErrors = (options: Options.StrykerOptions): readonly string[] =>
   Match.value(Boolean.and(options.ignoreStatic, options.coverageAnalysis !== 'perTest')).pipe(
     Match.when(true, (): readonly string[] => [
@@ -151,7 +143,6 @@ const commandRunnerWarningsOf = (options: Options.StrykerOptions): readonly stri
   })
 
 const customValidationErrors = (options: Options.StrykerOptions): readonly string[] => [
-  ...thresholdErrors(options),
   ...ignoreStaticErrors(options),
   ...options.mutate.flatMap(mutationRangeErrors),
 ]

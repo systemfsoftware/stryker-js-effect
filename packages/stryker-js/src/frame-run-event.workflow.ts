@@ -6,6 +6,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { ModeSignal, OutputMode } from './output-mode.schema.js'
 import { RunEvent } from './run-event.schema.js'
 
 const FrameRunEventTypeId: unique symbol = Symbol.for(
@@ -14,21 +15,14 @@ const FrameRunEventTypeId: unique symbol = Symbol.for(
 type FrameRunEventTypeId = typeof FrameRunEventTypeId
 
 export const FramingState = S.Struct({
-  mode: S.Literals(['machine', 'human']),
-  signal: S.Literals(['flag', 'env', 'tty', 'agent', 'tool']),
+  mode: OutputMode,
+  signal: ModeSignal,
   headerWritten: S.Boolean,
   terminalSeen: S.Boolean,
   completed: Report.NonNegativeInt,
   total: S.NullOr(Report.NonNegativeInt),
 })
-export interface FramingState {
-  readonly mode: 'machine' | 'human'
-  readonly signal: 'flag' | 'env' | 'tty' | 'agent' | 'tool'
-  readonly headerWritten: boolean
-  readonly terminalSeen: boolean
-  readonly completed: number
-  readonly total: number | null
-}
+export type FramingState = typeof FramingState.Type
 
 export class FrameRunEventCommand extends S.TaggedClass<FrameRunEventCommand>()(
   'FrameRunEventCommand',
@@ -60,10 +54,11 @@ export class EventSuppressed extends S.TaggedClass<EventSuppressed>()(
 
 export type FrameRunEventDecision = EventFramed | EventSuppressed
 
-export interface ResolvedModeInput {
-  readonly mode: 'machine' | 'human'
-  readonly signal: 'flag' | 'env' | 'tty' | 'agent' | 'tool'
-}
+export const ResolvedModeInput = S.Struct({
+  mode: OutputMode,
+  signal: ModeSignal,
+})
+export type ResolvedModeInput = typeof ResolvedModeInput.Type
 
 const nextFramingState = (state: FramingState, event: RunEvent): FramingState =>
   Match.value(event).pipe(
@@ -85,7 +80,7 @@ const nextFramingState = (state: FramingState, event: RunEvent): FramingState =>
         completed: state.completed,
         total: e.total,
       })),
-    Match.tag('mutant', (e) =>
+    Match.tag('mutantTested', (e) =>
       FramingState.make({
         mode: state.mode,
         signal: state.signal,
@@ -131,7 +126,7 @@ const formatStderrEvent = (event: RunEvent): string | null =>
     ),
     Match.tag('error', (e) => `error ${e.error}`),
     Match.tag('stream', () => null),
-    Match.tag('mutant', () => null),
+    Match.tag('mutantTested', () => null),
     Match.tag('help', () => null),
     Match.tag('plugins', () => null),
     Match.tag('formats', () => null),

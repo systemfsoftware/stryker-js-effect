@@ -14,16 +14,12 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type { RunnerTask, RunnerTestCase, RunnerTestFile, RunnerTestSuite } from 'vitest'
 
+import { testRecordOf } from './drivers/vitest-node.js'
 import { interpretVitestDryRun } from './interpret-vitest-dry-run.workflow.js'
 import { makeMutantRunCell } from './MutantRun.cell.js'
 import { VitestDryRunCommand } from './vitest-run-command.schema.js'
-import {
-  CoverageDecodeFailed,
-  HitCountMetaSchema,
-  MutantCoverageMetaSchema,
-  MutantCoverageShapeSchema,
-  type TestRunnerPhase,
-} from './VitestRunner.schema.js'
+import { interpretVitestTestRun } from './vitest-test-run.js'
+import { CoverageDecodeFailed, type TestRunnerPhase } from './VitestRunner.schema.js'
 import {
   applyRunFilter,
   clearFiles,
@@ -45,7 +41,7 @@ const asRunnerFailure = (phase: TestRunnerPhase) => <E>(cause: E) =>
         runnerName: 'vitest',
         phase,
         cause: Option.getOrElse(
-          Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text),
+          Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text),
           () => '',
         ),
       }),
@@ -203,15 +199,30 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
 
   const resetContext = Effect.flatMap(runtime, (self) => Effect.sync(() => clearFiles(self)))
 
+  const instrumenterContextOf = (
+    file: RunnerTestFile,
+  ): Effect.Effect<Option.Option<Mutant.InstrumenterContext>, CoverageDecodeFailed> =>
+    Option.match(Option.fromNullishOr(metaOf(file)), {
+      onNone: () => Effect.succeedNone,
+      onSome: (meta) =>
+        S.decodeEffect(Mutant.InstrumenterContext)(meta).pipe(
+          Effect.asSome,
+          Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
+        ),
+    })
+
   const readHitCount = Effect.gen(function*() {
     const self = yield* runtime.pipe(Effect.mapError((cause) => new CoverageDecodeFailed({ cause })))
     const hitCounts = yield* Effect.forEach(
       files(self),
       (file) =>
-        S.decodeUnknownEffect(HitCountMetaSchema)(metaOf(file)).pipe(
-          Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
-          Effect.orElseSucceed(() => ({ hitCount: undefined })),
-          Effect.map((decoded) => Option.getOrElse(Option.fromNullishOr(decoded.hitCount), () => 0)),
+        instrumenterContextOf(file).pipe(
+          Effect.map((context) =>
+            Option.getOrElse(
+              Option.flatMap(context, (present) => Option.fromNullishOr(present.hitCount)),
+              () => 0,
+            )
+          ),
         ),
     )
     return hitCounts.reduce((total, count) => total + count, 0)
@@ -219,21 +230,21 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
 
   const validateCoverage = (coverage: Mutant.MutantCoverage) => {
     const normalized = normalizeCoverage(coverage, projectRoot, pathService)
-    return S.decodeEffect(MutantCoverageShapeSchema)(normalized).pipe(
+    return S.decodeEffect(Mutant.MutantCoverageSchema)(normalized).pipe(
       Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
       Effect.map(() => normalized),
     )
   }
 
   const coverageOfFile = Effect.fn('vitest.runner.coverage_of_file')(function*(file: RunnerTestFile) {
-    const decoded = yield* S.decodeUnknownEffect(MutantCoverageMetaSchema)(metaOf(file)).pipe(
-      Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
-      Effect.orElseSucceed(() => ({ mutantCoverage: undefined })),
+    const context = yield* instrumenterContextOf(file)
+    return yield* Option.match(
+      Option.flatMap(context, (present) => Option.fromNullishOr(present.mutantCoverage)),
+      {
+        onNone: () => Effect.succeedNone,
+        onSome: (coverage) => Effect.asSome(validateCoverage(coverage)),
+      },
     )
-    return yield* Option.match(Option.fromNullishOr(decoded.mutantCoverage), {
-      onNone: () => Effect.succeedNone,
-      onSome: (coverage) => Effect.asSome(validateCoverage(coverage)),
-    })
   })
 
   const mergeTestCoverage = (
@@ -300,7 +311,7 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
         () => [],
       ).filter(isCollectableTest),
     }))
-    const rawTests = collected.flatMap((entry) => entry.tests)
+    const records = collected.flatMap((entry) => entry.tests).map(testRecordOf)
     const fileFailures = collected.flatMap(({ file, tests }) =>
       fileFailedWithoutFailingTest(file, tests)
         ? [{ fileName: file.filepath, message: fileFailureMessage(file) }]
@@ -309,12 +320,12 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
     const externalError = hasExternalErrors(self)
     yield* Effect.annotateCurrentSpan({
       'stryker.vitest.file_count': allFiles.length,
-      'stryker.vitest.raw_test_count': rawTests.length,
+      'stryker.vitest.raw_test_count': records.length,
       'stryker.vitest.failed_file_count': fileFailures.length,
       'stryker.vitest.has_external_error': externalError,
     })
     return {
-      rawTests,
+      records,
       fileFailures,
       hasExternalError: externalError,
       externalErrorText: Boolean.match(externalError, { onTrue: () => externalErrorText(self), onFalse: () => '' }),
@@ -367,14 +378,14 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
   const dryRun = (options: TestRunner.DryRunOptions) =>
     session.setMode('dry-run').pipe(
       Effect.andThen(Effect.gen(function*() {
-        const { rawTests, fileFailures, hasExternalError, externalErrorText: errorText } = yield* collectRaw(
+        const { records, fileFailures, hasExternalError, externalErrorText: errorText } = yield* collectRaw(
           dryRunFilter(options),
         )
         const decision = interpretVitestDryRun(
           yield* S.decodeEffect(VitestDryRunCommand)({
             _tag: 'VitestDryRunCommand',
             projectRoot,
-            tests: { projectRoot, records: rawTests, fileFailures },
+            tests: interpretVitestTestRun({ projectRoot, records, fileFailures }),
             hasExternalError,
             externalErrorText: errorText,
           }),

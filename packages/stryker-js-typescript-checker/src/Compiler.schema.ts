@@ -29,13 +29,26 @@ export class HybridFileNotFoundError extends S.TaggedError<HybridFileNotFoundErr
   },
 ) {}
 
+export class HybridMutantOutsideFileError extends S.TaggedError<HybridMutantOutsideFileError>()(
+  'HybridMutantOutsideFileError',
+  {
+    fileName: S.String,
+  },
+) {}
+
 /**
  * Every way the TypeScript compiler can fail while serving a check.
  * One tagged error — callers branch only on failure itself; `reason` keeps
  * cases distinguishable in reports.
  */
 export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFailed', {
-  reason: S.Literals(['not-initialized', 'no-projects', 'unknown-file-node', 'file-not-in-project']),
+  reason: S.Literals([
+    'not-initialized',
+    'no-projects',
+    'unknown-file-node',
+    'file-not-in-project',
+    'mutant-outside-file',
+  ]),
   subject: S.optional(S.String),
 }) {
   override get message(): string {
@@ -49,6 +62,10 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
       Match.when(
         'file-not-in-project',
         () => `'${this.subject ?? 'a file'}' is part of your TypeScript project but could not be found on disk`,
+      ),
+      Match.when(
+        'mutant-outside-file',
+        () => `A mutant's location falls outside '${this.subject ?? 'a file'}'`,
       ),
       Match.exhaustive,
     )

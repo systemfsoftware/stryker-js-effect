@@ -17,6 +17,7 @@ import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
 import {
   CoveredMutantHitCountMissing,
+  MutantTimeoutNotFinite,
   planMutantTests,
   PlannedEarlyResultMutant,
   PlannedRunMutant,
@@ -28,19 +29,8 @@ import { StageError } from '../Run.schema.js'
 import { sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 
-export const VALID_MUTANT_STATUSES = [
-  'Killed',
-  'Survived',
-  'NoCoverage',
-  'Timeout',
-  'CompileError',
-  'RuntimeError',
-  'Ignored',
-  'Pending',
-] as const
-export type ValidMutantStatus = typeof VALID_MUTANT_STATUSES[number]
-export const isMutantStatus = (candidate: string): candidate is ValidMutantStatus =>
-  VALID_MUTANT_STATUSES.some((status) => status === candidate)
+export const isMutantStatus = S.is(Mutant.MutantStatusSchema)
+export type ValidMutantStatus = Mutant.MutantStatus
 
 export const toReportedMutant = (mutant: Mutant.Mutant): Mutant.MutantTestCoverage =>
   Object.assign(mutant, { coveredBy: mutant.coveredBy, static: mutant.static })
@@ -183,15 +173,11 @@ const materializeDecision = Effect.fnUntraced(function*(
 const earlyResultStatusOf = (mutant: Mutant.Mutant) =>
   Option.getOrElse(Option.fromUndefinedOr(mutant.status), () => 'Ignored' as const)
 
-const earlyResultOf = Effect.fn('stryker.mutation_test.early_result')(function*(
-  plan: Mutant.EarlyResultPlan,
-) {
-  const reportLocation = yield* Effect.orDie(S.decodeEffect(Mutant.ReportLocationFromMutant)(plan.mutant.location))
-  return Object.assign({}, plan.mutant, {
-    location: reportLocation,
+const earlyResultOf = Effect.fn('stryker.mutation_test.early_result')((plan: Mutant.EarlyResultPlan) =>
+  Effect.succeed(Object.assign({}, plan.mutant, {
     status: earlyResultStatusOf(plan.mutant),
-  })
-})
+  }))
+)
 
 const partitionRunPlans = (plans: readonly Mutant.TestPlan[]) => ({
   runPlans: plans.filter((plan): plan is Mutant.RunPlan => plan.plan === 'Run'),
@@ -246,6 +232,14 @@ const planMutantTestsCell = Sandwich.named('stryker.mutation_test.plan_mutants')
           stage: 'mutationTest',
           reason: `covered mutant missing dry-run hit count: ${missingIds.join(', ')}`,
           cause: CoveredMutantHitCountMissing.make({ missingIds }),
+        }),
+      ),
+    MutantTimeoutNotFinite: ({ mutantId }) =>
+      Effect.fail(
+        StageError.make({
+          stage: 'mutationTest',
+          reason: `mutant ${mutantId} has a non-finite timeout`,
+          cause: MutantTimeoutNotFinite.make({ mutantId: Mutant.MutantId.make(mutantId) }),
         }),
       ),
     CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'mutationTest', reason: issue })),

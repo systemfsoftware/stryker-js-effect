@@ -5,6 +5,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { OverrideTsconfigOptionsCommand } from './CheckerCommands.schema.js'
+import type { TsConfigCompilerOptions, TsConfigDocument } from './Tsconfig.schema.js'
 
 const OverrideTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TsconfigOverride')
 type OverrideTypeId = typeof OverrideTypeId
@@ -28,10 +29,8 @@ export const TsconfigOverride = S.Union([ProjectReferencesOverride, SingleProjec
 export type TsconfigOverride = typeof TsconfigOverride.Type
 
 type CompilerOptionValue = boolean | string | number | ReadonlyArray<string> | undefined
-type TsConfigDocument = OverrideTsconfigOptionsCommand['document']
 
-const CompilerOptionsRecord = S.Record(S.String, S.Unknown)
-type CompilerOptions = S.Schema.Type<typeof CompilerOptionsRecord>
+type CompilerOptions = TsConfigCompilerOptions
 
 const COMPILER_OPTIONS_OVERRIDES: Readonly<Record<string, CompilerOptionValue>> = Object.freeze({
   allowUnreachableCode: true,
@@ -56,10 +55,7 @@ const LOW_EMIT_OPTIONS_FOR_PROJECT_REFERENCES: Readonly<Record<string, CompilerO
 })
 
 const compilerOptionsOf = (document: TsConfigDocument): CompilerOptions =>
-  Option.getOrElse(
-    S.decodeUnknownOption(CompilerOptionsRecord)(document['compilerOptions']),
-    (): CompilerOptions => ({}),
-  )
+  Option.getOrElse(Option.fromUndefinedOr(document.compilerOptions), (): CompilerOptions => ({}))
 
 const withCompilerOverrides = (
   document: TsConfigDocument,

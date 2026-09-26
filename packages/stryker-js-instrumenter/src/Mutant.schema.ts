@@ -1,7 +1,7 @@
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
-import { LocationSchema } from './Location.schema.js'
+import { Location } from './Location.schema.js'
 
 export const MutantStatusSchema = S.Literals([
   'Killed',
@@ -14,6 +14,18 @@ export const MutantStatusSchema = S.Literals([
   'Pending',
 ])
 export type MutantStatus = typeof MutantStatusSchema.Type
+
+export const SurvivorStatusSchema = S.Literals(['Survived', 'NoCoverage'])
+export type SurvivorStatus = typeof SurvivorStatusSchema.Type
+
+export const RememberedStatusSchema = S.Literals(['Survived', 'Killed', 'Timeout', 'NoCoverage', 'Ignored'])
+export type RememberedStatus = typeof RememberedStatusSchema.Type
+
+export const EphemeralStatusSchema = S.Literals(['CompileError', 'RuntimeError', 'Pending'])
+export type EphemeralStatus = typeof EphemeralStatusSchema.Type
+
+export const ActionableStatusSchema = S.Literals(['Survived', 'NoCoverage', 'Timeout', 'RuntimeError'])
+export type ActionableStatus = typeof ActionableStatusSchema.Type
 
 export const MutantId = S.String.check(S.isPattern(/^(0|[1-9][0-9]*)$/)).pipe(S.brand('MutantId'))
 export type MutantId = typeof MutantId.Type
@@ -35,19 +47,25 @@ export type CanonicalFileName = typeof CanonicalFileName.Type
  * machine stream emit. Every producer on the instrument path (node spans,
  * embedded-region shifts) targets this base; no downstream layer converts.
  */
-export class Mutant extends S.TaggedClass<Mutant>()('Mutant', {
+export const Mutant = S.TaggedStruct('Mutant', {
   id: MutantId,
   fileName: CanonicalFileName,
   mutatorName: MutatorName,
   replacement: S.String,
-  location: LocationSchema,
+  location: Location,
   status: S.optional(MutantStatusSchema),
   statusReason: S.optional(S.String),
   coveredBy: S.String.pipe(S.Array, S.optional),
   static: S.optional(S.Boolean),
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
-}) {}
+}).check(
+  S.makeFilter(
+    (mutant) => mutant.statusReason === undefined || mutant.status !== undefined,
+    { message: 'a mutant carries a status reason only together with a status' },
+  ),
+)
+export type Mutant = typeof Mutant.Type
 
 export const MutantFromUnknown = S.Unknown.pipe(S.decodeTo(Mutant))
 export type MutantFromUnknown = typeof MutantFromUnknown.Type
@@ -60,7 +78,7 @@ export const RunOptionsFields = {
 export const MutantActivationSchema = S.Literals(['runtime', 'static'])
 export type MutantActivation = typeof MutantActivationSchema.Type
 
-const HitCount = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
+export const HitCount = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
 
 export const MutantRunOptionsSchema = S.Struct({
   ...RunOptionsFields,
@@ -133,8 +151,8 @@ export class InstrumenterContext extends S.Class<InstrumenterContext>('Instrumen
   activeMutant: S.optional(S.String),
   currentTestId: S.optional(S.String),
   mutantCoverage: S.optional(MutantCoverageSchema),
-  hitCount: S.optional(S.Finite),
-  hitLimit: S.optional(S.Finite),
+  hitCount: S.optional(HitCount),
+  hitLimit: S.optional(HitCount),
 }) {
   static readonly NAMESPACE = '__stryker__'
   static readonly MUTATION_COVERAGE_OBJECT = 'mutantCoverage'

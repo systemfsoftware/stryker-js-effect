@@ -6,13 +6,10 @@ export {
   FrameworkModuleRow,
   Heartbeat,
   HelpRendered,
-  ModeSignal,
   MutationRunPlan,
-  OutputMode,
   PhaseEntered,
   PlanKnown,
   PlanMutationRunCommand,
-  PluginFailureReason,
   PluginsReported,
   RunDecodeError,
   RunEvent,
@@ -26,7 +23,9 @@ export {
   type VerdictCounts,
   type VerdictMutant,
   VerdictReached,
-  type VerdictThresholds,
 } from '../run-event.schema.js'
+
+export { ModeSignal, OutputMode } from '../output-mode.schema.js'
+export { PluginLoadFailureReason } from '../PluginsError.schema.js'
 
 export { PrepareError, StageError } from '../Run.schema.js'

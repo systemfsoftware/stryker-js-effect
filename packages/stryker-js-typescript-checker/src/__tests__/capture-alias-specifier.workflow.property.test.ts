@@ -1,53 +1,42 @@
 import { describe } from '@systemfsoftware/vitest'
+import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { AliasSpecifierCaptured, captureAliasSpecifier } from '../capture-alias-specifier.workflow.js'
 import { CaptureAliasSpecifierCommand } from '../CheckerCommands.schema.js'
 
-const exactAliasPattern = () => S.String.check(S.isPattern(/^[^*]*$/))
-
-const hashFreePattern = () => S.String.check(S.isPattern(/^[^#*]+$/))
-
-const captureFor = (pattern: string, specifier: string): string | undefined => {
-  const decision = Result.match(captureAliasSpecifier(CaptureAliasSpecifierCommand.make({ pattern, specifier })), {
+const captureFor = (command: CaptureAliasSpecifierCommand): string | undefined => {
+  const decision = Result.match(captureAliasSpecifier(command), {
     onFailure: (refused) => refused,
     onSuccess: (value) => value,
   })
   return S.is(AliasSpecifierCaptured)(decision) ? decision.capture : undefined
 }
 
-const wildcardCaptureFor = (prefix: string, suffix: string, middle: string): string | undefined =>
-  captureFor(prefix + '*' + suffix, prefix + middle + suffix)
+const prefixOf = (pattern: string): string => pattern.slice(0, pattern.indexOf('*'))
 
-const prefixNotSufficientFor = (
-  prefix: string,
-  suffix: string,
-  middle: string,
-): readonly [string | undefined, string | undefined] => [
-  captureFor(`${prefix}*${suffix}`, `${prefix}${middle}${suffix}`),
-  captureFor(`${prefix}*${suffix}`, `${prefix}${middle}${suffix}#`),
-]
+const suffixOf = (pattern: string): string => pattern.slice(pattern.indexOf('*') + 1)
 
 describe('captureAliasSpecifier', (it) => {
   it.prop(
-    '∀alias_ExactSpecifier_≡EmptyOrNone',
-    { of: [exactAliasPattern(), S.String], subject: captureFor },
-    (subject, [pattern, specifier]) => subject(pattern, specifier) === (specifier === pattern ? '' : undefined),
+    '∀command_ExactPattern_≡EmptyOrNone',
+    { of: [CaptureAliasSpecifierCommand], subject: captureFor },
+    (subject, [command]) =>
+      command.pattern.includes('*') ||
+      Equal.equals(subject(command), command.specifier === command.pattern ? '' : undefined),
   )
 
   it.prop(
-    '∀alias_WildcardSpecifier_≡MiddleSegment',
-    { of: [exactAliasPattern(), S.String.check(S.isMinLength(1)), S.String], subject: wildcardCaptureFor },
-    (subject, [prefix, suffix, middle]) => subject(prefix, suffix, middle) === middle,
-  )
-
-  it.prop(
-    '∀alias_WildcardPrefixes_≡MiddleSegmentAndNoneElsewhere',
-    { of: [exactAliasPattern(), hashFreePattern(), S.String], subject: prefixNotSufficientFor },
-    (subject, [prefix, suffix, middle]) => {
-      const [matching, unrelated] = subject(prefix, suffix, middle)
-      return matching === middle && unrelated === undefined
+    '∀command_WildcardCapture_≡SpecifierReconstruction',
+    { of: [CaptureAliasSpecifierCommand], subject: captureFor },
+    (subject, [command]) => {
+      const capture = subject(command)
+      return (
+        !command.pattern.includes('*') ||
+        capture === undefined ||
+        command.specifier === prefixOf(command.pattern) + capture + suffixOf(command.pattern)
+      )
     },
   )
 })

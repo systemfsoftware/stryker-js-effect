@@ -1,20 +1,21 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 export class MutantTestPlanCommand extends S.TaggedClass<MutantTestPlanCommand>()('MutantTestPlanCommand', {
   mutants: S.Array(Mutant.Mutant),
-  timeOverheadMS: S.Finite,
-  timeSpentAllTests: S.Finite,
+  timeOverheadMS: Report.NonNegativeFinite,
+  timeSpentAllTests: Report.NonNegativeFinite,
   globalTestFilter: S.String.pipe(S.Array, S.optional),
-  hitsByMutantId: S.Record(Mutant.MutantId, S.Finite),
-  staticCoverage: S.optional(S.Record(Mutant.MutantId, S.Finite)),
-  testsByMutantId: S.Record(Mutant.MutantId, S.Array(S.String)),
-  testTimeById: S.Record(S.String, S.Finite),
+  hitsByMutantId: S.Record(Mutant.MutantId, Report.NonNegativeInt),
+  staticCoverage: S.optional(S.Record(Mutant.MutantId, Report.NonNegativeInt)),
+  testsByMutantId: S.Record(Mutant.MutantId, S.Array(TestRunner.TestId)),
+  testTimeById: S.Record(TestRunner.TestId, Report.NonNegativeFinite),
   options: S.Struct({
     disableBail: S.Boolean,
-    timeoutMS: S.Finite,
-    timeoutFactor: S.Finite,
+    timeoutMS: Report.NonNegativeFinite,
+    timeoutFactor: Report.NonNegativeFinite,
     ignoreStatic: S.Boolean,
   }),
   sandboxFileByName: S.Record(S.String, S.String),

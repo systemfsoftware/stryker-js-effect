@@ -19,6 +19,7 @@ import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
+import { matchesFile } from './FileMatcher.js'
 import { FileMatcher } from './matching.schema.js'
 import { ProjectFiles } from './project-files.service.js'
 import type { Project, ProjectFile } from './Project.schema.js'
@@ -74,7 +75,7 @@ const makeDisableTypeChecksPreprocessor = (
     const pathService = yield* Path.Path
     const files = yield* ProjectFiles
     const matcher = FileMatcher.make({ pattern: options.disableTypeChecks, allowHiddenFiles: true })
-    const matched = [...project.files].filter(([name]) => matcher.matches(pathService, name))
+    const matched = [...project.files].filter(([name]) => matchesFile(matcher, pathService, name))
     const instrumented = yield* files.readAll(matched.map(([, file]) => file))
     const updates = yield* Effect.forEach(
       instrumented,
@@ -94,8 +95,7 @@ const makeDisableTypeChecksPreprocessor = (
 const parseJsonText = (jsonText: string): Effect.Effect<JsonValue, string> =>
   Effect.try({
     try: () => parse(jsonText.replace(/^\uFEFF/, '')),
-    catch: (cause) =>
-      Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    catch: (cause) => Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
   })
 
 const tsConfigShapeOf = (parsed: JsonValue): Option.Option<TSConfig> =>

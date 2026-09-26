@@ -1,6 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
@@ -18,8 +19,9 @@ import {
   SurvivorsRejection,
 } from '../admit-survivors-run.workflow.js'
 import { ConfigFileUnreadableError } from '../ConfigError.schema.js'
-import { RelativeNormalizedFileName } from '../matching.schema.js'
+import { relativeNormalizedFileName } from '../FileMatcher.js'
 import type { OutputMode } from '../output-mode.schema.js'
+import { MutationReportFileName } from '../reporting/report-assembly.schema.js'
 import { readConfig } from '../run/load-config.cell.js'
 import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
@@ -46,7 +48,7 @@ export interface SurvivorsAdmissionInput {
   readonly settle: SurvivorsSettlement
 }
 
-export const DEFAULT_SURVIVORS_PRIOR_REPORT = 'reports/mutation-report.json'
+export const DEFAULT_SURVIVORS_PRIOR_REPORT = `reports/${MutationReportFileName.literal}`
 
 const EMPTY_CONFIG: Record<string, string> = {}
 
@@ -97,7 +99,7 @@ const extractSurvivors = (
 ) =>
   Object.entries(priorReport.files).flatMap(([file, fileResult]) =>
     fileResult.mutants
-      .filter((mutant) => mutant.status === 'Survived')
+      .filter((mutant) => S.is(Mutant.SurvivorStatusSchema)(mutant.status))
       .map((mutant) => reportMutantToMutant(file, mutant, resolveAbsolutePath, relativize))
   )
 
@@ -188,8 +190,7 @@ export const survivorsRawOf = (input: {
   readonly sourceContentHashes: Record<string, string>
 }) => {
   const { read, resolvedOptions, priorReportPath, basePath, sourceContentHashes } = input
-  const relativize: RelativizeFileName = (fileName) =>
-    RelativeNormalizedFileName.fromAbsolute(fileName, basePath).fileName
+  const relativize: RelativizeFileName = (fileName) => relativeNormalizedFileName(fileName, basePath)
   const resolveAbsolutePath = resolveAbsolutePathOf(basePath)
   return Boolean.match(read.found, {
     onFalse: () =>

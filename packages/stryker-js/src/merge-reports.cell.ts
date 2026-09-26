@@ -26,12 +26,17 @@ import {
 import { MergeReportsFailed, PartMetaSchema } from './merge-reports.schema.js'
 import type { OutputMode } from './output-mode.schema.js'
 import { reportFromStream, ReportFromStreamCommand } from './report-from-stream.workflow.js'
-import { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
+import { metricsResultFromFiles } from './reporting/metrics-from-report.js'
+import {
+  MutationPartFileName,
+  MutationReportFileName,
+  MutationStreamFileName,
+} from './reporting/report-assembly.schema.js'
 
-const PART_MARKER = 'mutation-part.json'
-const PART_REPORT = 'mutation-report.json'
-const PART_STREAM = 'mutation-stream.jsonl'
-const OUT_REPORT = 'mutation-report.json'
+const PART_MARKER = MutationPartFileName.literal
+const PART_REPORT = MutationReportFileName.literal
+const PART_STREAM = MutationStreamFileName.literal
+const OUT_REPORT = MutationReportFileName.literal
 const OUT_HTML = 'mutation-report.html'
 const OUT_SUMMARY = 'summary.md'
 const SURVIVOR_CAP = 100
@@ -322,7 +327,7 @@ const renderHtmlReport = Effect.fn('stryker.merge_reports.render_html')(function
   report: MutationReport,
   options: Options.StrykerOptions,
 ) {
-  const metrics = MetricsResultFromReport.fromFiles(report.files)
+  const metrics = metricsResultFromFiles(report.files)
   yield* HtmlReporter.makeHtmlReporter(options, {})(
     toStream([Reporter.MutationTestReportReady.make({ report, metrics })]),
   ).pipe(Effect.catchCause(() => failReason(`cannot write the html report at ${fileName}`)))

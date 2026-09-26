@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -23,11 +24,21 @@ export const FailedRunOutcomeSchema = S.Union([
   RunInterrupted,
 ])
 
+export const RunOutcomeTag = S.Literals([
+  'RunOk',
+  'RunParseFailed',
+  'RunSurvivorsRejected',
+  'RunConfigFailed',
+  'RunFailed',
+  'RunInterrupted',
+])
+export type RunOutcomeTag = typeof RunOutcomeTag.Type
+
 export class PlanRunConclusionCommand extends S.TaggedClass<PlanRunConclusionCommand>()('PlanRunConclusionCommand', {
   command: RunOutcomeCommand,
   machine: S.Boolean,
-  exitCode: S.Finite,
-  outcome: S.String,
+  exitCode: Plugin.ExitCode,
+  outcome: RunOutcomeTag,
   error: S.String,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
@@ -48,7 +59,7 @@ export class RunConclusionEmittedFailed extends S.TaggedClass<RunConclusionEmitt
   'RunConclusionEmittedFailed',
   {
     command: RunOutcomeCommand,
-    exitCode: S.Finite,
+    exitCode: Plugin.ExitCode,
   },
 ) {
   readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
@@ -59,7 +70,7 @@ export class RunConclusionQuietOk extends S.TaggedClass<RunConclusionQuietOk>()(
 }
 
 export class RunConclusionQuietFailed extends S.TaggedClass<RunConclusionQuietFailed>()('RunConclusionQuietFailed', {
-  exitCode: S.Finite,
+  exitCode: Plugin.ExitCode,
 }) {
   readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
 }

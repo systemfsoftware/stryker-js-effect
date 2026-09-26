@@ -60,7 +60,7 @@ const decodeOptions = (
         runnerName: 'vitest',
         phase: 'init',
         cause: Option.getOrElse(
-          Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) =>
+          Option.map(ErrorText.errorTextOf(cause), (rendered) =>
             rendered.text),
           () => '',
         ),

@@ -38,6 +38,10 @@ export class CoveredMutantHitCountMissing extends S.TaggedError<CoveredMutantHit
   { missingIds: S.Array(S.String) },
 ) {}
 
+export class MutantTimeoutNotFinite extends S.TaggedError<MutantTimeoutNotFinite>()('MutantTimeoutNotFinite', {
+  mutantId: Mutant.MutantId,
+}) {}
+
 const firstDefined = <Value>(first: Value | undefined, second: Value | undefined) =>
   Option.getOrElse(Option.fromNullishOr(first), () => second)
 
@@ -110,28 +114,34 @@ const toRunPlan = (
   testFilter: readonly string[] | undefined,
   isStatic: boolean | undefined,
   coveredBy: readonly string[] | undefined,
-) =>
-  PlannedRunMutant.make({
-    mutantId: mutant.id,
-    netTime,
-    runOptions: {
-      mutantActivation: mutantActivationOf(testFilter),
-      timeout: command.options.timeoutFactor * netTime + command.options.timeoutMS + command.timeOverheadMS,
-      sandboxFileName: Option.getOrElse(
-        Record.get(command.sandboxFileByName, mutant.fileName),
-        () => mutant.fileName,
-      ),
-      disableBail: command.options.disableBail,
-      reloadEnvironment: reloadEnvironmentOf(testFilter, isStatic),
-      ...testFilterField(testFilter),
-      ...Option.match(hitLimitOf(Record.get(command.hitsByMutantId, mutant.id)), {
-        onNone: () => ({} as const),
-        onSome: (hitLimit) => ({ hitLimit } as const),
-      }),
-    },
-    ...staticField(isStatic),
-    ...coveredByField(coveredBy),
+): Result.Result<PlannedRunMutant, MutantTimeoutNotFinite> => {
+  const timeout = command.options.timeoutFactor * netTime + command.options.timeoutMS + command.timeOverheadMS
+  return Boolean.match(Number.isFinite(timeout), {
+    onTrue: () =>
+      Result.succeed(PlannedRunMutant.make({
+        mutantId: mutant.id,
+        netTime,
+        runOptions: {
+          mutantActivation: mutantActivationOf(testFilter),
+          timeout,
+          sandboxFileName: Option.getOrElse(
+            Record.get(command.sandboxFileByName, mutant.fileName),
+            () => mutant.fileName,
+          ),
+          disableBail: command.options.disableBail,
+          reloadEnvironment: reloadEnvironmentOf(testFilter, isStatic),
+          ...testFilterField(testFilter),
+          ...Option.match(hitLimitOf(Record.get(command.hitsByMutantId, mutant.id)), {
+            onNone: () => ({} as const),
+            onSome: (hitLimit) => ({ hitLimit } as const),
+          }),
+        },
+        ...staticField(isStatic),
+        ...coveredByField(coveredBy),
+      })),
+    onFalse: () => Result.fail(MutantTimeoutNotFinite.make({ mutantId: mutant.id })),
   })
+}
 
 const toEarlyResultPlan = (
   mutant: Mutant.Mutant,
@@ -176,7 +186,8 @@ const planForUncoveredStatic = (
   coveredBy: readonly string[],
 ) =>
   Boolean.match(command.options.ignoreStatic, {
-    onTrue: () => toEarlyResultPlan(mutant, isStatic, 'Ignored', IGNORED_STATIC_MUTANT_REASON, coveredBy),
+    onTrue: () =>
+      Result.succeed(toEarlyResultPlan(mutant, isStatic, 'Ignored', IGNORED_STATIC_MUTANT_REASON, coveredBy)),
     onFalse: () => toRunPlan(mutant, command, command.timeSpentAllTests, command.globalTestFilter, isStatic, coveredBy),
   })
 
@@ -203,10 +214,14 @@ const mutantIsCovered = (command: MutantTestPlanCommand, mutantId: Mutant.Mutant
     onSome: (tests) => Boolean.or(tests.length > 0, mutantIsStatic(command, mutantId)),
   })
 
-const decidePlanForMutant = (mutant: Mutant.Mutant, command: MutantTestPlanCommand) => {
+const decidePlanForMutant = (
+  mutant: Mutant.Mutant,
+  command: MutantTestPlanCommand,
+): Result.Result<PlannedEarlyResultMutant | PlannedRunMutant, MutantTimeoutNotFinite> => {
   const isStatic = mutantIsStatic(command, mutant.id)
   return Option.match(Option.fromUndefinedOr(mutant.status), {
-    onSome: (status) => toEarlyResultPlan(mutant, isStatic, status, mutant.statusReason, coveredByOfMutant(mutant)),
+    onSome: (status) =>
+      Result.succeed(toEarlyResultPlan(mutant, isStatic, status, mutant.statusReason, coveredByOfMutant(mutant))),
     onNone: () =>
       Boolean.match(hasCoverageForPlan(command.staticCoverage), {
         onTrue: () => planForStaticallyCovered(mutant, command, isStatic),
@@ -236,11 +251,22 @@ const missingHitCountIds = (command: MutantTestPlanCommand) =>
   )
 
 const plannedMutantsOf = (command: MutantTestPlanCommand) =>
-  command.mutants.map((mutant) => decidePlanForMutant(mutant, command))
+  command.mutants.reduce<
+    Result.Result<ReadonlyArray<PlannedRunMutant | PlannedEarlyResultMutant>, MutantTimeoutNotFinite>
+  >(
+    (planned, mutant) =>
+      Result.flatMap(planned, (soFar) => Result.map(decidePlanForMutant(mutant, command), (next) => [...soFar, next])),
+    Result.succeed([]),
+  )
 
-const decide = (command: MutantTestPlanCommand) =>
+const decide = (
+  command: MutantTestPlanCommand,
+): Result.Result<
+  ReadonlyArray<PlannedEarlyResultMutant | PlannedRunMutant>,
+  CoveredMutantHitCountMissing | MutantTimeoutNotFinite
+> =>
   Option.match(Option.fromUndefinedOr(missingHitCountIds(command)[0]), {
-    onNone: () => Result.succeed(plannedMutantsOf(command)),
+    onNone: () => plannedMutantsOf(command),
     onSome: (first) =>
       Result.fail(
         CoveredMutantHitCountMissing.make({
@@ -251,6 +277,6 @@ const decide = (command: MutantTestPlanCommand) =>
 export const planMutantTests = Workflow.make({
   command: MutantTestPlanCommand,
   decision: S.Array(S.Union([PlannedRunMutant, PlannedEarlyResultMutant])),
-  error: CoveredMutantHitCountMissing,
+  error: S.Union([CoveredMutantHitCountMissing, MutantTimeoutNotFinite]),
   decide,
 })

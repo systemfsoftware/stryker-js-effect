@@ -17,6 +17,9 @@ export const PluginLoadFailureReason = S.Union([
 ])
 export type PluginLoadFailureReason = typeof PluginLoadFailureReason.Type
 
+export const PeerFailureTag = S.Literals(['PeerMissing', 'PeerVersionUnsupported', 'PeerUnrecognized'])
+export type PeerFailureTag = typeof PeerFailureTag.Type
+
 const FAILURE_EXIT_CLASS: Record<PluginLoadFailureReason['_tag'], Plugin.ExitClass> = {
   PeerMissing: 'ConfigError',
   PeerVersionUnsupported: 'ConfigError',

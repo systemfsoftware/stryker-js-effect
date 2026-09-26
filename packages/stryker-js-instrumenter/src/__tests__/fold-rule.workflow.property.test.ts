@@ -30,7 +30,7 @@ const silencingReason = (
     PlanMutantsCommand.make({
       fileName: 'probe.ts',
       firstIndex: 0,
-      offset: { line: 0, column: 0 },
+      offset: { line: 1, columnShift: 0 },
       line,
       mutatorNames: [mutatorName.toLowerCase()],
       excludedMutations: [],

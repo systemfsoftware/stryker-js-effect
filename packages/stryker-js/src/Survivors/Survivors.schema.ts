@@ -13,11 +13,8 @@ export const PriorReportDocument = S.Struct({
           id: Mutant.MutantId,
           mutatorName: S.String,
           replacement: S.optional(S.String),
-          status: S.String,
-          location: S.Struct({
-            start: S.Struct({ line: S.Finite, column: S.Finite }),
-            end: S.Struct({ line: S.Finite, column: S.Finite }),
-          }),
+          status: Mutant.MutantStatusSchema,
+          location: Mutant.Location,
         }),
       ),
     }),

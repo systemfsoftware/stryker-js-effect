@@ -1,9 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-const Count = S.Int.check(S.isGreaterThanOrEqualTo(0))
+const Count = Report.NonNegativeInt
 
 export class InstrumentCommand extends S.TaggedClass<InstrumentCommand>()('InstrumentCommand', {
   fileCount: Count,

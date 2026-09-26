@@ -2,7 +2,6 @@ import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as S from 'effect/Schema'
 import type * as OxcModule from 'oxc-parser'
 import type { Program } from './Ast.handle.js'
 import {
@@ -14,7 +13,8 @@ import {
   type TSAst,
   type TsxAst,
 } from './Ast.schema.js'
-import { LineTable, LineTableFromText } from './Location.schema.js'
+import { lineStartsOf, positionAt } from './Location.js'
+import type { LineStarts } from './Location.schema.js'
 import { ParseFailed } from './Parser.schema.js'
 export { ParseFailed }
 
@@ -41,8 +41,8 @@ const parseWithOxcDataFirst = Effect.fn('stryker.instrument.parser.parseWithOxc'
   function*(text: string, fileName: string, lang: 'js' | 'jsx' | 'ts' | 'tsx') {
     const oxc = yield* loadOxc
     const result = oxc.parseSync(fileName, text, { lang, range: true })
-    const lineTable = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
-    const failure = oxcParseFailure(result.errors, fileName, lineTable)
+    const lineStarts = lineStartsOf(text)
+    const failure = oxcParseFailure(result.errors, fileName, lineStarts)
     return yield* Option.match(Option.fromNullishOr(failure), {
       onNone: () => Effect.succeed({ root: result.program, comments: result.comments }),
       onSome: (failed) => Effect.fail(failed),
@@ -65,7 +65,7 @@ export const parseWithOxc: {
 const oxcParseFailure = (
   errors: readonly OxcModule.OxcError[],
   fileName: string,
-  lineTable: LineTable,
+  lineStarts: LineStarts,
 ): ParseFailed | undefined =>
   Option.match(Option.fromNullishOr(errors.at(0)), {
     onNone: () => undefined,
@@ -73,7 +73,7 @@ const oxcParseFailure = (
       ParseFailed.make({
         fileName,
         message: first.message,
-        location: lineTable.positionAt(oxcErrorLabelStart(first)),
+        location: positionAt(lineStarts, oxcErrorLabelStart(first)),
         cause: errors.map((reported) => reported.message),
       }),
   })

@@ -15,7 +15,7 @@ const failAsProgress = <E = unknown>(cause: E): Reporter.ReporterFailed =>
   Reporter.ReporterFailed.make({
     reporterName: 'progress',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
   })
 
 const emptyTally = (startedAt: number): ProgressTally => ({

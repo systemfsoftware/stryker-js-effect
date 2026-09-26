@@ -3,6 +3,7 @@ import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 import { SourceFileSchema, TSFileNodeSchema } from './CheckMutants.schema.js'
+import { TsConfigDocumentSchema } from './Tsconfig.schema.js'
 
 export class GroupMutantsCommand extends S.TaggedClass<GroupMutantsCommand>()('GroupMutantsCommand', {
   mutants: S.Array(Checker.CheckerMutantWire),
@@ -76,7 +77,7 @@ export class PlanResolutionCandidatesCommand extends S.TaggedClass<PlanResolutio
 export class OverrideTsconfigOptionsCommand extends S.TaggedClass<OverrideTsconfigOptionsCommand>()(
   'OverrideTsconfigOptionsCommand',
   {
-    document: S.Record(S.String, S.Unknown),
+    document: TsConfigDocumentSchema,
     buildMode: S.Boolean,
   },
 ) {

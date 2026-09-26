@@ -6,6 +6,8 @@ import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 import type { Vitest } from 'vitest/node'
 
+import type { VitestTestRecord } from '../vitest-run-command.schema.js'
+
 export type VitestValue = S.Schema.Type<typeof S.Unknown>
 
 const isOpaqueRecord = <A = VitestValue, V = VitestValue>(value: A): value is A & Record<string, V> =>
@@ -108,4 +110,56 @@ export const onClose: {
   <E>(cleanup: Effect.Effect<void, E>): (vitest: Vitest) => void
 } = dual(2, <E>(vitest: Vitest, cleanup: Effect.Effect<void, E>): void => {
   vitest.onClose(() => Effect.runPromise(cleanup))
+})
+
+const recordOption = <A = VitestValue>(value: A): Option.Option<Record<string, VitestValue>> =>
+  Option.liftPredicate(value, isOpaqueRecord<A, VitestValue>)
+
+const fieldOf = <A = VitestValue>(value: A, key: string): VitestValue =>
+  Option.getOrUndefined(propertyOf<A, VitestValue>(value, key))
+
+const stringFieldOf = <A = VitestValue>(value: A, key: string): Option.Option<string> =>
+  Option.filter(propertyOf<A, VitestValue>(value, key), Predicate.isString)
+
+const numberFieldOf = <A = VitestValue>(value: A, key: string): Option.Option<number> =>
+  Option.filter(propertyOf<A, VitestValue>(value, key), Predicate.isNumber)
+
+const firstErrorMessageOf = <A = VitestValue>(result: A): Option.Option<string> =>
+  Option.flatMap(
+    Option.flatMap(propertyOf<A, VitestValue>(result, 'errors'), (errors) =>
+      Option.flatMap(Option.liftPredicate(errors, Array.isArray), (list) => Option.fromNullishOr(list[0]))),
+    (first) =>
+      stringFieldOf(first, 'message'),
+  )
+
+const suiteNamesOf = <A = VitestValue>(suite: A): readonly string[] =>
+  Option.match(recordOption(suite), {
+    onNone: (): readonly string[] => [],
+    onSome: (record) => {
+      const name = textFieldOf(record, 'name')
+      const parents = suiteNamesOf(fieldOf(record, 'suite'))
+      return name.length > 0 ? [...parents, name] : parents
+    },
+  })
+
+const suiteErrorOf = <A = VitestValue>(suite: A): string | undefined =>
+  Option.match(recordOption(suite), {
+    onNone: (): string | undefined => undefined,
+    onSome: (record) =>
+      Option.match(firstErrorMessageOf(fieldOf(record, 'result')), {
+        onNone: () => suiteErrorOf(fieldOf(record, 'suite')),
+        onSome: (message) => message,
+      }),
+  })
+
+export const testRecordOf = <A = VitestValue>(test: A): VitestTestRecord => ({
+  name: textFieldOf(test, 'name'),
+  fullTestName: Option.getOrUndefined(stringFieldOf(test, 'fullTestName')),
+  suiteNames: suiteNamesOf(fieldOf(test, 'suite')),
+  fileName: Option.getOrUndefined(stringFieldOf(fieldOf(test, 'file'), 'filepath')),
+  mode: Option.getOrUndefined(stringFieldOf(test, 'mode')),
+  state: Option.getOrUndefined(stringFieldOf(fieldOf(test, 'result'), 'state')),
+  durationMs: Option.getOrUndefined(numberFieldOf(fieldOf(test, 'result'), 'duration')),
+  errorMessage: Option.getOrUndefined(firstErrorMessageOf(fieldOf(test, 'result'))),
+  suiteErrorMessage: suiteErrorOf(fieldOf(test, 'suite')),
 })
