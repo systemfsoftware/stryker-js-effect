@@ -1246,12 +1246,12 @@ const refusalError = (refusal: InstrumentationRefusal): InstrumentError =>
     Match.exhaustive,
   )
 
-const transformScriptDataFirst: AstTransformer<ScriptAst> = (
-  { root, originFileName, rawContent, offset, comments },
-  mutantCollector,
-  { options, mutateDescription, basePath },
-) =>
-  Effect.gen(function*() {
+const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn('stryker.instrument.transform.script')(
+  function*(
+    { root, originFileName, rawContent, offset, comments }: ScriptAst,
+    mutantCollector: MutantCollector,
+    { options, mutateDescription, basePath }: TransformerContext,
+  ) {
     const lineTable = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(rawContent))
     attachComments(make(root), comments, lineTable)
 
@@ -1285,7 +1285,8 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = (
     yield* placeHeaderIfNeeded(plan.hasLiveMutants, options, root)
 
     return plan.warnings
-  })
+  },
+)
 
 export const transformScript: {
   (

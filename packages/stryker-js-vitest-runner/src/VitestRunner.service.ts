@@ -223,17 +223,16 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
     )
   }
 
-  const coverageOfFile = (file: RunnerTestFile) =>
-    Effect.gen(function*() {
-      const decoded = yield* S.decodeUnknownEffect(MutantCoverageMetaSchema)(metaOf(file)).pipe(
-        Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
-        Effect.orElseSucceed(() => ({ mutantCoverage: undefined })),
-      )
-      return yield* Option.match(Option.fromNullishOr(decoded.mutantCoverage), {
-        onNone: () => Effect.succeedNone,
-        onSome: (coverage) => Effect.asSome(validateCoverage(coverage)),
-      })
+  const coverageOfFile = Effect.fn('vitest.runner.coverage_of_file')(function*(file: RunnerTestFile) {
+    const decoded = yield* S.decodeUnknownEffect(MutantCoverageMetaSchema)(metaOf(file)).pipe(
+      Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
+      Effect.orElseSucceed(() => ({ mutantCoverage: undefined })),
+    )
+    return yield* Option.match(Option.fromNullishOr(decoded.mutantCoverage), {
+      onNone: () => Effect.succeedNone,
+      onSome: (coverage) => Effect.asSome(validateCoverage(coverage)),
     })
+  })
 
   const mergeTestCoverage = (
     perTest: Record<string, Mutant.CoverageData>,
@@ -268,58 +267,57 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
     })
   })
 
-  const collectRaw = (filter: RunFilter) =>
-    Effect.gen(function*() {
-      const self = yield* runtime
-      const options = yield* vitestOptions
-      yield* resetContext
-      const related = relatedFilesOf(options.related, filter.relatedFiles, projectRoot, pathService)
-      const plan = runFilterPlan(filter, projectRoot, pathService)
-      yield* applyRunFilter(self, { related, testNamePattern: plan.testNamePattern })
-      yield* start(self, plan.testFiles).pipe(
-        Effect.catchIf(
-          (error: TestRunner.TestRunnerFailed) => isMissingTestFilesCause(error.cause),
-          () => Effect.annotateCurrentSpan({ 'stryker.vitest.start_missing_files': true }).pipe(Effect.asVoid),
-        ),
-        Effect.catchIf(
-          (error: TestRunner.TestRunnerFailed) => !isMissingTestFilesCause(error.cause),
-          (error) =>
-            Effect.annotateCurrentSpan({ 'stryker.vitest.start_errored': true }).pipe(
-              Effect.flatMap(() => Effect.fail(error)),
-            ),
-        ),
-      )
-      yield* Effect.annotateCurrentSpan({
-        'stryker.vitest.start_filter_count': plan.testFiles === undefined ? -1 : plan.testFiles.length,
-      })
-      const allFiles = files(self)
-      const collected = allFiles.map((file) => ({
-        file,
-        tests: Option.getOrElse(
-          Option.map(Option.liftPredicate(file, isRunnerTestSuite), collectTestsFromSuite),
-          () => [],
-        ).filter(isCollectableTest),
-      }))
-      const rawTests = collected.flatMap((entry) => entry.tests)
-      const fileFailures = collected.flatMap(({ file, tests }) =>
-        fileFailedWithoutFailingTest(file, tests)
-          ? [{ fileName: file.filepath, message: fileFailureMessage(file) }]
-          : []
-      )
-      const externalError = hasExternalErrors(self)
-      yield* Effect.annotateCurrentSpan({
-        'stryker.vitest.file_count': allFiles.length,
-        'stryker.vitest.raw_test_count': rawTests.length,
-        'stryker.vitest.failed_file_count': fileFailures.length,
-        'stryker.vitest.has_external_error': externalError,
-      })
-      return {
-        rawTests,
-        fileFailures,
-        hasExternalError: externalError,
-        externalErrorText: Boolean.match(externalError, { onTrue: () => externalErrorText(self), onFalse: () => '' }),
-      }
+  const collectRaw = Effect.fn('vitest.runner.collect_raw')(function*(filter: RunFilter) {
+    const self = yield* runtime
+    const options = yield* vitestOptions
+    yield* resetContext
+    const related = relatedFilesOf(options.related, filter.relatedFiles, projectRoot, pathService)
+    const plan = runFilterPlan(filter, projectRoot, pathService)
+    yield* applyRunFilter(self, { related, testNamePattern: plan.testNamePattern })
+    yield* start(self, plan.testFiles).pipe(
+      Effect.catchIf(
+        (error: TestRunner.TestRunnerFailed) => isMissingTestFilesCause(error.cause),
+        () => Effect.annotateCurrentSpan({ 'stryker.vitest.start_missing_files': true }).pipe(Effect.asVoid),
+      ),
+      Effect.catchIf(
+        (error: TestRunner.TestRunnerFailed) => !isMissingTestFilesCause(error.cause),
+        (error) =>
+          Effect.annotateCurrentSpan({ 'stryker.vitest.start_errored': true }).pipe(
+            Effect.flatMap(() => Effect.fail(error)),
+          ),
+      ),
+    )
+    yield* Effect.annotateCurrentSpan({
+      'stryker.vitest.start_filter_count': plan.testFiles === undefined ? -1 : plan.testFiles.length,
     })
+    const allFiles = files(self)
+    const collected = allFiles.map((file) => ({
+      file,
+      tests: Option.getOrElse(
+        Option.map(Option.liftPredicate(file, isRunnerTestSuite), collectTestsFromSuite),
+        () => [],
+      ).filter(isCollectableTest),
+    }))
+    const rawTests = collected.flatMap((entry) => entry.tests)
+    const fileFailures = collected.flatMap(({ file, tests }) =>
+      fileFailedWithoutFailingTest(file, tests)
+        ? [{ fileName: file.filepath, message: fileFailureMessage(file) }]
+        : []
+    )
+    const externalError = hasExternalErrors(self)
+    yield* Effect.annotateCurrentSpan({
+      'stryker.vitest.file_count': allFiles.length,
+      'stryker.vitest.raw_test_count': rawTests.length,
+      'stryker.vitest.failed_file_count': fileFailures.length,
+      'stryker.vitest.has_external_error': externalError,
+    })
+    return {
+      rawTests,
+      fileFailures,
+      hasExternalError: externalError,
+      externalErrorText: Boolean.match(externalError, { onTrue: () => externalErrorText(self), onFalse: () => '' }),
+    }
+  })
 
   const mutantRunCell = Cell.provideContext(
     makeMutantRunCell({
@@ -350,8 +348,8 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
     })
   }
 
-  const completeDryRun = (tests: readonly TestRunner.TestResult[]) =>
-    Effect.gen(function*() {
+  const completeDryRun = Effect.fn('vitest.runner.complete_dry_run')(
+    function*(tests: readonly TestRunner.TestResult[]) {
       const mutantCoverage = yield* readMutantCoverage.pipe(Effect.mapError(asRunnerFailure('dryRun')))
       yield* Effect.annotateCurrentSpan({
         'stryker.vitest.test_count': tests.length,
@@ -361,7 +359,8 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
         onNone: (): TestRunner.DryRunResult => ({ status: 'complete', tests }),
         onSome: (coverage): TestRunner.DryRunResult => ({ status: 'complete', tests, mutantCoverage: coverage }),
       })
-    })
+    },
+  )
 
   const dryRun = (options: TestRunner.DryRunOptions) =>
     session.setMode('dry-run').pipe(

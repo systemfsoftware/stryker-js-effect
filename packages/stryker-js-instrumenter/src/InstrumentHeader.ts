@@ -1,3 +1,4 @@
+import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
@@ -85,8 +86,13 @@ const loadHeader = Effect.map(
   },
 )
 
-export const instrumentationHeader: Effect.Effect<readonly Statement[], ParseFailed> =
-  instrumentationHeaderValue !== undefined ? Effect.succeed(instrumentationHeaderValue) : loadHeader
+export const instrumentationHeader: Effect.Effect<readonly Statement[], ParseFailed> = Option.match(
+  Option.fromNullishOr(instrumentationHeaderValue),
+  {
+    onNone: () => loadHeader,
+    onSome: (header) => Effect.succeed(header),
+  },
+)
 
 export const placeHeader = (root: Program): Effect.Effect<void, ParseFailed> =>
   Effect.map(headerFor(root), (header) => {
@@ -94,17 +100,24 @@ export const placeHeader = (root: Program): Effect.Effect<void, ParseFailed> =>
   })
 
 const headerFor = (root: Program): Effect.Effect<readonly Statement[], ParseFailed> =>
-  Effect.map(instrumentationHeader, (header) =>
-    Option.match(leadingCommentsOf(root), {
-      onNone: () => header,
-      onSome: (leadingComments) => [commentedHeader(leadingComments, header), ...header.slice(1)],
-    }))
+  Effect.map(
+    instrumentationHeader,
+    (header) =>
+      Option.match(Option.all([Option.fromNullishOr(header[0]), leadingCommentsOf(root)]), {
+        onNone: () => header,
+        onSome: ([firstHeader, leadingComments]) => commentedHeader(firstHeader, leadingComments, header.slice(1)),
+      }),
+  )
 
 const placeHeaderIfNeededDataFirst = (
   placed: boolean,
   options: HeaderOptions,
   root: Program,
-): Effect.Effect<void, ParseFailed> => (placed ? placeHeaderWhenWanted(options, root) : Effect.void)
+): Effect.Effect<void, ParseFailed> =>
+  Boolean.match(placed, {
+    onTrue: () => placeHeaderWhenWanted(options, root),
+    onFalse: () => Effect.void,
+  })
 
 export const placeHeaderIfNeeded: {
   (placed: boolean, options: HeaderOptions, root: Program): Effect.Effect<void, ParseFailed>
@@ -112,20 +125,22 @@ export const placeHeaderIfNeeded: {
 } = dual((args: IArguments): boolean => args.length >= 3, placeHeaderIfNeededDataFirst)
 
 const placeHeaderWhenWanted = (options: HeaderOptions, root: Program): Effect.Effect<void, ParseFailed> =>
-  options.noHeader === true ? Effect.void : placeHeader(root)
+  Boolean.match(options.noHeader === true, {
+    onTrue: () => Effect.void,
+    onFalse: () => placeHeader(root),
+  })
 
 function leadingCommentsOf(root: Program): Option.Option<readonly LocatedComment[]> {
   const first = root.body[0]
-  if (!hasLeadingComments(first)) return Option.none()
-  return Option.some(first.leadingComments)
+  return Option.map(Option.liftPredicate(first, hasLeadingComments), (value) => value.leadingComments)
 }
 
-function commentedHeader(leadingComments: readonly LocatedComment[], header: readonly Statement[]): Statement {
-  const firstHeader = Option.getOrThrowWith(
-    Option.fromNullishOr(header[0]),
-    () => new Error('Instrumentation header is empty'),
-  )
+function commentedHeader(
+  firstHeader: Statement,
+  leadingComments: readonly LocatedComment[],
+  rest: readonly Statement[],
+): readonly Statement[] {
   const cloned = cloneNode(firstHeader)
   Object.assign(cloned, { leadingComments })
-  return cloned
+  return [cloned, ...rest]
 }

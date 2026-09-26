@@ -30,8 +30,8 @@ export interface MutantRunCellDeps {
 }
 
 export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
-  Sandwich.named('stryker.vitest.mutant_run')((command: Mutant.MutantRunOptions) =>
-    Effect.gen(function*() {
+  Sandwich.named('stryker.vitest.mutant_run')(
+    Effect.fn('vitest.mutant_run.read')(function*(command: Mutant.MutantRunOptions) {
       const session = yield* VitestSession
       yield* session.setMode('mutant')
       yield* session.provide('hitLimit', command.hitLimit)
@@ -59,7 +59,7 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
         timeoutTrapFile: vitestOptions.timeoutTrapFile,
         timeoutTrapMutantId: vitestOptions.timeoutTrapMutantId,
       }
-    })
+    }),
   )
     .decide(interpretVitestMutantRun)
     .write({

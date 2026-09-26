@@ -66,34 +66,35 @@ const instrumentedResult = (raw: InstrumentFilesRaw): Effect.Effect<InstrumentRe
 const skippedOnlyResult = (raw: InstrumentFilesRaw): InstrumentResult =>
   InstrumentResult.make({ files: [], mutants: [], skipped: [...raw.skipped] })
 
-const readInstrumentFiles = (input: InstrumentFilesInput): Effect.Effect<InstrumentFilesRaw, InstrumentError> =>
-  Effect.gen(function*() {
-    const outcomes = yield* Effect.forEach(
-      input.files,
-      (file) => fileOutcome({ registry: input.registry, file }),
-      { concurrency: 1 },
-    )
-    const parsed = outcomes.filter(isParsedOutcome).map((outcome) => outcome.parsed)
-    const collector = createMutantCollector()
-    yield* Effect.forEach(
-      parsed,
-      ({ file, ast }) => transformInto({ registry: input.registry, collector, file, ast, options: input.options }),
-      { concurrency: 1 },
-    )
-    const mutants = yield* collectMutants(collector)
-    const skipped = outcomes.flatMap(skipsOf)
-    return {
-      _tag: 'InstrumentFilesCommand',
-      version: 'instrument-files',
-      fileCount: input.files.length,
-      claimedCount: parsed.length,
-      skipped,
-      files: input.files,
-      registry: input.registry,
-      parsed,
-      mutants,
-    }
-  })
+const readInstrumentFiles = Effect.fn('stryker.instrument.read_files')(function*(
+  input: InstrumentFilesInput,
+): Effect.fn.Return<InstrumentFilesRaw, InstrumentError> {
+  const outcomes = yield* Effect.forEach(
+    input.files,
+    (file) => fileOutcome({ registry: input.registry, file }),
+    { concurrency: 1 },
+  )
+  const parsed = outcomes.filter(isParsedOutcome).map((outcome) => outcome.parsed)
+  const collector = createMutantCollector()
+  yield* Effect.forEach(
+    parsed,
+    ({ file, ast }) => transformInto({ registry: input.registry, collector, file, ast, options: input.options }),
+    { concurrency: 1 },
+  )
+  const mutants = yield* collectMutants(collector)
+  const skipped = outcomes.flatMap(skipsOf)
+  return {
+    _tag: 'InstrumentFilesCommand',
+    version: 'instrument-files',
+    fileCount: input.files.length,
+    claimedCount: parsed.length,
+    skipped,
+    files: input.files,
+    registry: input.registry,
+    parsed,
+    mutants,
+  }
+})
 
 export const instrumentFilesCell: Cell.Cell<InstrumentFilesInput, InstrumentResult, InstrumentError, never> = Sandwich
   .named('stryker.instrument.files')(

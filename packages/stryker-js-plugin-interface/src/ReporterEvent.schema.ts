@@ -114,12 +114,15 @@ const isObjectValue = <T = unknown>(input: T): input is T & object => typeof inp
 
 const withTag = <T = unknown>(input: T, tag: string): T => isObjectValue(input) ? { ...input, _tag: tag } : input
 
-const withoutTag = <T = unknown>(input: T): T => {
-  if (!isObjectValue(input)) return input
-  const copy = { ...input }
-  Reflect.deleteProperty(copy, '_tag')
-  return copy
-}
+const withoutTag = <T = unknown>(input: T): T =>
+  Option.match(Option.liftPredicate(input, isObjectValue), {
+    onNone: () => input,
+    onSome: (object) => {
+      const copy = { ...object }
+      Reflect.deleteProperty(copy, '_tag')
+      return copy
+    },
+  })
 
 const identity = <T = unknown>(input: T): T => input
 
@@ -156,11 +159,17 @@ const decodeAgreementToken = <T = unknown>(input: T): string => {
   return Exit.isFailure(decoded) ? 'invalid' : `valid:${reencoded(decoded.value)}`
 }
 
-const agreesWithDecode = <T = unknown>(input: T): boolean => {
-  const standard = validateEvent(input)
-  if (isAsyncResult(standard)) return false
-  return standardAgreementToken(standard) === decodeAgreementToken(input)
-}
+const agreesWithDecode = <T = unknown>(input: T): boolean =>
+  Option.match(
+    Option.liftPredicate(
+      validateEvent(input),
+      (standard): standard is StandardSchemaV1.Result<ReporterEvent> => !isAsyncResult(standard),
+    ),
+    {
+      onNone: () => false,
+      onSome: (standard) => standardAgreementToken(standard) === decodeAgreementToken(input),
+    },
+  )
 
 const resultShapeOf = (result: StandardSchemaV1.Result<ReporterEvent>): boolean =>
   'value' in result ? !('issues' in result) : result.issues.length > 0

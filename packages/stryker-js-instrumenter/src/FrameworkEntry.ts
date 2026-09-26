@@ -117,39 +117,37 @@ const frameworkEntryOfDataFirst = (moduleName: string, framework: Framework): Em
   } satisfies FormatClaim<'embedded'>,
   owner: moduleName,
   ownerVersion: framework.claim.ownerVersion,
-  parse: (text, fileName) =>
-    Effect.gen(function*() {
-      const context = frameworkContextOf(yield* loadFrameworkToolkit)
-      const lineTable = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
-      const result = yield* runHook(moduleName, 'parse', fileName, () => framework.parse(text, context))
-      const document = yield* settled(moduleName, fileName, result)
-      return {
-        format: 'embedded',
-        formatId: framework.claim.formatId,
-        originFileName: fileName,
-        rawContent: text,
-        document,
-        context,
-        scripts: embeddedScriptsOf(document, text, fileName, lineTable),
-      } satisfies EmbeddedAst
-    }),
+  parse: Effect.fn('stryker.instrument.framework_entry.parse')(function*(text: string, fileName: string) {
+    const context = frameworkContextOf(yield* loadFrameworkToolkit)
+    const lineTable = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
+    const result = yield* runHook(moduleName, 'parse', fileName, () => framework.parse(text, context))
+    const document = yield* settled(moduleName, fileName, result)
+    return {
+      format: 'embedded',
+      formatId: framework.claim.formatId,
+      originFileName: fileName,
+      rawContent: text,
+      document,
+      context,
+      scripts: embeddedScriptsOf(document, text, fileName, lineTable),
+    } satisfies EmbeddedAst
+  }),
   transform: (ast, mutantCollector, context) =>
     Option.match(embeddedOf(ast), {
       onNone: () => Effect.fail(embeddedAstError(ast)),
-      onSome: (embedded) =>
-        Effect.gen(function*() {
-          const warnings = yield* Effect.forEach(
-            embedded.scripts,
-            (script) => context.transform(script.ast, mutantCollector, context),
-          )
-          embedded.document = yield* runHook(
-            moduleName,
-            'transform',
-            embedded.originFileName,
-            () => framework.transform(embedded.document, embedded.context),
-          )
-          return warnings.flat()
-        }),
+      onSome: Effect.fn('stryker.instrument.framework_entry.transform')(function*(embedded: EmbeddedAst) {
+        const warnings = yield* Effect.forEach(
+          embedded.scripts,
+          (script) => context.transform(script.ast, mutantCollector, context),
+        )
+        embedded.document = yield* runHook(
+          moduleName,
+          'transform',
+          embedded.originFileName,
+          () => framework.transform(embedded.document, embedded.context),
+        )
+        return warnings.flat()
+      }),
     }),
   print: (ast) =>
     Option.match(embeddedOf(ast), {
