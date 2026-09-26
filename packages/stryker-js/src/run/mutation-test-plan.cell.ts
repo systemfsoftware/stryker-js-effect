@@ -1,10 +1,13 @@
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
+import * as Match from 'effect/Match'
 import * as Metric from 'effect/Metric'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Queue from 'effect/Queue'
+import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -12,7 +15,12 @@ import { CheckerMutantFromMutant, UndescribableMutant } from '../Checker/Checker
 import { MaterializeMutantPlanCommand, materializeMutantPlans } from '../materialize-mutant-plans.workflow.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
-import { planMutantTests } from '../plan-mutant-tests.workflow.js'
+import {
+  CoveredMutantHitCountMissing,
+  planMutantTests,
+  PlannedEarlyResultMutant,
+  PlannedRunMutant,
+} from '../plan-mutant-tests.workflow.js'
 import type { Project } from '../Project.schema.js'
 import { offerReporterEvent, type ReporterStage } from '../reporter-stream.service.js'
 import { PlanKnown, RunEvents } from '../run-events.service.js'
@@ -116,57 +124,54 @@ const planCommandOf = (
     }),
   })
 
-const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>) =>
-  new Map(mutants.map((mutant) => [mutant.id, mutant] as const))
+const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
+  Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant] as const))
 
-const decidePlans = Effect.fn('stryker.mutation_test.decide_plans')(function*(
-  input: Readonly<{
-    mutants: readonly Mutant.Mutant[]
-    testCoverage: TestCoverage
-    options: {
-      readonly disableBail: boolean
-      readonly timeoutMS: number
-      readonly timeoutFactor: number
-      readonly ignoreStatic: boolean
-    }
-    timeOverheadMS: number
-    globalTestFilter: string[] | undefined
-    sandboxFileByName: Record<string, string>
-  }>,
-) {
-  const command = planCommandOf(
+const readPlanCommand = Effect.fn('stryker.mutation_test.plan.read')(function*(input: MutationTestPlanInput) {
+  const sandboxFileByName: Record<string, string> = Object.fromEntries(
+    yield* sandboxFilesOf({
+      sandbox: input.sandbox,
+      fileNames: [...MutableHashMap.keys(input.project.filesToMutate)],
+    }),
+  )
+  return planCommandOf(
     input.mutants,
     input.testCoverage,
     input.options,
     input.timeOverheadMS,
-    input.globalTestFilter,
-    input.sandboxFileByName,
+    undefined,
+    sandboxFileByName,
   )
-  return yield* Result.match(planMutantTests(command), {
-    onFailure: (failure) =>
-      Effect.fail(
-        StageError.make({
-          stage: 'mutationTest',
-          reason: `covered mutant missing dry-run hit count: ${failure.missingIds.join(', ')}`,
-          cause: failure,
-        }),
-      ),
-    onSuccess: (decisions) => {
-      const byId = mutantsByIdOf(input.mutants)
-      return Effect.forEach(decisions, (decision) =>
-        Option.match(Option.fromUndefinedOr(byId.get(decision.mutantId)), {
-          onNone: () =>
-            Effect.die(UnknownPlannedMutant.make({
-              mutantId: decision.mutantId,
-              message: `planner returned an unknown mutant id: ${decision.mutantId}`,
-            })),
-          onSome: (mutant) =>
-            Effect.fromResult(
-              materializeMutantPlans(MaterializeMutantPlanCommand.make({ mutant, plan: decision })),
-            ).pipe(Effect.map((materialized) => materialized.plan)),
-        }))
-    },
-  })
+})
+
+type EncodedPlannedDecision = typeof PlannedRunMutant.Encoded | typeof PlannedEarlyResultMutant.Encoded
+
+const plannedPlanOf = (
+  mutant: Mutant.Mutant,
+  decision: EncodedPlannedDecision,
+): PlannedRunMutant | PlannedEarlyResultMutant =>
+  Match.value(decision).pipe(
+    Match.tag('PlannedRunMutant', (run) => PlannedRunMutant.make({ ...run, mutantId: mutant.id })),
+    Match.tag('PlannedEarlyResultMutant', (early) => PlannedEarlyResultMutant.make({ ...early, mutantId: mutant.id })),
+    Match.exhaustive,
+  )
+
+const materializeDecision = Effect.fnUntraced(function*(
+  decision: EncodedPlannedDecision,
+  command: MutantTestPlanCommand,
+): Effect.fn.Return<Mutant.TestPlan, StageError> {
+  const mutant = Option.getOrUndefined(Record.get(mutantsByIdOf(command.mutants), decision.mutantId))
+  if (mutant === undefined) {
+    return yield* Effect.die(
+      UnknownPlannedMutant.make({
+        mutantId: decision.mutantId,
+        message: `planner returned an unknown mutant id: ${decision.mutantId}`,
+      }),
+    )
+  }
+  return yield* Effect.fromResult(
+    materializeMutantPlans(MaterializeMutantPlanCommand.make({ mutant, plan: plannedPlanOf(mutant, decision) })),
+  ).pipe(Effect.map((materialized) => materialized.plan))
 })
 
 const earlyResultStatusOf = (mutant: Mutant.Mutant) =>
@@ -224,6 +229,22 @@ export const reportDroppedMutants = (dropped: readonly Mutant.Mutant[]) =>
       }),
   })
 
+const planMutantTestsCell = Sandwich.named('stryker.mutation_test.plan_mutants')(readPlanCommand)
+  .decide(planMutantTests)
+  .write({
+    PlannedRunMutant: (decision, command) => materializeDecision(decision, command),
+    PlannedEarlyResultMutant: (decision, command) => materializeDecision(decision, command),
+    CoveredMutantHitCountMissing: ({ missingIds }) =>
+      Effect.fail(
+        StageError.make({
+          stage: 'mutationTest',
+          reason: `covered mutant missing dry-run hit count: ${missingIds.join(', ')}`,
+          cause: CoveredMutantHitCountMissing.make({ missingIds }),
+        }),
+      ),
+    CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'mutationTest', reason: issue })),
+  })
+
 export interface MutationTestPlanInput {
   readonly mutants: readonly Mutant.Mutant[]
   readonly testCoverage: TestCoverage
@@ -250,22 +271,8 @@ export interface MutationTestPlan {
 export const planMutationTest = Effect.fn('stryker.mutation_test.plan')(function*(
   input: MutationTestPlanInput,
 ) {
-  const sandboxFileByName: Record<string, string> = Object.fromEntries(
-    yield* sandboxFilesOf({
-      sandbox: input.sandbox,
-      fileNames: [...MutableHashMap.keys(input.project.filesToMutate)],
-    }),
-  )
-  const { runPlans, earlyPlans } = partitionRunPlans(
-    yield* decidePlans({
-      mutants: input.mutants,
-      testCoverage: input.testCoverage,
-      options: input.options,
-      timeOverheadMS: input.timeOverheadMS,
-      globalTestFilter: undefined,
-      sandboxFileByName,
-    }),
-  )
+  const plans = yield* planMutantTestsCell.run(input)
+  const { runPlans, earlyPlans } = partitionRunPlans(plans)
   const earlyResults = yield* Effect.forEach(earlyPlans, (plan) => earlyResultOf(plan))
   const sortedPlans = sortRunPlans(runPlans)
   const plansForReporter: readonly Mutant.RunPlan[] = [...sortedPlans]

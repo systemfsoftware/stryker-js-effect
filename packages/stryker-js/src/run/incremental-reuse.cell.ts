@@ -1,17 +1,17 @@
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { type Format, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
-import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
 import * as S from 'effect/Schema'
 
 import {
-  incrementalDiff as incrementalDiffDecisions,
+  incrementalDiff,
   IncrementalDiffCommand,
-  type IncrementalDiffDecision,
   type MutantRemembered,
+  type MutantToRun,
 } from '../incremental-diff.workflow.js'
 import type { FormatIdentity } from '../IncrementalDiff.schema.js'
 import { PreviousFilesSchema, PreviousTestFilesSchema } from '../IncrementalDiff.schema.js'
@@ -19,6 +19,7 @@ import { RelativeNormalizedFileName } from '../matching.schema.js'
 import { identityOf } from '../mutation-reporting.service.js'
 import { ProjectFiles } from '../project-files.service.js'
 import type { Project } from '../Project.schema.js'
+import { StageError } from '../Run.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 
 const relativeFileNameOf = (fileName: string, basePath: string) =>
@@ -35,7 +36,7 @@ const readCurrentRelativeFiles = Effect.fn('stryker.mutation_test.read_relative_
   )
 })
 
-type RememberedMutantResult = MutantRemembered
+type RememberedMutantResult = typeof MutantRemembered.Encoded
 
 const rememberedCoveredBy = (entry: RememberedMutantResult): { readonly coveredBy?: readonly string[] } =>
   Option.match(Option.fromNullishOr(entry.coveredBy), {
@@ -80,8 +81,8 @@ const rememberedResultOf = (
     rememberedCoverage(entry),
   )
 
-const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>) =>
-  new Map(mutants.map((mutant) => [mutant.id, mutant] as const))
+const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
+  Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant] as const))
 
 const rememberedOf = (mutant: Mutant.Mutant, entry: RememberedMutantResult) =>
   Effect.map(
@@ -91,22 +92,6 @@ const rememberedOf = (mutant: Mutant.Mutant, entry: RememberedMutantResult) =>
     ]),
     ([reportLocation, status]) => rememberedResultOf(mutant, entry, reportLocation, status),
   )
-
-const rememberedResultsOf = Effect.fn('stryker.mutation_test.remembered_results')(function*(
-  mutants: readonly Mutant.Mutant[],
-  remembered: readonly RememberedMutantResult[],
-) {
-  const byId = mutantsByIdOf(mutants)
-  const located = yield* Effect.forEach(
-    remembered,
-    (entry) =>
-      Option.match(Option.fromUndefinedOr(byId.get(entry.mutantId)), {
-        onNone: () => Effect.succeed(Option.none<Mutant.RunMutantResult>()),
-        onSome: (mutant) => Effect.asSome(rememberedOf(mutant, entry)),
-      }),
-  )
-  return located.flatMap((entry) => Option.match(entry, { onNone: () => [], onSome: (result) => [result] }))
-})
 
 const previousFilesOf = (report: Report.MutationTestResult | undefined): S.Schema.Type<typeof PreviousFilesSchema> =>
   Option.getOrElse(
@@ -197,19 +182,63 @@ const incrementalDiffCommandOf = (
     force,
   })
 
-const mutantsOfDecision = (decision: IncrementalDiffDecision) =>
-  Match.value(decision).pipe(
-    Match.tag('MutantToRun', (run) => [run.mutant] as const),
-    Match.tag('MutantRemembered', () => [] as const),
-    Match.exhaustive,
-  )
+type IncrementalReuseRaw = IncrementalDiffCommand & {
+  readonly mutantsById: Record<string, Mutant.Mutant>
+}
 
-const rememberedOfDecision = (decision: IncrementalDiffDecision) =>
-  Match.value(decision).pipe(
-    Match.tag('MutantToRun', () => [] as const),
-    Match.tag('MutantRemembered', (remembered) => [remembered] as const),
-    Match.exhaustive,
+const readIncrementalReuseCommand = Effect.fn('stryker.incremental_reuse.read')(function*(
+  input: IncrementalReuseInput,
+) {
+  const currentRelativeFiles = yield* readCurrentRelativeFiles(input.project, input.basePath)
+  const command = incrementalDiffCommandOf(
+    input.currentMutants,
+    input.testCoverage,
+    input.project.incrementalReport,
+    currentRelativeFiles,
+    input.basePath,
+    input.force,
+    claimedIdentities(input.project, input.formatRegistry, input.basePath),
   )
+  return Object.assign(command, { mutantsById: mutantsByIdOf(command.currentMutants) })
+})
+
+export interface IncrementalReusePart {
+  readonly mutants: readonly Mutant.Mutant[]
+  readonly rememberedResults: readonly Mutant.RunMutantResult[]
+}
+
+const mutantToRunPart = Effect.fnUntraced(function*(
+  decision: typeof MutantToRun.Encoded,
+  command: IncrementalReuseRaw,
+): Effect.fn.Return<IncrementalReusePart, never> {
+  return yield* Option.match(Record.get(command.mutantsById, decision.mutant.id), {
+    onNone: () => Effect.succeed<IncrementalReusePart>({ mutants: [], rememberedResults: [] }),
+    onSome: (mutant) => Effect.succeed<IncrementalReusePart>({ mutants: [mutant], rememberedResults: [] }),
+  })
+})
+
+const rememberedMutantPart = Effect.fnUntraced(function*(
+  decision: typeof MutantRemembered.Encoded,
+  command: IncrementalReuseRaw,
+): Effect.fn.Return<IncrementalReusePart, never> {
+  return yield* Option.match(Record.get(command.mutantsById, decision.mutantId), {
+    onNone: () => Effect.succeed<IncrementalReusePart>({ mutants: [], rememberedResults: [] }),
+    onSome: (mutant) =>
+      Effect.map(
+        rememberedOf(mutant, decision),
+        (result): IncrementalReusePart => ({ mutants: [], rememberedResults: [result] }),
+      ),
+  })
+})
+
+const incrementalReuseCell = Sandwich.named('stryker.incremental_reuse')(readIncrementalReuseCommand)
+  .decide(incrementalDiff)
+  .write({
+    MutantToRun: (decision, command) => mutantToRunPart(decision, command),
+    MutantRemembered: (decision, command) => rememberedMutantPart(decision, command),
+    CommandRejected: ({ issue }) =>
+      Effect.die(StageError.make({ stage: 'mutationTest', reason: `incremental reuse command rejected: ${issue}` })),
+  })
 
 export interface IncrementalReuseInput {
   readonly project: Project
@@ -225,29 +254,8 @@ export interface IncrementalReuse {
   readonly rememberedResults: readonly Mutant.RunMutantResult[]
 }
 
-export const readIncrementalReuse = Effect.fn('stryker.mutation_test.incremental_diff')(function*(
-  input: IncrementalReuseInput,
-) {
-  const currentRelativeFiles = yield* readCurrentRelativeFiles(input.project, input.basePath)
-  const decisions = yield* Effect.fromResult(
-    incrementalDiffDecisions(
-      incrementalDiffCommandOf(
-        input.currentMutants,
-        input.testCoverage,
-        input.project.incrementalReport,
-        currentRelativeFiles,
-        input.basePath,
-        input.force,
-        claimedIdentities(input.project, input.formatRegistry, input.basePath),
-      ),
-    ),
-  )
-  const rememberedResults = yield* rememberedResultsOf(
-    input.currentMutants,
-    decisions.flatMap((decision) => rememberedOfDecision(decision)),
-  )
-  return {
-    mutants: decisions.flatMap((decision) => mutantsOfDecision(decision)),
-    rememberedResults,
-  }
-})
+export const readIncrementalReuse = (input: IncrementalReuseInput) =>
+  Effect.map(incrementalReuseCell.run(input), (parts) => ({
+    mutants: parts.flatMap((part) => part.mutants),
+    rememberedResults: parts.flatMap((part) => part.rememberedResults),
+  }))

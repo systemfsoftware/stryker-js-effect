@@ -1,7 +1,7 @@
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Reporter, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Boolean from 'effect/Boolean'
-import type * as Cause from 'effect/Cause'
+import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -13,6 +13,7 @@ import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import type * as Semaphore from 'effect/Semaphore'
 
+import { interpretMutantRun, MutantRunObservation } from '../interpret-mutant-run.workflow.js'
 import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
 import { invalidatesRunnerPool, type PooledTestRunner } from '../pooled-test-runner.handle.js'
 import { offerReporterEvent } from '../reporter-stream.service.js'
@@ -67,15 +68,6 @@ export const reasonOf = (result: { readonly status: string; readonly reason?: st
     Match.when({ status: 'timeout' }, (timedOut) => timedOut.reason),
     Match.orElse(() => undefined),
   )
-
-const stopWallClock = (
-  result: { readonly status: string; readonly reason?: string },
-): Effect.Effect<void, StageError> =>
-  Boolean.match(result.status === 'timeout' && !S.is(TestRunner.HitLimitReasonText)(reasonOf(result)), {
-    onTrue: () =>
-      Effect.fail(StageError.make({ stage: 'mutationTest', reason: TestRunner.WallClockTimeoutReason.literal })),
-    onFalse: () => Effect.void,
-  })
 
 const invalidateSlot = <A, E, I>(
   pool: Pool.Pool<A, I>,
@@ -200,49 +192,81 @@ export interface RunOnePlanArgs {
   readonly plan: Mutant.MutantRunPlan
 }
 
+type MutantRunRaw = typeof MutantRunObservation.Encoded & {
+  readonly args: RunOnePlanArgs
+  readonly runner: PooledTestRunner
+  readonly result: TestRunner.MutantRunResult
+}
+
+const readMutantRun = Effect.fnUntraced(function*(input: RunOnePlanArgs) {
+  const { testRunnerPool, plan } = input
+  const runner = yield* Pool.get(testRunnerPool)
+  const result = yield* runner.mutantRun(plan.runOptions).pipe(
+    Effect.withSpan('stryker.testRunner.mutantRun', {
+      attributes: {
+        'stryker.mutant.id': plan.mutant.id,
+        'stryker.mutant.mutator': plan.mutant.mutatorName,
+        'stryker.mutant.file': plan.mutant.fileName,
+      },
+    }),
+    Effect.tap((runResult) =>
+      Effect.annotateCurrentSpan({
+        'stryker.mutant.status': runResult.status,
+      })
+    ),
+    Effect.catchTags({
+      OutOfMemoryError: (error) => invalidateSlot(testRunnerPool, runner, error),
+      ChildProcessCrashedError: (error) => invalidateSlot(testRunnerPool, runner, error),
+    }),
+  )
+  return {
+    status: result.status,
+    timedOut: result.status === 'timeout',
+    wallClockTimeout: invalidatesRunnerPool(result.status, reasonOf(result)),
+    hitLimitReason: S.is(TestRunner.HitLimitReasonText)(reasonOf(result)),
+    args: input,
+    runner,
+    result,
+  }
+})
+
+const settleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
+  const { context, plan, checkpointGate, completedMutants } = raw.args
+  const reported = yield* context.reporting.reportMutantRunResult(toReportedMutant(plan.mutant), raw.result)
+  const prepared = yield* preparedStreamableOf(context, reported)
+  const finished = yield* offerFinished(context, reported, prepared)
+  yield* offerStreamTested(context, reported, finished, prepared)
+  yield* checkpointGate.withPermits(1)(persist(context, completedMutants, reported))
+  return reported
+})
+
+const invalidateMutantRunSlot = Effect.fnUntraced(function*(raw: MutantRunRaw) {
+  return yield* invalidateSlot(
+    raw.args.testRunnerPool,
+    raw.runner,
+    ChildProcessCrashedError.make({
+      pid: 0,
+      exit: { _tag: 'Signal', signal: 'SIGKILL' },
+      cause: 'wall-clock timeout',
+    }),
+  )
+})
+
+const stopMutantRunWallClock = Effect.fnUntraced(function*(_raw: MutantRunRaw) {
+  return yield* StageError.make({ stage: 'mutationTest', reason: TestRunner.WallClockTimeoutReason.literal })
+})
+
+const mutantRunCell = Sandwich.named('stryker.mutant_run')(readMutantRun)
+  .decide(interpretMutantRun)
+  .write({
+    MutantRunSettled: (_decision, raw) => settleMutantRun(raw),
+    MutantRunPoolInvalidated: (_decision, raw) => invalidateMutantRunSlot(raw),
+    MutantRunWallClockStopped: (_decision, raw) => stopMutantRunWallClock(raw),
+    CommandRejected: ({ issue }) =>
+      Effect.fail(StageError.make({ stage: 'mutationTest', reason: `mutant run command rejected: ${issue}` })),
+  })
+
 export const runOnePlan: (
   input: RunOnePlanArgs,
-) => Effect.Effect<Mutant.RunMutantResult, StageError | PooledTestRunnerError, Scope.Scope> = Effect.fnUntraced(
-  function*(input: RunOnePlanArgs) {
-    const { context, testRunnerPool, checkpointGate, completedMutants, plan } = input
-    const runner = yield* Pool.get(testRunnerPool)
-    const result = yield* runner.mutantRun(plan.runOptions).pipe(
-      Effect.withSpan('stryker.testRunner.mutantRun', {
-        attributes: {
-          'stryker.mutant.id': plan.mutant.id,
-          'stryker.mutant.mutator': plan.mutant.mutatorName,
-          'stryker.mutant.file': plan.mutant.fileName,
-        },
-      }),
-      Effect.tap((runResult) =>
-        Effect.annotateCurrentSpan({
-          'stryker.mutant.status': runResult.status,
-        })
-      ),
-      Effect.catchTags({
-        OutOfMemoryError: (error) => invalidateSlot(testRunnerPool, runner, error),
-        ChildProcessCrashedError: (error) => invalidateSlot(testRunnerPool, runner, error),
-      }),
-    )
-    yield* Boolean.match(invalidatesRunnerPool(result.status, reasonOf(result)), {
-      onTrue: () =>
-        invalidateSlot(
-          testRunnerPool,
-          runner,
-          ChildProcessCrashedError.make({
-            pid: 0,
-            exit: { _tag: 'Signal', signal: 'SIGKILL' },
-            cause: 'wall-clock timeout',
-          }),
-        ),
-      onFalse: () => Effect.void,
-    })
-    yield* stopWallClock(result)
-    const reported = yield* context.reporting.reportMutantRunResult(toReportedMutant(plan.mutant), result)
-    const prepared = yield* preparedStreamableOf(context, reported)
-    const finished = yield* offerFinished(context, reported, prepared)
-    yield* offerStreamTested(context, reported, finished, prepared)
-    yield* checkpointGate.withPermits(1)(persist(context, completedMutants, reported))
-    return reported
-  },
-)
+) => Effect.Effect<Mutant.RunMutantResult, StageError | PooledTestRunnerError, Scope.Scope> = (input) =>
+  mutantRunCell.run(input)
