@@ -90,6 +90,12 @@ catalogs:
     '@systemfsoftware/oxlint-config-recommended':
       specifier: ^3.2.0
       version: 3.2.0
+    '@systemfsoftware/trace-spec':
+      specifier: ^0.5.1
+      version: 0.5.1
+    '@systemfsoftware/trace-taxonomy':
+      specifier: ^0.0.2
+      version: 0.0.2
     '@systemfsoftware/tsconfig':
       specifier: ^2.0.1
       version: 2.0.1
@@ -1424,9 +1430,15 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@systemfsoftware/differential-spec':
+        specifier: 'catalog:'
+        version: 0.6.0(patch_hash=ab431434dec649929f2bb9ef356cc11085547c9d01ec2fcc24a646c0e6235110)(vitest@5.0.1)
       '@systemfsoftware/effect-cell-types':
         specifier: 'catalog:'
         version: 11.0.0(effect@4.0.0-rc.117)
+      '@systemfsoftware/effect-gherkin-spec':
+        specifier: 'catalog:'
+        version: 6.0.0(@systemfsoftware/vitest@0.2.0(effect@4.0.0-rc.117)(vitest@5.0.1))(effect@4.0.0-rc.117)(vitest@5.0.1)
       '@systemfsoftware/effect-microsandbox':
         specifier: 'catalog:'
         version: 4.0.1(effect@4.0.0-rc.117)(redis@6.2.1(@opentelemetry/api@1.9.1))(typescript@7.0.2)
@@ -1448,6 +1460,12 @@ importers:
       '@systemfsoftware/stryker-js-vitest-runner':
         specifier: workspace:^
         version: link:../../packages/stryker-js-vitest-runner
+      '@systemfsoftware/trace-spec':
+        specifier: 'catalog:'
+        version: 0.5.1(@opentelemetry/api-logs@0.222.0)(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@systemfsoftware/vitest@0.2.0(effect@4.0.0-rc.117)(vitest@5.0.1))(effect@4.0.0-rc.117)(vitest@5.0.1)
+      '@systemfsoftware/trace-taxonomy':
+        specifier: 'catalog:'
+        version: 0.0.2(effect@4.0.0-rc.117)
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
@@ -2852,6 +2870,18 @@ packages:
     resolution: {integrity: sha512-54nXYZtk9B0pyDPw6lVtSF8sVh6YdPnRbrLzsGEdo5hEJXbEENOc5nc5eEF6p9geoEqZ2cPPzh3urnYUsEj3Ag==}
     engines: {node: '>=24.13.1'}
     hasBin: true
+    peerDependencies:
+      effect: 4.0.0-rc.117
+
+  '@systemfsoftware/trace-spec@0.5.1':
+    resolution: {integrity: sha512-mPIrUj0aYltipHlC8eE+yWCM1XDHzl5RyGrFF+buuj2xCERdhgg4iALpmaRNytlpNVLgNPk2C6dSZ/02RC132w==}
+    peerDependencies:
+      '@systemfsoftware/vitest': ^0.2.0
+      effect: 4.0.0-rc.117
+      vitest: ^5
+
+  '@systemfsoftware/trace-taxonomy@0.0.2':
+    resolution: {integrity: sha512-KoDqmgZmEp3oiH23Kt69n/S11+ngY+cIDfFHsmCX0kfdIhUTk4XgCeMbD1EkP6USSAUxbLjZfIh7azXYaJ9BtQ==}
     peerDependencies:
       effect: 4.0.0-rc.117
 
@@ -5625,6 +5655,30 @@ snapshots:
       - supports-color
       - utf-8-validate
       - vitest
+
+  '@systemfsoftware/trace-spec@0.5.1(@opentelemetry/api-logs@0.222.0)(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@systemfsoftware/vitest@0.2.0(effect@4.0.0-rc.117)(vitest@5.0.1))(effect@4.0.0-rc.117)(vitest@5.0.1)':
+    dependencies:
+      '@effect/opentelemetry': 4.0.0-rc.117(@opentelemetry/api-logs@0.222.0)(@opentelemetry/api@1.9.1)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-metrics@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0-rc.117)
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/resources': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/semantic-conventions': 1.43.0
+      '@systemfsoftware/effect-cell-types': 11.0.0(effect@4.0.0-rc.117)
+      '@systemfsoftware/effect-spec-runtime': 0.3.1(@systemfsoftware/vitest@0.2.0(effect@4.0.0-rc.117)(vitest@5.0.1))(effect@4.0.0-rc.117)(vitest@5.0.1)
+      '@systemfsoftware/trace-taxonomy': 0.0.2(effect@4.0.0-rc.117)
+      '@systemfsoftware/vitest': 0.2.0(effect@4.0.0-rc.117)(vitest@5.0.1)
+      effect: 4.0.0-rc.117
+      vitest: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
+    transitivePeerDependencies:
+      - '@opentelemetry/api-logs'
+      - '@opentelemetry/sdk-logs'
+      - '@opentelemetry/sdk-metrics'
+      - '@opentelemetry/sdk-trace-node'
+      - '@opentelemetry/sdk-trace-web'
+
+  '@systemfsoftware/trace-taxonomy@0.0.2(effect@4.0.0-rc.117)':
+    dependencies:
+      effect: 4.0.0-rc.117
 
   '@systemfsoftware/tsconfig@2.0.1': {}
 

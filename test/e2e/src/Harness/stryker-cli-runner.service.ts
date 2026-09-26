@@ -24,7 +24,12 @@ export interface ForkedRun {
   readonly fork: Warm.SandboxFork
 }
 
-const runStrykerCli = (args: ReadonlyArray<string>, warm: Warm.WarmSandbox, label: string) =>
+const runStrykerCli = (
+  args: ReadonlyArray<string>,
+  warm: Warm.WarmSandbox,
+  label: string,
+  runEnvironment: Readonly<Record<string, string>> | undefined,
+) =>
   Effect.gen(function*() {
     const enabled = yield* Config.option(Config.String('OTEL_ENABLED'))
     const service = yield* Config.option(Config.String('OTEL_SERVICE_NAME'))
@@ -33,11 +38,14 @@ const runStrykerCli = (args: ReadonlyArray<string>, warm: Warm.WarmSandbox, labe
     const result = yield* Warm.exec(
       fork,
       ['npx', '--no-install', 'stryker', ...args],
-      guestEnvironment({
-        OTEL_ENABLED: Option.getOrUndefined(enabled),
-        OTEL_SERVICE_NAME: Option.getOrUndefined(service),
-        OTEL_EXPORTER_OTLP_ENDPOINT: Option.getOrUndefined(endpoint),
-      }),
+      {
+        ...guestEnvironment({
+          OTEL_ENABLED: Option.getOrUndefined(enabled),
+          OTEL_SERVICE_NAME: Option.getOrUndefined(service),
+          OTEL_EXPORTER_OTLP_ENDPOINT: Option.getOrUndefined(endpoint),
+        }),
+        ...runEnvironment,
+      },
     )
     const run: ForkedRun = { result, fork }
     return run
@@ -48,6 +56,7 @@ export interface StrykerCliRunnerShape {
     args: ReadonlyArray<string>,
     warm: Warm.WarmSandbox,
     label: string,
+    runEnvironment?: Readonly<Record<string, string>> | undefined,
   ) => Effect.Effect<ForkedRun, Config.ConfigError | SandboxForkFailure, Crypto.Crypto | Scope.Scope>
 }
 
@@ -57,7 +66,12 @@ export class StrykerCliRunner extends Context.Service<StrykerCliRunner, StrykerC
   static readonly layer = Layer.effect(
     StrykerCliRunner,
     Effect.sync(() => ({
-      run: (args: ReadonlyArray<string>, warm: Warm.WarmSandbox, label: string) => runStrykerCli(args, warm, label),
+      run: (
+        args: ReadonlyArray<string>,
+        warm: Warm.WarmSandbox,
+        label: string,
+        runEnvironment?: Readonly<Record<string, string>>,
+      ) => runStrykerCli(args, warm, label, runEnvironment),
     })),
   )
 }
