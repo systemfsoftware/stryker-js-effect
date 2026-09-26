@@ -60,20 +60,19 @@ const inlinedBundle = () =>
     Match.orElse(() => __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__),
   )
 
-const readBundleFromDisk = Effect.gen(function*() {
+const readBundleFromDisk = Effect.fn('html_report.read_bundle_from_disk')(function*() {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const bundlePath = yield* path.fromFileUrl(new URL(import.meta.resolve(BUNDLE_SPECIFIER)))
   return yield* fs.readFileString(bundlePath)
 })
 
-const writeHtmlFile = (fileName: string, html: string) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
-    yield* fs.writeFileString(fileName, html)
-  })
+const writeHtmlFile = Effect.fn('html_report.write_file')(function*(fileName: string, html: string) {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
+  yield* fs.writeFileString(fileName, html)
+})
 
 export type RenderHtmlReportRead = (typeof RenderHtmlReport)['Encoded'] & {
   readonly report: Reporter.MutationTestReportReady['report']
@@ -91,15 +90,16 @@ const readRenderCommand = (input: {
     report: input.report,
   })
 
+const writeBundleFromDisk = Effect.fn('html_report.write_bundle_from_disk')(function*(command: RenderHtmlReportRead) {
+  const bundle = yield* readBundleFromDisk()
+  yield* writeHtmlFile(command.fileName, buildReportHtml(command.report, bundle))
+})
+
 export const writeHtmlReport = Sandwich.named('html_report.write')(readRenderCommand)
   .decide(renderHtmlReport)
   .write({
     BundleInlined: ({ bundle }, command) => writeHtmlFile(command.fileName, buildReportHtml(command.report, bundle)),
-    BundleFromDisk: (_decision, command) =>
-      Effect.gen(function*() {
-        const bundle = yield* readBundleFromDisk
-        yield* writeHtmlFile(command.fileName, buildReportHtml(command.report, bundle))
-      }),
+    BundleFromDisk: (_decision, command) => writeBundleFromDisk(command),
     CommandRejected: (rejected) => Effect.die(rejected),
   })
 
@@ -109,7 +109,7 @@ const failAsHtmlReporter = <A = unknown>(cause: A) =>
   Reporter.ReporterFailed.make({
     reporterName: 'html',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
   })
 
 const drainEvents = (fileName: string, events: AsyncIterable<Reporter.ReporterEvent>) =>

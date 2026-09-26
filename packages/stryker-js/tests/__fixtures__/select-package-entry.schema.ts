@@ -36,14 +36,3 @@ export const FallbackCase = S.Struct({
   module: S.optional(S.Union([S.Literal('./from-module.mjs'), S.Literal('./lib/*.mjs')])),
   main: S.optional(S.Literal('from-main.js')),
 })
-
-export const TargetKind = S.Union([
-  S.Literal('wildcard'),
-  S.Literal('bare'),
-  S.Literal('absolute'),
-  S.Literal('null'),
-  S.Literal('arrayBare'),
-  S.Literal('arrayNull'),
-])
-
-export const TargetCase = S.Struct({ kind: TargetKind })

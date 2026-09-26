@@ -17,11 +17,9 @@ const config = {
     import.meta.resolve('@systemfsoftware/stryker-ignorer-effect-schema-declarations'),
     import.meta.resolve('@systemfsoftware/stryker-ignorer-in-source-vitest-block'),
   ],
-  plugins: [
-    import.meta.resolve('@systemfsoftware/stryker-test-contribution'),
-  ],
   mutate: shardMutate([
     'src/**/*.workflow.ts',
+    'src/**/*.schema.ts',
     '!src/**/*.test.ts',
     '!src/**/*.property.test.ts',
     '!src/**/*.d.ts',

@@ -19,6 +19,7 @@ import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
+import { matchesFile } from './FileMatcher.js'
 import { FileMatcher } from './matching.schema.js'
 import { ProjectFiles } from './project-files.service.js'
 import type { Project, ProjectFile } from './Project.schema.js'
@@ -65,35 +66,36 @@ const mergeUpdatedInto = (project: Project) => (updated: ProjectFile | Option.Op
   })
 }
 
-const makeDisableTypeChecksPreprocessor =
-  (options: Options.StrykerOptions, registry: Format.FormatRegistry, impl: typeof Instrument.disableTypeChecks) =>
-  (project: Project) =>
-    Effect.gen(function*() {
-      const pathService = yield* Path.Path
-      const files = yield* ProjectFiles
-      const matcher = FileMatcher.make({ pattern: options.disableTypeChecks, allowHiddenFiles: true })
-      const matched = [...project.files].filter(([name]) => matcher.matches(pathService, pathService.resolve(name)))
-      const instrumented = yield* files.readAll(matched.map(([, file]) => file))
-      const updates = yield* Effect.forEach(
-        instrumented,
-        ([file, content]) =>
-          Effect.map(
-            impl({ content, mutate: file.mutate, name: file.name }, registry).pipe(
-              Effect.map((instrumentedFile) => instrumentedFile.content),
-              Effect.mapError((cause) => StrykerError.make({ message: 'disableTypeChecks failed', cause })),
-            ),
-            (text) => ({ ...file, content: text }),
+const makeDisableTypeChecksPreprocessor = (
+  options: Options.StrykerOptions,
+  registry: Format.FormatRegistry,
+  impl: typeof Instrument.disableTypeChecks,
+) =>
+  Effect.fn('stryker.sandbox.preprocess.disable_type_checks')(function*(project: Project) {
+    const pathService = yield* Path.Path
+    const files = yield* ProjectFiles
+    const matcher = FileMatcher.make({ pattern: options.disableTypeChecks, allowHiddenFiles: true })
+    const matched = [...project.files].filter(([name]) => matchesFile(matcher, pathService, name))
+    const instrumented = yield* files.readAll(matched.map(([, file]) => file))
+    const updates = yield* Effect.forEach(
+      instrumented,
+      ([file, content]) =>
+        Effect.map(
+          impl({ content, mutate: file.mutate, name: file.name }, registry).pipe(
+            Effect.map((instrumentedFile) => instrumentedFile.content),
+            Effect.mapError((cause) => StrykerError.make({ message: 'disableTypeChecks failed', cause })),
           ),
-        { concurrency: 'unbounded' },
-      )
-      updates.forEach(mergeUpdatedInto(project))
-    })
+          (text) => ({ ...file, content: text }),
+        ),
+      { concurrency: 'unbounded' },
+    )
+    updates.forEach(mergeUpdatedInto(project))
+  })
 
 const parseJsonText = (jsonText: string): Effect.Effect<JsonValue, string> =>
   Effect.try({
     try: () => parse(jsonText.replace(/^\uFEFF/, '')),
-    catch: (cause) =>
-      Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    catch: (cause) => Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
   })
 
 const tsConfigShapeOf = (parsed: JsonValue): Option.Option<TSConfig> =>
@@ -131,6 +133,21 @@ const makeTSConfigPreprocessor = (options: Options.StrykerOptions, basePath: str
     })
   }
 
+  const rewriteFileArrayProperties = Effect.fn('stryker.sandbox.tsconfig.rewrite-file-arrays')(function*(
+    config: TSConfig,
+    tsconfigFile: ProjectFile,
+    tsconfigFileName: string,
+    pathService: Path.Path,
+  ) {
+    rewriteFileArrayProperty(config, tsconfigFileName, 'include', pathService)
+    rewriteFileArrayProperty(config, tsconfigFileName, 'exclude', pathService)
+    rewriteFileArrayProperty(config, tsconfigFileName, 'files', pathService)
+    const rewritten = yield* S.encodeEffect(S.fromJsonString(TsConfigSchema, { space: 2 }))(
+      config,
+    ).pipe(Effect.orDie)
+    Object.assign(tsconfigFile, { content: rewritten })
+  })
+
   const rewriteTSConfigFile = (
     project: Project,
     tsconfigFileName: string,
@@ -157,15 +174,7 @@ const makeTSConfigPreprocessor = (options: Options.StrykerOptions, basePath: str
                     { discard: true },
                   ).pipe(
                     Effect.flatMap(() =>
-                      Effect.gen(function*() {
-                        rewriteFileArrayProperty(config, tsconfigFileName, 'include', pathService)
-                        rewriteFileArrayProperty(config, tsconfigFileName, 'exclude', pathService)
-                        rewriteFileArrayProperty(config, tsconfigFileName, 'files', pathService)
-                        const rewritten = yield* S.encodeEffect(S.fromJsonString(TsConfigSchema, { space: 2 }))(
-                          config,
-                        ).pipe(Effect.orDie)
-                        Object.assign(tsconfigFile, { content: rewritten })
-                      })
+                      rewriteFileArrayProperties(config, tsconfigFile, tsconfigFileName, pathService)
                     ),
                   ),
               }),
@@ -343,53 +352,47 @@ const failOnBuildFailure = (
     Match.orElse(() => Effect.void),
   )
 
-const runBuildCommandIn = (
+const runBuildCommandIn = Effect.fn('stryker.sandbox.build.run')(function*(
   command: string,
   workingDirectory: string,
-): Effect.Effect<void, StrykerError, Path.Path | ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    const pathService = yield* Path.Path
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const separator = Boolean.match(pathService.sep === '\\', { onTrue: () => ';', onFalse: () => ':' })
-    const inherited = yield* inheritedPath()
-    const binDirs = binDirectoriesFrom(workingDirectory, pathService)
-    const newPath = [...binDirs, inherited].join(separator)
+): Effect.fn.Return<void, StrykerError, Path.Path | ChildProcessSpawner.ChildProcessSpawner> {
+  const pathService = yield* Path.Path
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+  const separator = Boolean.match(pathService.sep === '\\', { onTrue: () => ';', onFalse: () => ':' })
+  const inherited = yield* inheritedPath()
+  const binDirs = binDirectoriesFrom(workingDirectory, pathService)
+  const newPath = [...binDirs, inherited].join(separator)
 
-    const childCommand = ChildProcess.make(command, {
-      shell: true,
-      cwd: workingDirectory,
-      env: { PATH: newPath },
-      extendEnv: true,
-    })
-    const result = yield* Effect.scoped(
-      Effect.gen(function*() {
-        const handle = yield* spawner.spawn(childCommand)
-        const stderrChunks = yield* handle.stderr.pipe(
-          Stream.decodeText,
-          Stream.runCollect,
-          Effect.map((chunks) => [...chunks].join('')),
-          Effect.orElseSucceed(() => ''),
-        )
-        const exitCode = yield* handle.exitCode
-        return { exitCode: Number(exitCode), stderr: stderrChunks }
-      }),
-    ).pipe(
-      Effect.mapError((cause) => StrykerError.make({ message: `Failed to spawn build command "${command}"`, cause })),
-    )
-
-    yield* failOnBuildFailure(command, result)
+  const childCommand = ChildProcess.make(command, {
+    shell: true,
+    cwd: workingDirectory,
+    env: { PATH: newPath },
+    extendEnv: true,
   })
+  const result = yield* Effect.scoped(
+    Effect.gen(function*() {
+      const handle = yield* spawner.spawn(childCommand)
+      const stderrChunks = yield* handle.stderr.pipe(
+        Stream.decodeText,
+        Stream.runCollect,
+        Effect.map((chunks) => [...chunks].join('')),
+        Effect.orElseSucceed(() => ''),
+      )
+      const exitCode = yield* handle.exitCode
+      return { exitCode: Number(exitCode), stderr: stderrChunks }
+    }),
+  ).pipe(
+    Effect.mapError((cause) => StrykerError.make({ message: `Failed to spawn build command "${command}"`, cause })),
+  )
+
+  yield* failOnBuildFailure(command, result)
+})
 
 type BaseWalk = {
   readonly basePath: string
   readonly tempDirName: string | undefined
   readonly fs: FileSystem.FileSystem
   readonly path: Path.Path
-}
-
-type WalkState = {
-  readonly queue: ReadonlyArray<string>
-  readonly found: ReadonlyArray<string>
 }
 
 type DirectoryRole = 'skipped' | 'nodeModules' | 'searchable'
@@ -428,95 +431,96 @@ const childDirectoriesOf = (dir: string, walk: BaseWalk): Effect.Effect<readonly
       ),
   )
 
-const visitDirectory = (dir: string, walk: BaseWalk, state: WalkState): Effect.Effect<WalkState, PlatformError> =>
-  Match.value(directoryRole(dir, walk)).pipe(
-    Match.when('nodeModules', () => Effect.succeed({ queue: state.queue, found: [...state.found, dir] })),
-    Match.when('skipped', () => Effect.succeed(state)),
-    Match.orElse(() =>
-      Effect.map(childDirectoriesOf(dir, walk), (children) => ({
-        queue: [...state.queue, ...children],
-        found: state.found,
-      }))
-    ),
-  )
-
-const walkQueue = (walk: BaseWalk, state: WalkState): Effect.Effect<readonly string[], PlatformError> => {
-  const last = state.queue[state.queue.length - 1]
-  return Option.match(Option.fromUndefinedOr(last), {
-    onNone: () => Effect.succeed(state.found),
-    onSome: (dir) =>
-      Effect.flatMap(
-        visitDirectory(dir, walk, { queue: state.queue.slice(0, -1), found: state.found }),
-        (next) => walkQueue(walk, next),
-      ),
-  })
+type WalkStep = {
+  readonly emit: readonly string[]
+  readonly children: readonly string[]
 }
 
-const findNodeModulesList = (
-  basePath: string,
-  tempDirName: string | undefined,
-): Effect.Effect<string[], PlatformError, FileSystem.FileSystem | Path.Path> =>
-  Effect.map(
-    Effect.gen(function*() {
-      const walk: BaseWalk = {
-        basePath,
-        tempDirName,
-        fs: yield* FileSystem.FileSystem,
-        path: yield* Path.Path,
-      }
-      return yield* walkQueue(walk, { queue: ['.'], found: [] })
-    }),
-    (found) => [...found],
+const walkStep = (dir: string, walk: BaseWalk): Effect.Effect<WalkStep, PlatformError> =>
+  Match.value(directoryRole(dir, walk)).pipe(
+    Match.when('nodeModules', () => Effect.succeed({ emit: [dir], children: [] })),
+    Match.when('skipped', () => Effect.succeed({ emit: [], children: [] })),
+    Match.orElse(() => Effect.map(childDirectoriesOf(dir, walk), (children) => ({ emit: [], children }))),
   )
 
-const symlinkJunction = (
-  to: string,
-  from: string,
-): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fsService = yield* FileSystem.FileSystem
-    const pathService = yield* Path.Path
-    yield* fsService.makeDirectory(pathService.dirname(from), { recursive: true })
-    yield* fsService.symlink(to, from)
-  })
+const nodeModulesStream = (walk: BaseWalk): Stream.Stream<string, PlatformError> =>
+  Stream.paginate<string[], string, PlatformError, never>(
+    ['.'],
+    (queue) =>
+      Option.match(Option.fromUndefinedOr(queue[queue.length - 1]), {
+        onNone: () => Effect.succeed<readonly [ReadonlyArray<string>, Option.Option<string[]>]>([[], Option.none()]),
+        onSome: (dir) =>
+          Effect.map(walkStep(dir, walk), ({ emit, children }) =>
+            [
+              emit,
+              Option.some([...queue.slice(0, -1), ...children]),
+            ] as const),
+      }),
+  )
 
-const moveEntry = (
-  from: string,
-  to: string,
-): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const stat = yield* fs.stat(from)
-    yield* Boolean.match(stat.type === 'Directory', {
-      onTrue: () => moveDirectoryRecursive(from, to),
-      onFalse: () =>
-        fs.rename(from, to).pipe(Effect.catch(() => fs.copyFile(from, to).pipe(Effect.andThen(fs.remove(from))))),
-    })
-  })
+const findNodeModulesList = Effect.fn('stryker.sandbox.find_node_modules')(function*(
+  basePath: string,
+  tempDirName: string | undefined,
+): Effect.fn.Return<string[], PlatformError, FileSystem.FileSystem | Path.Path> {
+  const walk: BaseWalk = {
+    basePath,
+    tempDirName,
+    fs: yield* FileSystem.FileSystem,
+    path: yield* Path.Path,
+  }
+  const found = yield* Stream.runCollect(nodeModulesStream(walk))
+  return [...found]
+})
 
-const moveDirectoryRecursive = (
+const symlinkJunction = Effect.fn('stryker.sandbox.symlink_junction')(function*(
+  to: string,
+  from: string,
+): Effect.fn.Return<void, PlatformError, FileSystem.FileSystem | Path.Path> {
+  const fsService = yield* FileSystem.FileSystem
+  const pathService = yield* Path.Path
+  yield* fsService.makeDirectory(pathService.dirname(from), { recursive: true })
+  yield* fsService.symlink(to, from)
+})
+
+const moveEntry = Effect.fn('stryker.sandbox.move_entry')(function*(
   from: string,
   to: string,
-): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const pathService = yield* Path.Path
-    const exists = yield* fs.exists(from)
-    yield* Boolean.match(exists, {
-      onFalse: () => Effect.void,
-      onTrue: () =>
-        Effect.gen(function*() {
-          yield* fs.makeDirectory(to, { recursive: true })
-          const entries = yield* fs.readDirectory(from)
-          yield* Effect.forEach(
-            entries,
-            (entry) => moveEntry(pathService.join(from, entry), pathService.join(to, entry)),
-            { concurrency: 1, discard: true },
-          )
-          yield* fs.remove(from, { recursive: true, force: true })
-        }),
-    })
+): Effect.fn.Return<void, PlatformError, FileSystem.FileSystem | Path.Path> {
+  const fs = yield* FileSystem.FileSystem
+  const stat = yield* fs.stat(from)
+  yield* Boolean.match(stat.type === 'Directory', {
+    onTrue: () => moveDirectoryRecursive(from, to),
+    onFalse: () =>
+      fs.rename(from, to).pipe(Effect.catch(() => fs.copyFile(from, to).pipe(Effect.andThen(fs.remove(from))))),
   })
+})
+
+const moveDirectoryContents = Effect.fn('stryker.sandbox.move_directory.contents')(function*(
+  from: string,
+  to: string,
+) {
+  const fs = yield* FileSystem.FileSystem
+  const pathService = yield* Path.Path
+  yield* fs.makeDirectory(to, { recursive: true })
+  const entries = yield* fs.readDirectory(from)
+  yield* Stream.fromIterable(entries).pipe(
+    Stream.mapEffect((entry) => moveEntry(pathService.join(from, entry), pathService.join(to, entry))),
+    Stream.runDrain,
+  )
+  yield* fs.remove(from, { recursive: true, force: true })
+})
+
+const moveDirectoryRecursive = Effect.fn('stryker.sandbox.move_directory')(function*(
+  from: string,
+  to: string,
+): Effect.fn.Return<void, PlatformError, FileSystem.FileSystem | Path.Path> {
+  const fs = yield* FileSystem.FileSystem
+  const exists = yield* fs.exists(from)
+  yield* Boolean.match(exists, {
+    onFalse: () => Effect.void,
+    onTrue: () => moveDirectoryContents(from, to),
+  })
+})
 
 const announceSandbox = (
   options: Options.StrykerOptions,
@@ -541,25 +545,29 @@ const hasBackupToRestore = (options: Options.StrykerOptions, backupDirectory: st
     onFalse: () => false,
   })
 
+const restoreFromBackup = Effect.fn('stryker.sandbox.restore_original')(function*(
+  backupDirectory: string,
+  workingDirectory: string,
+  basePath: string,
+) {
+  const fs = yield* FileSystem.FileSystem
+  const p = yield* Path.Path
+  const exists = yield* fs.exists(backupDirectory)
+  yield* Boolean.match(exists, {
+    onFalse: () => Effect.void,
+    onTrue: () =>
+      Effect.logInfo(`Resetting your original files from ${p.relative(basePath, backupDirectory)}.`).pipe(
+        Effect.andThen(moveDirectoryRecursive(backupDirectory, workingDirectory).pipe(Effect.orDie)),
+      ),
+  })
+})
+
 const restoreOriginalFiles = (
   workingDirectory: string,
   backupDirectory: string,
   basePath: string,
 ): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
-  Effect.addFinalizer(() =>
-    Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
-      const p = yield* Path.Path
-      const exists = yield* fs.exists(backupDirectory)
-      yield* Boolean.match(exists, {
-        onFalse: () => Effect.void,
-        onTrue: () =>
-          Effect.logInfo(`Resetting your original files from ${p.relative(basePath, backupDirectory)}.`).pipe(
-            Effect.andThen(moveDirectoryRecursive(backupDirectory, workingDirectory).pipe(Effect.orDie)),
-          ),
-      })
-    }).pipe(Effect.orDie)
-  )
+  Effect.addFinalizer(() => restoreFromBackup(backupDirectory, workingDirectory, basePath).pipe(Effect.orDie))
 
 const isNonEmptyString = (value: string | undefined): value is string => value !== undefined && value !== ''
 
@@ -584,25 +592,24 @@ const linksNodeModules = (options: Options.StrykerOptions) =>
     onFalse: () => false,
   })
 
-const linkNodeModules = (
+const linkNodeModules = Effect.fn('stryker.sandbox.link_node_modules')(function*(
   nodeModules: string,
   workingDirectory: string,
   basePath: string,
   pathService: Path.Path,
-): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const resolvedTo = pathService.resolve(pathService.join(basePath, nodeModules))
-    const resolvedFrom = pathService.join(workingDirectory, nodeModules)
-    yield* Effect.logDebug(`Create symlink from ${resolvedTo} to ${resolvedFrom}`)
-    yield* symlinkJunction(resolvedTo, resolvedFrom).pipe(
-      Effect.tapError(() =>
-        Effect.logWarning(
-          `Unexpected error while trying to symlink "${nodeModules}" in sandbox directory.`,
-        )
-      ),
-      Effect.catchTag('PlatformError', () => Effect.void),
-    )
-  })
+): Effect.fn.Return<void, never, FileSystem.FileSystem | Path.Path> {
+  const resolvedTo = pathService.resolve(pathService.join(basePath, nodeModules))
+  const resolvedFrom = pathService.join(workingDirectory, nodeModules)
+  yield* Effect.logDebug(`Create symlink from ${resolvedTo} to ${resolvedFrom}`)
+  yield* symlinkJunction(resolvedTo, resolvedFrom).pipe(
+    Effect.tapError(() =>
+      Effect.logWarning(
+        `Unexpected error while trying to symlink "${nodeModules}" in sandbox directory.`,
+      )
+    ),
+    Effect.catchTag('PlatformError', () => Effect.void),
+  )
+})
 
 const linkFoundNodeModules = (
   options: Options.StrykerOptions,
@@ -627,61 +634,51 @@ const linkFoundNodeModules = (
       }),
   )
 
-const symlinkNodeModules = (
+const symlinkNodeModules = Effect.fn('stryker.sandbox.symlink_node_modules')(function*(
   options: Options.StrykerOptions,
   workingDirectory: string,
   basePath: string,
   pathService: Path.Path,
-): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    yield* Effect.logDebug('Start symlink node_modules')
-    yield* Boolean.match(linksNodeModules(options), {
-      onTrue: () => linkFoundNodeModules(options, workingDirectory, basePath, pathService),
-      onFalse: () => Effect.void,
-    })
+): Effect.fn.Return<void, PlatformError, FileSystem.FileSystem | Path.Path> {
+  yield* Effect.logDebug('Start symlink node_modules')
+  yield* Boolean.match(linksNodeModules(options), {
+    onTrue: () => linkFoundNodeModules(options, workingDirectory, basePath, pathService),
+    onFalse: () => Effect.void,
   })
+})
 
 export interface SandboxSpec extends MakeSandboxInput {
   readonly preprocessors: readonly FilePreprocessor[]
 }
 
-const acquireSandbox = (spec: SandboxSpec): Effect.Effect<
-  SandboxHandle,
-  PlatformError | StrykerError,
-  | FileSystem.FileSystem
-  | Path.Path
-  | ProjectFiles
-  | ChildProcessSpawner.ChildProcessSpawner
-  | Scope.Scope
-> =>
-  Effect.gen(function*() {
-    const { options, project, workingDirectory, backupDirectory, basePath } = spec
-    yield* Scope.Scope
-    const pathService = yield* Path.Path
+const acquireSandbox = Effect.fn('stryker.sandbox.acquire')(function*(spec: SandboxSpec) {
+  const { options, project, workingDirectory, backupDirectory, basePath } = spec
+  yield* Scope.Scope
+  const pathService = yield* Path.Path
 
-    yield* announceSandbox(options, workingDirectory, backupDirectory, basePath, pathService)
-    yield* Effect.when(
-      restoreOriginalFiles(workingDirectory, backupDirectory, basePath),
-      Effect.succeed(hasBackupToRestore(options, backupDirectory)),
-    )
-    const preprocessor = combinePreprocessors([
-      createPreprocessor(options, basePath, spec.formatRegistry),
-      ...spec.preprocessors,
-    ])
-    yield* preprocessor(project).pipe(
-      Effect.mapError((cause) => StrykerError.make({ message: 'Sandbox preprocessor failed', cause })),
-    )
-    const files = yield* ProjectFiles
-    const entries = yield* Boolean.match(options.inPlace, {
-      onTrue: () => files.writeAllInPlace([...project.files], { backupDirectory, basePath }),
-      onFalse: () => files.writeAllToSandbox([...project.files], { workingDirectory, basePath }),
-    })
-    const fileMap = toFileMap(entries)
-
-    yield* runConfiguredBuild(options, workingDirectory)
-    yield* symlinkNodeModules(options, workingDirectory, basePath, pathService)
-    return makeHandle({ fileMap, workingDirectory, basePath, pathService })
+  yield* announceSandbox(options, workingDirectory, backupDirectory, basePath, pathService)
+  yield* Effect.when(
+    restoreOriginalFiles(workingDirectory, backupDirectory, basePath),
+    Effect.succeed(hasBackupToRestore(options, backupDirectory)),
+  )
+  const preprocessor = combinePreprocessors([
+    createPreprocessor(options, basePath, spec.formatRegistry),
+    ...spec.preprocessors,
+  ])
+  yield* preprocessor(project).pipe(
+    Effect.mapError((cause) => StrykerError.make({ message: 'Sandbox preprocessor failed', cause })),
+  )
+  const files = yield* ProjectFiles
+  const entries = yield* Boolean.match(options.inPlace, {
+    onTrue: () => files.writeAllInPlace([...project.files], { backupDirectory, basePath }),
+    onFalse: () => files.writeAllToSandbox([...project.files], { workingDirectory, basePath }),
   })
+  const fileMap = toFileMap(entries)
+
+  yield* runConfiguredBuild(options, workingDirectory)
+  yield* symlinkNodeModules(options, workingDirectory, basePath, pathService)
+  return makeHandle({ fileMap, workingDirectory, basePath, pathService })
+})
 
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js/Sandbox')
 export type TypeId = typeof TypeId

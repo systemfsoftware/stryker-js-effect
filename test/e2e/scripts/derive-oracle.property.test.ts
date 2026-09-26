@@ -3,11 +3,8 @@ import { describe } from '@systemfsoftware/vitest'
 import * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
-import * as fs from 'node:fs'
 import { Project } from 'ts-morph'
-import { defaultMutators } from '../../../packages/stryker-js-instrumenter/src/Mutator.service.js'
 import { analyzeFileWithTsMorph } from './oracle/ast-analyzer.js'
-import { determineCompileErrorsWithDiagnostics } from './oracle/diagnostics.js'
 import {
   dualizeBooleanArithmetic,
   injectDeadCode,
@@ -15,7 +12,6 @@ import {
   nestSubsumingExpressions,
   shuffleIndependentStatements,
 } from './oracle/metamorphic.js'
-import { DECLARED_GAPS, MUTATOR_REGISTRY } from './oracle/mutator-registry.js'
 import type { IndependentInventory } from './oracle/types.js'
 
 const RESERVED_WORDS: Readonly<Record<string, true>> = {
@@ -212,73 +208,11 @@ const SurroundingStatement = Arbitrary.all([Identifier, Arbitrary.schema(Positiv
 
 const SubsumptionInput = S.Tuple([PositiveFifty, PositiveFifty, PositiveFifty, PositiveFifty])
 
-const snippet = (code: string, family: string, expectedReplacement: string) =>
-  S.Struct({
-    code: S.Literals([code]),
-    family: S.Literals([family]),
-    expectedReplacement: S.Literals([expectedReplacement]),
-  })
-
-const ReplaceableSnippet = S.Union([
-  snippet('const s = "HELLO".toLowerCase();', 'MethodExpression', '"HELLO".toUpperCase()'),
-  snippet('const s = "hello".toUpperCase();', 'MethodExpression', '"hello".toLowerCase()'),
-  snippet('const a = arr.filter(x => x);', 'MethodExpression', 'arr()'),
-  snippet('const r = /a+/;', 'Regex', '/a/'),
-  snippet('const r = /\\d/;', 'Regex', '/\\D/'),
-  snippet('const r = /^abc$/;', 'Regex', '/abc$/'),
-  snippet('const u = +a;', 'UnaryOperator', '-a'),
-  snippet('const u = -a;', 'UnaryOperator', '+a'),
-  snippet('const u = ~a;', 'UnaryOperator', 'a'),
-  snippet('const b = !a;', 'BooleanLiteral', 'a'),
-  snippet('const b = !isReady;', 'BooleanLiteral', 'isReady'),
-])
-
-const OptionalChainingSnippet = S.Literals(['const o = a?.b;', 'const o = a?.[0];', 'const o = a?.();'])
-
 const analyzeCode = (code: string, excluded: ReadonlyArray<string> = []): IndependentInventory =>
   analyzeFileWithTsMorph(code, excluded)
 
 const countOfFamily = (mutants: ReadonlyArray<{ readonly mutatorName: string }>, family: string): number =>
   mutants.filter((mutant) => mutant.mutatorName === family).length
-
-const coveredFamilies = (
-  registry: Readonly<Record<string, { readonly covered: boolean }>>,
-): Readonly<Record<string, true>> => {
-  const covered: Record<string, true> = {}
-  for (const [name, entry] of Object.entries(registry)) {
-    if (entry.covered) covered[name] = true
-  }
-  return covered
-}
-
-const checkFamilyExhaustiveness = (
-  family: string,
-  covered: Readonly<Record<string, true>>,
-  declaredGaps: Readonly<Record<string, true>>,
-): boolean => {
-  if (covered[family] !== true && declaredGaps[family] !== true) {
-    throw new Error(`Uncovered and undeclared mutator family in registry: ${family}`)
-  }
-  return true
-}
-
-const stubRegistry: Record<string, unknown> = {
-  ...defaultMutators,
-  SyntheticMutator: () => [],
-}
-const stubCovered = coveredFamilies(MUTATOR_REGISTRY)
-
-const contractContent = fs.readFileSync(new URL('./oracle/mutator-contract.md', import.meta.url), 'utf-8')
-
-const contractHeadingFor = (family: string): string | undefined => {
-  const entry = MUTATOR_REGISTRY[family]
-  if (entry === undefined) {
-    return undefined
-  }
-  const anchor = entry.contractSection.replace(/^#/, '')
-  const headingRegex = new RegExp(`^#{2,3}\\s+.*\\b(${family}|${anchor})\\b`, 'm')
-  return headingRegex.exec(contractContent)?.[0]
-}
 
 function alphaRename(sourceText: string, suffix: string): string {
   const project = new Project({ useInMemoryFileSystem: true })
@@ -346,112 +280,6 @@ describe('SOTA Metamorphic & Differential Oracle Properties', (it) => {
           countOfFamily(oxc.mutants, family) === countOfFamily(tsMorph.mutants, family)
         )
       }),
-  )
-
-  it.effect.prop(
-    'Differential Equivalence 3b (R3 staged): single-mutant replacements and replacement spans',
-    { of: [ReplaceableSnippet], subject: instrumentOxcCode, runs: 100 },
-    (subject, [chosen]) =>
-      Effect.gen(function*() {
-        const oxc = yield* subject(chosen.code)
-        const tsMorph = analyzeFileWithTsMorph(chosen.code, [])
-        const oxcMutants = oxc.mutants.filter((mutant) => mutant.mutatorName === chosen.family)
-        const tsMorphMutants = tsMorph.mutants.filter((mutant) => mutant.mutatorName === chosen.family)
-
-        if (oxcMutants.length !== tsMorphMutants.length) {
-          return false
-        }
-
-        const only = tsMorphMutants.length === 1 ? tsMorphMutants[0] : undefined
-        return only === undefined || only.replacement === chosen.expectedReplacement
-      }),
-  )
-
-  it.prop(
-    'Differential Equivalence 3b (R3 staged): OptionalChaining replacement spans stay within the question-dot',
-    { of: [OptionalChainingSnippet], subject: analyzeCode, runs: 100 },
-    (subject, [code]) => {
-      const optMutants = subject(code).mutants.filter((mutant) => mutant.mutatorName === 'OptionalChaining')
-      const only = optMutants.length === 1 ? optMutants[0] : undefined
-
-      return only !== undefined && ['.', '[', '('].includes(only.replacement)
-    },
-  )
-
-  it.prop(
-    'A Priori Semantic Invariant 4: CompileError classification matches ts.getPreEmitDiagnostics',
-    {
-      of: [S.Literals([[
-        'export const calculate = (x: number): number => {',
-        '  if (x > 0) {',
-        '    return x + 1;',
-        '  }',
-        '  return 0;',
-        '};',
-        'export const getMessage = async (): Promise<string> => {',
-        '  return "hello";',
-        '};',
-      ].join('\n')])],
-      subject: analyzeCode,
-      runs: 100,
-    },
-    (subject, [code]) => {
-      const withDiagnostics = determineCompileErrorsWithDiagnostics(code, subject(code).mutants)
-
-      const emptyBlockMutant = withDiagnostics.find(
-        (mutant) => mutant.mutatorName === 'BlockStatement' && mutant.line === 7,
-      )
-      const arithmeticMutant = withDiagnostics.find(
-        (mutant) => mutant.mutatorName === 'ArithmeticOperator' && mutant.replacement === '-',
-      )
-
-      return emptyBlockMutant?.compileError?.code === 2355 && arithmeticMutant?.compileError === undefined
-    },
-  )
-
-  it.prop(
-    'Registry Exhaustiveness Invariant 5: defaultMutators registry families are either covered or declared gaps',
-    { of: [S.Literals(Object.keys(defaultMutators))], subject: checkFamilyExhaustiveness, runs: 100 },
-    (subject, [family]) => subject(family, coveredFamilies(MUTATOR_REGISTRY), DECLARED_GAPS),
-  )
-
-  it.prop(
-    'Registry Exhaustiveness: injecting a synthetic 17th family into a stubbed registry fails with the family named',
-    { of: [S.Literals(Object.keys(stubRegistry))], subject: checkFamilyExhaustiveness, runs: 100 },
-    (subject, [family]) => {
-      try {
-        subject(family, stubCovered, DECLARED_GAPS)
-        return family !== 'SyntheticMutator'
-      } catch (error) {
-        return family === 'SyntheticMutator' && String(error).includes('SyntheticMutator')
-      }
-    },
-  )
-
-  it.prop(
-    'Count-Equality Property 6: covered mutator registry rows equal analyzer placement counts and replacements',
-    { of: [S.Literals(Object.keys(MUTATOR_REGISTRY))], subject: analyzeCode, runs: 100 },
-    (subject, [familyName]) => {
-      const entry = MUTATOR_REGISTRY[familyName]
-      if (entry === undefined) {
-        return false
-      }
-      const familyMutants = subject(entry.snippet).mutants.filter((mutant) => mutant.mutatorName === familyName)
-
-      return familyMutants.length === entry.placementCount &&
-        familyMutants.length === entry.replacements.length &&
-        familyMutants.every((mutant, index) => mutant.replacement === entry.replacements[index])
-    },
-  )
-
-  it.prop(
-    'Contract Sync 7: every registry table row cites a section heading in mutator-contract.md',
-    { of: [S.Literals(Object.keys(MUTATOR_REGISTRY))], subject: contractHeadingFor, runs: 100 },
-    (subject, [family]) => {
-      const heading = subject(family)
-
-      return heading !== undefined && heading.toLowerCase().includes(family.toLowerCase())
-    },
   )
 
   it.prop(

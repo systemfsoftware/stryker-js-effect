@@ -1,6 +1,7 @@
 import { Effect, SchemaGetter, SchemaTransformation } from 'effect'
 import * as S from 'effect/Schema'
-import { Percentage } from './Metrics.schema.js'
+import { NonNegativeFinite, NonNegativeInt, Percentage } from './Metrics.schema.js'
+import { OrderedThresholds } from './Report.schema.js'
 
 export const StrykerCoverageAnalysis = S.Literal('perTest')
 
@@ -84,7 +85,7 @@ const ClearTextReporterOptions = openStruct({
   allowColor: defaulted(S.Boolean, true),
   allowEmojis: defaulted(S.Boolean, false),
   logTests: defaulted(S.Boolean, true),
-  maxTestsToLog: defaulted(S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(0))), 3),
+  maxTestsToLog: defaulted(NonNegativeInt, 3),
   reportTests: defaulted(S.Boolean, true),
   reportMutants: defaulted(S.Boolean, true),
   reportScoreTable: defaulted(S.Boolean, true),
@@ -104,34 +105,9 @@ const MutationScoreThresholdsValuesSchema = S.Struct({
   low: defaulted(Percentage, 60),
   break: defaulted(S.NullOr(Percentage), null),
 })
-type MutationScoreThresholdsValues = S.Schema.Type<typeof MutationScoreThresholdsValuesSchema>
-
-const isMutationScoreThresholds = (value: unknown): value is MutationScoreThresholdsValues =>
-  S.is(MutationScoreThresholdsValuesSchema)(value) && value.low <= value.high
-
-/**
- * The pair is *built* ordered — a drawn pair is sorted — rather than drawn at
- * random and discarded until it happens to be ordered. The invariant lives on
- * the declaration because a filter over the pair cannot express `low <= high`
- * in the generation-constraint vocabulary, and only a declaration carries a
- * `toCodecArbitrary` derivation. The struct stays the wire side, so decoding
- * keeps member defaults and field paths.
- */
-const OrderedMutationScoreThresholds = S.declare<MutationScoreThresholdsValues>(isMutationScoreThresholds, {
-  message: 'expected thresholds where low <= high',
-  toCodecArbitrary: () =>
-    S.link<MutationScoreThresholdsValues>()(MutationScoreThresholdsValuesSchema, {
-      decode: SchemaGetter.transform(({ break: breaking, high, low }) => ({
-        high: Math.max(high, low),
-        low: Math.min(high, low),
-        break: breaking,
-      })),
-      encode: SchemaGetter.transform((thresholds) => thresholds),
-    }),
-})
 
 export const MutationScoreThresholdsSchema = MutationScoreThresholdsValuesSchema.pipe(
-  S.decodeTo(OrderedMutationScoreThresholds, SchemaTransformation.passthrough()),
+  S.decodeTo(OrderedThresholds, SchemaTransformation.passthrough()),
 )
 export type MutationScoreThresholds = typeof MutationScoreThresholdsSchema.Type
 
@@ -146,7 +122,7 @@ const WarningOptions = openStruct({
   unserializableOptions: defaulted(S.Boolean, true),
   slow: defaulted(S.Boolean, true),
 })
-const ConcurrencyCount = S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
+const ConcurrencyCount = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
 const ConcurrencyPercent = S.String.pipe(S.check(S.isPattern(/^(100|[1-9]?[0-9])%$/)))
 
 const PLUGIN_ARBITRARY_SPECIFIERS: readonly [string, ...string[]] = [
@@ -234,8 +210,8 @@ export const StrykerOptionsSchema = S.StructWithRest(
     fileLogLevel: defaulted(LogLevel, StrykerFileLogLevel.literal),
     inPlace: defaulted(S.Boolean, false),
     logLevel: defaulted(LogLevel, StrykerLogLevel.literal),
-    maxConcurrentTestRunners: defaulted(S.Finite, 9007199254740991),
-    maxTestRunnerReuse: defaulted(S.Finite, 0),
+    maxConcurrentTestRunners: defaulted(S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1))), Number.MAX_SAFE_INTEGER),
+    maxTestRunnerReuse: defaulted(NonNegativeInt, 0),
     mutate: defaulted(S.Array(S.String), [
       '{src,lib}/**/!(*.+(s|S)pec|*.+(t|T)est).+(cjs|mjs|js|ts|mts|cts|jsx|tsx|html|vue|svelte)',
       '!{src,lib}/**/__tests__/**/*.+(cjs|mjs|js|ts|mts|cts|jsx|tsx|html|vue|svelte)',
@@ -254,9 +230,9 @@ export const StrykerOptionsSchema = S.StructWithRest(
     testRunner: defaulted(TestRunnerConfigSchema, 'vm'),
     testRunnerNodeArgs: defaulted(S.Array(S.String), []),
     thresholds: defaulted(MutationScoreThresholdsSchema, { high: 80, low: 60, break: null }),
-    timeoutFactor: defaulted(S.Finite, 1.5),
-    timeoutMS: defaulted(S.Finite, 5000),
-    dryRunTimeoutMinutes: defaulted(S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(0))), 5),
+    timeoutFactor: defaulted(NonNegativeFinite, 1.5),
+    timeoutMS: defaulted(NonNegativeInt, 5000),
+    dryRunTimeoutMinutes: defaulted(NonNegativeFinite, 5),
     tsconfigFile: defaulted(S.String, 'tsconfig.json'),
     warnings: defaulted(S.Union([S.Boolean, WarningOptions]), true),
     disableBail: defaulted(S.Boolean, false),

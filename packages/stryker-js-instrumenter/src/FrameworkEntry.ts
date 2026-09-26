@@ -7,22 +7,20 @@ import type {
 } from '@systemfsoftware/stryker-framework-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as S from 'effect/Schema'
 import { type Program, type Statement } from './Ast.handle.js'
 import { type Ast, type EmbeddedAst, type EmbeddedScript, type ScriptAst } from './Ast.schema.js'
-import { ErrorText } from './ErrorText.schema.js'
+import { makeScriptParser } from './drivers/oxc-program.js'
+import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { EmbeddedFormatEntry, FormatClaim } from './Format.schema.js'
 import { InstrumentError } from './Instrument.schema.js'
 import { instrumentationHeader } from './InstrumentHeader.js'
-import { type LineTable, LineTableFromText, type Position } from './Location.schema.js'
+import { lineStartsOf, originAt } from './Location.js'
+import type { LineStarts } from './Location.schema.js'
 import { ParseFailed } from './Parser.schema.js'
-import { loadOxc, type Oxc } from './Parser.service.js'
+import { loadOxc } from './Parser.service.js'
 import { printProgram } from './print/SourceText.js'
-
-const toOneBasedOrigin = (origin: Position): Position => ({ line: origin.line + 1, column: origin.column })
-
-const EMBEDDED_SCRIPT_FILE = 'embedded-script.js'
 
 interface FrameworkToolkit {
   readonly parseScript: (source: string, scriptFormat: ScriptFormat) => Program
@@ -33,28 +31,10 @@ const loadFrameworkToolkit: Effect.Effect<FrameworkToolkit, ParseFailed> = Effec
   const oxc = yield* loadOxc
   const header = yield* instrumentationHeader
   return {
-    parseScript: (source, scriptFormat) => parseScriptProgram(oxc, source, scriptFormat),
+    parseScript: makeScriptParser(oxc),
     header,
   }
 })
-
-const parseScriptProgram = (
-  oxc: Oxc,
-  source: string,
-  scriptFormat: ScriptFormat,
-): Program => {
-  const result = oxc.parseSync(EMBEDDED_SCRIPT_FILE, source, { lang: scriptFormat, range: true })
-  const first = result.errors.at(0)
-  if (first !== undefined) {
-    throw ParseFailed.make({
-      fileName: EMBEDDED_SCRIPT_FILE,
-      message: first.message,
-      location: { line: 0, column: 0 },
-      cause: first,
-    })
-  }
-  return result.program
-}
 
 const frameworkContextOf = (toolkit: FrameworkToolkit): FrameworkContext => ({
   parseScript: toolkit.parseScript,
@@ -66,7 +46,7 @@ const embeddedScriptsOf = (
   document: EmbeddedDocument,
   rawContent: string,
   originFileName: string,
-  lineTable: LineTable,
+  lineStarts: LineStarts,
 ): readonly EmbeddedScript[] =>
   document.regions.flatMap((region, index) => {
     const ast: ScriptAst = {
@@ -75,17 +55,24 @@ const embeddedScriptsOf = (
       comments: [],
       rawContent: rawContent.slice(region.start, region.end),
       originFileName,
-      offset: toOneBasedOrigin(lineTable.zeroBasedPositionAt(region.start)),
+      offset: originAt(lineStarts, region.start),
     }
     return [{ region: index, ast }]
   })
 
-const embeddedOf = (ast: Ast): EmbeddedAst => {
-  if (ast.format !== 'embedded') {
-    throw new Error(`Expected an embedded document AST, received the "${ast.format}" format`)
-  }
-  return ast
-}
+const embeddedAstError = (ast: Ast): InstrumentError =>
+  InstrumentError.make({
+    message: `Expected an embedded document AST, received the "${ast.format}" format`,
+    cause: undefined,
+  })
+
+const embeddedOf = (ast: Ast): Option.Option<EmbeddedAst> =>
+  Match.value(ast).pipe(
+    Match.when({ format: 'embedded' }, (embedded) => Option.some(embedded)),
+    Match.orElse(() => Option.none<EmbeddedAst>()),
+  )
+
+const printNothingForNonEmbeddedAst = (): string => ''
 
 const frameworkFailure = (moduleName: string, fileName: string, detail: string): InstrumentError =>
   InstrumentError.make({
@@ -100,7 +87,7 @@ const hookFailure = <A = unknown>(moduleName: string, hook: string, fileName: st
   })
 
 const errorTextOf = <A = unknown>(cause: A): string =>
-  Option.getOrElse(Option.map(ErrorText.fromCause(cause), (text: ErrorText) => text.text), () => '')
+  Option.getOrElse(Option.map(renderedErrorText(cause), (rendered) => rendered.text), () => '')
 
 const runHook = <A>(
   moduleName: string,
@@ -128,50 +115,54 @@ const frameworkEntryOfDataFirst = (moduleName: string, framework: Framework): Em
   } satisfies FormatClaim<'embedded'>,
   owner: moduleName,
   ownerVersion: framework.claim.ownerVersion,
-  parse: (text, fileName) =>
-    Effect.gen(function*() {
-      const context = frameworkContextOf(yield* loadFrameworkToolkit)
-      const lineTable = yield* Effect.orDie(S.decodeEffect(LineTableFromText)(text))
-      const result = yield* runHook(moduleName, 'parse', fileName, () => framework.parse(text, context))
-      const document = yield* settled(moduleName, fileName, result)
-      return {
-        format: 'embedded',
-        formatId: framework.claim.formatId,
-        originFileName: fileName,
-        rawContent: text,
-        document,
-        context,
-        scripts: embeddedScriptsOf(document, text, fileName, lineTable),
-      } satisfies EmbeddedAst
-    }),
+  parse: Effect.fn('stryker.instrument.framework_entry.parse')(function*(text: string, fileName: string) {
+    const context = frameworkContextOf(yield* loadFrameworkToolkit)
+    const lineStarts = lineStartsOf(text)
+    const result = yield* runHook(moduleName, 'parse', fileName, () => framework.parse(text, context))
+    const document = yield* settled(moduleName, fileName, result)
+    return {
+      format: 'embedded',
+      formatId: framework.claim.formatId,
+      originFileName: fileName,
+      rawContent: text,
+      document,
+      context,
+      scripts: embeddedScriptsOf(document, text, fileName, lineStarts),
+    } satisfies EmbeddedAst
+  }),
   transform: (ast, mutantCollector, context) =>
-    Effect.gen(function*() {
-      const embedded = embeddedOf(ast)
-      const warnings = yield* Effect.forEach(
-        embedded.scripts,
-        (script) => context.transform(script.ast, mutantCollector, context),
-      )
-      embedded.document = yield* runHook(
-        moduleName,
-        'transform',
-        embedded.originFileName,
-        () => framework.transform(embedded.document, embedded.context),
-      )
-      return warnings.flat()
+    Option.match(embeddedOf(ast), {
+      onNone: () => Effect.fail(embeddedAstError(ast)),
+      onSome: Effect.fn('stryker.instrument.framework_entry.transform')(function*(embedded: EmbeddedAst) {
+        const warnings = yield* Effect.forEach(
+          embedded.scripts,
+          (script) => context.transform(script.ast, mutantCollector, context),
+        )
+        embedded.document = yield* runHook(
+          moduleName,
+          'transform',
+          embedded.originFileName,
+          () => framework.transform(embedded.document, embedded.context),
+        )
+        return warnings.flat()
+      }),
     }),
-  print: (ast) => {
-    const embedded = embeddedOf(ast)
-    return framework.print(embedded.document, embedded.context)
-  },
-  disableTypeChecks: (ast) => {
-    const embedded = embeddedOf(ast)
-    return runHook(
-      moduleName,
-      'disableTypeChecks',
-      embedded.originFileName,
-      () => framework.disableTypeChecks(embedded.rawContent),
-    ).pipe(Effect.flatMap((result) => settled(moduleName, embedded.originFileName, result)))
-  },
+  print: (ast) =>
+    Option.match(embeddedOf(ast), {
+      onNone: printNothingForNonEmbeddedAst,
+      onSome: (embedded) => framework.print(embedded.document, embedded.context),
+    }),
+  disableTypeChecks: (ast) =>
+    Option.match(embeddedOf(ast), {
+      onNone: () => Effect.fail(embeddedAstError(ast)),
+      onSome: (embedded) =>
+        runHook(
+          moduleName,
+          'disableTypeChecks',
+          embedded.originFileName,
+          () => framework.disableTypeChecks(embedded.rawContent),
+        ).pipe(Effect.flatMap((result) => settled(moduleName, embedded.originFileName, result))),
+    }),
 })
 
 export const frameworkEntryOf: {

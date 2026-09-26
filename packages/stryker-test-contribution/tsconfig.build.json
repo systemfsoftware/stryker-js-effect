@@ -1,8 +1,0 @@
-{
-  "extends": "./tsconfig.app.json",
-  "compilerOptions": {
-    "declarationMap": false,
-    "sourceMap": false,
-    "stripInternal": true
-  }
-}

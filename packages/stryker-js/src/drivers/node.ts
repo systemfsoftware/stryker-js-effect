@@ -17,7 +17,7 @@ import type { EnginePorts } from '../run/StageServices.service.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
 import { layerWorkerProtocol } from '../worker-protocol.blueprint.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
-import { WorkerLauncher } from '../WorkerLauncher.service.js'
+import { WorkerLauncher, type WorkerSpawnParams } from '../WorkerLauncher.service.js'
 
 const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string) =>
   fs.chmod(file, 0o600).pipe(
@@ -39,8 +39,8 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
 
       return {
-        spawn: (params) =>
-          Effect.gen(function*() {
+        spawn: Effect.fn('stryker.worker.spawn')(
+          function*(params: WorkerSpawnParams) {
             const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
             const workerId = yield* crypto.randomUUIDv4
             const socketPath = Match.value(globalThis.process.platform).pipe(
@@ -100,16 +100,19 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
             )
 
             return makeSpawnedSocketWorker({ pid: Number(handle.pid), clientLayer, exited })
-          }).pipe(
-            Effect.catchIf(S.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
-              Effect.fail(
-                ChildProcessCrashedError.make({
-                  pid: 0,
-                  exit: { _tag: 'Code', code: 1 },
-                  cause: 'worker spawn failed',
-                }),
-              )),
-          ),
+          },
+          (spawned) =>
+            spawned.pipe(
+              Effect.catchIf(S.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
+                Effect.fail(
+                  ChildProcessCrashedError.make({
+                    pid: 0,
+                    exit: { _tag: 'Code', code: 1 },
+                    cause: 'worker spawn failed',
+                  }),
+                )),
+            ),
+        ),
       }
     }),
   )

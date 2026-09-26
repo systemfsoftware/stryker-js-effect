@@ -30,7 +30,7 @@ const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = [
   'stream',
   'phase',
   'plan',
-  'mutant',
+  'mutantTested',
   'tick',
   'plugins',
   'formats',
@@ -61,12 +61,12 @@ const terminalIndexesIn = (kinds: ReadonlyArray<string>): ReadonlyArray<number> 
 
 const reportedMutants = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
   events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((mutant) => `${mutant.mutator}:${mutant.status}`)
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
+    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
 
 const runIdsIn = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
   events
-    .map((event) => ('runId' in event && typeof event.runId === 'string' ? event.runId : undefined))
+    .map((event) => ('runId' in event && typeof event.runId === 'string' ? String(event.runId) : undefined))
     .filter((runId): runId is string => runId !== undefined)
 
 const countedSumOf = (counts: RunEvent.VerdictReached['counts']): number =>

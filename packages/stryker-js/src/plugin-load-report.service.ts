@@ -1,9 +1,10 @@
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Array from 'effect/Array'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
-import * as HashMap from 'effect/HashMap'
+import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
@@ -46,7 +47,7 @@ export const pluginLoadFailureEvents: {
           code,
           error: error.message,
           remediation: PLUGIN_FAILURE_REMEDIATION[error.reason._tag],
-          reason: error.reason._tag,
+          reason: error.reason,
         }),
       ],
     ),
@@ -60,71 +61,39 @@ const frameworkRowOf = (entry: FrameworkContributionModule): FrameworkContributi
   extensions: [...entry.framework.claim.extensions],
 })
 
-interface ModuleRowAccumulator {
-  readonly modules: ReadonlyArray<FrameworkModuleRow>
-}
-
-const emptyModuleRows = (): ModuleRowAccumulator => ({ modules: [] })
-
-const appendModuleRow = (
-  accumulator: ModuleRowAccumulator,
-  entry: FrameworkContributionModule,
-): ModuleRowAccumulator =>
-  Option.match(Option.fromUndefinedOr(accumulator.modules.find((row) => row.moduleName === entry.moduleName)), {
-    onNone: () => ({
-      modules: [...accumulator.modules, { moduleName: entry.moduleName, contributions: [frameworkRowOf(entry)] }],
-    }),
-    onSome: (found) => ({
-      modules: accumulator.modules.map((row) =>
-        row.moduleName === found.moduleName
-          ? { moduleName: row.moduleName, contributions: [...row.contributions, frameworkRowOf(entry)] }
-          : row
-      ),
-    }),
-  })
-
 const moduleRowsOf = (loaded: LoadedPlugins): readonly FrameworkModuleRow[] =>
-  loaded.frameworks.reduce(appendModuleRow, emptyModuleRows()).modules
+  Object.entries(Array.groupBy(loaded.frameworks, (entry) => entry.moduleName)).map(
+    ([moduleName, entries]) => ({ moduleName, contributions: entries.map(frameworkRowOf) }),
+  )
 
 interface FormatReportRows {
   readonly rows: readonly FormatRegistryRow[]
   readonly shadowings: readonly FormatClaimShadowingRow[]
 }
 
-interface FormatReportAccumulator {
-  readonly winners: HashMap.HashMap<string, Format.FormatEntry>
-  readonly rows: readonly FormatRegistryRow[]
-  readonly shadowings: readonly FormatClaimShadowingRow[]
-}
-
 const formatReportOf = (registry: Format.FormatRegistry): FormatReportRows => {
-  const report = registry.entries
+  const winners = MutableHashMap.empty<string, Format.FormatEntry>()
+  const rows: FormatRegistryRow[] = []
+  const shadowings: FormatClaimShadowingRow[] = []
+  registry.entries
     .flatMap((entry) => entry.claim.extensions.map((extension) => ({ entry, extension })))
-    .reduce<FormatReportAccumulator>(
-      (accumulator, { entry, extension }) =>
-        Option.match(HashMap.get(accumulator.winners, extension), {
-          onNone: () => ({
-            winners: HashMap.set(accumulator.winners, extension, entry),
-            rows: [
-              ...accumulator.rows,
-              {
-                extension,
-                formatId: entry.claim.formatId,
-                ownerModule: entry.owner,
-                language: entry.claim.language,
-              },
-            ],
-            shadowings: accumulator.shadowings,
-          }),
-          onSome: (winner) => ({
-            winners: accumulator.winners,
-            rows: accumulator.rows,
-            shadowings: [...accumulator.shadowings, { extension, winner: winner.owner, loser: entry.owner }],
-          }),
-        }),
-      { winners: HashMap.empty<string, Format.FormatEntry>(), rows: [], shadowings: [] },
-    )
-  return { rows: report.rows, shadowings: report.shadowings }
+    .forEach(({ entry, extension }) => {
+      Option.match(MutableHashMap.get(winners, extension), {
+        onNone: () => {
+          MutableHashMap.set(winners, extension, entry)
+          rows.push({
+            extension,
+            formatId: entry.claim.formatId,
+            ownerModule: entry.owner,
+            language: entry.claim.language,
+          })
+        },
+        onSome: (winner) => {
+          shadowings.push({ extension, winner: winner.owner, loser: entry.owner })
+        },
+      })
+    })
+  return { rows, shadowings }
 }
 
 export const reportPluginLoad: {
@@ -139,12 +108,12 @@ export const reportPluginLoad: {
   ): Effect.Effect<void>
 } = dual(
   3,
-  (
-    queue: Queue.Queue<RunEvent, Cause.Done>,
-    loaded: LoadedPlugins,
-    registry: Format.FormatRegistry,
-  ): Effect.Effect<void> =>
-    Effect.gen(function*() {
+  Effect.fn('stryker.pluginLoad.report')(
+    function*(
+      queue: Queue.Queue<RunEvent, Cause.Done>,
+      loaded: LoadedPlugins,
+      registry: Format.FormatRegistry,
+    ): Effect.fn.Return<void> {
       const report = formatReportOf(registry)
       yield* Queue.offer(
         queue,
@@ -157,5 +126,6 @@ export const reportPluginLoad: {
         queue,
         FormatRegistryResolved.make({ rows: [...report.rows] }),
       )
-    }),
+    },
+  ),
 )

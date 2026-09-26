@@ -1,8 +1,9 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
-import { LocationSchema, type Position } from './Location.schema.js'
-import { Mutant } from './Mutant.schema.js'
+import { MutatorNameSchema } from './directives/directive.schema.js'
+import { Location } from './Location.schema.js'
+import { CanonicalFileName, Mutant } from './Mutant.schema.js'
 
 export class InstrumentError
   extends S.TaggedError<InstrumentError>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/InstrumentError')(
@@ -20,14 +21,9 @@ export class InstrumentError
     })
   }
 }
-export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(LocationSchema)])
+export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(Location)])
 
 export type MutateDescription = typeof MutateDescriptionSchema.Type
-
-export interface MutationRange {
-  readonly start: Position
-  readonly end: Position
-}
 
 export interface FileDescription {
   readonly mutate: MutateDescription
@@ -35,15 +31,8 @@ export interface FileDescription {
 
 export type FileDescriptions = Record<string, FileDescription>
 
-export const SourceLineSchema = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
-export const SourceColumnSchema = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
-export const NodePositionSchema = S.Struct({
-  line: S.Int,
-  column: S.Int,
-})
-
 export const FileSchema = S.Struct({
-  name: S.String,
+  name: CanonicalFileName,
   content: S.String,
   mutate: MutateDescriptionSchema,
 })
@@ -51,7 +40,7 @@ export const FileSchema = S.Struct({
 const IgnorerSchema = S.Unknown
 
 export const InstrumenterOptionsSchema = S.Struct({
-  excludedMutations: S.Array(S.String),
+  excludedMutations: S.Array(MutatorNameSchema),
   ignorers: S.Array(IgnorerSchema),
   noHeader: S.optional(S.Boolean),
   optInMutations: S.String.pipe(S.Array, S.optional),
@@ -84,11 +73,24 @@ export type PlacerName = typeof PlacerNameSchema.Type
 export class MutantsUnapplied extends S.TaggedError<MutantsUnapplied>()('MutantsUnapplied', {
   fileName: S.String,
   placer: PlacerNameSchema,
-  mutatorNames: S.Array(S.String),
+  mutatorNames: S.Array(MutatorNameSchema),
   cause: S.Defect(),
 }) {}
 
 export class MutantNotApplied extends S.TaggedError<MutantNotApplied>()('MutantNotApplied', {
   fileName: S.String,
-  mutatorName: S.String,
+  mutatorName: MutatorNameSchema,
+}) {}
+
+export class NodeWithoutSpan extends S.TaggedError<NodeWithoutSpan>()('NodeWithoutSpan', {
+  fileName: S.String,
+}) {}
+
+export class MutantsUnplaced extends S.TaggedError<MutantsUnplaced>()('MutantsUnplaced', {
+  fileName: S.String,
+  detail: S.String,
+}) {}
+
+export class PlacementRefused extends S.TaggedError<PlacementRefused>()('PlacementRefused', {
+  message: S.String,
 }) {}

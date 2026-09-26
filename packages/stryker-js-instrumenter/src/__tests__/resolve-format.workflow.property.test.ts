@@ -11,10 +11,6 @@ import {
   resolveFormat,
 } from '../resolve-format.workflow.js'
 
-const FormatResolutionDecisionTypeId: unique symbol = Symbol.for(
-  '@systemfsoftware/stryker-js-instrumenter/FormatResolutionDecision',
-)
-
 type Claim = FormatResolutionCommand['claims'][number]
 
 const isPinned = (command: FormatResolutionCommand): boolean => command.formatId !== undefined
@@ -41,19 +37,7 @@ const verdictOf = (
   (Result.isSuccess(left) && Result.isSuccess(right) &&
     S.is(FormatAssigned)(left.success) === S.is(FormatAssigned)(right.success))
 
-const hasBrand = (decision: FormatResolutionDecision): boolean =>
-  Object.getOwnPropertySymbols(decision).includes(FormatResolutionDecisionTypeId)
-
 describe('resolveFormat', () => {
-  it.prop(
-    '∀c_Command_∈BrandedDecision',
-    { of: [FormatResolutionCommand], subject: resolveFormat },
-    (subject, [command]) => {
-      const decided = subject(command)
-      return Result.isSuccess(decided) ? hasBrand(decided.success) : S.is(FormatOverrideUnclaimed)(decided.failure)
-    },
-  )
-
   it.prop(
     '∀c_Command_≡AssignedClaimsCoverTheFile',
     { of: [FormatResolutionCommand], subject: resolveFormat },

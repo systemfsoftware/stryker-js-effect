@@ -3,11 +3,18 @@ import * as S from 'effect/Schema'
 
 import { CheckerFailed, CheckerMutantWire, CheckResultSchema } from './Checker.schema.js'
 import { ReporterEventUnion, ReporterFailed } from './ReporterEvent.schema.js'
+import { Traceparent, Tracestate } from './TraceContext.schema.js'
 
 import { DryRunOptionsSchema, TestRunnerFailed } from './TestRunner.schema.js'
 
 export const WorkerPluginKind = S.Literals(['TestRunner', 'Checker', 'Reporter'])
 export type WorkerPluginKind = typeof WorkerPluginKind.Type
+
+export const EvaluatorPluginKind = S.Literal('Evaluator')
+export type EvaluatorPluginKind = typeof EvaluatorPluginKind.Type
+
+export const PluginKindSchema = S.Union([WorkerPluginKind, EvaluatorPluginKind])
+export type PluginKind = typeof PluginKindSchema.Type
 
 export const TestRunnerDryRunRequest = S.Struct({ options: DryRunOptionsSchema })
 export type TestRunnerDryRunRequest = typeof TestRunnerDryRunRequest.Type
@@ -22,8 +29,8 @@ export const CheckerCheckResult = S.Record(S.String, CheckResultSchema)
 export const CheckerGroupResult = S.String.pipe(S.Array, S.Array)
 
 export const ReporterInitOptions = S.Struct({
-  traceparent: S.optionalKey(S.String),
-  tracestate: S.optionalKey(S.String),
+  traceparent: S.optionalKey(Traceparent),
+  tracestate: S.optionalKey(Tracestate),
 })
 export type ReporterInitOptions = typeof ReporterInitOptions.Type
 

@@ -4,7 +4,7 @@ import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import {
   DuplicatePackageLabel,
@@ -53,7 +53,7 @@ const MODULE_ARB: Arbitrary.Arbitrary<ModuleSpec> = Arbitrary.all({
         label,
         testIds,
         mutants: specs.map((spec, index) => ({
-          id: `m${index}`,
+          id: `${index}`,
           status: spec.status,
           killingIds: testIds.slice(0, spec.reach),
         })),
@@ -64,26 +64,28 @@ const MODULE_ARB: Arbitrary.Arbitrary<ModuleSpec> = Arbitrary.all({
 
 const MODULES_ARB = Arbitrary.array(MODULE_ARB, { minLength: 1, maxLength: 3 })
 
+const testIdOf = (id: string): TestRunner.TestId => TestRunner.TestId.make(id)
+
 const reportOf = (spec: ModuleSpec): Report.MutationTestResult => ({
   schemaVersion: '1.0',
-  thresholds: { high: 80, low: 60 },
+  thresholds: { high: 80, low: 60, break: null },
   files: {
     'src/target.ts': {
       language: 'typescript',
       source: 'const marker = true',
       mutants: spec.mutants.map((mutant) => ({
-        id: mutant.id,
+        id: Mutant.MutantId.make(mutant.id),
         mutatorName: 'BooleanLiteral',
         replacement: 'false',
         status: mutant.status,
         location: LOCATION,
-        killedBy: [...mutant.killingIds],
-        coveredBy: [...mutant.killingIds],
+        killedBy: mutant.killingIds.map(testIdOf),
+        coveredBy: mutant.killingIds.map(testIdOf),
       })),
     },
   },
   testFiles: {
-    'src/target.test.ts': { tests: spec.testIds.map((id) => ({ id, name: `test ${id}` })) },
+    'src/target.test.ts': { tests: spec.testIds.map((id) => ({ id: testIdOf(id), name: `test ${id}` })) },
   },
 })
 
@@ -149,7 +151,7 @@ describe('mergeReportParts', () => {
   )
 
   it.prop(
-    '∀cs_Modules_≡MergedKeysCarryTheModuleThatOwnsThem',
+    '∀cs_Modules_≡MergedFileKeysCarryModuleWithDecimalIds',
     { of: [DISTINCT_MODULES_ARB], subject: mergeReportParts },
     (subject, [specs]) => {
       const merged = mergedOf(subject(commandOf(specs)))
@@ -158,11 +160,10 @@ describe('mergeReportParts', () => {
       }
       const labels = new Set(specs.map((spec) => spec.label))
       const entries = Object.entries(merged.report.files)
+      const ids = entries.flatMap(([, file]) => file.mutants.map((mutant) => mutant.id))
       return entries.length === specs.length &&
-        entries.every(([key, file]) =>
-          labels.has(key.slice(0, key.indexOf('/'))) &&
-          file.mutants.every((mutant) => mutant.id.startsWith(`${key.slice(0, key.indexOf('/'))}_`))
-        )
+        entries.every(([key]) => labels.has(key.slice(0, key.indexOf('/')))) &&
+        ids.every((id) => S.is(Mutant.MutantId)(id))
     },
   )
 
@@ -198,7 +199,7 @@ describe('mergeReportParts', () => {
         specs.every((spec) =>
           result.success.rows.some((row) =>
             row.label === spec.label &&
-            row.score === Report.MutationScore.match(Report.Metrics.fromMutants(spec.mutants).mutationScore, {
+            row.score === Report.MutationScore.match(Report.metricsFromMutants(spec.mutants).mutationScore, {
                 Scored: ({ percentage }) => percentage.toFixed(2),
                 Unscored: () => 'n/a',
               })

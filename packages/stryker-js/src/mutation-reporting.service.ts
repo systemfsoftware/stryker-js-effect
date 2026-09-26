@@ -1,10 +1,11 @@
+/// <reference types="vitest/importMeta" />
 import { Format, Mutant as InstrumenterMutant } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type Checker,
   type Options,
   type Plugin,
   Report,
-  type TestRunner,
+  TestRunner,
 } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -23,6 +24,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import * as Stream from 'effect/Stream'
 
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
 import type { FormatIdentity } from './IncrementalDiff.schema.js'
@@ -32,10 +34,10 @@ import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js
 import type { Project, ProjectFile } from './Project.schema.js'
 import type { ReporterStage } from './reporter-stream.service.js'
 import { closeReporterStage, offerTerminalReport, terminalDrainClass } from './reporter-stream.service.js'
-import { MetricsResultFromReport } from './reporting/metrics-from-report.schema.js'
+import { metricsResultFromFiles } from './reporting/metrics-from-report.js'
 import { ReportFileNames } from './reporting/report-assembly.schema.js'
-import { VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
-import type { RunEvent } from './run-event.schema.js'
+import { buildVerdictEnvelope } from './reporting/verdict-envelope.js'
+import { type RunEvent, RunId } from './run-event.schema.js'
 import { RunEvents, VerdictReached } from './run-events.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { StrykerPackage } from './stryker-package.schema.js'
@@ -158,27 +160,22 @@ const reportMutant = (
   status: InstrumenterMutant.RunMutantResult['status'],
   outcome: MutantOutcome = {},
 ) =>
-  Effect.map(
-    S.decodeEffect(InstrumenterMutant.ReportLocationFromMutant)(mutant.location),
-    (location): InstrumenterMutant.RunMutantResult => ({
+  Effect.succeed(
+    ({
       _tag: 'Mutant',
       id: mutant.id,
       fileName: mutant.fileName,
       mutatorName: mutant.mutatorName,
       replacement: mutant.replacement,
-      location,
+      location: mutant.location,
       status,
       coveredBy: mutant.coveredBy,
       static: mutant.static,
       testsCompleted: mutant.testsCompleted,
       description: mutant.description,
       ...outcome,
-    }),
-  ).pipe(Effect.orDie)
-
-const checkStatusToMutantStatus = (
-  _status: Exclude<Checker.CheckStatus, 'passed'>,
-): InstrumenterMutant.RunMutantResult['status'] => 'CompileError'
+    }) satisfies InstrumenterMutant.RunMutantResult,
+  )
 
 const reportMutantStatus = (
   mutant: InstrumenterMutant.MutantTestCoverage,
@@ -189,7 +186,7 @@ const reportMutantStatus = (
 const reportCheckFailure = (
   mutant: InstrumenterMutant.MutantTestCoverage,
   result: Exclude<Checker.CheckResult, Checker.PassedCheckResult>,
-) => reportMutantStatus(mutant, checkStatusToMutantStatus(result.status), result.reason)
+) => reportMutantStatus(mutant, 'CompileError', result.reason)
 
 const reasonedOutcomeOf = (reason: string | undefined) =>
   Option.match(Option.fromNullishOr(reason), {
@@ -262,15 +259,16 @@ const stampFileIdentities = (
   )
 
 interface TestIdRemap {
-  readonly testId: (id: string) => string
-  readonly testIds: (ids: readonly string[] | undefined) => readonly string[] | undefined
+  readonly testId: (id: TestRunner.TestId) => TestRunner.TestId
+  readonly testIds: (ids: readonly string[] | undefined) => readonly TestRunner.TestId[] | undefined
 }
 
-const testIdRemap = (testIds: readonly string[]): TestIdRemap => {
+const testIdRemap = (testIds: readonly TestRunner.TestId[]): TestIdRemap => {
   const positions = HashMap.fromIterable(
     Arr.map(testIds, (id, position): readonly [string, string] => [id, position.toString()]),
   )
-  const remapId = (id: string): string => Option.getOrElse(HashMap.get(positions, id), () => id)
+  const remapId = (id: string): TestRunner.TestId =>
+    TestRunner.TestId.make(Option.getOrElse(HashMap.get(positions, id), () => id))
   return {
     testId: remapId,
     testIds: (ids) =>
@@ -328,203 +326,219 @@ const reportTestOf = (test: TestRunner.TestResult, remap: TestIdRemap) =>
     onSome: (start) => ({ id: remap.testId(test.id), name: test.name, location: { start } }),
   })
 
-const groupMutants = (input: FileResultsInput): HashMap.HashMap<string, MutantGroup> =>
-  Arr.reduce(
-    input.mutants,
-    HashMap.empty<string, MutantGroup>(),
-    (accumulator, mutant) =>
-      Option.match(HashMap.get(input.reportNames, mutant.fileName), {
-        onNone: () => accumulator,
-        onSome: (reportName) => {
-          const mapped = reportMutantOf(mutant, input.remap)
-          return Option.match(HashMap.get(accumulator, reportName), {
-            onNone: () => HashMap.set(accumulator, reportName, { sourceFileName: mutant.fileName, mutants: [mapped] }),
-            onSome: (existing) =>
-              HashMap.set(accumulator, reportName, {
-                sourceFileName: existing.sourceFileName,
-                mutants: [...existing.mutants, mapped],
-              }),
-          })
-        },
-      }),
+const groupMutants = (input: FileResultsInput): Effect.Effect<HashMap.HashMap<string, MutantGroup>> =>
+  Stream.fromIterable(input.mutants).pipe(
+    Stream.runFold(
+      () => HashMap.empty<string, MutantGroup>(),
+      (accumulator, mutant) =>
+        Option.match(HashMap.get(input.reportNames, mutant.fileName), {
+          onNone: () => accumulator,
+          onSome: (reportName) => {
+            const mapped = reportMutantOf(mutant, input.remap)
+            return Option.match(HashMap.get(accumulator, reportName), {
+              onNone: () =>
+                HashMap.set(accumulator, reportName, { sourceFileName: mutant.fileName, mutants: [mapped] }),
+              onSome: (existing) =>
+                HashMap.set(accumulator, reportName, {
+                  sourceFileName: existing.sourceFileName,
+                  mutants: [...existing.mutants, mapped],
+                }),
+            })
+          },
+        }),
+    ),
   )
 
-const groupTests = (input: TestFilesInput): HashMap.HashMap<string, TestGroup> =>
-  Arr.reduce(
-    input.tests,
-    HashMap.empty<string, TestGroup>(),
-    (accumulator, test) =>
-      Option.match(Option.fromUndefinedOr(test.fileName), {
-        onNone: () => accumulator,
-        onSome: (testFileName) =>
-          Option.match(HashMap.get(input.reportNames, testFileName), {
-            onNone: () => accumulator,
-            onSome: (reportName) => {
-              const mapped = reportTestOf(test, input.remap)
-              return Option.match(HashMap.get(accumulator, reportName), {
-                onNone: () => HashMap.set(accumulator, reportName, { sourceFileName: testFileName, tests: [mapped] }),
-                onSome: (existing) =>
-                  HashMap.set(accumulator, reportName, {
-                    sourceFileName: existing.sourceFileName,
-                    tests: [...existing.tests, mapped],
-                  }),
-              })
-            },
-          }),
-      }),
+const groupTests = (input: TestFilesInput): Effect.Effect<HashMap.HashMap<string, TestGroup>> =>
+  Stream.fromIterable(input.tests).pipe(
+    Stream.runFold(
+      () => HashMap.empty<string, TestGroup>(),
+      (accumulator, test) =>
+        Option.match(Option.fromUndefinedOr(test.fileName), {
+          onNone: () => accumulator,
+          onSome: (testFileName) =>
+            Option.match(HashMap.get(input.reportNames, testFileName), {
+              onNone: () => accumulator,
+              onSome: (reportName) => {
+                const mapped = reportTestOf(test, input.remap)
+                return Option.match(HashMap.get(accumulator, reportName), {
+                  onNone: () => HashMap.set(accumulator, reportName, { sourceFileName: testFileName, tests: [mapped] }),
+                  onSome: (existing) =>
+                    HashMap.set(accumulator, reportName, {
+                      sourceFileName: existing.sourceFileName,
+                      tests: [...existing.tests, mapped],
+                    }),
+                })
+              },
+            }),
+        }),
+    ),
   )
 
-const assembleFileResults = (input: FileResultsInput): Report.FileResultDictionary =>
-  Object.fromEntries(
-    Arr.flatMap([...groupMutants(input)], ([reportName, group]) =>
-      Option.match(HashMap.get(input.sources, group.sourceFileName), {
-        onNone: (): ReadonlyArray<readonly [string, Report.FileResult]> => [],
-        onSome: (source): ReadonlyArray<readonly [string, Report.FileResult]> => [
-          [reportName, { ...source, mutants: group.mutants }],
-        ],
-      })),
-  )
-
-const assembleTestFiles = (input: TestFilesInput): Report.TestFileDefinitionDictionary =>
-  Object.fromEntries(
-    Arr.flatMap([...groupTests(input)], ([reportName, group]) =>
-      Option.match(HashMap.get(input.testSources, group.sourceFileName), {
-        onNone: (): ReadonlyArray<readonly [string, Report.TestFile]> => [],
-        onSome: (source): ReadonlyArray<readonly [string, Report.TestFile]> => [
-          [reportName, { ...source, tests: group.tests }],
-        ],
-      })),
-  )
-
-const readMutatedSources =
-  (deps: MutationReportingDeps, input: MutationReportingInput) => (fileNames: readonly string[]) =>
-    Effect.gen(function*() {
-      const { missing, present } = partitionByFile(input.project.files, fileNames)
-      yield* Effect.forEach(
-        missing,
-        (fileName) =>
-          Effect.logWarning(
-            `File "${fileName}" not found in input files, but did receive mutant result for it. This shouldn't happen`,
-          ),
-        { discard: true },
-      )
-      const originals = yield* deps.projectFiles.readAllOriginal(present)
-      const sources = originalSourcesOf(originals)
-      return HashMap.fromIterable(Arr.map(fileNames, (fileName) => {
-        const fileResult: Report.FileResult = {
-          language: determineLanguage(fileName, input.formatRegistry),
-          mutants: [],
-          source: Option.getOrElse(HashMap.get(sources, fileName), () => ''),
-        }
-        return [fileName, fileResult] as const
-      }))
-    })
-
-const readTestSources =
-  (deps: MutationReportingDeps, input: MutationReportingInput) => (fileNames: readonly string[]) =>
-    Effect.gen(function*() {
-      const { missing, present } = partitionByFile(input.project.files, fileNames)
-      yield* Effect.forEach(
-        missing,
-        (fileName) =>
-          Effect.logWarning(
-            `Test file "${fileName}" not found in input files, but did receive test result for it. This shouldn't happen.`,
-          ),
-        { discard: true },
-      )
-      const originals = yield* deps.projectFiles.readAllOriginal(present)
-      const sources = originalSourcesOf(originals)
-      return HashMap.fromIterable(Arr.map(fileNames, (fileName) =>
-        Option.match(HashMap.get(sources, fileName), {
-          onNone: (): readonly [string, Report.TestFile] => [fileName, { tests: [] }],
-          onSome: (source): readonly [string, Report.TestFile] => [fileName, { tests: [], source }],
-        })))
-    })
-
-const assembleReport =
-  (deps: MutationReportingDeps, input: MutationReportingInput) =>
-  (results: readonly InstrumenterMutant.RunMutantResult[]) =>
-    Effect.gen(function*() {
-      const tests = [...MutableHashMap.values(input.testCoverage.testsById)]
-      const remap = testIdRemap(Arr.map(tests, (test) => test.id))
-      const mutatedFileNames = uniqueNames(Arr.map(results, (result) => result.fileName))
-      const testFileNames = uniqueNames(Arr.map(tests, (test) => test.fileName))
-      const sources = yield* readMutatedSources(deps, input)(mutatedFileNames)
-      const testSources = yield* readTestSources(deps, input)(testFileNames)
-      const relativeNames = yield* S.decodeEffect(ReportFileNames)(
-        Object.fromEntries(
-          Arr.map([...mutatedFileNames, ...testFileNames], (fileName) =>
-            [
-              fileName,
-              deps.path.relative(input.basePath, fileName),
-            ] as const),
-        ),
-      ).pipe(Effect.orDie)
-      const reportNames = HashMap.fromIterable(Object.entries(relativeNames))
-      const identities = HashMap.fromIterable(
-        mutatedFileNames.flatMap((fileName) =>
-          Option.match(HashMap.get(reportNames, fileName), {
-            onNone: (): ReadonlyArray<readonly [string, Option.Option<FormatIdentity>]> => [],
-            onSome: (reportName) => [[reportName, identityOf(fileName, input.formatRegistry)] as const],
-          })
-        ),
-      )
-      return {
-        files: assembleFileResults({ sources, reportNames, mutants: results, remap }),
-        testFiles: assembleTestFiles({ testSources, reportNames, tests, remap }),
-        identities,
-      }
-    })
-
-const manifestVersionOf = (deps: Pick<MutationReportingDeps, 'fs' | 'path'>) => (specifier: string) =>
-  Effect.gen(function*() {
-    const resolved = yield* Effect.try({
-      try: () => new URL(import.meta.resolve(`${specifier}/package.json`)),
-      catch: (cause) => ManifestUnreadable.make({ specifier, cause }),
-    })
-    const manifestPath = yield* deps.path.fromFileUrl(resolved)
-    const text = yield* deps.fs.readFileString(manifestPath)
-    return Result.match(S.decodeResult(S.fromJsonString(ManifestSchema))(text), {
-      onFailure: () => Option.none<string>(),
-      onSuccess: (manifest) => Option.some(manifest.version ?? ''),
-    })
-  }).pipe(Effect.orElseSucceed(() => Option.none<string>()))
-
-const discoverDependencies = (deps: Pick<MutationReportingDeps, 'fs' | 'path'>) =>
-  Effect.gen(function*() {
-    const pairs = yield* Effect.forEach(
-      MANIFEST_SPECIFIERS,
-      (specifier) => Effect.map(manifestVersionOf(deps)(specifier), (version) => [specifier, version] as const),
-      { concurrency: MANIFEST_CONCURRENCY },
-    )
-    return Object.fromEntries(
-      Arr.flatMap(pairs, ([specifier, version]) =>
-        Option.match(version, {
-          onNone: (): ReadonlyArray<readonly [string, string]> => [],
-          onSome: (present): ReadonlyArray<readonly [string, string]> => [[specifier, present]],
+const assembleFileResults = (input: FileResultsInput): Effect.Effect<Report.FileResultDictionary> =>
+  Effect.map(groupMutants(input), (grouped) =>
+    Object.fromEntries(
+      Arr.flatMap([...grouped], ([reportName, group]) =>
+        Option.match(HashMap.get(input.sources, group.sourceFileName), {
+          onNone: (): ReadonlyArray<readonly [string, Report.FileResult]> => [],
+          onSome: (source): ReadonlyArray<readonly [string, Report.FileResult]> => [
+            [reportName, { ...source, mutants: group.mutants }],
+          ],
         })),
-    )
-  })
+    ))
 
-const mutationTestReport =
-  (deps: MutationReportingDeps, input: MutationReportingInput) =>
-  (results: readonly InstrumenterMutant.RunMutantResult[]) =>
-    Effect.gen(function*() {
-      const { files, testFiles, identities } = yield* assembleReport(deps, input)(results)
-      const dependencies = yield* discoverDependencies(deps)
-      return {
-        report: {
-          files,
-          schemaVersion: '1.0',
-          thresholds: input.options.thresholds,
-          testFiles,
-          projectRoot: input.basePath,
-          config: input.options,
-          framework: { ...STRYKER_FRAMEWORK, dependencies },
-        },
-        identities,
-      }
-    })
+const assembleTestFiles = (input: TestFilesInput): Effect.Effect<Report.TestFileDefinitionDictionary> =>
+  Effect.map(groupTests(input), (grouped) =>
+    Object.fromEntries(
+      Arr.flatMap([...grouped], ([reportName, group]) =>
+        Option.match(HashMap.get(input.testSources, group.sourceFileName), {
+          onNone: (): ReadonlyArray<readonly [string, Report.TestFile]> => [],
+          onSome: (source): ReadonlyArray<readonly [string, Report.TestFile]> => [
+            [reportName, { ...source, tests: group.tests }],
+          ],
+        })),
+    ))
+
+const readMutatedSources = Effect.fn('stryker.mutationReporting.readMutatedSources')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  fileNames: readonly string[],
+) {
+  const { missing, present } = partitionByFile(input.project.files, fileNames)
+  yield* Effect.forEach(
+    missing,
+    (fileName) =>
+      Effect.logWarning(
+        `File "${fileName}" not found in input files, but did receive mutant result for it. This shouldn't happen`,
+      ),
+    { discard: true },
+  )
+  const originals = yield* deps.projectFiles.readAllOriginal(present)
+  const sources = originalSourcesOf(originals)
+  return HashMap.fromIterable(Arr.map(fileNames, (fileName) => {
+    const fileResult: Report.FileResult = {
+      language: determineLanguage(fileName, input.formatRegistry),
+      mutants: [],
+      source: Option.getOrElse(HashMap.get(sources, fileName), () => ''),
+    }
+    return [fileName, fileResult] as const
+  }))
+})
+
+const readTestSources = Effect.fn('stryker.mutationReporting.readTestSources')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  fileNames: readonly string[],
+) {
+  const { missing, present } = partitionByFile(input.project.files, fileNames)
+  yield* Effect.forEach(
+    missing,
+    (fileName) =>
+      Effect.logWarning(
+        `Test file "${fileName}" not found in input files, but did receive test result for it. This shouldn't happen.`,
+      ),
+    { discard: true },
+  )
+  const originals = yield* deps.projectFiles.readAllOriginal(present)
+  const sources = originalSourcesOf(originals)
+  return HashMap.fromIterable(Arr.map(fileNames, (fileName) =>
+    Option.match(HashMap.get(sources, fileName), {
+      onNone: (): readonly [string, Report.TestFile] => [fileName, { tests: [] }],
+      onSome: (source): readonly [string, Report.TestFile] => [fileName, { tests: [], source }],
+    })))
+})
+
+const assembleReport = Effect.fn('stryker.mutationReporting.assembleReport')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  results: readonly InstrumenterMutant.RunMutantResult[],
+) {
+  const tests = [...MutableHashMap.values(input.testCoverage.testsById)]
+  const remap = testIdRemap(Arr.map(tests, (test) => test.id))
+  const mutatedFileNames = uniqueNames(Arr.map(results, (result) => result.fileName))
+  const testFileNames = uniqueNames(Arr.map(tests, (test) => test.fileName))
+  const sources = yield* readMutatedSources(deps, input, mutatedFileNames)
+  const testSources = yield* readTestSources(deps, input, testFileNames)
+  const relativeNames = yield* S.decodeEffect(ReportFileNames)(
+    Object.fromEntries(
+      Arr.map([...mutatedFileNames, ...testFileNames], (fileName) =>
+        [
+          fileName,
+          deps.path.relative(input.basePath, fileName),
+        ] as const),
+    ),
+  ).pipe(Effect.orDie)
+  const reportNames = HashMap.fromIterable(Object.entries(relativeNames))
+  const identities = HashMap.fromIterable(
+    mutatedFileNames.flatMap((fileName) =>
+      Option.match(HashMap.get(reportNames, fileName), {
+        onNone: (): ReadonlyArray<readonly [string, Option.Option<FormatIdentity>]> => [],
+        onSome: (reportName) => [[reportName, identityOf(fileName, input.formatRegistry)] as const],
+      })
+    ),
+  )
+  const files = yield* assembleFileResults({ sources, reportNames, mutants: results, remap })
+  const testFiles = yield* assembleTestFiles({ testSources, reportNames, tests, remap })
+  return { files, testFiles, identities }
+})
+
+const manifestVersionOf = Effect.fn('stryker.mutationReporting.manifestVersion')(function*(
+  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
+  specifier: string,
+) {
+  const resolved = yield* Effect.try({
+    try: () => new URL(import.meta.resolve(`${specifier}/package.json`)),
+    catch: (cause) => ManifestUnreadable.make({ specifier, cause }),
+  })
+  const manifestPath = yield* deps.path.fromFileUrl(resolved)
+  const text = yield* deps.fs.readFileString(manifestPath)
+  return Result.match(S.decodeResult(S.fromJsonString(ManifestSchema))(text), {
+    onFailure: () => Option.none<string>(),
+    onSuccess: (manifest) => Option.some(manifest.version ?? ''),
+  })
+})
+
+const discoverDependencies = Effect.fn('stryker.mutationReporting.discoverDependencies')(function*(
+  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
+) {
+  const pairs = yield* Effect.forEach(
+    MANIFEST_SPECIFIERS,
+    (specifier) =>
+      Effect.map(
+        manifestVersionOf(deps, specifier).pipe(Effect.orElseSucceed((): Option.Option<string> => Option.none())),
+        (version) => [specifier, version] as const,
+      ),
+    { concurrency: MANIFEST_CONCURRENCY },
+  )
+  return Object.fromEntries(
+    Arr.flatMap(pairs, ([specifier, version]) =>
+      Option.match(version, {
+        onNone: (): ReadonlyArray<readonly [string, string]> => [],
+        onSome: (present): ReadonlyArray<readonly [string, string]> => [[specifier, present]],
+      })),
+  )
+})
+
+const mutationTestReport = Effect.fn('stryker.mutationReporting.mutationTestReport')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  results: readonly InstrumenterMutant.RunMutantResult[],
+) {
+  const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
+  const dependencies = yield* discoverDependencies(deps)
+  return {
+    report: {
+      files,
+      schemaVersion: '1.0',
+      thresholds: input.options.thresholds,
+      testFiles,
+      projectRoot: input.basePath,
+      config: input.options,
+      framework: { ...STRYKER_FRAMEWORK, dependencies },
+    },
+    identities,
+  }
+})
 
 const determineExitCode = (input: MutationReportingInput) => (metrics: Report.MetricsResult) => {
   const breaking = input.options.thresholds.break
@@ -591,116 +605,127 @@ const logBroken = (breaking: number | null, percentage: number) =>
     ),
   )
 
-const emitVerdict =
-  (deps: MutationReportingDeps, input: MutationReportingInput) => (report: Report.MutationTestResult) =>
-    Effect.gen(function*() {
-      const envelope = VerdictEnvelope.build(
-        report,
-        input.resolvedMode.mode,
-        input.resolvedMode.signal,
-        input.runId,
-        input.basePath,
-        deps.path,
-      )
-      yield* Queue.offer(
-        deps.events,
-        VerdictReached.make({
-          schemaVersion: envelope.schemaVersion,
-          runId: envelope.runId,
-          mode: envelope.mode,
-          signal: envelope.signal,
-          score: envelope.score,
-          thresholds: envelope.thresholds,
-          reportFile: envelope.reportFile,
-          counts: envelope.counts,
-          mutants: envelope.mutants,
-        }),
-      )
-    })
+const emitVerdict = Effect.fn('stryker.mutationReporting.emitVerdict')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  report: Report.MutationTestResult,
+) {
+  const envelope = buildVerdictEnvelope(
+    report,
+    input.resolvedMode.mode,
+    input.resolvedMode.signal,
+    RunId.make(input.runId),
+    input.basePath,
+    deps.path,
+  )
+  yield* Queue.offer(
+    deps.events,
+    VerdictReached.make({
+      schemaVersion: envelope.schemaVersion,
+      runId: envelope.runId,
+      mode: envelope.mode,
+      signal: envelope.signal,
+      score: envelope.score,
+      thresholds: envelope.thresholds,
+      reportFile: envelope.reportFile,
+      counts: envelope.counts,
+      mutants: envelope.mutants,
+    }),
+  )
+})
 
-const writeIncrementalReport = (
+const writeIncrementalReport = Effect.fn('stryker.mutationReporting.writeIncrementalReport')(function*(
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
   input: MutationReportingInput,
   report: Report.MutationTestResult,
   identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>,
-) =>
-  Effect.gen(function*() {
-    yield* deps.fs.makeDirectory(deps.path.dirname(input.options.incrementalFile), { recursive: true })
-    const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
-      incrementalVersion: StrykerPackage.version,
-      ...report,
-      files: stampFileIdentities(report.files, identities),
-    }).pipe(Effect.orDie)
-    yield* deps.fs.writeFileString(input.options.incrementalFile, json)
-  })
+) {
+  yield* deps.fs.makeDirectory(deps.path.dirname(input.options.incrementalFile), { recursive: true })
+  const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
+    incrementalVersion: StrykerPackage.version,
+    ...report,
+    files: stampFileIdentities(report.files, identities),
+  }).pipe(Effect.orDie)
+  yield* deps.fs.writeFileString(input.options.incrementalFile, json)
+})
 
-const reportAll = (deps: MutationReportingDeps, input: MutationReportingInput) =>
-  Effect.gen(function*() {
-    const { report, identities } = yield* mutationTestReport(deps, input)(input.results)
-    const metrics = MetricsResultFromReport.fromFiles(report.files)
-    yield* offerTerminalReport(input.reporterStage, report, metrics)
-    const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
-    const verdict = yield* determineExitCode(input)(metrics)
-    const finalVerdict = Result.match(
-      classifyExit(
-        ClassifyExitCommand.make({
-          pending: [verdict, terminalDrain].filter((candidate): candidate is Plugin.ExitClass => candidate !== null),
-          score: Report.MutationScore.cases.Unscored.make({}),
-          breakingThreshold: null,
-        }),
-      ),
-      {
-        onFailure: (refused) => refused,
-        onSuccess: (decision) =>
-          Match.value(decision).pipe(
-            Match.tag('ExitVerdictFailed', (): Plugin.ExitClass => 'VerdictFail'),
-            Match.tag('ExitConfigErrored', (): Plugin.ExitClass => 'ConfigError'),
-            Match.tag('ExitRuntimeErrored', (): Plugin.ExitClass => 'RuntimeError'),
-            Match.tag('ExitInternalErrored', (): Plugin.ExitClass => 'InternalError'),
-            Match.orElse((): Plugin.ExitClass | null => null),
-          ),
-      },
-    )
-    yield* emitVerdict(deps, input)(report)
-    yield* Boolean.match(input.options.incremental, {
-      onTrue: () => writeIncrementalReport(deps, input, report, identities),
-      onFalse: () => Effect.void,
-    })
-    return { results: input.results, verdict: finalVerdict } satisfies MutationTestDone
+const reportAll = Effect.fn('stryker.mutationReporting.reportAll')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+) {
+  const { report, identities } = yield* mutationTestReport(deps, input, input.results)
+  const metrics = metricsResultFromFiles(report.files)
+  yield* offerTerminalReport(input.reporterStage, report, metrics)
+  const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
+  const verdict = yield* determineExitCode(input)(metrics)
+  const finalVerdict = Result.match(
+    classifyExit(
+      ClassifyExitCommand.make({
+        pending: [verdict, terminalDrain].filter((candidate): candidate is Plugin.ExitClass => candidate !== null),
+        score: Report.MutationScore.cases.Unscored.make({}),
+        breakingThreshold: null,
+      }),
+    ),
+    {
+      onFailure: (refused) => refused,
+      onSuccess: (decision) =>
+        Match.value(decision).pipe(
+          Match.tag('ExitVerdictFailed', (): Plugin.ExitClass => 'VerdictFail'),
+          Match.tag('ExitConfigErrored', (): Plugin.ExitClass => 'ConfigError'),
+          Match.tag('ExitRuntimeErrored', (): Plugin.ExitClass => 'RuntimeError'),
+          Match.tag('ExitInternalErrored', (): Plugin.ExitClass => 'InternalError'),
+          Match.orElse((): Plugin.ExitClass | null => null),
+        ),
+    },
+  )
+  yield* emitVerdict(deps, input, report)
+  yield* Boolean.match(input.options.incremental, {
+    onTrue: () => writeIncrementalReport(deps, input, report, identities),
+    onFalse: () => Effect.void,
   })
+  return { results: input.results, verdict: finalVerdict } satisfies MutationTestDone
+})
 
-const writeAtomic = (deps: Pick<MutationReportingDeps, 'fs' | 'path'>) => (file: string, content: string) =>
-  Effect.gen(function*() {
-    yield* deps.fs.makeDirectory(deps.path.dirname(file), { recursive: true })
-    const tmp = `${file}.tmp`
-    yield* deps.fs.writeFileString(tmp, content)
-    yield* deps.fs.rename(tmp, file).pipe(
-      Effect.catch(() => deps.fs.copyFile(tmp, file).pipe(Effect.andThen(deps.fs.remove(tmp)))),
-    )
-  })
+const writeAtomic = Effect.fn('stryker.mutationReporting.writeAtomic')(function*(
+  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
+  file: string,
+  content: string,
+) {
+  yield* deps.fs.makeDirectory(deps.path.dirname(file), { recursive: true })
+  const tmp = `${file}.tmp`
+  yield* deps.fs.writeFileString(tmp, content)
+  yield* deps.fs.rename(tmp, file).pipe(
+    Effect.catch(() => deps.fs.copyFile(tmp, file).pipe(Effect.andThen(deps.fs.remove(tmp)))),
+  )
+})
 
-const slimIncrementalReport =
-  (deps: MutationReportingDeps, input: MutationReportingInput) =>
-  (results: readonly InstrumenterMutant.RunMutantResult[]) =>
-    Effect.gen(function*() {
-      const { files, testFiles, identities } = yield* assembleReport(deps, input)(results)
-      return {
-        incrementalVersion: StrykerPackage.version,
-        schemaVersion: '1.0',
-        thresholds: input.options.thresholds,
-        files: stampFileIdentities(files, identities),
-        testFiles,
-      }
-    })
+const slimIncrementalReport = Effect.fn('stryker.mutationReporting.slimIncrementalReport')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  results: readonly InstrumenterMutant.RunMutantResult[],
+) {
+  const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
+  return {
+    incrementalVersion: StrykerPackage.version,
+    schemaVersion: '1.0',
+    thresholds: input.options.thresholds,
+    files: stampFileIdentities(files, identities),
+    testFiles,
+  }
+})
+
+const checkpointIncremental = Effect.fn('stryker.mutationReporting.checkpoint')(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+) {
+  const report = yield* slimIncrementalReport(deps, input, input.results)
+  const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(report).pipe(Effect.orDie)
+  yield* writeAtomic(deps, input.options.incrementalFile, json)
+})
 
 const checkpoint = (deps: MutationReportingDeps, input: MutationReportingInput) =>
   Boolean.match(input.options.incremental, {
-    onTrue: () =>
-      Effect.gen(function*() {
-        const report = yield* slimIncrementalReport(deps, input)(input.results)
-        const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(report).pipe(Effect.orDie)
-        yield* writeAtomic(deps)(input.options.incrementalFile, json)
-      }),
+    onTrue: () => checkpointIncremental(deps, input),
     onFalse: () => Effect.void,
   })
 

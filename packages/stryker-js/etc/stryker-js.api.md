@@ -26,7 +26,7 @@ export namespace Plugin {
 
 // @public (undocumented)
 export namespace RunEvent {
-    export { FormatClaimShadowingRow, FormatRegistryResolved, FormatRegistryRow, FrameworkContributionRow, FrameworkModuleRow, Heartbeat, HelpRendered, MetricsResultFromReport, ModeSignal$1 as ModeSignal, OutputMode$1 as OutputMode, PhaseEntered, PlanKnown, PluginFailureReason, PluginsReported, ResolvedMode, ResolvedModeInput, RunEvent, RunEventDrain, RunEventDrainLive, RunEventStream, RunEventWireLine, RunEvents, RunFailed, RunIdentity, RunIdentityShape, RunMutantTested, RunPhase, RunStarted, RunTerminalEvent, SkippedFileRow, SkippedReported, VerdictCounts, VerdictEnvelope, VerdictMutant, VerdictReached, VerdictThresholds, makeRunEventStream };
+    export { FormatClaimShadowingRow, FormatRegistryResolved, FormatRegistryRow, FrameworkContributionRow, FrameworkModuleRow, Heartbeat, HelpRendered, MetricsResultFromReport, ModeSignal, OutputMode, PhaseEntered, PlanKnown, PluginLoadFailureReason, PluginsReported, ResolvedMode, ResolvedModeInput, RunEvent, RunEventDrain, RunEventDrainLive, RunEventStream, RunEventWireLine, RunEvents, RunFailed, RunIdentity, RunIdentityShape, RunMutantTested, RunPhase, RunStarted, RunTerminalEvent, SkippedFileRow, SkippedReported, VerdictCounts, VerdictEnvelope, VerdictMutant, VerdictReached, makeRunEventStream, metricsResultFromFiles };
 }
 
 // @public (undocumented)

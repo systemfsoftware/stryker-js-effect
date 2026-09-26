@@ -22,32 +22,27 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
-const RunRequestBase = S.TaggedStruct('run', { survivors: S.Boolean })
+export const CliCommandSchema = S.Literals(['run', 'merge-reports'])
+export type CliCommand = typeof CliCommandSchema.Type
 
-export type RunRequest = S.Schema.Type<typeof RunRequestBase> & {
+const RunRequestSchema = S.TaggedStruct('run', { survivors: S.Boolean })
+
+export type RunRequest = S.Schema.Type<typeof RunRequestSchema> & {
   readonly options: Options.PartialStrykerOptions
 }
 
-const MergeReportsRequestBase = S.TaggedStruct('merge-reports', {
+const MergeReportsRequestSchema = S.TaggedStruct('merge-reports', {
   parts: S.String,
   out: S.String,
   packages: S.optional(S.String),
 })
 
-export type MergeReportsRequest = S.Schema.Type<typeof MergeReportsRequestBase>
+export type MergeReportsRequest = S.Schema.Type<typeof MergeReportsRequestSchema>
 
 export type CliRequest = RunRequest | MergeReportsRequest
 
 export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteCommand', {
-  route: S.Union([
-    S.TaggedStruct('help', {}),
-    S.TaggedStruct('merge-reports', {
-      parts: S.String,
-      out: S.String,
-      packages: S.optional(S.String),
-    }),
-    S.TaggedStruct('run', { survivors: S.Boolean }),
-  ]),
+  route: S.Union([S.TaggedStruct('help', {}), MergeReportsRequestSchema, RunRequestSchema]),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }

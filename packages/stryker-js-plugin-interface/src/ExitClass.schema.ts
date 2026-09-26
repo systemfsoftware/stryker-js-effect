@@ -1,6 +1,9 @@
 import { SchemaTransformation } from 'effect'
 import * as S from 'effect/Schema'
 
+export const ExitCode = S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 })))
+export type ExitCode = typeof ExitCode.Type
+
 export const ExitClass = S.Literals(['VerdictFail', 'ConfigError', 'RuntimeError', 'InternalError'])
 
 export type ExitClass = typeof ExitClass.Type

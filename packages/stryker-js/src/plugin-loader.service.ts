@@ -13,6 +13,15 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { importModule } from './drivers/config.js'
+import {
+  planPluginLoad,
+  type PluginDeclaration,
+  PluginDeclarationsPlanned,
+  PluginLoadCommand,
+  type PluginLoadDecision,
+  type PluginShadowing,
+} from './plan-plugin-load.workflow.js'
 import {
   type EvaluatorPluginDescriptor,
   type FrameworkModuleContributions,
@@ -26,7 +35,6 @@ import {
   SchemaValidationContributionSchema,
 } from './Plugins.schema.js'
 import { PluginLoadRefusedError } from './PluginsError.schema.js'
-import { importModule } from './run/load-config.cell.js'
 import { PackageManifestFields } from './run/package-manifest.schema.js'
 import { selectPackageEntry, SelectPackageEntryCommand } from './run/select-package-entry.workflow.js'
 import { isVmRunner, vmRunnerPluginUrl } from './vm-runner.js'
@@ -46,64 +54,37 @@ interface PluginLoadPlan {
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
   readonly pluginModulePaths: readonly string[]
   readonly pluginSources: readonly PluginSource[]
-  readonly shadowings: readonly {
-    readonly kind: PluginKind
-    readonly name: string
-    readonly shadowedIndex: number
-    readonly winnerIndex: number
-  }[]
+  readonly shadowings: readonly PluginShadowing[]
 }
 
+const plannedOf = (decision: Result.Result<PluginLoadDecision, never>): Option.Option<PluginDeclarationsPlanned> =>
+  Option.filter(Result.getSuccess(decision), S.is(PluginDeclarationsPlanned))
+
 const buildPluginLoadPlan = (entries: readonly PluginLoaderEntry[]): PluginLoadPlan => {
-  const declarations: readonly { plugin: PluginDescriptor; moduleName: string; entryIndex: number }[] = entries.flatMap(
-    (entry, index) =>
-      (entry.plugins ?? []).map((plugin) => ({ plugin, moduleName: entry.moduleName, entryIndex: index })),
+  const declarations: readonly PluginDeclaration[] = entries.flatMap((entry, index) =>
+    (entry.plugins ?? []).map((plugin) => ({ plugin, moduleName: entry.moduleName, entryIndex: index }))
+  )
+  const planned = plannedOf(planPluginLoad(PluginLoadCommand.make({ declarations: [...declarations] })))
+  const winningDeclarations: readonly PluginDeclaration[] = Option.getOrElse(
+    Option.map(planned, (plan) => [...plan.winners]),
+    (): readonly PluginDeclaration[] => [],
+  )
+  const shadowings: readonly PluginShadowing[] = Option.getOrElse(
+    Option.map(planned, (plan) => [...plan.shadowings]),
+    (): readonly PluginShadowing[] => [],
   )
 
-  const shadowingState = declarations.reduce<{
-    readonly seen: HashMap.HashMap<string, { readonly position: number; readonly entryIndex: number }>
-    readonly shadowings: readonly {
-      readonly kind: PluginKind
-      readonly name: string
-      readonly shadowedIndex: number
-      readonly winnerIndex: number
-    }[]
-  }>(
-    (acc, declaration, position) => {
-      const key = `${declaration.plugin.kind}:${declaration.plugin.name}`
-      return {
-        seen: HashMap.set(acc.seen, key, { position, entryIndex: declaration.entryIndex }),
-        shadowings: Option.match(HashMap.get(acc.seen, key), {
-          onNone: () => acc.shadowings,
-          onSome: (previous) => [
-            ...acc.shadowings,
-            {
-              kind: declaration.plugin.kind,
-              name: declaration.plugin.name,
-              shadowedIndex: previous.entryIndex,
-              winnerIndex: declaration.entryIndex,
-            },
-          ],
-        }),
-      }
-    },
-    { seen: HashMap.empty<string, { readonly position: number; readonly entryIndex: number }>(), shadowings: [] },
-  )
-
-  const winningDeclarations = declarations.filter((declaration, position) =>
-    Option.match(HashMap.get(shadowingState.seen, `${declaration.plugin.kind}:${declaration.plugin.name}`), {
-      onNone: () => false,
-      onSome: (winner) => winner.position === position,
-    })
-  )
-
-  const pluginsByKind = winningDeclarations.reduce<HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>>(
+  const pluginsByKind = winningDeclarations.reduce<HashMap.HashMap<PluginKind, PluginDescriptor[]>>(
     (map, declaration) =>
-      Option.match(HashMap.get(map, declaration.plugin.kind), {
-        onNone: () => HashMap.set(map, declaration.plugin.kind, [declaration.plugin]),
-        onSome: (existing) => HashMap.set(map, declaration.plugin.kind, [...existing, declaration.plugin]),
-      }),
-    HashMap.empty<PluginKind, readonly PluginDescriptor[]>(),
+      HashMap.modifyAt(map, declaration.plugin.kind, (existing) =>
+        Option.match(existing, {
+          onNone: () => Option.some([declaration.plugin]),
+          onSome: (plugins) => {
+            plugins.push(declaration.plugin)
+            return Option.some(plugins)
+          },
+        })),
+    HashMap.empty<PluginKind, PluginDescriptor[]>(),
   )
 
   const pluginSources = winningDeclarations.map((declaration): PluginSource =>
@@ -144,7 +125,7 @@ const buildPluginLoadPlan = (entries: readonly PluginLoaderEntry[]): PluginLoadP
     pluginsByKind,
     pluginModulePaths,
     pluginSources,
-    shadowings: shadowingState.shadowings,
+    shadowings,
   }
 }
 
@@ -307,20 +288,19 @@ const describeLoadedPlugin = (
       ),
   })
 
-const loadPlugin = (
+const loadPlugin = Effect.fn('stryker.plugin_load.load_plugin')(function*(
   descriptor: string,
   entrypoint: string,
-): Effect.Effect<Option.Option<LoadedContribution>, PluginLoadRefusedError> =>
-  Effect.gen(function*() {
-    yield* Effect.logDebug(`Loading plugin ${descriptor}`)
-    const maybeModule = yield* importModule<object>(entrypoint).pipe(
-      Effect.catch((error) => failPluginLoad(descriptor, importFailure(descriptor, { cause: error }))),
-    )
-    return yield* Option.match(Option.fromUndefinedOr(maybeModule), {
-      onNone: () => Effect.succeedNone,
-      onSome: (module) => describeLoadedPlugin(descriptor, module),
-    })
+): Effect.fn.Return<Option.Option<LoadedContribution>, PluginLoadRefusedError> {
+  yield* Effect.logDebug(`Loading plugin ${descriptor}`)
+  const maybeModule = yield* importModule<object>(entrypoint).pipe(
+    Effect.catch((error) => failPluginLoad(descriptor, importFailure(descriptor, { cause: error }))),
+  )
+  return yield* Option.match(Option.fromUndefinedOr(maybeModule), {
+    onNone: () => Effect.succeedNone,
+    onSome: (module) => describeLoadedPlugin(descriptor, module),
   })
+})
 
 const fileUrlOf = (specifier: string): Option.Option<URL> =>
   Result.match(
@@ -422,19 +402,18 @@ const resolveBareSpecifierOf = (
         importFailure(specifier, { cause: new Error(`the package "${specifier}" did not resolve`) }),
     }))
 
-const packageEntrypointOf = (
+const packageEntrypointOf = Effect.fn('stryker.plugin_load.package_entrypoint')(function*(
   specifier: string,
   basePath: string,
-): Effect.Effect<URL, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const path = yield* Path.Path
-    const manifestPath = yield* foundManifestPathOf(specifier, basePath)
-    const resolved = yield* resolveBareSpecifierOf(specifier, basePath)
-    const entry = yield* manifestOf(specifier, manifestPath)
-    const joined = path.join(path.dirname(manifestPath), entry)
-    const selected = resolved.endsWith(entry) ? resolved : joined
-    return yield* Effect.mapError(path.toFileUrl(selected), (cause) => importFailure(specifier, { cause }))
-  })
+): Effect.fn.Return<URL, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> {
+  const path = yield* Path.Path
+  const manifestPath = yield* foundManifestPathOf(specifier, basePath)
+  const resolved = yield* resolveBareSpecifierOf(specifier, basePath)
+  const entry = yield* manifestOf(specifier, manifestPath)
+  const joined = path.join(path.dirname(manifestPath), entry)
+  const selected = resolved.endsWith(entry) ? resolved : joined
+  return yield* Effect.mapError(path.toFileUrl(selected), (cause) => importFailure(specifier, { cause }))
+})
 
 const entrypointOf = (
   specifier: string,
@@ -444,6 +423,59 @@ const entrypointOf = (
     onSome: (url) => Effect.succeed(url),
     onNone: () => packageEntrypointOf(specifier, basePath),
   })
+
+const loadPluginsEffect = Effect.fn('stryker.plugin_load.load')(function*(
+  pluginDescriptors: readonly string[],
+  basePath: string,
+): Effect.fn.Return<LoadedPlugins, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> {
+  const entrypoints = yield* Effect.forEach(
+    Array.dedupe(pluginDescriptors),
+    (specifier) => Effect.map(entrypointOf(specifier, basePath), (entrypoint) => ({ specifier, entrypoint })),
+    { concurrency: 'unbounded' },
+  )
+  const loaded = yield* Effect.forEach(
+    entrypoints,
+    (resolved) =>
+      loadPlugin(resolved.specifier, resolved.entrypoint.href).pipe(
+        Effect.map((plugin) =>
+          Option.match(plugin, {
+            onNone: () => undefined,
+            onSome: (contributions) => ({ ...contributions, moduleName: resolved.specifier }),
+          })
+        ),
+      ),
+    { concurrency: 'unbounded' },
+  ).pipe(Effect.map((arr) => arr.filter(Predicate.isNotNullish)))
+  const ignorers: readonly Ignorer[] = loaded.flatMap((entry) => entry.ignorers ?? NO_IGNORERS)
+  const entries: readonly PluginLoaderEntry[] = loaded.map((entry) => ({
+    moduleName: entry.moduleName,
+    plugins: entry.plugins,
+    schemaContribution: entry.schemaContribution,
+  }))
+  const plan = buildPluginLoadPlan(entries)
+  yield* Effect.forEach(
+    plan.shadowings,
+    (shadowing) =>
+      Effect.logWarning(
+        `Plugin "${shadowing.name}" of kind "${shadowing.kind}" at index ${shadowing.winnerIndex} shadows plugin at index ${shadowing.shadowedIndex}.`,
+      ),
+    { concurrency: 1 },
+  )
+  const result: LoadedPlugins = {
+    schemaContributions: plan.schemaContributions,
+    pluginsByKind: plan.pluginsByKind,
+    pluginModulePaths: plan.pluginModulePaths,
+    pluginSources: plan.pluginSources,
+    ignorers,
+    frameworks: loaded.flatMap((entry) =>
+      entry.frameworks.map((framework) => ({
+        moduleName: entry.moduleName,
+        framework,
+      }))
+    ),
+  }
+  return result
+})
 
 export const loadPlugins: {
   (basePath: string): (pluginDescriptors: readonly string[]) => Effect.Effect<
@@ -455,62 +487,7 @@ export const loadPlugins: {
     pluginDescriptors: readonly string[],
     basePath: string,
   ): Effect.Effect<LoadedPlugins, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path>
-} = dual(
-  2,
-  (
-    pluginDescriptors: readonly string[],
-    basePath: string,
-  ): Effect.Effect<LoadedPlugins, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> =>
-    Effect.gen(function*() {
-      const entrypoints = yield* Effect.forEach(
-        Array.dedupe(pluginDescriptors),
-        (specifier) => Effect.map(entrypointOf(specifier, basePath), (entrypoint) => ({ specifier, entrypoint })),
-        { concurrency: 'unbounded' },
-      )
-      const loaded = yield* Effect.forEach(
-        entrypoints,
-        (resolved) =>
-          loadPlugin(resolved.specifier, resolved.entrypoint.href).pipe(
-            Effect.map((plugin) =>
-              Option.match(plugin, {
-                onNone: () => undefined,
-                onSome: (contributions) => ({ ...contributions, moduleName: resolved.specifier }),
-              })
-            ),
-          ),
-        { concurrency: 'unbounded' },
-      ).pipe(Effect.map((arr) => arr.filter(Predicate.isNotNullish)))
-      const ignorers: readonly Ignorer[] = loaded.flatMap((entry) => entry.ignorers ?? NO_IGNORERS)
-      const entries: readonly PluginLoaderEntry[] = loaded.map((entry) => ({
-        moduleName: entry.moduleName,
-        plugins: entry.plugins,
-        schemaContribution: entry.schemaContribution,
-      }))
-      const plan = buildPluginLoadPlan(entries)
-      yield* Effect.forEach(
-        plan.shadowings,
-        (shadowing) =>
-          Effect.logWarning(
-            `Plugin "${shadowing.name}" of kind "${shadowing.kind}" at index ${shadowing.winnerIndex} shadows plugin at index ${shadowing.shadowedIndex}.`,
-          ),
-        { concurrency: 1 },
-      )
-      const result: LoadedPlugins = {
-        schemaContributions: plan.schemaContributions,
-        pluginsByKind: plan.pluginsByKind,
-        pluginModulePaths: plan.pluginModulePaths,
-        pluginSources: plan.pluginSources,
-        ignorers,
-        frameworks: loaded.flatMap((entry) =>
-          entry.frameworks.map((framework) => ({
-            moduleName: entry.moduleName,
-            framework,
-          }))
-        ),
-      }
-      return result
-    }),
-)
+} = dual(2, (pluginDescriptors: readonly string[], basePath: string) => loadPluginsEffect(pluginDescriptors, basePath))
 
 export const pluginUrlsFromOptions = (options: Options.StrykerOptions): readonly string[] => [
   ...options.plugins,

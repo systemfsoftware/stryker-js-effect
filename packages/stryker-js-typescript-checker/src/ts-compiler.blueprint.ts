@@ -12,16 +12,19 @@ import { close, make as makeTSCompiler, type TSCompiler } from './ts-compiler.ha
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompilerResource')
 export type TypeId = typeof TypeId
 
-const scopedOf = (
+const scopedOf: (
   spec: Options.StrykerOptions,
-): Effect.Effect<TSCompiler, never, Scope.Scope | FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const host = yield* FileSystem.FileSystem
-    const pathService = yield* Path.Path
-    const compiler = makeTSCompiler(spec, { host, pathService })
-    yield* Effect.addFinalizer(() => close(compiler))
-    return compiler
-  })
+) => Effect.Effect<TSCompiler, never, Scope.Scope | FileSystem.FileSystem | Path.Path> = Effect.fn(
+  'typescript-checker.compiler.scoped',
+)(function*(
+  spec: Options.StrykerOptions,
+): Effect.fn.Return<TSCompiler, never, Scope.Scope | FileSystem.FileSystem | Path.Path> {
+  const host = yield* FileSystem.FileSystem
+  const pathService = yield* Path.Path
+  const compiler = yield* makeTSCompiler(spec, { host, pathService })
+  yield* Effect.addFinalizer(() => close(compiler))
+  return compiler
+})
 
 const layerOf =
   (spec: Options.StrykerOptions) =>

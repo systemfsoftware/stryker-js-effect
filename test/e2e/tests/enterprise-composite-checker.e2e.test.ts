@@ -80,12 +80,12 @@ const verifyCompositeCheckerOracle = (
 ): Check => {
   const normalized = verdict === undefined ? undefined : normalizeCounts(verdict.counts)
   const contractCompileErrors = events.filter(
-    (event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> =>
-      event._tag === 'mutant' && event.status === 'CompileError' && event.file.includes('contracts.ts'),
+    (event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> =>
+      event._tag === 'mutantTested' && event.status === 'CompileError' && event.fileName.includes('contracts.ts'),
   )
   const reported = events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((mutant) => `${mutant.mutator}:${mutant.status}`)
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
+    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
 
   return expect({
     exitCode: run.exitCode,

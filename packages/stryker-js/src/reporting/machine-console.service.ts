@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
@@ -9,15 +10,14 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
-import { CircularJson } from './machine-console.schema.js'
 
 const jsonArgumentText = <A = unknown>(argument: A): string =>
   Result.getOrElse(
     Result.try({
       try: () => String(JSON.stringify(argument)),
-      catch: () => CircularJson.make({}),
+      catch: () => '[Circular]',
     }),
-    () => '[Circular]',
+    (text) => text,
   )
 
 const inspectValue = <A = unknown>(value: A): string =>

@@ -6,31 +6,24 @@ export const CheckerMutantWire = S.Struct({
   fileName: Mutant.CanonicalFileName,
   mutatorName: Mutant.MutatorName,
   replacement: S.String,
-  location: Mutant.LocationSchema,
+  location: Mutant.Location,
 })
 export type CheckerMutantWire = typeof CheckerMutantWire.Type
-
-export const CheckStatus = S.Literals(['passed', 'compileError'])
-export type CheckStatus = typeof CheckStatus.Type
 
 export const CheckResultSchema = S.Union([
   S.Struct({ status: S.Literal('passed') }),
   S.Struct({ status: S.Literal('compileError'), reason: S.String }),
-])
+]).pipe(S.toTaggedUnion('status'))
+
+export const CheckStatus = S.Literals(CheckResultSchema.discriminants)
+export type CheckStatus = typeof CheckStatus.Type
 
 export class CheckerFailed extends S.TaggedError<CheckerFailed>()('CheckerFailed', {
   cause: S.String,
   checkerName: S.String,
-  mutantIds: S.Array(S.String),
+  mutantIds: S.Array(Mutant.MutantId),
 }) {}
 
-export interface FailedCheckResult {
-  readonly reason: string
-  readonly status: 'compileError'
-}
-
-export interface PassedCheckResult {
-  readonly status: 'passed'
-}
-
-export type CheckResult = FailedCheckResult | PassedCheckResult
+export type CheckResult = typeof CheckResultSchema.Type
+export type FailedCheckResult = Extract<CheckResult, { readonly status: 'compileError' }>
+export type PassedCheckResult = Extract<CheckResult, { readonly status: 'passed' }>

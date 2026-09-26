@@ -137,7 +137,7 @@ Feature('Settling checker requests against a worker that goes silent or boots sl
             Effect.gen(function*() {
               const harness = yield* makeHarness()
               const outcome = yield* Effect.forkChild(
-                checkMutants(harness, 'mutant-1').pipe(Effect.flip, Effect.timeout(ORPHAN_GUARD)),
+                checkMutants(harness, '1').pipe(Effect.flip, Effect.timeout(ORPHAN_GUARD)),
               )
               return { harness, outcome }
             }),
@@ -168,7 +168,7 @@ Feature('Settling checker requests against a worker that goes silent or boots sl
             Effect.gen(function*() {
               const harness = yield* makeHarness()
               const lost = yield* Effect.forkChild(
-                checkMutants(harness, 'mutant-1').pipe(Effect.flip, Effect.timeout(ORPHAN_GUARD)),
+                checkMutants(harness, '1').pipe(Effect.flip, Effect.timeout(ORPHAN_GUARD)),
               )
               yield* TestClock.adjust(SILENCE_WINDOW)
               yield* Fiber.join(lost)
@@ -178,13 +178,13 @@ Feature('Settling checker requests against a worker that goes silent or boots sl
         When('the worker responds again and a new request is made')('answer', (s) =>
           Effect.andThen(
             Effect.andThen(s.silent.gate.open, TestClock.adjust('2 seconds')),
-            checkMutants(s.silent, 'mutant-2'),
+            checkMutants(s.silent, '2'),
           )),
         Then('the new request is answered by the recovered worker')((s, expect) =>
           Effect.gen(function*() {
             const received = yield* Ref.get(s.silent.received)
-            return { status: s.answer['mutant-2']?.status, lastReceivedId: received.at(-1)?.id }
-          }).pipe(Effect.map((facts) => expect(facts).toEqual({ status: 'passed', lastReceivedId: 'mutant-2' })))
+            return { status: s.answer['2']?.status, lastReceivedId: received.at(-1)?.id }
+          }).pipe(Effect.map((facts) => expect(facts).toEqual({ status: 'passed', lastReceivedId: '2' })))
         ),
       ),
     )
@@ -198,7 +198,7 @@ Feature('Settling checker requests against a worker that goes silent or boots sl
               const booting = yield* makeHarness(BOOT_REFUSALS).pipe(Effect.forkChild)
               const outcome = yield* Effect.flatMap(
                 Fiber.join(booting),
-                (harness) => checkMutants(harness, 'mutant-boot'),
+                (harness) => checkMutants(harness, '3'),
               ).pipe(Effect.result, Effect.timeout(ORPHAN_GUARD), Effect.forkChild)
               return { booting, outcome }
             }),
@@ -222,8 +222,8 @@ Feature('Settling checker requests against a worker that goes silent or boots sl
               })
             }
             const received = yield* Ref.get(s.booted.received)
-            return { status: outcome.success['mutant-boot']?.status, lastReceivedId: received.at(-1)?.id }
-          }).pipe(Effect.map((facts) => expect(facts).toEqual({ status: 'passed', lastReceivedId: 'mutant-boot' })))
+            return { status: outcome.success['3']?.status, lastReceivedId: received.at(-1)?.id }
+          }).pipe(Effect.map((facts) => expect(facts).toEqual({ status: 'passed', lastReceivedId: '3' })))
         ),
       ),
     )

@@ -15,12 +15,6 @@ import * as Logger from 'effect/Logger'
 import { testRunnerHandlers } from './TestRunnerWorker.service.js'
 import { layer as vitestRunner } from './VitestRunner.service.js'
 
-const otlpTelemetryLayer = (serviceName: string, endpoint: string) =>
-  NodeSdk.layer(() => ({
-    resource: { serviceName },
-    spanProcessor: new SimpleSpanProcessor(new OTLPTraceExporter({ url: endpoint })),
-  }))
-
 const workerPlatformLayer = Layer.unwrap(
   Effect.gen(function*() {
     const telemetry = yield* Worker.WorkerTelemetry
@@ -30,7 +24,11 @@ const workerPlatformLayer = Layer.unwrap(
       NodeFileSystem.layer,
       NodePath.layer,
       Boolean.match(telemetry.enabled, {
-        onTrue: () => otlpTelemetryLayer(telemetry.serviceName, telemetry.endpoint),
+        onTrue: () =>
+          NodeSdk.layer(() => ({
+            resource: { serviceName: telemetry.serviceName },
+            spanProcessor: new SimpleSpanProcessor(new OTLPTraceExporter({ url: telemetry.endpoint })),
+          })),
         onFalse: () => Layer.empty,
       }),
     )

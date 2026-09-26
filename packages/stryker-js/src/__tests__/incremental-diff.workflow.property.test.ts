@@ -3,17 +3,16 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { EphemeralStatusSchema, RememberedStatusSchema } from '../../tests/__fixtures__/incremental-diff-law.schema.js'
 import { incrementalDiff, IncrementalDiffCommand, MutantRemembered, MutantToRun } from '../incremental-diff.workflow.js'
 import type { FormatIdentity } from '../IncrementalDiff.schema.js'
 
-const mutantOf = (id: string, line: number) =>
+const mutantOf = (id: Mutant.MutantId, line: number) =>
   Mutant.Mutant.make({
-    id: Mutant.MutantId.make(id),
+    id,
     fileName: Mutant.CanonicalFileName.make(`src/mutant-${line}.ts`),
     mutatorName: Mutant.MutatorName.make(`${id}-mutator`),
     replacement: '',
-    location: { start: { line, column: 0 }, end: { line, column: 1 } },
+    location: { start: { line, column: 1 }, end: { line, column: 2 } },
   })
 
 const IDENTITY: FormatIdentity = {
@@ -22,22 +21,12 @@ const IDENTITY: FormatIdentity = {
   ownerVersion: '1.0.0',
 }
 
-const mutantsOf = (ids: ReadonlyArray<string>): ReadonlyArray<Mutant.Mutant> =>
-  ids.map((id, index) => mutantOf(id, index))
+const mutantsOf = (ids: ReadonlyArray<Mutant.MutantId>): ReadonlyArray<Mutant.Mutant> =>
+  ids.map((id, index) => mutantOf(id, index + 1))
 
 const driftedIdentity = (identity: FormatIdentity): FormatIdentity => ({
   ...identity,
   ownerVersion: `${identity.ownerVersion}-drifted`,
-})
-
-/**
- * A report written before the location-base fix stored the mutant's 1-based
- * line but a column one too high, so a remembered legacy entry carries the
- * current location's columns shifted by one and its line unchanged.
- */
-const legacyLocationOf = (mutant: Mutant.Mutant) => ({
-  start: { line: mutant.location.start.line, column: mutant.location.start.column + 1 },
-  end: { line: mutant.location.end.line, column: mutant.location.end.column + 1 },
 })
 
 const lineDriftedLocationOf = (mutant: Mutant.Mutant) => ({
@@ -47,7 +36,7 @@ const lineDriftedLocationOf = (mutant: Mutant.Mutant) => ({
 
 const previousMutantOf = (
   mutant: Mutant.Mutant,
-  status: string,
+  status: Mutant.MutantStatus,
   testsCompleted: number,
   location = mutant.location,
 ) => ({
@@ -72,7 +61,7 @@ const commandOf = (
     coveringTestFilesByMutantId?: Record<string, readonly string[]>
     force?: boolean
   }>,
-  status: string,
+  status: Mutant.MutantStatus,
   testsCompleted: number,
 ) =>
   IncrementalDiffCommand.make({
@@ -109,7 +98,7 @@ const forceCommandOf = (mutants: ReadonlyArray<Mutant.Mutant>) =>
 describe('incrementalDiff', () => {
   it.prop(
     '∀ids_Force_≡AllToRunInInputOrder',
-    { of: [S.Array(S.NonEmptyString)], subject: incrementalDiff },
+    { of: [S.Array(Mutant.MutantId)], subject: incrementalDiff },
     (subject, [ids]) => {
       const mutants = mutantsOf(ids)
       const result = subject(forceCommandOf(mutants))
@@ -125,7 +114,7 @@ describe('incrementalDiff', () => {
   it.prop(
     '∀ilt_StableFile_≡RememberedCarriesPreviousFields',
     {
-      of: [S.NonEmptyString, RememberedStatusSchema, S.Finite, Mutant.PositionSchema.fields.line],
+      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, S.Finite, Mutant.Position.fields.line],
       subject: incrementalDiff,
     },
     (subject, [id, status, testsCompleted, line]) => {
@@ -147,29 +136,9 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
-    '∀ilt_LegacyColumnDrift_≡Remembered',
+    '∀ilt_StableFile_≡RememberedCarriesPreviousFields',
     {
-      of: [S.NonEmptyString, RememberedStatusSchema, S.Finite, Mutant.PositionSchema.fields.line],
-      subject: incrementalDiff,
-    },
-    (subject, [id, status, testsCompleted, line]) => {
-      const mutant = mutantOf(id, line)
-      const result = subject(
-        commandOf(mutant, { location: legacyLocationOf(mutant) }, status, testsCompleted),
-      )
-      return (
-        Result.isSuccess(result) &&
-        result.success.length === 1 &&
-        S.is(MutantRemembered)(result.success[0]) &&
-        result.success[0].mutantId === mutant.id
-      )
-    },
-  )
-
-  it.prop(
-    '∀il_LineDriftedPreviousKey_≡ToRun',
-    {
-      of: [S.NonEmptyString, RememberedStatusSchema, S.Finite, Mutant.PositionSchema.fields.line],
+      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, S.Finite, Mutant.Position.fields.line],
       subject: incrementalDiff,
     },
     (subject, [id, status, testsCompleted, line]) => {
@@ -184,7 +153,7 @@ describe('incrementalDiff', () => {
   it.prop(
     '∀il_IdentityDrift_≡ToRun',
     {
-      of: [S.NonEmptyString, RememberedStatusSchema, S.Finite, Mutant.PositionSchema.fields.line],
+      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, S.Finite, Mutant.Position.fields.line],
       subject: incrementalDiff,
     },
     (subject, [id, status, testsCompleted, line]) => {
@@ -199,7 +168,7 @@ describe('incrementalDiff', () => {
   it.prop(
     '∀il_MissingClaimedIdentity_≡ToRun',
     {
-      of: [S.NonEmptyString, RememberedStatusSchema, S.Finite, Mutant.PositionSchema.fields.line],
+      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, S.Finite, Mutant.Position.fields.line],
       subject: incrementalDiff,
     },
     (subject, [id, status, testsCompleted, line]) => {
@@ -230,7 +199,7 @@ describe('incrementalDiff', () => {
   it.prop(
     '∀il_MissingRecordedIdentity_≡ToRun',
     {
-      of: [S.NonEmptyString, RememberedStatusSchema, S.Finite, Mutant.PositionSchema.fields.line],
+      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, S.Finite, Mutant.Position.fields.line],
       subject: incrementalDiff,
     },
     (subject, [id, status, testsCompleted, line]) => {
@@ -259,7 +228,7 @@ describe('incrementalDiff', () => {
 
   it.prop(
     '∀il_EphemeralStatus_≡ToRun',
-    { of: [S.NonEmptyString, EphemeralStatusSchema, Mutant.PositionSchema.fields.line], subject: incrementalDiff },
+    { of: [Mutant.MutantId, Mutant.EphemeralStatusSchema, Mutant.Position.fields.line], subject: incrementalDiff },
     (subject, [id, status, line]) => {
       const mutant = mutantOf(id, line)
       const result = subject(commandOf(mutant, {}, status, line))
@@ -269,7 +238,7 @@ describe('incrementalDiff', () => {
 
   it.prop(
     '∀il_ChangedSourceFile_≡ToRun',
-    { of: [S.NonEmptyString, RememberedStatusSchema, Mutant.PositionSchema.fields.line], subject: incrementalDiff },
+    { of: [Mutant.MutantId, Mutant.RememberedStatusSchema, Mutant.Position.fields.line], subject: incrementalDiff },
     (subject, [id, status, line]) => {
       const mutant = mutantOf(id, line)
       const result = subject(
@@ -282,7 +251,7 @@ describe('incrementalDiff', () => {
   it.prop(
     '∀ilt_ChangedCoverage_≡ToRun',
     {
-      of: [S.NonEmptyString, RememberedStatusSchema, Mutant.PositionSchema.fields.line, S.NonEmptyString],
+      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, Mutant.Position.fields.line, S.NonEmptyString],
       subject: incrementalDiff,
     },
     (subject, [id, status, line, testFile]) => {

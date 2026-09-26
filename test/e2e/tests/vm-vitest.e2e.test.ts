@@ -84,8 +84,8 @@ const verifyCounts = (expect: Expect, verdict: RunEvent.VerdictReached): Check =
 
 const verifyMutantTally = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
   const reported = events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((mutant) => `${mutant.mutator}:${mutant.status}`)
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
+    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
 
   return expect({
     reportedCount: reported.length,

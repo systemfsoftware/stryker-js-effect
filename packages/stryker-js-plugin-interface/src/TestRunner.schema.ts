@@ -1,5 +1,15 @@
+/// <reference types="vitest/importMeta" />
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
+
+import { NonNegativeFinite, NonNegativeInt } from './Metrics.schema.js'
+
+const isTestId = (value: string): boolean => value.length > 0
+
+export const TestId = S.NonEmptyString.pipe(S.brand('TestId'))
+export type TestId = typeof TestId.Type
+
+const acceptsTestId = (value: string): boolean => S.is(TestId)(value)
 
 export const DryRunStatus = S.Literals(['complete', 'error', 'timeout'])
 export type DryRunStatus = typeof DryRunStatus.Type
@@ -11,11 +21,11 @@ export const MutantRunStatus = S.Literals(['killed', 'survived', 'timeout', 'err
 export type MutantRunStatus = typeof MutantRunStatus.Type
 
 const TestResultBase = {
-  id: S.String,
+  id: TestId,
   name: S.String,
-  timeSpentMs: S.Finite,
+  timeSpentMs: NonNegativeFinite,
   fileName: S.optionalKey(S.String),
-  startPosition: S.optionalKey(Mutant.PositionSchema),
+  startPosition: S.optionalKey(Mutant.Position),
 }
 
 export const TestResultSchema = S.Union([
@@ -25,8 +35,8 @@ export const TestResultSchema = S.Union([
 ])
 
 export const MutantCoverageSchema = S.Struct({
-  perTest: S.Record(S.String, S.Record(S.String, S.Finite)),
-  static: S.Record(S.String, S.Finite),
+  perTest: S.Record(S.String, S.Record(Mutant.MutantId, S.Finite)),
+  static: S.Record(Mutant.MutantId, S.Finite),
 })
 
 export const DryRunResultSchema = S.Union([
@@ -42,11 +52,11 @@ export const DryRunResultSchema = S.Union([
 export const MutantRunResultSchema = S.Union([
   S.Struct({
     status: S.Literal('killed'),
-    killedBy: S.Array(S.String),
+    killedBy: S.Array(TestId),
     failureMessage: S.String,
-    nrOfTests: S.Finite,
+    nrOfTests: NonNegativeInt,
   }),
-  S.Struct({ status: S.Literal('survived'), nrOfTests: S.Finite }),
+  S.Struct({ status: S.Literal('survived'), nrOfTests: NonNegativeInt }),
   S.Struct({ status: S.Literal('timeout'), reason: S.optionalKey(S.String) }),
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
 ])
@@ -71,7 +81,7 @@ export class TestRunnerFailed extends S.TaggedError<TestRunnerFailed>()('TestRun
 }) {}
 
 export interface BaseTestResult {
-  readonly id: string
+  readonly id: TestId
   readonly name: string
   readonly timeSpentMs: number
   readonly fileName?: string
@@ -118,7 +128,7 @@ export interface TimeoutMutantRunResult {
 
 export interface KilledMutantRunResult {
   readonly status: 'killed'
-  readonly killedBy: readonly string[]
+  readonly killedBy: readonly TestId[]
   readonly failureMessage: string
   readonly nrOfTests: number
 }
@@ -149,4 +159,16 @@ export interface DryRunOptions extends Mutant.RunOptions {
 
 export interface TestRunnerCapabilities {
   readonly reloadEnvironment: boolean
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+
+  const seeds = ['', ' ', 'a', 'file.ts#test']
+  it.prop(
+    '∀s_TestIdRefusal_≡NonEmpty',
+    { of: [S.String], subject: acceptsTestId },
+    (subject, [drawn]) => Arr.every(Arr.append(seeds, drawn), (value) => subject(value) === isTestId(value)),
+  )
 }

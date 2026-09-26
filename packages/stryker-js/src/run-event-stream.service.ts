@@ -16,6 +16,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
+import * as SynchronizedRef from 'effect/SynchronizedRef'
 
 import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
@@ -29,11 +30,11 @@ import {
 } from './frame-run-event.workflow.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { MachineConsole } from './reporting/machine-console.service.js'
-import { ErrorEnvelope } from './reporting/run-failure.schema.js'
+import { errorEnvelopeFromOutcome } from './reporting/run-failure.js'
 import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
-import { RunId, VerdictEnvelope } from './reporting/verdict-envelope.schema.js'
+import { buildVerdictEnvelope, generateRunId } from './reporting/verdict-envelope.js'
 import { RunEventWireLine } from './run-event-wire.schema.js'
-import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunStarted, VerdictReached } from './run-event.schema.js'
+import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunId, RunStarted, VerdictReached } from './run-event.schema.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
@@ -143,42 +144,53 @@ const runToSink = <E>(stdio: Stdio.Stdio, lines: Stream.Stream<string, E>, toStd
     onFalse: () => Stream.runDrain(lines),
   })
 
-const drainToSinks = (
+const drainToSinks = Effect.fn('stryker.runEventStream.drainToSinks')(function*(
   fs: FileSystem.FileSystem,
   path: Path.Path,
   stdio: Stdio.Stdio,
   fileName: string,
   toStdout: boolean,
   framed: Stream.Stream<string>,
-): Effect.Effect<void, never, never> =>
-  Effect.gen(function*() {
-    yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
-    yield* Effect.scoped(
-      Effect.gen(function*() {
-        const handle = yield* fs.open(fileName, { flag: 'w' })
-        const withFile = framed.pipe(
-          Stream.tap((line) => handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync))),
-        )
-        yield* runToSink(stdio, withFile, toStdout).pipe(Effect.ignore)
-      }),
-    )
-  }).pipe(Effect.orDie)
+) {
+  yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
+  yield* Effect.scoped(
+    Effect.gen(function*() {
+      const handle = yield* fs.open(fileName, { flag: 'w' })
+      const withFile = framed.pipe(
+        Stream.tap((line) => handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync))),
+      )
+      yield* runToSink(stdio, withFile, toStdout).pipe(Effect.ignore)
+    }),
+  )
+})
 
-const drainFileOf = (stdio: Stdio.Stdio, fs: FileSystem.FileSystem, path: Path.Path) =>
-  Effect.gen(function*() {
-    const fileNameRef = yield* Ref.make(DEFAULT_PROGRESS_STREAM_FILE)
-    return RunEventDrain.of({
-      drainFramed: (framed, toStdout) =>
-        Effect.gen(function*() {
-          const fileName = yield* Ref.get(fileNameRef)
-          yield* drainToSinks(fs, path, stdio, fileName, toStdout, framed)
-        }).pipe(
-          Effect.tapCause((cause) => Effect.logError('stryker.output.drain_file_failed', cause)),
-          Effect.ignoreCause,
-        ),
-      setProgressStreamFile: (fileName: string) => Ref.set(fileNameRef, fileName),
-    })
+const drainStoredFile = Effect.fn('stryker.runEventStream.drainStoredFile')(function*(
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  stdio: Stdio.Stdio,
+  fileNameRef: Ref.Ref<string>,
+  toStdout: boolean,
+  framed: Stream.Stream<string>,
+) {
+  const fileName = yield* Ref.get(fileNameRef)
+  yield* drainToSinks(fs, path, stdio, fileName, toStdout, framed).pipe(Effect.orDie)
+})
+
+const drainFileOf = Effect.fn('stryker.runEventStream.drainFile')(function*(
+  stdio: Stdio.Stdio,
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+) {
+  const fileNameRef = yield* Ref.make(DEFAULT_PROGRESS_STREAM_FILE)
+  return RunEventDrain.of({
+    drainFramed: (framed, toStdout) =>
+      drainStoredFile(fs, path, stdio, fileNameRef, toStdout, framed).pipe(
+        Effect.tapCause((cause) => Effect.logError('stryker.output.drain_file_failed', cause)),
+        Effect.ignoreCause,
+      ),
+    setProgressStreamFile: (fileName: string) => Ref.set(fileNameRef, fileName),
   })
+})
 
 const drainOf = (stdio: Stdio.Stdio, framed: Stream.Stream<string>, toStdout: boolean) =>
   runToSink(stdio, framed, toStdout).pipe(
@@ -192,7 +204,7 @@ const writeStderr = (stdio: Stdio.Stdio, line: string) =>
 
 export interface RunEventStream {
   readonly queue: Queue.Queue<RunEvent, Cause.Done>
-  readonly runId: string
+  readonly runId: RunId
   readonly startedAt: number
   readonly isOpen: Effect.Effect<boolean, never, never>
   readonly ensureOpen: (openResolved: ResolvedModeInput) => Effect.Effect<void, never, never>
@@ -226,7 +238,7 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
     projectRoot: basePath,
     framework: { name: 'StrykerJS', version: StrykerPackage.version },
   }
-  const envelope = VerdictEnvelope.build(
+  const envelope = buildVerdictEnvelope(
     report,
     mode.mode,
     mode.signal,
@@ -255,7 +267,7 @@ const offerFailureEnvelope = (
   failed: FailedRunOutcome,
   captured: string,
 ): Effect.Effect<void> => {
-  const envelope = ErrorEnvelope.fromOutcome({ error: failed, captured })
+  const envelope = errorEnvelopeFromOutcome({ error: failed, captured })
   return Queue.offer(
     stream.queue,
     RunFailed.make({
@@ -279,7 +291,27 @@ const emitHelpEnvelope = (stream: RunEventStream, help: string): Effect.Effect<v
   )
 
 const helpPayload = (ok: RunOk, captured: string): Option.Option<string> =>
-  Option.filter(Option.some(captured), () => ok.help || captured.length > 0)
+  Boolean.match(ok.help || captured.length > 0, {
+    onTrue: () => Option.some(captured),
+    onFalse: () => Option.none<string>(),
+  })
+
+const emitNullScoreVerdictFromDefaults = Effect.fn('stryker.runEventStream.nullScoreVerdict')(function*(
+  stream: RunEventStream,
+  mode: ResolvedMode,
+  basePath: string,
+  pathService: Path.Path,
+) {
+  const defaults = yield* defaultOptions
+  yield* emitNullScoreVerdict({
+    stream,
+    mode,
+    thresholds: defaults.thresholds,
+    config: {},
+    basePath,
+    pathService,
+  })
+})
 
 const emitNullScoreVerdictWhenOpen = (
   stream: RunEventStream,
@@ -289,48 +321,38 @@ const emitNullScoreVerdictWhenOpen = (
 ): Effect.Effect<void> =>
   Effect.andThen(stream.isOpen, (open) =>
     Boolean.match(open, {
-      onTrue: () =>
-        Effect.gen(function*() {
-          const defaults = yield* defaultOptions
-          yield* emitNullScoreVerdict({
-            stream,
-            mode,
-            thresholds: defaults.thresholds,
-            config: {},
-            basePath,
-            pathService,
-          })
-        }),
+      onTrue: () => emitNullScoreVerdictFromDefaults(stream, mode, basePath, pathService),
       onFalse: () => Effect.void,
     }))
 
-const emitMachineModeOutput = (params: EmitMachineModeOutputOptions): Effect.Effect<void, never, MachineConsole> =>
-  Effect.gen(function*() {
-    const { stream, mode, outcome, basePath, pathService } = params
-    const captured = (yield* MachineConsole).read()
-    return yield* Result.match(outcome, {
-      onSuccess: (decision) =>
-        Match.value(decision).pipe(
-          Match.tag('RunOk', (ok): Effect.Effect<void> =>
-            Option.match(helpPayload(ok, captured), {
-              onSome: (help) => emitHelpEnvelope(stream, help),
-              onNone: () =>
-                emitNullScoreVerdictWhenOpen(
-                  stream,
-                  mode,
-                  basePath,
-                  pathService,
-                ),
-            })),
-          Match.tag('RunParseFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
-          Match.tag('RunSurvivorsRejected', (failed) => offerFailureEnvelope(stream, failed, captured)),
-          Match.tag('RunConfigFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
-          Match.tag('RunFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
-          Match.exhaustive,
-        ),
-      onFailure: (failure) => offerFailureEnvelope(stream, failure, captured),
-    })
+const emitMachineModeOutput = Effect.fn('stryker.runEventStream.emitMachineModeOutput')(function*(
+  params: EmitMachineModeOutputOptions,
+) {
+  const { stream, mode, outcome, basePath, pathService } = params
+  const captured = (yield* MachineConsole).read()
+  return yield* Result.match(outcome, {
+    onSuccess: (decision) =>
+      Match.value(decision).pipe(
+        Match.tag('RunOk', (ok): Effect.Effect<void> =>
+          Option.match(helpPayload(ok, captured), {
+            onSome: (help) => emitHelpEnvelope(stream, help),
+            onNone: () =>
+              emitNullScoreVerdictWhenOpen(
+                stream,
+                mode,
+                basePath,
+                pathService,
+              ),
+          })),
+        Match.tag('RunParseFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
+        Match.tag('RunSurvivorsRejected', (failed) => offerFailureEnvelope(stream, failed, captured)),
+        Match.tag('RunConfigFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
+        Match.tag('RunFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
+        Match.exhaustive,
+      ),
+    onFailure: (failure) => offerFailureEnvelope(stream, failure, captured),
   })
+})
 
 export interface RunEventStreamPort {
   readonly createRunEventStream: (
@@ -371,16 +393,23 @@ const adoptMode = (state: FramingState, openResolved: ResolvedModeInput) =>
       }),
   })
 
-export const makeRunEventStream = (resolved: ResolvedModeInput) =>
-  Effect.gen(function*() {
+interface RunEventStreamLifecycle {
+  readonly closed: boolean
+  readonly drainFiber: Option.Option<Fiber.Fiber<void, never>>
+}
+
+export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
+  function*(resolved: ResolvedModeInput) {
     const stdio = yield* Stdio.Stdio
     const drain = yield* RunEventDrain
     const startedAt = yield* Clock.currentTimeMillis
-    const runId = RunId.generate(DateTime.makeUnsafe(startedAt)).value
+    const runId = generateRunId(DateTime.makeUnsafe(startedAt))
     const queue = yield* Queue.bounded<RunEvent, Cause.Done>(RunEvent.QUEUE_BOUND)
     const stateRef = yield* Ref.make<FramingState>(initialFramingState(resolved))
-    const closedRef = yield* Ref.make(false)
-    const drainFiberRef = yield* Ref.make(Option.none<Fiber.Fiber<void, never>>())
+    const lifecycleRef = yield* SynchronizedRef.make<RunEventStreamLifecycle>({
+      closed: false,
+      drainFiber: Option.none(),
+    })
 
     const offerStarted = (state: FramingState) =>
       Queue.offer(
@@ -393,7 +422,7 @@ export const makeRunEventStream = (resolved: ResolvedModeInput) =>
         }),
       )
 
-    const openHeader: Effect.Effect<void, never, never> = Effect.gen(function*() {
+    const openHeader = Effect.fn('stryker.runEventStream.openHeader')(function*() {
       const previous = yield* Ref.getAndUpdate(stateRef, markWritten)
       yield* Boolean.match(!previous.headerWritten && previous.mode === 'machine', {
         onTrue: () => offerStarted(previous),
@@ -403,20 +432,26 @@ export const makeRunEventStream = (resolved: ResolvedModeInput) =>
 
     const queueStream = Stream.fromQueue(queue)
 
+    const heartbeatTick = Effect.fn('stryker.runEventStream.tick')(function*() {
+      const now = yield* Clock.currentTimeMillis
+      const s = yield* Ref.get(stateRef)
+      return Heartbeat.make({
+        elapsedMs: now - startedAt,
+        completed: s.completed,
+        total: s.total,
+      })
+    })
+
     const tickStream = Stream.tick(TICK_INTERVAL_MS).pipe(
       Stream.drop(1),
-      Stream.filterEffect(() => Effect.zipWith(Ref.get(stateRef), Ref.get(closedRef), tickEnabled)),
-      Stream.mapEffect(() =>
-        Effect.gen(function*() {
-          const now = yield* Clock.currentTimeMillis
-          const s = yield* Ref.get(stateRef)
-          return Heartbeat.make({
-            elapsedMs: now - startedAt,
-            completed: s.completed,
-            total: s.total,
-          })
-        })
+      Stream.filterEffect(() =>
+        Effect.zipWith(
+          Ref.get(stateRef),
+          SynchronizedRef.get(lifecycleRef),
+          (state, lifecycle) => tickEnabled(state, lifecycle.closed),
+        )
       ),
+      Stream.mapEffect(() => heartbeatTick()),
     )
 
     const observed = Stream.merge(queueStream, tickStream, {
@@ -444,34 +479,45 @@ export const makeRunEventStream = (resolved: ResolvedModeInput) =>
       Stream.mapEffect((event: RunEvent) => S.encodeEffect(RunEventWireLine)(event).pipe(Effect.orDie)),
     )
 
+    const startDrain = Effect.fn('stryker.runEventStream.startDrain')(function*() {
+      const mode = (yield* Ref.get(stateRef)).mode
+      const drainFiber = yield* drain.drainFramed(framed, mode === 'machine').pipe(Effect.forkDetach)
+      yield* SynchronizedRef.update(lifecycleRef, (present) => ({
+        ...present,
+        drainFiber: Option.some(drainFiber),
+      }))
+    })
+
+    const openStream = Effect.fn('stryker.runEventStream.open')(function*() {
+      const lifecycle = yield* SynchronizedRef.get(lifecycleRef)
+      yield* Option.match(lifecycle.drainFiber, {
+        onNone: startDrain,
+        onSome: () => Effect.void,
+      })
+      yield* openHeader()
+    })
+
+    const closeAndDrainStream = Effect.fn('stryker.runEventStream.closeAndDrain')(function*() {
+      yield* SynchronizedRef.update(lifecycleRef, (present) => ({ ...present, closed: true }))
+      yield* Queue.end(queue)
+      const lifecycle = yield* SynchronizedRef.get(lifecycleRef)
+      yield* Option.match(lifecycle.drainFiber, {
+        onNone: () => Effect.void,
+        onSome: (drainFiber) => Fiber.join(drainFiber),
+      })
+    })
+
     return {
       queue,
       runId,
       startedAt,
       isOpen: Effect.map(
-        Effect.all([Ref.get(stateRef), Ref.get(closedRef), Ref.get(drainFiberRef)]),
-        ([state, closed, drainFiber]) => isStreamOpen(state, closed, Option.isSome(drainFiber)),
+        Effect.all([Ref.get(stateRef), SynchronizedRef.get(lifecycleRef)]),
+        ([state, lifecycle]) => isStreamOpen(state, lifecycle.closed, Option.isSome(lifecycle.drainFiber)),
       ),
       ensureOpen: (openResolved: ResolvedModeInput) => Ref.update(stateRef, (s) => adoptMode(s, openResolved)),
-      open: Effect.gen(function*() {
-        yield* Option.match(yield* Ref.get(drainFiberRef), {
-          onNone: () =>
-            Effect.gen(function*() {
-              const mode = (yield* Ref.get(stateRef)).mode
-              const drainFiber = yield* drain.drainFramed(framed, mode === 'machine').pipe(Effect.forkDetach)
-              yield* Ref.set(drainFiberRef, Option.some(drainFiber))
-            }),
-          onSome: () => Effect.void,
-        })
-        yield* openHeader
-      }),
-      closeAndDrain: Effect.gen(function*() {
-        yield* Ref.set(closedRef, true)
-        yield* Queue.end(queue)
-        yield* Option.match(yield* Ref.get(drainFiberRef), {
-          onNone: () => Effect.void,
-          onSome: (drainFiber) => Fiber.join(drainFiber),
-        })
-      }),
+      open: openStream(),
+      closeAndDrain: closeAndDrainStream(),
     }
-  })
+  },
+)

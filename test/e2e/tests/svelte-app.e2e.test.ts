@@ -74,8 +74,8 @@ const verifyNoSvelteSkipped = (expect: Expect, events: ReadonlyArray<RunEvent.Ru
 
 const verifyMutants = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
   const reported = events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((mutant) => `${mutant.file}:${mutant.location.start.line}:${mutant.mutator}:${mutant.status}`)
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
+    .map((mutant) => `${mutant.fileName}:${mutant.location.start.line}:${mutant.mutatorName}:${mutant.status}`)
     .toSorted()
   return expect(reported).toEqual([...SVELTE_APP_ORACLE.mutants].toSorted())
 }

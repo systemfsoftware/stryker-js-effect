@@ -3,9 +3,10 @@ import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
-import type { RunnerTestCase } from 'vitest'
 
 import { interpretVitestMutantRun } from './interpret-vitest-mutant-run.workflow.js'
+import type { VitestTestRecord } from './vitest-run-command.schema.js'
+import { interpretVitestTestRun } from './vitest-test-run.js'
 import type { VitestRunnerOptions } from './VitestRunner.schema.js'
 import type { RunFilter } from './VitestRunner.service.js'
 import { VitestSession } from './VitestSession.service.js'
@@ -16,7 +17,7 @@ export interface MutantRunCellDeps {
     filter: RunFilter,
   ) => Effect.Effect<
     {
-      readonly rawTests: readonly RunnerTestCase[]
+      readonly records: readonly VitestTestRecord[]
       readonly fileFailures: readonly { readonly fileName: string; readonly message: string }[]
       readonly hasExternalError: boolean
       readonly externalErrorText: string
@@ -30,14 +31,14 @@ export interface MutantRunCellDeps {
 }
 
 export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
-  Sandwich.named('stryker.vitest.mutant_run')((command: Mutant.MutantRunOptions) =>
-    Effect.gen(function*() {
+  Sandwich.named('stryker.vitest.mutant_run')(
+    Effect.fn('vitest.mutant_run.read')(function*(command: Mutant.MutantRunOptions) {
       const session = yield* VitestSession
       yield* session.setMode('mutant')
       yield* session.provide('hitLimit', command.hitLimit)
       yield* session.provide('mutantActivation', command.mutantActivation)
       yield* session.provide('activeMutant', command.activeMutant.id)
-      const { rawTests, fileFailures, hasExternalError, externalErrorText } = yield* deps.collectRaw({
+      const { records, fileFailures, hasExternalError, externalErrorText } = yield* deps.collectRaw({
         testIds: Option.getOrUndefined(
           Option.map(Option.fromNullishOr(command.testFilter), (ids) => [...ids]),
         ),
@@ -48,7 +49,7 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
       const vitestOptions = yield* deps.vitestOptions
       return {
         _tag: 'VitestMutantRunCommand' as const,
-        tests: { projectRoot: deps.projectRoot, records: rawTests, fileFailures },
+        tests: interpretVitestTestRun({ projectRoot: deps.projectRoot, records, fileFailures }),
         hasExternalError,
         externalErrorText,
         hitCount,
@@ -59,7 +60,7 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
         timeoutTrapFile: vitestOptions.timeoutTrapFile,
         timeoutTrapMutantId: vitestOptions.timeoutTrapMutantId,
       }
-    })
+    }),
   )
     .decide(interpretVitestMutantRun)
     .write({
@@ -68,7 +69,10 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
           status: 'killed' as const,
           failureMessage: killed.failureMessage ?? '',
           killedBy: Option.getOrElse(
-            Option.map(Option.fromNullishOr(killed.killerIds), (ids) => [...ids]),
+            Option.map(
+              Option.fromNullishOr(killed.killerIds),
+              (ids) => ids.map((id) => TestRunner.TestId.make(id)),
+            ),
             () => [],
           ),
           nrOfTests: killed.tests.length,

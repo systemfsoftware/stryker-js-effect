@@ -1,39 +1,15 @@
 import * as S from 'effect/Schema'
 
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+
 import { FormatIdentitySchema } from './IncrementalDiff.schema.js'
-
-const PositionSchema = S.Struct({
-  line: S.Finite,
-  column: S.Finite,
-})
-
-const LocationSchema = S.Struct({
-  start: PositionSchema,
-  end: PositionSchema,
-})
-
-const OpenEndLocationSchema = S.Struct({
-  start: PositionSchema,
-  end: S.optional(PositionSchema),
-})
-
-const MUTANT_STATUSES = [
-  'Killed',
-  'Survived',
-  'NoCoverage',
-  'Timeout',
-  'CompileError',
-  'RuntimeError',
-  'Ignored',
-  'Pending',
-] as const
 
 const MutantResultLikeSchema = S.Struct({
   id: S.String,
   mutatorName: S.String,
   replacement: S.String,
-  location: LocationSchema,
-  status: S.Literals(MUTANT_STATUSES),
+  location: Mutant.Location,
+  status: Mutant.MutantStatusSchema,
   killedBy: S.String.pipe(S.Array, S.optional),
   coveredBy: S.String.pipe(S.Array, S.optional),
   static: S.optional(S.Boolean),
@@ -53,7 +29,7 @@ const FileResultLikeSchema = S.Struct({
 const TestDefinitionLikeSchema = S.Struct({
   id: S.String,
   name: S.String,
-  location: S.optional(OpenEndLocationSchema),
+  location: S.optional(Mutant.OpenEndLocation),
 })
 
 const TestFileLikeSchema = S.Struct({
@@ -76,3 +52,5 @@ export const IncrementalReportSchema = S.StructWithRest(
   }),
   [S.Record(S.String, S.Unknown)],
 )
+
+export type IncrementalReport = S.Schema.Type<typeof IncrementalReportSchema>

@@ -44,33 +44,32 @@ const serviceOf = (handle: CheckerHandle): CheckerResourceService => ({
   group: (checkerName, mutants) => group(handle, checkerName, mutants),
 })
 
-const acquire = (spec: CheckerSpec) =>
-  Effect.gen(function*() {
-    const client = yield* makeWorkerClient({
-      rpcs: Plugin.CheckerRpcs,
-      options: spec.options,
-      entrypoint: spec.workerEntrypoint,
-      workingDirectory: spec.workingDirectory,
-      execArgv: [...nodeArgsOf(spec.options)],
-      tempDirPrefix: TEMP_DIR_PREFIX,
-    }).pipe(
-      Effect.mapError((error) =>
-        Match.value(error).pipe(
-          Match.tag('ChildProcessCrashedError', 'OutOfMemoryError', (crash) => crash),
-          Match.tag(
-            'WorkerBootTimeoutError',
-            () =>
-              connectionCrashed(
-                `Checker worker failed to start: its boot window closed before it accepted the RPC connection`,
-              ),
-          ),
-          Match.exhaustive,
-        )
-      ),
-      Effect.tapError(() => Metric.update(checkerProcessCrashes, 1)),
-    )
-    return serviceOf(makeCheckerHandle(client))
-  })
+const acquire = Effect.fnUntraced(function*(spec: CheckerSpec) {
+  const client = yield* makeWorkerClient({
+    rpcs: Plugin.CheckerRpcs,
+    options: spec.options,
+    entrypoint: spec.workerEntrypoint,
+    workingDirectory: spec.workingDirectory,
+    execArgv: [...nodeArgsOf(spec.options)],
+    tempDirPrefix: TEMP_DIR_PREFIX,
+  }).pipe(
+    Effect.mapError((error) =>
+      Match.value(error).pipe(
+        Match.tag('ChildProcessCrashedError', 'OutOfMemoryError', (crash) => crash),
+        Match.tag(
+          'WorkerBootTimeoutError',
+          () =>
+            connectionCrashed(
+              `Checker worker failed to start: its boot window closed before it accepted the RPC connection`,
+            ),
+        ),
+        Match.exhaustive,
+      )
+    ),
+    Effect.tapError(() => Metric.update(checkerProcessCrashes, 1)),
+  )
+  return serviceOf(makeCheckerHandle(client))
+})
 
 const Checkers = Blueprint.make<CheckerSpec>()(TypeId).steps({
   steps: {},

@@ -4,9 +4,13 @@
 
 ```ts
 
+import * as Arr from 'effect/Array';
+import * as Option from 'effect/Option';
+import * as S from 'effect/Schema';
+
 // @public (undocumented)
 export namespace ErrorText {
-    export { CauseText, CauseTextValue, ErrnoException, ErrorText, ErrorTextValue };
+    export { CauseText, CauseTextValue, ErrnoException, ErrorText, ErrorTextValue, causeTextOf, errorTextOf };
 }
 
 // @public (undocumented)
@@ -16,13 +20,50 @@ export namespace Format {
 
 // @public (undocumented)
 export namespace Instrument {
-    export { File, FileDescription, FileDescriptions, InstrumentError, InstrumentFileSkip, InstrumentResult, InstrumenterOptions, MutateDescription, MutationRange, ParserOptions, disableTypeChecks, instrument };
+    export { File, FileDescription, FileDescriptions, InstrumentError, InstrumentFileSkip, InstrumentResult, InstrumenterOptions, MutateDescription, ParserOptions, disableTypeChecks, instrument };
 }
+
+// Warning: (ae-forgotten-export) The symbol "LineStarts" needs to be exported by the entry point index.d.mts
+//
+// @public (undocumented)
+export const lineStartsOf: (text: string) => LineStarts;
+
+// @public (undocumented)
+export const locationOf: {
+    (lineStarts: LineStarts, span: Span): Location;
+    (span: Span): (lineStarts: LineStarts) => Location;
+};
 
 // @public (undocumented)
 export namespace Mutant {
-    export { CanonicalFileName, CanonicalFileName as CanonicalFileNameValue, Coverage, CoverageData, CoveragePerTestId, EarlyResultPlan, InstrumenterContext, Location, LocationSchema, Mutant$1 as Mutant, MutantActivation, MutantActivationSchema, MutantCoverage, MutantCoverageSchema, MutantEarlyResultPlan, MutantFromUnknown, MutantFromUnknown as MutantFromUnknownValue, MutantId, MutantId as MutantIdValue, MutantRunOptions, MutantRunOptionsSchema, MutantRunPlan, MutantStatus, MutantStatusSchema, MutantTestCoverage, MutantTestPlan, MutatorName, MutatorName as MutatorNameValue, OpenEndLocation, OpenEndLocationSchema, Position, PositionSchema, ReportLocationFromMutant, RunMutantResult, RunOptions, RunOptionsFields, RunPlan, TestPlan };
+    export { ActionableStatus, ActionableStatusSchema, CanonicalFileName, CanonicalFileName as CanonicalFileNameValue, Column, Coverage, CoverageData, CoveragePerTestId, EarlyResultPlan, EphemeralStatus, EphemeralStatusSchema, HitCount, InstrumenterContext, Line, LineStarts, Location, Mutant$1 as Mutant, MutantActivation, MutantActivationSchema, MutantCoverage, MutantCoverageSchema, MutantEarlyResultPlan, MutantFromUnknown, MutantFromUnknown as MutantFromUnknownValue, MutantId, MutantId as MutantIdValue, MutantRunOptions, MutantRunOptionsSchema, MutantRunPlan, MutantStatus, MutantStatusSchema, MutantTestCoverage, MutantTestPlan, MutatorName, MutatorName as MutatorNameValue, Offset, OpenEndLocation, Position, RememberedStatus, RememberedStatusSchema, RunMutantResult, RunOptions, RunOptionsFields, RunPlan, ScriptOrigin, Span, SurvivorStatus, SurvivorStatusSchema, TestPlan };
 }
+
+// @public (undocumented)
+export const offsetAt: {
+    (lineStarts: LineStarts, position: Position): Option.Option<Offset>;
+    (position: Position): (lineStarts: LineStarts) => Option.Option<Offset>;
+};
+
+// @public (undocumented)
+export const originAt: {
+    (lineStarts: LineStarts, offset: Offset): ScriptOrigin;
+    (offset: Offset): (lineStarts: LineStarts) => ScriptOrigin;
+};
+
+// @public (undocumented)
+export const positionAt: {
+    (lineStarts: LineStarts, offset: Offset): Position;
+    (offset: Offset): (lineStarts: LineStarts) => Position;
+};
+
+// Warnings were encountered during analysis:
+//
+// dist/index.d.mts:1917:3 - (ae-forgotten-export) The symbol "Span" needs to be exported by the entry point index.d.mts
+// dist/index.d.mts:1917:3 - (ae-forgotten-export) The symbol "Location" needs to be exported by the entry point index.d.mts
+// dist/index.d.mts:1921:3 - (ae-forgotten-export) The symbol "ScriptOrigin" needs to be exported by the entry point index.d.mts
+// dist/index.d.mts:1925:3 - (ae-forgotten-export) The symbol "Position" needs to be exported by the entry point index.d.mts
+// dist/index.d.mts:1925:3 - (ae-forgotten-export) The symbol "Offset" needs to be exported by the entry point index.d.mts
 
 // (No @packageDocumentation comment for this package)
 

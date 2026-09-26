@@ -164,7 +164,7 @@ const statusPairOf = (mutator: string, status: string): readonly [string, string
 const mutatorStatusPairsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<readonly [string, string]> =>
   events.flatMap((event) =>
     Match.value(event).pipe(
-      Match.tag('mutant', (mutant) => [statusPairOf(mutant.mutator, mutant.status)]),
+      Match.tag('mutantTested', (mutant) => [statusPairOf(mutant.mutatorName, mutant.status)]),
       Match.orElse(() => []),
     )
   )

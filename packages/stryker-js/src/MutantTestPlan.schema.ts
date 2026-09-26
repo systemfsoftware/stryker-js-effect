@@ -3,10 +3,9 @@ import * as S from 'effect/Schema'
 
 export const PlannedMutantRunOptions = S.Struct({
   mutantActivation: Mutant.MutantActivationSchema,
-  timeout: S.Finite,
+  ...Mutant.RunOptionsFields,
   sandboxFileName: S.String,
-  disableBail: S.Boolean,
   reloadEnvironment: S.Boolean,
   testFilter: S.String.pipe(S.Array, S.optional),
-  hitLimit: S.optional(S.Finite),
+  hitLimit: S.optional(Mutant.HitCount),
 })

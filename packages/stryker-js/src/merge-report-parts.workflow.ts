@@ -1,5 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -7,11 +9,11 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 const MERGED_SCHEMA_VERSION = '1.7'
-const DEFAULT_THRESHOLDS = { high: 80, low: 60 }
+const DEFAULT_THRESHOLDS = { high: 80, low: 60, break: null }
 const FAILING_OUTCOME = 'failure'
 const PASSING_OUTCOME = 'success'
 const PERFECT_MUTATION_SCORE = 100
-const SURVIVOR_STATUSES: Record<string, true> = { Survived: true, NoCoverage: true }
+const SURVIVOR_STATUSES = S.is(Mutant.SurvivorStatusSchema)
 
 const SCORE_INCOMPLETE = 'incomplete'
 const SCORE_ABSENT = 'no report'
@@ -43,8 +45,8 @@ export const MergeVerdictRow = S.Struct({
 
 export const MergeSurvivor = S.Struct({
   file: S.String,
-  line: S.Finite,
-  column: S.Finite,
+  line: Mutant.Line,
+  column: Mutant.Column,
   status: S.String,
   mutatorName: S.String,
   replacement: S.String,
@@ -139,16 +141,20 @@ const normalizedNames = <A>(input: Readonly<Record<string, A>>): Readonly<Record
   )
 }
 
-const uniqueId = (label: string, id: string): string => `${label}_${id}`
+const MergedTestId = S.NonEmptyString.pipe(S.brand('TestId'))
 
-const uniqueIds = (label: string, ids: readonly string[] | undefined): readonly string[] | undefined =>
+const uniqueId = (label: string, id: TestRunner.TestId): TestRunner.TestId => MergedTestId.make(`${label}_${id}`)
+
+const uniqueIds = (
+  label: string,
+  ids: readonly TestRunner.TestId[] | undefined,
+): readonly TestRunner.TestId[] | undefined =>
   Option.getOrUndefined(
     Option.map(Option.fromUndefinedOr(ids), (present) => present.map((id) => uniqueId(label, id))),
   )
 
 const rewrittenMutant = (label: string, mutant: Report.MutantResult): Report.MutantResult => ({
   ...mutant,
-  id: uniqueId(label, mutant.id),
   killedBy: uniqueIds(label, mutant.killedBy),
   coveredBy: uniqueIds(label, mutant.coveredBy),
 })
@@ -318,7 +324,7 @@ const survivorsOf = (report: Report.MutationTestResult): readonly Survivor[] =>
   Object.entries(report.files)
     .flatMap(([file, fileResult]) =>
       fileResult.mutants
-        .filter((mutant) => SURVIVOR_STATUSES[mutant.status] === true)
+        .filter((mutant) => SURVIVOR_STATUSES(mutant.status))
         .map((mutant) => ({
           file,
           line: mutant.location.start.line,

@@ -1,6 +1,9 @@
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
+import { CliCommandSchema } from '../Cli.schema.js'
+import { OutputMode } from '../output-mode.schema.js'
+
 export type StrykerConfig = Options.PartialStrykerOptions
 
 export type Primitive = boolean | number | string | null | undefined
@@ -15,9 +18,9 @@ export type Immutable<T> = T extends ImmutablePrimitive ? T
   : { readonly [K in keyof T]: Immutable<T[K]> }
 
 export const ConfigEnvSchema = S.Struct({
-  command: S.Literals(['run', 'merge-reports']),
+  command: CliCommandSchema,
   isDryRun: S.Boolean,
-  mode: S.Literals(['human', 'machine']),
+  mode: OutputMode,
   isCi: S.Boolean,
 })
 export type ConfigEnv = typeof ConfigEnvSchema.Type

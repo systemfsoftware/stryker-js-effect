@@ -12,7 +12,7 @@ type ExitDecisionTypeId = typeof ExitDecisionTypeId
 export class ClassifyExitCommand extends S.TaggedClass<ClassifyExitCommand>()('ClassifyExitCommand', {
   pending: S.Array(Plugin.ExitClass),
   score: Report.MutationScore,
-  breakingThreshold: S.NullOr(S.Finite),
+  breakingThreshold: S.NullOr(Report.Percentage),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }

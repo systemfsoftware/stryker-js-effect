@@ -35,10 +35,10 @@ export class WorkerCrashed extends S.TaggedClass<WorkerCrashed>()('WorkerCrashed
 export const ClassifyWorkerExitDecision = S.Union([WorkerOutOfMemory, WorkerCrashed])
 export type ClassifyWorkerExitDecision = typeof ClassifyWorkerExitDecision.Type
 
-const OUT_OF_MEMORY_EXIT_CODES = [128 + 6, 128 + 9]
+export const OutOfMemoryExitCode = S.Literals([128 + 6, 128 + 9])
 
 const decide = (command: ClassifyWorkerExitCommand) =>
-  Boolean.match(OUT_OF_MEMORY_EXIT_CODES.includes(command.exitCode), {
+  Boolean.match(S.is(OutOfMemoryExitCode)(command.exitCode), {
     onTrue: () => Result.succeed(WorkerOutOfMemory.make({ pid: command.pid, exitCode: command.exitCode })),
     onFalse: () => Result.succeed(WorkerCrashed.make({ pid: command.pid, exitCode: command.exitCode })),
   })

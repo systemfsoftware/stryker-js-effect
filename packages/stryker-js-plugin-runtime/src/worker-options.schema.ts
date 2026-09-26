@@ -1,24 +1,21 @@
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { SchemaGetter, SchemaTransformation } from 'effect'
-import * as Option from 'effect/Option'
+import { Option, SchemaGetter, SchemaTransformation } from 'effect'
 import * as S from 'effect/Schema'
 
-const isEscapedKey = (key: string): boolean => JSON.stringify(key) !== `"${key}"`
+import { withoutEscapedKeys } from './worker-options-json.js'
 
-const omitEscapedKeys = (key: string, value: S.Json): S.Json | undefined => (isEscapedKey(key) ? undefined : value)
-
-const withoutEscapedKeys = (options: Options.StrykerOptions): Options.StrykerOptions =>
-  Option.getOrThrow(
-    S.decodeUnknownOption(Options.StrykerOptionsSchema)(JSON.parse(JSON.stringify(options, omitEscapedKeys))),
-  )
+const escapedKeyFreeSample = SchemaGetter.transformOptional(
+  (sample: Option.Option<Options.StrykerOptions>) =>
+    Option.flatMap(sample, (options) => Option.map(S.decodeUnknownOption(S.Json)(options), withoutEscapedKeys)),
+)
 
 const OptionsLawDomain = S.declare<Options.StrykerOptions>(
   (value): value is Options.StrykerOptions => S.is(Options.StrykerOptionsSchema)(value),
   {
     toCodecArbitrary: () =>
-      S.link<Options.StrykerOptions>()(Options.StrykerOptionsSchema, {
-        decode: SchemaGetter.transform(withoutEscapedKeys),
-        encode: SchemaGetter.passthrough(),
+      S.link<S.Json>()(Options.StrykerOptionsSchema, {
+        decode: escapedKeyFreeSample,
+        encode: SchemaGetter.passthrough({ strict: false }),
       }),
   },
 )

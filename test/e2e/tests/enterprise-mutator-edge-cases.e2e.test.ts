@@ -75,8 +75,8 @@ const verifyEdgeOracle = (
 ): Check => {
   const normalized = verdict === undefined ? undefined : normalizeCounts(verdict.counts)
   const reported = events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((mutant) => `${mutant.mutator}:${mutant.status}`)
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
+    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
 
   return expect({
     exitCode: run.exitCode,

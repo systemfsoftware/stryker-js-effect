@@ -4,6 +4,7 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
+import type { PlatformError } from 'effect/PlatformError'
 import * as NetAddress from 'effect/unstable/net/NetAddress'
 import type * as Rpc from 'effect/unstable/rpc/Rpc'
 import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
@@ -19,8 +20,8 @@ const traceContextServer: Layer.Layer<Trace.TraceContextMiddleware> = layerTrace
 
 const NAMED_PIPE_PREFIX = '\\\\.\\pipe\\'
 
-const restrictSocket = (address: NetAddress.SocketAddress) =>
-  Match.value(address).pipe(
+const restrictSocket = Effect.fn('restrictSocket')(function*(address: NetAddress.SocketAddress) {
+  yield* Match.value(address).pipe(
     Match.tag('UnixPathAddress', ({ path }) =>
       Boolean.match(path.startsWith(NAMED_PIPE_PREFIX), {
         onTrue: () => Effect.void,
@@ -28,6 +29,15 @@ const restrictSocket = (address: NetAddress.SocketAddress) =>
       })),
     Match.orElse(() => Effect.void),
   )
+})
+
+const restrictedSocket: Layer.Layer<
+  never,
+  PlatformError,
+  SocketServer.SocketServer | FileSystem.FileSystem
+> = Layer.effectDiscard(
+  Effect.flatMap(SocketServer.SocketServer, (socket) => restrictSocket(socket.address)),
+)
 
 export interface WorkerServerParams<Rpcs extends Rpc.Any, HE, R = never> {
   readonly rpcs: RpcGroup.RpcGroup<Rpcs>
@@ -39,18 +49,16 @@ export const TypeId = Symbol.for('~systemfsoftware/stryker-js-plugin-runtime/Wor
 export type TypeId = typeof TypeId
 
 const workerServerLayerOf = <Rpcs extends Rpc.Any, HE, R>(params: WorkerServerParams<Rpcs, HE, R>) =>
-  Layer.unwrap(
-    Effect.gen(function*() {
-      const socket = yield* SocketServer.SocketServer
-      yield* restrictSocket(socket.address)
-      return RpcServer.layer(params.rpcs).pipe(
+  restrictedSocket.pipe(
+    Layer.flatMap(() =>
+      RpcServer.layer(params.rpcs).pipe(
         Layer.provide(params.handlers),
         Layer.provide(params.schemaServices),
         Layer.provide(RpcServer.layerProtocolSocketServer),
         Layer.provide(RpcSerialization.layerNdjson),
         Layer.provide(traceContextServer),
       )
-    }),
+    ),
   )
 
 const WorkerServers = Blueprint.make<WorkerServerParams<Rpc.Any, never, never>>()(TypeId).steps({

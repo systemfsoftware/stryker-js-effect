@@ -11,6 +11,12 @@ import * as Stream from 'effect/Stream'
 import { clearTextReporterFactory } from './clear-text-report.cell.js'
 import { jsonReporterFactory } from './json-report.cell.js'
 import { progressReporterFactory } from './progress-report.cell.js'
+import {
+  HumanReporterSchema,
+  JsonReporterSchema,
+  ProgressReporterSchema,
+  StreamReporterSchema,
+} from './reporter-name.schema.js'
 import { ReporterOutput } from './reporter-output.service.js'
 
 export interface ReporterShape {
@@ -21,7 +27,7 @@ const failAsStreamDrain = <E = unknown>(cause: E): InterfaceReporter.ReporterFai
   InterfaceReporter.ReporterFailed.make({
     reporterName: 'progress',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
   })
 
 const drainReporterFactory: InterfaceReporter.ReporterFactory = () => (events) =>
@@ -40,10 +46,10 @@ export class Reporter extends Context.Service<Reporter, ReporterShape>()(
         )
         return Reporter.of({
           builtin: {
-            'json': jsonReporterFactory(context),
-            'clear-text': clearTextReporterFactory(context),
-            'progress': progressReporterFactory(context),
-            'progress-stream': drainReporterFactory,
+            [JsonReporterSchema.literal]: jsonReporterFactory(context),
+            [HumanReporterSchema.literal]: clearTextReporterFactory(context),
+            [ProgressReporterSchema.literal]: progressReporterFactory(context),
+            [StreamReporterSchema.literal]: drainReporterFactory,
           },
         })
       }),

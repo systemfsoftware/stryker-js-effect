@@ -1,4 +1,5 @@
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -44,59 +45,59 @@ describe('classifyRunOutcome', () => {
     { of: [RunOutcomeCommand], subject: classifyRunOutcome },
     (subject, [command]) => {
       const result = subject(command)
-      if (command.succeeded) {
-        if (command.successExitClass === undefined) {
-          return Result.isSuccess(result) && S.is(RunOk)(result.success) && result.success.help === false
-        }
-        return isRunFailed(result, classCode(command.successExitClass), command.diagnostic)
-      }
-      if (command.interrupted) {
-        return Result.isFailure(result) && S.is(RunInterrupted)(result.failure) && result.failure.code === 130
-      }
-      if (command.helpErrorCount !== undefined) {
-        if (command.helpErrorCount > 0) {
-          return (
+      return Match.value(command.observation).pipe(
+        Match.tag(
+          'RunSucceededClean',
+          () => Result.isSuccess(result) && S.is(RunOk)(result.success) && result.success.help === false,
+        ),
+        Match.tag(
+          'RunSucceededVerdict',
+          (observation) => isRunFailed(result, classCode(observation.exitClass), observation.diagnostic ?? undefined),
+        ),
+        Match.tag(
+          'RunInterruptedObservation',
+          () => Result.isFailure(result) && S.is(RunInterrupted)(result.failure) && result.failure.code === 130,
+        ),
+        Match.tag('RunHelpObservation', (observation) =>
+          observation.errorCount > 0
+            ? Result.isSuccess(result) &&
+              S.is(RunParseFailed)(result.success) &&
+              result.success.unrecognized === (observation.unrecognized ?? undefined)
+            : Result.isSuccess(result) && S.is(RunOk)(result.success) && result.success.help === true),
+        Match.tag(
+          'RunCliErrorObservation',
+          (observation) =>
             Result.isSuccess(result) &&
             S.is(RunParseFailed)(result.success) &&
-            result.success.unrecognized === command.unrecognized
-          )
-        }
-        return Result.isSuccess(result) && S.is(RunOk)(result.success) && result.success.help === true
-      }
-      if (command.cliError) {
-        return (
-          Result.isSuccess(result) &&
-          S.is(RunParseFailed)(result.success) &&
-          result.success.unrecognized === command.unrecognized
-        )
-      }
-      if (command.survivorsReason !== undefined) {
-        return (
-          Result.isSuccess(result) &&
-          S.is(RunSurvivorsRejected)(result.success) &&
-          result.success.reason === command.survivorsReason &&
-          result.success.diagnostic === command.survivorsDiagnostic
-        )
-      }
-      if (command.schemaError) {
-        return (
-          Result.isSuccess(result) &&
-          S.is(RunConfigFailed)(result.success) &&
-          result.success.detail === command.configDetail
-        )
-      }
-      if (command.highestExitClass !== undefined) {
-        if (command.highestExitClass === 'ConfigError') {
-          return (
+            result.success.unrecognized === (observation.unrecognized ?? undefined),
+        ),
+        Match.tag(
+          'RunSurvivorsRejectedObservation',
+          (observation) =>
+            Result.isSuccess(result) &&
+            S.is(RunSurvivorsRejected)(result.success) &&
+            result.success.reason === observation.reason &&
+            result.success.diagnostic === (observation.diagnostic ?? undefined),
+        ),
+        Match.tag(
+          'RunSchemaErrorObservation',
+          (observation) =>
             Result.isSuccess(result) &&
             S.is(RunConfigFailed)(result.success) &&
-            result.success.detail === command.configDetail
-          )
-        }
-        const code = classCode(command.highestExitClass)
-        return isRunFailed(result, code, command.diagnostic)
-      }
-      return isRunFailed(result, 1, command.diagnostic)
+            result.success.detail === (observation.configDetail ?? undefined),
+        ),
+        Match.tag('RunClassedObservation', (observation) =>
+          observation.exitClass === 'ConfigError'
+            ? Result.isSuccess(result) &&
+              S.is(RunConfigFailed)(result.success) &&
+              result.success.detail === (observation.configDetail ?? undefined)
+            : isRunFailed(result, classCode(observation.exitClass), observation.diagnostic ?? undefined)),
+        Match.tag(
+          'RunGenericFailureObservation',
+          (observation) => isRunFailed(result, 1, observation.diagnostic ?? undefined),
+        ),
+        Match.exhaustive,
+      )
     },
   )
 })

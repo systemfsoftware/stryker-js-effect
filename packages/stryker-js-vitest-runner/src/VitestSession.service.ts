@@ -11,6 +11,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
+import * as Scope from 'effect/Scope'
 
 import { type StrykerNamespace, type VitestRunnerOptions, VitestRunnerOptionsSchema } from './VitestRunner.schema.js'
 import { create, resolveVitest, type VitestResolver } from './VitestRuntime.blueprint.js'
@@ -59,7 +60,7 @@ const decodeOptions = (
         runnerName: 'vitest',
         phase: 'init',
         cause: Option.getOrElse(
-          Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) =>
+          Option.map(ErrorText.errorTextOf(cause), (rendered) =>
             rendered.text),
           () => '',
         ),
@@ -79,8 +80,9 @@ export class VitestSession extends Context.Service<VitestSession, VitestSessionS
         const crypto = yield* Crypto.Crypto
         const fs = yield* FileSystem.FileSystem
         const path = yield* Path.Path
+        const lifetime = yield* Scope.Scope
         const created = yield* Ref.make<VitestRuntime | undefined>(undefined)
-        const build = buildRuntime(input, created, { crypto, fileSystem: fs, path })
+        const build = buildRuntime(input, created, { crypto, fileSystem: fs, path, lifetime })
         const closeCurrent = closeOnShutdown(created)
         const decodedOptions = yield* Effect.cached(decodeOptions(input.options))
         const runtime = yield* Effect.cached(Effect.flatMap(decodedOptions, build))
@@ -112,7 +114,12 @@ const closeOnShutdown = (created: Ref.Ref<VitestRuntime | undefined>) =>
 const buildRuntime = (
   input: VitestSessionInput,
   created: Ref.Ref<VitestRuntime | undefined>,
-  platform: { readonly crypto: Crypto.Crypto; readonly fileSystem: FileSystem.FileSystem; readonly path: Path.Path },
+  platform: {
+    readonly crypto: Crypto.Crypto
+    readonly fileSystem: FileSystem.FileSystem
+    readonly path: Path.Path
+    readonly lifetime: Scope.Scope
+  },
 ) =>
 (vitestOptions: VitestRunnerOptions): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
   create({
@@ -125,6 +132,7 @@ const buildRuntime = (
     crypto: platform.crypto,
     fileSystem: platform.fileSystem,
     path: platform.path,
+    lifetime: platform.lifetime,
   }).pipe(Effect.tap((self) => Ref.set(created, self)))
 const bailOf = (input: VitestSessionInput): number =>
   Boolean.match(input.options.disableBail, { onTrue: () => 0, onFalse: () => 1 })

@@ -5,64 +5,32 @@ import * as S from 'effect/Schema'
 import {
   decodeDirective,
   DecodeDirectiveCommand,
-  type DirectiveDecision,
   DirectiveDecoded,
   DirectiveMalformed,
-  StrykerCommentSchema,
 } from '../directives/decode-directive.workflow.js'
-
-const DirectiveDecisionTypeId: unique symbol = Symbol.for(
-  '@systemfsoftware/stryker-js-instrumenter/DirectiveDecision',
-)
-
-const commentText = (comment: typeof StrykerCommentSchema.Type): string =>
-  `${comment.clause} ${comment.nameLetters.join('')}`
-
-const isDirectiveClause = (clause: string): boolean => clause.includes('disable') || clause.includes('restore')
-
-const expectedAction = (clause: string): 'disable' | 'restore' => clause.includes('restore') ? 'restore' : 'disable'
-
-const expectedScope = (clause: string): 'next-line' | 'block' => clause.includes('next-line') ? 'next-line' : 'block'
-
-const expectedNames = (comment: typeof StrykerCommentSchema.Type): readonly string[] =>
-  comment.nameLetters
-    .join('')
-    .split(',')
-    .map((name) => name.trim().replace(/\s+/g, ' '))
-    .filter((name) => name.length > 0)
+import { type Directive, DirectiveSchema } from '../directives/directive.schema.js'
 
 const commandOf = (text: string): DecodeDirectiveCommand => DecodeDirectiveCommand.make({ commentText: text })
 
-const hasBrand = (decision: DirectiveDecision): boolean =>
-  Object.getOwnPropertySymbols(decision).includes(DirectiveDecisionTypeId)
+const scopeText = (scope: Directive['scope']): string => scope === 'next-line' ? ' next-line' : ''
+
+const commentOf = (directive: Directive): string =>
+  ` Stryker ${directive.action}${scopeText(directive.scope)} ${directive.mutatorNames.join(',')}:${directive.reason}`
 
 describe('decodeDirective', () => {
   it.prop(
-    '∀c_Comment_∈BrandedDecision',
-    { of: [StrykerCommentSchema], subject: decodeDirective },
-    (subject, [comment]) => {
-      const decided = subject(commandOf(commentText(comment)))
-      return Result.isSuccess(decided) ? hasBrand(decided.success) : false
-    },
-  )
-
-  it.prop(
-    '∀c_StrykerComment_≡DecodedAsWrittenOrMalformed',
-    { of: [StrykerCommentSchema], subject: decodeDirective },
-    (subject, [comment]) => {
-      const decided = subject(commandOf(commentText(comment)))
-      if (!Result.isSuccess(decided)) {
+    '∀d_Directive_≡DecodedAsWritten',
+    { of: [DirectiveSchema], subject: decodeDirective },
+    (subject, [directive]) => {
+      const decided = subject(commandOf(commentOf(directive)))
+      if (!Result.isSuccess(decided) || !S.is(DirectiveDecoded)(decided.success)) {
         return false
       }
-      const decision = decided.success
-      const names = expectedNames(comment)
-      if (!isDirectiveClause(comment.clause) || names.length === 0) {
-        return S.is(DirectiveMalformed)(decision)
-      }
-      return S.is(DirectiveDecoded)(decision) &&
-        decision.directive.action === expectedAction(comment.clause) &&
-        decision.directive.scope === expectedScope(comment.clause) &&
-        decision.directive.mutatorNames.join(',') === names.join(',')
+      const decoded = decided.success.directive
+      return decoded.action === directive.action &&
+        decoded.scope === directive.scope &&
+        decoded.mutatorNames.join(',') === directive.mutatorNames.join(',') &&
+        decoded.reason === directive.reason
     },
   )
 

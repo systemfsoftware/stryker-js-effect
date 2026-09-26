@@ -17,25 +17,22 @@ import {
   PhaseEntered,
   PlanKnown,
   PluginsReported,
+  RunEvent,
   RunFailed,
   RunMutantTested,
   RunStarted,
   SkippedReported,
+  VerdictReached,
 } from '../run-event.schema.js'
 
-const arbitraryTerminalEvent = Arbitrary.schema(S.Union([RunFailed, HelpRendered]))
+const arbitraryTerminalEvent = Arbitrary.schema(S.Union([VerdictReached, RunFailed, HelpRendered]))
 
 const arbitraryNonTerminalEvent = Arbitrary.schema(
-  S.Union([RunStarted, PhaseEntered, PlanKnown, Heartbeat, PluginsReported, FormatRegistryResolved, SkippedReported]),
-)
-
-const arbitraryEvent = Arbitrary.schema(
   S.Union([
-    RunFailed,
-    HelpRendered,
     RunStarted,
     PhaseEntered,
     PlanKnown,
+    RunMutantTested,
     Heartbeat,
     PluginsReported,
     FormatRegistryResolved,
@@ -43,9 +40,9 @@ const arbitraryEvent = Arbitrary.schema(
   ]),
 )
 
-const arbitraryState = Arbitrary.schema(FramingState)
+const arbitraryEvent = Arbitrary.schema(RunEvent)
 
-const arbitraryNat = Arbitrary.schema(S.Int.check(S.isGreaterThanOrEqualTo(0)))
+const arbitraryState = Arbitrary.schema(FramingState)
 
 describe('frameRunEvent', () => {
   it.prop(
@@ -91,26 +88,13 @@ describe('frameRunEvent', () => {
 
   it.prop(
     '∀m_Mutant_≡Progress',
-    { of: [arbitraryState, arbitraryNat, arbitraryNat], subject: frameRunEvent },
-    (subject, [state, completed, total]) => {
-      const mutantEvent = RunMutantTested.make({
-        id: '1',
-        file: 'src/foo.ts',
-        status: 'Killed',
-        location: {
-          start: { line: 1, column: 1 },
-          end: { line: 1, column: 2 },
-        },
-        mutator: 'EqualityOperator',
-        replacement: '!=',
-        completed,
-        total,
-      })
+    { of: [arbitraryState, Arbitrary.schema(RunMutantTested)], subject: frameRunEvent },
+    (subject, [state, mutantEvent]) => {
       const result = subject(FrameRunEventCommand.make({ state, event: mutantEvent }))
       return (
         Result.isSuccess(result) &&
-        result.success.state.completed === completed &&
-        result.success.state.total === total
+        result.success.state.completed === mutantEvent.completed &&
+        result.success.state.total === mutantEvent.total
       )
     },
   )

@@ -32,42 +32,35 @@ export interface WorkerClientParams<Rpcs extends Rpc.Any> {
   readonly env?: Readonly<Record<string, string>> | undefined
 }
 
-const scopedOf = <Rpcs extends Rpc.Any>(
-  params: WorkerClientParams<Rpcs>,
-): Effect.Effect<
-  RpcClient.RpcClient<Rpcs, RpcClientError>,
-  WorkerBootError,
-  Scope.Scope | WorkerLauncher
-> =>
-  Effect.gen(function*() {
-    const launcher = yield* WorkerLauncher
-    const optionsJson = yield* S.encodeEffect(Worker.WorkerOptionsWire)(params.options).pipe(Effect.orDie)
-    const worker = yield* launcher.spawn({
-      entrypoint: params.entrypoint,
-      workingDirectory: params.workingDirectory,
-      execArgv: params.execArgv,
-      optionsJson,
-      tempDirPrefix: params.tempDirPrefix,
-      env: params.env,
-    })
-    const protocol = yield* worker.pipe(
-      clientLayer,
-      Layer.build,
-      Effect.retry(connectRetry),
-      Effect.raceFirst(worker.exited),
-      Effect.catchTag('SocketError', () => Effect.fail(WorkerBootTimeoutError.make({ pid: worker.pid }))),
-    )
-    const traceContext = yield* Layer.build(Trace.layerTraceContextClient)
-
-    return yield* RpcClient.make(params.rpcs).pipe(
-      Effect.provideContext(Context.merge(protocol, traceContext)),
-    )
-  })
-
 const WorkerClients = <Rpcs extends Rpc.Any>() =>
   Blueprint.make<WorkerClientParams<Rpcs>>()(TypeId).steps({
     steps: {},
-    targets: { scoped: scopedOf<Rpcs> },
+    targets: {
+      scoped: Effect.fnUntraced(function*(params: WorkerClientParams<Rpcs>) {
+        const launcher = yield* WorkerLauncher
+        const optionsJson = yield* S.encodeEffect(Worker.WorkerOptionsWire)(params.options).pipe(Effect.orDie)
+        const worker = yield* launcher.spawn({
+          entrypoint: params.entrypoint,
+          workingDirectory: params.workingDirectory,
+          execArgv: params.execArgv,
+          optionsJson,
+          tempDirPrefix: params.tempDirPrefix,
+          env: params.env,
+        })
+        const protocol = yield* worker.pipe(
+          clientLayer,
+          Layer.build,
+          Effect.retry(connectRetry),
+          Effect.raceFirst(worker.exited),
+          Effect.catchTag('SocketError', () => Effect.fail(WorkerBootTimeoutError.make({ pid: worker.pid }))),
+        )
+        const traceContext = yield* Layer.build(Trace.layerTraceContextClient)
+
+        return yield* RpcClient.make(params.rpcs).pipe(
+          Effect.provideContext(Context.merge(protocol, traceContext)),
+        )
+      }),
+    },
   })
 
 export const makeWorkerClient = <Rpcs extends Rpc.Any>(

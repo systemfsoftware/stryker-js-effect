@@ -11,24 +11,28 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
+import * as Scope from 'effect/Scope'
 
+import { onClose } from './drivers/vitest-node.js'
 import {
   dispose as disposeStandbyThreads,
   initializer as standbyThreadsInitializer,
   make as makeStandbyThreadsPool,
   type StandbyThreadsPool,
 } from './StandbyThreadsPool.handle.js'
-import { type RawVitestRecord } from './vitest-run-command.schema.js'
 import {
   type ExportEntry,
   PackageManifest,
   type StrykerNamespace,
-  type TestRunnerPhase,
   type VitestRunnerOptions,
 } from './VitestRunner.schema.js'
-import { close, make, type VitestRuntime } from './VitestRuntime.handle.js'
+import { close, failRuntime, make, type VitestRuntime } from './VitestRuntime.handle.js'
 
-export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntimeBlueprint')
+export interface RawVitestRecord<A = unknown> {
+  readonly [key: string]: A
+}
+
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
 export type TypeId = typeof TypeId
 
 const STRYKER_SETUP_URL = new URL('./stryker-setup.mjs', import.meta.url)
@@ -119,8 +123,8 @@ export const sandboxSelfPlugin = (
   },
 })
 
-const readSandboxSelfAliases = (projectRoot: string, fs: FileSystem.FileSystem, pathService: Path.Path) =>
-  Effect.gen(function*() {
+const readSandboxSelfAliases = Effect.fn('vitest.runtime.read_sandbox_self_aliases')(
+  function*(projectRoot: string, fs: FileSystem.FileSystem, pathService: Path.Path) {
     const raw = yield* fs.readFileString(pathService.join(projectRoot, 'package.json')).pipe(
       Effect.orElseSucceed(() => null),
     )
@@ -131,19 +135,15 @@ const readSandboxSelfAliases = (projectRoot: string, fs: FileSystem.FileSystem, 
         onSome: (manifest) => sandboxSelfAliases(manifest, projectRoot, pathService),
       }),
     )
-  })
+  },
+)
 
 export interface ResolvedVitest {
   createVitest: typeof createVitestOriginal
 }
 
 export type VitestResolver = (dir: string) => Effect.Effect<ResolvedVitest>
-const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  new TestRunner.TestRunnerFailed({
-    runnerName: 'vitest',
-    phase,
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
-  })
+
 const vitestUnresolved = (specifier: string, base: string, detail: string): TestRunner.TestRunnerFailed =>
   new TestRunner.TestRunnerFailed({
     runnerName: 'vitest',
@@ -172,7 +172,7 @@ export const resolveVitest: VitestResolver = (_dir) => {
         catch: (cause) =>
           resolutionFailure(
             specifier,
-            Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+            Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
           ),
       })
     const vitestNodeUrl = yield* resolveSpecifier('vitest/node')
@@ -181,7 +181,7 @@ export const resolveVitest: VitestResolver = (_dir) => {
       catch: (cause) =>
         resolutionFailure(
           'vitest/node',
-          Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+          Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
         ),
     })
     return yield* Option.match(
@@ -213,6 +213,7 @@ export interface VitestRuntimeInput {
   readonly crypto: Crypto.Crypto
   readonly fileSystem: FileSystem.FileSystem
   readonly path: Path.Path
+  readonly lifetime: Scope.Scope
 }
 
 const createVitestConfig = (input: VitestRuntimeInput, standbyThreads: StandbyThreadsPool) => ({
@@ -261,53 +262,53 @@ const refuseBrowser = (
     onSome: (reason) => Effect.fail(failRuntime('init')(reason)),
   })
 
-const openRuntime = (
+const openRuntime = Effect.fn('vitest.runtime.open')(function*(
   input: VitestRuntimeInput,
   localSetupFile: string,
-): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
-  Effect.gen(function*() {
-    const { fileSystem: fs, path } = input
-    const aliases = yield* readSandboxSelfAliases(input.projectRoot, fs, path)
-    const { createVitest } = yield* input.resolver(input.projectRoot).pipe(
-      Effect.catchDefect((cause) => Effect.fail(failRuntime('init')(cause))),
-    )
-    const standbyThreads = makeStandbyThreadsPool()
-    const driver = yield* Effect.tryPromise({
-      try: () =>
-        createVitest('test', createVitestConfig(input, standbyThreads), {
-          resolve: { alias: [...aliases], conditions: ['import'] },
-          plugins: [sandboxSelfPlugin(aliases)],
-        }),
-      catch: (cause) => failRuntime('init')(cause),
-    })
-    driver.onClose(() => disposeStandbyThreads(standbyThreads))
-    const runtime = make({
-      driver,
-      projectRoot: input.projectRoot,
-      localSetupFile,
-      namespace: input.namespace,
-      mutantBail: input.bail,
-    })
-    yield* refuseBrowser(input, driver).pipe(Effect.onError(() => closeAfterFailure(runtime, fs)))
-    return runtime
+) {
+  const { fileSystem: fs, path } = input
+  const aliases = yield* readSandboxSelfAliases(input.projectRoot, fs, path)
+  const { createVitest } = yield* input.resolver(input.projectRoot).pipe(
+    Effect.catchDefect((cause) => Effect.fail(failRuntime('init')(cause))),
+  )
+  const standbyThreads = yield* makeStandbyThreadsPool().pipe(Scope.provide(input.lifetime))
+  const driver = yield* Effect.tryPromise({
+    try: () =>
+      createVitest('test', createVitestConfig(input, standbyThreads), {
+        resolve: { alias: [...aliases], conditions: ['import'] },
+        plugins: [sandboxSelfPlugin(aliases)],
+      }),
+    catch: (cause) => failRuntime('init')(cause),
   })
+  onClose(driver, disposeStandbyThreads(standbyThreads))
+  const runtime = make({
+    driver,
+    projectRoot: input.projectRoot,
+    localSetupFile,
+    namespace: input.namespace,
+    mutantBail: input.bail,
+  })
+  yield* refuseBrowser(input, driver).pipe(Effect.onError(() => closeAfterFailure(runtime, fs)))
+  return runtime
+})
 
-const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
-  Effect.gen(function*() {
-    const { crypto, fileSystem: fs, path } = input
-    const suffix = yield* crypto.randomUUIDv4.pipe(Effect.mapError(failRuntime('init')))
-    const localSetupFile = path.resolve(input.projectRoot, 'stryker-setup-' + suffix + '.js')
-    const setupFilePath = yield* Option.match(Option.fromNullishOr(input.setupFilePath), {
-      onNone: () => path.fromFileUrl(STRYKER_SETUP_URL).pipe(Effect.mapError(failRuntime('init'))),
-      onSome: Effect.succeed,
-    })
-    yield* fs.copyFile(setupFilePath, localSetupFile).pipe(Effect.mapError(failRuntime('init')))
-    return yield* openRuntime(input, localSetupFile).pipe(
-      Effect.onError(() =>
-        fs.remove(localSetupFile, { recursive: true, force: true }).pipe(Effect.orElseSucceed(() => undefined))
-      ),
-    )
+const acquire: (input: VitestRuntimeInput) => Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> = Effect.fn(
+  'vitest.runtime.acquire',
+)(function*(input: VitestRuntimeInput) {
+  const { crypto, fileSystem: fs, path } = input
+  const suffix = yield* crypto.randomUUIDv4.pipe(Effect.mapError(failRuntime('init')))
+  const localSetupFile = path.resolve(input.projectRoot, 'stryker-setup-' + suffix + '.js')
+  const setupFilePath = yield* Option.match(Option.fromNullishOr(input.setupFilePath), {
+    onNone: () => path.fromFileUrl(STRYKER_SETUP_URL).pipe(Effect.mapError(failRuntime('init'))),
+    onSome: Effect.succeed,
   })
+  yield* fs.copyFile(setupFilePath, localSetupFile).pipe(Effect.mapError(failRuntime('init')))
+  return yield* openRuntime(input, localSetupFile).pipe(
+    Effect.onError(() =>
+      fs.remove(localSetupFile, { recursive: true, force: true }).pipe(Effect.orElseSucceed(() => undefined))
+    ),
+  )
+})
 
 const VitestRuntimeBlueprint = Blueprint.make<VitestRuntimeInput>()(TypeId).steps({
   steps: {},

@@ -6,6 +6,7 @@ import { AggregationTemporalityPreference, OTLPMetricExporter } from '@opentelem
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics'
 import { BatchSpanProcessor, SimpleSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-base'
+import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
@@ -18,58 +19,31 @@ import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
+import * as Ref from 'effect/Ref'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
-import * as Stream from 'effect/Stream'
 import * as CliConfig from 'effect/unstable/cli/CliConfig'
+import * as Command from 'effect/unstable/cli/Command'
 import * as Flag from 'effect/unstable/cli/Flag'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 import { inheritableCompileCacheDirectory } from './enable-compile-cache.js'
 
-import { strykerCliEffect } from '../Cli.cell.js'
+import { classifyRunOutcome, RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
+import { concludeRunCell, runOutcomeCommandOf } from '../conclude-run.cell.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
+import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
+import { errorEnvelopeFromOutcome, runExitCodeFromOutcome } from '../reporting/run-failure.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
-import { UnsupportedNodeVersion } from './main.schema.js'
+import { type CliAnswer, type CliEnvironment } from '../run-request.cell.js'
+import { RunEnvironment } from '../run/RunEnvironment.service.js'
+import { makeStrykerCommand } from './cli-command.js'
 
 globalThis.process.title = 'stryker'
-
-const versionNumbers = (version: string): readonly number[] =>
-  version
-    .replace(/^v/, '')
-    .split(/[-+]/)
-    .slice(0, 1)
-    .flatMap((base) => base.split('.'))
-    .map((part) => Number.parseInt(part, 10))
-
-const componentAt = (numbers: readonly number[], index: number): number =>
-  Option.getOrElse(Option.fromUndefinedOr(numbers[index]), () => 0)
-
-const SUPPORTED_NODE_MAJOR = 20
-
-const NODE_VERSION_REJECTIONS: readonly ((numbers: readonly number[]) => boolean)[] = [
-  (numbers) => numbers.some(Number.isNaN),
-  (numbers) => componentAt(numbers, 0) < SUPPORTED_NODE_MAJOR,
-]
-
-const isSupportedNodeVersion = (version: string) =>
-  !NODE_VERSION_REJECTIONS.some((rejects) => rejects(versionNumbers(version)))
-
-const unsupportedNodeVersion = (version: string) =>
-  UnsupportedNodeVersion.make({ version, required: cliPkgJson.engines.node })
-
-const checkNodeVersion = (stdio: Stdio.Stdio, version: string) =>
-  Effect.flatMap(Effect.succeed(isSupportedNodeVersion(version)), (supported) =>
-    Boolean.match(supported, {
-      onTrue: () => Effect.void,
-      onFalse: () => {
-        const failure = unsupportedNodeVersion(version)
-        return Stream.run(Stream.make(`${failure.message}\n`), stdio.stderr()).pipe(
-          Effect.andThen(Effect.fail(failure)),
-        )
-      },
-    }))
 
 const EXPORT_TIMEOUT_MILLIS = 5000
 const SHUTDOWN_TIMEOUT = EffectDuration.millis(EXPORT_TIMEOUT_MILLIS + 1_000)
@@ -198,26 +172,101 @@ const cliLayer = Layer.mergeAll(
   NodeTerminal.layer,
 ).pipe(Layer.provideMerge(nodePlatform))
 
+const USAGE_EXIT_CODE = runExitCodeFromOutcome(RunParseFailed.make({})).code
+
+const SPAN_ERROR_LIMIT = 1024
+const TRUNCATION_SUFFIX = '…[truncated]'
+
+const boundedErrorText = (text: string): string =>
+  text.length > SPAN_ERROR_LIMIT ? text.slice(0, SPAN_ERROR_LIMIT) + TRUNCATION_SUFFIX : text
+
+const strykerProgram = Effect.gen(function*() {
+  const stdio = yield* Stdio.Stdio
+  const outputMode = yield* OutputModeProbe
+  const detected = yield* Effect.result(outputMode.detectMode)
+  const mode = yield* Result.match(detected, {
+    onFailure: (failure) =>
+      Console.error(failure.message).pipe(
+        Effect.andThen(Effect.fail(RunExit.make({ code: USAGE_EXIT_CODE }))),
+      ),
+    onSuccess: (success) => Effect.succeed(success),
+  })
+  const runEvents = yield* RunEventStreamPort
+  const stream = yield* runEvents.createRunEventStream(mode)
+  const noColor = yield* Config.String('NO_COLOR').pipe(Effect.option)
+  const host = yield* RunEnvironment.forStream(mode, stream, {
+    noColor: Option.getOrUndefined(noColor),
+    builtinReporters: { html: HtmlReporter.makeHtmlReporter },
+  })
+  const pathService = yield* Path.Path
+  const realConsole = yield* Console.Console
+  const environment: CliEnvironment = {
+    mode,
+    stream,
+    host: { env: host, events: stream.queue },
+    basePath: host.basePath,
+    pathService,
+    runEvents,
+    console: realConsole,
+  }
+  const args = [...(yield* stdio.args)]
+  const answer = yield* Ref.make<CliAnswer>(undefined)
+  const command = makeStrykerCommand({ environment, recordAnswer: (recorded) => Ref.set(answer, recorded) })
+  const machineConsole = Boolean.match(mode.mode === 'machine', {
+    onTrue: () => MachineConsole.captureLayer,
+    onFalse: () => Layer.empty,
+  })
+  return yield* Effect.uninterruptibleMask((restore) =>
+    Effect.withSpan('stryker.cli.run')(
+      Effect.gen(function*() {
+        const exit = yield* Effect.exit(
+          restore(
+            Command.runWith(command, { version: cliPkgJson.version })(args).pipe(
+              Effect.provide(machineConsole),
+              Effect.andThen(Ref.get(answer)),
+            ),
+          ),
+        )
+        const conclusionCommand = runOutcomeCommandOf({ exit, argv: args })
+        const outcome = classifyRunOutcome(conclusionCommand)
+        const classified = Result.getOrElse(
+          outcome,
+          (interrupted) => interrupted,
+        )
+        const machineConsoleService = yield* MachineConsole
+        const errorText = Option.getOrElse(
+          Option.map(
+            Option.liftPredicate(S.is(FailedRunOutcomeSchema))(classified),
+            (failure) =>
+              boundedErrorText(
+                errorEnvelopeFromOutcome({ error: failure, captured: machineConsoleService.read() }).error,
+              ),
+          ),
+          () => '',
+        )
+        yield* Effect.annotateCurrentSpan({
+          'stryker.run.outcome': classified._tag,
+          'stryker.run.exit_code': runExitCodeFromOutcome(classified).code,
+          'stryker.run.error': errorText,
+        })
+        return yield* concludeRunCell.run({
+          mode,
+          stream,
+          basePath: host.basePath,
+          pathService,
+          runEvents,
+          concluded: { command: conclusionCommand, outcome, error: errorText },
+        })
+      }),
+    )
+  )
+})
+
 const program = Effect.scoped(
   cliLayer.pipe(
     Layer.build,
     Effect.flatMap((context) =>
-      Effect.provideContext(
-        Effect.gen(function*() {
-          const stdio = yield* Stdio.Stdio
-          yield* checkNodeVersion(stdio, globalThis.process.version)
-          const outputMode = yield* OutputModeProbe
-          const runEvents = yield* RunEventStreamPort
-          const args = [...(yield* stdio.args)]
-          yield* strykerCliEffect({
-            argv: args,
-            runMutationTest: undefined,
-            detectMode: outputMode.detectMode,
-            runEvents,
-          })
-        }).pipe(Effect.provideService(Logger.LogToStderr, true)),
-        context,
-      )
+      Effect.provideContext(strykerProgram.pipe(Effect.provideService(Logger.LogToStderr, true)), context)
     ),
   ),
 )

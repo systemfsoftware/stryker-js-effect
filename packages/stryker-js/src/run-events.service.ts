@@ -17,6 +17,9 @@ export class RunIdentity extends Context.Service<RunIdentity, RunIdentityShape>(
   '@systemfsoftware/stryker-js/run-events.service/RunIdentity',
 ) {}
 
+export { ModeSignal, OutputMode } from './output-mode.schema.js'
+export { PluginLoadFailureReason } from './PluginsError.schema.js'
+
 export {
   FormatClaimShadowingRow,
   FormatRegistryResolved,
@@ -25,11 +28,8 @@ export {
   FrameworkModuleRow,
   Heartbeat,
   HelpRendered,
-  ModeSignal,
-  OutputMode,
   PhaseEntered,
   PlanKnown,
-  PluginFailureReason,
   PluginsReported,
   RunEvent,
   RunFailed,

@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import { Schema as S } from 'effect'
 
 // ---------------------------------------------------------------------------
@@ -20,11 +21,16 @@ export class WorkerMethodError extends S.TaggedError<WorkerMethodError>()('Worke
 
 export const ProcessId = S.Int
 
-export const ChildExitCode = S.Int
+const isPosixStatus = (n: number): boolean => n >= 0 && n <= 255
+
+export const ChildExitCode = S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 255 })))
+export type ChildExitCode = typeof ChildExitCode.Type
+
+const acceptsChildExitCode = (n: number): boolean => S.is(ChildExitCode)(n)
 
 const ChildExit = S.Union([
-  S.Struct({ _tag: S.Literals(['Code']), code: ChildExitCode }),
-  S.Struct({ _tag: S.Literals(['Signal']), signal: S.NonEmptyString }),
+  S.TaggedStruct('Code', { code: ChildExitCode }),
+  S.TaggedStruct('Signal', { signal: S.NonEmptyString }),
 ])
 
 export type ChildExit = typeof ChildExit.Type
@@ -66,4 +72,16 @@ export class WorkerBootTimeoutError extends S.TaggedError<WorkerBootTimeoutError
   },
 ) {
   readonly exitClass = 'InternalError' as const
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+
+  const seeds = [-1, 0, 255, 256, Number.MAX_SAFE_INTEGER, Number.NaN, Number.POSITIVE_INFINITY]
+  it.prop(
+    '∀n_ChildExitCodeRefusal_≡PosixStatus',
+    { of: [S.Int], subject: acceptsChildExitCode },
+    (subject, [drawn]) => Arr.every(Arr.append(seeds, drawn), (n) => subject(n) === isPosixStatus(n)),
+  )
 }

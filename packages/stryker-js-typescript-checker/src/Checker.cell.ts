@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
@@ -15,13 +15,12 @@ import { TypeScriptCompiler } from './ts-compiler.service.js'
 type CheckRefusalCause = CompilerError | CheckMutantsError | string
 
 const refuse = (
-  options: { readonly mutantIds: readonly string[]; readonly cause: CheckRefusalCause },
+  options: { readonly mutantIds: readonly Mutant.MutantId[]; readonly cause: CheckRefusalCause },
 ): Checker.CheckerFailed =>
   Checker.CheckerFailed.make({
     checkerName: 'typescript',
     mutantIds: options.mutantIds,
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(options.cause), (rendered) => rendered.text), () =>
-      ''),
+    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(options.cause), (rendered) => rendered.text), () => ''),
   })
 
 export type CheckMutantsRead = (typeof CheckMutantsInput)['Encoded']

@@ -2,6 +2,7 @@ import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -83,20 +84,20 @@ const reportFixture = (): Report.MutationTestResult => ({
       source: `export const marker = '${MARKER}'`,
       mutants: [
         {
-          id: '0',
+          id: Mutant.MutantId.make('0'),
           mutatorName: 'BlockStatement',
           status: 'Killed',
-          location: { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } },
+          location: { start: { line: 1, column: 1 }, end: { line: 1, column: 11 } },
         },
       ],
     },
   },
-  thresholds: { high: 80, low: 60 },
+  thresholds: { high: 80, low: 60, break: null },
 })
 
 const metricsFixture = (): Report.MetricsResult => ({
   name: 'All files',
-  metrics: Report.Metrics.fromMutants([{ status: 'Killed' }]),
+  metrics: Report.metricsFromMutants([{ status: 'Killed' }]),
   childResults: [],
 })
 
@@ -112,14 +113,14 @@ const runEvents = (
   }),
   Reporter.MutationTestingPlanReady.make({
     total: 1,
-    plans: [{ mutantId: '0', plan: 'Run', netTime: 1, reloadEnvironment: false }],
+    plans: [{ mutantId: Mutant.MutantId.make('0'), plan: 'Run', netTime: 1, reloadEnvironment: false }],
   }),
   Reporter.MutantTested.make({
-    id: '0',
+    id: Mutant.MutantId.make('0'),
     status: 'Killed',
-    file: 'src/marker.ts',
-    location: { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } },
-    mutator: 'BlockStatement',
+    fileName: Mutant.CanonicalFileName.make('src/marker.ts'),
+    location: { start: { line: 1, column: 1 }, end: { line: 1, column: 11 } },
+    mutatorName: Mutant.MutatorName.make('BlockStatement'),
     replacement: null,
     completed: 1,
     total: 1,

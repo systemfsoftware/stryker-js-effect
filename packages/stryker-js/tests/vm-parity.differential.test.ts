@@ -22,19 +22,11 @@ import { createVitest } from 'vitest/node'
 import type { RunnerTask, RunnerTestCase, RunnerTestFile, Vitest } from 'vitest/node'
 
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname)
-const FIXTURES_DIR_SEGMENTS: readonly [string, string] = ['testResources', 'vm-parity']
 
 const INTERRUPT_AFTER_MS = 280_000
 
-/**
- * Wall-clock bound for one reference mutant run, and the grace the spawner waits after
- * SIGKILL. The `hangs` fixture's mutated loops spin synchronously, so nothing inside the
- * run can interrupt them; the bound and the process-group kill read those runs as Timeout
- * without hanging the suite.
- */
 const MUTANT_RUN_BOUND_MS = 5_000
 const MUTANT_KILL_GRACE = Duration.seconds(1)
-const BASELINE_RUN_BOUND_MS = 60_000
 
 interface Location {
   readonly line: number
@@ -51,33 +43,68 @@ interface MutantRecord {
   readonly statusReason?: string | undefined
 }
 
-interface Fixture {
-  readonly name: string
-  readonly subroots: readonly string[]
-  readonly mutants: boolean
+interface GeneratedProject {
+  readonly operator: '+' | '-' | '*'
+  readonly left: number
+  readonly right: number
+  readonly limit: number
+  readonly flag: boolean
 }
 
-const FIXTURES: readonly Fixture[] = [
-  { name: 'mocking', subroots: ['.'], mutants: true },
-  { name: 'snapshots', subroots: ['.'], mutants: true },
-  { name: 'hangs', subroots: ['.'], mutants: true },
-  { name: 'config', subroots: ['.'], mutants: true },
-  { name: 'runner-api', subroots: ['.'], mutants: true },
-  { name: 'environments', subroots: ['.', 'node'], mutants: false },
-  { name: 'transforms', subroots: ['.'], mutants: false },
-  { name: 'projects', subroots: ['.'], mutants: false },
-]
+const generatedProjects: fc.Arbitrary<GeneratedProject> = fc.record({
+  operator: fc.constantFrom('+', '-', '*'),
+  left: fc.integer({ min: -6, max: 6 }),
+  right: fc.integer({ min: -6, max: 6 }),
+  limit: fc.integer({ min: 0, max: 4 }),
+  flag: fc.boolean(),
+})
+
+const combineResultOf = (project: GeneratedProject): string => {
+  const result = project.operator === '+'
+    ? project.left + project.right
+    : project.operator === '-'
+    ? project.left - project.right
+    : project.left * project.right
+  return Object.is(result, -0) ? '-0' : String(result)
+}
+
+const renderGeneratedSubject = (project: GeneratedProject): string =>
+  [
+    `export const combine = (left: number, right: number): number => left ${project.operator} right`,
+    '',
+    `export const untouched = (): boolean => ${project.flag}`,
+    '',
+    'export const spin = (limit: number): number => {',
+    '  let step = 0',
+    '  while (step < limit) {',
+    '    step = step + 1',
+    '  }',
+    '  return step',
+    '}',
+    '',
+  ].join('\n')
+
+const renderGeneratedSubjectTest = (project: GeneratedProject): string =>
+  [
+    "import { expect, test } from 'vitest'",
+    '',
+    "import { combine, spin } from './subject'",
+    '',
+    `test('combine ${project.left} ${project.operator} ${project.right}', () => {`,
+    `  expect(combine(${project.left}, ${project.right})).toBe(${combineResultOf(project)})`,
+    '})',
+    '',
+    `test('spin ${project.limit}', () => {`,
+    `  expect(spin(${project.limit})).toBe(${project.limit})`,
+    '})',
+    '',
+  ].join('\n')
 
 type Outcomes = Readonly<Record<string, string>>
 
 const recordOf = (entries: readonly (readonly [string, string])[]): Outcomes =>
   Object.fromEntries([...entries].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)))
 
-/**
- * The vm runner drives its own worker and an engine run changes the whole process's working
- * directory, so on top of the differential's dual execution every external run — real vitest,
- * the engine, a vm dry run — takes this permit instead of interleaving with another.
- */
 const exclusiveRuns = Semaphore.makeUnsafe(1)
 
 const serialized = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
@@ -103,9 +130,6 @@ const prepareSandboxFrom = (
     return root
   }).pipe(Effect.orDie)
 
-const fixtureSource = (fixture: string): Effect.Effect<string, never, Path.Path> =>
-  Effect.map(Path.Path, (path) => path.join(PACKAGE_ROOT, ...FIXTURES_DIR_SEGMENTS, fixture))
-
 const removeSandbox = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true })).pipe(Effect.orDie)
 
@@ -115,12 +139,6 @@ const withSandboxFrom = <A, E, R>(
   use: (root: string) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R | FileSystem.FileSystem | Path.Path> =>
   Effect.acquireUseRelease(prepareSandboxFrom(source, prefix), use, (root) => removeSandbox(root))
-
-const withSandbox = <A, E, R>(
-  fixture: string,
-  use: (root: string) => Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R | FileSystem.FileSystem | Path.Path> =>
-  Effect.flatMap(fixtureSource(fixture), (source) => withSandboxFrom(source, fixture, use))
 
 const prepareGeneratedSandbox = (): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
@@ -135,6 +153,26 @@ const prepareGeneratedSandbox = (): Effect.Effect<string, never, FileSystem.File
     yield* fs.symlink(path.join(PACKAGE_ROOT, 'node_modules'), path.join(root, 'node_modules'))
     return root
   }).pipe(Effect.orDie)
+
+const withGeneratedProject = <A, R>(
+  project: GeneratedProject,
+  use: (root: string, path: Path.Path) => Effect.Effect<A, never, R>,
+): Effect.Effect<A, never, R | FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const root = yield* prepareGeneratedSandbox()
+    return yield* Effect.acquireUseRelease(
+      Effect.succeed(root),
+      (directory) =>
+        Effect.gen(function*() {
+          const path = yield* Path.Path
+          const fs = yield* FileSystem.FileSystem
+          yield* fs.writeFileString(path.join(directory, 'src', 'subject.ts'), renderGeneratedSubject(project))
+          yield* fs.writeFileString(path.join(directory, 'src', 'subject.test.ts'), renderGeneratedSubjectTest(project))
+          return yield* use(directory, path)
+        }).pipe(Effect.orDie),
+      (directory) => removeSandbox(directory),
+    )
+  })
 
 const statusOf = (task: RunnerTestCase): TestRunner.TestStatus => {
   if (task.mode === 'skip' || task.mode === 'todo' || task.result?.state === 'skip') {
@@ -196,22 +234,8 @@ const runRealVitest = (
     }),
   ).pipe(dieOnFailure, serialized)
 
-const realTestOutcomes = (
-  root: string,
-  subroots: readonly string[],
-): Effect.Effect<Outcomes, never, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const path = yield* Path.Path
-    const rows: Array<readonly [string, string]> = []
-    for (const subroot of subroots) {
-      const directory = subroot === '.' ? root : path.join(root, subroot)
-      const captured = yield* runRealVitest(directory)
-      for (const [key, status] of captured) {
-        rows.push([subroot === '.' ? key : `${subroot}/${key}`, status])
-      }
-    }
-    return recordOf(rows)
-  })
+const realTestOutcomes = (root: string): Effect.Effect<Outcomes, never, FileSystem.FileSystem | Path.Path> =>
+  runRealVitest(root).pipe(Effect.map((captured) => recordOf(captured)))
 
 const contextFor = (defaults: Options.StrykerOptions, directory: string): Plugin.TestRunnerBuildContext => ({
   options: { ...defaults, testRunner: 'vm', disableBail: true },
@@ -255,35 +279,24 @@ const withVmRunner = <A, R>(
 const describeDryRunFailure = (dry: Exclude<TestRunner.DryRunResult, { readonly status: 'complete' }>): string =>
   dry.status === 'error' ? `the vm dry run failed: ${dry.errorMessage}` : `the vm dry run ended in ${dry.status}`
 
-const vmTestOutcomes = (
-  root: string,
-  subroots: readonly string[],
-  path: Path.Path,
-): Effect.Effect<Outcomes> =>
-  Effect.forEach(
-    subroots,
-    (subroot) => {
-      const directory = subroot === '.' ? root : path.join(root, subroot)
-      return serialized(
-        withVmRunner(directory, (runner) =>
-          Effect.gen(function*() {
-            const dry = yield* runner.dryRun({ timeout: 180_000, coverageAnalysis: 'off', disableBail: true }).pipe(
-              Effect.orDie,
-            )
-            if (dry.status !== 'complete') {
-              return yield* Effect.die(new Error(describeDryRunFailure(dry)))
-            }
-            return dry.tests.map((test): readonly [string, string] => {
-              const hash = test.id.lastIndexOf('#')
-              const file = hash === -1 ? '' : test.id.slice(0, hash)
-              const name = test.name === path.join(directory, file) ? FILE_FAILED_WITHOUT_FAILING_TEST : test.name
-              return [subroot === '.' ? `${file}#${name}` : `${subroot}/${file}#${name}`, test.status]
-            })
-          })),
-      )
-    },
-    { concurrency: 1 },
-  ).pipe(Effect.map((rows) => recordOf(rows.flat())))
+const vmTestOutcomes = (root: string, path: Path.Path): Effect.Effect<Outcomes> =>
+  serialized(
+    withVmRunner(root, (runner) =>
+      Effect.gen(function*() {
+        const dry = yield* runner.dryRun({ timeout: 180_000, coverageAnalysis: 'off', disableBail: true }).pipe(
+          Effect.orDie,
+        )
+        if (dry.status !== 'complete') {
+          return yield* Effect.die(new Error(describeDryRunFailure(dry)))
+        }
+        return recordOf(dry.tests.map((test): readonly [string, string] => {
+          const hash = test.id.lastIndexOf('#')
+          const file = hash === -1 ? '' : test.id.slice(0, hash)
+          const name = test.name === path.join(root, file) ? FILE_FAILED_WITHOUT_FAILING_TEST : test.name
+          return [`${file}#${name}`, test.status]
+        }))
+      })),
+  )
 
 const sameOutcomes = (reference: Outcomes, candidate: Outcomes): boolean => {
   const keys = Object.keys(reference)
@@ -340,22 +353,23 @@ const mutationEngineEffect = (root: string): Effect.Effect<readonly MutantRecord
       }),
   ).pipe(Effect.provide(Engine.nodePlatformLayer), dieOnFailure)
 
-const engineReportOf = (fixture: Fixture): Effect.Effect<readonly MutantRecord[]> =>
-  withSandbox(
-    fixture.name,
-    (root) => serialized(Effect.andThen(recordUnmutatedSnapshots(fixture, root), mutationEngineEffect(root))),
+const generatedMutantReportOf = (project: GeneratedProject): Effect.Effect<readonly MutantRecord[]> =>
+  withGeneratedProject(project, (root) => serialized(mutationEngineEffect(root))).pipe(
+    Effect.provide(Engine.nodePlatformLayer),
+    dieOnFailure,
   )
-    .pipe(
-      Effect.provide(Engine.nodePlatformLayer),
-      dieOnFailure,
-    )
 
-const engineReports = new Map<string, Effect.Effect<readonly MutantRecord[]>>()
+const generatedMutantReports: Record<string, Effect.Effect<readonly MutantRecord[]>> = {}
 
-const mutantReportOf = (fixture: Fixture): Effect.Effect<readonly MutantRecord[]> =>
+const projectKey = (project: GeneratedProject): string =>
+  `${project.operator}:${project.left}:${project.right}:${project.limit}:${project.flag}`
+
+const generatedMutantReport = (project: GeneratedProject): Effect.Effect<readonly MutantRecord[]> =>
   Effect.suspend(() => {
-    const report = engineReports.get(fixture.name) ?? engineReportOf(fixture).pipe(Effect.cached, Effect.runSync)
-    engineReports.set(fixture.name, report)
+    const key = projectKey(project)
+    const report = generatedMutantReports[key] ??
+      generatedMutantReportOf(project).pipe(Effect.cached, Effect.runSync)
+    generatedMutantReports[key] = report
     return report
   })
 
@@ -451,24 +465,11 @@ const runBoundedVitestProcess = (
     dieOnFailure,
   )
 
-const recordUnmutatedSnapshots = (
-  fixture: Fixture,
-  root: string,
-): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path> =>
-  Effect.flatMap(
-    runBoundedVitestProcess(root, BASELINE_RUN_BOUND_MS, ['run', '--update']),
-    (baseline) =>
-      baseline === 'Survived'
-        ? Effect.void
-        : Effect.die(new Error(`the unmutated ${fixture.name} baseline did not pass: ${baseline}`)),
-  )
-
 const realVerdictForMutant = (
-  fixture: Fixture,
   baselined: string,
   mutant: MutantRecord,
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner> =>
-  withSandboxFrom(baselined, fixture.name, (root) =>
+  withSandboxFrom(baselined, 'generated-mutant', (root) =>
     serialized(
       Effect.gen(function*() {
         yield* applyMutant(root, mutant)
@@ -479,21 +480,20 @@ const realVerdictForMutant = (
 const mutantKey = (mutant: MutantRecord): string =>
   `${mutant.file}:${mutant.start.line}:${mutant.start.column}:${mutant.mutatorName}:${mutant.replacement}`
 
-const mutationEngineVerdicts = (fixture: Fixture): Effect.Effect<Outcomes> =>
+const generatedMutationEngineVerdicts = (project: GeneratedProject): Effect.Effect<Outcomes> =>
   Effect.gen(function*() {
-    const mutants = yield* mutantReportOf(fixture)
+    const mutants = yield* generatedMutantReport(project)
     return recordOf(mutants.map((mutant): readonly [string, string] => [mutantKey(mutant), candidateVerdictOf(mutant)]))
   }).pipe(labelled('the vm mutation engine run failed'))
 
-const realMutantVerdicts = (fixture: Fixture): Effect.Effect<Outcomes> =>
+const generatedRealMutantVerdicts = (project: GeneratedProject): Effect.Effect<Outcomes> =>
   Effect.gen(function*() {
-    const mutants = yield* mutantReportOf(fixture)
+    const mutants = yield* generatedMutantReport(project)
     const rows: Array<readonly [string, string]> = []
-    yield* withSandbox(fixture.name, (baselined) =>
+    yield* withGeneratedProject(project, (baselined) =>
       Effect.gen(function*() {
-        yield* serialized(recordUnmutatedSnapshots(fixture, baselined))
         for (const mutant of mutants) {
-          rows.push([mutantKey(mutant), yield* realVerdictForMutant(fixture, baselined, mutant)])
+          rows.push([mutantKey(mutant), yield* realVerdictForMutant(baselined, mutant)])
         }
       }))
     return recordOf(rows)
@@ -650,43 +650,23 @@ const withGeneratedSuite = <A>(
   })
 
 const generatedRealOutcomes = (suite: GeneratedSuite): Effect.Effect<Outcomes> =>
-  withGeneratedSuite(suite, (directory) => realTestOutcomes(directory, ['.'])).pipe(
+  withGeneratedSuite(suite, (directory) => realTestOutcomes(directory)).pipe(
     Effect.provide(Engine.nodePlatformLayer),
     dieOnFailure,
     labelled('the real-vitest reference failed'),
   )
 
 const generatedVmOutcomes = (suite: GeneratedSuite): Effect.Effect<Outcomes> =>
-  withGeneratedSuite(suite, (directory, path) => vmTestOutcomes(directory, ['.'], path)).pipe(
+  withGeneratedSuite(suite, (directory, path) => vmTestOutcomes(directory, path)).pipe(
     Effect.provide(Engine.nodePlatformLayer),
     dieOnFailure,
     labelled('the vm runner failed'),
   )
 
-const realFixtureOutcomes = (fixture: Fixture): Effect.Effect<Outcomes> =>
-  withSandbox(fixture.name, (root) => realTestOutcomes(root, fixture.subroots)).pipe(
-    Effect.provide(Engine.nodePlatformLayer),
-    dieOnFailure,
-    labelled('the real-vitest reference failed'),
-  )
-
-const vmFixtureOutcomes = (fixture: Fixture): Effect.Effect<Outcomes> =>
-  withSandbox(fixture.name, (root) =>
-    Effect.gen(function*() {
-      const path = yield* Path.Path
-      return yield* vmTestOutcomes(root, fixture.subroots, path)
-    })).pipe(
-      Effect.provide(Engine.nodePlatformLayer),
-      dieOnFailure,
-      labelled('the vm runner failed'),
-    )
-
 const HOST_BOUND = {
   timeout: INTERRUPT_AFTER_MS,
   reason: 'each side runs a real vitest instance or the vm worker over the host filesystem and child processes',
 } as const
-
-const COMPARE_OPTIONS = { runBudget: 1, hostBound: HOST_BOUND } as const
 
 const traced = (side: string) => <I, A>(run: (input: I) => Effect.Effect<A>) => (input: I): Effect.Effect<A> =>
   TestTelemetry.underActiveTestSpan(run(input).pipe(Effect.withSpan(`vm_parity.${side}`))).pipe(
@@ -696,25 +676,13 @@ const traced = (side: string) => <I, A>(run: (input: I) => Effect.Effect<A>) => 
 const reference = traced('reference')
 const candidate = traced('candidate')
 
-for (const fixture of FIXTURES) {
-  Differential.compare({
-    name: `vm parity: fixture ${fixture.name} test outcomes match real vitest`,
-    reference: reference(realFixtureOutcomes),
-    candidate: candidate(vmFixtureOutcomes),
-  })
-    .on(fc.constant(fixture), COMPARE_OPTIONS)
-    .assert(sameOutcomes)
-}
-
-for (const fixture of FIXTURES.filter((entry) => entry.mutants)) {
-  Differential.compare({
-    name: `vm parity: fixture ${fixture.name} mutant verdicts match real vitest`,
-    reference: reference(realMutantVerdicts),
-    candidate: candidate(mutationEngineVerdicts),
-  })
-    .on(fc.constant(fixture), COMPARE_OPTIONS)
-    .assert(verdictsAgree)
-}
+Differential.compare({
+  name: 'vm parity: generated project mutant verdicts match real vitest',
+  reference: reference(generatedRealMutantVerdicts),
+  candidate: candidate(generatedMutationEngineVerdicts),
+})
+  .on(generatedProjects, { runBudget: 3, hostBound: HOST_BOUND })
+  .assert(verdictsAgree)
 
 Differential.compare({
   name: 'vm parity: generated suite outcomes match real vitest',

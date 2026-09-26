@@ -1,6 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { type Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -20,7 +20,7 @@ const failAsJsonReporter = <E = unknown>(cause: E): Reporter.ReporterFailed =>
   Reporter.ReporterFailed.make({
     reporterName: 'json',
     event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
+    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
   })
 
 const reportOf = Filter.make((
@@ -51,31 +51,40 @@ const readJsonReport = (input: {
     }),
   )
 
-const jsonBytesOf = (report: Report.MutationTestResult): Effect.Effect<string, Reporter.ReporterFailed> =>
+const jsonBytesOf = (
+  report: typeof Report.MutationTestResultSchema.Encoded,
+): Effect.Effect<string, Reporter.ReporterFailed> =>
   S.encodeEffect(S.fromJsonString(S.Unknown, { space: 0 }))(report).pipe(
     Effect.mapError(failAsJsonReporter),
   )
 
+const writeJsonReport = Effect.fn('stryker.report.json.write')(function*(
+  rendered: {
+    readonly report: typeof Report.MutationTestResultSchema.Encoded
+    readonly announceFileName: Option.Option<string>
+  },
+  raw: { readonly options: Options.StrykerOptions },
+) {
+  const output = yield* ReporterOutput
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const json = yield* jsonBytesOf(rendered.report)
+  const fileName = path.resolve(raw.options.jsonReporter.fileName)
+  yield* Effect.forEach(
+    Option.toArray(rendered.announceFileName),
+    (name) => Effect.ignore(output.write('stderr', [`Using relative path ${path.normalize(name)}\n`])),
+    { discard: true },
+  )
+  yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(Effect.mapError(failAsJsonReporter))
+  yield* fs.writeFileString(fileName, json).pipe(Effect.mapError(failAsJsonReporter))
+  const url = yield* path.toFileUrl(fileName).pipe(Effect.mapError(failAsJsonReporter))
+  yield* Effect.ignore(output.write('stdout', [`Your report can be found at: ${url.href}\n`]))
+})
+
 export const jsonReportCell = Sandwich.named('stryker.report.json')(readJsonReport)
   .decide(renderJsonReport)
   .write({
-    JsonReportRendered: (rendered, raw) =>
-      Effect.gen(function*() {
-        const output = yield* ReporterOutput
-        const fs = yield* FileSystem.FileSystem
-        const path = yield* Path.Path
-        const json = yield* jsonBytesOf(rendered.report)
-        const fileName = path.resolve(raw.options.jsonReporter.fileName)
-        yield* Effect.forEach(
-          Option.toArray(rendered.announceFileName),
-          (name) => Effect.ignore(output.write('stderr', [`Using relative path ${path.normalize(name)}\n`])),
-          { discard: true },
-        )
-        yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(Effect.mapError(failAsJsonReporter))
-        yield* fs.writeFileString(fileName, json).pipe(Effect.mapError(failAsJsonReporter))
-        const url = yield* path.toFileUrl(fileName).pipe(Effect.mapError(failAsJsonReporter))
-        yield* Effect.ignore(output.write('stdout', [`Your report can be found at: ${url.href}\n`]))
-      }),
+    JsonReportRendered: (rendered, raw) => writeJsonReport(rendered, raw),
     JsonReportSuppressed: () => Effect.void,
     CommandRejected: ({ issue }) => Effect.fail(failAsJsonReporter(issue)),
   })

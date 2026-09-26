@@ -1,6 +1,7 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -17,7 +18,7 @@ import { make as makePooledTestRunner, type PooledTestRunner } from './pooled-te
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js/CommandRunner')
 export type TypeId = typeof TypeId
 
-export const ALL_TESTS_ID = 'all'
+export const ALL_TESTS_ID = TestRunner.TestId.make('all')
 export const ALL_TESTS_NAME = 'All tests'
 
 export const isCommandRunner = (name: Options.TestRunnerConfig): name is 'command' =>
@@ -78,30 +79,29 @@ const spawnResult = <E = unknown>(
     Match.exhaustive,
   )
 
-const runCommand = (
+const runCommand = Effect.fn('stryker.command_runner.run')(function*(
   config: CommandTestRunnerConfig,
   activeMutantId: Mutant.MutantRunOptions['activeMutant']['id'] | undefined,
-): Effect.Effect<TestRunner.DryRunResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const startedAt = yield* Clock.currentTimeMillis
-    const command = ChildProcess.make(config.options.commandRunner.command, {
-      shell: true,
-      cwd: config.workingDir,
-      ...mutantActivation(activeMutantId),
-    })
-
-    const outcome = yield* Effect.scoped(
-      Effect.gen(function*() {
-        const handle = yield* spawner.spawn(command)
-        const output = yield* handle.all.pipe(Stream.decodeText, Stream.mkString)
-        const exitCode = yield* handle.exitCode
-        return { output, exitCode }
-      }),
-    ).pipe(Effect.exit)
-
-    return spawnResult(outcome, (yield* Clock.currentTimeMillis) - startedAt)
+): Effect.fn.Return<TestRunner.DryRunResult, never, ChildProcessSpawner.ChildProcessSpawner> {
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+  const startedAt = yield* Clock.currentTimeMillis
+  const command = ChildProcess.make(config.options.commandRunner.command, {
+    shell: true,
+    cwd: config.workingDir,
+    ...mutantActivation(activeMutantId),
   })
+
+  const outcome = yield* Effect.scoped(
+    Effect.gen(function*() {
+      const handle = yield* spawner.spawn(command)
+      const output = yield* handle.all.pipe(Stream.decodeText, Stream.mkString)
+      const exitCode = yield* handle.exitCode
+      return { output, exitCode }
+    }),
+  ).pipe(Effect.exit)
+
+  return spawnResult(outcome, (yield* Clock.currentTimeMillis) - startedAt)
+})
 
 const commandRunnerDryRun = (
   config: CommandTestRunnerConfig,

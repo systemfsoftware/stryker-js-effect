@@ -1,3 +1,4 @@
+import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import type { ScriptAst, SpannedComment } from './Ast.schema.js'
 
@@ -11,20 +12,21 @@ export function disableTypeCheckingInScript(ast: ScriptAst): string {
 }
 
 export function prefixWithNoCheck(code: string): string {
-  if (code.startsWith('#')) return afterHashbang(code)
-  return afterLeadingComment(code)
+  return code.startsWith('#') ? afterHashbang(code) : afterLeadingComment(code)
 }
 
 function afterHashbang(code: string): string {
   const newLineIndex = code.indexOf('\n')
-  if (newLineIndex <= 0) return code
-  return `${code.substring(0, newLineIndex)}\n// @ts-nocheck\n${code.substring(newLineIndex + 1)}`
+  return newLineIndex <= 0
+    ? code
+    : `${code.substring(0, newLineIndex)}\n// @ts-nocheck\n${code.substring(newLineIndex + 1)}`
 }
 
 function afterLeadingComment(code: string): string {
   const leadingComment = leadingCommentOf(code)
-  if (leadingComment === undefined) return `// @ts-nocheck\n${code}`
-  return `${leadingComment.concat('\n')}// @ts-nocheck\n${code.substring(leadingComment.length)}`
+  return leadingComment === undefined
+    ? `// @ts-nocheck\n${code}`
+    : `${leadingComment.concat('\n')}// @ts-nocheck\n${code.substring(leadingComment.length)}`
 }
 
 function leadingCommentOf(code: string): string | undefined {
@@ -62,15 +64,16 @@ function removeRanges(text: string, ranges: readonly DirectiveRange[]): string {
 }
 
 function tryParseTSDirective(comment: SpannedComment): DirectiveRange | undefined {
-  const match = commentDirectiveRegEx.exec(comment.value)
-  if (match === null) return undefined
-  const directivePrefix = requirePart(match[1], 'TS directive match without prefix')
-  const directiveName = requirePart(match[2], 'TS directive match without directive name')
-  const startPos = comment.start + directivePrefix.length + 2
-  return { startPos, endPos: startPos + directiveName.length + 1 }
+  return Option.match(Option.fromNullishOr(commentDirectiveRegEx.exec(comment.value)), {
+    onNone: () => undefined,
+    onSome: (match) => directiveRangeAt(comment.start, lengthOf(match[1]), lengthOf(match[2])),
+  })
 }
 
-function requirePart(part: string | undefined, message: string): string {
-  if (part === undefined) throw new Error(message)
-  return part
+const lengthOf = (text: string | undefined): number =>
+  Option.getOrElse(Option.map(Option.fromNullishOr(text), (value) => value.length), () => 0)
+
+const directiveRangeAt = (commentStart: number, prefixLength: number, nameLength: number): DirectiveRange => {
+  const startPos = commentStart + prefixLength + 2
+  return { startPos, endPos: startPos + nameLength + 1 }
 }

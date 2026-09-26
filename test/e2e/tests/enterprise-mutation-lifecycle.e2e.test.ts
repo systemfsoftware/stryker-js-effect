@@ -94,13 +94,13 @@ const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = [
   'stream',
   'phase',
   'plan',
-  'mutant',
+  'mutantTested',
   'tick',
   'plugins',
   'formats',
   'skipped',
 ]
-const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutant', 'verdict']
+const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutantTested', 'verdict']
 const ACTIONABLE_STATUSES: ReadonlyArray<string> = ['Survived', 'Timeout', 'NoCoverage', 'RuntimeError']
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
 
@@ -195,8 +195,8 @@ const verifyMutatorTallies = (
   verdict: RunEvent.VerdictReached,
 ): Check => {
   const reported = events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutant' }> => event._tag === 'mutant')
-    .map((mutant) => `${mutant.mutator}:${mutant.status}`)
+    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
+    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
   const reportedTally = normalizeTally(tallyReported(reported))
   const envelopeActionable = verdict.counts.survived +
     verdict.counts.timeout +
@@ -230,7 +230,7 @@ const verifyRunIdConsistency = (
   verdict: RunEvent.VerdictReached,
 ): Check => {
   const runIds = events
-    .map((event) => ('runId' in event && typeof event.runId === 'string' ? event.runId : undefined))
+    .map((event) => ('runId' in event && typeof event.runId === 'string' ? String(event.runId) : undefined))
     .filter((runId): runId is string => runId !== undefined)
 
   return expect({

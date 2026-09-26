@@ -30,9 +30,9 @@ export const contributionOf = async (load: () => Promise<PeerLoad>): Promise<Fra
 
 const loadedPeer = (module: unknown): PeerLoad => ({ kind: 'Loaded', module })
 
-const refusedPeer = (cause: unknown): PeerLoad | Promise<PeerLoad> => missingPeer(cause)
+const refusedPeer = (cause: unknown): Promise<PeerLoad> => missingPeer(cause)
 
-const missingPeer = (cause: unknown): PeerLoad | Promise<PeerLoad> =>
+const missingPeer = async (cause: unknown): Promise<PeerLoad> =>
   knownCode(codeOf(cause)) ? { kind: 'Missing' } : Promise.reject(cause)
 
 const knownCode = (code: string | undefined): boolean => code !== undefined && isKnownCode(code)

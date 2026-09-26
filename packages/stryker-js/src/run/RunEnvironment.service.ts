@@ -119,10 +119,9 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
   )
 }
 
-export const phaseEntered = (phase: PhaseEntered['phase']): Effect.Effect<void, never, RunEnvironment | RunEvents> =>
-  Effect.gen(function*() {
-    const env = yield* RunEnvironment
-    const now = yield* Clock.currentTimeMillis
-    const queue = yield* RunEvents
-    yield* Queue.offer(queue, PhaseEntered.make({ phase, elapsedMs: now - env.runStartedAt }))
-  })
+export const phaseEntered = Effect.fn('stryker.phase.entered')(function*(phase: PhaseEntered['phase']) {
+  const env = yield* RunEnvironment
+  const now = yield* Clock.currentTimeMillis
+  const queue = yield* RunEvents
+  yield* Queue.offer(queue, PhaseEntered.make({ phase, elapsedMs: now - env.runStartedAt }))
+})

@@ -5,6 +5,8 @@ import * as S from 'effect/Schema'
 
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 
+import { ModeSignal } from './output-mode.schema.js'
+
 const TOOL_VARIABLES = ['CLAUDECODE', 'CODEX_SANDBOX'] as const
 
 export class ResolveModeCommand extends S.TaggedClass<ResolveModeCommand>()('ResolveModeCommand', {
@@ -28,8 +30,6 @@ export class ModeConflictError extends S.TaggedError<ModeConflictError>()('ModeC
 }) {
   readonly [ResolveModeTypeId] = ResolveModeTypeId
 }
-
-const ModeSignal = S.Literals(['flag', 'env', 'tty', 'agent', 'tool'])
 
 export class HumanOutput extends S.TaggedClass<HumanOutput>()('HumanOutput', {
   signal: ModeSignal,

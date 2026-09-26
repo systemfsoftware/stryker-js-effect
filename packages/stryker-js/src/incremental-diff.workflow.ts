@@ -14,7 +14,9 @@ import type {
   PreviousTestFileRecord,
 } from './IncrementalDiff.schema.js'
 
-const REMEMBERED_STATUS: ReadonlySet<string> = new Set(['Killed', 'Survived', 'Timeout', 'NoCoverage', 'Ignored'])
+const isRememberedStatus = S.is(Mutant.RememberedStatusSchema)
+
+type RememberedRecord = PreviousMutantRecord & { readonly status: Mutant.RememberedStatus }
 
 const NO_PREVIOUS_MUTANTS: readonly PreviousMutantRecord[] = []
 
@@ -23,12 +25,12 @@ type IncrementalDiffTypeId = typeof IncrementalDiffTypeId
 
 export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand>()('IncrementalDiffCommand', {
   currentMutants: S.Array(Mutant.Mutant),
-  relativeFileByMutantId: S.Record(S.String, S.String),
+  relativeFileByMutantId: S.Record(Mutant.MutantId, S.String),
   previousFiles: PreviousFilesSchema,
   previousTestFiles: PreviousTestFilesSchema,
   currentRelativeFiles: S.Record(S.String, S.String),
   testIdsByRelativeFile: S.Record(S.String, S.Array(S.String)),
-  coveringTestFilesByMutantId: S.Record(S.String, S.Array(S.String)),
+  coveringTestFilesByMutantId: S.Record(Mutant.MutantId, S.Array(S.String)),
   identitiesByFile: S.Record(S.String, FormatIdentitySchema),
   force: S.Boolean,
 }) {
@@ -39,7 +41,7 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
 
 export class MutantRemembered extends S.TaggedClass<MutantRemembered>()('MutantRemembered', {
   mutantId: Mutant.MutantId,
-  status: S.String,
+  status: Mutant.RememberedStatusSchema,
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
@@ -68,22 +70,6 @@ type KeyedMutant = {
 
 const currentMutantKey = (mutant: KeyedMutant) =>
   mutantKeyOf(mutant.mutatorName, mutant.replacement, mutant.location.start, mutant.location.end)
-
-/**
- * Reports written before the location-base fix stored correct 1-based lines
- * but columns one too high, so a prior entry maps into the current key
- * space by subtracting one from the columns only. New reports already
- * persist the 1-based form and match through `currentMutantKey` directly;
- * this fallback only ever reads, and drops out once the next full run
- * rewrites the file.
- */
-const previousMutantKey = (mutant: KeyedMutant) =>
-  mutantKeyOf(
-    mutant.mutatorName,
-    mutant.replacement,
-    { line: mutant.location.start.line, column: mutant.location.start.column - 1 },
-    { line: mutant.location.end.line, column: mutant.location.end.column - 1 },
-  )
 
 const changedSourceFiles = (
   previousFiles: Readonly<Record<string, PreviousFileRecord>>,
@@ -116,7 +102,7 @@ const findRemembered = (
       (record) => Option.fromUndefinedOr(record.mutants),
     ),
     () => NO_PREVIOUS_MUTANTS,
-  ).find((candidate) => [previousMutantKey(candidate), currentMutantKey(candidate)].includes(key))
+  ).find((candidate) => currentMutantKey(candidate) === key)
 
 const hasChangedCoverage = (
   mutantId: string,
@@ -157,8 +143,8 @@ const isRememberable = (
   file: string,
   changedFiles: readonly string[],
   changedTests: readonly string[],
-) =>
-  Boolean.match(REMEMBERED_STATUS.has(previous.status), {
+): previous is RememberedRecord =>
+  Boolean.match(isRememberedStatus(previous.status), {
     onTrue: () =>
       Boolean.match(fileIdentityReuses(input, file), {
         onTrue: () =>
@@ -171,7 +157,7 @@ const isRememberable = (
     onFalse: () => false,
   })
 
-const rememberedOf = (mutant: Mutant.Mutant, previous: PreviousMutantRecord) =>
+const rememberedOf = (mutant: Mutant.Mutant, previous: RememberedRecord) =>
   MutantRemembered.make({
     mutantId: mutant.id,
     status: previous.status,
