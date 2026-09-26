@@ -32,6 +32,7 @@ export const REPORTER_STREAM_QUEUE_BOUND = 256
 
 interface ReporterChannelState {
   readonly terminalSeen: boolean
+  readonly terminalOffered: boolean
   readonly detached: boolean
 }
 
@@ -131,6 +132,7 @@ const reporterEvents = (ports: ReporterChannelPorts): AsyncIterable<Reporter.Rep
         onFalse: () => Effect.void,
       })
     ),
+    Stream.takeUntil(isTerminalReportEvent),
   )
   const iterable = Stream.toAsyncIterable(stream)
   let iterator: AsyncIterator<Reporter.ReporterEvent> | undefined
@@ -159,7 +161,11 @@ const attachOneReporter = Effect.fn('stryker.reporterStream.attach')(function*(
   init: Reporter.ReporterInit,
 ) {
   const channel = yield* PubSub.bounded<Reporter.ReporterEvent>(REPORTER_STREAM_QUEUE_BOUND)
-  const state = yield* SynchronizedRef.make<ReporterChannelState>({ terminalSeen: false, detached: false })
+  const state = yield* SynchronizedRef.make<ReporterChannelState>({
+    terminalSeen: false,
+    terminalOffered: false,
+    detached: false,
+  })
   const ports: ReporterChannelPorts = { channel, state }
   const consumer = Effect.flatten(
     Effect.try({
@@ -273,6 +279,15 @@ const detachStalledReporter = (attachment: ReporterAttachment): Effect.Effect<vo
     } seconds and was detached; exit code unchanged.`,
   ).pipe(Effect.andThen(() => markDetachedEffect(portsOf(attachment))))
 
+const noteTerminalOffered = (
+  attachment: ReporterAttachment,
+  event: Reporter.ReporterEvent,
+): Effect.Effect<void> =>
+  Boolean.match(isTerminalReportEvent(event), {
+    onTrue: () => SynchronizedRef.update(attachment.state, (state) => ({ ...state, terminalOffered: true })),
+    onFalse: () => Effect.void,
+  })
+
 const offerToChannel = Effect.fn('stryker.reporterStream.offerToChannel')(function*(
   attachment: ReporterAttachment,
   event: Reporter.ReporterEvent,
@@ -284,7 +299,7 @@ const offerToChannel = Effect.fn('stryker.reporterStream.offerToChannel')(functi
     onNone: () => detachStalledReporter(attachment),
     onSome: (accepted) =>
       Match.value(accepted).pipe(
-        Match.when(true, () => Effect.void),
+        Match.when(true, () => noteTerminalOffered(attachment, event)),
         Match.orElse(() => warnEventDropped(attachment)),
       ),
   })
@@ -403,9 +418,19 @@ const failedReporterNames = (outcome: ReporterDrainOutcome): readonly string[] =
     Match.orElse(() => []),
   )
 
+const shutdownUnreportedChannel = (attachment: ReporterAttachment): Effect.Effect<void> =>
+  Effect.flatMap(
+    SynchronizedRef.get(attachment.state),
+    (state) =>
+      Boolean.match(state.terminalOffered, {
+        onTrue: () => Effect.void,
+        onFalse: () => PubSub.shutdown(attachment.channel),
+      }),
+  )
+
 export const closeReporterStage = Effect.fn('stryker.reporterStream.closeStage')(function*(stage: ReporterStage) {
   const attachments = yield* stageAttachments(stage)
-  yield* Effect.forEach(attachments, (attachment) => PubSub.shutdown(attachment.channel), { discard: true })
+  yield* Effect.forEach(attachments, shutdownUnreportedChannel, { discard: true })
   const outcomes = yield* Effect.forEach(attachments, settleAttachment, { concurrency: 'unbounded' })
   return { terminalFailed: outcomes.flatMap((outcome) => failedReporterNames(outcome)) }
 })
