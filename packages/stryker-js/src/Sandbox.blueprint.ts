@@ -14,11 +14,13 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
+import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
+import { admitFileMatch, FileMatchCommand, FileMatched } from './admit-file-match.workflow.js'
 import { FileMatcher } from './matching.schema.js'
 import { ProjectFiles } from './project-files.service.js'
 import type { Project, ProjectFile } from './Project.schema.js'
@@ -65,6 +67,27 @@ const mergeUpdatedInto = (project: Project) => (updated: ProjectFile | Option.Op
   })
 }
 
+const DEFAULT_GLOB = '**/*.{js,ts,jsx,tsx,html,vue,mjs,mts,cts,cjs}'
+
+const resolvedMatcherPatternOf = (pattern: boolean | string, pathService: Path.Path): boolean | string =>
+  Match.value(pattern).pipe(
+    Match.withReturnType<boolean | string>(),
+    Match.when(Match.string, (value) => pathService.resolve(value).replace(/\\/g, '/')),
+    Match.when(true, () => DEFAULT_GLOB),
+    Match.orElse(() => false),
+  )
+
+const matcherMatches = (matcher: FileMatcher, pathService: Path.Path, fileName: string): boolean => {
+  const decision = admitFileMatch(
+    FileMatchCommand.make({
+      resolvedPattern: resolvedMatcherPatternOf(matcher.pattern, pathService),
+      allowHiddenFiles: matcher.allowHiddenFiles,
+      resolvedFileName: pathService.resolve(fileName).replace(/\\/g, '/'),
+    }),
+  )
+  return Result.isSuccess(decision) && S.is(FileMatched)(decision.success)
+}
+
 const makeDisableTypeChecksPreprocessor =
   (options: Options.StrykerOptions, registry: Format.FormatRegistry, impl: typeof Instrument.disableTypeChecks) =>
   (project: Project) =>
@@ -72,7 +95,7 @@ const makeDisableTypeChecksPreprocessor =
       const pathService = yield* Path.Path
       const files = yield* ProjectFiles
       const matcher = FileMatcher.make({ pattern: options.disableTypeChecks, allowHiddenFiles: true })
-      const matched = [...project.files].filter(([name]) => matcher.matches(pathService, pathService.resolve(name)))
+      const matched = [...project.files].filter(([name]) => matcherMatches(matcher, pathService, name))
       const instrumented = yield* files.readAll(matched.map(([, file]) => file))
       const updates = yield* Effect.forEach(
         instrumented,
@@ -645,43 +668,34 @@ export interface SandboxSpec extends MakeSandboxInput {
   readonly preprocessors: readonly FilePreprocessor[]
 }
 
-const acquireSandbox = (spec: SandboxSpec): Effect.Effect<
-  SandboxHandle,
-  PlatformError | StrykerError,
-  | FileSystem.FileSystem
-  | Path.Path
-  | ProjectFiles
-  | ChildProcessSpawner.ChildProcessSpawner
-  | Scope.Scope
-> =>
-  Effect.gen(function*() {
-    const { options, project, workingDirectory, backupDirectory, basePath } = spec
-    yield* Scope.Scope
-    const pathService = yield* Path.Path
+const acquireSandbox = Effect.fn('stryker.sandbox.acquire')(function*(spec: SandboxSpec) {
+  const { options, project, workingDirectory, backupDirectory, basePath } = spec
+  yield* Scope.Scope
+  const pathService = yield* Path.Path
 
-    yield* announceSandbox(options, workingDirectory, backupDirectory, basePath, pathService)
-    yield* Effect.when(
-      restoreOriginalFiles(workingDirectory, backupDirectory, basePath),
-      Effect.succeed(hasBackupToRestore(options, backupDirectory)),
-    )
-    const preprocessor = combinePreprocessors([
-      createPreprocessor(options, basePath, spec.formatRegistry),
-      ...spec.preprocessors,
-    ])
-    yield* preprocessor(project).pipe(
-      Effect.mapError((cause) => StrykerError.make({ message: 'Sandbox preprocessor failed', cause })),
-    )
-    const files = yield* ProjectFiles
-    const entries = yield* Boolean.match(options.inPlace, {
-      onTrue: () => files.writeAllInPlace([...project.files], { backupDirectory, basePath }),
-      onFalse: () => files.writeAllToSandbox([...project.files], { workingDirectory, basePath }),
-    })
-    const fileMap = toFileMap(entries)
-
-    yield* runConfiguredBuild(options, workingDirectory)
-    yield* symlinkNodeModules(options, workingDirectory, basePath, pathService)
-    return makeHandle({ fileMap, workingDirectory, basePath, pathService })
+  yield* announceSandbox(options, workingDirectory, backupDirectory, basePath, pathService)
+  yield* Effect.when(
+    restoreOriginalFiles(workingDirectory, backupDirectory, basePath),
+    Effect.succeed(hasBackupToRestore(options, backupDirectory)),
+  )
+  const preprocessor = combinePreprocessors([
+    createPreprocessor(options, basePath, spec.formatRegistry),
+    ...spec.preprocessors,
+  ])
+  yield* preprocessor(project).pipe(
+    Effect.mapError((cause) => StrykerError.make({ message: 'Sandbox preprocessor failed', cause })),
+  )
+  const files = yield* ProjectFiles
+  const entries = yield* Boolean.match(options.inPlace, {
+    onTrue: () => files.writeAllInPlace([...project.files], { backupDirectory, basePath }),
+    onFalse: () => files.writeAllToSandbox([...project.files], { workingDirectory, basePath }),
   })
+  const fileMap = toFileMap(entries)
+
+  yield* runConfiguredBuild(options, workingDirectory)
+  yield* symlinkNodeModules(options, workingDirectory, basePath, pathService)
+  return makeHandle({ fileMap, workingDirectory, basePath, pathService })
+})
 
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js/Sandbox')
 export type TypeId = typeof TypeId

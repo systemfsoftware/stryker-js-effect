@@ -1,22 +1,27 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Boolean } from 'effect'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import { absurd } from 'effect/Function'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Queue from 'effect/Queue'
+import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { InstrumentCommand, planInstrumentation } from '../plan-instrumentation.workflow.js'
 import { ProjectFiles } from '../project-files.service.js'
 import type { Project, ProjectFile } from '../Project.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
-import { RunEvents } from '../run-events.service.js'
+import type { SkippedFileRow } from '../run-event.schema.js'
+import { RunEvents, SkippedReported } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { makeSandbox } from '../Sandbox.blueprint.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
-import { mergeInstrumentedFile, offerSkipsIfAny, sandboxDirectoriesOf } from './instrument.parts.js'
+import { explainFileSkip, ExplainFileSkipCommand, type FrameworkClaimant } from './explain-file-skip.workflow.js'
 import type { PrepareDone } from './prepare.cell.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 
@@ -27,6 +32,60 @@ export interface InstrumentDone extends PrepareDone {
     readonly testRunners: number
     readonly checkers: number
   }
+}
+
+const offerSkipsIfAny = Effect.fn('stryker.instrument.offer-skips')(
+  function*(input: {
+    readonly skipped: readonly Instrument.InstrumentFileSkip[]
+    readonly claimants: readonly FrameworkClaimant[]
+  }) {
+    yield* Boolean.match(input.skipped.length === 0, {
+      onTrue: () => Effect.void,
+      onFalse: () =>
+        Effect.gen(function*() {
+          const files = input.skipped.map((skip) =>
+            Result.match(
+              explainFileSkip(
+                ExplainFileSkipCommand.make({ extension: skip.extension, claimants: [...input.claimants] }),
+              ),
+              {
+                onFailure: absurd<SkippedFileRow>,
+                onSuccess: (explained): SkippedFileRow => ({
+                  file: skip.file,
+                  extension: skip.extension,
+                  reason: explained.reason,
+                }),
+              },
+            )
+          )
+          const queue = yield* RunEvents
+          yield* Queue.offer(queue, SkippedReported.make({ files }))
+        }),
+    })
+  },
+)
+
+const sandboxDirectoriesOf = (input: { readonly command: PrepareDone; readonly basePath: string }) =>
+  Option.getOrElse(
+    Option.map(
+      Option.filter(Option.some(input), () => input.command.options.inPlace),
+      (inPlace) => ({
+        workingDirectory: inPlace.basePath,
+        backupDirectory: inPlace.command.temporaryDirectoryPath,
+      }),
+    ),
+    () => ({ workingDirectory: input.command.temporaryDirectoryPath, backupDirectory: '' }),
+  )
+
+const mergeInstrumentedFile = (input: { readonly project: Project; readonly file: ProjectFile }): Project => {
+  const files = MutableHashMap.fromIterable(input.project.files)
+  MutableHashMap.set(files, input.file.name, input.file)
+  const filesToMutate = MutableHashMap.fromIterable(input.project.filesToMutate)
+  const settable = [filesToMutate].filter(() => input.file.mutate !== false)
+  settable.forEach((target) => MutableHashMap.set(target, input.file.name, input.file))
+  const removable = [filesToMutate].filter(() => input.file.mutate === false)
+  removable.forEach((target) => MutableHashMap.remove(target, input.file.name))
+  return { ...input.project, files, filesToMutate }
 }
 
 type InstrumentRaw = typeof InstrumentCommand.Encoded & {

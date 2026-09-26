@@ -15,6 +15,14 @@ import * as S from 'effect/Schema'
 
 import { importModule } from './drivers/config.js'
 import {
+  planPluginLoad,
+  type PluginDeclaration,
+  PluginDeclarationsPlanned,
+  PluginLoadCommand,
+  type PluginLoadDecision,
+  type PluginShadowing,
+} from './plan-plugin-load.workflow.js'
+import {
   type EvaluatorPluginDescriptor,
   type FrameworkModuleContributions,
   FrameworkModuleSchema,
@@ -46,55 +54,24 @@ interface PluginLoadPlan {
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
   readonly pluginModulePaths: readonly string[]
   readonly pluginSources: readonly PluginSource[]
-  readonly shadowings: readonly {
-    readonly kind: PluginKind
-    readonly name: string
-    readonly shadowedIndex: number
-    readonly winnerIndex: number
-  }[]
+  readonly shadowings: readonly PluginShadowing[]
 }
 
+const plannedOf = (decision: Result.Result<PluginLoadDecision, never>): Option.Option<PluginDeclarationsPlanned> =>
+  Option.filter(Result.getSuccess(decision), S.is(PluginDeclarationsPlanned))
+
 const buildPluginLoadPlan = (entries: readonly PluginLoaderEntry[]): PluginLoadPlan => {
-  const declarations: readonly { plugin: PluginDescriptor; moduleName: string; entryIndex: number }[] = entries.flatMap(
-    (entry, index) =>
-      (entry.plugins ?? []).map((plugin) => ({ plugin, moduleName: entry.moduleName, entryIndex: index })),
+  const declarations: readonly PluginDeclaration[] = entries.flatMap((entry, index) =>
+    (entry.plugins ?? []).map((plugin) => ({ plugin, moduleName: entry.moduleName, entryIndex: index }))
   )
-
-  const shadowingState = declarations.reduce<{
-    readonly seen: HashMap.HashMap<string, { readonly position: number; readonly entryIndex: number }>
-    readonly shadowings: readonly {
-      readonly kind: PluginKind
-      readonly name: string
-      readonly shadowedIndex: number
-      readonly winnerIndex: number
-    }[]
-  }>(
-    (acc, declaration, position) => {
-      const key = `${declaration.plugin.kind}:${declaration.plugin.name}`
-      return {
-        seen: HashMap.set(acc.seen, key, { position, entryIndex: declaration.entryIndex }),
-        shadowings: Option.match(HashMap.get(acc.seen, key), {
-          onNone: () => acc.shadowings,
-          onSome: (previous) => [
-            ...acc.shadowings,
-            {
-              kind: declaration.plugin.kind,
-              name: declaration.plugin.name,
-              shadowedIndex: previous.entryIndex,
-              winnerIndex: declaration.entryIndex,
-            },
-          ],
-        }),
-      }
-    },
-    { seen: HashMap.empty<string, { readonly position: number; readonly entryIndex: number }>(), shadowings: [] },
+  const planned = plannedOf(planPluginLoad(PluginLoadCommand.make({ declarations: [...declarations] })))
+  const winningDeclarations: readonly PluginDeclaration[] = Option.getOrElse(
+    Option.map(planned, (plan) => [...plan.winners]),
+    (): readonly PluginDeclaration[] => [],
   )
-
-  const winningDeclarations = declarations.filter((declaration, position) =>
-    Option.match(HashMap.get(shadowingState.seen, `${declaration.plugin.kind}:${declaration.plugin.name}`), {
-      onNone: () => false,
-      onSome: (winner) => winner.position === position,
-    })
+  const shadowings: readonly PluginShadowing[] = Option.getOrElse(
+    Option.map(planned, (plan) => [...plan.shadowings]),
+    (): readonly PluginShadowing[] => [],
   )
 
   const pluginsByKind = winningDeclarations.reduce<HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>>(
@@ -144,7 +121,7 @@ const buildPluginLoadPlan = (entries: readonly PluginLoaderEntry[]): PluginLoadP
     pluginsByKind,
     pluginModulePaths,
     pluginSources,
-    shadowings: shadowingState.shadowings,
+    shadowings,
   }
 }
 
