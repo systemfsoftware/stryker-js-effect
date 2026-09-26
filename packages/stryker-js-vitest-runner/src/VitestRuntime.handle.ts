@@ -4,7 +4,6 @@ import type { Vitest } from 'vitest/node'
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
@@ -12,6 +11,21 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 
+import {
+  browserConfigOf,
+  clearVitestFiles,
+  errorCodeOf,
+  errorCollectionOf,
+  fileKeyOf,
+  hasEntries,
+  iterableEntriesOf,
+  metaOf as metaDriverOf,
+  onClose,
+  screenshotFailuresOff,
+  setSetupFiles,
+  setupFilesOf,
+  type VitestValue,
+} from './drivers/vitest-node.js'
 import { type StrykerNamespace, type TestRunnerPhase } from './VitestRunner.schema.js'
 
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
@@ -37,42 +51,25 @@ interface RunFilterInput {
   readonly testNamePattern: RegExp | undefined
 }
 
-const isErrorWithCode = (value: unknown): value is { readonly code: string } =>
-  typeof Reflect.get(Object(value), 'code') === 'string'
+const causeTextOf = <A>(cause: A): string =>
+  Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => '')
 
-const errorCodeOf = <A>(cause: A): Option.Option<string> =>
-  Option.map(Option.liftPredicate(cause, isErrorWithCode), (value) => value.code)
-
-const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  new TestRunner.TestRunnerFailed({
+export const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E): TestRunner.TestRunnerFailed =>
+  TestRunner.TestRunnerFailed.make({
     runnerName: 'vitest',
     phase,
-    cause: `${
-      Option.getOrElse(
-        Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text),
-        () => '',
-      )
-    }${Option.match(errorCodeOf(cause), { onNone: () => '', onSome: (code) => ` (code: ${code})` })}`,
+    cause: [causeTextOf(cause), ...Option.toArray(Option.map(errorCodeOf(cause), (code) => `(code: ${code})`))]
+      .filter((part) => part.length > 0)
+      .join(' '),
   })
-
-const disableScreenshotFailures = <A>(value: A) =>
-  Option.map(Option.filter(Option.fromNullishOr(value), Predicate.isObject), (browser) => {
-    Reflect.set(browser, 'screenshotFailures', false)
-  })
-
-const setupFilePathsOf = <A>(value: A) =>
-  Option.getOrElse(
-    Option.map(Option.liftPredicate(value, Array.isArray), (files) => files.filter(Predicate.isString)),
-    () => [],
-  )
 
 const withApplicationSetup = (self: VitestRuntime, namespace: StrykerNamespace): VitestRuntime => {
-  driverOf(self).provide('globalNamespace', namespace)
-  disableScreenshotFailures(Reflect.get(driverOf(self).config, 'browser'))
-  driverOf(self).projects.forEach((project) => {
-    const setupFiles = setupFilePathsOf(Reflect.get(project.config, 'setupFiles'))
-    Reflect.set(project.config, 'setupFiles', [self.localSetupFile, ...setupFiles])
-    disableScreenshotFailures(Reflect.get(project.config, 'browser'))
+  const driver = driverOf(self)
+  driver.provide('globalNamespace', namespace)
+  Option.map(browserConfigOf(driver.config), screenshotFailuresOff)
+  driver.projects.forEach((project) => {
+    setSetupFiles(project.config, [self.localSetupFile, ...setupFilesOf(project.config)])
+    Option.map(browserConfigOf(project.config), screenshotFailuresOff)
   })
   return self
 }
@@ -136,111 +133,73 @@ export const provideValue: {
 export const applyRunFilter: {
   (filter: RunFilterInput): (self: VitestRuntime) => Effect.Effect<void>
   (self: VitestRuntime, filter: RunFilterInput): Effect.Effect<void>
-} = dual(2, (self: VitestRuntime, filter: RunFilterInput): Effect.Effect<void> =>
-  Effect.sync(() => {
-    driverOf(self).config.related = filter.related
-    driverOf(self).projects.forEach((project) => {
-      project.config.testNamePattern = filter.testNamePattern
+} = dual(
+  2,
+  Effect.fn('vitest.runtime.apply_run_filter')(function*(self: VitestRuntime, filter: RunFilterInput) {
+    yield* Effect.sync(() => {
+      const driver = driverOf(self)
+      driver.config.related = filter.related
+      driver.projects.forEach((project) => {
+        project.config.testNamePattern = filter.testNamePattern
+      })
     })
-  }))
+  }),
+)
 
 export const start: {
   (testFiles: string[] | undefined): (self: VitestRuntime) => Effect.Effect<void, TestRunner.TestRunnerFailed>
   (self: VitestRuntime, testFiles: string[] | undefined): Effect.Effect<void, TestRunner.TestRunnerFailed>
-} = dual(2, (self: VitestRuntime, testFiles: string[] | undefined) =>
-  Effect.tryPromise({
-    try: () => driverOf(self).start(testFiles),
-    catch: (cause) => failRuntime('dryRun')(cause),
-  }))
+} = dual(
+  2,
+  Effect.fn('vitest.runtime.start')(function*(self: VitestRuntime, testFiles: string[] | undefined) {
+    yield* Effect.tryPromise({
+      try: () => driverOf(self).start(testFiles),
+      catch: (cause) => failRuntime('dryRun')(cause),
+    })
+  }),
+)
 
 export const files = (self: VitestRuntime): readonly RunnerTestFile[] => driverOf(self).state.getFiles()
 
 export const clearFiles = (self: VitestRuntime): void => {
   const driver = driverOf(self)
-  propertyOf(driver, 'state').pipe(
-    Option.flatMap((state) => propertyOf(state, 'filesMap')),
-    Option.match({ onNone: () => undefined, onSome: (filesMap) => clearFilesMap(filesMap) }),
-  )
+  clearVitestFiles(driver)
 }
 
 export const hasExternalErrors = (self: VitestRuntime): boolean => {
   const driver = driverOf(self)
-  return errorsSetOf(driver).pipe(Option.flatMap(entryCountOf), Option.exists((count) => count > 0))
+  return Option.exists(errorCollectionOf(driver), hasEntries)
 }
 
 export const externalErrorText = (self: VitestRuntime): string => {
   const driver = driverOf(self)
-  return Option.match(errorsSetOf(driver), {
+  return Option.match(errorCollectionOf(driver), {
     onNone: () => '',
-    onSome: (errorsSet) =>
-      Predicate.isIterable(errorsSet)
-        ? [...errorsSet].map((error) =>
-          Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(error), (rendered) => rendered.text), () => '')
-        ).join('\n')
-        : '',
+    onSome: (collection) => iterableEntriesOf(collection).map(causeTextOf).join('\n'),
   })
 }
 
-export const metaOf = <A>(file: A) => Option.getOrUndefined(propertyOf(file, 'meta'))
+export const metaOf = <A>(file: A): VitestValue => metaDriverOf(file)
 
 export const dedupeFilesByName = <A = unknown>(files: readonly A[]): Record<string, A> =>
-  Object.fromEntries(files.map((file) => [stringField(file, 'projectName') + '-' + stringField(file, 'name'), file]))
+  Object.fromEntries(files.map((file) => [fileKeyOf(file), file]))
 
 export const isRunnerTestSuite = (value: unknown): value is RunnerTestSuite =>
   Predicate.isObject(value) && Array.isArray(value['tasks'])
 
 export const reportAllKillersOf = (options: { readonly disableBail?: boolean }) => options.disableBail === true
 
-export const close = (
-  self: VitestRuntime,
-): Effect.Effect<void, TestRunner.TestRunnerFailed, FileSystem.FileSystem> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const cleanup = Context.make(FileSystem.FileSystem, fs)
-    driverOf(self).onClose(() =>
-      Effect.runPromiseWith(cleanup)(
-        fs.remove(self.localSetupFile, { recursive: true, force: true }).pipe(Effect.orElseSucceed(() => undefined)),
-      )
-    )
-    yield* Effect.tryPromise({
-      try: () => driverOf(self).close(),
-      catch: (cause) => failRuntime('dispose')(cause),
-    })
-  })
-
-const isOpaqueRecord = <A = unknown, V = unknown>(value: A): value is A & Record<string, V> => Predicate.isObject(value)
-
-const propertyOf = <A = unknown, V = unknown>(value: A, key: string): Option.Option<V> =>
-  Option.flatMap(Option.liftPredicate(value, isOpaqueRecord<A, V>), (record) => Option.fromNullishOr(record[key]))
-
-const stringField = <A = unknown>(value: A, key: string): string =>
-  Option.getOrElse(Option.filter(propertyOf(value, key), Predicate.isString), () => '')
-
-const vitestStateOf = <A = unknown>(vitest: A) => propertyOf(vitest, 'state')
-
-const errorsSetOf = <A = unknown>(vitest: A) =>
-  Option.flatMap(vitestStateOf(vitest), (state) => propertyOf(state, 'errorsSet'))
-
-const invokeMethod = <A = unknown>(holder: A, name: string): void => {
-  Option.match(Option.filter(propertyOf(holder, name), Predicate.isFunction), {
-    onNone: () => undefined,
-    onSome: (method) => {
-      Reflect.apply(method, holder, [])
-    },
-  })
-}
-
-const clearFilesMap = <A>(filesMap: A): void => {
-  Match.value(filesMap).pipe(
-    Match.when(Match.instanceOf(Map), (map) => {
-      map.clear()
-    }),
-    Match.orElse((value) => invokeMethod(value, 'clear')),
+export const close = Effect.fn('vitest.runtime.close')(function*(self: VitestRuntime) {
+  const fs = yield* FileSystem.FileSystem
+  onClose(
+    driverOf(self),
+    fs.remove(self.localSetupFile, { recursive: true, force: true }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.orElseSucceed(() => undefined),
+    ),
   )
-}
-
-const entryCountOf = <A = unknown>(collection: A) =>
-  Match.value(collection).pipe(
-    Match.when(Match.instanceOf(Set), (set) => Option.some(set.size)),
-    Match.orElse((value) => Option.filter(propertyOf(value, 'size'), Predicate.isNumber)),
-  )
+  yield* Effect.tryPromise({
+    try: () => driverOf(self).close(),
+    catch: (cause) => failRuntime('dispose')(cause),
+  })
+})

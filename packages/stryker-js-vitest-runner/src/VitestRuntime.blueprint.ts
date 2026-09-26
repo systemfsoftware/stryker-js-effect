@@ -12,6 +12,7 @@ import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
+import { onClose } from './drivers/vitest-node.js'
 import {
   dispose as disposeStandbyThreads,
   initializer as standbyThreadsInitializer,
@@ -23,12 +24,11 @@ import {
   type ExportEntry,
   PackageManifest,
   type StrykerNamespace,
-  type TestRunnerPhase,
   type VitestRunnerOptions,
 } from './VitestRunner.schema.js'
-import { close, make, type VitestRuntime } from './VitestRuntime.handle.js'
+import { close, failRuntime, make, type VitestRuntime } from './VitestRuntime.handle.js'
 
-export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntimeBlueprint')
+export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
 export type TypeId = typeof TypeId
 
 const STRYKER_SETUP_URL = new URL('./stryker-setup.mjs', import.meta.url)
@@ -138,12 +138,7 @@ export interface ResolvedVitest {
 }
 
 export type VitestResolver = (dir: string) => Effect.Effect<ResolvedVitest>
-const failRuntime = (phase: TestRunnerPhase) => <E>(cause: E) =>
-  new TestRunner.TestRunnerFailed({
-    runnerName: 'vitest',
-    phase,
-    cause: Option.getOrElse(Option.map(ErrorText.ErrorText.fromCause(cause), (rendered) => rendered.text), () => ''),
-  })
+
 const vitestUnresolved = (specifier: string, base: string, detail: string): TestRunner.TestRunnerFailed =>
   new TestRunner.TestRunnerFailed({
     runnerName: 'vitest',
@@ -271,7 +266,7 @@ const openRuntime = (
     const { createVitest } = yield* input.resolver(input.projectRoot).pipe(
       Effect.catchDefect((cause) => Effect.fail(failRuntime('init')(cause))),
     )
-    const standbyThreads = makeStandbyThreadsPool()
+    const standbyThreads = yield* makeStandbyThreadsPool()
     const driver = yield* Effect.tryPromise({
       try: () =>
         createVitest('test', createVitestConfig(input, standbyThreads), {
@@ -280,7 +275,7 @@ const openRuntime = (
         }),
       catch: (cause) => failRuntime('init')(cause),
     })
-    driver.onClose(() => disposeStandbyThreads(standbyThreads))
+    onClose(driver, disposeStandbyThreads(standbyThreads))
     const runtime = make({
       driver,
       projectRoot: input.projectRoot,
