@@ -24,9 +24,10 @@ import * as Stream from 'effect/Stream'
 import * as CliConfig from 'effect/unstable/cli/CliConfig'
 import * as Flag from 'effect/unstable/cli/Flag'
 import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
+import { inheritableCompileCacheDirectory } from './enable-compile-cache.js'
 
 import { strykerCliEffect } from '../Cli.cell.js'
-import { nodePlatformLayer } from '../drivers/node.js'
+import { makeNodePlatformLayer } from '../drivers/node.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
@@ -166,11 +167,17 @@ const telemetryLayer: Layer.Layer<never> = Layer.unwrap(
   ),
 )
 
+const compileCacheChildEnv = inheritableCompileCacheDirectory === undefined
+  ? {}
+  : { NODE_COMPILE_CACHE: inheritableCompileCacheDirectory }
+
+const nodePlatform = makeNodePlatformLayer({ childEnv: compileCacheChildEnv })
+
 const probeGroup = Layer.mergeAll(
   OutputModeProbeLive,
   RunEventStreamPortTag.layer.pipe(Layer.provide(RunEventDrain.fileLayer)),
   RunEventDrain.fileLayer,
-).pipe(Layer.provide(nodePlatformLayer))
+).pipe(Layer.provide(nodePlatform))
 
 const cliLayer = Layer.mergeAll(
   probeGroup,
@@ -189,7 +196,7 @@ const cliLayer = Layer.mergeAll(
     ],
   }),
   NodeTerminal.layer,
-).pipe(Layer.provideMerge(nodePlatformLayer))
+).pipe(Layer.provideMerge(nodePlatform))
 
 const program = Effect.scoped(
   cliLayer.pipe(

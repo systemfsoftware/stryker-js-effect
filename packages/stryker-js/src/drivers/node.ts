@@ -29,87 +29,90 @@ const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string) =>
     Effect.catchTag('PlatformError', () => Effect.void),
   )
 
-const nodeWorkerLauncherLayer = Layer.effect(
-  WorkerLauncher,
-  Effect.gen(function*() {
-    const crypto = yield* Crypto.Crypto
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
+  Layer.effect(
+    WorkerLauncher,
+    Effect.gen(function*() {
+      const crypto = yield* Crypto.Crypto
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
 
-    return {
-      spawn: (params) =>
-        Effect.gen(function*() {
-          const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
-          const workerId = yield* crypto.randomUUIDv4
-          const socketPath = Match.value(globalThis.process.platform).pipe(
-            Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${workerId}`),
-            Match.orElse(() => path.join(workerDir, 'worker.sock')),
-          )
-          const optionsFile = path.join(workerDir, 'options.json')
-          yield* fs.writeFileString(optionsFile, params.optionsJson)
-          yield* restrictToOwnerOrWarn(fs, optionsFile)
+      return {
+        spawn: (params) =>
+          Effect.gen(function*() {
+            const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
+            const workerId = yield* crypto.randomUUIDv4
+            const socketPath = Match.value(globalThis.process.platform).pipe(
+              Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${workerId}`),
+              Match.orElse(() => path.join(workerDir, 'worker.sock')),
+            )
+            const optionsFile = path.join(workerDir, 'options.json')
+            yield* fs.writeFileString(optionsFile, params.optionsJson)
+            yield* restrictToOwnerOrWarn(fs, optionsFile)
 
-          const entrypointPath = yield* path.fromFileUrl(new URL(params.entrypoint))
-          const handle = yield* ChildProcess.make(
-            globalThis.process.execPath,
-            [...params.execArgv, entrypointPath],
-            {
-              cwd: params.workingDirectory,
-              extendEnv: true,
-              env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath, ...params.env },
-              stderr: 'inherit',
-            },
-          ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
+            const entrypointPath = yield* path.fromFileUrl(new URL(params.entrypoint))
+            const handle = yield* ChildProcess.make(
+              globalThis.process.execPath,
+              [...params.execArgv, entrypointPath],
+              {
+                cwd: params.workingDirectory,
+                extendEnv: true,
+                env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath, ...childEnv, ...params.env },
+                stderr: 'inherit',
+              },
+            ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
 
-          const clientLayer = layerWorkerProtocol(NodeSocket.layerNet({ path: socketPath }))
+            const clientLayer = layerWorkerProtocol(NodeSocket.layerNet({ path: socketPath }))
 
-          const exited = handle.exitCode.pipe(
-            Effect.orDie,
-            Effect.flatMap((exitCode) =>
-              Result.match(
-                classifyWorkerExit(ClassifyWorkerExitCommand.make({ pid: Number(handle.pid), exitCode })),
-                {
-                  onFailure: (refused) => Effect.fail(refused),
-                  onSuccess: (decision) =>
-                    Match.value(decision).pipe(
-                      Match.tag(
-                        'WorkerOutOfMemory',
-                        (outOfMemory) =>
-                          Effect.fail(OutOfMemoryError.make({ pid: outOfMemory.pid, exitCode: outOfMemory.exitCode })),
+            const exited = handle.exitCode.pipe(
+              Effect.orDie,
+              Effect.flatMap((exitCode) =>
+                Result.match(
+                  classifyWorkerExit(ClassifyWorkerExitCommand.make({ pid: Number(handle.pid), exitCode })),
+                  {
+                    onFailure: (refused) => Effect.fail(refused),
+                    onSuccess: (decision) =>
+                      Match.value(decision).pipe(
+                        Match.tag(
+                          'WorkerOutOfMemory',
+                          (outOfMemory) =>
+                            Effect.fail(
+                              OutOfMemoryError.make({ pid: outOfMemory.pid, exitCode: outOfMemory.exitCode }),
+                            ),
+                        ),
+                        Match.tag(
+                          'WorkerCrashed',
+                          (crashed) =>
+                            Effect.fail(
+                              ChildProcessCrashedError.make({
+                                pid: crashed.pid,
+                                exit: { _tag: 'Code', code: crashed.exitCode },
+                                cause: 'worker exited before it accepted the RPC connection',
+                              }),
+                            ),
+                        ),
+                        Match.exhaustive,
                       ),
-                      Match.tag(
-                        'WorkerCrashed',
-                        (crashed) =>
-                          Effect.fail(
-                            ChildProcessCrashedError.make({
-                              pid: crashed.pid,
-                              exit: { _tag: 'Code', code: crashed.exitCode },
-                              cause: 'worker exited before it accepted the RPC connection',
-                            }),
-                          ),
-                      ),
-                      Match.exhaustive,
-                    ),
-                },
-              )
-            ),
-          )
+                  },
+                )
+              ),
+            )
 
-          return makeSpawnedSocketWorker({ pid: Number(handle.pid), clientLayer, exited })
-        }).pipe(
-          Effect.catchIf(S.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
-            Effect.fail(
-              ChildProcessCrashedError.make({
-                pid: 0,
-                exit: { _tag: 'Code', code: 1 },
-                cause: 'worker spawn failed',
-              }),
-            )),
-        ),
-    }
-  }),
-)
+            return makeSpawnedSocketWorker({ pid: Number(handle.pid), clientLayer, exited })
+          }).pipe(
+            Effect.catchIf(S.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
+              Effect.fail(
+                ChildProcessCrashedError.make({
+                  pid: 0,
+                  exit: { _tag: 'Code', code: 1 },
+                  cause: 'worker spawn failed',
+                }),
+              )),
+          ),
+      }
+    }),
+  )
 
 const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
@@ -117,7 +120,12 @@ const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFs
 
 const nodeBase = Layer.mergeAll(nodeFsPathLayer, nodeSpawnerLayer, NodeStdio.layer)
 
-export const nodePlatformLayer: Layer.Layer<EnginePorts> = Layer.mergeAll(
-  nodeWorkerLauncherLayer.pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
-  nodeBase,
-)
+export const makeNodePlatformLayer = (options: {
+  readonly childEnv: Readonly<Record<string, string>>
+}): Layer.Layer<EnginePorts> =>
+  Layer.mergeAll(
+    nodeWorkerLauncherLayer(options.childEnv).pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
+    nodeBase,
+  )
+
+export const nodePlatformLayer: Layer.Layer<EnginePorts> = makeNodePlatformLayer({ childEnv: {} })

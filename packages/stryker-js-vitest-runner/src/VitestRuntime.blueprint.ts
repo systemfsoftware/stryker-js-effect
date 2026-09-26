@@ -12,6 +12,12 @@ import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
+import {
+  dispose as disposeStandbyThreads,
+  initializer as standbyThreadsInitializer,
+  make as makeStandbyThreadsPool,
+  type StandbyThreadsPool,
+} from './StandbyThreadsPool.handle.js'
 import { type RawVitestRecord } from './vitest-run-command.schema.js'
 import {
   type ExportEntry,
@@ -20,7 +26,7 @@ import {
   type TestRunnerPhase,
   type VitestRunnerOptions,
 } from './VitestRunner.schema.js'
-import { make, type VitestRuntime } from './VitestRuntime.handle.js'
+import { close, make, type VitestRuntime } from './VitestRuntime.handle.js'
 
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntimeBlueprint')
 export type TypeId = typeof TypeId
@@ -209,7 +215,7 @@ export interface VitestRuntimeInput {
   readonly path: Path.Path
 }
 
-const createVitestConfig = (input: VitestRuntimeInput) => ({
+const createVitestConfig = (input: VitestRuntimeInput, standbyThreads: StandbyThreadsPool) => ({
   config: input.vitestOptions.configFile,
   coverage: { enabled: false },
   maxWorkers: 1,
@@ -222,7 +228,7 @@ const createVitestConfig = (input: VitestRuntimeInput) => ({
   ),
   ...Option.match(
     Option.fromNullishOr(input.vitestOptions.pool),
-    { onNone: () => ({}), onSome: (pool) => ({ pool }) },
+    { onNone: () => ({}), onSome: () => ({ pool: standbyThreadsInitializer(standbyThreads) }) },
   ),
   bail: input.bail,
   onConsoleLog: () => false,
@@ -239,6 +245,53 @@ const browserRefusalOf = (driver: Vitest): Option.Option<string> =>
     (enabled) => enabled,
   ).pipe(Option.as(BROWSER_REFUSAL))
 
+const closeAfterFailure = (runtime: VitestRuntime, fs: FileSystem.FileSystem): Effect.Effect<void> =>
+  close(runtime).pipe(
+    Effect.provideService(FileSystem.FileSystem, fs),
+    Effect.orElseSucceed(() => undefined),
+    Effect.catchDefect(() => Effect.void),
+  )
+
+const refuseBrowser = (
+  input: VitestRuntimeInput,
+  driver: Vitest,
+): Effect.Effect<void, TestRunner.TestRunnerFailed> =>
+  Option.match(input.vitestOptions.pool === undefined ? Option.none<string>() : browserRefusalOf(driver), {
+    onNone: () => Effect.void,
+    onSome: (reason) => Effect.fail(failRuntime('init')(reason)),
+  })
+
+const openRuntime = (
+  input: VitestRuntimeInput,
+  localSetupFile: string,
+): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
+  Effect.gen(function*() {
+    const { fileSystem: fs, path } = input
+    const aliases = yield* readSandboxSelfAliases(input.projectRoot, fs, path)
+    const { createVitest } = yield* input.resolver(input.projectRoot).pipe(
+      Effect.catchDefect((cause) => Effect.fail(failRuntime('init')(cause))),
+    )
+    const standbyThreads = makeStandbyThreadsPool()
+    const driver = yield* Effect.tryPromise({
+      try: () =>
+        createVitest('test', createVitestConfig(input, standbyThreads), {
+          resolve: { alias: [...aliases], conditions: ['import'] },
+          plugins: [sandboxSelfPlugin(aliases)],
+        }),
+      catch: (cause) => failRuntime('init')(cause),
+    })
+    driver.onClose(() => disposeStandbyThreads(standbyThreads))
+    const runtime = make({
+      driver,
+      projectRoot: input.projectRoot,
+      localSetupFile,
+      namespace: input.namespace,
+      mutantBail: input.bail,
+    })
+    yield* refuseBrowser(input, driver).pipe(Effect.onError(() => closeAfterFailure(runtime, fs)))
+    return runtime
+  })
+
 const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> =>
   Effect.gen(function*() {
     const { crypto, fileSystem: fs, path } = input
@@ -249,30 +302,11 @@ const acquire = (input: VitestRuntimeInput): Effect.Effect<VitestRuntime, TestRu
       onSome: Effect.succeed,
     })
     yield* fs.copyFile(setupFilePath, localSetupFile).pipe(Effect.mapError(failRuntime('init')))
-    const aliases = yield* readSandboxSelfAliases(input.projectRoot, fs, path)
-    const { createVitest } = yield* input.resolver(input.projectRoot).pipe(
-      Effect.catchDefect((cause) => Effect.fail(failRuntime('init')(cause))),
+    return yield* openRuntime(input, localSetupFile).pipe(
+      Effect.onError(() =>
+        fs.remove(localSetupFile, { recursive: true, force: true }).pipe(Effect.orElseSucceed(() => undefined))
+      ),
     )
-    const driver = yield* Effect.tryPromise({
-      try: () =>
-        createVitest('test', createVitestConfig(input), {
-          resolve: { alias: [...aliases], conditions: ['import'] },
-          plugins: [sandboxSelfPlugin(aliases)],
-        }),
-      catch: (cause) => failRuntime('init')(cause),
-    })
-    const refusal = input.vitestOptions.pool === undefined ? Option.none<string>() : browserRefusalOf(driver)
-    yield* Option.match(refusal, {
-      onNone: () => Effect.void,
-      onSome: (reason) => Effect.fail(failRuntime('init')(reason)),
-    })
-    return make({
-      driver,
-      projectRoot: input.projectRoot,
-      localSetupFile,
-      namespace: input.namespace,
-      mutantBail: input.bail,
-    })
   })
 
 const VitestRuntimeBlueprint = Blueprint.make<VitestRuntimeInput>()(TypeId).steps({
