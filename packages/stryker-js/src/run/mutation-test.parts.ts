@@ -819,20 +819,10 @@ const reportDroppedMutants = (dropped: readonly Mutant.Mutant[]) =>
     ),
   )
 
-const wallClockTimeoutStopsRun = (status: string, reason: string | undefined) =>
-  status === 'timeout' && !S.is(TestRunner.HitLimitReasonText)(reason)
-
 const reasonOf = (result: object) =>
   Option.getOrUndefined(
     Option.filter(Option.fromNullishOr(Reflect.get(result, 'reason')), Predicate.isString),
   )
-
-export const stopWallClock = (result: { readonly status: string; readonly reason?: string }) =>
-  Boolean.match(wallClockTimeoutStopsRun(result.status, reasonOf(result)), {
-    onTrue: () =>
-      Effect.fail(StageError.make({ stage: 'mutationTest', reason: TestRunner.WallClockTimeoutReason.literal })),
-    onFalse: () => Effect.void,
-  })
 
 export type MutationTestRaw = typeof MutationTestCommand.Encoded & {
   readonly prev: DryRunDone
@@ -1106,19 +1096,9 @@ export const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<
                   }),
                 )
                 yield* Boolean.match(invalidatesRunnerPool(result.status, reasonOf(result)), {
-                  onTrue: () =>
-                    invalidateSlot(
-                      pool,
-                      runner,
-                      ChildProcessCrashedError.make({
-                        pid: 0,
-                        exit: { _tag: 'Signal', signal: 'SIGKILL' },
-                        cause: 'wall-clock timeout',
-                      }),
-                    ),
+                  onTrue: () => Pool.invalidate(pool, runner),
                   onFalse: () => Effect.void,
                 })
-                yield* stopWallClock(result)
                 const reported = yield* reporting.reportMutantRunResult(
                   toReportedMutant(plan.mutant),
                   result,
@@ -1174,22 +1154,6 @@ export const mapMutationTestCause = (
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const Exit = await import('effect/Exit')
-
-  const [Killed, Survived, , Errored] = TestRunner.MutantRunResultSchema.members
-  const ContinueResult = S.Union([Killed, Survived, Errored])
-  const HitLimitTimeout = S.Struct({ status: S.Literal('timeout'), reason: TestRunner.HitLimitReasonText })
-  const ReasonlessTimeout = S.Struct({ status: S.Literal('timeout') })
-  const AnyResult = S.Union([ContinueResult, HitLimitTimeout, ReasonlessTimeout])
-
-  it.effect.prop(
-    '∀result_StopWallClock_≡StopsOnlyReasonlessTimeout',
-    { of: [AnyResult], subject: stopWallClock },
-    (subject, [result]) =>
-      Effect.map(
-        Effect.exit(subject(result)),
-        (exit) => Exit.isSuccess(exit) === (result.status !== 'timeout' || 'reason' in result),
-      ),
-  )
 
   const runPlanOf = (id: string, line: number): Mutant.MutantRunPlan => {
     const mutant = Mutant.Mutant.make({
