@@ -1,6 +1,7 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { type LocatedDirective, LocatedDirectiveSchema } from '../directives/directive.schema.js'
 import {
@@ -33,6 +34,21 @@ const silencingReason = (command: PlanMutantsCommand, mutatorName: string): stri
   }
   return command.candidates.find((candidate) => candidate.mutatorName === mutatorName)?.ignorerReason
 }
+
+const Namespace = Arbitrary.schema(S.Literals(['acme', 'beta']))
+const PascalName = Arbitrary.schema(S.String.check(S.isPattern(/^[A-Z][A-Za-z0-9]*$/)))
+
+const providerDirective = (mutatorName: string, reason: string): LocatedDirective => ({
+  directive: { action: 'disable', scope: 'next-line', mutatorNames: [mutatorName], reason },
+  at: { line: 1, column: 1 },
+  governedLine: 2,
+})
+
+const providerCandidate = (mutatorName: string) => ({
+  mutatorName,
+  replacementCode: 'n - 1',
+  location: { start: { line: 2, column: 1 }, end: { line: 2, column: 2 } },
+})
 
 describe('planMutants', () => {
   it.prop(
@@ -109,6 +125,49 @@ describe('planMutants', () => {
       })
       const planned = subject(command)
       return Result.isSuccess(planned) && planned.success.mutants.at(0)?.ignoreReason === undefined
+    },
+  )
+
+  it.prop(
+    '∀n_NamespacedDirective_≡SuppressesTheProviderMutant',
+    { of: [Namespace, PascalName], subject: planMutants },
+    (subject, [namespace, name]) => {
+      const mutatorName = `${namespace}/${name}`
+      const command = PlanMutantsCommand.make({
+        fileName: 'probe.ts',
+        firstIndex: 0,
+        offset: { line: 1, columnShift: 0 },
+        line: 2,
+        mutatorNames: [mutatorName.toLowerCase()],
+        excludedMutations: [],
+        rule: [providerDirective(mutatorName, 'the provider said so')],
+        directives: [],
+        candidates: [providerCandidate(mutatorName)],
+      })
+      const planned = subject(command)
+      return Result.isSuccess(planned) && planned.success.mutants.at(0)?.ignoreReason === 'the provider said so'
+    },
+  )
+
+  it.prop(
+    '∀n_UnknownNamespacedDirective_≡WarnsItIsUnused',
+    { of: [Namespace, PascalName], subject: planMutants },
+    (subject, [namespace, name]) => {
+      const mutatorName = `${namespace}/${name}`
+      const command = PlanMutantsCommand.make({
+        fileName: 'probe.ts',
+        firstIndex: 0,
+        offset: { line: 1, columnShift: 0 },
+        line: 2,
+        mutatorNames: [],
+        excludedMutations: [],
+        rule: [],
+        directives: [providerDirective(mutatorName, 'the provider said so')],
+        candidates: [providerCandidate('ArithmeticOperator')],
+      })
+      const planned = subject(command)
+      return Result.isSuccess(planned) &&
+        planned.success.warnings.join('\n').includes(`'${mutatorName}' not found`)
     },
   )
 })

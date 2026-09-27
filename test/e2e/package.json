@@ -27,6 +27,7 @@
     "@systemfsoftware/differential-spec": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-readiness": "catalog:",
+    "@systemfsoftware/stryker-e2e-core": "workspace:^",
     "@systemfsoftware/stryker-js": "workspace:^",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",

@@ -1,7 +1,6 @@
 import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Check, Expect } from '@systemfsoftware/vitest'
-import { Effect, Schema } from 'effect'
 import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
 import { reportedMutantsOf } from './machine-stream.fixture.js'
 
@@ -130,24 +129,20 @@ export const verifyBrokenCheckerError = (
 export const verifyDiskReport = (
   expect: Expect,
   run: ExecResult,
-  reportText: string,
-): Effect.Effect<Check, Schema.SchemaError> =>
-  Effect.map(
-    Schema.decodeUnknownEffect(Schema.fromJsonString(Report.MutationTestResult))(reportText),
-    (report) => {
-      const fileEntry = report.files['src/order.ts']
+  report: Report.MutationTestResult,
+): Check => {
+  const fileEntry = report.files['src/order.ts']
 
-      return expect({
-        exitCode: run.exitCode,
-        schemaVersion: report.schemaVersion,
-        fileStatuses: fileEntry === undefined ? undefined : fileEntry.mutants.map((mutant) => mutant.status).toSorted(),
-      }).toStrictEqual({
-        exitCode: 0,
-        schemaVersion: '1.0',
-        fileStatuses: ['CompileError', 'CompileError', 'CompileError', 'CompileError', 'Killed', 'Killed', 'Survived'],
-      })
-    },
-  )
+  return expect({
+    exitCode: run.exitCode,
+    schemaVersion: report.schemaVersion,
+    fileStatuses: fileEntry === undefined ? undefined : fileEntry.mutants.map((mutant) => mutant.status).toSorted(),
+  }).toStrictEqual({
+    exitCode: 0,
+    schemaVersion: '1.0',
+    fileStatuses: ['CompileError', 'CompileError', 'CompileError', 'CompileError', 'Killed', 'Killed', 'Survived'],
+  })
+}
 
 export const verifyDiskStream = (
   expect: Expect,

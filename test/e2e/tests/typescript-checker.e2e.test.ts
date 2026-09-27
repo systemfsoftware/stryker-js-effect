@@ -2,6 +2,7 @@ import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gh
 import { Effect } from 'effect'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
 import { decodeStream, runIdsIn, terminalEvent, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
+import { readReportOf } from './__fixtures__/run-artifacts.fixture.js'
 import {
   FIXTURE_URL,
   verifyBrokenCheckerError,
@@ -122,12 +123,12 @@ Feature('Checking mutations through the packed TypeScript checker', { timeout: C
         Then('the mutant stream matches the oracle and every event carries one run id')((s, expect) =>
           verifyMutantStreamAndActionables(expect, s.events, s.verdict, s.runIds)
         ),
-        When('the persisted mutation report is read')(
-          'reportText',
-          (s) => s.run.output.readFile('reports/mutation/mutation.json'),
+        When('the persisted mutation report is read through the verdict report file')(
+          'report',
+          (s) => readReportOf(s.verdict, s.run.output.readFile),
         ),
         Then('the persisted report conforms to the published schema')((s, expect) =>
-          verifyDiskReport(expect, s.run.output.result, s.reportText)
+          verifyDiskReport(expect, s.run.output.result, s.report)
         ),
         When('the persisted mutation stream is read and decoded')(
           'diskEvents',

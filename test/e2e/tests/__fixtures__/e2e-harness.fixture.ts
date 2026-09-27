@@ -19,9 +19,11 @@ export interface StrykerRunInput {
   readonly args: ReadonlyArray<string>
 }
 
+export type StrykerReadFile = (relativePath: string) => Effect.Effect<string, SandboxForkFailure>
+
 export interface StrykerRunOutput {
   readonly result: ExecResult
-  readonly readFile: (relativePath: string) => Effect.Effect<string, SandboxForkFailure>
+  readonly readFile: StrykerReadFile
 }
 
 const TRACE_ANNOTATION_TYPE = 'trace'

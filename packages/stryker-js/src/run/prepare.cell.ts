@@ -1,8 +1,12 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
-import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy, StockCatalog } from '@systemfsoftware/stryker-js-cli-contract'
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
-import { Options, type Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  MutatorCatalog,
+  Options,
+  type Reporter as InterfaceReporter,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Schema as S } from 'effect'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
@@ -22,6 +26,11 @@ import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 
 import { installedFrameworkClaimants } from '../framework-claimant.service.js'
+import {
+  type MergedCatalog,
+  planMutatorCatalogs,
+  PlanMutatorCatalogsCommand,
+} from '../plan-mutator-catalogs.workflow.js'
 import { pluginLoadFailureEvents, reportPluginLoad } from '../plugin-load-report.service.js'
 import { loadPlugins, pluginUrlsFromOptions } from '../plugin-loader.service.js'
 import { type LoadedPlugins, type PluginDescriptor } from '../Plugins.schema.js'
@@ -68,6 +77,7 @@ export interface PrepareDone {
   readonly project: Project
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly Ignorer[]
+  readonly mutatorCatalogs: readonly MergedCatalog[]
   readonly formatRegistry: Format.FormatRegistry
   readonly options: Options.StrykerOptions
   readonly temporaryDirectoryPath: string
@@ -88,6 +98,7 @@ type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly loaded: LoadedPlugins
   readonly project: Project
   readonly ignorers: readonly Ignorer[]
+  readonly mutatorCatalogs: readonly MergedCatalog[]
   readonly formatRegistry: Format.FormatRegistry
   readonly builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory>
   readonly reporterChoicesByName: HashMap.HashMap<string, ReporterChoice>
@@ -149,6 +160,25 @@ const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
     ),
     Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
   )
+  const stockCatalog = yield* Effect.orDie(S.decodeEffect(MutatorCatalog.Catalog)(StockCatalog.StockCatalog))
+  const providers = loaded.mutators.map((provider) => ({
+    moduleName: provider.moduleName,
+    namespace: provider.contribution.namespace,
+    entries: provider.contribution.entries.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      tier: entry.tier,
+      definition: entry.definition,
+      examples: [...entry.examples],
+    })),
+  }))
+  const plannedCatalogs = yield* Effect.fromResult(
+    Result.mapError(
+      planMutatorCatalogs(PlanMutatorCatalogsCommand.make({ stock: stockCatalog, providers })),
+      (refused) => StageError.make({ stage: 'prepare', reason: refused.message, cause: refused }),
+    ),
+  )
+  const mutatorCatalogs = plannedCatalogs.catalogs
   const registry = Format.registerEntries(
     Format.coreFormatRegistry,
     loaded.frameworks.map(({ moduleName, framework }) => Format.frameworkEntryOf(moduleName, framework)),
@@ -201,6 +231,7 @@ const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
     loaded,
     project: command.project,
     ignorers,
+    mutatorCatalogs,
     formatRegistry: registry,
     builtinReporterFactories,
     reporterChoicesByName,
@@ -266,6 +297,7 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
     project: raw.project,
     loadedPlugins: raw.loaded,
     ignorers: raw.ignorers,
+    mutatorCatalogs: raw.mutatorCatalogs,
     formatRegistry: raw.formatRegistry,
     options: raw.options,
     temporaryDirectoryPath,

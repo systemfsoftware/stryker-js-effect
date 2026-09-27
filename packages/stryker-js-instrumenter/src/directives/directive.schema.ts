@@ -1,7 +1,11 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export const MutatorNameSchema = S.String.pipe(S.check(S.isPattern(/^[a-zA-Z]+(?: [a-zA-Z]+)*$/)))
+export const MutatorNameSchema = S.String.pipe(
+  S.check(
+    S.isPattern(/^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/)?[a-zA-Z][a-zA-Z0-9]*(?: [a-zA-Z][a-zA-Z0-9]*)*$/),
+  ),
+)
 const DirectiveReasonSchema = S.String.pipe(S.check(S.isPattern(/^\S(?:[^\r\n\u2028\u2029]*\S)?$/)))
 
 export const DirectiveSchema = S.Struct({

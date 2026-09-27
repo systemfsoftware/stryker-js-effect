@@ -1,5 +1,6 @@
+import { decodeStream as decodeStreamWorkflow, DecodeStreamCommand } from '@systemfsoftware/stryker-e2e-core'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { Effect, Option, Schema } from 'effect'
+import { Effect, Option, Result, Schema } from 'effect'
 
 const TERMINAL_PREVIEW_CHARS = 4_000
 
@@ -12,22 +13,16 @@ export class MachineStreamError extends Schema.TaggedError<MachineStreamError>()
   }
 }
 
-const isEventLine = (line: string): boolean => line.startsWith('{') && line.endsWith('}')
-
-const eventLinesOf = (stdout: string): ReadonlyArray<string> =>
-  stdout.split('\n').map((line) => line.trim()).filter(isEventLine)
-
 export const decodeStream = (
   stdout: string,
 ): Effect.Effect<ReadonlyArray<RunEvent.RunEvent>, MachineStreamError> =>
-  Effect.forEach(
-    eventLinesOf(stdout),
-    (line) =>
-      Effect.mapError(
-        Schema.decodeUnknownEffect(RunEvent.RunEventWireLine)(line),
-        (issue) => new MachineStreamError({ line, detail: `stdout line is not a RunEvent: ${issue.message}` }),
+  Result.match(decodeStreamWorkflow(DecodeStreamCommand.make({ lines: stdout.split('\n') })), {
+    onFailure: (refused) =>
+      Effect.fail(
+        new MachineStreamError({ line: refused.line, detail: `line ${refused.lineNumber}: ${refused.reason}` }),
       ),
-  )
+    onSuccess: (decoded) => Effect.succeed(decoded.events),
+  })
 
 export const terminalEvent = (
   events: ReadonlyArray<RunEvent.RunEvent>,

@@ -1,6 +1,7 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   decodeDirective,
@@ -16,6 +17,9 @@ const scopeText = (scope: Directive['scope']): string => scope === 'next-line' ?
 
 const commentOf = (directive: Directive): string =>
   ` Stryker ${directive.action}${scopeText(directive.scope)} ${directive.mutatorNames.join(',')}:${directive.reason}`
+
+const Namespace = Arbitrary.schema(S.Literals(['acme', 'beta']))
+const PascalName = Arbitrary.schema(S.String.check(S.isPattern(/^[A-Z][A-Za-z0-9]*$/)))
 
 describe('decodeDirective', () => {
   it.prop(
@@ -40,6 +44,19 @@ describe('decodeDirective', () => {
     (subject, [text]) => {
       const decided = subject(commandOf(text.replaceAll('Stryker', 'Other')))
       return Result.isSuccess(decided) && S.is(DirectiveMalformed)(decided.success)
+    },
+  )
+
+  it.prop(
+    '∀ns_NamespacedName_≡DecodedWithItsNamespaceAndReason',
+    { of: [Namespace, PascalName], subject: decodeDirective },
+    (subject, [namespace, name]) => {
+      const mutatorName = `${namespace}/${name}`
+      const decided = subject(commandOf(` Stryker disable next-line ${mutatorName}: the provider said so`))
+      return Result.isSuccess(decided) && S.is(DirectiveDecoded)(decided.success) &&
+        decided.success.directive.mutatorNames.join(',') === mutatorName &&
+        decided.success.directive.scope === 'next-line' &&
+        decided.success.directive.reason === 'the provider said so'
     },
   )
 })
