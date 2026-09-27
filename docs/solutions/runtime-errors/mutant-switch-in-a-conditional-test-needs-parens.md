@@ -1,6 +1,8 @@
 ---
 title: A mutant switch placed on a conditional's test must print parenthesized
 date: 2026-09-27
+category: runtime-errors
+problem_type: printed mutant switch re-associates with the enclosing conditional
 input_shape: solution
 subject: The printed activation switch re-associates with the outer conditional, so the branch structure disappears and every test mutant leaks its replacement as the whole value
 applies_when:
