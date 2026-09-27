@@ -79,7 +79,7 @@ const writeJsonReport = Effect.fn(SpanTaxonomy.Spans.reportJsonWrite.name)(funct
   yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(Effect.mapError(failAsJsonReporter))
   yield* fs.writeFileString(fileName, json).pipe(Effect.mapError(failAsJsonReporter))
   const url = yield* path.toFileUrl(fileName).pipe(Effect.mapError(failAsJsonReporter))
-  yield* Effect.ignore(output.write('stdout', [`Your report can be found at: ${url.href}\n`]))
+  yield* Effect.ignore(output.write('stderr', [`Your report can be found at: ${url.href}\n`]))
 })
 
 export const jsonReportCell = Sandwich.named(SpanTaxonomy.Spans.reportJson.name)(readJsonReport)
