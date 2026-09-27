@@ -114,7 +114,7 @@ const METHOD_INVERTED_MAP: Readonly<Record<string, string>> = Object.freeze({
   setUTCMilliseconds: 'setUTCSeconds',
 })
 
-/** All regexpp quantifiers are stripped, lazy forms included (`mutator-contract.md` § Regex; `Mutator.ts` collectQuantifier). */
+/** All regexpp quantifiers are stripped, lazy forms included (the stock catalog's `Regex` entry; `Mutator.ts` collectQuantifier). */
 const QUANTIFIER_REGEX = /(?:\?|\*|\+|\{\d+(?:,\d*)?\})\??/y
 
 interface RegexMutation {
@@ -200,7 +200,7 @@ function negateLookaround(pattern: string, start: number): string | undefined {
 }
 
 /**
- * Mirrors the instrumenter's regex mutation order (`mutator-contract.md` § Regex):
+ * Mirrors the instrumenter's regex mutation order (the stock catalog's `Regex` entry):
  * anchors first, then remaining mutations by pattern position with quantifier removal
  * (priority 0) ahead of lookaround/class negation (priority 1) and predefined-class
  * negation (priority 2). Alternations, groupings, empty, and unparseable patterns

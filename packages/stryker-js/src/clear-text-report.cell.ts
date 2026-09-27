@@ -1,4 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
@@ -110,7 +111,7 @@ const writeChunks = (
 ): Effect.Effect<void, Reporter.ReporterFailed> =>
   Effect.mapError(output.write(channel, chunks.map(renderChunk)), failAsClearText)
 
-const writeClearTextReport = Effect.fn('stryker.report.clearText.write')(
+const writeClearTextReport = Effect.fn(SpanTaxonomy.Spans.reportClearTextWrite.name)(
   function*(rendered: {
     readonly stdout: ReadonlyArray<ReportChunk>
     readonly stderr: ReadonlyArray<ReportChunk>
@@ -121,7 +122,7 @@ const writeClearTextReport = Effect.fn('stryker.report.clearText.write')(
   },
 )
 
-export const clearTextReportCell = Sandwich.named('stryker.report.clearText')(readClearTextReport)
+export const clearTextReportCell = Sandwich.named(SpanTaxonomy.Spans.reportClearText.name)(readClearTextReport)
   .decide(renderClearTextReport)
   .write({
     ClearTextReportRendered: (rendered) => writeClearTextReport(rendered),

@@ -1,4 +1,4 @@
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
@@ -122,9 +122,11 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
   )
 }
 
-export const phaseEntered = Effect.fn('stryker.phase.entered')(function*(phase: RunEvent.PhaseEntered['phase']) {
-  const env = yield* RunEnvironment
-  const now = yield* Clock.currentTimeMillis
-  const queue = yield* RunEvents
-  yield* Queue.offer(queue, RunEvent.PhaseEntered.make({ phase, elapsedMs: now - env.runStartedAt }))
-})
+export const phaseEntered = Effect.fn(SpanTaxonomy.Spans.phaseEntered.name)(
+  function*(phase: RunEvent.PhaseEntered['phase']) {
+    const env = yield* RunEnvironment
+    const now = yield* Clock.currentTimeMillis
+    const queue = yield* RunEvents
+    yield* Queue.offer(queue, RunEvent.PhaseEntered.make({ phase, elapsedMs: now - env.runStartedAt }))
+  },
+)

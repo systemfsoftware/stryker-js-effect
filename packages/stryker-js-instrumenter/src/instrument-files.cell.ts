@@ -1,4 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Result from 'effect/Result'
@@ -66,7 +67,7 @@ const instrumentedResult = (raw: InstrumentFilesRaw): Effect.Effect<InstrumentRe
 const skippedOnlyResult = (raw: InstrumentFilesRaw): InstrumentResult =>
   InstrumentResult.make({ files: [], mutants: [], skipped: [...raw.skipped] })
 
-const readInstrumentFiles = Effect.fn('stryker.instrument.read_files')(function*(
+const readInstrumentFiles = Effect.fn(SpanTaxonomy.Spans.instrumentReadFiles.name)(function*(
   input: InstrumentFilesInput,
 ): Effect.fn.Return<InstrumentFilesRaw, InstrumentError> {
   const outcomes = yield* Effect.forEach(

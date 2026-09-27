@@ -1,4 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Context from 'effect/Context'
@@ -58,7 +59,7 @@ const jsonBytesOf = (
     Effect.mapError(failAsJsonReporter),
   )
 
-const writeJsonReport = Effect.fn('stryker.report.json.write')(function*(
+const writeJsonReport = Effect.fn(SpanTaxonomy.Spans.reportJsonWrite.name)(function*(
   rendered: {
     readonly report: typeof Report.MutationTestResult.Encoded
     readonly announceFileName: Option.Option<string>
@@ -81,7 +82,7 @@ const writeJsonReport = Effect.fn('stryker.report.json.write')(function*(
   yield* Effect.ignore(output.write('stdout', [`Your report can be found at: ${url.href}\n`]))
 })
 
-export const jsonReportCell = Sandwich.named('stryker.report.json')(readJsonReport)
+export const jsonReportCell = Sandwich.named(SpanTaxonomy.Spans.reportJson.name)(readJsonReport)
   .decide(renderJsonReport)
   .write({
     JsonReportRendered: (rendered, raw) => writeJsonReport(rendered, raw),

@@ -8,7 +8,7 @@ import type * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import type { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
+import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { forkOptionsSchema } from '../Config.schema.js'
 import type { ConfigEnv } from '../config/stryker-config.schema.js'
 import { ConfigError } from '../ConfigError.schema.js'
@@ -73,7 +73,7 @@ const emitPreparePhaseEntered = phaseEntered('prepare')
 const failConfigWith = (message: string) =>
   Effect.fail(ConfigError.make({ message })).pipe(Effect.tapCause(() => emitPreparePhaseEntered))
 
-const readLoadConfig = Effect.fn('stryker.config.load')(function*(input: {
+const readLoadConfig = Effect.fn(SpanTaxonomy.Spans.configLoad.name)(function*(input: {
   readonly cliOptions: Options.PartialStrykerOptions
   readonly invocation: ConfigInvocation
 }) {
@@ -91,7 +91,7 @@ const readLoadConfig = Effect.fn('stryker.config.load')(function*(input: {
   return command
 })
 
-const readRunConfig = Effect.fn('stryker.config.readRun')(function*(input: {
+const readRunConfig = Effect.fn(SpanTaxonomy.Spans.configReadRun.name)(function*(input: {
   readonly cliOptions: Options.PartialStrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
 }) {
@@ -107,7 +107,7 @@ const readRunConfig = Effect.fn('stryker.config.readRun')(function*(input: {
   }
 })
 
-export const loadConfig = Sandwich.named('stryker.config_read')(readLoadConfig)
+export const loadConfig = Sandwich.named(SpanTaxonomy.Spans.configRead.name)(readLoadConfig)
   .decide(resolveConfig)
   .write({
     ConfigFromFile: ({ options }) => Effect.succeed(options),
@@ -141,7 +141,7 @@ export const readConfig: {
     loadConfig.run({ cliOptions, invocation }),
 )
 
-export const loadConfigCell = Sandwich.named('stryker.load_config')(readRunConfig)
+export const loadConfigCell = Sandwich.named(SpanTaxonomy.Spans.loadConfig.name)(readRunConfig)
   .decide(resolveConfig)
   .write({
     ConfigFromFile: ({ options }, raw) =>
@@ -162,7 +162,7 @@ export const loadConfigCell = Sandwich.named('stryker.load_config')(readRunConfi
 
 const readValidateOptions = (command: ValidateOptionsCommand) => Effect.succeed(command)
 
-export const validateOptionsCell = Sandwich.named('stryker.validate_options')(readValidateOptions)
+export const validateOptionsCell = Sandwich.named(SpanTaxonomy.Spans.validateOptions.name)(readValidateOptions)
   .decide(validateOptionsAdmission)
   .write({
     OptionsValidated: ({ options, warnings }) =>

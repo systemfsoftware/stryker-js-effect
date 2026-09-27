@@ -1,3 +1,4 @@
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { createVitest as createVitestOriginal, type Vitest } from 'vitest/node'
 
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
@@ -123,7 +124,7 @@ export const sandboxSelfPlugin = (
   },
 })
 
-const readSandboxSelfAliases = Effect.fn('vitest.runtime.read_sandbox_self_aliases')(
+const readSandboxSelfAliases = Effect.fn(SpanTaxonomy.Spans.vitestRuntimeReadSandboxSelfAliases.name)(
   function*(projectRoot: string, fs: FileSystem.FileSystem, pathService: Path.Path) {
     const raw = yield* fs.readFileString(pathService.join(projectRoot, 'package.json')).pipe(
       Effect.orElseSucceed(() => null),
@@ -262,7 +263,7 @@ const refuseBrowser = (
     onSome: (reason) => Effect.fail(failRuntime('init')(reason)),
   })
 
-const openRuntime = Effect.fn('vitest.runtime.open')(function*(
+const openRuntime = Effect.fn(SpanTaxonomy.Spans.vitestRuntimeOpen.name)(function*(
   input: VitestRuntimeInput,
   localSetupFile: string,
 ) {
@@ -293,7 +294,7 @@ const openRuntime = Effect.fn('vitest.runtime.open')(function*(
 })
 
 const acquire: (input: VitestRuntimeInput) => Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed> = Effect.fn(
-  'vitest.runtime.acquire',
+  SpanTaxonomy.Spans.vitestRuntimeAcquire.name,
 )(function*(input: VitestRuntimeInput) {
   const { crypto, fileSystem: fs, path } = input
   const suffix = yield* crypto.randomUUIDv4.pipe(Effect.mapError(failRuntime('init')))

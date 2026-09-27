@@ -1,4 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Console from 'effect/Console'
@@ -71,7 +72,7 @@ const progressStreamFileName = (options: Options.PartialStrykerOptions): string 
     () => RunEventDrain.DefaultProgressStreamFile,
   )
 
-const readRunRequest = Effect.fn('stryker.run_request.gather')(function*(
+const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(function*(
   invocation: CliInvocation,
 ): Effect.fn.Return<CliRead, CliError.CliError, Command.Environment | RunEventDrain> {
   const drain = yield* RunEventDrain
@@ -139,7 +140,7 @@ const restrictedOptionsOf = ({
   incremental: false,
 })
 
-export const runRequestCell = Sandwich.named('stryker.run_request')(readRunRequest)
+export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)(readRunRequest)
   .decide(routeCliRequest)
   .write({
     CliHelpRequested: () => Effect.void,

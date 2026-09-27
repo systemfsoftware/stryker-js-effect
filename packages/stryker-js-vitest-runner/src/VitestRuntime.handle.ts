@@ -1,3 +1,4 @@
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { RunnerTestFile, RunnerTestSuite } from 'vitest'
 import type { Vitest } from 'vitest/node'
 
@@ -135,15 +136,17 @@ export const applyRunFilter: {
   (self: VitestRuntime, filter: RunFilterInput): Effect.Effect<void>
 } = dual(
   2,
-  Effect.fn('vitest.runtime.apply_run_filter')(function*(self: VitestRuntime, filter: RunFilterInput) {
-    yield* Effect.sync(() => {
-      const driver = driverOf(self)
-      driver.config.related = filter.related
-      driver.projects.forEach((project) => {
-        project.config.testNamePattern = filter.testNamePattern
+  Effect.fn(SpanTaxonomy.Spans.vitestRuntimeApplyRunFilter.name)(
+    function*(self: VitestRuntime, filter: RunFilterInput) {
+      yield* Effect.sync(() => {
+        const driver = driverOf(self)
+        driver.config.related = filter.related
+        driver.projects.forEach((project) => {
+          project.config.testNamePattern = filter.testNamePattern
+        })
       })
-    })
-  }),
+    },
+  ),
 )
 
 export const start: {
@@ -151,12 +154,14 @@ export const start: {
   (self: VitestRuntime, testFiles: string[] | undefined): Effect.Effect<void, TestRunner.TestRunnerFailed>
 } = dual(
   2,
-  Effect.fn('vitest.runtime.start')(function*(self: VitestRuntime, testFiles: string[] | undefined) {
-    yield* Effect.tryPromise({
-      try: () => driverOf(self).start(testFiles),
-      catch: (cause) => failRuntime('dryRun')(cause),
-    })
-  }),
+  Effect.fn(SpanTaxonomy.Spans.vitestRuntimeStart.name)(
+    function*(self: VitestRuntime, testFiles: string[] | undefined) {
+      yield* Effect.tryPromise({
+        try: () => driverOf(self).start(testFiles),
+        catch: (cause) => failRuntime('dryRun')(cause),
+      })
+    },
+  ),
 )
 
 export const files = (self: VitestRuntime): readonly RunnerTestFile[] => driverOf(self).state.getFiles()
@@ -189,7 +194,7 @@ export const isRunnerTestSuite = (value: unknown): value is RunnerTestSuite =>
 
 export const reportAllKillersOf = (options: { readonly disableBail?: boolean }) => options.disableBail === true
 
-export const close = Effect.fn('vitest.runtime.close')(function*(self: VitestRuntime) {
+export const close = Effect.fn(SpanTaxonomy.Spans.vitestRuntimeClose.name)(function*(self: VitestRuntime) {
   const fs = yield* FileSystem.FileSystem
   onClose(
     driverOf(self),

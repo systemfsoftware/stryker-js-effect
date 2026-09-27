@@ -1,7 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
+import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
@@ -116,7 +116,7 @@ export interface PriorReportRead<A = unknown> {
   readonly raw: A
 }
 
-export const resolveSurvivorsRunOptions = Effect.fn('stryker.survivors_admission.resolve_options')(
+export const resolveSurvivorsRunOptions = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionResolveOptions.name)(
   function*(input: {
     readonly cliOptions: Options.PartialStrykerOptions
     readonly mode: OutputMode.OutputMode
@@ -125,7 +125,7 @@ export const resolveSurvivorsRunOptions = Effect.fn('stryker.survivors_admission
   },
 )
 
-export const readPriorReport = Effect.fn('stryker.survivors_admission.read_prior_report')(
+export const readPriorReport = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionReadPriorReport.name)(
   function*(priorReportPath: string) {
     const fs = yield* FileSystem.FileSystem
     return yield* fs.readFileString(priorReportPath).pipe(
@@ -157,7 +157,7 @@ export const priorReportFileKeys = <A = unknown>(raw: A) =>
     (): readonly string[] => [],
   )
 
-const readSourceFile = Effect.fn('stryker.survivors_admission.read_source')(function*(file: string) {
+const readSourceFile = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionReadSource.name)(function*(file: string) {
   const fs = yield* FileSystem.FileSystem
   return yield* fs.readFileString(file).pipe(
     Effect.mapError((cause) => ConfigFileUnreadableError.make({ file, cause })),
@@ -166,7 +166,7 @@ const readSourceFile = Effect.fn('stryker.survivors_admission.read_source')(func
 
 const SOURCE_HASH_CONCURRENCY = 24
 
-export const currentSourceHashesFor = Effect.fn('stryker.survivors_admission.hash_sources')(
+export const currentSourceHashesFor = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionHashSources.name)(
   function*(files: readonly string[]) {
     const pairs = yield* Effect.forEach(
       files,
@@ -230,7 +230,7 @@ export const survivorsRawOf = (input: {
   })
 }
 
-const readSurvivorsAdmission = Effect.fn('stryker.survivors_admission.gather')(
+const readSurvivorsAdmission = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionGather.name)(
   function*(input: SurvivorsAdmissionInput) {
     const resolvedOptions = yield* resolveSurvivorsRunOptions({ cliOptions: input.cliOptions, mode: input.mode })
     const priorReportPath = priorReportPathOf(resolvedOptions)
@@ -247,7 +247,7 @@ const readSurvivorsAdmission = Effect.fn('stryker.survivors_admission.gather')(
   },
 )
 
-export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admission')(readSurvivorsAdmission)
+export const survivorsAdmissionCell = Sandwich.named(SpanTaxonomy.Spans.survivorsAdmission.name)(readSurvivorsAdmission)
   .decide(admitSurvivorsRun)
   .write({
     Admitted: (admitted, raw) =>

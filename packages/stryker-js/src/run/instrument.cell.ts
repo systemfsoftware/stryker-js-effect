@@ -1,7 +1,7 @@
 /// <reference types="vitest/importMeta" />
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean } from 'effect'
 import * as Array from 'effect/Array'
@@ -36,7 +36,7 @@ export interface InstrumentDone extends PrepareDone {
   }
 }
 
-const reportSkippedFiles = Effect.fn('stryker.instrument.report-skips')(
+const reportSkippedFiles = Effect.fn(SpanTaxonomy.Spans.instrumentReportSkips.name)(
   function*(input: {
     readonly skipped: readonly Instrument.InstrumentFileSkip[]
     readonly claimants: readonly FrameworkClaimant[]
@@ -61,7 +61,7 @@ const reportSkippedFiles = Effect.fn('stryker.instrument.report-skips')(
   },
 )
 
-const offerSkipsIfAny = Effect.fn('stryker.instrument.offer-skips')(
+const offerSkipsIfAny = Effect.fn(SpanTaxonomy.Spans.instrumentOfferSkips.name)(
   function*(input: {
     readonly skipped: readonly Instrument.InstrumentFileSkip[]
     readonly claimants: readonly FrameworkClaimant[]
@@ -107,7 +107,7 @@ type InstrumentRaw = typeof InstrumentCommand.Encoded & {
 
 const enteringInstrumentPhase = <A, E, R>(raw: InstrumentRaw, body: Effect.Effect<A, E, R>) =>
   withPhaseSpan(
-    'instrument',
+    SpanTaxonomy.Spans.instrumentPhase,
     { fileCount: raw.filesToMutate.length },
     () => Effect.andThen(phaseEntered('instrument'), body),
   )
@@ -147,7 +147,7 @@ const withInstrumentedFiles = (
       ),
   )
 
-const readInstrument = Effect.fn('stryker.instrument.gather')(function*(
+const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(function*(
   command: PrepareDone & {
     readonly concurrency: { readonly testRunners: number; readonly checkers: number }
   },
@@ -165,10 +165,12 @@ const readInstrument = Effect.fn('stryker.instrument.gather')(function*(
     ),
   )
 
+  const optInMutations = [...command.options.mutator.optInMutations]
   const instrumentResult = yield* Instrument.instrument(filesToMutate, {
     ignorers: [...command.ignorers],
     excludedMutations: [...command.options.mutator.excludedMutations],
-    optInMutations: [...command.options.mutator.optInMutations],
+    optInMutations,
+    mutators: Mutator.selectMutators(Mutator.stockRegistry, optInMutations),
   }, command.formatRegistry).pipe(
     Effect.mapError((cause) => StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
   )
@@ -215,7 +217,7 @@ export const instrumentCell: Cell.Cell<
   | FileSystem.FileSystem
   | Path.Path
   | ChildProcessSpawner.ChildProcessSpawner
-> = Sandwich.named('stryker.instrument')(readInstrument).decide(planInstrumentation).write({
+> = Sandwich.named(SpanTaxonomy.Spans.instrument.name)(readInstrument).decide(planInstrumentation).write({
   InPlaceInstrument: (_decision, raw) => writeInstrument(raw),
   EphemeralInstrument: (_decision, raw) => writeInstrument(raw),
   CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'instrument', reason: issue })),

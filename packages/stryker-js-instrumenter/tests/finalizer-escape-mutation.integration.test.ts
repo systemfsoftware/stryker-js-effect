@@ -6,7 +6,7 @@ import { Effect } from 'effect'
 
 import { shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
-import { instrument } from './__fixtures__/instrument.js'
+import { instrument, stockOptions } from './__fixtures__/instrument.js'
 
 const FINALIZER_ESCAPE = 'FinalizerEscape'
 
@@ -190,11 +190,14 @@ const exportLineRange = (content: string, exportName: string): ExportLineRange =
 }
 
 const instrumentSource = (source: string) =>
-  instrument([{ name: '/tmp/finalizer-escape-probe.ts', content: source, mutate: true }], {
-    ignorers: [],
-    excludedMutations: [],
-    optInMutations: [FINALIZER_ESCAPE],
-  })
+  instrument(
+    [{ name: '/tmp/finalizer-escape-probe.ts', content: source, mutate: true }],
+    stockOptions({
+      ignorers: [],
+      excludedMutations: [],
+      optInMutations: [FINALIZER_ESCAPE],
+    }),
+  )
 
 const finalizerCount = (result: Instrument.InstrumentResult): number =>
   result.mutants.filter((mutant) => mutant.mutatorName === FINALIZER_ESCAPE).length
@@ -224,7 +227,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
                 content: fixture.content,
                 mutate: true,
               })),
-              { ignorers: [], excludedMutations: [], optInMutations: [FINALIZER_ESCAPE] },
+              stockOptions({ ignorers: [], excludedMutations: [], optInMutations: [FINALIZER_ESCAPE] }),
             ),
         ),
         Then(

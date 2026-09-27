@@ -5,6 +5,7 @@ import type {
   FrameworkParseResult,
   ScriptFormat,
 } from '@systemfsoftware/stryker-framework-interface'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
@@ -115,7 +116,7 @@ const frameworkEntryOfDataFirst = (moduleName: string, framework: Framework): Em
   } satisfies FormatClaim<'embedded'>,
   owner: moduleName,
   ownerVersion: framework.claim.ownerVersion,
-  parse: Effect.fn('stryker.instrument.framework_entry.parse')(function*(text: string, fileName: string) {
+  parse: Effect.fn(SpanTaxonomy.Spans.instrumentFrameworkEntryParse.name)(function*(text: string, fileName: string) {
     const context = frameworkContextOf(yield* loadFrameworkToolkit)
     const lineStarts = lineStartsOf(text)
     const result = yield* runHook(moduleName, 'parse', fileName, () => framework.parse(text, context))
@@ -133,7 +134,7 @@ const frameworkEntryOfDataFirst = (moduleName: string, framework: Framework): Em
   transform: (ast, mutantCollector, context) =>
     Option.match(embeddedOf(ast), {
       onNone: () => Effect.fail(embeddedAstError(ast)),
-      onSome: Effect.fn('stryker.instrument.framework_entry.transform')(function*(embedded: EmbeddedAst) {
+      onSome: Effect.fn(SpanTaxonomy.Spans.instrumentFrameworkEntryTransform.name)(function*(embedded: EmbeddedAst) {
         const warnings = yield* Effect.forEach(
           embedded.scripts,
           (script) => context.transform(script.ast, mutantCollector, context),

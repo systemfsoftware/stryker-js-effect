@@ -1,5 +1,5 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe } from '@systemfsoftware/vitest'
@@ -86,6 +86,7 @@ const instrumentedWires = (layout: FixtureLayout) =>
       ignorers: [],
       excludedMutations: [],
       optInMutations: [...LIVE_OPT_IN_MUTATIONS],
+      mutators: Mutator.selectMutators(Mutator.stockRegistry, LIVE_OPT_IN_MUTATIONS),
     })
     return instrumented.mutants
       .filter((mutant) =>

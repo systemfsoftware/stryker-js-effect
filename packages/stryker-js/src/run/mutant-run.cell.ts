@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Reporter, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
@@ -200,7 +200,7 @@ const readMutantRun = Effect.fnUntraced(function*(input: RunOnePlanArgs) {
   const { testRunnerPool, plan } = input
   const runner = yield* Pool.get(testRunnerPool)
   const result = yield* runner.mutantRun(plan.runOptions).pipe(
-    Effect.withSpan('stryker.testRunner.mutantRun', {
+    Effect.withSpan(SpanTaxonomy.Spans.testRunnerMutantRun.name, {
       attributes: {
         'stryker.mutant.id': plan.mutant.id,
         'stryker.mutant.mutator': plan.mutant.mutatorName,
@@ -240,7 +240,7 @@ const recycleAndSettleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw)
   return yield* settleMutantRun(raw)
 })
 
-const mutantRunCell = Sandwich.named('stryker.mutant_run')(readMutantRun)
+const mutantRunCell = Sandwich.named(SpanTaxonomy.Spans.mutantRun.name)(readMutantRun)
   .decide(interpretMutantRun)
   .write({
     MutantRunSettled: (_decision, raw) => settleMutantRun(raw),

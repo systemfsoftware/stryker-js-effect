@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
+import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -62,7 +62,7 @@ const envToolVars = (): Effect.Effect<Record<string, string>> =>
       Effect.map((value) => [variable, Option.getOrUndefined(value)] as const),
     )).pipe(Effect.map((entries) => definedToolVars(Object.fromEntries(entries))))
 
-const probeInput = Effect.fn('stryker.outputModeProbe.read')(
+const probeInput = Effect.fn(SpanTaxonomy.Spans.outputModeProbeRead.name)(
   function*(
     command: FormatFlags,
   ): Effect.fn.Return<ProbeInput, never, Stdio.Stdio> {
@@ -81,7 +81,7 @@ const probeInput = Effect.fn('stryker.outputModeProbe.read')(
   },
 )
 
-const outputModeProbeCell = Sandwich.named('stryker.output_mode_probe')(probeInput)
+const outputModeProbeCell = Sandwich.named(SpanTaxonomy.Spans.outputModeProbe.name)(probeInput)
   .decide(resolveOutputMode)
   .write({
     HumanOutput: (human) => Effect.succeed(resolvedMode('human', human.signal, human.stdoutIsTTY)),

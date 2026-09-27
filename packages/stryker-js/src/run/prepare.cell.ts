@@ -1,6 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options, type Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Schema as S } from 'effect'
@@ -51,7 +51,7 @@ import { planReporters, ReporterPlanCommand } from './plan-reporters.workflow.js
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
-const announceSummary = Effect.fn('stryker.prepare.announce-summary')(
+const announceSummary = Effect.fn(SpanTaxonomy.Spans.prepareAnnounceSummary.name)(
   function*(input: { readonly env: RunEnvironmentShape; readonly summary: string }) {
     yield* Match.value(input.env.resolvedMode.mode).pipe(
       Match.when('human', () =>
@@ -111,7 +111,7 @@ const buildMergedSchema = <A = unknown>(
     core,
   )
 
-const readPrepare = Effect.fn('stryker.prepare.gather')(function*(
+const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
   command: ReadProjectDone,
 ): Effect.fn.Return<
   PrepareRaw,
@@ -208,7 +208,7 @@ const readPrepare = Effect.fn('stryker.prepare.gather')(function*(
   }
 })
 
-const applyPrepare = Effect.fn('stryker.prepare.apply')(function*(
+const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
   span: PhaseSpan,
   reporters: readonly string[],
   raw: PrepareRaw,
@@ -278,14 +278,14 @@ const writePrepare = (
   reporters: readonly string[],
   raw: PrepareRaw,
 ): Effect.Effect<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
-  withPhaseSpan('prepare', {}, (span) => applyPrepare(span, reporters, raw))
+  withPhaseSpan(SpanTaxonomy.Spans.preparePhase, {}, (span) => applyPrepare(span, reporters, raw))
 
 export const prepareCell: Cell.Cell<
   ReadProjectDone,
   PrepareDone,
   StageError,
   Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
-> = Sandwich.named('stryker.prepare')(readPrepare)
+> = Sandwich.named(SpanTaxonomy.Spans.prepare.name)(readPrepare)
   .decide(planPrepare)
   .write({
     HumanReporters: ({ reporters }, raw) => writePrepare(reporters, raw),

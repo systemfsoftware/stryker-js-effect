@@ -1,4 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
@@ -47,7 +48,7 @@ const readProgressStep = (input: {
 const writeChunk = (chunk: string) =>
   Effect.flatMap(ReporterOutput, (output) => Effect.ignore(output.write('stdout', [chunk])))
 
-export const progressReportCell = Sandwich.named('stryker.report.progress')(readProgressStep)
+export const progressReportCell = Sandwich.named(SpanTaxonomy.Spans.reportProgress.name)(readProgressStep)
   .decide(renderProgressReport)
   .write({
     ProgressBarTick: ({ chunk, state }) => Effect.as(writeChunk(chunk), state),
@@ -62,7 +63,7 @@ export const progressReporterFactory = (
   context: Context.Context<ReporterCellServices<typeof progressReportCell>>,
 ): Reporter.ReporterFactory => {
   const step = Cell.provideContext(progressReportCell, context)
-  const consumeEvent = Effect.fn('stryker.report.progress.consumeEvent')(function*(
+  const consumeEvent = Effect.fn(SpanTaxonomy.Spans.reportProgressConsumeEvent.name)(function*(
     state: Ref.Ref<ProgressState>,
     event: Reporter.ReporterEvent,
   ) {
@@ -71,7 +72,7 @@ export const progressReporterFactory = (
     yield* Ref.set(state, next)
   })
   return () =>
-    Effect.fn('stryker.report.progress.consume')(function*(events: AsyncIterable<Reporter.ReporterEvent>) {
+    Effect.fn(SpanTaxonomy.Spans.reportProgressConsume.name)(function*(events: AsyncIterable<Reporter.ReporterEvent>) {
       const state = yield* Ref.make<ProgressState>(INITIAL_PROGRESS)
       yield* Stream.runForEach(
         Stream.fromAsyncIterable(events, failAsProgress),

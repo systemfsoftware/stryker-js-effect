@@ -6,6 +6,7 @@ const baseExports = sourceExports({ dtsExt: '.d.mts' })
 const contractSubpaths = {
   './contract/stream.schema.json': './contract/stream.schema.json',
   './contract/stock-catalog.json': './contract/stock-catalog.json',
+  './contract/span-taxonomy.json': './contract/span-taxonomy.json',
 }
 
 export default defineConfig({

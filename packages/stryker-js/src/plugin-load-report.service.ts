@@ -1,4 +1,4 @@
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
@@ -108,7 +108,7 @@ export const reportPluginLoad: {
   ): Effect.Effect<void>
 } = dual(
   3,
-  Effect.fn('stryker.pluginLoad.report')(
+  Effect.fn(SpanTaxonomy.Spans.pluginLoadReport.name)(
     function*(
       queue: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
       loaded: LoadedPlugins,

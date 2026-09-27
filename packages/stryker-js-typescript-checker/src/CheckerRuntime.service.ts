@@ -1,4 +1,5 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
@@ -76,7 +77,7 @@ const mergeAnswers = (runs: ReadonlyArray<RunAnswers>) =>
     HashMap.empty<string, Checker.CheckResult>(),
   )
 
-const makeChecker = Effect.fn('typescript-checker.runtime.makeChecker')(function*(
+const makeChecker = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerRuntimeMakeChecker.name)(function*(
   options: Options.StrykerOptions,
   compiler: TSCompiler,
 ): Effect.fn.Return<Checker.Checker['Service'], Checker.CheckerFailed> {
@@ -109,7 +110,9 @@ const makeChecker = Effect.fn('typescript-checker.runtime.makeChecker')(function
     S.decodeEffect(Checker.CheckerMutantWire)(mutant).pipe(
       Effect.orDie,
       Effect.flatMap((decoded) => verify.run(CheckMutantsCommand.make({ mutants: [decoded] }))),
-      Effect.withSpan('typescript-checker.soloRound', { attributes: { 'stryker.mutant.id': mutant.id } }),
+      Effect.withSpan(SpanTaxonomy.Spans.typescriptCheckerSoloRound.name, {
+        attributes: { 'stryker.mutant.id': mutant.id },
+      }),
       Effect.map((decision) => decision.results),
     )
 
@@ -146,7 +149,9 @@ const makeChecker = Effect.fn('typescript-checker.runtime.makeChecker')(function
     check: (mutants) =>
       verify.run(CheckMutantsCommand.make({ mutants: [...mutants] })).pipe(
         Effect.flatMap((first) => Effect.map(soloRounds(first), (rounds) => mergeAnswers([first.results, ...rounds]))),
-        Effect.withSpan('typescript-checker.check', { attributes: { 'stryker.mutants.count': mutants.length } }),
+        Effect.withSpan(SpanTaxonomy.Spans.typescriptCheckerCheck.name, {
+          attributes: { 'stryker.mutants.count': mutants.length },
+        }),
       ),
 
     group: (mutants) =>

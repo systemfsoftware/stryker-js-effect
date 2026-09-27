@@ -2,6 +2,8 @@ import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/ef
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 
+import { stockOptions } from './__fixtures__/instrument.js'
+
 const OBJECT_PROTOTYPE_MEMBERS: readonly string[] = [
   'toString',
   'valueOf',
@@ -29,10 +31,13 @@ Feature('Mutating a method named after an Object.prototype member')
         When('it is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            Instrument.instrument([{ name: '/tmp/prototype-methods.ts', content: source, mutate: true }], {
-              ignorers: [],
-              excludedMutations: [],
-            }),
+            Instrument.instrument(
+              [{ name: '/tmp/prototype-methods.ts', content: source, mutate: true }],
+              stockOptions({
+                ignorers: [],
+                excludedMutations: [],
+              }),
+            ),
         ),
         Then('instrumentation succeeds and proposes no method replacement')((
           { result }: { result: Instrument.InstrumentResult },

@@ -1,4 +1,5 @@
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
@@ -59,15 +60,13 @@ import { InstrumentError } from './Instrument.schema.js'
 import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.js'
 import { lineStartsOf, locationOf, positionAt } from './Location.js'
 import type { LineStarts, ScriptOrigin } from './Location.schema.js'
-import { type MutatorContext, type MutatorEntry, type MutatorOptions } from './Mutator.service.js'
 import {
   applyMutant,
   createMutant,
-  defaultMutators,
   type Mutant,
-  type MutatorRegistry,
-  optInMutators,
-  selectMutators,
+  type MutatorContext,
+  type MutatorEntry,
+  type MutatorOptions,
 } from './Mutator.service.js'
 import { type ParseFailed } from './Parser.service.js'
 import {
@@ -111,8 +110,6 @@ const traversalFailure = <A = unknown>(cause: A): InstrumentError =>
 export interface TransformerOptions extends MutatorOptions {
   ignorers: readonly Ignorer[]
 }
-
-const DEFAULT_MUTATOR_REGISTRY: MutatorRegistry = { defaults: defaultMutators, optIn: optInMutators }
 
 export interface MutantCollector {
   readonly nextIndex: number
@@ -1244,7 +1241,9 @@ const refusalError = (refusal: InstrumentationRefusal): InstrumentError =>
     Match.exhaustive,
   )
 
-const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn('stryker.instrument.transform.script')(
+const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
+  SpanTaxonomy.Spans.instrumentTransformScript.name,
+)(
   function*(
     { root, originFileName, rawContent, offset, comments }: ScriptAst,
     mutantCollector: MutantCollector,
@@ -1253,15 +1252,14 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn('stryker.i
     const lineStarts = lineStartsOf(rawContent)
     attachComments(make(root), comments, lineStarts)
 
-    const selection = selectMutators(DEFAULT_MUTATOR_REGISTRY, options.optInMutations)
     const context: PlacementContext = {
       fileName: originFileName,
       lineStarts,
       mutateDescription,
       offset: offset ?? MUTATION_OFFSET,
       basePath,
-      mutatorEntries: selection.active,
-      allMutatorNames: selection.known.map((name) => name.toLowerCase()),
+      mutatorEntries: options.mutators.active,
+      allMutatorNames: options.mutators.known.map((name) => name.toLowerCase()),
       excludedMutations: options.excludedMutations,
       ignorers: options.ignorers,
     }

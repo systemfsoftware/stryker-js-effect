@@ -1,4 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
@@ -61,7 +62,7 @@ type MutationTestRaw = typeof MutationTestCommand.Encoded & {
   readonly droppedMutants: readonly Mutant.Mutant[]
 }
 
-const writeMutationTestNoTests = Effect.fn('stryker.mutation_test.no_tests')(function*() {
+const writeMutationTestNoTests = Effect.fn(SpanTaxonomy.Spans.mutationTestNoTests.name)(function*() {
   const env = yield* RunEnvironment
   const now = yield* Clock.currentTimeMillis
   const elapsed = Duration.millis(now - env.runStartedAt)
@@ -70,7 +71,7 @@ const writeMutationTestNoTests = Effect.fn('stryker.mutation_test.no_tests')(fun
   return { results: [], verdict: null }
 })
 
-const writeMutationTestDryRunOnly = Effect.fn('stryker.mutation_test.dry_run_only')(function*() {
+const writeMutationTestDryRunOnly = Effect.fn(SpanTaxonomy.Spans.mutationTestDryRunOnly.name)(function*() {
   yield* phaseEntered('mutation-test')
   yield* Effect.logInfo('The dry-run has been completed successfully. No mutations have been executed.')
   return { results: [], verdict: null }
@@ -171,7 +172,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
   const checkpointGate = yield* Semaphore.make(1)
   yield* checkpointMutationResults(context, completedMutants)
   const runResults = yield* withPhaseSpan(
-    'mutationTest.batch',
+    SpanTaxonomy.Spans.mutationTestBatch,
     { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
     () =>
       Stream.mapEffect(
@@ -224,7 +225,7 @@ const writeMutationTestOutcome = ({
   readonly outcome: Effect.Effect<MutationTestDone, StageError, StageServices>
 }): Effect.Effect<MutationTestDone, StageError, StageServices> =>
   withPhaseSpan(
-    'mutationTest',
+    SpanTaxonomy.Spans.mutationTestPhase,
     {
       mutantCount: raw.prev.mutants.length,
       skippedMutantCount: raw.droppedMutants.length,
@@ -234,7 +235,7 @@ const writeMutationTestOutcome = ({
   )
 
 export const mutationTestCell = Sandwich.named(
-  'stryker.mutation_test',
+  SpanTaxonomy.Spans.mutationTest.name,
 )((command: DryRunDone) =>
   Effect.gen(function*() {
     yield* Scope.Scope

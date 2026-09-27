@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
+import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Config from 'effect/Config'
@@ -65,12 +65,12 @@ export type MergeReportsInvocation = MergeReportsRequest & { readonly mode: Outp
 
 const refuse = (reason: string) => MergeReportsFailed.make({ reason })
 
-const failReason = Effect.fn('stryker.merge_reports.fail')(function*(reason: string) {
+const failReason = Effect.fn(SpanTaxonomy.Spans.mergeReportsFail.name)(function*(reason: string) {
   yield* Console.error(`stryker merge-reports: ${reason}`)
   return yield* MergeReportsFailed.make({ reason })
 })
 
-const readText = Effect.fn('stryker.merge_reports.read_text')(function*(file: string) {
+const readText = Effect.fn(SpanTaxonomy.Spans.mergeReportsReadText.name)(function*(file: string) {
   return yield* FileSystem.FileSystem.pipe(
     Effect.flatMap((fs) => fs.readFileString(file)),
     Effect.option,
@@ -78,7 +78,7 @@ const readText = Effect.fn('stryker.merge_reports.read_text')(function*(file: st
   )
 })
 
-const listNames = Effect.fn('stryker.merge_reports.list_names')(function*(dir: string) {
+const listNames = Effect.fn(SpanTaxonomy.Spans.mergeReportsListNames.name)(function*(dir: string) {
   return yield* FileSystem.FileSystem.pipe(
     Effect.flatMap((fs) => fs.readDirectory(dir)),
     Effect.orElseSucceed((): readonly string[] => []),
@@ -86,7 +86,7 @@ const listNames = Effect.fn('stryker.merge_reports.list_names')(function*(dir: s
   )
 })
 
-const directoryExists = Effect.fn('stryker.merge_reports.directory_exists')(function*(full: string) {
+const directoryExists = Effect.fn(SpanTaxonomy.Spans.mergeReportsDirectoryExists.name)(function*(full: string) {
   return yield* FileSystem.FileSystem.pipe(
     Effect.flatMap((fs) => fs.stat(full)),
     Effect.option,
@@ -97,7 +97,7 @@ const directoryExists = Effect.fn('stryker.merge_reports.directory_exists')(func
 const collectPartDirs: (
   dir: string,
 ) => Effect.Effect<readonly string[], never, FileSystem.FileSystem | Path.Path> = Effect.fn(
-  'stryker.merge_reports.collect_part_dirs',
+  SpanTaxonomy.Spans.mergeReportsCollectPartDirs.name,
 )(function*(dir: string) {
   const path = yield* Path.Path
   const names = yield* listNames(dir)
@@ -112,7 +112,7 @@ const collectPartDirs: (
   return [...current, ...subMatches.flat()]
 })
 
-const readPartBytes = Effect.fn('stryker.merge_reports.read_part')(function*(dir: string) {
+const readPartBytes = Effect.fn(SpanTaxonomy.Spans.mergeReportsReadPart.name)(function*(dir: string) {
   const path = yield* Path.Path
   return {
     dir,
@@ -298,11 +298,11 @@ const encodeMerge = ({
   unreadable: decoded.unreadable,
 })
 
-const encodeReport = Effect.fn('stryker.merge_reports.encode_report')(function*(report: MutationReport) {
+const encodeReport = Effect.fn(SpanTaxonomy.Spans.mergeReportsEncodeReport.name)(function*(report: MutationReport) {
   return yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(report).pipe(Effect.orDie)
 })
 
-const putFile = Effect.fn('stryker.merge_reports.put_file')(function*(
+const putFile = Effect.fn(SpanTaxonomy.Spans.mergeReportsPutFile.name)(function*(
   file: string,
   content: string,
   append: boolean,
@@ -322,7 +322,7 @@ const putFile = Effect.fn('stryker.merge_reports.put_file')(function*(
 const toStream = (events: readonly Reporter.ReporterEvent[]): AsyncIterable<Reporter.ReporterEvent> =>
   Stream.toAsyncIterable(Stream.fromIterable([...events]))
 
-const renderHtmlReport = Effect.fn('stryker.merge_reports.render_html')(function*(
+const renderHtmlReport = Effect.fn(SpanTaxonomy.Spans.mergeReportsRenderHtml.name)(function*(
   fileName: string,
   report: MutationReport,
   options: Options.StrykerOptions,
@@ -333,14 +333,16 @@ const renderHtmlReport = Effect.fn('stryker.merge_reports.render_html')(function
   ).pipe(Effect.catchCause(() => failReason(`cannot write the html report at ${fileName}`)))
 })
 
-const writeHtml = Effect.fn('stryker.merge_reports.write_html')(function*(fileName: string, report: MutationReport) {
-  return yield* Option.match(S.decodeOption(Options.StrykerOptionsSchema)({ htmlReporter: { fileName } }), {
-    onNone: () => failReason(`cannot configure the html report at ${fileName}`),
-    onSome: (options) => renderHtmlReport(fileName, report, options),
-  })
-})
+const writeHtml = Effect.fn(SpanTaxonomy.Spans.mergeReportsWriteHtml.name)(
+  function*(fileName: string, report: MutationReport) {
+    return yield* Option.match(S.decodeOption(Options.StrykerOptionsSchema)({ htmlReporter: { fileName } }), {
+      onNone: () => failReason(`cannot configure the html report at ${fileName}`),
+      onSome: (options) => renderHtmlReport(fileName, report, options),
+    })
+  },
+)
 
-export const writeEncoded = Effect.fn('stryker.merge_reports.write_files')(function*(input: {
+export const writeEncoded = Effect.fn(SpanTaxonomy.Spans.mergeReportsWriteFiles.name)(function*(input: {
   readonly body: EncodedMerge
   readonly raw: MergeCommand
 }) {
@@ -384,7 +386,7 @@ export const writeEncoded = Effect.fn('stryker.merge_reports.write_files')(funct
   )
 })
 
-const readMerge = Effect.fn('stryker.merge_reports.gather')(function*(request: MergeReportsInvocation) {
+const readMerge = Effect.fn(SpanTaxonomy.Spans.mergeReportsGather.name)(function*(request: MergeReportsInvocation) {
   const fs = yield* FileSystem.FileSystem
   const present = yield* fs.exists(request.parts).pipe(Effect.orElseSucceed(() => false))
   yield* Effect.filterOrFail(
@@ -409,7 +411,7 @@ const readMerge = Effect.fn('stryker.merge_reports.gather')(function*(request: M
   )
 })
 
-const writeMergedReports = Effect.fn('stryker.merge_reports.write_merged')(function*(
+const writeMergedReports = Effect.fn(SpanTaxonomy.Spans.mergeReportsWriteMerged.name)(function*(
   merged: typeof MergedReports.Encoded,
   raw: MergeCommand,
 ) {
@@ -420,7 +422,7 @@ const writeMergedReports = Effect.fn('stryker.merge_reports.write_merged')(funct
   })
 })
 
-const writeNoMergedReports = Effect.fn('stryker.merge_reports.write_absent')(function*(
+const writeNoMergedReports = Effect.fn(SpanTaxonomy.Spans.mergeReportsWriteAbsent.name)(function*(
   absent: { readonly rows: readonly VerdictRow[] },
   raw: MergeCommand,
 ) {
@@ -430,21 +432,21 @@ const writeNoMergedReports = Effect.fn('stryker.merge_reports.write_absent')(fun
   })
 })
 
-const refuseParts = Effect.fn('stryker.merge_reports.refuse_parts')(function*(
+const refuseParts = Effect.fn(SpanTaxonomy.Spans.mergeReportsRefuseParts.name)(function*(
   error: typeof DuplicatePackageLabel.Encoded | typeof MissingPackages.Encoded,
   raw: MergeCommand,
 ) {
   return yield* failReason(refusalText({ error, partsDir: raw.partsDir }))
 })
 
-const refuseCommand = Effect.fn('stryker.merge_reports.refuse_command')(function*(
+const refuseCommand = Effect.fn(SpanTaxonomy.Spans.mergeReportsRefuseCommand.name)(function*(
   issue: string,
   raw: MergeCommand,
 ) {
   return yield* failReason(`invalid merge command under ${raw.partsDir}: ${issue}`)
 })
 
-export const mergeReportsCell = Sandwich.named('stryker.merge_reports')(readMerge)
+export const mergeReportsCell = Sandwich.named(SpanTaxonomy.Spans.mergeReports.name)(readMerge)
   .decide(mergeReportParts)
   .write({
     MergedReports: (merged, raw) => writeMergedReports(merged, raw),

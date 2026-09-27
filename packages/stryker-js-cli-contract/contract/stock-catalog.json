@@ -8,7 +8,7 @@
       {
         "before": "const x = 1 + 2;",
         "after": [
-          "-"
+          "1 - 2"
         ]
       },
       {
@@ -32,7 +32,7 @@
       {
         "before": "const x = [];",
         "after": [
-          "['Stryker was here']"
+          "[\"Stryker was here\"]"
         ]
       },
       {
@@ -80,7 +80,7 @@
       {
         "before": "let x = 1; x += 2;",
         "after": [
-          "-="
+          "x -= 2"
         ]
       },
       {
@@ -138,7 +138,7 @@
     "definition": "A condition becomes `true` and `false`; a loop test becomes `false`; a condition under `&&` becomes `true` and one under `||` becomes `false`. A statement the rule does not match is refused.",
     "examples": [
       {
-        "before": "const x = a ? 1 : 2;",
+        "before": "if (a) { f(); }",
         "after": [
           "true",
           "false"
@@ -161,14 +161,14 @@
       {
         "before": "const x = a === b;",
         "after": [
-          "!=="
+          "a !== b"
         ]
       },
       {
         "before": "const x = a < b;",
         "after": [
-          "<=",
-          ">="
+          "a <= b",
+          "a >= b"
         ]
       }
     ]
@@ -182,13 +182,13 @@
       {
         "before": "const x = a && b;",
         "after": [
-          "||"
+          "a || b"
         ]
       },
       {
         "before": "const x = a ?? b;",
         "after": [
-          "&&"
+          "a && b"
         ]
       },
       {
@@ -332,7 +332,7 @@
       {
         "before": "let x = 1; x++;",
         "after": [
-          "--"
+          "x--"
         ]
       }
     ]

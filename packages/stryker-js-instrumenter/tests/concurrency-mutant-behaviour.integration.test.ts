@@ -22,7 +22,7 @@ import {
 import type { Form, Module, ScenarioKind, ShapeEntry } from '../testResources/effect-concurrency/shapes.js'
 import { shapes } from '../testResources/effect-concurrency/shapes.js'
 import { FixtureImportError } from './__fixtures__/concurrency-mutant-behaviour.schema.js'
-import { instrument } from './__fixtures__/instrument.js'
+import { instrument, stockOptions } from './__fixtures__/instrument.js'
 
 const FIXTURE_URL = new URL('../testResources/effect-concurrency/', import.meta.url)
 const SCRATCH_URL = new URL('../.scratch/concurrency-behaviour/', import.meta.url)
@@ -1471,7 +1471,7 @@ const buildHarness = Effect.gen(function*() {
       ...sources.map((source) => ({ ...source, mutate: true })),
       ...supportSources.map((source) => ({ ...source, mutate: false })),
     ],
-    { ignorers: [], excludedMutations: [], optInMutations: [...LIVE] },
+    stockOptions({ ignorers: [], excludedMutations: [], optInMutations: [...LIVE] }),
   )
   yield* fs.remove(filePathOf(SCRATCH_URL), { recursive: true, force: true })
   yield* fs.makeDirectory(filePathOf(new URL('effect-concurrency/', SCRATCH_URL)), { recursive: true })

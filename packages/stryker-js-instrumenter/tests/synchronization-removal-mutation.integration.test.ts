@@ -10,7 +10,7 @@ import {
   effectConcurrencyFixtureFiles,
   type FixtureFile,
 } from './__fixtures__/effect-concurrency-files.js'
-import { instrument } from './__fixtures__/instrument.js'
+import { instrument, stockOptions } from './__fixtures__/instrument.js'
 
 const SYNCHRONIZATION_REMOVAL = 'SynchronizationRemoval'
 
@@ -118,11 +118,14 @@ const exportLineRange = (content: string, exportName: string): ExportLineRange =
 }
 
 const instrumentSource = (source: string) =>
-  instrument([{ name: '/tmp/sync-removal-probe.ts', content: source, mutate: true }], {
-    ignorers: [],
-    excludedMutations: [],
-    optInMutations: [SYNCHRONIZATION_REMOVAL],
-  })
+  instrument(
+    [{ name: '/tmp/sync-removal-probe.ts', content: source, mutate: true }],
+    stockOptions({
+      ignorers: [],
+      excludedMutations: [],
+      optInMutations: [SYNCHRONIZATION_REMOVAL],
+    }),
+  )
 
 const removalCount = (result: Instrument.InstrumentResult): number =>
   result.mutants.filter((mutant) => mutant.mutatorName === SYNCHRONIZATION_REMOVAL).length
@@ -174,7 +177,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
                 content: fixture.content,
                 mutate: true,
               })),
-              { ignorers: [], excludedMutations: [], optInMutations: [SYNCHRONIZATION_REMOVAL] },
+              stockOptions({ ignorers: [], excludedMutations: [], optInMutations: [SYNCHRONIZATION_REMOVAL] }),
             ),
         ),
         Then(
@@ -301,11 +304,14 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           'mutants',
           ({ content }: { content: string }) =>
             Effect.map(
-              instrument([{ name: 'effect-concurrency/finalizer-escape.ts', content, mutate: true }], {
-                ignorers: [],
-                excludedMutations: [],
-                optInMutations: [SYNCHRONIZATION_REMOVAL],
-              }),
+              instrument(
+                [{ name: 'effect-concurrency/finalizer-escape.ts', content, mutate: true }],
+                stockOptions({
+                  ignorers: [],
+                  excludedMutations: [],
+                  optInMutations: [SYNCHRONIZATION_REMOVAL],
+                }),
+              ),
               removalMutantsOf,
             ),
         ),

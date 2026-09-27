@@ -18,7 +18,7 @@ import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
 import { defaultOptions } from './config/default-options.js'
@@ -142,7 +142,7 @@ const runToSink = <E>(stdio: Stdio.Stdio, lines: Stream.Stream<string, E>, toStd
     onFalse: () => Stream.runDrain(lines),
   })
 
-const drainToSinks = Effect.fn('stryker.runEventStream.drainToSinks')(function*(
+const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.name)(function*(
   fs: FileSystem.FileSystem,
   path: Path.Path,
   stdio: Stdio.Stdio,
@@ -162,7 +162,7 @@ const drainToSinks = Effect.fn('stryker.runEventStream.drainToSinks')(function*(
   )
 })
 
-const drainStoredFile = Effect.fn('stryker.runEventStream.drainStoredFile')(function*(
+const drainStoredFile = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainStoredFile.name)(function*(
   fs: FileSystem.FileSystem,
   path: Path.Path,
   stdio: Stdio.Stdio,
@@ -174,7 +174,7 @@ const drainStoredFile = Effect.fn('stryker.runEventStream.drainStoredFile')(func
   yield* drainToSinks(fs, path, stdio, fileName, toStdout, framed).pipe(Effect.orDie)
 })
 
-const drainFileOf = Effect.fn('stryker.runEventStream.drainFile')(function*(
+const drainFileOf = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainFile.name)(function*(
   stdio: Stdio.Stdio,
   fs: FileSystem.FileSystem,
   path: Path.Path,
@@ -192,7 +192,7 @@ const drainFileOf = Effect.fn('stryker.runEventStream.drainFile')(function*(
 
 const drainOf = (stdio: Stdio.Stdio, framed: Stream.Stream<string>, toStdout: boolean) =>
   runToSink(stdio, framed, toStdout).pipe(
-    Effect.withSpan('stryker.output.drain'),
+    Effect.withSpan(SpanTaxonomy.Spans.outputDrain.name),
     Effect.tapCause((cause) => Effect.logError('stryker.output.drain_failed', cause)),
     Effect.ignoreCause,
   )
@@ -294,7 +294,7 @@ const helpPayload = (ok: RunOk, captured: string): Option.Option<string> =>
     onFalse: () => Option.none<string>(),
   })
 
-const emitNullScoreVerdictFromDefaults = Effect.fn('stryker.runEventStream.nullScoreVerdict')(function*(
+const emitNullScoreVerdictFromDefaults = Effect.fn(SpanTaxonomy.Spans.runEventStreamNullScoreVerdict.name)(function*(
   stream: RunEventStream,
   mode: ResolvedMode,
   basePath: string,
@@ -323,7 +323,7 @@ const emitNullScoreVerdictWhenOpen = (
       onFalse: () => Effect.void,
     }))
 
-const emitMachineModeOutput = Effect.fn('stryker.runEventStream.emitMachineModeOutput')(function*(
+const emitMachineModeOutput = Effect.fn(SpanTaxonomy.Spans.runEventStreamEmitMachineModeOutput.name)(function*(
   params: EmitMachineModeOutputOptions,
 ) {
   const { stream, mode, outcome, basePath, pathService } = params
@@ -396,7 +396,7 @@ interface RunEventStreamLifecycle {
   readonly drainFiber: Option.Option<Fiber.Fiber<void, never>>
 }
 
-export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
+export const makeRunEventStream = Effect.fn(SpanTaxonomy.Spans.runEventStreamMake.name)(
   function*(resolved: ResolvedModeInput) {
     const stdio = yield* Stdio.Stdio
     const drain = yield* RunEventDrain
@@ -420,7 +420,7 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
         }),
       )
 
-    const openHeader = Effect.fn('stryker.runEventStream.openHeader')(function*() {
+    const openHeader = Effect.fn(SpanTaxonomy.Spans.runEventStreamOpenHeader.name)(function*() {
       const previous = yield* Ref.getAndUpdate(stateRef, markWritten)
       yield* Boolean.match(!previous.headerWritten && previous.mode === 'machine', {
         onTrue: () => offerStarted(previous),
@@ -430,7 +430,7 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
 
     const queueStream = Stream.fromQueue(queue)
 
-    const heartbeatTick = Effect.fn('stryker.runEventStream.tick')(function*() {
+    const heartbeatTick = Effect.fn(SpanTaxonomy.Spans.runEventStreamTick.name)(function*() {
       const now = yield* Clock.currentTimeMillis
       const s = yield* Ref.get(stateRef)
       return RunEvent.Heartbeat.make({
@@ -479,7 +479,7 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
       ),
     )
 
-    const startDrain = Effect.fn('stryker.runEventStream.startDrain')(function*() {
+    const startDrain = Effect.fn(SpanTaxonomy.Spans.runEventStreamStartDrain.name)(function*() {
       const mode = (yield* Ref.get(stateRef)).mode
       const drainFiber = yield* drain.drainFramed(framed, mode === 'machine').pipe(Effect.forkDetach)
       yield* SynchronizedRef.update(lifecycleRef, (present) => ({
@@ -488,7 +488,7 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
       }))
     })
 
-    const openStream = Effect.fn('stryker.runEventStream.open')(function*() {
+    const openStream = Effect.fn(SpanTaxonomy.Spans.runEventStreamOpen.name)(function*() {
       const lifecycle = yield* SynchronizedRef.get(lifecycleRef)
       yield* Option.match(lifecycle.drainFiber, {
         onNone: startDrain,
@@ -497,7 +497,7 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
       yield* openHeader()
     })
 
-    const closeAndDrainStream = Effect.fn('stryker.runEventStream.closeAndDrain')(function*() {
+    const closeAndDrainStream = Effect.fn(SpanTaxonomy.Spans.runEventStreamCloseAndDrain.name)(function*() {
       yield* SynchronizedRef.update(lifecycleRef, (present) => ({ ...present, closed: true }))
       yield* Queue.end(queue)
       const lifecycle = yield* SynchronizedRef.get(lifecycleRef)

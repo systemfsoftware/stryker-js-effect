@@ -1,4 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
@@ -25,7 +26,7 @@ import type { TestCoverage } from '../test-coverage.schema.js'
 
 const relativeFileNameOf = (fileName: string, basePath: string) => relativeNormalizedFileName(fileName, basePath)
 
-const readCurrentRelativeFiles = Effect.fn('stryker.mutation_test.read_relative_files')(function*(
+const readCurrentRelativeFiles = Effect.fn(SpanTaxonomy.Spans.mutationTestReadRelativeFiles.name)(function*(
   project: Project,
   basePath: string,
 ) {
@@ -187,7 +188,7 @@ type IncrementalReuseRaw = typeof IncrementalDiffCommand.Encoded & {
   readonly mutantsById: Record<string, Mutant.Mutant>
 }
 
-const readIncrementalReuseCommand = Effect.fn('stryker.incremental_reuse.read')(function*(
+const readIncrementalReuseCommand = Effect.fn(SpanTaxonomy.Spans.incrementalReuseRead.name)(function*(
   input: IncrementalReuseInput,
 ) {
   const currentRelativeFiles = yield* readCurrentRelativeFiles(input.project, input.basePath)
@@ -232,7 +233,7 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
   })
 })
 
-const incrementalReuseCell = Sandwich.named('stryker.incremental_reuse')(readIncrementalReuseCommand)
+const incrementalReuseCell = Sandwich.named(SpanTaxonomy.Spans.incrementalReuse.name)(readIncrementalReuseCommand)
   .decide(incrementalDiff)
   .write({
     MutantToRun: (decision) => mutantToRunPart(decision),

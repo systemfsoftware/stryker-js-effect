@@ -1,4 +1,5 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -127,7 +128,7 @@ export const make: {
   ): (options: Options.StrykerOptions) => Effect.Effect<TSCompiler>
 } = dual(
   2,
-  Effect.fn('typescript-checker.compiler.make')(function*(
+  Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerMake.name)(function*(
     options: Options.StrykerOptions,
     services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
   ) {
@@ -722,7 +723,7 @@ const nodesOf = (rt: TSCompilerRuntime) =>
       },
     }))
 
-export const init = Effect.fn('typescript-checker.compiler.init')(function*(
+export const init = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerInit.name)(function*(
   self: TSCompiler,
 ): Effect.fn.Return<readonly Diagnostic[], CompilerError> {
   const rt = runtimeOf(self)
@@ -822,7 +823,7 @@ const wholeProgramDiagnosticsOf = (program: Program): Effect.Effect<readonly Dia
     { concurrency: 2 },
   ).pipe(Effect.map(([programWide, semantic]) => [...semantic, ...programWide]))
 
-const dryRunDiagnostics = Effect.fn('typescript-checker.compiler.dryRun')(function*(
+const dryRunDiagnostics = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerDryRun.name)(function*(
   programs: ReadonlyArray<Program>,
 ) {
   yield* Effect.annotateCurrentSpan({ 'typescript.projects.count': programs.length })
@@ -855,7 +856,7 @@ export const check: {
   (self: TSCompiler, mutants: readonly Checker.CheckerMutantWire[]): Effect.Effect<readonly Diagnostic[], CompilerError>
 } = dual(
   2,
-  Effect.fn('typescript-checker.compiler.check')(function*(
+  Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerCheck.name)(function*(
     self: TSCompiler,
     mutants: readonly Checker.CheckerMutantWire[],
   ): Effect.fn.Return<readonly Diagnostic[], CompilerError> {
@@ -889,11 +890,11 @@ export const check: {
   }),
 )
 
-export const nodes = Effect.fn('typescript-checker.compiler.nodes')(function*(self: TSCompiler) {
+export const nodes = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerNodes.name)(function*(self: TSCompiler) {
   return yield* self.pipe(runtimeOf, nodesOf)
 })
 
-const groupedMutants = Effect.fn('typescript-checker.compiler.groups')(function*(
+const groupedMutants = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerGroups.name)(function*(
   self: TSCompiler,
   mutants: readonly Checker.CheckerMutantWire[],
   prioritizePerformanceOverAccuracy: boolean,
@@ -940,7 +941,7 @@ export const getLineAndCharacterOfPosition: {
   ): Effect.Effect<{ line: number; character: number } | undefined>
 } = dual(
   3,
-  Effect.fn('typescript-checker.compiler.lineAndCharacter')(function*(
+  Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerLineAndCharacter.name)(function*(
     self: TSCompiler,
     fileName: string,
     position: number,
@@ -956,7 +957,7 @@ export const getLineAndCharacterOfPosition: {
 
 const CLOSE_GRACE = '1 second'
 
-export const close = Effect.fn('typescript-checker.compiler.close')(function*(self: TSCompiler) {
+export const close = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerClose.name)(function*(self: TSCompiler) {
   const rt = runtimeOf(self)
   const state = yield* SynchronizedRef.getAndUpdate(rt.state, (prev) => ({
     ...prev,

@@ -9,7 +9,7 @@ import { Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect, Layer } from 'effect'
 
-import { instrument } from './__fixtures__/instrument.js'
+import { instrument, stockOptions } from './__fixtures__/instrument.js'
 
 const Feature = makeFeature({ it })
 
@@ -114,7 +114,7 @@ const twoLineSpans = (rawContent: string): ReadonlyArray<readonly [number, numbe
 const instrumentWith = (framework: Framework, name: string, content: string) =>
   instrument(
     [{ name, content, mutate: true }],
-    { ignorers: [], excludedMutations: [] },
+    stockOptions({ ignorers: [], excludedMutations: [] }),
     Format.registerEntries(
       Format.coreFormatRegistry,
       [Format.frameworkEntryOf('span-fixture-plugin', framework)],
@@ -132,10 +132,13 @@ Feature('Mutants point at the text they change')
         When('the module is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/math.ts', content: source, mutate: true }], {
-              ignorers: [],
-              excludedMutations: [],
-            }),
+            instrument(
+              [{ name: '/tmp/math.ts', content: source, mutate: true }],
+              stockOptions({
+                ignorers: [],
+                excludedMutations: [],
+              }),
+            ),
         ),
         Then('every reported span slices exactly the changed text')((s, expect) => {
           const located = locatedOf(s.result)

@@ -7,6 +7,7 @@ import { AggregationTemporalityPreference, OTLPMetricExporter } from '@opentelem
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics'
 import { BatchSpanProcessor, SimpleSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-base'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Boolean from 'effect/Boolean'
@@ -220,7 +221,7 @@ const strykerProgram = Effect.gen(function*() {
   })
   const parent = Option.getOrUndefined(Option.map(yield* environmentParentContext, OtelTracer.makeExternalSpan))
   return yield* Effect.uninterruptibleMask((restore) =>
-    Effect.withSpan('stryker.cli.run', { parent })(
+    Effect.withSpan(SpanTaxonomy.Spans.cliRun.name, { parent })(
       Effect.gen(function*() {
         const exit = yield* Effect.exit(
           restore(

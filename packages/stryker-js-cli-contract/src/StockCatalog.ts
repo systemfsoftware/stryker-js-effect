@@ -103,7 +103,7 @@ const entries = [
     definition:
       'A binary arithmetic operator: `+` becomes `-`, `-` becomes `+`, `*` becomes `/`, `/` becomes `*` and `%` becomes `*`. A string or template literal on either side is refused, as is a private name on the left.',
     examples: [
-      { before: 'const x = 1 + 2;', after: ['-'] },
+      { before: 'const x = 1 + 2;', after: ['1 - 2'] },
       { before: "const x = 'a' + 'b';", after: [] },
     ],
   },
@@ -115,7 +115,7 @@ const entries = [
       "An array literal becomes `[]` and an empty one becomes `['Stryker was here']`; `Array(1, 2)` becomes `Array()` and `Array()` becomes `Array([])`. A call that is not `Array` is refused.",
     examples: [
       { before: 'const x = [1];', after: ['[]'] },
-      { before: 'const x = [];', after: ["['Stryker was here']"] },
+      { before: 'const x = [];', after: ['["Stryker was here"]'] },
       { before: 'const x = Array(1, 2);', after: ['Array()'] },
       { before: 'const x = Array();', after: ['Array([])'] },
       { before: 'const x = someCall(1, 2);', after: [] },
@@ -139,7 +139,7 @@ const entries = [
     definition:
       'A compound assignment operator: `+=` becomes `-=`, `*=` becomes `/=`, `%=` becomes `*=`, `<<=` becomes `>>=`, `&=` becomes `|=`, `&&=` becomes `||=` and `??=` becomes `&&=`. A compound assignment whose right side is string-like is refused, except for the logical assignments.',
     examples: [
-      { before: 'let x = 1; x += 2;', after: ['-='] },
+      { before: 'let x = 1; x += 2;', after: ['x -= 2'] },
       { before: "let s = 'a'; s += 'b';", after: [] },
     ],
   },
@@ -173,7 +173,7 @@ const entries = [
     definition:
       'A condition becomes `true` and `false`; a loop test becomes `false`; a condition under `&&` becomes `true` and one under `||` becomes `false`. A statement the rule does not match is refused.',
     examples: [
-      { before: 'const x = a ? 1 : 2;', after: ['true', 'false'] },
+      { before: 'if (a) { f(); }', after: ['true', 'false'] },
       { before: 'while (a) { f(); }', after: ['false'] },
     ],
   },
@@ -184,8 +184,8 @@ const entries = [
     definition:
       'An ordering comparison becomes its two alternatives (`<` becomes `<=` and `>=`) and an equality comparison flips (`===` becomes `!==`, `!=` becomes `==`).',
     examples: [
-      { before: 'const x = a === b;', after: ['!=='] },
-      { before: 'const x = a < b;', after: ['<=', '>='] },
+      { before: 'const x = a === b;', after: ['a !== b'] },
+      { before: 'const x = a < b;', after: ['a <= b', 'a >= b'] },
     ],
   },
   {
@@ -195,8 +195,8 @@ const entries = [
     definition:
       '`&&` becomes `||`, `||` becomes `&&` and `??` becomes `&&`. An expression that is not logical is refused.',
     examples: [
-      { before: 'const x = a && b;', after: ['||'] },
-      { before: 'const x = a ?? b;', after: ['&&'] },
+      { before: 'const x = a && b;', after: ['a || b'] },
+      { before: 'const x = a ?? b;', after: ['a && b'] },
       { before: 'const x = a + b;', after: [] },
     ],
   },
@@ -273,7 +273,7 @@ const entries = [
     name: 'UpdateOperator',
     tier: 'default',
     definition: '`++` becomes `--` and `--` becomes `++`, prefix or postfix.',
-    examples: [{ before: 'let x = 1; x++;', after: ['--'] }],
+    examples: [{ before: 'let x = 1; x++;', after: ['x--'] }],
   },
   {
     id: 'atomic-update-split',

@@ -1,5 +1,6 @@
 import type { Framework, FrameworkRefusal } from '@systemfsoftware/stryker-framework-interface'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -288,7 +289,7 @@ const describeLoadedPlugin = (
       ),
   })
 
-const loadPlugin = Effect.fn('stryker.plugin_load.load_plugin')(function*(
+const loadPlugin = Effect.fn(SpanTaxonomy.Spans.pluginLoadLoadPlugin.name)(function*(
   descriptor: string,
   entrypoint: string,
 ): Effect.fn.Return<Option.Option<LoadedContribution>, PluginLoadRefusedError> {
@@ -402,7 +403,7 @@ const resolveBareSpecifierOf = (
         importFailure(specifier, { cause: new Error(`the package "${specifier}" did not resolve`) }),
     }))
 
-const packageEntrypointOf = Effect.fn('stryker.plugin_load.package_entrypoint')(function*(
+const packageEntrypointOf = Effect.fn(SpanTaxonomy.Spans.pluginLoadPackageEntrypoint.name)(function*(
   specifier: string,
   basePath: string,
 ): Effect.fn.Return<URL, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> {
@@ -424,7 +425,7 @@ const entrypointOf = (
     onNone: () => packageEntrypointOf(specifier, basePath),
   })
 
-const loadPluginsEffect = Effect.fn('stryker.plugin_load.load')(function*(
+const loadPluginsEffect = Effect.fn(SpanTaxonomy.Spans.pluginLoadLoad.name)(function*(
   pluginDescriptors: readonly string[],
   basePath: string,
 ): Effect.fn.Return<LoadedPlugins, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> {

@@ -1,0 +1,1248 @@
+[
+  {
+    "id": "stryker.checker.check",
+    "name": "stryker.checker.check",
+    "attributes": {
+      "stryker.checker.name": {
+        "type": "string"
+      },
+      "stryker.mutants.count": {
+        "type": "number"
+      }
+    }
+  },
+  {
+    "id": "stryker.checker.check_plans",
+    "name": "stryker.checker.check_plans",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.checker.group",
+    "name": "stryker.checker.group",
+    "attributes": {
+      "stryker.checker.name": {
+        "type": "string"
+      },
+      "stryker.mutants.count": {
+        "type": "number"
+      }
+    }
+  },
+  {
+    "id": "stryker.checker.group_plans",
+    "name": "stryker.checker.group_plans",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.checker.log_skipped",
+    "name": "stryker.checker.log_skipped",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.checker_pool.check_plans",
+    "name": "stryker.checker_pool.check_plans",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.checker_pool.split_checked",
+    "name": "stryker.checker_pool.split_checked",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.checker.record_skipped",
+    "name": "stryker.checker.record_skipped",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.cli.run",
+    "name": "stryker.cli.run",
+    "attributes": {
+      "stryker.run.outcome": {
+        "type": "string"
+      },
+      "stryker.run.exit_code": {
+        "type": "number"
+      },
+      "stryker.run.error": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "id": "stryker.command_runner.run",
+    "name": "stryker.command_runner.run",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.concurrency",
+    "name": "stryker.concurrency",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.discover",
+    "name": "stryker.config.discover",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.exists",
+    "name": "stryker.config.exists",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.expectedFile",
+    "name": "stryker.config.expectedFile",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.extends",
+    "name": "stryker.config.extends",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.extendsChild",
+    "name": "stryker.config.extendsChild",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.extendsStep",
+    "name": "stryker.config.extendsStep",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.load",
+    "name": "stryker.config.load",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.loadOptions",
+    "name": "stryker.config.loadOptions",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config_read",
+    "name": "stryker.config_read",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.readDocument",
+    "name": "stryker.config.readDocument",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.readModule",
+    "name": "stryker.config.readModule",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.config.readRun",
+    "name": "stryker.config.readRun",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.dry_run",
+    "name": "stryker.dry_run",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.dry_run.complete",
+    "name": "stryker.dry_run.complete",
+    "attributes": {}
+  },
+  {
+    "id": "dryRun",
+    "name": "dryRun",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.dry_run.resolve_files",
+    "name": "stryker.dry_run.resolve_files",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.dry_run.write_failed",
+    "name": "stryker.dry_run.write_failed",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.dry_run.write_passed",
+    "name": "stryker.dry_run.write_passed",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.framework_claimant.list",
+    "name": "stryker.framework_claimant.list",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.framework_claimant.of",
+    "name": "stryker.framework_claimant.of",
+    "attributes": {}
+  },
+  {
+    "id": "html_report.read_bundle_from_disk",
+    "name": "html_report.read_bundle_from_disk",
+    "attributes": {}
+  },
+  {
+    "id": "html_report.write",
+    "name": "html_report.write",
+    "attributes": {}
+  },
+  {
+    "id": "html_report.write_bundle_from_disk",
+    "name": "html_report.write_bundle_from_disk",
+    "attributes": {}
+  },
+  {
+    "id": "html_report.write_file",
+    "name": "html_report.write_file",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.incremental_reuse",
+    "name": "stryker.incremental_reuse",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.incremental_reuse.read",
+    "name": "stryker.incremental_reuse.read",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument",
+    "name": "stryker.instrument",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.disableTypeChecks",
+    "name": "stryker.instrument.disableTypeChecks",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.framework_entry.parse",
+    "name": "stryker.instrument.framework_entry.parse",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.framework_entry.transform",
+    "name": "stryker.instrument.framework_entry.transform",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.gather",
+    "name": "stryker.instrument.gather",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.offer-skips",
+    "name": "stryker.instrument.offer-skips",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.parser.parseJS",
+    "name": "stryker.instrument.parser.parseJS",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.parser.parseTS",
+    "name": "stryker.instrument.parser.parseTS",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.parser.parseTsx",
+    "name": "stryker.instrument.parser.parseTsx",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.parser.parseWithOxc",
+    "name": "stryker.instrument.parser.parseWithOxc",
+    "attributes": {}
+  },
+  {
+    "id": "instrument",
+    "name": "instrument",
+    "attributes": {
+      "fileCount": {
+        "type": "number"
+      }
+    }
+  },
+  {
+    "id": "stryker.instrument.read_files",
+    "name": "stryker.instrument.read_files",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.report-skips",
+    "name": "stryker.instrument.report-skips",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.instrument.transform.script",
+    "name": "stryker.instrument.transform.script",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.load_config",
+    "name": "stryker.load_config",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports",
+    "name": "stryker.merge_reports",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.collect_part_dirs",
+    "name": "stryker.merge_reports.collect_part_dirs",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.directory_exists",
+    "name": "stryker.merge_reports.directory_exists",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.encode_report",
+    "name": "stryker.merge_reports.encode_report",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.fail",
+    "name": "stryker.merge_reports.fail",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.gather",
+    "name": "stryker.merge_reports.gather",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.list_names",
+    "name": "stryker.merge_reports.list_names",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.put_file",
+    "name": "stryker.merge_reports.put_file",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.read_part",
+    "name": "stryker.merge_reports.read_part",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.read_text",
+    "name": "stryker.merge_reports.read_text",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.refuse_command",
+    "name": "stryker.merge_reports.refuse_command",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.refuse_parts",
+    "name": "stryker.merge_reports.refuse_parts",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.render_html",
+    "name": "stryker.merge_reports.render_html",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.write_absent",
+    "name": "stryker.merge_reports.write_absent",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.write_files",
+    "name": "stryker.merge_reports.write_files",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.write_html",
+    "name": "stryker.merge_reports.write_html",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.merge_reports.write_merged",
+    "name": "stryker.merge_reports.write_merged",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutant_run",
+    "name": "stryker.mutant_run",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.assembleReport",
+    "name": "stryker.mutationReporting.assembleReport",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.checkpoint",
+    "name": "stryker.mutationReporting.checkpoint",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.discoverDependencies",
+    "name": "stryker.mutationReporting.discoverDependencies",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.emitVerdict",
+    "name": "stryker.mutationReporting.emitVerdict",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.manifestVersion",
+    "name": "stryker.mutationReporting.manifestVersion",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.mutationTestReport",
+    "name": "stryker.mutationReporting.mutationTestReport",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.readMutatedSources",
+    "name": "stryker.mutationReporting.readMutatedSources",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.readTestSources",
+    "name": "stryker.mutationReporting.readTestSources",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.reportAll",
+    "name": "stryker.mutationReporting.reportAll",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.slimIncrementalReport",
+    "name": "stryker.mutationReporting.slimIncrementalReport",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.writeAtomic",
+    "name": "stryker.mutationReporting.writeAtomic",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutationReporting.writeIncrementalReport",
+    "name": "stryker.mutationReporting.writeIncrementalReport",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutation_test",
+    "name": "stryker.mutation_test",
+    "attributes": {}
+  },
+  {
+    "id": "mutationTest.batch",
+    "name": "mutationTest.batch",
+    "attributes": {
+      "total": {
+        "type": "number"
+      },
+      "testRunners": {
+        "type": "number"
+      }
+    }
+  },
+  {
+    "id": "stryker.mutation_test.checker_scope",
+    "name": "stryker.mutation_test.checker_scope",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutation_test.dry_run_only",
+    "name": "stryker.mutation_test.dry_run_only",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutation_test.early_result",
+    "name": "stryker.mutation_test.early_result",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutation_test.no_tests",
+    "name": "stryker.mutation_test.no_tests",
+    "attributes": {}
+  },
+  {
+    "id": "mutationTest",
+    "name": "mutationTest",
+    "attributes": {
+      "mutantCount": {
+        "type": "number"
+      },
+      "skippedMutantCount": {
+        "type": "number"
+      },
+      "testCount": {
+        "type": "number"
+      }
+    }
+  },
+  {
+    "id": "stryker.mutation_test.plan",
+    "name": "stryker.mutation_test.plan",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutation_test.plan_mutants",
+    "name": "stryker.mutation_test.plan_mutants",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutation_test.plan.read",
+    "name": "stryker.mutation_test.plan.read",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutation_test.read_relative_files",
+    "name": "stryker.mutation_test.read_relative_files",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.mutation_test.sandbox_files",
+    "name": "stryker.mutation_test.sandbox_files",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.output.drain",
+    "name": "stryker.output.drain",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.output_mode_probe",
+    "name": "stryker.output_mode_probe",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.outputModeProbe.read",
+    "name": "stryker.outputModeProbe.read",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.phase.entered",
+    "name": "stryker.phase.entered",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.plugin_load.load",
+    "name": "stryker.plugin_load.load",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.plugin_load.load_plugin",
+    "name": "stryker.plugin_load.load_plugin",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.plugin_load.package_entrypoint",
+    "name": "stryker.plugin_load.package_entrypoint",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.pluginLoad.report",
+    "name": "stryker.pluginLoad.report",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.prepare",
+    "name": "stryker.prepare",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.prepare.announce-summary",
+    "name": "stryker.prepare.announce-summary",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.prepare.apply",
+    "name": "stryker.prepare.apply",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.prepare.gather",
+    "name": "stryker.prepare.gather",
+    "attributes": {}
+  },
+  {
+    "id": "prepare",
+    "name": "prepare",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.project_files.read",
+    "name": "stryker.project_files.read",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.project_files.write-into",
+    "name": "stryker.project_files.write-into",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.project_read",
+    "name": "stryker.project_read",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.project.read",
+    "name": "stryker.project.read",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.report.clearText",
+    "name": "stryker.report.clearText",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.report.clearText.write",
+    "name": "stryker.report.clearText.write",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.report.json",
+    "name": "stryker.report.json",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.report.json.write",
+    "name": "stryker.report.json.write",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.report.progress",
+    "name": "stryker.report.progress",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.report.progress.consume",
+    "name": "stryker.report.progress.consume",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.report.progress.consumeEvent",
+    "name": "stryker.report.progress.consumeEvent",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.reporterStream.attach",
+    "name": "stryker.reporterStream.attach",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.reporterStream.closeStage",
+    "name": "stryker.reporterStream.closeStage",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.reporterStream.currentReporterInit",
+    "name": "stryker.reporterStream.currentReporterInit",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.reporterStream.detach",
+    "name": "stryker.reporterStream.detach",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.reporterStream.environmentTraceInit",
+    "name": "stryker.reporterStream.environmentTraceInit",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.reporterStream.offerToChannel",
+    "name": "stryker.reporterStream.offerToChannel",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.reporterStream.settle",
+    "name": "stryker.reporterStream.settle",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.reporterWiring.spawnPluginReporterFactory",
+    "name": "stryker.reporterWiring.spawnPluginReporterFactory",
+    "attributes": {}
+  },
+  {
+    "id": "restrictSocket",
+    "name": "restrictSocket",
+    "attributes": {}
+  },
+  {
+    "id": "rpc.capabilities",
+    "name": "rpc.capabilities",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "id": "rpc.check",
+    "name": "rpc.check",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "id": "RpcClient.capabilities",
+    "name": "RpcClient.capabilities",
+    "attributes": {}
+  },
+  {
+    "id": "RpcClient.check",
+    "name": "RpcClient.check",
+    "attributes": {}
+  },
+  {
+    "id": "RpcClient.dryRun",
+    "name": "RpcClient.dryRun",
+    "attributes": {}
+  },
+  {
+    "id": "RpcClient.flush",
+    "name": "RpcClient.flush",
+    "attributes": {}
+  },
+  {
+    "id": "RpcClient.group",
+    "name": "RpcClient.group",
+    "attributes": {}
+  },
+  {
+    "id": "RpcClient.init",
+    "name": "RpcClient.init",
+    "attributes": {}
+  },
+  {
+    "id": "RpcClient.mutantRun",
+    "name": "RpcClient.mutantRun",
+    "attributes": {}
+  },
+  {
+    "id": "RpcClient.onEventBatch",
+    "name": "RpcClient.onEventBatch",
+    "attributes": {}
+  },
+  {
+    "id": "rpc.dryRun",
+    "name": "rpc.dryRun",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "id": "rpc.flush",
+    "name": "rpc.flush",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "id": "rpc.group",
+    "name": "rpc.group",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "id": "rpc.init",
+    "name": "rpc.init",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "id": "rpc.mutantRun",
+    "name": "rpc.mutantRun",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "id": "rpc.onEventBatch",
+    "name": "rpc.onEventBatch",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
+    "id": "RpcServer.capabilities",
+    "name": "RpcServer.capabilities",
+    "attributes": {}
+  },
+  {
+    "id": "RpcServer.check",
+    "name": "RpcServer.check",
+    "attributes": {}
+  },
+  {
+    "id": "RpcServer.dryRun",
+    "name": "RpcServer.dryRun",
+    "attributes": {}
+  },
+  {
+    "id": "RpcServer.flush",
+    "name": "RpcServer.flush",
+    "attributes": {}
+  },
+  {
+    "id": "RpcServer.group",
+    "name": "RpcServer.group",
+    "attributes": {}
+  },
+  {
+    "id": "RpcServer.init",
+    "name": "RpcServer.init",
+    "attributes": {}
+  },
+  {
+    "id": "RpcServer.mutantRun",
+    "name": "RpcServer.mutantRun",
+    "attributes": {}
+  },
+  {
+    "id": "RpcServer.onEventBatch",
+    "name": "RpcServer.onEventBatch",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.run.conclude",
+    "name": "stryker.run.conclude",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.run_conclusion.read",
+    "name": "stryker.run_conclusion.read",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.closeAndDrain",
+    "name": "stryker.runEventStream.closeAndDrain",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.drainFile",
+    "name": "stryker.runEventStream.drainFile",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.drainStoredFile",
+    "name": "stryker.runEventStream.drainStoredFile",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.drainToSinks",
+    "name": "stryker.runEventStream.drainToSinks",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.emitMachineModeOutput",
+    "name": "stryker.runEventStream.emitMachineModeOutput",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.make",
+    "name": "stryker.runEventStream.make",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.nullScoreVerdict",
+    "name": "stryker.runEventStream.nullScoreVerdict",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.open",
+    "name": "stryker.runEventStream.open",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.openHeader",
+    "name": "stryker.runEventStream.openHeader",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.startDrain",
+    "name": "stryker.runEventStream.startDrain",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.runEventStream.tick",
+    "name": "stryker.runEventStream.tick",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.run_request",
+    "name": "stryker.run_request",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.run_request.gather",
+    "name": "stryker.run_request.gather",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.acquire",
+    "name": "stryker.sandbox.acquire",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.build.run",
+    "name": "stryker.sandbox.build.run",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.find_node_modules",
+    "name": "stryker.sandbox.find_node_modules",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.link_node_modules",
+    "name": "stryker.sandbox.link_node_modules",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.make_temp_dir",
+    "name": "stryker.sandbox.make_temp_dir",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.move_directory",
+    "name": "stryker.sandbox.move_directory",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.move_directory.contents",
+    "name": "stryker.sandbox.move_directory.contents",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.move_entry",
+    "name": "stryker.sandbox.move_entry",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.preprocess.disable_type_checks",
+    "name": "stryker.sandbox.preprocess.disable_type_checks",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.remove_empty_parent",
+    "name": "stryker.sandbox.remove_empty_parent",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.remove_temp_dir",
+    "name": "stryker.sandbox.remove_temp_dir",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.restore_original",
+    "name": "stryker.sandbox.restore_original",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.symlink_junction",
+    "name": "stryker.sandbox.symlink_junction",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.symlink_node_modules",
+    "name": "stryker.sandbox.symlink_node_modules",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.tsconfig.rewrite-file-arrays",
+    "name": "stryker.sandbox.tsconfig.rewrite-file-arrays",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.survivors_admission",
+    "name": "stryker.survivors_admission",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.survivors_admission.gather",
+    "name": "stryker.survivors_admission.gather",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.survivors_admission.hash_sources",
+    "name": "stryker.survivors_admission.hash_sources",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.survivors_admission.read_prior_report",
+    "name": "stryker.survivors_admission.read_prior_report",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.survivors_admission.read_source",
+    "name": "stryker.survivors_admission.read_source",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.survivors_admission.resolve_options",
+    "name": "stryker.survivors_admission.resolve_options",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.testRunner.applyEnvironmentState",
+    "name": "stryker.testRunner.applyEnvironmentState",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.testRunner.maxReusePolicy",
+    "name": "stryker.testRunner.maxReusePolicy",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.testRunner.mutantRun",
+    "name": "stryker.testRunner.mutantRun",
+    "attributes": {
+      "stryker.mutant.file": {
+        "type": "string"
+      },
+      "stryker.mutant.id": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)$"
+      },
+      "stryker.mutant.mutator": {
+        "type": "string",
+        "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+      },
+      "stryker.mutant.status": {
+        "type": "string",
+        "enum": [
+          "Killed",
+          "Survived",
+          "NoCoverage",
+          "CompileError",
+          "RuntimeError",
+          "Timeout",
+          "Ignored",
+          "Pending"
+        ]
+      }
+    }
+  },
+  {
+    "id": "stryker.testRunner.reloadEnvironment",
+    "name": "stryker.testRunner.reloadEnvironment",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.testRunner.withEnvironmentReload",
+    "name": "stryker.testRunner.withEnvironmentReload",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.testRunner.withMaxReuse",
+    "name": "stryker.testRunner.withMaxReuse",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.check",
+    "name": "typescript-checker.check",
+    "attributes": {
+      "stryker.mutants.count": {
+        "type": "number"
+      }
+    }
+  },
+  {
+    "id": "stryker.typescript_checker.check_mutants",
+    "name": "stryker.typescript_checker.check_mutants",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.compiler.check",
+    "name": "typescript-checker.compiler.check",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.compiler.close",
+    "name": "typescript-checker.compiler.close",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.compiler.dryRun",
+    "name": "typescript-checker.compiler.dryRun",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.compiler.groups",
+    "name": "typescript-checker.compiler.groups",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.compiler.init",
+    "name": "typescript-checker.compiler.init",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.compiler.lineAndCharacter",
+    "name": "typescript-checker.compiler.lineAndCharacter",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.compiler.make",
+    "name": "typescript-checker.compiler.make",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.compiler.nodes",
+    "name": "typescript-checker.compiler.nodes",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.compiler.scoped",
+    "name": "typescript-checker.compiler.scoped",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.runtime.makeChecker",
+    "name": "typescript-checker.runtime.makeChecker",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.soloRound",
+    "name": "typescript-checker.soloRound",
+    "attributes": {
+      "stryker.mutant.id": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)$"
+      }
+    }
+  },
+  {
+    "id": "stryker.validate_options",
+    "name": "stryker.validate_options",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.vitest.mutant_run",
+    "name": "stryker.vitest.mutant_run",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.mutant_run.read",
+    "name": "vitest.mutant_run.read",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.runner.collect_raw",
+    "name": "vitest.runner.collect_raw",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.runner.complete_dry_run",
+    "name": "vitest.runner.complete_dry_run",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.runner.coverage_of_file",
+    "name": "vitest.runner.coverage_of_file",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.runner.make",
+    "name": "vitest.runner.make",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.runtime.acquire",
+    "name": "vitest.runtime.acquire",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.runtime.apply_run_filter",
+    "name": "vitest.runtime.apply_run_filter",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.runtime.close",
+    "name": "vitest.runtime.close",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.runtime.open",
+    "name": "vitest.runtime.open",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.runtime.read_sandbox_self_aliases",
+    "name": "vitest.runtime.read_sandbox_self_aliases",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.runtime.start",
+    "name": "vitest.runtime.start",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.standby_pool.claim",
+    "name": "vitest.standby_pool.claim",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.standby_pool.dispose",
+    "name": "vitest.standby_pool.dispose",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.standby_pool.make",
+    "name": "vitest.standby_pool.make",
+    "attributes": {}
+  },
+  {
+    "id": "vitest.standby_pool.release",
+    "name": "vitest.standby_pool.release",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.worker.idGenerator.make",
+    "name": "stryker.worker.idGenerator.make",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.worker.protocol.failInFlight",
+    "name": "stryker.worker.protocol.failInFlight",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.worker.protocol.make",
+    "name": "stryker.worker.protocol.make",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.worker.spawn",
+    "name": "stryker.worker.spawn",
+    "attributes": {}
+  }
+]

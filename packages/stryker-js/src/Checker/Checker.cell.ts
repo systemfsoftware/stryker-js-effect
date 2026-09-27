@@ -1,4 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
@@ -96,7 +97,7 @@ const runWhen = <A, E, R>(condition: boolean, effect: Effect.Effect<A, E, R>): E
     { discard: true },
   )
 
-const logSkippedMutants = Effect.fn('stryker.checker.log_skipped')(function*(
+const logSkippedMutants = Effect.fn(SpanTaxonomy.Spans.checkerLogSkipped.name)(function*(
   checkerName: string,
   undescribable: readonly UndescribableMutant[],
 ) {
@@ -110,7 +111,7 @@ const logSkippedMutants = Effect.fn('stryker.checker.log_skipped')(function*(
   )
 })
 
-const recordSkipped = Effect.fn('stryker.checker.record_skipped')(function*(skipped: number) {
+const recordSkipped = Effect.fn(SpanTaxonomy.Spans.checkerRecordSkipped.name)(function*(skipped: number) {
   yield* runWhen(skipped > 0, Metric.update(UndescribableMutant.skipped, skipped))
 })
 
@@ -206,7 +207,7 @@ const commandFailed = (issue: string, input: CheckRaw) =>
     mutantIds: input.plans.map((plan) => plan.mutant.id),
   })
 
-const checkCell = Sandwich.named('stryker.checker.check_plans')(readCheckCommand)
+const checkCell = Sandwich.named(SpanTaxonomy.Spans.checkerCheckPlans.name)(readCheckCommand)
   .decide(admitCheckerAnswer)
   .write({
     CheckResultDecision: ({ pairs }, raw) => Effect.succeed(attachPlansToPairs(raw.plans, pairs)),
@@ -217,7 +218,7 @@ const checkCell = Sandwich.named('stryker.checker.check_plans')(readCheckCommand
     CommandRejected: ({ issue }, raw) => Effect.fail(commandFailed(issue, raw)),
   })
 
-const groupCell = Sandwich.named('stryker.checker.group_plans')(readGroupCommand)
+const groupCell = Sandwich.named(SpanTaxonomy.Spans.checkerGroupPlans.name)(readGroupCommand)
   .decide(admitCheckerAnswer)
   .write({
     CheckGroupDecision: ({ groups }, raw) => Effect.succeed(attachPlansToGroups(raw.plans, groups)),

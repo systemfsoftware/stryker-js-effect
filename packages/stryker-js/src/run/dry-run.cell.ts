@@ -1,4 +1,5 @@
 import { type Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, type Plugin, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
@@ -100,7 +101,7 @@ const buildDryRunFiles = (command: InstrumentDone) =>
       ),
   )
 
-const resolveDryRunFiles = Effect.fn('stryker.dry_run.resolve_files')(function*(command: InstrumentDone) {
+const resolveDryRunFiles = Effect.fn(SpanTaxonomy.Spans.dryRunResolveFiles.name)(function*(command: InstrumentDone) {
   return yield* Effect.fromResult(buildDryRunFiles(command)).pipe(
     Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Failed to resolve sandbox file', cause })),
   )
@@ -254,7 +255,7 @@ const announceDryRunOutcome = (
     ),
   )
 
-const completeDryRunResultOf = Effect.fn('stryker.dry_run.complete')(function*(
+const completeDryRunResultOf = Effect.fn(SpanTaxonomy.Spans.dryRunComplete.name)(function*(
   raw: DryRunRaw,
   rawResult: TestRunner.CompleteDryRunResult,
 ) {
@@ -387,9 +388,9 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
   }
 })
 
-const writeDryRunPassed = Effect.fn('stryker.dry_run.write_passed')(function*(raw: DryRunRaw) {
+const writeDryRunPassed = Effect.fn(SpanTaxonomy.Spans.dryRunWritePassed.name)(function*(raw: DryRunRaw) {
   return yield* withPhaseSpan(
-    'dryRun',
+    SpanTaxonomy.Spans.dryRunPhase,
     {},
     () =>
       Effect.gen(function*() {
@@ -409,7 +410,7 @@ const failedTestsDetail = (failedTests: readonly FailedTestSummary[]): string =>
 const reasonWithFailedTests = (detail: string): string =>
   detail.length > 0 ? `${FAILED_TESTS_REASON}\n${detail}` : FAILED_TESTS_REASON
 
-const writeDryRunFailed = Effect.fn('stryker.dry_run.write_failed')(function*({
+const writeDryRunFailed = Effect.fn(SpanTaxonomy.Spans.dryRunWriteFailed.name)(function*({
   testCount,
   failedTestCount,
   failedTests,
@@ -419,7 +420,7 @@ const writeDryRunFailed = Effect.fn('stryker.dry_run.write_failed')(function*({
   readonly failedTests: readonly FailedTestSummary[]
 }) {
   return yield* withPhaseSpan(
-    'dryRun',
+    SpanTaxonomy.Spans.dryRunPhase,
     {},
     () =>
       Effect.gen(function*() {
@@ -438,7 +439,7 @@ const writeDryRunFailed = Effect.fn('stryker.dry_run.write_failed')(function*({
 })
 
 export const dryRunCell: Cell.Cell<InstrumentDone, DryRunDone, StageError, StageServices> = Sandwich.named(
-  'stryker.dry_run',
+  SpanTaxonomy.Spans.dryRun.name,
 )(readDryRun).decide(dryRun).write({
   DryRunPassed: (_decision, raw) => writeDryRunPassed(raw),
   DryRunFailed: ({ testCount, failedTestCount, failedTests }, _raw) =>

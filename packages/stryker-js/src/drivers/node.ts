@@ -1,6 +1,7 @@
 import { NodeFileSystem, NodePath, NodeSocket, NodeStdio } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Crypto from 'effect/Crypto'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -39,7 +40,7 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
 
       return {
-        spawn: Effect.fn('stryker.worker.spawn')(
+        spawn: Effect.fn(SpanTaxonomy.Spans.workerSpawn.name)(
           function*(params: WorkerSpawnParams) {
             const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
             const workerId = yield* crypto.randomUUIDv4

@@ -38,6 +38,7 @@
     "@oxc-project/types": "catalog:",
     "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/stryker-framework-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "effect": "catalog:",
     "oxc-parser": "catalog:",

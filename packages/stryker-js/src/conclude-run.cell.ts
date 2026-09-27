@@ -1,5 +1,6 @@
 /// <reference types="vitest/importMeta" />
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
@@ -403,7 +404,7 @@ const encodedCommandOf = (
   observation: command.observation,
 })
 
-const readConclusion = Effect.fn('stryker.run_conclusion.read')(function*(
+const readConclusion = Effect.fn(SpanTaxonomy.Spans.runConclusionRead.name)(function*(
   input: RunConclusionInput,
 ): Effect.fn.Return<RunConclusionRaw, never, RunEventDrain> {
   const classified = Result.getOrElse(input.concluded.outcome, (interrupted) => interrupted)
@@ -419,7 +420,7 @@ const readConclusion = Effect.fn('stryker.run_conclusion.read')(function*(
   }
 })
 
-export const concludeRunCell = Sandwich.named('stryker.run.conclude')(readConclusion)
+export const concludeRunCell = Sandwich.named(SpanTaxonomy.Spans.runConclude.name)(readConclusion)
   .decide(planRunConclusion)
   .write({
     RunConclusionEmittedOk: (_decision, raw) =>

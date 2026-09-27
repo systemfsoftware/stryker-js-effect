@@ -1,5 +1,5 @@
 import { Differential, Metamorphic } from '@systemfsoftware/differential-spec'
-import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import * as Effect from 'effect/Effect'
 import * as fc from 'fast-check'
 import { Project } from 'ts-morph'
@@ -259,6 +259,7 @@ const instrumentOxcCode = (code: string) =>
   Instrument.instrument([{ name: 'synthetic.ts', content: code, mutate: true }], {
     excludedMutations: [],
     ignorers: [],
+    mutators: Mutator.selectMutators(Mutator.stockRegistry, []),
   })
 
 const INSTRUMENTER_HOST_BOUND = {

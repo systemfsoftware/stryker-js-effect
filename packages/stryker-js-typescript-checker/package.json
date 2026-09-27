@@ -41,6 +41,7 @@
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",

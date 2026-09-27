@@ -1,4 +1,5 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
+import type { StockCatalog } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -205,7 +206,7 @@ export type Mutator = (node: Node, context: MutatorContext) => Iterable<Node>
 
 export interface MutatorOptions {
   excludedMutations: string[]
-  optInMutations: readonly string[]
+  mutators: MutatorSelection
   noHeader?: boolean
 }
 
@@ -1297,7 +1298,7 @@ function isUpdateExpression(node: Node): node is UpdateExpression {
  * `optInMutators` below follows the same hand-written rule, for the same
  * reason: a mutator exists for a run only when a human named it here.
  */
-export const defaultMutators: Readonly<Record<string, Mutator>> = Object.freeze({
+export const defaultMutators: Readonly<Record<StockCatalog.StockDefaultName, Mutator>> = Object.freeze({
   ArithmeticOperator: arithmeticOperatorMutator,
   ArrayDeclaration: arrayDeclarationMutator,
   ArrowFunction: arrowFunctionMutator,
@@ -1316,7 +1317,7 @@ export const defaultMutators: Readonly<Record<string, Mutator>> = Object.freeze(
   UpdateOperator: updateOperatorMutator,
 })
 
-export const optInMutators: Readonly<Record<string, Mutator>> = Object.freeze({
+export const optInMutators: Readonly<Record<StockCatalog.StockOptInName, Mutator>> = Object.freeze({
   AtomicUpdateSplit: atomicUpdateSplitMutator,
   SynchronizationRemoval: synchronizationRemovalMutator,
   FinalizerEscape: finalizerEscapeMutator,
@@ -1328,6 +1329,8 @@ export interface MutatorRegistry {
   readonly defaults: Readonly<Record<string, Mutator>>
   readonly optIn: Readonly<Record<string, Mutator>>
 }
+
+export const stockRegistry: MutatorRegistry = { defaults: defaultMutators, optIn: optInMutators }
 
 export interface MutatorSelection {
   /** Every default, then each opt-in the run named, in the registry's declared order. */

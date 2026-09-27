@@ -5,7 +5,7 @@ import { Effect } from 'effect'
 
 import { type ShapeEntry, shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
-import { instrument } from './__fixtures__/instrument.js'
+import { instrument, stockOptions } from './__fixtures__/instrument.js'
 
 const OPT_IN_MUTATOR_NAMES: readonly string[] = ['AtomicUpdateSplit', 'SynchronizationRemoval', 'FinalizerEscape']
 
@@ -60,7 +60,7 @@ Feature('Keeping the Effect concurrency faults off unless a run asks for them')
           ({ fixtures }: { fixtures: readonly FixtureFile[] }) =>
             instrument(
               fixtures.map((fixture) => ({ name: fixture.name, content: fixture.content, mutate: true })),
-              { ignorers: [], excludedMutations: [] },
+              stockOptions({ ignorers: [], excludedMutations: [] }),
             ),
         ),
         Then('the report names no concurrency mutator, and no fixture came out empty')((

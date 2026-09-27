@@ -1,3 +1,4 @@
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
@@ -37,7 +38,7 @@ const oxcModule = Effect.cached(Effect.promise(() => import('oxc-parser')))
 
 export const loadOxc: Effect.Effect<Oxc> = Effect.flatMap(oxcModule, (load) => load)
 
-const parseWithOxcDataFirst = Effect.fn('stryker.instrument.parser.parseWithOxc')(
+const parseWithOxcDataFirst = Effect.fn(SpanTaxonomy.Spans.instrumentParserParseWithOxc.name)(
   function*(text: string, fileName: string, lang: 'js' | 'jsx' | 'ts' | 'tsx') {
     const oxc = yield* loadOxc
     const result = oxc.parseSync(fileName, text, { lang, range: true })
@@ -91,7 +92,7 @@ export const createParser = (): ParserContext => ({
     ),
 })
 
-const parseJSDataFirst = Effect.fn('stryker.instrument.parser.parseJS')(
+const parseJSDataFirst = Effect.fn(SpanTaxonomy.Spans.instrumentParserParseJS.name)(
   function*(text: string, fileName: string) {
     const parsed = yield* parseWithOxc(text, fileName, 'js')
     const ast: JSAst = {
@@ -110,7 +111,7 @@ export const parseJS: {
   (fileName: string): (text: string) => Effect.Effect<JSAst, ParseFailed>
 } = dual((args: IArguments): boolean => args.length >= 2, parseJSDataFirst)
 
-const parseTSDataFirst = Effect.fn('stryker.instrument.parser.parseTS')(
+const parseTSDataFirst = Effect.fn(SpanTaxonomy.Spans.instrumentParserParseTS.name)(
   function*(text: string, fileName: string) {
     const parsed = yield* parseWithOxc(text, fileName, 'ts')
     const ast: TSAst = {
@@ -129,7 +130,7 @@ export const parseTS: {
   (fileName: string): (text: string) => Effect.Effect<TSAst, ParseFailed>
 } = dual((args: IArguments): boolean => args.length >= 2, parseTSDataFirst)
 
-const parseTsxDataFirst = Effect.fn('stryker.instrument.parser.parseTsx')(
+const parseTsxDataFirst = Effect.fn(SpanTaxonomy.Spans.instrumentParserParseTsx.name)(
   function*(text: string, fileName: string) {
     const parsed = yield* parseWithOxc(text, fileName, 'tsx')
     const ast: TsxAst = {

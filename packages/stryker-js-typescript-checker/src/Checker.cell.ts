@@ -1,4 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
@@ -25,7 +26,9 @@ const refuse = (
 
 export type CheckMutantsRead = (typeof CheckMutantsInput)['Encoded']
 
-export const checkCell = Sandwich.named('stryker.typescript_checker.check_mutants')((command: CheckMutantsCommand) =>
+export const checkCell = Sandwich.named(SpanTaxonomy.Spans.typescriptCheckerCheckMutants.name)((
+  command: CheckMutantsCommand,
+) =>
   Effect.flatMap(TypeScriptCompiler, (compiler) =>
     Effect.zipWith(
       nodes(compiler),

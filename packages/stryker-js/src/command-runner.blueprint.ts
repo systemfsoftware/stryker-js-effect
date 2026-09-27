@@ -1,4 +1,5 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -79,7 +80,7 @@ const spawnResult = <E = unknown>(
     Match.exhaustive,
   )
 
-const runCommand = Effect.fn('stryker.command_runner.run')(function*(
+const runCommand = Effect.fn(SpanTaxonomy.Spans.commandRunnerRun.name)(function*(
   config: CommandTestRunnerConfig,
   activeMutantId: Mutant.MutantRunOptions['activeMutant']['id'] | undefined,
 ): Effect.fn.Return<TestRunner.DryRunResult, never, ChildProcessSpawner.ChildProcessSpawner> {

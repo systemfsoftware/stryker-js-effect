@@ -1,6 +1,7 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
@@ -60,14 +61,14 @@ const inlinedBundle = () =>
     Match.orElse(() => __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__),
   )
 
-const readBundleFromDisk = Effect.fn('html_report.read_bundle_from_disk')(function*() {
+const readBundleFromDisk = Effect.fn(SpanTaxonomy.Spans.htmlReportReadBundleFromDisk.name)(function*() {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const bundlePath = yield* path.fromFileUrl(new URL(import.meta.resolve(BUNDLE_SPECIFIER)))
   return yield* fs.readFileString(bundlePath)
 })
 
-const writeHtmlFile = Effect.fn('html_report.write_file')(function*(fileName: string, html: string) {
+const writeHtmlFile = Effect.fn(SpanTaxonomy.Spans.htmlReportWriteFile.name)(function*(fileName: string, html: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
@@ -90,12 +91,14 @@ const readRenderCommand = (input: {
     report: input.report,
   })
 
-const writeBundleFromDisk = Effect.fn('html_report.write_bundle_from_disk')(function*(command: RenderHtmlReportRead) {
-  const bundle = yield* readBundleFromDisk()
-  yield* writeHtmlFile(command.fileName, buildReportHtml(command.report, bundle))
-})
+const writeBundleFromDisk = Effect.fn(SpanTaxonomy.Spans.htmlReportWriteBundleFromDisk.name)(
+  function*(command: RenderHtmlReportRead) {
+    const bundle = yield* readBundleFromDisk()
+    yield* writeHtmlFile(command.fileName, buildReportHtml(command.report, bundle))
+  },
+)
 
-export const writeHtmlReport = Sandwich.named('html_report.write')(readRenderCommand)
+export const writeHtmlReport = Sandwich.named(SpanTaxonomy.Spans.htmlReportWrite.name)(readRenderCommand)
   .decide(renderHtmlReport)
   .write({
     BundleInlined: ({ bundle }, command) => writeHtmlFile(command.fileName, buildReportHtml(command.report, bundle)),

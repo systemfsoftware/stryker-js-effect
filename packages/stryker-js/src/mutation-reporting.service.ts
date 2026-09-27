@@ -1,5 +1,5 @@
 /// <reference types="vitest/importMeta" />
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
@@ -415,7 +415,7 @@ const assembleTestFiles = (input: TestFilesInput): Effect.Effect<Report.TestFile
         })),
     ))
 
-const readMutatedSources = Effect.fn('stryker.mutationReporting.readMutatedSources')(function*(
+const readMutatedSources = Effect.fn(SpanTaxonomy.Spans.mutationReportingReadMutatedSources.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
   fileNames: readonly string[],
@@ -441,7 +441,7 @@ const readMutatedSources = Effect.fn('stryker.mutationReporting.readMutatedSourc
   }))
 })
 
-const readTestSources = Effect.fn('stryker.mutationReporting.readTestSources')(function*(
+const readTestSources = Effect.fn(SpanTaxonomy.Spans.mutationReportingReadTestSources.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
   fileNames: readonly string[],
@@ -464,7 +464,7 @@ const readTestSources = Effect.fn('stryker.mutationReporting.readTestSources')(f
     })))
 })
 
-const assembleReport = Effect.fn('stryker.mutationReporting.assembleReport')(function*(
+const assembleReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingAssembleReport.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
   results: readonly Mutant.RunMutantResult[],
@@ -498,7 +498,7 @@ const assembleReport = Effect.fn('stryker.mutationReporting.assembleReport')(fun
   return { files, testFiles, identities }
 })
 
-const manifestVersionOf = Effect.fn('stryker.mutationReporting.manifestVersion')(function*(
+const manifestVersionOf = Effect.fn(SpanTaxonomy.Spans.mutationReportingManifestVersion.name)(function*(
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
   specifier: string,
 ) {
@@ -514,7 +514,7 @@ const manifestVersionOf = Effect.fn('stryker.mutationReporting.manifestVersion')
   })
 })
 
-const discoverDependencies = Effect.fn('stryker.mutationReporting.discoverDependencies')(function*(
+const discoverDependencies = Effect.fn(SpanTaxonomy.Spans.mutationReportingDiscoverDependencies.name)(function*(
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
 ) {
   const pairs = yield* Effect.forEach(
@@ -535,7 +535,7 @@ const discoverDependencies = Effect.fn('stryker.mutationReporting.discoverDepend
   )
 })
 
-const mutationTestReport = Effect.fn('stryker.mutationReporting.mutationTestReport')(function*(
+const mutationTestReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingMutationTestReport.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
   results: readonly Mutant.RunMutantResult[],
@@ -625,7 +625,7 @@ const logBroken = (breaking: number | null, percentage: number) =>
     ),
   )
 
-const emitVerdict = Effect.fn('stryker.mutationReporting.emitVerdict')(function*(
+const emitVerdict = Effect.fn(SpanTaxonomy.Spans.mutationReportingEmitVerdict.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
   report: Report.MutationTestResult,
@@ -654,7 +654,7 @@ const emitVerdict = Effect.fn('stryker.mutationReporting.emitVerdict')(function*
   )
 })
 
-const writeIncrementalReport = Effect.fn('stryker.mutationReporting.writeIncrementalReport')(function*(
+const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWriteIncrementalReport.name)(function*(
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
   input: MutationReportingInput,
   report: Report.MutationTestResult,
@@ -669,7 +669,7 @@ const writeIncrementalReport = Effect.fn('stryker.mutationReporting.writeIncreme
   yield* deps.fs.writeFileString(input.options.incrementalFile, json)
 })
 
-const reportAll = Effect.fn('stryker.mutationReporting.reportAll')(function*(
+const reportAll = Effect.fn(SpanTaxonomy.Spans.mutationReportingReportAll.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
 ) {
@@ -706,7 +706,7 @@ const reportAll = Effect.fn('stryker.mutationReporting.reportAll')(function*(
   return { results: input.results, verdict: finalVerdict } satisfies MutationTestDone
 })
 
-const writeAtomic = Effect.fn('stryker.mutationReporting.writeAtomic')(function*(
+const writeAtomic = Effect.fn(SpanTaxonomy.Spans.mutationReportingWriteAtomic.name)(function*(
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
   file: string,
   content: string,
@@ -719,7 +719,7 @@ const writeAtomic = Effect.fn('stryker.mutationReporting.writeAtomic')(function*
   )
 })
 
-const slimIncrementalReport = Effect.fn('stryker.mutationReporting.slimIncrementalReport')(function*(
+const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlimIncrementalReport.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
   results: readonly Mutant.RunMutantResult[],
@@ -774,7 +774,7 @@ const checkpointResultsOf = (
     },
   )
 
-const checkpointIncremental = Effect.fn('stryker.mutationReporting.checkpoint')(function*(
+const checkpointIncremental = Effect.fn(SpanTaxonomy.Spans.mutationReportingCheckpoint.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
   plannedMutants: readonly Mutant.Mutant[],

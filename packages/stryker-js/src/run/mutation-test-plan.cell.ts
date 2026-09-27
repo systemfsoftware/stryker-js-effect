@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
@@ -54,7 +54,7 @@ export interface SandboxFilesInput {
 export const sandboxFilesOf: (
   input: SandboxFilesInput,
 ) => Effect.Effect<readonly (readonly [string, string])[], StageError> = Effect.fn(
-  'stryker.mutation_test.sandbox_files',
+  SpanTaxonomy.Spans.mutationTestSandboxFiles.name,
 )(function*(input: SandboxFilesInput) {
   return yield* Effect.fromResult(sandboxFilePairsOf(input.sandbox, input.fileNames)).pipe(
     Effect.mapError((cause) =>
@@ -123,23 +123,25 @@ type MutantTestPlanRaw = typeof MutantTestPlanCommand.Encoded & {
   readonly mutantsById: Record<string, Mutant.Mutant>
 }
 
-const readPlanCommand = Effect.fn('stryker.mutation_test.plan.read')(function*(input: MutationTestPlanInput) {
-  const sandboxFileByName: Record<string, string> = Object.fromEntries(
-    yield* sandboxFilesOf({
-      sandbox: input.sandbox,
-      fileNames: [...MutableHashMap.keys(input.project.filesToMutate)],
-    }),
-  )
-  const command = planCommandOf(
-    input.mutants,
-    input.testCoverage,
-    input.options,
-    input.timeOverheadMS,
-    undefined,
-    sandboxFileByName,
-  )
-  return { ...command, mutantsById: mutantsByIdOf(input.mutants) }
-})
+const readPlanCommand = Effect.fn(SpanTaxonomy.Spans.mutationTestPlanRead.name)(
+  function*(input: MutationTestPlanInput) {
+    const sandboxFileByName: Record<string, string> = Object.fromEntries(
+      yield* sandboxFilesOf({
+        sandbox: input.sandbox,
+        fileNames: [...MutableHashMap.keys(input.project.filesToMutate)],
+      }),
+    )
+    const command = planCommandOf(
+      input.mutants,
+      input.testCoverage,
+      input.options,
+      input.timeOverheadMS,
+      undefined,
+      sandboxFileByName,
+    )
+    return { ...command, mutantsById: mutantsByIdOf(input.mutants) }
+  },
+)
 
 type EncodedPlannedDecision = typeof PlannedRunMutant.Encoded | typeof PlannedEarlyResultMutant.Encoded
 
@@ -175,7 +177,7 @@ const materializeDecision = Effect.fnUntraced(function*(
 const earlyResultStatusOf = (mutant: Mutant.Mutant) =>
   Option.getOrElse(Option.fromUndefinedOr(mutant.status), () => 'Ignored' as const)
 
-const earlyResultOf = Effect.fn('stryker.mutation_test.early_result')((plan: Mutant.EarlyResultPlan) =>
+const earlyResultOf = Effect.fn(SpanTaxonomy.Spans.mutationTestEarlyResult.name)((plan: Mutant.EarlyResultPlan) =>
   Effect.succeed(Object.assign({}, plan.mutant, {
     status: earlyResultStatusOf(plan.mutant),
   }))
@@ -223,7 +225,7 @@ export const reportDroppedMutants = (dropped: readonly Mutant.Mutant[]) =>
       }),
   })
 
-const planMutantTestsCell = Sandwich.named('stryker.mutation_test.plan_mutants')(readPlanCommand)
+const planMutantTestsCell = Sandwich.named(SpanTaxonomy.Spans.mutationTestPlanMutants.name)(readPlanCommand)
   .decide(planMutantTests)
   .write({
     PlannedRunMutant: (decision, command) => materializeDecision(decision, command),
@@ -271,7 +273,7 @@ export interface MutationTestPlan {
   readonly plansForReporter: readonly Mutant.RunPlan[]
 }
 
-export const planMutationTest = Effect.fn('stryker.mutation_test.plan')(function*(
+export const planMutationTest = Effect.fn(SpanTaxonomy.Spans.mutationTestPlan.name)(function*(
   input: MutationTestPlanInput,
 ) {
   const plans = yield* planMutantTestsCell.run(input)

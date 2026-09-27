@@ -1,12 +1,11 @@
 export const CONTRACT_CLAUSES = {
-  DEAD_CODE: 'mutator-contract.md § R1 (Dead-Code Invariance: mutants placed regardless of reachability)',
-  STATEMENT_COMMUTATIVITY: 'mutator-contract.md § R1 (AST Commutativity: independent statement order invariant)',
-  BOOLEAN_ARITHMETIC_DUALITY:
-    'mutator-contract.md § LogicalOperator & § BooleanLiteral (Duality preserves tally mapping)',
+  DEAD_CODE: 'StockCatalog "ArithmeticOperator" (Dead-Code Invariance: mutants placed regardless of reachability)',
+  STATEMENT_COMMUTATIVITY: 'StockCatalog entries (AST Commutativity: independent statement order invariant)',
+  BOOLEAN_ARITHMETIC_DUALITY: 'StockCatalog "LogicalOperator" & "BooleanLiteral" (Duality preserves tally mapping)',
   DIRECTIVE_SCOPE:
-    'mutator-contract.md § R1 (Directive Scope Invariance: disable next-line mutes exactly next line, restore re-activates)',
+    'StockCatalog mutator names (Directive Scope Invariance: disable next-line mutes exactly next line, restore re-activates)',
   MUTATION_SUBSUMPTION:
-    'mutator-contract.md § R1 (Mutation Subsumption bounded: nested-subtree tallies reflect nesting rules)',
+    'StockCatalog "ArithmeticOperator" (Mutation Subsumption bounded: nested-subtree tallies reflect nesting rules)',
 } as const
 
 export interface DeadCodeInjectionOptions {

@@ -1,4 +1,5 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -92,7 +93,7 @@ const standbyStage = (state: StandbyThreadState): StandbyThreadStage =>
     Match.orElse((): StandbyThreadStage => 'spare'),
   )
 
-export const make = Effect.fn('vitest.standby_pool.make')(function*() {
+export const make = Effect.fn(SpanTaxonomy.Spans.vitestStandbyPoolMake.name)(function*() {
   const slots = yield* SynchronizedRef.make<ReadonlyArray<StandbySlot>>([])
   const lifetime = yield* Scope.Scope
   const scope = yield* Scope.fork(lifetime)
@@ -121,7 +122,7 @@ const claimedSlotOf = (
 ): Effect.Effect<StandbySlot> =>
   Effect.flatMap(acquireSlot(pool, options, 'claimed'), (slot) => registerSlot(pool, slot))
 
-export const claim = Effect.fn('vitest.standby_pool.claim')(function*(
+export const claim = Effect.fn(SpanTaxonomy.Spans.vitestStandbyPoolClaim.name)(function*(
   self: StandbyThreadsPool,
   options: PoolOptions,
 ) {
@@ -145,7 +146,7 @@ export const claim = Effect.fn('vitest.standby_pool.claim')(function*(
   return claimed.thread
 })
 
-export const release = Effect.fn('vitest.standby_pool.release')(function*(
+export const release = Effect.fn(SpanTaxonomy.Spans.vitestStandbyPoolRelease.name)(function*(
   self: StandbyThreadsPool,
   thread: PoolThread,
 ) {
@@ -168,7 +169,7 @@ const firstFailureOf = (
     { onNone: () => Effect.void, onSome: (failure) => Effect.fail(failure) },
   )
 
-export const dispose = Effect.fn('vitest.standby_pool.dispose')(function*(self: StandbyThreadsPool) {
+export const dispose = Effect.fn(SpanTaxonomy.Spans.vitestStandbyPoolDispose.name)(function*(self: StandbyThreadsPool) {
   const pool = StandbyThreadsPool.slot(self)
   const slots = yield* SynchronizedRef.get(pool.slots)
   const outcomes = yield* Effect.forEach(

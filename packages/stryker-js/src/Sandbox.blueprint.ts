@@ -1,6 +1,7 @@
 import type { JsonValue } from '@std/jsonc'
 import { parse } from '@std/jsonc'
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText, Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Predicate, Schema as S } from 'effect'
@@ -71,7 +72,7 @@ const makeDisableTypeChecksPreprocessor = (
   registry: Format.FormatRegistry,
   impl: typeof Instrument.disableTypeChecks,
 ) =>
-  Effect.fn('stryker.sandbox.preprocess.disable_type_checks')(function*(project: Project) {
+  Effect.fn(SpanTaxonomy.Spans.sandboxPreprocessDisableTypeChecks.name)(function*(project: Project) {
     const pathService = yield* Path.Path
     const files = yield* ProjectFiles
     const matcher = FileMatcher.make({ pattern: options.disableTypeChecks, allowHiddenFiles: true })
@@ -133,7 +134,7 @@ const makeTSConfigPreprocessor = (options: Options.StrykerOptions, basePath: str
     })
   }
 
-  const rewriteFileArrayProperties = Effect.fn('stryker.sandbox.tsconfig.rewrite-file-arrays')(function*(
+  const rewriteFileArrayProperties = Effect.fn(SpanTaxonomy.Spans.sandboxTsconfigRewriteFileArrays.name)(function*(
     config: TSConfig,
     tsconfigFile: ProjectFile,
     tsconfigFileName: string,
@@ -352,7 +353,7 @@ const failOnBuildFailure = (
     Match.orElse(() => Effect.void),
   )
 
-const runBuildCommandIn = Effect.fn('stryker.sandbox.build.run')(function*(
+const runBuildCommandIn = Effect.fn(SpanTaxonomy.Spans.sandboxBuildRun.name)(function*(
   command: string,
   workingDirectory: string,
 ): Effect.fn.Return<void, StrykerError, Path.Path | ChildProcessSpawner.ChildProcessSpawner> {
@@ -458,7 +459,7 @@ const nodeModulesStream = (walk: BaseWalk): Stream.Stream<string, PlatformError>
       }),
   )
 
-const findNodeModulesList = Effect.fn('stryker.sandbox.find_node_modules')(function*(
+const findNodeModulesList = Effect.fn(SpanTaxonomy.Spans.sandboxFindNodeModules.name)(function*(
   basePath: string,
   tempDirName: string | undefined,
 ): Effect.fn.Return<string[], PlatformError, FileSystem.FileSystem | Path.Path> {
@@ -472,7 +473,7 @@ const findNodeModulesList = Effect.fn('stryker.sandbox.find_node_modules')(funct
   return [...found]
 })
 
-const symlinkJunction = Effect.fn('stryker.sandbox.symlink_junction')(function*(
+const symlinkJunction = Effect.fn(SpanTaxonomy.Spans.sandboxSymlinkJunction.name)(function*(
   to: string,
   from: string,
 ): Effect.fn.Return<void, PlatformError, FileSystem.FileSystem | Path.Path> {
@@ -482,7 +483,7 @@ const symlinkJunction = Effect.fn('stryker.sandbox.symlink_junction')(function*(
   yield* fsService.symlink(to, from)
 })
 
-const moveEntry = Effect.fn('stryker.sandbox.move_entry')(function*(
+const moveEntry = Effect.fn(SpanTaxonomy.Spans.sandboxMoveEntry.name)(function*(
   from: string,
   to: string,
 ): Effect.fn.Return<void, PlatformError, FileSystem.FileSystem | Path.Path> {
@@ -495,7 +496,7 @@ const moveEntry = Effect.fn('stryker.sandbox.move_entry')(function*(
   })
 })
 
-const moveDirectoryContents = Effect.fn('stryker.sandbox.move_directory.contents')(function*(
+const moveDirectoryContents = Effect.fn(SpanTaxonomy.Spans.sandboxMoveDirectoryContents.name)(function*(
   from: string,
   to: string,
 ) {
@@ -510,7 +511,7 @@ const moveDirectoryContents = Effect.fn('stryker.sandbox.move_directory.contents
   yield* fs.remove(from, { recursive: true, force: true })
 })
 
-const moveDirectoryRecursive = Effect.fn('stryker.sandbox.move_directory')(function*(
+const moveDirectoryRecursive = Effect.fn(SpanTaxonomy.Spans.sandboxMoveDirectory.name)(function*(
   from: string,
   to: string,
 ): Effect.fn.Return<void, PlatformError, FileSystem.FileSystem | Path.Path> {
@@ -545,7 +546,7 @@ const hasBackupToRestore = (options: Options.StrykerOptions, backupDirectory: st
     onFalse: () => false,
   })
 
-const restoreFromBackup = Effect.fn('stryker.sandbox.restore_original')(function*(
+const restoreFromBackup = Effect.fn(SpanTaxonomy.Spans.sandboxRestoreOriginal.name)(function*(
   backupDirectory: string,
   workingDirectory: string,
   basePath: string,
@@ -592,7 +593,7 @@ const linksNodeModules = (options: Options.StrykerOptions) =>
     onFalse: () => false,
   })
 
-const linkNodeModules = Effect.fn('stryker.sandbox.link_node_modules')(function*(
+const linkNodeModules = Effect.fn(SpanTaxonomy.Spans.sandboxLinkNodeModules.name)(function*(
   nodeModules: string,
   workingDirectory: string,
   basePath: string,
@@ -634,7 +635,7 @@ const linkFoundNodeModules = (
       }),
   )
 
-const symlinkNodeModules = Effect.fn('stryker.sandbox.symlink_node_modules')(function*(
+const symlinkNodeModules = Effect.fn(SpanTaxonomy.Spans.sandboxSymlinkNodeModules.name)(function*(
   options: Options.StrykerOptions,
   workingDirectory: string,
   basePath: string,
@@ -651,7 +652,7 @@ export interface SandboxSpec extends MakeSandboxInput {
   readonly preprocessors: readonly FilePreprocessor[]
 }
 
-const acquireSandbox = Effect.fn('stryker.sandbox.acquire')(function*(spec: SandboxSpec) {
+const acquireSandbox = Effect.fn(SpanTaxonomy.Spans.sandboxAcquire.name)(function*(spec: SandboxSpec) {
   const { options, project, workingDirectory, backupDirectory, basePath } = spec
   yield* Scope.Scope
   const pathService = yield* Path.Path

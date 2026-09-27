@@ -1,4 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Schema as S } from 'effect'
@@ -255,7 +256,7 @@ type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
   readonly testFiles: readonly string[]
 }
 
-export const readProject = Effect.fn('stryker.project.read')(function*(input: ReadProjectInput) {
+export const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(function*(input: ReadProjectInput) {
   const mutatePatterns: readonly string[] = input.options.mutate
   const { testFileIgnores, testFilePatterns } = testFileSelectionOf(input.options)
   const inputFileNames = yield* resolveInputFileNames(ignoreRulesOf(input.options), input.basePath)
@@ -349,7 +350,7 @@ export const projectOf = ({
   project: makeProject(command.fileDescriptions, report, command.testFiles),
 })
 
-export const readProjectCell = Sandwich.named('stryker.project_read')(readProject)
+export const readProjectCell = Sandwich.named(SpanTaxonomy.Spans.projectRead.name)(readProject)
   .decide(admitIncrementalReport)
   .write({
     IncrementalReportKeep: (keep, command) => Effect.succeed(projectOf({ command, report: keep.report })),

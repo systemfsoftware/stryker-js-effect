@@ -6,7 +6,11 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 
-import { stockCatalogDocumentSource, streamDocumentSource } from '../scripts/contract-documents.js'
+import {
+  spanTaxonomyDocumentSource,
+  stockCatalogDocumentSource,
+  streamDocumentSource,
+} from '../scripts/contract-documents.js'
 
 const Feature = makeFeature({ it })
 
@@ -45,6 +49,20 @@ Feature('Regenerating the published CLI contract documents')
         When('the generator reconstructs the document from the catalog')(
           'regenerated',
           () => Effect.sync(() => stockCatalogDocumentSource()),
+        ),
+        Then('the regenerated document equals the committed bytes')((s, expect) =>
+          expect(s.regenerated).toEqual(s.committed)
+        ),
+      ),
+    )
+
+    scenario(
+      'The committed span taxonomy document is byte for byte what the generator writes from the taxonomy',
+      Gherkin.Do.pipe(
+        Given('the committed span taxonomy document')('committed', () => readCommitted('contract/span-taxonomy.json')),
+        When('the generator reconstructs the document from the taxonomy')(
+          'regenerated',
+          () => Effect.sync(() => spanTaxonomyDocumentSource()),
         ),
         Then('the regenerated document equals the committed bytes')((s, expect) =>
           expect(s.regenerated).toEqual(s.committed)

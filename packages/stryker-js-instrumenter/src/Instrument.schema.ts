@@ -3,6 +3,7 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
 import { MutatorNameSchema } from './directives/directive.schema.js'
+import type { MutatorSelection } from './Mutator.service.js'
 
 export class InstrumentError
   extends S.TaggedError<InstrumentError>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/InstrumentError')(
@@ -41,10 +42,13 @@ const IgnorerSchema = S.Unknown
 export const InstrumenterOptionsSchema = S.Struct({
   excludedMutations: S.Array(MutatorNameSchema),
   ignorers: S.Array(IgnorerSchema),
+  mutators: S.Unknown,
   noHeader: S.optional(S.Boolean),
   optInMutations: S.String.pipe(S.Array, S.optional),
 })
-export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
+export type InstrumenterOptions = Omit<typeof InstrumenterOptionsSchema.Type, 'mutators'> & {
+  readonly mutators: MutatorSelection
+}
 
 export class InstrumentFileSkip extends S.TaggedClass<InstrumentFileSkip>()('InstrumentFileSkip', {
   file: S.String,

@@ -1,3 +1,4 @@
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean } from 'effect'
 import * as Context from 'effect/Context'
@@ -40,7 +41,7 @@ const removesTempDir = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>, cleanTe
       ),
   })
 
-const removeEmptyParentDirectory = Effect.fn('stryker.sandbox.remove_empty_parent')(function*(
+const removeEmptyParentDirectory = Effect.fn(SpanTaxonomy.Spans.sandboxRemoveEmptyParent.name)(function*(
   parent: string,
   fs: FileSystem.FileSystem,
 ): Effect.fn.Return<void, PlatformError> {
@@ -51,7 +52,7 @@ const removeEmptyParentDirectory = Effect.fn('stryker.sandbox.remove_empty_paren
   })
 })
 
-const removeTempDirectory = Effect.fn('stryker.sandbox.remove_temp_dir')(function*(
+const removeTempDirectory = Effect.fn(SpanTaxonomy.Spans.sandboxRemoveTempDir.name)(function*(
   tmp: string,
   parent: string,
   fs: FileSystem.FileSystem,
@@ -65,7 +66,7 @@ const removeTempDirectory = Effect.fn('stryker.sandbox.remove_temp_dir')(functio
   })
 })
 
-const makeTemporaryDirectory = Effect.fn('stryker.sandbox.make_temp_dir')(function*(
+const makeTemporaryDirectory = Effect.fn(SpanTaxonomy.Spans.sandboxMakeTempDir.name)(function*(
   options: Options.StrykerOptions,
 ): Effect.fn.Return<TemporaryDirectoryShape, PlatformError, FileSystem.FileSystem | Path.Path | Scope.Scope> {
   const fs = yield* FileSystem.FileSystem

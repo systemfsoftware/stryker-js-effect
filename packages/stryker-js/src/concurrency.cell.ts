@@ -1,4 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -37,7 +38,7 @@ export const concurrencyCell: Cell.Cell<
   PrepareDone & { readonly concurrency: { readonly testRunners: number; readonly checkers: number } },
   never,
   never
-> = Sandwich.named('stryker.concurrency')(readConcurrency)
+> = Sandwich.named(SpanTaxonomy.Spans.concurrency.name)(readConcurrency)
   .decide(resolveConcurrency)
   .write({
     TestRunnersAndCheckers: (split, command) =>
