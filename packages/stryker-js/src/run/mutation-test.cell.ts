@@ -126,6 +126,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     mutants: reuse.mutants,
     testCoverage: prev.testCoverage,
     options: {
+      coverageAnalysis: prev.options.coverageAnalysis,
       disableBail: prev.options.disableBail,
       timeoutMS: prev.options.timeoutMS,
       timeoutFactor: prev.options.timeoutFactor,

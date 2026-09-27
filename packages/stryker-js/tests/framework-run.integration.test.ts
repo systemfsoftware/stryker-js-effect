@@ -376,7 +376,7 @@ Feature('Framework plugins joining a mutation run')
                   formatOwner: pluginUrlOf('valid-framework.fixture.mjs'),
                   formatId: 'fixture',
                   formatLanguage: 'fixture',
-                  claimedMutantStatus: 'Survived',
+                  claimedMutantStatus: 'NoCoverage',
                   stateLanguage: 'fixture',
                   stateFormatIdentity: {
                     formatId: 'fixture',

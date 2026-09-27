@@ -1,6 +1,6 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Options, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Metric from 'effect/Metric'
@@ -86,6 +86,7 @@ const planCommandOf = (
   mutants: readonly Mutant.Mutant[],
   testCoverage: TestCoverage,
   options: {
+    readonly coverageAnalysis: Options.CoverageAnalysisModeType
     readonly disableBail: boolean
     readonly timeoutMS: number
     readonly timeoutFactor: number
@@ -249,6 +250,7 @@ export interface MutationTestPlanInput {
   readonly mutants: readonly Mutant.Mutant[]
   readonly testCoverage: TestCoverage
   readonly options: {
+    readonly coverageAnalysis: Options.CoverageAnalysisModeType
     readonly disableBail: boolean
     readonly timeoutMS: number
     readonly timeoutFactor: number

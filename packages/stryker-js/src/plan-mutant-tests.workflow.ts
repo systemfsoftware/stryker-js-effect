@@ -222,6 +222,20 @@ const mutantIsCovered = (command: MutantTestPlanCommand, mutantId: Mutant.Mutant
     onSome: (tests) => Boolean.or(tests.length > 0, mutantIsStatic(command, mutantId)),
   })
 
+const coveringTestIdsOf = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId) =>
+  Option.getOrElse(Record.get(command.testsByMutantId, mutantId), (): readonly string[] => [])
+
+const isPerTestUncoveredNonStatic = (
+  command: MutantTestPlanCommand,
+  mutant: Mutant.Mutant,
+  isStatic: boolean,
+) =>
+  Boolean.every([
+    command.options.coverageAnalysis === 'perTest',
+    Boolean.not(isStatic),
+    Boolean.not(mutantIsCovered(command, mutant.id)),
+  ])
+
 const decidePlanForMutant = (
   mutant: Mutant.Mutant,
   command: MutantTestPlanCommand,
@@ -231,10 +245,17 @@ const decidePlanForMutant = (
     onSome: (status) =>
       Result.succeed(toEarlyResultPlan(mutant, isStatic, status, mutant.statusReason, coveredByOfMutant(mutant))),
     onNone: () =>
-      Boolean.match(hasCoverageForPlan(command.staticCoverage), {
-        onTrue: () => planForStaticallyCovered(mutant, command, isStatic),
+      Boolean.match(isPerTestUncoveredNonStatic(command, mutant, isStatic), {
+        onTrue: () =>
+          Result.succeed(
+            toEarlyResultPlan(mutant, isStatic, 'NoCoverage', undefined, coveringTestIdsOf(command, mutant.id)),
+          ),
         onFalse: () =>
-          toRunPlan(mutant, command, command.timeSpentAllTests, command.globalTestFilter, undefined, undefined),
+          Boolean.match(hasCoverageForPlan(command.staticCoverage), {
+            onTrue: () => planForStaticallyCovered(mutant, command, isStatic),
+            onFalse: () =>
+              toRunPlan(mutant, command, command.timeSpentAllTests, command.globalTestFilter, undefined, undefined),
+          }),
       }),
   })
 }
