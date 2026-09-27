@@ -6,4 +6,6 @@ The machine-stream events, the stock mutator catalog and the span taxonomy moved
 
 The mutants in the stream's `verdict` event carry string ids, as the report's do, instead of decoding `Mutant.MutantId`.
 
+With `OTEL_ENABLED=true` the CLI exports spans in batches. It used to send one request per span, and the OTLP exporter drops any export beyond 30 in flight, so a run against a slow collector lost spans at random, including the parents that link a run's phases to `stryker.cli.run`.
+
 Import the stream events, the catalog and the taxonomy from the CLI contract.
