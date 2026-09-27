@@ -1,24 +1,18 @@
 #!/usr/bin/env tsx
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { Array, Boolean, ConfigProvider, Effect, Layer, ManagedRuntime, Match, Option, Result, Schema } from 'effect'
-import * as Crypto from 'effect/Crypto'
+import { Array, Boolean, ConfigProvider, Effect, Layer, Match, Option, Result, Schema } from 'effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
-import { ChildProcessSpawner } from 'effect/unstable/process'
 
-import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
-import { Readiness } from '@systemfsoftware/effect-readiness'
+import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { RunEvent } from '@systemfsoftware/stryker-js'
 
 import type { BakeOutcome } from '../src/Harness/bake-key.schema.js'
 import { BakedFixtureCache } from '../src/Harness/fixture-cache.service.js'
-import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { GuestJobs } from '../src/Harness/guest-job.service.js'
-import type { HarnessError } from '../src/Harness/harness-failure.schema.js'
-import { layer as harnessTelemetryLayer } from '../src/Harness/harness-telemetry.service.js'
+import { BlessRefused } from '../src/Harness/harness-failure.schema.js'
+import { HarnessPlatformLive, HarnessServicesLive } from '../src/Harness/harness-layers.js'
 import { StrykerCliRunner } from '../src/Harness/stryker-cli-runner.service.js'
 import {
   type BaselineCounts,
@@ -32,18 +26,6 @@ import { foldTimeoutIntoKilled, normalizeTally } from './oracle/normalize.js'
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fixture', import.meta.url)
 const BASELINE_OUTPUT_DIR = join(REPO_ROOT, 'test/e2e/oracle-baselines')
-
-type HarnessRuntime = ManagedRuntime.ManagedRuntime<
-  | BakedFixtureCache
-  | StrykerCliRunner
-  | GuestJobs
-  | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
-  | FileSystem.FileSystem
-  | Path.Path
-  | Readiness.HostProber,
-  HarnessError
->
 
 const foldForGate = (baseline: BlessedBaseline): BlessedBaseline => ({
   ...baseline,
@@ -72,6 +54,9 @@ function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
   const slices: OracleSliceId[] = []
   let verify = false
   for (const arg of argv) {
+    if (arg === '--') {
+      continue
+    }
     if (arg === '--verify') {
       verify = true
       continue
@@ -144,6 +129,10 @@ const countsOf = (verdict: VerdictEvent): BaselineCounts => ({
   timeout: verdict.counts.timeout,
 })
 
+const messageOf = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause))
+
+const refuse = (reason: string): Effect.Effect<never, BlessRefused> => Effect.fail(new BlessRefused({ reason }))
+
 const decodeEvent = (line: string, slice: OracleSliceId): RunEvent.RunEvent =>
   Result.match(Schema.decodeResult(RunEvent.RunEventWireLine)(line), {
     onFailure: (issue) => {
@@ -202,54 +191,62 @@ function parseRunEvents(stdout: string, slice: OracleSliceId): ParsedRun {
   })
 }
 
-async function runSliceOnce(
-  runtime: HarnessRuntime,
-  slice: OracleSliceId,
-  attempt: number,
-): Promise<BlessedBaseline> {
-  const config = OracleSliceConfig.SLICES[slice]
-  const fixtureName = `oracle-${slice}`
-  const warm = await runtime.runPromise(BakedFixtureCache.use((cache) => cache.warm(ENTERPRISE_FIXTURE_URL)))
-  const args: string[] = ['run', config.strykerConfig]
-  const run: ExecResult = await runtime.runPromise(
-    Effect.scoped(StrykerCliRunner.use((runner) => runner.run(args, warm, fixtureName))).pipe(
-      Effect.map((forked) => forked.result),
-    ),
-  )
-  if (run.exitCode !== 0) {
-    throw new Error(
-      `Slice "${slice}" (attempt ${attempt}) exited with code ${run.exitCode}; refusing to bless a failing run.\nstdout: ${
-        run.stdout.slice(-2000)
-      }\nstderr: ${run.stderr.slice(-2000)}`,
-    )
-  }
-  return parseRunEvents(run.stdout, slice).baseline
-}
+const runSliceOnce = (slice: OracleSliceId, attempt: number) =>
+  Effect.gen(function*() {
+    const config = OracleSliceConfig.SLICES[slice]
+    const fixtureName = `oracle-${slice}`
+    const cache = yield* BakedFixtureCache
+    const warm = yield* cache.warm(ENTERPRISE_FIXTURE_URL)
+    const runner = yield* StrykerCliRunner
+    const forked = yield* Effect.scoped(runner.run(['run', config.strykerConfig], warm, fixtureName))
+    const run = forked.result
+    if (run.exitCode !== 0) {
+      return yield* refuse(
+        `Slice "${slice}" (attempt ${attempt}) exited with code ${run.exitCode}; refusing to bless a failing run.\nstdout: ${
+          run.stdout.slice(-2000)
+        }\nstderr: ${run.stderr.slice(-2000)}`,
+      )
+    }
+    return yield* Effect.try({
+      try: () => parseRunEvents(run.stdout, slice).baseline,
+      catch: (cause) => new BlessRefused({ reason: messageOf(cause) }),
+    })
+  })
 
-async function writeBaselineFile(baseline: BlessedBaseline): Promise<string> {
-  const outPath = join(BASELINE_OUTPUT_DIR, `${baseline.slice}.json`)
-  await mkdir(dirname(outPath), { recursive: true })
-  const encoded = Result.getOrThrow(Schema.encodeUnknownResult(BlessedBaseline)(baseline))
-  await writeFile(outPath, `${JSON.stringify(encoded, undefined, 2)}\n`, 'utf8')
-  return outPath
-}
+const writeBaselineFile = (baseline: BlessedBaseline) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const outPath = path.join(BASELINE_OUTPUT_DIR, `${baseline.slice}.json`)
+    yield* fs.makeDirectory(BASELINE_OUTPUT_DIR, { recursive: true })
+    const encoded = yield* Effect.try({
+      try: () => Result.getOrThrow(Schema.encodeUnknownResult(BlessedBaseline)(baseline)),
+      catch: (cause) => new BlessRefused({ reason: messageOf(cause) }),
+    })
+    yield* fs.writeFileString(outPath, `${JSON.stringify(encoded, undefined, 2)}\n`)
+    return outPath
+  })
 
-async function readExistingBaseline(slice: OracleSliceId): Promise<BlessedBaseline | undefined> {
-  const path = join(BASELINE_OUTPUT_DIR, `${slice}.json`)
-  try {
-    const text = await readFile(path, 'utf8')
-    return Result.getOrThrow(Schema.decodeUnknownResult(BlessedBaseline)(JSON.parse(text)))
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') {
+const readExistingBaseline = (slice: OracleSliceId) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const filePath = path.join(BASELINE_OUTPUT_DIR, `${slice}.json`)
+    const present = yield* fs.exists(filePath)
+    if (!present) {
       return undefined
     }
-    throw cause
-  }
-}
+    const text = yield* fs.readFileString(filePath)
+    return yield* Effect.try({
+      try: () => Result.getOrThrow(Schema.decodeUnknownResult(BlessedBaseline)(JSON.parse(text))),
+      catch: (cause) => new BlessRefused({ reason: messageOf(cause) }),
+    })
+  })
 
-function reportRun(slice: OracleSliceId, attempt: number, startedMs: number, finishedMs: number): void {
-  console.log(`[${slice}] run ${attempt}: wall=${(finishedMs - startedMs) / 1000}s`)
-}
+const reportRun = (slice: OracleSliceId, attempt: number, startedMs: number, finishedMs: number): Effect.Effect<void> =>
+  Effect.sync(() => {
+    console.log(`[${slice}] run ${attempt}: wall=${(finishedMs - startedMs) / 1000}s`)
+  })
 
 interface BaselineDiff {
   readonly countsDiff: Readonly<Record<string, readonly [number, number]>>
@@ -315,107 +312,100 @@ const formatBaselineDiff = (diff: BaselineDiff): string =>
       ].join('\n'),
   })
 
-async function blessSlice(runtime: HarnessRuntime, slice: OracleSliceId, verify: boolean): Promise<void> {
-  const sliceConfig: OracleSliceConfig = OracleSliceConfig.SLICES[slice]
-  const existing = await readExistingBaseline(slice)
-  const wallStartMs = Date.now()
-  const firstStartMs = Date.now()
-  const first = await runSliceOnce(runtime, slice, 1)
-  const firstFinishedMs = Date.now()
-  reportRun(slice, 1, firstStartMs, firstFinishedMs)
+const blessSlice = (slice: OracleSliceId, verify: boolean) =>
+  Effect.gen(function*() {
+    const sliceConfig: OracleSliceConfig = OracleSliceConfig.SLICES[slice]
+    const existing = yield* readExistingBaseline(slice)
+    const wallStartMs = Date.now()
+    const firstStartMs = Date.now()
+    const first = yield* runSliceOnce(slice, 1)
+    const firstFinishedMs = Date.now()
+    yield* reportRun(slice, 1, firstStartMs, firstFinishedMs)
 
-  if (verify) {
-    const secondStartMs = Date.now()
-    const second = await runSliceOnce(runtime, slice, 2)
-    const secondFinishedMs = Date.now()
-    reportRun(slice, 2, secondStartMs, secondFinishedMs)
-    const gateDiff = compareBaselines(foldForGate(first), foldForGate(second))
-    if (!gateDiff.isEmpty()) {
-      throw new Error(
-        `Slice "${slice}" is FLAKY across two consecutive runs on the normalized projection (R5 flake gate).\n${
-          formatBaselineDiff(gateDiff)
-        }`,
-      )
+    if (verify) {
+      const secondStartMs = Date.now()
+      const second = yield* runSliceOnce(slice, 2)
+      const secondFinishedMs = Date.now()
+      yield* reportRun(slice, 2, secondStartMs, secondFinishedMs)
+      const gateDiff = compareBaselines(foldForGate(first), foldForGate(second))
+      if (!gateDiff.isEmpty()) {
+        return yield* refuse(
+          `Slice "${slice}" is FLAKY across two consecutive runs on the normalized projection (R5 flake gate).\n${
+            formatBaselineDiff(gateDiff)
+          }`,
+        )
+      }
+      const rawDiff = compareBaselines(first, second)
+      if (!rawDiff.isEmpty()) {
+        yield* Effect.sync(() =>
+          console.log(
+            `[${slice}] flake gate: raw K/T boundary moved but the folded projection agrees:\n${
+              formatBaselineDiff(rawDiff)
+            }`,
+          )
+        )
+      } else {
+        yield* Effect.sync(() => console.log(`[${slice}] flake gate: 2/2 runs agree byte-for-byte`))
+      }
     }
-    const rawDiff = compareBaselines(first, second)
-    if (!rawDiff.isEmpty()) {
+
+    if (existing !== undefined) {
+      const drift = compareBaselines(foldForGate(existing), foldForGate(first))
+      if (!drift.isEmpty()) {
+        yield* Effect.sync(() =>
+          console.log(
+            `[${slice}] note: existing baseline at ${
+              join(BASELINE_OUTPUT_DIR, `${slice}.json`)
+            } differs from fresh blessing on the normalized projection:\n${formatBaselineDiff(drift)}`,
+          )
+        )
+      } else {
+        yield* Effect.sync(() =>
+          console.log(`[${slice}] note: existing baseline matches fresh blessing on the normalized projection`)
+        )
+      }
+    }
+
+    const outPath = yield* writeBaselineFile(first)
+    yield* Effect.sync(() => {
       console.log(
-        `[${slice}] flake gate: raw K/T boundary moved but the folded projection agrees:\n${
-          formatBaselineDiff(rawDiff)
-        }`,
+        `[${slice}] blessed baseline written: ${outPath} (slice=${sliceConfig.id}, config=${sliceConfig.strykerConfig})`,
       )
-    } else {
-      console.log(`[${slice}] flake gate: 2/2 runs agree byte-for-byte`)
-    }
-  }
+      console.log(`[${slice}] total wall=${(Date.now() - wallStartMs) / 1000}s`)
+    })
+  })
 
-  if (existing !== undefined) {
-    const drift = compareBaselines(foldForGate(existing), foldForGate(first))
-    if (!drift.isEmpty()) {
-      console.log(
-        `[${slice}] note: existing baseline at ${
-          join(BASELINE_OUTPUT_DIR, `${slice}.json`)
-        } differs from fresh blessing on the normalized projection:\n${formatBaselineDiff(drift)}`,
-      )
-    } else {
-      console.log(`[${slice}] note: existing baseline matches fresh blessing on the normalized projection`)
-    }
-  }
-
-  const outPath = await writeBaselineFile(first)
-  console.log(
-    `[${slice}] blessed baseline written: ${outPath} (slice=${sliceConfig.id}, config=${sliceConfig.strykerConfig})`,
-  )
-  console.log(`[${slice}] total wall=${(Date.now() - wallStartMs) / 1000}s`)
-}
-
-let bakeOutcome: BakeOutcome | undefined
-
-const selfBakingHarness = Layer.mergeAll(
-  BakedFixtureCache.layer,
-  StrykerCliRunner.layer,
-  GuestJobs.layer,
-).pipe(
-  Layer.provideMerge(
-    ConfigProvider.layerAdd(
-      Effect.map(
-        BakedFixtureCache.bakeProgram,
-        (outcome) => {
-          bakeOutcome = outcome
-          return ConfigProvider.fromUnknown({
-            [BakedFixtureCache.BAKED_ROOT_ENV]: outcome.root,
-            [BakedFixtureCache.BAKED_KEYS_ENV]: JSON.stringify(outcome.keys),
-          })
-        },
-      ),
-      { asPrimary: true },
+const bakedConfigLayer = ConfigProvider.layerAdd(
+  Effect.acquireRelease(
+    BakedFixtureCache.bakeProgram,
+    (outcome: BakeOutcome) => BakedFixtureCache.teardownProgram(outcome).pipe(Effect.ignore),
+  ).pipe(
+    Effect.map((outcome) =>
+      ConfigProvider.fromUnknown({
+        [BakedFixtureCache.BAKED_ROOT_ENV]: outcome.root,
+        [BakedFixtureCache.BAKED_KEYS_ENV]: JSON.stringify(outcome.keys),
+      })
     ),
   ),
-  Layer.provideMerge(
-    Layer.mergeAll(GuestJobs.layer, nodeServicesLayer, Readiness.NodeHostProber.layer, harnessTelemetryLayer),
-  ),
+  { asPrimary: true },
 )
 
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2))
-  if (args.verify && args.slices.length > 1) {
-    throw new Error('--verify runs two consecutive runs per slice; pass exactly one slice with --verify')
-  }
-  const runtime = ManagedRuntime.make(selfBakingHarness)
-  try {
-    for (const requested of args.slices) {
-      const known = ensureKnownSlice(requested)
-      await blessSlice(runtime, known, args.verify)
-    }
-  } finally {
-    if (bakeOutcome !== undefined) {
-      await runtime.runPromiseExit(BakedFixtureCache.teardownProgram(bakeOutcome))
-    }
-    await runtime.dispose()
-  }
-}
+const harnessLayer = HarnessServicesLive.pipe(
+  Layer.provideMerge(bakedConfigLayer),
+  Layer.provideMerge(HarnessPlatformLive),
+)
 
-main().catch((cause: unknown) => {
-  console.error((cause as Error).message)
-  process.exit(1)
+const program = Effect.gen(function*() {
+  const args = yield* Effect.try({
+    try: () => parseArgs(process.argv.slice(2)),
+    catch: (cause) => new BlessRefused({ reason: messageOf(cause) }),
+  })
+  if (args.verify && args.slices.length > 1) {
+    return yield* refuse('--verify runs two consecutive runs per slice; pass exactly one slice with --verify')
+  }
+  yield* Effect.forEach(args.slices, (slice) => blessSlice(slice, args.verify), { discard: true }).pipe(
+    Effect.provide(harnessLayer),
+  )
 })
+
+NodeRuntime.runMain(program)

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
+import * as OtelTracer from '@effect/opentelemetry/OtelTracer'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import * as NodeTerminal from '@effect/platform-node/NodeTerminal'
 import { AggregationTemporalityPreference, OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http'
@@ -36,6 +37,7 @@ import { concludeRunCell, runOutcomeCommandOf } from '../conclude-run.cell.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
+import { environmentParentContext } from '../reporter-stream.service.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
 import { errorEnvelopeFromOutcome, runExitCodeFromOutcome } from '../reporting/run-failure.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
@@ -216,8 +218,9 @@ const strykerProgram = Effect.gen(function*() {
     onTrue: () => MachineConsole.captureLayer,
     onFalse: () => Layer.empty,
   })
+  const parent = Option.getOrUndefined(Option.map(yield* environmentParentContext, OtelTracer.makeExternalSpan))
   return yield* Effect.uninterruptibleMask((restore) =>
-    Effect.withSpan('stryker.cli.run')(
+    Effect.withSpan('stryker.cli.run', { parent })(
       Effect.gen(function*() {
         const exit = yield* Effect.exit(
           restore(

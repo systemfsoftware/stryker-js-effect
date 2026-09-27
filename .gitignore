@@ -5,6 +5,7 @@ reports/
 .stryker-tmp/
 e2e-telemetry/
 e2e-telemetry.tar.gz
+test/e2e/artifacts/
 *.tsbuildinfo
 
 .mcp.json

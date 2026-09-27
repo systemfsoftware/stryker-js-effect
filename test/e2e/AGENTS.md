@@ -37,22 +37,21 @@ under `tests/`.
 ## Machine stream
 
 The CLI writes machine-mode events to stdout and to `reports/mutation-stream.jsonl`
-under the run's working directory. Journeys parse stdout.
+under the run's working directory. Journeys decode stdout through `tests/__fixtures__/machine-stream.fixture.ts`.
 
 ## MicroVM environment
 
 Read by the harness services in `src/Harness/`; the `test:e2e` turbo task passes the OTEL variables through.
 
-| Variable                         | Value                                                             | Why                                                                                           |
-| -------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `OTEL_ENABLED`                   | `true` starts the CLI's, its workers' and the test process's SDKs | The lifecycle journey grades the run's trace; the CI `e2e` job sets it                        |
-| `OTEL_SERVICE_NAME`              | default `stryker-e2e`                                             | One service name across the CLI, its workers and the test process — what the journey searches |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`    | default `http://127.0.0.1:4318`                                   | The host collector each forked microVM exports to                                             |
-| `STRYKER_E2E_BAKED_ROOT`         | set by global setup                                               | The baked cache entry every warm microVM copies its fixture from                              |
-| `STRYKER_E2E_BAKED_FIXTURE_KEYS` | set by global setup                                               | The per-fixture bake keys, so a worker resolves `<fixtureId>.<key>` inside that entry         |
+| Variable                         | Value                            | Why                                                                                                                                      |
+| -------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `OTEL_ENABLED`                   | forced to `true` by global setup | Every CLI run exports its trace, and the lifecycle feature judges one; a run refuses an explicit `false`                                 |
+| `OTEL_SERVICE_NAME`              | default `stryker-e2e`            | One service name across the CLI, its workers and the test process                                                                        |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`    | default `http://127.0.0.1:4318`  | The host collector each forked microVM exports to                                                                                        |
+| `TEMPO_URL`                      | default `http://127.0.0.1:3200`  | Tempo's HTTP API; the lifecycle contract reads `/api/v2/traces/{id}` from this base URL (read in `tests/__fixtures__/tempo-endpoint.ts`) |
+| `STRYKER_E2E_BAKED_ROOT`         | set by global setup              | The baked cache entry every warm microVM copies its fixture from                                                                         |
+| `STRYKER_E2E_BAKED_FIXTURE_KEYS` | set by global setup              | The per-fixture bake keys, so a worker resolves `<fixtureId>.<key>` inside that entry                                                    |
 
-`StrykerCliRunner` passes the OTEL variables into every forked run, so a spawned worker inherits them.
-Each fork is restored with host access, and the endpoint's loopback host is rewritten to `host.microsandbox.internal`,
-so the collector must publish 4318 beyond loopback (`process-compose.yaml` does).
-The harness exports its own seam spans (setup, pack, keys, bake, fixture install, guest job, CLI run) to the
-same collector under `OTEL_ENABLED`.
+Global setup probes Tempo's readiness at `TEMPO_URL` before any test runs; a run fails if the collector is unreachable, naming the remediation `pnpm lgtm:up`. `StrykerCliRunner` passes the OTEL variables into every forked run, so a spawned worker inherits them. Each fork is restored with host access, and the endpoint's loopback host is rewritten to `host.microsandbox.internal`, so the collector must publish 4318 beyond loopback.
+
+Each CLI invocation runs as a trace-spec `Stimulus` under a trace id the test owns, passed to the CLI as `TRACEPARENT` in its environment. The harness annotates the Vitest task with `trace <id>`; a failure report names the id, and a contract Break also writes a dump under `test/e2e/artifacts/traces/`. The harness exports its own seam spans (setup, pack, keys, bake, fixture install, guest job, CLI run) into the same trace. Observation settings (`TRACE_POLL_INTERVAL`, `TRACE_SETTLE_WINDOW`, `TRACE_OBSERVATION_TIMEOUT`) live in `tests/__fixtures__/trace-observation.fixture.ts`.

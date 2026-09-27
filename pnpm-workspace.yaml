@@ -35,6 +35,8 @@ catalog:
   "@systemfsoftware/effect-schema-law": ^4.0.0
   "@systemfsoftware/effect-schema-vite": ^2.2.6
   "@systemfsoftware/oxlint-config-recommended": ^3.2.0
+  "@systemfsoftware/trace-spec": ^0.5.1
+  "@systemfsoftware/trace-taxonomy": ^0.0.2
   "@systemfsoftware/tsconfig": ^2.0.1
   "@systemfsoftware/vitest": ^0.2.0
   "@types/estree": ^1.0.5
