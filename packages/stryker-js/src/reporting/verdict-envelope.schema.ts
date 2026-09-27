@@ -3,8 +3,6 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export type VerdictCounts = Report.Metrics
-
 export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')({
   schemaVersion: RunEvent.StreamSchemaVersion,
   runId: RunEvent.RunId,

@@ -9,29 +9,16 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 export const Offset = S.Int.check(S.isGreaterThanOrEqualTo(0))
 export type Offset = typeof Offset.Type
 
-interface Ends<A> {
-  readonly start: A
-  readonly end: A
-}
-
-const inOrder = <A>(order: Order.Order<A>) => (ends: Ends<A>): Ends<A> => ({
-  start: Order.min(order)(ends.start, ends.end),
-  end: Order.max(order)(ends.start, ends.end),
-})
-
-const notReversed = <A>(order: Order.Order<A>) => (ends: Ends<A>): boolean =>
-  Order.isLessThanOrEqualTo(order)(ends.start, ends.end)
-
 const OffsetEnds = S.Struct({ start: Offset, end: Offset })
 type OffsetEnds = typeof OffsetEnds.Type
 
 export const Span = S.declare(
-  (value: unknown): value is OffsetEnds => S.is(OffsetEnds)(value) && notReversed(Order.Number)(value),
+  (value: unknown): value is OffsetEnds => S.is(OffsetEnds)(value) && Mutant.notReversed(Order.Number)(value),
   {
     expected: 'a span whose end is not before its start',
     toCodecArbitrary: () =>
       S.link<OffsetEnds>()(OffsetEnds, {
-        decode: SchemaGetter.transform(inOrder(Order.Number)),
+        decode: SchemaGetter.transform(Mutant.inOrder(Order.Number)),
         encode: SchemaGetter.transform((ends: OffsetEnds) => ends),
       }),
   },

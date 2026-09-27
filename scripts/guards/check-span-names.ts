@@ -190,8 +190,7 @@ const selftest = (): number => {
 const main = async (): Promise<number> => {
   if (Deno.args.includes('--selftest')) return selftest()
 
-  const root = Deno.args.find((arg) => !arg.startsWith('--')) ?? '.'
-  const files = await listSources(`${root}/packages`)
+  const files = await listSources('./packages')
   let failures = 0
   for (const file of files) {
     const findings = findSpanNameLiterals(await Deno.readTextFile(file))

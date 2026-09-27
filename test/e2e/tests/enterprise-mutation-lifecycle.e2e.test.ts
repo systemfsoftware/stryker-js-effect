@@ -1,12 +1,11 @@
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Contract } from '@systemfsoftware/trace-spec'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import { Effect } from 'effect'
 
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { compareAnnotatedRun } from './__fixtures__/annotation-oracle.fixture.js'
+import { compareAnnotatedRun, statusesOf } from './__fixtures__/annotation-oracle.fixture.js'
 import { E2eHarnessLive } from './__fixtures__/e2e-harness.fixture.js'
 import { decodeStream, runIdsIn, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
 import { readReportOf } from './__fixtures__/run-artifacts.fixture.js'
@@ -31,9 +30,6 @@ const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = [
 ]
 const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutantTested', 'verdict']
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
-
-const statusesOf = (report: Report.MutationTestResult): ReadonlyArray<string> =>
-  Object.values(report.files).flatMap((file) => file.mutants.map((mutant) => mutant.status))
 
 const terminalIndexesIn = (kinds: ReadonlyArray<string>): ReadonlyArray<number> =>
   kinds

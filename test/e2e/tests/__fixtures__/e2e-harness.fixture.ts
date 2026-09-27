@@ -42,6 +42,7 @@ export interface StrykerRunOutput {
 }
 
 const PERSIST_POLL_ATTEMPTS = 200
+const PERSIST_POLL_INTERVAL_MILLIS = 50
 
 const isMutantEvent = (
   event: RunEvent.RunEvent,
@@ -76,8 +77,8 @@ const checkpointListsAll = async (
   checkpointFile: string,
   ids: ReadonlyArray<string>,
 ): Promise<boolean> => {
-  const settled = await checkpointSettledIds(readGuestFile, checkpointFile)
-  return ids.every((id) => settled.includes(id))
+  const settled = new Set(await checkpointSettledIds(readGuestFile, checkpointFile))
+  return ids.every((id) => settled.has(id))
 }
 
 const awaitPersisted = async (
@@ -89,6 +90,7 @@ const awaitPersisted = async (
     if (await checkpointListsAll(readGuestFile, checkpointFile, ids)) {
       return true
     }
+    await Effect.runPromise(Effect.sleep(`${PERSIST_POLL_INTERVAL_MILLIS} millis`))
   }
   return false
 }

@@ -113,6 +113,9 @@ const reportMutantsOf = (report: Report.MutationTestResult): ReadonlyArray<Repor
     fileResult.mutants.map((mutant): ReportMutant => ({ file, mutant }))
   )
 
+export const statusesOf = (report: Report.MutationTestResult): ReadonlyArray<string> =>
+  reportMutantsOf(report).map((entry) => entry.mutant.status)
+
 export interface AnnotatedRunObservation {
   readonly mutantsReported: number
   readonly mutantsMatched: number

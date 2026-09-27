@@ -7,8 +7,6 @@ import { spanMembers } from '../src/SpanTaxonomy.js'
 import { SpanDocuments, type SpanMember } from '../src/SpanTaxonomy.schema.js'
 import { StockCatalog } from '../src/StockCatalog.js'
 
-export const GENERATOR = 'scripts/generate-contract.ts'
-
 export const streamDocumentSource = (): string => {
   const draft07 = JsonSchema.toDocumentDraft07(Schema.toJsonSchemaDocument(RunEvent))
   const published = {

@@ -1,3 +1,6 @@
+export { duplicatedValue } from '../duplicated-value.js'
+export { inOrder, notReversed } from '../location-order.js'
+export type { Ends } from '../location-order.js'
 export { Column, Line, Location, OpenEndLocation, Position } from '../Location.schema.js'
 export type {
   Coverage,

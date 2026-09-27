@@ -271,7 +271,7 @@ const stampFileIdentities = (
 
 interface TestIdRemap {
   readonly testId: (id: TestRunner.TestId) => TestRunner.TestId
-  readonly testIds: (ids: readonly string[]) => readonly TestRunner.TestId[]
+  readonly testIds: (ids: readonly string[] | undefined) => readonly TestRunner.TestId[] | undefined
 }
 
 const testIdRemap = (testIds: readonly TestRunner.TestId[]): TestIdRemap => {
@@ -280,7 +280,11 @@ const testIdRemap = (testIds: readonly TestRunner.TestId[]): TestIdRemap => {
   )
   const remapId = (id: string): TestRunner.TestId =>
     TestRunner.TestId.make(Option.getOrElse(HashMap.get(positions, id), () => id))
-  return { testId: remapId, testIds: (ids) => Arr.map(ids, remapId) }
+  return {
+    testId: remapId,
+    testIds: (ids) =>
+      Option.getOrUndefined(Option.map(Option.fromUndefinedOr(ids), (present) => Arr.map(present, remapId))),
+  }
 }
 
 interface MutantGroup {
@@ -326,14 +330,8 @@ const reportMutantOf = (
   ...presentField('testsCompleted', mutant.testsCompleted),
   ...presentField('description', mutant.description),
   ...presentField('static', mutant.static),
-  ...presentField(
-    'killedBy',
-    Option.getOrUndefined(Option.map(Option.fromUndefinedOr(mutant.killedBy), remap.testIds)),
-  ),
-  ...presentField(
-    'coveredBy',
-    Option.getOrUndefined(Option.map(Option.fromUndefinedOr(mutant.coveredBy), remap.testIds)),
-  ),
+  ...presentField('killedBy', remap.testIds(mutant.killedBy)),
+  ...presentField('coveredBy', remap.testIds(mutant.coveredBy)),
 })
 
 const reportTestOf = (test: TestRunner.TestResult, remap: TestIdRemap) =>

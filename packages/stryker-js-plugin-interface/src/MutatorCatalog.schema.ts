@@ -1,6 +1,7 @@
 /// <reference types="vitest/importMeta" />
 import * as S from 'effect/Schema'
 
+import { duplicatedValue } from './duplicated-value.js'
 import { MutatorName } from './Mutant.schema.js'
 
 export const Id = S.String.check(
@@ -59,9 +60,6 @@ const namespaceOf = (name: string): string | undefined => {
   const slash = name.indexOf('/')
   return slash === -1 ? undefined : name.slice(0, slash)
 }
-
-const duplicatedValue = (values: ReadonlyArray<string>): string | undefined =>
-  values.find((value, index) => values.indexOf(value) !== index)
 
 const entryIdsAreUnique = S.makeFilter((catalog: typeof CatalogShape.Type): string | undefined => {
   const duplicated = duplicatedValue(catalog.entries.map((entry) => entry.id))

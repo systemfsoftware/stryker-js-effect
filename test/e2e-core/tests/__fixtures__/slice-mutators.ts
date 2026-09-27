@@ -10,18 +10,14 @@ import type { PlacementSlice } from './placement-slice.schema.js'
 import { renderedFailureOf } from './rendered-failure.js'
 
 export interface SliceMutators {
-  readonly registry: Mutator.MutatorRegistry
   readonly selection: Mutator.MutatorSelection
   readonly entries: ReadonlyArray<CatalogEntryRef>
 }
 
-type Contribution = MutatorProvider.ContributionValue
-type ProviderMutator = MutatorProvider.Mutator
-
 const contributionOf = (input: {
   readonly moduleName: string
   readonly fixtureDirectory: URL
-}): Effect.Effect<Contribution, PlacementFixtureUnreadable> =>
+}): Effect.Effect<MutatorProvider.ContributionValue, PlacementFixtureUnreadable> =>
   Effect.flatMap(
     Effect.tryPromise({
       try: () => import(new URL(input.moduleName, input.fixtureDirectory).href),
@@ -40,33 +36,8 @@ const contributionOf = (input: {
       ),
   )
 
-const implementationsOf = (contributions: readonly Contribution[]): ReadonlyMap<string, ProviderMutator> =>
-  new Map<string, ProviderMutator>([
-    ...Object.entries(Mutator.defaultMutators),
-    ...Object.entries(Mutator.optInMutators),
-    ...contributions.flatMap(({ entries }) => entries.map((entry) => [entry.name, entry.implementation] as const)),
-  ])
-
-const registryOf = (
-  catalogs: ReadonlyArray<MutatorCatalog.Catalog>,
-  implementations: ReadonlyMap<string, ProviderMutator>,
-): Mutator.MutatorRegistry => {
-  const entriesOfTier = (tier: MutatorCatalog.Tier): ReadonlyArray<Mutator.MutatorEntry> =>
-    catalogs
-      .flatMap((catalog) => catalog.entries)
-      .filter((entry) => entry.tier === tier)
-      .flatMap((entry) => {
-        const implementation = implementations.get(entry.name)
-        return implementation === undefined ? [] : [[entry.name, implementation] as const]
-      })
-  return {
-    defaults: Object.fromEntries(entriesOfTier('default')),
-    optIn: Object.fromEntries(entriesOfTier('optIn')),
-  }
-}
-
 const sliceMutatorsOf = (
-  contributions: readonly Contribution[],
+  contributions: readonly MutatorProvider.ContributionValue[],
   optInMutations: readonly string[],
 ): Effect.Effect<SliceMutators, S.SchemaError> =>
   Effect.map(S.decodeEffect(MutatorCatalog.Catalog)(StockCatalog.StockCatalog), (stock) => {
@@ -77,10 +48,8 @@ const sliceMutatorsOf = (
         entries: contribution.entries,
       })),
     ]
-    const registry = registryOf(catalogs, implementationsOf(contributions))
     return {
-      registry,
-      selection: Mutator.selectMutators(registry, optInMutations),
+      selection: Mutator.selectMutators(Mutator.registryOf(catalogs, contributions), optInMutations),
       entries: catalogs.flatMap((catalog) =>
         catalog.entries.map((entry): CatalogEntryRef => ({
           id: entry.id,

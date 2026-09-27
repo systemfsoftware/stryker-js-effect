@@ -800,18 +800,15 @@ const plannedWithNodes = (
   candidates: readonly MutableCandidate[],
   planned: readonly PlannedMutant[],
   fileName: string,
+  includes: (mutant: PlannedMutant) => boolean,
 ): readonly Mutant[] =>
-  candidates.flatMap((candidate, index) =>
-    Option.match(Option.fromNullishOr(planned[index]), {
+  planned.flatMap((mutant, index) =>
+    Option.match(Option.fromNullishOr(candidates[index]), {
       onNone: () => [],
-      onSome: (mutant) => [createMutant(mutant, fileName, candidate.node, candidate.replacement)],
+      onSome: (candidate) =>
+        includes(mutant) ? [createMutant(mutant, fileName, candidate.node, candidate.replacement)] : [],
     })
   )
-
-const placeableAmong = (mutants: readonly Mutant[], placeableIds: readonly ApiMutant.MutantId[]): readonly Mutant[] => {
-  const placeable = new Set(placeableIds)
-  return mutants.filter((mutant) => placeable.has(mutant.id))
-}
 
 const ignorersReasonFor = (
   node: Node,
@@ -968,7 +965,7 @@ const collectPlan = (
   state: FoldState,
   context: PlacementContext,
 ): Result.Result<FoldState, InstrumentationRefusal> => {
-  const collected = plannedWithNodes(candidates, plan.mutants, context.fileName)
+  const collected = plannedWithNodes(candidates, plan.mutants, context.fileName, () => true)
   const nextState: FoldState = {
     ...state,
     mutants: [...state.mutants, ...collected],
@@ -976,13 +973,15 @@ const collectPlan = (
     nextIndex: plan.nextIndex,
   }
   return Match.value(plan).pipe(
-    Match.tag('MutantsPlanned', (planned) =>
-      attachPlaceable(
-        placeableAmong(collected, planned.placeableIds),
+    Match.tag('MutantsPlanned', (planned) => {
+      const placeable = new Set(planned.placeableIds)
+      return attachPlaceable(
+        plannedWithNodes(candidates, plan.mutants, context.fileName, (mutant) => placeable.has(mutant.id)),
         frame,
         { ...nextState, hasLiveMutants: true },
         context,
-      )),
+      )
+    }),
     Match.tag('MutantsFullyIgnored', () => Result.succeed(nextState)),
     Match.exhaustive,
   )

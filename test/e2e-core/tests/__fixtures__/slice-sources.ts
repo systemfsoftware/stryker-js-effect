@@ -1,3 +1,4 @@
+import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
@@ -17,8 +18,6 @@ export interface SliceSource {
 
 export interface SliceFixture {
   readonly slice: PlacementSlice
-  readonly fixtureDirectory: string
-  readonly fixtureDirectoryUrl: URL
   readonly files: ReadonlyArray<SliceSource>
   readonly mutators: SliceMutators
   readonly checkerTsconfigFile: string
@@ -96,10 +95,9 @@ const sourcesOf = (
             reason: `the slice "${slice.id}" could not expand "${pattern}": ${renderedFailureOf(cause)}`,
           }),
       ))).flat()
-    const absolute = matched
-      .map((match) => (path.isAbsolute(match) ? match : path.join(fixtureDirectory, match)))
-      .filter((match, index, all) => all.indexOf(match) === index)
-      .sort()
+    const absolute = Array.dedupe(
+      matched.map((match) => (path.isAbsolute(match) ? match : path.join(fixtureDirectory, match))),
+    ).sort((left, right) => left.localeCompare(right))
     return yield* Effect.forEach(absolute, (absolutePath) =>
       Effect.map(
         Effect.mapError(
@@ -142,7 +140,7 @@ const fixtureOf = (
       loadedSliceMutatorsOf({ slice, fixtureDirectory: fixtureDirectoryUrl }),
       checkerTsconfigFileOf({ slice, fixtureDirectory, fixtureDirectoryUrl }),
     ])
-    return { slice, fixtureDirectory, fixtureDirectoryUrl, files, mutators, checkerTsconfigFile }
+    return { slice, files, mutators, checkerTsconfigFile }
   })
 
 export const sliceFixtures: Effect.Effect<

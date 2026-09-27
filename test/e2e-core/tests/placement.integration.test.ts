@@ -3,6 +3,7 @@ import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/ef
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Mutant, Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
@@ -275,9 +276,8 @@ const observationOf = (placement: Placement, overrides: ObservationOverrides = {
   const pairs = Result.getOrElse(matched, (): ReadonlyArray<MatchedAnnotation> => [])
   const failures = Result.isFailure(matched) ? [matched.failure] : []
   const matchedNames = pairs.map((pair) => pair.mutant.mutant.mutatorName)
-  const witnessed = placement.instrumented
-    .map((mutant) => mutant.mutatorName)
-    .filter((name, index, all) => all.indexOf(name) === index && matchedNames.includes(name))
+  const witnessed = Array.dedupe(placement.instrumented.map((mutant) => mutant.mutatorName))
+    .filter((name) => matchedNames.includes(name))
   const closure = placementClosure(
     PlacementClosureCommand.make({
       entries: [...placement.fixture.mutators.entries],

@@ -4,6 +4,8 @@ import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
 import * as SchemaGetter from 'effect/SchemaGetter'
 
+import { inOrder, notReversed } from './location-order.js'
+
 /** A 1-based line: the first line of a file is line 1. */
 export const Line = S.Int.check(S.isGreaterThanOrEqualTo(1))
 export type Line = typeof Line.Type
@@ -19,19 +21,6 @@ const positionOrder = Order.combine(
   Order.mapInput(Order.Number, (position: Position) => position.line),
   Order.mapInput(Order.Number, (position: Position) => position.column),
 )
-
-interface Ends<A> {
-  readonly start: A
-  readonly end: A
-}
-
-const inOrder = <A>(order: Order.Order<A>) => (ends: Ends<A>): Ends<A> => ({
-  start: Order.min(order)(ends.start, ends.end),
-  end: Order.max(order)(ends.start, ends.end),
-})
-
-const notReversed = <A>(order: Order.Order<A>) => (ends: Ends<A>): boolean =>
-  Order.isLessThanOrEqualTo(order)(ends.start, ends.end)
 
 const PositionEnds = S.Struct({ start: Position, end: Position })
 type PositionEnds = typeof PositionEnds.Type

@@ -34,16 +34,6 @@ export const terminalEvent = (
 
 export type VerdictEvent = Extract<RunEvent.RunEvent, { readonly _tag: 'verdict' }>
 
-export const verdictOrUndefined = (events: ReadonlyArray<RunEvent.RunEvent>): VerdictEvent | undefined => {
-  const terminal = events.at(-1)
-  return terminal !== undefined && terminal._tag === 'verdict' ? terminal : undefined
-}
-
-export const reportedMutantsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
-  events
-    .filter((event): event is Extract<RunEvent.RunEvent, { _tag: 'mutantTested' }> => event._tag === 'mutantTested')
-    .map((mutant) => `${mutant.mutatorName}:${mutant.status}`)
-
 export const runIdsIn = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<string> =>
   events
     .map((event) => ('runId' in event && typeof event.runId === 'string' ? String(event.runId) : undefined))

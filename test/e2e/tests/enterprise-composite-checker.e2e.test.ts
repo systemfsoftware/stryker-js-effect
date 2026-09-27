@@ -1,10 +1,9 @@
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import { Effect } from 'effect'
 
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { compareAnnotatedRun } from './__fixtures__/annotation-oracle.fixture.js'
+import { compareAnnotatedRun, statusesOf } from './__fixtures__/annotation-oracle.fixture.js'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
 import { decodeStream, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
 import { readReportOf } from './__fixtures__/run-artifacts.fixture.js'
@@ -15,9 +14,6 @@ const CHECKER_SLICE = 'stryker.checker.config.ts'
 
 const verifyExit = (expect: Expect, run: ExecResult): Check =>
   expect({ exitCode: run.exitCode }).toStrictEqual({ exitCode: 0 })
-
-const statusesOf = (report: Report.MutationTestResult): ReadonlyArray<string> =>
-  Object.values(report.files).flatMap((file) => file.mutants.map((mutant) => mutant.status))
 
 const Feature = makeFeature({ it })
 

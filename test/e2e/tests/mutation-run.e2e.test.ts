@@ -59,7 +59,7 @@ const verifyRunIdConsistency = (
 ): Check =>
   expect({
     carriesAtLeastTwoRunIds: runIds.length >= 2,
-    distinctRunIds: runIds.filter((runId, index) => runIds.indexOf(runId) === index).length,
+    distinctRunIds: new Set(runIds).size,
     verdictRunIdMatchesFirst: verdict.runId === runIds.at(0),
   }).toStrictEqual({
     carriesAtLeastTwoRunIds: true,

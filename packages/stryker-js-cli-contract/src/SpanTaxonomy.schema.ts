@@ -1,7 +1,8 @@
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 export const SpanName = S.String.check(
-  S.isPattern(/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*$/, {
+  S.isPattern(/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)*$/, {
     expected: 'a dot-separated span name whose segments start with a letter, such as "stryker.checker.check"',
   }),
 ).pipe(S.brand('SpanName'))
@@ -35,12 +36,9 @@ export const SpanDocument = S.Struct({
 })
 export type SpanDocument = typeof SpanDocument.Type
 
-const duplicatedId = (documents: ReadonlyArray<SpanDocument>): string | undefined =>
-  documents.map((document) => document.id).find((id, index, ids) => ids.indexOf(id) !== index)
-
 const idsAreUnique = S.makeFilter(
   (documents: ReadonlyArray<SpanDocument>): string | undefined => {
-    const duplicated = duplicatedId(documents)
+    const duplicated = Mutant.duplicatedValue(documents.map((document) => document.id))
     return duplicated === undefined ? undefined : `span taxonomy documents share the id "${duplicated}"`
   },
   { arbitraryConstraint: { uniqueBy: (document: SpanDocument) => document.id } },
@@ -62,18 +60,16 @@ const boundaryNames = [
   '.cli',
   'stryker cli',
   'stryker/cli',
+  'stryker.9cli',
+  'A.-',
 ]
 
 const boundaryAttributeKeys = ['', 'fileCount', 'stryker.checker.name', 'rpc.method', '9count', '_count']
 
-const segmentReadsAsPrefix = (segment: string): boolean => /^[A-Za-z]/.test(segment)
+const segmentReadsAsSpanName = (segment: string): boolean =>
+  /^[A-Za-z]/.test(segment) && /^[A-Za-z0-9_-]+$/.test(segment)
 
-const segmentReadsAsSpanName = (segment: string): boolean => /^[A-Za-z0-9_-]+$/.test(segment)
-
-const segmentReadsAsSpanNameSegment = (segment: string): boolean =>
-  segmentReadsAsPrefix(segment) && segmentReadsAsSpanName(segment)
-
-const readsAsSpanName = (value: string): boolean => value.split('.').every(segmentReadsAsSpanNameSegment)
+const readsAsSpanName = (value: string): boolean => value.split('.').every(segmentReadsAsSpanName)
 
 const readsAsAttributeKey = (value: string): boolean => /^[A-Za-z]/.test(value) && /^[A-Za-z0-9_.-]+$/.test(value)
 

@@ -1,6 +1,7 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -29,9 +30,6 @@ const REPOSITORY_ROOT_URL = new URL('../../../', import.meta.url)
 const COMPILE_ERROR_JOURNEY = 'test/e2e/tests/enterprise-composite-checker.e2e.test.ts'
 
 const SKIP_MARKER = /\.(skip|only|todo)\b/
-
-const distinct = (values: ReadonlyArray<string>): ReadonlyArray<string> =>
-  values.filter((value, index, all) => all.indexOf(value) === index)
 
 const availabilityOf = (
   fs: FileSystem.FileSystem,
@@ -62,7 +60,7 @@ const manifestOf = (): Effect.Effect<Manifest, S.SchemaError, FileSystem.FileSys
     const root = yield* path.fromFileUrl(REPOSITORY_ROOT_URL).pipe(Effect.orDie)
     const registry = yield* S.decodeEffect(WitnessRegistry)(witnessRegistry)
     const journeys = yield* Effect.forEach(
-      distinct(registry.witnesses.map((witness) => witness.journey)),
+      Array.dedupe(registry.witnesses.map((witness) => witness.journey)),
       (journey) => availabilityOf(fs, path, root, journey),
     )
     return { registry, journeys: [...journeys] }

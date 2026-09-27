@@ -164,53 +164,45 @@ const failPluginLoad = (
     Effect.andThen(() => Effect.fail(error)),
   )
 
+const whenPropertyPresent = <A>(
+  module: object,
+  key: string,
+  decode: () => Result.Result<A | undefined, S.SchemaError>,
+): Result.Result<A | undefined, S.SchemaError> =>
+  Match.value(Predicate.hasProperty(module, key)).pipe(
+    Match.when(true, decode),
+    Match.orElse((): Result.Result<A | undefined, S.SchemaError> => Result.succeed(undefined)),
+  )
+
 const modulePluginContributions = (
   module: object,
 ): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
-  Match.value(Predicate.hasProperty(module, 'strykerPlugins')).pipe(
-    Match.when(true, () =>
-      S.decodeUnknownResult(PluginModuleSchema)(module).pipe(
-        Result.map((pluginModule) => pluginModule.strykerPlugins),
-      )),
-    Match.orElse((): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
-      Result.succeed(undefined)
-    ),
-  )
+  whenPropertyPresent(module, 'strykerPlugins', () =>
+    S.decodeUnknownResult(PluginModuleSchema)(module).pipe(
+      Result.map((pluginModule) => pluginModule.strykerPlugins),
+    ))
 
 const moduleIgnorers = (module: object): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> =>
-  Match.value(Predicate.hasProperty(module, 'strykerIgnorers')).pipe(
-    Match.when(true, () =>
-      S.decodeUnknownResult(IgnorerModuleSchema)(module).pipe(
-        Result.map((ignorerModule) => ignorerModule.strykerIgnorers),
-      )),
-    Match.orElse((): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> => Result.succeed(undefined)),
-  )
+  whenPropertyPresent(module, 'strykerIgnorers', () =>
+    S.decodeUnknownResult(IgnorerModuleSchema)(module).pipe(
+      Result.map((ignorerModule) => ignorerModule.strykerIgnorers),
+    ))
 
 const moduleMutators = (
   module: object,
 ): Result.Result<MutatorProvider.ContributionValue | undefined, S.SchemaError> =>
-  Match.value(Predicate.hasProperty(module, 'strykerMutators')).pipe(
-    Match.when(true, () =>
-      S.decodeUnknownResult(MutatorModuleSchema)(module).pipe(
-        Result.map((mutatorModule) => mutatorModule.strykerMutators),
-      )),
-    Match.orElse((): Result.Result<MutatorProvider.ContributionValue | undefined, S.SchemaError> =>
-      Result.succeed(undefined)
-    ),
-  )
+  whenPropertyPresent(module, 'strykerMutators', () =>
+    S.decodeUnknownResult(MutatorModuleSchema)(module).pipe(
+      Result.map((mutatorModule) => mutatorModule.strykerMutators),
+    ))
 
 const moduleFrameworks = (
   module: object,
 ): Result.Result<FrameworkModuleContributions | undefined, S.SchemaError> =>
-  Match.value(Predicate.hasProperty(module, 'strykerFrameworks')).pipe(
-    Match.when(true, () =>
-      S.decodeUnknownResult(FrameworkModuleSchema)(module).pipe(
-        Result.map((frameworkModule): FrameworkModuleContributions => [...frameworkModule.strykerFrameworks]),
-      )),
-    Match.orElse((): Result.Result<FrameworkModuleContributions | undefined, S.SchemaError> =>
-      Result.succeed(undefined)
-    ),
-  )
+  whenPropertyPresent(module, 'strykerFrameworks', () =>
+    S.decodeUnknownResult(FrameworkModuleSchema)(module).pipe(
+      Result.map((frameworkModule): FrameworkModuleContributions => [...frameworkModule.strykerFrameworks]),
+    ))
 
 const hasValidationSchemaContribution = (
   module: object,

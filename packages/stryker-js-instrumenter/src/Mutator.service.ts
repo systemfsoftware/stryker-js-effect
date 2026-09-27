@@ -1,6 +1,7 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
 import type { StockCatalog } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { MutatorCatalog } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -1331,6 +1332,42 @@ export interface MutatorRegistry {
 }
 
 export const stockRegistry: MutatorRegistry = { defaults: defaultMutators, optIn: optInMutators }
+
+export interface RegistryCatalog {
+  readonly entries: ReadonlyArray<{ readonly name: string; readonly tier: MutatorCatalog.Tier }>
+}
+
+export interface RegistryContribution {
+  readonly entries: ReadonlyArray<{ readonly name: string; readonly implementation: Mutator }>
+}
+
+const registryOfDataFirst = (
+  catalogs: ReadonlyArray<RegistryCatalog>,
+  contributions: ReadonlyArray<RegistryContribution>,
+): MutatorRegistry => {
+  const implementations = new Map<string, Mutator>([
+    ...Object.entries(defaultMutators),
+    ...Object.entries(optInMutators),
+    ...contributions.flatMap(({ entries }) => entries.map((entry) => [entry.name, entry.implementation] as const)),
+  ])
+  const entries = catalogs.flatMap((catalog) => catalog.entries)
+  const entriesOfTier = (tier: MutatorCatalog.Tier): readonly MutatorEntry[] =>
+    entries.filter((entry) => entry.tier === tier).flatMap((entry) =>
+      Option.match(Option.fromNullishOr(implementations.get(entry.name)), {
+        onNone: (): readonly MutatorEntry[] => [],
+        onSome: (implementation): readonly MutatorEntry[] => [[entry.name, implementation]],
+      })
+    )
+  return {
+    defaults: Object.fromEntries(entriesOfTier('default')),
+    optIn: Object.fromEntries(entriesOfTier('optIn')),
+  }
+}
+
+export const registryOf: {
+  (catalogs: ReadonlyArray<RegistryCatalog>, contributions: ReadonlyArray<RegistryContribution>): MutatorRegistry
+  (contributions: ReadonlyArray<RegistryContribution>): (catalogs: ReadonlyArray<RegistryCatalog>) => MutatorRegistry
+} = dual((args: IArguments): boolean => args.length >= 2, registryOfDataFirst)
 
 export interface MutatorSelection {
   /** Every default, then each opt-in the run named, in the registry's declared order. */

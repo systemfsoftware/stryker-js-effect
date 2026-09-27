@@ -2,7 +2,7 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
-import { Mutant, type MutatorProvider } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean } from 'effect'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -16,8 +16,6 @@ import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 import { InstrumentCommand, planInstrumentation } from '../plan-instrumentation.workflow.js'
-import type { MergedCatalog } from '../plan-mutator-catalogs.workflow.js'
-import type { LoadedMutatorProvider } from '../Plugins.schema.js'
 import { ProjectFiles } from '../project-files.service.js'
 import type { Project, ProjectFile } from '../Project.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
@@ -149,40 +147,6 @@ const withInstrumentedFiles = (
       ),
   )
 
-const mutatorImplementationsOf = (
-  providers: readonly LoadedMutatorProvider[],
-): ReadonlyMap<string, MutatorProvider.Mutator> =>
-  new Map([
-    ...Object.entries(Mutator.defaultMutators),
-    ...Object.entries(Mutator.optInMutators),
-    ...providers.flatMap(({ contribution }) =>
-      contribution.entries.map((entry) => [entry.name, entry.implementation] as const)
-    ),
-  ])
-
-const mutatorEntryOf = (
-  entry: MergedCatalog['entries'][number],
-  implementations: ReadonlyMap<string, MutatorProvider.Mutator>,
-): readonly Mutator.MutatorEntry[] =>
-  Option.match(Option.fromNullishOr(implementations.get(entry.name)), {
-    onNone: (): readonly Mutator.MutatorEntry[] => [],
-    onSome: (implementation): readonly Mutator.MutatorEntry[] => [[entry.name, implementation]],
-  })
-
-const mutatorRegistryOf = (
-  catalogs: readonly MergedCatalog[],
-  providers: readonly LoadedMutatorProvider[],
-): Mutator.MutatorRegistry => {
-  const implementations = mutatorImplementationsOf(providers)
-  const entries = catalogs.flatMap((catalog) => catalog.entries)
-  const entriesOfTier = (tier: MergedCatalog['entries'][number]['tier']): readonly Mutator.MutatorEntry[] =>
-    entries.filter((entry) => entry.tier === tier).flatMap((entry) => mutatorEntryOf(entry, implementations))
-  return {
-    defaults: Object.fromEntries(entriesOfTier('default')),
-    optIn: Object.fromEntries(entriesOfTier('optIn')),
-  }
-}
-
 const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(function*(
   command: PrepareDone & {
     readonly concurrency: { readonly testRunners: number; readonly checkers: number }
@@ -206,7 +170,10 @@ const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(funct
     ignorers: [...command.ignorers],
     excludedMutations: [...excludedMutations],
     mutators: Mutator.selectMutators(
-      mutatorRegistryOf(command.mutatorCatalogs, command.loadedPlugins.mutators),
+      Mutator.registryOf(
+        command.mutatorCatalogs,
+        command.loadedPlugins.mutators.map(({ contribution }) => contribution),
+      ),
       optInMutations,
     ),
   }, command.formatRegistry).pipe(
