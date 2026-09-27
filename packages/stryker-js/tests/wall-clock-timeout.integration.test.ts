@@ -122,7 +122,7 @@ const readDaemonMutants = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const text = yield* fs.readFileString(reportFileOf(directory))
-    const report = yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResultSchema))(text)
+    const report = yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResult))(text)
     return Object.entries(report.files)
       .filter(([file]) => file === DAEMON_FILE)
       .flatMap(([, fileResult]) =>

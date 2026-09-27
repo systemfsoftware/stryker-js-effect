@@ -1,7 +1,7 @@
+/// <reference types="vitest/importMeta" />
 import { Effect, SchemaGetter, SchemaTransformation } from 'effect'
 import * as S from 'effect/Schema'
 import { NonNegativeFinite, NonNegativeInt, Percentage } from './Metrics.schema.js'
-import { OrderedThresholds } from './Report.schema.js'
 
 export const StrykerCoverageAnalysis = S.Literal('perTest')
 
@@ -106,10 +106,44 @@ const MutationScoreThresholdsValuesSchema = S.Struct({
   break: defaulted(S.NullOr(Percentage), null),
 })
 
+const OrderedThresholdsValuesSchema = S.Struct({
+  high: Percentage,
+  low: Percentage,
+  break: S.NullOr(Percentage),
+})
+type OrderedThresholdsValues = typeof OrderedThresholdsValuesSchema.Type
+
+const isOrderedThresholds = (value: unknown): value is OrderedThresholdsValues =>
+  S.is(OrderedThresholdsValuesSchema)(value) && value.low <= value.high
+
+const OrderedThresholds = S.declare<OrderedThresholdsValues>(isOrderedThresholds, {
+  message: 'a mutation score threshold pair has low at or below high',
+  toCodecArbitrary: () =>
+    S.link<OrderedThresholdsValues>()(OrderedThresholdsValuesSchema, {
+      decode: SchemaGetter.transform(({ break: breaking, high, low }) => ({
+        break: breaking,
+        high: Math.max(high, low),
+        low: Math.min(high, low),
+      })),
+      encode: SchemaGetter.transform((thresholds) => thresholds),
+    }),
+})
+
 export const MutationScoreThresholdsSchema = MutationScoreThresholdsValuesSchema.pipe(
   S.decodeTo(OrderedThresholds, SchemaTransformation.passthrough()),
 )
 export type MutationScoreThresholds = typeof MutationScoreThresholdsSchema.Type
+
+const isUnitInterval = (value: number): boolean => 0 <= value && value <= 100
+
+const isPercentage = (value: number): boolean => Number.isFinite(value) && isUnitInterval(value)
+
+const isPercentagePair = (high: number, low: number): boolean => isPercentage(high) && isPercentage(low)
+
+const isOrderedPercentagePair = (high: number, low: number): boolean => isPercentagePair(high, low) && low <= high
+
+const acceptsThresholdPair = (high: number, low: number): boolean =>
+  S.is(MutationScoreThresholdsSchema)({ high, low, break: null })
 
 const MutatorDescriptor = S.Struct({
   excludedMutations: defaulted(S.Array(S.String), []),
@@ -260,4 +294,28 @@ export type PartialStrykerOptions = DeepOptional<StrykerOptions>
 export type DeepOptional<T, V = unknown> = {
   -readonly [P in keyof T]?: T[P] extends Record<string, V> ? DeepOptional<T[P], V> | undefined
     : T[P]
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+
+  const pairProbes: ReadonlyArray<readonly [number, number]> = [
+    [80, 60],
+    [60, 60],
+    [80.5, 60.25],
+    [60, 80],
+    [101, 60],
+    [-1, 0],
+  ]
+
+  it.prop(
+    '∀p_ThresholdOrder_≡LowAtOrBelowHigh',
+    { of: [S.Finite, S.Finite], subject: acceptsThresholdPair },
+    (subject, [high, low]) =>
+      Arr.every(
+        pairProbes,
+        ([probeHigh, probeLow]) => subject(probeHigh, probeLow) === isOrderedPercentagePair(probeHigh, probeLow),
+      ) && subject(high, low) === isOrderedPercentagePair(high, low),
+  )
 }

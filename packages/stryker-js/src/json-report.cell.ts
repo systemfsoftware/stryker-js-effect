@@ -52,7 +52,7 @@ const readJsonReport = (input: {
   )
 
 const jsonBytesOf = (
-  report: typeof Report.MutationTestResultSchema.Encoded,
+  report: typeof Report.MutationTestResult.Encoded,
 ): Effect.Effect<string, Reporter.ReporterFailed> =>
   S.encodeEffect(S.fromJsonString(S.Unknown, { space: 0 }))(report).pipe(
     Effect.mapError(failAsJsonReporter),
@@ -60,7 +60,7 @@ const jsonBytesOf = (
 
 const writeJsonReport = Effect.fn('stryker.report.json.write')(function*(
   rendered: {
-    readonly report: typeof Report.MutationTestResultSchema.Encoded
+    readonly report: typeof Report.MutationTestResult.Encoded
     readonly announceFileName: Option.Option<string>
   },
   raw: { readonly options: Options.StrykerOptions },

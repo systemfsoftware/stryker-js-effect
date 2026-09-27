@@ -45,7 +45,7 @@ const STEP_SUMMARY = 'GITHUB_STEP_SUMMARY'
 
 type VerdictRow = S.Schema.Type<typeof MergeVerdictRowSchema>
 type Survivor = S.Schema.Type<typeof MergeSurvivorSchema>
-type MutationReport = S.Schema.Type<typeof Report.MutationTestResultSchema>
+type MutationReport = S.Schema.Type<typeof Report.MutationTestResult>
 
 type MergeCommand = typeof MergeReportPartsCommand.Encoded & {
   readonly out: string
@@ -151,7 +151,7 @@ const decodedPart = (bytes: {
         const base = { label: meta.package, outcome: meta.outcome, incomplete: false }
         return Option.match(Option.fromNullishOr(bytes.reportText), {
           onSome: (text) =>
-            Option.match(S.decodeOption(S.fromJsonString(Report.MutationTestResultSchema))(text), {
+            Option.match(S.decodeOption(S.fromJsonString(Report.MutationTestResult))(text), {
               onNone: () => ({ part: Option.some(base), unreadable: true }),
               onSome: (report) => ({ part: Option.some({ ...base, report }), unreadable: false }),
             }),
@@ -413,7 +413,7 @@ const writeMergedReports = Effect.fn('stryker.merge_reports.write_merged')(funct
   merged: typeof MergedReports.Encoded,
   raw: MergeCommand,
 ) {
-  const report = yield* S.decodeEffect(Report.MutationTestResultSchema)(merged.report).pipe(Effect.orDie)
+  const report = yield* S.decodeEffect(Report.MutationTestResult)(merged.report).pipe(Effect.orDie)
   return yield* writeEncoded({
     body: encodeMerge({ decoded: raw, rows: merged.rows, survivors: merged.survivors, report }),
     raw,

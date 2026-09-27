@@ -87,9 +87,9 @@ export class Heartbeat extends S.TaggedClass<Heartbeat>()('tick', {
 }) {}
 
 export const VerdictMutant = S.Struct({
-  id: Mutant.MutantId,
+  id: S.String,
   file: S.String,
-  location: Mutant.Location,
+  location: Report.Location,
   mutator: S.String,
   replacement: S.NullOr(S.String),
   status: Mutant.MutantStatusSchema,
@@ -103,7 +103,7 @@ export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   mode: OutputMode,
   signal: ModeSignal,
   score: S.NullOr(Report.Percentage),
-  thresholds: Report.ThresholdsSchema,
+  thresholds: Report.Thresholds,
   reportFile: S.NullOr(S.String),
   counts: Report.Metrics,
   mutants: S.Array(VerdictMutant),

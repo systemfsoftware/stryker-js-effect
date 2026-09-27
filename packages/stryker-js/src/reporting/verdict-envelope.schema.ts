@@ -14,7 +14,7 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
   mode: OutputMode,
   signal: ModeSignal,
   score: S.NullOr(Report.Percentage),
-  thresholds: Report.ThresholdsSchema,
+  thresholds: Report.Thresholds,
   counts: Report.MetricsSchema,
   reportFile: S.NullOr(Mutant.CanonicalFileName),
   mutants: S.Array(VerdictMutant),

@@ -1,7 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -33,7 +32,7 @@ export const ReportPart = S.Struct({
   label: S.String,
   outcome: S.String,
   incomplete: S.Boolean,
-  report: S.optional(Report.MutationTestResultSchema),
+  report: S.optional(Report.MutationTestResult),
 })
 
 export const MergeVerdictRow = S.Struct({
@@ -63,7 +62,7 @@ const MergeReportPartsTypeId: unique symbol = Symbol.for('@systemfsoftware/stryk
 type MergeReportPartsTypeId = typeof MergeReportPartsTypeId
 
 export class MergedReports extends S.TaggedClass<MergedReports>()('MergedReports', {
-  report: Report.MutationTestResultSchema,
+  report: Report.MutationTestResult,
   rows: S.Array(MergeVerdictRow),
   survivors: S.Array(MergeSurvivor),
 }) {
@@ -153,22 +152,20 @@ const normalizedNames = <A>(input: Readonly<Record<string, A>>): Readonly<Record
   )
 }
 
-const MergedTestId = S.NonEmptyString.pipe(S.brand('TestId'))
+const uniqueId = (label: string, id: string): string => `${label}_${id}`
 
-const uniqueId = (label: string, id: TestRunner.TestId): TestRunner.TestId => MergedTestId.make(`${label}_${id}`)
-
-const uniqueIds = (
-  label: string,
-  ids: readonly TestRunner.TestId[] | undefined,
-): readonly TestRunner.TestId[] | undefined =>
-  Option.getOrUndefined(
-    Option.map(Option.fromUndefinedOr(ids), (present) => present.map((id) => uniqueId(label, id))),
-  )
+const uniqueIds = (label: string, ids: readonly string[]): readonly string[] => ids.map((id) => uniqueId(label, id))
 
 const rewrittenMutant = (label: string, mutant: Report.MutantResult): Report.MutantResult => ({
   ...mutant,
-  killedBy: uniqueIds(label, mutant.killedBy),
-  coveredBy: uniqueIds(label, mutant.coveredBy),
+  ...Option.match(Option.fromUndefinedOr(mutant.killedBy), {
+    onNone: () => ({}),
+    onSome: (ids) => ({ killedBy: uniqueIds(label, ids) }),
+  }),
+  ...Option.match(Option.fromUndefinedOr(mutant.coveredBy), {
+    onNone: () => ({}),
+    onSome: (ids) => ({ coveredBy: uniqueIds(label, ids) }),
+  }),
 })
 
 const withProjectRoot = (

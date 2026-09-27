@@ -1,6 +1,6 @@
 import * as Context from 'effect/Context'
 import type * as Effect from 'effect/Effect'
-import type * as schema from './Report.schema.js'
+import type * as schema from './generated/report.generated.js'
 
 import { EvaluatorFailed } from './Evaluator.schema.js'
 import type { ExitClass } from './ExitClass.schema.js'

@@ -133,7 +133,7 @@ export const verifyDiskReport = (
   reportText: string,
 ): Effect.Effect<Check, Schema.SchemaError> =>
   Effect.map(
-    Schema.decodeUnknownEffect(Schema.fromJsonString(Report.MutationTestResultSchema))(reportText),
+    Schema.decodeUnknownEffect(Schema.fromJsonString(Report.MutationTestResult))(reportText),
     (report) => {
       const fileEntry = report.files['src/order.ts']
 

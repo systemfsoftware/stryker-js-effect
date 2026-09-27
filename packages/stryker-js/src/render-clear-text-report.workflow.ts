@@ -53,7 +53,7 @@ export const ClearTextRenderOptions = S.Struct({
 export type ClearTextRenderOptions = typeof ClearTextRenderOptions.Type
 
 export class ClearTextReportCommand extends S.TaggedClass<ClearTextReportCommand>()('ClearTextReportCommand', {
-  reported: S.optional(Report.MutationTestResultSchema),
+  reported: S.optional(Report.MutationTestResult),
   computed: S.optional(Report.MetricsResultSchema),
   render: ClearTextRenderOptions,
   rendered: S.Boolean,

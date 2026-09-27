@@ -23,6 +23,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Queue from 'effect/Queue'
+import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
@@ -261,7 +262,7 @@ const stampFileIdentities = (
 
 interface TestIdRemap {
   readonly testId: (id: TestRunner.TestId) => TestRunner.TestId
-  readonly testIds: (ids: readonly string[] | undefined) => readonly TestRunner.TestId[] | undefined
+  readonly testIds: (ids: readonly string[]) => readonly TestRunner.TestId[]
 }
 
 const testIdRemap = (testIds: readonly TestRunner.TestId[]): TestIdRemap => {
@@ -270,14 +271,7 @@ const testIdRemap = (testIds: readonly TestRunner.TestId[]): TestIdRemap => {
   )
   const remapId = (id: string): TestRunner.TestId =>
     TestRunner.TestId.make(Option.getOrElse(HashMap.get(positions, id), () => id))
-  return {
-    testId: remapId,
-    testIds: (ids) =>
-      Option.match(Option.fromUndefinedOr(ids), {
-        onNone: () => undefined,
-        onSome: (present) => Arr.map(present, remapId),
-      }),
-  }
+  return { testId: remapId, testIds: (ids) => Arr.map(ids, remapId) }
 }
 
 interface MutantGroup {
@@ -304,6 +298,12 @@ interface TestFilesInput {
   readonly remap: TestIdRemap
 }
 
+const presentField = <K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> =>
+  Option.match(Option.fromUndefinedOr(value), {
+    onNone: (): Partial<Record<K, V>> => ({}),
+    onSome: (present) => Record.singleton(key, present),
+  })
+
 const reportMutantOf = (
   mutant: Mutant.RunMutantResult,
   remap: TestIdRemap,
@@ -313,12 +313,18 @@ const reportMutantOf = (
   replacement: mutant.replacement,
   status: mutant.status,
   location: mutant.location,
-  statusReason: mutant.statusReason,
-  testsCompleted: mutant.testsCompleted,
-  description: mutant.description,
-  static: mutant.static,
-  killedBy: remap.testIds(mutant.killedBy),
-  coveredBy: remap.testIds(mutant.coveredBy),
+  ...presentField('statusReason', mutant.statusReason),
+  ...presentField('testsCompleted', mutant.testsCompleted),
+  ...presentField('description', mutant.description),
+  ...presentField('static', mutant.static),
+  ...presentField(
+    'killedBy',
+    Option.getOrUndefined(Option.map(Option.fromUndefinedOr(mutant.killedBy), remap.testIds)),
+  ),
+  ...presentField(
+    'coveredBy',
+    Option.getOrUndefined(Option.map(Option.fromUndefinedOr(mutant.coveredBy), remap.testIds)),
+  ),
 })
 
 const reportTestOf = (test: TestRunner.TestResult, remap: TestIdRemap) =>
@@ -527,14 +533,18 @@ const mutationTestReport = Effect.fn('stryker.mutationReporting.mutationTestRepo
 ) {
   const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
   const dependencies = yield* discoverDependencies(deps)
+  const config = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(input.options).pipe(
+    Effect.flatMap(S.decodeEffect(S.fromJsonString(S.Record(S.String, S.Json)))),
+    Effect.orDie,
+  )
   return {
     report: {
       files,
-      schemaVersion: '1.0',
+      schemaVersion: Report.WrittenSchemaVersion.literal,
       thresholds: input.options.thresholds,
       testFiles,
       projectRoot: input.basePath,
-      config: input.options,
+      config,
       framework: { ...STRYKER_FRAMEWORK, dependencies },
     },
     identities,
@@ -708,7 +718,7 @@ const slimIncrementalReport = Effect.fn('stryker.mutationReporting.slimIncrement
   const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
   return {
     incrementalVersion: StrykerPackage.version,
-    schemaVersion: '1.0',
+    schemaVersion: Report.WrittenSchemaVersion.literal,
     thresholds: input.options.thresholds,
     files: stampFileIdentities(files, identities),
     testFiles,

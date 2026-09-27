@@ -18,7 +18,7 @@ import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 
-import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
 import { defaultOptions } from './config/default-options.js'
 import {
@@ -232,7 +232,7 @@ export interface EmitMachineModeOutputOptions {
 const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOptions<Config>): Effect.Effect<void> => {
   const { stream, mode, thresholds, basePath, pathService } = params
   const report: Report.MutationTestResult = {
-    schemaVersion: '1.0',
+    schemaVersion: Report.WrittenSchemaVersion.literal,
     files: {},
     thresholds,
     projectRoot: basePath,

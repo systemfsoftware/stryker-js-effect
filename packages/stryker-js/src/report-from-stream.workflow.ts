@@ -20,7 +20,7 @@ export class ReportFromStreamCommand extends S.Class<ReportFromStreamCommand>('R
 }
 
 export class ReportFromStreamRebuilt extends S.TaggedClass<ReportFromStreamRebuilt>()('ReportFromStreamRebuilt', {
-  report: Report.MutationTestResultSchema,
+  report: Report.MutationTestResult,
 }) {
   readonly [ReportFromStreamTypeId] = ReportFromStreamTypeId
 }

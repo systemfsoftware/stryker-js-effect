@@ -96,19 +96,19 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 interface ObservedRun {
   readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
   readonly events: ReadonlyArray<RunEvent.RunEvent>
-  readonly report: Option.Option<typeof Report.MutationTestResultSchema.Type>
+  readonly report: Option.Option<Report.MutationTestResult>
 }
 
 const readReport = (
   directory: string,
-): Effect.Effect<typeof Report.MutationTestResultSchema.Type, never, FileSystem.FileSystem> =>
+): Effect.Effect<Report.MutationTestResult, never, FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const text = yield* fs.readFileString(reportFileOf(directory))
-    return yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResultSchema))(text)
+    return yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResult))(text)
   }).pipe(Effect.orDie)
 
-const reportOf = (run: ObservedRun): typeof Report.MutationTestResultSchema.Type =>
+const reportOf = (run: ObservedRun): Report.MutationTestResult =>
   Option.getOrThrowWith(run.report, () => new Error('the run wrote no JSON report'))
 
 const executeRun = (workspace: Workspace): Effect.Effect<ObservedRun, never, FileSystem.FileSystem> =>
@@ -166,7 +166,7 @@ const streamRowsOf = (events: ReadonlyArray<RunEvent.RunEvent>): readonly Mutant
     location: mutant.location,
   }))
 
-const reportRowsOf = (report: typeof Report.MutationTestResultSchema.Type): readonly MutantRow[] =>
+const reportRowsOf = (report: Report.MutationTestResult): readonly MutantRow[] =>
   Object.entries(report.files).flatMap(([file, fileResult]) =>
     fileResult.mutants.map((mutant) => ({
       file,

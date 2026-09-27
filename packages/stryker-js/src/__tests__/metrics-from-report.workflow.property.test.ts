@@ -33,25 +33,25 @@ const childNamesAreTopSegments = (tree: Report.MetricsResult, files: Files): boo
 describe('metricsResultFromFiles', () => {
   it.prop(
     '∀files_MetricsResultFromFiles_≡ConservesMutantCountAtRoot',
-    { of: [Report.FileResultDictionarySchema], subject: metricsResultFromFiles },
+    { of: [Report.FileResultDictionary], subject: metricsResultFromFiles },
     (subject, [files]) => subject(files).metrics.totalMutants === inputMutantCountOf(files),
   )
 
   it.prop(
     '∀files_MetricsResultFromFiles_≡PartitionsCountsOverChildren',
-    { of: [Report.FileResultDictionarySchema], subject: metricsResultFromFiles },
+    { of: [Report.FileResultDictionary], subject: metricsResultFromFiles },
     (subject, [files]) => everyLevelPartitions(subject(files)),
   )
 
   it.prop(
     '∀files_MetricsResultFromFiles_≡SortsChildResultsByLocale',
-    { of: [Report.FileResultDictionarySchema], subject: metricsResultFromFiles },
+    { of: [Report.FileResultDictionary], subject: metricsResultFromFiles },
     (subject, [files]) => everyLevelSorted(subject(files)),
   )
 
   it.prop(
     '∀files_Children_≡TopSegmentsOfTheInput',
-    { of: [Report.FileResultDictionarySchema], subject: metricsResultFromFiles },
+    { of: [Report.FileResultDictionary], subject: metricsResultFromFiles },
     (subject, [files]) => childNamesAreTopSegments(subject(files), files),
   )
 })

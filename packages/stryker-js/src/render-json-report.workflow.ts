@@ -9,7 +9,7 @@ const JsonReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/
 type JsonReportTypeId = typeof JsonReportTypeId
 
 export class JsonReportCommand extends S.TaggedClass<JsonReportCommand>()('JsonReportCommand', {
-  reported: S.optional(Report.MutationTestResultSchema),
+  reported: S.optional(Report.MutationTestResult),
   rendered: S.Boolean,
   debug: S.Boolean,
   fileName: S.String,
@@ -18,7 +18,7 @@ export class JsonReportCommand extends S.TaggedClass<JsonReportCommand>()('JsonR
 }
 
 export class JsonReportRendered extends S.TaggedClass<JsonReportRendered>()('JsonReportRendered', {
-  report: Report.MutationTestResultSchema,
+  report: Report.MutationTestResult,
   announceFileName: S.Option(S.String),
 }) {
   readonly [JsonReportTypeId] = JsonReportTypeId

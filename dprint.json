@@ -17,6 +17,8 @@
     "**/*-lock.json",
     "pnpm-lock.yaml",
     "**/etc/*.api.md",
+    "**/src/generated/**",
+    "**/contract/*.json",
     "coverage/**",
     "**/snapshots/*.md",
     "repos/**",

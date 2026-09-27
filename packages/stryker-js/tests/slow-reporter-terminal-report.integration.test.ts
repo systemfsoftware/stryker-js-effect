@@ -36,7 +36,7 @@ interface Workspace {
 interface ObservedRun {
   readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
   readonly observation: Option.Option<SlowReporterObservation>
-  readonly report: Option.Option<typeof Report.MutationTestResultSchema.Type>
+  readonly report: Option.Option<Report.MutationTestResult>
 }
 
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
@@ -61,11 +61,11 @@ const removeWorkspace = (directory: string): Effect.Effect<void, never, FileSyst
 
 const readReport = (
   directory: string,
-): Effect.Effect<typeof Report.MutationTestResultSchema.Type, never, FileSystem.FileSystem> =>
+): Effect.Effect<Report.MutationTestResult, never, FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const text = yield* fs.readFileString(reportFileOf(directory))
-    return yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResultSchema))(text)
+    return yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResult))(text)
   }).pipe(Effect.orDie)
 
 const readObservation = (
@@ -135,16 +135,16 @@ const runAndClean = (
     Effect.provide(filePorts),
   )
 
-const reportOf = (run: ObservedRun): typeof Report.MutationTestResultSchema.Type =>
+const reportOf = (run: ObservedRun): Report.MutationTestResult =>
   Option.getOrThrowWith(run.report, () => new Error('the run wrote no JSON report'))
 
 const observationOf = (run: ObservedRun): SlowReporterObservation =>
   Option.getOrThrowWith(run.observation, () => new Error('the slow reporter never finished consuming the run'))
 
-const mutantCountOf = (report: typeof Report.MutationTestResultSchema.Type): number =>
+const mutantCountOf = (report: Report.MutationTestResult): number =>
   Object.values(report.files).reduce((total, file) => total + file.mutants.length, 0)
 
-const expectedEventTags = (report: typeof Report.MutationTestResultSchema.Type): readonly string[] => [
+const expectedEventTags = (report: Report.MutationTestResult): readonly string[] => [
   'dryRunCompleted',
   'mutationTestingPlanReady',
   ...Array.from({ length: mutantCountOf(report) }, () => 'mutantTested'),

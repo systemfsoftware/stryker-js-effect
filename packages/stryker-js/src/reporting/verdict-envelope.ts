@@ -132,7 +132,7 @@ export const buildVerdictEnvelope: {
       thresholds: {
         high: report.thresholds.high,
         low: report.thresholds.low,
-        break: report.thresholds.break,
+        break: Option.getOrNull(Option.fromNullishOr(report.thresholds.break)),
       },
       counts: metrics,
       reportFile: Option.getOrNull(
