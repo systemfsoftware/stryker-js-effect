@@ -65,9 +65,9 @@ export namespace Source {
 
 // Warnings were encountered during analysis:
 //
-// dist/index.d.mts:1758:3 - (ae-forgotten-export) The symbol "Span" needs to be exported by the entry point index.d.mts
-// dist/index.d.mts:1762:3 - (ae-forgotten-export) The symbol "ScriptOrigin" needs to be exported by the entry point index.d.mts
-// dist/index.d.mts:1766:3 - (ae-forgotten-export) The symbol "Offset" needs to be exported by the entry point index.d.mts
+// dist/index.d.mts:1752:3 - (ae-forgotten-export) The symbol "Span" needs to be exported by the entry point index.d.mts
+// dist/index.d.mts:1756:3 - (ae-forgotten-export) The symbol "ScriptOrigin" needs to be exported by the entry point index.d.mts
+// dist/index.d.mts:1760:3 - (ae-forgotten-export) The symbol "Offset" needs to be exported by the entry point index.d.mts
 
 // (No @packageDocumentation comment for this package)
 
