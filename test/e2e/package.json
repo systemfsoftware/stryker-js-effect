@@ -12,6 +12,7 @@
   "type": "module",
   "scripts": {
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "seed-status-fault": "node scripts/seed-status-fault.ts",
     "test:e2e": "vitest run",
     "typecheck": "tsc -b"
   },
