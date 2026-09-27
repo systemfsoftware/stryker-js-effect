@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as ConfigProvider from 'effect/ConfigProvider'

@@ -5,7 +5,8 @@ import type {
   FrameworkContext,
   FrameworkParseResult,
 } from '@systemfsoftware/stryker-framework-interface'
-import { Format, Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect, Layer } from 'effect'
 
 import { instrument } from './__fixtures__/instrument.js'

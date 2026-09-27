@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { NonEmptyReadonlyArray } from 'effect/Array'
 import * as Arr from 'effect/Array'

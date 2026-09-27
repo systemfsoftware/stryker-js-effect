@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 

@@ -1,5 +1,6 @@
 /// <reference types="vitest/importMeta" />
-import { Format, Mutant as InstrumenterMutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Format } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   type Checker,
   type Options,
@@ -93,7 +94,7 @@ const MANIFEST_SPECIFIERS = [
 const MANIFEST_CONCURRENCY = 24
 
 export interface MutationReportingInput {
-  readonly results: readonly InstrumenterMutant.RunMutantResult[]
+  readonly results: readonly Mutant.RunMutantResult[]
   readonly options: Options.StrykerOptions
   readonly project: Project
   readonly testCoverage: TestCoverage
@@ -106,13 +107,13 @@ export interface MutationReportingInput {
 
 export interface MutationReportingService {
   readonly reportCheckFailure: (
-    mutant: InstrumenterMutant.MutantTestCoverage,
+    mutant: Mutant.MutantTestCoverage,
     result: Exclude<Checker.CheckResult, Checker.PassedCheckResult>,
-  ) => Effect.Effect<InstrumenterMutant.RunMutantResult>
+  ) => Effect.Effect<Mutant.RunMutantResult>
   readonly reportMutantRunResult: (
-    mutant: InstrumenterMutant.MutantTestCoverage,
+    mutant: Mutant.MutantTestCoverage,
     result: TestRunner.MutantRunResult,
-  ) => Effect.Effect<InstrumenterMutant.RunMutantResult>
+  ) => Effect.Effect<Mutant.RunMutantResult>
   readonly reportAll: (input: MutationReportingInput) => Effect.Effect<MutationTestDone, PlatformError>
   readonly checkpoint: (input: MutationReportingInput) => Effect.Effect<void, PlatformError>
 }
@@ -156,8 +157,8 @@ interface MutantOutcome {
 }
 
 const reportMutant = (
-  mutant: InstrumenterMutant.MutantTestCoverage,
-  status: InstrumenterMutant.RunMutantResult['status'],
+  mutant: Mutant.MutantTestCoverage,
+  status: Mutant.RunMutantResult['status'],
   outcome: MutantOutcome = {},
 ) =>
   Effect.succeed(
@@ -174,17 +175,17 @@ const reportMutant = (
       testsCompleted: mutant.testsCompleted,
       description: mutant.description,
       ...outcome,
-    }) satisfies InstrumenterMutant.RunMutantResult,
+    }) satisfies Mutant.RunMutantResult,
   )
 
 const reportMutantStatus = (
-  mutant: InstrumenterMutant.MutantTestCoverage,
-  status: InstrumenterMutant.RunMutantResult['status'],
+  mutant: Mutant.MutantTestCoverage,
+  status: Mutant.RunMutantResult['status'],
   statusReason?: string,
 ) => reportMutant(mutant, status, { statusReason: statusReason ?? mutant.statusReason })
 
 const reportCheckFailure = (
-  mutant: InstrumenterMutant.MutantTestCoverage,
+  mutant: Mutant.MutantTestCoverage,
   result: Exclude<Checker.CheckResult, Checker.PassedCheckResult>,
 ) => reportMutantStatus(mutant, 'CompileError', result.reason)
 
@@ -194,7 +195,7 @@ const reasonedOutcomeOf = (reason: string | undefined) =>
     onSome: (present) => ({ statusReason: present }),
   })
 
-const mapRunResult = (mutant: InstrumenterMutant.MutantTestCoverage, result: TestRunner.MutantRunResult) =>
+const mapRunResult = (mutant: Mutant.MutantTestCoverage, result: TestRunner.MutantRunResult) =>
   Match.value(result).pipe(
     Match.discriminator('status')(
       'error',
@@ -292,7 +293,7 @@ interface TestGroup {
 interface FileResultsInput {
   readonly sources: HashMap.HashMap<string, Report.FileResult>
   readonly reportNames: HashMap.HashMap<string, string>
-  readonly mutants: readonly InstrumenterMutant.RunMutantResult[]
+  readonly mutants: readonly Mutant.RunMutantResult[]
   readonly remap: TestIdRemap
 }
 
@@ -304,7 +305,7 @@ interface TestFilesInput {
 }
 
 const reportMutantOf = (
-  mutant: InstrumenterMutant.RunMutantResult,
+  mutant: Mutant.RunMutantResult,
   remap: TestIdRemap,
 ): Report.MutantResult => ({
   id: mutant.id,
@@ -451,7 +452,7 @@ const readTestSources = Effect.fn('stryker.mutationReporting.readTestSources')(f
 const assembleReport = Effect.fn('stryker.mutationReporting.assembleReport')(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
-  results: readonly InstrumenterMutant.RunMutantResult[],
+  results: readonly Mutant.RunMutantResult[],
 ) {
   const tests = [...MutableHashMap.values(input.testCoverage.testsById)]
   const remap = testIdRemap(Arr.map(tests, (test) => test.id))
@@ -522,7 +523,7 @@ const discoverDependencies = Effect.fn('stryker.mutationReporting.discoverDepend
 const mutationTestReport = Effect.fn('stryker.mutationReporting.mutationTestReport')(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
-  results: readonly InstrumenterMutant.RunMutantResult[],
+  results: readonly Mutant.RunMutantResult[],
 ) {
   const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
   const dependencies = yield* discoverDependencies(deps)
@@ -702,7 +703,7 @@ const writeAtomic = Effect.fn('stryker.mutationReporting.writeAtomic')(function*
 const slimIncrementalReport = Effect.fn('stryker.mutationReporting.slimIncrementalReport')(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
-  results: readonly InstrumenterMutant.RunMutantResult[],
+  results: readonly Mutant.RunMutantResult[],
 ) {
   const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
   return {
@@ -731,14 +732,15 @@ const checkpoint = (deps: MutationReportingDeps, input: MutationReportingInput) 
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const { Mutant: { Mutant } } = await import('@systemfsoftware/stryker-js-instrumenter')
-  const { TestRunner: { MutantRunResultSchema } } = await import('@systemfsoftware/stryker-js-plugin-interface')
+  const { Mutant: { Mutant }, TestRunner: { MutantRunResultSchema } } = await import(
+    '@systemfsoftware/stryker-js-plugin-interface'
+  )
 
   const MAX_SOURCE_COORDINATE = 1_000_000
 
   const sourceCoordinateOf = (coordinate: number) => Math.min(Math.floor(Math.abs(coordinate)), MAX_SOURCE_COORDINATE)
 
-  const coverageOf = (mutant: InstrumenterMutant.Mutant): InstrumenterMutant.MutantTestCoverage => ({
+  const coverageOf = (mutant: Mutant.Mutant): Mutant.MutantTestCoverage => ({
     _tag: mutant._tag,
     id: mutant.id,
     fileName: mutant.fileName,
@@ -764,7 +766,7 @@ if (import.meta.vitest !== void 0) {
 
   const holds = (conditions: readonly boolean[]) => conditions.every((condition) => condition)
 
-  const carriesClassOutcome = (result: TestRunner.MutantRunResult, mapped: InstrumenterMutant.RunMutantResult) =>
+  const carriesClassOutcome = (result: TestRunner.MutantRunResult, mapped: Mutant.RunMutantResult) =>
     Match.value(result).pipe(
       Match.discriminator('status')('error', (errored) =>
         holds([
@@ -791,7 +793,7 @@ if (import.meta.vitest !== void 0) {
       Match.exhaustive,
     )
 
-  const mapForLaw = (mutant: InstrumenterMutant.Mutant, result: TestRunner.MutantRunResult) =>
+  const mapForLaw = (mutant: Mutant.Mutant, result: TestRunner.MutantRunResult) =>
     mapRunResult(coverageOf(mutant), result)
 
   it.effect.prop(

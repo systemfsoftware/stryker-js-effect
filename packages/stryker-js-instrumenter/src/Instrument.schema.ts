@@ -1,9 +1,8 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
 import { MutatorNameSchema } from './directives/directive.schema.js'
-import { Location } from './Location.schema.js'
-import { CanonicalFileName, Mutant } from './Mutant.schema.js'
 
 export class InstrumentError
   extends S.TaggedError<InstrumentError>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/InstrumentError')(
@@ -21,7 +20,7 @@ export class InstrumentError
     })
   }
 }
-export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(Location)])
+export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(Mutant.Location)])
 
 export type MutateDescription = typeof MutateDescriptionSchema.Type
 
@@ -32,7 +31,7 @@ export interface FileDescription {
 export type FileDescriptions = Record<string, FileDescription>
 
 export const FileSchema = S.Struct({
-  name: CanonicalFileName,
+  name: Mutant.CanonicalFileName,
   content: S.String,
   mutate: MutateDescriptionSchema,
 })
@@ -63,7 +62,7 @@ export class InstrumentFilesCommand extends S.TaggedClass<InstrumentFilesCommand
 
 export class InstrumentResult extends S.TaggedClass<InstrumentResult>()('InstrumentResult', {
   files: S.Array(FileSchema),
-  mutants: S.Array(Mutant),
+  mutants: S.Array(Mutant.Mutant),
   skipped: S.Array(InstrumentFileSkip),
 }) {}
 

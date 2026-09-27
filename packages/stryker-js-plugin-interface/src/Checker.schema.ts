@@ -1,5 +1,6 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
+
+import * as Mutant from './Mutant/mod.js'
 
 export const CheckerMutantWire = S.Struct({
   id: Mutant.MutantId,

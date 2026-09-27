@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'

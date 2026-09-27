@@ -1,4 +1,4 @@
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type * as Mutant from './Mutant/mod.js'
 
 import { Metrics } from './Metrics.schema.js'
 

@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'

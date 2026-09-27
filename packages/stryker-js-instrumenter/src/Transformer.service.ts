@@ -1,4 +1,5 @@
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
@@ -57,7 +58,7 @@ import {
 import { InstrumentError } from './Instrument.schema.js'
 import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.js'
 import { lineStartsOf, locationOf, positionAt } from './Location.js'
-import type { LineStarts, Location, Position, ScriptOrigin } from './Location.schema.js'
+import type { LineStarts, ScriptOrigin } from './Location.schema.js'
 import { type MutatorContext, type MutatorEntry, type MutatorOptions } from './Mutator.service.js'
 import {
   applyMutant,
@@ -87,15 +88,15 @@ import {
 } from './plan-mutants.workflow.js'
 import { printNode } from './print/SourceText.js'
 
-const comparePositions = (a: Position, b: Position): number => {
+const comparePositions = (a: ApiMutant.Position, b: ApiMutant.Position): number => {
   const lineDelta = a.line - b.line
   return lineDelta !== 0 ? lineDelta : a.column - b.column
 }
 
-const locationIncluded = (haystack: Location, needle: Location): boolean =>
+const locationIncluded = (haystack: ApiMutant.Location, needle: ApiMutant.Location): boolean =>
   comparePositions(haystack.start, needle.start) <= 0 && comparePositions(haystack.end, needle.end) >= 0
 
-const locationOverlaps = (a: Location, b: Location): boolean =>
+const locationOverlaps = (a: ApiMutant.Location, b: ApiMutant.Location): boolean =>
   comparePositions(a.start, b.end) <= 0 && comparePositions(a.end, b.start) >= 0
 
 const errorTextOf = <A = unknown>(cause: A): string =>
@@ -689,7 +690,7 @@ interface MutableCandidate {
   readonly data: MutantCandidate
 }
 
-function isMutateRangeList(value: MutateDescription): value is readonly Location[] {
+function isMutateRangeList(value: MutateDescription): value is readonly ApiMutant.Location[] {
   return Array.isArray(value)
 }
 
@@ -822,7 +823,7 @@ const ignorersReasonFor = (
 
 const mutablesFor = (
   frame: NodeFrame,
-  location: Location,
+  location: ApiMutant.Location,
   context: PlacementContext,
 ): readonly MutableCandidate[] => {
   const ancestors = ancestorsOfFrame(frame)
@@ -845,27 +846,27 @@ const mutablesFor = (
   }))
 }
 
-const mutateRangesOf = (mutateDescription: MutateDescription): Option.Option<readonly Location[]> =>
+const mutateRangesOf = (mutateDescription: MutateDescription): Option.Option<readonly ApiMutant.Location[]> =>
   Option.filter(Option.some(mutateDescription), isMutateRangeList)
 
-const isOutsideMutateRanges = (location: Location, mutateDescription: MutateDescription): boolean =>
+const isOutsideMutateRanges = (location: ApiMutant.Location, mutateDescription: MutateDescription): boolean =>
   Option.exists(
     mutateRangesOf(mutateDescription),
     (ranges) => ranges.every((range) => !locationOverlaps(range, location)),
   )
 
-const isInsideMutateRanges = (location: Location, mutateDescription: MutateDescription): boolean =>
+const isInsideMutateRanges = (location: ApiMutant.Location, mutateDescription: MutateDescription): boolean =>
   Option.exists(
     mutateRangesOf(mutateDescription),
     (ranges) => ranges.some((range) => locationIncluded(range, location)),
   )
 
-const shouldMutateAt = (location: Location, mutateDescription: MutateDescription): boolean =>
+const shouldMutateAt = (location: ApiMutant.Location, mutateDescription: MutateDescription): boolean =>
   mutateDescription === true || isInsideMutateRanges(location, mutateDescription)
 
 const shouldSkipNode = (
   frame: NodeFrame,
-  location: Location,
+  location: ApiMutant.Location,
   mutateDescription: MutateDescription,
 ): boolean =>
   [
@@ -879,7 +880,7 @@ const shouldSkipNode = (
 const locationOfNode = (
   frame: NodeFrame,
   context: PlacementContext,
-): Result.Result<Location, NodeWithoutSpan> =>
+): Result.Result<ApiMutant.Location, NodeWithoutSpan> =>
   Option.match(
     Option.map(Option.fromNullishOr(spanOf(frame.node)), (span) => locationOf(context.lineStarts, span)),
     {
@@ -988,7 +989,7 @@ const planMutantsAt = (
   frame: NodeFrame,
   candidates: readonly MutableCandidate[],
   directives: readonly LocatedDirective[],
-  location: Location,
+  location: ApiMutant.Location,
   state: FoldState,
   context: PlacementContext,
 ): Result.Result<FoldState, InstrumentationRefusal> => {
@@ -1013,7 +1014,7 @@ const planMutantsAt = (
 
 const candidatesFor = (
   frame: NodeFrame,
-  location: Location,
+  location: ApiMutant.Location,
   context: PlacementContext,
 ): readonly MutableCandidate[] =>
   Match.value(shouldMutateAt(location, context.mutateDescription)).pipe(
@@ -1029,7 +1030,7 @@ const needsPlan = (
 const planAtNode = (
   frame: NodeFrame,
   directives: readonly LocatedDirective[],
-  location: Location,
+  location: ApiMutant.Location,
   state: FoldState,
   context: PlacementContext,
 ): Result.Result<FoldState, InstrumentationRefusal> => {
@@ -1120,7 +1121,7 @@ const foldChildren = (
 const visitFrame = (
   frame: NodeFrame,
   directives: readonly LocatedDirective[],
-  location: Location,
+  location: ApiMutant.Location,
   state: FoldState,
   context: PlacementContext,
 ): Result.Result<FoldState, InstrumentationRefusal> => {

@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Metric from 'effect/Metric'
 import * as S from 'effect/Schema'

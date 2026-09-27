@@ -1,6 +1,7 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect } from 'effect'
 
 import { shapes } from '../testResources/effect-concurrency/shapes.js'

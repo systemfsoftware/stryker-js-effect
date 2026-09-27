@@ -1,4 +1,4 @@
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 
 /**
  * Types the context `inject()` reads in `stryker-setup.ts` and the task metadata

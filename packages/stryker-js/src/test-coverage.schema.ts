@@ -1,4 +1,4 @@
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as MutableHashSet from 'effect/MutableHashSet'

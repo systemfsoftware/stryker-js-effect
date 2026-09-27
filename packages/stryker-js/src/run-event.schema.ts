@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Plugin, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { SchemaGetter } from 'effect'
 import * as S from 'effect/Schema'

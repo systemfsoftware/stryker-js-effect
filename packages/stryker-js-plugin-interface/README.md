@@ -42,7 +42,11 @@ the trace-context contract the groups carry (`TraceContextMiddleware`,
 `PropagatedTrace`, `TracedRpc`, `TraceContextReference`, `TraceContextParts`,
 `Traceparent`, `TraceparentHeader`, `TracestateHeader`). `Checker`,
 `TestRunner`, `Evaluator`, `Reporter`, `Report` and `Options` hold each plugin
-kind's contract, the mutation report and the Stryker options:
+kind's contract, the mutation report and the Stryker options. `Mutant` holds
+mutant identity, status and location (`Mutant`, `MutantId`, `MutatorName`,
+`CanonicalFileName`, `MutantStatusSchema` with its status subsets,
+`Location`, `Position`) together with the run-options and coverage payloads a
+test runner receives (`MutantRunOptionsSchema`, `MutantCoverageSchema`):
 
 ```ts
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'

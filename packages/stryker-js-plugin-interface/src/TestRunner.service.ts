@@ -1,7 +1,7 @@
 import * as Context from 'effect/Context'
 import type * as Effect from 'effect/Effect'
 
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type * as Mutant from './Mutant/mod.js'
 
 import type { DryRunOptions, DryRunResult, MutantRunResult, TestRunnerCapabilities } from './TestRunner.schema.js'
 import { TestRunnerFailed } from './TestRunner.schema.js'

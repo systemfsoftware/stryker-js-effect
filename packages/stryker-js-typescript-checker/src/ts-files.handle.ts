@@ -1,6 +1,6 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { lineStartsOf, offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Source } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
@@ -26,7 +26,7 @@ export interface ScriptFile {
   readonly originalContent: string
   readonly content: string
   readonly modifiedTime: DateTime.Utc
-  readonly lineStarts: Mutant.LineStarts
+  readonly lineStarts: Source.LineStarts
 }
 
 interface TSFilesSources {

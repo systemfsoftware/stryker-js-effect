@@ -2,10 +2,19 @@
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
-export const DetectedStatus = S.Union([S.Literal('Killed'), S.Literal('Timeout')])
-export const UndetectedStatus = S.Union([S.Literal('Survived'), S.Literal('NoCoverage')])
-export const InvalidStatus = S.Union([S.Literal('CompileError'), S.Literal('RuntimeError')])
-export const UntestedStatus = S.Union([S.Literal('Ignored'), S.Literal('Pending')])
+import { type MutantStatus, MutantStatusSchema } from './Mutant.schema.js'
+
+const statusBuckets = {
+  Detected: ['Killed', 'Timeout'],
+  Undetected: ['Survived', 'NoCoverage'],
+  Invalid: ['CompileError', 'RuntimeError'],
+  Untested: ['Ignored', 'Pending'],
+} as const satisfies Record<string, ReadonlyArray<MutantStatus>>
+
+export const DetectedStatus = S.Literals(statusBuckets.Detected)
+export const UndetectedStatus = S.Literals(statusBuckets.Undetected)
+export const InvalidStatus = S.Literals(statusBuckets.Invalid)
+export const UntestedStatus = S.Literals(statusBuckets.Untested)
 
 export const NonNegativeInt = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
 export const NonNegativeFinite = S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
@@ -93,7 +102,27 @@ export const MetricsResultSchema: S.Codec<MetricsResult, MetricsResultEncoded> =
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
   const Option = await import('effect/Option')
+
+  const statusSubsets: ReadonlyArray<ReadonlyArray<string>> = [
+    DetectedStatus.literals,
+    UndetectedStatus.literals,
+    InvalidStatus.literals,
+    UntestedStatus.literals,
+  ]
+  const bucketCountOf = (status: string): number => statusSubsets.filter((members) => members.includes(status)).length
+
+  const statusProbes = Arr.appendAll([...MutantStatusSchema.literals], ['NotAStatus'])
+  const expectedBucketCount = (status: string): number => S.is(MutantStatusSchema)(status) ? 1 : 0
+
+  it.prop(
+    '∀s_StatusBuckets_≡ExactlyOneBucketPerStatus',
+    { of: [S.String], subject: bucketCountOf },
+    (subject, [drawn]) =>
+      Arr.every(statusProbes, (value) => subject(value) === expectedBucketCount(value)) &&
+      subject(drawn) === expectedBucketCount(drawn),
+  )
 
   it.prop(
     '∀dc_ScorePercentageOf_≡UnscoredIffNothingCounted',

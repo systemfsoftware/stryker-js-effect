@@ -1,7 +1,7 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
 import { CheckerFailed, CheckerMutantWire, CheckResultSchema } from './Checker.schema.js'
+import * as Mutant from './Mutant/mod.js'
 import { ReporterEventUnion, ReporterFailed } from './ReporterEvent.schema.js'
 import { Traceparent, Tracestate } from './TraceContext.schema.js'
 

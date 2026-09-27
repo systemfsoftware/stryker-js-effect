@@ -1,8 +1,8 @@
 /// <reference types="vitest/importMeta" />
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
 import { NonNegativeFinite, NonNegativeInt } from './Metrics.schema.js'
+import * as Mutant from './Mutant/mod.js'
 
 const isTestId = (value: string): boolean => value.length > 0
 
@@ -34,16 +34,11 @@ export const TestResultSchema = S.Union([
   S.Struct({ ...TestResultBase, status: S.Literal('success') }),
 ])
 
-export const MutantCoverageSchema = S.Struct({
-  perTest: S.Record(S.String, S.Record(Mutant.MutantId, S.Finite)),
-  static: S.Record(Mutant.MutantId, S.Finite),
-})
-
 export const DryRunResultSchema = S.Union([
   S.Struct({
     status: S.Literal('complete'),
     tests: S.Array(TestResultSchema),
-    mutantCoverage: S.optionalKey(MutantCoverageSchema),
+    mutantCoverage: S.optionalKey(Mutant.MutantCoverageSchema),
   }),
   S.Struct({ status: S.Literal('timeout'), reason: S.optionalKey(S.String) }),
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),

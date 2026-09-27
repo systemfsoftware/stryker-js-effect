@@ -1,5 +1,4 @@
-export { Column, Line, Location, Offset, OpenEndLocation, Position, ScriptOrigin, Span } from '../Location.schema.js'
-export type { LineStarts } from '../Location.schema.js'
+export { Column, Line, Location, OpenEndLocation, Position } from '../Location.schema.js'
 export type {
   Coverage,
   CoverageData,
@@ -20,7 +19,6 @@ export {
   CanonicalFileName,
   EphemeralStatusSchema,
   HitCount,
-  InstrumenterContext,
   Mutant,
   MutantActivationSchema,
   MutantCoverageSchema,

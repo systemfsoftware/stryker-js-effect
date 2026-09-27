@@ -1,6 +1,6 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { type Format, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import type { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Format } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'

@@ -1,3 +1,4 @@
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
@@ -15,7 +16,6 @@ import {
   type InstrumentFileSkip,
   InstrumentResult as InstrumentResultSchema,
 } from './Instrument.schema.js'
-import { CanonicalFileName, type Mutant as ApiMutant } from './Mutant.schema.js'
 import { optInMutators } from './Mutator.service.js'
 
 export interface File extends FileDescription {
@@ -24,7 +24,7 @@ export interface File extends FileDescription {
 }
 export interface InstrumentResult {
   files: readonly File[]
-  mutants: readonly ApiMutant[]
+  mutants: readonly Mutant.Mutant[]
   skipped: readonly InstrumentFileSkip[]
 }
 
@@ -32,7 +32,7 @@ export type { InstrumenterOptions }
 export type { InstrumentFileSkip } from './Instrument.schema.js'
 
 const toSchemaFile = (file: File): S.Schema.Type<typeof FileSchema> => ({
-  name: CanonicalFileName.make(file.name),
+  name: Mutant.CanonicalFileName.make(file.name),
   content: file.content,
   mutate: file.mutate,
 })

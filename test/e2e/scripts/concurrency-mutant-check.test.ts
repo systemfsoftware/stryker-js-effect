@@ -1,5 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe } from '@systemfsoftware/vitest'
 import * as Cause from 'effect/Cause'

@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
@@ -30,7 +31,11 @@ export type ActionableStatus = typeof ActionableStatusSchema.Type
 export const MutantId = S.String.check(S.isPattern(/^(0|[1-9][0-9]*)$/)).pipe(S.brand('MutantId'))
 export type MutantId = typeof MutantId.Type
 
-export const MutatorName = S.NonEmptyString.pipe(S.brand('MutatorName'))
+export const MutatorName = S.String.check(
+  S.isPattern(/^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/)?[A-Z][A-Za-z0-9]*$/, {
+    expected: 'a PascalCase mutator name, optionally prefixed by a lowercase kebab-case namespace and a slash',
+  }),
+).pipe(S.brand('MutatorName'))
 export type MutatorName = typeof MutatorName.Type
 
 export const CanonicalFileName = S.String.pipe(
@@ -147,24 +152,72 @@ export type RunMutantResult = Mutant & {
   readonly static?: boolean | undefined
 }
 
-export class InstrumenterContext extends S.Class<InstrumenterContext>('InstrumenterContext')({
-  activeMutant: S.optional(S.String),
-  currentTestId: S.optional(S.String),
-  mutantCoverage: S.optional(MutantCoverageSchema),
-  hitCount: S.optional(HitCount),
-  hitLimit: S.optional(HitCount),
-}) {
-  static readonly NAMESPACE = '__stryker__'
-  static readonly MUTATION_COVERAGE_OBJECT = 'mutantCoverage'
-  static readonly ACTIVE_MUTANT = 'activeMutant'
-  static readonly CURRENT_TEST_ID = 'currentTestId'
-  static readonly HIT_COUNT = 'hitCount'
-  static readonly HIT_LIMIT = 'hitLimit'
-  static readonly ACTIVE_MUTANT_ENV_VARIABLE = '__STRYKER_ACTIVE_MUTANT__'
-}
-
 export type MutantRunPlan = RunPlan
 
 export type MutantEarlyResultPlan = EarlyResultPlan
 
 export type MutantTestPlan = TestPlan
+
+const acceptsMutatorName = (value: string): boolean => S.is(MutatorName)(value)
+
+const isKebabSegment = (segment: string): boolean => /^[a-z0-9]+$/.test(segment)
+const startsWithLowerLetter = (value: string): boolean => /^[a-z]/.test(value)
+
+const isKebabNamespace = (namespace: string): boolean =>
+  startsWithLowerLetter(namespace) && namespace.split('-').every(isKebabSegment)
+
+const isPascalCase = (name: string): boolean => /^[A-Z]/.test(name) && /^[A-Za-z0-9]*$/.test(name.slice(1))
+
+const namespacePartOf = (parts: ReadonlyArray<string>): string => parts[0] ?? ''
+const namePartOf = (parts: ReadonlyArray<string>): string => parts[1] ?? ''
+
+const namespacedPartsReadAsName = (parts: ReadonlyArray<string>): boolean =>
+  isKebabNamespace(namespacePartOf(parts)) && isPascalCase(namePartOf(parts))
+
+const readsAsMutatorName = (value: string): boolean => {
+  const parts = value.split('/')
+  return parts.length === 2 ? namespacedPartsReadAsName(parts) : isPascalCase(value)
+}
+
+const namedStatusSubsets: ReadonlyArray<ReadonlyArray<string>> = [
+  SurvivorStatusSchema.literals,
+  RememberedStatusSchema.literals,
+  EphemeralStatusSchema.literals,
+  ActionableStatusSchema.literals,
+]
+
+const namedByASubset = (status: string): boolean => namedStatusSubsets.some((subset) => subset.includes(status))
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+
+  const boundaryNames = [
+    '',
+    'ArithmeticOperator',
+    'acme/SwapArguments',
+    'acme/',
+    '/Swap',
+    'a/b/C',
+    'arithmeticOperator',
+    'acme/swapArguments',
+    'a-b/Cd',
+  ]
+  const withBoundaries = (drawn: string): ReadonlyArray<string> => Arr.prepend(boundaryNames, drawn)
+
+  it.prop(
+    '∀n_MutatorNameRefusal_≡ProviderGrammar',
+    { of: [S.String], subject: acceptsMutatorName },
+    (subject, [drawn]) => Arr.every(withBoundaries(drawn), (value) => subject(value) === readsAsMutatorName(value)),
+  )
+
+  const statusProbes = Arr.appendAll([...MutantStatusSchema.literals], ['NotAStatus'])
+
+  it.prop(
+    '∀s_NamedStatusSubsets_≡NameExactlyTheStatusVocabulary',
+    { of: [S.String], subject: namedByASubset },
+    (subject, [drawn]) =>
+      Arr.every(statusProbes, (value) => subject(value) === S.is(MutantStatusSchema)(value)) &&
+      subject(drawn) === S.is(MutantStatusSchema)(drawn),
+  )
+}

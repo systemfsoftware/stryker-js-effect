@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Array from 'effect/Array'
@@ -44,7 +44,7 @@ const runPlanOf = (id: string, line: number): Mutant.MutantRunPlan => {
   const mutant = Mutant.Mutant.make({
     id: Mutant.MutantId.make(id),
     fileName: Mutant.CanonicalFileName.make(`src/${id}.ts`),
-    mutatorName: Mutant.MutatorName.make(`${id}-mutator`),
+    mutatorName: Mutant.MutatorName.make(`Mutator${id}`),
     replacement: '',
     location: { start: { line, column: 1 }, end: { line, column: 2 } },
   })
@@ -67,7 +67,7 @@ const labelledPlanOf = (mutantId: string, netTime: number): Mutant.MutantRunPlan
   const mutant = Mutant.Mutant.make({
     id: Mutant.MutantId.make(mutantId),
     fileName: Mutant.CanonicalFileName.make(`src/${mutantId}.ts`),
-    mutatorName: Mutant.MutatorName.make(`${mutantId}-mutator`),
+    mutatorName: Mutant.MutatorName.make(`Mutator${mutantId}`),
     replacement: '',
     location: { start: { line: netTime + 1, column: 1 }, end: { line: netTime + 1, column: 2 } },
   })

@@ -1,8 +1,8 @@
 import { SchemaGetter } from 'effect'
 import * as S from 'effect/Schema'
 
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { NonNegativeFinite, NonNegativeInt, Percentage } from './Metrics.schema.js'
+import * as Mutant from './Mutant/mod.js'
 import { TestId } from './TestRunner.schema.js'
 
 export const MutantResultSchema = S.Struct({

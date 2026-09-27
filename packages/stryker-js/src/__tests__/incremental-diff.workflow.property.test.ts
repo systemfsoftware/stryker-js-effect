@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -10,7 +10,7 @@ const mutantOf = (id: Mutant.MutantId, line: number) =>
   Mutant.Mutant.make({
     id,
     fileName: Mutant.CanonicalFileName.make(`src/mutant-${line}.ts`),
-    mutatorName: Mutant.MutatorName.make(`${id}-mutator`),
+    mutatorName: Mutant.MutatorName.make(`Mutator${id}`),
     replacement: '',
     location: { start: { line, column: 1 }, end: { line, column: 2 } },
   })

@@ -1,5 +1,6 @@
 export * as Checker from './Checker/mod.js'
 export * as Evaluator from './Evaluator/mod.js'
+export * as Mutant from './Mutant/mod.js'
 export * as Options from './Options/mod.js'
 export * as Plugin from './Plugin/mod.js'
 export * as Report from './Report/mod.js'

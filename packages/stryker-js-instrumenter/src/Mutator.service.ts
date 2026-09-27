@@ -1,4 +1,5 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
+import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -39,8 +40,6 @@ import type {
   WhileStatement,
 } from './Ast.handle.js'
 import { MutantNotApplied } from './Instrument.schema.js'
-import type { Location } from './Location.schema.js'
-import { Mutant as ApiMutant, type MutantId } from './Mutant.schema.js'
 import type { PlannedMutant } from './plan-mutants.workflow.js'
 
 import { dual } from 'effect/Function'
@@ -94,10 +93,10 @@ export interface Mutable {
   replacement: Node
 }
 export interface Mutant extends Mutable {
-  readonly id: MutantId
+  readonly id: ApiMutant.MutantId
   readonly fileName: string
   readonly original: Node
-  readonly location: Location
+  readonly location: ApiMutant.Location
   readonly replacementCode: string
 }
 function orDefault<T>(value: T | undefined, fallback: T): T {
@@ -126,7 +125,7 @@ export const createMutant: {
   (planned: PlannedMutant, fileName: string, original: Node, replacement: Node): Mutant
   (fileName: string, original: Node, replacement: Node): (planned: PlannedMutant) => Mutant
 } = dual((args: IArguments): boolean => args.length >= 4, createMutantDataFirst)
-export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant, S.SchemaError> {
+export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.SchemaError> {
   const baseFields = {
     _tag: 'Mutant' as const,
     fileName: mutant.fileName,
@@ -135,7 +134,7 @@ export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant, S.SchemaEr
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacementCode,
   }
-  return S.decodeResult(ApiMutant)(
+  return S.decodeResult(ApiMutant.Mutant)(
     mutant.ignoreReason === undefined
       ? baseFields
       : { ...baseFields, statusReason: mutant.ignoreReason, status: 'Ignored' },

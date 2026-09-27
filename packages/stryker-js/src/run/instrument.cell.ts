@@ -1,6 +1,7 @@
 /// <reference types="vitest/importMeta" />
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean } from 'effect'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'

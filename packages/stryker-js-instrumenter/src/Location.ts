@@ -1,9 +1,10 @@
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
-import type { LineStarts, Location, Offset, Position, ScriptOrigin, Span } from './Location.schema.js'
-import { Location as LocationSchema, ScriptOrigin as ScriptOriginSchema } from './Location.schema.js'
+import type { LineStarts, Offset, ScriptOrigin, Span } from './Location.schema.js'
+import { ScriptOrigin as ScriptOriginSchema } from './Location.schema.js'
 
 const LINE_TERMINATOR = /\r\n|[\n\r\u2028\u2029]/g
 
@@ -20,7 +21,7 @@ const positionAtOffset = (
   low: number,
   high: number,
   start: number,
-): Position =>
+): Mutant.Position =>
   Boolean.match(low > high, {
     onTrue: () => ({ line: low, column: offset - start + 1 }),
     onFalse: () =>
@@ -39,21 +40,21 @@ const positionAtOffset = (
   })
 
 export const positionAt: {
-  (lineStarts: LineStarts, offset: Offset): Position
-  (offset: Offset): (lineStarts: LineStarts) => Position
+  (lineStarts: LineStarts, offset: Offset): Mutant.Position
+  (offset: Offset): (lineStarts: LineStarts) => Mutant.Position
 } = dual(
   2,
-  (lineStarts: LineStarts, offset: Offset): Position =>
+  (lineStarts: LineStarts, offset: Offset): Mutant.Position =>
     positionAtOffset(lineStarts, offset, 0, lineStarts.length - 1, 0),
 )
 
 export const locationOf: {
-  (lineStarts: LineStarts, span: Span): Location
-  (span: Span): (lineStarts: LineStarts) => Location
+  (lineStarts: LineStarts, span: Span): Mutant.Location
+  (span: Span): (lineStarts: LineStarts) => Mutant.Location
 } = dual(
   2,
-  (lineStarts: LineStarts, span: Span): Location =>
-    LocationSchema.make({ start: positionAt(lineStarts, span.start), end: positionAt(lineStarts, span.end) }),
+  (lineStarts: LineStarts, span: Span): Mutant.Location =>
+    Mutant.Location.make({ start: positionAt(lineStarts, span.start), end: positionAt(lineStarts, span.end) }),
 )
 
 export const originAt: {
@@ -65,11 +66,11 @@ export const originAt: {
 })
 
 export const offsetAt: {
-  (lineStarts: LineStarts, position: Position): Option.Option<Offset>
-  (position: Position): (lineStarts: LineStarts) => Option.Option<Offset>
+  (lineStarts: LineStarts, position: Mutant.Position): Option.Option<Offset>
+  (position: Mutant.Position): (lineStarts: LineStarts) => Option.Option<Offset>
 } = dual(
   2,
-  (lineStarts: LineStarts, position: Position): Option.Option<Offset> =>
+  (lineStarts: LineStarts, position: Mutant.Position): Option.Option<Offset> =>
     Option.flatMap(Arr.get(lineStarts, position.line - 1), (start) => {
       const offset = start + position.column - 1
       return Option.match(Arr.get(lineStarts, position.line), {

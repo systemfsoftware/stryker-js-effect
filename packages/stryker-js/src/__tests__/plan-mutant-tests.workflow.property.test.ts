@@ -1,6 +1,6 @@
 import { describe, it } from '@systemfsoftware/vitest'
 
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'

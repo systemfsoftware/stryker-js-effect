@@ -1,5 +1,5 @@
 /// <reference types="vitest/importMeta" />
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect } from 'effect'
 import * as S from 'effect/Schema'
 

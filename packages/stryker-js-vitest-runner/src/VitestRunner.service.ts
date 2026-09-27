@@ -1,6 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { ErrorText, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Crypto from 'effect/Crypto'
@@ -201,11 +201,11 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
 
   const instrumenterContextOf = (
     file: RunnerTestFile,
-  ): Effect.Effect<Option.Option<Mutant.InstrumenterContext>, CoverageDecodeFailed> =>
+  ): Effect.Effect<Option.Option<Instrument.InstrumenterContext>, CoverageDecodeFailed> =>
     Option.match(Option.fromNullishOr(metaOf(file)), {
       onNone: () => Effect.succeedNone,
       onSome: (meta) =>
-        S.decodeEffect(Mutant.InstrumenterContext)(meta).pipe(
+        S.decodeEffect(Instrument.InstrumenterContext)(meta).pipe(
           Effect.asSome,
           Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
         ),

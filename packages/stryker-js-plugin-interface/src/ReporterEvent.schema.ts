@@ -2,8 +2,8 @@ import type * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
 import type { StandardSchemaV1 } from 'effect/StandardSchema'
 
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import { MetricsResultSchema, NonNegativeFinite, NonNegativeInt } from './Metrics.schema.js'
+import * as Mutant from './Mutant/mod.js'
 
 import { MutationTestResultSchema } from './Report.schema.js'
 import type { StrykerOptions } from './stryker-options.schema.js'

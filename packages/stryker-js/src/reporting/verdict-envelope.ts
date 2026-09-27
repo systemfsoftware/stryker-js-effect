@@ -1,5 +1,5 @@
 import { randomBytes } from '@noble/hashes/utils.js'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as DateTime from 'effect/DateTime'

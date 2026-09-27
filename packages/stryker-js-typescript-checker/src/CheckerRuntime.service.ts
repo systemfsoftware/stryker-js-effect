@@ -1,6 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { ErrorText, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { Checker, Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'

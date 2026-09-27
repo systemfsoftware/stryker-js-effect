@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean } from 'effect'
 import * as HashMap from 'effect/HashMap'
 import * as HashSet from 'effect/HashSet'
