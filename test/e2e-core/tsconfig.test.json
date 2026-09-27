@@ -26,7 +26,6 @@
     ]
   },
   "include": [
-    "scripts",
     "tests",
     "src/**/__tests__/**/*",
     "src/**/*.test.ts",

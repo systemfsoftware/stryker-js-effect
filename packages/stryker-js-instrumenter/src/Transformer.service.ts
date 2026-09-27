@@ -808,6 +808,11 @@ const plannedWithNodes = (
     })
   )
 
+const placeableAmong = (mutants: readonly Mutant[], placeableIds: readonly ApiMutant.MutantId[]): readonly Mutant[] => {
+  const placeable = new Set(placeableIds)
+  return mutants.filter((mutant) => placeable.has(mutant.id))
+}
+
 const ignorersReasonFor = (
   node: Node,
   ancestors: readonly Node[],
@@ -973,12 +978,13 @@ const collectPlan = (
   return Match.value(plan).pipe(
     Match.tag('MutantsPlanned', (planned) =>
       attachPlaceable(
-        plannedWithNodes(candidates, planned.placeable, context.fileName),
+        placeableAmong(collected, planned.placeableIds),
         frame,
         { ...nextState, hasLiveMutants: true },
         context,
       )),
-    Match.orElse(() => Result.succeed(nextState)),
+    Match.tag('MutantsFullyIgnored', () => Result.succeed(nextState)),
+    Match.exhaustive,
   )
 }
 

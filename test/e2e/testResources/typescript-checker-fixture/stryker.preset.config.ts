@@ -9,5 +9,6 @@ export default defineConfig({
     },
   ],
   tsconfigFile: 'tsconfig.extends.json',
+  reporters: ['json'],
   mutate: ['src/first.ts'],
 })

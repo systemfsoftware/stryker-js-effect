@@ -3,32 +3,10 @@ import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import { Effect } from 'effect'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
+import { verifyAnnotatedRun } from './__fixtures__/annotation-oracle.fixture.js'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
-import {
-  decodeStream,
-  MachineStreamError,
-  reportedMutantsOf,
-  runIdsIn,
-  verdictEvent,
-} from './__fixtures__/machine-stream.fixture.js'
-
-const CALC_FIXTURE_ORACLE = {
-  killed: 7,
-  survived: 2,
-  total: 9,
-  mutantStatusTally: {
-    'ArithmeticOperator:Killed': 1,
-    'ArithmeticOperator:Survived': 1,
-    'BlockStatement:Killed': 2,
-    'BlockStatement:Survived': 1,
-    'ConditionalExpression:Killed': 2,
-    'EqualityOperator:Killed': 2,
-  },
-  actionableStatusTally: {
-    'ArithmeticOperator:Survived': 1,
-    'BlockStatement:Survived': 1,
-  },
-} as const
+import { decodeStream, MachineStreamError, runIdsIn, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
+import { readReportOf } from './__fixtures__/run-artifacts.fixture.js'
 
 const CALC_FIXTURE_URL = new URL('../testResources/calc-fixture', import.meta.url)
 const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
@@ -50,10 +28,6 @@ const terminalIndexesIn = (kinds: ReadonlyArray<string>): ReadonlyArray<number> 
     .map((kind, index) => ({ index, kind }))
     .filter((entry) => TERMINAL_RUN_KINDS.includes(entry.kind))
     .map((entry) => entry.index)
-
-const countedSumOf = (counts: RunEvent.VerdictReached['counts']): number =>
-  counts.killed + counts.survived + counts.timeout + counts.compileErrors +
-  counts.ignored + counts.noCoverage + counts.pending + counts.runtimeErrors
 
 const verifyStreamAndExit = (expect: Expect, run: ExecResult, events: ReadonlyArray<RunEvent.RunEvent>): Check => {
   const kinds = events.map((event) => event._tag)
@@ -78,36 +52,6 @@ const verifyStreamAndExit = (expect: Expect, run: ExecResult, events: ReadonlyAr
   })
 }
 
-const verifyOracleCounts = (expect: Expect, verdict: RunEvent.VerdictReached): Check =>
-  expect({
-    break: verdict.thresholds.break,
-    compileErrors: verdict.counts.compileErrors,
-    ignored: verdict.counts.ignored,
-    noCoverage: verdict.counts.noCoverage,
-    pending: verdict.counts.pending,
-    runtimeErrors: verdict.counts.runtimeErrors,
-  }).toStrictEqual({
-    break: null,
-    compileErrors: 0,
-    ignored: 0,
-    noCoverage: 0,
-    pending: 0,
-    runtimeErrors: 0,
-  })
-
-const verifyReportedAndActionableMutants = (
-  expect: Expect,
-  reported: ReadonlyArray<string>,
-  verdict: RunEvent.VerdictReached,
-): Check =>
-  expect({
-    reportedCount: reported.length,
-    talliedCount: countedSumOf(verdict.counts),
-  }).toStrictEqual({
-    reportedCount: CALC_FIXTURE_ORACLE.total,
-    talliedCount: CALC_FIXTURE_ORACLE.total,
-  })
-
 const verifyRunIdConsistency = (
   expect: Expect,
   runIds: ReadonlyArray<string>,
@@ -115,7 +59,7 @@ const verifyRunIdConsistency = (
 ): Check =>
   expect({
     carriesAtLeastTwoRunIds: runIds.length >= 2,
-    distinctRunIds: new Set(runIds).size,
+    distinctRunIds: runIds.filter((runId, index) => runIds.indexOf(runId) === index).length,
     verdictRunIdMatchesFirst: verdict.runId === runIds.at(0),
   }).toStrictEqual({
     carriesAtLeastTwoRunIds: true,
@@ -154,15 +98,17 @@ Feature('Running one mutation run through the packed CLI')
               })
             ),
           )),
-        Then('the mutation verdict tallies match the calc oracle')((s, expect) =>
-          verifyOracleCounts(expect, s.verdict)
+        When('the report the verdict names is read and decoded')(
+          'report',
+          (s) => readReportOf(s.verdict, s.run.output.readFile),
         ),
-        When('the reported mutants of the decoded stream are read')(
-          'reported',
-          (s) => Effect.succeed(reportedMutantsOf(s.events)),
-        ),
-        Then('every reported mutant is counted in the verdict')((s, expect) =>
-          verifyReportedAndActionableMutants(expect, s.reported, s.verdict)
+        Then('every reported mutant matches its authored annotation and the verdict tallies agree')((s, expect) =>
+          verifyAnnotatedRun(expect, {
+            fixture: 'calc-fixture',
+            slice: 'stryker.config.ts',
+            report: s.report,
+            verdict: s.verdict,
+          })
         ),
         When('the run ids carried by the decoded stream are read')('runIds', (s) => Effect.succeed(runIdsIn(s.events))),
         Then('every event carries the verdict run id')((s, expect) =>

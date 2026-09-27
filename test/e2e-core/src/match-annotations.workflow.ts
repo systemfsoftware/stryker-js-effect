@@ -8,7 +8,13 @@ import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { type Annotation, type MutatorTarget, type Scope, SourcedAnnotation } from './annotation.schema.js'
+import {
+  type Annotation,
+  type MutatorItem,
+  type MutatorTarget,
+  type Scope,
+  SourcedAnnotation,
+} from './annotation.schema.js'
 import { ReportMutant } from './match.schema.js'
 
 const MatchedAnnotationTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/MatchedAnnotation')
@@ -90,10 +96,19 @@ const sliceAppliesTo = (slice: string, annotation: Annotation): boolean =>
     onSome: (slices) => slices.includes(slice),
   })
 
-const targetCoversMutator = (target: MutatorTarget, mutatorName: string): boolean =>
+const replacementMatches = (item: MutatorItem, mutant: ReportMutant): boolean =>
+  Option.match(Option.fromUndefinedOr(item.replacement), {
+    onNone: () => true,
+    onSome: (replacement) => mutant.mutant.replacement === replacement,
+  })
+
+const itemCoversMutant = (item: MutatorItem, mutant: ReportMutant): boolean =>
+  Boolean.and(item.name === mutant.mutant.mutatorName, replacementMatches(item, mutant))
+
+const targetCoversMutant = (target: MutatorTarget, mutant: ReportMutant): boolean =>
   Match.value(target).pipe(
     Match.tag('All', () => true),
-    Match.tag('Named', ({ names }) => names.some((name) => name === mutatorName)),
+    Match.tag('Named', ({ items }) => items.some((item) => itemCoversMutant(item, mutant))),
     Match.exhaustive,
   )
 
@@ -109,7 +124,7 @@ const rangeContainsPoint = (range: Mutant.Location, point: Point): boolean =>
 const coversMutant = (sourced: SourcedAnnotation, mutant: ReportMutant): boolean =>
   Boolean.every([
     sourced.file === mutant.file,
-    targetCoversMutator(sourced.annotation.mutators, mutant.mutant.mutatorName),
+    targetCoversMutant(sourced.annotation.mutators, mutant),
     rangeContainsPoint(sourced.annotation.range, mutant.mutant.location.start),
   ])
 

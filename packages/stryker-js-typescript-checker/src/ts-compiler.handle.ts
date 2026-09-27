@@ -30,7 +30,12 @@ import {
   RequestAffectedFilesCommand,
   TraceAffectedFilesCommand,
 } from './CheckerCommands.schema.js'
-import type { NodeDecodedShape } from './CheckMutants.schema.js'
+import {
+  type DiagnosticDecoded,
+  DiagnosticLine,
+  type DiagnosticSeverity,
+  type NodeDecodedShape,
+} from './CheckMutants.schema.js'
 import { type CompilerError, CompilerFailed, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
 import { groupMutants } from './group-mutants.workflow.js'
 import { overrideTsconfigOptions } from './override-tsconfig-options.workflow.js'
@@ -953,6 +958,54 @@ export const getLineAndCharacterOfPosition: {
       Option.map(found, (sourceFile) => sourceFile.getLineAndCharacterOfPosition(position)),
     )
   }),
+)
+
+const severityOf = (category: Diagnostic['category']): DiagnosticSeverity =>
+  Match.value(category).pipe(
+    Match.when(DiagnosticCategory.Warning, (): DiagnosticSeverity => 'warning'),
+    Match.when(DiagnosticCategory.Error, (): DiagnosticSeverity => 'error'),
+    Match.when(DiagnosticCategory.Suggestion, (): DiagnosticSeverity => 'suggestion'),
+    Match.orElse((): DiagnosticSeverity => 'message'),
+  )
+
+const renderPosition = (fileName: string, at: { line: number; character: number } | undefined): string =>
+  Option.match(Option.fromUndefinedOr(at), {
+    onNone: () => fileName + '(1,1): ',
+    onSome: (position) => fileName + '(' + (position.line + 1) + ',' + (position.character + 1) + '): ',
+  })
+
+const positionOf = (self: TSCompiler, diagnostic: Diagnostic): Effect.Effect<string> =>
+  Option.match(Option.filter(Option.fromUndefinedOr(diagnostic.fileName), (fileName) => fileName !== ''), {
+    onNone: () => Effect.succeed(''),
+    onSome: (fileName) =>
+      getLineAndCharacterOfPosition(self, fileName, diagnostic.pos).pipe(
+        Effect.orElseSucceed(() => undefined),
+        Effect.map((at) => renderPosition(fileName, at)),
+      ),
+  })
+
+const describedOf = (self: TSCompiler, diagnostic: Diagnostic): Effect.Effect<DiagnosticDecoded> =>
+  Effect.map(positionOf(self, diagnostic), (position) =>
+    DiagnosticLine.make({
+      position,
+      severity: severityOf(diagnostic.category),
+      code: diagnostic.code,
+      text: diagnostic.text,
+      ...(diagnostic.fileName === undefined ? {} : { fileName: diagnostic.fileName }),
+    }))
+
+export const describeDiagnostics: {
+  (
+    diagnostics: readonly Diagnostic[],
+  ): (self: TSCompiler) => Effect.Effect<readonly DiagnosticDecoded[]>
+  (
+    self: TSCompiler,
+    diagnostics: readonly Diagnostic[],
+  ): Effect.Effect<readonly DiagnosticDecoded[]>
+} = dual(
+  2,
+  (self: TSCompiler, diagnostics: readonly Diagnostic[]): Effect.Effect<readonly DiagnosticDecoded[]> =>
+    Effect.forEach(diagnostics, (diagnostic) => describedOf(self, diagnostic)),
 )
 
 const CLOSE_GRACE = '1 second'

@@ -6,10 +6,20 @@ import * as S from 'effect/Schema'
 /** A file name the node map can be keyed by: non-empty, and naming an extension. */
 export const SourceFileSchema = S.NonEmptyString.pipe(S.check(S.isPattern(/\.[^./\\]+$/)))
 
-const DiagnosticSchema = S.Struct({
+export const DiagnosticSeveritySchema = S.Literals(['error', 'warning', 'suggestion', 'message'])
+export type DiagnosticSeverity = S.Schema.Type<typeof DiagnosticSeveritySchema>
+
+export class DiagnosticLine extends S.Class<DiagnosticLine>('DiagnosticLine')({
   fileName: S.optional(SourceFileSchema),
+  position: S.String,
+  severity: DiagnosticSeveritySchema,
+  code: S.Finite,
   text: S.String,
-})
+}) {
+  get rendered(): string {
+    return this.position + this.severity + ' TS' + this.code + ': ' + this.text
+  }
+}
 
 export interface NodeDecodedShape {
   readonly fileName: string
@@ -29,7 +39,7 @@ export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput>()(
   'CheckMutantsInput',
   {
     mutants: S.Array(Checker.CheckerMutantWire),
-    diagnostics: S.Array(DiagnosticSchema),
+    diagnostics: S.Array(DiagnosticLine),
     nodes: S.Record(SourceFileSchema, TSFileNodeSchema),
   },
 ) {
@@ -37,7 +47,7 @@ export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput>()(
 }
 
 export type MutantDecoded = Checker.CheckerMutantWire
-export type DiagnosticDecoded = S.Schema.Type<typeof DiagnosticSchema>
+export type DiagnosticDecoded = DiagnosticLine
 export type NodeDecoded = NodeDecodedShape
 
 const accepts = {

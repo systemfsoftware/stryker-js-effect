@@ -8,7 +8,6 @@
   },
   "include": [
     "oxlint.config.ts",
-    "vitest.config.ts",
-    "vitest.oracle.config.ts"
+    "vitest.config.ts"
   ]
 }

@@ -193,7 +193,7 @@ const checkResults = (
   return mutants.flatMap((mutant): ReadonlyArray<readonly [string, MutantCheckStatus]> =>
     Option.match(HashMap.get(classification.definitive, mutant.id), {
       onSome: (diagnostics) => [
-        [mutant.id, { status: 'compileError', reason: diagnostics.map((entry) => entry.text).join('\n') }],
+        [mutant.id, { status: 'compileError', reason: diagnostics.map((entry) => entry.rendered).join('\n') }],
       ],
       onNone: () =>
         Option.match(

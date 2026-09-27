@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { countRiskSignals, EventFilter, retryPlan } from './stats.js'
+import { countRiskSignals, EventFilter, isRiskCode, primaryTag, retryPlan } from './stats.js'
 
 describe.concurrent('Feature: Resilience Strategies and Risk Assessment', () => {
   describe.concurrent('Rule: Retry plans provide deterministic defaults and support custom configurations', () => {
@@ -44,6 +44,25 @@ describe.concurrent('Feature: Resilience Strategies and Risk Assessment', () => 
         expect(countRiskSignals(signals)).toBe(expected)
       },
     )
+  })
+
+  describe.concurrent('Rule: Risk codes match the anchored numeric suffix pattern', () => {
+    test.each([
+      { code: 'risk-42', expected: true, description: 'anchored multi digit code' },
+      { code: 'risk-7', expected: true, description: 'anchored single digit code' },
+      { code: 'xrisk-42', expected: false, description: 'leading text before the prefix' },
+      { code: 'risk-42x', expected: false, description: 'trailing text after the digits' },
+      { code: 'risk-', expected: false, description: 'missing digits' },
+      { code: 'risk-aa', expected: false, description: 'non numeric suffix' },
+    ])('Given $description, When tested, Then isRiskCode returns $expected', ({ code, expected }) => {
+      expect(isRiskCode(code)).toBe(expected)
+    })
+  })
+
+  describe.concurrent('Rule: The primary risk tag is the upper cased head of the tag list', () => {
+    test('Given the published tag list, When the primary tag is derived, Then it upper cases the head entry', () => {
+      expect(primaryTag()).toBe('BLOCK')
+    })
   })
 
   describe('Rule: Event filter emits allowed events and tracks dropped or skipped audit events', () => {

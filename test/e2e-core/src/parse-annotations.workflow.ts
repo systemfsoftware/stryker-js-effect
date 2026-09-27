@@ -4,6 +4,7 @@ import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -28,7 +29,6 @@ export class ParseAnnotationsCommand extends S.TaggedClass<ParseAnnotationsComma
 }
 
 const MARKER_LINE = new RegExp(`^\\s*//\\s*${AnnotationMarker.literal}\\s*(.*)$`)
-const SLICE_QUALIFIER = /^(.*?)\s*\[([^\]]*)\]\s*$/
 const COLON_SPLIT = /^([^:]*):([\s\S]*)$/
 const SCOPED_HEAD = /^(?:(\S+)\s+)?(\S+)$/
 const OUTCOME_CALL = /^(CompileError|RuntimeError)\(([^)]*)\)$/
@@ -45,6 +45,7 @@ const StatusOutcome = AnnotationStatusOutcome
 const KilledOrTimeout = KilledOrTimeoutOutcome
 const DecodeOutcome = S.decodeResult(Outcome)
 const DecodeAnnotation = S.decodeResult(Annotation)
+const DecodeJsonString = S.decodeResult(S.fromJsonString(S.String))
 const RefuseUnreadable = AnnotationUnreadable
 const RefuseRange = AnnotationRangeUnresolved
 
@@ -70,12 +71,16 @@ const EncodedCauseBase = S.Union([
   S.TaggedStruct('RuntimeError', { errorClass: S.String }),
 ])
 
+const EncodedItemBase = S.Struct({ name: S.String, replacement: S.String.pipe(S.optional) })
+
 const EncodedTargetBase = S.Union([
   S.TaggedStruct('All', {}),
-  S.TaggedStruct('Named', { names: S.Array(S.String) }),
+  S.TaggedStruct('Named', { items: S.Array(EncodedItemBase) }),
 ])
 
 type EncodedCause = S.Schema.Type<typeof EncodedCauseBase>
+
+type EncodedItem = S.Schema.Type<typeof EncodedItemBase>
 
 type EncodedTarget = S.Schema.Type<typeof EncodedTargetBase>
 
@@ -97,11 +102,63 @@ const colonPartsOf = (text: string): Option.Option<{ scopeAndOutcome: string; mu
     mutators: match[2].trim(),
   }))
 
+interface BracketScan {
+  readonly inString: boolean
+  readonly escaped: boolean
+  readonly open: Option.Option<number>
+  readonly index: number
+}
+
+const INERT_BRACKETS: BracketScan = { inString: false, escaped: false, open: Option.none(), index: 0 }
+
+const scanRecord = (
+  inString: boolean,
+  escaped: boolean,
+  open: Option.Option<number>,
+  index: number,
+): BracketScan => ({ inString, escaped, open, index })
+
+const bracketStep = (scan: BracketScan, char: string): BracketScan =>
+  Boolean.match(Option.isSome(scan.open), {
+    onTrue: () => scanRecord(scan.inString, false, scan.open, scan.index + 1),
+    onFalse: () =>
+      Boolean.match(scan.escaped, {
+        onTrue: () => scanRecord(scan.inString, false, scan.open, scan.index + 1),
+        onFalse: () =>
+          Boolean.match(Boolean.and(scan.inString, char === '\\'), {
+            onTrue: () => scanRecord(true, true, scan.open, scan.index + 1),
+            onFalse: () =>
+              Boolean.match(char === '"', {
+                onTrue: () => scanRecord(Boolean.not(scan.inString), false, scan.open, scan.index + 1),
+                onFalse: () =>
+                  Boolean.match(Boolean.and(Boolean.not(scan.inString), char === '['), {
+                    onTrue: () => scanRecord(scan.inString, false, Option.some(scan.index), scan.index + 1),
+                    onFalse: () => scanRecord(scan.inString, false, scan.open, scan.index + 1),
+                  }),
+              }),
+          }),
+      }),
+  })
+
+const SLICE_GROUP = /^\[([^\]]*)\]\s*$/
+
+const sliceBracketOf = (text: string): Option.Option<{ readonly head: string; readonly slices: string }> => {
+  const scan = text.split('').reduce(bracketStep, INERT_BRACKETS)
+  return Option.flatMap(
+    scan.open,
+    (open) =>
+      Option.map(Option.fromNullishOr(SLICE_GROUP.exec(text.slice(open))), (match) => ({
+        head: text.slice(0, open),
+        slices: match[1],
+      })),
+  )
+}
+
 const sectionsOf = (text: string): Option.Option<Sections> =>
-  Option.match(Option.fromNullishOr(SLICE_QUALIFIER.exec(text)), {
+  Option.match(sliceBracketOf(text), {
     onNone: () => Option.map(colonPartsOf(text), (parts) => ({ ...parts, slices: Option.none() })),
-    onSome: (match) =>
-      Option.map(colonPartsOf(match[1]), (parts) => ({ ...parts, slices: Option.some(commaSeparated(match[2])) })),
+    onSome: ({ head, slices }) =>
+      Option.map(colonPartsOf(head), (parts) => ({ ...parts, slices: Option.some(commaSeparated(slices)) })),
   })
 
 const scopeOf = (token: string | undefined): Option.Option<Scope> =>
@@ -145,14 +202,131 @@ const callOutcomeOf = (text: string): Option.Option<Outcome> =>
 const outcomeOf = (text: string): Option.Option<Outcome> =>
   Option.firstSomeOf([statusOutcomeOf(text), killedOrTimeoutOf(text), callOutcomeOf(text)])
 
+const EQUALS_SPLIT = /^([^=]*)=([\s\S]*)$/
+
+const UNTERMINATED_QUALIFIER = 'a mutator qualifier leaves its JSON string unterminated'
+const NO_MUTATOR = 'expected "all" or at least one mutator name after the outcome'
+const ALL_QUALIFIER = '"all" takes no replacement qualifier'
+
+interface ListScan {
+  readonly inString: boolean
+  readonly escaped: boolean
+  readonly items: ReadonlyArray<string>
+  readonly current: string
+}
+
+interface RawItem {
+  readonly name: string
+  readonly qualifier: Option.Option<string>
+}
+
+const INERT_LIST: ListScan = { inString: false, escaped: false, items: [], current: '' }
+
+const listStep = (scan: ListScan, char: string): ListScan =>
+  Boolean.match(scan.escaped, {
+    onTrue: () => ({ inString: scan.inString, escaped: false, items: scan.items, current: scan.current + char }),
+    onFalse: () =>
+      Boolean.match(Boolean.and(scan.inString, char === '\\'), {
+        onTrue: () => ({ inString: true, escaped: true, items: scan.items, current: scan.current + char }),
+        onFalse: () =>
+          Boolean.match(char === '"', {
+            onTrue: () => ({
+              inString: Boolean.not(scan.inString),
+              escaped: false,
+              items: scan.items,
+              current: scan.current + char,
+            }),
+            onFalse: () =>
+              Boolean.match(Boolean.and(Boolean.not(scan.inString), char === ','), {
+                onTrue: () => ({ inString: false, escaped: false, items: [...scan.items, scan.current], current: '' }),
+                onFalse: () => ({
+                  inString: scan.inString,
+                  escaped: false,
+                  items: scan.items,
+                  current: scan.current + char,
+                }),
+              }),
+          }),
+      }),
+  })
+
+const rawItemsOf = (text: string): Option.Option<ReadonlyArray<string>> => {
+  const scan = text.split('').reduce(listStep, INERT_LIST)
+  return Boolean.match(scan.inString, {
+    onTrue: () => Option.none(),
+    onFalse: () =>
+      Option.some(
+        [...scan.items, scan.current].map((item) => item.trim()).filter((item) => item.length > 0),
+      ),
+  })
+}
+
+const rawItemOf = (raw: string): RawItem =>
+  Option.match(Option.fromNullishOr(EQUALS_SPLIT.exec(raw)), {
+    onNone: () => ({ name: raw.trim(), qualifier: Option.none() }),
+    onSome: (match) => ({ name: match[1].trim(), qualifier: Option.some(match[2].trim()) }),
+  })
+
+const qualifierOf = (item: RawItem): Result.Result<Option.Option<string>, string> =>
+  Option.match(item.qualifier, {
+    onNone: () => Result.succeed(Option.none()),
+    onSome: (text) =>
+      Result.match(DecodeJsonString(text), {
+        onFailure: () => Result.fail(`a mutator qualifier is not a JSON string literal: ${text}`),
+        onSuccess: (replacement) => Result.succeed(Option.some(replacement)),
+      }),
+  })
+
+const encodedItemOf = (raw: string): Result.Result<EncodedItem, string> => {
+  const item = rawItemOf(raw)
+  return Result.flatMap(qualifierOf(item), (qualifier) =>
+    Option.match(qualifier, {
+      onNone: () => Result.succeed({ name: item.name }),
+      onSome: (replacement) =>
+        Boolean.match(item.name === ALL_MUTATORS, {
+          onTrue: () => Result.fail(ALL_QUALIFIER),
+          onFalse: () =>
+            Boolean.match(replacement.length === 0, {
+              onTrue: () => Result.fail(`a mutator qualifier decodes to an empty replacement: ${raw}`),
+              onFalse: () => Result.succeed({ name: item.name, replacement }),
+            }),
+        }),
+    }))
+}
+
+const mutatorsOf = (text: string): Result.Result<EncodedTarget, string> =>
+  Boolean.match(text === ALL_MUTATORS, {
+    onTrue: () => Result.succeed({ _tag: 'All' }),
+    onFalse: () =>
+      Result.flatMap(
+        Option.match(rawItemsOf(text), {
+          onNone: () => Result.fail(UNTERMINATED_QUALIFIER),
+          onSome: (items) => Result.succeed(items),
+        }),
+        (items) =>
+          Boolean.match(items.length === 0, {
+            onTrue: () => Result.fail(NO_MUTATOR),
+            onFalse: () =>
+              Result.map(Result.all(items.map(encodedItemOf)), (encodedItems) => ({
+                _tag: 'Named' as const,
+                items: encodedItems,
+              })),
+          }),
+      ),
+  })
+
+const withTextRefusal = <A>(
+  result: Result.Result<A, string>,
+  file: string,
+  marker: MarkerLine,
+): Result.Result<A, AnnotationParseFailure> =>
+  Result.match(result, {
+    onFailure: (reason) => Result.fail(refuseText(file, marker, reason)),
+    onSuccess: (value) => Result.succeed(value),
+  })
+
 const nonEmptyList = (values: ReadonlyArray<string>): Option.Option<NonEmptyList> =>
   Option.map(Arr.head(values), (first): NonEmptyList => [first, ...values.slice(1)])
-
-const encodedTargetOf = (text: string): Option.Option<EncodedTarget> =>
-  Boolean.match(text === ALL_MUTATORS, {
-    onTrue: () => Option.some({ _tag: 'All' }),
-    onFalse: () => Option.map(nonEmptyList(commaSeparated(text)), (names) => ({ _tag: 'Named', names: [...names] })),
-  })
 
 const encodedSlices = (
   slices: Option.Option<ReadonlyArray<string>>,
@@ -184,13 +358,21 @@ const singleLineRange = (line: SourceLine): Mutant.Location => ({
 })
 
 const linesAfter = (lines: ReadonlyArray<SourceLine>, number: number): ReadonlyArray<SourceLine> =>
-  lines.filter((line) => line.number > number)
+  Arr.sort(
+    lines.filter((line) => line.number > number),
+    Order.mapInput(Order.Number, (line: SourceLine) => line.number),
+  )
+
+const isMarkerLine = (line: SourceLine): boolean => MARKER_LINE.test(line.text)
+
+const contentLinesAfter = (lines: ReadonlyArray<SourceLine>, number: number): ReadonlyArray<SourceLine> =>
+  linesAfter(lines, number).filter((line) => Boolean.not(isMarkerLine(line)))
 
 const firstNonBlank = (lines: ReadonlyArray<SourceLine>): Option.Option<SourceLine> =>
   Arr.findFirst(lines, (line) => line.text.trim().length > 0)
 
 const lineRange = (lines: ReadonlyArray<SourceLine>, number: number): Option.Option<Mutant.Location> =>
-  Option.map(Arr.findFirst(lines, (line) => line.number === number + 1), singleLineRange)
+  Option.map(Arr.head(contentLinesAfter(lines, number)), singleLineRange)
 
 const fileRange = (lines: ReadonlyArray<SourceLine>): Mutant.Location => {
   const last = Option.getOrElse(Arr.last(lines), (): SourceLine => ({ number: 1, text: '' }))
@@ -235,7 +417,7 @@ const openingIndex = (text: string): number =>
   Option.getOrElse(Option.filter(Option.some(text.indexOf('{')), (index) => index >= 0), () => 0)
 
 const declarationRange = (lines: ReadonlyArray<SourceLine>, number: number): Option.Option<Mutant.Location> =>
-  Option.flatMap(firstNonBlank(linesAfter(lines, number)), (from) =>
+  Option.flatMap(firstNonBlank(contentLinesAfter(lines, number)), (from) =>
     Boolean.match(from.text.includes('{'), {
       onTrue: () =>
         Option.map(
@@ -302,10 +484,7 @@ const annotationOf = (
     required(sectionsOf(marker.rest), refuseText(file, marker, 'expected "<outcome>: <mutators>"')),
     (sections) =>
       Result.flatMap(
-        required(
-          encodedTargetOf(sections.mutators),
-          refuseText(file, marker, 'expected "all" or at least one mutator name after the outcome'),
-        ),
+        withTextRefusal(mutatorsOf(sections.mutators), file, marker),
         (mutators) =>
           Result.flatMap(
             required(

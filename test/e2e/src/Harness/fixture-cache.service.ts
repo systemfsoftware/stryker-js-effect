@@ -21,15 +21,19 @@ import {
 import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/unstable/process'
 
-import type {
-  BakeOutcome,
-  FileBytes,
-  FixtureInput,
-  PackedPackage,
-  PackedPackageLookup,
-  PackInput,
-  TurboDryClosure,
-} from './bake-key.schema.js'
+import {
+  type FileBytes,
+  type FixtureInput,
+  fixtureKeyBytes,
+  missingFixtures as missingFixturesWorkflow,
+  MissingFixturesCommand,
+  type PackInput,
+  packsKeyBytes,
+  pruneStaleEntries as pruneStaleEntriesWorkflow,
+  PruneStaleEntriesCommand,
+} from '@systemfsoftware/stryker-e2e-core'
+
+import type { BakeOutcome, PackedPackage, PackedPackageLookup, TurboDryClosure } from './bake-key.schema.js'
 import {
   FixtureKeys,
   FoundPackage,
@@ -320,19 +324,22 @@ const pruneStaleEntries = (environment: BakeEnvironment, keep: string) =>
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const entries = yield* fs.readDirectory(environment.bakedCacheRoot)
-    const removable = yield* Effect.forEach(
+    const leased = yield* Effect.forEach(
       Array.filter(entries, (name) => name !== keep),
       (name) =>
         Effect.map(isHeld(path.join(environment.bakedCacheRoot, name)), (held) =>
           Boolean.match(held, {
-            onTrue: (): ReadonlyArray<string> => [],
-            onFalse: (): ReadonlyArray<string> => [name],
+            onTrue: (): ReadonlyArray<string> => [name],
+            onFalse: (): ReadonlyArray<string> => [],
           })),
       { concurrency: 'unbounded' },
     )
+    const plan = yield* Effect.fromResult(
+      pruneStaleEntriesWorkflow(PruneStaleEntriesCommand.make({ entries, keep, leased: leased.flat() })),
+    )
     yield* Effect.forEach(
-      removable.flat(),
-      (name) => fs.remove(path.join(environment.bakedCacheRoot, name), { recursive: true, force: true }),
+      plan,
+      (entry) => fs.remove(path.join(environment.bakedCacheRoot, entry.name), { recursive: true, force: true }),
       { discard: true, concurrency: 'unbounded' },
     )
   })
@@ -360,39 +367,10 @@ const canonicalBytes = (relativePath: string, bytes: Uint8Array): Uint8Array =>
     onFalse: () => bytes,
   })
 
-const encodeChunk = (text: string) => new TextEncoder().encode(text)
-
-const fileChunks = (label: string, files: ReadonlyArray<FileBytes>): ReadonlyArray<Uint8Array> =>
-  [...files]
-    .sort((left, right) => left.relativePath.localeCompare(right.relativePath))
-    .flatMap((file) => [
-      encodeChunk(`${label}\0${file.relativePath}\0`),
-      canonicalBytes(file.relativePath, file.bytes),
-      encodeChunk('\0'),
-    ])
-
-const joinChunks = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
-  const bytes = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0))
-  chunks.reduce<number>((offset, chunk) => {
-    bytes.set(chunk, offset)
-    return offset + chunk.length
-  }, 0)
-  return bytes
-}
-
-const packKeyBytes = (input: PackInput): Uint8Array =>
-  joinChunks([
-    encodeChunk(`image\0${input.baseImage}\0`),
-    encodeChunk('bake\0'),
-    input.bakeScript,
-    encodeChunk('\0'),
-    ...[...input.packs]
-      .sort((left, right) => left.fileName.localeCompare(right.fileName))
-      .flatMap((pack) => fileChunks(`pack\0${pack.fileName}`, pack.files)),
-  ])
-
-const fixtureKeyBytes = (input: FixtureInput): Uint8Array =>
-  joinChunks(fileChunks(`fixture\0${input.fixtureId}`, input.files))
+const canonicalFile = (file: FileBytes): FileBytes => ({
+  relativePath: file.relativePath,
+  bytes: canonicalBytes(file.relativePath, file.bytes),
+})
 
 const hashOf = (crypto: Crypto.Crypto, bytes: Uint8Array) =>
   Effect.map(crypto.digest('SHA-256', bytes), Encoding.encodeHex)
@@ -528,15 +506,14 @@ const packWorkspaceClosure = (environment: BakeEnvironment, directory: string) =
     )
   }).pipe(seamSpan(SpanNames.pack, {}))
 
-const derivePacksKey = (
+const packsInputOf = (
   environment: BakeEnvironment,
   packs: ReadonlyArray<PackedPackage>,
   scratch: string,
-): Effect.Effect<string, ExitFailure | PlatformError | HarnessError, BakePlatform> =>
+): Effect.Effect<PackInput, ExitFailure | PlatformError | HarnessError, BakePlatform> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const crypto = yield* Crypto.Crypto
     const bakeScript = yield* fs.readFile(environment.bakeScriptPath)
     const packedTrees = yield* Effect.forEach(
       packs,
@@ -548,26 +525,20 @@ const derivePacksKey = (
             const target = path.join(scratch, 'unpacked', pack.fileName)
             yield* fs.makeDirectory(target, { recursive: true })
             yield* requireZeroExit(STEP_KEY, yield* runCommand(['tar', '-xzf', pack.tarballPath, '-C', target]))
-            return { fileName: pack.fileName, files: yield* readTreeBytes(target) }
+            const files = yield* readTreeBytes(target)
+            return { fileName: pack.fileName, files: files.map(canonicalFile) }
           }),
         ),
       { concurrency: UNPACK_CONCURRENCY },
     )
-    return yield* hashOf(
-      crypto,
-      packKeyBytes({
-        baseImage: GuestJobs.BASE_IMAGE,
-        bakeScript,
-        packs: packedTrees,
-      }),
-    )
+    return { baseImage: GuestJobs.BASE_IMAGE, bakeScript, packs: packedTrees }
   }).pipe(seamSpan(SpanNames.packsKey, { 'e2e.packs': packs.length }))
 
-const deriveFixtureKeys = (
+const fixtureInputsOf = (
   environment: BakeEnvironment,
   fixtureIds: ReadonlyArray<string>,
   catalogs: WorkspaceCatalogs,
-): Effect.Effect<ReadonlyArray<BakedFixture>, ExitFailure | PlatformError | HarnessError, BakePlatform> =>
+): Effect.Effect<ReadonlyArray<FixtureInput>, ExitFailure | PlatformError | HarnessError, BakePlatform> =>
   Effect.forEach(
     fixtureIds,
     (fixtureId) =>
@@ -576,33 +547,48 @@ const deriveFixtureKeys = (
         { 'e2e.fixture': fixtureId },
         Effect.gen(function*() {
           const path = yield* Path.Path
-          const crypto = yield* Crypto.Crypto
           const files = yield* readTreeBytes(path.join(environment.resourcesDir, fixtureId))
           const resolved = yield* resolveTreeManifests(fixtureId, files, catalogs)
-          const key = yield* hashOf(crypto, fixtureKeyBytes({ fixtureId, files: resolved }))
-          return { fixtureId, key }
+          return { fixtureId, files: resolved.map(canonicalFile) }
         }),
       ),
     { concurrency: UNPACK_CONCURRENCY },
   ).pipe(seamSpan(SpanNames.fixtureKeys, { 'e2e.fixtures': fixtureIds.length }))
+
+interface DerivedBakeKeys {
+  readonly packsKey: string
+  readonly fixtures: ReadonlyArray<BakedFixture>
+}
+
+const deriveBakeKeys = (
+  packsInput: PackInput,
+  fixtureInputs: ReadonlyArray<FixtureInput>,
+): Effect.Effect<DerivedBakeKeys, HarnessError, BakePlatform> =>
+  Effect.gen(function*() {
+    const crypto = yield* Crypto.Crypto
+    const packsKey = yield* hashOf(crypto, packsKeyBytes(packsInput))
+    const fixtures = yield* Effect.forEach(
+      fixtureInputs,
+      (input) =>
+        Effect.map(
+          hashOf(crypto, fixtureKeyBytes(input)),
+          (key): BakedFixture => ({ fixtureId: input.fixtureId, key }),
+        ),
+      { concurrency: UNPACK_CONCURRENCY },
+    )
+    return { packsKey, fixtures }
+  })
 
 const entryNameOf = (fixture: BakedFixture): string => `${fixture.fixtureId}.${fixture.key}`
 
 const missingFixtures = (root: string, fixtures: ReadonlyArray<BakedFixture>) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const presence = yield* Effect.forEach(
-      fixtures,
-      (fixture) =>
-        Effect.map(fs.exists(path.join(root, entryNameOf(fixture))), (exists) =>
-          Boolean.match(exists, {
-            onTrue: (): ReadonlyArray<BakedFixture> => [],
-            onFalse: (): ReadonlyArray<BakedFixture> => [fixture],
-          })),
-      { concurrency: 'unbounded' },
+    const present = yield* fs.readDirectory(root)
+    const missing = yield* Effect.fromResult(
+      missingFixturesWorkflow(MissingFixturesCommand.make({ fixtures, present })),
     )
-    return presence.flat()
+    return missing.map((fixture): BakedFixture => ({ fixtureId: fixture.fixtureId, key: fixture.key }))
   })
 
 const bakeMissing = (
@@ -655,8 +641,9 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
       const packs = yield* packWorkspaceClosure(environment, packsDir)
       const fixtureIds = yield* listFixtureIds(environment)
       const catalogs = yield* loadWorkspaceCatalogs(environment)
-      const packsKey = yield* derivePacksKey(environment, packs, scratch)
-      const fixtures = yield* deriveFixtureKeys(environment, fixtureIds, catalogs)
+      const packsInput = yield* packsInputOf(environment, packs, scratch)
+      const fixtureInputs = yield* fixtureInputsOf(environment, fixtureIds, catalogs)
+      const { packsKey, fixtures } = yield* deriveBakeKeys(packsInput, fixtureInputs)
       const root = path.join(environment.bakedCacheRoot, packsKey)
       yield* fs.makeDirectory(root, { recursive: true })
       const lease = yield* leaseEntry(root)
@@ -689,7 +676,7 @@ const warmFixtureInto = (
       onNone: () => Effect.fail(new FixtureMissingFailure({ directory: `${bakedRoot}/${fixtureId}` })),
       onSome: (present) => Effect.succeed(present),
     })
-    const entryDir = path.join(bakedRoot, `${fixtureId}.${key}`)
+    const entryDir = path.join(bakedRoot, entryNameOf({ fixtureId, key }))
     const entryExists = yield* fs.exists(entryDir)
     yield* Boolean.match(entryExists, {
       onTrue: () => Effect.void,

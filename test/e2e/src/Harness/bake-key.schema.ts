@@ -1,12 +1,5 @@
 import { Schema } from 'effect'
 
-export const FileBytes = Schema.Struct({
-  relativePath: Schema.String,
-  bytes: Schema.Uint8Array,
-})
-
-export type FileBytes = typeof FileBytes.Type
-
 export const PackedPackage = Schema.Struct({
   name: Schema.String,
   version: Schema.String,
@@ -48,21 +41,6 @@ export class MalformedClosure extends Schema.TaggedClass<MalformedClosure>()('Ma
 export const TurboDryClosure = Schema.Union([TurboClosure, MalformedClosure])
 
 export type TurboDryClosure = typeof TurboDryClosure.Type
-
-export const PackInput = Schema.Struct({
-  baseImage: Schema.String,
-  bakeScript: Schema.Uint8Array,
-  packs: Schema.Array(Schema.Struct({ fileName: Schema.String, files: Schema.Array(FileBytes) })),
-})
-
-export type PackInput = typeof PackInput.Type
-
-export const FixtureInput = Schema.Struct({
-  fixtureId: Schema.String,
-  files: Schema.Array(FileBytes),
-})
-
-export type FixtureInput = typeof FixtureInput.Type
 
 export const FixtureKeys = Schema.Record(Schema.String, Schema.String)
 

@@ -53,6 +53,7 @@ const mutantOf = (
   column: number,
   mutatorName: string,
   status: Mutant.MutantStatus,
+  replacement?: string,
 ): ReportMutant => ({
   file: FILE,
   mutant: {
@@ -60,6 +61,7 @@ const mutantOf = (
     mutatorName,
     location: { start: { line, column }, end: { line, column: column + 1 } },
     status,
+    ...(replacement === undefined ? {} : { replacement }),
   },
 })
 
@@ -80,7 +82,12 @@ describe('matchAnnotations', () => {
     { of: [Mutant.MutatorName, Mutant.MutantStatusSchema], subject: matchAnnotations },
     (subject, [mutatorName, status]) => {
       const range: Mutant.Location = { start: { line: 10, column: 1 }, end: { line: 12, column: 10 } }
-      const annotation = sourcedAnnotationOf('Declaration', NamedMutators.make({ names: [mutatorName] }), range, 9)
+      const annotation = sourcedAnnotationOf(
+        'Declaration',
+        NamedMutators.make({ items: [{ name: mutatorName }] }),
+        range,
+        9,
+      )
       const mutant = mutantOf(11, 5, mutatorName, status)
       return Result.match(subject(commandOf([annotation], [mutant])), {
         onFailure: () => false,
@@ -119,8 +126,13 @@ describe('matchAnnotations', () => {
       if (annotatedName === mutantName) {
         return true
       }
-      const covering = sourcedAnnotationOf('Line', NamedMutators.make({ names: [mutantName] }), NARROW_RANGE, 1)
-      const dangling = sourcedAnnotationOf('Declaration', NamedMutators.make({ names: [annotatedName] }), {
+      const covering = sourcedAnnotationOf(
+        'Line',
+        NamedMutators.make({ items: [{ name: mutantName }] }),
+        NARROW_RANGE,
+        1,
+      )
+      const dangling = sourcedAnnotationOf('Declaration', NamedMutators.make({ items: [{ name: annotatedName }] }), {
         start: { line: 5, column: 1 },
         end: { line: 5, column: 2 },
       }, 4)
@@ -201,6 +213,96 @@ describe('matchAnnotations', () => {
       ]
       const mutant = mutantOf(3, 1, mutatorName, status)
       return Result.match(subject(commandOf(annotations, [mutant])), {
+        onFailure: (failure) =>
+          S.is(MutantClaimedTwice)(failure) &&
+          failure.mutator === mutatorName &&
+          Equal.equals(failure.claimedBy.map((claim) => claim.line), [1, 2]),
+        onSuccess: () => false,
+      })
+    },
+  )
+
+  it.prop(
+    '∀r_QualifiedItem_≡ClaimsOnlyItsExactReplacement',
+    {
+      of: [Mutant.MutatorName, S.NonEmptyString, Mutant.MutantStatusSchema],
+      subject: matchAnnotations,
+    },
+    (subject, [mutatorName, replacement, status]) => {
+      const annotation = sourcedAnnotationOf(
+        'Line',
+        NamedMutators.make({ items: [{ name: mutatorName, replacement }] }),
+        NARROW_RANGE,
+        1,
+      )
+      const same = mutantOf(1, 1, mutatorName, status, replacement)
+      const different = mutantOf(1, 1, mutatorName, status, `${replacement}-other`)
+      const absent = mutantOf(1, 1, mutatorName, status)
+      return Result.match(subject(commandOf([annotation], [same])), {
+        onFailure: () => false,
+        onSuccess: (matches) =>
+          matches.length === 1 &&
+          Result.match(subject(commandOf([annotation], [different])), {
+            onFailure: (failure) => S.is(MutantUnmatched)(failure) && failure.mutator === mutatorName,
+            onSuccess: () => false,
+          }) &&
+          Result.match(subject(commandOf([annotation], [absent])), {
+            onFailure: (failure) => S.is(MutantUnmatched)(failure) && failure.mutator === mutatorName,
+            onSuccess: () => false,
+          }),
+      })
+    },
+  )
+
+  it.prop(
+    '∀r_UnqualifiedItem_≡ClaimsAnyReplacement',
+    {
+      of: [Mutant.MutatorName, S.NonEmptyString, Mutant.MutantStatusSchema],
+      subject: matchAnnotations,
+    },
+    (subject, [mutatorName, replacement, status]) => {
+      const annotation = sourcedAnnotationOf(
+        'Line',
+        NamedMutators.make({ items: [{ name: mutatorName }] }),
+        NARROW_RANGE,
+        1,
+      )
+      const qualified = mutantOf(1, 1, mutatorName, status, replacement)
+      const unqualified = mutantOf(1, 1, mutatorName, status)
+      return Result.match(subject(commandOf([annotation], [qualified])), {
+        onFailure: () => false,
+        onSuccess: (matches) =>
+          matches.length === 1 &&
+          Result.match(subject(commandOf([annotation], [unqualified])), {
+            onFailure: () => false,
+            onSuccess: (others) => others.length === 1,
+          }),
+      })
+    },
+  )
+
+  it.prop(
+    '∀r_QualifiedAndUnqualifiedItemAtOneScope_≡RefusedNamingBoth',
+    {
+      of: [Mutant.MutatorName, S.NonEmptyString, Mutant.MutantStatusSchema],
+      subject: matchAnnotations,
+    },
+    (subject, [mutatorName, replacement, status]) => {
+      const range: Mutant.Location = { start: { line: 3, column: 1 }, end: { line: 3, column: 4 } }
+      const qualified = sourcedAnnotationOf(
+        'Line',
+        NamedMutators.make({ items: [{ name: mutatorName, replacement }] }),
+        range,
+        1,
+      )
+      const anyReplacement = sourcedAnnotationOf(
+        'Line',
+        NamedMutators.make({ items: [{ name: mutatorName }] }),
+        range,
+        2,
+      )
+      const mutant = mutantOf(3, 1, mutatorName, status, replacement)
+      return Result.match(subject(commandOf([qualified, anyReplacement], [mutant])), {
         onFailure: (failure) =>
           S.is(MutantClaimedTwice)(failure) &&
           failure.mutator === mutatorName &&

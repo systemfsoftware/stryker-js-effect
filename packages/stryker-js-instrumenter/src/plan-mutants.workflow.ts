@@ -55,7 +55,7 @@ type MutantPlanTypeId = typeof MutantPlanTypeId
 
 export class MutantsPlanned extends S.TaggedClass<MutantsPlanned>()('MutantsPlanned', {
   mutants: S.Array(PlannedMutantSchema),
-  placeable: S.Array(PlannedMutantSchema),
+  placeableIds: S.Array(Mutant.MutantId),
   warnings: S.Array(S.String),
   nextIndex: MutantCountSchema,
 }) {
@@ -230,7 +230,7 @@ const planOf = (command: PlanMutantsCommand, mutants: readonly PlannedMutant[]):
     Match.when(true, () =>
       MutantsPlanned.make({
         mutants: [...mutants],
-        placeable: mutants.filter(withoutReason),
+        placeableIds: mutants.filter(withoutReason).map((mutant) => mutant.id),
         warnings: warningsOf(command),
         nextIndex: command.firstIndex + mutants.length,
       })),

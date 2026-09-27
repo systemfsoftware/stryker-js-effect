@@ -83,14 +83,6 @@ export class SandboxForkFailure extends Schema.TaggedError<SandboxForkFailure>()
   }
 }
 
-export class BlessRefused extends Schema.TaggedError<BlessRefused>()('BlessRefused', {
-  reason: Schema.String,
-}) {
-  override get message(): string {
-    return this.reason
-  }
-}
-
 export class MalformedFixtureManifest extends Schema.TaggedError<MalformedFixtureManifest>()(
   'MalformedFixtureManifest',
   {
@@ -114,7 +106,6 @@ export class UnresolvedCatalogSpec extends Schema.TaggedError<UnresolvedCatalogS
 }
 
 export type HarnessFailure =
-  | BlessRefused
   | ExitFailure
   | FixtureMissingFailure
   | GuestJobFailure

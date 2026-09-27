@@ -67,3 +67,17 @@ gh run download <run-id> -n e2e-telemetry-<run-id> -D /tmp/tele
 tar xzf /tmp/tele/e2e-telemetry.tar.gz -C /tmp/tele
 IN_DIR=/tmp/tele/e2e-telemetry ./test/e2e/scripts/import-traces.ts
 ```
+
+## Runbook
+
+### Diagnosing a failing or flaky run
+
+Query Grafana LGTM traces (OTLP export to Tempo) to isolate the diverging span or event; do not add logging or retry blind.
+
+- Each CLI invocation runs under a trace id the test owns, passed to the CLI as `TRACEPARENT`; a failure report names the id.
+- If Tempo holds no guest trace, first verify the collector endpoint is reachable from inside the guest: the lane rewrites the endpoint's loopback host to `host.microsandbox.internal` (`StrykerCliRunner`), which only works when the collector is published beyond loopback.
+- Ephemeral `console.log`/print statements under `tests/` are a lint error (`no-console`), so temporary logging is not the fallback.
+
+### Diagnosing a bundle defect
+
+The lane runs the packed `dist/main.mjs`, not workspace source. A worker failure that cannot be reproduced from source is a bundle defect (an unresolvable import, or a tree-shaken combinator compiling to `(void 0)`): read the packed-bundle line in the stack before blaming source. The image uses a fixed tag, so a run may adopt bundles baked before your edit — after changing a workspace package, clear the baked cache (`rm -rf node_modules/.cache/stryker-e2e/baked`) before trusting a verdict.

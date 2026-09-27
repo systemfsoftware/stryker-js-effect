@@ -882,7 +882,13 @@ const logicalExpressionText = (ctx: PrintContext, node: LogicalExpression, prec:
 
 const conditionalExpressionText = (ctx: PrintContext, node: ConditionalExpression, prec: number): string => {
   const myPrec = PREC.Conditional
-  const testStr = wrapIfNeeded(ctx, node.test, precOf(node.test), myPrec, false)
+  const testStr = wrapIfNeeded(
+    ctx,
+    node.test,
+    precOf(node.test),
+    myPrec,
+    CONDITIONAL_TEST_WRAPPED_KINDS[node.test.type] === true,
+  )
   const consStr = dispatchNode(ctx, node.consequent, PREC.Assignment)
   const altStr = dispatchNode(ctx, node.alternate, PREC.Assignment)
   return parenthesizedIf(myPrec < prec, `${testStr} ? ${consStr} : ${altStr}`)
@@ -1863,6 +1869,10 @@ const MEMBER_OBJECT_WRAPPED_KINDS: Readonly<Record<string, true>> = {
   UpdateExpression: true,
   AwaitExpression: true,
   YieldExpression: true,
+}
+
+const CONDITIONAL_TEST_WRAPPED_KINDS: Readonly<Record<string, true>> = {
+  ConditionalExpression: true,
 }
 
 const CALLEE_WRAPPED_KINDS: Readonly<Record<string, true>> = {

@@ -6,6 +6,7 @@ import { Arbitrary } from 'effect/unstable/arbitrary'
 import { type LocatedDirective, LocatedDirectiveSchema } from '../directives/directive.schema.js'
 import {
   MutantsFullyIgnored,
+  MutantsPlanned,
   MutantWithoutLocation,
   planMutants,
   PlanMutantsCommand,
@@ -73,6 +74,28 @@ describe('planMutants', () => {
         (firstMutant === undefined || firstMutant.id === `${command.firstIndex}`) &&
         (lastMutant === undefined || lastMutant.id === `${lastIndex}`) &&
         (S.is(MutantsFullyIgnored)(plan) ? plan.mutants.every((mutant) => mutant.ignoreReason !== undefined) : true)
+    },
+  )
+
+  it.prop(
+    '∀c_Command_≡PlaceableIdsNameExactlyTheUnignoredMutants',
+    { of: [PlanMutantsCommand], subject: planMutants },
+    (subject, [command]) => {
+      const planned = subject(command)
+      if (command.candidates.some((candidate) => candidate.location === undefined)) {
+        return Result.isFailure(planned) && S.is(MutantWithoutLocation)(planned.failure)
+      }
+      if (Result.isFailure(planned)) {
+        return false
+      }
+      const plan = planned.success
+      const unignored = plan.mutants
+        .filter((mutant) => mutant.ignoreReason === undefined)
+        .map((mutant) => mutant.id)
+      return S.is(MutantsPlanned)(plan)
+        ? plan.placeableIds.length === unignored.length &&
+          plan.placeableIds.every((id, index) => id === unignored[index])
+        : unignored.length === 0
     },
   )
 

@@ -7,6 +7,7 @@
   ],
   "devDependencies": {
     "@types/node": "catalog:",
+    "effect": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

@@ -10,7 +10,7 @@ import { checkMutants, DiagnosticInUnrelatedFileError, DiagnosticWithoutFileErro
 import { CheckMutantsCommand } from './Checker.schema.js'
 import { CheckMutantsInput } from './CheckMutants.schema.js'
 import type { CompilerError } from './Compiler.schema.js'
-import { check, nodes } from './ts-compiler.handle.js'
+import { check, describeDiagnostics, nodes } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
 
 type CheckRefusalCause = CompilerError | CheckMutantsError | string
@@ -29,19 +29,23 @@ export type CheckMutantsRead = (typeof CheckMutantsInput)['Encoded']
 export const checkCell = Sandwich.named(SpanTaxonomy.Spans.typescriptCheckerCheckMutants.name)((
   command: CheckMutantsCommand,
 ) =>
-  Effect.flatMap(TypeScriptCompiler, (compiler) =>
-    Effect.zipWith(
-      nodes(compiler),
-      check(compiler, [...command.mutants]),
-      (graphNodes, diagnostics): CheckMutantsRead =>
-        CheckMutantsInput.make({
-          mutants: [...command.mutants],
-          diagnostics: [...diagnostics],
-          nodes: Object.fromEntries(graphNodes),
-        }),
-    )).pipe(
-      Effect.mapError((cause) => refuse({ mutantIds: command.mutants.map((mutant) => mutant.id), cause })),
-    )
+  Effect.flatMap(
+    TypeScriptCompiler,
+    (compiler) =>
+      Effect.flatMap(check(compiler, [...command.mutants]), (diagnostics) =>
+        Effect.zipWith(
+          nodes(compiler),
+          describeDiagnostics(compiler, diagnostics),
+          (graphNodes, described): CheckMutantsRead =>
+            CheckMutantsInput.make({
+              mutants: [...command.mutants],
+              diagnostics: [...described],
+              nodes: Object.fromEntries(graphNodes),
+            }),
+        )),
+  ).pipe(
+    Effect.mapError((cause) => refuse({ mutantIds: command.mutants.map((mutant) => mutant.id), cause })),
+  )
 )
   .decide(checkMutants)
   .write({

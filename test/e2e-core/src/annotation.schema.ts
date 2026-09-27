@@ -42,10 +42,16 @@ export const Outcome = S.Union([
 ])
 export type Outcome = typeof Outcome.Type
 
+export const MutatorItem = S.Struct({
+  name: Mutant.MutatorName,
+  replacement: S.NonEmptyString.pipe(S.optional),
+})
+export type MutatorItem = typeof MutatorItem.Type
+
 export class AllMutators extends S.TaggedClass<AllMutators>()('All', {}) {}
 
 export class NamedMutators extends S.TaggedClass<NamedMutators>()('Named', {
-  names: S.Array(Mutant.MutatorName),
+  items: S.Array(MutatorItem),
 }) {}
 
 export const MutatorTarget = S.Union([AllMutators, NamedMutators])

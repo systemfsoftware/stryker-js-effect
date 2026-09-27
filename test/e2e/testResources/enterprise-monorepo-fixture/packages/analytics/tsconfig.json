@@ -19,6 +19,9 @@
     "paths": {
       "@enterprise/core": [
         "../core/src/index.ts"
+      ],
+      "@enterprise/core/*": [
+        "../core/src/*.ts"
       ]
     }
   },

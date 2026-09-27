@@ -13,14 +13,13 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
-import { DiagnosticCategory } from 'typescript/unstable/async'
 import type { Diagnostic } from 'typescript/unstable/async'
 import type { CheckMutantsAnswer } from './check-mutants.workflow.js'
 import { checkCell } from './Checker.cell.js'
 import { CheckMutantsCommand } from './Checker.schema.js'
 import { type CompilerError, DryRunCompileErrors, NodeNotInGraph } from './Compiler.schema.js'
 import { make as makeCompilerBlueprint } from './ts-compiler.blueprint.js'
-import { getLineAndCharacterOfPosition, groups, init, type TSCompiler } from './ts-compiler.handle.js'
+import { describeDiagnostics, groups, init, type TSCompiler } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
 
 type RunAnswers = CheckMutantsAnswer['results']
@@ -52,14 +51,6 @@ const getPrioritize = (options: Options.StrykerOptions) =>
     ),
   )
 
-const severityOf = (category: Diagnostic['category']) =>
-  Match.value(category).pipe(
-    Match.when(DiagnosticCategory.Warning, () => 'warning'),
-    Match.when(DiagnosticCategory.Error, () => 'error'),
-    Match.when(DiagnosticCategory.Suggestion, () => 'suggestion'),
-    Match.orElse(() => 'message'),
-  )
-
 const toCheckResult = (answer: RunAnswers[string]) =>
   Match.value(answer).pipe(
     Match.discriminator('status')('passed', () => ({ status: 'passed' as const })),
@@ -83,28 +74,11 @@ const makeChecker = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerRuntimeMakeChe
 ): Effect.fn.Return<Checker.Checker['Service'], Checker.CheckerFailed> {
   const verify = Cell.provideContext(checkCell, Context.make(TypeScriptCompiler, compiler))
 
-  const positionOf = (error: Diagnostic) =>
-    Option.match(Option.filter(Option.fromUndefinedOr(error.fileName), (fileName) => fileName !== ''), {
-      onNone: () => Effect.succeed(''),
-      onSome: (fileName) =>
-        getLineAndCharacterOfPosition(compiler, fileName, error.pos).pipe(
-          Effect.orElseSucceed(() => undefined),
-          Effect.map((at) =>
-            Option.match(Option.fromUndefinedOr(at), {
-              onNone: () => fileName + '(1,1): ',
-              onSome: (position) => fileName + '(' + (position.line + 1) + ',' + (position.character + 1) + '): ',
-            })
-          ),
-        ),
-    })
-
-  const formatDiagnostic = (error: Diagnostic) =>
-    positionOf(error).pipe(
-      Effect.map((position) => position + severityOf(error.category) + ' TS' + error.code + ': ' + error.text),
-    )
-
   const createErrorText = (errors: readonly Diagnostic[]) =>
-    Effect.map(Effect.forEach(errors, formatDiagnostic), (parts) => parts.join('\n'))
+    Effect.map(
+      describeDiagnostics(compiler, errors),
+      (diagnostics) => diagnostics.map((entry) => entry.rendered).join('\n'),
+    )
 
   const soloRound = (mutant: (typeof Checker.CheckerMutantWire)['Encoded']) =>
     S.decodeEffect(Checker.CheckerMutantWire)(mutant).pipe(
