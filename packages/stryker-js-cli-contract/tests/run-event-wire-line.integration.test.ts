@@ -56,7 +56,7 @@ const refusalsOf = (probes: Record<string, string>): Record<string, string> => {
   return outcomes
 }
 
-Feature('The CLI contract machine stream carries every declared event kind')
+Feature('The machine-stream wire codec carries every declared event kind')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(

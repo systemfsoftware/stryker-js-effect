@@ -58,9 +58,9 @@ returned the right keys, so the fault depends on what the parser read before.
 
 ## Verification
 
-- `stream-document.contract.test.ts` in the CLI contract package imports
-  the committed document, generates lines from it and from the wire codec, and
-  requires each side to read the other's lines unchanged.
+- `stream-document.differential.test.ts` in the CLI contract package compares
+  the committed document with the wire codec on lines generated from both, and
+  requires them to refuse the same lines and reproduce the same JSON.
 - Run the law file under CI settings (`env -u AGENT CI=true vitest run
   schema-laws.test.ts`) several times; each run draws new seeds.
 - Code smell: a `Report.*` schema, `Schema.Record(Schema.String, Schema.Json)`

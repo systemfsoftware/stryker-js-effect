@@ -26,6 +26,7 @@
     ]
   },
   "include": [
+    "contract/*.json",
     "scripts",
     "tests",
     "src/**/__tests__/**/*",

@@ -76,7 +76,7 @@ const roundTrip = (document: S.Json) =>
     return yield* S.encodeEffect(Report.MutationTestResult)(decoded)
   })
 
-Feature('The report contract decodes what the upstream report schema declares')
+Feature('The report codec decodes what the upstream report schema declares')
   .withLayer(Layer.empty)
   .body(({ scenario }) => {
     scenario(
@@ -90,7 +90,7 @@ Feature('The report contract decodes what the upstream report schema declares')
               pinnedMinor: reportWithVersion('1.1'),
             })),
         ),
-        When('each report is decoded through the report contract')(
+        When('each report is decoded through the report codec')(
           'outcomes',
           (s) => Effect.sync(() => decodedOutcomes(s.probes)),
         ),
@@ -114,7 +114,7 @@ Feature('The report contract decodes what the upstream report schema declares')
               undeclared: reportWithStatus('NotAStatus'),
             })),
         ),
-        When('each report is decoded through the report contract')(
+        When('each report is decoded through the report codec')(
           'outcomes',
           (s) => Effect.sync(() => decodedOutcomes(s.probes)),
         ),
@@ -139,7 +139,7 @@ Feature('The report contract decodes what the upstream report schema declares')
               inRange: reportWithHighThreshold(80),
             })),
         ),
-        When('each report is decoded through the report contract')(
+        When('each report is decoded through the report codec')(
           'outcomes',
           (s) => Effect.sync(() => decodedOutcomes(s.probes)),
         ),
@@ -165,7 +165,7 @@ Feature('The report contract decodes what the upstream report schema declares')
               disabled: reportWithBreakThreshold(null),
             })),
         ),
-        When('each report is decoded through the report contract')(
+        When('each report is decoded through the report codec')(
           'outcomes',
           (s) => Effect.sync(() => decodedOutcomes(s.probes)),
         ),
@@ -190,7 +190,7 @@ Feature('The report contract decodes what the upstream report schema declares')
               first: reportWithLine(1),
             })),
         ),
-        When('each report is decoded through the report contract')(
+        When('each report is decoded through the report codec')(
           'outcomes',
           (s) => Effect.sync(() => decodedOutcomes(s.probes)),
         ),
@@ -211,7 +211,7 @@ Feature('The report contract decodes what the upstream report schema declares')
               absent: reportWithoutThresholds(),
             })),
         ),
-        When('each report is decoded through the report contract')(
+        When('each report is decoded through the report codec')(
           'outcomes',
           (s) => Effect.sync(() => decodedOutcomes(s.probes)),
         ),
@@ -232,7 +232,7 @@ Feature('The report contract decodes what the upstream report schema declares')
               absent: reportWithoutMutantKey('location'),
             })),
         ),
-        When('each report is decoded through the report contract')(
+        When('each report is decoded through the report codec')(
           'outcomes',
           (s) => Effect.sync(() => decodedOutcomes(s.probes)),
         ),
@@ -253,7 +253,7 @@ Feature('The report contract decodes what the upstream report schema declares')
               absent: reportWithoutMutantKey('status'),
             })),
         ),
-        When('each report is decoded through the report contract')(
+        When('each report is decoded through the report codec')(
           'outcomes',
           (s) => Effect.sync(() => decodedOutcomes(s.probes)),
         ),
