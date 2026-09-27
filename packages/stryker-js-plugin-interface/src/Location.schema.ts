@@ -3,6 +3,7 @@ import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
 import * as SchemaGetter from 'effect/SchemaGetter'
+import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 import { inOrder, notReversed } from './location-order.js'
 
@@ -22,36 +23,38 @@ const positionOrder = Order.combine(
   Order.mapInput(Order.Number, (position: Position) => position.column),
 )
 
-const PositionEnds = S.Struct({ start: Position, end: Position })
-type PositionEnds = typeof PositionEnds.Type
+const PositionEndsSchema = S.Struct({ start: Position, end: Position })
+type PositionEnds = typeof PositionEndsSchema.Type
 
-export const Location = S.declare(
-  (value: unknown): value is PositionEnds => S.is(PositionEnds)(value) && notReversed(positionOrder)(value),
+const OrderedEnds = S.declare(
+  (value: unknown): value is PositionEnds => S.is(PositionEndsSchema)(value) && notReversed(positionOrder)(value),
   {
     expected: 'a location whose end is not before its start',
     toCodecArbitrary: () =>
-      S.link<PositionEnds>()(PositionEnds, {
+      S.link<PositionEnds>()(PositionEndsSchema, {
         decode: SchemaGetter.transform(inOrder(positionOrder)),
         encode: SchemaGetter.transform((ends: PositionEnds) => ends),
       }),
   },
 )
+
+export const Location = PositionEndsSchema.pipe(S.decodeTo(OrderedEnds, SchemaTransformation.passthrough()))
 export type Location = typeof Location.Type
 
-const OpenEnds = S.Struct({ start: Position, end: S.optional(Position) })
-type OpenEnds = typeof OpenEnds.Type
+const OpenEndsSchema = S.Struct({ start: Position, end: S.optional(Position) })
+type OpenEnds = typeof OpenEndsSchema.Type
 
 const closedEnds = (ends: OpenEnds): Option.Option<PositionEnds> =>
   Option.map(Option.fromUndefinedOr(ends.end), (end) => ({ start: ends.start, end }))
 
-export const OpenEndLocation = S.declare(
+const OrderedOpenEnds = S.declare(
   (value: unknown): value is OpenEnds =>
-    S.is(OpenEnds)(value) &&
+    S.is(OpenEndsSchema)(value) &&
     Option.match(closedEnds(value), { onNone: () => true, onSome: notReversed(positionOrder) }),
   {
     expected: 'a location whose end, when present, is not before its start',
     toCodecArbitrary: () =>
-      S.link<OpenEnds>()(OpenEnds, {
+      S.link<OpenEnds>()(OpenEndsSchema, {
         decode: SchemaGetter.transform((ends: OpenEnds) =>
           Option.getOrElse(Option.map(closedEnds(ends), inOrder(positionOrder)), () => ends)
         ),
@@ -59,6 +62,8 @@ export const OpenEndLocation = S.declare(
       }),
   },
 )
+
+export const OpenEndLocation = OpenEndsSchema.pipe(S.decodeTo(OrderedOpenEnds, SchemaTransformation.passthrough()))
 export type OpenEndLocation = typeof OpenEndLocation.Type
 
 const accepts = {

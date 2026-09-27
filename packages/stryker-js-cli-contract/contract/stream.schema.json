@@ -142,7 +142,8 @@
           ]
         },
         "id": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)$"
         },
         "status": {
           "type": "string",
@@ -158,11 +159,58 @@
           ]
         },
         "file": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^[^\\\\]+$"
         },
-        "location": {},
+        "location": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "object",
+              "properties": {
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "column": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "line",
+                "column"
+              ],
+              "additionalProperties": true
+            },
+            "end": {
+              "type": "object",
+              "properties": {
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "column": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "line",
+                "column"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": true
+        },
         "mutator": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
         },
         "replacement": {
           "anyOf": [
@@ -397,54 +445,6 @@
       ],
       "additionalProperties": true
     },
-    "thresholds": {
-      "type": "object",
-      "properties": {
-        "high": {
-          "type": "integer",
-          "description": "Higher bound threshold.",
-          "examples": [
-            80
-          ],
-          "minimum": 0,
-          "maximum": 100
-        },
-        "low": {
-          "type": "integer",
-          "description": "Lower bound threshold.",
-          "examples": [
-            60
-          ],
-          "minimum": 0,
-          "maximum": 100
-        },
-        "break": {
-          "anyOf": [
-            {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 100
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "The mutation score below which the run breaks. Null disables the break."
-        }
-      },
-      "required": [
-        "high",
-        "low"
-      ],
-      "allOf": [
-        {
-          "type": "object",
-          "additionalProperties": {}
-        }
-      ],
-      "title": "Thresholds",
-      "description": "Thresholds for the status of the reported application."
-    },
     "MetricsEncoded": {
       "type": "object",
       "properties": {
@@ -492,60 +492,6 @@
         "ignored"
       ],
       "additionalProperties": true
-    },
-    "position": {
-      "type": "object",
-      "properties": {
-        "line": {
-          "type": "integer",
-          "examples": [
-            4
-          ],
-          "minimum": 1
-        },
-        "column": {
-          "type": "integer",
-          "examples": [
-            3
-          ],
-          "minimum": 1
-        }
-      },
-      "required": [
-        "line",
-        "column"
-      ],
-      "allOf": [
-        {
-          "type": "object",
-          "additionalProperties": {}
-        }
-      ],
-      "title": "Position",
-      "description": "Position of a mutation. Both line and column start at one."
-    },
-    "location": {
-      "type": "object",
-      "properties": {
-        "start": {
-          "$ref": "#/definitions/position"
-        },
-        "end": {
-          "$ref": "#/definitions/position"
-        }
-      },
-      "required": [
-        "start",
-        "end"
-      ],
-      "allOf": [
-        {
-          "type": "object",
-          "additionalProperties": {}
-        }
-      ],
-      "title": "Location",
-      "description": "A location with start and end. Start is inclusive, end is exclusive."
     },
     "verdictEncoded": {
       "type": "object",
@@ -596,7 +542,37 @@
           ]
         },
         "thresholds": {
-          "$ref": "#/definitions/thresholds"
+          "type": "object",
+          "properties": {
+            "high": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "low": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "break": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "high",
+            "low",
+            "break"
+          ],
+          "additionalProperties": true
         },
         "reportFile": {
           "anyOf": [
@@ -623,7 +599,50 @@
                 "type": "string"
               },
               "location": {
-                "$ref": "#/definitions/location"
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "type": "object",
+                    "properties": {
+                      "line": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "column": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "line",
+                      "column"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "end": {
+                    "type": "object",
+                    "properties": {
+                      "line": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "column": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "line",
+                      "column"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "required": [
+                  "start",
+                  "end"
+                ],
+                "additionalProperties": true
               },
               "mutator": {
                 "type": "string"

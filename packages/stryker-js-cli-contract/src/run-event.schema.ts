@@ -41,22 +41,21 @@ export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
 export interface RunMutantTested extends Reporter.MutantTested {}
 
 const MutantTestedWireSchema = S.TaggedStruct('mutant', {
-  id: S.String,
+  id: Mutant.MutantId,
   status: Mutant.MutantStatusSchema,
-  file: S.String,
+  file: S.toType(Mutant.CanonicalFileName),
   location: Mutant.Location,
-  mutator: S.String,
+  mutator: Mutant.MutatorName,
   replacement: S.NullOr(S.String),
   completed: Report.NonNegativeInt,
   total: Report.NonNegativeInt,
 })
 
-export const RunMutantTested: S.Codec<RunMutantTested, S.Schema.Type<typeof MutantTestedWireSchema>> =
-  MutantTestedWireSchema
-    .pipe(
-      S.decodeTo(Reporter.MutantTested, {
-        decode: SchemaGetter.transform((line) => ({
-          _tag: 'mutantTested' as const,
+export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSchema.Encoded> = MutantTestedWireSchema
+  .pipe(
+    S.decodeTo(S.toType(Reporter.MutantTested), {
+      decode: SchemaGetter.transform((line) =>
+        Reporter.MutantTested.make({
           id: line.id,
           status: line.status,
           fileName: line.file,
@@ -65,20 +64,21 @@ export const RunMutantTested: S.Codec<RunMutantTested, S.Schema.Type<typeof Muta
           replacement: line.replacement,
           completed: line.completed,
           total: line.total,
-        })),
-        encode: SchemaGetter.transform((tested) => ({
-          _tag: 'mutant' as const,
-          id: tested.id,
-          status: tested.status,
-          file: tested.fileName,
-          location: tested.location,
-          mutator: tested.mutatorName,
-          replacement: tested.replacement,
-          completed: tested.completed,
-          total: tested.total,
-        })),
-      }),
-    )
+        })
+      ),
+      encode: SchemaGetter.transform((tested) => ({
+        _tag: 'mutant' as const,
+        id: tested.id,
+        status: tested.status,
+        file: tested.fileName,
+        location: tested.location,
+        mutator: tested.mutatorName,
+        replacement: tested.replacement,
+        completed: tested.completed,
+        total: tested.total,
+      })),
+    }),
+  )
 
 export class Heartbeat extends S.TaggedClass<Heartbeat>()('tick', {
   elapsedMs: Report.NonNegativeFinite,
@@ -86,10 +86,20 @@ export class Heartbeat extends S.TaggedClass<Heartbeat>()('tick', {
   total: S.NullOr(Report.NonNegativeInt),
 }) {}
 
+export const VerdictLocation = S.Struct({ start: Mutant.Position, end: Mutant.Position })
+export type VerdictLocation = typeof VerdictLocation.Type
+
+export const VerdictThresholds = S.Struct({
+  high: Report.Percentage,
+  low: Report.Percentage,
+  break: S.NullOr(Report.Percentage),
+})
+export type VerdictThresholds = typeof VerdictThresholds.Type
+
 export const VerdictMutant = S.Struct({
   id: S.String,
   file: S.String,
-  location: Report.Location,
+  location: VerdictLocation,
   mutator: S.String,
   replacement: S.NullOr(S.String),
   status: Mutant.MutantStatusSchema,
@@ -103,7 +113,7 @@ export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   mode: OutputMode,
   signal: ModeSignal,
   score: S.NullOr(Report.Percentage),
-  thresholds: Report.Thresholds,
+  thresholds: VerdictThresholds,
   reportFile: S.NullOr(S.String),
   counts: Report.Metrics,
   mutants: S.Array(VerdictMutant),

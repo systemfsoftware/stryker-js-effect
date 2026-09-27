@@ -213,7 +213,7 @@ export interface RunEventStream {
 export interface EmitNullScoreVerdictOptions<Config = unknown> {
   readonly stream: RunEventStream
   readonly mode: ResolvedMode
-  readonly thresholds: Report.Thresholds
+  readonly thresholds: RunEvent.VerdictThresholds
   readonly config: Readonly<Record<string, Config>>
   readonly basePath: string
   readonly pathService: Path.Path
