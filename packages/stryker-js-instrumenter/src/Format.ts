@@ -190,11 +190,6 @@ export interface ParsedFile {
   readonly ast: Ast
 }
 
-const NO_OPT_IN_MUTATIONS: readonly string[] = []
-
-export const optInMutationsOf = (options: InstrumenterOptions): readonly string[] =>
-  options.optInMutations ?? NO_OPT_IN_MUTATIONS
-
 const isIgnorer = (value: unknown): value is Ignorer =>
   Predicate.isObject(value) && typeof value['shouldIgnore'] === 'function'
 

@@ -31,11 +31,13 @@ export type ActionableStatus = typeof ActionableStatusSchema.Type
 export const MutantId = S.String.check(S.isPattern(/^(0|[1-9][0-9]*)$/)).pipe(S.brand('MutantId'))
 export type MutantId = typeof MutantId.Type
 
-export const MutatorName = S.String.check(
+export const MutatorNameGrammar = S.String.check(
   S.isPattern(/^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/)?[A-Z][A-Za-z0-9]*$/, {
     expected: 'a PascalCase mutator name, optionally prefixed by a lowercase kebab-case namespace and a slash',
   }),
-).pipe(S.brand('MutatorName'))
+)
+
+export const MutatorName = MutatorNameGrammar.pipe(S.brand('MutatorName'))
 export type MutatorName = typeof MutatorName.Type
 
 export const CanonicalFileName = S.String.pipe(

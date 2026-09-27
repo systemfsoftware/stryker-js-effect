@@ -20,10 +20,6 @@ const CONCURRENCY_MUTATOR_NAMES: readonly string[] = [
   FINALIZER_ESCAPE,
 ]
 
-const UNKNOWN_MUTATOR_NAME = 'AtomicUpdateSplt'
-
-const MODULE_SOURCE = 'export const total = 1 + 1\n'
-
 const SUPPRESSED_SOURCE = `import { Effect, Ref } from 'effect'
 
 // Stryker disable next-line AtomicUpdateSplit: race proven elsewhere
@@ -103,29 +99,6 @@ Feature('Choosing extra concurrency mutations by name')
   .live('reads fixture files from disk and parses real source with the oxc parser')
   .withLayer(NodeFileSystem.layer)
   .body(({ scenario }) => {
-    scenario(
-      'A run that asks for a mutation the library does not have stops with a message naming it',
-      Gherkin.Do.pipe(
-        Given('a module ready to be instrumented')('source', () => Effect.succeed(MODULE_SOURCE)),
-        When('a run asks for a concurrency mutation by a name the library does not offer')(
-          'failure',
-          ({ source }: { source: string }) =>
-            instrument(
-              [{ name: 'probe.ts', content: source, mutate: true }],
-              stockOptions({
-                ignorers: [],
-                excludedMutations: [],
-                optInMutations: [UNKNOWN_MUTATOR_NAME],
-              }),
-            ).pipe(Effect.flip),
-        ),
-        Then('the run fails, and the message names the entry it does not have')((
-          { failure }: { failure: Instrument.InstrumentError },
-          expect,
-        ) => expect(failure.message).toContain(UNKNOWN_MUTATOR_NAME)),
-      ),
-    )
-
     scenario(
       'A run that asks for no extra mutation asks for the same run as one that asks for an empty list',
       Gherkin.Do.pipe(

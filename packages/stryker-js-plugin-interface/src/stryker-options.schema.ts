@@ -2,6 +2,7 @@
 import { Effect, SchemaGetter, SchemaTransformation } from 'effect'
 import * as S from 'effect/Schema'
 import { NonNegativeFinite, NonNegativeInt, Percentage } from './Metrics.schema.js'
+import { MutatorNameGrammar } from './Mutant.schema.js'
 
 export const StrykerCoverageAnalysis = S.Literal('perTest')
 
@@ -146,8 +147,8 @@ const acceptsThresholdPair = (high: number, low: number): boolean =>
   S.is(MutationScoreThresholdsSchema)({ high, low, break: null })
 
 const MutatorDescriptor = S.Struct({
-  excludedMutations: defaulted(S.Array(S.String), []),
-  optInMutations: defaulted(S.Array(S.String), []),
+  excludedMutations: defaulted(S.Array(MutatorNameGrammar), []),
+  optInMutations: defaulted(S.Array(MutatorNameGrammar), []),
 })
 
 const WarningOptions = openStruct({

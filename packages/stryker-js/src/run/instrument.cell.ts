@@ -201,11 +201,10 @@ const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(funct
     ),
   )
 
-  const optInMutations = [...command.options.mutator.optInMutations]
+  const { excludedMutations, optInMutations } = command.mutatorSelection
   const instrumentResult = yield* Instrument.instrument(filesToMutate, {
     ignorers: [...command.ignorers],
-    excludedMutations: [...command.options.mutator.excludedMutations],
-    optInMutations,
+    excludedMutations: [...excludedMutations],
     mutators: Mutator.selectMutators(
       mutatorRegistryOf(command.mutatorCatalogs, command.loadedPlugins.mutators),
       optInMutations,

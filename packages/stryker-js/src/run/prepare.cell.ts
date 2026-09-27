@@ -25,6 +25,11 @@ import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 
+import {
+  decodeMutatorSelection,
+  DecodeMutatorSelectionCommand,
+  type MutatorSelectionDecoded,
+} from '../decode-mutator-selection.workflow.js'
 import { installedFrameworkClaimants } from '../framework-claimant.service.js'
 import {
   type MergedCatalog,
@@ -78,6 +83,7 @@ export interface PrepareDone {
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly Ignorer[]
   readonly mutatorCatalogs: readonly MergedCatalog[]
+  readonly mutatorSelection: MutatorSelectionDecoded
   readonly formatRegistry: Format.FormatRegistry
   readonly options: Options.StrykerOptions
   readonly temporaryDirectoryPath: string
@@ -99,6 +105,7 @@ type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly project: Project
   readonly ignorers: readonly Ignorer[]
   readonly mutatorCatalogs: readonly MergedCatalog[]
+  readonly mutatorSelection: MutatorSelectionDecoded
   readonly formatRegistry: Format.FormatRegistry
   readonly builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory>
   readonly reporterChoicesByName: HashMap.HashMap<string, ReporterChoice>
@@ -179,6 +186,18 @@ const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
     ),
   )
   const mutatorCatalogs = plannedCatalogs.catalogs
+  const mutatorSelection = yield* Effect.fromResult(
+    Result.mapError(
+      decodeMutatorSelection(
+        DecodeMutatorSelectionCommand.make({
+          catalogs: [...mutatorCatalogs],
+          excludedMutations: [...options.mutator.excludedMutations],
+          optInMutations: [...options.mutator.optInMutations],
+        }),
+      ),
+      (refused) => StageError.make({ stage: 'prepare', reason: refused.message, cause: refused }),
+    ),
+  )
   const registry = Format.registerEntries(
     Format.coreFormatRegistry,
     loaded.frameworks.map(({ moduleName, framework }) => Format.frameworkEntryOf(moduleName, framework)),
@@ -232,6 +251,7 @@ const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
     project: command.project,
     ignorers,
     mutatorCatalogs,
+    mutatorSelection,
     formatRegistry: registry,
     builtinReporterFactories,
     reporterChoicesByName,
@@ -298,6 +318,7 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
     loadedPlugins: raw.loaded,
     ignorers: raw.ignorers,
     mutatorCatalogs: raw.mutatorCatalogs,
+    mutatorSelection: raw.mutatorSelection,
     formatRegistry: raw.formatRegistry,
     options: raw.options,
     temporaryDirectoryPath,

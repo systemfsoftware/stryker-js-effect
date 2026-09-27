@@ -1,11 +1,10 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
-import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 import { disableTypeChecksCell } from './disable-type-checks.cell.js'
-import { coreFormatRegistry, optInMutationsOf } from './Format.js'
+import { coreFormatRegistry } from './Format.js'
 import type { FormatRegistry } from './Format.schema.js'
 import { instrumentFilesCell } from './instrument-files.cell.js'
 import {
@@ -16,7 +15,6 @@ import {
   type InstrumentFileSkip,
   InstrumentResult as InstrumentResultSchema,
 } from './Instrument.schema.js'
-import { optInMutators } from './Mutator.service.js'
 
 export interface File extends FileDescription {
   name: string
@@ -37,43 +35,12 @@ const toSchemaFile = (file: File): S.Schema.Type<typeof FileSchema> => ({
   mutate: file.mutate,
 })
 
-const KNOWN_OPT_IN_MUTATIONS: readonly string[] = Object.keys(optInMutators)
-
-const unknownOptInMutations = (requested: readonly string[]): readonly string[] =>
-  requested.filter((name) => !KNOWN_OPT_IN_MUTATIONS.includes(name))
-
-const listNames = (names: readonly string[]): string =>
-  Option.match(Option.fromNullishOr(names.at(0)), {
-    onNone: () => 'none',
-    onSome: () => names.map((name) => `'${name}'`).join(', '),
-  })
-
-const unknownOptInMutationsError = (requested: readonly string[]): Option.Option<InstrumentError> =>
-  Option.map(
-    Option.fromNullishOr(unknownOptInMutations(requested).at(0)),
-    () =>
-      InstrumentError.make({
-        message: `Unknown opt-in mutations: ${listNames(unknownOptInMutations(requested))}. Known opt-in mutations: ${
-          listNames(KNOWN_OPT_IN_MUTATIONS)
-        }.`,
-        cause: undefined,
-      }),
-  )
-
-const refuseUnknownOptInMutations = (options: InstrumenterOptions): Effect.Effect<void, InstrumentError> =>
-  Option.match(unknownOptInMutationsError(optInMutationsOf(options)), {
-    onNone: (): Effect.Effect<void, InstrumentError> => Effect.void,
-    onSome: (error): Effect.Effect<void, InstrumentError> => Effect.fail(error),
-  })
-
 const instrumentDataFirst = (
   files: readonly File[],
   options: InstrumenterOptions,
   registry: FormatRegistry = coreFormatRegistry,
 ): Effect.Effect<InstrumentResultSchema, InstrumentError> =>
-  refuseUnknownOptInMutations(options).pipe(
-    Effect.andThen(instrumentFilesCell.run({ files: files.map(toSchemaFile), options, registry })),
-  )
+  instrumentFilesCell.run({ files: files.map(toSchemaFile), options, registry })
 
 export const instrument: {
   (
