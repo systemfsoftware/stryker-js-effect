@@ -15,6 +15,21 @@ export namespace Evaluator {
 }
 
 // @public (undocumented)
+export namespace Mutant {
+    export { ActionableStatus, ActionableStatusSchema, CanonicalFileName, CanonicalFileName as CanonicalFileNameValue, Column, Coverage, CoverageData, CoveragePerTestId, EarlyResultPlan, Ends, EphemeralStatus, EphemeralStatusSchema, HitCount, Line, Location, Mutant, MutantActivation, MutantActivationSchema, MutantCoverage, MutantCoverageSchema, MutantEarlyResultPlan, MutantFromUnknown, MutantFromUnknown as MutantFromUnknownValue, MutantId, MutantId as MutantIdValue, MutantRunOptions, MutantRunOptionsSchema, MutantRunPlan, MutantStatus, MutantStatusSchema, MutantTestCoverage, MutantTestPlan, MutatorName, MutatorName as MutatorNameValue, OpenEndLocation, Position, RememberedStatus, RememberedStatusSchema, RunMutantResult, RunOptions, RunOptionsFields, RunPlan, SurvivorStatus, SurvivorStatusSchema, TestPlan, duplicatedValue, inOrder, notReversed };
+}
+
+// @public (undocumented)
+export namespace MutatorCatalog {
+    export { Catalog, Catalog as CatalogValue, Definition, Definition as DefinitionValue, Entry, Entry as EntryValue, Example, Example as ExampleValue, Id, Id as IdValue, MutatorName as Name, MutatorName as NameValue, Provider, Provider as ProviderValue, Tier, Tier as TierValue };
+}
+
+// @public (undocumented)
+export namespace MutatorProvider {
+    export { Contribution, Contribution as ContributionValue, Implementation, Mutator, MutatorContext, ProviderEntry, ProviderEntry as ProviderEntryValue };
+}
+
+// @public (undocumented)
 export namespace Options {
     export { CheckerCustomConfig, CheckerCustomConfigSchema, CheckerEntryConfig, CheckerEntryConfigSchema, CommandRunnerOptions, CommandRunnerOptionsSchema, CoverageAnalysisMode, CoverageAnalysisMode as CoverageAnalysisModeType, DeepOptional, LogLevel, LogLevel as LogLevelType, MutationScoreThresholds, MutationScoreThresholdsSchema, PackageManager, PackageManager as PackageManagerType, PartialStrykerOptions, PluginFileUrl, ReportType, ReportType as ReportTypeType, StrykerCoverageAnalysis, StrykerFileLogLevel, StrykerLogLevel, StrykerOptions, StrykerOptionsSchema, StrykerTempDirName, TestRunnerConfig, TestRunnerConfigSchema, TestRunnerCustomConfig, TestRunnerCustomConfigSchema, isCustomTestRunner };
 }
@@ -26,7 +41,7 @@ export namespace Plugin {
 
 // @public (undocumented)
 export namespace Report {
-    export { BrandingInformation, BrandingInformationSchema, Dependencies, DependenciesSchema, DetectedStatus, FileResult, FileResultDictionary, FileResultDictionarySchema, FileResultSchema, FrameworkInformation, FrameworkInformationSchema, InvalidStatus, Metrics, MetricsResult, MetricsResultEncoded, MetricsResultSchema, MetricsSchema, MutantResult, MutantResultSchema, MutationScore, MutationTestResult, MutationTestResultSchema, NonNegativeFinite, NonNegativeInt, OrderedThresholds, Percentage, TestDefinition, TestDefinitionSchema, TestFile, TestFileDefinitionDictionary, TestFileDefinitionDictionarySchema, TestFileSchema, Thresholds, ThresholdsSchema, UndetectedStatus, UntestedStatus, metricsFromMutants };
+    export { BrandingInformation, CpuInformation, Dependencies, DetectedStatus, FileResult, FileResultDictionary, FrameworkInformation, InvalidStatus, Location$1 as Location, Metrics, MetricsResult, MetricsResultEncoded, MetricsResultSchema, MetricsSchema, MutantResult, MutationScore, MutationTestResult, NonNegativeFinite, NonNegativeInt, OSInformation, OpenEndLocation$1 as OpenEndLocation, Percentage, PerformanceStatistics, Position$1 as Position, RamInformation, SystemInformation, TestDefinition, TestFile, TestFileDefinitionDictionary, Thresholds, UndetectedStatus, UntestedStatus, WrittenSchemaVersion, metricsFromMutants };
 }
 
 // @public (undocumented)
@@ -36,7 +51,7 @@ export namespace Reporter {
 
 // @public (undocumented)
 export namespace TestRunner {
-    export { BaseTestResult, CompleteDryRunResult, CoverageAnalysis, CoverageAnalysisSchema, DryRunOptions, DryRunOptionsSchema, DryRunResult, DryRunResultSchema, DryRunStatus, ErrorDryRunResult, ErrorMutantRunResult, FailedTestResult, HitLimitReason, HitLimitReasonPrefix, HitLimitReasonText, KilledMutantRunResult, MutantCoverageSchema, MutantRunResult, MutantRunResultSchema, MutantRunStatus, SkippedTestResult, SuccessTestResult, SurvivedMutantRunResult, TestId, TestResult, TestResultSchema, TestRunner, TestRunnerCapabilities, TestRunnerCapabilitiesSchema, TestRunnerFailed, TestRunnerService, TestStatus, TimeoutDryRunResult, TimeoutMutantRunResult, WallClockTimeoutReason };
+    export { BaseTestResult, CompleteDryRunResult, CoverageAnalysis, CoverageAnalysisSchema, DryRunOptions, DryRunOptionsSchema, DryRunResult, DryRunResultSchema, DryRunStatus, ErrorDryRunResult, ErrorMutantRunResult, FailedTestResult, HitLimitReason, HitLimitReasonPrefix, HitLimitReasonText, KilledMutantRunResult, MutantRunResult, MutantRunResultSchema, MutantRunStatus, SkippedTestResult, SuccessTestResult, SurvivedMutantRunResult, TestId, TestResult, TestResultSchema, TestRunner, TestRunnerCapabilities, TestRunnerCapabilitiesSchema, TestRunnerFailed, TestRunnerService, TestStatus, TimeoutDryRunResult, TimeoutMutantRunResult, WallClockTimeoutReason };
 }
 
 // @public (undocumented)

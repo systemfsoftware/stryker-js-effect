@@ -23,8 +23,7 @@ tags:
 
 # Context
 
-Hardening the vm-vitest container oracle (`VM_VITEST_ORACLE` and its step verifiers) surfaced
-three facts about what this lane can observe. The report-shape facts were verified against a live
+Hardening the vm-vitest container oracle surfaced three facts about what this lane can observe. The report-shape facts were verified against a live
 container run: the fixture gained a dead exported function, the config gained `reporters:
 ['json']`, and the oracle was iterated until green. The status the uncovered mutants carry is now
 the planner's contract, asserted by its property suite rather than read off a run.

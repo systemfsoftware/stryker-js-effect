@@ -17,10 +17,14 @@ pnpm add @systemfsoftware/stryker-js-cli-contract
 The package groups its exports into namespaces. `RunEvent` holds the machine
 stream: the `RunEvent` union of every event kind the CLI emits, each event's
 class, the `RunEventWireLine` newline-delimited JSON codec a consumer decodes
-stdout with, and `StreamSchemaVersion`. `OutputMode` holds the output mode and
-its signal (`OutputMode`, `ModeSignal`) as the stream header carries them.
-`StockCatalog` holds the stock mutator catalog and its name vocabulary
-(`StockCatalog`, `StockMutatorName`, `StockDefaultName`, `StockOptInName`).
+stdout with, and `StreamSchemaVersion` (`1.1`, the version the stream
+declares). `OutputMode` holds the output mode and its signal (`OutputMode`,
+`ModeSignal`) as the stream header carries them. `StockCatalog` holds the stock
+mutator catalog and its name vocabulary (`StockCatalog`, `StockMutatorName`,
+`StockDefaultName`, `StockOptInName`). `SpanTaxonomy` holds the names the CLI's
+traces use and each member's attributes (`Spans`, `SpanName`, `SpanMember`,
+`spanMembers`), plus `rpcServedSpanOf` for the RPC method spans a plugin worker
+serves.
 
 ```ts
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
@@ -38,10 +42,23 @@ declares:
   JSON Schema of the `RunEvent` union.
 - `@systemfsoftware/stryker-js-cli-contract/contract/stock-catalog.json` — the
   stock catalog entries.
+- `@systemfsoftware/stryker-js-cli-contract/contract/span-taxonomy.json` — the
+  span names and their attributes.
 
-Run `pnpm --filter @systemfsoftware/stryker-js-cli-contract generate:contract`
-to regenerate them; a version guard fails an incompatible change until the
-package's version is bumped.
+Every committed document equals its generated form: a test in this package
+regenerates each one from its contract and fails when the committed bytes
+differ. Run `pnpm --filter @systemfsoftware/stryker-js-cli-contract
+generate:contract` to rewrite them and review the diff; never hand-edit one.
+
+## Compatibility
+
+The package's version tracks the contract it publishes. Removing or narrowing a
+declared member of a published document — an event kind, a catalog entry or its
+name or tier, a span or one of its attributes — is an incompatible change: the
+version guard fails it until the package takes a `major` bump (`minor` while the
+package is `0.x`), and a breaking change to the stream additionally raises the
+major segment of the `StreamSchemaVersion` the schema declares. Additive changes
+need no bump.
 
 ## License
 

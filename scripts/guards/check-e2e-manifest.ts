@@ -3,7 +3,7 @@ const LANE_MANIFEST = 'test/e2e/package.json'
 const TURBO_MANIFEST = 'turbo.json'
 const WITNESS_REGISTRY = 'test/e2e-core/src/witness-registry.ts'
 const JOURNEY_DIRECTORY = 'test/e2e/tests/'
-const DISABLED_MARKER = /\.(?:skip|only|todo)\s*\(/
+const DISABLED_MARKER = /(?:\.(?:skip|skipIf|runIf|only|todo)|\bx(?:it|test|describe))\s*\(/
 const JOURNEY_ENTRY = /journey:\s*'([^']+)'/g
 
 const parseObject = (text: string): Record<string, unknown> | null => {
@@ -52,7 +52,7 @@ export const journeyViolations = (
   }
   if (!exists) return [`${WITNESS_REGISTRY}: names the journey ${journey}, which does not exist`]
   if (text !== null && DISABLED_MARKER.test(text)) {
-    return [`${WITNESS_REGISTRY}: names the journey ${journey}, which carries a disabled (.skip/.only/.todo) case`]
+    return [`${WITNESS_REGISTRY}: names the journey ${journey}, which carries a disabled or focused case`]
   }
   return []
 }
@@ -106,6 +106,21 @@ const selftest = (): number => {
         const found = journeyViolations('test/e2e/tests/muted.e2e.test.ts', true, "it.skip('muted', () => {})")
         if (found.length !== 1) throw new Error(`expected one violation, got ${found.length}`)
         if (!found[0]?.includes('disabled')) throw new Error(`${found[0]}`)
+      },
+    },
+    {
+      name: 'refuses a registry journey with a conditional or x-prefixed disable',
+      run: () => {
+        const disabled = [
+          "it.skipIf(process.env.CI)('muted', () => {})",
+          "describe.runIf(false)('muted', () => {})",
+          "xit('muted', () => {})",
+          "xdescribe('muted', () => {})",
+        ]
+        const found = disabled.flatMap((text) => journeyViolations('test/e2e/tests/muted.e2e.test.ts', true, text))
+        if (found.length !== disabled.length) {
+          throw new Error(`expected ${disabled.length} violations, got ${found.length}`)
+        }
       },
     },
     {

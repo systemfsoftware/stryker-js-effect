@@ -15,6 +15,11 @@ export namespace RunEvent {
 }
 
 // @public (undocumented)
+export namespace SpanTaxonomy {
+    export { SpanAttributeCount, SpanAttributeKey, SpanAttributeText, SpanDocument, SpanDocuments, SpanMember, SpanName, Spans, rpcServedSpanOf, spanMembers };
+}
+
+// @public (undocumented)
 export namespace StockCatalog {
     export { StockCatalog, StockDefaultName, StockMutatorName, StockOptInName };
 }
