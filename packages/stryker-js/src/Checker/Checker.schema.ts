@@ -1,6 +1,5 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Metric from 'effect/Metric'
 import * as S from 'effect/Schema'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
@@ -9,10 +8,6 @@ export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('U
   fileName: Mutant.CanonicalFileName,
   reason: S.String,
 }) {
-  static readonly skipped = Metric.counter('stryker.checker.mutants.skipped', {
-    description: 'Total number of mutants dropped because they cannot be described to a checker',
-  })
-
   override get message(): string {
     return `Mutant ${this.id} in ${this.fileName} cannot be described to a checker: ${this.reason}`
   }

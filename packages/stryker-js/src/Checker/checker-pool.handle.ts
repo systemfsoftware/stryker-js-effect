@@ -13,8 +13,8 @@ import * as Scope from 'effect/Scope'
 
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { StageError } from '../Run.schema.js'
-import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.cell.js'
 import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
+import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.plans.js'
 import {
   CheckedPlanFailed,
   CheckedPlanPassed,

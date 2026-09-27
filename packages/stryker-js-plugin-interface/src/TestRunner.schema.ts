@@ -1,8 +1,10 @@
 /// <reference types="vitest/importMeta" />
 import * as S from 'effect/Schema'
 
+import { Position } from './Location.schema.js'
 import { NonNegativeFinite, NonNegativeInt } from './Metrics.schema.js'
-import * as Mutant from './Mutant/mod.js'
+import { MutantCoverageSchema, RunOptionsFields } from './Mutant.schema.js'
+import type { MutantCoverage, RunOptions } from './Mutant.schema.js'
 
 const isTestId = (value: string): boolean => value.length > 0
 
@@ -25,7 +27,7 @@ const TestResultBase = {
   name: S.String,
   timeSpentMs: NonNegativeFinite,
   fileName: S.optionalKey(S.String),
-  startPosition: S.optionalKey(Mutant.Position),
+  startPosition: S.optionalKey(Position),
 }
 
 export const TestResultSchema = S.Union([
@@ -38,7 +40,7 @@ export const DryRunResultSchema = S.Union([
   S.Struct({
     status: S.Literal('complete'),
     tests: S.Array(TestResultSchema),
-    mutantCoverage: S.optionalKey(Mutant.MutantCoverageSchema),
+    mutantCoverage: S.optionalKey(MutantCoverageSchema),
   }),
   S.Struct({ status: S.Literal('timeout'), reason: S.optionalKey(S.String) }),
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
@@ -59,7 +61,7 @@ export const MutantRunResultSchema = S.Union([
 export const CoverageAnalysisSchema = S.Literals(['off', 'all', 'perTest'])
 
 export const DryRunOptionsSchema = S.Struct({
-  ...Mutant.RunOptionsFields,
+  ...RunOptionsFields,
   coverageAnalysis: CoverageAnalysisSchema,
   files: S.String.pipe(S.Array, S.optionalKey),
   testFiles: S.String.pipe(S.Array, S.optionalKey),
@@ -84,7 +86,7 @@ export interface BaseTestResult {
   readonly name: string
   readonly timeSpentMs: number
   readonly fileName?: string
-  readonly startPosition?: Mutant.Position
+  readonly startPosition?: Position
 }
 
 export interface FailedTestResult extends BaseTestResult {
@@ -104,7 +106,7 @@ export type TestResult = FailedTestResult | SkippedTestResult | SuccessTestResul
 
 export interface CompleteDryRunResult {
   readonly tests: readonly TestResult[]
-  readonly mutantCoverage?: Mutant.MutantCoverage
+  readonly mutantCoverage?: MutantCoverage
   readonly status: 'complete'
 }
 
@@ -150,7 +152,7 @@ export type MutantRunResult =
 
 export type CoverageAnalysis = 'off' | 'all' | 'perTest'
 
-export interface DryRunOptions extends Mutant.RunOptions {
+export interface DryRunOptions extends RunOptions {
   readonly coverageAnalysis: CoverageAnalysis
   readonly files?: readonly string[]
   readonly testFiles?: readonly string[]

@@ -1,6 +1,5 @@
-export { duplicatedValue } from '../duplicated-value.js'
-export { inOrder, notReversed } from '../location-order.js'
-export type { Ends } from '../location-order.js'
+export { inOrder, notReversed } from '../Location.schema.js'
+export type { Ends } from '../Location.schema.js'
 export { Column, Line, Location, OpenEndLocation, Position } from '../Location.schema.js'
 export type {
   Coverage,
@@ -47,3 +46,4 @@ export type {
   RememberedStatus,
   SurvivorStatus,
 } from '../Mutant.schema.js'
+export { duplicatedValue } from '../MutatorCatalog.schema.js'

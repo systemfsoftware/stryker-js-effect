@@ -58,12 +58,13 @@ import { TemporaryDirectory } from '../Sandbox.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { admitNonEmptyProject, NonEmptyProjectCommand, ProjectEmpty } from './admit-non-empty-project.workflow.js'
 import type { FrameworkClaimant } from './explain-file-skip.workflow.js'
-import { forkCoreSchema, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
+import { forkCoreSchema } from './load-config.js'
 import { planPrepare, PrepareDecoded } from './plan-prepare.workflow.js'
 import { planReporters, ReporterPlanCommand } from './plan-reporters.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
+import { validateOptions } from './validate-options.js'
 
 const announceSummary = Effect.fn(SpanTaxonomy.Spans.prepareAnnounceSummary.name)(
   function*(input: { readonly env: RunEnvironmentShape; readonly summary: string }) {

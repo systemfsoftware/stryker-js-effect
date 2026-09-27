@@ -29,7 +29,7 @@ Feature('Regenerating the published report contract')
     scenario(
       'The committed module is byte for byte what the generator writes from the pinned upstream document',
       Gherkin.Do.pipe(
-        Given('the committed generated module')('committed', () => readCommitted('src/generated/report.generated.ts')),
+        Given('the committed generated module')('committed', () => readCommitted('src/generated/report.schema.ts')),
         When('the generator regenerates the module from the pinned upstream document')(
           'regenerated',
           () => Effect.sync(() => reportModuleSource()),

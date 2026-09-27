@@ -1,0 +1,197 @@
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Reporter, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import type * as Cause from 'effect/Cause'
+import * as Effect from 'effect/Effect'
+import * as Option from 'effect/Option'
+import type * as Path from 'effect/Path'
+import * as Pool from 'effect/Pool'
+import * as Queue from 'effect/Queue'
+import * as Ref from 'effect/Ref'
+import * as S from 'effect/Schema'
+import type * as Semaphore from 'effect/Semaphore'
+
+import { MutantRunObservation } from '../interpret-mutant-run.workflow.js'
+import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
+import { type PooledTestRunner } from '../pooled-test-runner.handle.js'
+import { offerReporterEvent } from '../reporter-stream.service.js'
+import { StageError } from '../Run.schema.js'
+import type { PooledTestRunnerError } from '../TestRunner.schema.js'
+import type { DryRunDone } from './dry-run.cell.js'
+import { isMutantStatus, toReportedMutant, type ValidMutantStatus } from './mutation-test-plan.js'
+import type { RunEnvironmentShape } from './RunEnvironment.service.js'
+
+export interface PreparedStreamableMutant {
+  readonly status: ValidMutantStatus
+  readonly file: Mutant.CanonicalFileName
+  readonly location: Mutant.Location
+}
+
+export interface RunContext {
+  readonly prev: DryRunDone
+  readonly env: RunEnvironmentShape
+  readonly reporting: MutationReportingService
+  readonly progressQueue: Queue.Queue<RunEvent.RunEvent, Cause.Done>
+  readonly completedRef: Ref.Ref<number>
+  readonly plannedTotal: number
+  readonly plannedMutants: readonly Mutant.Mutant[]
+  readonly pathService: Path.Path
+}
+
+export interface ReportingInputArgs {
+  readonly prev: DryRunDone
+  readonly env: RunEnvironmentShape
+  readonly results: readonly Mutant.RunMutantResult[]
+}
+
+export const reportingInputOf = (input: ReportingInputArgs): MutationReportingInput => ({
+  results: input.results,
+  options: input.prev.options,
+  project: input.prev.project,
+  testCoverage: input.prev.testCoverage,
+  runId: input.env.runId,
+  resolvedMode: input.env.resolvedMode,
+  basePath: input.env.basePath,
+  reporterStage: input.prev.reporterStage,
+  formatRegistry: input.prev.formatRegistry,
+})
+
+const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, result: Mutant.RunMutantResult) {
+  return yield* Option.match(Option.filter(Option.some(result.status), isMutantStatus), {
+    onNone: () => Effect.succeed(Option.none<PreparedStreamableMutant>()),
+    onSome: (status) =>
+      Effect.map(
+        Effect.orDie(
+          S.decodeEffect(Mutant.CanonicalFileName)(
+            context.pathService.relative(context.env.basePath, result.fileName),
+          ),
+        ),
+        (file) => Option.some({ status, file, location: result.location }),
+      ),
+  })
+})
+
+const offerFinished = Effect.fnUntraced(function*(
+  context: RunContext,
+  result: Mutant.RunMutantResult,
+  prepared: Option.Option<PreparedStreamableMutant>,
+) {
+  return yield* Option.match(prepared, {
+    onNone: () => Effect.succeed(Option.none<number>()),
+    onSome: (streamable) =>
+      Effect.gen(function*() {
+        const completed = yield* Ref.updateAndGet(context.completedRef, (n) => n + 1)
+        yield* Queue.offer(
+          context.progressQueue,
+          Reporter.MutantTested.make({
+            id: result.id,
+            status: streamable.status,
+            fileName: streamable.file,
+            location: streamable.location,
+            mutatorName: result.mutatorName,
+            replacement: result.replacement,
+            completed,
+            total: context.plannedTotal,
+          }),
+        )
+        return Option.some(completed)
+      }),
+  })
+})
+
+const reportStreamTested = Effect.fnUntraced(function*(
+  context: RunContext,
+  result: Mutant.RunMutantResult,
+  completed: number,
+  prepared: PreparedStreamableMutant,
+) {
+  yield* offerReporterEvent(
+    context.prev.reporterStage,
+    Reporter.MutantTested.make({
+      id: result.id,
+      status: prepared.status,
+      fileName: prepared.file,
+      location: prepared.location,
+      mutatorName: result.mutatorName,
+      replacement: result.replacement,
+      completed,
+      total: context.plannedTotal,
+    }),
+  ).pipe(
+    Effect.tapCause((cause) => Effect.logWarning('Reporter stream failed handling mutantTested', cause)),
+    Effect.ignoreCause,
+  )
+})
+
+const offerStreamTested = Effect.fnUntraced(function*(
+  context: RunContext,
+  result: Mutant.RunMutantResult,
+  completed: Option.Option<number>,
+  prepared: Option.Option<PreparedStreamableMutant>,
+) {
+  yield* Option.match(Option.all([completed, prepared]), {
+    onNone: () => Effect.void,
+    onSome: ([done, streamable]) => reportStreamTested(context, result, done, streamable),
+  })
+})
+
+export const announceSettledMutant = Effect.fnUntraced(function*(
+  context: RunContext,
+  result: Mutant.RunMutantResult,
+) {
+  const prepared = yield* preparedStreamableOf(context, result)
+  const completed = yield* offerFinished(context, result, prepared)
+  yield* offerStreamTested(context, result, completed, prepared)
+})
+
+export const checkpointMutationResults = Effect.fnUntraced(function*(
+  context: RunContext,
+  completedMutants: Ref.Ref<readonly Mutant.RunMutantResult[]>,
+) {
+  const input = yield* Ref.get(completedMutants)
+  yield* context.reporting.checkpoint(
+    reportingInputOf({ prev: context.prev, env: context.env, results: input }),
+    context.plannedMutants,
+  ).pipe(
+    Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
+    Effect.ignoreCause,
+  )
+})
+
+const persist = Effect.fnUntraced(function*(
+  context: RunContext,
+  completedMutants: Ref.Ref<readonly Mutant.RunMutantResult[]>,
+  result: Mutant.RunMutantResult,
+) {
+  yield* Ref.update(completedMutants, (completed) => [...completed, result])
+  yield* checkpointMutationResults(context, completedMutants)
+})
+
+export interface RunOnePlanArgs {
+  readonly context: RunContext
+  readonly testRunnerPool: Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError>
+  readonly checkpointGate: Semaphore.Semaphore
+  readonly completedMutants: Ref.Ref<readonly Mutant.RunMutantResult[]>
+  readonly plan: Mutant.MutantRunPlan
+}
+
+export type MutantRunRaw = typeof MutantRunObservation.Encoded & {
+  readonly args: RunOnePlanArgs
+  readonly runner: PooledTestRunner
+  readonly result: TestRunner.MutantRunResult
+}
+
+export const settleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
+  const { context, plan, checkpointGate, completedMutants } = raw.args
+  const reported = yield* context.reporting.reportMutantRunResult(toReportedMutant(plan.mutant), raw.result)
+  const prepared = yield* preparedStreamableOf(context, reported)
+  const finished = yield* offerFinished(context, reported, prepared)
+  yield* offerStreamTested(context, reported, finished, prepared)
+  yield* checkpointGate.withPermits(1)(persist(context, completedMutants, reported))
+  return reported
+})
+
+export const recycleAndSettleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
+  yield* Pool.invalidate(raw.args.testRunnerPool, raw.runner)
+  return yield* settleMutantRun(raw)
+})

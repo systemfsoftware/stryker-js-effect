@@ -4,15 +4,11 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
-import * as Metric from 'effect/Metric'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Queue from 'effect/Queue'
 import * as Record from 'effect/Record'
-import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 
-import { CheckerMutantFromMutant, UndescribableMutant } from '../Checker/Checker.schema.js'
 import { MaterializeMutantPlanCommand, materializeMutantPlans } from '../materialize-mutant-plans.workflow.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
@@ -27,46 +23,9 @@ import type { Project } from '../Project.schema.js'
 import { offerReporterEvent, type ReporterStage } from '../reporter-stream.service.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
-import { sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
+import type { SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
-
-export const isMutantStatus = S.is(Mutant.MutantStatusSchema)
-export type ValidMutantStatus = Mutant.MutantStatus
-
-export const toReportedMutant = (mutant: Mutant.Mutant): Mutant.MutantTestCoverage =>
-  Object.assign(mutant, { coveredBy: mutant.coveredBy, static: mutant.static })
-
-const sandboxFilePairsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
-  Result.all(
-    fileNames.map((fileName) =>
-      Result.map(
-        sandboxFileFor(sandbox, fileName),
-        (sandboxFileName): readonly [string, string] => [fileName, sandboxFileName],
-      )
-    ),
-  )
-
-export interface SandboxFilesInput {
-  readonly sandbox: SandboxHandle
-  readonly fileNames: readonly string[]
-}
-
-export const sandboxFilesOf: (
-  input: SandboxFilesInput,
-) => Effect.Effect<readonly (readonly [string, string])[], StageError> = Effect.fn(
-  SpanTaxonomy.Spans.mutationTestSandboxFiles.name,
-)(function*(input: SandboxFilesInput) {
-  return yield* Effect.fromResult(sandboxFilePairsOf(input.sandbox, input.fileNames)).pipe(
-    Effect.mapError((cause) =>
-      StageError.make({ stage: 'mutationTest', reason: 'Failed to resolve sandbox file', cause })
-    ),
-  )
-})
-
-export const configuredTestFilesOf = (run: {
-  readonly options: { readonly testFiles: readonly string[] }
-  readonly project: { readonly testFiles: readonly string[] }
-}): readonly string[] => run.options.testFiles.length === 0 ? [] : run.project.testFiles
+import { sandboxFilesOf } from './mutation-test-plan.js'
 
 const calculateTotalTime = (testResults: Iterable<TestRunner.TestResult>) =>
   [...testResults].reduce((acc, test) => acc + test.timeSpentMs, 0)
@@ -192,38 +151,6 @@ const sortRunPlans = (plans: readonly Mutant.RunPlan[]): readonly Mutant.RunPlan
   [...plans].sort(
     (left, right) => Number(left.runOptions.reloadEnvironment) - Number(right.runOptions.reloadEnvironment),
   )
-
-const isPlannable = (mutant: Mutant.Mutant): boolean =>
-  Result.isSuccess(S.decodeResult(CheckerMutantFromMutant)(mutant))
-
-const DROPPED_IDS_IN_WARNING = 5
-
-export const partitionPlannable = (mutants: readonly Mutant.Mutant[]) => ({
-  plannable: mutants.filter(isPlannable),
-  dropped: mutants.filter((candidate) => !isPlannable(candidate)),
-})
-
-const droppedIdsOf = (dropped: readonly Mutant.Mutant[]): string =>
-  `${dropped.slice(0, DROPPED_IDS_IN_WARNING).map((mutant) => mutant.id).join(', ')}${
-    Option.match(Option.liftPredicate(dropped.length, (count) => count > DROPPED_IDS_IN_WARNING), {
-      onNone: () => '',
-      onSome: (count) => `, +${count - DROPPED_IDS_IN_WARNING} more`,
-    })
-  }`
-
-export const reportDroppedMutants = (dropped: readonly Mutant.Mutant[]) =>
-  Option.match(Option.liftPredicate(dropped, (candidates) => candidates.length > 0), {
-    onNone: () => Effect.void,
-    onSome: (candidates) =>
-      Effect.gen(function*() {
-        yield* Metric.update(UndescribableMutant.skipped, candidates.length)
-        yield* Effect.logWarning(
-          `${candidates.length} mutant(s) cannot be described to a checker and were left out of the run (${
-            droppedIdsOf(candidates)
-          })`,
-        )
-      }),
-  })
 
 const planMutantTestsCell = Sandwich.named(SpanTaxonomy.Spans.mutationTestPlanMutants.name)(readPlanCommand)
   .decide(planMutantTests)

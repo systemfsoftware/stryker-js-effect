@@ -1,8 +1,6 @@
-import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
-import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Filter from 'effect/Filter'
@@ -15,14 +13,8 @@ import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
 import { renderJsonReport } from './render-json-report.workflow.js'
+import { failAsJsonReporter } from './reporter-failures.js'
 import { ReporterOutput } from './reporter-output.service.js'
-
-const failAsJsonReporter = <E = unknown>(cause: E): Reporter.ReporterFailed =>
-  Reporter.ReporterFailed.make({
-    reporterName: 'json',
-    event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
-  })
 
 const reportOf = Filter.make((
   event: Reporter.ReporterEvent,
@@ -89,12 +81,3 @@ export const jsonReportCell = Sandwich.named(SpanTaxonomy.Spans.reportJson.name)
     JsonReportSuppressed: () => Effect.void,
     CommandRejected: ({ issue }) => Effect.fail(failAsJsonReporter(issue)),
   })
-
-type ReporterCellServices<C> = C extends Cell.Cell<infer _I, infer _A, infer _E, infer S> ? S : never
-
-export const jsonReporterFactory = (
-  context: Context.Context<ReporterCellServices<typeof jsonReportCell>>,
-): Reporter.ReporterFactory => {
-  const report = Cell.provideContext(jsonReportCell, context)
-  return (options) => (events) => Effect.asVoid(report.run({ options, events }))
-}

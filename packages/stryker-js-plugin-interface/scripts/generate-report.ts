@@ -12,5 +12,5 @@ const write = (relativePath: string, contents: string): void => {
   writeFileSync(target, contents)
 }
 
-write('src/generated/report.generated.ts', reportModuleSource())
+write('src/generated/report.schema.ts', reportModuleSource())
 write('contract/report.schema.json', reportDocumentSource())

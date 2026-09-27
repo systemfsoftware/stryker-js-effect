@@ -1,9 +1,7 @@
-import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
-import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Filter from 'effect/Filter'
 import * as Match from 'effect/Match'
@@ -20,15 +18,9 @@ import {
   type ReportSpan,
   type Tone,
 } from './render-clear-text-report.workflow.js'
+import { failAsClearText } from './reporter-failures.js'
 import { type OutputChannel, ReporterOutput, type ReporterOutputShape } from './reporter-output.service.js'
 import { AnsiCode, type AnsiColor } from './reporting/ansi.schema.js'
-
-const failAsClearText = <E = unknown>(cause: E): Reporter.ReporterFailed =>
-  Reporter.ReporterFailed.make({
-    reporterName: 'clear-text',
-    event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
-  })
 
 interface TerminalReport {
   readonly report: Report.MutationTestResult
@@ -129,12 +121,3 @@ export const clearTextReportCell = Sandwich.named(SpanTaxonomy.Spans.reportClear
     ClearTextReportSuppressed: () => Effect.void,
     CommandRejected: ({ issue }) => Effect.fail(failAsClearText(issue)),
   })
-
-type ReporterCellServices<C> = C extends Cell.Cell<infer _I, infer _A, infer _E, infer S> ? S : never
-
-export const clearTextReporterFactory = (
-  context: Context.Context<ReporterCellServices<typeof clearTextReportCell>>,
-): Reporter.ReporterFactory => {
-  const report = Cell.provideContext(clearTextReportCell, context)
-  return (options) => (events) => Effect.asVoid(report.run({ options, events }))
-}

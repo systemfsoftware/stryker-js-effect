@@ -256,7 +256,7 @@ type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
   readonly testFiles: readonly string[]
 }
 
-export const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(function*(input: ReadProjectInput) {
+const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(function*(input: ReadProjectInput) {
   const mutatePatterns: readonly string[] = input.options.mutate
   const { testFileIgnores, testFilePatterns } = testFileSelectionOf(input.options)
   const inputFileNames = yield* resolveInputFileNames(ignoreRulesOf(input.options), input.basePath)
@@ -337,7 +337,7 @@ const makeProject = (
   return { fileDescriptions, incrementalReport, testFiles, files, filesToMutate }
 }
 
-export const projectOf = ({
+const projectOf = ({
   command,
   report,
 }: {

@@ -32,21 +32,16 @@ import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import { readIncrementalReuse } from './incremental-reuse.cell.js'
-import {
-  announceSettledMutant,
-  checkpointMutationResults,
-  reportingInputOf,
-  type RunContext,
-  runOnePlan,
-} from './mutant-run.cell.js'
+import { mutantRunCell } from './mutant-run.cell.js'
+import { announceSettledMutant, checkpointMutationResults, reportingInputOf, type RunContext } from './mutant-run.js'
+import { planMutationTest } from './mutation-test-plan.cell.js'
 import {
   configuredTestFilesOf,
   partitionPlannable,
-  planMutationTest,
   reportDroppedMutants,
   sandboxFilesOf,
   toReportedMutant,
-} from './mutation-test-plan.cell.js'
+} from './mutation-test-plan.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 import { scoped as testRunnerPoolScoped } from './test-runner-pool.blueprint.js'
@@ -179,7 +174,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
         Stream.fromIterable(passedPlans),
         (runPlan) =>
           Effect.scoped(
-            runOnePlan({ context, testRunnerPool, checkpointGate, completedMutants, plan: runPlan }),
+            mutantRunCell.run({ context, testRunnerPool, checkpointGate, completedMutants, plan: runPlan }),
           ),
         { concurrency: Math.max(1, testRunnerCapacity) },
       ).pipe(

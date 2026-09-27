@@ -8,9 +8,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Stream from 'effect/Stream'
 
-import { clearTextReporterFactory } from './clear-text-report.cell.js'
-import { jsonReporterFactory } from './json-report.cell.js'
-import { progressReporterFactory } from './progress-report.cell.js'
+import { clearTextReporterFactory, jsonReporterFactory, progressReporterFactory } from './reporter-factories.js'
 import {
   HumanReporterSchema,
   JsonReporterSchema,

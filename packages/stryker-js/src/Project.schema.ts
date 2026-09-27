@@ -1,5 +1,5 @@
 import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import * as MutableHashMap from 'effect/MutableHashMap'
+import type * as MutableHashMap from 'effect/MutableHashMap'
 
 import type { IncrementalReport } from './IncrementalReport.schema.js'
 

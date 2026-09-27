@@ -1,7 +1,6 @@
 /// <reference types="vitest/importMeta" />
 import * as S from 'effect/Schema'
 
-import { duplicatedValue } from './duplicated-value.js'
 import { MutatorName } from './Mutant.schema.js'
 
 export const Id = S.String.check(
@@ -55,6 +54,11 @@ export const Provider = S.String.check(
 export type Provider = typeof Provider.Type
 
 const CatalogShape = S.Struct({ provider: Provider, entries: S.NonEmptyArray(Entry) })
+
+export type CatalogText = string
+
+export const duplicatedValue = (values: readonly CatalogText[]): string | undefined =>
+  values.find((value, index) => values.indexOf(value) !== index)
 
 const namespaceOf = (name: string): string | undefined => {
   const slash = name.indexOf('/')

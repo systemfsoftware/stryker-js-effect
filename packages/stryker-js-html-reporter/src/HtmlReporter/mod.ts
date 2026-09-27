@@ -1,1 +1,1 @@
-export { makeHtmlReporter } from '../write-html-report.cell.js'
+export { makeHtmlReporter } from '../html-reporter.js'

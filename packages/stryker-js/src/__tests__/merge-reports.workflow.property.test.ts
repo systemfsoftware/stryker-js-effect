@@ -11,7 +11,7 @@ import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { decodeMerge, writeEncoded } from '../merge-reports.cell.js'
+import { decodeMerge, writeEncoded } from '../merge-reports.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
 
 const META_TEXT = '{"package":"pkg-a","outcome":"success"}'
