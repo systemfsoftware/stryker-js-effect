@@ -18,6 +18,7 @@ export default defineConfig({
       '@std/jsonc',
       '@systemfsoftware/stryker-framework-interface',
       '@systemfsoftware/stryker-ignorer-interface',
+      '@systemfsoftware/stryker-js-cli-contract',
       '@systemfsoftware/stryker-js-html-reporter',
       '@systemfsoftware/stryker-js-instrumenter',
       '@systemfsoftware/stryker-js-plugin-interface',

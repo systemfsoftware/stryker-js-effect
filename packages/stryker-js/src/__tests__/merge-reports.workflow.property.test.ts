@@ -10,17 +10,17 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { decodeMerge, writeEncoded } from '../merge-reports.cell.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
-import { RunMutantTested } from '../run-event.schema.js'
 
 const META_TEXT = '{"package":"pkg-a","outcome":"success"}'
 const PART_DIR = 'pkg-a'
 
-const streamLineOf = (mutant: RunMutantTested): Effect.Effect<string> =>
-  S.encodeEffect(S.fromJsonString(RunMutantTested))(mutant).pipe(Effect.orDie)
+const streamLineOf = (mutant: RunEvent.RunMutantTested): Effect.Effect<string> =>
+  S.encodeEffect(S.fromJsonString(RunEvent.RunMutantTested))(mutant).pipe(Effect.orDie)
 
-const place = (mutants: ReadonlyArray<RunMutantTested>) =>
+const place = (mutants: ReadonlyArray<RunEvent.RunMutantTested>) =>
   mutants.map((mutant, index) =>
     Reporter.MutantTested.make({
       id: mutant.id,
@@ -42,12 +42,12 @@ const partFromStreamText = (streamText: string) => {
   return Result.isSuccess(result) ? result.success.command.parts[0] : undefined
 }
 
-const partFromMutants = (mutants: ReadonlyArray<RunMutantTested>) =>
+const partFromMutants = (mutants: ReadonlyArray<RunEvent.RunMutantTested>) =>
   Effect.forEach(place(mutants), streamLineOf).pipe(
     Effect.map((lines) => partFromStreamText(lines.length === 0 ? '{"_tag":"stream"}\n' : lines.join('\n'))),
   )
 
-const expectedFiles = (mutants: ReadonlyArray<RunMutantTested>) => {
+const expectedFiles = (mutants: ReadonlyArray<RunEvent.RunMutantTested>) => {
   const grouped: Record<string, ReadonlyArray<string>> = {}
   for (const mutant of mutants) {
     grouped[mutant.fileName] = [...(grouped[mutant.fileName] ?? []), `${mutant.id}:${mutant.mutatorName}`]
@@ -92,7 +92,7 @@ const printedSummaryOf = (mode: 'human' | 'machine', summary: string) =>
 describe('merge-reports', () => {
   it.effect.prop(
     '∀ms_StreamedMutants_≡DecodedMergeRebuildsEachIntoItsFile',
-    { of: [Arbitrary.schema(S.Array(RunMutantTested))], subject: partFromMutants },
+    { of: [Arbitrary.schema(S.Array(RunEvent.RunMutantTested))], subject: partFromMutants },
     (subject, [mutants]) =>
       Effect.map(subject(mutants), (part) => {
         if (part === undefined) {

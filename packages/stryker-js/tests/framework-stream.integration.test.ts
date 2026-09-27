@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { RunEvent } from '@systemfsoftware/stryker-js'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as S from 'effect/Schema'

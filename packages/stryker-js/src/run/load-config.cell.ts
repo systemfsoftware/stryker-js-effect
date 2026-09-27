@@ -8,11 +8,11 @@ import type * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import type { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
 import { forkOptionsSchema } from '../Config.schema.js'
 import type { ConfigEnv } from '../config/stryker-config.schema.js'
 import { ConfigError } from '../ConfigError.schema.js'
 import { type ConfigReadError, readConfigDocument } from '../drivers/config.js'
-import type { OutputMode } from '../output-mode.schema.js'
 import { describeConfigError, DescribeConfigErrorCommand } from './describe-config-error.workflow.js'
 import { LoadConfigCommand, resolveConfig } from './resolve-config.workflow.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
@@ -27,7 +27,7 @@ export type { ValidationSchemaDocument } from './validate-options-admission.work
 
 export interface ConfigInvocation {
   readonly command: 'run' | 'merge-reports'
-  readonly mode: OutputMode
+  readonly mode: OutputMode.OutputMode
 }
 
 export interface LoadedConfig {
@@ -44,7 +44,7 @@ const isCiEnvironment: Effect.Effect<boolean> = Config.String('CI').pipe(
 
 export const configEnvOf = (input: {
   readonly command: 'run' | 'merge-reports'
-  readonly mode: OutputMode
+  readonly mode: OutputMode.OutputMode
   readonly isDryRun: boolean
 }): Effect.Effect<ConfigEnv> =>
   Effect.map(isCiEnvironment, (isCi) => ({

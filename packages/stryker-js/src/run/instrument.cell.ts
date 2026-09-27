@@ -1,5 +1,6 @@
 /// <reference types="vitest/importMeta" />
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean } from 'effect'
@@ -18,8 +19,7 @@ import { InstrumentCommand, planInstrumentation } from '../plan-instrumentation.
 import { ProjectFiles } from '../project-files.service.js'
 import type { Project, ProjectFile } from '../Project.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
-import type { SkippedFileRow } from '../run-event.schema.js'
-import { RunEvents, SkippedReported } from '../run-events.service.js'
+import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { makeSandbox } from '../Sandbox.blueprint.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
@@ -47,8 +47,8 @@ const reportSkippedFiles = Effect.fn('stryker.instrument.report-skips')(
           ExplainFileSkipCommand.make({ extension: skip.extension, claimants: [...input.claimants] }),
         ),
         {
-          onFailure: absurd<SkippedFileRow>,
-          onSuccess: (explained): SkippedFileRow => ({
+          onFailure: absurd<RunEvent.SkippedFileRow>,
+          onSuccess: (explained): RunEvent.SkippedFileRow => ({
             file: skip.file,
             extension: skip.extension,
             reason: explained.reason,
@@ -57,7 +57,7 @@ const reportSkippedFiles = Effect.fn('stryker.instrument.report-skips')(
       )
     )
     const queue = yield* RunEvents
-    yield* Queue.offer(queue, SkippedReported.make({ files }))
+    yield* Queue.offer(queue, RunEvent.SkippedReported.make({ files }))
   },
 )
 

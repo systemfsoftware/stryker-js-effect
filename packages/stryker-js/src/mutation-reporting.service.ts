@@ -1,4 +1,5 @@
 /// <reference types="vitest/importMeta" />
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
@@ -28,6 +29,12 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
+import {
+  type CheckpointMutantRow,
+  checkpointMutants,
+  CheckpointMutantsCommand,
+  CheckpointSettledMutant,
+} from './checkpoint-mutants.workflow.js'
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
 import type { FormatIdentity } from './IncrementalDiff.schema.js'
 import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
@@ -39,8 +46,7 @@ import { closeReporterStage, offerTerminalReport, terminalDrainClass } from './r
 import { metricsResultFromFiles } from './reporting/metrics-from-report.js'
 import { ReportFileNames } from './reporting/report-assembly.schema.js'
 import { buildVerdictEnvelope } from './reporting/verdict-envelope.js'
-import { type RunEvent, RunId } from './run-event.schema.js'
-import { RunEvents, VerdictReached } from './run-events.service.js'
+import { RunEvents } from './run-events.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
@@ -116,7 +122,10 @@ export interface MutationReportingService {
     result: TestRunner.MutantRunResult,
   ) => Effect.Effect<Mutant.RunMutantResult>
   readonly reportAll: (input: MutationReportingInput) => Effect.Effect<MutationTestDone, PlatformError>
-  readonly checkpoint: (input: MutationReportingInput) => Effect.Effect<void, PlatformError>
+  readonly checkpoint: (
+    input: MutationReportingInput,
+    plannedMutants: readonly Mutant.Mutant[],
+  ) => Effect.Effect<void, PlatformError>
 }
 
 export class MutationReporting extends Context.Service<MutationReporting, MutationReportingService>()(
@@ -138,7 +147,7 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
         reportCheckFailure: (mutant, result) => reportCheckFailure(mutant, result),
         reportMutantRunResult: (mutant, result) => mapRunResult(mutant, result),
         reportAll: (input) => reportAll(deps, input),
-        checkpoint: (input) => checkpoint(deps, input),
+        checkpoint: (input, plannedMutants) => checkpoint(deps, input, plannedMutants),
       })
     }),
   )
@@ -147,7 +156,7 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
 interface MutationReportingDeps {
   readonly fs: FileSystem.FileSystem
   readonly path: Path.Path
-  readonly events: Queue.Queue<RunEvent, Cause.Done>
+  readonly events: Queue.Queue<RunEvent.RunEvent, Cause.Done>
   readonly projectFiles: ProjectFilesShape
 }
 
@@ -625,13 +634,13 @@ const emitVerdict = Effect.fn('stryker.mutationReporting.emitVerdict')(function*
     report,
     input.resolvedMode.mode,
     input.resolvedMode.signal,
-    RunId.make(input.runId),
+    RunEvent.RunId.make(input.runId),
     input.basePath,
     deps.path,
   )
   yield* Queue.offer(
     deps.events,
-    VerdictReached.make({
+    RunEvent.VerdictReached.make({
       schemaVersion: envelope.schemaVersion,
       runId: envelope.runId,
       mode: envelope.mode,
@@ -725,18 +734,63 @@ const slimIncrementalReport = Effect.fn('stryker.mutationReporting.slimIncrement
   }
 })
 
+const killedByField = (killedBy: readonly string[] | undefined) =>
+  Option.match(Option.fromUndefinedOr(killedBy), {
+    onNone: (): { readonly killedBy?: readonly string[] } => ({}),
+    onSome: (present) => ({ killedBy: [...present] }),
+  })
+
+const settledCheckpointRowOf = (result: Mutant.RunMutantResult): CheckpointSettledMutant =>
+  CheckpointSettledMutant.make({
+    mutant: result,
+    status: result.status,
+    ...killedByField(result.killedBy),
+  })
+
+const checkpointResultOf = (row: CheckpointMutantRow): Mutant.RunMutantResult =>
+  Match.valueTags(row, {
+    CheckpointSettledMutant: ({ killedBy, mutant, status }) => ({
+      ...mutant,
+      status,
+      ...killedByField(killedBy),
+    }),
+    CheckpointPendingMutant: ({ mutant }) => ({ ...mutant, status: 'Pending' as const }),
+  })
+
+const checkpointResultsOf = (
+  input: MutationReportingInput,
+  plannedMutants: readonly Mutant.Mutant[],
+): readonly Mutant.RunMutantResult[] =>
+  Result.match(
+    checkpointMutants(
+      CheckpointMutantsCommand.make({
+        plannedMutants: [...plannedMutants],
+        settled: input.results.map(settledCheckpointRowOf),
+      }),
+    ),
+    {
+      onFailure: (refused) => refused,
+      onSuccess: (rows) => rows.map(checkpointResultOf),
+    },
+  )
+
 const checkpointIncremental = Effect.fn('stryker.mutationReporting.checkpoint')(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
+  plannedMutants: readonly Mutant.Mutant[],
 ) {
-  const report = yield* slimIncrementalReport(deps, input, input.results)
+  const report = yield* slimIncrementalReport(deps, input, checkpointResultsOf(input, plannedMutants))
   const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(report).pipe(Effect.orDie)
   yield* writeAtomic(deps, input.options.incrementalFile, json)
 })
 
-const checkpoint = (deps: MutationReportingDeps, input: MutationReportingInput) =>
+const checkpoint = (
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  plannedMutants: readonly Mutant.Mutant[],
+) =>
   Boolean.match(input.options.incremental, {
-    onTrue: () => checkpointIncremental(deps, input),
+    onTrue: () => checkpointIncremental(deps, input, plannedMutants),
     onFalse: () => Effect.void,
   })
 

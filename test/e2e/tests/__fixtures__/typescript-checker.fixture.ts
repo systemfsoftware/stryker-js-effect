@@ -1,4 +1,4 @@
-import type { RunEvent } from '@systemfsoftware/stryker-js'
+import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import { Effect, Schema } from 'effect'

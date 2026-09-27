@@ -1,0 +1,82 @@
+{
+  "name": "@systemfsoftware/stryker-js-cli-contract",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "packages/stryker-js-cli-contract"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-cli-contract#readme",
+  "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
+  "description": "The Stryker CLI product contract — the machine-stream events and their wire codec, the stream version, the stock mutator catalog and the span taxonomy.",
+  "type": "module",
+  "files": [
+    "dist",
+    "contract"
+  ],
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "tsdown",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "attw": "attw --pack .",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "api:check": "api-extractor run",
+    "api:update": "api-extractor run --local",
+    "generate:contract": "tsx --conditions=@systemfsoftware/source scripts/generate-contract.ts",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text} && effect-tsgo diagnostics --project tsconfig.test.json --format ${TSGO_FORMAT:-text}"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-node-shared": "catalog:",
+    "@effect/tsgo": "catalog:",
+    "@microsoft/api-extractor": "catalog:",
+    "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-gherkin-spec": "catalog:",
+    "@systemfsoftware/effect-schema-law": "catalog:",
+    "@systemfsoftware/effect-schema-vite": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
+    "@systemfsoftware/vitest": "catalog:",
+    "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/node": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "./package.json": "./package.json",
+      "./contract/stream.schema.json": "./contract/stream.schema.json",
+      "./contract/stock-catalog.json": "./contract/stock-catalog.json"
+    }
+  },
+  "exports": {
+    ".": {
+      "@systemfsoftware/source": "./src/mod.ts",
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json",
+    "./contract/stream.schema.json": "./contract/stream.schema.json",
+    "./contract/stock-catalog.json": "./contract/stock-catalog.json"
+  }
+}

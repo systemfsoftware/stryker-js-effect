@@ -159,6 +159,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     progressQueue,
     completedRef,
     plannedTotal: plan.plannedTotal,
+    plannedMutants: [...rememberedResults, ...reuse.mutants],
     pathService,
   }
   const settledResults = [...rememberedResults, ...plan.earlyResults, ...checkerResults]

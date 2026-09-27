@@ -1,4 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import type { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Config from 'effect/Config'
@@ -24,7 +25,6 @@ import {
   ReportPart,
 } from './merge-report-parts.workflow.js'
 import { MergeReportsFailed, PartMetaSchema } from './merge-reports.schema.js'
-import type { OutputMode } from './output-mode.schema.js'
 import { reportFromStream, ReportFromStreamCommand } from './report-from-stream.workflow.js'
 import { metricsResultFromFiles } from './reporting/metrics-from-report.js'
 import {
@@ -52,7 +52,7 @@ type MergeCommand = typeof MergeReportPartsCommand.Encoded & {
   readonly partsDir: string
   readonly skipped: readonly string[]
   readonly unreadable: readonly string[]
-  readonly mode: OutputMode
+  readonly mode: OutputMode.OutputMode
 }
 
 type EncodedMerge = {
@@ -61,7 +61,7 @@ type EncodedMerge = {
   readonly unreadable: readonly string[]
 }
 
-export type MergeReportsInvocation = MergeReportsRequest & { readonly mode: OutputMode }
+export type MergeReportsInvocation = MergeReportsRequest & { readonly mode: OutputMode.OutputMode }
 
 const refuse = (reason: string) => MergeReportsFailed.make({ reason })
 

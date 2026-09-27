@@ -4,8 +4,8 @@ import { SchemaGetter } from 'effect'
 import * as S from 'effect/Schema'
 
 import { ModeSignal, OutputMode } from './output-mode.schema.js'
-import { PluginLoadFailureReason } from './PluginsError.schema.js'
-import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
+import { PluginLoadFailureReason } from './plugin-load-failure-reason.schema.js'
+import { StreamSchemaVersion } from './stream-version.schema.js'
 
 export const RunPhase = S.Literals(['prepare', 'instrument', 'dry-run', 'mutation-test'])
 export type RunPhase = typeof RunPhase.Type
@@ -189,37 +189,3 @@ export const RunEvent = Object.assign(
 export type RunEvent = typeof RunEvent.Type
 
 export type RunTerminalEvent = VerdictReached | RunFailed | HelpRendered
-
-export class RunCommand extends S.TaggedClass<RunCommand>()('RunCommand', {
-  cliOptionsJson: S.String,
-  targetMutatePatterns: S.Array(S.String),
-}) {}
-
-export class RunOutput extends S.TaggedClass<RunOutput>()('RunOutput', {
-  verdictJson: S.String,
-  exitCode: Plugin.ExitCode,
-}) {}
-
-export class RunDecodeError extends S.TaggedError<RunDecodeError>()('RunDecodeError', {
-  message: S.String,
-}) {}
-
-export class RunReadError extends S.TaggedError<RunReadError>()('RunReadError', {
-  message: S.String,
-}) {}
-
-export class RunWriteError extends S.TaggedError<RunWriteError>()('RunWriteError', {
-  message: S.String,
-}) {}
-
-export class PlanMutationRunCommand extends S.TaggedClass<PlanMutationRunCommand>()('PlanMutationRunCommand', {
-  configMutatePatterns: S.Array(S.String),
-  configMutatorNames: S.Array(S.String),
-  targetMutatePatterns: S.Array(S.String),
-  availableMutators: S.Array(S.String),
-}) {}
-
-export class MutationRunPlan extends S.TaggedClass<MutationRunPlan>()('MutationRunPlan', {
-  mutatePatterns: S.Array(S.String),
-  mutatorNames: S.Array(S.String),
-}) {}

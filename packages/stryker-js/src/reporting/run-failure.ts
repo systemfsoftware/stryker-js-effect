@@ -1,3 +1,4 @@
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -5,7 +6,6 @@ import * as S from 'effect/Schema'
 
 import type { FailedRunOutcome, RunOutcomeDecision, RunOutcomeError } from '../classify-run-outcome.workflow.js'
 import { ErrorEnvelope, RunExitCode } from './run-failure.schema.js'
-import { StreamSchemaVersion } from './stream-version.schema.js'
 
 const CONFIG_CODE = 2
 const UNKNOWN_FAILURE = 'Unknown failure'
@@ -71,7 +71,7 @@ export const errorEnvelopeFromOutcome = (input: {
   readonly captured: string
 }): ErrorEnvelope =>
   ErrorEnvelope.make({
-    schemaVersion: StreamSchemaVersion.literal,
+    schemaVersion: RunEvent.StreamSchemaVersion.literal,
     code: exitCodeOf(input.error),
     error: failureTextOf(input.error, input.captured),
     remediation: remediationTextOf(input.error),

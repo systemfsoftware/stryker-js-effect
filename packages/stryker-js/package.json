@@ -67,6 +67,7 @@
     "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "catalog:stryker",
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "@systemfsoftware/stryker-js": "catalog:stryker",
+    "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/stryker-js-html-reporter": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",

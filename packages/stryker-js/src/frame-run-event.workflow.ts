@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { OutputMode, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
@@ -6,17 +7,14 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { ModeSignal, OutputMode } from './output-mode.schema.js'
-import { RunEvent } from './run-event.schema.js'
-
 const FrameRunEventTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js/FrameRunEventDecision',
 )
 type FrameRunEventTypeId = typeof FrameRunEventTypeId
 
 export const FramingState = S.Struct({
-  mode: OutputMode,
-  signal: ModeSignal,
+  mode: OutputMode.OutputMode,
+  signal: OutputMode.ModeSignal,
   headerWritten: S.Boolean,
   terminalSeen: S.Boolean,
   completed: Report.NonNegativeInt,
@@ -28,7 +26,7 @@ export class FrameRunEventCommand extends S.TaggedClass<FrameRunEventCommand>()(
   'FrameRunEventCommand',
   {
     state: FramingState,
-    event: RunEvent,
+    event: RunEvent.RunEvent,
   },
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -36,7 +34,7 @@ export class FrameRunEventCommand extends S.TaggedClass<FrameRunEventCommand>()(
 
 export class EventFramed extends S.TaggedClass<EventFramed>()('EventFramed', {
   state: FramingState,
-  event: RunEvent,
+  event: RunEvent.RunEvent,
   stderrLine: S.NullOr(S.String),
 }) {
   readonly [FrameRunEventTypeId] = FrameRunEventTypeId
@@ -55,12 +53,12 @@ export class EventSuppressed extends S.TaggedClass<EventSuppressed>()(
 export type FrameRunEventDecision = EventFramed | EventSuppressed
 
 export const ResolvedModeInput = S.Struct({
-  mode: OutputMode,
-  signal: ModeSignal,
+  mode: OutputMode.OutputMode,
+  signal: OutputMode.ModeSignal,
 })
 export type ResolvedModeInput = typeof ResolvedModeInput.Type
 
-const nextFramingState = (state: FramingState, event: RunEvent): FramingState =>
+const nextFramingState = (state: FramingState, event: RunEvent.RunEvent): FramingState =>
   Match.value(event).pipe(
     Match.tag('verdict', 'error', 'help', () =>
       FramingState.make({
@@ -98,7 +96,7 @@ const nextFramingState = (state: FramingState, event: RunEvent): FramingState =>
     Match.exhaustive,
   )
 
-const noteState = (state: FramingState, event: RunEvent): FramingState => nextFramingState(state, event)
+const noteState = (state: FramingState, event: RunEvent.RunEvent): FramingState => nextFramingState(state, event)
 
 const formatScore = (score: number | null): string =>
   Option.match(Option.fromNullishOr(score), {
@@ -112,7 +110,7 @@ const formatTotal = (total: number | null): string =>
     onSome: (val) => String(val),
   })
 
-const formatStderrEvent = (event: RunEvent): string | null =>
+const formatStderrEvent = (event: RunEvent.RunEvent): string | null =>
   Match.value(event).pipe(
     Match.tag('plan', (e) => `plan ${e.total} mutants`),
     Match.tag('phase', (e) => `phase ${e.phase}`),
@@ -134,7 +132,7 @@ const formatStderrEvent = (event: RunEvent): string | null =>
     Match.exhaustive,
   )
 
-const stderrLineFor = (state: FramingState, event: RunEvent): string | null =>
+const stderrLineFor = (state: FramingState, event: RunEvent.RunEvent): string | null =>
   Boolean.match(Boolean.and(state.mode === 'human', !state.terminalSeen), {
     onTrue: () => formatStderrEvent(event),
     onFalse: () => null,

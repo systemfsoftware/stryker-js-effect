@@ -1,4 +1,4 @@
-import { RunEvent } from '@systemfsoftware/stryker-js'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Effect, Option, Schema } from 'effect'
 
 const TERMINAL_PREVIEW_CHARS = 4_000

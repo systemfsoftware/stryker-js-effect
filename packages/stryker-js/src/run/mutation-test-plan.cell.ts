@@ -1,4 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
@@ -24,7 +25,7 @@ import {
 } from '../plan-mutant-tests.workflow.js'
 import type { Project } from '../Project.schema.js'
 import { offerReporterEvent, type ReporterStage } from '../reporter-stream.service.js'
-import { PlanKnown, RunEvents } from '../run-events.service.js'
+import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
@@ -294,7 +295,7 @@ export const planMutationTest = Effect.fn('stryker.mutation_test.plan')(function
   const progressQueue = yield* RunEvents
   yield* Queue.offer(
     progressQueue,
-    PlanKnown.make({ total: plansForReporter.length + earlyResults.length }),
+    RunEvent.PlanKnown.make({ total: plansForReporter.length + earlyResults.length }),
   )
   return { runPlans: sortedPlans, earlyResults, plannedTotal, plansForReporter }
 })

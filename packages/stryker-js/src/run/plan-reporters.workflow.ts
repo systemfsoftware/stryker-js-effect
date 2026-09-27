@@ -5,7 +5,7 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { OutputMode } from '../output-mode.schema.js'
+import { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
 import { HumanReporterSchema, ProgressReporterSchema, StreamReporterSchema } from '../reporter-name.schema.js'
 
 const ReporterPlanTypeId = Symbol.for('@systemfsoftware/stryker-js/ReporterPlanDecision')
@@ -35,7 +35,7 @@ const machineReportersFrom = (configured: readonly string[]): readonly string[] 
 
 export class ReporterPlanCommand extends S.TaggedClass<ReporterPlanCommand>()('ReporterPlanCommand', {
   configured: S.Array(S.String),
-  mode: OutputMode,
+  mode: OutputMode.OutputMode,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     mode: 'stryker.reporter_plan.mode',

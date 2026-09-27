@@ -1,0 +1,864 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/streamEncoded"
+    },
+    {
+      "$ref": "#/definitions/phaseEncoded"
+    },
+    {
+      "$ref": "#/definitions/planEncoded"
+    },
+    {
+      "$ref": "#/definitions/mutantTestedEncoded"
+    },
+    {
+      "$ref": "#/definitions/tickEncoded"
+    },
+    {
+      "$ref": "#/definitions/pluginsEncoded"
+    },
+    {
+      "$ref": "#/definitions/formatsEncoded"
+    },
+    {
+      "$ref": "#/definitions/skippedEncoded"
+    },
+    {
+      "$ref": "#/definitions/verdictEncoded"
+    },
+    {
+      "$ref": "#/definitions/errorEncoded"
+    },
+    {
+      "$ref": "#/definitions/helpEncoded"
+    }
+  ],
+  "definitions": {
+    "streamEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "stream"
+          ]
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1.1"
+          ]
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "human",
+            "machine"
+          ]
+        },
+        "signal": {
+          "type": "string",
+          "enum": [
+            "flag",
+            "env",
+            "tty",
+            "agent",
+            "tool"
+          ]
+        }
+      },
+      "required": [
+        "_tag",
+        "schemaVersion",
+        "runId",
+        "mode",
+        "signal"
+      ],
+      "additionalProperties": true
+    },
+    "phaseEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "phase"
+          ]
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "prepare",
+            "instrument",
+            "dry-run",
+            "mutation-test"
+          ]
+        },
+        "elapsedMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "_tag",
+        "phase",
+        "elapsedMs"
+      ],
+      "additionalProperties": true
+    },
+    "planEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "plan"
+          ]
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "_tag",
+        "total"
+      ],
+      "additionalProperties": true
+    },
+    "mutantTestedEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "mutant"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Killed",
+            "Survived",
+            "NoCoverage",
+            "CompileError",
+            "RuntimeError",
+            "Timeout",
+            "Ignored",
+            "Pending"
+          ]
+        },
+        "file": {
+          "type": "string"
+        },
+        "location": {},
+        "mutator": {
+          "type": "string"
+        },
+        "replacement": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "_tag",
+        "id",
+        "status",
+        "file",
+        "location",
+        "mutator",
+        "replacement",
+        "completed",
+        "total"
+      ],
+      "additionalProperties": true
+    },
+    "tickEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "tick"
+          ]
+        },
+        "elapsedMs": {
+          "type": "number",
+          "minimum": 0
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "_tag",
+        "elapsedMs",
+        "completed",
+        "total"
+      ],
+      "additionalProperties": true
+    },
+    "pluginsEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "plugins"
+          ]
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "moduleName": {
+                "type": "string"
+              },
+              "contributions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "formatId": {
+                      "type": "string"
+                    },
+                    "extensions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "formatId",
+                    "extensions"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            },
+            "required": [
+              "moduleName",
+              "contributions"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "shadowings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "extension": {
+                "type": "string"
+              },
+              "winner": {
+                "type": "string"
+              },
+              "loser": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "extension",
+              "winner",
+              "loser"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "_tag",
+        "modules",
+        "shadowings"
+      ],
+      "additionalProperties": true
+    },
+    "formatsEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "formats"
+          ]
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "extension": {
+                "type": "string"
+              },
+              "formatId": {
+                "type": "string"
+              },
+              "ownerModule": {
+                "type": "string"
+              },
+              "language": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "extension",
+              "formatId",
+              "ownerModule",
+              "language"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "_tag",
+        "rows"
+      ],
+      "additionalProperties": true
+    },
+    "skippedEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "skipped"
+          ]
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "extension": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "file",
+              "extension",
+              "reason"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "_tag",
+        "files"
+      ],
+      "additionalProperties": true
+    },
+    "thresholds": {
+      "type": "object",
+      "properties": {
+        "high": {
+          "description": "Higher bound threshold.",
+          "examples": [
+            80
+          ],
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "low": {
+          "description": "Lower bound threshold.",
+          "examples": [
+            60
+          ],
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "break": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The mutation score below which the run breaks. Null disables the break."
+        }
+      },
+      "required": [
+        "high",
+        "low"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "Thresholds",
+      "description": "Thresholds for the status of the reported application."
+    },
+    "MetricsEncoded": {
+      "type": "object",
+      "properties": {
+        "pending": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "killed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "survived": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "noCoverage": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtimeErrors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "compileErrors": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ignored": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "pending",
+        "killed",
+        "timeout",
+        "survived",
+        "noCoverage",
+        "runtimeErrors",
+        "compileErrors",
+        "ignored"
+      ],
+      "additionalProperties": true
+    },
+    "position": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "examples": [
+            4
+          ],
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "examples": [
+            3
+          ],
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "line",
+        "column"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "Position",
+      "description": "Position of a mutation. Both line and column start at one."
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "$ref": "#/definitions/position"
+        },
+        "end": {
+          "$ref": "#/definitions/position"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "Location",
+      "description": "A location with start and end. Start is inclusive, end is exclusive."
+    },
+    "verdictEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "verdict"
+          ]
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1.1"
+          ]
+        },
+        "runId": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "human",
+            "machine"
+          ]
+        },
+        "signal": {
+          "type": "string",
+          "enum": [
+            "flag",
+            "env",
+            "tty",
+            "agent",
+            "tool"
+          ]
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thresholds": {
+          "$ref": "#/definitions/thresholds"
+        },
+        "reportFile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "counts": {
+          "$ref": "#/definitions/MetricsEncoded"
+        },
+        "mutants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "location": {
+                "$ref": "#/definitions/location"
+              },
+              "mutator": {
+                "type": "string"
+              },
+              "replacement": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "Killed",
+                  "Survived",
+                  "NoCoverage",
+                  "CompileError",
+                  "RuntimeError",
+                  "Timeout",
+                  "Ignored",
+                  "Pending"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "file",
+              "location",
+              "mutator",
+              "replacement",
+              "status"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "required": [
+        "_tag",
+        "schemaVersion",
+        "runId",
+        "mode",
+        "signal",
+        "score",
+        "thresholds",
+        "reportFile",
+        "counts",
+        "mutants"
+      ],
+      "additionalProperties": true
+    },
+    "errorEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "error"
+          ]
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1.1"
+          ]
+        },
+        "code": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "error": {
+          "type": "string"
+        },
+        "remediation": {
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "PeerMissing"
+                      ]
+                    },
+                    "peer": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "peer"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "PeerVersionUnsupported"
+                      ]
+                    },
+                    "peer": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "peer",
+                    "detail"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "PeerUnrecognized"
+                      ]
+                    },
+                    "peer": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "peer"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "InvalidContribution"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "detail"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "ImportFailed"
+                      ]
+                    },
+                    "cause": {}
+                  },
+                  "required": [
+                    "_tag",
+                    "cause"
+                  ],
+                  "additionalProperties": true
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "_tag",
+        "schemaVersion",
+        "code",
+        "error",
+        "remediation",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "helpEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "help"
+          ]
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "1.1"
+          ]
+        },
+        "code": {
+          "anyOf": [
+            {
+              "type": "number",
+              "enum": [
+                0
+              ]
+            }
+          ]
+        },
+        "help": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "_tag",
+        "schemaVersion",
+        "code",
+        "help"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

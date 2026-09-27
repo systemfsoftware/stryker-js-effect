@@ -7,7 +7,7 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
 
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
-import { RunEvent } from '@systemfsoftware/stryker-js'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 
 import type { BakeOutcome } from '../src/Harness/bake-key.schema.js'
 import { BakedFixtureCache } from '../src/Harness/fixture-cache.service.js'

@@ -4,8 +4,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-
-import { ModeSignal } from './output-mode.schema.js'
+import { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
 
 const TOOL_VARIABLES = ['CLAUDECODE', 'CODEX_SANDBOX'] as const
 
@@ -36,14 +35,14 @@ export class ModeConflictError extends S.TaggedError<ModeConflictError>()('ModeC
 }
 
 export class HumanOutput extends S.TaggedClass<HumanOutput>()('HumanOutput', {
-  signal: ModeSignal,
+  signal: OutputMode.ModeSignal,
   stdoutIsTTY: S.Boolean,
 }) {
   readonly [ResolveModeTypeId] = ResolveModeTypeId
 }
 
 export class MachineOutput extends S.TaggedClass<MachineOutput>()('MachineOutput', {
-  signal: ModeSignal,
+  signal: OutputMode.ModeSignal,
   stdoutIsTTY: S.Boolean,
 }) {
   readonly [ResolveModeTypeId] = ResolveModeTypeId

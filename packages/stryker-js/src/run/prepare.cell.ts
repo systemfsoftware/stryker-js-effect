@@ -1,5 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options, type Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Schema as S } from 'effect'
@@ -37,8 +38,7 @@ import {
 import { type ReporterChoice, reporterInputsOf } from '../reporter-wiring.service.js'
 import { Reporter } from '../reporter.service.js'
 import { AnsiCode } from '../reporting/ansi.schema.js'
-import { type RunEvent } from '../run-events.service.js'
-import { PhaseEntered, RunEvents } from '../run-events.service.js'
+import { RunEvents } from '../run-events.service.js'
 import { PrepareError, StageError } from '../Run.schema.js'
 import { TemporaryDirectory } from '../Sandbox.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
@@ -83,7 +83,7 @@ export interface PrepareExecutorArgs {
 type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly now: number
   readonly env: RunEnvironmentShape
-  readonly queue: Queue.Queue<RunEvent, Cause.Done>
+  readonly queue: Queue.Queue<RunEvent.RunEvent, Cause.Done>
   readonly options: Options.StrykerOptions
   readonly loaded: LoadedPlugins
   readonly project: Project
@@ -261,7 +261,7 @@ const applyPrepare = Effect.fn('stryker.prepare.apply')(function*(
   const reporterInit = yield* currentReporterInit(span)
   const reporterStage = yield* attachReporterFactories(reporterInputs, raw.options, reporterInit)
   const { now } = raw
-  yield* Queue.offer(raw.queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - raw.env.runStartedAt }))
+  yield* Queue.offer(raw.queue, RunEvent.PhaseEntered.make({ phase: 'prepare', elapsedMs: now - raw.env.runStartedAt }))
   return {
     project: raw.project,
     loadedPlugins: raw.loaded,

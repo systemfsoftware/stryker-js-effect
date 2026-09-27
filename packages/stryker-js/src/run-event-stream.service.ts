@@ -18,6 +18,7 @@ import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
 import { defaultOptions } from './config/default-options.js'
@@ -31,10 +32,7 @@ import {
 import type { ResolvedMode } from './output-mode.schema.js'
 import { MachineConsole } from './reporting/machine-console.service.js'
 import { errorEnvelopeFromOutcome } from './reporting/run-failure.js'
-import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
 import { buildVerdictEnvelope, generateRunId } from './reporting/verdict-envelope.js'
-import { RunEventWireLine } from './run-event-wire.schema.js'
-import { Heartbeat, HelpRendered, RunEvent, RunFailed, RunId, RunStarted, VerdictReached } from './run-event.schema.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
@@ -203,8 +201,8 @@ const writeStderr = (stdio: Stdio.Stdio, line: string) =>
   Stream.run(Stream.succeed(`${line}\n`), stdio.stderr({ endOnDone: false })).pipe(Effect.ignore)
 
 export interface RunEventStream {
-  readonly queue: Queue.Queue<RunEvent, Cause.Done>
-  readonly runId: RunId
+  readonly queue: Queue.Queue<RunEvent.RunEvent, Cause.Done>
+  readonly runId: RunEvent.RunId
   readonly startedAt: number
   readonly isOpen: Effect.Effect<boolean, never, never>
   readonly ensureOpen: (openResolved: ResolvedModeInput) => Effect.Effect<void, never, never>
@@ -248,7 +246,7 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
   )
   return Queue.offer(
     stream.queue,
-    VerdictReached.make({
+    RunEvent.VerdictReached.make({
       schemaVersion: envelope.schemaVersion,
       runId: envelope.runId,
       mode: envelope.mode,
@@ -270,7 +268,7 @@ const offerFailureEnvelope = (
   const envelope = errorEnvelopeFromOutcome({ error: failed, captured })
   return Queue.offer(
     stream.queue,
-    RunFailed.make({
+    RunEvent.RunFailed.make({
       schemaVersion: envelope.schemaVersion,
       code: envelope.code,
       error: envelope.error,
@@ -283,8 +281,8 @@ const offerFailureEnvelope = (
 const emitHelpEnvelope = (stream: RunEventStream, help: string): Effect.Effect<void> =>
   Queue.offer(
     stream.queue,
-    HelpRendered.make({
-      schemaVersion: StreamSchemaVersion.literal,
+    RunEvent.HelpRendered.make({
+      schemaVersion: RunEvent.StreamSchemaVersion.literal,
       code: 0,
       help,
     }),
@@ -404,7 +402,7 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
     const drain = yield* RunEventDrain
     const startedAt = yield* Clock.currentTimeMillis
     const runId = generateRunId(DateTime.makeUnsafe(startedAt))
-    const queue = yield* Queue.bounded<RunEvent, Cause.Done>(RunEvent.QUEUE_BOUND)
+    const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const stateRef = yield* Ref.make<FramingState>(initialFramingState(resolved))
     const lifecycleRef = yield* SynchronizedRef.make<RunEventStreamLifecycle>({
       closed: false,
@@ -414,8 +412,8 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
     const offerStarted = (state: FramingState) =>
       Queue.offer(
         queue,
-        RunStarted.make({
-          schemaVersion: StreamSchemaVersion.literal,
+        RunEvent.RunStarted.make({
+          schemaVersion: RunEvent.StreamSchemaVersion.literal,
           runId,
           mode: state.mode,
           signal: state.signal,
@@ -435,7 +433,7 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
     const heartbeatTick = Effect.fn('stryker.runEventStream.tick')(function*() {
       const now = yield* Clock.currentTimeMillis
       const s = yield* Ref.get(stateRef)
-      return Heartbeat.make({
+      return RunEvent.Heartbeat.make({
         elapsedMs: now - startedAt,
         completed: s.completed,
         total: s.total,
@@ -459,7 +457,7 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
     })
 
     const framed = observed.pipe(
-      Stream.mapEffect((event: RunEvent) =>
+      Stream.mapEffect((event: RunEvent.RunEvent) =>
         Ref.modify(stateRef, (state) => {
           const decision = frameRunEvent(FrameRunEventCommand.make({ state, event }))
           return [decisionOf(decision), stateAfter(decision, state)] as const
@@ -476,7 +474,9 @@ export const makeRunEventStream = Effect.fn('stryker.runEventStream.make')(
         })
       ),
       Stream.filterMap(framedEventOf),
-      Stream.mapEffect((event: RunEvent) => S.encodeEffect(RunEventWireLine)(event).pipe(Effect.orDie)),
+      Stream.mapEffect((event: RunEvent.RunEvent) =>
+        S.encodeEffect(RunEvent.RunEventWireLine)(event).pipe(Effect.orDie)
+      ),
     )
 
     const startDrain = Effect.fn('stryker.runEventStream.startDrain')(function*() {

@@ -1,4 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Reporter, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
@@ -17,7 +18,6 @@ import { interpretMutantRun, MutantRunObservation } from '../interpret-mutant-ru
 import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
 import { invalidatesRunnerPool, type PooledTestRunner } from '../pooled-test-runner.handle.js'
 import { offerReporterEvent } from '../reporter-stream.service.js'
-import type { RunEvent } from '../run-event.schema.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import type { DryRunDone } from './dry-run.cell.js'
@@ -34,9 +34,10 @@ export interface RunContext {
   readonly prev: DryRunDone
   readonly env: RunEnvironmentShape
   readonly reporting: MutationReportingService
-  readonly progressQueue: Queue.Queue<RunEvent, Cause.Done>
+  readonly progressQueue: Queue.Queue<RunEvent.RunEvent, Cause.Done>
   readonly completedRef: Ref.Ref<number>
   readonly plannedTotal: number
+  readonly plannedMutants: readonly Mutant.Mutant[]
   readonly pathService: Path.Path
 }
 
@@ -163,7 +164,10 @@ export const checkpointMutationResults = Effect.fnUntraced(function*(
   completedMutants: Ref.Ref<readonly Mutant.RunMutantResult[]>,
 ) {
   const input = yield* Ref.get(completedMutants)
-  yield* context.reporting.checkpoint(reportingInputOf({ prev: context.prev, env: context.env, results: input })).pipe(
+  yield* context.reporting.checkpoint(
+    reportingInputOf({ prev: context.prev, env: context.env, results: input }),
+    context.plannedMutants,
+  ).pipe(
     Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
     Effect.ignoreCause,
   )

@@ -1,5 +1,5 @@
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { RunEvent } from '@systemfsoftware/stryker-js'
+import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'

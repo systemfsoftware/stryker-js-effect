@@ -2,9 +2,9 @@ import type * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
 import type * as Queue from 'effect/Queue'
 
-import type { RunEvent } from './run-event.schema.js'
+import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 
-export class RunEvents extends Context.Service<RunEvents, Queue.Queue<RunEvent, Cause.Done>>()(
+export class RunEvents extends Context.Service<RunEvents, Queue.Queue<RunEvent.RunEvent, Cause.Done>>()(
   '@systemfsoftware/stryker-js/run-events.service/RunEvents',
 ) {}
 
@@ -16,28 +16,3 @@ export interface RunIdentityShape {
 export class RunIdentity extends Context.Service<RunIdentity, RunIdentityShape>()(
   '@systemfsoftware/stryker-js/run-events.service/RunIdentity',
 ) {}
-
-export { ModeSignal, OutputMode } from './output-mode.schema.js'
-export { PluginLoadFailureReason } from './PluginsError.schema.js'
-
-export {
-  FormatClaimShadowingRow,
-  FormatRegistryResolved,
-  FormatRegistryRow,
-  FrameworkContributionRow,
-  FrameworkModuleRow,
-  Heartbeat,
-  HelpRendered,
-  PhaseEntered,
-  PlanKnown,
-  PluginsReported,
-  RunEvent,
-  RunFailed,
-  RunMutantTested,
-  RunPhase,
-  RunStarted,
-  type RunTerminalEvent,
-  SkippedFileRow,
-  SkippedReported,
-  VerdictReached,
-} from './run-event.schema.js'

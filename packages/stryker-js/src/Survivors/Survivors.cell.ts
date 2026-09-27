@@ -1,6 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import type { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
@@ -20,7 +21,6 @@ import {
 } from '../admit-survivors-run.workflow.js'
 import { ConfigFileUnreadableError } from '../ConfigError.schema.js'
 import { relativeNormalizedFileName } from '../FileMatcher.js'
-import type { OutputMode } from '../output-mode.schema.js'
 import { MutationReportFileName } from '../reporting/report-assembly.schema.js'
 import { readConfig } from '../run/load-config.cell.js'
 import type { MutationTestDone } from '../run/mutation-test.cell.js'
@@ -43,7 +43,7 @@ export interface SurvivorsSettlement {
 
 export interface SurvivorsAdmissionInput {
   readonly cliOptions: Options.PartialStrykerOptions
-  readonly mode: OutputMode
+  readonly mode: OutputMode.OutputMode
   readonly basePath: string
   readonly settle: SurvivorsSettlement
 }
@@ -119,7 +119,7 @@ export interface PriorReportRead<A = unknown> {
 export const resolveSurvivorsRunOptions = Effect.fn('stryker.survivors_admission.resolve_options')(
   function*(input: {
     readonly cliOptions: Options.PartialStrykerOptions
-    readonly mode: OutputMode
+    readonly mode: OutputMode.OutputMode
   }) {
     return yield* readConfig(input.cliOptions, { command: 'run', mode: input.mode })
   },

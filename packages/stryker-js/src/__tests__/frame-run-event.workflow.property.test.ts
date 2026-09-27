@@ -3,6 +3,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import {
   EventFramed,
   EventSuppressed,
@@ -10,37 +11,25 @@ import {
   FrameRunEventCommand,
   FramingState,
 } from '../frame-run-event.workflow.js'
-import {
-  FormatRegistryResolved,
-  Heartbeat,
-  HelpRendered,
-  PhaseEntered,
-  PlanKnown,
-  PluginsReported,
-  RunEvent,
-  RunFailed,
-  RunMutantTested,
-  RunStarted,
-  SkippedReported,
-  VerdictReached,
-} from '../run-event.schema.js'
 
-const arbitraryTerminalEvent = Arbitrary.schema(S.Union([VerdictReached, RunFailed, HelpRendered]))
+const arbitraryTerminalEvent = Arbitrary.schema(
+  S.Union([RunEvent.VerdictReached, RunEvent.RunFailed, RunEvent.HelpRendered]),
+)
 
 const arbitraryNonTerminalEvent = Arbitrary.schema(
   S.Union([
-    RunStarted,
-    PhaseEntered,
-    PlanKnown,
-    RunMutantTested,
-    Heartbeat,
-    PluginsReported,
-    FormatRegistryResolved,
-    SkippedReported,
+    RunEvent.RunStarted,
+    RunEvent.PhaseEntered,
+    RunEvent.PlanKnown,
+    RunEvent.RunMutantTested,
+    RunEvent.Heartbeat,
+    RunEvent.PluginsReported,
+    RunEvent.FormatRegistryResolved,
+    RunEvent.SkippedReported,
   ]),
 )
 
-const arbitraryEvent = Arbitrary.schema(RunEvent)
+const arbitraryEvent = Arbitrary.schema(RunEvent.RunEvent)
 
 const arbitraryState = Arbitrary.schema(FramingState)
 
@@ -88,7 +77,7 @@ describe('frameRunEvent', () => {
 
   it.prop(
     '∀m_Mutant_≡Progress',
-    { of: [arbitraryState, Arbitrary.schema(RunMutantTested)], subject: frameRunEvent },
+    { of: [arbitraryState, Arbitrary.schema(RunEvent.RunMutantTested)], subject: frameRunEvent },
     (subject, [state, mutantEvent]) => {
       const result = subject(FrameRunEventCommand.make({ state, event: mutantEvent }))
       return (

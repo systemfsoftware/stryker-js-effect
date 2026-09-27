@@ -1,5 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { RunEvent } from '@systemfsoftware/stryker-js'
+import { RunEvent as CliContract } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
@@ -13,11 +14,11 @@ import * as Stream from 'effect/Stream'
 
 const Feature = makeFeature({ it })
 
-const PLAN_KNOWN = RunEvent.PlanKnown.make({ total: 4 })
-const PHASE_ENTERED = RunEvent.PhaseEntered.make({ phase: 'dry-run', elapsedMs: 1 })
-const HEARTBEAT = RunEvent.Heartbeat.make({ elapsedMs: 2, completed: 1, total: 4 })
-const HELP_RENDERED = RunEvent.HelpRendered.make({ schemaVersion: '1.1', code: 0, help: 'usage' })
-const RUN_FAILED = RunEvent.RunFailed.make({
+const PLAN_KNOWN = CliContract.PlanKnown.make({ total: 4 })
+const PHASE_ENTERED = CliContract.PhaseEntered.make({ phase: 'dry-run', elapsedMs: 1 })
+const HEARTBEAT = CliContract.Heartbeat.make({ elapsedMs: 2, completed: 1, total: 4 })
+const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '1.1', code: 0, help: 'usage' })
+const RUN_FAILED = CliContract.RunFailed.make({
   schemaVersion: '1.1',
   code: 3,
   error: 'x',
@@ -97,19 +98,19 @@ const recordingFixture = (mode: 'machine' | 'human'): Effect.Effect<RecordedStre
 
 const offerAll = (
   stream: RunEvent.RunEventStream,
-  events: ReadonlyArray<RunEvent.RunEvent>,
+  events: ReadonlyArray<CliContract.RunEvent>,
 ): Effect.Effect<void, never, never> =>
   Effect.forEach(events, (event) => Queue.offer(stream.queue, event)).pipe(Effect.asVoid)
 
-const decodedEventAt = (lines: ReadonlyArray<string>, index: number): Option.Option<RunEvent.RunEvent> =>
-  Option.all(lines.map((line) => S.decodeOption(RunEvent.RunEventWireLine)(line))).pipe(
+const decodedEventAt = (lines: ReadonlyArray<string>, index: number): Option.Option<CliContract.RunEvent> =>
+  Option.all(lines.map((line) => S.decodeOption(CliContract.RunEventWireLine)(line))).pipe(
     Option.flatMap((events) => Option.fromNullishOr(events[index])),
   )
 
-const tagOf = (event: RunEvent.RunEvent): string => event._tag
+const tagOf = (event: CliContract.RunEvent): string => event._tag
 
-const parseLinesAsEvents = (lines: ReadonlyArray<string>): ReadonlyArray<RunEvent.RunEvent> => {
-  const decoded = Option.all(lines.map((line) => S.decodeOption(RunEvent.RunEventWireLine)(line)))
+const parseLinesAsEvents = (lines: ReadonlyArray<string>): ReadonlyArray<CliContract.RunEvent> => {
+  const decoded = Option.all(lines.map((line) => S.decodeOption(CliContract.RunEventWireLine)(line)))
   if (Option.isSome(decoded)) {
     return decoded.value
   }
@@ -147,7 +148,7 @@ Feature('Streaming a run to machine readers')
         Then(
           'every stdout line decodes as a wire record in chronological sequence, each newline-terminated, opening with machine session metadata',
         )((s, expect) => {
-          const opening = Option.filter(decodedEventAt(s.result.stdout, 0), S.is(RunEvent.RunStarted))
+          const opening = Option.filter(decodedEventAt(s.result.stdout, 0), S.is(CliContract.RunStarted))
           return expect({
             tags: parseLinesAsEvents(s.result.stdout).map(tagOf),
             newlineTerminated: s.result.stdout.every((line) => line.endsWith('\n')),
@@ -276,7 +277,7 @@ Feature('Streaming a run to machine readers')
         Then(
           'the consumer receives only the opening header and the error document, which carries the failure code, error message, and remediation guidance, and the stream is permanently closed',
         )((s, expect) => {
-          const failure = Option.filter(decodedEventAt(s.result.stdout, 1), S.is(RunEvent.RunFailed))
+          const failure = Option.filter(decodedEventAt(s.result.stdout, 1), S.is(CliContract.RunFailed))
           return expect({
             tags: parseLinesAsEvents(s.result.stdout).map(tagOf),
             failure: Option.match(failure, {

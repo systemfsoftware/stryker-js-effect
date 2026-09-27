@@ -1,3 +1,4 @@
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
@@ -21,7 +22,6 @@ import { ProjectFiles } from '../project-files.service.js'
 import { ReporterOutput } from '../reporter-output.service.js'
 import { Reporter } from '../reporter.service.js'
 import type { RunEventStream } from '../run-event-stream.service.js'
-import { PhaseEntered, RunEvent } from '../run-event.schema.js'
 import { RunEvents } from '../run-events.service.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { EnginePorts, RunStageServices } from './StageServices.service.js'
@@ -41,19 +41,22 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
   static readonly stage: {
     (
       env: RunEnvironmentShape,
-      events?: Queue.Queue<RunEvent, Cause.Done>,
+      events?: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
     ): Layer.Layer<RunStageServices, never, EnginePorts>
     (
-      events?: Queue.Queue<RunEvent, Cause.Done>,
+      events?: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
     ): (env: RunEnvironmentShape) => Layer.Layer<RunStageServices, never, EnginePorts>
   } = dual(
     (args) => Predicate.isObject(args[0]) && !Queue.isQueue(args[0]),
     (
       env: RunEnvironmentShape,
-      events?: Queue.Queue<RunEvent, Cause.Done>,
+      events?: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
     ): Layer.Layer<RunStageServices, never, EnginePorts> => {
       const eventsLayer: Layer.Layer<RunEvents> = Match.value(events).pipe(
-        Match.when(undefined, () => Layer.effect(RunEvents, Queue.bounded<RunEvent, Cause.Done>(RunEvent.QUEUE_BOUND))),
+        Match.when(
+          undefined,
+          () => Layer.effect(RunEvents, Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)),
+        ),
         Match.orElse((queue) => Layer.succeed(RunEvents, queue)),
       )
       const stageLayer = Layer.mergeAll(
@@ -119,9 +122,9 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
   )
 }
 
-export const phaseEntered = Effect.fn('stryker.phase.entered')(function*(phase: PhaseEntered['phase']) {
+export const phaseEntered = Effect.fn('stryker.phase.entered')(function*(phase: RunEvent.PhaseEntered['phase']) {
   const env = yield* RunEnvironment
   const now = yield* Clock.currentTimeMillis
   const queue = yield* RunEvents
-  yield* Queue.offer(queue, PhaseEntered.make({ phase, elapsedMs: now - env.runStartedAt }))
+  yield* Queue.offer(queue, RunEvent.PhaseEntered.make({ phase, elapsedMs: now - env.runStartedAt }))
 })
