@@ -48,11 +48,10 @@ describe('decodeReport', () => {
   it.prop(
     '∀t_TextOutsideTheReportContract_≡RefusedNamingTheFile',
     { of: [S.Literals(UNDECODABLE_TEXTS)], subject: decodeReport },
-    (subject, [text]) => {
-      return Result.match(subject(DecodeReportCommand.make({ file: 'reports/mutation-report.json', text })), {
+    (subject, [text]) =>
+      Result.match(subject(DecodeReportCommand.make({ file: 'reports/mutation-report.json', text })), {
         onFailure: (failure) => S.is(ReportUndecodable)(failure) && failure.file === 'reports/mutation-report.json',
         onSuccess: () => false,
-      })
-    },
+      }),
   )
 })

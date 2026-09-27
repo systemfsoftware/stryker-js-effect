@@ -200,9 +200,9 @@ Feature('The TypeScript checker accepting opted-in concurrency faults')
               uninspectedDefinitionFiles: rig.layout.definitionFiles.filter((fileName) => inspected[fileName] !== true),
             }
           }).pipe(Effect.scoped)),
-        Then('the start reports nothing and every definition file is in the program')((s, expect) => {
-          return expect(s.observed).toStrictEqual({ startComplaints: [], uninspectedDefinitionFiles: [] })
-        }),
+        Then('the start reports nothing and every definition file is in the program')((s, expect) =>
+          expect(s.observed).toStrictEqual({ startComplaints: [], uninspectedDefinitionFiles: [] })
+        ),
       ),
     )
 
@@ -216,9 +216,9 @@ Feature('The TypeScript checker accepting opted-in concurrency faults')
             const results = yield* withChecker(rig, (checker) => checker.check(wires))
             return { wireCount: wires.length, problemReports: problemReports(wires, results) }
           }).pipe(Effect.scoped)),
-        Then('the checker reaches a verdict for every fault and refuses none of them')((s, expect) => {
-          return expect(s.observed).toStrictEqual({ wireCount: expectedMutantCount(), problemReports: [] })
-        }),
+        Then('the checker reaches a verdict for every fault and refuses none of them')((s, expect) =>
+          expect(s.observed).toStrictEqual({ wireCount: expectedMutantCount(), problemReports: [] })
+        ),
       ),
     )
 
@@ -242,13 +242,13 @@ Feature('The TypeScript checker accepting opted-in concurrency faults')
                 ),
             })
           }).pipe(Effect.scoped)),
-        Then('a fault was proposed and every refusal names the compile problem')((s, expect) => {
-          return expect({
+        Then('a fault was proposed and every refusal names the compile problem')((s, expect) =>
+          expect({
             faultProposed: s.observed.faultProposed,
             everyRefusalNamesAProblem: s.observed.refusals.length > 0 &&
               s.observed.refusals.every((report) => /\S/.test(report)),
           }).toStrictEqual({ faultProposed: true, everyRefusalNamesAProblem: true })
-        }),
+        ),
       ),
     )
 
@@ -331,12 +331,12 @@ Feature('The TypeScript checker accepting opted-in concurrency faults')
               return { candidate, compileError: result?.compileError }
             }),
         ),
-        Then('the diagnostic names the properties the imported type lost')((s, expect) => {
-          return expect(s.observed).toMatchObject({
+        Then('the diagnostic names the properties the imported type lost')((s, expect) =>
+          expect(s.observed).toMatchObject({
             candidate: expect.objectContaining({ mutatorName: 'ObjectLiteral' }),
             compileError: { code: 2739, message: expect.stringMatching(/missing the following properties/i) },
           })
-        }),
+        ),
       ),
     )
 
@@ -351,9 +351,9 @@ Feature('The TypeScript checker accepting opted-in concurrency faults')
               code: withDiagnostics.find((m) => m.mutatorName === 'BlockStatement' && m.line === 1)?.compileError?.code,
             }
           })),
-        Then('the block statement mutant is reported under the expected diagnostic code')((s, expect) => {
-          return expect(s.observed.code).toBe(2355)
-        }),
+        Then('the block statement mutant is reported under the expected diagnostic code')((s, expect) =>
+          expect(s.observed.code).toBe(2355)
+        ),
       ),
     )
 
@@ -373,9 +373,9 @@ Feature('The TypeScript checker accepting opted-in concurrency faults')
               diagnosed: diagnosed?.compileError,
             }
           })),
-        Then('the mutant stays Ignored and carries no diagnostic')((s, expect) => {
-          return expect(s.observed).toStrictEqual({ status: 'Ignored', ignoredCount: 1, diagnosed: undefined })
-        }),
+        Then('the mutant stays Ignored and carries no diagnostic')((s, expect) =>
+          expect(s.observed).toStrictEqual({ status: 'Ignored', ignoredCount: 1, diagnosed: undefined })
+        ),
       ),
     )
 
@@ -394,9 +394,9 @@ Feature('The TypeScript checker accepting opted-in concurrency faults')
               }
             }),
         ),
-        Then('the inventory is empty on every count')((s, expect) => {
-          return expect(s.observed).toEqual({ mutants: [], activeCount: 0, ignoredCount: 0 })
-        }),
+        Then('the inventory is empty on every count')((s, expect) =>
+          expect(s.observed).toEqual({ mutants: [], activeCount: 0, ignoredCount: 0 })
+        ),
       ),
     )
 
@@ -414,13 +414,13 @@ Feature('The TypeScript checker accepting opted-in concurrency faults')
                 .some((m) => m.compileError !== undefined),
             }
           })),
-        Then('every excluded family is tallied as Ignored and none is diagnosed')((s, expect) => {
-          return expect(s.observed).toStrictEqual({
+        Then('every excluded family is tallied as Ignored and none is diagnosed')((s, expect) =>
+          expect(s.observed).toStrictEqual({
             everyExcludedFamilyTallied: true,
             statuses: 'Ignored',
             diagnosed: false,
           })
-        }),
+        ),
       ),
     )
 
@@ -446,9 +446,9 @@ Feature('The TypeScript checker accepting opted-in concurrency faults')
               compileError: result?.compileError,
             }
           })),
-        Then('the mutant comes back Ignored with no diagnostic')((s, expect) => {
-          return expect(s.observed).toStrictEqual({ status: 'Ignored', resultDefined: true, compileError: undefined })
-        }),
+        Then('the mutant comes back Ignored with no diagnostic')((s, expect) =>
+          expect(s.observed).toStrictEqual({ status: 'Ignored', resultDefined: true, compileError: undefined })
+        ),
       ),
     )
   })

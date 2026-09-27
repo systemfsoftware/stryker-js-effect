@@ -65,15 +65,14 @@ describe('statusClosure', () => {
   it.prop(
     '∀s_StatusAssignedToNoJourney_≡RefusedNamingIt',
     { of: [Mutant.MutantStatusSchema], subject: statusClosure },
-    (subject, [omitted]) => {
-      return Result.match(
+    (subject, [omitted]) =>
+      Result.match(
         subject(commandOf(STATUSES, witnessesFor(without(STATUSES, omitted)), [], journeysFor([WITNESS_JOURNEY]))),
         {
           onFailure: (failure) => S.is(StatusUnwitnessed)(failure) && failure.status === omitted,
           onSuccess: () => false,
         },
-      )
-    },
+      ),
   )
 
   it.prop(
@@ -103,8 +102,8 @@ describe('statusClosure', () => {
   it.prop(
     '∀s_WaiverOverAProducedStatus_≡Refused',
     { of: [S.Literals(PRODUCED_STATUSES), S.NonEmptyString], subject: statusClosure },
-    (subject, [produced, reason]) => {
-      return Result.match(
+    (subject, [produced, reason]) =>
+      Result.match(
         subject(
           commandOf(
             STATUSES,
@@ -117,8 +116,7 @@ describe('statusClosure', () => {
           onFailure: (failure) => S.is(StatusWaiverForProducedStatus)(failure) && failure.status === produced,
           onSuccess: () => false,
         },
-      )
-    },
+      ),
   )
 
   it.prop(

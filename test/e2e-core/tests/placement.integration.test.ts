@@ -328,8 +328,8 @@ Feature('The in-process placement check', { timeout: 120_000 })
           () => Effect.forEach(fixtures, (fixture) => placementOf(fixture)),
         ),
         Then('each slice claims every mutant it places, with every authored diagnostic code confirmed')(
-          (s, expect) => {
-            return expect(s.placements.map((placement) => {
+          (s, expect) =>
+            expect(s.placements.map((placement) => {
               const observation = observationOf(placement)
               return {
                 matchedEveryMutant: observation.mutantCount > 0 &&
@@ -347,8 +347,7 @@ Feature('The in-process placement check', { timeout: 120_000 })
                 claimedTwice: [],
                 compileErrorFindings: [],
               })),
-            )
-          },
+            ),
         ),
       ),
     )
@@ -361,14 +360,13 @@ Feature('The in-process placement check', { timeout: 120_000 })
           () => Effect.forEach(fixtures, (fixture) => placementOf(fixture)),
         ),
         Then('no confirmation reports a project-membership diagnostic')(
-          (s, expect) => {
-            return expect(s.placements.map((placement) => ({
+          (s, expect) =>
+            expect(s.placements.map((placement) => ({
               slice: placement.fixture.slice.id,
               outsideOwningProject: observationOf(placement).outsideOwningProject,
             }))).toStrictEqual(
               fixtures.map((fixture) => ({ slice: fixture.slice.id, outsideOwningProject: [] })),
-            )
-          },
+            ),
         ),
       ),
     )
@@ -407,8 +405,8 @@ Feature('The in-process placement check', { timeout: 120_000 })
           const observation = observationOf(s.placement, { omitAnnotation: dropped })
           return Effect.succeed({ dropped, observation })
         }),
-        Then('the gate fails and names the file, the location and the mutator')((s, expect) => {
-          return expect({
+        Then('the gate fails and names the file, the location and the mutator')((s, expect) =>
+          expect({
             droppedAnAnnotation: s.observed.dropped >= 0,
             unmatchedCount: s.observed.observation.unmatched.length,
             namesFileLocationAndMutator: s.observed.observation.unmatched.some((message) =>
@@ -416,7 +414,7 @@ Feature('The in-process placement check', { timeout: 120_000 })
               message.includes('ArithmeticOperator')
             ),
           }).toStrictEqual({ droppedAnAnnotation: true, unmatchedCount: 1, namesFileLocationAndMutator: true })
-        }),
+        ),
       ),
     )
 
@@ -429,15 +427,15 @@ Feature('The in-process placement check', { timeout: 120_000 })
           const observation = observationOf(s.placement, { omitMutant: dropped })
           return Effect.succeed({ dropped, observation })
         }),
-        Then('the gate fails as dangling and names the annotation')((s, expect) => {
-          return expect({
+        Then('the gate fails as dangling and names the annotation')((s, expect) =>
+          expect({
             droppedAMutant: s.observed.dropped >= 0,
             danglingCount: s.observed.observation.dangling.length,
             namesTheAnnotation: s.observed.observation.dangling.some((message) =>
               message.includes('arithmetic.ts') && message.includes('claims no mutant')
             ),
           }).toStrictEqual({ droppedAMutant: true, danglingCount: 1, namesTheAnnotation: true })
-        }),
+        ),
       ),
     )
 
@@ -451,8 +449,8 @@ Feature('The in-process placement check', { timeout: 120_000 })
           return Effect.succeed({ accepted, mismatched })
         }),
         Then('the authored code is confirmed when it matches and both codes are named when it does not')(
-          (s, expect) => {
-            return expect({
+          (s, expect) =>
+            expect({
               authoredCodeAccepted: s.observed.accepted.compileErrorFindings,
               mismatchedCode: s.observed.mismatched.compileErrorFindings.map((finding) => ({
                 namesAuthoredCode: finding.includes('TS9999'),
@@ -462,8 +460,7 @@ Feature('The in-process placement check', { timeout: 120_000 })
             }).toStrictEqual({
               authoredCodeAccepted: [],
               mismatchedCode: [{ namesAuthoredCode: true, namesReportedCode: true, namesMutant: true }],
-            })
-          },
+            }),
         ),
       ),
     )
@@ -477,13 +474,13 @@ Feature('The in-process placement check', { timeout: 120_000 })
             instrumentedOf(withoutAnnotations(s.placement.fixture.files), s.placement.fixture),
             (without) => ({ withAnnotations: s.placement.instrumented, without }),
           )),
-        Then('both instrumentations place the same mutants at the same locations')((s, expect) => {
-          return expect({
+        Then('both instrumentations place the same mutants at the same locations')((s, expect) =>
+          expect({
             instrumentsSomething: s.runs.withAnnotations.length > 0,
             sameMutants: JSON.stringify(mutantTuplesOf(s.runs.withAnnotations)) ===
               JSON.stringify(mutantTuplesOf(s.runs.without)),
           }).toStrictEqual({ instrumentsSomething: true, sameMutants: true })
-        }),
+        ),
       ),
     )
   })

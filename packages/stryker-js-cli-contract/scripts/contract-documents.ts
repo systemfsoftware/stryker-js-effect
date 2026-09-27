@@ -8,7 +8,7 @@ import { SpanDocuments, type SpanMember } from '../src/SpanTaxonomy.schema.js'
 import { StockCatalog } from '../src/StockCatalog.js'
 
 export const streamDocumentSource = (): string => {
-  const draft07 = JsonSchema.toDocumentDraft07(Schema.toJsonSchemaDocument(RunEvent))
+  const draft07 = RunEvent.pipe(Schema.toJsonSchemaDocument, JsonSchema.toDocumentDraft07)
   const published = {
     $schema: JsonSchema.META_SCHEMA_URI_DRAFT_07,
     ...draft07.schema,

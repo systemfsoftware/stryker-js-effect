@@ -134,8 +134,10 @@ export const reportModuleSource = (): string => {
       `upstream mutant statuses [${declared.join(', ')}] differ from MutantStatusSchema [${members.join(', ')}]`,
     )
   }
-  const generated = Representation.toCodeDocument(
-    Representation.toMultiDocument(Schema.toRepresentation(liveSchema(document))),
+  const generated = liveSchema(document).pipe(
+    Schema.toRepresentation,
+    Representation.toMultiDocument,
+    Representation.toCodeDocument,
   )
   if (generated.codes.length === 0) throw new Error('the code generator emitted no root report schema')
   const root = generated.codes[0]
@@ -155,7 +157,10 @@ export const reportModuleSource = (): string => {
   const exported: ReadonlyArray<NamedCode> = emitted.map((entry) => ({
     name: entry.name,
     code: {
-      runtime: entry.code.runtime.replaceAll(literal, 'MutantStatusSchema'),
+      runtime: entry.code.runtime.replaceAll(literal, 'MutantStatusSchema').replaceAll(
+        /\bSchema\.Number\b/gu,
+        'Schema.Finite',
+      ),
       Type: entry.code.Type.replaceAll(union, 'MutantStatus'),
     },
   }))
@@ -174,8 +179,9 @@ export const reportModuleSource = (): string => {
 }
 
 export const reportDocumentSource = (): string => {
-  const draft07 = JsonSchema.toDocumentDraft07(
-    Schema.toJsonSchemaDocument(liveSchema(contractDocument(readUpstreamDocument()))),
+  const draft07 = liveSchema(contractDocument(readUpstreamDocument())).pipe(
+    Schema.toJsonSchemaDocument,
+    JsonSchema.toDocumentDraft07,
   )
   const published = {
     $schema: JsonSchema.META_SCHEMA_URI_DRAFT_07,

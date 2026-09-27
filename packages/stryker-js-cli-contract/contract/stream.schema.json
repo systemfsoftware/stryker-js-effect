@@ -401,20 +401,20 @@
       "type": "object",
       "properties": {
         "high": {
+          "type": "integer",
           "description": "Higher bound threshold.",
           "examples": [
             80
           ],
-          "type": "integer",
           "minimum": 0,
           "maximum": 100
         },
         "low": {
+          "type": "integer",
           "description": "Lower bound threshold.",
           "examples": [
             60
           ],
-          "type": "integer",
           "minimum": 0,
           "maximum": 100
         },
@@ -497,17 +497,17 @@
       "type": "object",
       "properties": {
         "line": {
+          "type": "integer",
           "examples": [
             4
           ],
-          "type": "integer",
           "minimum": 1
         },
         "column": {
+          "type": "integer",
           "examples": [
             3
           ],
-          "type": "integer",
           "minimum": 1
         }
       },

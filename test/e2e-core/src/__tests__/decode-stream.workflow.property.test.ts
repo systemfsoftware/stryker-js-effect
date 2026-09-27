@@ -59,13 +59,12 @@ describe('decodeStream', () => {
   it.prop(
     '∀l_NonEventLine_≡RefusedNamingTheLine',
     { of: [S.Literals(NON_EVENT_LINES)], subject: decodeStream },
-    (subject, [line]) => {
-      return Result.match(subject(decodeOf([line])), {
+    (subject, [line]) =>
+      Result.match(subject(decodeOf([line])), {
         onFailure: (failure) =>
           S.is(StreamLineUndecodable)(failure) && failure.lineNumber === 1 && failure.line === line,
         onSuccess: () => false,
-      })
-    },
+      }),
   )
 
   it.prop(
