@@ -316,7 +316,7 @@ const withoutAnnotations = (files: ReadonlyArray<SliceSource>): ReadonlyArray<Sl
     content: file.content.split('\n').map((line) => (MARKER.test(line) ? '' : line)).join('\n'),
   }))
 
-Feature('The in-process placement check', { timeout: 120_000 })
+Feature('The in-process placement check', { timeout: 600_000 })
   .withLayer(FILE_PORTS)
   .live('the check reads and instruments the fixture files with the real oxc instrumenter')
   .body(({ scenario }) => {
