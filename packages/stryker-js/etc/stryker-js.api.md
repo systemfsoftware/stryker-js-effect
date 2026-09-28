@@ -20,6 +20,16 @@ export namespace Engine {
 }
 
 // @public (undocumented)
+export namespace GitDiff {
+    export { GitDiff, GitDiffInput, GitDiffShape };
+}
+
+// @public (undocumented)
+export namespace GitDiffSchema {
+    export { DiffHunk, DiffScopeCommand, DiffScopeDecision, DiffScoped, FullScope, GitCommandFailed, GitDiffError, GitDiffResult, GitRefUnresolved };
+}
+
+// @public (undocumented)
 export namespace ImportClosure {
     export { ImportClosureAnalysis, ImportClosureInput, TestFileClosureDigest, analyzeImportClosure };
 }

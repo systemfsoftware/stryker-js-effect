@@ -89,6 +89,13 @@ const runOptions = {
       Flag.withDescription('Specify the file for the machine-mode progress stream.'),
       optional,
     ),
+  since: Flag.String('since')
+    .pipe(
+      Flag.withDescription(
+        'Scope the run to the lines changed since a git ref. Stryker resolves the merge base, diffs the working tree at `--unified=0`, and intersects the changed lines with the configured `mutate` globs. Falls back to a full run when the Stryker config, a test-runner config, `package.json`, or the lockfile changed.',
+      ),
+      optional,
+    ),
   force: Flag.map(optional(Flag.Boolean('force')), absentWhenFalse).pipe(
     Flag.withDescription(
       'Run all mutants, even if --incremental is provided and an incremental file exists. Can be used to force a rebuild of the incremental file.',
@@ -333,6 +340,7 @@ const readStrykerOptions = (config: RunParsedConfig): Options.PartialStrykerOpti
     ...trueEntryOf('allowEmpty', config.allowEmpty),
     ...entryOf('incrementalFile', config.incrementalFile),
     ...entryOf('progressStreamFile', config.progressStreamFile),
+    ...entryOf('since', config.since),
     ...trueEntryOf('force', config.force),
     ...entryOf('mutate', config.mutate),
     ...entryOf('testFiles', config.testFiles),

@@ -141,4 +141,34 @@ describe('selectProjectFiles', () => {
       return testFiles !== undefined && [...testFiles].sort().join('\n') === [testFile].sort().join('\n')
     },
   )
+
+  it.prop(
+    '∀fs_Selection_≡DiffRangesRestrictMutationToChangedSpans',
+    { of: [Arbitrary.all({ a: segmentArb, b: segmentArb, line: lineArb })], subject: selectProjectFiles },
+    (subject, [draw]) => {
+      const changedFile = `/p/${draw.a}.ts`
+      const untouchedFile = `/p/${draw.b}.test.ts`
+      const descriptions = descriptionsOf(
+        subject,
+        ProjectSelectionCommand.make({
+          inputFileNames: [changedFile, untouchedFile],
+          mutatePatterns: ['**/*.ts'],
+          diffRanges: [`${changedFile}:${draw.line}-${draw.line + 1}`],
+          testFilePatterns: [],
+          basePath: '/',
+        }),
+      )
+      return (
+        descriptions !== undefined &&
+        JSON.stringify(descriptions[changedFile]?.mutate) ===
+          JSON.stringify([
+            {
+              start: { line: draw.line, column: 1 },
+              end: { line: draw.line + 1, column: Number.MAX_SAFE_INTEGER },
+            },
+          ]) &&
+        descriptions[untouchedFile]?.mutate === false
+      )
+    },
+  )
 })

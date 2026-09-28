@@ -28,6 +28,7 @@ interface FileSelectionInput {
   readonly inputFileNames: readonly string[]
   readonly mutatePatterns: readonly string[]
   readonly targetMutatePatterns: readonly string[] | undefined
+  readonly diffRanges: readonly string[] | undefined
   readonly testFilePatterns: readonly string[]
   readonly testFileIgnores: readonly string[] | undefined
   readonly basePath: string
@@ -338,10 +339,21 @@ const restrictToTargets = (
   )
 }
 
+const restrictByRanges = (
+  descriptions: HashMap.HashMap<string, FileDescriptionLike>,
+  patterns: readonly string[] | undefined,
+  basePath: string,
+): HashMap.HashMap<string, FileDescriptionLike> =>
+  Option.getOrElse(
+    Option.map(Option.fromUndefinedOr(patterns), (targets) => restrictToTargets(descriptions, targets, basePath)),
+    () => descriptions,
+  )
+
 const resolveFileDescriptionsPure = (
   inputFileNames: readonly string[],
   mutatePatterns: readonly string[],
   targetMutatePatterns: readonly string[] | undefined,
+  diffRanges: readonly string[] | undefined,
   basePath: string,
 ) => {
   const initial = HashMap.fromIterable(
@@ -351,10 +363,8 @@ const resolveFileDescriptionsPure = (
     (files, pattern) => applyMutatePattern(files, pattern, inputFileNames, basePath),
     initial,
   )
-  return Option.match(Option.fromUndefinedOr(targetMutatePatterns), {
-    onNone: () => Object.fromEntries(afterMutate),
-    onSome: (targets) => Object.fromEntries(restrictToTargets(afterMutate, targets, basePath)),
-  })
+  const afterTargets = restrictByRanges(afterMutate, targetMutatePatterns, basePath)
+  return Object.fromEntries(restrictByRanges(afterTargets, diffRanges, basePath))
 }
 
 const resolveTestFilesPure = (
@@ -385,6 +395,7 @@ const selectFiles = (input: FileSelectionInput): SelectedFiles => ({
     input.inputFileNames,
     input.mutatePatterns,
     input.targetMutatePatterns,
+    input.diffRanges,
     input.basePath,
   ),
   testFiles: resolveTestFilesPure(
@@ -403,6 +414,7 @@ export class ProjectSelectionCommand extends S.TaggedClass<ProjectSelectionComma
   inputFileNames: S.Array(S.String),
   mutatePatterns: S.Array(S.String),
   targetMutatePatterns: S.Array(S.String).pipe(S.optional),
+  diffRanges: S.Array(S.String).pipe(S.optional),
   testFilePatterns: S.Array(S.String),
   testFileIgnores: S.Array(S.String).pipe(S.optional),
   basePath: S.String,
@@ -443,6 +455,7 @@ export const selectProjectFiles = Workflow.make({
               inputFileNames: command.inputFileNames,
               mutatePatterns: command.mutatePatterns,
               targetMutatePatterns: command.targetMutatePatterns,
+              diffRanges: command.diffRanges,
               testFilePatterns: command.testFilePatterns,
               testFileIgnores: command.testFileIgnores,
               basePath: command.basePath,
