@@ -71,6 +71,10 @@
   dir: packages/frameworks/angular
   intents:
     - stryker-js-angular-debut
+"@systemfsoftware/stryker-js-cli-contract@0.1.0":
+  dir: packages/stryker-js-cli-contract
+  intents:
+    - cli-contract-publishes-the-stream-and-catalog
 "@systemfsoftware/stryker-js-cli@9.0.0":
   dir: apps/stryker-js-cli
   intents:
@@ -138,6 +142,10 @@
   dir: packages/stryker-js-instrumenter
   intents:
     - systemfsoftware-latest-packages-2026-09-26
+"@systemfsoftware/stryker-js-instrumenter@11.0.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - instrumenter-namespaces-and-two-placement-fixes
 "@systemfsoftware/stryker-js-instrumenter@7.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -198,6 +206,10 @@
   dir: packages/stryker-js-plugin-interface
   intents:
     - systemfsoftware-latest-packages-2026-09-26
+"@systemfsoftware/stryker-js-plugin-interface@11.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - plugin-interface-owns-mutant-identity-catalog-and-report
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -339,6 +351,10 @@
   dir: packages/stryker-js-typescript-checker
   intents:
     - systemfsoftware-latest-packages-2026-09-26
+"@systemfsoftware/stryker-js-typescript-checker@8.1.0":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - typescript-checker-runtime-subpath-and-diagnostic-reason
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -488,6 +504,10 @@
   intents:
     - cli-run-joins-traceparent
     - systemfsoftware-latest-packages-2026-09-26
+"@systemfsoftware/stryker-js@14.0.0":
+  dir: packages/stryker-js
+  intents:
+    - stryker-js-stream-contract-mutator-providers-and-statuses
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
