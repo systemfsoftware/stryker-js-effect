@@ -19,6 +19,9 @@ const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = [
   'plugins',
   'formats',
   'skipped',
+  'reuse',
+  'mutant-detail',
+  'feedback',
 ]
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
 const STDERR_TAIL_CHARS = 3_000
