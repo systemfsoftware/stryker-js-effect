@@ -88,7 +88,13 @@ const presentationOptionKeys: readonly string[] = [
   'fileLogLevel',
 ]
 
-const unfingerprintedOptionKeys: readonly string[] = [...scopeOptionKeys, ...presentationOptionKeys]
+const storageOptionKeys: readonly string[] = ['incrementalFile', 'incrementalSources', 'tempDirName', 'cleanTempDir']
+
+const unfingerprintedOptionKeys: readonly string[] = [
+  ...scopeOptionKeys,
+  ...presentationOptionKeys,
+  ...storageOptionKeys,
+]
 
 const optionsJsonOf = (options: Options.StrykerOptions): Effect.Effect<Json, S.SchemaError> =>
   S.encodeEffect(S.fromJsonString(Options.StrykerOptionsSchema))(options).pipe(
@@ -105,7 +111,7 @@ const withoutUnfingerprintedKeys = (value: Json): Json =>
 const optionsFingerprintOf = (options: Options.StrykerOptions): Effect.Effect<string, S.SchemaError> =>
   optionsJsonOf(options).pipe(Effect.map(withoutUnfingerprintedKeys), Effect.flatMap(canonicalJsonOf))
 
-const packageManifestInputOf = (content: string): Effect.Effect<string, never> =>
+export const packageManifestInputOf = (content: string): Effect.Effect<string, never> =>
   S.decodeEffect(S.fromJsonString(S.Json))(content).pipe(
     Effect.flatMap((manifest) => {
       const stripped = withoutVersionOf(manifest)
@@ -209,6 +215,16 @@ if (import.meta.vitest !== void 0) {
       Effect.map(
         Effect.all([subject(options), subject(withKeysTakenFromOf(presentationOptionKeys, options, other))]),
         ([baseline, represented]) => represented === baseline,
+      ),
+  )
+
+  it.effect.prop(
+    '∀oo_Options_≡StorageOptionDrawsKeepTheOptionsFingerprint',
+    { of: [Options.StrykerOptionsSchema, Options.StrykerOptionsSchema], subject: optionsFingerprintOf },
+    (subject, [options, other]) =>
+      Effect.map(
+        Effect.all([subject(options), subject(withKeysTakenFromOf(storageOptionKeys, options, other))]),
+        ([baseline, relocated]) => relocated === baseline,
       ),
   )
 

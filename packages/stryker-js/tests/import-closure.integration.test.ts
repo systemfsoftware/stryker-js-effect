@@ -214,6 +214,24 @@ const WORKSPACE_LINK: FixtureSpec = {
   testFiles: ['test/link.test.ts'],
 }
 
+const MANIFEST = '{"name":"@fixture/app","version":"1.0.0","type":"module"}'
+
+const manifestReadingSpecWith = (changedManifest: string): FixtureSpec => ({
+  files: {
+    'package.json': MANIFEST,
+    'src/version.ts':
+      "import manifest from '../package.json' with { type: 'json' }\nexport const version = manifest.version\n",
+    'test/version.test.ts':
+      "import { test } from 'vitest'\nimport { version } from '../src/version.js'\ntest('version', () => { version })\n",
+  },
+  testFiles: ['test/version.test.ts'],
+  changed: { 'package.json': changedManifest },
+})
+
+const VERSION_BUMP = manifestReadingSpecWith('{"name":"@fixture/app","version":"1.0.1","type":"module"}')
+
+const MANIFEST_FIELD_CHANGE = manifestReadingSpecWith('{"name":"@fixture/app","version":"1.0.0","type":"commonjs"}')
+
 Feature('Mapping a test file to the import closure it can reach')
   .withLayer(filePorts)
   .live('the scenarios read, parse and hash real project files off the filesystem, which the kernel cannot settle')
@@ -394,6 +412,42 @@ Feature('Mapping a test file to the import closure it can reach')
               open: openOf(s.observation.before, 'test/link.test.ts'),
             }).toEqual({ sourceConditionLink: true, mainFieldLink: true, outsideNodeModules: true, open: false })
           },
+        ),
+      ),
+    )
+
+    scenario(
+      'A release that only bumps the package version leaves the digest of a closure reading the manifest still',
+      Gherkin.Do.pipe(
+        Given('a project whose source imports its own package.json')('root', () => writeFixture(VERSION_BUMP)),
+        When('the closure is analyzed before and after the version field alone changes')(
+          'observation',
+          (s) => observe(s.root, VERSION_BUMP).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the manifest is in the closure and the digest stands still')(
+          (s, expect) =>
+            expect({
+              manifestInClosure: filesOf(s.observation.before, 'test/version.test.ts').includes('package.json'),
+              digestMoved: digestMoved(s.observation, 'test/version.test.ts'),
+            }).toEqual({ manifestInClosure: true, digestMoved: false }),
+        ),
+      ),
+    )
+
+    scenario(
+      'Any other manifest change still moves the digest of a closure reading the manifest',
+      Gherkin.Do.pipe(
+        Given('a project whose source imports its own package.json')('root', () => writeFixture(MANIFEST_FIELD_CHANGE)),
+        When('the closure is analyzed before and after a field other than the version changes')(
+          'observation',
+          (s) => observe(s.root, MANIFEST_FIELD_CHANGE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the manifest is in the closure and the digest moves')(
+          (s, expect) =>
+            expect({
+              manifestInClosure: filesOf(s.observation.before, 'test/version.test.ts').includes('package.json'),
+              digestMoved: digestMoved(s.observation, 'test/version.test.ts'),
+            }).toEqual({ manifestInClosure: true, digestMoved: true }),
         ),
       ),
     )

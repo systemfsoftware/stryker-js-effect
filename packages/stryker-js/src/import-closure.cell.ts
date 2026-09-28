@@ -20,6 +20,7 @@ import {
   type TestFileClosure,
 } from './import-closure.schema.js'
 import { importClosure } from './import-closure.workflow.js'
+import { packageManifestInputOf } from './verdict-semantics.js'
 
 export interface ImportClosureInput {
   readonly rootDir: string
@@ -542,9 +543,17 @@ const readProjectFile = Effect.fnUntraced(function*(roots: Roots, file: string) 
   return { key, absolute, content: yield* fs.readFileString(absolute) }
 })
 
-const unparsedScan = (loaded: LoadedFile): ModuleScan => ({
+const PACKAGE_MANIFEST_FILE = 'package.json'
+
+const isPackageManifest = (key: string): boolean =>
+  key === PACKAGE_MANIFEST_FILE || key.endsWith(`/${PACKAGE_MANIFEST_FILE}`)
+
+const verdictContentOf = (loaded: LoadedFile): Effect.Effect<string> =>
+  isPackageManifest(loaded.key) ? packageManifestInputOf(loaded.content) : Effect.succeed(loaded.content)
+
+const unparsedScan = (loaded: LoadedFile, verdictContent: string): ModuleScan => ({
   key: loaded.key,
-  contentHash: hashOf(loaded.content),
+  contentHash: hashOf(verdictContent),
   dependencies: [],
   open: INERT_EXTENSIONS[extensionOf(loaded.key)] !== true,
 })
@@ -572,7 +581,7 @@ const moduleScanOf = Effect.fnUntraced(function*(
 ) {
   const loaded = yield* readProjectFile(roots, file)
   const language = SCRIPT_LANGUAGES[extensionOf(loaded.key)]
-  if (language === undefined) return unparsedScan(loaded)
+  if (language === undefined) return unparsedScan(loaded, yield* verdictContentOf(loaded))
   return yield* parsedScan(loaded, language, (specifier) =>
     resolveMemoized(memo, {
       files,
