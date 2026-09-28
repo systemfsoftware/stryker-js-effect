@@ -29,6 +29,40 @@ const INSIDE_FLAG = 'inside if (flag)'
 const IGNORED_OUTSIDE_KEEP = `ignorer: ${OUTSIDE_KEEP}`
 const IGNORED_INSIDE_FLAG = `ignorer: ${INSIDE_FLAG}`
 
+const ARID_LOG_SOURCE = `export const ready = () => Effect.logInfo("ready")
+`
+
+const ARID_RULE_SOURCE = `export const logged = () => Effect.logInfo('logged')
+export const named = () => Logger.info('named')
+export const consoled = () => console.log('consoled')
+export const spanned = () => Effect.withSpan('spanned')
+export const counted = () => Metric.counter('counted')
+export const slept = () => Effect.sleep(Duration.seconds('slept'))
+export const scheduled = () => Schedule.recurs('scheduled')
+export const defaulted = () => Config.withDefault('defaulted')
+export const cached = () => Effect.cached('cached')
+export const local = () => logInfo('local')
+export const foreign = () => logger.logInfo('foreign')
+export const countedElsewhere = () => Metrics.counter('countedElsewhere')
+export const scheduledElsewhere = () => Scheduler.recurs('scheduledElsewhere')
+export const configuredElsewhere = () => Config.string('configuredElsewhere')
+export const cachedElsewhere = () => Effect.cache('cachedElsewhere')
+`
+
+const ARID_GATED_SOURCE = `export const announce = (level) => {
+  if (level > 3) {
+    Effect.logInfo('ready')
+  }
+}
+`
+
+const ARID_NEAR_MISS_SOURCE = `export const announce = (level) => {
+  if (level > 3) {
+    logInfo('ready')
+  }
+}
+`
+
 type Mutant = {
   id: string
   mutatorName: string
@@ -780,6 +814,130 @@ export function price(n) {
             counts: [one.mutants.length, two.mutants.length],
             everyIdDiffers: one.mutants.every((mutant) => !twoIds.has(mutant.id)),
           }).toEqual({ counts: [13, 13], everyIdDiffers: true })
+        }),
+      ),
+    )
+
+    scenario(
+      'An arid log argument is ignored by default and mutated under the full policy',
+      Gherkin.Do.pipe(
+        Given('a module logging a constant')('source', () => Effect.succeed(ARID_LOG_SOURCE)),
+        When('it is instrumented under the default policy')(
+          'defaulted',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-log.ts', source),
+        ),
+        When('it is instrumented under the full policy')(
+          'full',
+          ({ source }: { source: string }) =>
+            Instrument.instrument(
+              [{ name: '/tmp/arid-log.ts', content: source, mutate: true }],
+              stockOptions({ ignorers: [], excludedMutations: [], mutantSetPolicy: 'full' }),
+            ),
+        ),
+        Then('the logged string is Ignored with the arid rule, and live under the full policy')((
+          { defaulted, full }: {
+            defaulted: Instrument.InstrumentResult
+            full: Instrument.InstrumentResult
+          },
+          expect,
+        ) => {
+          const strings = (result: Instrument.InstrumentResult) =>
+            result.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral')
+          return expect({
+            defaulted: strings(defaulted).map((mutant) => [mutant.status, mutant.statusReason]),
+            fullIsActive: strings(full).length > 0 && strings(full).every(isActive),
+          }).toEqual({
+            defaulted: [['Ignored', 'arid-logging: Effect.logInfo']],
+            fullIsActive: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A condition deciding whether to log is still mutated',
+      Gherkin.Do.pipe(
+        Given('a module logging inside a guarded branch')('source', () => Effect.succeed(ARID_GATED_SOURCE)),
+        When('it is instrumented under the default policy')(
+          'gated',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-gated.ts', source),
+        ),
+        When('it is instrumented with the same guard around a local function named logInfo')(
+          'nearMiss',
+          () => instrumentSource('/tmp/arid-near-miss.ts', ARID_NEAR_MISS_SOURCE),
+        ),
+        Then('the guard keeps its mutants while the logged string is ignored')((
+          { gated, nearMiss }: {
+            gated: Instrument.InstrumentResult
+            nearMiss: Instrument.InstrumentResult
+          },
+          expect,
+        ) => {
+          const conditionMutants = (result: Instrument.InstrumentResult) =>
+            result.mutants.filter((mutant) => isActive(mutant) && mutant.mutatorName !== 'StringLiteral')
+          return expect({
+            gatedIgnored: gated.mutants.filter((mutant) => mutant.status === 'Ignored').map((mutant) => [
+              mutant.mutatorName,
+              mutant.statusReason,
+            ]),
+            gatedActiveStrings: gated.mutants.filter((mutant) =>
+              isActive(mutant) && mutant.mutatorName === 'StringLiteral'
+            ).length,
+            nearMissIgnored: nearMiss.mutants.filter((mutant) => mutant.status === 'Ignored').length,
+            nearMissActiveStrings: nearMiss.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral').length,
+            sameConditionMutants: conditionMutants(gated).length === conditionMutants(nearMiss).length &&
+              conditionMutants(gated).length > 0,
+          }).toEqual({
+            gatedIgnored: [['StringLiteral', 'arid-logging: Effect.logInfo']],
+            gatedActiveStrings: 0,
+            nearMissIgnored: 0,
+            nearMissActiveStrings: 1,
+            sameConditionMutants: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'Every arid rule ignores its argument and keeps its near miss',
+      Gherkin.Do.pipe(
+        Given('a module calling each arid form beside a look-alike local call')(
+          'source',
+          () => Effect.succeed(ARID_RULE_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-rules.ts', source),
+        ),
+        Then('each arid argument names its rule and the look-alikes stay mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const strings = result.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral')
+          const ignoredByReason: Record<string, number> = {}
+          for (const mutant of strings) {
+            if (mutant.status === 'Ignored') {
+              const reason = mutant.statusReason ?? ''
+              ignoredByReason[reason] = (ignoredByReason[reason] ?? 0) + 1
+            }
+          }
+          return expect({
+            ignoredByReason,
+            activeStrings: strings.filter(isActive).length,
+          }).toEqual({
+            ignoredByReason: {
+              'arid-config-default: Config.withDefault': 1,
+              'arid-logging: Effect.logInfo': 1,
+              'arid-logging: Logger.info': 1,
+              'arid-logging: console.log': 1,
+              'arid-memoization: Effect.cached': 1,
+              'arid-telemetry: Effect.withSpan': 1,
+              'arid-telemetry: Metric.counter': 1,
+              'arid-time: Duration.seconds': 1,
+              'arid-time: Schedule.recurs': 1,
+            },
+            activeStrings: 6,
+          })
         }),
       ),
     )

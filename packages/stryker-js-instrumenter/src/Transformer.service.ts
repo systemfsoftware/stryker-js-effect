@@ -8,6 +8,13 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import {
+  type AridCallee,
+  aridCode,
+  AridCodeCommand,
+  type AridCodeDecision,
+  type AridFrame,
+} from './arid-code.workflow.js'
+import {
   type ArrowFunctionExpression,
   arrowFunctionExpression,
   attachComments,
@@ -21,6 +28,7 @@ import {
   formatKeyOf,
   type FunctionExpression,
   identifier,
+  type IdentifierName,
   type IdentifierReference,
   ifStatement,
   isExpressionKind,
@@ -34,6 +42,7 @@ import {
   sequenceExpression,
   spanOf,
   type Statement,
+  type StaticMemberExpression,
   stringLiteral,
   switchCase,
   traverse,
@@ -691,6 +700,7 @@ interface MutableCandidate {
   readonly node: Node
   readonly replacement: Node
   readonly data: MutantCandidate
+  readonly aridReason: Option.Option<string>
 }
 
 function isMutateRangeList(value: MutateDescription): value is readonly ApiMutant.Location[] {
@@ -826,6 +836,72 @@ const ignorersReasonFor = (
     Option.none<string>(),
   )
 
+interface NamedCallee extends StaticMemberExpression {
+  readonly object: IdentifierReference
+  readonly property: IdentifierName
+}
+
+const hasKey = <B = unknown>(node: object, key: string): node is Record<string, B> => key in node
+
+const readKey = <B = unknown>(
+  node: object,
+  key: string,
+): B | undefined => (hasKey<B>(node, key) ? node[key] : undefined)
+
+const isMemberExpressionValue = (node: Node): boolean => nodeType(node) === 'MemberExpression'
+
+const isIdentifierValue = (value: Node | undefined): boolean =>
+  value !== undefined && readKey<string>(value, 'type') === 'Identifier'
+
+const hasIdentifierParts = (member: Node): boolean =>
+  [isIdentifierValue(readKey<Node>(member, 'property')), isIdentifierValue(readKey<Node>(member, 'object'))]
+    .every(Boolean)
+
+const isMemberOfIdentifierParts = (node: Node): node is NamedCallee =>
+  isMemberExpressionValue(node) && hasIdentifierParts(node)
+
+function isNamedCallee(node: Node): node is NamedCallee {
+  return isMemberOfIdentifierParts(node) && readKey<boolean>(node, 'computed') === false
+}
+
+const aridCalleeOf = (callee: Expression): Option.Option<AridCallee> =>
+  Match.value(callee).pipe(
+    Match.when(isNamedCallee, (named) =>
+      Option.some<AridCallee>({ object: named.object.name, member: named.property.name })),
+    Match.orElse(() =>
+      Option.none<AridCallee>()
+    ),
+  )
+
+const aridFrameFor = (child: Node, ancestor: Node): Option.Option<AridFrame> =>
+  ancestor.type === 'CallExpression'
+    ? Option.some({
+      callee: aridCalleeOf(ancestor.callee),
+      childIsArgument: ancestor.arguments.some((argument) => argument === child),
+    })
+    : Option.none()
+
+const aridFramesOf = (frame: NodeFrame): readonly AridFrame[] =>
+  framesUpward(frame).flatMap((current) =>
+    Option.match(Option.fromNullishOr(current.parent), {
+      onNone: (): readonly AridFrame[] => [],
+      onSome: (parent) => Option.toArray(aridFrameFor(current.node, parent.node)),
+    })
+  )
+
+const aridStatusReason = (decision: AridCodeDecision): Option.Option<string> =>
+  Match.value(decision).pipe(
+    Match.tag('AridSuppressed', (suppressed) => Option.some(`${suppressed.ruleId}: ${suppressed.detail}`)),
+    Match.tag('AridKept', () => Option.none<string>()),
+    Match.exhaustive,
+  )
+
+const aridReasonOf = (frame: NodeFrame, policy: Options.MutantSetPolicyType): Option.Option<string> =>
+  Match.value(aridCode(AridCodeCommand.make({ policy, frames: [...aridFramesOf(frame)] }))).pipe(
+    Match.when(Result.isSuccess, (decided) => aridStatusReason(decided.success)),
+    Match.orElse(() => Option.none<string>()),
+  )
+
 const mutablesFor = (
   frame: NodeFrame,
   location: ApiMutant.Location,
@@ -839,6 +915,7 @@ const mutablesFor = (
   const ignorerReason = replacements.length === 0
     ? undefined
     : Option.getOrUndefined(ignorersReasonFor(frame.node, ancestors, context.ignorers))
+  const aridReason = aridReasonOf(frame, context.mutantSetPolicy)
   const originalCode = printNode(frame.node)
   return replacements.map(({ mutatorName, replacement }): MutableCandidate => {
     const replacementCode = printNode(replacement)
@@ -846,6 +923,7 @@ const mutablesFor = (
     return {
       node: frame.node,
       replacement,
+      aridReason,
       data: {
         id: mutantIdOf({ ...tuple, ordinal: context.ordinalOf(tuple) }),
         mutatorName,
@@ -970,6 +1048,20 @@ const attachPlaceable = (
     Match.exhaustive,
   )
 
+const aridReasonAt = (candidates: readonly MutableCandidate[], index: number): Option.Option<string> =>
+  Option.flatMap(Option.fromNullishOr(candidates[index]), (candidate) => candidate.aridReason)
+
+const withAridReason = (mutant: PlannedMutant, reason: Option.Option<string>): PlannedMutant =>
+  Option.match(reason, {
+    onNone: () => mutant,
+    onSome: (text) => (mutant.ignoreReason === undefined ? { ...mutant, ignoreReason: text } : mutant),
+  })
+
+const withAridReasons = (
+  candidates: readonly MutableCandidate[],
+  planned: readonly PlannedMutant[],
+): readonly PlannedMutant[] => planned.map((mutant, index) => withAridReason(mutant, aridReasonAt(candidates, index)))
+
 const collectPlan = (
   frame: NodeFrame,
   candidates: readonly MutableCandidate[],
@@ -977,19 +1069,26 @@ const collectPlan = (
   state: FoldState,
   context: PlacementContext,
 ): Result.Result<FoldState, InstrumentationRefusal> => {
-  const collected = plannedWithNodes(candidates, plan.mutants, context.fileName, () => true)
+  const planned = withAridReasons(candidates, plan.mutants)
+  const collected = plannedWithNodes(candidates, planned, context.fileName, () => true)
   const nextState: FoldState = {
     ...state,
     mutants: [...state.mutants, ...collected],
     warnings: [...state.warnings, ...plan.warnings],
   }
   return Match.value(plan).pipe(
-    Match.tag('MutantsPlanned', (planned) => {
-      const placeable = new Set(planned.placeableIds)
+    Match.tag('MutantsPlanned', (plannedPlan) => {
+      const placeable = new Set(plannedPlan.placeableIds)
+      const live = plannedWithNodes(
+        candidates,
+        planned,
+        context.fileName,
+        (mutant) => placeable.has(mutant.id) && mutant.ignoreReason === undefined,
+      )
       return attachPlaceable(
-        plannedWithNodes(candidates, plan.mutants, context.fileName, (mutant) => placeable.has(mutant.id)),
+        live,
         frame,
-        { ...nextState, hasLiveMutants: true },
+        { ...nextState, hasLiveMutants: nextState.hasLiveMutants || live.length > 0 },
         context,
       )
     }),
