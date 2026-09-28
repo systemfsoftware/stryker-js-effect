@@ -50,6 +50,7 @@ import { RunEvents } from './run-events.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
+import { INCREMENTAL_CACHE_VERSION, runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from './verdict-semantics.js'
 
 export const identityOf = dual<
   (
@@ -663,8 +664,12 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
   identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>,
 ) {
   yield* deps.fs.makeDirectory(deps.path.dirname(input.options.incrementalFile), { recursive: true })
+  const runInputsDigest = yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options)
   const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
-    incrementalVersion: StrykerPackage.version,
+    incrementalVersion: INCREMENTAL_CACHE_VERSION,
+    verdictSemanticsVersion: VERDICT_SEMANTICS_VERSION,
+    mutantSetPolicy: input.options.mutator.mutantSetPolicy,
+    runInputsDigest,
     ...report,
     files: stampFileIdentities(report.files, identities),
   }).pipe(Effect.orDie)
@@ -727,8 +732,12 @@ const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlim
   results: readonly Mutant.RunMutantResult[],
 ) {
   const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
+  const runInputsDigest = yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options)
   return {
-    incrementalVersion: StrykerPackage.version,
+    incrementalVersion: INCREMENTAL_CACHE_VERSION,
+    verdictSemanticsVersion: VERDICT_SEMANTICS_VERSION,
+    mutantSetPolicy: input.options.mutator.mutantSetPolicy,
+    runInputsDigest,
     schemaVersion: Report.WrittenSchemaVersion.literal,
     thresholds: input.options.thresholds,
     files: stampFileIdentities(files, identities),

@@ -1,6 +1,6 @@
 import * as S from 'effect/Schema'
 
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import { FormatIdentitySchema } from './IncrementalDiff.schema.js'
 
@@ -46,6 +46,9 @@ export const IncrementalReportSchema = S.StructWithRest(
   S.Struct({
     incrementalVersion: S.String,
     schemaVersion: S.String,
+    verdictSemanticsVersion: S.Int,
+    mutantSetPolicy: Options.MutantSetPolicy,
+    runInputsDigest: S.String,
     thresholds: ThresholdsLikeSchema,
     files: S.Record(S.String, FileResultLikeSchema),
     testFiles: S.optional(S.Record(S.String, TestFileLikeSchema)),

@@ -6,49 +6,126 @@ import { Arbitrary } from 'effect/unstable/arbitrary'
 import {
   admitIncrementalReport,
   AdmitIncrementalReportCommand,
+  type IncrementalReportDecision,
   IncrementalReportDiscard,
   IncrementalReportKeep,
 } from '../admit-incremental-report.workflow.js'
 import { IncrementalReportSchema } from '../IncrementalReport.schema.js'
 
-const EXPECTED_VERSION = '8.0.0'
+type Admission = Result.Result<IncrementalReportDecision, never>
+
+type Report = S.Schema.Type<typeof IncrementalReportSchema>
+
+const identityOf = (report: Report) => ({
+  expectedIncrementalVersion: report.incrementalVersion,
+  verdictSemanticsVersion: report.verdictSemanticsVersion,
+  mutantSetPolicy: report.mutantSetPolicy,
+  runInputsDigest: report.runInputsDigest,
+})
+
+const discardReasonOf = (result: Admission): string | undefined =>
+  Result.isSuccess(result) && S.is(IncrementalReportDiscard)(result.success)
+    ? result.success.reason
+    : undefined
+
+const admits = (result: Admission): boolean => Result.isSuccess(result) && S.is(IncrementalReportKeep)(result.success)
 
 describe('admitIncrementalReport', () => {
   it.prop(
-    '∀r_Report_≡Decision',
+    '∀r_Report_≡KeepWhenEveryIdentityFieldMatches',
     { of: [IncrementalReportSchema], subject: admitIncrementalReport },
     (subject, [report]) => {
-      const result = subject(
-        AdmitIncrementalReportCommand.make({ report, expectedVersion: EXPECTED_VERSION }),
-      )
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      const decision = result.success
-      if (report.incrementalVersion === EXPECTED_VERSION) {
-        return S.is(IncrementalReportKeep)(decision) && decision.report.incrementalVersion === EXPECTED_VERSION
-      }
-      return (
-        S.is(IncrementalReportDiscard)(decision) &&
-        decision.actual === report.incrementalVersion &&
-        decision.expected === EXPECTED_VERSION
-      )
+      const result = subject(AdmitIncrementalReportCommand.make({ report, ...identityOf(report) }))
+      return Result.isSuccess(result) &&
+        S.is(IncrementalReportKeep)(result.success) &&
+        result.success.report.incrementalVersion === report.incrementalVersion
     },
   )
 
   it.prop(
-    '∀r_Missing_≡Discard',
-    { of: [Arbitrary.schema(S.String)], subject: admitIncrementalReport },
-    (subject, [expectedVersion]) => {
+    '∀r_ReportToolVersion_≡KeepBecauseTheToolVersionIsMetadataOnly',
+    { of: [IncrementalReportSchema], subject: admitIncrementalReport },
+    (subject, [report]) => {
+      const bumped = { ...report, framework: { name: 'StrykerJS', version: '999.9.9' } }
+      const result = subject(AdmitIncrementalReportCommand.make({ report: bumped, ...identityOf(report) }))
+      return admits(result)
+    },
+  )
+
+  it.prop(
+    '∀r_SemanticsMismatch_≡DiscardNamingSemanticsChanged',
+    { of: [IncrementalReportSchema], subject: admitIncrementalReport },
+    (subject, [report]) => {
       const result = subject(
-        AdmitIncrementalReportCommand.make({ report: undefined, expectedVersion }),
+        AdmitIncrementalReportCommand.make({
+          report,
+          ...identityOf(report),
+          verdictSemanticsVersion: report.verdictSemanticsVersion ^ 1,
+        }),
       )
-      return (
-        Result.isSuccess(result) &&
+      return discardReasonOf(result) === 'semanticsChanged'
+    },
+  )
+
+  it.prop(
+    '∀r_PolicyMismatch_≡DiscardNamingPolicyChanged',
+    { of: [IncrementalReportSchema], subject: admitIncrementalReport },
+    (subject, [report]) => {
+      const other = report.mutantSetPolicy === 'default' ? 'full' : 'default'
+      const result = subject(
+        AdmitIncrementalReportCommand.make({ report, ...identityOf(report), mutantSetPolicy: other }),
+      )
+      return discardReasonOf(result) === 'policyChanged'
+    },
+  )
+
+  it.prop(
+    '∀r_RunInputsMismatch_≡DiscardNamingRunInputsChanged',
+    { of: [IncrementalReportSchema], subject: admitIncrementalReport },
+    (subject, [report]) => {
+      const result = subject(
+        AdmitIncrementalReportCommand.make({
+          report,
+          ...identityOf(report),
+          runInputsDigest: `${report.runInputsDigest}-changed`,
+        }),
+      )
+      return discardReasonOf(result) === 'runInputsChanged'
+    },
+  )
+
+  it.prop(
+    '∀r_CacheLayoutMismatch_≡DiscardNamingCacheLayoutChanged',
+    { of: [IncrementalReportSchema], subject: admitIncrementalReport },
+    (subject, [report]) => {
+      const result = subject(
+        AdmitIncrementalReportCommand.make({
+          report,
+          ...identityOf(report),
+          expectedIncrementalVersion: `${report.incrementalVersion}-next`,
+        }),
+      )
+      return discardReasonOf(result) === 'cacheLayoutChanged'
+    },
+  )
+
+  it.prop(
+    '∀v_NoReport_≡DiscardNamingNoPriorRecord',
+    { of: [Arbitrary.schema(S.String)], subject: admitIncrementalReport },
+    (subject, [expectedIncrementalVersion]) => {
+      const result = subject(
+        AdmitIncrementalReportCommand.make({
+          report: undefined,
+          expectedIncrementalVersion,
+          verdictSemanticsVersion: 1,
+          mutantSetPolicy: 'default',
+          runInputsDigest: '',
+        }),
+      )
+      return Result.isSuccess(result) &&
         S.is(IncrementalReportDiscard)(result.success) &&
-        result.success.actual === undefined &&
-        result.success.expected === expectedVersion
-      )
+        result.success.reason === 'noPriorRecord' &&
+        result.success.expected === expectedIncrementalVersion
     },
   )
 })
