@@ -77,6 +77,8 @@ import {
   type MutatorContext,
   type MutatorEntry,
   type MutatorOptions,
+  relationalSiteFacts,
+  relationalSufficientReplacement,
 } from './Mutator.service.js'
 import { type ParseFailed } from './Parser.service.js'
 import {
@@ -908,7 +910,7 @@ const mutablesFor = (
   context: PlacementContext,
 ): readonly MutableCandidate[] => {
   const ancestors = ancestorsOfFrame(frame)
-  const mutatorContext = toMutatorContext(ancestors)
+  const mutatorContext = toMutatorContext(ancestors, context.mutantSetPolicy)
   const replacements = context.mutatorEntries.flatMap(([mutatorName, mutate]) =>
     [...mutate(frame.node, mutatorContext)].map((replacement) => ({ mutatorName, replacement }))
   )
@@ -917,6 +919,7 @@ const mutablesFor = (
     : Option.getOrUndefined(ignorersReasonFor(frame.node, ancestors, context.ignorers))
   const aridReason = aridReasonOf(frame, context.mutantSetPolicy)
   const originalCode = printNode(frame.node)
+  const relationalSite = relationalSiteFacts(frame.node, mutatorContext)
   return replacements.map(({ mutatorName, replacement }): MutableCandidate => {
     const replacementCode = printNode(replacement)
     const tuple: MutantTuple = { fileName: context.fileName, mutatorName, originalCode, replacementCode }
@@ -930,6 +933,11 @@ const mutablesFor = (
         replacementCode,
         location,
         ignorerReason,
+        mutantSet: {
+          originalCode,
+          replacementCode,
+          relationalSufficient: relationalSufficientReplacement(relationalSite, replacement),
+        },
       },
     }
   })
@@ -1115,6 +1123,7 @@ const planMutantsAt = (
       rule: [...state.directiveRule],
       directives: [...directives],
       candidates: candidates.map((candidate) => candidate.data),
+      mutantSetPolicy: context.mutantSetPolicy,
     }),
   )
   return Match.value(plan).pipe(
@@ -1411,11 +1420,12 @@ export const transformScript: {
   ): (ast: ScriptAst) => Effect.Effect<readonly string[], ParseFailed | InstrumentError>
 } = dual((args: IArguments): boolean => args.length >= 3, transformScriptDataFirst)
 
-function toMutatorContext(ancestors: readonly Node[]): MutatorContext {
+function toMutatorContext(ancestors: readonly Node[], mutantSetPolicy: Options.MutantSetPolicyType): MutatorContext {
   return {
     parent: ancestors[0],
     grandParent: ancestors[1],
     ancestors: [...ancestors],
+    mutantSetPolicy,
   }
 }
 

@@ -5,6 +5,7 @@ import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { type LocatedDirective, LocatedDirectiveSchema } from '../directives/directive.schema.js'
+import { MutantKept, mutantSetPolicy, MutantSetPolicyCommand } from '../mutant-set-policy.workflow.js'
 import {
   type MutantCandidate,
   MutantsPlanned,
@@ -26,7 +27,22 @@ const reasonFromRule = (rule: readonly LocatedDirective[], mutatorName: string, 
   return last.directive.action === 'disable' ? last.directive.reason : undefined
 }
 
-const silencingReason = (command: PlanMutantsCommand, mutatorName: string): string | undefined => {
+const policyReasonOf = (command: PlanMutantsCommand, candidate: MutantCandidate): string | undefined => {
+  const outcomes = Result.match(
+    mutantSetPolicy(
+      MutantSetPolicyCommand.make({ policy: command.mutantSetPolicy, candidates: [candidate.mutantSet] }),
+    ),
+    { onFailure: () => [], onSuccess: (decided) => decided },
+  )
+  const first = outcomes.at(0)
+  if (first === undefined || S.is(MutantKept)(first)) {
+    return undefined
+  }
+  return `${first.ruleId}: ${first.detail}`
+}
+
+const silencingReason = (command: PlanMutantsCommand, candidate: MutantCandidate): string | undefined => {
+  const mutatorName = candidate.mutatorName
   const directive = reasonFromRule(command.rule, mutatorName, command.line)
   if (directive !== undefined) {
     return `directive: ${directive}`
@@ -34,8 +50,11 @@ const silencingReason = (command: PlanMutantsCommand, mutatorName: string): stri
   if (command.excludedMutations.includes(mutatorName)) {
     return `excluded-mutator: Ignored because of excluded mutation "${mutatorName}"`
   }
-  const provider = command.candidates.find((candidate) => candidate.mutatorName === mutatorName)?.ignorerReason
-  return provider === undefined ? undefined : `ignorer: ${provider}`
+  const provider = candidate.ignorerReason
+  if (provider !== undefined) {
+    return `ignorer: ${provider}`
+  }
+  return policyReasonOf(command, candidate)
 }
 
 const Namespace = Arbitrary.schema(S.Literals(['acme', 'beta']))
@@ -52,6 +71,7 @@ const commandOf = (
     readonly directives?: readonly LocatedDirective[]
     readonly mutatorNames?: readonly string[]
     readonly excludedMutations?: readonly string[]
+    readonly mutantSetPolicy?: PlanMutantsCommand['mutantSetPolicy']
   } = {},
 ): PlanMutantsCommand =>
   PlanMutantsCommand.make({
@@ -64,6 +84,7 @@ const commandOf = (
     rule: overrides.rule ?? [],
     directives: overrides.directives ?? [],
     candidates: [...candidates],
+    mutantSetPolicy: overrides.mutantSetPolicy ?? 'default',
   })
 
 const providerDirective = (mutatorName: string, reason: string): LocatedDirective => ({
@@ -77,6 +98,7 @@ const providerCandidate = (mutatorName: string): MutantCandidate => ({
   mutatorName,
   replacementCode: 'n - 1',
   location: { start: { line: 2, column: 1 }, end: { line: 2, column: 2 } },
+  mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
 })
 
 describe('planMutants', () => {
@@ -131,7 +153,7 @@ describe('planMutants', () => {
       if (Result.isFailure(planned)) {
         return false
       }
-      return planned.success.mutants.at(0)?.ignoreReason === silencingReason(command, candidate.mutatorName)
+      return planned.success.mutants.at(0)?.ignoreReason === silencingReason(command, candidate)
     },
   )
 
@@ -149,6 +171,7 @@ describe('planMutants', () => {
             start: { ...later.at, line: later.governedLine },
             end: { ...later.at, line: later.governedLine },
           },
+          mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
         }],
         {
           line: later.governedLine,

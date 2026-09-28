@@ -41,7 +41,9 @@ const silencingReason = (
         mutatorName,
         replacementCode: 'n - 1',
         location: { start: { line, column: 1 }, end: { line, column: 2 } },
+        mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
       }],
+      mutantSetPolicy: 'default',
     }),
   )
   return Result.isSuccess(planned) ? planned.success.mutants.at(0)?.ignoreReason : undefined

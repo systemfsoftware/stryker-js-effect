@@ -132,6 +132,26 @@ const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
 
 const isActive = (mutant: Mutant): boolean => mutant.status !== 'Ignored'
 
+const COMPARISON_MUTATORS: readonly string[] = ['BooleanLiteral', 'ConditionalExpression', 'EqualityOperator']
+
+const activeReplacements = (result: Instrument.InstrumentResult): readonly string[] =>
+  result.mutants
+    .filter((mutant) => isActive(mutant) && COMPARISON_MUTATORS.includes(mutant.mutatorName))
+    .map((mutant) => mutant.replacement)
+    .toSorted()
+
+const ignoredComparisonReasons = (result: Instrument.InstrumentResult): readonly string[] =>
+  result.mutants
+    .filter((mutant) => !isActive(mutant) && COMPARISON_MUTATORS.includes(mutant.mutatorName))
+    .map((mutant) => `${mutant.replacement} <= ${mutant.statusReason ?? ''}`)
+    .toSorted()
+
+const underFull = (fileName: string, source: string) =>
+  Instrument.instrument(
+    [{ name: fileName, content: source, mutate: true }],
+    stockOptions({ ignorers: [], excludedMutations: [], mutantSetPolicy: 'full' }),
+  )
+
 const instrumentSource = (fileName: string, source: string) =>
   Instrument.instrument(
     [{ name: fileName, content: source, mutate: true }],
@@ -150,14 +170,7 @@ Feature('Instrumenter characterization')
         Given('the baseline source')('source', () => Effect.succeed(PROBE_SOURCE)),
         When('it is instrumented')(
           'result',
-          ({ source }: { source: string }) =>
-            Instrument.instrument(
-              [{ name: '/tmp/probe.ts', content: source, mutate: true }],
-              stockOptions({
-                ignorers: [],
-                excludedMutations: [],
-              }),
-            ),
+          ({ source }: { source: string }) => underFull('/tmp/probe.ts', source),
         ),
         Then('the total and per-mutator counts match the baseline')((
           { result }: { result: Instrument.InstrumentResult },
@@ -371,14 +384,7 @@ export const b = 2 + 2
         Given('the baseline source')('source', () => Effect.succeed(PROBE_SOURCE)),
         When('it is instrumented')(
           'result',
-          ({ source }: { source: string }) =>
-            Instrument.instrument(
-              [{ name: '/tmp/probe.ts', content: source, mutate: true }],
-              stockOptions({
-                ignorers: [],
-                excludedMutations: [],
-              }),
-            ),
+          ({ source }: { source: string }) => underFull('/tmp/probe.ts', source),
         ),
         Then('every active mutant id is tested in the emitted content')((
           { result }: { result: Instrument.InstrumentResult },
@@ -604,6 +610,7 @@ export function price(n) {
               stockOptions({
                 ignorers: [invertedKeepIgnorer],
                 excludedMutations: [],
+                mutantSetPolicy: 'full',
               }),
             ),
         ),
@@ -685,8 +692,8 @@ export function price(n) {
         Given('the baseline source')('source', () => Effect.succeed(PROBE_SOURCE)),
         When('it is instrumented twice')('results', ({ source }: { source: string }) =>
           Effect.all([
-            instrumentSource('/tmp/probe.ts', source),
-            instrumentSource('/tmp/probe.ts', source),
+            underFull('/tmp/probe.ts', source),
+            underFull('/tmp/probe.ts', source),
           ])),
         Then('both runs mint sixteen lowercase hex digits per mutant, in the same order')((
           { results }: { results: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult] },
@@ -800,8 +807,8 @@ export function price(n) {
           'results',
           ({ source }: { source: string }) =>
             Effect.all([
-              instrumentSource('/tmp/one.ts', source),
-              instrumentSource('/tmp/two.ts', source),
+              underFull('/tmp/one.ts', source),
+              underFull('/tmp/two.ts', source),
             ]),
         ),
         Then('each id is scoped to its own file')((
@@ -876,14 +883,15 @@ export function price(n) {
           const conditionMutants = (result: Instrument.InstrumentResult) =>
             result.mutants.filter((mutant) => isActive(mutant) && mutant.mutatorName !== 'StringLiteral')
           return expect({
-            gatedIgnored: gated.mutants.filter((mutant) => mutant.status === 'Ignored').map((mutant) => [
-              mutant.mutatorName,
-              mutant.statusReason,
-            ]),
+            gatedIgnored: gated.mutants
+              .filter((mutant) => mutant.status === 'Ignored' && mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.mutatorName, mutant.statusReason]),
             gatedActiveStrings: gated.mutants.filter((mutant) =>
               isActive(mutant) && mutant.mutatorName === 'StringLiteral'
             ).length,
-            nearMissIgnored: nearMiss.mutants.filter((mutant) => mutant.status === 'Ignored').length,
+            nearMissIgnored: nearMiss.mutants.filter((mutant) =>
+              mutant.status === 'Ignored' && mutant.mutatorName === 'StringLiteral'
+            ).length,
             nearMissActiveStrings: nearMiss.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral').length,
             sameConditionMutants: conditionMutants(gated).length === conditionMutants(nearMiss).length &&
               conditionMutants(gated).length > 0,
@@ -939,6 +947,202 @@ export function price(n) {
             activeStrings: 6,
           })
         }),
+      ),
+    )
+
+    scenario(
+      'A relational comparison in a condition emits the sufficient set under default',
+      Gherkin.Do.pipe(
+        Given('a guard comparing two numbers')(
+          'source',
+          () => Effect.succeed(`export function f(a, b) { if (a < b) { return 1 } return 0 }`),
+        ),
+        When('it is instrumented under the default policy')(
+          'defaulted',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u17-if.ts', source),
+        ),
+        When('it is instrumented under the full policy')(
+          'full',
+          ({ source }: { source: string }) => underFull('/tmp/u17-if.ts', source),
+        ),
+        Then('default keeps the sufficient set and names every removal')((
+          { defaulted, full }: {
+            defaulted: Instrument.InstrumentResult
+            full: Instrument.InstrumentResult
+          },
+          expect,
+        ) =>
+          expect({
+            defaultedActive: activeReplacements(defaulted),
+            defaultedIgnored: ignoredComparisonReasons(defaulted),
+            fullActive: activeReplacements(full),
+            fullIgnored: ignoredComparisonReasons(full),
+          }).toEqual({
+            defaultedActive: ['a != b', 'a <= b', 'false'],
+            defaultedIgnored: [
+              'a >= b <= redundant-relational: a >= b is not in the sufficient set for a < b',
+              'true <= redundant-relational: true is not in the sufficient set for a < b',
+            ],
+            fullActive: ['a <= b', 'a >= b', 'false', 'true'],
+            fullIgnored: [],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A loop and a ternary condition each emit their own sufficient set under default',
+      Gherkin.Do.pipe(
+        Given('a while loop and a ternary comparing numbers')(
+          'source',
+          () =>
+            Effect.succeed(
+              `export const g = (a, b) => { while (a <= b) { a++ } return a }\nexport const h = (a, b) => a > b ? 1 : 0\n`,
+            ),
+        ),
+        When('it is instrumented under the default policy')(
+          'defaulted',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u17-loops.ts', source),
+        ),
+        When('it is instrumented under the full policy')(
+          'full',
+          ({ source }: { source: string }) => underFull('/tmp/u17-loops.ts', source),
+        ),
+        Then('each condition position keeps only its sufficient set')((
+          { defaulted, full }: {
+            defaulted: Instrument.InstrumentResult
+            full: Instrument.InstrumentResult
+          },
+          expect,
+        ) =>
+          expect({
+            defaultedActive: activeReplacements(defaulted),
+            defaultedIgnored: ignoredComparisonReasons(defaulted),
+            fullActive: activeReplacements(full),
+          }).toEqual({
+            defaultedActive: ['a != b', 'a < b', 'a == b', 'a >= b', 'false', 'true'],
+            defaultedIgnored: [
+              'a <= b <= redundant-relational: a <= b is not in the sufficient set for a > b',
+              'a > b <= redundant-relational: a > b is not in the sufficient set for a <= b',
+              'false <= redundant-relational: false is not in the sufficient set for a <= b',
+              'true <= redundant-relational: true is not in the sufficient set for a > b',
+            ],
+            fullActive: ['a < b', 'a <= b', 'a > b', 'a >= b', 'false', 'false', 'true'],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A bare comparison keeps today’s variants under both policies',
+      Gherkin.Do.pipe(
+        Given('a comparison assigned to a local')(
+          'source',
+          () => Effect.succeed(`export const ok = (a, b) => { const x = a < b; return x }`),
+        ),
+        When('it is instrumented under the default policy')(
+          'defaulted',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u17-bare.ts', source),
+        ),
+        When('it is instrumented under the full policy')(
+          'full',
+          ({ source }: { source: string }) => underFull('/tmp/u17-bare.ts', source),
+        ),
+        Then('both policies keep the same replacements')((
+          { defaulted, full }: {
+            defaulted: Instrument.InstrumentResult
+            full: Instrument.InstrumentResult
+          },
+          expect,
+        ) =>
+          expect({
+            defaultedActive: activeReplacements(defaulted),
+            defaultedIgnored: ignoredComparisonReasons(defaulted),
+            fullActive: activeReplacements(full),
+          }).toEqual({
+            defaultedActive: ['a <= b', 'a >= b', 'false', 'true'],
+            defaultedIgnored: [],
+            fullActive: ['a <= b', 'a >= b', 'false', 'true'],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'An equality comparison and a logical conjunction are untouched by both policies',
+      Gherkin.Do.pipe(
+        Given('an equality and a conjunction')(
+          'source',
+          () =>
+            Effect.succeed(
+              `export const eq = (a, b) => { const x = a === b; return x }\nexport const conj = (a, b) => { const y = a && b; return y }\n`,
+            ),
+        ),
+        When('it is instrumented under the default policy')(
+          'defaulted',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u17-eq.ts', source),
+        ),
+        When('it is instrumented under the full policy')(
+          'full',
+          ({ source }: { source: string }) => underFull('/tmp/u17-eq.ts', source),
+        ),
+        Then('both policies keep every replacement')((
+          { defaulted, full }: {
+            defaulted: Instrument.InstrumentResult
+            full: Instrument.InstrumentResult
+          },
+          expect,
+        ) =>
+          expect({
+            defaultedActive: activeReplacements(defaulted),
+            defaultedIgnored: ignoredComparisonReasons(defaulted),
+            fullActive: activeReplacements(full),
+          }).toEqual({
+            defaultedActive: ['a !== b', 'false', 'false', 'true', 'true'],
+            defaultedIgnored: [],
+            fullActive: ['a !== b', 'false', 'false', 'true', 'true'],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A replacement equal to its original and a duplicate sibling are suppressed',
+      Gherkin.Do.pipe(
+        Given('a guard whose condition is the literal true')(
+          'source',
+          () => Effect.succeed(`export const ok = () => { if (true) { return 1 } return 0 }`),
+        ),
+        When('it is instrumented under the default policy')(
+          'defaulted',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u17-true.ts', source),
+        ),
+        When('it is instrumented under the full policy')(
+          'full',
+          ({ source }: { source: string }) => underFull('/tmp/u17-true.ts', source),
+        ),
+        Then('the no-op is named equivalent and the second false is a duplicate')((
+          { defaulted, full }: {
+            defaulted: Instrument.InstrumentResult
+            full: Instrument.InstrumentResult
+          },
+          expect,
+        ) =>
+          expect({
+            defaultedActive: activeReplacements(defaulted),
+            defaultedIgnored: ignoredComparisonReasons(defaulted),
+            fullActive: activeReplacements(full),
+            fullIgnored: ignoredComparisonReasons(full),
+          }).toEqual({
+            defaultedActive: ['false'],
+            defaultedIgnored: [
+              'false <= duplicate-at-site: false is already planted at this site',
+              'true <= equivalent-to-original: true is the original code',
+            ],
+            fullActive: ['false', 'false', 'true'],
+            fullIgnored: [],
+          })
+        ),
       ),
     )
   })
