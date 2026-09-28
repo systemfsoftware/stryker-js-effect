@@ -23,7 +23,8 @@ const windowEnd = Number(Deno.env.get('TRACE_WINDOW_END') ?? Math.floor(Date.now
 const windowStart = Number(Deno.env.get('TRACE_WINDOW_START') ?? windowEnd - SEARCH_WINDOW_SECONDS)
 const outDir = resolve(Deno.env.get('OUT_DIR') ?? 'e2e-telemetry')
 const gated = Deno.env.get('OTEL_ENABLED') === 'true'
-const waitSeconds = Number(Deno.env.get('TRACE_WAIT_SECONDS') ?? 60)
+const waitSeconds = Number(Deno.env.get('TRACE_WAIT_SECONDS') ?? 180)
+const settleSeconds = Number(Deno.env.get('TRACE_SETTLE_SECONDS') ?? 70)
 
 const fail = (message: string): never => {
   console.error(`::error::export-traces: ${message}`)
@@ -103,19 +104,27 @@ const waitFor = (milliseconds: number): Promise<void> => {
   return promise
 }
 
-const searchUntilVisible = async (): Promise<ReadonlyArray<{ traceID: string }>> => {
+const searchUntilSettled = async (): Promise<ReadonlyArray<{ traceID: string }>> => {
   const deadline = Date.now() + waitSeconds * 1_000
+  const seen = new Set<string>()
+  let grewAt = Date.now()
   for (;;) {
     const found = await searchTraces()
-    console.log(`export-traces: ${found.length} trace(s) searchable for ${serviceName}`)
-    if (found.length > 0 || Date.now() >= deadline) return found
+    const fresh = found.filter((trace) => !seen.has(trace.traceID))
+    if (fresh.length > 0) {
+      fresh.forEach((trace) => seen.add(trace.traceID))
+      grewAt = Date.now()
+      console.log(`export-traces: ${found.length} trace(s) searchable for ${serviceName}`)
+    }
+    const settled = found.length > 0 && Date.now() - grewAt >= settleSeconds * 1_000
+    if (settled || Date.now() >= deadline) return found
     await waitFor(POLL_INTERVAL_MS)
   }
 }
 
 await ensureDir(join(outDir, 'traces'))
 
-const traces = await searchUntilVisible().catch(async (cause: unknown) => {
+const traces = await searchUntilSettled().catch(async (cause: unknown) => {
   const message = cause instanceof Error ? cause.message : String(cause)
   if (gated) fail(message)
   await writeManifest(0)
