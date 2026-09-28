@@ -102,9 +102,33 @@ export const MutantRunOptionsSchema = S.Struct({
   hitLimit: S.optionalKey(HitCount),
 })
 
+const asMutantIdKeyed = (counts: Record<string, number>): Record<MutantId, number> =>
+  Object.fromEntries(Object.entries(counts).filter(([key]) => S.is(MutantId)(key)))
+
+const asStringKeyed = (counts: Record<MutantId, number>): Record<string, number> =>
+  Object.fromEntries(Object.entries(counts))
+
+const MutantIdKeyedHitCounts = S.Record(S.String, HitCount).pipe(
+  S.check(
+    S.makeFilter(
+      (counts: Record<string, number>) => {
+        const unknownKey = Object.keys(counts).find((key) => !S.is(MutantId)(key))
+        return unknownKey === undefined
+          ? undefined
+          : { path: [unknownKey], issue: `hit counts must be keyed by mutant ids, got '${unknownKey}'` }
+      },
+      { arbitraryConstraint: { patterns: [{ source: '^[0-9a-f]{16}$', flags: '' }] } },
+    ),
+  ),
+  S.decodeTo(S.Record(MutantId, HitCount), {
+    decode: SGetter.transform(asMutantIdKeyed),
+    encode: SGetter.transform(asStringKeyed),
+  }),
+)
+
 export const MutantCoverageSchema = S.Struct({
-  perTest: S.Record(S.String, S.Record(MutantId, HitCount)),
-  static: S.Record(MutantId, HitCount),
+  perTest: S.Record(S.String, MutantIdKeyedHitCounts),
+  static: MutantIdKeyedHitCounts,
 })
 export type MutantCoverage = typeof MutantCoverageSchema.Type
 
@@ -207,6 +231,7 @@ const namedByASubset = (status: string): boolean => namedStatusSubsets.some((sub
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const Arr = await import('effect/Array')
+  const Option = await import('effect/Option')
 
   const boundaryNames = [
     '',
@@ -247,6 +272,20 @@ if (import.meta.vitest !== void 0) {
     '∀id_MutantIdRefusal_≡ExactlySixteenLowercaseHexDigits',
     { of: [S.String], subject: (value: string) => S.is(MutantId)(value) },
     (subject, [drawn]) => Arr.every(withIdBoundaries(drawn), (value) => subject(value) === readsAsMutantId(value)),
+  )
+
+  const coverageKeyedBy = (key: string): MutantCoverage => ({
+    perTest: { 'src/calc.ts::adds': { [key]: 1 } },
+    static: { [key]: 1 },
+  })
+  const decodedCoverageOrNull = (key: string) =>
+    Option.getOrNull(S.decodeOption(MutantCoverageSchema)(coverageKeyedBy(key)))
+
+  it.prop(
+    '∀key_CoverageKeyRefusal_≡MutantIdKeyedHitCounts',
+    { of: [S.String], subject: decodedCoverageOrNull },
+    (subject, [drawn]) =>
+      Arr.every(withIdBoundaries(drawn), (key) => (subject(key) === null) === !readsAsMutantId(key)),
   )
 
   const statusProbes = Arr.appendAll([...MutantStatusSchema.literals], ['NotAStatus'])
