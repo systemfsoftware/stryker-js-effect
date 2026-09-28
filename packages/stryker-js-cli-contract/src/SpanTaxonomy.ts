@@ -164,6 +164,7 @@ export const Spans = {
     name: 'stryker.reporterWiring.spawnPluginReporterFactory',
     attributes: {},
   },
+  rerun: { name: 'stryker.rerun', attributes: {} },
   restrictSocket: { name: 'restrictSocket', attributes: {} },
   rpcCapabilities: { name: 'rpc.capabilities', attributes: { 'rpc.method': SpanAttributeText } },
   rpcCheck: { name: 'rpc.check', attributes: { 'rpc.method': SpanAttributeText } },

@@ -675,6 +675,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.rerun",
+    "name": "stryker.rerun",
+    "attributes": {}
+  },
+  {
     "id": "restrictSocket",
     "name": "restrictSocket",
     "attributes": {}

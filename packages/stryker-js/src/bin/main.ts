@@ -38,6 +38,7 @@ import { concludeRunCell } from '../conclude-run.cell.js'
 import { runOutcomeCommandOf } from '../conclude-run.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
+import type { ResolvedMode } from '../output-mode.schema.js'
 import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
 import { environmentParentContext } from '../reporter-stream.service.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
@@ -169,6 +170,16 @@ const cliLayer = Layer.mergeAll(
 
 const USAGE_EXIT_CODE = runExitCodeFromOutcome(RunParseFailed.make({})).code
 
+const PROTOCOL_SERVER_SUBCOMMANDS: ReadonlyArray<string> = ['serve', 'mcp']
+
+const PROTOCOL_SERVER_MODE: ResolvedMode = { mode: 'human', signal: 'flag', stdoutIsTTY: false }
+
+const servedInvocation = (argv: ReadonlyArray<string>): boolean =>
+  Option.exists(
+    Option.fromUndefinedOr(argv.find((argument) => !argument.startsWith('-'))),
+    (subcommand) => PROTOCOL_SERVER_SUBCOMMANDS.some((served) => served === subcommand),
+  )
+
 const SPAN_ERROR_LIMIT = 1024
 const TRUNCATION_SUFFIX = '…[truncated]'
 
@@ -177,15 +188,22 @@ const boundedErrorText = (text: string): string =>
 
 const strykerProgram = Effect.gen(function*() {
   const stdio = yield* Stdio.Stdio
-  const outputMode = yield* OutputModeProbe
-  const detected = yield* Effect.result(outputMode.detectMode)
-  const mode = yield* Result.match(detected, {
-    onFailure: (failure) =>
-      Console.error(failure.message).pipe(
-        Effect.andThen(Effect.fail(RunExit.make({ code: USAGE_EXIT_CODE }))),
-      ),
-    onSuccess: (success) => Effect.succeed(success),
+  const args = [...(yield* stdio.args)]
+  const probeMode = Effect.gen(function*() {
+    const outputMode = yield* OutputModeProbe
+    const detected = yield* Effect.result(outputMode.detectMode)
+    return yield* Result.match(detected, {
+      onFailure: (failure) =>
+        Console.error(failure.message).pipe(
+          Effect.andThen(Effect.fail(RunExit.make({ code: USAGE_EXIT_CODE }))),
+        ),
+      onSuccess: (success) => Effect.succeed(success),
+    })
   })
+  const mode = yield* Match.value(servedInvocation(args)).pipe(
+    Match.when(true, () => Effect.succeed(PROTOCOL_SERVER_MODE)),
+    Match.orElse(() => probeMode),
+  )
   const runEvents = yield* RunEventStreamPort
   const stream = yield* runEvents.createRunEventStream(mode)
   const noColor = yield* Config.String('NO_COLOR').pipe(Effect.option)
@@ -204,7 +222,6 @@ const strykerProgram = Effect.gen(function*() {
     runEvents,
     console: realConsole,
   }
-  const args = [...(yield* stdio.args)]
   const answer = yield* Ref.make<CliAnswer>(undefined)
   const command = makeStrykerCommand({ environment, recordAnswer: (recorded) => Ref.set(answer, recorded) })
   const machineConsole = Boolean.match(mode.mode === 'machine', {

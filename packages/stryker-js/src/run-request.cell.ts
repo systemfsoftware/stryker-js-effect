@@ -1,5 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Console from 'effect/Console'
@@ -16,7 +17,8 @@ import * as Command from 'effect/unstable/cli/Command'
 
 import { type Admitted } from './admit-survivors-run.workflow.js'
 import { Baseline } from './Baseline.schema.js'
-import { CliRouteCommand } from './Cli.schema.js'
+import { addressFields, portFields } from './cli-route-fields.js'
+import { CliRouteCommand, type FeedbackJudgment, type ServeChannel } from './Cli.schema.js'
 import {
   CompareFailed,
   compareVerdicts,
@@ -31,6 +33,8 @@ import {
   type ConfigFileUnreadableError,
   type ConfigFileUnsupportedError,
 } from './ConfigError.schema.js'
+import { recordFeedbackCell } from './Feedback/Feedback.cell.js'
+import { FeedbackUnusable } from './Feedback/Feedback.schema.js'
 import {
   type GateEntry,
   GateInputUnusable,
@@ -38,16 +42,24 @@ import {
   GateNewSurvivorsCommand,
   GateRejected,
 } from './gate-new-survivors.workflow.js'
+import { mcpServerLayer } from './Mcp/mod.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { AnnotationsUnusable, renderAnnotations, RenderAnnotationsCommand } from './render-annotations.workflow.js'
+import {
+  mutantRerunAdmissionCell,
+  type MutantRerunInput,
+  type MutantRerunSettlement,
+  RerunRefused,
+} from './Rerun/mod.js'
 import { routeCliRequest } from './route-cli-request.workflow.js'
 import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
 import type { HostServices } from './run/host.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
+import { serveMutationServer, type ServeRequest } from './Serve/Serve.cell.js'
 import { StrykerError } from './stryker-error.schema.js'
 import { annotationLinesOf, surfacedSurvivorsOf } from './surfacing.js'
 import { type SurfacingCaps, SurfacingFields } from './surfacing.schema.js'
@@ -82,6 +94,7 @@ export type CliAnswer = void | MutationTestDone
 export type CliFailure =
   | SchemaError
   | SurvivorsRejection
+  | RerunRefused
   | ConfigFileNotFoundError
   | ConfigFileUnreadableError
   | ConfigFileInvalidError
@@ -92,6 +105,7 @@ export type CliFailure =
   | GateInputUnusable
   | AnnotationsUnusable
   | MergeReportsFailed
+  | FeedbackUnusable
 
 const progressStreamFileName = (options: Options.PartialStrykerOptions): string =>
   Option.getOrElse(
@@ -144,6 +158,39 @@ const survivorsInputOf = (channel: CliRead): SurvivorsAdmissionInput => ({
   mode: channel.environment.mode.mode,
   basePath: channel.environment.basePath,
   settle: settlementOf(channel),
+})
+
+const rerunRestrictedOptionsOf = ({
+  ids,
+  mutateSpans,
+  resolvedOptions,
+}: {
+  readonly ids: ReadonlyArray<string>
+  readonly mutateSpans: ReadonlyArray<string>
+  readonly resolvedOptions: Options.StrykerOptions
+}): Options.PartialStrykerOptions & {
+  readonly mutantIds?: ReadonlyArray<string>
+  readonly mutate?: ReadonlyArray<string>
+  readonly incremental?: boolean
+  readonly incrementalFile?: string
+} => ({
+  ...resolvedOptions,
+  mutate: [...mutateSpans],
+  mutantIds: [...ids],
+  incremental: true,
+})
+
+const rerunSettlementOf = (channel: CliRead): MutantRerunSettlement => ({
+  runAdmitted: ({ ids, mutateSpans, resolvedOptions }) =>
+    runStage({ ...channel, options: rerunRestrictedOptionsOf({ ids, mutateSpans, resolvedOptions }) }),
+})
+
+const rerunInputOf = (channel: CliRead, ids: ReadonlyArray<string>): MutantRerunInput => ({
+  ids,
+  cliOptions: channel.options,
+  mode: channel.environment.mode.mode,
+  basePath: channel.environment.basePath,
+  settle: rerunSettlementOf(channel),
 })
 
 const restrictedOptionsOf = ({
@@ -414,6 +461,31 @@ const annotateReport = (
     )
   })
 
+const serveRequestOf = (
+  serve: { readonly channel: ServeChannel; readonly port?: number | undefined; readonly address?: string | undefined },
+  cliOptions: Options.PartialStrykerOptions,
+): ServeRequest => ({
+  channel: serve.channel,
+  cliOptions,
+  ...portFields(serve.port),
+  ...addressFields(serve.address),
+})
+
+const feedbackRoute = (
+  feedback: { readonly id: string; readonly judgment: FeedbackJudgment; readonly reason?: string | undefined },
+  channel: CliRead,
+): Effect.Effect<void, FeedbackUnusable, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const recorded = yield* recordFeedbackCell({
+      basePath: channel.environment.basePath,
+      id: feedback.id,
+      judgment: feedback.judgment,
+      reason: feedback.reason ?? null,
+    })
+    const line = yield* Effect.orDie(S.encodeEffect(S.fromJsonString(RunEvent.FeedbackReported))(recorded))
+    yield* Effect.sync(() => channel.environment.console.log(line))
+  })
+
 export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)(readRunRequest)
   .decide(routeCliRequest)
   .write({
@@ -429,8 +501,23 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
     CliCompareRequested: (compare) => compareReports(compare),
     CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(explainGateRefusal)),
     CliAnnotateRequested: (annotate, channel) => annotateReport(annotate, channel),
+    CliFeedbackRequested: (feedback, channel) => feedbackRoute(feedback, channel),
+    CliMcpRequested: (_, channel) =>
+      Layer.launch(mcpServerLayer({ basePath: channel.environment.basePath })).pipe(Effect.scoped, Effect.orDie),
+    CliServeRequested: (serve, channel) =>
+      serveMutationServer(serveRequestOf(serve, channel.options)).pipe(Effect.scoped),
     CliRunRequested: (_, channel) => runStage(channel),
     CliSurvivorsRequested: (_, channel) => survivorsAdmissionCell.run(survivorsInputOf(channel)),
+    CliRerunRequested: (rerun, channel) =>
+      mutantRerunAdmissionCell.run(rerunInputOf(channel, rerun.ids)).pipe(
+        Effect.tapError((failure) =>
+          Effect.forEach(
+            Option.toArray(Option.liftPredicate(failure, S.is(RerunRefused))),
+            (refusal) => Effect.logError(refusal.reason),
+            { discard: true },
+          )
+        ),
+      ),
     CommandRejected: ({ issue }) =>
       Effect.fail(StrykerError.make({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
   })

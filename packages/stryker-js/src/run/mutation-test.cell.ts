@@ -28,6 +28,7 @@ import {
 import { MutationReporting } from '../mutation-reporting.service.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
+import { mutantDetailEventsOf, requestedIdsOf, restrictedToRequestedIds } from '../Rerun/rerun-selection.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
@@ -198,6 +199,11 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
   )
   const checkerRelease = yield* checkers.releaseInBackground
   const allResults = [...settledResults, ...runResults]
+  yield* Effect.forEach(
+    mutantDetailEventsOf({ requested: requestedIdsOf(prev.options), results: allResults }),
+    (detail) => Queue.offer(progressQueue, detail),
+    { discard: true },
+  )
   const outcomeResult = yield* reporting.reportAll({
     ...reportingInputOf({ prev, env, results: allResults }),
     closureDigestsByMutantId: reuse.closureDigestsByMutantId,
@@ -247,7 +253,9 @@ export const mutationTestCell = Sandwich.named(
   Effect.gen(function*() {
     yield* Scope.Scope
     const prev = command
-    const { dropped, plannable } = partitionPlannable(prev.mutants)
+    const { dropped, plannable } = partitionPlannable(
+      restrictedToRequestedIds({ mutants: prev.mutants, requested: requestedIdsOf(prev.options) }),
+    )
     const raw: MutationTestRaw = {
       _tag: 'MutationTestCommand',
       dryRunOnly: prev.options.dryRunOnly,

@@ -274,6 +274,14 @@ const runOptions = {
       "Re-run only the mutants that survived a previous run. Admits against the previous run's mutation report (the `survivorsPriorReport` config option, default `reports/mutation-report.json`) and re-tests exactly the survivor set. Exits 2 with a remediation naming a full run when the report is missing, drifted, or the configuration changed; exits 0 with a null score when the report has no survivors.",
     ),
   ),
+  mutant: Flag.String('mutant')
+    .pipe(
+      Flag.withDescription(
+        "Re-run one or more mutants by id, comma separated. Admits each id against the previous run's mutation report (`reports/mutation/mutation.json`), restricts the run to those mutants' files, and emits a `mutant-detail` for each with its status, covering tests, killing test, and `stryker run --mutant <id>` reproducer. Exits 2 naming the ids when a report is missing or does not list one of them.",
+      ),
+      Flag.map(splitOnComma),
+      optional,
+    ),
 }
 
 const runArgs = {
@@ -351,6 +359,23 @@ const annotateOptions = {
   ),
 }
 
+const serveOptions = {
+  port: Flag.Int('port').pipe(
+    Flag.withDescription('The port the socket channel listens on. Required for the `socket` channel.'),
+    optional,
+  ),
+  address: Flag.String('address').pipe(
+    Flag.withDescription('The host address the socket channel listens on. Defaults to `localhost`.'),
+    optional,
+  ),
+}
+
+const serveArgs = {
+  channel: Argument.Literals('channel', ['stdio', 'socket'] as const).pipe(
+    Argument.withDescription('The transport to speak the Mutation Server Protocol over.'),
+  ),
+}
+
 type ParsedConfigValue<A> = A extends Argument.Argument<infer Value> ? Value
   : A extends Flag.Flag<infer Value> ? Value
   : never
@@ -421,7 +446,9 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
         ),
       onNone: () =>
         runRequestCell.run({
-          route: CliRouteCommand.make({ route: { _tag: 'run', survivors: config.survivors === true } }),
+          route: CliRouteCommand.make({
+            route: { _tag: 'run', survivors: config.survivors === true, mutants: Option.getOrUndefined(config.mutant) },
+          }),
           options: readStrykerOptions(config),
           environment,
         }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer)),
@@ -502,10 +529,105 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
       ),
     )
 
+  const serveCommand = Command.make('serve', { ...serveOptions, ...serveArgs }, (config) =>
+    runRequestCell.run({
+      route: CliRouteCommand.make({
+        route: {
+          _tag: 'serve',
+          channel: config.channel,
+          port: Option.getOrUndefined(config.port),
+          address: Option.getOrUndefined(config.address),
+        },
+      }),
+      options: {},
+      environment,
+    }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer))).pipe(
+      Command.withDescription(
+        'Serve the Mutation Server Protocol: framed JSON-RPC (`configure`, `discover`, `mutationTest`) over stdio or a socket',
+      ),
+    )
+
+  const feedbackOptions = {
+    useful: Flag.map(optional(Flag.Boolean('useful')), absentWhenFalse).pipe(
+      Flag.withDescription('Judge the survivor worth acting on.'),
+    ),
+    notUseful: Flag.map(optional(Flag.Boolean('not-useful')), absentWhenFalse).pipe(
+      Flag.withDescription('Judge the survivor not worth acting on.'),
+    ),
+    reason: Flag.String('reason').pipe(
+      Flag.withDescription('Why the survivor was or was not worth acting on.'),
+      optional,
+    ),
+  }
+
+  const feedbackArgs = {
+    id: Argument.String('id').pipe(
+      Argument.withDescription('The id of a surfaced survivor of the finished mutation report.'),
+    ),
+  }
+
+  const feedbackJudgmentOf = (
+    useful: boolean | undefined,
+    notUseful: boolean | undefined,
+  ): Option.Option<'useful' | 'not-useful'> =>
+    Bool.match(useful === notUseful, {
+      onTrue: () => Option.none(),
+      onFalse: () =>
+        Option.some(
+          Bool.match(useful === true, { onTrue: () => 'useful' as const, onFalse: () => 'not-useful' as const }),
+        ),
+    })
+
   const root = Command
     .make('stryker', {}, (_config) => Effect.fail(CliError.ShowHelp.make({ commandPath: ['stryker'], errors: [] })))
 
+  const feedbackCommand = Command.make(
+    'feedback',
+    { ...feedbackOptions, ...feedbackArgs },
+    (config) =>
+      Option.match(feedbackJudgmentOf(config.useful, config.notUseful), {
+        onNone: () =>
+          Console.error('stryker feedback takes exactly one of --useful or --not-useful').pipe(
+            Effect.andThen(
+              Effect.failSync(() => CliError.UnexpectedArgument.make({ arguments: ['--useful', '--not-useful'] })),
+            ),
+          ),
+        onSome: (judgment) =>
+          runRequestCell.run({
+            route: CliRouteCommand.make({
+              route: { _tag: 'feedback', id: config.id, judgment, reason: Option.getOrUndefined(config.reason) },
+            }),
+            options: {},
+            environment,
+          }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer)),
+      }),
+  ).pipe(
+    Command.withDescription(
+      'Record whether one surfaced survivor was worth acting on, appending one `feedback` stream line to the report directory',
+    ),
+  )
+
+  const mcpCommand = Command.make('mcp', {}, (_config) =>
+    runRequestCell.run({
+      route: CliRouteCommand.make({ route: { _tag: 'mcp' } }),
+      options: {},
+      environment,
+    }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer))).pipe(
+      Command.withDescription(
+        'Serve the Model Context Protocol over stdio: tools to list survivors, show and re-run a mutant, and record usefulness',
+      ),
+    )
+
   return root.pipe(
-    Command.withSubcommands([runCommand, mergeReportsCommand, compareCommand, gateCommand, annotateCommand]),
+    Command.withSubcommands([
+      runCommand,
+      mergeReportsCommand,
+      compareCommand,
+      gateCommand,
+      annotateCommand,
+      serveCommand,
+      feedbackCommand,
+      mcpCommand,
+    ]),
   )
 }

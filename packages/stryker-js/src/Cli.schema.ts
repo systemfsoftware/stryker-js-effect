@@ -22,10 +22,36 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
-export const CliCommandSchema = S.Literals(['run', 'merge-reports'])
+export const CliCommandSchema = S.Literals(['run', 'merge-reports', 'serve', 'feedback', 'mcp'])
 export type CliCommand = typeof CliCommandSchema.Type
 
-const RunRequestSchema = S.TaggedStruct('run', { survivors: S.Boolean })
+export const ServeChannelSchema = S.Literals(['stdio', 'socket'])
+export type ServeChannel = typeof ServeChannelSchema.Type
+
+export const FeedbackJudgmentSchema = S.Literals(['useful', 'not-useful'])
+export type FeedbackJudgment = typeof FeedbackJudgmentSchema.Type
+
+const FeedbackRouteRequestSchema = S.TaggedStruct('feedback', {
+  id: S.String,
+  judgment: FeedbackJudgmentSchema,
+  reason: S.optional(S.String),
+})
+
+export type FeedbackRouteRequest = S.Schema.Type<typeof FeedbackRouteRequestSchema>
+
+const McpRouteRequestSchema = S.TaggedStruct('mcp', {})
+
+export type McpRouteRequest = S.Schema.Type<typeof McpRouteRequestSchema>
+
+const ServeRouteRequestSchema = S.TaggedStruct('serve', {
+  channel: ServeChannelSchema,
+  port: S.optional(S.Int),
+  address: S.optional(S.String),
+})
+
+export type ServeRouteRequest = S.Schema.Type<typeof ServeRouteRequestSchema>
+
+const RunRequestSchema = S.TaggedStruct('run', { survivors: S.Boolean, mutants: S.Array(S.String).pipe(S.optional) })
 
 export type RunRequest = S.Schema.Type<typeof RunRequestSchema> & {
   readonly options: Options.PartialStrykerOptions
@@ -60,7 +86,15 @@ const AnnotateRequestSchema = S.TaggedStruct('annotate', {
 
 export type AnnotateRequest = S.Schema.Type<typeof AnnotateRequestSchema>
 
-export type CliRequest = RunRequest | MergeReportsRequest | CompareRequest | GateRequest | AnnotateRequest
+export type CliRequest =
+  | RunRequest
+  | MergeReportsRequest
+  | CompareRequest
+  | GateRequest
+  | AnnotateRequest
+  | ServeRouteRequest
+  | FeedbackRouteRequest
+  | McpRouteRequest
 
 export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteCommand', {
   route: S.Union([
@@ -70,6 +104,9 @@ export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteC
     CompareRequestSchema,
     GateRequestSchema,
     AnnotateRequestSchema,
+    ServeRouteRequestSchema,
+    FeedbackRouteRequestSchema,
+    McpRouteRequestSchema,
   ]),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const

@@ -42,6 +42,15 @@ export type ExtendsStepState = typeof ExtendsStepStateSchema.Type
 
 export type ExtendsRefusalReason = 'cycle' | 'non-string-extends'
 
+export const mutantIds = S.String.pipe(
+  S.Array,
+  S.annotate({
+    description:
+      "The content ids of the mutants a run re-runs. Set by naming ids on the run command; the run then mutates only the files those ids live in, plans only those mutants, and reports each one's status, covering tests, killing test, and reproducer command.",
+  }),
+  S.optionalKey,
+)
+
 export const survivorsPriorReport = S.optionalKey(
   S.String.pipe(
     S.annotate({
@@ -62,6 +71,7 @@ export const extendsPropertySchema = S.optionalKey(
 export const forkOptionsSchema = S.StructWithRest(
   S.Struct({
     ...Options.StrykerOptionsSchema.schema.fields,
+    mutantIds,
     survivorsPriorReport,
     extends: extendsPropertySchema,
   }),
