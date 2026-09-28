@@ -5,6 +5,7 @@ import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Array from 'effect/Array'
 import * as Deferred from 'effect/Deferred'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
@@ -15,6 +16,7 @@ import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
+import * as Stream from 'effect/Stream'
 
 import {
   type CheckedHistoryEntry,
@@ -22,10 +24,13 @@ import {
 } from '../../tests/__fixtures__/partition-checked-plans-law.fixture.js'
 import {
   type CheckerPool,
+  type CheckerPoolHandle,
   type CheckerSlot,
   checkPlans,
+  checkPlansStream,
   inOwnScope,
   makeCheckerPoolHandle,
+  runCheckedPlans,
   splitCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
 import type { CheckerCrash, CheckerResourceService } from '../Checker/Checker.handle.js'
@@ -89,6 +94,8 @@ const labelledPlanOf = (mutantId: string, netTime: number): Mutant.MutantRunPlan
     },
   }
 }
+
+const runResultOf = (plan: Mutant.MutantRunPlan): Mutant.RunMutantResult => ({ ...plan.mutant, status: 'Killed' })
 
 const passedAnswers = (mutants: readonly Checker.CheckerMutantWire[]): Record<string, Checker.CheckResult> =>
   Object.fromEntries(
@@ -398,6 +405,156 @@ describe('checker pool', () => {
           Match.exhaustive,
         )
         return verdict
+      }),
+  )
+
+  it.effect.prop(
+    '∀seed_ChainedCheckers_≠FailedPassed',
+    {
+      of: [S.Int],
+      subject: (handle: CheckerPoolHandle, plans: readonly Mutant.MutantRunPlan[]) =>
+        Stream.runCollect(checkPlansStream(handle, plans)),
+    },
+    (subject, [seed]) =>
+      Effect.gen(function*() {
+        const plans = groupPlansOf('chain', seed)
+        const failingId = Option.getOrThrow(Array.get(plans, Math.abs(seed) % plans.length)).mutant.id
+        const failingAnswers = (mutants: readonly Checker.CheckerMutantWire[]): Record<string, Checker.CheckResult> =>
+          Object.fromEntries(
+            mutants.map((mutant): readonly [string, Checker.CheckResult] => [
+              mutant.id,
+              mutant.id === failingId
+                ? { status: 'compileError', reason: 'the second checker refused it' }
+                : { status: 'passed' },
+            ]),
+          )
+        const passing = checkerServiceOf({
+          group: (_checkerName, mutants) => Effect.succeed(singletonGroups(mutants)),
+          check: (_checkerName, mutants) => Effect.succeed(passedAnswers(mutants)),
+        })
+        const refusing = checkerServiceOf({
+          group: (_checkerName, mutants) => Effect.succeed(singletonGroups(mutants)),
+          check: (_checkerName, mutants) => Effect.succeed(failingAnswers(mutants)),
+        })
+        const slot: CheckerSlot = [
+          { checkerName: 'first', checker: passing },
+          { checkerName: 'second', checker: refusing },
+        ]
+        const pool = yield* checkerSlotPoolOf(1, Effect.succeed(slot))
+        const groups = yield* subject(makeCheckerPoolHandle(pool), plans)
+        const passedIds = groups.flatMap((group) => group.passedPlans.map((plan) => plan.mutant.id))
+        const failedIds = groups.flatMap((group) => group.failedChecks.map(([plan]) => plan.mutant.id))
+        return holds([
+          passedIds.length === plans.length - 1,
+          !passedIds.includes(failingId),
+          failedIds.join(',') === failingId,
+          passedIds.join(',') === plans.map((plan) => plan.mutant.id).filter((id) => id !== failingId).join(','),
+        ])
+      }),
+  )
+
+  it.effect.prop(
+    '∀seed_SlowGroup_⊨FirstEmit≺LastCheck',
+    {
+      of: [S.Int],
+      subject: (plans: readonly Mutant.MutantRunPlan[]) =>
+        Effect.gen(function*() {
+          const slowId = Option.getOrThrow(Array.last(plans)).mutant.id
+          const events = yield* Ref.make<readonly string[]>([])
+          const releaseSlow = yield* Deferred.make<void>()
+          const checker = checkerServiceOf({
+            group: (_checkerName, mutants) => Effect.succeed(singletonGroups(mutants)),
+            check: (_checkerName, mutants) =>
+              Effect.gen(function*() {
+                const id = Option.getOrThrow(Array.head(mutants)).id
+                yield* Ref.update(events, (seen) => [...seen, `check:start:${id}`])
+                if (id === slowId) yield* Deferred.await(releaseSlow)
+                yield* Ref.update(events, (seen) => [...seen, `check:end:${id}`])
+                return passedAnswers(mutants)
+              }),
+          })
+          const pool = yield* checkerSlotPoolOf(plans.length, Effect.succeed(checkerSlotOf('slow', checker)))
+          yield* checkPlansStream(makeCheckerPoolHandle(pool), plans).pipe(
+            Stream.mapEffect(
+              ({ passedPlans }) =>
+                Effect.gen(function*() {
+                  yield* Ref.update(events, (seen) => [
+                    ...seen,
+                    ...passedPlans.map((plan) => `emit:${plan.mutant.id}`),
+                  ])
+                  yield* Deferred.succeed(releaseSlow, undefined)
+                }),
+              { concurrency: 1 },
+            ),
+            Stream.runDrain,
+          )
+          return { log: yield* Ref.get(events), slowId }
+        }),
+    },
+    (subject, [seed]) =>
+      Effect.gen(function*() {
+        const plans = groupPlansOf('slow', seed)
+        const observed = yield* subject(plans)
+        const emittedIds = observed.log
+          .filter((entry) => entry.startsWith('emit:'))
+          .map((entry) => entry.slice('emit:'.length))
+        const endedIds = observed.log
+          .filter((entry) => entry.startsWith('check:end:'))
+          .map((entry) => entry.slice('check:end:'.length))
+        const firstEmit = observed.log.findIndex((entry) => entry.startsWith('emit:'))
+        const slowEnd = observed.log.findIndex((entry) => entry === `check:end:${observed.slowId}`)
+        const slowStart = observed.log.findIndex((entry) => entry === `check:start:${observed.slowId}`)
+        return holds([
+          emittedIds.join(',') === plans.map((plan) => plan.mutant.id).join(','),
+          [...endedIds].sort().join(',') === plans.map((plan) => plan.mutant.id).sort().join(','),
+          slowStart >= 0 && slowStart < firstEmit,
+          firstEmit >= 0 && firstEmit < slowEnd,
+        ])
+      }),
+  )
+
+  it.live.prop(
+    '∀seed_AcrossClearedGroups_⊨FreeRunnerTakesNext',
+    { of: [S.Int], subject: runCheckedPlans },
+    (subject, [seed]) =>
+      Effect.gen(function*() {
+        const slowId = idOf(`slow-${seed}`)
+        const fastId = idOf(`fast-${seed}`)
+        const checked = Stream.make(
+          { passedPlans: [labelledPlanOf(slowId, Math.abs(seed))], failedChecks: [] },
+          { passedPlans: [labelledPlanOf(fastId, Math.abs(seed) + 1)], failedChecks: [] },
+        )
+        const releaseSlow = yield* Deferred.make<void>()
+        const fastStarted = yield* Deferred.make<void>()
+        const startedIds = yield* Ref.make<readonly string[]>([])
+        const execution = {
+          settleFailure: (plan: Mutant.MutantRunPlan) => Effect.succeed(runResultOf(plan)),
+          runPlan: (plan: Mutant.MutantRunPlan) =>
+            Effect.gen(function*() {
+              yield* Ref.update(startedIds, (seen) => [...seen, plan.mutant.id])
+              if (plan.mutant.id === slowId) {
+                yield* Deferred.await(releaseSlow)
+              } else {
+                yield* Deferred.succeed(fastStarted, undefined)
+              }
+              return runResultOf(plan)
+            }),
+          concurrency: 2,
+        }
+        const observed = yield* Effect.scoped(Effect.gen(function*() {
+          const fiber = yield* subject(checked, execution).pipe(Stream.runDrain, Effect.forkScoped)
+          const fastRanWhileSlowBlocked = yield* Deferred.await(fastStarted).pipe(
+            Effect.timeoutOption(Duration.millis(100)),
+            Effect.map(Option.isSome),
+          )
+          yield* Deferred.succeed(releaseSlow, undefined)
+          yield* Fiber.join(fiber)
+          return { fastRanWhileSlowBlocked, started: yield* Ref.get(startedIds) }
+        }))
+        return holds([
+          observed.fastRanWhileSlowBlocked,
+          [...observed.started].sort().join(',') === [slowId, fastId].sort().join(','),
+        ])
       }),
   )
 

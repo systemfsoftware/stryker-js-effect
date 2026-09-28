@@ -20,9 +20,10 @@ import * as Stream from 'effect/Stream'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import { scoped as checkerPoolsScoped } from '../Checker/checker-pool.blueprint.js'
 import {
-  checkPlans as checkPlansWithConfiguredCheckers,
+  checkPlansStream as checkPlansWithConfiguredCheckers,
   inOwnScope,
   makeCheckerPoolHandle,
+  runCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
@@ -141,16 +142,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     reporterStage: prev.reporterStage,
   })
   const checkerHandle = Option.map(Option.fromNullishOr(checkers.resources), makeCheckerPoolHandle)
-  const { passedPlans, failedChecks } = yield* checkPlansWithConfiguredCheckers(
-    Option.getOrUndefined(checkerHandle),
-    plan.runPlans,
-  )
-  const checkerResults = yield* Effect.forEach(
-    failedChecks,
-    ([mutantPlan, result]) => reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result),
-    { concurrency: 1 },
-  )
-  const checkerRelease = yield* checkers.releaseInBackground
+  const checkedPlans = checkPlansWithConfiguredCheckers(Option.getOrUndefined(checkerHandle), plan.runPlans)
   const completedRef = yield* Ref.make(0)
   const pathService = yield* Path.Path
   const context: RunContext = {
@@ -163,7 +155,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     plannedMutants: [...rememberedResults, ...reuse.mutants],
     pathService,
   }
-  const settledResults = [...rememberedResults, ...plan.earlyResults, ...checkerResults]
+  const settledResults = [...rememberedResults, ...plan.earlyResults]
   yield* Effect.forEach(settledResults, (result) => announceSettledMutant(context, result), {
     concurrency: 1,
     discard: true,
@@ -175,14 +167,25 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     SpanTaxonomy.Spans.mutationTestBatch,
     { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
     () =>
-      Stream.mapEffect(
-        Stream.fromIterable(passedPlans),
-        (runPlan) =>
+      runCheckedPlans(checkedPlans, {
+        settleFailure: (mutantPlan, result) =>
+          Effect.gen(function*() {
+            const reported = yield* reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result)
+            yield* announceSettledMutant(context, reported)
+            yield* checkpointGate.withPermits(1)(
+              Effect.gen(function*() {
+                yield* Ref.update(completedMutants, (completed) => [...completed, reported])
+                yield* checkpointMutationResults(context, completedMutants)
+              }),
+            )
+            return reported
+          }),
+        runPlan: (runPlan) =>
           Effect.scoped(
             mutantRunCell.run({ context, testRunnerPool, checkpointGate, completedMutants, plan: runPlan }),
           ),
-        { concurrency: Math.max(1, testRunnerCapacity) },
-      ).pipe(
+        concurrency: testRunnerCapacity,
+      }).pipe(
         Stream.runFold(
           (): Mutant.RunMutantResult[] => [],
           (acc, result) => {
@@ -192,10 +195,12 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
         ),
       ),
   )
+  const checkerRelease = yield* checkers.releaseInBackground
   const allResults = [...settledResults, ...runResults]
   const outcomeResult = yield* reporting.reportAll({
     ...reportingInputOf({ prev, env, results: allResults }),
     closureDigestsByMutantId: reuse.closureDigestsByMutantId,
+    timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
   })
   yield* Fiber.await(checkerRelease)
   const doneNow = yield* Clock.currentTimeMillis
