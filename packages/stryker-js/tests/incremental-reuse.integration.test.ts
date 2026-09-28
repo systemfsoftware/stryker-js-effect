@@ -45,6 +45,7 @@ const mutantsOf = (text: string): readonly RecordedMutant[] =>
 
 interface RunObservation {
   readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
+  readonly events: ReadonlyArray<RunEvent.RunEvent>
   readonly reuse: RunEvent.ReuseReported | undefined
   readonly verdict: RunEvent.VerdictReached | undefined
   readonly mutants: readonly RecordedMutant[]
@@ -110,7 +111,7 @@ const runOnce = (root: string, options: Options.PartialStrykerOptions): Effect.E
     )
     const reuse = events.find((event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event))
     const verdict = events.find((event): event is RunEvent.VerdictReached => S.is(RunEvent.VerdictReached)(event))
-    return { exit, reuse, verdict, mutants: mutantsOf(incrementalText), incrementalText }
+    return { exit, events, reuse, verdict, mutants: mutantsOf(incrementalText), incrementalText }
   }).pipe(Effect.provide(filePorts))
 
 const optionsOf = (
@@ -138,6 +139,156 @@ const ZERO_REFUSALS = {
   timeoutUnreproduced: 0,
   noPriorRecord: 0,
 }
+
+const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
+
+const VM_PACKAGE_SOURCE = '{ "type": "commonjs" }\n'
+
+const VM_MATH_SOURCE = [
+  'function add(left, right) {',
+  '  return left + right;',
+  '}',
+  '',
+  'module.exports = { add };',
+  '',
+].join('\n')
+
+const VM_OTHER_SOURCE = [
+  'function label() {',
+  "  return 'left' + 'right';",
+  '}',
+  '',
+  'module.exports = { label };',
+  '',
+].join('\n')
+
+const VM_PASSING_TEST = [
+  "import { test } from 'vitest'",
+  "import math from '../src/math.js'",
+  '',
+  "test('executes add without asserting on its result', () => {",
+  '  math.add(1, 2)',
+  '})',
+  '',
+].join('\n')
+
+const VM_KILLING_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import math from '../src/math.js'",
+  '',
+  "test('adds two numbers', () => {",
+  '  let spin = 0',
+  '  for (let index = 0; index < 20000000; index += 1) {',
+  '    spin += index % 3',
+  '  }',
+  '  expect(spin).toBeGreaterThan(0)',
+  '  expect(math.add(1, 2)).toBe(3)',
+  '})',
+  '',
+].join('\n')
+
+const VM_OTHER_TEST = [
+  "import { test } from 'vitest'",
+  "import other from '../src/other.js'",
+  '',
+  ...Array.from(
+    { length: 24 },
+    (_unused, index) => `test('touches label ${index}', () => {\n  other.label()\n})`,
+  ),
+  '',
+].join('\n')
+
+const writeVmFixture = (
+  files: ReadonlyArray<readonly [string, string]>,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const root = yield* writeFixture(files)
+    yield* fs.makeDirectory(path.join(root, 'node_modules'), { recursive: true })
+    const installed = yield* fs.readDirectory(path.join(PACKAGE_ROOT, 'node_modules'))
+    yield* Effect.forEach(
+      installed,
+      (entry) =>
+        Effect.gen(function*() {
+          const target = path.join(root, 'node_modules', entry)
+          const present = yield* fs.exists(target)
+          yield* Effect.when(
+            fs.symlink(path.join(PACKAGE_ROOT, 'node_modules', entry), target),
+            Effect.succeed(!present),
+          )
+        }),
+      { discard: true },
+    )
+    return root
+  }).pipe(Effect.orDie)
+
+const vmOptionsOf = (
+  root: string,
+  extras: Partial<Options.PartialStrykerOptions> = {},
+): Options.PartialStrykerOptions => ({
+  testRunner: 'vm',
+  testFiles: ['test/**/*.mjs'],
+  mutate: ['src/**/*.js'],
+  reporters: [],
+  checkers: [],
+  cleanTempDir: 'always',
+  incremental: true,
+  incrementalFile: `${root}/reports/main.json`,
+  ...extras,
+})
+
+interface CostedMutant {
+  readonly id: string
+  readonly status: string
+  readonly static: boolean
+  readonly testsExecuted: number
+}
+
+const costedMutantsOf = (events: ReadonlyArray<RunEvent.RunEvent>): readonly CostedMutant[] =>
+  events.flatMap((event) =>
+    S.is(RunEvent.RunMutantTestedEvent)(event)
+      ? [{
+        id: event.id,
+        status: event.status,
+        static: event.static,
+        testsExecuted: event.cost?.testsExecuted ?? 0,
+      }]
+      : []
+  )
+
+const SEMANTICS_BUMPED = 0
+
+const withSemanticsBumped = (text: string): string =>
+  Option.getOrElse(
+    Option.flatMap(
+      S.decodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))(text),
+      (report) =>
+        S.encodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))({
+          ...report,
+          verdictSemanticsVersion: SEMANTICS_BUMPED,
+        }),
+    ),
+    () => text,
+  )
+
+const killerNamesOf = (text: string, mutantIds: ReadonlySet<string>): readonly string[] =>
+  Option.getOrElse(
+    Option.map(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), (report) => {
+      const testFiles = report.testFiles ?? {}
+      const runnerIdByPosition = Object.fromEntries(
+        Object.entries(testFiles).flatMap(([file, entry]) =>
+          entry.tests.map((test) => [test.id, `${file}#${test.name}`] as const)
+        ),
+      )
+      return Object.values(report.files)
+        .flatMap((file) => file.mutants)
+        .filter((mutant) => mutantIds.has(mutant.id))
+        .flatMap((mutant) => [...(mutant.killedBy ?? [])])
+        .map((id) => runnerIdByPosition[id] ?? id)
+    }),
+    (): readonly string[] => [],
+  )
 
 const statusesOf = (mutants: readonly RecordedMutant[]): readonly string[] =>
   [...mutants].sort((left, right) => left.id.localeCompare(right.id)).map((mutant) => `${mutant.id}:${mutant.status}`)
@@ -335,6 +486,93 @@ Feature('Content-keyed reuse across incremental reports')
             plannedNonZero: true,
             mutantSetUnchanged: true,
             second: { reused: 0, ran: planned, refused: { ...ZERO_REFUSALS, closureChanged: planned } },
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A refused re-run starts a mutant with its previous killing test',
+      Gherkin.Do.pipe(
+        Given('a workspace whose mutant is covered by a passing test and killed by a slower one')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeVmFixture([
+                ['package.json', VM_PACKAGE_SOURCE],
+                ['src/math.js', VM_MATH_SOURCE],
+                ['src/other.js', VM_OTHER_SOURCE],
+                ['test/passing.test.mjs', VM_PASSING_TEST],
+                ['test/killing.test.mjs', VM_KILLING_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root)
+                  const incrementalFile = path.join(root, 'reports', 'main.json')
+                  const first = yield* runOnce(root, options)
+                  yield* fs.writeFileString(
+                    incrementalFile,
+                    withSemanticsBumped(yield* fs.readFileString(incrementalFile)),
+                  )
+                  const second = yield* runOnce(root, options)
+                  yield* fs.writeFileString(path.join(root, 'test', 'aaa-other.test.mjs'), VM_OTHER_TEST)
+                  const third = yield* runOnce(root, options)
+                  return { first, second, third }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then('the second run runs the previous killer first, and every run names it as the killer')((s, expect) => {
+          const planned = s.fixture.first.mutants.length
+          const performedTestsOf = (events: ReadonlyArray<RunEvent.RunEvent>) =>
+            Object.fromEntries(
+              costedMutantsOf(events)
+                .filter((mutant) => mutant.status === 'Killed' && !mutant.static)
+                .map((mutant) => [mutant.id, mutant.testsExecuted] as const),
+            )
+          const firstPerformed = performedTestsOf(s.fixture.first.events)
+          const secondPerformed = performedTestsOf(s.fixture.second.events)
+          const coveredByMoreThanOneTest = Object.keys(firstPerformed).filter(
+            (id) => (firstPerformed[id] ?? 0) > 1,
+          )
+          const killedIds = new Set(
+            s.fixture.first.mutants.filter((mutant) => mutant.status === 'Killed').map((mutant) => mutant.id),
+          )
+          const statusesOfKilled = (mutants: readonly RecordedMutant[]) =>
+            statusesOf(mutants.filter((mutant) => killedIds.has(mutant.id)))
+          const killerNames = killerNamesOf(s.fixture.third.incrementalText, killedIds)
+          return expect({
+            runSucceeded: Exit.isSuccess(s.fixture.second.exit),
+            thirdRunSucceeded: Exit.isSuccess(s.fixture.third.exit),
+            plannedNonZero: planned > 0,
+            someKilledMutantCoveredByMoreThanOneTest: coveredByMoreThanOneTest.length > 0,
+            second: {
+              reused: s.fixture.second.reuse?.reused,
+              ran: s.fixture.second.reuse?.ran,
+              refused: s.fixture.second.reuse?.refused,
+            },
+            secondRunPlannedTheKillerFirst: coveredByMoreThanOneTest.every(
+              (id) => secondPerformed[id] === 1,
+            ),
+            killedVerdictsStableAcrossAddedTests: killedIds.size > 0 &&
+              statusesOfKilled(s.fixture.first.mutants).join(',') ===
+                statusesOfKilled(s.fixture.third.mutants).join(','),
+            thirdRunReusedAVerdict: (s.fixture.third.reuse?.reused ?? 0) > 0,
+            everyReportedKillerIsTheKillingTest: killerNames.length === killedIds.size &&
+              killerNames.every((name) => name.endsWith('#adds two numbers')),
+          }).toEqual({
+            runSucceeded: true,
+            thirdRunSucceeded: true,
+            plannedNonZero: true,
+            someKilledMutantCoveredByMoreThanOneTest: true,
+            second: { reused: 0, ran: planned, refused: { ...ZERO_REFUSALS, semanticsChanged: planned } },
+            secondRunPlannedTheKillerFirst: true,
+            killedVerdictsStableAcrossAddedTests: true,
+            thirdRunReusedAVerdict: true,
+            everyReportedKillerIsTheKillingTest: true,
           })
         }),
       ),

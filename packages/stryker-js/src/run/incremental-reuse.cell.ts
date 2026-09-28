@@ -14,6 +14,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Record from 'effect/Record'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { relativeNormalizedFileName } from '../FileMatcher.js'
@@ -32,6 +33,7 @@ import {
   type TimeoutEvidence,
 } from '../IncrementalDiff.schema.js'
 import type { Project } from '../Project.schema.js'
+import { reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow.js'
 import { StageError } from '../Run.schema.js'
 import { originalFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
@@ -76,8 +78,27 @@ const optionalListField = (field: string, value: readonly string[] | undefined) 
     onSome: (present) => ({ [field]: [...present] }),
   })
 
-const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
-  Object.values(report.files).flatMap((file) =>
+const runnerTestIdTableOf = (report: ReuseReport): Readonly<Record<string, string>> =>
+  Object.fromEntries(
+    Result.getOrThrow(
+      reportTestIds(
+        ResolveReportTestIds.make(report.testFiles === undefined ? {} : { testFiles: report.testFiles }),
+      ),
+    ).map((entry) => [entry.positionalId, entry.runnerTestId] as const),
+  )
+
+const runnerTestIdsOf = (
+  runnerTestIdByPosition: Readonly<Record<string, string>>,
+  ids: readonly string[] | undefined,
+): readonly string[] | undefined =>
+  Option.getOrUndefined(
+    Option.map(Option.fromUndefinedOr(ids), (present) =>
+      Arr.map(present, (id) => Option.getOrElse(Record.get(runnerTestIdByPosition, id), () => id))),
+  )
+
+const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] => {
+  const runnerTestIdByPosition = runnerTestIdTableOf(report)
+  return Object.values(report.files).flatMap((file) =>
     file.mutants.map((mutant): PreviousReuseRecord => ({
       mutantId: mutant.id,
       status: mutant.status,
@@ -88,10 +109,11 @@ const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
       ...optionalField('timeoutKind', mutant.timeoutKind),
       ...optionalField('reproductions', mutant.reproductions),
       ...optionalField('testsCompleted', mutant.testsCompleted),
-      ...optionalListField('coveredBy', mutant.coveredBy),
-      ...optionalListField('killedBy', mutant.killedBy),
+      ...optionalListField('coveredBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.coveredBy)),
+      ...optionalListField('killedBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.killedBy)),
     }))
   )
+}
 
 const reportOfText = (text: string): Option.Option<ReuseReport> =>
   S.decodeOption(S.fromJsonString(ReuseReportSchema))(text)

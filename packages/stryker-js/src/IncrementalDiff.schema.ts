@@ -67,11 +67,27 @@ const ReuseFileSchema = S.Struct({
   mutants: S.Array(ReuseMutantSchema),
 })
 
+export const ReuseTestDefinitionSchema = S.Struct({
+  id: S.String,
+  name: S.String,
+})
+
+export const ReuseTestFileSchema = S.Struct({
+  tests: S.Array(ReuseTestDefinitionSchema),
+})
+
+export type ReuseTestFile = typeof ReuseTestFileSchema.Type
+
+export const ReuseTestFilesSchema = S.Record(S.String, ReuseTestFileSchema)
+
+export type ReuseTestFiles = typeof ReuseTestFilesSchema.Type
+
 export const ReuseReportSchema = S.Struct({
   verdictSemanticsVersion: S.Int,
   mutantSetPolicy: Options.MutantSetPolicy,
   runInputsDigest: S.String,
   files: S.Record(S.String, ReuseFileSchema),
+  testFiles: S.optional(ReuseTestFilesSchema),
 })
 
 export type ReuseReport = S.Schema.Type<typeof ReuseReportSchema>
