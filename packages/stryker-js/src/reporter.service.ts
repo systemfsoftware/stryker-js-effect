@@ -8,11 +8,17 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Stream from 'effect/Stream'
 
-import { clearTextReporterFactory, jsonReporterFactory, progressReporterFactory } from './reporter-factories.js'
+import {
+  clearTextReporterFactory,
+  jsonReporterFactory,
+  progressReporterFactory,
+  sarifReporterFactory,
+} from './reporter-factories.js'
 import {
   HumanReporterSchema,
   JsonReporterSchema,
   ProgressReporterSchema,
+  SarifReporterSchema,
   StreamReporterSchema,
 } from './reporter-name.schema.js'
 import { ReporterOutput } from './reporter-output.service.js'
@@ -47,6 +53,7 @@ export class Reporter extends Context.Service<Reporter, ReporterShape>()(
             [JsonReporterSchema.literal]: jsonReporterFactory(context),
             [HumanReporterSchema.literal]: clearTextReporterFactory(context),
             [ProgressReporterSchema.literal]: progressReporterFactory(context),
+            [SarifReporterSchema.literal]: sarifReporterFactory(context),
             [StreamReporterSchema.literal]: drainReporterFactory,
           },
         })

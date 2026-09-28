@@ -1,6 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
@@ -41,6 +41,7 @@ import {
 import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
+import { AnnotationsUnusable, renderAnnotations, RenderAnnotationsCommand } from './render-annotations.workflow.js'
 import { routeCliRequest } from './route-cli-request.workflow.js'
 import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
 import type { HostServices } from './run/host.service.js'
@@ -48,6 +49,8 @@ import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import { StrykerError } from './stryker-error.schema.js'
+import { annotationLinesOf, surfacedSurvivorsOf } from './surfacing.js'
+import { type SurfacingCaps, SurfacingFields } from './surfacing.schema.js'
 import type { SurvivorsAdmissionInput, SurvivorsSettlement } from './Survivors/mod.js'
 import { SurvivorsRejection } from './Survivors/mod.js'
 import { survivorsAdmissionCell } from './Survivors/Survivors.cell.js'
@@ -87,6 +90,7 @@ export type CliFailure =
   | VerdictsDiffer
   | GateRejected
   | GateInputUnusable
+  | AnnotationsUnusable
   | MergeReportsFailed
 
 const progressStreamFileName = (options: Options.PartialStrykerOptions): string =>
@@ -323,6 +327,93 @@ const gateReport = (
     yield* reportUnchecked(decision.unchecked)
   })
 
+const SURFACING_DEFAULTS: SurfacingCaps = { perLine: 1, perFile: 7 }
+
+const surfacingFieldsOf = (report: Report.MutationTestResult): Option.Option<SurfacingFields> =>
+  Option.flatMap(
+    Option.fromUndefinedOr(report.config?.['surfacing']),
+    (surfacing) => S.decodeUnknownOption(SurfacingFields)(surfacing),
+  )
+
+const capsOf = (fields: SurfacingFields): SurfacingCaps => ({
+  perLine: Option.getOrElse(Option.fromNullishOr(fields.perLine), () => SURFACING_DEFAULTS.perLine),
+  perFile: Option.getOrElse(Option.fromNullishOr(fields.perFile), () => SURFACING_DEFAULTS.perFile),
+})
+
+const surfacingCapsOf = (report: Report.MutationTestResult): SurfacingCaps =>
+  Option.getOrElse(Option.map(surfacingFieldsOf(report), capsOf), () => SURFACING_DEFAULTS)
+
+const decodeAnnotateReport = S.decodeUnknownResult(S.fromJsonString(Report.MutationTestResult))
+
+const readAnnotateReport = (
+  file: string,
+): Effect.Effect<Report.MutationTestResult, AnnotationsUnusable, FileSystem.FileSystem> =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) =>
+    fs.readFileString(file).pipe(
+      Effect.mapError(() =>
+        AnnotationsUnusable.make({
+          reason: `cannot read the finished mutation report at ${file}; run \`stryker run\` first`,
+        })
+      ),
+      Effect.flatMap((text) =>
+        Effect.fromResult(
+          Result.mapError(
+            decodeAnnotateReport(text),
+            (error) =>
+              AnnotationsUnusable.make({
+                reason: `cannot decode the finished mutation report at ${file}: ${error.message}`,
+              }),
+          ),
+        )
+      ),
+    ))
+
+const readAnnotateBaseline = (
+  file: string,
+): Effect.Effect<ReadonlyArray<Mutant.MutantId>, AnnotationsUnusable, FileSystem.FileSystem> =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) =>
+    fs.readFileString(file).pipe(
+      Effect.mapError(() => AnnotationsUnusable.make({ reason: `cannot read the committed baseline at ${file}` })),
+      Effect.flatMap((text) =>
+        Effect.fromResult(
+          Result.mapError(
+            decodeGateBaseline(text),
+            (error) =>
+              AnnotationsUnusable.make({ reason: `cannot decode the committed baseline at ${file}: ${error.message}` }),
+          ),
+        )
+      ),
+      Effect.map((baseline) => baseline.survivors),
+    ))
+
+const annotateReport = (
+  annotate: { readonly baseline?: string | undefined },
+  channel: CliRead,
+): Effect.Effect<void, AnnotationsUnusable, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const basePath = channel.environment.basePath
+    const report = yield* readAnnotateReport(path.resolve(basePath, GATE_REPORT_FILE))
+    const baseline = yield* Effect.forEach(
+      Option.toArray(Option.fromUndefinedOr(annotate.baseline)),
+      (file) => readAnnotateBaseline(path.resolve(basePath, file)),
+    )
+    const decision = Result.getOrThrow(
+      renderAnnotations(
+        RenderAnnotationsCommand.make({
+          report,
+          survivors: surfacedSurvivorsOf(report, surfacingCapsOf(report)),
+          baseline: baseline.flat(),
+        }),
+      ),
+    )
+    yield* Effect.forEach(
+      annotationLinesOf(decision),
+      (line) => Effect.sync(() => channel.environment.console.log(line)),
+      { discard: true },
+    )
+  })
+
 export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)(readRunRequest)
   .decide(routeCliRequest)
   .write({
@@ -337,6 +428,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
       }),
     CliCompareRequested: (compare) => compareReports(compare),
     CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(explainGateRefusal)),
+    CliAnnotateRequested: (annotate, channel) => annotateReport(annotate, channel),
     CliRunRequested: (_, channel) => runStage(channel),
     CliSurvivorsRequested: (_, channel) => survivorsAdmissionCell.run(survivorsInputOf(channel)),
     CommandRejected: ({ issue }) =>

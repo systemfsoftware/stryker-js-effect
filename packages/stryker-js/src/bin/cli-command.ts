@@ -342,6 +342,15 @@ const gateOptions = {
   ),
 }
 
+const annotateOptions = {
+  baseline: Flag.String('baseline').pipe(
+    Flag.withDescription(
+      'The committed baseline of accepted survivor ids. When set, only survivors absent from it are annotated; without it every surfaced survivor is annotated.',
+    ),
+    optional,
+  ),
+}
+
 type ParsedConfigValue<A> = A extends Argument.Argument<infer Value> ? Value
   : A extends Flag.Flag<infer Value> ? Value
   : never
@@ -477,8 +486,26 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
       ),
     )
 
+  const annotateCommand = Command.make('annotate', annotateOptions, (config) =>
+    runRequestCell.run({
+      route: CliRouteCommand.make({
+        route: {
+          _tag: 'annotate',
+          baseline: Option.getOrUndefined(config.baseline),
+        },
+      }),
+      options: {},
+      environment,
+    }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer))).pipe(
+      Command.withDescription(
+        'Print GitHub workflow annotations at the location of every surfaced survivor of the finished mutation report',
+      ),
+    )
+
   const root = Command
     .make('stryker', {}, (_config) => Effect.fail(CliError.ShowHelp.make({ commandPath: ['stryker'], errors: [] })))
 
-  return root.pipe(Command.withSubcommands([runCommand, mergeReportsCommand, compareCommand, gateCommand]))
+  return root.pipe(
+    Command.withSubcommands([runCommand, mergeReportsCommand, compareCommand, gateCommand, annotateCommand]),
+  )
 }

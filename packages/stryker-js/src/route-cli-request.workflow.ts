@@ -47,6 +47,12 @@ export class CliGateRequested extends S.TaggedClass<CliGateRequested>()('CliGate
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
+export class CliAnnotateRequested extends S.TaggedClass<CliAnnotateRequested>()('CliAnnotateRequested', {
+  baseline: S.optional(S.String),
+}) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
+
 export type CliRouteDecision =
   | CliHelpRequested
   | CliMergeReportsRequested
@@ -54,6 +60,7 @@ export type CliRouteDecision =
   | CliSurvivorsRequested
   | CliCompareRequested
   | CliGateRequested
+  | CliAnnotateRequested
 
 export const routeCliRequest = Workflow.make({
   command: CliRouteCommand,
@@ -64,6 +71,7 @@ export const routeCliRequest = Workflow.make({
     CliSurvivorsRequested,
     CliCompareRequested,
     CliGateRequested,
+    CliAnnotateRequested,
   ]),
   error: S.Never,
   decide: (command): Result.Result<CliRouteDecision, never> =>
@@ -81,6 +89,7 @@ export const routeCliRequest = Workflow.make({
         Result.succeed(
           CliGateRequested.make({ baseline: gate.baseline, updateBaseline: gate.updateBaseline }),
         )),
+      Match.tag('annotate', (annotate) => Result.succeed(CliAnnotateRequested.make({ baseline: annotate.baseline }))),
       Match.tag('run', (run) =>
         Boolean.match(run.survivors, {
           onTrue: () => Result.succeed(CliSurvivorsRequested.make({})),

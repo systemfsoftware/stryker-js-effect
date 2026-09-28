@@ -54,7 +54,13 @@ const GateRequestSchema = S.TaggedStruct('gate', {
 
 export type GateRequest = S.Schema.Type<typeof GateRequestSchema>
 
-export type CliRequest = RunRequest | MergeReportsRequest | CompareRequest | GateRequest
+const AnnotateRequestSchema = S.TaggedStruct('annotate', {
+  baseline: S.optional(S.String),
+})
+
+export type AnnotateRequest = S.Schema.Type<typeof AnnotateRequestSchema>
+
+export type CliRequest = RunRequest | MergeReportsRequest | CompareRequest | GateRequest | AnnotateRequest
 
 export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteCommand', {
   route: S.Union([
@@ -63,6 +69,7 @@ export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteC
     RunRequestSchema,
     CompareRequestSchema,
     GateRequestSchema,
+    AnnotateRequestSchema,
   ]),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const

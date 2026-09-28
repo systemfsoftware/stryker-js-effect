@@ -29,6 +29,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
+import { buildReproducers, BuildReproducersCommand } from './build-reproducers.workflow.js'
 import {
   type CheckpointMutantRow,
   checkpointMutants,
@@ -769,6 +770,29 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
   yield* deps.fs.writeFileString(input.options.incrementalFile, json)
 })
 
+const REPRODUCERS_FILE = 'reports/mutation/reproducers.json'
+
+const writeReproducers = (
+  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
+  input: MutationReportingInput,
+  report: Report.MutationTestResult,
+): Effect.Effect<void, PlatformError> => {
+  const decision = Result.getOrThrow(buildReproducers(BuildReproducersCommand.make({ report })))
+  return Match.value(decision).pipe(
+    Match.tag('NoMutantsToReproduce', () => Effect.void),
+    Match.tag('ReproducersBuilt', (built) =>
+      Effect.gen(function*() {
+        const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(built.reproducers).pipe(
+          Effect.orDie,
+        )
+        const file = deps.path.resolve(input.basePath, REPRODUCERS_FILE)
+        yield* deps.fs.makeDirectory(deps.path.dirname(file), { recursive: true })
+        yield* deps.fs.writeFileString(file, json)
+      })),
+    Match.exhaustive,
+  )
+}
+
 const reportAll = Effect.fn(SpanTaxonomy.Spans.mutationReportingReportAll.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
@@ -805,6 +829,7 @@ const reportAll = Effect.fn(SpanTaxonomy.Spans.mutationReportingReportAll.name)(
     },
   )
   yield* emitVerdict(deps, input, report)
+  yield* writeReproducers(deps, input, report)
   yield* Boolean.match(input.options.incremental, {
     onTrue: () => writeIncrementalReport(deps, input, report, identities),
     onFalse: () => Effect.void,
