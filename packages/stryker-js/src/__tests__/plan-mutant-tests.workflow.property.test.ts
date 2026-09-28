@@ -70,7 +70,7 @@ const coverageCommandArb = Arbitrary.all([
   Arbitrary.schema(S.Boolean),
 ]).pipe(
   Arbitrary.map(([baseMutant, coverageAnalysis, ignoreStatic, isStatic, staticPresent, coveringTests, closed]) => {
-    const mutantId = Mutant.MutantId.make('0')
+    const mutantId = Mutant.MutantId.make('0000000000000000')
     return MutantTestPlanCommand.make({
       _tag: 'MutantTestPlanCommand',
       mutants: [

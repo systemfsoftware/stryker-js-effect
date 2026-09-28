@@ -60,6 +60,7 @@ import { InstrumentError } from './Instrument.schema.js'
 import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.js'
 import { lineStartsOf, locationOf, positionAt } from './Location.js'
 import type { LineStarts, ScriptOrigin } from './Location.schema.js'
+import { mutantIdOf, type MutantTuple, mutantTupleKey } from './MutantIdentity.js'
 import {
   applyMutant,
   createMutant,
@@ -112,16 +113,21 @@ export interface TransformerOptions extends MutatorOptions {
 }
 
 export interface MutantCollector {
-  readonly nextIndex: number
+  /** 0-based, counting this collector's earlier occurrences of the same tuple. */
+  readonly ordinalOf: (tuple: MutantTuple) => number
   readonly append: (mutants: readonly Mutant[]) => void
   readonly map: <A>(transform: (mutant: Mutant) => A) => readonly A[]
 }
 
 export const createMutantCollector = (): MutantCollector => {
   const mutants: Mutant[] = []
+  const occurrences = new Map<string, number>()
   return {
-    get nextIndex(): number {
-      return mutants.length
+    ordinalOf: (tuple) => {
+      const key = mutantTupleKey(tuple)
+      const ordinal = occurrences.get(key) ?? 0
+      occurrences.set(key, ordinal + 1)
+      return ordinal
     },
     append: (added) => {
       mutants.push(...added)
@@ -729,11 +735,11 @@ interface PlacementContext {
   readonly allMutatorNames: readonly string[]
   readonly excludedMutations: readonly string[]
   readonly ignorers: readonly Ignorer[]
+  readonly ordinalOf: (tuple: MutantTuple) => number
 }
 
 interface FoldState {
   readonly directiveRule: MutantRule
-  readonly nextIndex: number
   readonly mutants: readonly Mutant[]
   readonly warnings: readonly string[]
   readonly claims: readonly ClaimedSite[]
@@ -741,9 +747,8 @@ interface FoldState {
   readonly hasLiveMutants: boolean
 }
 
-const initialFoldState = (firstIndex: number): FoldState => ({
+const initialFoldState = (): FoldState => ({
   directiveRule: [],
-  nextIndex: firstIndex,
   mutants: [],
   warnings: [],
   claims: [],
@@ -833,16 +838,22 @@ const mutablesFor = (
   const ignorerReason = replacements.length === 0
     ? undefined
     : Option.getOrUndefined(ignorersReasonFor(frame.node, ancestors, context.ignorers))
-  return replacements.map(({ mutatorName, replacement }): MutableCandidate => ({
-    node: frame.node,
-    replacement,
-    data: {
-      mutatorName,
-      replacementCode: printNode(replacement),
-      location,
-      ignorerReason,
-    },
-  }))
+  const originalCode = printNode(frame.node)
+  return replacements.map(({ mutatorName, replacement }): MutableCandidate => {
+    const replacementCode = printNode(replacement)
+    const tuple: MutantTuple = { fileName: context.fileName, mutatorName, originalCode, replacementCode }
+    return {
+      node: frame.node,
+      replacement,
+      data: {
+        id: mutantIdOf({ ...tuple, ordinal: context.ordinalOf(tuple) }),
+        mutatorName,
+        replacementCode,
+        location,
+        ignorerReason,
+      },
+    }
+  })
 }
 
 const mutateRangesOf = (mutateDescription: MutateDescription): Option.Option<readonly ApiMutant.Location[]> =>
@@ -970,7 +981,6 @@ const collectPlan = (
     ...state,
     mutants: [...state.mutants, ...collected],
     warnings: [...state.warnings, ...plan.warnings],
-    nextIndex: plan.nextIndex,
   }
   return Match.value(plan).pipe(
     Match.tag('MutantsPlanned', (planned) => {
@@ -998,7 +1008,6 @@ const planMutantsAt = (
   const plan = planMutants(
     PlanMutantsCommand.make({
       fileName: context.fileName,
-      firstIndex: state.nextIndex,
       offset: context.offset,
       line: location.start.line,
       mutatorNames: [...context.allMutatorNames],
@@ -1156,11 +1165,10 @@ const foldPlacements = (
 
 const planInstrumentation = (
   root: Program,
-  firstIndex: number,
   context: PlacementContext,
 ): Result.Result<InstrumentationPlan, InstrumentationRefusal> =>
   Result.map(
-    foldPlacements({ node: root, parent: null }, initialFoldState(firstIndex), context),
+    foldPlacements({ node: root, parent: null }, initialFoldState(), context),
     (state) => ({
       mutants: state.mutants,
       placements: state.placements,
@@ -1267,10 +1275,11 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
       allMutatorNames: options.mutators.known.map((name) => name.toLowerCase()),
       excludedMutations: options.excludedMutations,
       ignorers: options.ignorers,
+      ordinalOf: mutantCollector.ordinalOf,
     }
 
     const planned = yield* Effect.try({
-      try: () => planInstrumentation(root, mutantCollector.nextIndex, context),
+      try: () => planInstrumentation(root, context),
       catch: traversalFailure,
     })
     const plan = yield* Match.value(planned).pipe(

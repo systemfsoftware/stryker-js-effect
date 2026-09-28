@@ -84,7 +84,7 @@ const reportFixture = (): Report.MutationTestResult => ({
       source: `export const marker = '${MARKER}'`,
       mutants: [
         {
-          id: Mutant.MutantId.make('0'),
+          id: Mutant.MutantId.make('0000000000000000'),
           mutatorName: 'BlockStatement',
           status: 'Killed',
           location: { start: { line: 1, column: 1 }, end: { line: 1, column: 11 } },
@@ -113,10 +113,10 @@ const runEvents = (
   }),
   Reporter.MutationTestingPlanReady.make({
     total: 1,
-    plans: [{ mutantId: Mutant.MutantId.make('0'), plan: 'Run', netTime: 1, reloadEnvironment: false }],
+    plans: [{ mutantId: Mutant.MutantId.make('0000000000000000'), plan: 'Run', netTime: 1, reloadEnvironment: false }],
   }),
   Reporter.MutantTested.make({
-    id: Mutant.MutantId.make('0'),
+    id: Mutant.MutantId.make('0000000000000000'),
     status: 'Killed',
     fileName: Mutant.CanonicalFileName.make('src/marker.ts'),
     location: { start: { line: 1, column: 1 }, end: { line: 1, column: 11 } },

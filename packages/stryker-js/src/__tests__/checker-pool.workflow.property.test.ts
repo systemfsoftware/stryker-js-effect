@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
@@ -40,9 +42,11 @@ type CheckedPlans = readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResul
 
 const holds = (conditions: readonly boolean[]) => conditions.every((condition) => condition)
 
+const idOf = (seed: string): Mutant.MutantId => Mutant.MutantId.make(bytesToHex(sha256(utf8ToBytes(seed))).slice(0, 16))
+
 const runPlanOf = (id: string, line: number): Mutant.MutantRunPlan => {
   const mutant = Mutant.Mutant.make({
-    id: Mutant.MutantId.make(id),
+    id: idOf(id),
     fileName: Mutant.CanonicalFileName.make(`src/${id}.ts`),
     mutatorName: Mutant.MutatorName.make(`Mutator${id}`),
     replacement: '',
@@ -327,7 +331,7 @@ describe('checker pool', () => {
                     Checker.CheckerFailed.make({
                       cause: 'the checker refused',
                       checkerName: 'c',
-                      mutantIds: [Mutant.MutantId.make('0')],
+                      mutantIds: [idOf('0')],
                     }),
                   ),
               ),

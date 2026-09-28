@@ -28,7 +28,11 @@ export type EphemeralStatus = typeof EphemeralStatusSchema.Type
 export const ActionableStatusSchema = S.Literals(['Survived', 'NoCoverage', 'Timeout', 'RuntimeError'])
 export type ActionableStatus = typeof ActionableStatusSchema.Type
 
-export const MutantId = S.String.check(S.isPattern(/^(0|[1-9][0-9]*)$/)).pipe(S.brand('MutantId'))
+export const MutantId = S.String.check(
+  S.isPattern(/^[0-9a-f]{16}$/, {
+    expected: 'a 16-character lowercase hexadecimal mutant id',
+  }),
+).pipe(S.brand('MutantId'))
 export type MutantId = typeof MutantId.Type
 
 export const MutatorNameGrammar = S.String.check(
@@ -211,6 +215,28 @@ if (import.meta.vitest !== void 0) {
     '∀n_MutatorNameRefusal_≡ProviderGrammar',
     { of: [S.String], subject: acceptsMutatorName },
     (subject, [drawn]) => Arr.every(withBoundaries(drawn), (value) => subject(value) === readsAsMutatorName(value)),
+  )
+
+  const boundaryIds: ReadonlyArray<string> = [
+    '',
+    '0',
+    '1',
+    '00',
+    '0123456789abcdef',
+    '0123456789ABCDEF',
+    'fedcba9876543210',
+    '0123456789abcde',
+    '0123456789abcdef0',
+    'g123456789abcdef',
+    '-123456789abcdef',
+  ]
+  const withIdBoundaries = (drawn: string): ReadonlyArray<string> => Arr.prepend(boundaryIds, drawn)
+  const readsAsMutantId = (value: string): boolean => /^[0-9a-f]{16}$/.test(value)
+
+  it.prop(
+    '∀id_MutantIdRefusal_≡ExactlySixteenLowercaseHexDigits',
+    { of: [S.String], subject: (value: string) => S.is(MutantId)(value) },
+    (subject, [drawn]) => Arr.every(withIdBoundaries(drawn), (value) => subject(value) === readsAsMutantId(value)),
   )
 
   const statusProbes = Arr.appendAll([...MutantStatusSchema.literals], ['NotAStatus'])

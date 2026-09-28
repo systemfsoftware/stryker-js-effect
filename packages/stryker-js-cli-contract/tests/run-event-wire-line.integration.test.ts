@@ -12,7 +12,7 @@ const RUN_ID = '01J0Z0Z0Z0Z0Z0Z0Z0Z0Z0Z0Z0'
 const LOCATION = '"location":{"start":{"line":1,"column":1},"end":{"line":1,"column":2}}'
 
 const mutantLine = (status: string, file: string | null): string =>
-  `{"_tag":"mutant","id":"1","status":"${status}",${
+  `{"_tag":"mutant","id":"0000000000000001","status":"${status}",${
     file === null ? '' : `"file":"${file}",`
   }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3}`
 

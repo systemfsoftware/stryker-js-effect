@@ -1,3 +1,4 @@
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 
@@ -29,7 +30,6 @@ const silencingReason = (
   const planned = planMutants(
     PlanMutantsCommand.make({
       fileName: 'probe.ts',
-      firstIndex: 0,
       offset: { line: 1, columnShift: 0 },
       line,
       mutatorNames: [mutatorName.toLowerCase()],
@@ -37,6 +37,7 @@ const silencingReason = (
       rule,
       directives: [],
       candidates: [{
+        id: Mutant.MutantId.make('0000000000000000'),
         mutatorName,
         replacementCode: 'n - 1',
         location: { start: { line, column: 1 }, end: { line, column: 2 } },

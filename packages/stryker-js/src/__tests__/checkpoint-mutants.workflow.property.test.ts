@@ -22,9 +22,11 @@ const IDENTITY: FormatIdentity = {
   ownerVersion: '1.0.0',
 }
 
+const hexIdOf = (index: number): Mutant.MutantId => Mutant.MutantId.make(index.toString(16).padStart(16, '0'))
+
 const mutantOf = (index: number): Mutant.Mutant =>
   Mutant.Mutant.make({
-    id: Mutant.MutantId.make(`${index}`),
+    id: hexIdOf(index),
     fileName: Mutant.CanonicalFileName.make(SUBJECT_FILE),
     mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
     replacement: `${index}`,

@@ -53,7 +53,7 @@ const MODULE_ARB: Arbitrary.Arbitrary<ModuleSpec> = Arbitrary.all({
         label,
         testIds,
         mutants: specs.map((spec, index) => ({
-          id: `${index}`,
+          id: index.toString(16).padStart(16, '0'),
           status: spec.status,
           killingIds: testIds.slice(0, spec.reach),
         })),
@@ -151,7 +151,7 @@ describe('mergeReportParts', () => {
   )
 
   it.prop(
-    '∀cs_Modules_≡MergedFileKeysCarryModuleWithDecimalIds',
+    '∀cs_Modules_≡MergedFileKeysCarryTheirModuleAndValidMutantIds',
     { of: [DISTINCT_MODULES_ARB], subject: mergeReportParts },
     (subject, [specs]) => {
       const merged = mergedOf(subject(commandOf(specs)))

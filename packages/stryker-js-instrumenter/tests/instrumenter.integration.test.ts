@@ -96,6 +96,12 @@ const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
 
 const isActive = (mutant: Mutant): boolean => mutant.status !== 'Ignored'
 
+const instrumentSource = (fileName: string, source: string) =>
+  Instrument.instrument(
+    [{ name: fileName, content: source, mutate: true }],
+    stockOptions({ ignorers: [], excludedMutations: [] }),
+  )
+
 const Feature = makeFeature({ it })
 
 Feature('Instrumenter characterization')
@@ -629,6 +635,145 @@ export function price(n) {
             ),
           }).toEqual({ namesFile: true, namesReason: true })
         ),
+      ),
+    )
+
+    scenario(
+      'Instrumenting the same source twice mints the same content-derived ids',
+      Gherkin.Do.pipe(
+        Given('the baseline source')('source', () => Effect.succeed(PROBE_SOURCE)),
+        When('it is instrumented twice')('results', ({ source }: { source: string }) =>
+          Effect.all([
+            instrumentSource('/tmp/probe.ts', source),
+            instrumentSource('/tmp/probe.ts', source),
+          ])),
+        Then('both runs mint sixteen lowercase hex digits per mutant, in the same order')((
+          { results }: { results: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult] },
+          expect,
+        ) => {
+          const ids = results[0].mutants.map((mutant) => mutant.id)
+          return expect({
+            count: ids.length,
+            everyIdIsSixteenLowercaseHexDigits: ids.every((id) => /^[0-9a-f]{16}$/.test(id)),
+            secondRunIds: results[1].mutants.map((mutant) => mutant.id),
+          }).toEqual({ count: 13, everyIdIsSixteenLowercaseHexDigits: true, secondRunIds: ids })
+        }),
+      ),
+    )
+
+    scenario(
+      'A line inserted above a mutant leaves its id alone',
+      Gherkin.Do.pipe(
+        Given('the baseline source')('source', () => Effect.succeed(PROBE_SOURCE)),
+        When('it is instrumented with and without a blank first line')(
+          'results',
+          ({ source }: { source: string }) =>
+            Effect.all([
+              instrumentSource('/tmp/probe.ts', source),
+              instrumentSource('/tmp/probe.ts', `\n${source}`),
+            ]),
+        ),
+        Then('both runs carry the same ids')((
+          { results }: { results: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult] },
+          expect,
+        ) => {
+          const idsOf = (result: Instrument.InstrumentResult) => result.mutants.map((mutant) => mutant.id).toSorted()
+          return expect(idsOf(results[1])).toEqual(idsOf(results[0]))
+        }),
+      ),
+    )
+
+    scenario(
+      'Two identical replacements of identical text get distinct ids',
+      Gherkin.Do.pipe(
+        Given('a file with the same addition twice')(
+          'source',
+          () => Effect.succeed('export const a = 1 + 1\nexport const b = 1 + 1\n'),
+        ),
+        When('it is instrumented')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/twin-additions.ts', source),
+        ),
+        Then('both arithmetic mutants carry one replacement, two ids, and one switch arm each')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const content = result.files[0]?.content ?? ''
+          const helper = content.match(/stryMutAct_([0-9a-f]+)/)?.[1]
+          const arithmetic = result.mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
+          return expect({
+            count: arithmetic.length,
+            replacements: [...new Set(arithmetic.map((mutant) => mutant.replacement))],
+            distinctIds: new Set(arithmetic.map((mutant) => mutant.id)).size,
+            everyIdTestedInTheEmittedSwitch: arithmetic.every((mutant) =>
+              helper !== undefined && content.includes(`stryMutAct_${helper}("${mutant.id}")`)
+            ),
+          }).toEqual({ count: 2, replacements: ['1 - 1'], distinctIds: 2, everyIdTestedInTheEmittedSwitch: true })
+        }),
+      ),
+    )
+
+    scenario(
+      'A directive that ignores an earlier mutant leaves the later ids alone',
+      Gherkin.Do.pipe(
+        Given('a file with two additions')(
+          'source',
+          () => Effect.succeed('export const a = 1 + 1\nexport const b = 2 + 2\n'),
+        ),
+        When('it is instrumented as written')(
+          'plain',
+          ({ source }: { source: string }) => instrumentSource('/tmp/two-additions.ts', source),
+        ),
+        When('it is instrumented with a directive ignoring the first addition')(
+          'directed',
+          ({ source }: { source: string }) =>
+            instrumentSource('/tmp/two-additions.ts', `// Stryker disable next-line ArithmeticOperator\n${source}`),
+        ),
+        Then('the ignored addition is Ignored and both ids stay put')((
+          { plain, directed }: { plain: Instrument.InstrumentResult; directed: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const arithmeticOf = (result: Instrument.InstrumentResult) =>
+            result.mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
+          const directedArithmetic = arithmeticOf(directed)
+          return expect({
+            plainIds: arithmeticOf(plain).map((mutant) => mutant.id).toSorted(),
+            ignoredEarlier: directedArithmetic.filter((mutant) => mutant.replacement === '1 - 1').map(
+              (mutant) => mutant.status,
+            ),
+            laterIds: directedArithmetic.filter((mutant) => mutant.replacement === '2 - 2').map((mutant) => mutant.id),
+          }).toEqual({
+            plainIds: directedArithmetic.map((mutant) => mutant.id).toSorted(),
+            ignoredEarlier: ['Ignored'],
+            laterIds: arithmeticOf(plain).filter((mutant) => mutant.replacement === '2 - 2').map((mutant) => mutant.id),
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'The same source under a different file name carries different ids',
+      Gherkin.Do.pipe(
+        Given('the baseline source')('source', () => Effect.succeed(PROBE_SOURCE)),
+        When('it is instrumented as two files with identical content')(
+          'results',
+          ({ source }: { source: string }) =>
+            Effect.all([
+              instrumentSource('/tmp/one.ts', source),
+              instrumentSource('/tmp/two.ts', source),
+            ]),
+        ),
+        Then('each id is scoped to its own file')((
+          { results }: { results: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult] },
+          expect,
+        ) => {
+          const [one, two] = results
+          const twoIds = new Set(two.mutants.map((mutant) => mutant.id))
+          return expect({
+            counts: [one.mutants.length, two.mutants.length],
+            everyIdDiffers: one.mutants.every((mutant) => !twoIds.has(mutant.id)),
+          }).toEqual({ counts: [13, 13], everyIdDiffers: true })
+        }),
       ),
     )
   })

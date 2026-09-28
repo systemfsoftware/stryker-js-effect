@@ -10,7 +10,7 @@ const Feature = makeFeature({ it })
 type ReportProbe = { readonly [key: string]: S.Json }
 
 const sampleMutant = (): ReportProbe => ({
-  id: '1',
+  id: '0000000000000001',
   mutatorName: 'ArithmeticOperator',
   status: 'Killed',
   location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },

@@ -1030,7 +1030,7 @@
       },
       "stryker.mutant.id": {
         "type": "string",
-        "pattern": "^(0|[1-9][0-9]*)$"
+        "pattern": "^[0-9a-f]{16}$"
       },
       "stryker.mutant.mutator": {
         "type": "string",
@@ -1136,7 +1136,7 @@
     "attributes": {
       "stryker.mutant.id": {
         "type": "string",
-        "pattern": "^(0|[1-9][0-9]*)$"
+        "pattern": "^[0-9a-f]{16}$"
       }
     }
   },

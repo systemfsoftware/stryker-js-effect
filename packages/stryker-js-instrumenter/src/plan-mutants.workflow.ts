@@ -17,6 +17,7 @@ const WILDCARD = 'all'
 const NEXT_LINE = 'next-line'
 
 export const MutantCandidateSchema = S.Struct({
+  id: Mutant.MutantId,
   mutatorName: MutatorNameSchema,
   replacementCode: S.String,
   location: S.optional(Mutant.Location),
@@ -33,12 +34,8 @@ const PlannedMutantSchema = S.Struct({
 })
 export type PlannedMutant = typeof PlannedMutantSchema.Type
 
-const MutantCounterSchema = S.Int.pipe(S.check(S.isBetween({ minimum: 0, maximum: 1_000_000 })))
-const MutantCountSchema = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
-
 export class PlanMutantsCommand extends S.TaggedClass<PlanMutantsCommand>()('PlanMutantsCommand', {
   fileName: S.String,
-  firstIndex: MutantCounterSchema,
   offset: ScriptOrigin,
   line: Mutant.Line,
   mutatorNames: S.Array(MutatorNameSchema),
@@ -57,7 +54,6 @@ export class MutantsPlanned extends S.TaggedClass<MutantsPlanned>()('MutantsPlan
   mutants: S.Array(PlannedMutantSchema),
   placeableIds: S.Array(Mutant.MutantId),
   warnings: S.Array(S.String),
-  nextIndex: MutantCountSchema,
 }) {
   readonly [MutantPlanTypeId] = MutantPlanTypeId
 }
@@ -65,7 +61,6 @@ export class MutantsPlanned extends S.TaggedClass<MutantsPlanned>()('MutantsPlan
 export class MutantsFullyIgnored extends S.TaggedClass<MutantsFullyIgnored>()('MutantsFullyIgnored', {
   mutants: S.Array(PlannedMutantSchema),
   warnings: S.Array(S.String),
-  nextIndex: MutantCountSchema,
 }) {
   readonly [MutantPlanTypeId] = MutantPlanTypeId
 }
@@ -196,14 +191,13 @@ const shiftedLocation = (location: Mutant.Location, offset: ScriptOrigin): Mutan
 const plannedMutant = (
   command: PlanMutantsCommand,
   candidate: MutantCandidate,
-  index: number,
 ): Result.Result<PlannedMutant, MutantWithoutLocation> =>
   Option.match(Option.fromNullishOr(candidate.location), {
     onNone: () =>
       Result.fail(MutantWithoutLocation.make({ fileName: command.fileName, mutatorName: candidate.mutatorName })),
     onSome: (location) =>
       Result.succeed({
-        id: PlannedMutantSchema.fields.id.make(`${command.firstIndex + index}`),
+        id: candidate.id,
         mutatorName: candidate.mutatorName,
         replacementCode: candidate.replacementCode,
         location: shiftedLocation(location, command.offset),
@@ -215,10 +209,10 @@ const plannedMutants = (
   command: PlanMutantsCommand,
 ): Result.Result<readonly PlannedMutant[], MutantWithoutLocation> =>
   command.candidates.reduce<Result.Result<readonly PlannedMutant[], MutantWithoutLocation>>(
-    (accumulated, candidate, index) =>
+    (accumulated, candidate) =>
       Result.flatMap(
         accumulated,
-        (mutants) => Result.map(plannedMutant(command, candidate, index), (mutant) => [...mutants, mutant]),
+        (mutants) => Result.map(plannedMutant(command, candidate), (mutant) => [...mutants, mutant]),
       ),
     Result.succeed([]),
   )
@@ -232,13 +226,11 @@ const planOf = (command: PlanMutantsCommand, mutants: readonly PlannedMutant[]):
         mutants: [...mutants],
         placeableIds: mutants.filter(withoutReason).map((mutant) => mutant.id),
         warnings: warningsOf(command),
-        nextIndex: command.firstIndex + mutants.length,
       })),
     Match.when(false, () =>
       MutantsFullyIgnored.make({
         mutants: [...mutants],
         warnings: warningsOf(command),
-        nextIndex: command.firstIndex + mutants.length,
       })),
     Match.exhaustive,
   )

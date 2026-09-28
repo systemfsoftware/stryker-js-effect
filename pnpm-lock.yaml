@@ -1006,6 +1006,9 @@ importers:
       '@eslint-community/regexpp':
         specifier: 'catalog:'
         version: 4.12.2
+      '@noble/hashes':
+        specifier: 'catalog:'
+        version: 2.4.0
       '@oxc-project/types':
         specifier: 'catalog:'
         version: 0.150.0

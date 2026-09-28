@@ -13,8 +13,8 @@ import {
 } from '../interpret-vitest-mutant-run.workflow.js'
 import { VitestMutantRunCommand } from '../vitest-run-command.schema.js'
 
-const TRAP_MUTANT_ID = Mutant.MutantId.make('0')
-const OTHER_MUTANT_ID = Mutant.MutantId.make('1')
+const TRAP_MUTANT_ID = Mutant.MutantId.make('0000000000000000')
+const OTHER_MUTANT_ID = Mutant.MutantId.make('0000000000000001')
 const TRAP_FILE = 'b.ts'
 
 const commandWith = (

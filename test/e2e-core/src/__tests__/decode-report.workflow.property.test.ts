@@ -17,7 +17,7 @@ const reportTextOf = (file: string, mutatorName: string, status: Mutant.MutantSt
         source: 'const subject = 1 + 1',
         mutants: [
           {
-            id: '1',
+            id: '0000000000000001',
             mutatorName,
             location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
             status,
