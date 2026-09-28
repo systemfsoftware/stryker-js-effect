@@ -365,13 +365,22 @@ const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*
   const completeDryRun = Effect.fn(SpanTaxonomy.Spans.vitestRunnerCompleteDryRun.name)(
     function*(tests: readonly TestRunner.TestResult[]) {
       const mutantCoverage = yield* readMutantCoverage.pipe(Effect.mapError(asRunnerFailure('dryRun')))
+      const globalTestInputs = yield* runtime.pipe(
+        Effect.map((self) => self.globalTestInputs),
+        Effect.mapError(asRunnerFailure('dryRun')),
+      )
       yield* Effect.annotateCurrentSpan({
         'stryker.vitest.test_count': tests.length,
         'stryker.vitest.has_mutant_coverage': mutantCoverage !== undefined,
       })
       return Option.match(Option.fromNullishOr(mutantCoverage), {
-        onNone: (): TestRunner.DryRunResult => ({ status: 'complete', tests }),
-        onSome: (coverage): TestRunner.DryRunResult => ({ status: 'complete', tests, mutantCoverage: coverage }),
+        onNone: (): TestRunner.DryRunResult => ({ status: 'complete', tests, globalTestInputs }),
+        onSome: (coverage): TestRunner.DryRunResult => ({
+          status: 'complete',
+          tests,
+          mutantCoverage: coverage,
+          globalTestInputs,
+        }),
       })
     },
   )

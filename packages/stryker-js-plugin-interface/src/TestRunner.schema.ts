@@ -41,6 +41,7 @@ export const DryRunResultSchema = S.Union([
     status: S.Literal('complete'),
     tests: S.Array(TestResultSchema),
     mutantCoverage: S.optionalKey(MutantCoverageSchema),
+    globalTestInputs: S.String.pipe(S.Array, S.optionalKey),
   }),
   S.Struct({ status: S.Literal('timeout'), reason: S.optionalKey(S.String) }),
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
@@ -107,6 +108,7 @@ export type TestResult = FailedTestResult | SkippedTestResult | SuccessTestResul
 export interface CompleteDryRunResult {
   readonly tests: readonly TestResult[]
   readonly mutantCoverage?: MutantCoverage
+  readonly globalTestInputs?: readonly string[]
   readonly status: 'complete'
 }
 

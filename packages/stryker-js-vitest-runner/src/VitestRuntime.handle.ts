@@ -18,6 +18,7 @@ import {
   errorCodeOf,
   errorCollectionOf,
   fileKeyOf,
+  globalTestInputsOf,
   hasEntries,
   iterableEntriesOf,
   metaOf as metaDriverOf,
@@ -33,7 +34,12 @@ export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/Vite
 export type TypeId = typeof TypeId
 
 const VitestRuntime = Handle.make<
-  { readonly projectRoot: string; readonly localSetupFile: string; readonly mutantBail: number },
+  {
+    readonly projectRoot: string
+    readonly localSetupFile: string
+    readonly mutantBail: number
+    readonly globalTestInputs: readonly string[]
+  },
   Vitest
 >()(TypeId)
 
@@ -84,7 +90,12 @@ export const make = (options: {
 }): VitestRuntime =>
   withApplicationSetup(
     VitestRuntime.make(
-      { projectRoot: options.projectRoot, localSetupFile: options.localSetupFile, mutantBail: options.mutantBail },
+      {
+        projectRoot: options.projectRoot,
+        localSetupFile: options.localSetupFile,
+        mutantBail: options.mutantBail,
+        globalTestInputs: globalTestInputsOf(options.driver, [options.localSetupFile]),
+      },
       options.driver,
     ),
     options.namespace,
