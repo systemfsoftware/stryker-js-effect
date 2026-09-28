@@ -1,7 +1,9 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import * as HashMap from 'effect/HashMap'
+import * as HashSet from 'effect/HashSet'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -85,21 +87,29 @@ const nodeOf = (
 const nodesOfChild = (child: NodeDecoded, nodes: Readonly<Record<string, NodeDecoded>>): NodeDecoded =>
   Option.getOrElse(nodeAt(child.fileName, nodes), () => child)
 
-const walk = (
+const reachableFileNamesOf = (
+  node: NodeDecoded,
+  nodes: Readonly<Record<string, NodeDecoded>>,
+  visited: HashSet.HashSet<string>,
+): HashSet.HashSet<string> =>
+  Boolean.match(HashSet.has(visited, node.fileName), {
+    onTrue: () => visited,
+    onFalse: () =>
+      Arr.reduce(
+        node.children,
+        HashSet.add(visited, node.fileName),
+        (names, child) => reachableFileNamesOf(nodesOfChild(child, nodes), nodes, names),
+      ),
+  })
+
+const relatedMutantsOf = (
   node: NodeDecoded,
   mutants: readonly MutantDecoded[],
   nodes: Readonly<Record<string, NodeDecoded>>,
-  visited: readonly string[],
-): readonly MutantDecoded[] =>
-  Option.match(Option.filter(Option.some(node), (current) => !visited.includes(current.fileName)), {
-    onNone: () => [],
-    onSome: (current) => [
-      ...mutants.filter((mutant) => normalizeFileName(mutant.fileName) === current.fileName),
-      ...current.children.flatMap((child) =>
-        walk(nodesOfChild(child, nodes), mutants, nodes, [...visited, current.fileName])
-      ),
-    ],
-  })
+): readonly MutantDecoded[] => {
+  const reachable = reachableFileNamesOf(node, nodes, HashSet.empty())
+  return mutants.filter((mutant) => HashSet.has(reachable, normalizeFileName(mutant.fileName)))
+}
 
 interface Accumulator {
   readonly definitive: HashMap.HashMap<string, readonly DiagnosticDecoded[]>
@@ -134,7 +144,7 @@ const classifyOne = (
   nodes: Readonly<Record<string, NodeDecoded>>,
 ): Result.Result<Accumulator, CheckMutantsError> =>
   Result.flatMap(nodeOf(diagnostic, nodes), (node) => {
-    const related = walk(node, mutants, nodes, [])
+    const related = relatedMutantsOf(node, mutants, nodes)
     return Result.succeed(
       Option.match(Option.filter(Arr.head(related), () => related.length === 1), {
         onSome: (only) => ({
