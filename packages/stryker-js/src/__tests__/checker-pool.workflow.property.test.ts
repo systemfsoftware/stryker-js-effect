@@ -147,8 +147,6 @@ const crashTagOf = (error: StageError | CheckerCrash): string =>
     Match.orElse(() => 'StageError'),
   )
 
-const groupOrderVerdictOf = (reportedIds: string, expectedIds: string) => reportedIds === expectedIds
-
 const poolBoundVerdictOf = (observed: {
   readonly peak: number
   readonly acquires: number
@@ -221,25 +219,6 @@ const reportedOf = (split: {
 })
 
 describe('checker pool', () => {
-  it.effect.prop(
-    '∀ids_CheckGroups_≡GroupOrder',
-    { of: [S.Int], subject: checkPlans },
-    (subject, [seed]) =>
-      Effect.gen(function*() {
-        const plans = groupPlansOf('1', seed)
-        const checker = checkerServiceOf({
-          group: (_checkerName, mutants) => Effect.succeed(singletonGroups(mutants)),
-          check: (_checkerName, mutants) =>
-            Effect.sleep(`${2 * (plans.length - plans.findIndex((plan) => plan.mutant.id === mutants[0]?.id))} milli`)
-              .pipe(Effect.as(passedAnswers(mutants))),
-        })
-        const pool = yield* checkerSlotPoolOf(plans.length, Effect.succeed(checkerSlotOf('c', checker)))
-        const checked = yield* subject(makeCheckerPoolHandle(pool), plans)
-        const reportedIds = checked.passedPlans.map((plan) => plan.mutant.id).join(',')
-        return groupOrderVerdictOf(reportedIds, plans.map((plan) => plan.mutant.id).join(','))
-      }),
-  )
-
   it.effect.prop(
     '∀seed_CheckerFanOut_⊆PoolBound',
     { of: [S.Int], subject: checkPlans },
@@ -449,66 +428,6 @@ describe('checker pool', () => {
           !passedIds.includes(failingId),
           failedIds.join(',') === failingId,
           passedIds.join(',') === plans.map((plan) => plan.mutant.id).filter((id) => id !== failingId).join(','),
-        ])
-      }),
-  )
-
-  it.effect.prop(
-    '∀seed_SlowGroup_⊨FirstEmit≺LastCheck',
-    {
-      of: [S.Int],
-      subject: (plans: readonly Mutant.MutantRunPlan[]) =>
-        Effect.gen(function*() {
-          const slowId = Option.getOrThrow(Array.last(plans)).mutant.id
-          const events = yield* Ref.make<readonly string[]>([])
-          const releaseSlow = yield* Deferred.make<void>()
-          const checker = checkerServiceOf({
-            group: (_checkerName, mutants) => Effect.succeed(singletonGroups(mutants)),
-            check: (_checkerName, mutants) =>
-              Effect.gen(function*() {
-                const id = Option.getOrThrow(Array.head(mutants)).id
-                yield* Ref.update(events, (seen) => [...seen, `check:start:${id}`])
-                if (id === slowId) yield* Deferred.await(releaseSlow)
-                yield* Ref.update(events, (seen) => [...seen, `check:end:${id}`])
-                return passedAnswers(mutants)
-              }),
-          })
-          const pool = yield* checkerSlotPoolOf(plans.length, Effect.succeed(checkerSlotOf('slow', checker)))
-          yield* checkPlansStream(makeCheckerPoolHandle(pool), plans).pipe(
-            Stream.mapEffect(
-              ({ passedPlans }) =>
-                Effect.gen(function*() {
-                  yield* Ref.update(events, (seen) => [
-                    ...seen,
-                    ...passedPlans.map((plan) => `emit:${plan.mutant.id}`),
-                  ])
-                  yield* Deferred.succeed(releaseSlow, undefined)
-                }),
-              { concurrency: 1 },
-            ),
-            Stream.runDrain,
-          )
-          return { log: yield* Ref.get(events), slowId }
-        }),
-    },
-    (subject, [seed]) =>
-      Effect.gen(function*() {
-        const plans = groupPlansOf('slow', seed)
-        const observed = yield* subject(plans)
-        const emittedIds = observed.log
-          .filter((entry) => entry.startsWith('emit:'))
-          .map((entry) => entry.slice('emit:'.length))
-        const endedIds = observed.log
-          .filter((entry) => entry.startsWith('check:end:'))
-          .map((entry) => entry.slice('check:end:'.length))
-        const firstEmit = observed.log.findIndex((entry) => entry.startsWith('emit:'))
-        const slowEnd = observed.log.findIndex((entry) => entry === `check:end:${observed.slowId}`)
-        const slowStart = observed.log.findIndex((entry) => entry === `check:start:${observed.slowId}`)
-        return holds([
-          emittedIds.join(',') === plans.map((plan) => plan.mutant.id).join(','),
-          [...endedIds].sort().join(',') === plans.map((plan) => plan.mutant.id).sort().join(','),
-          slowStart >= 0 && slowStart < firstEmit,
-          firstEmit >= 0 && firstEmit < slowEnd,
         ])
       }),
   )

@@ -39,6 +39,7 @@ import { announceSettledMutant, makeCheckpointWriter, reportingInputOf, type Run
 import { planMutationTest } from './mutation-test-plan.cell.js'
 import {
   configuredTestFilesOf,
+  inPlannedOrder,
   partitionPlannable,
   reportDroppedMutants,
   sandboxFilesOf,
@@ -190,7 +191,10 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     )
   }))
   const checkerRelease = yield* checkers.releaseInBackground
-  const allResults = [...settledResults, ...runResults]
+  const allResults = inPlannedOrder({
+    planned: context.plannedMutants,
+    results: [...settledResults, ...runResults],
+  })
   yield* Effect.forEach(
     mutantDetailEventsOf({ requested: requestedIdsOf(prev.options), results: allResults }),
     (detail) => Queue.offer(progressQueue, detail),

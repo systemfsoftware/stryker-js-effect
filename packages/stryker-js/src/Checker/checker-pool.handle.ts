@@ -165,7 +165,7 @@ const checkedGroupsFor = (
                     .pipe(
                       Effect.flatMap((checked) => splitCheckedPlans(checked)),
                     ),
-                { concurrency: 'unbounded' },
+                { concurrency: 'unbounded', unordered: true },
               ),
               Stream.flatMap((split) =>
                 Stream.concat(
@@ -249,7 +249,7 @@ export const runCheckedPlans: {
           ...passedPlans.map((plan) => () => execution.runPlan(plan)),
         ])
       ),
-      Stream.mapEffect((work) => work(), { concurrency: Math.max(1, execution.concurrency) }),
+      Stream.mapEffect((work) => work(), { concurrency: Math.max(1, execution.concurrency), unordered: true }),
     ),
 )
 
