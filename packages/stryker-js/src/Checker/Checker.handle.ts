@@ -1,4 +1,5 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Checker, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
@@ -22,6 +23,10 @@ const checkerDuration = Metric.timer('stryker.checker.duration', {
 
 const checkerMutantsChecked = Metric.counter('stryker.checker.mutants.checked', {
   description: 'Total number of mutants a checker worker answered for',
+})
+
+export const checkerMutantsSkipped = Metric.counter('stryker.checker.mutants.skipped', {
+  description: 'Total number of mutants dropped because they cannot be described to a checker',
 })
 
 const checkerRpcFailures = Metric.counter('stryker.checker.rpc_failures', {
@@ -61,13 +66,13 @@ export const connectionCrashed = (cause: string): ChildProcessCrashedError =>
   ChildProcessCrashedError.make({ pid: 0, exit: { _tag: 'Code', code: 1 }, cause })
 
 const recordCheckerCall = <A>(
-  spanName: string,
+  span: SpanTaxonomy.SpanMember,
   checkerName: string,
   mutants: readonly Checker.CheckerMutantWire[],
   call: Effect.Effect<A, Checker.CheckerFailed | { readonly message: string }>,
 ) =>
   call.pipe(
-    Effect.withSpan(spanName, {
+    Effect.withSpan(span.name, {
       attributes: {
         'stryker.checker.name': checkerName,
         'stryker.mutants.count': mutants.length,
@@ -99,7 +104,7 @@ const recordCheckerCall = <A>(
 
 const checkOf = (self: CheckerHandle, checkerName: string, mutants: readonly Checker.CheckerMutantWire[]) =>
   recordCheckerCall(
-    'stryker.checker.check',
+    SpanTaxonomy.Spans.checkerCheck,
     checkerName,
     mutants,
     CheckerHandle.slot(self).check({ checkerName, mutants: [...mutants] }),
@@ -107,7 +112,7 @@ const checkOf = (self: CheckerHandle, checkerName: string, mutants: readonly Che
 
 const groupOf = (self: CheckerHandle, checkerName: string, mutants: readonly Checker.CheckerMutantWire[]) =>
   recordCheckerCall(
-    'stryker.checker.group',
+    SpanTaxonomy.Spans.checkerGroup,
     checkerName,
     mutants,
     CheckerHandle.slot(self).group({ checkerName, mutants: [...mutants] }),

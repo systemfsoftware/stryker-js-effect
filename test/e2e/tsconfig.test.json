@@ -18,6 +18,9 @@
   "exclude": ["scripts/export-traces.ts", "scripts/import-traces.ts"],
   "references": [
     {
+      "path": "../e2e-core/tsconfig.app.json"
+    },
+    {
       "path": "../../packages/stryker-js-instrumenter/tsconfig.app.json"
     },
     {

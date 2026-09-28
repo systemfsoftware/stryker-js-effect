@@ -5,7 +5,7 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import { cloneNode, type Program, type Statement } from './Ast.handle.js'
 import type { SpannedComment } from './Ast.schema.js'
-import { InstrumenterContext } from './Mutant.schema.js'
+import { InstrumenterContext } from './InstrumentContext.schema.js'
 import { type ParseFailed, parseWithOxc } from './Parser.service.js'
 
 interface LocatedComment extends SpannedComment {

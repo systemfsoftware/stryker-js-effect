@@ -1,4 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Result from 'effect/Result'
 
@@ -12,7 +14,6 @@ import {
   InstrumentFilesCommand,
   InstrumentResult,
 } from './Instrument.schema.js'
-import { Mutant as ApiMutant } from './Mutant.schema.js'
 import { PrintFailed } from './print/PrintFailed.schema.js'
 import { print } from './Printer.js'
 import { createMutantCollector } from './Transformer.service.js'
@@ -30,7 +31,7 @@ type InstrumentFilesRaw = typeof InstrumentFilesCommand.Encoded & {
   readonly files: readonly FileDescription[]
   readonly registry: FormatRegistry
   readonly parsed: readonly ParsedFile[]
-  readonly mutants: readonly ApiMutant[]
+  readonly mutants: readonly Mutant.Mutant[]
 }
 
 const printedFile = (
@@ -66,7 +67,7 @@ const instrumentedResult = (raw: InstrumentFilesRaw): Effect.Effect<InstrumentRe
 const skippedOnlyResult = (raw: InstrumentFilesRaw): InstrumentResult =>
   InstrumentResult.make({ files: [], mutants: [], skipped: [...raw.skipped] })
 
-const readInstrumentFiles = Effect.fn('stryker.instrument.read_files')(function*(
+const readInstrumentFiles = Effect.fn(SpanTaxonomy.Spans.instrumentReadFiles.name)(function*(
   input: InstrumentFilesInput,
 ): Effect.fn.Return<InstrumentFilesRaw, InstrumentError> {
   const outcomes = yield* Effect.forEach(

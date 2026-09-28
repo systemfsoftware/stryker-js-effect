@@ -1,7 +1,12 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import { RunEvent, SpanTaxonomy, StockCatalog } from '@systemfsoftware/stryker-js-cli-contract'
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
-import { Options, type Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  MutatorCatalog,
+  Options,
+  type Reporter as InterfaceReporter,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Schema as S } from 'effect'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
@@ -20,7 +25,17 @@ import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 
+import {
+  decodeMutatorSelection,
+  DecodeMutatorSelectionCommand,
+  type MutatorSelectionDecoded,
+} from '../decode-mutator-selection.workflow.js'
 import { installedFrameworkClaimants } from '../framework-claimant.service.js'
+import {
+  type MergedCatalog,
+  planMutatorCatalogs,
+  PlanMutatorCatalogsCommand,
+} from '../plan-mutator-catalogs.workflow.js'
 import { pluginLoadFailureEvents, reportPluginLoad } from '../plugin-load-report.service.js'
 import { loadPlugins, pluginUrlsFromOptions } from '../plugin-loader.service.js'
 import { type LoadedPlugins, type PluginDescriptor } from '../Plugins.schema.js'
@@ -37,21 +52,21 @@ import {
 import { type ReporterChoice, reporterInputsOf } from '../reporter-wiring.service.js'
 import { Reporter } from '../reporter.service.js'
 import { AnsiCode } from '../reporting/ansi.schema.js'
-import { type RunEvent } from '../run-events.service.js'
-import { PhaseEntered, RunEvents } from '../run-events.service.js'
+import { RunEvents } from '../run-events.service.js'
 import { PrepareError, StageError } from '../Run.schema.js'
 import { TemporaryDirectory } from '../Sandbox.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { admitNonEmptyProject, NonEmptyProjectCommand, ProjectEmpty } from './admit-non-empty-project.workflow.js'
 import type { FrameworkClaimant } from './explain-file-skip.workflow.js'
-import { forkCoreSchema, validateOptions } from './load-config.cell.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
+import { forkCoreSchema } from './load-config.js'
 import { planPrepare, PrepareDecoded } from './plan-prepare.workflow.js'
 import { planReporters, ReporterPlanCommand } from './plan-reporters.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
+import { validateOptions } from './validate-options.js'
 
-const announceSummary = Effect.fn('stryker.prepare.announce-summary')(
+const announceSummary = Effect.fn(SpanTaxonomy.Spans.prepareAnnounceSummary.name)(
   function*(input: { readonly env: RunEnvironmentShape; readonly summary: string }) {
     yield* Match.value(input.env.resolvedMode.mode).pipe(
       Match.when('human', () =>
@@ -68,6 +83,8 @@ export interface PrepareDone {
   readonly project: Project
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly Ignorer[]
+  readonly mutatorCatalogs: readonly MergedCatalog[]
+  readonly mutatorSelection: MutatorSelectionDecoded
   readonly formatRegistry: Format.FormatRegistry
   readonly options: Options.StrykerOptions
   readonly temporaryDirectoryPath: string
@@ -83,11 +100,13 @@ export interface PrepareExecutorArgs {
 type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly now: number
   readonly env: RunEnvironmentShape
-  readonly queue: Queue.Queue<RunEvent, Cause.Done>
+  readonly queue: Queue.Queue<RunEvent.RunEvent, Cause.Done>
   readonly options: Options.StrykerOptions
   readonly loaded: LoadedPlugins
   readonly project: Project
   readonly ignorers: readonly Ignorer[]
+  readonly mutatorCatalogs: readonly MergedCatalog[]
+  readonly mutatorSelection: MutatorSelectionDecoded
   readonly formatRegistry: Format.FormatRegistry
   readonly builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory>
   readonly reporterChoicesByName: HashMap.HashMap<string, ReporterChoice>
@@ -111,7 +130,7 @@ const buildMergedSchema = <A = unknown>(
     core,
   )
 
-const readPrepare = Effect.fn('stryker.prepare.gather')(function*(
+const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
   command: ReadProjectDone,
 ): Effect.fn.Return<
   PrepareRaw,
@@ -148,6 +167,37 @@ const readPrepare = Effect.fn('stryker.prepare.gather')(function*(
       )
     ),
     Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
+  )
+  const stockCatalog = yield* Effect.orDie(S.decodeEffect(MutatorCatalog.Catalog)(StockCatalog.StockCatalog))
+  const providers = loaded.mutators.map((provider) => ({
+    moduleName: provider.moduleName,
+    namespace: provider.contribution.namespace,
+    entries: provider.contribution.entries.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      tier: entry.tier,
+      definition: entry.definition,
+      examples: [...entry.examples],
+    })),
+  }))
+  const plannedCatalogs = yield* Effect.fromResult(
+    Result.mapError(
+      planMutatorCatalogs(PlanMutatorCatalogsCommand.make({ stock: stockCatalog, providers })),
+      (refused) => StageError.make({ stage: 'prepare', reason: refused.message, cause: refused }),
+    ),
+  )
+  const mutatorCatalogs = plannedCatalogs.catalogs
+  const mutatorSelection = yield* Effect.fromResult(
+    Result.mapError(
+      decodeMutatorSelection(
+        DecodeMutatorSelectionCommand.make({
+          catalogs: [...mutatorCatalogs],
+          excludedMutations: [...options.mutator.excludedMutations],
+          optInMutations: [...options.mutator.optInMutations],
+        }),
+      ),
+      (refused) => StageError.make({ stage: 'prepare', reason: refused.message, cause: refused }),
+    ),
   )
   const registry = Format.registerEntries(
     Format.coreFormatRegistry,
@@ -201,6 +251,8 @@ const readPrepare = Effect.fn('stryker.prepare.gather')(function*(
     loaded,
     project: command.project,
     ignorers,
+    mutatorCatalogs,
+    mutatorSelection,
     formatRegistry: registry,
     builtinReporterFactories,
     reporterChoicesByName,
@@ -208,7 +260,7 @@ const readPrepare = Effect.fn('stryker.prepare.gather')(function*(
   }
 })
 
-const applyPrepare = Effect.fn('stryker.prepare.apply')(function*(
+const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
   span: PhaseSpan,
   reporters: readonly string[],
   raw: PrepareRaw,
@@ -261,11 +313,13 @@ const applyPrepare = Effect.fn('stryker.prepare.apply')(function*(
   const reporterInit = yield* currentReporterInit(span)
   const reporterStage = yield* attachReporterFactories(reporterInputs, raw.options, reporterInit)
   const { now } = raw
-  yield* Queue.offer(raw.queue, PhaseEntered.make({ phase: 'prepare', elapsedMs: now - raw.env.runStartedAt }))
+  yield* Queue.offer(raw.queue, RunEvent.PhaseEntered.make({ phase: 'prepare', elapsedMs: now - raw.env.runStartedAt }))
   return {
     project: raw.project,
     loadedPlugins: raw.loaded,
     ignorers: raw.ignorers,
+    mutatorCatalogs: raw.mutatorCatalogs,
+    mutatorSelection: raw.mutatorSelection,
     formatRegistry: raw.formatRegistry,
     options: raw.options,
     temporaryDirectoryPath,
@@ -278,14 +332,14 @@ const writePrepare = (
   reporters: readonly string[],
   raw: PrepareRaw,
 ): Effect.Effect<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
-  withPhaseSpan('prepare', {}, (span) => applyPrepare(span, reporters, raw))
+  withPhaseSpan(SpanTaxonomy.Spans.preparePhase, {}, (span) => applyPrepare(span, reporters, raw))
 
 export const prepareCell: Cell.Cell<
   ReadProjectDone,
   PrepareDone,
   StageError,
   Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
-> = Sandwich.named('stryker.prepare')(readPrepare)
+> = Sandwich.named(SpanTaxonomy.Spans.prepare.name)(readPrepare)
   .decide(planPrepare)
   .write({
     HumanReporters: ({ reporters }, raw) => writePrepare(reporters, raw),

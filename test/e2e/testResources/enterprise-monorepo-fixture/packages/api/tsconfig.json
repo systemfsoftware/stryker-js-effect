@@ -20,6 +20,9 @@
       "@enterprise/core": [
         "../core/src/index.ts"
       ],
+      "@enterprise/core/*": [
+        "../core/src/*.ts"
+      ],
       "@enterprise/services": [
         "../services/src/index.ts"
       ],

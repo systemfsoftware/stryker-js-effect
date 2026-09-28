@@ -1,19 +1,9 @@
 #!/usr/bin/env -S deno run --config=scripts/deno.json --allow-read --allow-run=git --allow-import --allow-net=jsr.io
 
 import { withoutAll } from '@std/collections/without-all'
-import { extractYaml, test } from '@std/front-matter'
 import { expandGlob } from '@std/fs/expand-glob'
-import { basename } from '@std/path'
+import { collectChangesetIntents } from './lib/changeset-intents.ts'
 import { run } from './lib/run.ts'
-
-const BUMP: Record<string, true> = { none: true, patch: true, minor: true, major: true }
-
-const intentPackages = (markdown: string) => {
-  if (!test(markdown)) return []
-  return Object.entries(extractYaml<Record<string, unknown>>(markdown).attrs)
-    .filter(([, bump]) => typeof bump === 'string' && BUMP[bump])
-    .map(([name]) => name)
-}
 
 const publicPackages = async () => {
   const names: string[] = []
@@ -28,14 +18,7 @@ const publicPackages = async () => {
   return names
 }
 
-const namedIntents = async () => {
-  const named: string[] = []
-  for await (const file of expandGlob('.changeset/*.md')) {
-    if (basename(file.path) === 'README.md') continue
-    named.push(...intentPackages(await Deno.readTextFile(file.path)))
-  }
-  return named
-}
+const namedIntents = async () => (await collectChangesetIntents('.changeset')).map((intent) => intent.package)
 
 const baseSha = Deno.args[0]
 if (!baseSha) {

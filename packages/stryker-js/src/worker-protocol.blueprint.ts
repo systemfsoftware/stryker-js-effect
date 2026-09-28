@@ -1,4 +1,5 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FiberSet from 'effect/FiberSet'
@@ -26,14 +27,14 @@ const connectionLost = RpcClientError.make({
 
 const connectionLostMessage: FromServerEncoded = { _tag: 'ClientProtocolError', error: connectionLost }
 
-const failInFlightRequests = Effect.fn('stryker.worker.protocol.failInFlight')(function*(
+const failInFlightRequests = Effect.fn(SpanTaxonomy.Spans.workerProtocolFailInFlight.name)(function*(
   responseHandlers: Ref.Ref<HashMap.HashMap<number, ResponseHandler>>,
 ) {
   const registered = yield* Ref.get(responseHandlers)
   yield* Effect.forEach(HashMap.values(registered), (write) => write(connectionLostMessage), { discard: true })
 })
 
-const makeWorkerProtocol = Effect.fn('stryker.worker.protocol.make')(function*(
+const makeWorkerProtocol = Effect.fn(SpanTaxonomy.Spans.workerProtocolMake.name)(function*(
   socket: Layer.Layer<Socket.Socket, Socket.SocketError>,
 ) {
   const responseHandlers = yield* Ref.make(HashMap.empty<number, ResponseHandler>())

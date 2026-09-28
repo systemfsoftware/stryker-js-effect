@@ -1,3 +1,4 @@
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Options, Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -24,7 +25,7 @@ export interface ReporterChoice {
   readonly builtinFactory: Option.Option<InterfaceReporter.ReporterFactory>
 }
 
-const spawnPluginReporterFactory = Effect.fn('stryker.reporterWiring.spawnPluginReporterFactory')(
+const spawnPluginReporterFactory = Effect.fn(SpanTaxonomy.Spans.reporterWiringSpawnPluginReporterFactory.name)(
   function*(
     name: string,
     loaded: LoadedPlugins,

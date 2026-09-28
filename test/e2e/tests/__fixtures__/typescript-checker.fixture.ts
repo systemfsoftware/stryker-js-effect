@@ -1,11 +1,10 @@
-import type { RunEvent } from '@systemfsoftware/stryker-js'
+import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Check, Expect } from '@systemfsoftware/vitest'
-import { Effect, Schema } from 'effect'
 import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
-import { reportedMutantsOf } from './machine-stream.fixture.js'
 
 export const FIXTURE_URL = new URL('../../testResources/typescript-checker-fixture', import.meta.url)
+export const FIXTURE_NAME = 'typescript-checker-fixture'
 export const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
 export const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutantTested', 'verdict']
 export const RUN_EVENT_KINDS: ReadonlyArray<string> = [
@@ -32,9 +31,6 @@ const kindsOutsideOf = (
   kinds: ReadonlyArray<string>,
   allowed: ReadonlyArray<string>,
 ): ReadonlyArray<string> => kinds.filter((kind) => !allowed.includes(kind))
-
-const statusSuffixCount = (mutants: ReadonlyArray<string>, suffix: string): number =>
-  mutants.filter((mutant) => mutant.endsWith(suffix)).length
 
 export const verifyProcessAndStreamIntegrity = (
   expect: Expect,
@@ -64,44 +60,28 @@ export const verifyProcessAndStreamIntegrity = (
   })
 }
 
-export const verifyVerdictCounts = (expect: Expect, verdict: RunEvent.VerdictReached): Check =>
-  expect({
-    compileErrors: verdict.counts.compileErrors,
-    pending: verdict.counts.pending,
-    runtimeErrors: verdict.counts.runtimeErrors,
-  }).toStrictEqual({ compileErrors: 4, pending: 0, runtimeErrors: 0 })
-
-export const verifyMutantStreamAndActionables = (
+export const verifyRunIds = (
   expect: Expect,
-  events: ReadonlyArray<RunEvent.RunEvent>,
   verdict: RunEvent.VerdictReached,
   runIds: ReadonlyArray<string>,
-): Check => {
-  const reportedMutants = reportedMutantsOf(events)
-  const actionable = verdict.mutants.map((mutant) => `${mutant.mutator}:${mutant.status}`)
-
-  return expect({
-    reportedCount: reportedMutants.length,
-    compileErrorCount: statusSuffixCount(reportedMutants, ':CompileError'),
-    killedCount: statusSuffixCount(reportedMutants, ':Killed'),
-    survivedCount: statusSuffixCount(reportedMutants, ':Survived'),
-    hasStringLiteralCompileError: reportedMutants.includes('StringLiteral:CompileError'),
-    actionableCount: actionable.length,
-    actionableSurvivorCount: actionable.filter((mutant) => mutant.endsWith(':Survived')).length,
+): Check =>
+  expect({
     distinctRunIds: new Set(runIds).size,
     verdictRunIdMatchesFirst: verdict.runId === runIds[0],
-  }).toStrictEqual({
-    reportedCount: 7,
-    compileErrorCount: 4,
-    killedCount: 2,
-    survivedCount: 1,
-    hasStringLiteralCompileError: true,
-    actionableCount: 1,
-    actionableSurvivorCount: 1,
-    distinctRunIds: 1,
-    verdictRunIdMatchesFirst: true,
-  })
+  }).toStrictEqual({ distinctRunIds: 1, verdictRunIdMatchesFirst: true })
+
+export interface ReportEnvelope {
+  readonly exitCode: number
+  readonly schemaVersion: string
 }
+
+export const reportEnvelopeOf = (run: ExecResult, report: Report.MutationTestResult): ReportEnvelope => ({
+  exitCode: run.exitCode,
+  schemaVersion: report.schemaVersion,
+})
+
+export const verifyReportEnvelope = (expect: Expect, envelope: ReportEnvelope): Check =>
+  expect(envelope).toStrictEqual({ exitCode: 0, schemaVersion: '1.0' })
 
 export const verifyBrokenCheckerError = (
   expect: Expect,
@@ -127,28 +107,6 @@ export const verifyBrokenCheckerError = (
   })
 }
 
-export const verifyDiskReport = (
-  expect: Expect,
-  run: ExecResult,
-  reportText: string,
-): Effect.Effect<Check, Schema.SchemaError> =>
-  Effect.map(
-    Schema.decodeUnknownEffect(Schema.fromJsonString(Report.MutationTestResultSchema))(reportText),
-    (report) => {
-      const fileEntry = report.files['src/order.ts']
-
-      return expect({
-        exitCode: run.exitCode,
-        schemaVersion: report.schemaVersion,
-        fileStatuses: fileEntry === undefined ? undefined : fileEntry.mutants.map((mutant) => mutant.status).toSorted(),
-      }).toStrictEqual({
-        exitCode: 0,
-        schemaVersion: '1.0',
-        fileStatuses: ['CompileError', 'CompileError', 'CompileError', 'CompileError', 'Killed', 'Killed', 'Survived'],
-      })
-    },
-  )
-
 export const verifyDiskStream = (
   expect: Expect,
   stdoutEvents: ReadonlyArray<RunEvent.RunEvent>,
@@ -160,27 +118,5 @@ export const verifyDiskStream = (
   return expect({ diskEventCount: diskKinds.length, diskKinds }).toStrictEqual({
     diskEventCount: stdoutKinds.length,
     diskKinds: stdoutKinds,
-  })
-}
-
-export const verifyPresetMutants = (
-  expect: Expect,
-  events: ReadonlyArray<RunEvent.RunEvent>,
-  verdict: RunEvent.VerdictReached,
-): Check => {
-  const reportedMutants = reportedMutantsOf(events)
-
-  return expect({
-    reportedCount: reportedMutants.length,
-    compileErrorCount: statusSuffixCount(reportedMutants, ':CompileError'),
-    hasDroppedFallbackError: reportedMutants.includes('LogicalOperator:CompileError'),
-    hasKilledStringLiteral: reportedMutants.includes('StringLiteral:Killed'),
-    verdictCompileErrors: verdict.counts.compileErrors,
-  }).toStrictEqual({
-    reportedCount: 3,
-    compileErrorCount: 1,
-    hasDroppedFallbackError: true,
-    hasKilledStringLiteral: true,
-    verdictCompileErrors: 1,
   })
 }

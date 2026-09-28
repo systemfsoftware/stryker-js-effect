@@ -1,3 +1,4 @@
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -13,7 +14,7 @@ const dependencyNamesOf = (
   dependencies: S.Schema.Type<typeof ProjectDependencies>['dependencies'],
 ): readonly string[] => Object.keys(dependencies ?? {})
 
-const installedClaimantOf = Effect.fn('stryker.framework_claimant.of')(function*(
+const installedClaimantOf = Effect.fn(SpanTaxonomy.Spans.frameworkClaimantOf.name)(function*(
   fs: FileSystem.FileSystem,
   path: Path.Path,
   basePath: string,
@@ -34,7 +35,7 @@ const installedClaimantOf = Effect.fn('stryker.framework_claimant.of')(function*
   )
 })
 
-export const installedFrameworkClaimants = Effect.fn('stryker.framework_claimant.list')(function*(
+export const installedFrameworkClaimants = Effect.fn(SpanTaxonomy.Spans.frameworkClaimantList.name)(function*(
   basePath: string,
 ) {
   const fs = yield* FileSystem.FileSystem

@@ -4,18 +4,18 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import {
   reportFromStream,
   ReportFromStreamAbsent,
   ReportFromStreamCommand,
   ReportFromStreamRebuilt,
 } from '../report-from-stream.workflow.js'
-import { RunMutantTested } from '../run-event.schema.js'
 
 const STREAM_HEADER = '{"_tag":"stream"}'
 const TORN_LINE = '{"_tag":"mutant","id":'
 
-const lineOf = S.encodeOption(S.fromJsonString(RunMutantTested))
+const lineOf = S.encodeOption(S.fromJsonString(RunEvent.RunMutantTested))
 
 type RebuiltReport = typeof ReportFromStreamRebuilt.Type.report
 
@@ -31,13 +31,13 @@ const reportOf = (subject: typeof reportFromStream, text: string): Option.Option
     (decision) => S.is(ReportFromStreamRebuilt)(decision) ? Option.some(decision.report) : Option.none(),
   )
 
-const streamTextOf = (mutants: ReadonlyArray<RunMutantTested>): string =>
+const streamTextOf = (mutants: ReadonlyArray<RunEvent.RunMutantTested>): string =>
   [STREAM_HEADER, ...Arr.flatMap(mutants, (mutant) => Option.toArray(lineOf(mutant))), TORN_LINE].join('\n')
 
 describe('reportFromStream', () => {
   it.prop(
     '∀ms_StreamedMutants_≡RebuiltIntoTheirFilesIffAnyMutant',
-    { of: [S.Array(RunMutantTested)], subject: reportFromStream },
+    { of: [S.Array(RunEvent.RunMutantTested)], subject: reportFromStream },
     (subject, [mutants]) => {
       const rebuilt = reportOf(subject, streamTextOf(mutants))
       return Option.match(rebuilt, {
@@ -54,7 +54,7 @@ describe('reportFromStream', () => {
 
   it.prop(
     '∀t_NoMutantRecords_≡Absent',
-    { of: [S.Array(RunMutantTested)], subject: reportFromStream },
+    { of: [S.Array(RunEvent.RunMutantTested)], subject: reportFromStream },
     (subject, [mutants]) =>
       Arr.isReadonlyArrayNonEmpty(mutants) ||
       S.is(ReportFromStreamAbsent)(decisionOf(subject, `${STREAM_HEADER}\n${TORN_LINE}`)),

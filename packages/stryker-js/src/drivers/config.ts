@@ -1,3 +1,4 @@
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
@@ -103,7 +104,7 @@ const extendsChildKind = (configFile: string, pathService: Path.Path): ConfigFil
     onFalse: (): ConfigFileKindValue => 'supported',
   })
 
-const exists = Effect.fn('stryker.config.exists')(function*(fileName: string) {
+const exists = Effect.fn(SpanTaxonomy.Spans.configExists.name)(function*(fileName: string) {
   const fs = yield* FileSystem.FileSystem
   return yield* fs.access(fileName).pipe(
     Effect.as(true),
@@ -153,7 +154,7 @@ const configFilePresence = (
 ): Effect.Effect<boolean, ConfigFileUnreadableError, FileSystem.FileSystem> =>
   kind === 'supported' ? exists(configFileName) : Effect.succeed(false)
 
-const expectedConfigFileOf = Effect.fn('stryker.config.expectedFile')(function*(
+const expectedConfigFileOf = Effect.fn(SpanTaxonomy.Spans.configExpectedFile.name)(function*(
   configFileName: string,
   context: 'cli' | 'extends',
 ) {
@@ -172,7 +173,7 @@ const expectedConfigFileOf = Effect.fn('stryker.config.expectedFile')(function*(
   return yield* Effect.fromOption(found, () => ConfigFileNotFoundError.make({ file: configFileName }))
 })
 
-const discoverConfigFileEffect = Effect.fn('stryker.config.discover')(function*() {
+const discoverConfigFileEffect = Effect.fn(SpanTaxonomy.Spans.configDiscover.name)(function*() {
   const discovered = yield* firstExistingConfigFile(DISCOVERABLE_CONFIG_FILE_NAMES)
   const legacyPresent = yield* firstExistingConfigFile(LEGACY_CONFIG_FILE_NAMES)
   return yield* actionableConfigFileOf(
@@ -309,7 +310,7 @@ const decodeConfigDocument = <A>(
     Effect.mapError((cause) => ConfigFileInvalidError.make({ file: configFile, cause })),
   )
 
-const readConfigModule = Effect.fn('stryker.config.readModule')(function*(
+const readConfigModule = Effect.fn(SpanTaxonomy.Spans.configReadModule.name)(function*(
   configFile: string,
   configEnv: ConfigEnv,
 ) {
@@ -337,7 +338,7 @@ const readExtendsChild = (
   FileSystem.FileSystem | Path.Path
 > => expectedConfigFileOf(configFile, 'extends').pipe(Effect.flatMap((file) => readConfigModule(file, configEnv)))
 
-const resolveExtends = Effect.fn('stryker.config.extends')(function*(
+const resolveExtends = Effect.fn(SpanTaxonomy.Spans.configExtends.name)(function*(
   configFile: string,
   document: ConfigDocument,
   configEnv: ConfigEnv,
@@ -351,7 +352,7 @@ const resolveExtends = Effect.fn('stryker.config.extends')(function*(
     ConfigDocument,
     ConfigReadError,
     FileSystem.FileSystem | Path.Path
-  > = Effect.fn('stryker.config.extendsStep')(function*(
+  > = Effect.fn(SpanTaxonomy.Spans.configExtendsStep.name)(function*(
     state: ExtendsStepState,
     file: string,
     currentDocument: ConfigDocument,
@@ -361,7 +362,7 @@ const resolveExtends = Effect.fn('stryker.config.extends')(function*(
       specifier: string,
       nextState: ExtendsStepState,
     ) => Effect.Effect<ConfigDocument, ConfigReadError, FileSystem.FileSystem | Path.Path> = Effect.fn(
-      'stryker.config.extendsChild',
+      SpanTaxonomy.Spans.configExtendsChild.name,
     )(function*(specifier: string, nextState: ExtendsStepState) {
       const childFile = pathService.resolve(pathService.dirname(canonicalFile), specifier)
       const childDocument = yield* readExtendsChild(childFile, configEnv)
@@ -418,7 +419,7 @@ const resolveChildExtends = (
     onFalse: () => Effect.succeed(child),
   })
 
-const loadOptionsFromConfigFile = Effect.fn('stryker.config.loadOptions')(function*(
+const loadOptionsFromConfigFile = Effect.fn(SpanTaxonomy.Spans.configLoadOptions.name)(function*(
   cliOptions: ConfigDocument,
   configEnv: ConfigEnv,
 ) {
@@ -439,7 +440,7 @@ export type ConfigReadError =
   | ConfigFileInvalidError
   | ConfigFileUnsupportedError
 
-export const readConfigDocument = Effect.fn('stryker.config.readDocument')(function*(input: {
+export const readConfigDocument = Effect.fn(SpanTaxonomy.Spans.configReadDocument.name)(function*(input: {
   readonly cliOptions: Options.PartialStrykerOptions
   readonly configEnv: ConfigEnv
 }) {

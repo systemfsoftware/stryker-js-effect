@@ -1,6 +1,6 @@
 import * as S from 'effect/Schema'
 
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import { FormatIdentitySchema } from './IncrementalDiff.schema.js'
 

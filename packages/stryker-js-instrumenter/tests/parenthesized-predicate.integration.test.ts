@@ -2,6 +2,8 @@ import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/ef
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 
+import { stockOptions } from './__fixtures__/instrument.js'
+
 const WORKFLOW_BODY = `import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
@@ -38,10 +40,13 @@ Feature('Parenthesized type predicates in make bodies')
         When('it is instrumented')(
           'result',
           ({ source }: { source: string }) =>
-            Instrument.instrument([{ name: '/tmp/probe/predicate.workflow.ts', content: source, mutate: true }], {
-              ignorers: [],
-              excludedMutations: [],
-            }),
+            Instrument.instrument(
+              [{ name: '/tmp/probe/predicate.workflow.ts', content: source, mutate: true }],
+              stockOptions({
+                ignorers: [],
+                excludedMutations: [],
+              }),
+            ),
         ),
         Then('instrumentation succeeds with a non-empty mutant population')((
           { result }: { result: Instrument.InstrumentResult },

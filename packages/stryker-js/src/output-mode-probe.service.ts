@@ -1,4 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -7,7 +8,7 @@ import * as Option from 'effect/Option'
 import * as Stdio from 'effect/Stdio'
 import * as CliError from 'effect/unstable/cli/CliError'
 
-import type { ModeSignal, OutputMode, ResolvedMode } from './output-mode.schema.js'
+import type { ResolvedMode } from './output-mode.schema.js'
 import { ModeConflictError, ResolveModeCommand, resolveOutputMode } from './resolve-output-mode.workflow.js'
 
 const TOOL_VARIABLES = ['CLAUDECODE', 'CODEX_SANDBOX'] as const
@@ -36,8 +37,8 @@ const formatFlagsOf = (argv: readonly string[]): FormatFlags => ({
 })
 
 const resolvedMode = (
-  mode: OutputMode,
-  signal: ModeSignal,
+  mode: OutputMode.OutputMode,
+  signal: OutputMode.ModeSignal,
   stdoutIsTTY: boolean,
 ): ResolvedMode => ({
   mode,
@@ -61,7 +62,7 @@ const envToolVars = (): Effect.Effect<Record<string, string>> =>
       Effect.map((value) => [variable, Option.getOrUndefined(value)] as const),
     )).pipe(Effect.map((entries) => definedToolVars(Object.fromEntries(entries))))
 
-const probeInput = Effect.fn('stryker.outputModeProbe.read')(
+const probeInput = Effect.fn(SpanTaxonomy.Spans.outputModeProbeRead.name)(
   function*(
     command: FormatFlags,
   ): Effect.fn.Return<ProbeInput, never, Stdio.Stdio> {
@@ -80,7 +81,7 @@ const probeInput = Effect.fn('stryker.outputModeProbe.read')(
   },
 )
 
-const outputModeProbeCell = Sandwich.named('stryker.output_mode_probe')(probeInput)
+const outputModeProbeCell = Sandwich.named(SpanTaxonomy.Spans.outputModeProbe.name)(probeInput)
   .decide(resolveOutputMode)
   .write({
     HumanOutput: (human) => Effect.succeed(resolvedMode('human', human.signal, human.stdoutIsTTY)),

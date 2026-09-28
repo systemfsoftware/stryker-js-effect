@@ -1,4 +1,5 @@
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import type * as Types from 'effect/Types'
 import { afterAll, afterEach, beforeAll, beforeEach, inject, RunnerTestCase } from 'vitest'
@@ -7,7 +8,8 @@ const globalNamespace = inject('globalNamespace') as '__stryker__' | '__stryker2
 const mutantActivation = inject('mutantActivation') as 'runtime' | 'static' | undefined
 const mode = inject('mode') as 'dry-run' | 'mutant'
 
-const ns: Types.Mutable<Mutant.InstrumenterContext> = globalThis[globalNamespace] ?? (globalThis[globalNamespace] = {})
+const ns: Types.Mutable<Instrument.InstrumenterContext> = globalThis[globalNamespace] ??
+  (globalThis[globalNamespace] = {})
 
 interface SuiteWithTaskMeta {
   meta: { hitCount?: number; mutantCoverage?: Mutant.MutantCoverage }

@@ -1,4 +1,5 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -20,7 +21,7 @@ const traceContextServer: Layer.Layer<Trace.TraceContextMiddleware> = layerTrace
 
 const NAMED_PIPE_PREFIX = '\\\\.\\pipe\\'
 
-const restrictSocket = Effect.fn('restrictSocket')(function*(address: NetAddress.SocketAddress) {
+const restrictSocket = Effect.fn(SpanTaxonomy.Spans.restrictSocket.name)(function*(address: NetAddress.SocketAddress) {
   yield* Match.value(address).pipe(
     Match.tag('UnixPathAddress', ({ path }) =>
       Boolean.match(path.startsWith(NAMED_PIPE_PREFIX), {

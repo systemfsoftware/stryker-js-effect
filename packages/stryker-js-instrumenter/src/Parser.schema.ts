@@ -1,5 +1,5 @@
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
-import { Position } from './Location.schema.js'
 
 export class ParseFailed
   extends S.TaggedError<ParseFailed>('@systemfsoftware/stryker-js-instrumenter/Parser.schema/ParseFailed')(
@@ -7,7 +7,7 @@ export class ParseFailed
     {
       fileName: S.String,
       message: S.String,
-      location: Position,
+      location: Mutant.Position,
       cause: S.Defect(),
     },
   )

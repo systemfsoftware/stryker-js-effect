@@ -15,6 +15,7 @@ export async function* streamAuditEvents(events: readonly AuditPayload[]): Async
   }
 }
 
+// @stryker-expect next-line CompileError(TS2355): BlockStatement
 export async function collectAuditEvents(events: readonly AuditPayload[]): Promise<string[]> {
   const results: string[] = []
   for await (const line of streamAuditEvents(events)) {
@@ -22,3 +23,5 @@ export async function collectAuditEvents(events: readonly AuditPayload[]): Promi
   }
   return results
 }
+
+// @stryker-expect file KilledOrTimeout: all

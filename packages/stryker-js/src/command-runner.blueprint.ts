@@ -1,6 +1,7 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
@@ -57,7 +58,7 @@ const resultFromExit = (exitCode: number, output: string, timeSpentMs: number): 
 const mutantActivation = (activeMutantId: Mutant.MutantRunOptions['activeMutant']['id'] | undefined) =>
   Match.value(activeMutantId).pipe(
     Match.when(Predicate.isString, (id) => ({
-      env: { [Mutant.InstrumenterContext.ACTIVE_MUTANT_ENV_VARIABLE]: id },
+      env: { [Instrument.InstrumenterContext.ACTIVE_MUTANT_ENV_VARIABLE]: id },
       extendEnv: true as const,
     })),
     Match.orElse(() => undefined),
@@ -79,7 +80,7 @@ const spawnResult = <E = unknown>(
     Match.exhaustive,
   )
 
-const runCommand = Effect.fn('stryker.command_runner.run')(function*(
+const runCommand = Effect.fn(SpanTaxonomy.Spans.commandRunnerRun.name)(function*(
   config: CommandTestRunnerConfig,
   activeMutantId: Mutant.MutantRunOptions['activeMutant']['id'] | undefined,
 ): Effect.fn.Return<TestRunner.DryRunResult, never, ChildProcessSpawner.ChildProcessSpawner> {

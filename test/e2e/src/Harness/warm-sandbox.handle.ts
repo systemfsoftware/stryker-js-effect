@@ -4,6 +4,7 @@ import { Boolean, Effect } from 'effect'
 import * as Crypto from 'effect/Crypto'
 import type * as Scope from 'effect/Scope'
 import { NetworkPolicy, Sandbox, Snapshot } from 'microsandbox'
+import type { ExecHandle } from 'microsandbox'
 
 import type { ExecResult } from './guest-job.schema.js'
 import { GuestJobs } from './guest-job.service.js'
@@ -164,6 +165,104 @@ export const exec = (
     catch: (cause) =>
       new SandboxForkFailure({ step: `run ${argv.join(' ')}`, sandboxName: forked.name, detail: describe(cause) }),
   }).pipe(Effect.map((output) => ({ exitCode: output.code, stdout: output.stdout(), stderr: output.stderr() })))
+}
+
+export type GuestFileReader = (relativePath: string) => Promise<string>
+
+export interface StreamedExecOptions {
+  readonly env: Record<string, string>
+  readonly interruptOnLine: (line: string, readGuestFile: GuestFileReader) => Promise<boolean>
+}
+
+export interface StreamedExecResult {
+  readonly exitCode: number
+  readonly stdout: string
+  readonly stderr: string
+  readonly interrupted: boolean
+}
+
+const INTERRUPT_SIGNAL = 2
+const LINE_FEED = '\n'
+
+const drainStreamedExec = async (
+  handle: ExecHandle,
+  options: StreamedExecOptions,
+  readGuestFile: GuestFileReader,
+): Promise<StreamedExecResult> => {
+  const stdoutDecoder = new TextDecoder()
+  const stderrDecoder = new TextDecoder()
+  const stdout: Array<string> = []
+  const stderr: Array<string> = []
+  let pendingLine = ''
+  let consulting = false
+  let interrupted = false
+  let exitCode = 0
+
+  const consult = (line: string): void => {
+    if (interrupted || consulting) {
+      return
+    }
+    consulting = true
+    options.interruptOnLine(line, readGuestFile)
+      .then(async (decided) => {
+        consulting = false
+        if (!decided || interrupted) {
+          return
+        }
+        interrupted = true
+        await handle.signal(INTERRUPT_SIGNAL)
+      })
+      .catch(() => {
+        consulting = false
+      })
+  }
+
+  for await (const event of handle) {
+    switch (event.kind) {
+      case 'stdout': {
+        const text = stdoutDecoder.decode(event.data, { stream: true })
+        stdout.push(text)
+        const lines = `${pendingLine}${text}`.split(LINE_FEED)
+        pendingLine = lines.pop() ?? ''
+        lines.forEach(consult)
+        break
+      }
+      case 'stderr':
+        stderr.push(stderrDecoder.decode(event.data, { stream: true }))
+        break
+      case 'exited':
+        exitCode = event.code
+        break
+      default:
+        break
+    }
+  }
+
+  stdout.push(stdoutDecoder.decode())
+  stderr.push(stderrDecoder.decode())
+  return { exitCode, stdout: stdout.join(''), stderr: stderr.join(''), interrupted }
+}
+
+const guestFileReader = (forked: SandboxFork): GuestFileReader => (relativePath) =>
+  sandboxOf(forked).fs().readToString(`${GuestJobs.GUEST_WORKROOT}/${relativePath}`)
+
+export const execStreaming = (
+  forked: SandboxFork,
+  argv: readonly [string, ...Array<string>],
+  options: StreamedExecOptions,
+): Effect.Effect<StreamedExecResult, SandboxForkFailure> => {
+  const [cmd, ...args] = argv
+  return Effect.tryPromise({
+    try: async () => {
+      const handle = await sandboxOf(forked).execStreamWith(
+        cmd,
+        (builder) => builder.args(args).cwd(GuestJobs.GUEST_WORKROOT).envs(options.env),
+      )
+      return await drainStreamedExec(handle, options, guestFileReader(forked))
+    },
+    catch: (cause) =>
+      new SandboxForkFailure({ step: `stream ${argv.join(' ')}`, sandboxName: forked.name, detail: describe(cause) }),
+  })
 }
 
 export const readFile = (forked: SandboxFork, relativePath: string): Effect.Effect<string, SandboxForkFailure> =>

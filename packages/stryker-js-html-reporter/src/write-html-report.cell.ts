@@ -1,17 +1,9 @@
-import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
-import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { type Options, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import { dual } from 'effect/Function'
-import * as Layer from 'effect/Layer'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as S from 'effect/Schema'
-import * as Stream from 'effect/Stream'
 
 import { RenderHtmlReport, renderHtmlReport } from './render-html-report.workflow.js'
 
@@ -46,28 +38,14 @@ const buildReportHtml = (report: Reporter.MutationTestReportReady['report'], scr
 
 const BUNDLE_SPECIFIER = 'mutation-testing-elements/dist/mutation-test-elements.js'
 
-/**
- * The client bundle, when the build inlined it. A build that ships this
- * reporter bundled — with no `mutation-testing-elements` on disk to resolve
- * against — bakes the text here; a build that leaves the package resolvable
- * reads it at runtime instead.
- */
-declare const __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__: string | undefined
-
-const inlinedBundle = () =>
-  Match.value(typeof __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__).pipe(
-    Match.when('undefined', () => undefined),
-    Match.orElse(() => __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__),
-  )
-
-const readBundleFromDisk = Effect.fn('html_report.read_bundle_from_disk')(function*() {
+const readBundleFromDisk = Effect.fn(SpanTaxonomy.Spans.htmlReportReadBundleFromDisk.name)(function*() {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const bundlePath = yield* path.fromFileUrl(new URL(import.meta.resolve(BUNDLE_SPECIFIER)))
   return yield* fs.readFileString(bundlePath)
 })
 
-const writeHtmlFile = Effect.fn('html_report.write_file')(function*(fileName: string, html: string) {
+const writeHtmlFile = Effect.fn(SpanTaxonomy.Spans.htmlReportWriteFile.name)(function*(fileName: string, html: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
@@ -90,52 +68,17 @@ const readRenderCommand = (input: {
     report: input.report,
   })
 
-const writeBundleFromDisk = Effect.fn('html_report.write_bundle_from_disk')(function*(command: RenderHtmlReportRead) {
-  const bundle = yield* readBundleFromDisk()
-  yield* writeHtmlFile(command.fileName, buildReportHtml(command.report, bundle))
-})
+const writeBundleFromDisk = Effect.fn(SpanTaxonomy.Spans.htmlReportWriteBundleFromDisk.name)(
+  function*(command: RenderHtmlReportRead) {
+    const bundle = yield* readBundleFromDisk()
+    yield* writeHtmlFile(command.fileName, buildReportHtml(command.report, bundle))
+  },
+)
 
-export const writeHtmlReport = Sandwich.named('html_report.write')(readRenderCommand)
+export const writeHtmlReport = Sandwich.named(SpanTaxonomy.Spans.htmlReportWrite.name)(readRenderCommand)
   .decide(renderHtmlReport)
   .write({
     BundleInlined: ({ bundle }, command) => writeHtmlFile(command.fileName, buildReportHtml(command.report, bundle)),
     BundleFromDisk: (_decision, command) => writeBundleFromDisk(command),
     CommandRejected: (rejected) => Effect.die(rejected),
   })
-
-const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-
-const failAsHtmlReporter = <A = unknown>(cause: A) =>
-  Reporter.ReporterFailed.make({
-    reporterName: 'html',
-    event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
-  })
-
-const drainEvents = (fileName: string, events: AsyncIterable<Reporter.ReporterEvent>) =>
-  Stream.runForEach(
-    Stream.fromAsyncIterable(events, failAsHtmlReporter).pipe(Stream.filter(S.is(Reporter.MutationTestReportReady))),
-    (ready) =>
-      writeHtmlReport.run({ fileName, report: ready.report, inlinedBundle: inlinedBundle() }).pipe(
-        Effect.mapError(failAsHtmlReporter),
-      ),
-  )
-
-export const makeHtmlReporter = dual<
-  (
-    options: Options.StrykerOptions,
-  ) => (
-    init: Reporter.ReporterInit,
-  ) => (events: AsyncIterable<Reporter.ReporterEvent>) => Effect.Effect<void, Reporter.ReporterFailed>,
-  (
-    options: Options.StrykerOptions,
-    init: Reporter.ReporterInit,
-  ) => (events: AsyncIterable<Reporter.ReporterEvent>) => Effect.Effect<void, Reporter.ReporterFailed>
->(
-  2,
-  (options, _init) => (events) =>
-    Layer.build(nodeFsPathLayer).pipe(
-      Effect.flatMap((platform) => Effect.provideContext(drainEvents(options.htmlReporter.fileName, events), platform)),
-      Effect.scoped,
-    ),
-)

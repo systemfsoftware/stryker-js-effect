@@ -1,6 +1,7 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { ErrorText, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { ErrorText, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Crypto from 'effect/Crypto'
@@ -190,7 +191,7 @@ export const layer = (
 ): Layer.Layer<TestRunner.TestRunner, never, Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
   Layer.effect(TestRunner.TestRunner, makeRunner(input)).pipe(Layer.provide(VitestSession.layer(input)))
 
-const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessionInput) {
+const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*(input: VitestSessionInput) {
   const session = yield* VitestSession
   const pathService = yield* Path.Path
   const projectRoot = input.sandboxDirectory
@@ -201,11 +202,11 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
 
   const instrumenterContextOf = (
     file: RunnerTestFile,
-  ): Effect.Effect<Option.Option<Mutant.InstrumenterContext>, CoverageDecodeFailed> =>
+  ): Effect.Effect<Option.Option<Instrument.InstrumenterContext>, CoverageDecodeFailed> =>
     Option.match(Option.fromNullishOr(metaOf(file)), {
       onNone: () => Effect.succeedNone,
       onSome: (meta) =>
-        S.decodeEffect(Mutant.InstrumenterContext)(meta).pipe(
+        S.decodeEffect(Instrument.InstrumenterContext)(meta).pipe(
           Effect.asSome,
           Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
         ),
@@ -236,7 +237,7 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
     )
   }
 
-  const coverageOfFile = Effect.fn('vitest.runner.coverage_of_file')(function*(file: RunnerTestFile) {
+  const coverageOfFile = Effect.fn(SpanTaxonomy.Spans.vitestRunnerCoverageOfFile.name)(function*(file: RunnerTestFile) {
     const context = yield* instrumenterContextOf(file)
     return yield* Option.match(
       Option.flatMap(context, (present) => Option.fromNullishOr(present.mutantCoverage)),
@@ -280,7 +281,7 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
     })
   })
 
-  const collectRaw = Effect.fn('vitest.runner.collect_raw')(function*(filter: RunFilter) {
+  const collectRaw = Effect.fn(SpanTaxonomy.Spans.vitestRunnerCollectRaw.name)(function*(filter: RunFilter) {
     const self = yield* runtime
     const options = yield* vitestOptions
     yield* resetContext
@@ -361,7 +362,7 @@ const makeRunner = Effect.fn('vitest.runner.make')(function*(input: VitestSessio
     })
   }
 
-  const completeDryRun = Effect.fn('vitest.runner.complete_dry_run')(
+  const completeDryRun = Effect.fn(SpanTaxonomy.Spans.vitestRunnerCompleteDryRun.name)(
     function*(tests: readonly TestRunner.TestResult[]) {
       const mutantCoverage = yield* readMutantCoverage.pipe(Effect.mapError(asRunnerFailure('dryRun')))
       yield* Effect.annotateCurrentSpan({

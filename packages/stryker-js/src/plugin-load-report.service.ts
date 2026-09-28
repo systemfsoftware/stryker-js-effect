@@ -1,3 +1,4 @@
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
@@ -10,18 +11,9 @@ import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
 import type { LoadedPlugins } from './Plugins.schema.js'
-import { type PluginLoadFailureReason, type PluginLoadRefusedError } from './PluginsError.schema.js'
-import { StreamSchemaVersion } from './reporting/stream-version.schema.js'
-import type {
-  FormatClaimShadowingRow,
-  FormatRegistryRow,
-  FrameworkContributionRow,
-  FrameworkModuleRow,
-} from './run-event.schema.js'
-import { type RunEvent } from './run-events.service.js'
-import { FormatRegistryResolved, PhaseEntered, PluginsReported, RunFailed } from './run-events.service.js'
+import { type PluginLoadRefusedError } from './PluginsError.schema.js'
 
-const PLUGIN_FAILURE_REMEDIATION: Record<PluginLoadFailureReason['_tag'], string> = {
+const PLUGIN_FAILURE_REMEDIATION: Record<RunEvent.PluginLoadFailureReason['_tag'], string> = {
   PeerMissing: 'install the peer dependency the plugin needs',
   PeerVersionUnsupported: 'install a supported version of the peer dependency',
   PeerUnrecognized: 'install a peer version the plugin recognizes, or a matching plugin version',
@@ -33,17 +25,25 @@ const exitCodeOfClass = (exitClass: Plugin.ExitClass): Effect.Effect<number> =>
   Effect.orDie(S.decodeEffect(Plugin.ExitCodeFromClass)(exitClass))
 
 export const pluginLoadFailureEvents: {
-  (elapsedMs: number): (error: PluginLoadRefusedError) => Effect.Effect<readonly [PhaseEntered, RunFailed]>
-  (error: PluginLoadRefusedError, elapsedMs: number): Effect.Effect<readonly [PhaseEntered, RunFailed]>
+  (
+    elapsedMs: number,
+  ): (error: PluginLoadRefusedError) => Effect.Effect<readonly [RunEvent.PhaseEntered, RunEvent.RunFailed]>
+  (
+    error: PluginLoadRefusedError,
+    elapsedMs: number,
+  ): Effect.Effect<readonly [RunEvent.PhaseEntered, RunEvent.RunFailed]>
 } = dual(
   2,
-  (error: PluginLoadRefusedError, elapsedMs: number): Effect.Effect<readonly [PhaseEntered, RunFailed]> =>
+  (
+    error: PluginLoadRefusedError,
+    elapsedMs: number,
+  ): Effect.Effect<readonly [RunEvent.PhaseEntered, RunEvent.RunFailed]> =>
     Effect.map(
       exitCodeOfClass(error.exitClass),
-      (code): readonly [PhaseEntered, RunFailed] => [
-        PhaseEntered.make({ phase: 'prepare', elapsedMs }),
-        RunFailed.make({
-          schemaVersion: StreamSchemaVersion.literal,
+      (code): readonly [RunEvent.PhaseEntered, RunEvent.RunFailed] => [
+        RunEvent.PhaseEntered.make({ phase: 'prepare', elapsedMs }),
+        RunEvent.RunFailed.make({
+          schemaVersion: RunEvent.StreamSchemaVersion.literal,
           code,
           error: error.message,
           remediation: PLUGIN_FAILURE_REMEDIATION[error.reason._tag],
@@ -55,26 +55,26 @@ export const pluginLoadFailureEvents: {
 
 type FrameworkContributionModule = LoadedPlugins['frameworks'][number]
 
-const frameworkRowOf = (entry: FrameworkContributionModule): FrameworkContributionRow => ({
+const frameworkRowOf = (entry: FrameworkContributionModule): RunEvent.FrameworkContributionRow => ({
   name: entry.framework.name,
   formatId: entry.framework.claim.formatId,
   extensions: [...entry.framework.claim.extensions],
 })
 
-const moduleRowsOf = (loaded: LoadedPlugins): readonly FrameworkModuleRow[] =>
+const moduleRowsOf = (loaded: LoadedPlugins): readonly RunEvent.FrameworkModuleRow[] =>
   Object.entries(Array.groupBy(loaded.frameworks, (entry) => entry.moduleName)).map(
     ([moduleName, entries]) => ({ moduleName, contributions: entries.map(frameworkRowOf) }),
   )
 
 interface FormatReportRows {
-  readonly rows: readonly FormatRegistryRow[]
-  readonly shadowings: readonly FormatClaimShadowingRow[]
+  readonly rows: readonly RunEvent.FormatRegistryRow[]
+  readonly shadowings: readonly RunEvent.FormatClaimShadowingRow[]
 }
 
 const formatReportOf = (registry: Format.FormatRegistry): FormatReportRows => {
   const winners = MutableHashMap.empty<string, Format.FormatEntry>()
-  const rows: FormatRegistryRow[] = []
-  const shadowings: FormatClaimShadowingRow[] = []
+  const rows: RunEvent.FormatRegistryRow[] = []
+  const shadowings: RunEvent.FormatClaimShadowingRow[] = []
   registry.entries
     .flatMap((entry) => entry.claim.extensions.map((extension) => ({ entry, extension })))
     .forEach(({ entry, extension }) => {
@@ -100,31 +100,31 @@ export const reportPluginLoad: {
   (
     loaded: LoadedPlugins,
     registry: Format.FormatRegistry,
-  ): (queue: Queue.Queue<RunEvent, Cause.Done>) => Effect.Effect<void>
+  ): (queue: Queue.Queue<RunEvent.RunEvent, Cause.Done>) => Effect.Effect<void>
   (
-    queue: Queue.Queue<RunEvent, Cause.Done>,
+    queue: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
     loaded: LoadedPlugins,
     registry: Format.FormatRegistry,
   ): Effect.Effect<void>
 } = dual(
   3,
-  Effect.fn('stryker.pluginLoad.report')(
+  Effect.fn(SpanTaxonomy.Spans.pluginLoadReport.name)(
     function*(
-      queue: Queue.Queue<RunEvent, Cause.Done>,
+      queue: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
       loaded: LoadedPlugins,
       registry: Format.FormatRegistry,
     ): Effect.fn.Return<void> {
       const report = formatReportOf(registry)
       yield* Queue.offer(
         queue,
-        PluginsReported.make({
+        RunEvent.PluginsReported.make({
           modules: [...moduleRowsOf(loaded)],
           shadowings: [...report.shadowings],
         }),
       )
       yield* Queue.offer(
         queue,
-        FormatRegistryResolved.make({ rows: [...report.rows] }),
+        RunEvent.FormatRegistryResolved.make({ rows: [...report.rows] }),
       )
     },
   ),

@@ -1,6 +1,7 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine, RunEvent } from '@systemfsoftware/stryker-js'
+import { Engine } from '@systemfsoftware/stryker-js'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -376,7 +377,7 @@ Feature('Framework plugins joining a mutation run')
                   formatOwner: pluginUrlOf('valid-framework.fixture.mjs'),
                   formatId: 'fixture',
                   formatLanguage: 'fixture',
-                  claimedMutantStatus: 'Survived',
+                  claimedMutantStatus: 'NoCoverage',
                   stateLanguage: 'fixture',
                   stateFormatIdentity: {
                     formatId: 'fixture',

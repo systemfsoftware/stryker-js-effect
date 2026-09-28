@@ -1,7 +1,7 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
 import * as S from 'effect/Schema'
 
 import { CheckerFailed, CheckerMutantWire, CheckResultSchema } from './Checker.schema.js'
+import { MutantRunOptionsSchema } from './Mutant.schema.js'
 import { ReporterEventUnion, ReporterFailed } from './ReporterEvent.schema.js'
 import { Traceparent, Tracestate } from './TraceContext.schema.js'
 
@@ -19,7 +19,7 @@ export type PluginKind = typeof PluginKindSchema.Type
 export const TestRunnerDryRunRequest = S.Struct({ options: DryRunOptionsSchema })
 export type TestRunnerDryRunRequest = typeof TestRunnerDryRunRequest.Type
 
-export const TestRunnerMutantRunRequest = S.Struct({ options: Mutant.MutantRunOptionsSchema })
+export const TestRunnerMutantRunRequest = S.Struct({ options: MutantRunOptionsSchema })
 export type TestRunnerMutantRunRequest = typeof TestRunnerMutantRunRequest.Type
 
 export const CheckerRequest = S.Struct({ checkerName: S.String, mutants: S.Array(CheckerMutantWire) })

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { applyVolumeRebate, discount, roundCents, subtotal, total } from './pricing.js'
+import { applyVolumeRebate, discount, refund, roundCents, subtotal, total } from './pricing.js'
 
 const sampleOrder = {
   unitPrice: 19.99,
@@ -54,12 +54,45 @@ describe.concurrent('Feature: Financial Pricing, Discounting, and Taxation', () 
   describe.concurrent('Rule: Volume rebates scale with quantity tiers', () => {
     test.each([
       { input: { quantity: 1500, baseAmount: 100 }, expected: 75, description: 'tier 1: >=1000 items (25% rebate)' },
+      { input: { quantity: 1000, baseAmount: 100 }, expected: 75, description: 'tier 1 boundary: exactly 1000 items' },
       { input: { quantity: 600, baseAmount: 100 }, expected: 85, description: 'tier 2: >=500 items (15% rebate)' },
+      { input: { quantity: 500, baseAmount: 100 }, expected: 85, description: 'tier 2 boundary: exactly 500 items' },
       { input: { quantity: 150, baseAmount: 100 }, expected: 95, description: 'tier 3: >=100 items (5% rebate)' },
+      { input: { quantity: 100, baseAmount: 100 }, expected: 95, description: 'tier 3 boundary: exactly 100 items' },
+      { input: { quantity: 99, baseAmount: 100 }, expected: 100, description: 'below every tier: 99 items' },
       { input: { quantity: 20, baseAmount: 100 }, expected: 100, description: 'tier 0: <100 items (no rebate)' },
       { input: { quantity: 0, baseAmount: 100 }, expected: 100, description: 'zero quantity returns base amount' },
     ])('Given $description, When applying rebate, Then final amount is $expected', ({ input, expected }) => {
       expect(applyVolumeRebate(input)).toBe(expected)
+    })
+
+    test.each([
+      {
+        input: { quantity: 51, baseAmount: 100, isPrivilegedAccount: true },
+        expected: 95,
+        description: 'privileged account above the quantity floor',
+      },
+      {
+        input: { quantity: 50, baseAmount: 100, isPrivilegedAccount: true },
+        expected: 100,
+        description: 'privileged account exactly at the quantity floor',
+      },
+      {
+        input: { quantity: 1200, baseAmount: 100, isPrivilegedAccount: true },
+        expected: 70,
+        description: 'privileged account combining a tier rebate with the privileged bonus',
+      },
+    ])('Given $description, When applying rebate, Then final amount is $expected', ({ input, expected }) => {
+      expect(applyVolumeRebate(input)).toBe(expected)
+    })
+  })
+
+  describe.concurrent('Rule: Refunds carry the negated rounded amount', () => {
+    test.each([
+      { amount: 12.5, expected: -12.5, description: 'exact amount' },
+      { amount: 10.126, expected: -10.13, description: 'amount rounded before it is negated' },
+    ])('Given $description, When refunded, Then refund returns $expected', ({ amount, expected }) => {
+      expect(refund(amount)).toBe(expected)
     })
   })
 })

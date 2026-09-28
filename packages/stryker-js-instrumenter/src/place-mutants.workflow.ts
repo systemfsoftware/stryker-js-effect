@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -6,7 +7,6 @@ import * as S from 'effect/Schema'
 
 import { MutatorNameSchema } from './directives/directive.schema.js'
 import { MutantNotApplied, MutantsUnapplied, type PlacerName, PlacerNameSchema } from './Instrument.schema.js'
-import { MutantId } from './Mutant.schema.js'
 
 export const PlacementFactsSchema = S.Struct({
   isExpression: S.Boolean,
@@ -23,7 +23,7 @@ const ReplacementFactsSchema = S.Struct({
 })
 
 const PlacedMutantSchema = S.Struct({
-  id: MutantId,
+  id: Mutant.MutantId,
   mutatorName: MutatorNameSchema,
   replacement: ReplacementFactsSchema,
 })
@@ -44,21 +44,21 @@ type PlacementDecisionTypeId = typeof PlacementDecisionTypeId
 
 export class ExpressionSite extends S.TaggedClass<ExpressionSite>()('ExpressionSite', {
   fileName: S.String,
-  mutantIds: S.Array(MutantId),
+  mutantIds: S.Array(Mutant.MutantId),
 }) {
   readonly [PlacementDecisionTypeId] = PlacementDecisionTypeId
 }
 
 export class StatementSite extends S.TaggedClass<StatementSite>()('StatementSite', {
   fileName: S.String,
-  mutantIds: S.Array(MutantId),
+  mutantIds: S.Array(Mutant.MutantId),
 }) {
   readonly [PlacementDecisionTypeId] = PlacementDecisionTypeId
 }
 
 export class SwitchCaseSite extends S.TaggedClass<SwitchCaseSite>()('SwitchCaseSite', {
   fileName: S.String,
-  mutantIds: S.Array(MutantId),
+  mutantIds: S.Array(Mutant.MutantId),
 }) {
   readonly [PlacementDecisionTypeId] = PlacementDecisionTypeId
 }
@@ -72,7 +72,7 @@ type ExpectedKind = typeof ExpectedKindSchema.Type
 export class MutantKindMismatch extends S.TaggedError<MutantKindMismatch>()('MutantKindMismatch', {
   fileName: S.String,
   placer: PlacerNameSchema,
-  mutantId: MutantId,
+  mutantId: Mutant.MutantId,
   mutatorName: MutatorNameSchema,
   expected: ExpectedKindSchema,
 }) {

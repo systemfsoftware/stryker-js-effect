@@ -74,7 +74,7 @@ const reportedFilesOf = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const text = yield* fs.readFileString(path.join(root, REPORT_FILE))
-    const report = yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResultSchema))(text)
+    const report = yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResult))(text)
     return report.files
   }).pipe(Effect.orDie)
 

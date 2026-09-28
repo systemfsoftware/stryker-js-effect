@@ -6,7 +6,7 @@ import * as S from 'effect/Schema'
 
 import { type Directive, DirectiveSchema } from './directive.schema.js'
 
-const DIRECTIVE_PATTERN = /^\s?Stryker (disable|restore)(?: (next-line))? ([a-zA-Z, ]+)(?::(.+)?)?/
+const DIRECTIVE_PATTERN = /^\s?Stryker (disable|restore)(?: (next-line))? ([a-zA-Z0-9,/ -]+)(?::(.+)?)?/
 const DEFAULT_REASON = 'Ignored using a comment'
 const NEXT_LINE = 'next-line'
 

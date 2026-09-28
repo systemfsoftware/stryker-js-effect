@@ -24,4 +24,10 @@ describe('Counter', () => {
 
     expect(getByText('positive')).toBeTruthy()
   })
+
+  it('takes the zero branch at zero', () => {
+    const { getByText } = render(Counter, { props: { start: 0 } })
+
+    expect(getByText('zero')).toBeTruthy()
+  })
 })

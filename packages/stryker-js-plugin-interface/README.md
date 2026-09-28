@@ -42,7 +42,15 @@ the trace-context contract the groups carry (`TraceContextMiddleware`,
 `PropagatedTrace`, `TracedRpc`, `TraceContextReference`, `TraceContextParts`,
 `Traceparent`, `TraceparentHeader`, `TracestateHeader`). `Checker`,
 `TestRunner`, `Evaluator`, `Reporter`, `Report` and `Options` hold each plugin
-kind's contract, the mutation report and the Stryker options:
+kind's contract, the mutation report and the Stryker options. `Mutant` holds
+mutant identity, status and location (`Mutant`, `MutantId`, `MutatorName` with
+its `<namespace>/<Name>` grammar, `CanonicalFileName`, `MutantStatusSchema`
+with its status subsets, `Location`, `Position`) together with the run-options
+and coverage payloads a test runner receives (`MutantRunOptionsSchema`,
+`MutantCoverageSchema`). `MutatorCatalog` holds the catalog entry shape a
+provider authors (`Entry`, `Id`, `Tier`, `Definition`, `Example`, `Provider`),
+and `MutatorProvider` holds the contribution a mutator plugin's module exports
+(`Contribution`, `ProviderEntry`, `Implementation`):
 
 ```ts
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -66,6 +74,44 @@ Telemetry is a layer everywhere: a worker root reads `WorkerTelemetry` and binds
 its own `NodeSdk.layer`-based exporter, and a host provides its own
 `NodeSdk.layer`-based layer at its composition root. Both are no-ops unless
 `OTEL_ENABLED` is `true`.
+
+## Mutator providers
+
+A plugin can contribute mutators. The library module the host executes to read
+the plugin's descriptor exports `strykerMutators`, a
+`MutatorProvider.Contribution`:
+
+```ts
+import { MutatorProvider } from '@systemfsoftware/stryker-js-plugin-interface'
+
+export const strykerMutators: MutatorProvider.Contribution = {
+  namespace: 'acme',
+  entries: [
+    {
+      id: 'swap-arguments',
+      name: 'acme/SwapArguments',
+      tier: 'default',
+      definition: 'swaps the two arguments of a two-argument call',
+      examples: [{ before: 'f(a, b)', after: ['f(b, a)'] }],
+      implementation: (node, context) => [/* replacement nodes */],
+    },
+  ],
+}
+```
+
+An entry's `id` is a lowercase kebab-case catalog id, and its `name` is a
+PascalCase mutator name whose prefix is the provider that owns it: the stock
+`stryker` provider owns the unprefixed names, and a plugin owns
+`<namespace>/<Name>`. `tier` is `'default'` or `'optIn'`, `definition` is the
+authored prose, `examples` carries at least one before/after pair, and
+`implementation` is the `(node, context) => Iterable<Node>` the instrumenter
+runs, with `MutatorContext` carrying the parent, grandparent and ancestor nodes.
+
+The catalog is refined where it is declared: a duplicated id or name, a provider
+that does not own a name, an entry with no examples, and an example whose
+`before` is empty are refused. At load time the run is refused before
+instrumentation when two providers declare one namespace, when a catalog claims
+a stock mutator name, or when an entry names a mutator its provider does not own.
 
 ## The entry a plugin ships
 

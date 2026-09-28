@@ -13,6 +13,7 @@
     }
   },
   "dependencies": {
-    "@enterprise/core": "1.0.0"
+    "@enterprise/core": "1.0.0",
+    "effect": "catalog:"
   }
 }

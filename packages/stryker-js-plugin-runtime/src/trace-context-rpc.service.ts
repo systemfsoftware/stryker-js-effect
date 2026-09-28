@@ -12,6 +12,7 @@ import type * as Rpc from 'effect/unstable/rpc/Rpc'
 import type { Request } from 'effect/unstable/rpc/RpcMessage'
 import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware'
 
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import { TraceContextPartsFromEffectSpan, TraceContextUnavailable } from './trace-parts.schema.js'
@@ -115,9 +116,13 @@ const remoteSpanOf = (context: Context.Context<never>): Option.Option<Tracer.Ext
 const serverMiddleware: RpcMiddleware.RpcMiddleware<typeof Trace.PropagatedTrace, never, never> = (effect, options) => {
   const remote = remotePartsFromHeaders(options.headers)
   const attributes = { 'rpc.method': options.rpc._tag }
-  const spanned = Option.match(Option.flatMap(remote, externalSpanOf), {
-    onNone: () => Effect.useSpan(`rpc.${options.rpc._tag}`, { attributes }, () => effect),
-    onSome: (parent) => Effect.useSpan(`rpc.${options.rpc._tag}`, { attributes, parent }, () => effect),
+  const spanned = Option.match(Option.fromNullishOr(SpanTaxonomy.rpcServedSpanOf(options.rpc._tag)), {
+    onNone: () => effect,
+    onSome: (span) =>
+      Option.match(Option.flatMap(remote, externalSpanOf), {
+        onNone: () => Effect.useSpan(span.name, { attributes }, () => effect),
+        onSome: (parent) => Effect.useSpan(span.name, { attributes, parent }, () => effect),
+      }),
   })
   return spanned.pipe(Effect.provideService(Trace.PropagatedTrace, remote))
 }

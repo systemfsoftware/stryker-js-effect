@@ -1,5 +1,6 @@
 import { Schema as S } from 'effect'
 
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export class PluginNotFoundError extends S.TaggedError<PluginNotFoundError>()('PluginNotFoundError', {
@@ -12,19 +13,10 @@ export class PluginNotFoundError extends S.TaggedError<PluginNotFoundError>()('P
   }
 }
 
-export const PluginLoadFailureReason = S.Union([
-  S.TaggedStruct('PeerMissing', { peer: S.String }),
-  S.TaggedStruct('PeerVersionUnsupported', { peer: S.String, detail: S.String }),
-  S.TaggedStruct('PeerUnrecognized', { peer: S.String }),
-  S.TaggedStruct('InvalidContribution', { detail: S.String }),
-  S.TaggedStruct('ImportFailed', { cause: S.Unknown }),
-])
-export type PluginLoadFailureReason = typeof PluginLoadFailureReason.Type
-
 export const PeerFailureTag = S.Literals(['PeerMissing', 'PeerVersionUnsupported', 'PeerUnrecognized'])
 export type PeerFailureTag = typeof PeerFailureTag.Type
 
-const FAILURE_EXIT_CLASS: Record<PluginLoadFailureReason['_tag'], Plugin.ExitClass> = {
+const FAILURE_EXIT_CLASS: Record<RunEvent.PluginLoadFailureReason['_tag'], Plugin.ExitClass> = {
   PeerMissing: 'ConfigError',
   PeerVersionUnsupported: 'ConfigError',
   PeerUnrecognized: 'ConfigError',
@@ -36,7 +28,7 @@ export class PluginLoadRefusedError extends S.TaggedError<PluginLoadRefusedError
   'PluginLoadRefusedError',
   {
     descriptor: S.String,
-    reason: PluginLoadFailureReason,
+    reason: RunEvent.PluginLoadFailureReason,
   },
 ) {
   get exitClass(): Plugin.ExitClass {

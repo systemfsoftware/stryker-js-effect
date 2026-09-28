@@ -6,7 +6,8 @@ import * as NodeTerminal from '@effect/platform-node/NodeTerminal'
 import { AggregationTemporalityPreference, OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics'
-import { BatchSpanProcessor, SimpleSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace-base'
+import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Boolean from 'effect/Boolean'
@@ -33,7 +34,8 @@ import * as GlobalFlag from 'effect/unstable/cli/GlobalFlag'
 import { inheritableCompileCacheDirectory } from './enable-compile-cache.js'
 
 import { classifyRunOutcome, RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
-import { concludeRunCell, runOutcomeCommandOf } from '../conclude-run.cell.js'
+import { concludeRunCell } from '../conclude-run.cell.js'
+import { runOutcomeCommandOf } from '../conclude-run.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
@@ -71,11 +73,6 @@ const withBestEffortShutdown = <A, E>(
     ).pipe(Effect.map(({ context }) => context)),
   )
 
-const PROCESSOR_BY_KIND: Record<'simple' | 'batch', (exporter: OTLPTraceExporter) => SpanProcessor> = {
-  batch: (exporter) => new BatchSpanProcessor(exporter),
-  simple: (exporter) => new SimpleSpanProcessor(exporter),
-}
-
 const TRACES_PATH = '/v1/traces'
 const METRICS_PATH = '/v1/metrics'
 const DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS = 60_000
@@ -100,7 +97,6 @@ const resourceUrlFor = (
 const otlpTelemetryLayer = (options: {
   readonly serviceName: string
   readonly endpoint?: string | undefined
-  readonly processor?: 'simple' | 'batch' | undefined
   readonly metricExportIntervalMillis?: number | undefined
 }): Layer.Layer<never> => {
   const exporter = new OTLPTraceExporter(resourceUrlFor(options.endpoint, TRACES_PATH))
@@ -115,10 +111,7 @@ const otlpTelemetryLayer = (options: {
     NodeSdk.layer(() => ({
       resource: { serviceName: options.serviceName },
       metricReader,
-      spanProcessor: Match.value(options.processor ?? 'simple').pipe(
-        Match.when('batch', (kind) => PROCESSOR_BY_KIND[kind](exporter)),
-        Match.orElse((kind) => PROCESSOR_BY_KIND[kind](exporter)),
-      ),
+      spanProcessor: new BatchSpanProcessor(exporter),
     })),
     SHUTDOWN_TIMEOUT,
   )
@@ -220,7 +213,7 @@ const strykerProgram = Effect.gen(function*() {
   })
   const parent = Option.getOrUndefined(Option.map(yield* environmentParentContext, OtelTracer.makeExternalSpan))
   return yield* Effect.uninterruptibleMask((restore) =>
-    Effect.withSpan('stryker.cli.run', { parent })(
+    Effect.withSpan(SpanTaxonomy.Spans.cliRun.name, { parent })(
       Effect.gen(function*() {
         const exit = yield* Effect.exit(
           restore(

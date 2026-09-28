@@ -1,3 +1,4 @@
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options, Plugin, type Report, Reporter, Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace as RuntimeTrace } from '@systemfsoftware/stryker-js-plugin-runtime'
@@ -144,7 +145,7 @@ const reporterEvents = (ports: ReporterChannelPorts): AsyncIterable<Reporter.Rep
   }
 }
 
-const detach = Effect.fn('stryker.reporterStream.detach')(function*(ports: ReporterChannelPorts) {
+const detach = Effect.fn(SpanTaxonomy.Spans.reporterStreamDetach.name)(function*(ports: ReporterChannelPorts) {
   yield* SynchronizedRef.update(ports.state, (state) => ({ ...state, detached: true }))
   yield* PubSub.shutdown(ports.channel)
 })
@@ -155,7 +156,7 @@ const markDetachedEffect = (ports: ReporterChannelPorts): Effect.Effect<void> =>
     (state) => Boolean.match(state.terminalSeen, { onTrue: () => Effect.void, onFalse: () => detach(ports) }),
   )
 
-const attachOneReporter = Effect.fn('stryker.reporterStream.attach')(function*(
+const attachOneReporter = Effect.fn(SpanTaxonomy.Spans.reporterStreamAttach.name)(function*(
   input: AttachReporterInput,
   options: Options.StrykerOptions,
   init: Reporter.ReporterInit,
@@ -287,7 +288,7 @@ const noteTerminalOffered = (
     onFalse: () => Effect.void,
   })
 
-const offerToChannel = Effect.fn('stryker.reporterStream.offerToChannel')(function*(
+const offerToChannel = Effect.fn(SpanTaxonomy.Spans.reporterStreamOfferToChannel.name)(function*(
   attachment: ReporterAttachment,
   event: Reporter.ReporterEvent,
 ) {
@@ -390,26 +391,28 @@ const settleFailedAttachment = <E = unknown>(
       }),
   )
 
-const settleAttachment = Effect.fn('stryker.reporterStream.settle')(function*(attachment: ReporterAttachment) {
-  const settled = yield* attachment.consumer.pipe(
-    Fiber.join,
-    Effect.exit,
-    Effect.timeoutOption(REPORTER_STALL_TIMEOUT),
-  )
-  return yield* Option.match(settled, {
-    onNone: () =>
-      Effect.logWarning(
-        `Reporter "${attachment.name}" did not finish draining for ${
-          Duration.toSeconds(REPORTER_STALL_TIMEOUT)
-        } seconds and was detached; exit code unchanged.`,
-      ).pipe(Effect.as<ReporterDrainOutcome>({ kind: 'detached', name: attachment.name })),
-    onSome: (exit) =>
-      Exit.match(exit, {
-        onSuccess: () => Effect.succeed<ReporterDrainOutcome>({ kind: 'completed', name: attachment.name }),
-        onFailure: (cause) => settleFailedAttachment(attachment, cause),
-      }),
-  })
-})
+const settleAttachment = Effect.fn(SpanTaxonomy.Spans.reporterStreamSettle.name)(
+  function*(attachment: ReporterAttachment) {
+    const settled = yield* attachment.consumer.pipe(
+      Fiber.join,
+      Effect.exit,
+      Effect.timeoutOption(REPORTER_STALL_TIMEOUT),
+    )
+    return yield* Option.match(settled, {
+      onNone: () =>
+        Effect.logWarning(
+          `Reporter "${attachment.name}" did not finish draining for ${
+            Duration.toSeconds(REPORTER_STALL_TIMEOUT)
+          } seconds and was detached; exit code unchanged.`,
+        ).pipe(Effect.as<ReporterDrainOutcome>({ kind: 'detached', name: attachment.name })),
+      onSome: (exit) =>
+        Exit.match(exit, {
+          onSuccess: () => Effect.succeed<ReporterDrainOutcome>({ kind: 'completed', name: attachment.name }),
+          onFailure: (cause) => settleFailedAttachment(attachment, cause),
+        }),
+    })
+  },
+)
 
 const failedReporterNames = (outcome: ReporterDrainOutcome): readonly string[] =>
   Match.value(outcome).pipe(
@@ -427,12 +430,14 @@ const shutdownUnreportedChannel = (attachment: ReporterAttachment): Effect.Effec
       }),
   )
 
-export const closeReporterStage = Effect.fn('stryker.reporterStream.closeStage')(function*(stage: ReporterStage) {
-  const attachments = yield* stageAttachments(stage)
-  yield* Effect.forEach(attachments, shutdownUnreportedChannel, { discard: true })
-  const outcomes = yield* Effect.forEach(attachments, settleAttachment, { concurrency: 'unbounded' })
-  return { terminalFailed: outcomes.flatMap((outcome) => failedReporterNames(outcome)) }
-})
+export const closeReporterStage = Effect.fn(SpanTaxonomy.Spans.reporterStreamCloseStage.name)(
+  function*(stage: ReporterStage) {
+    const attachments = yield* stageAttachments(stage)
+    yield* Effect.forEach(attachments, shutdownUnreportedChannel, { discard: true })
+    const outcomes = yield* Effect.forEach(attachments, settleAttachment, { concurrency: 'unbounded' })
+    return { terminalFailed: outcomes.flatMap((outcome) => failedReporterNames(outcome)) }
+  },
+)
 
 type TraceparentInit = { readonly traceparent?: Trace.TraceparentParts }
 type TracestateInit = { readonly tracestate?: string }
@@ -481,7 +486,7 @@ export interface PhaseSpan {
   readonly sampled: boolean
 }
 
-const environmentTraceInit = Effect.fn('stryker.reporterStream.environmentTraceInit')(function*() {
+const environmentTraceInit = Effect.fn(SpanTaxonomy.Spans.reporterStreamEnvironmentTraceInit.name)(function*() {
   const traceparent = yield* Config.String('TRACEPARENT').pipe(Effect.option)
   const tracestate = yield* Config.String('TRACESTATE').pipe(Effect.option)
   return {
@@ -513,7 +518,7 @@ export const environmentParentContext: Effect.Effect<Option.Option<Trace.TraceCo
   },
 )
 
-export const currentReporterInit = Effect.fn('stryker.reporterStream.currentReporterInit')(
+export const currentReporterInit = Effect.fn(SpanTaxonomy.Spans.reporterStreamCurrentReporterInit.name)(
   function*(span?: PhaseSpan) {
     const fromEnvironment = yield* initFromEnvironment()
     const current = Option.getOrUndefined(yield* Effect.currentSpan.pipe(Effect.option))
@@ -525,18 +530,18 @@ export const withPhaseSpan: {
   <A, E, R>(
     attributes: Record<string, string | number>,
     effect: (span: PhaseSpan) => Effect.Effect<A, E, R>,
-  ): (spanName: string) => Effect.Effect<A, E, R>
+  ): (member: SpanTaxonomy.SpanMember) => Effect.Effect<A, E, R>
   <A, E, R>(
-    spanName: string,
+    member: SpanTaxonomy.SpanMember,
     attributes: Record<string, string | number>,
     effect: (span: PhaseSpan) => Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E, R>
 } = dual(3, <A, E, R>(
-  spanName: string,
+  member: SpanTaxonomy.SpanMember,
   attributes: Record<string, string | number>,
   effect: (span: PhaseSpan) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
-  Effect.useSpan(spanName, { attributes }, (span) =>
+  Effect.useSpan(member.name, { attributes }, (span) =>
     effect(span).pipe(
       Effect.provideService(
         Trace.TraceContextReference,

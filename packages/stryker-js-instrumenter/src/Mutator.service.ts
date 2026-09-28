@@ -1,4 +1,7 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
+import type { StockCatalog } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { MutatorCatalog } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -39,8 +42,6 @@ import type {
   WhileStatement,
 } from './Ast.handle.js'
 import { MutantNotApplied } from './Instrument.schema.js'
-import type { Location } from './Location.schema.js'
-import { Mutant as ApiMutant, type MutantId } from './Mutant.schema.js'
 import type { PlannedMutant } from './plan-mutants.workflow.js'
 
 import { dual } from 'effect/Function'
@@ -94,10 +95,10 @@ export interface Mutable {
   replacement: Node
 }
 export interface Mutant extends Mutable {
-  readonly id: MutantId
+  readonly id: ApiMutant.MutantId
   readonly fileName: string
   readonly original: Node
-  readonly location: Location
+  readonly location: ApiMutant.Location
   readonly replacementCode: string
 }
 function orDefault<T>(value: T | undefined, fallback: T): T {
@@ -126,7 +127,7 @@ export const createMutant: {
   (planned: PlannedMutant, fileName: string, original: Node, replacement: Node): Mutant
   (fileName: string, original: Node, replacement: Node): (planned: PlannedMutant) => Mutant
 } = dual((args: IArguments): boolean => args.length >= 4, createMutantDataFirst)
-export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant, S.SchemaError> {
+export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.SchemaError> {
   const baseFields = {
     _tag: 'Mutant' as const,
     fileName: mutant.fileName,
@@ -135,7 +136,7 @@ export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant, S.SchemaEr
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacementCode,
   }
-  return S.decodeResult(ApiMutant)(
+  return S.decodeResult(ApiMutant.Mutant)(
     mutant.ignoreReason === undefined
       ? baseFields
       : { ...baseFields, statusReason: mutant.ignoreReason, status: 'Ignored' },
@@ -206,7 +207,7 @@ export type Mutator = (node: Node, context: MutatorContext) => Iterable<Node>
 
 export interface MutatorOptions {
   excludedMutations: string[]
-  optInMutations: readonly string[]
+  mutators: MutatorSelection
   noHeader?: boolean
 }
 
@@ -1298,7 +1299,7 @@ function isUpdateExpression(node: Node): node is UpdateExpression {
  * `optInMutators` below follows the same hand-written rule, for the same
  * reason: a mutator exists for a run only when a human named it here.
  */
-export const defaultMutators: Readonly<Record<string, Mutator>> = Object.freeze({
+export const defaultMutators: Readonly<Record<StockCatalog.StockDefaultName, Mutator>> = Object.freeze({
   ArithmeticOperator: arithmeticOperatorMutator,
   ArrayDeclaration: arrayDeclarationMutator,
   ArrowFunction: arrowFunctionMutator,
@@ -1317,7 +1318,7 @@ export const defaultMutators: Readonly<Record<string, Mutator>> = Object.freeze(
   UpdateOperator: updateOperatorMutator,
 })
 
-export const optInMutators: Readonly<Record<string, Mutator>> = Object.freeze({
+export const optInMutators: Readonly<Record<StockCatalog.StockOptInName, Mutator>> = Object.freeze({
   AtomicUpdateSplit: atomicUpdateSplitMutator,
   SynchronizationRemoval: synchronizationRemovalMutator,
   FinalizerEscape: finalizerEscapeMutator,
@@ -1329,6 +1330,44 @@ export interface MutatorRegistry {
   readonly defaults: Readonly<Record<string, Mutator>>
   readonly optIn: Readonly<Record<string, Mutator>>
 }
+
+export const stockRegistry: MutatorRegistry = { defaults: defaultMutators, optIn: optInMutators }
+
+export interface RegistryCatalog {
+  readonly entries: ReadonlyArray<{ readonly name: string; readonly tier: MutatorCatalog.Tier }>
+}
+
+export interface RegistryContribution {
+  readonly entries: ReadonlyArray<{ readonly name: string; readonly implementation: Mutator }>
+}
+
+const registryOfDataFirst = (
+  catalogs: ReadonlyArray<RegistryCatalog>,
+  contributions: ReadonlyArray<RegistryContribution>,
+): MutatorRegistry => {
+  const implementations = new Map<string, Mutator>([
+    ...Object.entries(defaultMutators),
+    ...Object.entries(optInMutators),
+    ...contributions.flatMap(({ entries }) => entries.map((entry) => [entry.name, entry.implementation] as const)),
+  ])
+  const entries = catalogs.flatMap((catalog) => catalog.entries)
+  const entriesOfTier = (tier: MutatorCatalog.Tier): readonly MutatorEntry[] =>
+    entries.filter((entry) => entry.tier === tier).flatMap((entry) =>
+      Option.match(Option.fromNullishOr(implementations.get(entry.name)), {
+        onNone: (): readonly MutatorEntry[] => [],
+        onSome: (implementation): readonly MutatorEntry[] => [[entry.name, implementation]],
+      })
+    )
+  return {
+    defaults: Object.fromEntries(entriesOfTier('default')),
+    optIn: Object.fromEntries(entriesOfTier('optIn')),
+  }
+}
+
+export const registryOf: {
+  (catalogs: ReadonlyArray<RegistryCatalog>, contributions: ReadonlyArray<RegistryContribution>): MutatorRegistry
+  (contributions: ReadonlyArray<RegistryContribution>): (catalogs: ReadonlyArray<RegistryCatalog>) => MutatorRegistry
+} = dual((args: IArguments): boolean => args.length >= 2, registryOfDataFirst)
 
 export interface MutatorSelection {
   /** Every default, then each opt-in the run named, in the registry's declared order. */

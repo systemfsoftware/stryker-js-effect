@@ -3,7 +3,7 @@ import * as HashMap from 'effect/HashMap'
 
 import type { Framework } from '@systemfsoftware/stryker-framework-interface'
 import type { Ignorer as IgnorerDescriptor, Node } from '@systemfsoftware/stryker-ignorer-interface'
-import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { MutatorProvider, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import { PeerFailureTag } from './PluginsError.schema.js'
 
@@ -34,6 +34,10 @@ export const IgnorerEntrySchema = S.Struct({
 
 export const IgnorerModuleSchema = S.Struct({
   strykerIgnorers: S.Array(IgnorerEntrySchema),
+})
+
+export const MutatorModuleSchema = S.Struct({
+  strykerMutators: MutatorProvider.Contribution,
 })
 
 export const SchemaValidationContributionSchema = S.Struct({
@@ -174,12 +178,18 @@ export type AnyWorkerPluginSource = {
 
 export type PluginSource = AnyWorkerPluginSource | EvaluatorPluginSource
 
+export interface LoadedMutatorProvider {
+  readonly moduleName: string
+  readonly contribution: MutatorProvider.ContributionValue
+}
+
 export interface LoadedPlugins<A = unknown> {
   readonly schemaContributions: readonly Record<string, A>[]
   readonly pluginsByKind: HashMap.HashMap<PluginKind, readonly PluginDescriptor[]>
   readonly pluginModulePaths: readonly string[]
   readonly pluginSources: readonly PluginSource[]
   readonly ignorers: readonly IgnorerDescriptor[]
+  readonly mutators: readonly LoadedMutatorProvider[]
   readonly frameworks: readonly {
     readonly moduleName: string
     readonly framework: Framework

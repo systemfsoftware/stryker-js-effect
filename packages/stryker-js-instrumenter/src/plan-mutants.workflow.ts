@@ -1,10 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Line, Location, type Position, ScriptOrigin } from './Location.schema.js'
-import { MutantId } from './Mutant.schema.js'
+import { ScriptOrigin } from './Location.schema.js'
 
 import {
   type LocatedDirective,
@@ -19,16 +19,16 @@ const NEXT_LINE = 'next-line'
 export const MutantCandidateSchema = S.Struct({
   mutatorName: MutatorNameSchema,
   replacementCode: S.String,
-  location: S.optional(Location),
+  location: S.optional(Mutant.Location),
   ignorerReason: S.optional(S.String),
 })
 export type MutantCandidate = typeof MutantCandidateSchema.Type
 
 const PlannedMutantSchema = S.Struct({
-  id: MutantId,
+  id: Mutant.MutantId,
   mutatorName: MutatorNameSchema,
   replacementCode: S.String,
-  location: Location,
+  location: Mutant.Location,
   ignoreReason: S.optional(S.String),
 })
 export type PlannedMutant = typeof PlannedMutantSchema.Type
@@ -40,7 +40,7 @@ export class PlanMutantsCommand extends S.TaggedClass<PlanMutantsCommand>()('Pla
   fileName: S.String,
   firstIndex: MutantCounterSchema,
   offset: ScriptOrigin,
-  line: Line,
+  line: Mutant.Line,
   mutatorNames: S.Array(MutatorNameSchema),
   excludedMutations: S.Array(MutatorNameSchema),
   rule: S.Array(LocatedDirectiveSchema),
@@ -55,7 +55,7 @@ type MutantPlanTypeId = typeof MutantPlanTypeId
 
 export class MutantsPlanned extends S.TaggedClass<MutantsPlanned>()('MutantsPlanned', {
   mutants: S.Array(PlannedMutantSchema),
-  placeable: S.Array(PlannedMutantSchema),
+  placeableIds: S.Array(Mutant.MutantId),
   warnings: S.Array(S.String),
   nextIndex: MutantCountSchema,
 }) {
@@ -176,19 +176,19 @@ const warningsOf = (command: PlanMutantsCommand): readonly string[] =>
  * column 1, so the shift adds `offset.line - 1` lines and — only when the node
  * sits on the region's first line — `offset.columnShift`.
  */
-const columnOffsetOf = (source: Position, offset: ScriptOrigin): number =>
+const columnOffsetOf = (source: Mutant.Position, offset: ScriptOrigin): number =>
   Match.value(source.line === 1).pipe(
     Match.when(true, () => offset.columnShift),
     Match.when(false, () => 0),
     Match.exhaustive,
   )
 
-const shiftedPosition = (source: Position, offset: ScriptOrigin): Position => ({
+const shiftedPosition = (source: Mutant.Position, offset: ScriptOrigin): Mutant.Position => ({
   column: source.column + columnOffsetOf(source, offset),
   line: source.line + offset.line - 1,
 })
 
-const shiftedLocation = (location: Location, offset: ScriptOrigin): Location => ({
+const shiftedLocation = (location: Mutant.Location, offset: ScriptOrigin): Mutant.Location => ({
   start: shiftedPosition(location.start, offset),
   end: shiftedPosition(location.end, offset),
 })
@@ -230,7 +230,7 @@ const planOf = (command: PlanMutantsCommand, mutants: readonly PlannedMutant[]):
     Match.when(true, () =>
       MutantsPlanned.make({
         mutants: [...mutants],
-        placeable: mutants.filter(withoutReason),
+        placeableIds: mutants.filter(withoutReason).map((mutant) => mutant.id),
         warnings: warningsOf(command),
         nextIndex: command.firstIndex + mutants.length,
       })),

@@ -1,7 +1,6 @@
-import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
-import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Filter from 'effect/Filter'
@@ -14,14 +13,8 @@ import * as Sink from 'effect/Sink'
 import * as Stream from 'effect/Stream'
 
 import { renderJsonReport } from './render-json-report.workflow.js'
+import { failAsJsonReporter } from './reporter-failures.js'
 import { ReporterOutput } from './reporter-output.service.js'
-
-const failAsJsonReporter = <E = unknown>(cause: E): Reporter.ReporterFailed =>
-  Reporter.ReporterFailed.make({
-    reporterName: 'json',
-    event: 'mutationTestReportReady',
-    cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
-  })
 
 const reportOf = Filter.make((
   event: Reporter.ReporterEvent,
@@ -52,15 +45,15 @@ const readJsonReport = (input: {
   )
 
 const jsonBytesOf = (
-  report: typeof Report.MutationTestResultSchema.Encoded,
+  report: typeof Report.MutationTestResult.Encoded,
 ): Effect.Effect<string, Reporter.ReporterFailed> =>
   S.encodeEffect(S.fromJsonString(S.Unknown, { space: 0 }))(report).pipe(
     Effect.mapError(failAsJsonReporter),
   )
 
-const writeJsonReport = Effect.fn('stryker.report.json.write')(function*(
+const writeJsonReport = Effect.fn(SpanTaxonomy.Spans.reportJsonWrite.name)(function*(
   rendered: {
-    readonly report: typeof Report.MutationTestResultSchema.Encoded
+    readonly report: typeof Report.MutationTestResult.Encoded
     readonly announceFileName: Option.Option<string>
   },
   raw: { readonly options: Options.StrykerOptions },
@@ -78,22 +71,13 @@ const writeJsonReport = Effect.fn('stryker.report.json.write')(function*(
   yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(Effect.mapError(failAsJsonReporter))
   yield* fs.writeFileString(fileName, json).pipe(Effect.mapError(failAsJsonReporter))
   const url = yield* path.toFileUrl(fileName).pipe(Effect.mapError(failAsJsonReporter))
-  yield* Effect.ignore(output.write('stdout', [`Your report can be found at: ${url.href}\n`]))
+  yield* Effect.ignore(output.write('stderr', [`Your report can be found at: ${url.href}\n`]))
 })
 
-export const jsonReportCell = Sandwich.named('stryker.report.json')(readJsonReport)
+export const jsonReportCell = Sandwich.named(SpanTaxonomy.Spans.reportJson.name)(readJsonReport)
   .decide(renderJsonReport)
   .write({
     JsonReportRendered: (rendered, raw) => writeJsonReport(rendered, raw),
     JsonReportSuppressed: () => Effect.void,
     CommandRejected: ({ issue }) => Effect.fail(failAsJsonReporter(issue)),
   })
-
-type ReporterCellServices<C> = C extends Cell.Cell<infer _I, infer _A, infer _E, infer S> ? S : never
-
-export const jsonReporterFactory = (
-  context: Context.Context<ReporterCellServices<typeof jsonReportCell>>,
-): Reporter.ReporterFactory => {
-  const report = Cell.provideContext(jsonReportCell, context)
-  return (options) => (events) => Effect.asVoid(report.run({ options, events }))
-}

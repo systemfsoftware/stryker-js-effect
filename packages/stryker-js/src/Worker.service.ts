@@ -1,3 +1,4 @@
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -7,7 +8,7 @@ export interface IdGeneratorShape {
   readonly next: Effect.Effect<number>
 }
 
-const makeIdGenerator = Effect.fn('stryker.worker.idGenerator.make')(function*() {
+const makeIdGenerator = Effect.fn(SpanTaxonomy.Spans.workerIdGeneratorMake.name)(function*() {
   const ref = yield* Ref.make(0)
   return {
     next: Ref.getAndUpdate(ref, (n) => n + 1),

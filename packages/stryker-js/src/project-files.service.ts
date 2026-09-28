@@ -1,3 +1,4 @@
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Boolean } from 'effect'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -55,7 +56,7 @@ export class ProjectFiles extends Context.Service<ProjectFiles, ProjectFilesShap
       const currentContent = (file: ProjectFile) =>
         Option.orElse(Option.fromUndefinedOr(file.content), () => Option.fromUndefinedOr(file.originalContent))
       const readFromDisk = (file: ProjectFile) => fs.readFileString(file.name)
-      const read = Effect.fn('stryker.project_files.read')(function*(file: ProjectFile) {
+      const read = Effect.fn(SpanTaxonomy.Spans.projectFilesRead.name)(function*(file: ProjectFile) {
         const current = currentContent(file)
         return yield* Option.match(current, {
           onSome: (content) => Effect.succeed(content),
@@ -68,7 +69,7 @@ export class ProjectFiles extends Context.Service<ProjectFiles, ProjectFilesShap
           onNone: () => Effect.void,
           onSome: (text) => fs.writeFileString(file.name, text),
         })
-      const writeInto = Effect.fn('stryker.project_files.write-into')(function*(
+      const writeInto = Effect.fn(SpanTaxonomy.Spans.projectFilesWriteInto.name)(function*(
         directory: string,
         file: ProjectFile,
         basePath: string,

@@ -1,4 +1,5 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -29,7 +30,12 @@ import {
   RequestAffectedFilesCommand,
   TraceAffectedFilesCommand,
 } from './CheckerCommands.schema.js'
-import type { NodeDecodedShape } from './CheckMutants.schema.js'
+import {
+  type DiagnosticDecoded,
+  DiagnosticLine,
+  type DiagnosticSeverity,
+  type NodeDecodedShape,
+} from './CheckMutants.schema.js'
 import { type CompilerError, CompilerFailed, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
 import { groupMutants } from './group-mutants.workflow.js'
 import { overrideTsconfigOptions } from './override-tsconfig-options.workflow.js'
@@ -127,7 +133,7 @@ export const make: {
   ): (options: Options.StrykerOptions) => Effect.Effect<TSCompiler>
 } = dual(
   2,
-  Effect.fn('typescript-checker.compiler.make')(function*(
+  Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerMake.name)(function*(
     options: Options.StrykerOptions,
     services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
   ) {
@@ -722,7 +728,7 @@ const nodesOf = (rt: TSCompilerRuntime) =>
       },
     }))
 
-export const init = Effect.fn('typescript-checker.compiler.init')(function*(
+export const init = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerInit.name)(function*(
   self: TSCompiler,
 ): Effect.fn.Return<readonly Diagnostic[], CompilerError> {
   const rt = runtimeOf(self)
@@ -822,7 +828,7 @@ const wholeProgramDiagnosticsOf = (program: Program): Effect.Effect<readonly Dia
     { concurrency: 2 },
   ).pipe(Effect.map(([programWide, semantic]) => [...semantic, ...programWide]))
 
-const dryRunDiagnostics = Effect.fn('typescript-checker.compiler.dryRun')(function*(
+const dryRunDiagnostics = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerDryRun.name)(function*(
   programs: ReadonlyArray<Program>,
 ) {
   yield* Effect.annotateCurrentSpan({ 'typescript.projects.count': programs.length })
@@ -855,7 +861,7 @@ export const check: {
   (self: TSCompiler, mutants: readonly Checker.CheckerMutantWire[]): Effect.Effect<readonly Diagnostic[], CompilerError>
 } = dual(
   2,
-  Effect.fn('typescript-checker.compiler.check')(function*(
+  Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerCheck.name)(function*(
     self: TSCompiler,
     mutants: readonly Checker.CheckerMutantWire[],
   ): Effect.fn.Return<readonly Diagnostic[], CompilerError> {
@@ -889,11 +895,11 @@ export const check: {
   }),
 )
 
-export const nodes = Effect.fn('typescript-checker.compiler.nodes')(function*(self: TSCompiler) {
+export const nodes = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerNodes.name)(function*(self: TSCompiler) {
   return yield* self.pipe(runtimeOf, nodesOf)
 })
 
-const groupedMutants = Effect.fn('typescript-checker.compiler.groups')(function*(
+const groupedMutants = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerGroups.name)(function*(
   self: TSCompiler,
   mutants: readonly Checker.CheckerMutantWire[],
   prioritizePerformanceOverAccuracy: boolean,
@@ -940,7 +946,7 @@ export const getLineAndCharacterOfPosition: {
   ): Effect.Effect<{ line: number; character: number } | undefined>
 } = dual(
   3,
-  Effect.fn('typescript-checker.compiler.lineAndCharacter')(function*(
+  Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerLineAndCharacter.name)(function*(
     self: TSCompiler,
     fileName: string,
     position: number,
@@ -954,9 +960,57 @@ export const getLineAndCharacterOfPosition: {
   }),
 )
 
+const severityOf = (category: Diagnostic['category']): DiagnosticSeverity =>
+  Match.value(category).pipe(
+    Match.when(DiagnosticCategory.Warning, (): DiagnosticSeverity => 'warning'),
+    Match.when(DiagnosticCategory.Error, (): DiagnosticSeverity => 'error'),
+    Match.when(DiagnosticCategory.Suggestion, (): DiagnosticSeverity => 'suggestion'),
+    Match.orElse((): DiagnosticSeverity => 'message'),
+  )
+
+const renderPosition = (fileName: string, at: { line: number; character: number } | undefined): string =>
+  Option.match(Option.fromUndefinedOr(at), {
+    onNone: () => fileName + '(1,1): ',
+    onSome: (position) => fileName + '(' + (position.line + 1) + ',' + (position.character + 1) + '): ',
+  })
+
+const positionOf = (self: TSCompiler, diagnostic: Diagnostic): Effect.Effect<string> =>
+  Option.match(Option.filter(Option.fromUndefinedOr(diagnostic.fileName), (fileName) => fileName !== ''), {
+    onNone: () => Effect.succeed(''),
+    onSome: (fileName) =>
+      getLineAndCharacterOfPosition(self, fileName, diagnostic.pos).pipe(
+        Effect.orElseSucceed(() => undefined),
+        Effect.map((at) => renderPosition(fileName, at)),
+      ),
+  })
+
+const describedOf = (self: TSCompiler, diagnostic: Diagnostic): Effect.Effect<DiagnosticDecoded> =>
+  Effect.map(positionOf(self, diagnostic), (position) =>
+    DiagnosticLine.make({
+      position,
+      severity: severityOf(diagnostic.category),
+      code: diagnostic.code,
+      text: diagnostic.text,
+      ...(diagnostic.fileName === undefined ? {} : { fileName: diagnostic.fileName }),
+    }))
+
+export const describeDiagnostics: {
+  (
+    diagnostics: readonly Diagnostic[],
+  ): (self: TSCompiler) => Effect.Effect<readonly DiagnosticDecoded[]>
+  (
+    self: TSCompiler,
+    diagnostics: readonly Diagnostic[],
+  ): Effect.Effect<readonly DiagnosticDecoded[]>
+} = dual(
+  2,
+  (self: TSCompiler, diagnostics: readonly Diagnostic[]): Effect.Effect<readonly DiagnosticDecoded[]> =>
+    Effect.forEach(diagnostics, (diagnostic) => describedOf(self, diagnostic)),
+)
+
 const CLOSE_GRACE = '1 second'
 
-export const close = Effect.fn('typescript-checker.compiler.close')(function*(self: TSCompiler) {
+export const close = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerClose.name)(function*(self: TSCompiler) {
   const rt = runtimeOf(self)
   const state = yield* SynchronizedRef.getAndUpdate(rt.state, (prev) => ({
     ...prev,

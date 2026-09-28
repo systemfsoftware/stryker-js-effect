@@ -93,16 +93,22 @@ Feature('Opting a mutation run into extra mutations')
             ),
         ),
         Then(
-          'the run stops before any mutant exists, blaming the unknown name and naming the extra mutations that do exist',
+          'the run stops before instrumentation, as a config failure that blames the unknown name',
         )(
           (s, expect) => {
             const failure = failureOf(s.outcome)
             const cause = textOf(failure.cause)
             return expect({
               stage: failure.stage,
-              unknownOptInNamed: cause.includes(`Unknown opt-in mutations: '${UNKNOWN_NAME}'`),
-              knownOptInNamed: cause.includes('Known opt-in mutations:'),
-            }).toEqual({ stage: 'instrument', unknownOptInNamed: true, knownOptInNamed: true })
+              exitClass: failure['exitClass'],
+              unknownEntryNamed: failure.message.includes(UNKNOWN_NAME),
+              causeNamesTheUnknownEntry: cause.includes(UNKNOWN_NAME),
+            }).toEqual({
+              stage: 'prepare',
+              exitClass: 'ConfigError',
+              unknownEntryNamed: true,
+              causeNamesTheUnknownEntry: true,
+            })
           },
         ),
       ),

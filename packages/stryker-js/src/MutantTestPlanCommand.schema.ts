@@ -1,6 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Options, Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 export class MutantTestPlanCommand extends S.TaggedClass<MutantTestPlanCommand>()('MutantTestPlanCommand', {
@@ -13,6 +13,7 @@ export class MutantTestPlanCommand extends S.TaggedClass<MutantTestPlanCommand>(
   testsByMutantId: S.Record(Mutant.MutantId, S.Array(TestRunner.TestId)),
   testTimeById: S.Record(TestRunner.TestId, Report.NonNegativeFinite),
   options: S.Struct({
+    coverageAnalysis: Options.CoverageAnalysisMode,
     disableBail: S.Boolean,
     timeoutMS: Report.NonNegativeFinite,
     timeoutFactor: Report.NonNegativeFinite,

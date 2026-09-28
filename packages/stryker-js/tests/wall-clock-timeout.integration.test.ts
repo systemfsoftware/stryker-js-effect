@@ -1,7 +1,8 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine, RunEvent } from '@systemfsoftware/stryker-js'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Engine } from '@systemfsoftware/stryker-js'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
@@ -122,7 +123,7 @@ const readDaemonMutants = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const text = yield* fs.readFileString(reportFileOf(directory))
-    const report = yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResultSchema))(text)
+    const report = yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResult))(text)
     return Object.entries(report.files)
       .filter(([file]) => file === DAEMON_FILE)
       .flatMap(([, fileResult]) =>

@@ -2,10 +2,10 @@ import type * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
 import type { StandardSchemaV1 } from 'effect/StandardSchema'
 
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { MutationTestResult } from './generated/report.schema.js'
+import { Location } from './Location.schema.js'
 import { MetricsResultSchema, NonNegativeFinite, NonNegativeInt } from './Metrics.schema.js'
-
-import { MutationTestResultSchema } from './Report.schema.js'
+import { CanonicalFileName, MutantId, MutantStatusSchema, MutatorName } from './Mutant.schema.js'
 import type { StrykerOptions } from './stryker-options.schema.js'
 import { TestResultSchema, TestRunnerCapabilitiesSchema } from './TestRunner.schema.js'
 
@@ -18,7 +18,7 @@ export type RunTiming = typeof RunTimingSchema.Type
 export const ReporterPlanKind = S.Literals(['EarlyResult', 'Run'])
 
 export const ReporterPlanDescriptorSchema = S.Struct({
-  mutantId: Mutant.MutantId,
+  mutantId: MutantId,
   plan: ReporterPlanKind,
   netTime: NonNegativeFinite,
   reloadEnvironment: S.Boolean,
@@ -41,11 +41,11 @@ export class MutationTestingPlanReady extends S.TaggedClass<MutationTestingPlanR
 ) {}
 
 export class MutantTested extends S.TaggedClass<MutantTested>()('mutantTested', {
-  id: Mutant.MutantId,
-  status: Mutant.MutantStatusSchema,
-  fileName: Mutant.CanonicalFileName,
-  location: Mutant.Location,
-  mutatorName: Mutant.MutatorName,
+  id: MutantId,
+  status: MutantStatusSchema,
+  fileName: CanonicalFileName,
+  location: Location,
+  mutatorName: MutatorName,
   replacement: S.NullOr(S.String),
   completed: NonNegativeInt,
   total: NonNegativeInt,
@@ -54,7 +54,7 @@ export class MutantTested extends S.TaggedClass<MutantTested>()('mutantTested', 
 export class MutationTestReportReady extends S.TaggedClass<MutationTestReportReady>()(
   'mutationTestReportReady',
   {
-    report: MutationTestResultSchema,
+    report: MutationTestResult,
     metrics: MetricsResultSchema,
   },
 ) {}

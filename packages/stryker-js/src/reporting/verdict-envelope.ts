@@ -1,5 +1,6 @@
 import { randomBytes } from '@noble/hashes/utils.js'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { OutputMode, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as DateTime from 'effect/DateTime'
@@ -9,9 +10,6 @@ import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 
-import { ModeSignal, OutputMode } from '../output-mode.schema.js'
-import { RunId, VerdictMutant } from '../run-event.schema.js'
-import { StreamSchemaVersion } from './stream-version.schema.js'
 import { VerdictEnvelope } from './verdict-envelope.schema.js'
 
 const CROCKFORD_BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
@@ -60,16 +58,16 @@ export const runIdTextOf = (now: DateTime.Utc): string => {
   )
 }
 
-export const generateRunId = (now: DateTime.Utc): RunId => RunId.make(runIdTextOf(now))
+export const generateRunId = (now: DateTime.Utc): RunEvent.RunId => RunEvent.RunId.make(runIdTextOf(now))
 
 const isActionableStatus = S.is(Mutant.ActionableStatusSchema)
 
-export const actionableMutants = (files: Report.MutationTestResult['files']): ReadonlyArray<VerdictMutant> =>
+export const actionableMutants = (files: Report.MutationTestResult['files']): ReadonlyArray<RunEvent.VerdictMutant> =>
   Arr.flatMap(Object.entries(files), ([file, fileResult]) =>
     Arr.map(
       Arr.filter(fileResult.mutants, (mutant) => isActionableStatus(mutant.status)),
       (mutant) =>
-        VerdictMutant.make({
+        RunEvent.VerdictMutant.make({
           id: mutant.id,
           file,
           location: mutant.location,
@@ -94,17 +92,17 @@ const embeddedConfig = (report: Report.MutationTestResult) => {
 
 export const buildVerdictEnvelope: {
   (
-    mode: OutputMode,
-    signal: ModeSignal,
-    runId: RunId,
+    mode: OutputMode.OutputMode,
+    signal: OutputMode.ModeSignal,
+    runId: RunEvent.RunId,
     basePath: string,
     pathService: Path.Path,
   ): (report: Report.MutationTestResult) => VerdictEnvelope
   (
     report: Report.MutationTestResult,
-    mode: OutputMode,
-    signal: ModeSignal,
-    runId: RunId,
+    mode: OutputMode.OutputMode,
+    signal: OutputMode.ModeSignal,
+    runId: RunEvent.RunId,
     basePath: string,
     pathService: Path.Path,
   ): VerdictEnvelope
@@ -112,16 +110,16 @@ export const buildVerdictEnvelope: {
   (args) => args.length === 6,
   (
     report: Report.MutationTestResult,
-    mode: OutputMode,
-    signal: ModeSignal,
-    runId: RunId,
+    mode: OutputMode.OutputMode,
+    signal: OutputMode.ModeSignal,
+    runId: RunEvent.RunId,
     basePath: string,
     pathService: Path.Path,
   ): VerdictEnvelope => {
     const metrics = Report.metricsFromMutants(Arr.flatMap(Object.values(report.files), (file) => file.mutants))
     const { jsonReporterFileName } = embeddedConfig(report)
     return VerdictEnvelope.make({
-      schemaVersion: StreamSchemaVersion.literal,
+      schemaVersion: RunEvent.StreamSchemaVersion.literal,
       runId,
       mode,
       signal,
@@ -132,7 +130,7 @@ export const buildVerdictEnvelope: {
       thresholds: {
         high: report.thresholds.high,
         low: report.thresholds.low,
-        break: report.thresholds.break,
+        break: Option.getOrNull(Option.fromNullishOr(report.thresholds.break)),
       },
       counts: metrics,
       reportFile: Option.getOrNull(

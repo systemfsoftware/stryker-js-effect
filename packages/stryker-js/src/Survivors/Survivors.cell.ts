@@ -1,7 +1,8 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
@@ -20,9 +21,8 @@ import {
 } from '../admit-survivors-run.workflow.js'
 import { ConfigFileUnreadableError } from '../ConfigError.schema.js'
 import { relativeNormalizedFileName } from '../FileMatcher.js'
-import type { OutputMode } from '../output-mode.schema.js'
 import { MutationReportFileName } from '../reporting/report-assembly.schema.js'
-import { readConfig } from '../run/load-config.cell.js'
+import { readConfig } from '../run/load-config.js'
 import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { StrykerPackage } from '../stryker-package.schema.js'
@@ -43,12 +43,12 @@ export interface SurvivorsSettlement {
 
 export interface SurvivorsAdmissionInput {
   readonly cliOptions: Options.PartialStrykerOptions
-  readonly mode: OutputMode
+  readonly mode: OutputMode.OutputMode
   readonly basePath: string
   readonly settle: SurvivorsSettlement
 }
 
-export const DEFAULT_SURVIVORS_PRIOR_REPORT = `reports/${MutationReportFileName.literal}`
+const DEFAULT_SURVIVORS_PRIOR_REPORT = `reports/${MutationReportFileName.literal}`
 
 const EMPTY_CONFIG: Record<string, string> = {}
 
@@ -105,7 +105,7 @@ const extractSurvivors = (
 
 const resolveAbsolutePathOf = (basePath: string): ResolveAbsolutePath => (file) => `${basePath}/${file}`
 
-export const priorReportPathOf = (resolved: Options.StrykerOptions) =>
+const priorReportPathOf = (resolved: Options.StrykerOptions) =>
   Option.getOrElse(
     Option.filter(Option.fromUndefinedOr(resolved['survivorsPriorReport']), Predicate.isString),
     () => DEFAULT_SURVIVORS_PRIOR_REPORT,
@@ -116,16 +116,16 @@ export interface PriorReportRead<A = unknown> {
   readonly raw: A
 }
 
-export const resolveSurvivorsRunOptions = Effect.fn('stryker.survivors_admission.resolve_options')(
+const resolveSurvivorsRunOptions = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionResolveOptions.name)(
   function*(input: {
     readonly cliOptions: Options.PartialStrykerOptions
-    readonly mode: OutputMode
+    readonly mode: OutputMode.OutputMode
   }) {
     return yield* readConfig(input.cliOptions, { command: 'run', mode: input.mode })
   },
 )
 
-export const readPriorReport = Effect.fn('stryker.survivors_admission.read_prior_report')(
+const readPriorReport = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionReadPriorReport.name)(
   function*(priorReportPath: string) {
     const fs = yield* FileSystem.FileSystem
     return yield* fs.readFileString(priorReportPath).pipe(
@@ -145,7 +145,7 @@ export const readPriorReport = Effect.fn('stryker.survivors_admission.read_prior
   },
 )
 
-export const priorReportFileKeys = <A = unknown>(raw: A) =>
+const priorReportFileKeys = <A = unknown>(raw: A) =>
   Option.getOrElse(
     Option.map(
       Option.flatMap(
@@ -157,7 +157,7 @@ export const priorReportFileKeys = <A = unknown>(raw: A) =>
     (): readonly string[] => [],
   )
 
-const readSourceFile = Effect.fn('stryker.survivors_admission.read_source')(function*(file: string) {
+const readSourceFile = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionReadSource.name)(function*(file: string) {
   const fs = yield* FileSystem.FileSystem
   return yield* fs.readFileString(file).pipe(
     Effect.mapError((cause) => ConfigFileUnreadableError.make({ file, cause })),
@@ -166,7 +166,7 @@ const readSourceFile = Effect.fn('stryker.survivors_admission.read_source')(func
 
 const SOURCE_HASH_CONCURRENCY = 24
 
-export const currentSourceHashesFor = Effect.fn('stryker.survivors_admission.hash_sources')(
+const currentSourceHashesFor = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionHashSources.name)(
   function*(files: readonly string[]) {
     const pairs = yield* Effect.forEach(
       files,
@@ -182,7 +182,7 @@ export type SurvivorsRaw = typeof AdmitSurvivorsRunCommand.Encoded & {
   readonly priorReportPath: string
 }
 
-export const survivorsRawOf = (input: {
+const survivorsRawOf = (input: {
   readonly read: PriorReportRead
   readonly resolvedOptions: Options.StrykerOptions
   readonly priorReportPath: string
@@ -230,7 +230,7 @@ export const survivorsRawOf = (input: {
   })
 }
 
-const readSurvivorsAdmission = Effect.fn('stryker.survivors_admission.gather')(
+const readSurvivorsAdmission = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionGather.name)(
   function*(input: SurvivorsAdmissionInput) {
     const resolvedOptions = yield* resolveSurvivorsRunOptions({ cliOptions: input.cliOptions, mode: input.mode })
     const priorReportPath = priorReportPathOf(resolvedOptions)
@@ -247,7 +247,7 @@ const readSurvivorsAdmission = Effect.fn('stryker.survivors_admission.gather')(
   },
 )
 
-export const survivorsAdmissionCell = Sandwich.named('stryker.survivors_admission')(readSurvivorsAdmission)
+export const survivorsAdmissionCell = Sandwich.named(SpanTaxonomy.Spans.survivorsAdmission.name)(readSurvivorsAdmission)
   .decide(admitSurvivorsRun)
   .write({
     Admitted: (admitted, raw) =>

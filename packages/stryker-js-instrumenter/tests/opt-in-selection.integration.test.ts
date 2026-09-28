@@ -8,7 +8,7 @@ import {
   effectConcurrencySelectionFixtureFiles,
   type FixtureFile,
 } from './__fixtures__/effect-concurrency-files.js'
-import { instrument } from './__fixtures__/instrument.js'
+import { instrument, stockOptions } from './__fixtures__/instrument.js'
 
 const ATOMIC_UPDATE_SPLIT = 'AtomicUpdateSplit'
 const SYNCHRONIZATION_REMOVAL = 'SynchronizationRemoval'
@@ -19,10 +19,6 @@ const CONCURRENCY_MUTATOR_NAMES: readonly string[] = [
   SYNCHRONIZATION_REMOVAL,
   FINALIZER_ESCAPE,
 ]
-
-const UNKNOWN_MUTATOR_NAME = 'AtomicUpdateSplt'
-
-const MODULE_SOURCE = 'export const total = 1 + 1\n'
 
 const SUPPRESSED_SOURCE = `import { Effect, Ref } from 'effect'
 
@@ -104,26 +100,6 @@ Feature('Choosing extra concurrency mutations by name')
   .withLayer(NodeFileSystem.layer)
   .body(({ scenario }) => {
     scenario(
-      'A run that asks for a mutation the library does not have stops with a message naming it',
-      Gherkin.Do.pipe(
-        Given('a module ready to be instrumented')('source', () => Effect.succeed(MODULE_SOURCE)),
-        When('a run asks for a concurrency mutation by a name the library does not offer')(
-          'failure',
-          ({ source }: { source: string }) =>
-            instrument([{ name: 'probe.ts', content: source, mutate: true }], {
-              ignorers: [],
-              excludedMutations: [],
-              optInMutations: [UNKNOWN_MUTATOR_NAME],
-            }).pipe(Effect.flip),
-        ),
-        Then('the run fails, and the message names the entry it does not have')((
-          { failure }: { failure: Instrument.InstrumentError },
-          expect,
-        ) => expect(failure.message).toContain(UNKNOWN_MUTATOR_NAME)),
-      ),
-    )
-
-    scenario(
       'A run that asks for no extra mutation asks for the same run as one that asks for an empty list',
       Gherkin.Do.pipe(
         Given('every Effect concurrency fixture has been read from disk')(
@@ -133,16 +109,19 @@ Feature('Choosing extra concurrency mutations by name')
         When('the fixtures are instrumented with no list of extra mutations at all')(
           'unlisted',
           ({ fixtures }: { fixtures: readonly FixtureFile[] }) =>
-            instrument(filesToInstrument(fixtures), { ignorers: [], excludedMutations: [] }),
+            instrument(filesToInstrument(fixtures), stockOptions({ ignorers: [], excludedMutations: [] })),
         ),
         When('the fixtures are instrumented with an empty list of extra mutations')(
           'emptyList',
           ({ fixtures }: { fixtures: readonly FixtureFile[] }) =>
-            instrument(filesToInstrument(fixtures), {
-              ignorers: [],
-              excludedMutations: [],
-              optInMutations: [],
-            }),
+            instrument(
+              filesToInstrument(fixtures),
+              stockOptions({
+                ignorers: [],
+                excludedMutations: [],
+                optInMutations: [],
+              }),
+            ),
         ),
         Then('neither report holds a concurrency fault, and both hold the same ordinary mutants')((
           { unlisted, emptyList }: { unlisted: Instrument.InstrumentResult; emptyList: Instrument.InstrumentResult },
@@ -179,16 +158,19 @@ Feature('Choosing extra concurrency mutations by name')
           'runs',
           ({ fixtures }: { fixtures: readonly FixtureFile[] }) =>
             Effect.flatMap(
-              instrument(filesToInstrument(fixtures), { ignorers: [], excludedMutations: [] }),
+              instrument(filesToInstrument(fixtures), stockOptions({ ignorers: [], excludedMutations: [] })),
               (plain) =>
                 Effect.map(
                   Effect.forEach(OPT_IN_SELECTIONS, (selection) =>
                     Effect.map(
-                      instrument(filesToInstrument(fixtures), {
-                        ignorers: [],
-                        excludedMutations: [],
-                        optInMutations: [...selection.named],
-                      }),
+                      instrument(
+                        filesToInstrument(fixtures),
+                        stockOptions({
+                          ignorers: [],
+                          excludedMutations: [],
+                          optInMutations: [...selection.named],
+                        }),
+                      ),
                       (report): SelectionOutcome => ({
                         label: selection.label,
                         named: selection.named,
@@ -230,16 +212,22 @@ Feature('Choosing extra concurrency mutations by name')
           'runs',
           ({ fixtures }: { fixtures: readonly FixtureFile[] }) =>
             Effect.all([
-              instrument(filesToInstrument(fixtures), {
-                ignorers: [],
-                excludedMutations: [],
-                optInMutations: [ATOMIC_UPDATE_SPLIT],
-              }),
-              instrument(filesToInstrument(fixtures), {
-                ignorers: [],
-                excludedMutations: [],
-                optInMutations: [ATOMIC_UPDATE_SPLIT, ATOMIC_UPDATE_SPLIT],
-              }),
+              instrument(
+                filesToInstrument(fixtures),
+                stockOptions({
+                  ignorers: [],
+                  excludedMutations: [],
+                  optInMutations: [ATOMIC_UPDATE_SPLIT],
+                }),
+              ),
+              instrument(
+                filesToInstrument(fixtures),
+                stockOptions({
+                  ignorers: [],
+                  excludedMutations: [],
+                  optInMutations: [ATOMIC_UPDATE_SPLIT, ATOMIC_UPDATE_SPLIT],
+                }),
+              ),
             ]),
         ),
         Then('both runs propose the identical faults')((
@@ -259,10 +247,13 @@ Feature('Choosing extra concurrency mutations by name')
         When('the module is instrumented without naming that fault')(
           'report',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/opt-in-suppressed-probe.ts', content: source, mutate: true }], {
-              ignorers: [],
-              excludedMutations: [],
-            }),
+            instrument(
+              [{ name: '/tmp/opt-in-suppressed-probe.ts', content: source, mutate: true }],
+              stockOptions({
+                ignorers: [],
+                excludedMutations: [],
+              }),
+            ),
         ),
         Then('the run goes through, and none of the concurrency faults is proposed')((
           { report }: { report: Instrument.InstrumentResult },

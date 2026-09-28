@@ -1,8 +1,8 @@
+import { OutputMode } from '@systemfsoftware/stryker-js-cli-contract'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 import { CliCommandSchema } from '../Cli.schema.js'
-import { OutputMode } from '../output-mode.schema.js'
 
 export type StrykerConfig = Options.PartialStrykerOptions
 
@@ -20,7 +20,7 @@ export type Immutable<T> = T extends ImmutablePrimitive ? T
 export const ConfigEnvSchema = S.Struct({
   command: CliCommandSchema,
   isDryRun: S.Boolean,
-  mode: OutputMode,
+  mode: OutputMode.OutputMode,
   isCi: S.Boolean,
 })
 export type ConfigEnv = typeof ConfigEnvSchema.Type

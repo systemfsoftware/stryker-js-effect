@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { NonEmptyReadonlyArray } from 'effect/Array'
 import * as Arr from 'effect/Array'
@@ -53,7 +53,7 @@ export const ClearTextRenderOptions = S.Struct({
 export type ClearTextRenderOptions = typeof ClearTextRenderOptions.Type
 
 export class ClearTextReportCommand extends S.TaggedClass<ClearTextReportCommand>()('ClearTextReportCommand', {
-  reported: S.optional(Report.MutationTestResultSchema),
+  reported: S.optional(Report.MutationTestResult),
   computed: S.optional(Report.MetricsResultSchema),
   render: ClearTextRenderOptions,
   rendered: S.Boolean,

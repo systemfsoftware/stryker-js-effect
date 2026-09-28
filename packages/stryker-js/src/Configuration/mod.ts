@@ -30,5 +30,7 @@ export {
   ExtendsStepResolve,
 } from '../run/extends-step.workflow.js'
 export type { ExtendsStepDecision } from '../run/extends-step.workflow.js'
-export { describeErrors, forkCoreSchema, loadConfigCell, readConfig, validateOptions } from '../run/load-config.cell.js'
+export { loadConfigCell } from '../run/load-config.cell.js'
 export type { ConfigInvocation, ValidationSchemaDocument } from '../run/load-config.cell.js'
+export { describeErrors, forkCoreSchema, readConfig } from '../run/load-config.js'
+export { validateOptions } from '../run/validate-options.js'

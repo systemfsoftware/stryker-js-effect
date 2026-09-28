@@ -1,10 +1,9 @@
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-import { StreamSchemaVersion } from './stream-version.schema.js'
-
 export class ErrorEnvelope extends S.Class<ErrorEnvelope>('ErrorEnvelope')({
-  schemaVersion: StreamSchemaVersion,
+  schemaVersion: RunEvent.StreamSchemaVersion,
   code: Plugin.ExitCode,
   error: S.NonEmptyString,
   remediation: S.NonEmptyString,

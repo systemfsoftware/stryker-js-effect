@@ -1,4 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 
 import { resolutionCommandOf, spliceForAssigned } from './Format.js'
@@ -37,7 +38,7 @@ export const disableTypeChecksCell: Cell.Cell<
   typeof FileSchema.Type,
   InstrumentError | FormatOverrideUnclaimed,
   never
-> = Sandwich.named('stryker.instrument.disableTypeChecks')(
+> = Sandwich.named(SpanTaxonomy.Spans.instrumentDisableTypeChecks.name)(
   (input: DisableTypeChecksInput) => readDisable(input),
 )
   .decide(resolveFormat)

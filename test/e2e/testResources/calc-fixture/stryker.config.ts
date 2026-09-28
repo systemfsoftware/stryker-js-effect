@@ -4,4 +4,5 @@ export default defineConfig({
   testRunner: 'vm',
   testFiles: ['src/**/*.test.ts'],
   mutate: ['src/**/*.ts', '!src/**/*.test.ts'],
+  reporters: ['json'],
 })

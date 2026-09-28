@@ -1,4 +1,5 @@
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
@@ -16,7 +17,6 @@ import {
   type ScriptFormatEntry,
 } from './Format.schema.js'
 import { FileSchema, type InstrumenterOptions, InstrumentError, InstrumentFileSkip } from './Instrument.schema.js'
-import type { Mutant as ApiMutant } from './Mutant.schema.js'
 import { toApiMutant } from './Mutator.service.js'
 import type { ParseFailed } from './Parser.schema.js'
 import { createParser, parseJS, parseTS, parseTsx } from './Parser.service.js'
@@ -190,17 +190,12 @@ export interface ParsedFile {
   readonly ast: Ast
 }
 
-const NO_OPT_IN_MUTATIONS: readonly string[] = []
-
-export const optInMutationsOf = (options: InstrumenterOptions): readonly string[] =>
-  options.optInMutations ?? NO_OPT_IN_MUTATIONS
-
 const isIgnorer = (value: unknown): value is Ignorer =>
   Predicate.isObject(value) && typeof value['shouldIgnore'] === 'function'
 
 export const toTransformerOptions = (options: InstrumenterOptions): TransformerOptions => ({
   excludedMutations: [...options.excludedMutations],
-  optInMutations: [...optInMutationsOf(options)],
+  mutators: options.mutators,
   ignorers: options.ignorers.filter(isIgnorer),
   ...(options.noHeader !== undefined ? { noHeader: options.noHeader } : {}),
 })
@@ -274,7 +269,7 @@ export const transformInto = (request: {
     Effect.mapError((cause) => InstrumentError.make({ message: `Failed to transform ${request.file.name}`, cause })),
   )
 
-export const collectMutants = (collector: MutantCollector): Effect.Effect<readonly ApiMutant[], InstrumentError> =>
+export const collectMutants = (collector: MutantCollector): Effect.Effect<readonly Mutant.Mutant[], InstrumentError> =>
   Effect.flatMap(
     Effect.sync(() => Result.all(collector.map(toApiMutant))),
     (collected) =>

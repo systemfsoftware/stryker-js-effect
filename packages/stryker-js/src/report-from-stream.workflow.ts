@@ -1,12 +1,11 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-
-import { RunMutantTested } from './run-event.schema.js'
 
 const STREAM_THRESHOLDS = { high: 100, low: 80, break: null }
 
@@ -20,7 +19,7 @@ export class ReportFromStreamCommand extends S.Class<ReportFromStreamCommand>('R
 }
 
 export class ReportFromStreamRebuilt extends S.TaggedClass<ReportFromStreamRebuilt>()('ReportFromStreamRebuilt', {
-  report: Report.MutationTestResultSchema,
+  report: Report.MutationTestResult,
 }) {
   readonly [ReportFromStreamTypeId] = ReportFromStreamTypeId
 }
@@ -29,7 +28,7 @@ export class ReportFromStreamAbsent extends S.TaggedClass<ReportFromStreamAbsent
   readonly [ReportFromStreamTypeId] = ReportFromStreamTypeId
 }
 
-const mutantFromStream = (line: RunMutantTested) => {
+const mutantFromStream = (line: RunEvent.RunMutantTested) => {
   const mutant = {
     id: line.id,
     mutatorName: line.mutatorName,
@@ -45,7 +44,7 @@ const mutantFromStream = (line: RunMutantTested) => {
   )
 }
 
-const decodeLineText = S.decodeOption(S.fromJsonString(RunMutantTested))
+const decodeLineText = S.decodeOption(S.fromJsonString(RunEvent.RunMutantTested))
 
 const streamLines = (text: string) => text.split('\n').flatMap((raw) => Option.toArray(decodeLineText(raw.trim())))
 

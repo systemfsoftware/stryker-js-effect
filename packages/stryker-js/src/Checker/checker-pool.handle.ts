@@ -1,5 +1,6 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -12,8 +13,8 @@ import * as Scope from 'effect/Scope'
 
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { StageError } from '../Run.schema.js'
-import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.cell.js'
 import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
+import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.plans.js'
 import {
   CheckedPlanFailed,
   CheckedPlanPassed,
@@ -123,7 +124,7 @@ const checkGroupsConcurrently = (
       ),
   )
 
-export const splitCheckedPlans = Effect.fn('stryker.checker_pool.split_checked')(function*(
+export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitChecked.name)(function*(
   checked: readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResult])[],
 ) {
   const decisions = yield* Effect.fromResult(
@@ -184,7 +185,7 @@ const runConfiguredCheckers = (
     },
   )
 
-export const checkPlans = Effect.fn('stryker.checker_pool.check_plans')(function*(
+export const checkPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolCheckPlans.name)(function*(
   checkerPool: CheckerPoolHandle | undefined,
   plans: readonly Mutant.MutantRunPlan[],
 ) {
@@ -194,7 +195,7 @@ export const checkPlans = Effect.fn('stryker.checker_pool.check_plans')(function
   })
 })
 
-export const inOwnScope = Effect.fn('stryker.mutation_test.checker_scope')(function*<Resources, RAcquire>(
+export const inOwnScope = Effect.fn(SpanTaxonomy.Spans.mutationTestCheckerScope.name)(function*<Resources, RAcquire>(
   acquire: Effect.Effect<Resources, never, Scope.Scope | RAcquire>,
 ) {
   const checkerScope = yield* Scope.make()

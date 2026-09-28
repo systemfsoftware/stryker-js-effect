@@ -29,7 +29,7 @@ const colorOffArb = commandArb.pipe(
 )
 
 const coherentArb = Arbitrary.all({
-  report: Arbitrary.schema(Report.MutationTestResultSchema),
+  report: Arbitrary.schema(Report.MutationTestResult),
   computed: Arbitrary.schema(Report.MetricsResultSchema),
   render: Arbitrary.schema(ClearTextRenderOptions),
 })

@@ -1,6 +1,6 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
-import type { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
-import { Options, Plugin, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant, Options, Plugin, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import type * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'

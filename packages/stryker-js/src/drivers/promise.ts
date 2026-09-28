@@ -3,7 +3,7 @@ import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 
 import type { MutationTestDone } from '../run/mutation-test.cell.js'
-import { strykerCell } from '../run/run-stages.cell.js'
+import { strykerCell } from '../run/run-stages.js'
 import { nodePlatformLayer } from './node.js'
 
 export const run = dual<

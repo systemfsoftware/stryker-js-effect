@@ -1,11 +1,12 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Instrument, Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect } from 'effect'
 
 import { importStyles, shapes } from '../testResources/effect-concurrency/shapes.js'
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
-import { instrument } from './__fixtures__/instrument.js'
+import { instrument, stockOptions } from './__fixtures__/instrument.js'
 
 const ATOMIC_UPDATE_SPLIT = 'AtomicUpdateSplit'
 
@@ -188,11 +189,14 @@ const exportLineRange = (content: string, exportName: string): ExportLineRange =
   return { firstLine: marker + 1, lastLine: after === -1 ? lines.length : marker + after + 1 }
 }
 const instrumentSource = (source: string) =>
-  instrument([{ name: '/tmp/atomic-split-probe.ts', content: source, mutate: true }], {
-    ignorers: [],
-    excludedMutations: [],
-    optInMutations: [ATOMIC_UPDATE_SPLIT],
-  })
+  instrument(
+    [{ name: '/tmp/atomic-split-probe.ts', content: source, mutate: true }],
+    stockOptions({
+      ignorers: [],
+      excludedMutations: [],
+      optInMutations: [ATOMIC_UPDATE_SPLIT],
+    }),
+  )
 
 const atomicCount = (result: Instrument.InstrumentResult): number =>
   result.mutants.filter((mutant) => mutant.mutatorName === ATOMIC_UPDATE_SPLIT).length
@@ -244,7 +248,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
                 content: fixture.content,
                 mutate: true,
               })),
-              { ignorers: [], excludedMutations: [], optInMutations: [ATOMIC_UPDATE_SPLIT] },
+              stockOptions({ ignorers: [], excludedMutations: [], optInMutations: [ATOMIC_UPDATE_SPLIT] }),
             ),
         ),
         Then(
@@ -437,11 +441,14 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
         When('the file is instrumented with the split enabled but excluded')(
           'report',
           ({ source }: { source: string }) =>
-            instrument([{ name: '/tmp/atomic-split-probe.ts', content: source, mutate: true }], {
-              ignorers: [],
-              excludedMutations: [ATOMIC_UPDATE_SPLIT],
-              optInMutations: [ATOMIC_UPDATE_SPLIT],
-            }),
+            instrument(
+              [{ name: '/tmp/atomic-split-probe.ts', content: source, mutate: true }],
+              stockOptions({
+                ignorers: [],
+                excludedMutations: [ATOMIC_UPDATE_SPLIT],
+                optInMutations: [ATOMIC_UPDATE_SPLIT],
+              }),
+            ),
         ),
         Then('the single mutant is reported as ignored for the exclusion')(
           ({ report }: { report: Instrument.InstrumentResult }, expect) => {

@@ -1,5 +1,6 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'
@@ -31,21 +32,16 @@ import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import { readIncrementalReuse } from './incremental-reuse.cell.js'
-import {
-  announceSettledMutant,
-  checkpointMutationResults,
-  reportingInputOf,
-  type RunContext,
-  runOnePlan,
-} from './mutant-run.cell.js'
+import { mutantRunCell } from './mutant-run.cell.js'
+import { announceSettledMutant, checkpointMutationResults, reportingInputOf, type RunContext } from './mutant-run.js'
+import { planMutationTest } from './mutation-test-plan.cell.js'
 import {
   configuredTestFilesOf,
   partitionPlannable,
-  planMutationTest,
   reportDroppedMutants,
   sandboxFilesOf,
   toReportedMutant,
-} from './mutation-test-plan.cell.js'
+} from './mutation-test-plan.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 import { scoped as testRunnerPoolScoped } from './test-runner-pool.blueprint.js'
@@ -61,7 +57,7 @@ type MutationTestRaw = typeof MutationTestCommand.Encoded & {
   readonly droppedMutants: readonly Mutant.Mutant[]
 }
 
-const writeMutationTestNoTests = Effect.fn('stryker.mutation_test.no_tests')(function*() {
+const writeMutationTestNoTests = Effect.fn(SpanTaxonomy.Spans.mutationTestNoTests.name)(function*() {
   const env = yield* RunEnvironment
   const now = yield* Clock.currentTimeMillis
   const elapsed = Duration.millis(now - env.runStartedAt)
@@ -70,7 +66,7 @@ const writeMutationTestNoTests = Effect.fn('stryker.mutation_test.no_tests')(fun
   return { results: [], verdict: null }
 })
 
-const writeMutationTestDryRunOnly = Effect.fn('stryker.mutation_test.dry_run_only')(function*() {
+const writeMutationTestDryRunOnly = Effect.fn(SpanTaxonomy.Spans.mutationTestDryRunOnly.name)(function*() {
   yield* phaseEntered('mutation-test')
   yield* Effect.logInfo('The dry-run has been completed successfully. No mutations have been executed.')
   return { results: [], verdict: null }
@@ -126,6 +122,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     mutants: reuse.mutants,
     testCoverage: prev.testCoverage,
     options: {
+      coverageAnalysis: prev.options.coverageAnalysis,
       disableBail: prev.options.disableBail,
       timeoutMS: prev.options.timeoutMS,
       timeoutFactor: prev.options.timeoutFactor,
@@ -158,6 +155,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     progressQueue,
     completedRef,
     plannedTotal: plan.plannedTotal,
+    plannedMutants: [...rememberedResults, ...reuse.mutants],
     pathService,
   }
   const settledResults = [...rememberedResults, ...plan.earlyResults, ...checkerResults]
@@ -169,14 +167,14 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
   const checkpointGate = yield* Semaphore.make(1)
   yield* checkpointMutationResults(context, completedMutants)
   const runResults = yield* withPhaseSpan(
-    'mutationTest.batch',
+    SpanTaxonomy.Spans.mutationTestBatch,
     { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
     () =>
       Stream.mapEffect(
         Stream.fromIterable(passedPlans),
         (runPlan) =>
           Effect.scoped(
-            runOnePlan({ context, testRunnerPool, checkpointGate, completedMutants, plan: runPlan }),
+            mutantRunCell.run({ context, testRunnerPool, checkpointGate, completedMutants, plan: runPlan }),
           ),
         { concurrency: Math.max(1, testRunnerCapacity) },
       ).pipe(
@@ -222,7 +220,7 @@ const writeMutationTestOutcome = ({
   readonly outcome: Effect.Effect<MutationTestDone, StageError, StageServices>
 }): Effect.Effect<MutationTestDone, StageError, StageServices> =>
   withPhaseSpan(
-    'mutationTest',
+    SpanTaxonomy.Spans.mutationTestPhase,
     {
       mutantCount: raw.prev.mutants.length,
       skippedMutantCount: raw.droppedMutants.length,
@@ -232,7 +230,7 @@ const writeMutationTestOutcome = ({
   )
 
 export const mutationTestCell = Sandwich.named(
-  'stryker.mutation_test',
+  SpanTaxonomy.Spans.mutationTest.name,
 )((command: DryRunDone) =>
   Effect.gen(function*() {
     yield* Scope.Scope

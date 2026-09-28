@@ -1,6 +1,10 @@
+// @stryker-expect next-line CompileError(TS2345): ObjectLiteral
 export const SEVERITIES = {
+  // @stryker-expect next-line CompileError(TS2345): StringLiteral
   info: 'info',
+  // @stryker-expect next-line CompileError(TS2345): StringLiteral
   warning: 'warning',
+  // @stryker-expect next-line CompileError(TS2345): StringLiteral
   critical: 'critical',
 } as const
 
@@ -8,6 +12,7 @@ export type Severity = (typeof SEVERITIES)[keyof typeof SEVERITIES]
 
 declare const EntityBrand: unique symbol
 export type EntityId = string & { readonly [EntityBrand]: 'EntityId' }
+// @stryker-expect next-line CompileError(TS2554): ArrowFunction
 export const entityId = (id: string): EntityId => id as EntityId
 
 export interface InfoMetricEvent {

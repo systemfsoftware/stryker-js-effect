@@ -3,9 +3,9 @@ import { Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 
 import { failingFramework, fixtureDocument, fixtureFramework } from './__fixtures__/framework.js'
-import { instrument } from './__fixtures__/instrument.js'
+import { instrument, stockOptions } from './__fixtures__/instrument.js'
 
-const OPTIONS = { ignorers: [], excludedMutations: [] }
+const OPTIONS = stockOptions({ ignorers: [], excludedMutations: [] })
 
 const registryWith = (framework: typeof fixtureFramework) =>
   Format.registerEntries(Format.coreFormatRegistry, [Format.frameworkEntryOf('fixture-plugin', framework)])

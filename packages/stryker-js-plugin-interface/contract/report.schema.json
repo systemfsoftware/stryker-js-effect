@@ -1,0 +1,613 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "config": {
+      "type": "object",
+      "description": "Free-format object that represents the configuration used to run mutation testing."
+    },
+    "schemaVersion": {
+      "type": "string",
+      "description": "Major version of this report. Used for compatibility.",
+      "examples": [
+        "1",
+        "2.0",
+        "2.0.0"
+      ],
+      "pattern": "^([1-2])(\\.(([1-9]\\d*)|0)){0,2}$"
+    },
+    "files": {
+      "$ref": "#/definitions/fileResultDictionary"
+    },
+    "testFiles": {
+      "$ref": "#/definitions/testFileDefinitionDictionary"
+    },
+    "thresholds": {
+      "$ref": "#/definitions/thresholds"
+    },
+    "projectRoot": {
+      "type": "string",
+      "description": "The optional location of the project root.",
+      "examples": [
+        "C:\\Projects\\project-under-test",
+        "/home/user/projects/project-under-test"
+      ]
+    },
+    "performance": {
+      "$ref": "#/definitions/performanceStatistics"
+    },
+    "framework": {
+      "$ref": "#/definitions/frameworkInformation"
+    },
+    "system": {
+      "$ref": "#/definitions/systemInformation"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "files",
+    "thresholds"
+  ],
+  "allOf": [
+    {
+      "type": "object",
+      "additionalProperties": {}
+    }
+  ],
+  "title": "MutationTestResult",
+  "description": "Schema for a mutation testing report.",
+  "definitions": {
+    "position": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "examples": [
+            4
+          ],
+          "type": "integer",
+          "minimum": 1
+        },
+        "column": {
+          "examples": [
+            3
+          ],
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "line",
+        "column"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "Position",
+      "description": "Position of a mutation. Both line and column start at one."
+    },
+    "location": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "$ref": "#/definitions/position"
+        },
+        "end": {
+          "$ref": "#/definitions/position"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "Location",
+      "description": "A location with start and end. Start is inclusive, end is exclusive."
+    },
+    "mutantResult": {
+      "type": "object",
+      "properties": {
+        "coveredBy": {
+          "type": "array",
+          "description": "The test ids that covered this mutant. If a mutation testing framework doesn't measure this information, it can simply be left out.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the applied mutation.",
+          "examples": [
+            "removed call to java/io/Writer::write"
+          ]
+        },
+        "duration": {
+          "description": "The net time it took to test this mutant in milliseconds. This is the time measurement without overhead from the mutation testing framework.",
+          "type": "number"
+        },
+        "id": {
+          "type": "string",
+          "description": "Unique id, can be used to correlate this mutant across reports.",
+          "examples": [
+            "321321"
+          ]
+        },
+        "killedBy": {
+          "type": "array",
+          "description": "The test ids that killed this mutant. It is a best practice to \"bail\" on first failing test, in which case you can fill this array with that one test.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "location": {
+          "$ref": "#/definitions/location"
+        },
+        "mutatorName": {
+          "type": "string",
+          "description": "Category of the mutation.",
+          "examples": [
+            "ConditionalExpression",
+            "EqualityOperator",
+            "LogicalOperator"
+          ]
+        },
+        "replacement": {
+          "type": "string",
+          "description": "Actual mutation that has been applied.",
+          "examples": [
+            "-",
+            "+",
+            "&&",
+            "||"
+          ]
+        },
+        "static": {
+          "type": "boolean",
+          "description": "A static mutant means that it was loaded once at during initialization, this makes it slow or even impossible to test, depending on the mutation testing framework."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Killed",
+            "Survived",
+            "NoCoverage",
+            "CompileError",
+            "RuntimeError",
+            "Timeout",
+            "Ignored",
+            "Pending"
+          ],
+          "title": "MutantStatus",
+          "description": "Result of the mutation."
+        },
+        "statusReason": {
+          "type": "string",
+          "description": "The reason that this mutant has this status. In the case of a killed mutant, this should be filled with the failure message(s) of the failing tests. In case of an error mutant, this should be filled with the error message."
+        },
+        "testsCompleted": {
+          "description": "The number of tests actually completed in order to test this mutant. Can differ from \"coveredBy\" because of bailing a mutant test run after first failing test.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "location",
+        "mutatorName",
+        "status"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "MutantResult",
+      "description": "Single mutation."
+    },
+    "fileResult": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "type": "string",
+          "description": "Programming language that is used. Used for code highlighting, see https://prismjs.com/#examples.",
+          "examples": [
+            "javascript",
+            "typescript",
+            "cs",
+            "scala",
+            "java"
+          ]
+        },
+        "mutants": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/definitions/mutantResult"
+          }
+        },
+        "source": {
+          "type": "string",
+          "description": "Full source code of the original file (without mutants), this is used to display exactly what was changed for each mutant.",
+          "examples": [
+            "using System; using....."
+          ]
+        }
+      },
+      "required": [
+        "language",
+        "mutants",
+        "source"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "FileResult",
+      "description": "Mutated file, with the relative path of the file as the key."
+    },
+    "fileResultDictionary": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/fileResult"
+      },
+      "title": "FileResultDictionary",
+      "description": "All mutated files."
+    },
+    "openEndLocation": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "$ref": "#/definitions/position"
+        },
+        "end": {
+          "$ref": "#/definitions/position"
+        }
+      },
+      "required": [
+        "start"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "OpenEndLocation",
+      "description": "A location where \"end\" is not required. Start is inclusive, end is exclusive."
+    },
+    "testDefinition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique id of the test, used to correlate what test killed a mutant."
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the test, used to display the test."
+        },
+        "location": {
+          "$ref": "#/definitions/openEndLocation"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "TestDefinition",
+      "description": "A test in your test file."
+    },
+    "testFile": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Full source code of the test file, this can be used to display in the report."
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/testDefinition"
+          }
+        }
+      },
+      "required": [
+        "tests"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "TestFile",
+      "description": "A file containing one or more tests"
+    },
+    "testFileDefinitionDictionary": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/testFile"
+      },
+      "title": "TestFileDefinitionDictionary",
+      "description": "Test file definitions by file path OR class name."
+    },
+    "thresholds": {
+      "type": "object",
+      "properties": {
+        "high": {
+          "description": "Higher bound threshold.",
+          "examples": [
+            80
+          ],
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "low": {
+          "description": "Lower bound threshold.",
+          "examples": [
+            60
+          ],
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "break": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The mutation score below which the run breaks. Null disables the break."
+        }
+      },
+      "required": [
+        "high",
+        "low"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "Thresholds",
+      "description": "Thresholds for the status of the reported application."
+    },
+    "performanceStatistics": {
+      "type": "object",
+      "properties": {
+        "setup": {
+          "description": "Time it took to run the setup phase in milliseconds.",
+          "type": "number"
+        },
+        "initialRun": {
+          "description": "Time it took to run the initial test phase (dry-run) in milliseconds.",
+          "type": "number"
+        },
+        "mutation": {
+          "description": "Time it took to run the mutation test phase in milliseconds.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "setup",
+        "initialRun",
+        "mutation"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "PerformanceStatistics",
+      "description": "The performance statistics per phase. Total time should be roughly equal to the sum of all these."
+    },
+    "brandingInformation": {
+      "type": "object",
+      "properties": {
+        "homepageUrl": {
+          "type": "string",
+          "description": "URL to the homepage of the framework.",
+          "format": "uri"
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "URL to an image for the framework, can be a data URL."
+        }
+      },
+      "required": [
+        "homepageUrl"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "BrandingInformation",
+      "description": "Extra branding information about the framework used."
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Dependencies",
+      "description": "Dependencies used by the framework. Key-value pair of dependencies and their versions."
+    },
+    "frameworkInformation": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the framework used.",
+          "examples": [
+            "Stryker",
+            "Stryker4s",
+            "Stryker.NET",
+            "Infection PHP",
+            "Pitest"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "description": "Version of the framework."
+        },
+        "branding": {
+          "$ref": "#/definitions/brandingInformation"
+        },
+        "dependencies": {
+          "$ref": "#/definitions/dependencies"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "FrameworkInformation",
+      "description": "Extra information about the framework used"
+    },
+    "oSInformation": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the OS",
+          "examples": [
+            "Windows 10 Pro",
+            "Debian Buster",
+            "Ubuntu 20.04.1 LTS"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "description": "Platform identifier",
+          "examples": [
+            "linux",
+            "win32"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "description": "Version of the OS or distribution",
+          "examples": [
+            "10.0.19041"
+          ]
+        }
+      },
+      "required": [
+        "platform"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "OSInformation"
+    },
+    "cpuInformation": {
+      "type": "object",
+      "properties": {
+        "baseClock": {
+          "description": "Clock speed in MHz",
+          "type": "number"
+        },
+        "logicalCores": {
+          "type": "number"
+        },
+        "model": {
+          "type": "string",
+          "examples": [
+            "Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz"
+          ]
+        }
+      },
+      "required": [
+        "logicalCores"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "CpuInformation"
+    },
+    "ramInformation": {
+      "type": "object",
+      "properties": {
+        "total": {
+          "description": "The total RAM of the system that performed mutation testing in MB.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "total"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "RamInformation"
+    },
+    "systemInformation": {
+      "type": "object",
+      "properties": {
+        "ci": {
+          "type": "boolean",
+          "description": "Did mutation testing run in a Continuous Integration environment (pipeline)? Note that there is no way of knowing this for sure. It's done on a best-effort basis."
+        },
+        "os": {
+          "$ref": "#/definitions/oSInformation"
+        },
+        "cpu": {
+          "$ref": "#/definitions/cpuInformation"
+        },
+        "ram": {
+          "$ref": "#/definitions/ramInformation"
+        }
+      },
+      "required": [
+        "ci"
+      ],
+      "allOf": [
+        {
+          "type": "object",
+          "additionalProperties": {}
+        }
+      ],
+      "title": "SystemInformation",
+      "description": "Information about the system that performed mutation testing."
+    }
+  }
+}

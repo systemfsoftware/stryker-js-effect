@@ -1,9 +1,9 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
 import { MutatorNameSchema } from './directives/directive.schema.js'
-import { Location } from './Location.schema.js'
-import { CanonicalFileName, Mutant } from './Mutant.schema.js'
+import type { MutatorSelection } from './Mutator.service.js'
 
 export class InstrumentError
   extends S.TaggedError<InstrumentError>('@systemfsoftware/stryker-js-instrumenter/Instrument.schema/InstrumentError')(
@@ -21,7 +21,7 @@ export class InstrumentError
     })
   }
 }
-export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(Location)])
+export const MutateDescriptionSchema = S.Union([S.Boolean, S.Array(Mutant.Location)])
 
 export type MutateDescription = typeof MutateDescriptionSchema.Type
 
@@ -32,7 +32,7 @@ export interface FileDescription {
 export type FileDescriptions = Record<string, FileDescription>
 
 export const FileSchema = S.Struct({
-  name: CanonicalFileName,
+  name: Mutant.CanonicalFileName,
   content: S.String,
   mutate: MutateDescriptionSchema,
 })
@@ -42,10 +42,12 @@ const IgnorerSchema = S.Unknown
 export const InstrumenterOptionsSchema = S.Struct({
   excludedMutations: S.Array(MutatorNameSchema),
   ignorers: S.Array(IgnorerSchema),
+  mutators: S.Unknown,
   noHeader: S.optional(S.Boolean),
-  optInMutations: S.String.pipe(S.Array, S.optional),
 })
-export type InstrumenterOptions = typeof InstrumenterOptionsSchema.Type
+export type InstrumenterOptions = Omit<typeof InstrumenterOptionsSchema.Type, 'mutators'> & {
+  readonly mutators: MutatorSelection
+}
 
 export class InstrumentFileSkip extends S.TaggedClass<InstrumentFileSkip>()('InstrumentFileSkip', {
   file: S.String,
@@ -63,7 +65,7 @@ export class InstrumentFilesCommand extends S.TaggedClass<InstrumentFilesCommand
 
 export class InstrumentResult extends S.TaggedClass<InstrumentResult>()('InstrumentResult', {
   files: S.Array(FileSchema),
-  mutants: S.Array(Mutant),
+  mutants: S.Array(Mutant.Mutant),
   skipped: S.Array(InstrumentFileSkip),
 }) {}
 

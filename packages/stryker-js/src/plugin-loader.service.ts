@@ -1,6 +1,7 @@
 import type { Framework, FrameworkRefusal } from '@systemfsoftware/stryker-framework-interface'
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
-import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { type MutatorProvider, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -27,7 +28,9 @@ import {
   type FrameworkModuleContributions,
   FrameworkModuleSchema,
   IgnorerModuleSchema,
+  type LoadedMutatorProvider,
   type LoadedPlugins,
+  MutatorModuleSchema,
   type PluginDescriptor,
   type PluginKind,
   PluginModuleSchema,
@@ -132,6 +135,7 @@ const buildPluginLoadPlan = (entries: readonly PluginLoaderEntry[]): PluginLoadP
 interface PluginContributions {
   readonly plugins: readonly PluginDescriptor[] | undefined
   readonly ignorers: readonly Ignorer[] | undefined
+  readonly mutators: MutatorProvider.ContributionValue | undefined
   readonly frameworks: FrameworkModuleContributions | undefined
   readonly schemaContribution: ValidationSchemaProperties | undefined
 }
@@ -160,40 +164,45 @@ const failPluginLoad = (
     Effect.andThen(() => Effect.fail(error)),
   )
 
+const whenPropertyPresent = <A>(
+  module: object,
+  key: string,
+  decode: () => Result.Result<A | undefined, S.SchemaError>,
+): Result.Result<A | undefined, S.SchemaError> =>
+  Match.value(Predicate.hasProperty(module, key)).pipe(
+    Match.when(true, decode),
+    Match.orElse((): Result.Result<A | undefined, S.SchemaError> => Result.succeed(undefined)),
+  )
+
 const modulePluginContributions = (
   module: object,
 ): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
-  Match.value(Predicate.hasProperty(module, 'strykerPlugins')).pipe(
-    Match.when(true, () =>
-      S.decodeUnknownResult(PluginModuleSchema)(module).pipe(
-        Result.map((pluginModule) => pluginModule.strykerPlugins),
-      )),
-    Match.orElse((): Result.Result<readonly PluginDescriptor[] | undefined, S.SchemaError> =>
-      Result.succeed(undefined)
-    ),
-  )
+  whenPropertyPresent(module, 'strykerPlugins', () =>
+    S.decodeUnknownResult(PluginModuleSchema)(module).pipe(
+      Result.map((pluginModule) => pluginModule.strykerPlugins),
+    ))
 
 const moduleIgnorers = (module: object): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> =>
-  Match.value(Predicate.hasProperty(module, 'strykerIgnorers')).pipe(
-    Match.when(true, () =>
-      S.decodeUnknownResult(IgnorerModuleSchema)(module).pipe(
-        Result.map((ignorerModule) => ignorerModule.strykerIgnorers),
-      )),
-    Match.orElse((): Result.Result<readonly Ignorer[] | undefined, S.SchemaError> => Result.succeed(undefined)),
-  )
+  whenPropertyPresent(module, 'strykerIgnorers', () =>
+    S.decodeUnknownResult(IgnorerModuleSchema)(module).pipe(
+      Result.map((ignorerModule) => ignorerModule.strykerIgnorers),
+    ))
+
+const moduleMutators = (
+  module: object,
+): Result.Result<MutatorProvider.ContributionValue | undefined, S.SchemaError> =>
+  whenPropertyPresent(module, 'strykerMutators', () =>
+    S.decodeUnknownResult(MutatorModuleSchema)(module).pipe(
+      Result.map((mutatorModule) => mutatorModule.strykerMutators),
+    ))
 
 const moduleFrameworks = (
   module: object,
 ): Result.Result<FrameworkModuleContributions | undefined, S.SchemaError> =>
-  Match.value(Predicate.hasProperty(module, 'strykerFrameworks')).pipe(
-    Match.when(true, () =>
-      S.decodeUnknownResult(FrameworkModuleSchema)(module).pipe(
-        Result.map((frameworkModule): FrameworkModuleContributions => [...frameworkModule.strykerFrameworks]),
-      )),
-    Match.orElse((): Result.Result<FrameworkModuleContributions | undefined, S.SchemaError> =>
-      Result.succeed(undefined)
-    ),
-  )
+  whenPropertyPresent(module, 'strykerFrameworks', () =>
+    S.decodeUnknownResult(FrameworkModuleSchema)(module).pipe(
+      Result.map((frameworkModule): FrameworkModuleContributions => [...frameworkModule.strykerFrameworks]),
+    ))
 
 const hasValidationSchemaContribution = (
   module: object,
@@ -214,19 +223,25 @@ const pluginContributionsOf = (
   Result.flatMap(
     moduleIgnorers(module),
     (ignorers) =>
-      Result.flatMap(moduleFrameworks(module), (frameworks) =>
-        Result.map(modulePluginContributions(module), (plugins) => ({
-          plugins,
-          ignorers,
-          frameworks,
-          schemaContribution: moduleSchemaContribution(module),
-        }))),
+      Result.flatMap(moduleMutators(module), (mutators) =>
+        Result.flatMap(moduleFrameworks(module), (frameworks) =>
+          Result.map(modulePluginContributions(module), (plugins) => ({
+            plugins,
+            ignorers,
+            mutators,
+            frameworks,
+            schemaContribution: moduleSchemaContribution(module),
+          })))),
   )
 
 const hasContribution = (contributions: PluginContributions): boolean =>
-  [contributions.plugins, contributions.ignorers, contributions.frameworks, contributions.schemaContribution].some(
-    (contribution) => contribution !== undefined,
-  )
+  [
+    contributions.plugins,
+    contributions.ignorers,
+    contributions.mutators,
+    contributions.frameworks,
+    contributions.schemaContribution,
+  ].some((contribution) => contribution !== undefined)
 
 const moduleFrameworkRefusalError = (
   descriptor: string,
@@ -267,7 +282,7 @@ const frameworkRefusalsOf = (
 
 const warnUndescribedPluginModule = (descriptor: string): Effect.Effect<undefined> =>
   Effect.logWarning(
-    `Module "${descriptor}" did not contribute a StrykerJS plugin. It didn't export a "strykerPlugins", "strykerIgnorers", "strykerFrameworks", or "strykerValidationSchema".`,
+    `Module "${descriptor}" did not contribute a StrykerJS plugin. It didn't export a "strykerPlugins", "strykerIgnorers", "strykerMutators", "strykerFrameworks", or "strykerValidationSchema".`,
   ).pipe(Effect.as(undefined))
 
 const describeLoadedPlugin = (
@@ -288,7 +303,7 @@ const describeLoadedPlugin = (
       ),
   })
 
-const loadPlugin = Effect.fn('stryker.plugin_load.load_plugin')(function*(
+const loadPlugin = Effect.fn(SpanTaxonomy.Spans.pluginLoadLoadPlugin.name)(function*(
   descriptor: string,
   entrypoint: string,
 ): Effect.fn.Return<Option.Option<LoadedContribution>, PluginLoadRefusedError> {
@@ -402,7 +417,7 @@ const resolveBareSpecifierOf = (
         importFailure(specifier, { cause: new Error(`the package "${specifier}" did not resolve`) }),
     }))
 
-const packageEntrypointOf = Effect.fn('stryker.plugin_load.package_entrypoint')(function*(
+const packageEntrypointOf = Effect.fn(SpanTaxonomy.Spans.pluginLoadPackageEntrypoint.name)(function*(
   specifier: string,
   basePath: string,
 ): Effect.fn.Return<URL, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> {
@@ -424,7 +439,7 @@ const entrypointOf = (
     onNone: () => packageEntrypointOf(specifier, basePath),
   })
 
-const loadPluginsEffect = Effect.fn('stryker.plugin_load.load')(function*(
+const loadPluginsEffect = Effect.fn(SpanTaxonomy.Spans.pluginLoadLoad.name)(function*(
   pluginDescriptors: readonly string[],
   basePath: string,
 ): Effect.fn.Return<LoadedPlugins, PluginLoadRefusedError, FileSystem.FileSystem | Path.Path> {
@@ -447,6 +462,9 @@ const loadPluginsEffect = Effect.fn('stryker.plugin_load.load')(function*(
     { concurrency: 'unbounded' },
   ).pipe(Effect.map((arr) => arr.filter(Predicate.isNotNullish)))
   const ignorers: readonly Ignorer[] = loaded.flatMap((entry) => entry.ignorers ?? NO_IGNORERS)
+  const mutators: readonly LoadedMutatorProvider[] = loaded.flatMap((entry) =>
+    entry.mutators === undefined ? [] : [{ moduleName: entry.moduleName, contribution: entry.mutators }]
+  )
   const entries: readonly PluginLoaderEntry[] = loaded.map((entry) => ({
     moduleName: entry.moduleName,
     plugins: entry.plugins,
@@ -467,6 +485,7 @@ const loadPluginsEffect = Effect.fn('stryker.plugin_load.load')(function*(
     pluginModulePaths: plan.pluginModulePaths,
     pluginSources: plan.pluginSources,
     ignorers,
+    mutators,
     frameworks: loaded.flatMap((entry) =>
       entry.frameworks.map((framework) => ({
         moduleName: entry.moduleName,

@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
@@ -28,7 +28,7 @@ const actionableIdsOf = (files: Report.FileResultDictionary): ReadonlyArray<stri
 describe('buildVerdictEnvelope', () => {
   it.prop(
     '∀r_EnvelopeCounts_≡EveryMutantCounted',
-    { of: [Report.MutationTestResultSchema], subject: buildVerdictEnvelope },
+    { of: [Report.MutationTestResult], subject: buildVerdictEnvelope },
     (subject, [report]) => {
       const { counts } = subject(report, 'machine', 'flag', fixedRunId, '/base', pathService)
       return counts.totalMutants === mutantTotalOf(report)
@@ -39,7 +39,7 @@ describe('buildVerdictEnvelope', () => {
 describe('actionableMutants', () => {
   it.prop(
     '∀files_ActionableMutants_≡ActionableOnly',
-    { of: [Report.FileResultDictionarySchema], subject: actionableMutants },
+    { of: [Report.FileResultDictionary], subject: actionableMutants },
     (subject, [files]) => {
       const observed = subject(files)
       const expected = actionableIdsOf(files)

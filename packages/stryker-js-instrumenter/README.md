@@ -34,7 +34,7 @@ Three mutators that plant Effect concurrency faults are available on request and
 - **SynchronizationRemoval** drops the guarding effect of `Semaphore.withPermits`/`withPermit` and `Effect.uninterruptible`, letting code that assumed exclusivity or uninterruptibility run without it.
 - **FinalizerEscape** weakens `Effect.ensuring`, `Effect.onExit`, `Effect.onError`, and `Effect.onInterrupt` so their cleanup no longer runs on interruption.
 
-Naming a mutator that does not exist fails the run and lists the names that do. The replacements these mutators plant use Effect 4 APIs, so a repository on Effect 3.x must not opt in.
+Naming a mutator that does not exist fails the run before instrumentation, as a config failure naming the entry. The replacements these mutators plant use Effect 4 APIs, so a repository on Effect 3.x must not opt in.
 
 ## License
 

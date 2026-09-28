@@ -1,6 +1,7 @@
 /// <reference types="vitest/importMeta" />
 import { Handle } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-instrumenter'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
@@ -134,14 +135,14 @@ export const withMaxReuse: {
     Match.value(options.maxTestRunnerReuse).pipe(
       Match.when((restartAfter) => restartAfter <= 0, () => Effect.succeed(inner)),
       Match.orElse(
-        Effect.fn('stryker.testRunner.withMaxReuse')(function*(restartAfter: number) {
+        Effect.fn(SpanTaxonomy.Spans.testRunnerWithMaxReuse.name)(function*(restartAfter: number) {
           const runs = yield* Ref.make(0)
 
           return make({
             ...inner,
             mutantRun: (runOptions: Mutant.MutantRunOptions) => {
               const policy: RunPolicy<TestRunner.MutantRunResult, PooledTestRunnerError> = Effect.fn(
-                'stryker.testRunner.maxReusePolicy',
+                SpanTaxonomy.Spans.testRunnerMaxReusePolicy.name,
               )(function*(self: Effect.Effect<TestRunner.MutantRunResult, PooledTestRunnerError>) {
                 const count = yield* Ref.updateAndGet(runs, (n) => n + 1)
                 yield* Boolean.match(count > restartAfter, {
@@ -196,7 +197,7 @@ export const withEnvironmentReload: {
   (inner: PooledTestRunner, retire: Effect.Effect<void>): Effect.Effect<PooledTestRunner>
 } = dual(
   2,
-  Effect.fn('stryker.testRunner.withEnvironmentReload')(function*(
+  Effect.fn(SpanTaxonomy.Spans.testRunnerWithEnvironmentReload.name)(function*(
     inner: PooledTestRunner,
     retire: Effect.Effect<void>,
   ) {
@@ -211,25 +212,27 @@ export const withEnvironmentReload: {
         return policy(inner.dryRun(options))
       },
 
-      mutantRun: Effect.fn('stryker.testRunner.reloadEnvironment')(function*(options: Mutant.MutantRunOptions) {
-        const current = yield* Ref.get(state)
-        const canReload = (yield* inner.capabilities).reloadEnvironment
-        const plan = reloadPlanOf(options.reloadEnvironment, current, canReload)
+      mutantRun: Effect.fn(SpanTaxonomy.Spans.testRunnerReloadEnvironment.name)(
+        function*(options: Mutant.MutantRunOptions) {
+          const current = yield* Ref.get(state)
+          const canReload = (yield* inner.capabilities).reloadEnvironment
+          const plan = reloadPlanOf(options.reloadEnvironment, current, canReload)
 
-        yield* Boolean.match(plan.retire, {
-          onTrue: () => retire,
-          onFalse: () => Effect.void,
-        })
-        const policy: RunPolicy<TestRunner.MutantRunResult, PooledTestRunnerError> = Effect.fn(
-          'stryker.testRunner.applyEnvironmentState',
-        )(function*(self: Effect.Effect<TestRunner.MutantRunResult, PooledTestRunnerError>) {
-          const result = yield* self
-          yield* Ref.set(state, plan.nextState)
-          return result
-        })
+          yield* Boolean.match(plan.retire, {
+            onTrue: () => retire,
+            onFalse: () => Effect.void,
+          })
+          const policy: RunPolicy<TestRunner.MutantRunResult, PooledTestRunnerError> = Effect.fn(
+            SpanTaxonomy.Spans.testRunnerApplyEnvironmentState.name,
+          )(function*(self: Effect.Effect<TestRunner.MutantRunResult, PooledTestRunnerError>) {
+            const result = yield* self
+            yield* Ref.set(state, plan.nextState)
+            return result
+          })
 
-        return yield* policy(inner.mutantRun({ ...options, reloadEnvironment: plan.reloadEnvironment }))
-      }),
+          return yield* policy(inner.mutantRun({ ...options, reloadEnvironment: plan.reloadEnvironment }))
+        },
+      ),
     })
   }),
 )

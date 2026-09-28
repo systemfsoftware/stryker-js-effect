@@ -1,4 +1,5 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -15,7 +16,7 @@ export type TypeId = typeof TypeId
 const scopedOf: (
   spec: Options.StrykerOptions,
 ) => Effect.Effect<TSCompiler, never, Scope.Scope | FileSystem.FileSystem | Path.Path> = Effect.fn(
-  'typescript-checker.compiler.scoped',
+  SpanTaxonomy.Spans.typescriptCheckerCompilerScoped.name,
 )(function*(
   spec: Options.StrykerOptions,
 ): Effect.fn.Return<TSCompiler, never, Scope.Scope | FileSystem.FileSystem | Path.Path> {

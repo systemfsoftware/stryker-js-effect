@@ -9,5 +9,6 @@ export default defineConfig({
     },
   ],
   tsconfigFile: 'tsconfig.preservation.json',
+  reporters: ['json'],
   mutate: ['src/order.ts'],
 })
