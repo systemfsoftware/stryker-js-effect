@@ -11,7 +11,7 @@ export namespace OutputMode {
 
 // @public (undocumented)
 export namespace RunEvent {
-    export { FormatClaimShadowingRow, FormatRegistryResolved, FormatRegistryRow, FrameworkContributionRow, FrameworkModuleRow, Heartbeat, HelpRendered, PhaseEntered, PlanKnown, PluginLoadFailureReason, PluginsReported, RunEvent, RunEventWireLine, RunFailed, RunId, RunMutantTested, RunPhase, RunStarted, RunTerminalEvent, SkippedFileRow, SkippedReported, StreamSchemaVersion, VerdictCounts, VerdictLocation, VerdictMutant, VerdictReached, VerdictThresholds };
+    export { FeedbackJudgment, FeedbackReported, FormatClaimShadowingRow, FormatRegistryResolved, FormatRegistryRow, FrameworkContributionRow, FrameworkModuleRow, Heartbeat, HelpRendered, MutantCost, MutantDetailReported, MutantSetPolicy, PhaseDurations, PhaseEntered, PlanKnown, PluginLoadFailureReason, PluginsReported, ReuseRefusals, ReuseReported, RunEvent, RunEventWireLine, RunFailed, RunId, RunMutantTested, RunMutantTestedEvent, RunPhase, RunScope, RunStarted, RunTerminalEvent, SkippedFileRow, SkippedReported, StaticVerdict, StreamSchemaVersion, VerdictCounts, VerdictLocation, VerdictMutant, VerdictReached, VerdictThresholds };
 }
 
 // @public (undocumented)

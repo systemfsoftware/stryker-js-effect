@@ -1048,6 +1048,25 @@
           "Ignored",
           "Pending"
         ]
+      },
+      "test.suite.name": {
+        "type": "string"
+      },
+      "test.suite.run.status": {
+        "type": "string",
+        "enum": [
+          "success",
+          "failure",
+          "timed_out",
+          "aborted",
+          "skipped"
+        ]
+      },
+      "cicd.pipeline.run.id": {
+        "type": "string"
+      },
+      "cicd.pipeline.name": {
+        "type": "string"
       }
     }
   },

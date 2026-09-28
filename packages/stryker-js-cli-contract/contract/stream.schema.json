@@ -26,6 +26,15 @@
       "$ref": "#/definitions/skippedEncoded"
     },
     {
+      "$ref": "#/definitions/reuseEncoded"
+    },
+    {
+      "$ref": "#/definitions/mutant-detailEncoded"
+    },
+    {
+      "$ref": "#/definitions/feedbackEncoded"
+    },
+    {
       "$ref": "#/definitions/verdictEncoded"
     },
     {
@@ -48,7 +57,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "1.1"
+            "2.0"
           ]
         },
         "runId": {
@@ -229,6 +238,43 @@
         "total": {
           "type": "integer",
           "minimum": 0
+        },
+        "static": {
+          "type": "boolean"
+        },
+        "cost": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "fixedOverheadMs": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "testBodyMs": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "testsExecuted": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "shared": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "fixedOverheadMs",
+                "testBodyMs",
+                "testsExecuted",
+                "shared"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -240,7 +286,9 @@
         "mutator",
         "replacement",
         "completed",
-        "total"
+        "total",
+        "static",
+        "cost"
       ],
       "additionalProperties": true
     },
@@ -445,6 +493,177 @@
       ],
       "additionalProperties": true
     },
+    "reuseEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "reuse"
+          ]
+        },
+        "reused": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ran": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "refused": {
+          "type": "object",
+          "properties": {
+            "semanticsChanged": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "policyChanged": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "runInputsChanged": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "closureChanged": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "timeoutUnreproduced": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "flakyDependency": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "noPriorRecord": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "semanticsChanged",
+            "policyChanged",
+            "runInputsChanged",
+            "closureChanged",
+            "timeoutUnreproduced",
+            "flakyDependency",
+            "noPriorRecord"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "_tag",
+        "reused",
+        "ran",
+        "refused"
+      ],
+      "additionalProperties": true
+    },
+    "mutant-detailEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "mutant-detail"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Killed",
+            "Survived",
+            "NoCoverage",
+            "CompileError",
+            "RuntimeError",
+            "Timeout",
+            "Ignored",
+            "Pending"
+          ]
+        },
+        "coveringTests": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "killedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reproducer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "_tag",
+        "id",
+        "status",
+        "coveringTests",
+        "killedBy",
+        "reproducer"
+      ],
+      "additionalProperties": true
+    },
+    "feedbackEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "feedback"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "judgment": {
+          "type": "string",
+          "enum": [
+            "useful",
+            "not-useful"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "_tag",
+        "id",
+        "judgment",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
     "MetricsEncoded": {
       "type": "object",
       "properties": {
@@ -505,7 +724,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "1.1"
+            "2.0"
           ]
         },
         "runId": {
@@ -681,6 +900,80 @@
             ],
             "additionalProperties": true
           }
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "full",
+            "diff"
+          ]
+        },
+        "mutantSetPolicy": {
+          "type": "string",
+          "enum": [
+            "default",
+            "full"
+          ]
+        },
+        "phaseDurations": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "prepare": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "instrument": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "dry-run": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "mutation-test": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "prepare",
+                "instrument",
+                "dry-run",
+                "mutation-test"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "static": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "costMs": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "count",
+                "costMs"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -693,7 +986,11 @@
         "thresholds",
         "reportFile",
         "counts",
-        "mutants"
+        "mutants",
+        "scope",
+        "mutantSetPolicy",
+        "phaseDurations",
+        "static"
       ],
       "additionalProperties": true
     },
@@ -709,7 +1006,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "1.1"
+            "2.0"
           ]
         },
         "code": {
@@ -854,7 +1151,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "1.1"
+            "2.0"
           ]
         },
         "code": {

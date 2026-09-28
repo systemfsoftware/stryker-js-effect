@@ -256,6 +256,10 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
       reportFile: envelope.reportFile,
       counts: envelope.counts,
       mutants: envelope.mutants,
+      scope: envelope.scope,
+      mutantSetPolicy: envelope.mutantSetPolicy,
+      phaseDurations: envelope.phaseDurations,
+      static: envelope.static,
     }),
   )
 }

@@ -83,7 +83,7 @@ const offerFinished = Effect.fnUntraced(function*(
         const completed = yield* Ref.updateAndGet(context.completedRef, (n) => n + 1)
         yield* Queue.offer(
           context.progressQueue,
-          Reporter.MutantTested.make({
+          RunEvent.RunMutantTestedEvent.make({
             id: result.id,
             status: streamable.status,
             fileName: streamable.file,
@@ -92,6 +92,8 @@ const offerFinished = Effect.fnUntraced(function*(
             replacement: result.replacement,
             completed,
             total: context.plannedTotal,
+            static: result.static ?? false,
+            cost: null,
           }),
         )
         return Option.some(completed)

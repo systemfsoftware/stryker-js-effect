@@ -648,6 +648,10 @@ const emitVerdict = Effect.fn(SpanTaxonomy.Spans.mutationReportingEmitVerdict.na
       reportFile: envelope.reportFile,
       counts: envelope.counts,
       mutants: envelope.mutants,
+      scope: envelope.scope,
+      mutantSetPolicy: envelope.mutantSetPolicy,
+      phaseDurations: envelope.phaseDurations,
+      static: envelope.static,
     }),
   )
 })

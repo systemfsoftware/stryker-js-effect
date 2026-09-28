@@ -79,14 +79,23 @@ export const actionableMutants = (files: Report.MutationTestResult['files']): Re
 
 const embeddedConfig = (report: Report.MutationTestResult) => {
   const JsonReporterSchema = S.Struct({ fileName: S.String })
+  const MutatorSchema = S.StructWithRest(
+    S.Struct({ mutantSetPolicy: S.optional(RunEvent.MutantSetPolicy) }),
+    [S.Record(S.String, S.Unknown)],
+  )
   const EmbeddedConfigSchema = S.StructWithRest(
-    S.Struct({ jsonReporter: S.optional(JsonReporterSchema) }),
+    S.Struct({ jsonReporter: S.optional(JsonReporterSchema), mutator: S.optional(MutatorSchema) }),
     [S.Record(S.String, S.Unknown)],
   )
   const decoded = S.decodeUnknownOption(EmbeddedConfigSchema)(report.config)
   const jsonReporter = Option.flatMap(decoded, (config) => Option.fromUndefinedOr(config.jsonReporter))
+  const mutantSetPolicy = Option.flatMap(
+    decoded,
+    (config) => Option.fromUndefinedOr(config.mutator?.mutantSetPolicy),
+  )
   return {
     jsonReporterFileName: Option.getOrUndefined(Option.map(jsonReporter, (reporter) => reporter.fileName)),
+    mutantSetPolicy: Option.getOrElse(mutantSetPolicy, () => 'default' as const),
   }
 }
 
@@ -117,7 +126,7 @@ export const buildVerdictEnvelope: {
     pathService: Path.Path,
   ): VerdictEnvelope => {
     const metrics = Report.metricsFromMutants(Arr.flatMap(Object.values(report.files), (file) => file.mutants))
-    const { jsonReporterFileName } = embeddedConfig(report)
+    const { jsonReporterFileName, mutantSetPolicy } = embeddedConfig(report)
     return VerdictEnvelope.make({
       schemaVersion: RunEvent.StreamSchemaVersion.literal,
       runId,
@@ -140,6 +149,10 @@ export const buildVerdictEnvelope: {
         ),
       ),
       mutants: actionableMutants(report.files),
+      scope: 'full',
+      mutantSetPolicy,
+      phaseDurations: null,
+      static: null,
     })
   },
 )

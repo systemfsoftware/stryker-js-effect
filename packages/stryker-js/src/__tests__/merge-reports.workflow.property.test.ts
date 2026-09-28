@@ -1,5 +1,4 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Effect from 'effect/Effect'
@@ -20,9 +19,9 @@ const PART_DIR = 'pkg-a'
 const streamLineOf = (mutant: RunEvent.RunMutantTested): Effect.Effect<string> =>
   S.encodeEffect(S.fromJsonString(RunEvent.RunMutantTested))(mutant).pipe(Effect.orDie)
 
-const place = (mutants: ReadonlyArray<RunEvent.RunMutantTested>) =>
+const place = (mutants: ReadonlyArray<RunEvent.RunMutantTested>): ReadonlyArray<RunEvent.RunMutantTested> =>
   mutants.map((mutant, index) =>
-    Reporter.MutantTested.make({
+    RunEvent.RunMutantTestedEvent.make({
       id: mutant.id,
       status: mutant.status,
       fileName: Mutant.CanonicalFileName.make(`src/file-${index % 3}.ts`),
@@ -31,6 +30,8 @@ const place = (mutants: ReadonlyArray<RunEvent.RunMutantTested>) =>
       replacement: mutant.replacement,
       completed: mutant.completed,
       total: mutant.total,
+      static: mutant.static,
+      cost: mutant.cost,
     })
   )
 

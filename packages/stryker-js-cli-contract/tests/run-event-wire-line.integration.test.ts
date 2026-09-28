@@ -11,24 +11,31 @@ const RUN_ID = '01J0Z0Z0Z0Z0Z0Z0Z0Z0Z0Z0Z0'
 
 const LOCATION = '"location":{"start":{"line":1,"column":1},"end":{"line":1,"column":2}}'
 
-const mutantLine = (status: string, file: string | null): string =>
+const COST = '{"fixedOverheadMs":1,"testBodyMs":2,"testsExecuted":1,"shared":false}'
+
+const mutantLine = (status: string, file: string | null, cost: string): string =>
   `{"_tag":"mutant","id":"0000000000000001","status":"${status}",${
     file === null ? '' : `"file":"${file}",`
-  }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3}`
+  }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${cost}}`
 
 const wireLines = (): Record<string, string> => ({
-  stream: `{"_tag":"stream","schemaVersion":"1.1","runId":"${RUN_ID}","mode":"machine","signal":"flag"}`,
+  stream: `{"_tag":"stream","schemaVersion":"2.0","runId":"${RUN_ID}","mode":"machine","signal":"flag"}`,
   phase: '{"_tag":"phase","phase":"prepare","elapsedMs":1}',
   plan: '{"_tag":"plan","total":3}',
-  mutant: mutantLine('Killed', 'src/a.ts'),
+  mutant: mutantLine('Killed', 'src/a.ts', COST),
   tick: '{"_tag":"tick","elapsedMs":1,"completed":1,"total":null}',
   plugins: '{"_tag":"plugins","modules":[],"shadowings":[]}',
   formats: '{"_tag":"formats","rows":[]}',
   skipped: '{"_tag":"skipped","files":[]}',
+  reuse:
+    '{"_tag":"reuse","reused":1,"ran":2,"refused":{"semanticsChanged":0,"policyChanged":0,"runInputsChanged":0,"closureChanged":1,"timeoutUnreproduced":0,"flakyDependency":0,"noPriorRecord":1}}',
+  mutantDetail:
+    '{"_tag":"mutant-detail","id":"0000000000000001","status":"Survived","coveringTests":["suite.test.ts::kills"],"killedBy":null,"reproducer":"stryker run --mutant 0000000000000001"}',
+  feedback: '{"_tag":"feedback","id":"0000000000000001","judgment":"useful","reason":null}',
   verdict:
-    `{"_tag":"verdict","schemaVersion":"1.1","runId":"${RUN_ID}","mode":"machine","signal":"flag","score":null,"thresholds":{"high":80,"low":60,"break":null},"reportFile":null,"counts":{"pending":0,"killed":1,"timeout":0,"survived":0,"noCoverage":1,"runtimeErrors":0,"compileErrors":0,"ignored":0},"mutants":[]}`,
-  error: '{"_tag":"error","schemaVersion":"1.1","code":2,"error":"boom","remediation":"fix it","reason":null}',
-  help: '{"_tag":"help","schemaVersion":"1.1","code":0,"help":"usage"}',
+    `{"_tag":"verdict","schemaVersion":"2.0","runId":"${RUN_ID}","mode":"machine","signal":"flag","score":null,"thresholds":{"high":80,"low":60,"break":null},"reportFile":null,"counts":{"pending":0,"killed":1,"timeout":0,"survived":0,"noCoverage":1,"runtimeErrors":0,"compileErrors":0,"ignored":0},"mutants":[],"scope":"full","mutantSetPolicy":"full","phaseDurations":null,"static":null}`,
+  error: '{"_tag":"error","schemaVersion":"2.0","code":2,"error":"boom","remediation":"fix it","reason":null}',
+  help: '{"_tag":"help","schemaVersion":"2.0","code":0,"help":"usage"}',
 })
 
 const refusalOf = (line: string): string => {
@@ -85,8 +92,8 @@ Feature('The machine-stream wire codec carries every declared event kind')
           'probes',
           () =>
             Effect.sync(() => ({
-              declared: mutantLine('Killed', 'src/a.ts'),
-              undeclared: mutantLine('NotAStatus', 'src/a.ts'),
+              declared: mutantLine('Killed', 'src/a.ts', COST),
+              undeclared: mutantLine('NotAStatus', 'src/a.ts', COST),
             })),
         ),
         When('each line is decoded through the wire codec')(
@@ -107,7 +114,11 @@ Feature('The machine-stream wire codec carries every declared event kind')
       Gherkin.Do.pipe(
         Given('a mutant line carrying its file and one omitting the file key')(
           'probes',
-          () => Effect.sync(() => ({ present: mutantLine('Killed', 'src/a.ts'), absent: mutantLine('Killed', null) })),
+          () =>
+            Effect.sync(() => ({
+              present: mutantLine('Killed', 'src/a.ts', COST),
+              absent: mutantLine('Killed', null, COST),
+            })),
         ),
         When('each line is decoded through the wire codec')(
           'outcomes',
@@ -117,6 +128,31 @@ Feature('The machine-stream wire codec carries every declared event kind')
           expect(s.outcomes).toEqual({
             present: 'accepted: mutantTested',
             absent: expect.stringMatching(/^refused:[\s\S]*file/),
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A mutant line that omits its cost breakdown is refused',
+      Gherkin.Do.pipe(
+        Given('a mutant line carrying its cost and one omitting the cost key')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              present: mutantLine('Killed', 'src/a.ts', COST),
+              absent:
+                `{"_tag":"mutant","id":"0000000000000001","status":"Killed","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false}`,
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'outcomes',
+          (s) => Effect.sync(() => refusalsOf(s.probes)),
+        ),
+        Then('the line carrying its cost is accepted and the line omitting it is refused')((s, expect) =>
+          expect(s.outcomes).toEqual({
+            present: 'accepted: mutantTested',
+            absent: expect.stringMatching(/^refused:[\s\S]*cost/),
           })
         ),
       ),

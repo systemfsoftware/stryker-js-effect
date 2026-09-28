@@ -13,4 +13,8 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
   counts: Report.MetricsSchema,
   reportFile: S.NullOr(Mutant.CanonicalFileName),
   mutants: S.Array(RunEvent.VerdictMutant),
+  scope: RunEvent.RunScope,
+  mutantSetPolicy: RunEvent.MutantSetPolicy,
+  phaseDurations: S.NullOr(RunEvent.PhaseDurations),
+  static: S.NullOr(RunEvent.StaticVerdict),
 }) {}

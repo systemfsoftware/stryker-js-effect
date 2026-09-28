@@ -1,5 +1,5 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Plugin, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { SchemaGetter } from 'effect'
 import * as S from 'effect/Schema'
 
@@ -32,13 +32,34 @@ export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
   total: Report.NonNegativeInt,
 }) {}
 
+export const MutantCost = S.Struct({
+  fixedOverheadMs: Report.NonNegativeFinite,
+  testBodyMs: Report.NonNegativeFinite,
+  testsExecuted: Report.NonNegativeInt,
+  shared: S.Boolean,
+})
+export type MutantCost = typeof MutantCost.Type
+
 /**
  * The machine-stream line a tested mutant is published as. Its wire shape is a
  * published contract: the `mutant` tag and the `file`/`mutator` keys must not
- * change. The domain event it carries is `Reporter.MutantTested`, so the line is
- * a codec at the boundary rather than a second declaration of the same event.
+ * change. The line carries the verified fields of `Reporter.MutantTested` plus
+ * the static classification (R24) and the measured cost breakdown (R39).
  */
-export interface RunMutantTested extends Reporter.MutantTested {}
+export class RunMutantTestedEvent extends S.TaggedClass<RunMutantTestedEvent>()('mutantTested', {
+  id: Mutant.MutantId,
+  status: Mutant.MutantStatusSchema,
+  fileName: Mutant.CanonicalFileName,
+  location: Mutant.Location,
+  mutatorName: Mutant.MutatorName,
+  replacement: S.NullOr(S.String),
+  completed: Report.NonNegativeInt,
+  total: Report.NonNegativeInt,
+  static: S.Boolean,
+  cost: S.NullOr(MutantCost),
+}) {}
+
+export type RunMutantTested = RunMutantTestedEvent
 
 const MutantTestedWireSchema = S.TaggedStruct('mutant', {
   id: Mutant.MutantId,
@@ -49,13 +70,15 @@ const MutantTestedWireSchema = S.TaggedStruct('mutant', {
   replacement: S.NullOr(S.String),
   completed: Report.NonNegativeInt,
   total: Report.NonNegativeInt,
+  static: S.Boolean,
+  cost: S.NullOr(MutantCost),
 })
 
 export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSchema.Encoded> = MutantTestedWireSchema
   .pipe(
-    S.decodeTo(S.toType(Reporter.MutantTested), {
+    S.decodeTo(S.toType(RunMutantTestedEvent), {
       decode: SchemaGetter.transform((line) =>
-        Reporter.MutantTested.make({
+        RunMutantTestedEvent.make({
           id: line.id,
           status: line.status,
           fileName: line.file,
@@ -64,6 +87,8 @@ export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSc
           replacement: line.replacement,
           completed: line.completed,
           total: line.total,
+          static: line.static,
+          cost: line.cost,
         })
       ),
       encode: SchemaGetter.transform((tested) => ({
@@ -76,6 +101,8 @@ export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSc
         replacement: tested.replacement,
         completed: tested.completed,
         total: tested.total,
+        static: tested.static,
+        cost: tested.cost,
       })),
     }),
   )
@@ -107,6 +134,27 @@ export const VerdictMutant = S.Struct({
 export type VerdictMutant = typeof VerdictMutant.Type
 
 export type VerdictCounts = Report.Metrics
+
+export const RunScope = S.Literals(['full', 'diff'])
+export type RunScope = typeof RunScope.Type
+
+export const MutantSetPolicy = S.Literals(['default', 'full'])
+export type MutantSetPolicy = typeof MutantSetPolicy.Type
+
+export const PhaseDurations = S.Struct({
+  prepare: Report.NonNegativeFinite,
+  instrument: Report.NonNegativeFinite,
+  'dry-run': Report.NonNegativeFinite,
+  'mutation-test': Report.NonNegativeFinite,
+})
+export type PhaseDurations = typeof PhaseDurations.Type
+
+export const StaticVerdict = S.Struct({
+  count: Report.NonNegativeInt,
+  costMs: Report.NonNegativeFinite,
+})
+export type StaticVerdict = typeof StaticVerdict.Type
+
 export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   schemaVersion: StreamSchemaVersion,
   runId: RunId,
@@ -117,6 +165,10 @@ export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   reportFile: S.NullOr(S.String),
   counts: Report.Metrics,
   mutants: S.Array(VerdictMutant),
+  scope: RunScope,
+  mutantSetPolicy: MutantSetPolicy,
+  phaseDurations: S.NullOr(PhaseDurations),
+  static: S.NullOr(StaticVerdict),
 }) {}
 
 export const FrameworkContributionRow = S.Struct({
@@ -167,6 +219,40 @@ export class SkippedReported extends S.TaggedClass<SkippedReported>()('skipped',
   files: S.Array(SkippedFileRow),
 }) {}
 
+export const ReuseRefusals = S.Struct({
+  semanticsChanged: Report.NonNegativeInt,
+  policyChanged: Report.NonNegativeInt,
+  runInputsChanged: Report.NonNegativeInt,
+  closureChanged: Report.NonNegativeInt,
+  timeoutUnreproduced: Report.NonNegativeInt,
+  flakyDependency: Report.NonNegativeInt,
+  noPriorRecord: Report.NonNegativeInt,
+})
+export type ReuseRefusals = typeof ReuseRefusals.Type
+
+export class ReuseReported extends S.TaggedClass<ReuseReported>()('reuse', {
+  reused: Report.NonNegativeInt,
+  ran: Report.NonNegativeInt,
+  refused: ReuseRefusals,
+}) {}
+
+export class MutantDetailReported extends S.TaggedClass<MutantDetailReported>()('mutant-detail', {
+  id: Mutant.MutantId,
+  status: Mutant.MutantStatusSchema,
+  coveringTests: S.Array(S.String),
+  killedBy: S.NullOr(S.String),
+  reproducer: S.NullOr(S.String),
+}) {}
+
+export const FeedbackJudgment = S.Literals(['useful', 'not-useful'])
+export type FeedbackJudgment = typeof FeedbackJudgment.Type
+
+export class FeedbackReported extends S.TaggedClass<FeedbackReported>()('feedback', {
+  id: Mutant.MutantId,
+  judgment: FeedbackJudgment,
+  reason: S.NullOr(S.String),
+}) {}
+
 export class RunFailed extends S.TaggedClass<RunFailed>()('error', {
   schemaVersion: StreamSchemaVersion,
   code: Plugin.ExitCode,
@@ -190,6 +276,9 @@ export const RunEvent = Object.assign(
     PluginsReported,
     FormatRegistryResolved,
     SkippedReported,
+    ReuseReported,
+    MutantDetailReported,
+    FeedbackReported,
     VerdictReached,
     RunFailed,
     HelpRendered,
