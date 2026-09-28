@@ -53,6 +53,7 @@ import { buildVerdictEnvelope } from './reporting/verdict-envelope.js'
 import { RunEvents } from './run-events.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { PhaseClock, type PhaseClockShape } from './run/phase-clock.service.js'
+import { REPRODUCERS_FILE } from './stryker-outputs.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
 import { INCREMENTAL_CACHE_VERSION, runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from './verdict-semantics.js'
@@ -769,8 +770,6 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
   }).pipe(Effect.orDie)
   yield* deps.fs.writeFileString(input.options.incrementalFile, json)
 })
-
-const REPRODUCERS_FILE = 'reports/mutation/reproducers.json'
 
 const writeReproducers = (
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,

@@ -348,6 +348,46 @@ Feature('Content-keyed reuse across incremental reports')
     )
 
     scenario(
+      'A first repeat run under default ignore patterns reuses every verdict',
+      Gherkin.Do.pipe(
+        Given('a workspace configured with no ignore patterns of its own')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writeFixture([['src/math.ts', SOURCE]])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = optionsOf(root, { ignorePatterns: [] })
+                  const first = yield* runOnce(root, options)
+                  const second = yield* runOnce(root, options)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the second run reuses every verdict although the first run wrote reports into the project')(
+          (s, expect) => {
+            const planned = s.fixture.first.mutants.length
+            return expect({
+              runSucceeded: Exit.isSuccess(s.fixture.second.exit),
+              plannedNonZero: planned > 0,
+              second: {
+                reused: s.fixture.second.reuse?.reused,
+                ran: s.fixture.second.reuse?.ran,
+                refused: s.fixture.second.reuse?.refused,
+              },
+            }).toEqual({
+              runSucceeded: true,
+              plannedNonZero: true,
+              second: { reused: planned, ran: 0, refused: ZERO_REFUSALS },
+            })
+          },
+        ),
+      ),
+    )
+
+    scenario(
       'A second run with no change skips the dry run instead of spawning the test runner again',
       Gherkin.Do.pipe(
         Given('a workspace whose command runner appends every spawn to a log file')(

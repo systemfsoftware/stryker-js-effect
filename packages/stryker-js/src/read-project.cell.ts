@@ -28,6 +28,7 @@ import { gitDiff } from './git-diff.workflow.js'
 import { type IncrementalReport, IncrementalReportSchema } from './IncrementalReport.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFilesDiscovered, ProjectSelectionCommand, selectProjectFiles } from './select-project-files.workflow.js'
+import { strykerOutputFilesOf } from './stryker-outputs.js'
 import { INCREMENTAL_CACHE_VERSION, runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from './verdict-semantics.js'
 
 const ALWAYS_IGNORE = Object.freeze([
@@ -95,13 +96,25 @@ type ReadProjectInput = {
   readonly basePath: string
 }
 
-const ignoreRulesOf = (options: Options.StrykerOptions) => [
+const insideProjectOnlyRuleOf = (relative: string, absoluteFallback: string): string =>
+  Option.getOrElse(
+    Option.liftPredicate(relative, (value) => value.length > 0 && !value.startsWith('..')),
+    () => absoluteFallback,
+  )
+
+const projectRelativeRuleOf = (basePath: string, pathService: Path.Path, rule: string): string =>
+  Boolean.match(pathService.isAbsolute(rule), {
+    onTrue: () => insideProjectOnlyRuleOf(pathService.relative(pathService.resolve(basePath), rule), rule),
+    onFalse: () => rule,
+  })
+
+const ignoreRulesOf = (
+  options: Options.StrykerOptions,
+  basePath: string,
+  pathService: Path.Path,
+): readonly string[] => [
   ...ALWAYS_IGNORE,
-  options.tempDirName,
-  options.incrementalFile,
-  options.progressStreamFile,
-  options.htmlReporter.fileName,
-  options.jsonReporter.fileName,
+  ...strykerOutputFilesOf(options).map((file) => projectRelativeRuleOf(basePath, pathService, file)),
   ...options.ignorePatterns,
 ]
 
@@ -323,6 +336,8 @@ type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
 }
 
 const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(function*(input: ReadProjectInput) {
+  const fs = yield* FileSystem.FileSystem
+  const pathService = yield* Path.Path
   const diffScope = yield* Option.match(Option.fromUndefinedOr(input.options.since), {
     onNone: () => Effect.succeed(FULL_SCOPE),
     onSome: (ref) => diffScopeOf(ref, input.basePath),
@@ -330,7 +345,10 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
   const options = effectiveOptions(diffScope, input.options)
   const mutatePatterns: readonly string[] = options.mutate
   const { testFileIgnores, testFilePatterns } = testFileSelectionOf(options)
-  const inputFileNames = yield* resolveInputFileNames(ignoreRulesOf(options), input.basePath)
+  const inputFileNames = yield* resolveInputFileNames(
+    ignoreRulesOf(options, input.basePath, pathService),
+    input.basePath,
+  )
   const defaults = yield* defaultOptions
   const decision = selectedOf(
     ProjectSelectionCommand.make({
@@ -359,8 +377,6 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
     (pattern) => warnUnmatchedTestPattern(inputFileNames, input.basePath, pattern),
     { discard: true },
   )
-  const fs = yield* FileSystem.FileSystem
-  const pathService = yield* Path.Path
   const runInputsDigest = yield* runInputsDigestOf(fs, pathService, input.basePath, options)
   const contents = Option.getOrUndefined(yield* incrementalContentsOf(fs, options))
   const command: ReadProjectCommand = {

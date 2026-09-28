@@ -72,8 +72,38 @@ const withoutVersionOf = (value: Json): Json =>
     onNone: () => value,
   })
 
+const scopeOptionKeys: readonly string[] = ['mutate', 'since', 'mutantIds']
+
+const presentationOptionKeys: readonly string[] = [
+  'reporters',
+  'allowConsoleColors',
+  'clearTextReporter',
+  'htmlReporter',
+  'jsonReporter',
+  'progressStreamFile',
+  'thresholds',
+  'surfacing',
+  'warnings',
+  'logLevel',
+  'fileLogLevel',
+]
+
+const unfingerprintedOptionKeys: readonly string[] = [...scopeOptionKeys, ...presentationOptionKeys]
+
+const optionsJsonOf = (options: Options.StrykerOptions): Effect.Effect<Json, S.SchemaError> =>
+  S.encodeEffect(S.fromJsonString(Options.StrykerOptionsSchema))(options).pipe(
+    Effect.flatMap((encoded) => S.decodeEffect(S.fromJsonString(S.Json))(encoded)),
+  )
+
+const withoutUnfingerprintedKeys = (value: Json): Json =>
+  Option.match(Option.liftPredicate(value, isJsonObject), {
+    onSome: (record) =>
+      Object.fromEntries(Object.entries(record).filter(([key]) => !unfingerprintedOptionKeys.includes(key))),
+    onNone: () => value,
+  })
+
 const optionsFingerprintOf = (options: Options.StrykerOptions): Effect.Effect<string, S.SchemaError> =>
-  S.encodeEffect(S.fromJsonString(Options.StrykerOptionsSchema))(options)
+  optionsJsonOf(options).pipe(Effect.map(withoutUnfingerprintedKeys), Effect.flatMap(canonicalJsonOf))
 
 const packageManifestInputOf = (content: string): Effect.Effect<string, never> =>
   S.decodeEffect(S.fromJsonString(S.Json))(content).pipe(
@@ -137,3 +167,58 @@ export const runInputsDigestOf = Effect.fnUntraced(function*(
     nodeMajor: NODE_MAJOR,
   })
 })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  const withKeysTakenFromOf = (
+    keys: readonly string[],
+    options: Options.StrykerOptions,
+    other: Options.StrykerOptions,
+  ): Options.StrykerOptions =>
+    Object.assign({ ...options }, Object.fromEntries(Object.entries(other).filter(([key]) => keys.includes(key))))
+
+  const otherCoverageAnalysisOf = (
+    mode: Options.StrykerOptions['coverageAnalysis'],
+  ): Options.StrykerOptions['coverageAnalysis'] => (mode === 'off' ? 'perTest' : 'off')
+
+  const otherTimeoutMSOf = (timeoutMS: number): number => (timeoutMS === 0 ? 1 : 0)
+
+  const verdictDriftedOf = (options: Options.StrykerOptions): Options.StrykerOptions => ({
+    ...options,
+    testFiles: [...options.testFiles, 'test/**/*.extra.mjs'],
+    coverageAnalysis: otherCoverageAnalysisOf(options.coverageAnalysis),
+    timeoutMS: otherTimeoutMSOf(options.timeoutMS),
+    force: !options.force,
+  })
+
+  it.effect.prop(
+    '∀oo_Options_≡ScopeOptionDrawsKeepTheOptionsFingerprint',
+    { of: [Options.StrykerOptionsSchema, Options.StrykerOptionsSchema], subject: optionsFingerprintOf },
+    (subject, [options, other]) =>
+      Effect.map(
+        Effect.all([subject(options), subject(withKeysTakenFromOf(scopeOptionKeys, options, other))]),
+        ([baseline, rescoped]) => rescoped === baseline,
+      ),
+  )
+
+  it.effect.prop(
+    '∀oo_Options_≡PresentationOptionDrawsKeepTheOptionsFingerprint',
+    { of: [Options.StrykerOptionsSchema, Options.StrykerOptionsSchema], subject: optionsFingerprintOf },
+    (subject, [options, other]) =>
+      Effect.map(
+        Effect.all([subject(options), subject(withKeysTakenFromOf(presentationOptionKeys, options, other))]),
+        ([baseline, represented]) => represented === baseline,
+      ),
+  )
+
+  it.effect.prop(
+    '∀o_Options_≡AVerdictRelevantOptionMovesTheOptionsFingerprint',
+    { of: [Options.StrykerOptionsSchema], subject: optionsFingerprintOf },
+    (subject, [options]) =>
+      Effect.map(
+        Effect.all([subject(options), subject(verdictDriftedOf(options))]),
+        ([baseline, drifted]) => drifted !== baseline,
+      ),
+  )
+}

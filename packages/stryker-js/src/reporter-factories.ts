@@ -22,6 +22,7 @@ import type { ProgressState, ProgressTally } from './render-progress-report.work
 import { failAsProgress } from './reporter-failures.js'
 import { ReporterOutput } from './reporter-output.service.js'
 import { sarifReport, SarifReportCommand } from './sarif-report.workflow.js'
+import { sarifFileNameOf } from './stryker-outputs.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import { surfacedSurvivorsOf } from './surfacing.js'
 
@@ -90,8 +91,6 @@ const failAsSarif = <E = unknown>(cause: E): Reporter.ReporterFailed =>
     event: 'mutationTestReportReady',
     cause: Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
   })
-
-const sarifFileNameOf = (jsonReportFileName: string): string => `${jsonReportFileName.replace(/\.[^./\\]*$/, '')}.sarif`
 
 const reportOf = Filter.make((
   event: Reporter.ReporterEvent,
