@@ -53,8 +53,13 @@ export const MutantRunResultSchema = S.Union([
     killedBy: S.Array(TestId),
     failureMessage: S.String,
     nrOfTests: NonNegativeInt,
+    executedTests: TestId.pipe(S.Array, S.optionalKey),
   }),
-  S.Struct({ status: S.Literal('survived'), nrOfTests: NonNegativeInt }),
+  S.Struct({
+    status: S.Literal('survived'),
+    nrOfTests: NonNegativeInt,
+    executedTests: TestId.pipe(S.Array, S.optionalKey),
+  }),
   S.Struct({ status: S.Literal('timeout'), reason: S.optionalKey(S.String) }),
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
 ])
@@ -134,11 +139,13 @@ export interface KilledMutantRunResult {
   readonly killedBy: readonly TestId[]
   readonly failureMessage: string
   readonly nrOfTests: number
+  readonly executedTests?: readonly TestId[]
 }
 
 export interface SurvivedMutantRunResult {
   readonly status: 'survived'
   readonly nrOfTests: number
+  readonly executedTests?: readonly TestId[]
 }
 
 export interface ErrorMutantRunResult {

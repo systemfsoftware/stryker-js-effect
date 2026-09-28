@@ -186,4 +186,21 @@ describe('interpretVitestMutantRun', (it) => {
       })
     },
   )
+
+  it.prop(
+    '∀c_MutantRunCommand_≡ScorableOutcomesReportExecutedTestIds',
+    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (outcome) => {
+          if (!S.is(MutantKilled)(outcome) && !S.is(MutantSurvived)(outcome)) {
+            return true
+          }
+          const ran = command.tests.filter((test) => test.status !== 'skipped')
+          return outcome.executedTestIds.length === ran.length &&
+            outcome.executedTestIds.every((id, index) => id === ran.at(index)?.id)
+        },
+      }),
+  )
 })

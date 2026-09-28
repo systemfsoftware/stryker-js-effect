@@ -1,12 +1,13 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Pool from 'effect/Pool'
 import type * as Scope from 'effect/Scope'
 
-import { interpretMutantRun } from '../interpret-mutant-run.workflow.js'
+import { interpretMutantRun, NoCoveringTestExecutedReason } from '../interpret-mutant-run.workflow.js'
 import { invalidatesRunnerPool } from '../pooled-test-runner.handle.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
@@ -24,7 +25,30 @@ const invalidateSlot = <A, E, I>(
   error: E,
 ): Effect.Effect<never, E> => Effect.flatMap(Pool.invalidate(pool, slot), () => Effect.fail(error))
 
-const readMutantRun = Effect.fnUntraced(function*(input: RunOnePlanArgs) {
+const coveringTestsOf = (plan: Mutant.MutantRunPlan): readonly string[] => [
+  ...(plan.runOptions.testFilter ?? []),
+]
+
+const executedTestsOf = (result: TestRunner.MutantRunResult): readonly TestRunner.TestId[] | undefined =>
+  Match.value(result).pipe(
+    Match.when({ status: 'killed' }, (killed) => killed.executedTests),
+    Match.when({ status: 'survived' }, (survived) => survived.executedTests),
+    Match.orElse(() => undefined),
+  )
+
+const executedTestsFieldOf = (
+  result: TestRunner.MutantRunResult,
+): { readonly executedTests?: readonly TestRunner.TestId[] } =>
+  Option.match(Option.fromUndefinedOr(executedTestsOf(result)), {
+    onNone: () => ({}),
+    onSome: (executed) => ({ executedTests: [...executed] }),
+  })
+
+interface MutantRunAttemptArgs extends RunOnePlanArgs {
+  readonly attempt: number
+}
+
+const readMutantRunAttempt = Effect.fnUntraced(function*(input: MutantRunAttemptArgs) {
   const { testRunnerPool, plan } = input
   const runner = yield* Pool.get(testRunnerPool)
   const result = yield* runner.mutantRun(plan.runOptions).pipe(
@@ -47,22 +71,48 @@ const readMutantRun = Effect.fnUntraced(function*(input: RunOnePlanArgs) {
   )
   return {
     wallClockTimeout: invalidatesRunnerPool(result.status, reasonOf(result)),
+    coveringTests: coveringTestsOf(plan),
+    ...executedTestsFieldOf(result),
+    attempt: input.attempt,
     args: input,
     runner,
     result,
   }
 })
 
+const attemptCell: Cell.Cell<
+  MutantRunAttemptArgs,
+  Mutant.RunMutantResult,
+  StageError | PooledTestRunnerError,
+  Scope.Scope
+> = Cell.suspend(() =>
+  Sandwich.named(SpanTaxonomy.Spans.mutantRun.name)(readMutantRunAttempt)
+    .decide(interpretMutantRun)
+    .write({
+      MutantRunSettled: (_decision, raw) => settleMutantRun(raw),
+      MutantRunPoolInvalidated: (_decision, raw) => recycleAndSettleMutantRun(raw),
+      MutantRunRetry: (_decision, raw) =>
+        Effect.flatMap(
+          Pool.invalidate(raw.args.testRunnerPool, raw.runner),
+          () => attemptCell.run({ ...raw.args, attempt: raw.attempt + 1 }),
+        ),
+      MutantRunRetryExhausted: (_decision, raw) =>
+        Effect.flatMap(
+          Pool.invalidate(raw.args.testRunnerPool, raw.runner),
+          () =>
+            settleMutantRun({
+              ...raw,
+              result: { status: 'error', errorMessage: NoCoveringTestExecutedReason.literal },
+            }),
+        ),
+      CommandRejected: ({ issue }) =>
+        Effect.fail(StageError.make({ stage: 'mutationTest', reason: `mutant run command rejected: ${issue}` })),
+    })
+)
+
 export const mutantRunCell: Cell.Cell<
   RunOnePlanArgs,
   Mutant.RunMutantResult,
   StageError | PooledTestRunnerError,
   Scope.Scope
-> = Sandwich.named(SpanTaxonomy.Spans.mutantRun.name)(readMutantRun)
-  .decide(interpretMutantRun)
-  .write({
-    MutantRunSettled: (_decision, raw) => settleMutantRun(raw),
-    MutantRunPoolInvalidated: (_decision, raw) => recycleAndSettleMutantRun(raw),
-    CommandRejected: ({ issue }) =>
-      Effect.fail(StageError.make({ stage: 'mutationTest', reason: `mutant run command rejected: ${issue}` })),
-  })
+> = Cell.mapInput(attemptCell, (args: RunOnePlanArgs): MutantRunAttemptArgs => ({ ...args, attempt: 0 }))

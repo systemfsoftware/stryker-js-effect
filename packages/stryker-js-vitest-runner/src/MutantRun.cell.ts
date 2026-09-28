@@ -77,8 +77,14 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
             () => [],
           ),
           nrOfTests: killed.tests.length,
+          executedTests: killed.executedTestIds.map((id) => TestRunner.TestId.make(id)),
         }),
-      Survived: (survived) => Effect.succeed({ status: 'survived' as const, nrOfTests: survived.tests.length }),
+      Survived: (survived) =>
+        Effect.succeed({
+          status: 'survived' as const,
+          nrOfTests: survived.tests.length,
+          executedTests: survived.executedTestIds.map((id) => TestRunner.TestId.make(id)),
+        }),
       Timeout: (timeout) =>
         Effect.succeed({
           status: 'timeout' as const,
