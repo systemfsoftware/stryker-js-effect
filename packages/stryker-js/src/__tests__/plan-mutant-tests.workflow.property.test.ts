@@ -278,6 +278,25 @@ describe('planMutantTests', () => {
   )
 
   it.prop(
+    '∀r_IgnoredEarlyResult_≡ItsReasonIsForwardedOrNamesARule',
+    { of: [coverageCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => true,
+        onSuccess: (decisions) =>
+          decisions.every((decision, index) =>
+            !S.is(PlannedEarlyResultMutant)(decision) || decision.status !== 'Ignored' ||
+            Option.match(Option.fromUndefinedOr(command.mutants[index]), {
+              onNone: () => false,
+              onSome: (mutant) =>
+                decision.statusReason === mutant.statusReason ||
+                (decision.statusReason !== undefined && S.is(Mutant.IgnoreStatusReasonText)(decision.statusReason)),
+            })
+          ),
+      }),
+  )
+
+  it.prop(
     '∀l_ClosedMutant_≡KeepsItsStatus',
     { of: [MutantTestPlanCommand], subject: planMutantTests },
     (subject, [command]) =>

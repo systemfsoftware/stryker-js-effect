@@ -1,6 +1,6 @@
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant as ApiMutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
@@ -734,6 +734,7 @@ interface PlacementContext {
   readonly mutatorEntries: readonly MutatorEntry[]
   readonly allMutatorNames: readonly string[]
   readonly excludedMutations: readonly string[]
+  readonly mutantSetPolicy: Options.MutantSetPolicyType
   readonly ignorers: readonly Ignorer[]
   readonly ordinalOf: (tuple: MutantTuple) => number
 }
@@ -1274,6 +1275,7 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
       mutatorEntries: options.mutators.active,
       allMutatorNames: options.mutators.known.map((name) => name.toLowerCase()),
       excludedMutations: options.excludedMutations,
+      mutantSetPolicy: options.mutantSetPolicy,
       ignorers: options.ignorers,
       ordinalOf: mutantCollector.ordinalOf,
     }

@@ -16,6 +16,12 @@ import {
 const WILDCARD = 'all'
 const NEXT_LINE = 'next-line'
 
+const RULE_SEPARATOR = ': '
+
+type IgnoreRule = 'directive' | 'excluded-mutator' | 'ignorer'
+
+const ignoreReasonFor = (ruleId: IgnoreRule, detail: string): string => `${ruleId}${RULE_SEPARATOR}${detail}`
+
 export const MutantCandidateSchema = S.Struct({
   id: Mutant.MutantId,
   mutatorName: MutatorNameSchema,
@@ -108,7 +114,7 @@ const directiveReason = (
     lastReachingDirective(rule, mutatorName.toLowerCase(), line),
     (located) =>
       Match.value(located.directive.action).pipe(
-        Match.when('disable', () => Option.some(located.directive.reason)),
+        Match.when('disable', () => Option.some(ignoreReasonFor('directive', located.directive.reason))),
         Match.when('restore', () => Option.none<string>()),
         Match.exhaustive,
       ),
@@ -119,9 +125,18 @@ const exclusionReason = (
   mutatorName: string,
 ): Option.Option<string> =>
   Match.value(excludedMutations.includes(mutatorName)).pipe(
-    Match.when(true, () => Option.some(`Ignored because of excluded mutation "${mutatorName}"`)),
+    Match.when(true, () =>
+      Option.some(
+        ignoreReasonFor('excluded-mutator', `Ignored because of excluded mutation "${mutatorName}"`),
+      )),
     Match.when(false, () => Option.none<string>()),
     Match.exhaustive,
+  )
+
+const ignorerReason = (candidate: MutantCandidate): Option.Option<string> =>
+  Option.map(
+    Option.fromNullishOr(candidate.ignorerReason),
+    (reason) => ignoreReasonFor('ignorer', reason),
   )
 
 const ignoreReasonOf = (command: PlanMutantsCommand, candidate: MutantCandidate): string | undefined =>
@@ -131,7 +146,7 @@ const ignoreReasonOf = (command: PlanMutantsCommand, candidate: MutantCandidate)
         directiveReason(command.rule, candidate.mutatorName, command.line),
         () => exclusionReason(command.excludedMutations, candidate.mutatorName),
       ),
-      () => Option.fromNullishOr(candidate.ignorerReason),
+      () => ignorerReason(candidate),
     ),
   )
 

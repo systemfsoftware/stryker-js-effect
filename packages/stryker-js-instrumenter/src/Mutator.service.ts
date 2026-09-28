@@ -1,6 +1,6 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
 import type { StockCatalog } from '@systemfsoftware/stryker-js-cli-contract'
-import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant as ApiMutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MutatorCatalog } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -208,6 +208,7 @@ export type Mutator = (node: Node, context: MutatorContext) => Iterable<Node>
 export interface MutatorOptions {
   excludedMutations: string[]
   mutators: MutatorSelection
+  mutantSetPolicy: Options.MutantSetPolicyType
   noHeader?: boolean
 }
 

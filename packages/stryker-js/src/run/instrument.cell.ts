@@ -169,6 +169,7 @@ const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(funct
   const instrumentResult = yield* Instrument.instrument(filesToMutate, {
     ignorers: [...command.ignorers],
     excludedMutations: [...excludedMutations],
+    mutantSetPolicy: command.options.mutator.mutantSetPolicy,
     mutators: Mutator.selectMutators(
       Mutator.registryOf(
         command.mutatorCatalogs,

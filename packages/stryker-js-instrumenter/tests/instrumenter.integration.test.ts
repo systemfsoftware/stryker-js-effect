@@ -26,6 +26,8 @@ if (flag) {
 
 const OUTSIDE_KEEP = 'outside keep()'
 const INSIDE_FLAG = 'inside if (flag)'
+const IGNORED_OUTSIDE_KEEP = `ignorer: ${OUTSIDE_KEEP}`
+const IGNORED_INSIDE_FLAG = `ignorer: ${INSIDE_FLAG}`
 
 type Mutant = {
   id: string
@@ -318,7 +320,7 @@ export const b = 2 + 2
           return expect({
             arithmeticCount: arithmetic.length,
             ignored: ignored.map((mutant) => [mutant.statusReason, mutant.replacement]),
-          }).toEqual({ arithmeticCount: 2, ignored: [['consecutive run', '2 - 2']] })
+          }).toEqual({ arithmeticCount: 2, ignored: [['directive: consecutive run', '2 - 2']] })
         }),
       ),
     )
@@ -410,7 +412,10 @@ export const b = 2 + 2
             counts: excludedCounts,
             equalityOperator: excludedCounts['EqualityOperator'],
           }).toEqual({
-            excludedArithmetic: [['Ignored', 'Ignored because of excluded mutation "ArithmeticOperator"']],
+            excludedArithmetic: [[
+              'Ignored',
+              'excluded-mutator: Ignored because of excluded mutation "ArithmeticOperator"',
+            ]],
             activeShrink: 1,
             hasArithmeticActive: false,
             counts: baselineCounts,
@@ -462,7 +467,9 @@ export const b = 2 + 2
           return expect({
             selectedKeepActive: selectedKeep.some(isActive),
             selectedSiblingIgnored: selectedSibling.length > 0 &&
-              selectedSibling.every((mutant) => mutant.status === 'Ignored' && mutant.statusReason === OUTSIDE_KEEP),
+              selectedSibling.every((mutant) =>
+                mutant.status === 'Ignored' && mutant.statusReason === IGNORED_OUTSIDE_KEEP
+              ),
             unselectedKeepActive: arith(unselected.mutants, 'x - 1').some(isActive),
             unselectedSiblingActive: arith(unselected.mutants, 'a - b').some(isActive),
           }).toEqual({
@@ -546,7 +553,7 @@ export function price(n) {
           return expect({
             siblingActive: sibling.some(isActive),
             innerIgnored: inner.length > 0 &&
-              inner.every((mutant) => mutant.status === 'Ignored' && mutant.statusReason === INSIDE_FLAG),
+              inner.every((mutant) => mutant.status === 'Ignored' && mutant.statusReason === IGNORED_INSIDE_FLAG),
           }).toEqual({ siblingActive: true, innerIgnored: true })
         }),
       ),
@@ -573,7 +580,7 @@ export function price(n) {
           expect({
             mutantCount: result.mutants.length,
             everyIgnored: result.mutants.every((mutant) =>
-              mutant.status === 'Ignored' && mutant.statusReason === OUTSIDE_KEEP
+              mutant.status === 'Ignored' && mutant.statusReason === IGNORED_OUTSIDE_KEEP
             ),
           }).toEqual({ mutantCount: 13, everyIgnored: true })
         ),
@@ -602,9 +609,9 @@ export function price(n) {
           expect({
             atLeastOne: result.mutants.length > 0,
             everyIgnoredOutsideKeep: result.mutants.every((mutant) =>
-              mutant.status === 'Ignored' && mutant.statusReason === OUTSIDE_KEEP
+              mutant.status === 'Ignored' && mutant.statusReason === IGNORED_OUTSIDE_KEEP
             ),
-            noneInsideFlag: result.mutants.every((mutant) => mutant.statusReason !== INSIDE_FLAG),
+            noneInsideFlag: result.mutants.every((mutant) => mutant.statusReason !== IGNORED_INSIDE_FLAG),
           }).toEqual({ atLeastOne: true, everyIgnoredOutsideKeep: true, noneInsideFlag: true })
         ),
       ),

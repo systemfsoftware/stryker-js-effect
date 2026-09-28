@@ -497,7 +497,11 @@ Feature('Configuring a Stryker run from a module config file')
           (s) => Effect.sync(() => ({ mutations: optionsOrThrow(s.read).mutator })),
         ),
         Then('nothing is excluded from mutation and nothing extra is opted into')((s, expect) =>
-          expect(s.seen.mutations).toEqual({ excludedMutations: [], optInMutations: [] })
+          expect(s.seen.mutations).toEqual({
+            excludedMutations: [],
+            optInMutations: [],
+            mutantSetPolicy: 'default',
+          })
         ),
       ),
     )

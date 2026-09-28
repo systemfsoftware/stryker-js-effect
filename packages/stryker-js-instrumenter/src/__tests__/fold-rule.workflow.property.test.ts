@@ -66,7 +66,8 @@ describe('foldRule', () => {
       const disable = acted(drawn, 'disable')
       const name = reachedNameOf(disable)
       return name !== undefined &&
-        silencingReason(folding(subject, [], disable), name, disable.governedLine) === disable.directive.reason
+        silencingReason(folding(subject, [], disable), name, disable.governedLine) ===
+          `directive: ${disable.directive.reason}`
     },
   )
 
@@ -89,7 +90,7 @@ describe('foldRule', () => {
         at,
         governedLine,
       }
-      const expected = second.directive.action === 'disable' ? second.directive.reason : undefined
+      const expected = second.directive.action === 'disable' ? `directive: ${second.directive.reason}` : undefined
       return silencingReason(folding(subject, folding(subject, [], first), second), name, governedLine) === expected
     },
   )

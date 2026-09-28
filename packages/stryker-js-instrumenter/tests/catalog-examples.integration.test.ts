@@ -59,7 +59,7 @@ const runEntries = (
           content: example.before,
           mutate: true,
         })),
-        { ignorers: [], excludedMutations: [], mutators: onlyThese(namesOf(entry)) },
+        { ignorers: [], excludedMutations: [], mutantSetPolicy: 'full', mutators: onlyThese(namesOf(entry)) },
       ),
       (result: Instrument.InstrumentResult): EntryRun => ({ entry, mutants: result.mutants }),
     ))

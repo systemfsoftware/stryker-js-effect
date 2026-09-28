@@ -70,12 +70,14 @@ export const LogLevel = S.Literals(['off', 'fatal', 'error', 'warn', 'info', 'de
 export const CoverageAnalysisMode = S.Literals(['off', 'all', 'perTest'])
 export const ReportType = S.Literals(['full', 'mutationScore'])
 export const PackageManager = S.Literals(['npm', 'yarn', 'pnpm'])
+export const MutantSetPolicy = S.Literals(['default', 'full'])
 
 /** The generated module exported these as TypeScript types; consumers still name them that way. */
 export type LogLevel = typeof LogLevel.Type
 export type CoverageAnalysisMode = typeof CoverageAnalysisMode.Type
 export type ReportType = typeof ReportType.Type
 export type PackageManager = typeof PackageManager.Type
+export type MutantSetPolicy = typeof MutantSetPolicy.Type
 
 export const CommandRunnerOptionsSchema = openStruct({
   command: defaulted(S.String, 'npm test'),
@@ -149,6 +151,7 @@ const acceptsThresholdPair = (high: number, low: number): boolean =>
 const MutatorDescriptor = S.Struct({
   excludedMutations: defaulted(S.Array(MutatorNameGrammar), []),
   optInMutations: defaulted(S.Array(MutatorNameGrammar), []),
+  mutantSetPolicy: defaulted(MutantSetPolicy, 'default'),
 })
 
 const WarningOptions = openStruct({
@@ -251,7 +254,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
       '{src,lib}/**/!(*.+(s|S)pec|*.+(t|T)est).+(cjs|mjs|js|ts|mts|cts|jsx|tsx|html|vue|svelte)',
       '!{src,lib}/**/__tests__/**/*.+(cjs|mjs|js|ts|mts|cts|jsx|tsx|html|vue|svelte)',
     ]),
-    mutator: defaulted(MutatorDescriptor, { excludedMutations: [], optInMutations: [] }),
+    mutator: defaulted(MutatorDescriptor, { excludedMutations: [], optInMutations: [], mutantSetPolicy: 'default' }),
     packageManager: S.optionalKey(PackageManager),
     plugins: defaulted(S.Array(PluginFileUrl), []),
     appendPlugins: defaulted(S.Array(PluginFileUrl), []),
@@ -300,6 +303,7 @@ export type DeepOptional<T, V = unknown> = {
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const Arr = await import('effect/Array')
+  const Result = await import('effect/Result')
 
   const pairProbes: ReadonlyArray<readonly [number, number]> = [
     [80, 60],
@@ -318,5 +322,57 @@ if (import.meta.vitest !== void 0) {
         pairProbes,
         ([probeHigh, probeLow]) => subject(probeHigh, probeLow) === isOrderedPercentagePair(probeHigh, probeLow),
       ) && subject(high, low) === isOrderedPercentagePair(high, low),
+  )
+
+  const policyProbes: ReadonlyArray<string> = [
+    '',
+    'default',
+    'full',
+    'DEFAULT',
+    'defaults',
+    'full ',
+    ' default',
+    'full\n',
+    'full-set',
+    'all',
+  ]
+  const withPolicyProbes = (drawn: string): ReadonlyArray<string> => Arr.prepend(policyProbes, drawn)
+
+  const namesAPolicy = (value: string): boolean => value === 'default' || value === 'full'
+
+  const namedOptionPath = (message: string): string | undefined => {
+    const segments = Array.from(message.matchAll(/\["([^"]+)"\]/g), (matched) => String(matched[1]))
+    return segments.length === 0 ? undefined : segments.join('.')
+  }
+
+  const decodeOutcome = (value: string): string | undefined =>
+    Result.match(S.decodeUnknownResult(StrykerOptionsSchema)({ mutator: { mutantSetPolicy: value } }), {
+      onFailure: (issue) => namedOptionPath(issue.message),
+      onSuccess: (options) => options.mutator.mutantSetPolicy,
+    })
+
+  const policyOfOptions = (options: { readonly mutator?: { readonly mutantSetPolicy?: string } }): string | undefined =>
+    Result.match(S.decodeUnknownResult(StrykerOptionsSchema)(options), {
+      onFailure: () => undefined,
+      onSuccess: (decoded) => decoded.mutator.mutantSetPolicy,
+    })
+
+  const accepts = {
+    policy: decodeOutcome,
+    policyWhenMutatorOmitted: (): string | undefined => policyOfOptions({}),
+    policyWhenPolicyOmitted: (): string | undefined => policyOfOptions({ mutator: {} }),
+  }
+
+  const bothOmissionsDefault = (subject: typeof accepts): boolean =>
+    subject.policyWhenMutatorOmitted() === 'default' && subject.policyWhenPolicyOmitted() === 'default'
+
+  it.prop(
+    '∀p_MutantSetPolicy_≡DecodedOrRefusedNamingItsOption',
+    { of: [S.String], subject: accepts },
+    (subject, [drawn]) =>
+      Arr.every(
+        withPolicyProbes(drawn),
+        (value) => subject.policy(value) === (namesAPolicy(value) ? value : 'mutator.mutantSetPolicy'),
+      ) && bothOmissionsDefault(subject),
   )
 }

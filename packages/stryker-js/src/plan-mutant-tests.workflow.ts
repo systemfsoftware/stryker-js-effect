@@ -169,7 +169,9 @@ const toEarlyResultPlan = (
     ...coveredByField(coveredBy),
   })
 
-const IGNORED_STATIC_MUTANT_REASON = 'Static mutant (and "ignoreStatic" was enabled)' as const
+const RULE_SEPARATOR = ': '
+
+const IGNORED_STATIC_MUTANT_REASON = `ignore-static${RULE_SEPARATOR}Static mutant (and "ignoreStatic" was enabled)`
 
 const runWithCoveredTests = (
   mutant: Mutant.Mutant,

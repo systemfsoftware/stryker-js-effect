@@ -3,8 +3,11 @@ import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 export const instrument = Instrument.instrument
 
 export const stockOptions = (
-  options: Omit<Instrument.InstrumenterOptions, 'mutators'> & { readonly optInMutations?: readonly string[] },
+  options: Omit<Instrument.InstrumenterOptions, 'mutators' | 'mutantSetPolicy'> & {
+    readonly optInMutations?: readonly string[]
+    readonly mutantSetPolicy?: Instrument.InstrumenterOptions['mutantSetPolicy']
+  },
 ): Instrument.InstrumenterOptions => {
-  const { optInMutations = [], ...rest } = options
-  return { ...rest, mutators: Mutator.selectMutators(Mutator.stockRegistry, optInMutations) }
+  const { optInMutations = [], mutantSetPolicy = 'default', ...rest } = options
+  return { ...rest, mutantSetPolicy, mutators: Mutator.selectMutators(Mutator.stockRegistry, optInMutations) }
 }

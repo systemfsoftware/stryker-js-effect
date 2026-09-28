@@ -29,12 +29,13 @@ const reasonFromRule = (rule: readonly LocatedDirective[], mutatorName: string, 
 const silencingReason = (command: PlanMutantsCommand, mutatorName: string): string | undefined => {
   const directive = reasonFromRule(command.rule, mutatorName, command.line)
   if (directive !== undefined) {
-    return directive
+    return `directive: ${directive}`
   }
   if (command.excludedMutations.includes(mutatorName)) {
-    return `Ignored because of excluded mutation "${mutatorName}"`
+    return `excluded-mutator: Ignored because of excluded mutation "${mutatorName}"`
   }
-  return command.candidates.find((candidate) => candidate.mutatorName === mutatorName)?.ignorerReason
+  const provider = command.candidates.find((candidate) => candidate.mutatorName === mutatorName)?.ignorerReason
+  return provider === undefined ? undefined : `ignorer: ${provider}`
 }
 
 const Namespace = Arbitrary.schema(S.Literals(['acme', 'beta']))
@@ -173,7 +174,22 @@ describe('planMutants', () => {
         rule: [providerDirective(mutatorName, 'the provider said so')],
       })
       const planned = subject(command)
-      return Result.isSuccess(planned) && planned.success.mutants.at(0)?.ignoreReason === 'the provider said so'
+      return Result.isSuccess(planned) &&
+        planned.success.mutants.at(0)?.ignoreReason === 'directive: the provider said so'
+    },
+  )
+
+  it.prop(
+    '∀c_Command_≡EveryIgnoreReasonNamesItsRule',
+    { of: [PlanMutantsCommand], subject: planMutants },
+    (subject, [command]) => {
+      const planned = subject(command)
+      if (Result.isFailure(planned)) {
+        return S.is(MutantWithoutLocation)(planned.failure)
+      }
+      return planned.success.mutants.every((mutant) =>
+        mutant.ignoreReason === undefined || S.is(Mutant.IgnoreStatusReasonText)(mutant.ignoreReason)
+      )
     },
   )
 

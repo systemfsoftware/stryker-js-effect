@@ -26,7 +26,7 @@ export namespace ImportClosure {
 
 // @public (undocumented)
 export namespace Plugin {
-    export { AnyPluginDescriptor, AnyWorkerPluginDescriptor, AnyWorkerPluginSource, EvaluatorPluginDescriptor, EvaluatorPluginSource, Framework, Ignorer, LoadedPlugins, Node_2 as Node, PluginDescriptor, PluginDescriptorOf, PluginKind, PluginSource, PooledTestRunner, PooledTestRunnerError, REPORTER_EVENT_BATCH_BOUND, ReporterStage, ReporterWorkerClient, SpawnReporterWorkerParams, TestRunnerBuildContext, WorkerPluginDescriptor, WorkerPluginSource, buildTestRunner, isCommandRunner, isVmRunner, makeChildProcessTestRunner, reporterWorkerFactory, spawnReporterWorker, testRunnerConfigOf, vmRunnerPluginUrl, vmTestRunnerConfig };
+    export { AnyPluginDescriptor, AnyWorkerPluginDescriptor, AnyWorkerPluginSource, EvaluatorPluginDescriptor, EvaluatorPluginSource, Framework, Ignorer, LoadedPlugins, Node, PluginDescriptor, PluginDescriptorOf, PluginKind, PluginSource, PooledTestRunner, PooledTestRunnerError, REPORTER_EVENT_BATCH_BOUND, ReporterStage, ReporterWorkerClient, SpawnReporterWorkerParams, TestRunnerBuildContext, WorkerPluginDescriptor, WorkerPluginSource, buildTestRunner, isCommandRunner, isVmRunner, makeChildProcessTestRunner, reporterWorkerFactory, spawnReporterWorker, testRunnerConfigOf, vmRunnerPluginUrl, vmTestRunnerConfig };
 }
 
 // @public (undocumented)

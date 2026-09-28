@@ -428,7 +428,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
               count: mutants.length,
               status: mutants[0]?.status,
               reason: mutants[0]?.statusReason,
-            }).toEqual({ count: 1, status: 'Ignored', reason: 'race proven elsewhere' })
+            }).toEqual({ count: 1, status: 'Ignored', reason: 'directive: race proven elsewhere' })
           },
         ),
       ),
@@ -460,7 +460,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
             }).toEqual({
               count: 1,
               status: 'Ignored',
-              reason: `Ignored because of excluded mutation "${ATOMIC_UPDATE_SPLIT}"`,
+              reason: `excluded-mutator: Ignored because of excluded mutation "${ATOMIC_UPDATE_SPLIT}"`,
             })
           },
         ),
