@@ -1,0 +1,34 @@
+diff --git a/dist/Queue.js b/dist/Queue.js
+index 22a310f9fe270ae4b3e703099a7661a6d987f638..2e12a211b9af27af0ef596b9293f7376dd9cf489 100644
+--- a/dist/Queue.js
++++ b/dist/Queue.js
+@@ -1611,6 +1611,9 @@ const offerRemainingSingle = (self, message) => {
+     if (self.state._tag !== "Open") {
+       return resume(exitFalse);
+     }
++    if (self.capacity <= 0 ? self.state.takers.size > 0 : self.messages.length < self.capacity) {
++      return resume(offer(self, message));
++    }
+     const entry = {
+       _tag: "Single",
+       message,
+@@ -1629,6 +1632,9 @@ const offerRemainingArray = (self, remaining) => {
+     if (self.state._tag !== "Open") {
+       return resume(core.exitSucceed(remaining));
+     }
++    if (self.capacity <= 0 ? self.state.takers.size > 0 : self.messages.length < self.capacity) {
++      return resume(offerAll(self, remaining));
++    }
+     const entry = {
+       _tag: "Array",
+       remaining,
+@@ -1691,6 +1697,9 @@ const awaitTake = self => internalEffect.callback(resume => {
+   if (self.state._tag === "Done") {
+     return resume(self.state.exit);
+   }
++  if (self.messages.length > 0 || self.state.offers.size > 0) {
++    return resume(internalEffect.exitVoid);
++  }
+   self.state.takers.add(resume);
+   return internalEffect.sync(() => {
+     if (self.state._tag !== "Done") {
