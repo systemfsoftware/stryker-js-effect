@@ -15,6 +15,7 @@ const PlanRunOptionsSchema = S.Struct({
   mutantActivation: S.Literals(['runtime', 'static']),
   reloadEnvironment: S.Boolean,
   testFilter: S.String.pipe(S.Array, S.optionalKey),
+  priorKillerTestIds: S.String.pipe(S.Array, S.optionalKey),
   hitLimit: S.optionalKey(S.Finite),
 })
 
@@ -118,6 +119,10 @@ const runPlanOf = (mutant: Mutant.Mutant, run: PlannedRunMutant) => {
       ...Option.match(Option.fromUndefinedOr(run.runOptions.testFilter), {
         onNone: () => ({} as const),
         onSome: (testFilter) => ({ testFilter } as const),
+      }),
+      ...Option.match(Option.fromUndefinedOr(run.runOptions.priorKillerTestIds), {
+        onNone: () => ({} as const),
+        onSome: (priorKillerTestIds) => ({ priorKillerTestIds } as const),
       }),
       ...Option.match(Option.fromUndefinedOr(run.runOptions.hitLimit), {
         onNone: () => ({} as const),

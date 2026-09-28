@@ -32,15 +32,39 @@ export class CliSurvivorsRequested extends S.TaggedClass<CliSurvivorsRequested>(
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
+export class CliCompareRequested extends S.TaggedClass<CliCompareRequested>()('CliCompareRequested', {
+  baseline: S.String,
+  fresh: S.String,
+  noise: S.optional(S.String),
+}) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
+
+export class CliGateRequested extends S.TaggedClass<CliGateRequested>()('CliGateRequested', {
+  baseline: S.String,
+  updateBaseline: S.Boolean,
+}) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
+
 export type CliRouteDecision =
   | CliHelpRequested
   | CliMergeReportsRequested
   | CliRunRequested
   | CliSurvivorsRequested
+  | CliCompareRequested
+  | CliGateRequested
 
 export const routeCliRequest = Workflow.make({
   command: CliRouteCommand,
-  decision: S.Union([CliHelpRequested, CliMergeReportsRequested, CliRunRequested, CliSurvivorsRequested]),
+  decision: S.Union([
+    CliHelpRequested,
+    CliMergeReportsRequested,
+    CliRunRequested,
+    CliSurvivorsRequested,
+    CliCompareRequested,
+    CliGateRequested,
+  ]),
   error: S.Never,
   decide: (command): Result.Result<CliRouteDecision, never> =>
     Match.value(command.route).pipe(
@@ -48,6 +72,14 @@ export const routeCliRequest = Workflow.make({
       Match.tag('merge-reports', (merge) =>
         Result.succeed(
           CliMergeReportsRequested.make({ parts: merge.parts, out: merge.out, packages: merge.packages }),
+        )),
+      Match.tag('compare', (compare) =>
+        Result.succeed(
+          CliCompareRequested.make({ baseline: compare.baseline, fresh: compare.fresh, noise: compare.noise }),
+        )),
+      Match.tag('gate', (gate) =>
+        Result.succeed(
+          CliGateRequested.make({ baseline: gate.baseline, updateBaseline: gate.updateBaseline }),
         )),
       Match.tag('run', (run) =>
         Boolean.match(run.survivors, {

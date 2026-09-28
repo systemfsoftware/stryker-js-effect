@@ -41,7 +41,7 @@ export namespace Plugin {
 
 // @public (undocumented)
 export namespace RunEvent {
-    export { MetricsResultFromReport, ResolvedMode, ResolvedModeInput, RunEventDrain, RunEventDrainLive, RunEventStream, RunEvents, RunIdentity, RunIdentityShape, VerdictEnvelope, makeRunEventStream, metricsResultFromFiles };
+    export { MetricsResultFromReport, ResolvedMode, ResolvedModeInput, RunEventDrain, RunEventDrainLive, RunEventStream, RunEvents, RunIdentity, RunIdentityShape, VerdictEnvelope, buildVerdictEnvelope, makeRunEventStream, metricsResultFromFiles, staticVerdictOf };
 }
 
 // @public (undocumented)

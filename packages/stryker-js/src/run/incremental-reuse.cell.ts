@@ -36,6 +36,7 @@ import { StageError } from '../Run.schema.js'
 import { originalFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from '../verdict-semantics.js'
+import { incrementalReportTextsOf } from './incremental-reuse.js'
 
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
@@ -95,48 +96,10 @@ const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
 const reportOfText = (text: string): Option.Option<ReuseReport> =>
   S.decodeOption(S.fromJsonString(ReuseReportSchema))(text)
 
-const absoluteSourceOf = (path: Path.Path, basePath: string, file: string): string =>
-  path.isAbsolute(file) ? file : path.join(basePath, file)
-
-const matchedSourcesOf = Effect.fnUntraced(function*(input: IncrementalReuseInput) {
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const matched = yield* Effect.forEach(
-    input.options.incrementalSources,
-    (pattern) =>
-      fs.glob(pattern, { root: input.basePath }).pipe(
-        Effect.orElseSucceed((): readonly string[] => []),
-        Effect.map((files) => files.map((file) => absoluteSourceOf(path, input.basePath, file))),
-      ),
-    { discard: false, concurrency: 1 },
-  )
-  return matched.flat()
-})
-
-const sourceFilesOf = Effect.fnUntraced(function*(input: IncrementalReuseInput) {
-  const path = yield* Path.Path
-  const incrementalFile = absoluteSourceOf(path, input.basePath, input.options.incrementalFile)
-  const matched = yield* Boolean.match(input.options.incremental, {
-    onTrue: () => matchedSourcesOf(input),
-    onFalse: () => Effect.succeed<readonly string[]>([]),
-  })
-  return Arr.dedupe([incrementalFile, ...matched])
-})
-
 const previousRecordsOf = Effect.fnUntraced(function*(input: IncrementalReuseInput) {
-  const fs = yield* FileSystem.FileSystem
-  const sources = yield* sourceFilesOf(input)
-  const texts = yield* Effect.forEach(
-    sources,
-    (file) =>
-      fs.readFileString(file).pipe(
-        Effect.option,
-        Effect.map((text) => Option.flatMap(text, reportOfText)),
-      ),
-    { concurrency: 1 },
-  )
-  return texts.flatMap((report) =>
-    Option.match(report, {
+  const texts = yield* incrementalReportTextsOf(input)
+  return texts.flatMap((text) =>
+    Option.match(reportOfText(text), {
       onNone: (): readonly PreviousReuseRecord[] => [],
       onSome: recordsOfReport,
     })
@@ -160,6 +123,36 @@ const coveringTestFilesOf = (
     .map((result) => relativeNormalizedFileName(result.fileName, basePath))
 
 const digestOfEntries = (entries: readonly string[]): string => hashOf(entries.join('\n'))
+
+const digestTextOf = (digest: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(digest), () => '')
+
+const currentDigestOf = (digests: Record<string, string>, mutantId: Mutant.MutantId): string =>
+  Option.getOrElse(Record.get(digests, mutantId), () => '')
+
+const priorKilledByOf = (
+  previousRecords: readonly PreviousReuseRecord[],
+  closureDigests: ClosureDigestsResult,
+): Record<string, readonly string[]> =>
+  previousRecords.reduce<Record<string, readonly string[]>>(
+    (accumulated, record) =>
+      Boolean.match(
+        Boolean.and(
+          Boolean.not(closureDigests.failed),
+          Boolean.and(
+            Option.isSome(Option.fromUndefinedOr(record.killedBy)),
+            digestTextOf(record.closureDigest) === currentDigestOf(closureDigests.digests, record.mutantId),
+          ),
+        ),
+        {
+          onTrue: () => ({
+            ...accumulated,
+            [record.mutantId]: [...Option.getOrElse(Option.fromUndefinedOr(record.killedBy), () => [])],
+          }),
+          onFalse: () => accumulated,
+        },
+      ),
+    {},
+  )
 
 const staticCoverageCountOf = (staticCoverage: Record<string, number> | undefined, mutantId: string): number =>
   Option.getOrElse(
@@ -309,6 +302,7 @@ const closureDigestsOf = (
 type IncrementalReuseRaw = typeof IncrementalDiffCommand.Encoded & {
   readonly mutantsById: Record<string, Mutant.Mutant>
   readonly closureDigestsByMutantId: Record<string, string>
+  readonly priorKilledByByMutantId: Record<string, readonly string[]>
 }
 
 const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
@@ -332,11 +326,18 @@ const readIncrementalReuseCommand = Effect.fn(SpanTaxonomy.Spans.incrementalReus
     mutantSetPolicy: input.options.mutator.mutantSetPolicy,
     runInputsDigest,
     force: input.force,
+    flakyMutantIds: Option.getOrElse(
+      Option.map(Option.fromUndefinedOr(input.testCoverage.dryRunCoverage), (coverage) => [
+        ...coverage.flakyMutantIds,
+      ]),
+      () => [],
+    ),
   }
   return {
     ...command,
     mutantsById: mutantsByIdOf(input.currentMutants),
     closureDigestsByMutantId: closures.digests,
+    priorKilledByByMutantId: priorKilledByOf(previousRecords, closures),
   }
 })
 
@@ -346,6 +347,7 @@ export interface IncrementalReusePart {
   readonly refusal: ReuseRefusalReason | undefined
   readonly closureDigestsByMutantId: Record<string, string>
   readonly timeoutEvidenceByMutantId: Record<string, TimeoutEvidence>
+  readonly priorKilledByByMutantId: Record<string, readonly string[]>
 }
 
 const priorTimeoutEvidenceOf = (decision: typeof MutantToRun.Encoded): Record<string, TimeoutEvidence> =>
@@ -380,6 +382,10 @@ const mutantToRunPart = Effect.fnUntraced(function*(
     refusal: decision.refusal,
     closureDigestsByMutantId: command.closureDigestsByMutantId,
     timeoutEvidenceByMutantId: priorTimeoutEvidenceOf(decision),
+    priorKilledByByMutantId: Option.match(Record.get(command.priorKilledByByMutantId, mutant.id), {
+      onNone: () => ({}),
+      onSome: (killedBy) => ({ [mutant.id]: [...killedBy] }),
+    }),
   })
 })
 
@@ -426,6 +432,7 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
         refusal: undefined,
         closureDigestsByMutantId: command.closureDigestsByMutantId,
         timeoutEvidenceByMutantId: {},
+        priorKilledByByMutantId: {},
       }),
     onSome: (mutant) =>
       Effect.map(
@@ -436,6 +443,7 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
           refusal: undefined,
           closureDigestsByMutantId: command.closureDigestsByMutantId,
           timeoutEvidenceByMutantId: rememberedTimeoutEvidenceOf(decision),
+          priorKilledByByMutantId: {},
         }),
       ),
   })
@@ -469,6 +477,7 @@ export interface IncrementalReuse {
   readonly refusalCounts: RefusalCounts
   readonly closureDigestsByMutantId: Record<string, string>
   readonly timeoutEvidenceByMutantId: Record<string, TimeoutEvidence>
+  readonly priorKilledByByMutantId: Record<string, readonly string[]>
 }
 
 const closureDigestsOfParts = (parts: readonly IncrementalReusePart[]): Record<string, string> =>
@@ -486,6 +495,12 @@ const timeoutEvidenceOfParts = (parts: readonly IncrementalReusePart[]): Record<
 const countRefusalOfPart = (counts: RefusalCounts, part: IncrementalReusePart): RefusalCounts =>
   part.refusal === undefined ? counts : countedRefusal(counts, part.refusal)
 
+const priorKilledByOfParts = (parts: readonly IncrementalReusePart[]): Record<string, readonly string[]> =>
+  parts.reduce<Record<string, readonly string[]>>(
+    (accumulated, part) => ({ ...accumulated, ...part.priorKilledByByMutantId }),
+    {},
+  )
+
 export const readIncrementalReuse = (input: IncrementalReuseInput) =>
   Effect.map(incrementalReuseCell.run(input), (parts) => ({
     mutants: parts.flatMap((part) => part.mutants),
@@ -493,4 +508,5 @@ export const readIncrementalReuse = (input: IncrementalReuseInput) =>
     refusalCounts: parts.reduce(countRefusalOfPart, emptyRefusalCounts()),
     closureDigestsByMutantId: closureDigestsOfParts(parts),
     timeoutEvidenceByMutantId: timeoutEvidenceOfParts(parts),
+    priorKilledByByMutantId: priorKilledByOfParts(parts),
   }))

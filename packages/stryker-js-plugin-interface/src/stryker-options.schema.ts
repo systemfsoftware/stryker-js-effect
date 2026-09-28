@@ -154,6 +154,11 @@ const MutatorDescriptor = S.Struct({
   mutantSetPolicy: defaulted(MutantSetPolicy, 'default'),
 })
 
+const SurfacingOptions = S.Struct({
+  perLine: defaulted(NonNegativeInt, 1),
+  perFile: defaulted(NonNegativeInt, 7),
+})
+
 const WarningOptions = openStruct({
   unknownOptions: defaulted(S.Boolean, true),
   preprocessorErrors: defaulted(S.Boolean, true),
@@ -257,6 +262,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
       '!{src,lib}/**/__tests__/**/*.+(cjs|mjs|js|ts|mts|cts|jsx|tsx|html|vue|svelte)',
     ]),
     mutator: defaulted(MutatorDescriptor, { excludedMutations: [], optInMutations: [], mutantSetPolicy: 'default' }),
+    surfacing: defaulted(SurfacingOptions, { perLine: 1, perFile: 7 }),
     packageManager: S.optionalKey(PackageManager),
     plugins: defaulted(S.Array(PluginFileUrl), []),
     appendPlugins: defaulted(S.Array(PluginFileUrl), []),

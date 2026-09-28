@@ -52,6 +52,7 @@ export const IncrementalReportSchema = S.StructWithRest(
     thresholds: ThresholdsLikeSchema,
     files: S.Record(S.String, FileResultLikeSchema),
     testFiles: S.optional(S.Record(S.String, TestFileLikeSchema)),
+    dryRunCoverage: S.optionalKey(S.Unknown),
   }),
   [S.Record(S.String, S.Unknown)],
 )

@@ -26,6 +26,12 @@ export const MutationScore = S.TaggedUnion({
 })
 export type MutationScore = typeof MutationScore.Type
 
+export const StaticClassSummarySchema = S.Struct({
+  count: NonNegativeInt,
+  costMs: NonNegativeFinite,
+})
+export type StaticClassSummary = typeof StaticClassSummarySchema.Type
+
 const scorePercentageOf = (counts: {
   readonly detected: number
   readonly counted: number

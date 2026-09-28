@@ -55,6 +55,7 @@ export type ClearTextRenderOptions = typeof ClearTextRenderOptions.Type
 export class ClearTextReportCommand extends S.TaggedClass<ClearTextReportCommand>()('ClearTextReportCommand', {
   reported: S.optional(Report.MutationTestResult),
   computed: S.optional(Report.MetricsResultSchema),
+  static: S.optional(Report.StaticClassSummarySchema),
   render: ClearTextRenderOptions,
   rendered: S.Boolean,
 }) {
@@ -679,14 +680,39 @@ const scoreTableOf = (metrics: Report.MetricsResult, render: ClearTextRenderOpti
     onFalse: () => Option.none(),
   })
 
+const STATIC_SUMMARY_PREFIX = 'Static mutants: '
+
+const staticSummaryChunks = (
+  summary: Report.StaticClassSummary | undefined,
+  metrics: Report.MetricsResult,
+): readonly ReportChunk[] =>
+  Option.match(Option.fromUndefinedOr(summary), {
+    onNone: () => [],
+    onSome: (present) => [
+      chunkOf([
+        plain(
+          `${STATIC_SUMMARY_PREFIX}${present.count} of ${metrics.metrics.totalMutants} (${
+            present.costMs.toFixed(0)
+          }ms)`,
+        ),
+      ]),
+    ],
+  })
+
 const renderClearText = (
   report: Report.MutationTestResult,
   metrics: Report.MetricsResult,
   render: ClearTextRenderOptions,
+  staticSummary: Report.StaticClassSummary | undefined,
 ): ReportSections => {
   const section = mutantReportSection(report, metrics, render)
   return {
-    stdout: [chunkOf(EMPTY_LINE), ...section.stdout, ...Option.toArray(scoreTableOf(metrics, render))],
+    stdout: [
+      chunkOf(EMPTY_LINE),
+      ...section.stdout,
+      ...staticSummaryChunks(staticSummary, metrics),
+      ...Option.toArray(scoreTableOf(metrics, render)),
+    ],
     diagnostics: section.diagnostics,
   }
 }
@@ -701,7 +727,7 @@ export const renderClearTextReport = Workflow.make({
       {
         onNone: () => Result.succeed(ClearTextReportSuppressed.make({})),
         onSome: ([report, metrics]) => {
-          const sections = renderClearText(report, metrics, command.render)
+          const sections = renderClearText(report, metrics, command.render, command.static)
           return Result.succeed(
             ClearTextReportRendered.make({
               stdout: [...sections.stdout],

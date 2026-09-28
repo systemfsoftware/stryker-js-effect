@@ -8,6 +8,7 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Queue from 'effect/Queue'
 import * as Record from 'effect/Record'
+import * as Result from 'effect/Result'
 
 import { MaterializeMutantPlanCommand, materializeMutantPlans } from '../materialize-mutant-plans.workflow.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
@@ -24,6 +25,7 @@ import { offerReporterEvent, type ReporterStage } from '../reporter-stream.servi
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
+import { OrderedRunPlan, SortRunPlans, sortRunPlans } from '../sort-run-plans.workflow.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { sandboxFilesOf } from './mutation-test-plan.js'
 
@@ -54,6 +56,7 @@ const planCommandOf = (
   },
   timeOverheadMS: number,
   globalTestFilter: string[] | undefined,
+  priorKilledByByMutantId: Record<string, readonly string[]> | undefined,
   sandboxFileByName: Record<string, string>,
 ): typeof MutantTestPlanCommand.Encoded => ({
   _tag: 'MutantTestPlanCommand',
@@ -72,6 +75,10 @@ const planCommandOf = (
   ...Option.match(Option.fromUndefinedOr(globalTestFilter), {
     onNone: () => ({}),
     onSome: (testFilter) => ({ globalTestFilter: testFilter }),
+  }),
+  ...Option.match(Option.fromUndefinedOr(priorKilledByByMutantId), {
+    onNone: () => ({}),
+    onSome: (byMutantId) => ({ priorKilledByByMutantId: byMutantId }),
   }),
 })
 
@@ -96,6 +103,7 @@ const readPlanCommand = Effect.fn(SpanTaxonomy.Spans.mutationTestPlanRead.name)(
       input.options,
       input.timeOverheadMS,
       undefined,
+      input.priorKilledByByMutantId,
       sandboxFileByName,
     )
     return { ...command, mutantsById: mutantsByIdOf(input.mutants) }
@@ -147,10 +155,23 @@ const partitionRunPlans = (plans: readonly Mutant.TestPlan[]) => ({
   earlyPlans: plans.filter((plan): plan is Mutant.EarlyResultPlan => plan.plan === 'EarlyResult'),
 })
 
-const sortRunPlans = (plans: readonly Mutant.RunPlan[]): readonly Mutant.RunPlan[] =>
-  [...plans].sort(
-    (left, right) => Number(left.runOptions.reloadEnvironment) - Number(right.runOptions.reloadEnvironment),
+const sortedRunPlans = (plans: readonly Mutant.RunPlan[]): readonly Mutant.RunPlan[] => {
+  const plansById = Object.fromEntries(plans.map((plan) => [plan.mutant.id, plan] as const))
+  const ordered = Result.getOrThrow(
+    sortRunPlans(
+      SortRunPlans.make({
+        plans: plans.map((plan) =>
+          OrderedRunPlan.make({
+            id: plan.mutant.id,
+            netTime: plan.netTime,
+            reloadEnvironment: plan.runOptions.reloadEnvironment,
+          })
+        ),
+      }),
+    ),
   )
+  return ordered.flatMap((cost) => Option.toArray(Record.get(plansById, cost.id)))
+}
 
 const planMutantTestsCell = Sandwich.named(SpanTaxonomy.Spans.mutationTestPlanMutants.name)(readPlanCommand)
   .decide(planMutantTests)
@@ -187,6 +208,7 @@ export interface MutationTestPlanInput {
     readonly ignoreStatic: boolean
   }
   readonly timeOverheadMS: number
+  readonly priorKilledByByMutantId?: Record<string, readonly string[]> | undefined
   readonly sandbox: SandboxHandle
   readonly project: Project
   readonly rememberedCount: number
@@ -206,7 +228,7 @@ export const planMutationTest = Effect.fn(SpanTaxonomy.Spans.mutationTestPlan.na
   const plans = yield* planMutantTestsCell.run(input)
   const { runPlans, earlyPlans } = partitionRunPlans(plans)
   const earlyResults = yield* Effect.forEach(earlyPlans, (plan) => earlyResultOf(plan))
-  const sortedPlans = sortRunPlans(runPlans)
+  const sortedPlans = sortedRunPlans(runPlans)
   const plansForReporter: readonly Mutant.RunPlan[] = [...sortedPlans]
   const plannedTotal = sortedPlans.length + earlyResults.length + input.rememberedCount
   yield* offerReporterEvent(

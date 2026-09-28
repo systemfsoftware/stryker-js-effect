@@ -9,6 +9,8 @@ const matchesRoute = (command: CliRouteCommand, tag: string): boolean =>
   Match.value(command.route).pipe(
     Match.tag('help', () => tag === 'CliHelpRequested'),
     Match.tag('merge-reports', () => tag === 'CliMergeReportsRequested'),
+    Match.tag('compare', () => tag === 'CliCompareRequested'),
+    Match.tag('gate', () => tag === 'CliGateRequested'),
     Match.tag('run', (run) => tag === (run.survivors ? 'CliSurvivorsRequested' : 'CliRunRequested')),
     Match.exhaustive,
   )
@@ -20,6 +22,8 @@ const decides = (subject: typeof routeCliRequest, command: CliRouteCommand): str
       Match.value(decision).pipe(
         Match.tag('CliHelpRequested', () => 'CliHelpRequested'),
         Match.tag('CliMergeReportsRequested', () => 'CliMergeReportsRequested'),
+        Match.tag('CliCompareRequested', () => 'CliCompareRequested'),
+        Match.tag('CliGateRequested', () => 'CliGateRequested'),
         Match.tag('CliRunRequested', () => 'CliRunRequested'),
         Match.tag('CliSurvivorsRequested', () => 'CliSurvivorsRequested'),
         Match.exhaustive,

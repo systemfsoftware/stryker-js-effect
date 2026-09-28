@@ -43,6 +43,9 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
         testIds: Option.getOrUndefined(
           Option.map(Option.fromNullishOr(command.testFilter), (ids) => [...ids]),
         ),
+        priorKillerTestIds: Option.getOrUndefined(
+          Option.map(Option.fromNullishOr(command.priorKillerTestIds), (ids) => [...ids]),
+        ),
         relatedFiles: [command.sandboxFileName],
       })
       const hitCount = yield* deps.hitCount

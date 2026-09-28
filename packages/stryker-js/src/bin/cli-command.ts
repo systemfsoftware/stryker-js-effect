@@ -312,6 +312,36 @@ const mergeReportsOptions = {
     ),
 }
 
+const compareOptions = {
+  baseline: Flag.String('baseline').pipe(
+    Flag.withDescription(
+      'The report of record to compare against: `reports/mutation-report.json` or the incremental cache file.',
+    ),
+  ),
+  fresh: Flag.String('fresh').pipe(
+    Flag.withDescription('The report to compare with the baseline, in the same format.'),
+  ),
+  noise: Flag.String('noise').pipe(
+    Flag.withDescription(
+      'A JSON array of mutant ids whose statuses the current engine already disagrees with itself on; the comparison subtracts them.',
+    ),
+    optional,
+  ),
+}
+
+const gateOptions = {
+  baseline: Flag.String('baseline').pipe(
+    Flag.withDescription(
+      'The committed baseline of accepted survivor ids. `stryker gate` fails on survivors absent from it and passes every survivor it already holds.',
+    ),
+  ),
+  updateBaseline: Flag.map(optional(Flag.Boolean('update-baseline')), absentWhenFalse).pipe(
+    Flag.withDescription(
+      'Rewrite the baseline file with exactly the survivors of the finished report and exit 0, instead of gating against it.',
+    ),
+  ),
+}
+
 type ParsedConfigValue<A> = A extends Argument.Argument<infer Value> ? Value
   : A extends Flag.Flag<infer Value> ? Value
   : never
@@ -412,8 +442,43 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
       ),
   ).pipe(Command.withDescription('Merge per-package mutation reports into one report'))
 
+  const compareCommand = Command.make('compare', compareOptions, (config) =>
+    runRequestCell.run({
+      route: CliRouteCommand.make({
+        route: {
+          _tag: 'compare',
+          baseline: config.baseline,
+          fresh: config.fresh,
+          noise: Option.getOrUndefined(config.noise),
+        },
+      }),
+      options: {},
+      environment,
+    }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer))).pipe(
+      Command.withDescription(
+        'Compare a fresh mutation report with the baseline of record, naming every mutant whose status differs',
+      ),
+    )
+
+  const gateCommand = Command.make('gate', gateOptions, (config) =>
+    runRequestCell.run({
+      route: CliRouteCommand.make({
+        route: {
+          _tag: 'gate',
+          baseline: config.baseline,
+          updateBaseline: config.updateBaseline === true,
+        },
+      }),
+      options: {},
+      environment,
+    }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer))).pipe(
+      Command.withDescription(
+        'Fail on survivors absent from the committed baseline, tallying the mutants the run did not settle',
+      ),
+    )
+
   const root = Command
     .make('stryker', {}, (_config) => Effect.fail(CliError.ShowHelp.make({ commandPath: ['stryker'], errors: [] })))
 
-  return root.pipe(Command.withSubcommands([runCommand, mergeReportsCommand]))
+  return root.pipe(Command.withSubcommands([runCommand, mergeReportsCommand, compareCommand, gateCommand]))
 }

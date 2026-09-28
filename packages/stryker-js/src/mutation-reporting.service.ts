@@ -36,6 +36,7 @@ import {
   CheckpointSettledMutant,
 } from './checkpoint-mutants.workflow.js'
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
+import type { DryRunCoverage } from './dry-run-coverage.schema.js'
 import type { FormatIdentity, TimeoutEvidence, TimeoutKind } from './IncrementalDiff.schema.js'
 import { TimeoutEvidenceSchema } from './IncrementalDiff.schema.js'
 import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
@@ -46,6 +47,7 @@ import type { ReporterStage } from './reporter-stream.service.js'
 import { closeReporterStage, offerTerminalReport, terminalDrainClass } from './reporter-stream.service.js'
 import { metricsResultFromFiles } from './reporting/metrics-from-report.js'
 import { ReportFileNames } from './reporting/report-assembly.schema.js'
+import { staticVerdictOf } from './reporting/static-verdict.js'
 import { buildVerdictEnvelope } from './reporting/verdict-envelope.js'
 import { RunEvents } from './run-events.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
@@ -719,6 +721,7 @@ const emitVerdict = Effect.fn(SpanTaxonomy.Spans.mutationReportingEmitVerdict.na
     input.basePath,
     deps.path,
     yield* deps.phaseClock.durations,
+    staticVerdictOf(input.results),
   )
   yield* Queue.offer(
     deps.events,
@@ -740,6 +743,12 @@ const emitVerdict = Effect.fn(SpanTaxonomy.Spans.mutationReportingEmitVerdict.na
   )
 })
 
+const dryRunCoverageFieldOf = (testCoverage: TestCoverage): { readonly dryRunCoverage?: DryRunCoverage } =>
+  Option.match(Option.fromUndefinedOr(testCoverage.dryRunCoverage), {
+    onNone: () => ({}),
+    onSome: (dryRunCoverage) => ({ dryRunCoverage }),
+  })
+
 const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWriteIncrementalReport.name)(function*(
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
   input: MutationReportingInput,
@@ -755,6 +764,7 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
     runInputsDigest,
     ...report,
     files: stampFileIdentities(stampClosureDigests(report.files, input.closureDigestsByMutantId), identities),
+    ...dryRunCoverageFieldOf(input.testCoverage),
   }).pipe(Effect.orDie)
   yield* deps.fs.writeFileString(input.options.incrementalFile, json)
 })
@@ -765,7 +775,13 @@ const reportAll = Effect.fn(SpanTaxonomy.Spans.mutationReportingReportAll.name)(
 ) {
   const { report, identities } = yield* mutationTestReport(deps, input, input.results)
   const metrics = metricsResultFromFiles(report.files)
-  yield* offerTerminalReport(input.reporterStage, report, metrics)
+  const staticVerdict = staticVerdictOf(input.results)
+  yield* offerTerminalReport(
+    input.reporterStage,
+    report,
+    metrics,
+    staticVerdict ?? undefined,
+  )
   const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
   const verdict = yield* determineExitCode(input)(metrics)
   const finalVerdict = Result.match(
@@ -825,6 +841,7 @@ const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlim
     thresholds: input.options.thresholds,
     files: stampFileIdentities(stampClosureDigests(files, input.closureDigestsByMutantId), identities),
     testFiles,
+    ...dryRunCoverageFieldOf(input.testCoverage),
   }
 })
 

@@ -136,6 +136,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
       ignoreStatic: prev.options.ignoreStatic,
     },
     timeOverheadMS: Duration.toMillis(prev.timeOverhead),
+    priorKilledByByMutantId: reuse.priorKilledByByMutantId,
     sandbox: prev.sandbox,
     project: prev.project,
     rememberedCount: rememberedResults.length,

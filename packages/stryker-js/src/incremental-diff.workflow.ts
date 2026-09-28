@@ -32,6 +32,7 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
   mutantSetPolicy: Options.MutantSetPolicy,
   runInputsDigest: S.String,
   force: S.Boolean,
+  flakyMutantIds: S.String.pipe(S.Array, S.optional),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     force: 'stryker.incremental_diff.force',
@@ -213,6 +214,29 @@ const priorTimeoutField = (
     onFalse: (): Readonly<Record<string, never>> => ({}),
   })
 
+const flakyMutantIdsOf = (command: IncrementalDiffCommand): readonly string[] =>
+  Option.getOrElse(Option.fromUndefinedOr(command.flakyMutantIds), (): readonly string[] => [])
+
+/**
+ * A mutant is flaky-dependent when a flaky test covers it — or when it is static and any test is
+ * flaky, because a static mutant runs every test in the suite and so inherits every flaky test's
+ * instability even though it never appears in the per-test coverage.
+ */
+const flakyDependent = (command: IncrementalDiffCommand, mutant: Mutant.Mutant): boolean => {
+  const flaky = flakyMutantIdsOf(command)
+  return Boolean.or(flaky.includes(mutant.id), Boolean.and(mutant.static === true, flaky.length > 0))
+}
+
+const flakyRefusedOf = (
+  mutant: Mutant.Mutant,
+  records: readonly PreviousReuseRecord[],
+): IncrementalDiffDecision =>
+  MutantToRun.make({
+    mutant,
+    refusal: 'flakyDependency',
+    ...priorTimeoutField('flakyDependency', records),
+  })
+
 const toRunOf = (
   mutant: Mutant.Mutant,
   command: IncrementalDiffCommand,
@@ -228,9 +252,13 @@ const decideForMutant = (
   recordsById: Record.ReadonlyRecord<Mutant.MutantId, readonly PreviousReuseRecord[]>,
 ): IncrementalDiffDecision => {
   const records = Option.getOrElse(Record.get(recordsById, mutant.id), () => NO_PREVIOUS_RECORDS)
-  return Option.match(newestMatchingOf(records, command), {
-    onNone: () => toRunOf(mutant, command, records),
-    onSome: (record) => rememberedOf(mutant, record),
+  return Boolean.match(flakyDependent(command, mutant), {
+    onTrue: () => flakyRefusedOf(mutant, records),
+    onFalse: () =>
+      Option.match(newestMatchingOf(records, command), {
+        onNone: () => toRunOf(mutant, command, records),
+        onSome: (record) => rememberedOf(mutant, record),
+      }),
   })
 }
 

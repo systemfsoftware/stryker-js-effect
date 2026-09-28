@@ -7,5 +7,6 @@ export const PlannedMutantRunOptions = S.Struct({
   sandboxFileName: S.String,
   reloadEnvironment: S.Boolean,
   testFilter: S.String.pipe(S.Array, S.optional),
+  priorKillerTestIds: S.String.pipe(S.Array, S.optional),
   hitLimit: S.optional(Mutant.HitCount),
 })

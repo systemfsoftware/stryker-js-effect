@@ -39,10 +39,31 @@ const MergeReportsRequestSchema = S.TaggedStruct('merge-reports', {
 
 export type MergeReportsRequest = S.Schema.Type<typeof MergeReportsRequestSchema>
 
-export type CliRequest = RunRequest | MergeReportsRequest
+const CompareRequestSchema = S.TaggedStruct('compare', {
+  baseline: S.String,
+  fresh: S.String,
+  noise: S.optional(S.String),
+})
+
+export type CompareRequest = S.Schema.Type<typeof CompareRequestSchema>
+
+const GateRequestSchema = S.TaggedStruct('gate', {
+  baseline: S.String,
+  updateBaseline: S.Boolean,
+})
+
+export type GateRequest = S.Schema.Type<typeof GateRequestSchema>
+
+export type CliRequest = RunRequest | MergeReportsRequest | CompareRequest | GateRequest
 
 export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteCommand', {
-  route: S.Union([S.TaggedStruct('help', {}), MergeReportsRequestSchema, RunRequestSchema]),
+  route: S.Union([
+    S.TaggedStruct('help', {}),
+    MergeReportsRequestSchema,
+    RunRequestSchema,
+    CompareRequestSchema,
+    GateRequestSchema,
+  ]),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }

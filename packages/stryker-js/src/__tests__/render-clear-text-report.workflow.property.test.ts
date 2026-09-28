@@ -45,6 +45,12 @@ const tableBodyRowsOf = (rendered: ClearTextReportRendered): number =>
     onSome: (table) => table.length - TABLE_CHROME_ROWS,
   })
 
+const STATIC_SUMMARY_PREFIX = 'Static mutants: '
+
+const staticSummaryTextsOf = (rendered: ClearTextReportRendered): ReadonlyArray<string> =>
+  Arr.flatMap(rendered.stdout, (chunk) => Arr.flatMap(chunk, (line) => Arr.map(line, (span) => span.text)))
+    .filter((text) => text.startsWith(STATIC_SUMMARY_PREFIX))
+
 describe('renderClearTextReport', () => {
   it.prop(
     '∀c_Command_≡SuppressedIffNoTerminalReport',
@@ -79,6 +85,28 @@ describe('renderClearTextReport', () => {
               'ClearTextReportRendered',
               (rendered) => spansOf(rendered).every((span) => span.tone === 'plain'),
             ),
+            Match.tag('ClearTextReportSuppressed', () => true),
+            Match.exhaustive,
+          ),
+      }),
+  )
+
+  it.prop(
+    '∀c_StaticSummary_≡PresentExactlyWhenSupplied',
+    { of: [commandArb], subject: renderClearTextReport },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (value) =>
+          Match.value(value).pipe(
+            Match.tag('ClearTextReportRendered', (rendered) => {
+              const summaries = staticSummaryTextsOf(rendered)
+              const [first] = summaries
+              const supplied = command.static
+              return supplied === undefined
+                ? summaries.length === 0
+                : summaries.length === 1 && first !== undefined && first.includes(String(supplied.count))
+            }),
             Match.tag('ClearTextReportSuppressed', () => true),
             Match.exhaustive,
           ),

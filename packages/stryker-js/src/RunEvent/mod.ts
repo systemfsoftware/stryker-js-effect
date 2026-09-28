@@ -1,6 +1,8 @@
 export type { ResolvedMode } from '../output-mode.schema.js'
 export { metricsResultFromFiles } from '../reporting/metrics-from-report.js'
 export { MetricsResultFromReport } from '../reporting/metrics-from-report.schema.js'
+export { staticVerdictOf } from '../reporting/static-verdict.js'
+export { buildVerdictEnvelope } from '../reporting/verdict-envelope.js'
 export { VerdictEnvelope } from '../reporting/verdict-envelope.schema.js'
 export {
   makeRunEventStream,

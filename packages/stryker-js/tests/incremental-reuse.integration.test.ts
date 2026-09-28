@@ -46,9 +46,17 @@ const mutantsOf = (text: string): readonly RecordedMutant[] =>
 interface RunObservation {
   readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
   readonly reuse: RunEvent.ReuseReported | undefined
+  readonly verdict: RunEvent.VerdictReached | undefined
   readonly mutants: readonly RecordedMutant[]
   readonly incrementalText: string
 }
+
+const lineCountOf = (file: string): Effect.Effect<number, never, FileSystem.FileSystem> =>
+  FileSystem.FileSystem.pipe(
+    Effect.flatMap((fs) => fs.readFileString(file)),
+    Effect.map((text) => text.split('\n').filter((line) => line.length > 0).length),
+    Effect.orElseSucceed(() => 0),
+  )
 
 const writeFixture = (
   files: ReadonlyArray<readonly [string, string]>,
@@ -101,7 +109,8 @@ const runOnce = (root: string, options: Options.PartialStrykerOptions): Effect.E
       Effect.orElseSucceed(() => ''),
     )
     const reuse = events.find((event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event))
-    return { exit, reuse, mutants: mutantsOf(incrementalText), incrementalText }
+    const verdict = events.find((event): event is RunEvent.VerdictReached => S.is(RunEvent.VerdictReached)(event))
+    return { exit, reuse, verdict, mutants: mutantsOf(incrementalText), incrementalText }
   }).pipe(Effect.provide(filePorts))
 
 const optionsOf = (
@@ -184,6 +193,59 @@ Feature('Content-keyed reuse across incremental reports')
             everyMutantCarriesAClosureDigest: true,
           })
         }),
+      ),
+    )
+
+    scenario(
+      'A second run with no change skips the dry run instead of spawning the test runner again',
+      Gherkin.Do.pipe(
+        Given('a workspace whose command runner appends every spawn to a log file')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const root = yield* writeFixture([['src/math.ts', SOURCE]])
+              const spawnLog = yield* fs.makeTempFile({ prefix: 'runner-spawns', suffix: '.txt' })
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = optionsOf(root, {
+                    commandRunner: { command: `echo spawned >> ${spawnLog}` },
+                  })
+                  const first = yield* runOnce(root, options)
+                  const spawnsAfterFirst = yield* lineCountOf(spawnLog)
+                  const second = yield* runOnce(root, options)
+                  const spawnsAfterSecond = yield* lineCountOf(spawnLog)
+                  return {
+                    planned: first.mutants.length,
+                    first,
+                    second,
+                    spawnsInFirstRun: spawnsAfterFirst,
+                    spawnsInSecondRun: spawnsAfterSecond - spawnsAfterFirst,
+                  }
+                }),
+                Effect.andThen(removeFixture(root), Effect.orDie(fs.remove(spawnLog, { force: true }))),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then('the second run spawns no test runner and still reports every phase duration')((s, expect) =>
+          expect({
+            plannedNonZero: s.fixture.planned > 0,
+            firstRunSpawned: s.fixture.spawnsInFirstRun > 0,
+            second: {
+              reused: s.fixture.second.reuse?.reused,
+              ran: s.fixture.second.reuse?.ran,
+              refused: s.fixture.second.reuse?.refused,
+            },
+            spawnsInSecondRun: s.fixture.spawnsInSecondRun,
+            secondRunDryRunPhase: typeof s.fixture.second.verdict?.phaseDurations?.['dry-run'],
+          }).toEqual({
+            plannedNonZero: true,
+            firstRunSpawned: true,
+            second: { reused: s.fixture.planned, ran: 0, refused: ZERO_REFUSALS },
+            spawnsInSecondRun: 0,
+            secondRunDryRunPhase: 'number',
+          })
+        ),
       ),
     )
 

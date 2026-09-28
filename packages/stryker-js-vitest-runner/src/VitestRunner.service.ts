@@ -21,6 +21,7 @@ import { makeMutantRunCell } from './MutantRun.cell.js'
 import { VitestDryRunCommand } from './vitest-run-command.schema.js'
 import { interpretVitestTestRun } from './vitest-test-run.js'
 import { CoverageDecodeFailed, type TestRunnerPhase } from './VitestRunner.schema.js'
+import { testFileOrder } from './VitestRuntime.blueprint.js'
 import {
   applyRunFilter,
   clearFiles,
@@ -130,6 +131,7 @@ export interface RunFilter {
   testIds?: string[]
   relatedFiles?: string[]
   testFiles?: string[]
+  priorKillerTestIds?: string[]
 }
 
 /** Vitest matches related files against absolute module ids, and only resolves them when the config is first built. */
@@ -287,6 +289,21 @@ const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*
     yield* resetContext
     const related = relatedFilesOf(options.related, filter.relatedFiles, projectRoot, pathService)
     const plan = runFilterPlan(filter, projectRoot, pathService)
+    const filterFiles = Option.getOrElse(Option.fromNullishOr(plan.testFiles), () => [])
+    testFileOrder.current = {
+      order: filterFiles,
+      priority: Boolean.match(filterFiles.length > 0, {
+        onTrue: () => [],
+        onFalse: () =>
+          Option.getOrElse(
+            Option.map(
+              Option.fromNullishOr(filter.priorKillerTestIds),
+              (ids) => ids.map((id) => pathService.resolve(projectRoot, fromTestId(id).file)),
+            ),
+            () => [],
+          ),
+      }),
+    }
     yield* applyRunFilter(self, { related, testNamePattern: plan.testNamePattern })
     yield* start(self, plan.testFiles).pipe(
       Effect.catchIf(

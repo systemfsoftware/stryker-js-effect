@@ -98,6 +98,7 @@ export const MutantRunOptionsSchema = S.Struct({
   mutantActivation: MutantActivationSchema,
   reloadEnvironment: S.Boolean,
   testFilter: S.String.pipe(S.Array, S.optionalKey),
+  priorKillerTestIds: S.String.pipe(S.Array, S.optionalKey),
   hitLimit: S.optionalKey(HitCount),
 })
 
@@ -123,6 +124,7 @@ export interface RunOptions {
 
 export interface MutantRunOptions extends RunOptions {
   readonly testFilter?: readonly string[]
+  readonly priorKillerTestIds?: readonly string[]
   readonly hitLimit?: number
   readonly activeMutant: Mutant
   readonly sandboxFileName: string

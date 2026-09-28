@@ -20,6 +20,9 @@ export const testBodyMsOf = (result: TestRunner.MutantRunResult): number =>
 
 const bodyTimeWithinWall = (elapsedMs: number, testBodyMs: number): number => Math.min(testBodyMs, elapsedMs)
 
+export const costTotalMsOf = (cost: Mutant.MutantCost | undefined): number | undefined =>
+  cost === undefined ? undefined : cost.fixedOverheadMs + cost.testBodyMs
+
 export const mutantCostOf = (input: MutantCostInput): Mutant.MutantCost => {
   const testBodyMs = bodyTimeWithinWall(input.elapsedMs, input.testBodyMs)
   return {

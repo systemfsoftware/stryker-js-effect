@@ -113,6 +113,7 @@ export const buildVerdictEnvelope: {
     basePath: string,
     pathService: Path.Path,
     phaseDurations: Option.Option<RunEvent.PhaseDurations>,
+    staticVerdict: RunEvent.StaticVerdict | null,
   ): (report: Report.MutationTestResult) => VerdictEnvelope
   (
     report: Report.MutationTestResult,
@@ -122,9 +123,10 @@ export const buildVerdictEnvelope: {
     basePath: string,
     pathService: Path.Path,
     phaseDurations: Option.Option<RunEvent.PhaseDurations>,
+    staticVerdict: RunEvent.StaticVerdict | null,
   ): VerdictEnvelope
 } = dual(
-  (args) => args.length === 7,
+  (args) => args.length === 8,
   (
     report: Report.MutationTestResult,
     mode: OutputMode.OutputMode,
@@ -133,6 +135,7 @@ export const buildVerdictEnvelope: {
     basePath: string,
     pathService: Path.Path,
     phaseDurations: Option.Option<RunEvent.PhaseDurations>,
+    staticVerdict: RunEvent.StaticVerdict | null,
   ): VerdictEnvelope => {
     const metrics = Report.metricsFromMutants(Arr.flatMap(Object.values(report.files), (file) => file.mutants))
     const { jsonReporterFileName, mutantSetPolicy, scope } = embeddedConfig(report)
@@ -161,7 +164,7 @@ export const buildVerdictEnvelope: {
       scope,
       mutantSetPolicy,
       phaseDurations: Option.getOrNull(phaseDurations),
-      static: null,
+      static: staticVerdict,
     })
   },
 )

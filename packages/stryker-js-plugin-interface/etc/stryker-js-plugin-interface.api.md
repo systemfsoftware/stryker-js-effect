@@ -41,7 +41,7 @@ export namespace Plugin {
 
 // @public (undocumented)
 export namespace Report {
-    export { BrandingInformation, CpuInformation, Dependencies, DetectedStatus, FileResult, FileResultDictionary, FrameworkInformation, InvalidStatus, Location$1 as Location, Metrics, MetricsResult, MetricsResultEncoded, MetricsResultSchema, MetricsSchema, MutantResult, MutationScore, MutationTestResult, NonNegativeFinite, NonNegativeInt, OSInformation, OpenEndLocation$1 as OpenEndLocation, Percentage, PerformanceStatistics, Position$1 as Position, RamInformation, SystemInformation, TestDefinition, TestFile, TestFileDefinitionDictionary, Thresholds, UndetectedStatus, UntestedStatus, WrittenSchemaVersion, metricsFromMutants };
+    export { BrandingInformation, CpuInformation, Dependencies, DetectedStatus, FileResult, FileResultDictionary, FrameworkInformation, InvalidStatus, Location$1 as Location, Metrics, MetricsResult, MetricsResultEncoded, MetricsResultSchema, MetricsSchema, MutantResult, MutationScore, MutationTestResult, NonNegativeFinite, NonNegativeInt, OSInformation, OpenEndLocation$1 as OpenEndLocation, Percentage, PerformanceStatistics, Position$1 as Position, RamInformation, StaticClassSummary, StaticClassSummarySchema, SystemInformation, TestDefinition, TestFile, TestFileDefinitionDictionary, Thresholds, UndetectedStatus, UntestedStatus, WrittenSchemaVersion, metricsFromMutants };
 }
 
 // @public (undocumented)

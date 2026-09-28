@@ -31,7 +31,7 @@ describe('buildVerdictEnvelope', () => {
     '∀r_EnvelopeCounts_≡EveryMutantCounted',
     { of: [Report.MutationTestResult], subject: buildVerdictEnvelope },
     (subject, [report]) => {
-      const { counts } = subject(report, 'machine', 'flag', fixedRunId, '/base', pathService, Option.none())
+      const { counts } = subject(report, 'machine', 'flag', fixedRunId, '/base', pathService, Option.none(), null)
       return counts.totalMutants === mutantTotalOf(report)
     },
   )

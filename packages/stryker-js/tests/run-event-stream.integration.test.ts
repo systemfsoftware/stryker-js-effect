@@ -1,10 +1,12 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { RunEvent } from '@systemfsoftware/stryker-js'
 import { RunEvent as CliContract } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
@@ -25,6 +27,93 @@ const RUN_FAILED = CliContract.RunFailed.make({
   remediation: 'y',
   reason: null,
 })
+
+const pathService = Effect.runSync(Effect.provide(Path.Path, Path.layer))
+
+const VERDICT_RUN_ID = CliContract.RunId.make('00000000000000000000000000')
+
+const MUTANT_LOCATION = { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } }
+
+interface MutantFixture {
+  readonly index: number
+  readonly static: boolean
+  readonly status: 'Survived' | 'Ignored'
+  readonly bodyMs: number | null
+}
+
+const MIXED_MUTANTS: ReadonlyArray<MutantFixture> = [
+  { index: 1, static: true, status: 'Survived', bodyMs: 30 },
+  { index: 2, static: true, status: 'Survived', bodyMs: 50 },
+  { index: 3, static: false, status: 'Survived', bodyMs: 2 },
+  { index: 4, static: false, status: 'Survived', bodyMs: 3 },
+]
+
+const IGNORED_STATIC_MUTANTS: ReadonlyArray<MutantFixture> = [
+  { index: 1, static: true, status: 'Ignored', bodyMs: null },
+  { index: 2, static: true, status: 'Survived', bodyMs: 30 },
+  { index: 3, static: false, status: 'Survived', bodyMs: 2 },
+]
+
+const mutantIdTextOf = (index: number): string => String(index).padStart(16, '0')
+
+const mutantLineOf = (fixture: MutantFixture): CliContract.RunMutantTestedEvent =>
+  CliContract.RunMutantTestedEvent.make({
+    id: Mutant.MutantId.make(mutantIdTextOf(fixture.index)),
+    status: fixture.status,
+    fileName: Mutant.CanonicalFileName.make('src/a.ts'),
+    location: MUTANT_LOCATION,
+    mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
+    replacement: '+',
+    completed: fixture.index,
+    total: 4,
+    static: fixture.static,
+    cost: fixture.bodyMs === null
+      ? null
+      : CliContract.MutantCost.make({
+        fixedOverheadMs: 0,
+        testBodyMs: fixture.bodyMs,
+        testsExecuted: 1,
+        shared: false,
+      }),
+  })
+
+const reportOf = (fixtures: ReadonlyArray<MutantFixture>): Report.MutationTestResult => ({
+  schemaVersion: '1.0',
+  thresholds: { high: 100, low: 80 },
+  files: {
+    'src/a.ts': {
+      language: 'typescript',
+      source: '',
+      mutants: fixtures.map(
+        (fixture): Report.MutantResult => ({
+          id: mutantIdTextOf(fixture.index),
+          mutatorName: 'ArithmeticOperator',
+          replacement: '+',
+          status: fixture.status,
+          location: MUTANT_LOCATION,
+          static: fixture.static,
+        }),
+      ),
+    },
+  },
+})
+
+const runResultOf = (fixture: MutantFixture): Mutant.RunMutantResult => ({
+  _tag: 'Mutant',
+  id: Mutant.MutantId.make(mutantIdTextOf(fixture.index)),
+  fileName: Mutant.CanonicalFileName.make('src/a.ts'),
+  mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
+  replacement: '+',
+  location: MUTANT_LOCATION,
+  status: fixture.status,
+  static: fixture.static,
+  ...(fixture.bodyMs === null
+    ? {}
+    : { cost: { fixedOverheadMs: 0, testBodyMs: fixture.bodyMs, testsExecuted: 1, shared: false } }),
+})
+
+const costTotalOf = (cost: CliContract.MutantCost | null): number =>
+  cost === null ? 0 : cost.fixedOverheadMs + cost.testBodyMs
 
 interface CapturedStream {
   readonly stream: RunEvent.RunEventStream
@@ -335,6 +424,130 @@ Feature('Streaming a run to machine readers')
             stdout: s.result.stdout,
           }).toEqual({ drainFailureLogged: true, stdout: [] })
         ),
+      ),
+    )
+
+    scenario(
+      'The static verdict counts the mutant lines that are static and sums their measured cost totals',
+      Gherkin.Do.pipe(
+        Given('a machine run streaming two static mutants and two per-test mutants')(
+          'fixture',
+          () => capturingFixture('machine'),
+        ),
+        When('the run streams the mutant lines and its verdict, then closes')(
+          'result',
+          (s) =>
+            Effect.gen(function*() {
+              const envelope = RunEvent.buildVerdictEnvelope(
+                reportOf(MIXED_MUTANTS),
+                'machine',
+                'flag',
+                VERDICT_RUN_ID,
+                '/base',
+                pathService,
+                Option.none(),
+                RunEvent.staticVerdictOf(MIXED_MUTANTS.map(runResultOf)),
+              )
+              yield* s.fixture.stream.open
+              yield* offerAll(s.fixture.stream, [
+                ...MIXED_MUTANTS.map(mutantLineOf),
+                CliContract.VerdictReached.make({
+                  schemaVersion: envelope.schemaVersion,
+                  runId: envelope.runId,
+                  mode: envelope.mode,
+                  signal: envelope.signal,
+                  score: envelope.score,
+                  thresholds: envelope.thresholds,
+                  reportFile: envelope.reportFile,
+                  counts: envelope.counts,
+                  mutants: envelope.mutants,
+                  scope: envelope.scope,
+                  mutantSetPolicy: envelope.mutantSetPolicy,
+                  phaseDurations: envelope.phaseDurations,
+                  static: envelope.static,
+                }),
+              ])
+              yield* s.fixture.stream.closeAndDrain
+              return { stdout: yield* Ref.get(s.fixture.stdout) }
+            }),
+        ),
+        Then(
+          'the decoded static count matches the static mutant lines and the static cost matches their cost totals',
+        )((s, expect) => {
+          const events = parseLinesAsEvents(s.result.stdout)
+          const staticLines = events.filter(S.is(CliContract.RunMutantTested)).filter((line) => line.static)
+          const verdict = events.find(S.is(CliContract.VerdictReached))
+          return expect({
+            staticLineCount: staticLines.length,
+            staticLineCostMs: staticLines.reduce((total, line) => total + costTotalOf(line.cost), 0),
+            verdictStatic: verdict === undefined ? null : verdict.static,
+          }).toEqual({
+            staticLineCount: 2,
+            staticLineCostMs: 80,
+            verdictStatic: { count: 2, costMs: 80 },
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'An ignored static mutant still counts as static but contributes no cost to the verdict',
+      Gherkin.Do.pipe(
+        Given('a machine run with an ignored static mutant, a measured static mutant, and a per-test mutant')(
+          'fixture',
+          () => capturingFixture('machine'),
+        ),
+        When('the run streams the mutant lines and its verdict, then closes')(
+          'result',
+          (s) =>
+            Effect.gen(function*() {
+              const envelope = RunEvent.buildVerdictEnvelope(
+                reportOf(IGNORED_STATIC_MUTANTS),
+                'machine',
+                'flag',
+                VERDICT_RUN_ID,
+                '/base',
+                pathService,
+                Option.none(),
+                RunEvent.staticVerdictOf(IGNORED_STATIC_MUTANTS.map(runResultOf)),
+              )
+              yield* s.fixture.stream.open
+              yield* offerAll(s.fixture.stream, [
+                ...IGNORED_STATIC_MUTANTS.map(mutantLineOf),
+                CliContract.VerdictReached.make({
+                  schemaVersion: envelope.schemaVersion,
+                  runId: envelope.runId,
+                  mode: envelope.mode,
+                  signal: envelope.signal,
+                  score: envelope.score,
+                  thresholds: envelope.thresholds,
+                  reportFile: envelope.reportFile,
+                  counts: envelope.counts,
+                  mutants: envelope.mutants,
+                  scope: envelope.scope,
+                  mutantSetPolicy: envelope.mutantSetPolicy,
+                  phaseDurations: envelope.phaseDurations,
+                  static: envelope.static,
+                }),
+              ])
+              yield* s.fixture.stream.closeAndDrain
+              return { stdout: yield* Ref.get(s.fixture.stdout) }
+            }),
+        ),
+        Then('the ignored static line is counted but only the measured static cost is summed')((s, expect) => {
+          const events = parseLinesAsEvents(s.result.stdout)
+          const staticLines = events.filter(S.is(CliContract.RunMutantTested)).filter((line) => line.static)
+          const verdict = events.find(S.is(CliContract.VerdictReached))
+          return expect({
+            staticLineCount: staticLines.length,
+            staticLineCostMs: staticLines.reduce((total, line) => total + costTotalOf(line.cost), 0),
+            verdictStatic: verdict === undefined ? null : verdict.static,
+          }).toEqual({
+            staticLineCount: 2,
+            staticLineCostMs: 30,
+            verdictStatic: { count: 2, costMs: 30 },
+          })
+        }),
       ),
     )
   })

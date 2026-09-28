@@ -56,6 +56,7 @@ interface CommandFields {
   readonly runInputsDigest?: string
   readonly force?: boolean
   readonly previousRecords?: ReadonlyArray<PreviousReuseRecord>
+  readonly flakyMutantIds?: ReadonlyArray<Mutant.MutantId>
 }
 
 const commandOf = (
@@ -72,6 +73,7 @@ const commandOf = (
     mutantSetPolicy: fields.mutantSetPolicy ?? 'default',
     runInputsDigest: fields.runInputsDigest ?? 'run-inputs',
     force: fields.force ?? false,
+    ...(fields.flakyMutantIds === undefined ? {} : { flakyMutantIds: [...fields.flakyMutantIds] }),
   })
 
 const matchingCommandOf = (
@@ -261,6 +263,41 @@ describe('incrementalDiff', () => {
       return reusableInOrder === undefined
         ? S.is(MutantToRun)(decision)
         : S.is(MutantRemembered)(decision) && decision.status === reusableInOrder.status
+    },
+  )
+
+  it.prop(
+    '∀rf_RecordAndFlakyId_≡AStaticMutantIsFlakyDependentWheneverTheFlakeSetIsNotEmpty',
+    { of: [PreviousReuseRecordSchema, Mutant.MutantId], subject: incrementalDiff },
+    (subject, [record, flakyId]) => {
+      const mutant = Mutant.Mutant.make({ ...mutantOf(record.mutantId), static: true })
+      const result = subject(commandOf([mutant], [record], {
+        closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
+        verdictSemanticsVersion: record.verdictSemanticsVersion,
+        mutantSetPolicy: record.mutantSetPolicy,
+        runInputsDigest: record.runInputsDigest,
+        flakyMutantIds: [flakyId],
+      }))
+      return runsWithRefusal(result, 'flakyDependency')
+    },
+  )
+
+  it.prop(
+    '∀r_Record_≡AStaticMutantWithoutFlakesIsRememberedExactlyLikeAnyOtherMutant',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const mutant = Mutant.Mutant.make({ ...mutantOf(record.mutantId), static: true })
+      const decision = onlyDecision(subject(commandOf([mutant], [record], {
+        closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
+        verdictSemanticsVersion: record.verdictSemanticsVersion,
+        mutantSetPolicy: record.mutantSetPolicy,
+        runInputsDigest: record.runInputsDigest,
+        flakyMutantIds: [],
+      })))
+      if (decision === undefined) {
+        return false
+      }
+      return remembers(record) ? S.is(MutantRemembered)(decision) : S.is(MutantToRun)(decision)
     },
   )
 
