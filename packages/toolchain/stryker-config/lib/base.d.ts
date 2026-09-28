@@ -7,6 +7,7 @@ export interface SharedConfig {
   coverageAnalysis: 'perTest'
   incremental: boolean
   incrementalFile: string
+  incrementalSources: string[]
   ignorePatterns: string[]
   cleanTempDir: 'always'
   thresholds: { high: number; low: number; break: number }

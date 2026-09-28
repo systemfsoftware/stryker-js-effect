@@ -10,5 +10,6 @@ export default defineConfig({
   reporters: ['json'],
   tsconfigFile: 'tsconfig.json',
   timeoutMS: 60000,
+  mutator: { mutantSetPolicy: 'full' },
   mutate: ['packages/core/src/contracts.ts', 'packages/api/src/report.ts'],
 })

@@ -14,6 +14,7 @@ export default defineConfig({
   ],
   reporters: ['json'],
   tsconfigFile: 'tsconfig.json',
+  mutator: { mutantSetPolicy: 'full' },
   mutate: ['packages/services/src/nontermination.ts'],
   timeoutMS: 500,
 })

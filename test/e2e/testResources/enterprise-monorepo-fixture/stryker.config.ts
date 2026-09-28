@@ -11,6 +11,6 @@ export default defineConfig({
   tsconfigFile: 'tsconfig.json',
   timeoutMS: 60000,
   plugins: [new URL('./provider.mjs', import.meta.url).href],
-  mutator: { optInMutations: ['AtomicUpdateSplit', 'FinalizerEscape'] },
+  mutator: { mutantSetPolicy: 'full', optInMutations: ['AtomicUpdateSplit', 'FinalizerEscape'] },
   mutate: ['packages/*/src/**/*.ts', '!packages/*/src/**/*.test.ts', '!packages/services/src/nontermination.ts'],
 })
