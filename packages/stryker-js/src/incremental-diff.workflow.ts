@@ -11,8 +11,10 @@ import {
   PreviousReuseRecordSchema,
   type ReuseRefusalReason,
   ReuseRefusalReasonSchema,
+  TimeoutEvidenceSchema,
+  TimeoutKindSchema,
 } from './IncrementalDiff.schema.js'
-import type { PreviousReuseRecord } from './IncrementalDiff.schema.js'
+import type { PreviousReuseRecord, TimeoutEvidence } from './IncrementalDiff.schema.js'
 
 const isReusableStatus = S.is(Mutant.RememberedStatusSchema)
 
@@ -39,6 +41,8 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
 export class MutantRemembered extends S.TaggedClass<MutantRemembered>()('MutantRemembered', {
   mutantId: Mutant.MutantId,
   status: Mutant.RememberedStatusSchema,
+  timeoutKind: S.optional(TimeoutKindSchema),
+  reproductions: S.optional(S.Natural),
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
@@ -49,6 +53,7 @@ export class MutantRemembered extends S.TaggedClass<MutantRemembered>()('MutantR
 export class MutantToRun extends S.TaggedClass<MutantToRun>()('MutantToRun', {
   mutant: Mutant.Mutant,
   refusal: ReuseRefusalReasonSchema,
+  priorTimeout: S.optional(TimeoutEvidenceSchema),
 }) {
   readonly [IncrementalDiffTypeId] = IncrementalDiffTypeId
 }
@@ -63,8 +68,26 @@ type CacheKeyComponents = {
 
 type RememberedReuseRecord = PreviousReuseRecord & { readonly status: Mutant.RememberedStatus }
 
+const isUnreproducedWallClockTimeout = (record: PreviousReuseRecord): boolean =>
+  Boolean.and(
+    record.status === 'Timeout',
+    Boolean.and(
+      Boolean.not(record.timeoutKind === 'hitLimit'),
+      Option.getOrElse(Option.fromUndefinedOr(record.reproductions), () => 0) < 1,
+    ),
+  )
+
 const isReusableRecord = (record: PreviousReuseRecord): record is RememberedReuseRecord =>
-  isReusableStatus(record.status)
+  Boolean.and(isReusableStatus(record.status), Boolean.not(isUnreproducedWallClockTimeout(record)))
+
+const timeoutEvidenceOf = (record: PreviousReuseRecord): Option.Option<TimeoutEvidence> =>
+  Option.map(
+    Option.fromUndefinedOr(record.timeoutKind),
+    (timeoutKind) => ({
+      timeoutKind,
+      reproductions: Option.getOrElse(Option.fromUndefinedOr(record.reproductions), () => 0),
+    }),
+  )
 
 const digestOf = (digest: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(digest), () => '')
 
@@ -95,7 +118,11 @@ const closureChanged = (command: IncrementalDiffCommand, record: PreviousReuseRe
 const reasonAfterClosure = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
   Boolean.match(closureChanged(command, record), {
     onTrue: (): ReuseRefusalReason => 'closureChanged',
-    onFalse: (): ReuseRefusalReason => 'noPriorRecord',
+    onFalse: (): ReuseRefusalReason =>
+      Boolean.match(isUnreproducedWallClockTimeout(record), {
+        onTrue: () => 'timeoutUnreproduced',
+        onFalse: () => 'noPriorRecord',
+      }),
   })
 
 const reasonAfterRunInputs = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
@@ -138,6 +165,14 @@ const rememberedOf = (mutant: Mutant.Mutant, record: RememberedReuseRecord) =>
   MutantRemembered.make({
     mutantId: mutant.id,
     status: record.status,
+    ...Option.match(Option.fromUndefinedOr(record.timeoutKind), {
+      onNone: () => ({}),
+      onSome: (timeoutKind) => ({ timeoutKind }),
+    }),
+    ...Option.match(Option.fromUndefinedOr(record.reproductions), {
+      onNone: () => ({}),
+      onSome: (reproductions) => ({ reproductions }),
+    }),
     ...Option.match(Option.fromUndefinedOr(record.testsCompleted), {
       onNone: () => ({}),
       onSome: (testsCompleted) => ({ testsCompleted }),
@@ -161,6 +196,32 @@ const refusalForMutant = (
     onSome: (newest) => refusalOf(command, newest),
   })
 
+const priorTimeoutField = (
+  refusal: ReuseRefusalReason,
+  records: readonly PreviousReuseRecord[],
+) =>
+  Boolean.match(refusal === 'timeoutUnreproduced', {
+    onTrue: () =>
+      Option.match(Arr.last(records), {
+        onNone: (): Readonly<Record<string, never>> => ({}),
+        onSome: (newest) =>
+          Option.match(timeoutEvidenceOf(newest), {
+            onNone: (): Readonly<Record<string, never>> => ({}),
+            onSome: (priorTimeout) => ({ priorTimeout }),
+          }),
+      }),
+    onFalse: (): Readonly<Record<string, never>> => ({}),
+  })
+
+const toRunOf = (
+  mutant: Mutant.Mutant,
+  command: IncrementalDiffCommand,
+  records: readonly PreviousReuseRecord[],
+): IncrementalDiffDecision => {
+  const refusal = refusalForMutant(command, records)
+  return MutantToRun.make({ mutant, refusal, ...priorTimeoutField(refusal, records) })
+}
+
 const decideForMutant = (
   mutant: Mutant.Mutant,
   command: IncrementalDiffCommand,
@@ -168,7 +229,7 @@ const decideForMutant = (
 ): IncrementalDiffDecision => {
   const records = Option.getOrElse(Record.get(recordsById, mutant.id), () => NO_PREVIOUS_RECORDS)
   return Option.match(newestMatchingOf(records, command), {
-    onNone: () => MutantToRun.make({ mutant, refusal: refusalForMutant(command, records) }),
+    onNone: () => toRunOf(mutant, command, records),
     onSome: (record) => rememberedOf(mutant, record),
   })
 }

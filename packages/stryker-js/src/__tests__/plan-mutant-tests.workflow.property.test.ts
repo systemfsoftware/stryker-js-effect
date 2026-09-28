@@ -18,6 +18,8 @@ import {
   PlannedRunMutant,
 } from '../plan-mutant-tests.workflow.js'
 
+const MUTANT_TIMEOUT_FLOOR_MS = 100
+
 const testsOf = (command: MutantTestPlanCommand, id: Mutant.MutantId): readonly TestRunner.TestId[] =>
   Option.getOrElse(Record.get(command.testsByMutantId, id), (): readonly TestRunner.TestId[] => [])
 
@@ -308,6 +310,19 @@ describe('planMutantTests', () => {
               onNone: () => false,
               onSome: (mutant) => mutant.status === undefined || earlyResultStatusOf(decision) === mutant.status,
             })
+          ),
+      }),
+  )
+
+  it.prop(
+    '∀p_CoveringTestTime_≡TheComputedTimeoutNeverFallsBelowTheFloor',
+    { of: [MutantTestPlanCommand], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => true,
+        onSuccess: (decisions) =>
+          decisions.every((decision) =>
+            !S.is(PlannedRunMutant)(decision) || decision.runOptions.timeout >= MUTANT_TIMEOUT_FLOOR_MS
           ),
       }),
   )

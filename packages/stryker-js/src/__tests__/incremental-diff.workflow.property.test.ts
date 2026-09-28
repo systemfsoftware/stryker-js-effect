@@ -28,6 +28,11 @@ const mutantOf = (id: Mutant.MutantId): Mutant.Mutant =>
 
 const isReusable = S.is(Mutant.RememberedStatusSchema)
 
+const unreproducedWallClock = (record: PreviousReuseRecord): boolean =>
+  record.status === 'Timeout' && record.timeoutKind !== 'hitLimit' && (record.reproductions ?? 0) < 1
+
+const remembers = (record: PreviousReuseRecord): boolean => isReusable(record.status) && !unreproducedWallClock(record)
+
 const recordOf = (
   mutantId: Mutant.MutantId,
   status: Mutant.MutantStatus,
@@ -143,9 +148,37 @@ describe('incrementalDiff', () => {
       if (decision === undefined) {
         return false
       }
-      return isReusable(record.status)
+      return remembers(record)
         ? S.is(MutantRemembered)(decision) && decision.mutantId === record.mutantId && decision.status === record.status
-        : S.is(MutantToRun)(decision) && decision.refusal === 'noPriorRecord'
+        : S.is(MutantToRun)(decision) &&
+          decision.refusal === (unreproducedWallClock(record) ? 'timeoutUnreproduced' : 'noPriorRecord')
+    },
+  )
+
+  it.prop(
+    '∀rd_RecordAndReproductions_≡AWallClockTimeoutIsRememberedExactlyWhenItReproduced',
+    { of: [PreviousReuseRecordSchema, S.Natural], subject: incrementalDiff },
+    (subject, [record, reproductions]) => {
+      const prior = { ...record, status: 'Timeout' as const, timeoutKind: 'wallClock' as const, reproductions }
+      const decision = onlyDecision(subject(matchingCommandOf(prior)))
+      if (decision === undefined) {
+        return false
+      }
+      return reproductions >= 1
+        ? S.is(MutantRemembered)(decision) && decision.status === 'Timeout' && decision.timeoutKind === 'wallClock' &&
+          decision.reproductions === reproductions
+        : S.is(MutantToRun)(decision) && decision.refusal === 'timeoutUnreproduced' &&
+          decision.priorTimeout?.timeoutKind === 'wallClock'
+    },
+  )
+
+  it.prop(
+    '∀r_Record_≡AHitLimitTimeoutIsRememberedOnFirstSight',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const prior = { ...record, status: 'Timeout' as const, timeoutKind: 'hitLimit' as const, reproductions: 0 }
+      const decision = onlyDecision(subject(matchingCommandOf(prior)))
+      return decision !== undefined && S.is(MutantRemembered)(decision) && decision.status === 'Timeout'
     },
   )
 
@@ -224,11 +257,10 @@ describe('incrementalDiff', () => {
       if (decision === undefined) {
         return false
       }
-      const reusableInOrder = isReusable(newer.status) ? newer : older
-      const expected = isReusable(reusableInOrder.status) ? reusableInOrder : undefined
-      return expected === undefined
+      const reusableInOrder = remembers(newer) ? newer : remembers(older) ? older : undefined
+      return reusableInOrder === undefined
         ? S.is(MutantToRun)(decision)
-        : S.is(MutantRemembered)(decision) && decision.status === expected.status
+        : S.is(MutantRemembered)(decision) && decision.status === reusableInOrder.status
     },
   )
 

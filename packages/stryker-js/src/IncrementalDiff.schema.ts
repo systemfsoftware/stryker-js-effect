@@ -25,6 +25,17 @@ export const ClosureDigestsSchema = S.Record(Mutant.MutantId, S.String)
 
 export type ClosureDigests = S.Schema.Type<typeof ClosureDigestsSchema>
 
+export const TimeoutKindSchema = S.Literals(['wallClock', 'hitLimit'])
+
+export type TimeoutKind = typeof TimeoutKindSchema.Type
+
+export const TimeoutEvidenceSchema = S.Struct({
+  timeoutKind: TimeoutKindSchema,
+  reproductions: S.Natural,
+})
+
+export type TimeoutEvidence = S.Schema.Type<typeof TimeoutEvidenceSchema>
+
 export const PreviousReuseRecordSchema = S.Struct({
   mutantId: Mutant.MutantId,
   status: Mutant.MutantStatusSchema,
@@ -32,6 +43,8 @@ export const PreviousReuseRecordSchema = S.Struct({
   verdictSemanticsVersion: S.Int,
   mutantSetPolicy: Options.MutantSetPolicy,
   runInputsDigest: S.String,
+  timeoutKind: S.optional(TimeoutKindSchema),
+  reproductions: S.optional(S.Natural),
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
@@ -43,6 +56,8 @@ const ReuseMutantSchema = S.Struct({
   id: Mutant.MutantId,
   status: Mutant.MutantStatusSchema,
   closureDigest: S.optional(S.String),
+  timeoutKind: S.optional(TimeoutKindSchema),
+  reproductions: S.optional(S.Natural),
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),

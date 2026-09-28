@@ -36,7 +36,8 @@ import {
   CheckpointSettledMutant,
 } from './checkpoint-mutants.workflow.js'
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
-import type { FormatIdentity } from './IncrementalDiff.schema.js'
+import type { FormatIdentity, TimeoutEvidence, TimeoutKind } from './IncrementalDiff.schema.js'
+import { TimeoutEvidenceSchema } from './IncrementalDiff.schema.js'
 import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js'
@@ -113,6 +114,7 @@ export interface MutationReportingInput {
   readonly reporterStage: ReporterStage
   readonly formatRegistry: Format.FormatRegistry
   readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
+  readonly timeoutEvidenceByMutantId?: Readonly<Record<string, TimeoutEvidence>>
 }
 
 export interface MutationReportingService {
@@ -324,6 +326,7 @@ interface FileResultsInput {
   readonly reportNames: HashMap.HashMap<string, string>
   readonly mutants: readonly Mutant.RunMutantResult[]
   readonly remap: TestIdRemap
+  readonly timeoutEvidenceByMutantId: Readonly<Record<string, TimeoutEvidence>>
 }
 
 interface TestFilesInput {
@@ -339,9 +342,60 @@ const presentField = <K extends string, V>(key: K, value: V | undefined): Partia
     onSome: (present) => Record.singleton(key, present),
   })
 
+const timeoutKindIn = (reason: string | undefined): TimeoutKind | undefined =>
+  Match.value(reason).pipe(
+    Match.when(TestRunner.WallClockTimeoutReason.literal, (): TimeoutKind => 'wallClock'),
+    Match.when(
+      (candidate: string | undefined): boolean =>
+        candidate !== undefined && S.is(TestRunner.HitLimitReasonText)(candidate),
+      (): TimeoutKind => 'hitLimit',
+    ),
+    Match.orElse((): TimeoutKind | undefined => undefined),
+  )
+
+const evidenceKindOf = (evidence: TimeoutEvidence | undefined): TimeoutKind | undefined =>
+  Option.getOrUndefined(Option.map(Option.fromUndefinedOr(evidence), (present) => present.timeoutKind))
+
+const timeoutKindOf = (
+  mutant: Mutant.RunMutantResult,
+  evidence: TimeoutEvidence | undefined,
+): TimeoutKind | undefined =>
+  Option.getOrUndefined(
+    Option.firstSomeOf(
+      [Option.fromUndefinedOr(timeoutKindIn(mutant.statusReason)), Option.fromUndefinedOr(evidenceKindOf(evidence))],
+    ),
+  )
+
+const reproducedCountOf = (timeoutKind: TimeoutKind, evidenceKind: TimeoutKind | undefined): number =>
+  Match.value(timeoutKind).pipe(
+    Match.when('wallClock', () =>
+      Match.value(evidenceKind).pipe(
+        Match.when('wallClock', () => 1),
+        Match.orElse(() => 0),
+      )),
+    Match.orElse(() => 0),
+  )
+
+const timeoutFieldsOf = (
+  mutant: Mutant.RunMutantResult,
+  evidence: TimeoutEvidence | undefined,
+): { readonly timeoutKind?: TimeoutKind; readonly reproductions?: number } =>
+  Boolean.match(mutant.status === 'Timeout', {
+    onFalse: (): { readonly timeoutKind?: TimeoutKind; readonly reproductions?: number } => ({}),
+    onTrue: () =>
+      Option.match(Option.fromUndefinedOr(timeoutKindOf(mutant, evidence)), {
+        onNone: (): { readonly timeoutKind?: TimeoutKind; readonly reproductions?: number } => ({}),
+        onSome: (timeoutKind) => ({
+          timeoutKind,
+          reproductions: reproducedCountOf(timeoutKind, evidenceKindOf(evidence)),
+        }),
+      }),
+  })
+
 const reportMutantOf = (
   mutant: Mutant.RunMutantResult,
   remap: TestIdRemap,
+  evidence: TimeoutEvidence | undefined,
 ): Report.MutantResult => ({
   id: mutant.id,
   mutatorName: mutant.mutatorName,
@@ -354,6 +408,7 @@ const reportMutantOf = (
   ...presentField('static', mutant.static),
   ...presentField('killedBy', remap.testIds(mutant.killedBy)),
   ...presentField('coveredBy', remap.testIds(mutant.coveredBy)),
+  ...timeoutFieldsOf(mutant, evidence),
 })
 
 const reportTestOf = (test: TestRunner.TestResult, remap: TestIdRemap) =>
@@ -370,7 +425,7 @@ const groupMutants = (input: FileResultsInput): Effect.Effect<HashMap.HashMap<st
         Option.match(HashMap.get(input.reportNames, mutant.fileName), {
           onNone: () => accumulator,
           onSome: (reportName) => {
-            const mapped = reportMutantOf(mutant, input.remap)
+            const mapped = reportMutantOf(mutant, input.remap, input.timeoutEvidenceByMutantId[mutant.id])
             return Option.match(HashMap.get(accumulator, reportName), {
               onNone: () =>
                 HashMap.set(accumulator, reportName, { sourceFileName: mutant.fileName, mutants: [mapped] }),
@@ -513,7 +568,13 @@ const assembleReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingAssembleRep
       })
     ),
   )
-  const files = yield* assembleFileResults({ sources, reportNames, mutants: results, remap })
+  const files = yield* assembleFileResults({
+    sources,
+    reportNames,
+    mutants: results,
+    remap,
+    timeoutEvidenceByMutantId: input.timeoutEvidenceByMutantId ?? {},
+  })
   const testFiles = yield* assembleTestFiles({ testSources, reportNames, tests, remap })
   return { files, testFiles, identities }
 })
@@ -829,7 +890,7 @@ const checkpoint = (
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const { Mutant: { Mutant }, TestRunner: { MutantRunResultSchema } } = await import(
+  const { Mutant: { Mutant, MutantStatusSchema }, TestRunner: { MutantRunResultSchema } } = await import(
     '@systemfsoftware/stryker-js-plugin-interface'
   )
 
@@ -897,5 +958,53 @@ if (import.meta.vitest !== void 0) {
     '∀mr_MapRunResult_≡CarriesClassOutcome',
     { of: [Mutant, MutantRunResultSchema], subject: mapForLaw },
     (subject, [mutant, result]) => Effect.map(subject(mutant, result), (mapped) => carriesClassOutcome(result, mapped)),
+  )
+
+  const expectedTimeoutKind = (
+    result: Parameters<typeof timeoutFieldsOf>[0],
+    evidence: { readonly timeoutKind: TimeoutKind; readonly reproductions: number },
+  ): TimeoutKind =>
+    Match.value(result.statusReason).pipe(
+      Match.when('wall-clock-timeout', (): TimeoutKind => 'wallClock'),
+      Match.when(
+        (reason: string | undefined): boolean =>
+          reason !== undefined && /^Hit limit reached \(\d+\/\d+\)$/.test(reason),
+        (): TimeoutKind => 'hitLimit',
+      ),
+      Match.orElse((): TimeoutKind => evidence.timeoutKind),
+    )
+
+  const expectedReproductions = (
+    timeoutKind: TimeoutKind,
+    evidence: { readonly timeoutKind: TimeoutKind },
+  ): number =>
+    Match.value(timeoutKind).pipe(
+      Match.when('wallClock', () =>
+        Match.value(evidence.timeoutKind).pipe(
+          Match.when('wallClock', () => 1),
+          Match.orElse(() => 0),
+        )),
+      Match.orElse(() => 0),
+    )
+
+  const expectedTimeoutFields = (
+    result: Parameters<typeof timeoutFieldsOf>[0],
+    evidence: { readonly timeoutKind: TimeoutKind; readonly reproductions: number },
+  ) =>
+    Match.value(result.status === 'Timeout').pipe(
+      Match.when(true, () => ({
+        timeoutKind: expectedTimeoutKind(result, evidence),
+        reproductions: expectedReproductions(expectedTimeoutKind(result, evidence), evidence),
+      })),
+      Match.orElse(() => ({ timeoutKind: undefined, reproductions: undefined })),
+    )
+
+  it.prop(
+    '∀mse_MutantStatusAndEvidence_≡PersistedTimeoutFieldsFollowTheReproductionRule',
+    { of: [Mutant, MutantStatusSchema, TimeoutEvidenceSchema], subject: timeoutFieldsOf },
+    (subject, [mutant, status, evidence]) => {
+      const result: Parameters<typeof timeoutFieldsOf>[0] = { ...mutant, status }
+      return JSON.stringify(subject(result, evidence)) === JSON.stringify(expectedTimeoutFields(result, evidence))
+    },
   )
 }

@@ -29,6 +29,7 @@ import {
   type ReuseRefusalReason,
   type ReuseReport,
   ReuseReportSchema,
+  type TimeoutEvidence,
 } from '../IncrementalDiff.schema.js'
 import type { Project } from '../Project.schema.js'
 import { StageError } from '../Run.schema.js'
@@ -83,6 +84,8 @@ const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
       verdictSemanticsVersion: report.verdictSemanticsVersion,
       mutantSetPolicy: report.mutantSetPolicy,
       runInputsDigest: report.runInputsDigest,
+      ...optionalField('timeoutKind', mutant.timeoutKind),
+      ...optionalField('reproductions', mutant.reproductions),
       ...optionalField('testsCompleted', mutant.testsCompleted),
       ...optionalListField('coveredBy', mutant.coveredBy),
       ...optionalListField('killedBy', mutant.killedBy),
@@ -342,7 +345,29 @@ export interface IncrementalReusePart {
   readonly rememberedResults: readonly Mutant.RunMutantResult[]
   readonly refusal: ReuseRefusalReason | undefined
   readonly closureDigestsByMutantId: Record<string, string>
+  readonly timeoutEvidenceByMutantId: Record<string, TimeoutEvidence>
 }
+
+const priorTimeoutEvidenceOf = (decision: typeof MutantToRun.Encoded): Record<string, TimeoutEvidence> =>
+  Option.match(Option.fromNullishOr(decision.priorTimeout), {
+    onNone: (): Record<string, TimeoutEvidence> => ({}),
+    onSome: (priorTimeout) => ({ [decision.mutant.id]: priorTimeout }),
+  })
+
+const rememberedTimeoutEvidenceOf = (decision: typeof MutantRemembered.Encoded): Record<string, TimeoutEvidence> =>
+  Boolean.match(decision.status === 'Timeout', {
+    onTrue: () =>
+      Option.match(Option.fromNullishOr(decision.timeoutKind), {
+        onNone: (): Record<string, TimeoutEvidence> => ({}),
+        onSome: (timeoutKind) => ({
+          [decision.mutantId]: {
+            timeoutKind,
+            reproductions: Option.getOrElse(Option.fromNullishOr(decision.reproductions), () => 0),
+          },
+        }),
+      }),
+    onFalse: (): Record<string, TimeoutEvidence> => ({}),
+  })
 
 const mutantToRunPart = Effect.fnUntraced(function*(
   decision: typeof MutantToRun.Encoded,
@@ -354,6 +379,7 @@ const mutantToRunPart = Effect.fnUntraced(function*(
     rememberedResults: [],
     refusal: decision.refusal,
     closureDigestsByMutantId: command.closureDigestsByMutantId,
+    timeoutEvidenceByMutantId: priorTimeoutEvidenceOf(decision),
   })
 })
 
@@ -399,6 +425,7 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
         rememberedResults: [],
         refusal: undefined,
         closureDigestsByMutantId: command.closureDigestsByMutantId,
+        timeoutEvidenceByMutantId: {},
       }),
     onSome: (mutant) =>
       Effect.map(
@@ -408,6 +435,7 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
           rememberedResults: [rememberedResultOf(mutant, decision, status)],
           refusal: undefined,
           closureDigestsByMutantId: command.closureDigestsByMutantId,
+          timeoutEvidenceByMutantId: rememberedTimeoutEvidenceOf(decision),
         }),
       ),
   })
@@ -440,12 +468,19 @@ export interface IncrementalReuse {
   readonly rememberedResults: readonly Mutant.RunMutantResult[]
   readonly refusalCounts: RefusalCounts
   readonly closureDigestsByMutantId: Record<string, string>
+  readonly timeoutEvidenceByMutantId: Record<string, TimeoutEvidence>
 }
 
 const closureDigestsOfParts = (parts: readonly IncrementalReusePart[]): Record<string, string> =>
   Option.getOrElse(
     Option.map(Arr.head(parts), (part) => part.closureDigestsByMutantId),
     (): Record<string, string> => ({}),
+  )
+
+const timeoutEvidenceOfParts = (parts: readonly IncrementalReusePart[]): Record<string, TimeoutEvidence> =>
+  parts.reduce<Record<string, TimeoutEvidence>>(
+    (accumulated, part) => ({ ...accumulated, ...part.timeoutEvidenceByMutantId }),
+    {},
   )
 
 const countRefusalOfPart = (counts: RefusalCounts, part: IncrementalReusePart): RefusalCounts =>
@@ -457,4 +492,5 @@ export const readIncrementalReuse = (input: IncrementalReuseInput) =>
     rememberedResults: parts.flatMap((part) => part.rememberedResults),
     refusalCounts: parts.reduce(countRefusalOfPart, emptyRefusalCounts()),
     closureDigestsByMutantId: closureDigestsOfParts(parts),
+    timeoutEvidenceByMutantId: timeoutEvidenceOfParts(parts),
   }))

@@ -115,6 +115,17 @@ const reloadEnvironmentOf = (testFilter: readonly string[] | undefined, isStatic
       }),
   })
 
+const MUTANT_TIMEOUT_FLOOR_MS = 100
+
+const flooredTimeoutOf = (timeout: number): number =>
+  Boolean.match(timeout < MUTANT_TIMEOUT_FLOOR_MS, {
+    onTrue: () => MUTANT_TIMEOUT_FLOOR_MS,
+    onFalse: () => timeout,
+  })
+
+const mutantTimeoutOf = (command: MutantTestPlanCommand, netTime: number): number =>
+  flooredTimeoutOf(command.options.timeoutFactor * netTime + command.options.timeoutMS + command.timeOverheadMS)
+
 const toRunPlan = (
   mutant: Mutant.Mutant,
   command: MutantTestPlanCommand,
@@ -123,7 +134,7 @@ const toRunPlan = (
   isStatic: boolean | undefined,
   coveredBy: readonly string[] | undefined,
 ): Result.Result<PlannedRunMutant, MutantTimeoutNotFinite> => {
-  const timeout = command.options.timeoutFactor * netTime + command.options.timeoutMS + command.timeOverheadMS
+  const timeout = mutantTimeoutOf(command, netTime)
   return Boolean.match(Number.isFinite(timeout), {
     onTrue: () =>
       Result.succeed(PlannedRunMutant.make({
