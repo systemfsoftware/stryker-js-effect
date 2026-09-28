@@ -14,7 +14,6 @@ import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
-import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
 
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
@@ -36,7 +35,7 @@ import { IdGenerator } from '../Worker.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import { readIncrementalReuse } from './incremental-reuse.cell.js'
 import { mutantRunCell } from './mutant-run.cell.js'
-import { announceSettledMutant, checkpointMutationResults, reportingInputOf, type RunContext } from './mutant-run.js'
+import { announceSettledMutant, makeCheckpointWriter, reportingInputOf, type RunContext } from './mutant-run.js'
 import { planMutationTest } from './mutation-test-plan.cell.js'
 import {
   configuredTestFilesOf,
@@ -162,41 +161,34 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     concurrency: 1,
     discard: true,
   })
-  const completedMutants = yield* Ref.make<readonly Mutant.RunMutantResult[]>(settledResults)
-  const checkpointGate = yield* Semaphore.make(1)
-  yield* checkpointMutationResults(context, completedMutants)
-  const runResults = yield* withPhaseSpan(
-    SpanTaxonomy.Spans.mutationTestBatch,
-    { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
-    () =>
-      runCheckedPlans(checkedPlans, {
-        settleFailure: (mutantPlan, result) =>
-          Effect.gen(function*() {
-            const reported = yield* reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result)
-            yield* announceSettledMutant(context, reported)
-            yield* checkpointGate.withPermits(1)(
-              Effect.gen(function*() {
-                yield* Ref.update(completedMutants, (completed) => [...completed, reported])
-                yield* checkpointMutationResults(context, completedMutants)
-              }),
-            )
-            return reported
-          }),
-        runPlan: (runPlan) =>
-          Effect.scoped(
-            mutantRunCell.run({ context, testRunnerPool, checkpointGate, completedMutants, plan: runPlan }),
+  const runResults = yield* Effect.scoped(Effect.gen(function*() {
+    const checkpoint = yield* makeCheckpointWriter(context, settledResults)
+    return yield* withPhaseSpan(
+      SpanTaxonomy.Spans.mutationTestBatch,
+      { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
+      () =>
+        runCheckedPlans(checkedPlans, {
+          settleFailure: (mutantPlan, result) =>
+            Effect.gen(function*() {
+              const reported = yield* reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result)
+              yield* announceSettledMutant(context, reported)
+              yield* checkpoint.record(reported)
+              return reported
+            }),
+          runPlan: (runPlan) =>
+            Effect.scoped(mutantRunCell.run({ context, testRunnerPool, checkpoint, plan: runPlan })),
+          concurrency: testRunnerCapacity,
+        }).pipe(
+          Stream.runFold(
+            (): Mutant.RunMutantResult[] => [],
+            (acc, result) => {
+              acc.push(result)
+              return acc
+            },
           ),
-        concurrency: testRunnerCapacity,
-      }).pipe(
-        Stream.runFold(
-          (): Mutant.RunMutantResult[] => [],
-          (acc, result) => {
-            acc.push(result)
-            return acc
-          },
         ),
-      ),
-  )
+    )
+  }))
   const checkerRelease = yield* checkers.releaseInBackground
   const allResults = [...settledResults, ...runResults]
   yield* Effect.forEach(
