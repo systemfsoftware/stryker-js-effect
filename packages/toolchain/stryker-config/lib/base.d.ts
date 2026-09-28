@@ -8,7 +8,6 @@ export interface SharedConfig {
   incremental: boolean
   incrementalFile: string
   ignorePatterns: string[]
-  disableBail: boolean
   cleanTempDir: 'always'
   thresholds: { high: number; low: number; break: number }
   concurrency?: string

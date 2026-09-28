@@ -18,7 +18,6 @@ export const sharedConfig = {
   incremental: true,
   incrementalFile: 'reports/stryker-incremental.json',
   ignorePatterns: ['reports', 'coverage'],
-  disableBail: true,
   cleanTempDir: 'always',
   thresholds: { high: 100, low: 80, break: 100 },
   ...(envConcurrency !== undefined ? { concurrency: envConcurrency } : {}),
