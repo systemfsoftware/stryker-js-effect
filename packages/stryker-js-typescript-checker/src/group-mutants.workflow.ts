@@ -53,36 +53,44 @@ const emptyRound: MutantRound = {
   taken: HashSet.empty(),
 }
 
-const ancestorFileNamesOf = (node: FileNode, visited: HashSet.HashSet<string>): HashSet.HashSet<string> =>
+const parentIn = (nodes: Nodes, parent: FileNode): FileNode =>
+  Option.getOrElse(nodeIn(nodes, parent.fileName), () => parent)
+
+const ancestorFileNamesOf = (
+  node: FileNode,
+  nodes: Nodes,
+  visited: HashSet.HashSet<string>,
+): HashSet.HashSet<string> =>
   Boolean.match(HashSet.has(visited, node.fileName), {
     onTrue: () => visited,
     onFalse: () =>
       Arr.reduce(
         node.parents,
         HashSet.add(visited, node.fileName),
-        (names, parent) => ancestorFileNamesOf(parent, names),
+        (names, parent) => ancestorFileNamesOf(parentIn(nodes, parent), nodes, names),
       ),
   })
 
-const sharesDependencyPath = (node: FileNode, round: MutantRound): boolean =>
+const sharesDependencyPath = (node: FileNode, nodes: Nodes, round: MutantRound): boolean =>
   Boolean.or(
     HashSet.has(round.ignored, node.fileName),
-    Arr.some(Arr.fromIterable(ancestorFileNamesOf(node, HashSet.empty())), (name) => HashSet.has(round.members, name)),
+    Arr.some(Arr.fromIterable(ancestorFileNamesOf(node, nodes, HashSet.empty())), (name) =>
+      HashSet.has(round.members, name)),
   )
 
-const joinRound = (round: MutantRound, { mutant, node }: MutantNode): MutantRound =>
-  Boolean.match(sharesDependencyPath(node, round), {
+const joinRound = (round: MutantRound, nodes: Nodes, { mutant, node }: MutantNode): MutantRound =>
+  Boolean.match(sharesDependencyPath(node, nodes, round), {
     onFalse: () => ({
       ids: [...round.ids, mutant.id],
-      ignored: HashSet.union(round.ignored, ancestorFileNamesOf(node, HashSet.empty())),
+      ignored: HashSet.union(round.ignored, ancestorFileNamesOf(node, nodes, HashSet.empty())),
       members: HashSet.add(round.members, node.fileName),
       taken: HashSet.add(round.taken, mutant),
     }),
     onTrue: () => round,
   })
 
-const takeRound = (remaining: ReadonlyArray<MutantNode>): MutantRound =>
-  Arr.reduce(remaining, emptyRound, (round, candidate) => joinRound(round, candidate))
+const takeRound = (remaining: ReadonlyArray<MutantNode>, nodes: Nodes): MutantRound =>
+  Arr.reduce(remaining, emptyRound, (round, candidate) => joinRound(round, nodes, candidate))
 
 interface GroupingRun {
   readonly groups: ReadonlyArray<ReadonlyArray<string>>
@@ -91,11 +99,11 @@ interface GroupingRun {
 
 const emptyGrouping = (remaining: ReadonlyArray<MutantNode>): GroupingRun => ({ groups: [], remaining })
 
-const takeNextRound = (grouping: GroupingRun): GroupingRun =>
+const takeNextRound = (grouping: GroupingRun, nodes: Nodes): GroupingRun =>
   Boolean.match(grouping.remaining.length === 0, {
     onTrue: () => grouping,
     onFalse: () => {
-      const round = takeRound(grouping.remaining)
+      const round = takeRound(grouping.remaining, nodes)
       return {
         groups: [...grouping.groups, round.ids],
         remaining: Arr.filter(grouping.remaining, (candidate) => !HashSet.has(round.taken, candidate.mutant)),
@@ -103,9 +111,9 @@ const takeNextRound = (grouping: GroupingRun): GroupingRun =>
     },
   })
 
-const roundsOf = (inside: ReadonlyArray<MutantNode>): ReadonlyArray<ReadonlyArray<string>> => {
+const roundsOf = (inside: ReadonlyArray<MutantNode>, nodes: Nodes): ReadonlyArray<ReadonlyArray<string>> => {
   const pending = Arr.dedupe(inside)
-  return Arr.reduce(pending, emptyGrouping(pending), (grouping) => takeNextRound(grouping)).groups
+  return Arr.reduce(pending, emptyGrouping(pending), (grouping) => takeNextRound(grouping, nodes)).groups
 }
 
 const groupIds = (command: GroupMutantsCommand): ReadonlyArray<ReadonlyArray<string>> =>
@@ -121,8 +129,8 @@ const groupIds = (command: GroupMutantsCommand): ReadonlyArray<ReadonlyArray<str
         onTrue: () => Arr.map(command.mutants, (mutant) => [mutant.id]),
         onFalse: () =>
           Boolean.match(outside.length === 0, {
-            onTrue: () => roundsOf(inside),
-            onFalse: () => [Arr.map(outside, (mutant) => mutant.id), ...roundsOf(inside)],
+            onTrue: () => roundsOf(inside, command.nodes),
+            onFalse: () => [Arr.map(outside, (mutant) => mutant.id), ...roundsOf(inside, command.nodes)],
           }),
       })
     },

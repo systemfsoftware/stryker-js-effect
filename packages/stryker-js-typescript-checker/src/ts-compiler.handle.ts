@@ -696,14 +696,35 @@ const buildGraph = Effect.fnUntraced(function*(rt: TSCompilerRuntime, programs: 
   yield* SynchronizedRef.update(rt.state, (prev) => ({ ...prev, sourceFiles: linked }))
 })
 
-const fileNode = (fileName: string, children: ReadonlyArray<FileNode>): FileNode => ({
+const fileNode = (
+  fileName: string,
+  children: ReadonlyArray<FileNode>,
+  parents: ReadonlyArray<FileNode> = [],
+): FileNode => ({
   children,
   fileName,
-  parents: [],
+  parents,
 })
+
+const importersOf = (sourceFiles: SourceFiles): HashMap.HashMap<string, ReadonlyArray<string>> =>
+  Arr.reduce(
+    Arr.fromIterable(sourceFiles),
+    HashMap.empty<string, ReadonlyArray<string>>(),
+    (accumulated, [importer, file]) =>
+      Arr.reduce(
+        Arr.fromIterable(file.imports),
+        accumulated,
+        (into, imported) =>
+          HashMap.set(into, imported, [
+            ...Option.getOrElse(HashMap.get(into, imported), (): ReadonlyArray<string> => []),
+            importer,
+          ]),
+      ),
+  )
 
 const graphNodesOf = (sourceFiles: SourceFiles): GraphNodes => {
   const entries = Arr.fromIterable(sourceFiles)
+  const importers = importersOf(sourceFiles)
   const leaves = HashMap.fromIterable(
     Arr.map(entries, ([fileName]): readonly [string, FileNode] => [fileName, fileNode(fileName, [])]),
   )
@@ -713,6 +734,10 @@ const graphNodesOf = (sourceFiles: SourceFiles): GraphNodes => {
       fileNode(
         fileName,
         Arr.filterMap(Arr.fromIterable(file.imports), (imported) => keepSome(HashMap.get(leaves, imported))),
+        Arr.filterMap(
+          Option.getOrElse(HashMap.get(importers, fileName), (): ReadonlyArray<string> => []),
+          (importer) => keepSome(HashMap.get(leaves, importer)),
+        ),
       ),
     ]),
   )

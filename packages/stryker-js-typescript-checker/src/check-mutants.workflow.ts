@@ -82,16 +82,22 @@ const nodeOf = (
       }),
   })
 
+const nodesOfChild = (child: NodeDecoded, nodes: Readonly<Record<string, NodeDecoded>>): NodeDecoded =>
+  Option.getOrElse(nodeAt(child.fileName, nodes), () => child)
+
 const walk = (
   node: NodeDecoded,
   mutants: readonly MutantDecoded[],
+  nodes: Readonly<Record<string, NodeDecoded>>,
   visited: readonly string[],
 ): readonly MutantDecoded[] =>
   Option.match(Option.filter(Option.some(node), (current) => !visited.includes(current.fileName)), {
     onNone: () => [],
     onSome: (current) => [
       ...mutants.filter((mutant) => normalizeFileName(mutant.fileName) === current.fileName),
-      ...current.children.flatMap((child) => walk(child, mutants, [...visited, current.fileName])),
+      ...current.children.flatMap((child) =>
+        walk(nodesOfChild(child, nodes), mutants, nodes, [...visited, current.fileName])
+      ),
     ],
   })
 
@@ -128,7 +134,7 @@ const classifyOne = (
   nodes: Readonly<Record<string, NodeDecoded>>,
 ): Result.Result<Accumulator, CheckMutantsError> =>
   Result.flatMap(nodeOf(diagnostic, nodes), (node) => {
-    const related = walk(node, mutants, [])
+    const related = walk(node, mutants, nodes, [])
     return Result.succeed(
       Option.match(Option.filter(Arr.head(related), () => related.length === 1), {
         onSome: (only) => ({
