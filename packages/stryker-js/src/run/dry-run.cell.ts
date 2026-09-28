@@ -25,6 +25,7 @@ import {
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
+import type { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { originalFileFor, sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
@@ -33,6 +34,7 @@ import { testRunnerConfigOf } from '../vm-runner.js'
 import { IdGenerator } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import type { InstrumentDone } from './instrument.cell.js'
+import type { PhaseClock } from './phase-clock.service.js'
 import {
   ConfiguredPluginModulePath,
   ConfiguredPluginName,
@@ -40,7 +42,7 @@ import {
   WorkerSpawnCommand,
   type WorkerSpawnResolved,
 } from './resolve-configured-plugin.workflow.js'
-import { phaseEntered } from './RunEnvironment.service.js'
+import { phaseEntered, type RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
 export interface DryRunDone extends InstrumentDone {
@@ -296,7 +298,14 @@ const completeDryRunPassed = (raw: DryRunRaw) =>
 const readDryRun: (command: InstrumentDone) => Effect.Effect<
   DryRunRaw,
   StageError,
-  Scope.Scope | IdGenerator | ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | WorkerLauncher
+  | Scope.Scope
+  | IdGenerator
+  | ChildProcessSpawner.ChildProcessSpawner
+  | FileSystem.FileSystem
+  | WorkerLauncher
+  | RunEnvironment
+  | RunEvents
+  | PhaseClock
 > = Effect.fnUntraced(function*(command: InstrumentDone) {
   yield* Scope.Scope
   const idGenerator = yield* IdGenerator
@@ -304,6 +313,7 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
   const { files, testFiles } = yield* resolveDryRunFiles(command)
   const dryRunTimeout = command.options.dryRunTimeoutMinutes * 60 * 1000
 
+  yield* phaseEntered('dry-run')
   yield* Effect.logInfo('Starting dry run')
   const { rawResult, capabilities, gross } = yield* Effect.scoped(
     Effect.gen(function*() {
@@ -392,11 +402,7 @@ const writeDryRunPassed = Effect.fn(SpanTaxonomy.Spans.dryRunWritePassed.name)(f
   return yield* withPhaseSpan(
     SpanTaxonomy.Spans.dryRunPhase,
     {},
-    () =>
-      Effect.gen(function*() {
-        yield* phaseEntered('dry-run')
-        return yield* completeDryRunPassed(raw)
-      }),
+    () => completeDryRunPassed(raw),
   )
 })
 
@@ -424,7 +430,6 @@ const writeDryRunFailed = Effect.fn(SpanTaxonomy.Spans.dryRunWriteFailed.name)(f
     {},
     () =>
       Effect.gen(function*() {
-        yield* phaseEntered('dry-run')
         const detail = failedTestsDetail(failedTests)
         yield* Effect.logError(
           `Initial test run failed. ${failedTestCount} of ${testCount} test(s) failed:\n${detail}`,

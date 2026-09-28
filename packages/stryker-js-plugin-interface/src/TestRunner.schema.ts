@@ -47,18 +47,24 @@ export const DryRunResultSchema = S.Union([
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
 ])
 
+export const ExecutedTestSchema = S.Struct({
+  id: TestId,
+  timeSpentMs: NonNegativeFinite,
+})
+export type ExecutedTest = typeof ExecutedTestSchema.Type
+
 export const MutantRunResultSchema = S.Union([
   S.Struct({
     status: S.Literal('killed'),
     killedBy: S.Array(TestId),
     failureMessage: S.String,
     nrOfTests: NonNegativeInt,
-    executedTests: TestId.pipe(S.Array, S.optionalKey),
+    executedTests: S.Array(ExecutedTestSchema),
   }),
   S.Struct({
     status: S.Literal('survived'),
     nrOfTests: NonNegativeInt,
-    executedTests: TestId.pipe(S.Array, S.optionalKey),
+    executedTests: S.Array(ExecutedTestSchema),
   }),
   S.Struct({ status: S.Literal('timeout'), reason: S.optionalKey(S.String) }),
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
@@ -139,13 +145,13 @@ export interface KilledMutantRunResult {
   readonly killedBy: readonly TestId[]
   readonly failureMessage: string
   readonly nrOfTests: number
-  readonly executedTests?: readonly TestId[]
+  readonly executedTests: readonly ExecutedTest[]
 }
 
 export interface SurvivedMutantRunResult {
   readonly status: 'survived'
   readonly nrOfTests: number
-  readonly executedTests?: readonly TestId[]
+  readonly executedTests: readonly ExecutedTest[]
 }
 
 export interface ErrorMutantRunResult {

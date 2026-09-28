@@ -169,7 +169,6 @@ const NOTHING: Extraction = { specifier: undefined, hidden: false }
 const EMPTY_STATE: ScanState = { specifiers: HashSet.empty(), open: false }
 const EXTERNAL_RESOLUTION: Resolution = { kind: 'External', file: '' }
 const UNRESOLVED_RESOLUTION: Resolution = { kind: 'Unresolved', file: '' }
-const NO_CLOSURES: readonly TestFileClosure[] = []
 
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
@@ -653,7 +652,10 @@ export const analyzeImportClosure = Effect.fnUntraced(function*(
   )
   const projectDigest = projectDigestOf(scanned)
   const hashes = MutableHashMap.fromIterable(scanned.map((scan) => [scan.key, scan.contentHash] as const))
-  const closures = Result.getOrElse(importClosure(commandOf(input, roots, scanned)), () => NO_CLOSURES)
+  const closures = Result.getOrElse(
+    importClosure(commandOf(input, roots, scanned)),
+    (unreachable: never) => unreachable,
+  )
   return {
     closures: closures.map((closure) => closureWithDigest(hashes, projectDigest, closure)),
     projectDigest,

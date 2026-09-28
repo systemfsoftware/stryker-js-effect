@@ -12,6 +12,7 @@ import { Reporter } from '../reporter.service.js'
 import { RunEvents } from '../run-events.service.js'
 import { IdGenerator } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
+import { PhaseClock } from './phase-clock.service.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 
 export type StageServices =
@@ -21,6 +22,7 @@ export type StageServices =
   | IdGenerator
   | MutationReporting
   | Path.Path
+  | PhaseClock
   | ProjectFiles
   | Reporter
   | RunEnvironment
@@ -43,6 +45,7 @@ export type RunStageServices =
   | RunEvents
   | IdGenerator
   | MutationReporting
+  | PhaseClock
   | Scope.Scope
 
 export type WiredRunLayer = Layer.Layer<RunStageServices | EnginePorts, never, never>

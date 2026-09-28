@@ -156,6 +156,14 @@ export type RunMutantResult = Mutant & {
   readonly killedBy?: readonly string[] | undefined
   readonly coveredBy?: readonly string[] | undefined
   readonly static?: boolean | undefined
+  readonly cost?: MutantCost | undefined
+}
+
+export interface MutantCost {
+  readonly fixedOverheadMs: number
+  readonly testBodyMs: number
+  readonly testsExecuted: number
+  readonly shared: boolean
 }
 
 export type MutantRunPlan = RunPlan

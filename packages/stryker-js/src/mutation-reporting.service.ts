@@ -48,6 +48,7 @@ import { ReportFileNames } from './reporting/report-assembly.schema.js'
 import { buildVerdictEnvelope } from './reporting/verdict-envelope.js'
 import { RunEvents } from './run-events.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
+import { PhaseClock, type PhaseClockShape } from './run/phase-clock.service.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
 import { INCREMENTAL_CACHE_VERSION, runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from './verdict-semantics.js'
@@ -111,6 +112,7 @@ export interface MutationReportingInput {
   readonly basePath: string
   readonly reporterStage: ReporterStage
   readonly formatRegistry: Format.FormatRegistry
+  readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
 }
 
 export interface MutationReportingService {
@@ -135,7 +137,7 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
   static readonly layer: Layer.Layer<
     MutationReporting,
     never,
-    FileSystem.FileSystem | Path.Path | RunEvents | ProjectFiles
+    FileSystem.FileSystem | Path.Path | RunEvents | ProjectFiles | PhaseClock
   > = Layer.effect(
     MutationReporting,
     Effect.gen(function*() {
@@ -143,7 +145,8 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
       const pathService = yield* Path.Path
       const events = yield* RunEvents
       const projectFiles: ProjectFilesShape = yield* ProjectFiles
-      const deps: MutationReportingDeps = { fs, path: pathService, events, projectFiles }
+      const phaseClock = yield* PhaseClock
+      const deps: MutationReportingDeps = { fs, path: pathService, events, projectFiles, phaseClock }
       return MutationReporting.of({
         reportCheckFailure: (mutant, result) => reportCheckFailure(mutant, result),
         reportMutantRunResult: (mutant, result) => mapRunResult(mutant, result),
@@ -159,6 +162,7 @@ interface MutationReportingDeps {
   readonly path: Path.Path
   readonly events: Queue.Queue<RunEvent.RunEvent, Cause.Done>
   readonly projectFiles: ProjectFilesShape
+  readonly phaseClock: PhaseClockShape
 }
 
 interface MutantOutcome {
@@ -255,6 +259,23 @@ const determineLanguage = (fileName: string, registry: Format.FormatRegistry): s
   })
 
 type FileResultWithIdentity = Report.FileResult & { readonly formatIdentity?: FormatIdentity }
+
+const withClosureDigest = (mutant: Report.MutantResult, digest: string | undefined): Report.MutantResult =>
+  digest === undefined ? mutant : { ...mutant, closureDigest: digest }
+
+const stampClosureDigests = (
+  files: Report.FileResultDictionary,
+  digests: Readonly<Record<string, string>> | undefined,
+): Record<string, Report.FileResult> =>
+  Object.fromEntries(
+    Object.entries(files).map(([name, file]): readonly [string, Report.FileResult] => [
+      name,
+      {
+        ...file,
+        mutants: file.mutants.map((mutant) => withClosureDigest(mutant, digests?.[mutant.id])),
+      },
+    ]),
+  )
 
 const stampFileIdentities = (
   files: Report.FileResultDictionary,
@@ -636,6 +657,7 @@ const emitVerdict = Effect.fn(SpanTaxonomy.Spans.mutationReportingEmitVerdict.na
     RunEvent.RunId.make(input.runId),
     input.basePath,
     deps.path,
+    yield* deps.phaseClock.durations,
   )
   yield* Queue.offer(
     deps.events,
@@ -671,7 +693,7 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
     mutantSetPolicy: input.options.mutator.mutantSetPolicy,
     runInputsDigest,
     ...report,
-    files: stampFileIdentities(report.files, identities),
+    files: stampFileIdentities(stampClosureDigests(report.files, input.closureDigestsByMutantId), identities),
   }).pipe(Effect.orDie)
   yield* deps.fs.writeFileString(input.options.incrementalFile, json)
 })
@@ -740,7 +762,7 @@ const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlim
     runInputsDigest,
     schemaVersion: Report.WrittenSchemaVersion.literal,
     thresholds: input.options.thresholds,
-    files: stampFileIdentities(files, identities),
+    files: stampFileIdentities(stampClosureDigests(files, input.closureDigestsByMutantId), identities),
     testFiles,
   }
 })

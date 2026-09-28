@@ -1,6 +1,8 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Config from 'effect/Config'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -8,6 +10,7 @@ import * as Pool from 'effect/Pool'
 import type * as Scope from 'effect/Scope'
 
 import { interpretMutantRun, NoCoveringTestExecutedReason } from '../interpret-mutant-run.workflow.js'
+import { cicdAttributesOf, spanRunStatusOf, testSuiteNameOf } from '../mutant-run-span.js'
 import { invalidatesRunnerPool } from '../pooled-test-runner.handle.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
@@ -29,7 +32,7 @@ const coveringTestsOf = (plan: Mutant.MutantRunPlan): readonly string[] => [
   ...(plan.runOptions.testFilter ?? []),
 ]
 
-const executedTestsOf = (result: TestRunner.MutantRunResult): readonly TestRunner.TestId[] | undefined =>
+const executedTestsOf = (result: TestRunner.MutantRunResult): readonly TestRunner.ExecutedTest[] | undefined =>
   Match.value(result).pipe(
     Match.when({ status: 'killed' }, (killed) => killed.executedTests),
     Match.when({ status: 'survived' }, (survived) => survived.executedTests),
@@ -41,38 +44,62 @@ const executedTestsFieldOf = (
 ): { readonly executedTests?: readonly TestRunner.TestId[] } =>
   Option.match(Option.fromUndefinedOr(executedTestsOf(result)), {
     onNone: () => ({}),
-    onSome: (executed) => ({ executedTests: [...executed] }),
+    onSome: (executed) => ({ executedTests: executed.map((test) => test.id) }),
   })
 
 interface MutantRunAttemptArgs extends RunOnePlanArgs {
   readonly attempt: number
 }
 
+const CI_PIPELINE_RUN_ID_VARIABLES: ReadonlyArray<string> = ['GITHUB_RUN_ID', 'CI_PIPELINE_ID', 'BUILD_ID']
+const CI_PIPELINE_NAME_VARIABLES: ReadonlyArray<string> = ['GITHUB_WORKFLOW', 'CI_PIPELINE_NAME', 'BUILD_NAME']
+
+const configuredOf = (variable: string): Effect.Effect<Option.Option<string>> =>
+  Config.String(variable).pipe(
+    Effect.option,
+    Effect.map(Option.filter((value) => value.length > 0)),
+  )
+
+const firstConfiguredOf = (variables: ReadonlyArray<string>): Effect.Effect<Option.Option<string>> =>
+  Effect.map(Effect.forEach(variables, configuredOf), Option.firstSomeOf)
+
+const ciPipelineAttributes: Effect.Effect<Readonly<Record<string, string>>> = Effect.map(
+  Effect.all([firstConfiguredOf(CI_PIPELINE_RUN_ID_VARIABLES), firstConfiguredOf(CI_PIPELINE_NAME_VARIABLES)]),
+  ([runId, name]) => cicdAttributesOf({ runId: Option.getOrUndefined(runId), name: Option.getOrUndefined(name) }),
+)
+
 const readMutantRunAttempt = Effect.fnUntraced(function*(input: MutantRunAttemptArgs) {
   const { testRunnerPool, plan } = input
   const runner = yield* Pool.get(testRunnerPool)
-  const result = yield* runner.mutantRun(plan.runOptions).pipe(
-    Effect.withSpan(SpanTaxonomy.Spans.testRunnerMutantRun.name, {
-      attributes: {
-        'stryker.mutant.id': plan.mutant.id,
-        'stryker.mutant.mutator': plan.mutant.mutatorName,
-        'stryker.mutant.file': plan.mutant.fileName,
-      },
-    }),
-    Effect.tap((runResult) =>
-      Effect.annotateCurrentSpan({
-        'stryker.mutant.status': runResult.status,
-      })
+  const ciAttributes = yield* ciPipelineAttributes
+  const [elapsed, result] = yield* Effect.timed(
+    runner.mutantRun(plan.runOptions).pipe(
+      Effect.withSpan(SpanTaxonomy.Spans.testRunnerMutantRun.name, {
+        attributes: {
+          'stryker.mutant.id': plan.mutant.id,
+          'stryker.mutant.mutator': plan.mutant.mutatorName,
+          'stryker.mutant.file': plan.mutant.fileName,
+          'test.suite.name': testSuiteNameOf(plan.mutant),
+          ...ciAttributes,
+        },
+      }),
+      Effect.tap((runResult) =>
+        Effect.annotateCurrentSpan({
+          'stryker.mutant.status': runResult.status,
+          'test.suite.run.status': spanRunStatusOf(runResult.status),
+        })
+      ),
+      Effect.catchTags({
+        OutOfMemoryError: (error) => invalidateSlot(testRunnerPool, runner, error),
+        ChildProcessCrashedError: (error) => invalidateSlot(testRunnerPool, runner, error),
+      }),
     ),
-    Effect.catchTags({
-      OutOfMemoryError: (error) => invalidateSlot(testRunnerPool, runner, error),
-      ChildProcessCrashedError: (error) => invalidateSlot(testRunnerPool, runner, error),
-    }),
   )
   return {
     wallClockTimeout: invalidatesRunnerPool(result.status, reasonOf(result)),
     coveringTests: coveringTestsOf(plan),
     ...executedTestsFieldOf(result),
+    elapsedMs: Duration.toMillis(elapsed),
     attempt: input.attempt,
     args: input,
     runner,

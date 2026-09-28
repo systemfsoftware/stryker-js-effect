@@ -4,6 +4,7 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 
@@ -30,7 +31,7 @@ describe('buildVerdictEnvelope', () => {
     '∀r_EnvelopeCounts_≡EveryMutantCounted',
     { of: [Report.MutationTestResult], subject: buildVerdictEnvelope },
     (subject, [report]) => {
-      const { counts } = subject(report, 'machine', 'flag', fixedRunId, '/base', pathService)
+      const { counts } = subject(report, 'machine', 'flag', fixedRunId, '/base', pathService, Option.none())
       return counts.totalMutants === mutantTotalOf(report)
     },
   )

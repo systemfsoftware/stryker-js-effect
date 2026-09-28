@@ -188,19 +188,25 @@ describe('interpretVitestMutantRun', (it) => {
   )
 
   it.prop(
-    '∀c_MutantRunCommand_≡ScorableOutcomesReportExecutedTestIds',
+    '∀c_MutantRunCommand_≡ScorableOutcomesReportEveryExecutedTest',
     { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
-    (subject, [command]) =>
-      Result.match(subject(command), {
+    (subject, [input]) => {
+      const command = commandWith(input, {
+        tests: input.tests,
+        hasExternalError: false,
+        hitCount: 0,
+        hitLimit: 0,
+      })
+      const ran = command.tests.filter((test) => test.status !== 'skipped')
+      return Result.match(subject(command), {
         onFailure: () => false,
-        onSuccess: (outcome) => {
-          if (!S.is(MutantKilled)(outcome) && !S.is(MutantSurvived)(outcome)) {
-            return true
-          }
-          const ran = command.tests.filter((test) => test.status !== 'skipped')
-          return outcome.executedTestIds.length === ran.length &&
-            outcome.executedTestIds.every((id, index) => id === ran.at(index)?.id)
-        },
-      }),
+        onSuccess: (outcome) =>
+          (S.is(MutantKilled)(outcome) || S.is(MutantSurvived)(outcome)) &&
+          outcome.executedTests.length === ran.length &&
+          outcome.executedTests.every((executed, index) =>
+            executed.id === ran.at(index)?.id && executed.timeSpentMs === ran.at(index)?.timeSpentMs
+          ),
+      })
+    },
   )
 })

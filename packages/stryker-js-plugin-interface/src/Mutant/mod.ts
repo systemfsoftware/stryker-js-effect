@@ -11,6 +11,7 @@ export type {
   CoverageData,
   CoveragePerTestId,
   EarlyResultPlan,
+  MutantCost,
   MutantEarlyResultPlan,
   MutantRunOptions,
   MutantRunPlan,

@@ -20,6 +20,7 @@ import {
   decodeMerge,
   encodeMerge,
   failReason,
+  INCREMENTAL_PART_NAME,
   type MergeCommand,
   type VerdictRow,
   writeEncoded,
@@ -78,6 +79,15 @@ const collectPartDirs: (
   return [...current, ...subMatches.flat()]
 })
 
+const readIncrementalTexts = Effect.fnUntraced(function*(dir: string) {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const names = yield* fs.readDirectory(dir).pipe(Effect.orElseSucceed((): readonly string[] => []))
+  const incremental = [...names].filter((name) => INCREMENTAL_PART_NAME.test(name)).sort()
+  const texts = yield* Effect.forEach(incremental, (name) => readText(path.join(dir, name)), { concurrency: 1 })
+  return texts.filter((text): text is string => text !== undefined)
+})
+
 const readPartBytes = Effect.fn(SpanTaxonomy.Spans.mergeReportsReadPart.name)(function*(dir: string) {
   const path = yield* Path.Path
   return {
@@ -85,6 +95,7 @@ const readPartBytes = Effect.fn(SpanTaxonomy.Spans.mergeReportsReadPart.name)(fu
     metaText: yield* readText(path.join(dir, PART_MARKER)),
     reportText: yield* readText(path.join(dir, PART_REPORT)),
     streamText: yield* readText(path.join(dir, PART_STREAM)),
+    incrementalTexts: yield* readIncrementalTexts(dir),
   }
 })
 

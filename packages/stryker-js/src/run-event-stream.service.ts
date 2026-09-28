@@ -243,6 +243,7 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
     stream.runId,
     basePath,
     pathService,
+    Option.none(),
   )
   return Queue.offer(
     stream.queue,

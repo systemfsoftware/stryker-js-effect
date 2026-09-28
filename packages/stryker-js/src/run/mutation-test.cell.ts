@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
@@ -10,6 +10,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
+import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
@@ -103,20 +104,25 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     max: testRunnerCapacity,
   })
   const reporting = yield* MutationReporting
+  const progressQueue = yield* RunEvents
   const reuse = yield* readIncrementalReuse({
     project: prev.project,
     currentMutants: plannableMutants,
     testCoverage: prev.testCoverage,
     basePath: env.basePath,
     force: prev.options.force,
-    formatRegistry: prev.formatRegistry,
+    options: prev.options,
+    globalTestInputs: prev.dryRunResult.globalTestInputs ?? [],
+    sandbox: prev.sandbox,
   })
   const rememberedResults = reuse.rememberedResults
-  yield* Effect.when(
-    Effect.logInfo(
-      `Incremental mode: reusing ${rememberedResults.length} mutant result(s), running ${reuse.mutants.length} mutant(s).`,
-    ),
-    Effect.succeed(rememberedResults.length > 0),
+  yield* Queue.offer(
+    progressQueue,
+    RunEvent.ReuseReported.make({
+      reused: rememberedResults.length,
+      ran: reuse.mutants.length,
+      refused: yield* S.decodeEffect(RunEvent.ReuseRefusals)(reuse.refusalCounts).pipe(Effect.orDie),
+    }),
   )
   const plan = yield* planMutationTest({
     mutants: reuse.mutants,
@@ -145,7 +151,6 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     { concurrency: 1 },
   )
   const checkerRelease = yield* checkers.releaseInBackground
-  const progressQueue = yield* RunEvents
   const completedRef = yield* Ref.make(0)
   const pathService = yield* Path.Path
   const context: RunContext = {
@@ -188,9 +193,10 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
       ),
   )
   const allResults = [...settledResults, ...runResults]
-  const outcomeResult = yield* reporting.reportAll(
-    reportingInputOf({ prev, env, results: allResults }),
-  )
+  const outcomeResult = yield* reporting.reportAll({
+    ...reportingInputOf({ prev, env, results: allResults }),
+    closureDigestsByMutantId: reuse.closureDigestsByMutantId,
+  })
   yield* Fiber.await(checkerRelease)
   const doneNow = yield* Clock.currentTimeMillis
   const elapsed = Duration.millis(doneNow - env.runStartedAt)

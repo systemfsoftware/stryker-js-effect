@@ -12,6 +12,7 @@ import * as S from 'effect/Schema'
 import type * as Semaphore from 'effect/Semaphore'
 
 import { MutantRunObservation } from '../interpret-mutant-run.workflow.js'
+import { mutantCostOf, testBodyMsOf } from '../mutant-cost.js'
 import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
 import { type PooledTestRunner } from '../pooled-test-runner.handle.js'
 import { offerReporterEvent } from '../reporter-stream.service.js'
@@ -71,6 +72,9 @@ const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, re
   })
 })
 
+const costLineOf = (result: Mutant.RunMutantResult): RunEvent.MutantCost | null =>
+  Option.getOrNull(Option.map(Option.fromUndefinedOr(result.cost), (cost) => RunEvent.MutantCost.make(cost)))
+
 const offerFinished = Effect.fnUntraced(function*(
   context: RunContext,
   result: Mutant.RunMutantResult,
@@ -93,7 +97,7 @@ const offerFinished = Effect.fnUntraced(function*(
             completed,
             total: context.plannedTotal,
             static: result.static ?? false,
-            cost: null,
+            cost: costLineOf(result),
           }),
         )
         return Option.some(completed)
@@ -181,16 +185,35 @@ export type MutantRunRaw = typeof MutantRunObservation.Encoded & {
   readonly args: RunOnePlanArgs
   readonly runner: PooledTestRunner
   readonly result: TestRunner.MutantRunResult
+  readonly elapsedMs: number
 }
+
+const executedTestsCountOf = (executedTests: readonly string[] | undefined): number =>
+  Option.match(Option.fromUndefinedOr(executedTests), {
+    onNone: () => 0,
+    onSome: (ids) => ids.length,
+  })
+
+const costOf = (raw: MutantRunRaw): Mutant.MutantCost =>
+  mutantCostOf({
+    elapsedMs: raw.elapsedMs,
+    testBodyMs: testBodyMsOf(raw.result),
+    testsExecuted: executedTestsCountOf(raw.executedTests),
+    shared: false,
+  })
 
 export const settleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
   const { context, plan, checkpointGate, completedMutants } = raw.args
   const reported = yield* context.reporting.reportMutantRunResult(toReportedMutant(plan.mutant), raw.result)
-  const prepared = yield* preparedStreamableOf(context, reported)
-  const finished = yield* offerFinished(context, reported, prepared)
-  yield* offerStreamTested(context, reported, finished, prepared)
-  yield* checkpointGate.withPermits(1)(persist(context, completedMutants, reported))
-  return reported
+  const costed: Mutant.RunMutantResult = {
+    ...reported,
+    cost: costOf(raw),
+  }
+  const prepared = yield* preparedStreamableOf(context, costed)
+  const finished = yield* offerFinished(context, costed, prepared)
+  yield* offerStreamTested(context, costed, finished, prepared)
+  yield* checkpointGate.withPermits(1)(persist(context, completedMutants, costed))
+  return costed
 })
 
 export const recycleAndSettleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
