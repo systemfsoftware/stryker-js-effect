@@ -162,6 +162,55 @@ pnpm exec stryker run --survivors
 
 ---
 
+## Workflow: Gate, Reproduce, Deliver
+
+The same CLI carries a run into review and lets an editor or an agent drive it, so nothing parses a report by hand:
+
+```bash
+# Seed a committed baseline of accepted survivor ids, then gate pull requests on new ones
+pnpm exec stryker gate --baseline .stryker-baseline.json --update-baseline
+pnpm exec stryker run --since origin/main
+pnpm exec stryker gate --baseline .stryker-baseline.json
+pnpm exec stryker annotate --baseline .stryker-baseline.json
+
+# Study and re-run one survivor, by id
+pnpm exec stryker run --mutant <id>
+
+# Let an agent or editor drive the run, and record what was worth doing
+pnpm exec stryker mcp
+pnpm exec stryker serve stdio
+pnpm exec stryker feedback <id> --not-useful --reason "logging only"
+```
+
+```yaml
+- id: W6
+  title: Gate on New Survivors, Not a Flat Score
+  do: keep a committed baseline of accepted survivor ids and run `stryker gate --baseline <file>` in CI, seeding or refreshing it with `--update-baseline`
+  dont: fail the build on a flat mutation-score threshold, which hides new survivors in changed code and blocks on old ones in untouched code
+  harm: a score gate says neither what regressed nor what to fix, so teams stop reading it
+  check: a run with one new survivor fails and names only that survivor; `--update-baseline` rewrites the file with exactly the finished report's survivors
+- id: W7
+  title: Reproduce a Survivor Before Writing a Test
+  do: read the survivor's reproducer from `reports/mutation/reproducers.json`, or re-run it with `stryker run --mutant <id>`, which reports its status, covering tests, and killing test
+  dont: re-run the whole suite to study one survivor, and dont open the HTML report to find its diff
+  harm: a full re-run spends minutes to answer a question one mutant id answers
+  check: `stryker run --mutant <id>` exits 0 and reports the mutant with its covering tests
+- id: W8
+  title: Deliver Survivors Where the Reader Works
+  do: annotate pull requests with `stryker annotate --baseline <file>`, add the `sarif` reporter for code scanning, and serve the run to editors and agents over `stryker serve stdio|socket` and `stryker mcp`
+  dont: require a human or an agent to open a generated HTML report to find a survivor
+  harm: survivors nobody sees are never fixed, and the gate fires after the code has merged
+  check: a run writes `reports/mutation/mutation.sarif` and `reports/mutation/reproducers.json`, and `stryker annotate` prints one workflow command per surfaced survivor
+- id: W9
+  title: Record Usefulness Where the Run Can Read It
+  do: judge a surfaced survivor with `stryker feedback <id> --useful|--not-useful --reason "<why>"`, or the MCP `report_usefulness` tool
+  dont: leave the judgment in a chat thread or a review comment
+  harm: the judgment never reaches the report directory, so no surface can act on it
+  check: the report directory gains a `feedback` line naming the id, the judgment, and the reason
+```
+
+Assertions about specific mutants belong under `mutator: { mutantSetPolicy: 'full' }`. The default policy suppresses mutants a rule proves redundant — a relational replacement outside the sufficient set, a conditional collapsing to a literal, a replacement equal to the original, or a duplicate already planted at the site — and reports each as `Ignored` with the rule id, so a fixture or configuration that claims those mutants must keep every variant.
+
 ## Gotchas
 
 ```yaml

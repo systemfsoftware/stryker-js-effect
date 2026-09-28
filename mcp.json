@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "stryker": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": ["exec", "stryker", "mcp"]
+    }
+  }
+}

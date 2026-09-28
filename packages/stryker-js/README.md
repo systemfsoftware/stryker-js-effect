@@ -144,6 +144,12 @@ pnpm exec stryker run [options]
 # Mutate specific files only
 pnpm exec stryker run --mutate "src/auth/*.ts"
 
+# Scope the run to lines changed since a git ref
+pnpm exec stryker run --since origin/main
+
+# Re-run named mutants from the previous report
+pnpm exec stryker run --mutant <id,...>
+
 # Re-test only surviving mutants from prior run
 pnpm exec stryker run --survivors
 
@@ -155,7 +161,23 @@ pnpm exec stryker run --concurrency 4
 
 # Merge partial mutation reports from parallel CI shards
 pnpm exec stryker merge-reports --parts reports/shards --out reports/mutation
+
+# Fail on survivors absent from a committed baseline
+pnpm exec stryker gate --baseline .stryker-baseline.json
+
+# Name every mutant whose status differs between two reports
+pnpm exec stryker compare --baseline reports/mutation-report.json --fresh reports/fresh.json
+
+# Annotate a pull request at each surfaced survivor
+pnpm exec stryker annotate --baseline .stryker-baseline.json
+
+# Judge one surfaced survivor, or drive runs from an editor or an agent
+pnpm exec stryker feedback <id> --not-useful --reason "logging only"
+pnpm exec stryker serve stdio
+pnpm exec stryker mcp
 ```
+
+`stryker run --since <ref>` takes the merge base of `<ref>` and the working tree, diffs it at `--unified=0`, and intersects the changed lines with `mutate`; it falls back to a full run when the Stryker config, a test-runner config, `package.json`, or the lockfile changed. `stryker run --mutant <id,...>` admits each id against the previous report (`reports/mutation/mutation.json`), restricts the run to those mutants' files, and emits each one's status, covering tests, killing test, and a `stryker run --mutant <id>` reproducer. `stryker gate` exits non-zero on survivors missing from its baseline, `stryker compare` exits `1` on a status mismatch after subtracting a `--noise` file, and `stryker annotate` prints GitHub workflow commands at each surfaced survivor. `stryker serve stdio|socket` speaks the Mutation Server Protocol and `stryker mcp` serves MCP over stdio.
 
 ## Output Modes
 
@@ -167,6 +189,14 @@ STRYKER_MODE=machine pnpm exec stryker run  # the same, named by environment
 ```
 
 `--format text` names the human format explicitly; `--json` together with `--format text` is a usage error (exit 2). Under `--json`, `stdout` carries wire records and nothing else — progress lines and log output stay on `stderr`. Every run also writes the same records to `reports/mutation-stream.jsonl` (`--progressStreamFile`) in both modes, which is the artifact `stryker merge-reports` rebuilds a shard's partial report from.
+
+## Reporters, Sidecars, and Verdict Reuse
+
+`reporters` defaults to `['clear-text', 'progress', 'html']`. Add `sarif` to also write `reports/mutation/mutation.sarif` (SARIF 2.1.0, named from `jsonReporter.fileName`): each survivor is a `warning` result, each no-coverage mutant a `note`, the fingerprint is the mutant's content id, and the log is capped at 5,000 results. Every run writes `reports/mutation/reproducers.json`: one entry per mutant in the report, holding its mutated-lines diff and the `stryker run --mutant <id>` command that reproduces it.
+
+The incremental cache is keyed by content: a mutant's id, the import-closure digest of its covering tests, the run inputs, the verdict-semantics version, and the mutant-set policy. Nothing in the key names a shard, branch, report path, or machine, so verdicts from different runs union and are reused wherever their inputs match. `incrementalSources` accepts globs of further incremental reports to union beside `incrementalFile`, which is how a sharded CI workspace reuses the reports it restored from other shards. Each run's stream carries a `reuse` line with the reused, ran, and per-reason refused counts, and an unchanged project reuses its persisted initial test run instead of repeating it.
+
+`mutator.mutantSetPolicy` defaults to `'default'`, which suppresses the mutants a rule proves redundant — a relational replacement outside the sufficient set, a conditional that collapses to a literal, a replacement equal to the original code, or a duplicate already planted at the site — and records the rule id in the mutant's report entry. Set `mutator: { mutantSetPolicy: 'full' }` to keep every variant. `surfacing` (`{ perLine: 1, perFile: 7 }`) caps how many survivors reach the review surfaces and SARIF, without changing what the engine computes.
 
 ## Programmatic API
 
