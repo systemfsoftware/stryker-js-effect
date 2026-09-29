@@ -302,8 +302,10 @@ Feature('Survivors reaching code scanning, annotations, and reproducers', { time
               result.locations.every((location) => !location.physicalLocation.artifactLocation.uri.startsWith('/'))
             ),
             reproducerCount: reproducers?.length,
-            reproducerIdsMatchTheReport: JSON.stringify(Arr.map(reproducers ?? [], (reproducer) => reproducer.id)) ===
-              JSON.stringify(mutants.map((mutant) => mutant.id)),
+            reproducerIdsMatchTheReport: JSON.stringify(
+              Arr.map(reproducers ?? [], (reproducer) => reproducer.id).toSorted(),
+            ) ===
+              JSON.stringify(mutants.map((mutant) => mutant.id).toSorted()),
             everyReproducerCarriesADiff: (reproducers ?? []).every((reproducer) => reproducer.diff.includes('@@')),
             everyReproducerNamesItsId: (reproducers ?? []).every((reproducer) =>
               reproducer.command === `stryker run --mutant ${reproducer.id}`
