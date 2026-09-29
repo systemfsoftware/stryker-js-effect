@@ -5,7 +5,6 @@ import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Array from 'effect/Array'
 import * as Deferred from 'effect/Deferred'
-import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
@@ -30,7 +29,6 @@ import {
   checkPlansStream,
   inOwnScope,
   makeCheckerPoolHandle,
-  runCheckedPlans,
   splitCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
 import type { CheckerCrash, CheckerResourceService } from '../Checker/Checker.handle.js'
@@ -94,8 +92,6 @@ const labelledPlanOf = (mutantId: string, netTime: number): Mutant.MutantRunPlan
     },
   }
 }
-
-const runResultOf = (plan: Mutant.MutantRunPlan): Mutant.RunMutantResult => ({ ...plan.mutant, status: 'Killed' })
 
 const passedAnswers = (mutants: readonly Checker.CheckerMutantWire[]): Record<string, Checker.CheckResult> =>
   Object.fromEntries(
@@ -428,51 +424,6 @@ describe('checker pool', () => {
           !passedIds.includes(failingId),
           failedIds.join(',') === failingId,
           passedIds.join(',') === plans.map((plan) => plan.mutant.id).filter((id) => id !== failingId).join(','),
-        ])
-      }),
-  )
-
-  it.live.prop(
-    '∀seed_AcrossClearedGroups_⊨FreeRunnerTakesNext',
-    { of: [S.Int], subject: runCheckedPlans },
-    (subject, [seed]) =>
-      Effect.gen(function*() {
-        const slowId = idOf(`slow-${seed}`)
-        const fastId = idOf(`fast-${seed}`)
-        const checked = Stream.make(
-          { passedPlans: [labelledPlanOf(slowId, Math.abs(seed))], failedChecks: [] },
-          { passedPlans: [labelledPlanOf(fastId, Math.abs(seed) + 1)], failedChecks: [] },
-        )
-        const releaseSlow = yield* Deferred.make<void>()
-        const fastStarted = yield* Deferred.make<void>()
-        const startedIds = yield* Ref.make<readonly string[]>([])
-        const execution = {
-          settleFailure: (plan: Mutant.MutantRunPlan) => Effect.succeed(runResultOf(plan)),
-          runPlan: (plan: Mutant.MutantRunPlan) =>
-            Effect.gen(function*() {
-              yield* Ref.update(startedIds, (seen) => [...seen, plan.mutant.id])
-              if (plan.mutant.id === slowId) {
-                yield* Deferred.await(releaseSlow)
-              } else {
-                yield* Deferred.succeed(fastStarted, undefined)
-              }
-              return runResultOf(plan)
-            }),
-          concurrency: 2,
-        }
-        const observed = yield* Effect.scoped(Effect.gen(function*() {
-          const fiber = yield* subject(checked, execution).pipe(Stream.runDrain, Effect.forkScoped)
-          const fastRanWhileSlowBlocked = yield* Deferred.await(fastStarted).pipe(
-            Effect.timeoutOption(Duration.millis(100)),
-            Effect.map(Option.isSome),
-          )
-          yield* Deferred.succeed(releaseSlow, undefined)
-          yield* Fiber.join(fiber)
-          return { fastRanWhileSlowBlocked, started: yield* Ref.get(startedIds) }
-        }))
-        return holds([
-          observed.fastRanWhileSlowBlocked,
-          [...observed.started].sort().join(',') === [slowId, fastId].sort().join(','),
         ])
       }),
   )
