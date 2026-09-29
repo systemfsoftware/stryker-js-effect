@@ -148,7 +148,7 @@ const calleeCase: Case = {
       fileName: join('dep.ts'),
       mutatorName: 'X',
       replacement: 'self => self',
-      location: { start: { line: 2, column: 42 }, end: { line: 2, column: 52 } },
+      location: { start: { line: 2, column: 40 }, end: { line: 2, column: 50 } },
     },
   ],
 }
