@@ -374,8 +374,6 @@ const programsOf = (rt: TSCompilerRuntime): Effect.Effect<ReadonlyArray<Program>
 
 const resolveFileName = (rt: TSCompilerRuntime, fileName: string) => normalizeFileName(rt.pathService.resolve(fileName))
 
-type SourceFileLookup = HashMap.HashMap<string, Option.Option<SourceFile>>
-
 const nodeSpanOf = (node: Node): { readonly start: number; readonly end: number } => ({
   start: node.getStart(node.getSourceFile()),
   end: node.end,
@@ -399,86 +397,51 @@ const spanContainsOf = (node: Node, start: number, end: number): boolean => {
   return span.start <= start && end <= span.end
 }
 
-const deepestNodeAtSpanOf = (node: Node, start: number, end: number): Option.Option<Node> =>
-  Option.orElse(
-    Option.flatMap(
-      Option.fromUndefinedOr(childrenOf(node).find((child) => spanContainsOf(child, start, end))),
-      (child) => deepestNodeAtSpanOf(child, start, end),
-    ),
-    () => Option.filter(Option.some(node), (found) => spanEqualsOf(found, start, end)),
+const hasSpanOf = (node: Node, start: number, end: number): boolean => {
+  if (spanEqualsOf(node, start, end)) return true
+  return Arr.some(
+    childrenOf(node),
+    (child) => Boolean.and(spanContainsOf(child, start, end), hasSpanOf(child, start, end)),
   )
+}
 
-const splicesAsIsKind = (kind: SyntaxKind): boolean =>
-  Boolean.or(
-    Boolean.and(kind >= SyntaxKind.FirstStatement, kind <= SyntaxKind.LastStatement),
-    Boolean.or(
-      kind === SyntaxKind.Block,
-      Boolean.or(kind === SyntaxKind.CaseClause, kind === SyntaxKind.DefaultClause),
-    ),
-  )
-
-const parenthesizesAtSpanOf = (sourceFile: SourceFile, start: number, end: number): boolean =>
-  Option.match(deepestNodeAtSpanOf(sourceFile, start, end), {
-    onNone: () => false,
-    onSome: (found) => !splicesAsIsKind(found.kind),
+const parseHeldOf = (sourceFile: SourceFile, file: ScriptFile, mutant: Checker.CheckerMutantWire): boolean =>
+  Option.match(offsetAt(file.lineStarts, mutant.location.start), {
+    onNone: () => true,
+    onSome: (start) => hasSpanOf(sourceFile, start, start + mutant.replacement.length),
   })
 
-const parenthesizesMutantOf = (file: ScriptFile, mutant: Checker.CheckerMutantWire, sourceFile: SourceFile): boolean =>
-  Option.match(
-    Option.all([offsetAt(file.lineStarts, mutant.location.start), offsetAt(file.lineStarts, mutant.location.end)]),
-    { onNone: () => false, onSome: ([start, end]) => parenthesizesAtSpanOf(sourceFile, start, end) },
-  )
-
-const replacementOf = (
-  lookup: SourceFileLookup,
-  file: ScriptFile,
-  fileName: string,
-  mutant: Checker.CheckerMutantWire,
-): string =>
-  Option.match(Option.flatMap(HashMap.get(lookup, fileName), (found) => found), {
-    onNone: () => mutant.replacement,
-    onSome: (sourceFile) =>
-      Boolean.match(parenthesizesMutantOf(file, mutant, sourceFile), {
-        onTrue: () => '(' + mutant.replacement + ')',
-        onFalse: () => mutant.replacement,
-      }),
-  })
-
-const sourceFileLookupOf = (
-  projects: ReadonlyArray<Project>,
-  fileNames: ReadonlyArray<string>,
-): Effect.Effect<SourceFileLookup> =>
-  Effect.map(
-    Effect.forEach(
-      fileNames,
-      (fileName) =>
-        Effect.map(projectOfFile(projects, fileName), (owned) =>
-          [fileName, Option.map(owned, (found) => found.sourceFile)] as const),
-      { concurrency: 1 },
-    ),
-    HashMap.fromIterable,
-  )
-
-const replacementsOf = (
+const mutatedSourceFileOf = (
   rt: TSCompilerRuntime,
-  mutants: readonly Checker.CheckerMutantWire[],
-  lookup: SourceFileLookup,
-): Effect.Effect<HashMap.HashMap<string, string>> =>
-  Effect.map(
-    Effect.forEach(
-      mutants,
-      (mutant) => {
-        const fileName = resolveFileName(rt, mutant.fileName)
-        return Effect.map(getFile(rt.files, fileName), (file) =>
-          Option.match(file, {
-            onNone: () => [mutant.id, mutant.replacement] as const,
-            onSome: (found) => [mutant.id, replacementOf(lookup, found, fileName, mutant)] as const,
-          }))
-      },
-      { concurrency: 1 },
-    ),
-    HashMap.fromIterable,
+  fileName: string,
+): Effect.Effect<Option.Option<SourceFile>, CompilerFailed> =>
+  Effect.flatMap(
+    projectsOf(rt),
+    (projects) =>
+      Effect.map(projectOfFile(projects, fileName), (owned) => Option.map(owned, (found) => found.sourceFile)),
   )
+
+const parseHeldAfterSpliceOf = (
+  rt: TSCompilerRuntime,
+  file: Option.Option<ScriptFile>,
+  mutant: Checker.CheckerMutantWire,
+  fileName: string,
+): Effect.Effect<boolean, CompilerFailed> =>
+  Effect.gen(function*() {
+    const sourceFile = yield* mutatedSourceFileOf(rt, fileName)
+    return Option.match(Option.all([file, sourceFile]), {
+      onNone: () => true,
+      onSome: ([spliced, mutated]) => parseHeldOf(mutated, spliced, mutant),
+    })
+  })
+
+const parenthesizedSpliceOf = (
+  rt: TSCompilerRuntime,
+  mutant: Checker.CheckerMutantWire,
+  fileName: string,
+  changedFiles: ReadonlyArray<string>,
+): Effect.Effect<void, CompilerFailed> =>
+  Effect.flatMap(applyMutant(rt, mutant, '(' + mutant.replacement + ')'), () => refreshSnapshot(rt, changedFiles))
 
 const applyMutant = (
   rt: TSCompilerRuntime,
@@ -1091,16 +1054,22 @@ const checkedIn = (
 const checkOne = (
   rt: TSCompilerRuntime,
   state: CompilerState,
-  replacements: HashMap.HashMap<string, string>,
   mutant: Checker.CheckerMutantWire,
   previousMutants: ReadonlyArray<Checker.CheckerMutantWire>,
 ): Effect.Effect<MutantCheck, CompilerFailed> =>
   Effect.gen(function*() {
     yield* resetMutatedFiles(rt, previousMutants)
-    yield* applyMutant(rt, mutant, Option.getOrElse(HashMap.get(replacements, mutant.id), () => mutant.replacement))
     const fileName = resolveFileName(rt, mutant.fileName)
     const previousFileNames = Arr.map(previousMutants, (previous) => resolveFileName(rt, previous.fileName))
-    yield* refreshSnapshot(rt, Arr.dedupe([...previousFileNames, fileName]))
+    const changedFiles = Arr.dedupe([...previousFileNames, fileName])
+    const file = yield* getFile(rt.files, fileName)
+    yield* applyMutant(rt, mutant, mutant.replacement)
+    yield* refreshSnapshot(rt, changedFiles)
+    const held = yield* parseHeldAfterSpliceOf(rt, file, mutant, fileName)
+    yield* Boolean.match(held, {
+      onTrue: () => Effect.void,
+      onFalse: () => parenthesizedSpliceOf(rt, mutant, fileName, changedFiles),
+    })
     const projects = yield* projectsOf(rt)
     const owned = yield* projectOfFile(projects, fileName)
     return yield* Option.match(owned, {
@@ -1137,14 +1106,12 @@ export const check: {
     yield* resetMutatedFiles(rt, state.lastMutants)
     const batchFileNames = Arr.dedupe(Arr.map(mutants, (mutant) => resolveFileName(rt, mutant.fileName)))
     yield* refreshSnapshot(rt, Arr.dedupe([...state.lastMutatedFileNames, ...batchFileNames]))
-    const sourceFiles = yield* sourceFileLookupOf(yield* projectsOf(rt), batchFileNames)
-    const replacements = yield* replacementsOf(rt, mutants, sourceFiles)
     const accumulated = yield* Effect.reduce(
       mutants,
       (): CheckAccumulator => ({ previous: Option.none(), results: [] }),
       (previous, mutant) =>
         Effect.map(
-          checkOne(rt, state, replacements, mutant, Option.toArray(previous.previous)),
+          checkOne(rt, state, mutant, Option.toArray(previous.previous)),
           (result): CheckAccumulator => ({ previous: Option.some(mutant), results: [...previous.results, result] }),
         ),
     )

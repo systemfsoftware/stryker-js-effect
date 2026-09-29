@@ -22,6 +22,7 @@ interface Observation {
   readonly batches: ReadonlyArray<ReadonlyArray<string>>
   readonly statuses: Readonly<Record<string, string>>
   readonly brokenBlamesTheImporter: boolean
+  readonly brokenReason: string
 }
 
 type WireInput = S.Codec.Encoded<typeof Checker.CheckerMutantWire>
@@ -51,6 +52,10 @@ const observedOf = (
       result.status === 'compileError' &&
       result.reason.includes(testCase.importerFile) &&
       !result.reason.includes(testCase.mutatedFile),
+  }),
+  brokenReason: Option.match(HashMap.get(results, testCase.brokenId), {
+    onNone: () => '',
+    onSome: (result) => (result.status === 'compileError' ? result.reason : ''),
   }),
 })
 
@@ -170,6 +175,25 @@ const statementCase: Case = {
   ],
 }
 
+const IMPORT_ID = '0000000000000007'
+
+const importCase: Case = {
+  fixture: 'per-mutant-import',
+  brokenId: IMPORT_ID,
+  observedIds: [IMPORT_ID],
+  importerFile: 'dep.ts',
+  mutatedFile: 'dep.ts',
+  wires: (join) => [
+    {
+      id: IMPORT_ID,
+      fileName: join('dep.ts'),
+      mutatorName: 'StringLiteral',
+      replacement: "''",
+      location: { start: { line: 1, column: 51 }, end: { line: 1, column: 63 } },
+    },
+  ],
+}
+
 Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
   .withLayer(FILE_PORTS)
   .live('one warm TypeScript 7 program and the real filesystem settle batches in process')
@@ -255,6 +279,24 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
           expect({ batches: s.seen.batches, statuses: s.seen.statuses }).toEqual({
             batches: [[STATEMENT_ID]],
             statuses: { [STATEMENT_ID]: 'passed' },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A mutant that empties a dynamic import specifier keeps the missing-module diagnostic',
+      Gherkin.Do.pipe(
+        When('the emptied specifier is handed to the checker runtime')('seen', () => checkFixture(importCase)),
+        Then('the mutant is a CompileError that still names the module it cannot find')((s, expect) =>
+          expect({
+            batches: s.seen.batches,
+            statuses: s.seen.statuses,
+            missingModule: s.seen.brokenReason.includes('Cannot find module'),
+          }).toEqual({
+            batches: [[IMPORT_ID]],
+            statuses: { [IMPORT_ID]: 'compileError' },
+            missingModule: true,
           })
         ),
       ),
