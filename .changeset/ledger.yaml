@@ -75,6 +75,7 @@
   dir: packages/stryker-js-cli-contract
   intents:
     - cli-contract-publishes-the-stream-and-catalog
+    - rerun-by-id
 "@systemfsoftware/stryker-js-cli@9.0.0":
   dir: apps/stryker-js-cli
   intents:
@@ -210,6 +211,11 @@
   dir: packages/stryker-js-plugin-interface
   intents:
     - plugin-interface-owns-mutant-identity-catalog-and-report
+"@systemfsoftware/stryker-js-plugin-interface@11.1.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - coverage-keys-must-be-mutant-ids
+    - surfacing-caps
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -354,6 +360,8 @@
 "@systemfsoftware/stryker-js-typescript-checker@8.1.0":
   dir: packages/stryker-js-typescript-checker
   intents:
+    - queue-handoff-hang
+    - typescript-checker-checks-each-mutant
     - typescript-checker-runtime-subpath-and-diagnostic-reason
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
@@ -414,6 +422,10 @@
   dir: packages/stryker-js-vitest-runner
   intents:
     - systemfsoftware-latest-packages-2026-09-26
+"@systemfsoftware/stryker-js-vitest-runner@8.0.2":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - queue-handoff-hang
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -507,7 +519,28 @@
 "@systemfsoftware/stryker-js@14.0.0":
   dir: packages/stryker-js
   intents:
+    - annotate-command
+    - checked-mutants-run-as-checked
+    - checkpoint-writes-coalesce
+    - compare-reports
+    - feedback-command
+    - gate-survivor-baseline
+    - mcp-server
+    - mutation-server
+    - queue-handoff-hang
+    - reproducers-sidecar
+    - rerun-by-id
+    - reuse-ignores-stryker-outputs
+    - reuse-runs-the-prior-killer-first
+    - sarif-reporter
+    - shards-reuse-each-others-verdicts
+    - since-changed-lines
+    - static-mutant-summary
     - stryker-js-stream-contract-mutator-providers-and-statuses
+    - surfacing-caps
+    - verdict-semantics-content-keyed-cache
+    - version-bump-keeps-closure-digests
+    - warm-initial-test-run
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:

@@ -1,11 +1,11 @@
 ## 8.1.0
 
-### Minor Changes
+### Major Changes
 
-- The package publishes a second entry point at `./runtime` for tooling that drives the compiler in process: `CheckerRuntime.layer`, its shape type, the `TypeScriptCompiler` tag and the `nodes` accessor. A mutant's `CompileError` reason now renders the diagnostic the way `tsc` does, code included, so a consumer matching that text matches the code form.
+- The TypeScript checker now type-checks each mutant on its own, so a mutant is `CompileError` only when that mutant fails to compile, and checking finishes much sooner on large projects. Files that import a mutated file are checked only when the mutant changes what that file exports.
+
+  The `prioritizePerformanceOverAccuracy` option is removed. Delete it from your `checkers` options.
 
 ### Patch Changes
 
-- Updated dependencies:
-  - @systemfsoftware/stryker-js-instrumenter@11.0.0
-  - @systemfsoftware/stryker-js-plugin-interface@11.0.0
+- Fixed a rare hang where a run stopped making progress while a test runner or checker worker waited for a message that had already arrived. The message now always wakes the worker waiting for it.
