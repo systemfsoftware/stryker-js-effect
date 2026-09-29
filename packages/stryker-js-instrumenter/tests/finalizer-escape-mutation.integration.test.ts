@@ -346,7 +346,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
               count: mutants.length,
               status: mutants[0]?.status,
               reason: mutants[0]?.statusReason,
-            }).toEqual({ count: 1, status: 'Ignored', reason: 'cleanup proven by concurrency tests' }),
+            }).toEqual({ count: 1, status: 'Ignored', reason: 'directive: cleanup proven by concurrency tests' }),
         ),
       ),
     )

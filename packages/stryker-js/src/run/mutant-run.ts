@@ -2,6 +2,7 @@ import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Reporter, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
@@ -9,9 +10,9 @@ import * as Pool from 'effect/Pool'
 import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
-import type * as Semaphore from 'effect/Semaphore'
 
 import { MutantRunObservation } from '../interpret-mutant-run.workflow.js'
+import { mutantCostOf, testBodyMsOf } from '../mutant-cost.js'
 import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
 import { type PooledTestRunner } from '../pooled-test-runner.handle.js'
 import { offerReporterEvent } from '../reporter-stream.service.js'
@@ -71,6 +72,9 @@ const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, re
   })
 })
 
+const costLineOf = (result: Mutant.RunMutantResult): RunEvent.MutantCost | null =>
+  Option.getOrNull(Option.map(Option.fromUndefinedOr(result.cost), (cost) => RunEvent.MutantCost.make(cost)))
+
 const offerFinished = Effect.fnUntraced(function*(
   context: RunContext,
   result: Mutant.RunMutantResult,
@@ -83,7 +87,7 @@ const offerFinished = Effect.fnUntraced(function*(
         const completed = yield* Ref.updateAndGet(context.completedRef, (n) => n + 1)
         yield* Queue.offer(
           context.progressQueue,
-          Reporter.MutantTested.make({
+          RunEvent.RunMutantTestedEvent.make({
             id: result.id,
             status: streamable.status,
             fileName: streamable.file,
@@ -92,6 +96,8 @@ const offerFinished = Effect.fnUntraced(function*(
             replacement: result.replacement,
             completed,
             total: context.plannedTotal,
+            static: result.static ?? false,
+            cost: costLineOf(result),
           }),
         )
         return Option.some(completed)
@@ -144,34 +150,54 @@ export const announceSettledMutant = Effect.fnUntraced(function*(
   yield* offerStreamTested(context, result, completed, prepared)
 })
 
-export const checkpointMutationResults = Effect.fnUntraced(function*(
-  context: RunContext,
-  completedMutants: Ref.Ref<readonly Mutant.RunMutantResult[]>,
-) {
-  const input = yield* Ref.get(completedMutants)
-  yield* context.reporting.checkpoint(
-    reportingInputOf({ prev: context.prev, env: context.env, results: input }),
+const writeCheckpoint = (context: RunContext, results: readonly Mutant.RunMutantResult[]) =>
+  context.reporting.checkpoint(
+    reportingInputOf({ prev: context.prev, env: context.env, results }),
     context.plannedMutants,
   ).pipe(
     Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
     Effect.ignoreCause,
   )
-})
 
-const persist = Effect.fnUntraced(function*(
+const MIN_PAUSE_BETWEEN_CHECKPOINT_WRITES = Duration.seconds(1)
+
+export interface CheckpointWriter {
+  readonly record: (result: Mutant.RunMutantResult) => Effect.Effect<void>
+}
+
+export const makeCheckpointWriter = Effect.fnUntraced(function*(
   context: RunContext,
-  completedMutants: Ref.Ref<readonly Mutant.RunMutantResult[]>,
-  result: Mutant.RunMutantResult,
+  settled: readonly Mutant.RunMutantResult[],
 ) {
-  yield* Ref.update(completedMutants, (completed) => [...completed, result])
-  yield* checkpointMutationResults(context, completedMutants)
+  const completed = yield* Ref.make(settled)
+  const written = yield* Ref.make(-1)
+  const signals = yield* Queue.sliding<void>(1)
+  const writeLatest = Effect.flatMap(
+    Ref.get(completed),
+    (results) => Effect.andThen(writeCheckpoint(context, results), Ref.set(written, results.length)),
+  )
+  const writeIfBehind = Effect.flatMap(
+    Effect.all([Ref.get(completed), Ref.get(written)]),
+    ([results, count]) => Effect.when(writeLatest, Effect.succeed(results.length !== count)),
+  )
+  yield* writeLatest
+  yield* Effect.addFinalizer(() => writeIfBehind)
+  yield* Queue.take(signals).pipe(
+    Effect.andThen(writeLatest),
+    Effect.andThen(Effect.sleep(MIN_PAUSE_BETWEEN_CHECKPOINT_WRITES)),
+    Effect.forever,
+    Effect.forkScoped,
+  )
+  return {
+    record: (result) =>
+      Effect.andThen(Ref.update(completed, (results) => [...results, result]), Queue.offer(signals, undefined)),
+  } satisfies CheckpointWriter
 })
 
 export interface RunOnePlanArgs {
   readonly context: RunContext
   readonly testRunnerPool: Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError>
-  readonly checkpointGate: Semaphore.Semaphore
-  readonly completedMutants: Ref.Ref<readonly Mutant.RunMutantResult[]>
+  readonly checkpoint: CheckpointWriter
   readonly plan: Mutant.MutantRunPlan
 }
 
@@ -179,16 +205,35 @@ export type MutantRunRaw = typeof MutantRunObservation.Encoded & {
   readonly args: RunOnePlanArgs
   readonly runner: PooledTestRunner
   readonly result: TestRunner.MutantRunResult
+  readonly elapsedMs: number
 }
 
+const executedTestsCountOf = (executedTests: readonly string[] | undefined): number =>
+  Option.match(Option.fromUndefinedOr(executedTests), {
+    onNone: () => 0,
+    onSome: (ids) => ids.length,
+  })
+
+const costOf = (raw: MutantRunRaw): Mutant.MutantCost =>
+  mutantCostOf({
+    elapsedMs: raw.elapsedMs,
+    testBodyMs: testBodyMsOf(raw.result),
+    testsExecuted: executedTestsCountOf(raw.executedTests),
+    shared: false,
+  })
+
 export const settleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
-  const { context, plan, checkpointGate, completedMutants } = raw.args
+  const { context, plan, checkpoint } = raw.args
   const reported = yield* context.reporting.reportMutantRunResult(toReportedMutant(plan.mutant), raw.result)
-  const prepared = yield* preparedStreamableOf(context, reported)
-  const finished = yield* offerFinished(context, reported, prepared)
-  yield* offerStreamTested(context, reported, finished, prepared)
-  yield* checkpointGate.withPermits(1)(persist(context, completedMutants, reported))
-  return reported
+  const costed: Mutant.RunMutantResult = {
+    ...reported,
+    cost: costOf(raw),
+  }
+  const prepared = yield* preparedStreamableOf(context, costed)
+  const finished = yield* offerFinished(context, costed, prepared)
+  yield* offerStreamTested(context, costed, finished, prepared)
+  yield* checkpoint.record(costed)
+  return costed
 })
 
 export const recycleAndSettleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {

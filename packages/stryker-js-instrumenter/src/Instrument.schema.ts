@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
 import { MutatorNameSchema } from './directives/directive.schema.js'
@@ -43,6 +43,7 @@ export const InstrumenterOptionsSchema = S.Struct({
   excludedMutations: S.Array(MutatorNameSchema),
   ignorers: S.Array(IgnorerSchema),
   mutators: S.Unknown,
+  mutantSetPolicy: Options.MutantSetPolicy,
   noHeader: S.optional(S.Boolean),
 })
 export type InstrumenterOptions = Omit<typeof InstrumenterOptionsSchema.Type, 'mutators'> & {

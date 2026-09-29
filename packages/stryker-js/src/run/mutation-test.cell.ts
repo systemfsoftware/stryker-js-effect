@@ -1,5 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
@@ -10,22 +10,24 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
+import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
-import * as Semaphore from 'effect/Semaphore'
 import * as Stream from 'effect/Stream'
 
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import { scoped as checkerPoolsScoped } from '../Checker/checker-pool.blueprint.js'
 import {
-  checkPlans as checkPlansWithConfiguredCheckers,
+  checkPlansStream as checkPlansWithConfiguredCheckers,
   inOwnScope,
   makeCheckerPoolHandle,
+  runCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
+import { mutantDetailEventsOf, requestedIdsOf, restrictedToRequestedIds } from '../Rerun/rerun-selection.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
@@ -33,10 +35,11 @@ import { IdGenerator } from '../Worker.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import { readIncrementalReuse } from './incremental-reuse.cell.js'
 import { mutantRunCell } from './mutant-run.cell.js'
-import { announceSettledMutant, checkpointMutationResults, reportingInputOf, type RunContext } from './mutant-run.js'
+import { announceSettledMutant, makeCheckpointWriter, reportingInputOf, type RunContext } from './mutant-run.js'
 import { planMutationTest } from './mutation-test-plan.cell.js'
 import {
   configuredTestFilesOf,
+  inPlannedOrder,
   partitionPlannable,
   reportDroppedMutants,
   sandboxFilesOf,
@@ -103,20 +106,25 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     max: testRunnerCapacity,
   })
   const reporting = yield* MutationReporting
+  const progressQueue = yield* RunEvents
   const reuse = yield* readIncrementalReuse({
     project: prev.project,
     currentMutants: plannableMutants,
     testCoverage: prev.testCoverage,
     basePath: env.basePath,
     force: prev.options.force,
-    formatRegistry: prev.formatRegistry,
+    options: prev.options,
+    globalTestInputs: prev.dryRunResult.globalTestInputs ?? [],
+    sandbox: prev.sandbox,
   })
   const rememberedResults = reuse.rememberedResults
-  yield* Effect.when(
-    Effect.logInfo(
-      `Incremental mode: reusing ${rememberedResults.length} mutant result(s), running ${reuse.mutants.length} mutant(s).`,
-    ),
-    Effect.succeed(rememberedResults.length > 0),
+  yield* Queue.offer(
+    progressQueue,
+    RunEvent.ReuseReported.make({
+      reused: rememberedResults.length,
+      ran: reuse.mutants.length,
+      refused: yield* S.decodeEffect(RunEvent.ReuseRefusals)(reuse.refusalCounts).pipe(Effect.orDie),
+    }),
   )
   const plan = yield* planMutationTest({
     mutants: reuse.mutants,
@@ -129,23 +137,14 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
       ignoreStatic: prev.options.ignoreStatic,
     },
     timeOverheadMS: Duration.toMillis(prev.timeOverhead),
+    priorKilledByByMutantId: reuse.priorKilledByByMutantId,
     sandbox: prev.sandbox,
     project: prev.project,
     rememberedCount: rememberedResults.length,
     reporterStage: prev.reporterStage,
   })
   const checkerHandle = Option.map(Option.fromNullishOr(checkers.resources), makeCheckerPoolHandle)
-  const { passedPlans, failedChecks } = yield* checkPlansWithConfiguredCheckers(
-    Option.getOrUndefined(checkerHandle),
-    plan.runPlans,
-  )
-  const checkerResults = yield* Effect.forEach(
-    failedChecks,
-    ([mutantPlan, result]) => reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result),
-    { concurrency: 1 },
-  )
-  const checkerRelease = yield* checkers.releaseInBackground
-  const progressQueue = yield* RunEvents
+  const checkedPlans = checkPlansWithConfiguredCheckers(Option.getOrUndefined(checkerHandle), plan.runPlans)
   const completedRef = yield* Ref.make(0)
   const pathService = yield* Path.Path
   const context: RunContext = {
@@ -158,39 +157,54 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     plannedMutants: [...rememberedResults, ...reuse.mutants],
     pathService,
   }
-  const settledResults = [...rememberedResults, ...plan.earlyResults, ...checkerResults]
+  const settledResults = [...rememberedResults, ...plan.earlyResults]
   yield* Effect.forEach(settledResults, (result) => announceSettledMutant(context, result), {
     concurrency: 1,
     discard: true,
   })
-  const completedMutants = yield* Ref.make<readonly Mutant.RunMutantResult[]>(settledResults)
-  const checkpointGate = yield* Semaphore.make(1)
-  yield* checkpointMutationResults(context, completedMutants)
-  const runResults = yield* withPhaseSpan(
-    SpanTaxonomy.Spans.mutationTestBatch,
-    { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
-    () =>
-      Stream.mapEffect(
-        Stream.fromIterable(passedPlans),
-        (runPlan) =>
-          Effect.scoped(
-            mutantRunCell.run({ context, testRunnerPool, checkpointGate, completedMutants, plan: runPlan }),
+  const runResults = yield* Effect.scoped(Effect.gen(function*() {
+    const checkpoint = yield* makeCheckpointWriter(context, settledResults)
+    return yield* withPhaseSpan(
+      SpanTaxonomy.Spans.mutationTestBatch,
+      { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
+      () =>
+        runCheckedPlans(checkedPlans, {
+          settleFailure: (mutantPlan, result) =>
+            Effect.gen(function*() {
+              const reported = yield* reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result)
+              yield* announceSettledMutant(context, reported)
+              yield* checkpoint.record(reported)
+              return reported
+            }),
+          runPlan: (runPlan) =>
+            Effect.scoped(mutantRunCell.run({ context, testRunnerPool, checkpoint, plan: runPlan })),
+          concurrency: testRunnerCapacity,
+        }).pipe(
+          Stream.runFold(
+            (): Mutant.RunMutantResult[] => [],
+            (acc, result) => {
+              acc.push(result)
+              return acc
+            },
           ),
-        { concurrency: Math.max(1, testRunnerCapacity) },
-      ).pipe(
-        Stream.runFold(
-          (): Mutant.RunMutantResult[] => [],
-          (acc, result) => {
-            acc.push(result)
-            return acc
-          },
         ),
-      ),
+    )
+  }))
+  const checkerRelease = yield* checkers.releaseInBackground
+  const allResults = inPlannedOrder({
+    planned: context.plannedMutants,
+    results: [...settledResults, ...runResults],
+  })
+  yield* Effect.forEach(
+    mutantDetailEventsOf({ requested: requestedIdsOf(prev.options), results: allResults }),
+    (detail) => Queue.offer(progressQueue, detail),
+    { discard: true },
   )
-  const allResults = [...settledResults, ...runResults]
-  const outcomeResult = yield* reporting.reportAll(
-    reportingInputOf({ prev, env, results: allResults }),
-  )
+  const outcomeResult = yield* reporting.reportAll({
+    ...reportingInputOf({ prev, env, results: allResults }),
+    closureDigestsByMutantId: reuse.closureDigestsByMutantId,
+    timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
+  })
   yield* Fiber.await(checkerRelease)
   const doneNow = yield* Clock.currentTimeMillis
   const elapsed = Duration.millis(doneNow - env.runStartedAt)
@@ -235,7 +249,9 @@ export const mutationTestCell = Sandwich.named(
   Effect.gen(function*() {
     yield* Scope.Scope
     const prev = command
-    const { dropped, plannable } = partitionPlannable(prev.mutants)
+    const { dropped, plannable } = partitionPlannable(
+      restrictedToRequestedIds({ mutants: prev.mutants, requested: requestedIdsOf(prev.options) }),
+    )
     const raw: MutationTestRaw = {
       _tag: 'MutationTestCommand',
       dryRunOnly: prev.options.dryRunOnly,

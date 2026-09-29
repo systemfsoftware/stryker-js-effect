@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 export const FormatIdentitySchema = S.Struct({
@@ -9,29 +9,85 @@ export const FormatIdentitySchema = S.Struct({
 
 export type FormatIdentity = S.Schema.Type<typeof FormatIdentitySchema>
 
-const PreviousMutantSchema = S.Struct({
-  mutatorName: S.String,
-  replacement: S.String,
-  location: Mutant.Location,
+export const ReuseRefusalReasonSchema = S.Literals([
+  'semanticsChanged',
+  'policyChanged',
+  'runInputsChanged',
+  'closureChanged',
+  'flakyDependency',
+  'timeoutUnreproduced',
+  'noPriorRecord',
+])
+
+export type ReuseRefusalReason = typeof ReuseRefusalReasonSchema.Type
+
+export const ClosureDigestsSchema = S.Record(Mutant.MutantId, S.String)
+
+export type ClosureDigests = S.Schema.Type<typeof ClosureDigestsSchema>
+
+export const TimeoutKindSchema = S.Literals(['wallClock', 'hitLimit'])
+
+export type TimeoutKind = typeof TimeoutKindSchema.Type
+
+export const TimeoutEvidenceSchema = S.Struct({
+  timeoutKind: TimeoutKindSchema,
+  reproductions: S.Natural,
+})
+
+export type TimeoutEvidence = S.Schema.Type<typeof TimeoutEvidenceSchema>
+
+export const PreviousReuseRecordSchema = S.Struct({
+  mutantId: Mutant.MutantId,
   status: Mutant.MutantStatusSchema,
+  closureDigest: S.optional(S.String),
+  verdictSemanticsVersion: S.Int,
+  mutantSetPolicy: Options.MutantSetPolicy,
+  runInputsDigest: S.String,
+  timeoutKind: S.optional(TimeoutKindSchema),
+  reproductions: S.optional(S.Natural),
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
 })
 
-const PreviousFileSchema = S.Struct({
-  source: S.optional(S.String),
-  mutants: PreviousMutantSchema.pipe(S.Array, S.optional),
-  formatIdentity: S.optional(FormatIdentitySchema),
+export type PreviousReuseRecord = S.Schema.Type<typeof PreviousReuseRecordSchema>
+
+const ReuseMutantSchema = S.Struct({
+  id: Mutant.MutantId,
+  status: Mutant.MutantStatusSchema,
+  closureDigest: S.optional(S.String),
+  timeoutKind: S.optional(TimeoutKindSchema),
+  reproductions: S.optional(S.Natural),
+  testsCompleted: S.optional(S.Finite),
+  coveredBy: S.String.pipe(S.Array, S.optional),
+  killedBy: S.String.pipe(S.Array, S.optional),
 })
 
-const PreviousTestFileSchema = S.Struct({
-  source: S.optional(S.String),
+const ReuseFileSchema = S.Struct({
+  mutants: S.Array(ReuseMutantSchema),
 })
 
-export const PreviousFilesSchema = S.Record(S.String, PreviousFileSchema)
-export const PreviousTestFilesSchema = S.Record(S.String, PreviousTestFileSchema)
+export const ReuseTestDefinitionSchema = S.Struct({
+  id: S.String,
+  name: S.String,
+})
 
-export type PreviousFileRecord = S.Schema.Type<typeof PreviousFileSchema>
-export type PreviousTestFileRecord = S.Schema.Type<typeof PreviousTestFileSchema>
-export type PreviousMutantRecord = S.Schema.Type<typeof PreviousMutantSchema>
+export const ReuseTestFileSchema = S.Struct({
+  tests: S.Array(ReuseTestDefinitionSchema),
+})
+
+export type ReuseTestFile = typeof ReuseTestFileSchema.Type
+
+export const ReuseTestFilesSchema = S.Record(S.String, ReuseTestFileSchema)
+
+export type ReuseTestFiles = typeof ReuseTestFilesSchema.Type
+
+export const ReuseReportSchema = S.Struct({
+  verdictSemanticsVersion: S.Int,
+  mutantSetPolicy: Options.MutantSetPolicy,
+  runInputsDigest: S.String,
+  files: S.Record(S.String, ReuseFileSchema),
+  testFiles: S.optional(ReuseTestFilesSchema),
+})
+
+export type ReuseReport = S.Schema.Type<typeof ReuseReportSchema>

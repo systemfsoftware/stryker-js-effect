@@ -320,6 +320,7 @@ const MUTATION_RUN_OPTIONS = {
     '!src/__mocks__/**',
   ],
   coverageAnalysis: 'perTest',
+  mutator: { mutantSetPolicy: 'full' },
   concurrency: 2,
   ignorePatterns: ['**/node_modules/**'],
   reporters: ['json'],

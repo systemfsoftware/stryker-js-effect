@@ -29,6 +29,9 @@ export const SpanAttributeText = S.String
 
 export const SpanAttributeCount = S.Finite
 
+export const SpanRunStatus = S.Literals(['success', 'failure', 'timed_out', 'aborted', 'skipped'])
+export type SpanRunStatus = typeof SpanRunStatus.Type
+
 export const SpanDocument = S.Struct({
   id: SpanName,
   name: SpanName,

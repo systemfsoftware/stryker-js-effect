@@ -9,6 +9,7 @@ export {
   type DeepOptional,
   isCustomTestRunner,
   LogLevel,
+  MutantSetPolicy,
   type MutationScoreThresholds,
   MutationScoreThresholdsSchema,
   PackageManager,
@@ -27,6 +28,7 @@ export {
 export type {
   CoverageAnalysisMode as CoverageAnalysisModeType,
   LogLevel as LogLevelType,
+  MutantSetPolicy as MutantSetPolicyType,
   PackageManager as PackageManagerType,
   PartialStrykerOptions,
   ReportType as ReportTypeType,

@@ -1,3 +1,8 @@
+export { IgnoreRuleId, IgnoreStatusReason, IgnoreStatusReasonText } from '../ignore-rule.schema.js'
+export type {
+  IgnoreRuleId as IgnoreRuleIdValue,
+  IgnoreStatusReason as IgnoreStatusReasonValue,
+} from '../ignore-rule.schema.js'
 export { inOrder, notReversed } from '../Location.schema.js'
 export type { Ends } from '../Location.schema.js'
 export { Column, Line, Location, OpenEndLocation, Position } from '../Location.schema.js'
@@ -6,6 +11,7 @@ export type {
   CoverageData,
   CoveragePerTestId,
   EarlyResultPlan,
+  MutantCost,
   MutantEarlyResultPlan,
   MutantRunOptions,
   MutantRunPlan,

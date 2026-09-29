@@ -43,7 +43,7 @@ const markerReport = (): Report.MutationTestResult => ({
       source: 'export const marker = true',
       mutants: [
         {
-          id: Mutant.MutantId.make('0'),
+          id: Mutant.MutantId.make('0000000000000000'),
           mutatorName: 'BooleanLiteral',
           replacement: 'false',
           status: 'Killed',
@@ -61,7 +61,7 @@ const metricsFixture = (report: Report.MutationTestResult) => RunEvent.metricsRe
 
 const killedMutant = (index: number, total: number): Reporter.MutantTested =>
   Reporter.MutantTested.make({
-    id: Mutant.MutantId.make(String(index)),
+    id: Mutant.MutantId.make(index.toString(16).padStart(16, '0')),
     status: 'Killed',
     fileName: Mutant.CanonicalFileName.make(MARKER_FILE),
     location,
@@ -82,7 +82,12 @@ const completedRun = (): readonly Reporter.ReporterEvent[] => {
     }),
     Reporter.MutationTestingPlanReady.make({
       total: 1,
-      plans: [{ mutantId: Mutant.MutantId.make('0'), plan: 'Run', netTime: 1, reloadEnvironment: false }],
+      plans: [{
+        mutantId: Mutant.MutantId.make('0000000000000000'),
+        plan: 'Run',
+        netTime: 1,
+        reloadEnvironment: false,
+      }],
     }),
     killedMutant(1, 1),
     Reporter.MutationTestReportReady.make({ report, metrics: metricsFixture(report) }),

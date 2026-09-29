@@ -1,5 +1,6 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -16,7 +17,16 @@ import * as S from 'effect/Schema'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 import type { Node, SourceFile } from 'typescript/unstable/ast'
 import { SyntaxKind } from 'typescript/unstable/ast'
-import { API, type Diagnostic, DiagnosticCategory, type Program, type Snapshot } from 'typescript/unstable/async'
+import { isModuleDeclaration } from 'typescript/unstable/ast/is'
+import {
+  API,
+  type Diagnostic,
+  DiagnosticCategory,
+  ModifierFlags,
+  type Program,
+  type Project,
+  type Snapshot,
+} from 'typescript/unstable/async'
 import type { FileSystem as TSFileSystem } from 'typescript/unstable/fs'
 
 import { captureAliasSpecifier } from './capture-alias-specifier.workflow.js'
@@ -49,6 +59,7 @@ import {
   make as makeTSFiles,
   mutateFile,
   resetFile,
+  type ScriptFile,
   setOverrides,
   type TSFiles,
   tsFileSystem,
@@ -348,25 +359,101 @@ const walkTsConfigs = (
 const snapshotOf = (state: CompilerState) =>
   Effect.fromOption(Option.fromUndefinedOr(state.snapshot), () => CompilerFailed.make({ reason: 'not-initialized' }))
 
-const programsOf = (rt: TSCompilerRuntime): Effect.Effect<ReadonlyArray<Program>, CompilerFailed> =>
+const projectsOf = (rt: TSCompilerRuntime): Effect.Effect<ReadonlyArray<Project>, CompilerFailed> =>
   Effect.flatMap(SynchronizedRef.get(rt.state), (state) =>
     Effect.flatMap(snapshotOf(state), (snapshot) => {
       const projects = snapshot.getProjects()
       return Boolean.match(projects.length === 0, {
         onTrue: () => Effect.fail(CompilerFailed.make({ reason: 'no-projects', subject: state.tsconfigFile })),
-        onFalse: () => Effect.succeed(Arr.map(projects, (project) => project.program)),
+        onFalse: () => Effect.succeed(projects),
       })
     }))
 
+const programsOf = (rt: TSCompilerRuntime): Effect.Effect<ReadonlyArray<Program>, CompilerFailed> =>
+  Effect.map(projectsOf(rt), (projects) => Arr.map(projects, (project) => project.program))
+
 const resolveFileName = (rt: TSCompilerRuntime, fileName: string) => normalizeFileName(rt.pathService.resolve(fileName))
 
-const applyMutant = (rt: TSCompilerRuntime, mutant: Checker.CheckerMutantWire): Effect.Effect<void, CompilerFailed> =>
+const nodeSpanOf = (node: Node): { readonly start: number; readonly end: number } => ({
+  start: node.getStart(node.getSourceFile()),
+  end: node.end,
+})
+
+const childrenOf = (node: Node): ReadonlyArray<Node> => {
+  const children: Array<Node> = []
+  node.forEachChild((child) => {
+    children.push(child)
+  })
+  return children
+}
+
+const spanEqualsOf = (node: Node, start: number, end: number): boolean => {
+  const span = nodeSpanOf(node)
+  return span.start === start && span.end === end
+}
+
+const spanContainsOf = (node: Node, start: number, end: number): boolean => {
+  const span = nodeSpanOf(node)
+  return span.start <= start && end <= span.end
+}
+
+const hasSpanOf = (node: Node, start: number, end: number): boolean => {
+  if (spanEqualsOf(node, start, end)) return true
+  return Arr.some(
+    childrenOf(node),
+    (child) => Boolean.and(spanContainsOf(child, start, end), hasSpanOf(child, start, end)),
+  )
+}
+
+const parseHeldOf = (sourceFile: SourceFile, file: ScriptFile, mutant: Checker.CheckerMutantWire): boolean =>
+  Option.match(offsetAt(file.lineStarts, mutant.location.start), {
+    onNone: () => true,
+    onSome: (start) => hasSpanOf(sourceFile, start, start + mutant.replacement.length),
+  })
+
+const mutatedSourceFileOf = (
+  rt: TSCompilerRuntime,
+  fileName: string,
+): Effect.Effect<Option.Option<SourceFile>, CompilerFailed> =>
+  Effect.flatMap(
+    projectsOf(rt),
+    (projects) =>
+      Effect.map(projectOfFile(projects, fileName), (owned) => Option.map(owned, (found) => found.sourceFile)),
+  )
+
+const parseHeldAfterSpliceOf = (
+  rt: TSCompilerRuntime,
+  file: Option.Option<ScriptFile>,
+  mutant: Checker.CheckerMutantWire,
+  fileName: string,
+): Effect.Effect<boolean, CompilerFailed> =>
+  Effect.gen(function*() {
+    const sourceFile = yield* mutatedSourceFileOf(rt, fileName)
+    return Option.match(Option.all([file, sourceFile]), {
+      onNone: () => true,
+      onSome: ([spliced, mutated]) => parseHeldOf(mutated, spliced, mutant),
+    })
+  })
+
+const parenthesizedSpliceOf = (
+  rt: TSCompilerRuntime,
+  mutant: Checker.CheckerMutantWire,
+  fileName: string,
+  changedFiles: ReadonlyArray<string>,
+): Effect.Effect<void, CompilerFailed> =>
+  Effect.flatMap(applyMutant(rt, mutant, '(' + mutant.replacement + ')'), () => refreshSnapshot(rt, changedFiles))
+
+const applyMutant = (
+  rt: TSCompilerRuntime,
+  mutant: Checker.CheckerMutantWire,
+  replacement: string,
+): Effect.Effect<void, CompilerFailed> =>
   Effect.flatMap(getFile(rt.files, resolveFileName(rt, mutant.fileName)), (file) =>
     Effect.flatMap(
       Effect.fromOption(file, () => CompilerFailed.make({ reason: 'file-not-in-project', subject: mutant.fileName })),
       () =>
         Effect.mapError(
-          mutateFile(rt.files, resolveFileName(rt, mutant.fileName), mutant),
+          mutateFile(rt.files, resolveFileName(rt, mutant.fileName), { location: mutant.location, replacement }),
           (error) =>
             Match.value(error).pipe(
               Match.tag('HybridFileNotFoundError', () =>
@@ -377,9 +464,6 @@ const applyMutant = (rt: TSCompilerRuntime, mutant: Checker.CheckerMutantWire): 
             ),
         ),
     ))
-
-const applyMutants = (rt: TSCompilerRuntime, mutants: readonly Checker.CheckerMutantWire[]) =>
-  Effect.forEach(mutants, (mutant) => applyMutant(rt, mutant), { discard: true })
 
 const resetMutatedFiles = (rt: TSCompilerRuntime, mutants: readonly Checker.CheckerMutantWire[]) =>
   Effect.forEach(mutants, (mutant) => resetFile(rt.files, resolveFileName(rt, mutant.fileName)), { discard: true })
@@ -696,14 +780,35 @@ const buildGraph = Effect.fnUntraced(function*(rt: TSCompilerRuntime, programs: 
   yield* SynchronizedRef.update(rt.state, (prev) => ({ ...prev, sourceFiles: linked }))
 })
 
-const fileNode = (fileName: string, children: ReadonlyArray<FileNode>): FileNode => ({
+const fileNode = (
+  fileName: string,
+  children: ReadonlyArray<FileNode>,
+  parents: ReadonlyArray<FileNode> = [],
+): FileNode => ({
   children,
   fileName,
-  parents: [],
+  parents,
 })
+
+const importersOf = (sourceFiles: SourceFiles): HashMap.HashMap<string, ReadonlyArray<string>> =>
+  Arr.reduce(
+    Arr.fromIterable(sourceFiles),
+    HashMap.empty<string, ReadonlyArray<string>>(),
+    (accumulated, [importer, file]) =>
+      Arr.reduce(
+        Arr.fromIterable(file.imports),
+        accumulated,
+        (into, imported) =>
+          HashMap.set(into, imported, [
+            ...Option.getOrElse(HashMap.get(into, imported), (): ReadonlyArray<string> => []),
+            importer,
+          ]),
+      ),
+  )
 
 const graphNodesOf = (sourceFiles: SourceFiles): GraphNodes => {
   const entries = Arr.fromIterable(sourceFiles)
+  const importers = importersOf(sourceFiles)
   const leaves = HashMap.fromIterable(
     Arr.map(entries, ([fileName]): readonly [string, FileNode] => [fileName, fileNode(fileName, [])]),
   )
@@ -713,6 +818,10 @@ const graphNodesOf = (sourceFiles: SourceFiles): GraphNodes => {
       fileNode(
         fileName,
         Arr.filterMap(Arr.fromIterable(file.imports), (imported) => keepSome(HashMap.get(leaves, imported))),
+        Arr.filterMap(
+          Option.getOrElse(HashMap.get(importers, fileName), (): ReadonlyArray<string> => []),
+          (importer) => keepSome(HashMap.get(leaves, importer)),
+        ),
       ),
     ]),
   )
@@ -814,14 +923,6 @@ const programWideDiagnosticsOf = (program: Program): Effect.Effect<readonly Diag
     ([config, programWide]) => [...config, ...programWide],
   )
 
-const affectedDiagnosticsOf = (
-  program: Program,
-  fileNames: HashSet.HashSet<string>,
-): Effect.Effect<readonly Diagnostic[]> =>
-  Effect.all([programWideDiagnosticsOf(program), semanticDiagnosticsOf(program, fileNames)], { concurrency: 2 }).pipe(
-    Effect.map(([programWide, semantic]) => [...semantic, ...programWide]),
-  )
-
 const wholeProgramDiagnosticsOf = (program: Program): Effect.Effect<readonly Diagnostic[]> =>
   Effect.all(
     [programWideDiagnosticsOf(program), Effect.promise(() => program.getSemanticDiagnostics())],
@@ -840,6 +941,65 @@ const dryRunDiagnostics = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompiler
 const errorDiagnosticsOf = (diagnostics: readonly Diagnostic[]): readonly Diagnostic[] =>
   Arr.filter(diagnostics, (diagnostic) => diagnostic.category === DiagnosticCategory.Error)
 
+interface OwnedSourceFile {
+  readonly project: Project
+  readonly sourceFile: SourceFile
+}
+
+export interface MutantCheck {
+  readonly mutantId: Checker.CheckerMutantWire['id']
+  readonly diagnostics: ReadonlyArray<Diagnostic>
+}
+
+const projectOfFile = (
+  projects: ReadonlyArray<Project>,
+  fileName: string,
+): Effect.Effect<Option.Option<OwnedSourceFile>> =>
+  Option.match(Arr.head(projects), {
+    onNone: () => Effect.succeedNone,
+    onSome: (project) =>
+      Effect.flatMap(
+        Effect.promise(() => project.program.getSourceFile(fileName)),
+        (sourceFile) =>
+          Option.match(Option.fromUndefinedOr(sourceFile), {
+            onNone: () => projectOfFile(Arr.drop(projects, 1), fileName),
+            onSome: (found) => Effect.succeedSome({ project, sourceFile: found }),
+          }),
+      ),
+  })
+
+const isAmbientGlobal = (sourceFile: SourceFile, statement: Node): boolean =>
+  isModuleDeclaration(statement)
+    ? Boolean.and(
+      (statement.modifierFlags & ModifierFlags.Ambient) !== 0,
+      statement.name.getText(sourceFile) === 'global',
+    )
+    : false
+
+const declaresGlobalScope = (sourceFile: SourceFile): boolean =>
+  Boolean.or(
+    sourceFile.externalModuleIndicator === undefined,
+    Arr.some(sourceFile.statements, (statement) => isAmbientGlobal(sourceFile, statement)),
+  )
+
+const importerErrorsOf = (
+  projects: ReadonlyArray<Project>,
+  fileNames: HashSet.HashSet<string>,
+): Effect.Effect<ReadonlyArray<Diagnostic>> =>
+  Effect.map(
+    Effect.forEach(projects, (project) => semanticDiagnosticsOf(project.program, fileNames), { concurrency: 1 }),
+    (perProject) => errorDiagnosticsOf(Arr.flatten(perProject)),
+  )
+
+const wholeProgramErrorsOf = (projects: ReadonlyArray<Project>): Effect.Effect<ReadonlyArray<Diagnostic>> =>
+  Effect.map(
+    Effect.forEach(projects, (project) => wholeProgramDiagnosticsOf(project.program), { concurrency: 1 }),
+    (perProject) => errorDiagnosticsOf(Arr.flatten(perProject)),
+  )
+
+const ownErrorsOf = (owned: OwnedSourceFile, fileName: string): Effect.Effect<ReadonlyArray<Diagnostic>> =>
+  Effect.map(Effect.promise(() => owned.project.program.getSemanticDiagnostics(fileName)), errorDiagnosticsOf)
+
 const affectedFileNamesOf = (
   state: CompilerState,
   mutatedFileNames: ReadonlyArray<string>,
@@ -854,17 +1014,89 @@ const affectedFileNamesOf = (
   return HashSet.fromIterable(Arr.map(affected, (affectedFile) => affectedFile.fileName))
 }
 
+const importerErrorsOfMutant = (
+  state: CompilerState,
+  projects: ReadonlyArray<Project>,
+  mutant: Checker.CheckerMutantWire,
+  fileName: string,
+): Effect.Effect<MutantCheck> =>
+  Effect.map(
+    importerErrorsOf(projects, affectedFileNamesOf(state, [fileName])),
+    (diagnostics): MutantCheck => ({ mutantId: mutant.id, diagnostics }),
+  )
+
+const beyondOwnErrorsOf = (
+  state: CompilerState,
+  projects: ReadonlyArray<Project>,
+  mutant: Checker.CheckerMutantWire,
+  owned: OwnedSourceFile,
+  fileName: string,
+): Effect.Effect<MutantCheck> =>
+  Boolean.match(declaresGlobalScope(owned.sourceFile), {
+    onTrue: () =>
+      Effect.map(wholeProgramErrorsOf(projects), (diagnostics): MutantCheck => ({ mutantId: mutant.id, diagnostics })),
+    onFalse: () => importerErrorsOfMutant(state, projects, mutant, fileName),
+  })
+
+const checkedIn = (
+  state: CompilerState,
+  projects: ReadonlyArray<Project>,
+  mutant: Checker.CheckerMutantWire,
+  owned: OwnedSourceFile,
+  fileName: string,
+): Effect.Effect<MutantCheck> =>
+  Effect.flatMap(ownErrorsOf(owned, fileName), (own) =>
+    Boolean.match(own.length > 0, {
+      onTrue: () => Effect.succeed<MutantCheck>({ mutantId: mutant.id, diagnostics: own }),
+      onFalse: () => beyondOwnErrorsOf(state, projects, mutant, owned, fileName),
+    }))
+
+const checkOne = (
+  rt: TSCompilerRuntime,
+  state: CompilerState,
+  mutant: Checker.CheckerMutantWire,
+  previousMutants: ReadonlyArray<Checker.CheckerMutantWire>,
+): Effect.Effect<MutantCheck, CompilerFailed> =>
+  Effect.gen(function*() {
+    yield* resetMutatedFiles(rt, previousMutants)
+    const fileName = resolveFileName(rt, mutant.fileName)
+    const previousFileNames = Arr.map(previousMutants, (previous) => resolveFileName(rt, previous.fileName))
+    const changedFiles = Arr.dedupe([...previousFileNames, fileName])
+    const file = yield* getFile(rt.files, fileName)
+    yield* applyMutant(rt, mutant, mutant.replacement)
+    yield* refreshSnapshot(rt, changedFiles)
+    const held = yield* parseHeldAfterSpliceOf(rt, file, mutant, fileName)
+    yield* Boolean.match(held, {
+      onTrue: () => Effect.void,
+      onFalse: () => parenthesizedSpliceOf(rt, mutant, fileName, changedFiles),
+    })
+    const projects = yield* projectsOf(rt)
+    const owned = yield* projectOfFile(projects, fileName)
+    return yield* Option.match(owned, {
+      onNone: () => Effect.succeed<MutantCheck>({ mutantId: mutant.id, diagnostics: [] }),
+      onSome: (found) => checkedIn(state, projects, mutant, found, fileName),
+    })
+  })
+
+interface CheckAccumulator {
+  readonly previous: Option.Option<Checker.CheckerMutantWire>
+  readonly results: ReadonlyArray<MutantCheck>
+}
+
 export const check: {
   (
     mutants: readonly Checker.CheckerMutantWire[],
-  ): (self: TSCompiler) => Effect.Effect<readonly Diagnostic[], CompilerError>
-  (self: TSCompiler, mutants: readonly Checker.CheckerMutantWire[]): Effect.Effect<readonly Diagnostic[], CompilerError>
+  ): (self: TSCompiler) => Effect.Effect<ReadonlyArray<MutantCheck>, CompilerError>
+  (
+    self: TSCompiler,
+    mutants: readonly Checker.CheckerMutantWire[],
+  ): Effect.Effect<ReadonlyArray<MutantCheck>, CompilerError>
 } = dual(
   2,
   Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerCheck.name)(function*(
     self: TSCompiler,
     mutants: readonly Checker.CheckerMutantWire[],
-  ): Effect.fn.Return<readonly Diagnostic[], CompilerError> {
+  ): Effect.fn.Return<ReadonlyArray<MutantCheck>, CompilerError> {
     const rt = runtimeOf(self)
     yield* Effect.annotateCurrentSpan({
       'stryker.mutants.count': mutants.length,
@@ -872,26 +1104,30 @@ export const check: {
     })
     const state = yield* SynchronizedRef.get(rt.state)
     yield* resetMutatedFiles(rt, state.lastMutants)
-    yield* applyMutants(rt, mutants)
-    const mutatedFileNames = Arr.dedupe(Arr.map(mutants, (mutant) => resolveFileName(rt, mutant.fileName)))
-    const changedFiles = Arr.dedupe([...state.lastMutatedFileNames, ...mutatedFileNames])
-    yield* refreshSnapshot(rt, changedFiles)
+    const batchFileNames = Arr.dedupe(Arr.map(mutants, (mutant) => resolveFileName(rt, mutant.fileName)))
+    yield* refreshSnapshot(rt, Arr.dedupe([...state.lastMutatedFileNames, ...batchFileNames]))
+    const accumulated = yield* Effect.reduce(
+      mutants,
+      (): CheckAccumulator => ({ previous: Option.none(), results: [] }),
+      (previous, mutant) =>
+        Effect.map(
+          checkOne(rt, state, mutant, Option.toArray(previous.previous)),
+          (result): CheckAccumulator => ({ previous: Option.some(mutant), results: [...previous.results, result] }),
+        ),
+    )
+    const checked = accumulated.results
     yield* SynchronizedRef.update(rt.state, (prev) => ({
       ...prev,
       lastMutants: [...mutants],
-      lastMutatedFileNames: mutatedFileNames,
+      lastMutatedFileNames: batchFileNames,
     }))
-    const affected = affectedFileNamesOf(state, mutatedFileNames)
-    const programs = yield* programsOf(rt)
-    const diagnostics = errorDiagnosticsOf(
-      Arr.flatten(yield* Effect.forEach(programs, (program) => affectedDiagnosticsOf(program, affected))),
-    )
+    const failed = Arr.filter(checked, (entry) => entry.diagnostics.length > 0)
     yield* Effect.annotateCurrentSpan({
-      'typescript.diagnostics.count': diagnostics.length,
-      'typescript.files.count': HashSet.size(affected),
+      'typescript.diagnostics.count': Arr.reduce(checked, 0, (total, entry) => total + entry.diagnostics.length),
+      'typescript.compile_errors.count': failed.length,
     })
-    yield* annotateDiagnosticSample(diagnostics)
-    return diagnostics
+    yield* annotateDiagnosticSample(Arr.flatten(Arr.map(failed, (entry) => entry.diagnostics)))
+    return checked
   }),
 )
 
@@ -899,40 +1135,18 @@ export const nodes = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerNodes
   return yield* self.pipe(runtimeOf, nodesOf)
 })
 
-const groupedMutants = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerGroups.name)(function*(
-  self: TSCompiler,
-  mutants: readonly Checker.CheckerMutantWire[],
-  prioritizePerformanceOverAccuracy: boolean,
-): Effect.fn.Return<ReadonlyArray<ReadonlyArray<string>>, CompilerError> {
-  const graphNodes = yield* self.pipe(runtimeOf, nodesOf)
-  const command = GroupMutantsCommand.make({
-    mutants: [...mutants],
-    nodes: Object.fromEntries(graphNodes),
-    prioritizePerformanceOverAccuracy,
-  })
-  const decidedGroups = decided(groupMutants(command))
-  return Arr.map(decidedGroups, (group) => group.ids)
-})
+const groupedMutants = (mutants: readonly Checker.CheckerMutantWire[]): ReadonlyArray<ReadonlyArray<string>> =>
+  Arr.map(
+    decided(groupMutants(GroupMutantsCommand.make({ mutants: [...mutants] }))),
+    (group) => group.ids,
+  )
 
-export const groups: {
-  (
-    mutants: readonly Checker.CheckerMutantWire[],
-    prioritizePerformanceOverAccuracy: boolean,
-  ): (self: TSCompiler) => Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, CompilerError>
-  (
-    self: TSCompiler,
-    mutants: readonly Checker.CheckerMutantWire[],
-    prioritizePerformanceOverAccuracy: boolean,
-  ): Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, CompilerError>
-} = dual(
-  3,
-  (
-    self: TSCompiler,
-    mutants: readonly Checker.CheckerMutantWire[],
-    prioritizePerformanceOverAccuracy: boolean,
-  ): Effect.Effect<ReadonlyArray<ReadonlyArray<string>>, CompilerError> =>
-    groupedMutants(self, mutants, prioritizePerformanceOverAccuracy),
-)
+export const groups = (
+  mutants: readonly Checker.CheckerMutantWire[],
+): Effect.Effect<ReadonlyArray<ReadonlyArray<string>>> =>
+  Effect.sync(() => groupedMutants(mutants)).pipe(
+    Effect.withSpan(SpanTaxonomy.Spans.typescriptCheckerCompilerGroups.name),
+  )
 
 export const getLineAndCharacterOfPosition: {
   (

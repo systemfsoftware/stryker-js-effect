@@ -5,11 +5,13 @@ import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Pool from 'effect/Pool'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
+import * as Stream from 'effect/Stream'
 
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { StageError } from '../Run.schema.js'
@@ -102,27 +104,9 @@ const onCheckerSlot = <A>(
         ),
     }))
 
-const checkGroupsConcurrently = (
-  pool: CheckerPool,
-  checkerIndex: number,
-  checkerName: string,
-  currentPlans: readonly Mutant.MutantRunPlan[],
-): Effect.Effect<
-  readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResult])[],
-  StageError | CheckerCrash
-> =>
-  Effect.flatMap(
-    onCheckerSlot(pool, checkerIndex, (checker) => groupPlansWithChecker(checker, checkerName, currentPlans)),
-    (groups) =>
-      Effect.map(
-        Effect.forEach(
-          groups,
-          (group) => onCheckerSlot(pool, checkerIndex, (checker) => checkPlansWithChecker(checker, checkerName, group)),
-          { concurrency: 'unbounded' },
-        ),
-        (perGroup) => perGroup.flat(),
-      ),
-  )
+const noPassedPlans: readonly Mutant.MutantRunPlan[] = []
+
+const noFailedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[] = []
 
 export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitChecked.name)(function*(
   checked: readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResult])[],
@@ -151,49 +135,123 @@ export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitCh
   return { passedPlans, failedChecks }
 })
 
-const stepOneChecker = (
+const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], StageError | CheckerCrash> =>
+  Pool.use(pool, (slot) => Effect.succeed(slot.map(({ checkerName }) => checkerName)))
+
+const failedElement = (
+  failedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[],
+): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
+  Option.match(Array.head(failedChecks), {
+    onNone: () => Stream.empty,
+    onSome: () => Stream.succeed<CheckedPlans>({ passedPlans: noPassedPlans, failedChecks }),
+  })
+
+const checkedGroupsFor = (
   pool: CheckerPool,
+  checkerNames: readonly string[],
   checkerIndex: number,
-  checkerName: string,
-  currentPlans: readonly Mutant.MutantRunPlan[],
-) =>
-  checkGroupsConcurrently(pool, checkerIndex, checkerName, currentPlans).pipe(
-    Effect.flatMap((checked) => splitCheckedPlans(checked)),
-  )
-
-const runConfiguredCheckers = (
-  pool: CheckerPool,
   plans: readonly Mutant.MutantRunPlan[],
-): Effect.Effect<CheckedPlans, StageError | CheckerCrash> =>
-  Effect.flatMap(
-    Pool.use(pool, (slot) => Effect.succeed(slot.map(({ checkerName }) => checkerName))),
-    (checkerNames) => {
-      const failedChecks: (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[] = []
-      const checkedPlans: CheckedPlans = { passedPlans: plans, failedChecks }
-      return Effect.reduce(
-        checkerNames,
-        () => checkedPlans,
-        (acc, checkerName, checkerIndex) =>
-          Effect.map(
-            stepOneChecker(pool, checkerIndex, checkerName, acc.passedPlans),
-            (split) => {
-              failedChecks.push(...split.failedChecks)
-              return { passedPlans: split.passedPlans, failedChecks }
-            },
+): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
+  Option.match(Array.get(checkerNames, checkerIndex), {
+    onNone: () => Stream.succeed<CheckedPlans>({ passedPlans: plans, failedChecks: noFailedChecks }),
+    onSome: (checkerName) =>
+      Stream.unwrap(
+        onCheckerSlot(pool, checkerIndex, (checker) => groupPlansWithChecker(checker, checkerName, plans)).pipe(
+          Effect.map((groups) =>
+            Stream.fromIterable(groups).pipe(
+              Stream.mapEffect(
+                (group) =>
+                  onCheckerSlot(pool, checkerIndex, (checker) => checkPlansWithChecker(checker, checkerName, group))
+                    .pipe(
+                      Effect.flatMap((checked) => splitCheckedPlans(checked)),
+                    ),
+                { concurrency: 'unbounded', unordered: true },
+              ),
+              Stream.flatMap((split) =>
+                Stream.concat(
+                  failedElement(split.failedChecks),
+                  checkedGroupsFor(pool, checkerNames, checkerIndex + 1, split.passedPlans),
+                )
+              ),
+            )
           ),
-      )
-    },
-  )
+        ),
+      ),
+  })
 
-export const checkPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolCheckPlans.name)(function*(
+export const checkPlansStream: {
+  (
+    plans: readonly Mutant.MutantRunPlan[],
+  ): (checkerPool: CheckerPoolHandle | undefined) => Stream.Stream<CheckedPlans, StageError | CheckerCrash>
+  (
+    checkerPool: CheckerPoolHandle | undefined,
+    plans: readonly Mutant.MutantRunPlan[],
+  ): Stream.Stream<CheckedPlans, StageError | CheckerCrash>
+} = dual(
+  2,
+  (
+    checkerPool: CheckerPoolHandle | undefined,
+    plans: readonly Mutant.MutantRunPlan[],
+  ): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
+    Option.fromNullishOr(checkerPool).pipe(
+      Option.match({
+        onNone: () => Stream.succeed<CheckedPlans>({ passedPlans: plans, failedChecks: noFailedChecks }),
+        onSome: (handle) =>
+          checkerNamesOf(CheckerPoolHandle.slot(handle)).pipe(
+            Effect.map((checkerNames) => checkedGroupsFor(CheckerPoolHandle.slot(handle), checkerNames, 0, plans)),
+            Stream.unwrap,
+          ),
+      }),
+      Stream.withSpan(SpanTaxonomy.Spans.checkerPoolCheckPlans.name),
+    ),
+)
+
+export const checkPlans = Effect.fnUntraced(function*(
   checkerPool: CheckerPoolHandle | undefined,
   plans: readonly Mutant.MutantRunPlan[],
 ) {
-  return yield* Option.match(Option.fromNullishOr(checkerPool), {
-    onNone: (): Effect.Effect<CheckedPlans> => Effect.succeed({ passedPlans: plans, failedChecks: [] }),
-    onSome: (handle) => runConfiguredCheckers(CheckerPoolHandle.slot(handle), plans),
-  })
+  const checkedGroups = yield* Stream.runCollect(checkPlansStream(checkerPool, plans))
+  const passedPlans: Mutant.MutantRunPlan[] = []
+  const failedChecks: (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[] = []
+  for (const group of checkedGroups) {
+    passedPlans.push(...group.passedPlans)
+    failedChecks.push(...group.failedChecks)
+  }
+  return { passedPlans, failedChecks } satisfies CheckedPlans
 })
+
+export interface CheckedPlansExecution<A, E> {
+  readonly settleFailure: (plan: Mutant.MutantRunPlan, result: Checker.FailedCheckResult) => Effect.Effect<A, E>
+  readonly runPlan: (plan: Mutant.MutantRunPlan) => Effect.Effect<A, E>
+  readonly concurrency: number
+}
+
+export const runCheckedPlans: {
+  <A, E>(
+    execution: CheckedPlansExecution<A, E>,
+  ): (
+    self: Stream.Stream<CheckedPlans, StageError | CheckerCrash>,
+  ) => Stream.Stream<A, E | StageError | CheckerCrash>
+  <A, E>(
+    self: Stream.Stream<CheckedPlans, StageError | CheckerCrash>,
+    execution: CheckedPlansExecution<A, E>,
+  ): Stream.Stream<A, E | StageError | CheckerCrash>
+} = dual(
+  2,
+  <A, E>(
+    self: Stream.Stream<CheckedPlans, StageError | CheckerCrash>,
+    execution: CheckedPlansExecution<A, E>,
+  ): Stream.Stream<A, E | StageError | CheckerCrash> =>
+    self.pipe(
+      Stream.flatMap(({ passedPlans, failedChecks }) =>
+        Stream.fromIterable<() => Effect.Effect<A, E>>([
+          ...failedChecks.map(([plan, result]) => () => execution.settleFailure(plan, result)),
+          ...passedPlans.map((plan) => () => execution.runPlan(plan)),
+        ])
+      ),
+      Stream.mapEffect((work) => work(), { concurrency: Math.max(1, execution.concurrency), unordered: true }),
+    ),
+)
 
 export const inOwnScope = Effect.fn(SpanTaxonomy.Spans.mutationTestCheckerScope.name)(function*<Resources, RAcquire>(
   acquire: Effect.Effect<Resources, never, Scope.Scope | RAcquire>,

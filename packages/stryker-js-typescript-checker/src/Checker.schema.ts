@@ -8,11 +8,7 @@ import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 export const TypescriptCheckerOptionsSchema = S.Struct({
-  typescriptChecker: S.optional(
-    S.Struct({
-      prioritizePerformanceOverAccuracy: S.optional(S.Boolean),
-    }),
-  ),
+  typescriptChecker: S.optional(S.Struct({})),
 })
 
 // ── command ────────────────────────────────────────────────────────────────

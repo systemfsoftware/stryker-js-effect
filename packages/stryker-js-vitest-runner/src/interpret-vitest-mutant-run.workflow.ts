@@ -43,12 +43,14 @@ export class MutantKilled extends S.TaggedClass<MutantKilled>()('Killed', {
   tests: S.Array(TestRunner.TestResultSchema),
   killerIds: S.String.pipe(S.Array, S.optional),
   failureMessage: S.optional(S.String),
+  executedTests: S.Array(TestRunner.ExecutedTestSchema),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
 
 export class MutantSurvived extends S.TaggedClass<MutantSurvived>()('Survived', {
   tests: S.Array(TestRunner.TestResultSchema),
+  executedTests: S.Array(TestRunner.ExecutedTestSchema),
 }) {
   readonly [VitestMutantRunTypeId] = VitestMutantRunTypeId
 }
@@ -80,6 +82,11 @@ const hitLimitReason = (hitCount: number | undefined, hitLimit: number | undefin
         })),
   )
 
+const executedTestsOf = (command: VitestMutantRunCommand): ReadonlyArray<TestRunner.ExecutedTest> =>
+  command.tests
+    .filter((test) => test.status !== 'skipped')
+    .map((test) => ({ id: test.id, timeSpentMs: test.timeSpentMs }))
+
 const killedFrom = (
   command: VitestMutantRunCommand,
   killed: readonly TestRunner.FailedTestResult[],
@@ -88,7 +95,12 @@ const killedFrom = (
   const failureMessage = Option.getOrUndefined(Option.map(firstKiller, (killer) => killer.failureMessage))
   return Boolean.match(command.reportAllKillers, {
     onTrue: (): VitestMutantRunOutput =>
-      MutantKilled.make({ tests: command.tests, killerIds: killed.map((test) => test.id), failureMessage }),
+      MutantKilled.make({
+        tests: command.tests,
+        killerIds: killed.map((test) => test.id),
+        failureMessage,
+        executedTests: [...executedTestsOf(command)],
+      }),
     onFalse: (): VitestMutantRunOutput =>
       MutantKilled.make({
         tests: command.tests,
@@ -97,6 +109,7 @@ const killedFrom = (
           onSome: (killer): readonly string[] => [killer.id],
         }),
         failureMessage,
+        executedTests: [...executedTestsOf(command)],
       }),
   })
 }
@@ -112,7 +125,11 @@ const decideFromTests = (command: VitestMutantRunCommand): VitestMutantRunOutput
             tests: [],
             errorMessage: `An error occurred outside of a test run: ${command.externalErrorText}`,
           }),
-        onFalse: (): VitestMutantRunOutput => MutantSurvived.make({ tests: command.tests }),
+        onFalse: (): VitestMutantRunOutput =>
+          MutantSurvived.make({
+            tests: command.tests,
+            executedTests: [...executedTestsOf(command)],
+          }),
       }),
   })
 }
@@ -124,7 +141,13 @@ const decideVitestMutantRun = (command: VitestMutantRunCommand) =>
         onTrue: (): Result.Result<VitestMutantRunOutput, never> =>
           Result.succeed(MutantTimeout.make({ tests: [], reason: hit })),
         onFalse: (): Result.Result<VitestMutantRunOutput, never> =>
-          Result.succeed(MutantKilled.make({ tests: [], failureMessage: hit })),
+          Result.succeed(
+            MutantKilled.make({
+              tests: [],
+              failureMessage: hit,
+              executedTests: [...executedTestsOf(command)],
+            }),
+          ),
       }),
     onNone: (): Result.Result<VitestMutantRunOutput, never> => Result.succeed(decideFromTests(command)),
   })

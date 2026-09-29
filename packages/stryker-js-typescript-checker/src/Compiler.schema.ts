@@ -88,14 +88,6 @@ export class DryRunCompileErrors extends S.TaggedError<DryRunCompileErrors>()('D
   }
 }
 
-export class NodeNotInGraph extends S.TaggedError<NodeNotInGraph>()('NodeNotInGraph', {
-  fileName: S.String,
-}) {
-  override get message(): string {
-    return `Node not in graph: ${this.fileName}`
-  }
-}
-
 export type CompilerError =
   | CompilerFailed
   | UnsupportedTypeScriptVersionError

@@ -6,7 +6,6 @@ import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 
 import { GroupMutantsCommand } from '../CheckerCommands.schema.js'
-import type { NodeDecodedShape } from '../CheckMutants.schema.js'
 import { groupMutants } from '../group-mutants.workflow.js'
 
 const groupsOf = (command: GroupMutantsCommand): ReadonlyArray<ReadonlyArray<string>> =>
@@ -15,56 +14,28 @@ const groupsOf = (command: GroupMutantsCommand): ReadonlyArray<ReadonlyArray<str
     onSuccess: (decision) => Arr.map(decision, (group) => group.ids),
   })
 
-const singleGroupsOf = (command: GroupMutantsCommand): ReadonlyArray<ReadonlyArray<string>> =>
-  Arr.map(command.mutants, (mutant) => [mutant.id])
+const fileNamesOf = (command: GroupMutantsCommand, ids: ReadonlyArray<string>): ReadonlyArray<string> =>
+  Arr.getSomes(
+    Arr.map(ids, (id) =>
+      Option.map(
+        Arr.findFirst(command.mutants, (mutant) => mutant.id === id),
+        (mutant) => mutant.fileName,
+      )),
+  )
 
-const insideMutantsOf = (command: GroupMutantsCommand) =>
-  Arr.filter(command.mutants, (mutant) => command.nodes[mutant.fileName] !== undefined)
-
-const outsideMutantsOf = (command: GroupMutantsCommand) =>
-  Arr.filter(command.mutants, (mutant) => command.nodes[mutant.fileName] === undefined)
-
-const seenNamesOf = (node: NodeDecodedShape): ReadonlyArray<string> => [
-  node.fileName,
-  ...Arr.flatMap(node.parents, seenNamesOf),
-]
-
-const relatedNodes = (left: NodeDecodedShape, right: NodeDecodedShape): boolean =>
-  seenNamesOf(left).includes(right.fileName) || seenNamesOf(right).includes(left.fileName)
-
-const keepSome = <A>(option: Option.Option<A>): Result.Result<A, void> =>
-  Option.match(option, { onNone: () => Result.failVoid, onSome: Result.succeed })
-
-const memberNodesOf = (
+const everyGroupSharesOneFile = (
   groups: ReadonlyArray<ReadonlyArray<string>>,
   command: GroupMutantsCommand,
-): ReadonlyArray<ReadonlyArray<NodeDecodedShape>> =>
-  Arr.map(groups, (ids) =>
-    Arr.filterMap(ids, (id) =>
-      keepSome(
-        Option.flatMap(
-          Arr.findFirst(command.mutants, (mutant) => mutant.id === id),
-          (mutant) => Option.fromUndefinedOr(command.nodes[mutant.fileName]),
-        ),
-      )))
-
-const everyGroupIndependent = (groups: ReadonlyArray<ReadonlyArray<string>>, command: GroupMutantsCommand): boolean =>
-  Arr.every(memberNodesOf(groups, command), (members) =>
-    Arr.every(
-      Arr.flatMap(
-        members,
-        (left, index) =>
-          Arr.map(
-            Arr.drop(members, index + 1),
-            (right): readonly [NodeDecodedShape, NodeDecodedShape] => [left, right],
-          ),
-      ),
-      ([left, right]) => !relatedNodes(left, right),
-    ))
+): boolean =>
+  Arr.every(groups, (ids) => {
+    const fileNames = fileNamesOf(command, ids)
+    const first = fileNames[0] ?? ''
+    return fileNames.length === ids.length && Arr.every(fileNames, (fileName) => fileName === first)
+  })
 
 describe('groupMutants', (it) => {
   it.prop(
-    '∀command_Groups_≡Partition',
+    '∀command_Batches_≡Partition',
     { of: [GroupMutantsCommand], subject: groupsOf },
     (subject, [command]) =>
       Equal.equals(
@@ -74,25 +45,8 @@ describe('groupMutants', (it) => {
   )
 
   it.prop(
-    '∀command_Group_⊆Independent',
+    '∀command_Group_≡OneFile',
     { of: [GroupMutantsCommand], subject: groupsOf },
-    (subject, [command]) => everyGroupIndependent(subject(command), command),
-  )
-
-  it.prop(
-    '∀command_NotPrioritizing_≡Singletons',
-    { of: [GroupMutantsCommand], subject: groupsOf },
-    (subject, [command]) =>
-      command.prioritizePerformanceOverAccuracy || Equal.equals(subject(command), singleGroupsOf(command)),
-  )
-
-  it.prop(
-    '∀command_OutsideGraph_≡OwnRoundFirst',
-    { of: [GroupMutantsCommand], subject: groupsOf },
-    (subject, [command]) =>
-      !command.prioritizePerformanceOverAccuracy ||
-      insideMutantsOf(command).length === 0 ||
-      outsideMutantsOf(command).length === 0 ||
-      Equal.equals(Arr.head(subject(command)), Option.some(Arr.map(outsideMutantsOf(command), (mutant) => mutant.id))),
+    (subject, [command]) => everyGroupSharesOneFile(subject(command), command),
   )
 })

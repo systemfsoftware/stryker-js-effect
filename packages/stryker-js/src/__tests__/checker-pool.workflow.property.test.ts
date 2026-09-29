@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
@@ -13,6 +15,7 @@ import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
+import * as Stream from 'effect/Stream'
 
 import {
   type CheckedHistoryEntry,
@@ -20,8 +23,10 @@ import {
 } from '../../tests/__fixtures__/partition-checked-plans-law.fixture.js'
 import {
   type CheckerPool,
+  type CheckerPoolHandle,
   type CheckerSlot,
   checkPlans,
+  checkPlansStream,
   inOwnScope,
   makeCheckerPoolHandle,
   splitCheckedPlans,
@@ -40,9 +45,11 @@ type CheckedPlans = readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResul
 
 const holds = (conditions: readonly boolean[]) => conditions.every((condition) => condition)
 
+const idOf = (seed: string): Mutant.MutantId => Mutant.MutantId.make(bytesToHex(sha256(utf8ToBytes(seed))).slice(0, 16))
+
 const runPlanOf = (id: string, line: number): Mutant.MutantRunPlan => {
   const mutant = Mutant.Mutant.make({
-    id: Mutant.MutantId.make(id),
+    id: idOf(id),
     fileName: Mutant.CanonicalFileName.make(`src/${id}.ts`),
     mutatorName: Mutant.MutatorName.make(`Mutator${id}`),
     replacement: '',
@@ -136,8 +143,6 @@ const crashTagOf = (error: StageError | CheckerCrash): string =>
     Match.orElse(() => 'StageError'),
   )
 
-const groupOrderVerdictOf = (reportedIds: string, expectedIds: string) => reportedIds === expectedIds
-
 const poolBoundVerdictOf = (observed: {
   readonly peak: number
   readonly acquires: number
@@ -210,25 +215,6 @@ const reportedOf = (split: {
 })
 
 describe('checker pool', () => {
-  it.effect.prop(
-    '∀ids_CheckGroups_≡GroupOrder',
-    { of: [S.Int], subject: checkPlans },
-    (subject, [seed]) =>
-      Effect.gen(function*() {
-        const plans = groupPlansOf('1', seed)
-        const checker = checkerServiceOf({
-          group: (_checkerName, mutants) => Effect.succeed(singletonGroups(mutants)),
-          check: (_checkerName, mutants) =>
-            Effect.sleep(`${2 * (plans.length - plans.findIndex((plan) => plan.mutant.id === mutants[0]?.id))} milli`)
-              .pipe(Effect.as(passedAnswers(mutants))),
-        })
-        const pool = yield* checkerSlotPoolOf(plans.length, Effect.succeed(checkerSlotOf('c', checker)))
-        const checked = yield* subject(makeCheckerPoolHandle(pool), plans)
-        const reportedIds = checked.passedPlans.map((plan) => plan.mutant.id).join(',')
-        return groupOrderVerdictOf(reportedIds, plans.map((plan) => plan.mutant.id).join(','))
-      }),
-  )
-
   it.effect.prop(
     '∀seed_CheckerFanOut_⊆PoolBound',
     { of: [S.Int], subject: checkPlans },
@@ -327,7 +313,7 @@ describe('checker pool', () => {
                     Checker.CheckerFailed.make({
                       cause: 'the checker refused',
                       checkerName: 'c',
-                      mutantIds: [Mutant.MutantId.make('0')],
+                      mutantIds: [idOf('0')],
                     }),
                   ),
               ),
@@ -394,6 +380,51 @@ describe('checker pool', () => {
           Match.exhaustive,
         )
         return verdict
+      }),
+  )
+
+  it.effect.prop(
+    '∀seed_ChainedCheckers_≠FailedPassed',
+    {
+      of: [S.Int],
+      subject: (handle: CheckerPoolHandle, plans: readonly Mutant.MutantRunPlan[]) =>
+        Stream.runCollect(checkPlansStream(handle, plans)),
+    },
+    (subject, [seed]) =>
+      Effect.gen(function*() {
+        const plans = groupPlansOf('chain', seed)
+        const failingId = Option.getOrThrow(Array.get(plans, Math.abs(seed) % plans.length)).mutant.id
+        const failingAnswers = (mutants: readonly Checker.CheckerMutantWire[]): Record<string, Checker.CheckResult> =>
+          Object.fromEntries(
+            mutants.map((mutant): readonly [string, Checker.CheckResult] => [
+              mutant.id,
+              mutant.id === failingId
+                ? { status: 'compileError', reason: 'the second checker refused it' }
+                : { status: 'passed' },
+            ]),
+          )
+        const passing = checkerServiceOf({
+          group: (_checkerName, mutants) => Effect.succeed(singletonGroups(mutants)),
+          check: (_checkerName, mutants) => Effect.succeed(passedAnswers(mutants)),
+        })
+        const refusing = checkerServiceOf({
+          group: (_checkerName, mutants) => Effect.succeed(singletonGroups(mutants)),
+          check: (_checkerName, mutants) => Effect.succeed(failingAnswers(mutants)),
+        })
+        const slot: CheckerSlot = [
+          { checkerName: 'first', checker: passing },
+          { checkerName: 'second', checker: refusing },
+        ]
+        const pool = yield* checkerSlotPoolOf(1, Effect.succeed(slot))
+        const groups = yield* subject(makeCheckerPoolHandle(pool), plans)
+        const passedIds = groups.flatMap((group) => group.passedPlans.map((plan) => plan.mutant.id))
+        const failedIds = groups.flatMap((group) => group.failedChecks.map(([plan]) => plan.mutant.id))
+        return holds([
+          passedIds.length === plans.length - 1,
+          !passedIds.includes(failingId),
+          failedIds.join(',') === failingId,
+          passedIds.join(',') === plans.map((plan) => plan.mutant.id).filter((id) => id !== failingId).join(','),
+        ])
       }),
   )
 

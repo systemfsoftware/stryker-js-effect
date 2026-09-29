@@ -9,7 +9,16 @@ const matchesRoute = (command: CliRouteCommand, tag: string): boolean =>
   Match.value(command.route).pipe(
     Match.tag('help', () => tag === 'CliHelpRequested'),
     Match.tag('merge-reports', () => tag === 'CliMergeReportsRequested'),
-    Match.tag('run', (run) => tag === (run.survivors ? 'CliSurvivorsRequested' : 'CliRunRequested')),
+    Match.tag('compare', () => tag === 'CliCompareRequested'),
+    Match.tag('gate', () => tag === 'CliGateRequested'),
+    Match.tag('annotate', () => tag === 'CliAnnotateRequested'),
+    Match.tag('serve', () => tag === 'CliServeRequested'),
+    Match.tag('feedback', () => tag === 'CliFeedbackRequested'),
+    Match.tag('mcp', () => tag === 'CliMcpRequested'),
+    Match.tag('run', (run) =>
+      run.mutants !== undefined && run.mutants.length > 0
+        ? tag === 'CliRerunRequested'
+        : tag === (run.survivors ? 'CliSurvivorsRequested' : 'CliRunRequested')),
     Match.exhaustive,
   )
 
@@ -20,8 +29,15 @@ const decides = (subject: typeof routeCliRequest, command: CliRouteCommand): str
       Match.value(decision).pipe(
         Match.tag('CliHelpRequested', () => 'CliHelpRequested'),
         Match.tag('CliMergeReportsRequested', () => 'CliMergeReportsRequested'),
+        Match.tag('CliCompareRequested', () => 'CliCompareRequested'),
+        Match.tag('CliGateRequested', () => 'CliGateRequested'),
+        Match.tag('CliAnnotateRequested', () => 'CliAnnotateRequested'),
+        Match.tag('CliServeRequested', () => 'CliServeRequested'),
+        Match.tag('CliFeedbackRequested', () => 'CliFeedbackRequested'),
+        Match.tag('CliMcpRequested', () => 'CliMcpRequested'),
         Match.tag('CliRunRequested', () => 'CliRunRequested'),
         Match.tag('CliSurvivorsRequested', () => 'CliSurvivorsRequested'),
+        Match.tag('CliRerunRequested', () => 'CliRerunRequested'),
         Match.exhaustive,
       ),
   })

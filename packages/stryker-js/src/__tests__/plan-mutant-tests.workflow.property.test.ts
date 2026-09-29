@@ -1,7 +1,8 @@
 import { describe, it } from '@systemfsoftware/vitest'
 
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
@@ -17,6 +18,8 @@ import {
   PlannedEarlyResultMutant,
   PlannedRunMutant,
 } from '../plan-mutant-tests.workflow.js'
+
+const MUTANT_TIMEOUT_FLOOR_MS = 100
 
 const testsOf = (command: MutantTestPlanCommand, id: Mutant.MutantId): readonly TestRunner.TestId[] =>
   Option.getOrElse(Record.get(command.testsByMutantId, id), (): readonly TestRunner.TestId[] => [])
@@ -58,6 +61,13 @@ const earlyResultStatusOf = (
     Option.map(Option.liftPredicate(decision, S.is(PlannedEarlyResultMutant)), (early) => early.status),
   )
 
+const earlyResultReasonOf = (
+  decision: PlannedEarlyResultMutant | PlannedRunMutant,
+): string | undefined =>
+  Option.getOrUndefined(
+    Option.map(Option.liftPredicate(decision, S.is(PlannedEarlyResultMutant)), (early) => early.statusReason),
+  )
+
 const isRunPlan = (decision: PlannedEarlyResultMutant | PlannedRunMutant): boolean => S.is(PlannedRunMutant)(decision)
 
 const coverageCommandArb = Arbitrary.all([
@@ -70,7 +80,7 @@ const coverageCommandArb = Arbitrary.all([
   Arbitrary.schema(S.Boolean),
 ]).pipe(
   Arbitrary.map(([baseMutant, coverageAnalysis, ignoreStatic, isStatic, staticPresent, coveringTests, closed]) => {
-    const mutantId = Mutant.MutantId.make('0')
+    const mutantId = Mutant.MutantId.make('0000000000000000')
     return MutantTestPlanCommand.make({
       _tag: 'MutantTestPlanCommand',
       mutants: [
@@ -92,6 +102,74 @@ const coverageCommandArb = Arbitrary.all([
     })
   }),
 )
+
+const timeByIdOf = (command: MutantTestPlanCommand, testId: string): number =>
+  Option.getOrElse(Record.get(command.testTimeById, TestRunner.TestId.make(testId)), () => 0)
+
+const killerOf = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): readonly TestRunner.TestId[] =>
+  Option.getOrElse(
+    Option.flatMap(
+      Option.fromUndefinedOr(command.priorKilledByByMutantId),
+      (byMutantId) => Record.get(byMutantId, mutantId),
+    ),
+    (): readonly TestRunner.TestId[] => [],
+  )
+
+const orderedCommandArb = Arbitrary.all([
+  Arbitrary.schema(Mutant.Mutant),
+  Arbitrary.array(Arbitrary.schema(TestRunner.TestId), { maxLength: 3 }),
+  Arbitrary.array(Arbitrary.schema(Report.NonNegativeFinite), { maxLength: 3 }),
+  Arbitrary.schema(S.Natural),
+  Arbitrary.schema(S.Boolean),
+]).pipe(
+  Arbitrary.map(([baseMutant, coveringTests, durations, killerPick, hasKiller]) => {
+    const mutantId = Mutant.MutantId.make('0000000000000000')
+    const tests = [...new Set(coveringTests)]
+    const testTimeById = Object.fromEntries(tests.map((testId, index) => [testId, durations[index] ?? 0]))
+    const killer = hasKiller && tests.length > 0 ? tests[killerPick % tests.length] : undefined
+    return MutantTestPlanCommand.make({
+      _tag: 'MutantTestPlanCommand',
+      mutants: [Mutant.Mutant.make({ ...baseMutant, id: mutantId, status: undefined, statusReason: undefined })],
+      timeOverheadMS: 1,
+      timeSpentAllTests: 1,
+      hitsByMutantId: { [mutantId]: 1 },
+      testsByMutantId: { [mutantId]: tests },
+      testTimeById,
+      staticCoverage: { [mutantId]: 0 },
+      options: { coverageAnalysis: 'perTest', disableBail: false, timeoutMS: 0, timeoutFactor: 0, ignoreStatic: false },
+      sandboxFileByName: {},
+      ...(killer === undefined ? {} : { priorKilledByByMutantId: { [mutantId]: [killer] } }),
+    })
+  }),
+)
+
+const staticKillerCommandArb = Arbitrary.all([
+  Arbitrary.schema(Mutant.Mutant),
+  Arbitrary.array(Arbitrary.schema(TestRunner.TestId), { maxLength: 3 }),
+  Arbitrary.array(Arbitrary.schema(S.Boolean), { maxLength: 3 }),
+]).pipe(
+  Arbitrary.map(([baseMutant, knownTests, killerFlags]) => {
+    const mutantId = Mutant.MutantId.make('0000000000000000')
+    const known = Arr.dedupe(knownTests)
+    const killers = known.filter((_, index) => killerFlags[index] === true)
+    return MutantTestPlanCommand.make({
+      _tag: 'MutantTestPlanCommand',
+      mutants: [Mutant.Mutant.make({ ...baseMutant, id: mutantId, status: undefined, statusReason: undefined })],
+      timeOverheadMS: 1,
+      timeSpentAllTests: 1,
+      hitsByMutantId: { [mutantId]: 1 },
+      testsByMutantId: { [mutantId]: [] },
+      testTimeById: Object.fromEntries(known.map((testId) => [testId, 1])),
+      staticCoverage: { [mutantId]: 1 },
+      options: { coverageAnalysis: 'perTest', disableBail: false, timeoutMS: 0, timeoutFactor: 0, ignoreStatic: false },
+      sandboxFileByName: {},
+      ...(killers.length === 0 ? {} : { priorKilledByByMutantId: { [mutantId]: killers } }),
+    })
+  }),
+)
+
+const knownKillersOf = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): readonly TestRunner.TestId[] =>
+  killerOf(command, mutantId).filter((testId) => Record.has(command.testTimeById, testId))
 
 describe('planMutantTests', () => {
   it.prop(
@@ -258,6 +336,37 @@ describe('planMutantTests', () => {
   )
 
   it.prop(
+    '∀o_OrderedCoveringTests_≡ThePreviousKillerLeadsThenAscendingDryRunTime',
+    { of: [orderedCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => true,
+        onSuccess: (decisions) =>
+          decisions.every((decision, index) =>
+            Option.match(Option.fromUndefinedOr(command.mutants[index]), {
+              onNone: () => false,
+              onSome: (mutant) =>
+                Option.match(Option.liftPredicate(decision, S.is(PlannedRunMutant)), {
+                  onNone: () => true,
+                  onSome: (run) => {
+                    const filter = run.runOptions.testFilter ?? []
+                    const tests = testsOf(command, mutant.id)
+                    const killer = killerOf(command, mutant.id).find((testId) => tests.includes(testId))
+                    const times = filter.map((testId) => timeByIdOf(command, testId))
+                    const tail = killer === undefined ? times : times.slice(1)
+                    return (
+                      JSON.stringify([...filter].sort()) === JSON.stringify([...tests].sort()) &&
+                      (killer === undefined || filter[0] === killer) &&
+                      tail.every((time, tailIndex) => tail.slice(0, tailIndex).every((earlier) => earlier <= time))
+                    )
+                  },
+                }),
+            })
+          ),
+      }),
+  )
+
+  it.prop(
     '∀i_IgnoreStaticUncoveredStatic_≡Ignored',
     { of: [coverageCommandArb], subject: planMutantTests },
     (subject, [command]) =>
@@ -270,8 +379,29 @@ describe('planMutantTests', () => {
               onSome: (mutant) =>
                 Boolean.match(command.options.ignoreStatic && isUncoveredStatic(command, mutant), {
                   onFalse: () => true,
-                  onTrue: () => earlyResultStatusOf(decision) === 'Ignored',
+                  onTrue: () =>
+                    earlyResultStatusOf(decision) === 'Ignored' &&
+                    earlyResultReasonOf(decision)?.startsWith('ignore-static') === true,
                 }),
+            })
+          ),
+      }),
+  )
+
+  it.prop(
+    '∀r_IgnoredEarlyResult_≡ItsReasonIsForwardedOrNamesARule',
+    { of: [coverageCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => true,
+        onSuccess: (decisions) =>
+          decisions.every((decision, index) =>
+            !S.is(PlannedEarlyResultMutant)(decision) || decision.status !== 'Ignored' ||
+            Option.match(Option.fromUndefinedOr(command.mutants[index]), {
+              onNone: () => false,
+              onSome: (mutant) =>
+                decision.statusReason === mutant.statusReason ||
+                (decision.statusReason !== undefined && S.is(Mutant.IgnoreStatusReasonText)(decision.statusReason)),
             })
           ),
       }),
@@ -294,6 +424,19 @@ describe('planMutantTests', () => {
   )
 
   it.prop(
+    '∀p_CoveringTestTime_≡TheComputedTimeoutNeverFallsBelowTheFloor',
+    { of: [MutantTestPlanCommand], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => true,
+        onSuccess: (decisions) =>
+          decisions.every((decision) =>
+            !S.is(PlannedRunMutant)(decision) || decision.runOptions.timeout >= MUTANT_TIMEOUT_FLOOR_MS
+          ),
+      }),
+  )
+
+  it.prop(
     '∀x_Plan_≡ExactlyOnePartition',
     { of: [MutantTestPlanCommand], subject: planMutantTests },
     (subject, [command]) =>
@@ -302,6 +445,46 @@ describe('planMutantTests', () => {
         onSuccess: (decisions) =>
           decisions.length === command.mutants.length &&
           decisions.every((decision) => S.is(PlannedEarlyResultMutant)(decision) !== S.is(PlannedRunMutant)(decision)),
+      }),
+  )
+
+  it.prop(
+    '∀s_StaticPriorKiller_≡TheRunPublishesItsKnownKillerTestIdsInTheirOrder',
+    { of: [staticKillerCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => true,
+        onSuccess: (decisions) =>
+          decisions.every((decision, index) =>
+            Option.match(Option.fromUndefinedOr(command.mutants[index]), {
+              onNone: () => false,
+              onSome: (mutant) =>
+                Option.match(Option.liftPredicate(decision, S.is(PlannedRunMutant)), {
+                  onNone: () => false,
+                  onSome: (run) =>
+                    run.runOptions.testFilter === undefined &&
+                    JSON.stringify(run.runOptions.priorKillerTestIds ?? []) ===
+                      JSON.stringify(knownKillersOf(command, mutant.id)),
+                }),
+            })
+          ),
+      }),
+  )
+
+  it.prop(
+    '∀r_CoveredRun_≡NeverPublishesKillerTestIds',
+    { of: [orderedCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => true,
+        onSuccess: (decisions) =>
+          decisions.every((decision) =>
+            Option.match(Option.liftPredicate(decision, S.is(PlannedRunMutant)), {
+              onNone: () => true,
+              onSome: (run) =>
+                run.runOptions.testFilter === undefined || run.runOptions.priorKillerTestIds === undefined,
+            })
+          ),
       }),
   )
 })

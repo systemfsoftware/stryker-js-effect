@@ -329,20 +329,23 @@ export const offerTerminalReport: {
   (
     report: Report.MutationTestResult,
     metrics: Report.MetricsResult,
+    staticSummary: Report.StaticClassSummary | undefined,
   ): (stage: ReporterStage) => Effect.Effect<void, never>
   (
     stage: ReporterStage,
     report: Report.MutationTestResult,
     metrics: Report.MetricsResult,
+    staticSummary: Report.StaticClassSummary | undefined,
   ): Effect.Effect<void, never>
 } = dual(
-  3,
+  4,
   (
     stage: ReporterStage,
     report: Report.MutationTestResult,
     metrics: Report.MetricsResult,
+    staticSummary: Report.StaticClassSummary | undefined,
   ): Effect.Effect<void, never> =>
-    offerReporterEvent(stage, Reporter.MutationTestReportReady.make({ report, metrics })),
+    offerReporterEvent(stage, Reporter.MutationTestReportReady.make({ report, metrics, static: staticSummary })),
 )
 
 export const terminalDrainClass = (summary: ReporterDrainSummary): Plugin.ExitClass | null =>

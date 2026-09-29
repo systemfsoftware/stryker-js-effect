@@ -16,12 +16,20 @@ import * as Result from 'effect/Result'
 import * as Stream from 'effect/Stream'
 
 import { admitDiscoveredEntry, DiscoveredEntryCommand, EntryIncluded } from './admit-discovered-entry.workflow.js'
-import { admitIncrementalReport, AdmitIncrementalReportCommand } from './admit-incremental-report.workflow.js'
+import {
+  admitIncrementalReport,
+  AdmitIncrementalReportCommand,
+  type IncrementalReportDiscard,
+} from './admit-incremental-report.workflow.js'
 import { defaultOptions } from './config/default-options.js'
+import { DiffScopeCommand, type DiffScopeDecision, FullScope } from './git-diff.schema.js'
+import { GitDiff } from './git-diff.service.js'
+import { gitDiff } from './git-diff.workflow.js'
 import { type IncrementalReport, IncrementalReportSchema } from './IncrementalReport.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFilesDiscovered, ProjectSelectionCommand, selectProjectFiles } from './select-project-files.workflow.js'
-import { StrykerPackage } from './stryker-package.schema.js'
+import { strykerOutputFilesOf } from './stryker-outputs.js'
+import { INCREMENTAL_CACHE_VERSION, runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from './verdict-semantics.js'
 
 const ALWAYS_IGNORE = Object.freeze([
   'node_modules',
@@ -35,24 +43,47 @@ const ALWAYS_IGNORE = Object.freeze([
 
 const CRAWL_CONCURRENCY = 256
 
+type DiscardReason = IncrementalReportDiscard['reason']
+
+interface IncrementalReportDiscardShape {
+  readonly reason: DiscardReason
+  readonly actual?: string | undefined
+  readonly expected: string
+}
+
+const DISCARD_TEXTS: Readonly<
+  Record<DiscardReason, (command: ReadProjectCommand, discard: IncrementalReportDiscardShape) => string>
+> = {
+  noPriorRecord: (command) =>
+    `Unable to parse incremental result file at ${command.incrementalFile}; a full mutation testing run will be performed.`,
+  cacheLayoutChanged: (command, discard) =>
+    `Incremental result file at ${command.incrementalFile} has cache layout version ${
+      discard.actual ?? ''
+    }, expected ${discard.expected}; a full mutation testing run will be performed.`,
+  semanticsChanged: (command, discard) =>
+    `Incremental result file at ${command.incrementalFile} has verdict semantics version ${
+      discard.actual ?? ''
+    }, expected ${discard.expected}; a full mutation testing run will be performed.`,
+  policyChanged: (command, discard) =>
+    `Incremental result file at ${command.incrementalFile} has mutant-set policy ${
+      discard.actual ?? ''
+    }, expected ${discard.expected}; a full mutation testing run will be performed.`,
+  runInputsChanged: (command) =>
+    `Run inputs changed since the incremental result file at ${command.incrementalFile} was written; a full mutation testing run will be performed.`,
+}
+
 const discardMessageOf = (
   command: ReadProjectCommand,
-  discard: { readonly actual?: string | undefined; readonly expected: string },
+  discard: IncrementalReportDiscardShape,
 ): Option.Option<string> =>
-  Option.map(Option.filter(Option.fromUndefinedOr(command.contents), () => command.incremental), () =>
-    Option.getOrElse(
-      Option.map(
-        Option.fromUndefinedOr(discard.actual),
-        (actual) =>
-          `Incremental result file at ${command.incrementalFile} version ${actual} does not match expected version ${discard.expected}; a full mutation testing run will be performed.`,
-      ),
-      () =>
-        `Unable to parse incremental result file at ${command.incrementalFile}; a full mutation testing run will be performed.`,
-    ))
+  Option.map(
+    Option.filter(Option.fromUndefinedOr(command.contents), () => command.incremental),
+    () => DISCARD_TEXTS[discard.reason](command, discard),
+  )
 
 const discardLogOf: (input: {
   readonly command: ReadProjectCommand
-  readonly discard: { readonly actual?: string | undefined; readonly expected: string }
+  readonly discard: IncrementalReportDiscardShape
 }) => Effect.Effect<void> = ({ command, discard }) =>
   Option.getOrElse(
     Option.map(discardMessageOf(command, discard), (message) => Effect.logInfo(message)),
@@ -65,13 +96,25 @@ type ReadProjectInput = {
   readonly basePath: string
 }
 
-const ignoreRulesOf = (options: Options.StrykerOptions) => [
+const insideProjectOnlyRuleOf = (relative: string, absoluteFallback: string): string =>
+  Option.getOrElse(
+    Option.liftPredicate(relative, (value) => value.length > 0 && !value.startsWith('..')),
+    () => absoluteFallback,
+  )
+
+const projectRelativeRuleOf = (basePath: string, pathService: Path.Path, rule: string): string =>
+  Boolean.match(pathService.isAbsolute(rule), {
+    onTrue: () => insideProjectOnlyRuleOf(pathService.relative(pathService.resolve(basePath), rule), rule),
+    onFalse: () => rule,
+  })
+
+const ignoreRulesOf = (
+  options: Options.StrykerOptions,
+  basePath: string,
+  pathService: Path.Path,
+): readonly string[] => [
   ...ALWAYS_IGNORE,
-  options.tempDirName,
-  options.incrementalFile,
-  options.progressStreamFile,
-  options.htmlReporter.fileName,
-  options.jsonReporter.fileName,
+  ...strykerOutputFilesOf(options).map((file) => projectRelativeRuleOf(basePath, pathService, file)),
   ...options.ignorePatterns,
 ]
 
@@ -245,6 +288,42 @@ const warnUnmatchedTestPattern = (
 
 const stringArrayEquivalence = Equivalence.Array(Equivalence.String)
 
+interface DiffScope {
+  readonly scope: 'diff' | 'full'
+  readonly diffRanges: readonly string[] | undefined
+}
+
+const FULL_SCOPE: DiffScope = { scope: 'full', diffRanges: undefined }
+
+const diffScopeOf = Effect.fnUntraced(function*(ref: string, basePath: string) {
+  const git = yield* GitDiff
+  const result = yield* git.changedSince({ cwd: basePath, ref })
+  const decision: DiffScopeDecision = Result.match(
+    gitDiff(DiffScopeCommand.make({ hunks: [...result.hunks], untrackedFiles: [...result.untrackedFiles] })),
+    { onFailure: () => FullScope.make({ reason: 'the diff could not be computed' }), onSuccess: (value) => value },
+  )
+  return yield* Match.value(decision).pipe(
+    Match.tag(
+      'DiffScoped',
+      (scoped): Effect.Effect<DiffScope> => Effect.succeed({ scope: 'diff', diffRanges: [...scoped.ranges] }),
+    ),
+    Match.tag(
+      'FullScope',
+      (full): Effect.Effect<DiffScope> =>
+        Effect.as(Effect.logWarning(`Diff scope fell back to a full run: ${full.reason}.`), FULL_SCOPE),
+    ),
+    Match.exhaustive,
+  )
+})
+
+const effectiveOptions = (scope: DiffScope, options: Options.StrykerOptions): Options.StrykerOptions => {
+  const { since, ...withoutSince } = options
+  return Boolean.match(scope.scope === 'full', {
+    onTrue: () => (since === undefined ? options : withoutSince),
+    onFalse: () => options,
+  })
+}
+
 type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
   readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
@@ -257,9 +336,19 @@ type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
 }
 
 const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(function*(input: ReadProjectInput) {
-  const mutatePatterns: readonly string[] = input.options.mutate
-  const { testFileIgnores, testFilePatterns } = testFileSelectionOf(input.options)
-  const inputFileNames = yield* resolveInputFileNames(ignoreRulesOf(input.options), input.basePath)
+  const fs = yield* FileSystem.FileSystem
+  const pathService = yield* Path.Path
+  const diffScope = yield* Option.match(Option.fromUndefinedOr(input.options.since), {
+    onNone: () => Effect.succeed(FULL_SCOPE),
+    onSome: (ref) => diffScopeOf(ref, input.basePath),
+  })
+  const options = effectiveOptions(diffScope, input.options)
+  const mutatePatterns: readonly string[] = options.mutate
+  const { testFileIgnores, testFilePatterns } = testFileSelectionOf(options)
+  const inputFileNames = yield* resolveInputFileNames(
+    ignoreRulesOf(options, input.basePath, pathService),
+    input.basePath,
+  )
   const defaults = yield* defaultOptions
   const decision = selectedOf(
     ProjectSelectionCommand.make({
@@ -268,6 +357,7 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
       targetMutatePatterns: Option.getOrUndefined(
         Option.map(Option.fromUndefinedOr(input.targetMutatePatterns), (targets) => [...targets]),
       ),
+      diffRanges: Option.getOrUndefined(Option.fromUndefinedOr(diffScope.diffRanges)),
       testFilePatterns: [...testFilePatterns],
       testFileIgnores: [...testFileIgnores],
       basePath: input.basePath,
@@ -287,17 +377,20 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
     (pattern) => warnUnmatchedTestPattern(inputFileNames, input.basePath, pattern),
     { discard: true },
   )
-  const fs = yield* FileSystem.FileSystem
-  const contents = Option.getOrUndefined(yield* incrementalContentsOf(fs, input.options))
+  const runInputsDigest = yield* runInputsDigestOf(fs, pathService, input.basePath, options)
+  const contents = Option.getOrUndefined(yield* incrementalContentsOf(fs, options))
   const command: ReadProjectCommand = {
     _tag: 'AdmitIncrementalReportCommand',
     report: reportOf(contents),
-    expectedVersion: StrykerPackage.version,
-    options: input.options,
+    expectedIncrementalVersion: INCREMENTAL_CACHE_VERSION,
+    verdictSemanticsVersion: VERDICT_SEMANTICS_VERSION,
+    mutantSetPolicy: options.mutator.mutantSetPolicy,
+    runInputsDigest,
+    options,
     targetMutatePatterns: input.targetMutatePatterns,
     basePath: input.basePath,
-    incremental: input.options.incremental,
-    incrementalFile: input.options.incrementalFile,
+    incremental: options.incremental,
+    incrementalFile: options.incrementalFile,
     contents,
     fileDescriptions: decision.fileDescriptions,
     testFiles: [...decision.testFiles],

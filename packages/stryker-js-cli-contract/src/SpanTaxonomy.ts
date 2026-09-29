@@ -1,7 +1,7 @@
 import { Mutant, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-import { SpanAttributeCount, SpanAttributeText, type SpanMember } from './SpanTaxonomy.schema.js'
+import { SpanAttributeCount, SpanAttributeText, type SpanMember, SpanRunStatus } from './SpanTaxonomy.schema.js'
 
 const protocolMethods: ReadonlyArray<string> = [
   ...new Set([
@@ -164,6 +164,7 @@ export const Spans = {
     name: 'stryker.reporterWiring.spawnPluginReporterFactory',
     attributes: {},
   },
+  rerun: { name: 'stryker.rerun', attributes: {} },
   restrictSocket: { name: 'restrictSocket', attributes: {} },
   rpcCapabilities: { name: 'rpc.capabilities', attributes: { 'rpc.method': SpanAttributeText } },
   rpcCheck: { name: 'rpc.check', attributes: { 'rpc.method': SpanAttributeText } },
@@ -234,6 +235,10 @@ export const Spans = {
       'stryker.mutant.id': Mutant.MutantId,
       'stryker.mutant.mutator': Mutant.MutatorName,
       'stryker.mutant.status': Mutant.MutantStatusSchema,
+      'test.suite.name': SpanAttributeText,
+      'test.suite.run.status': SpanRunStatus,
+      'cicd.pipeline.run.id': SpanAttributeText,
+      'cicd.pipeline.name': SpanAttributeText,
     },
   },
   testRunnerReloadEnvironment: { name: 'stryker.testRunner.reloadEnvironment', attributes: {} },

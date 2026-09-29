@@ -89,3 +89,4 @@ packages:
   - packages/frameworks/*
 patchedDependencies:
   "@systemfsoftware/differential-spec@0.6.1": patches/@systemfsoftware__differential-spec@0.6.1.patch
+  effect@4.0.0-rc.117: patches/effect@4.0.0-rc.117.patch

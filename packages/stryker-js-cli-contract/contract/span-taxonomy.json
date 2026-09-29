@@ -675,6 +675,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.rerun",
+    "name": "stryker.rerun",
+    "attributes": {}
+  },
+  {
     "id": "restrictSocket",
     "name": "restrictSocket",
     "attributes": {}
@@ -1030,7 +1035,7 @@
       },
       "stryker.mutant.id": {
         "type": "string",
-        "pattern": "^(0|[1-9][0-9]*)$"
+        "pattern": "^[0-9a-f]{16}$"
       },
       "stryker.mutant.mutator": {
         "type": "string",
@@ -1048,6 +1053,25 @@
           "Ignored",
           "Pending"
         ]
+      },
+      "test.suite.name": {
+        "type": "string"
+      },
+      "test.suite.run.status": {
+        "type": "string",
+        "enum": [
+          "success",
+          "failure",
+          "timed_out",
+          "aborted",
+          "skipped"
+        ]
+      },
+      "cicd.pipeline.run.id": {
+        "type": "string"
+      },
+      "cicd.pipeline.name": {
+        "type": "string"
       }
     }
   },
@@ -1136,7 +1160,7 @@
     "attributes": {
       "stryker.mutant.id": {
         "type": "string",
-        "pattern": "^(0|[1-9][0-9]*)$"
+        "pattern": "^[0-9a-f]{16}$"
       }
     }
   },

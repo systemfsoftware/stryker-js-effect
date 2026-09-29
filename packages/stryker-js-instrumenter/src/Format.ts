@@ -196,6 +196,7 @@ const isIgnorer = (value: unknown): value is Ignorer =>
 export const toTransformerOptions = (options: InstrumenterOptions): TransformerOptions => ({
   excludedMutations: [...options.excludedMutations],
   mutators: options.mutators,
+  mutantSetPolicy: options.mutantSetPolicy,
   ignorers: options.ignorers.filter(isIgnorer),
   ...(options.noHeader !== undefined ? { noHeader: options.noHeader } : {}),
 })

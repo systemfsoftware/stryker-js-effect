@@ -62,6 +62,7 @@ const fileOf = (file: SliceSource): Instrument.File => ({ name: file.name, conte
 const instrumentOptionsOf = (mutators: SliceMutators, slice: PlacementSlice): Instrument.InstrumenterOptions => ({
   ignorers: [],
   excludedMutations: [...slice.excludedMutations],
+  mutantSetPolicy: 'full',
   mutators: mutators.selection,
 })
 

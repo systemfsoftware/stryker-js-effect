@@ -14,6 +14,7 @@ import * as ChildProcess from 'effect/unstable/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
+import { GitDiff } from '../git-diff.service.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
 import { layerWorkerProtocol } from '../worker-protocol.blueprint.js'
@@ -130,6 +131,7 @@ export const makeNodePlatformLayer = (options: {
   Layer.mergeAll(
     nodeWorkerLauncherLayer(options.childEnv).pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
     nodeBase,
+    GitDiff.layer,
   )
 
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = makeNodePlatformLayer({ childEnv: {} })

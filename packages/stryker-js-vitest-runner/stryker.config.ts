@@ -7,12 +7,7 @@ const config = {
     plugin: installedPlugin('@systemfsoftware/stryker-js-vitest-runner', import.meta.url),
     options: { configFile: 'vitest.config.ts', dir: '.', related: true },
   },
-  checkers: [
-    {
-      plugin: installedPlugin('@systemfsoftware/stryker-js-typescript-checker', import.meta.url),
-      options: { prioritizePerformanceOverAccuracy: true },
-    },
-  ],
+  checkers: [{ plugin: installedPlugin('@systemfsoftware/stryker-js-typescript-checker', import.meta.url) }],
   ignorers: [
     import.meta.resolve('@systemfsoftware/stryker-ignorer-effect-schema-declarations'),
     import.meta.resolve('@systemfsoftware/stryker-ignorer-in-source-vitest-block'),

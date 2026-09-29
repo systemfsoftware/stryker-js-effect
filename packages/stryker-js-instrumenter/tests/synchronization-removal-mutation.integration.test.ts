@@ -349,7 +349,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
               count: mutants.length,
               status: mutants[0]?.status,
               reason: mutants[0]?.statusReason,
-            }).toEqual({ count: 1, status: 'Ignored', reason: 'the race is proven by the lock suite' })
+            }).toEqual({ count: 1, status: 'Ignored', reason: 'directive: the race is proven by the lock suite' })
           },
         ),
       ),

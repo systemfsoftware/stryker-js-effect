@@ -27,6 +27,9 @@ const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = [
   'plugins',
   'formats',
   'skipped',
+  'reuse',
+  'mutant-detail',
+  'feedback',
 ]
 const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutantTested', 'verdict']
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)

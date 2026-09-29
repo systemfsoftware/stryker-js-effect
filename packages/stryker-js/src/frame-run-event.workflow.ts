@@ -93,6 +93,7 @@ const nextFramingState = (state: FramingState, event: RunEvent.RunEvent): Framin
     Match.tag('plugins', () => state),
     Match.tag('formats', () => state),
     Match.tag('skipped', () => state),
+    Match.tag('reuse', 'mutant-detail', 'feedback', () => state),
     Match.exhaustive,
   )
 
@@ -129,6 +130,7 @@ const formatStderrEvent = (event: RunEvent.RunEvent): string | null =>
     Match.tag('plugins', () => null),
     Match.tag('formats', () => null),
     Match.tag('skipped', () => null),
+    Match.tag('reuse', 'mutant-detail', 'feedback', () => null),
     Match.exhaustive,
   )
 

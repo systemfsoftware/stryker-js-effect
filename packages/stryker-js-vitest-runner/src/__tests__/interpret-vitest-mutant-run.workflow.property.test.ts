@@ -13,8 +13,8 @@ import {
 } from '../interpret-vitest-mutant-run.workflow.js'
 import { VitestMutantRunCommand } from '../vitest-run-command.schema.js'
 
-const TRAP_MUTANT_ID = Mutant.MutantId.make('0')
-const OTHER_MUTANT_ID = Mutant.MutantId.make('1')
+const TRAP_MUTANT_ID = Mutant.MutantId.make('0000000000000000')
+const OTHER_MUTANT_ID = Mutant.MutantId.make('0000000000000001')
 const TRAP_FILE = 'b.ts'
 
 const commandWith = (
@@ -183,6 +183,29 @@ describe('interpretVitestMutantRun', (it) => {
         onSuccess: (outcome) =>
           S.is(MutantDryError)(outcome) &&
           outcome.errorMessage === `An error occurred outside of a test run: ${externalErrorText}`,
+      })
+    },
+  )
+
+  it.prop(
+    '∀c_MutantRunCommand_≡ScorableOutcomesReportEveryExecutedTest',
+    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    (subject, [input]) => {
+      const command = commandWith(input, {
+        tests: input.tests,
+        hasExternalError: false,
+        hitCount: 0,
+        hitLimit: 0,
+      })
+      const ran = command.tests.filter((test) => test.status !== 'skipped')
+      return Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (outcome) =>
+          (S.is(MutantKilled)(outcome) || S.is(MutantSurvived)(outcome)) &&
+          outcome.executedTests.length === ran.length &&
+          outcome.executedTests.every((executed, index) =>
+            executed.id === ran.at(index)?.id && executed.timeSpentMs === ran.at(index)?.timeSpentMs
+          ),
       })
     },
   )

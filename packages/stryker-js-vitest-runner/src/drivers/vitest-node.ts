@@ -39,14 +39,50 @@ export const screenshotFailuresOff = (browser: object): void => {
   Reflect.set(browser, 'screenshotFailures', false)
 }
 
-export const setupFilesOf = <A>(config: A): readonly string[] =>
+const stringArrayFieldOf = <A>(value: A, key: string): readonly string[] =>
   Option.getOrElse(
     Option.map(
-      Option.filter(propertyOf<A, VitestValue>(config, 'setupFiles'), Array.isArray),
-      (files) => files.filter(Predicate.isString),
+      Option.filter(propertyOf<A, VitestValue>(value, key), Array.isArray),
+      (entries) => entries.filter(Predicate.isString),
     ),
     () => [],
   )
+
+export const setupFilesOf = <A>(config: A): readonly string[] => stringArrayFieldOf(config, 'setupFiles')
+
+export const globalSetupOf = <A>(config: A): readonly string[] => stringArrayFieldOf(config, 'globalSetup')
+
+const configFilesOf = <A>(config: A): readonly string[] =>
+  Option.getOrElse(
+    Option.map(Option.filter(propertyOf<A, VitestValue>(config, 'configFile'), Predicate.isString), (
+      file,
+    ) => [file]),
+    () => [],
+  )
+
+const configsOf = <A>(vitest: A): readonly VitestValue[] => [
+  ...Option.toArray(propertyOf<A, VitestValue>(vitest, 'config')),
+  ...Option.getOrElse(
+    Option.map(
+      Option.filter(propertyOf<A, VitestValue>(vitest, 'projects'), Array.isArray),
+      (projects) =>
+        projects.flatMap((project) => Option.toArray(propertyOf<VitestValue, VitestValue>(project, 'config'))),
+    ),
+    (): readonly VitestValue[] => [],
+  ),
+]
+
+export const globalTestInputsOf: {
+  (excluded: readonly string[]): <A>(vitest: A) => readonly string[]
+  <A>(vitest: A, excluded: readonly string[]): readonly string[]
+} = dual(2, <A>(vitest: A, excluded: readonly string[]): readonly string[] => {
+  const inputs = configsOf(vitest).flatMap((config) => [
+    ...setupFilesOf(config),
+    ...globalSetupOf(config),
+    ...configFilesOf(config),
+  ])
+  return [...new Set(inputs.filter((file) => !excluded.includes(file)))].sort()
+})
 
 export const setSetupFiles: {
   (files: readonly string[]): (config: object) => void

@@ -1,274 +1,316 @@
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import { Arbitrary } from 'effect/unstable/arbitrary'
 
-import { incrementalDiff, IncrementalDiffCommand, MutantRemembered, MutantToRun } from '../incremental-diff.workflow.js'
-import type { FormatIdentity } from '../IncrementalDiff.schema.js'
+import {
+  incrementalDiff,
+  IncrementalDiffCommand,
+  type IncrementalDiffDecision,
+  MutantRemembered,
+  MutantToRun,
+} from '../incremental-diff.workflow.js'
+import { type PreviousReuseRecord, ReuseRefusalReasonSchema } from '../IncrementalDiff.schema.js'
+import { PreviousReuseRecordSchema } from '../IncrementalDiff.schema.js'
 
-const mutantOf = (id: Mutant.MutantId, line: number) =>
+const FILE = Mutant.CanonicalFileName.make('src/subject.ts')
+
+const mutantOf = (id: Mutant.MutantId): Mutant.Mutant =>
   Mutant.Mutant.make({
     id,
-    fileName: Mutant.CanonicalFileName.make(`src/mutant-${line}.ts`),
-    mutatorName: Mutant.MutatorName.make(`Mutator${id}`),
+    fileName: FILE,
+    mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
     replacement: '',
-    location: { start: { line, column: 1 }, end: { line, column: 2 } },
+    location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
   })
 
-const IDENTITY: FormatIdentity = {
-  formatId: 'typescript',
-  ownerModule: '@systemfsoftware/stryker-js-instrumenter',
-  ownerVersion: '1.0.0',
+const isReusable = S.is(Mutant.RememberedStatusSchema)
+
+const unreproducedWallClock = (record: PreviousReuseRecord): boolean =>
+  record.status === 'Timeout' && record.timeoutKind !== 'hitLimit' && (record.reproductions ?? 0) < 1
+
+const remembers = (record: PreviousReuseRecord): boolean => isReusable(record.status) && !unreproducedWallClock(record)
+
+const recordOf = (
+  mutantId: Mutant.MutantId,
+  status: Mutant.MutantStatus,
+  closureDigest: string | undefined,
+  overrides: Partial<PreviousReuseRecord> = {},
+): PreviousReuseRecord => ({
+  mutantId,
+  status,
+  ...(closureDigest === undefined ? {} : { closureDigest }),
+  verdictSemanticsVersion: 1,
+  mutantSetPolicy: 'default',
+  runInputsDigest: 'run-inputs',
+  ...overrides,
+})
+
+interface CommandFields {
+  readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
+  readonly closureAnalysisFailed?: boolean
+  readonly verdictSemanticsVersion?: number
+  readonly mutantSetPolicy?: Options.MutantSetPolicy
+  readonly runInputsDigest?: string
+  readonly force?: boolean
+  readonly previousRecords?: ReadonlyArray<PreviousReuseRecord>
+  readonly flakyMutantIds?: ReadonlyArray<Mutant.MutantId>
 }
 
-const mutantsOf = (ids: ReadonlyArray<Mutant.MutantId>): ReadonlyArray<Mutant.Mutant> =>
-  ids.map((id, index) => mutantOf(id, index + 1))
-
-const driftedIdentity = (identity: FormatIdentity): FormatIdentity => ({
-  ...identity,
-  ownerVersion: `${identity.ownerVersion}-drifted`,
-})
-
-const lineDriftedLocationOf = (mutant: Mutant.Mutant) => ({
-  start: { line: mutant.location.start.line + 1, column: mutant.location.start.column },
-  end: { line: mutant.location.end.line + 1, column: mutant.location.end.column },
-})
-
-const previousMutantOf = (
-  mutant: Mutant.Mutant,
-  status: Mutant.MutantStatus,
-  testsCompleted: number,
-  location = mutant.location,
-) => ({
-  mutatorName: mutant.mutatorName,
-  replacement: mutant.replacement,
-  location,
-  status,
-  testsCompleted,
-  coveredBy: [mutant.id],
-  killedBy: [mutant.id],
-})
-
 const commandOf = (
-  mutant: Mutant.Mutant,
-  input: Readonly<{
-    source?: string
-    location?: Mutant.Location
-    identity?: FormatIdentity
-    claimed?: FormatIdentity
-    previousTestFiles?: Record<string, { readonly source: string }>
-    testIdsByRelativeFile?: Record<string, readonly string[]>
-    coveringTestFilesByMutantId?: Record<string, readonly string[]>
-    force?: boolean
-  }>,
-  status: Mutant.MutantStatus,
-  testsCompleted: number,
-) =>
+  currentMutants: ReadonlyArray<Mutant.Mutant>,
+  previousRecords: ReadonlyArray<PreviousReuseRecord>,
+  fields: CommandFields = {},
+): IncrementalDiffCommand =>
   IncrementalDiffCommand.make({
-    currentMutants: [mutant],
-    relativeFileByMutantId: { [mutant.id]: mutant.fileName },
-    previousFiles: {
-      [mutant.fileName]: {
-        source: input.source ?? mutant.fileName,
-        mutants: [previousMutantOf(mutant, status, testsCompleted, input.location ?? mutant.location)],
-        formatIdentity: input.identity ?? IDENTITY,
-      },
-    },
-    previousTestFiles: input.previousTestFiles ?? {},
-    currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
-    testIdsByRelativeFile: input.testIdsByRelativeFile ?? {},
-    coveringTestFilesByMutantId: input.coveringTestFilesByMutantId ?? {},
-    identitiesByFile: { [mutant.fileName]: input.claimed ?? IDENTITY },
-    force: input.force ?? false,
+    currentMutants: [...currentMutants],
+    previousRecords: [...(fields.previousRecords ?? previousRecords)],
+    closureDigestsByMutantId: fields.closureDigestsByMutantId ?? {},
+    closureAnalysisFailed: fields.closureAnalysisFailed ?? false,
+    verdictSemanticsVersion: fields.verdictSemanticsVersion ?? 1,
+    mutantSetPolicy: fields.mutantSetPolicy ?? 'default',
+    runInputsDigest: fields.runInputsDigest ?? 'run-inputs',
+    force: fields.force ?? false,
+    ...(fields.flakyMutantIds === undefined ? {} : { flakyMutantIds: [...fields.flakyMutantIds] }),
   })
 
-const forceCommandOf = (mutants: ReadonlyArray<Mutant.Mutant>) =>
-  IncrementalDiffCommand.make({
-    currentMutants: [...mutants],
-    relativeFileByMutantId: Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant.fileName])),
-    previousFiles: {},
-    previousTestFiles: {},
-    currentRelativeFiles: {},
-    testIdsByRelativeFile: {},
-    coveringTestFilesByMutantId: {},
-    identitiesByFile: {},
-    force: true,
+const matchingCommandOf = (
+  record: PreviousReuseRecord,
+  fields: CommandFields = {},
+) =>
+  commandOf([mutantOf(record.mutantId)], [record], {
+    closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
+    verdictSemanticsVersion: record.verdictSemanticsVersion,
+    mutantSetPolicy: record.mutantSetPolicy,
+    runInputsDigest: record.runInputsDigest,
+    ...fields,
   })
+
+const onlyDecision = (
+  result: Result.Result<readonly IncrementalDiffDecision[], never>,
+): IncrementalDiffDecision | undefined =>
+  Result.isSuccess(result) && result.success.length === 1 ? result.success[0] : undefined
+
+const runsWithRefusal = (
+  result: Result.Result<readonly IncrementalDiffDecision[], never>,
+  refusal: string,
+): boolean =>
+  Result.isSuccess(result) && result.success.length === 1 &&
+  S.is(MutantToRun)(result.success[0]) && result.success[0].refusal === refusal
+
+const partitionCommandArb = Arbitrary.schema(
+  S.Array(S.Struct({
+    id: Mutant.MutantId,
+    digest: S.String,
+    status: Mutant.MutantStatusSchema,
+  })),
+).pipe(
+  Arbitrary.map((entries) =>
+    commandOf(
+      entries.map((entry) => mutantOf(entry.id)),
+      entries.map((entry) => recordOf(entry.id, entry.status, entry.digest)),
+      { closureDigestsByMutantId: Object.fromEntries(entries.map((entry) => [entry.id, entry.digest])) },
+    )
+  ),
+)
 
 describe('incrementalDiff', () => {
   it.prop(
-    '∀ids_Force_≡AllToRunInInputOrder',
+    '∀m_Mutants_≡ForceRunsEveryMutantInOrderNamingNoPriorRecord',
     { of: [S.Array(Mutant.MutantId)], subject: incrementalDiff },
     (subject, [ids]) => {
-      const mutants = mutantsOf(ids)
-      const result = subject(forceCommandOf(mutants))
-      const isRun = S.is(MutantToRun)
-      return (
-        Result.isSuccess(result) &&
-        result.success.length === mutants.length &&
-        result.success.every((decision, index) => isRun(decision) && mutants[index]?.id === decision.mutant.id)
-      )
+      const mutants = ids.map(mutantOf)
+      const result = subject(commandOf(mutants, [], { force: true }))
+      return Result.isSuccess(result) && result.success.length === mutants.length &&
+        result.success.every((decision, index) =>
+          S.is(MutantToRun)(decision) && decision.mutant.id === mutants[index]?.id &&
+          decision.refusal === 'noPriorRecord'
+        )
     },
   )
 
   it.prop(
-    '∀ilt_StableFile_≡RememberedCarriesPreviousFields',
-    {
-      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, S.Finite, Mutant.Position.fields.line],
-      subject: incrementalDiff,
+    '∀m_Mutants_≡WithoutAPriorRecordEveryMutantRunsNamingNoPriorRecord',
+    { of: [S.Array(Mutant.MutantId)], subject: incrementalDiff },
+    (subject, [ids]) => {
+      const mutants = ids.map(mutantOf)
+      const result = subject(commandOf(mutants, []))
+      return Result.isSuccess(result) && result.success.length === mutants.length &&
+        result.success.every((decision) => S.is(MutantToRun)(decision) && decision.refusal === 'noPriorRecord')
     },
-    (subject, [id, status, testsCompleted, line]) => {
-      const mutant = mutantOf(id, line)
-      const result = subject(commandOf(mutant, {}, status, testsCompleted))
-      if (!Result.isSuccess(result) || result.success.length !== 1) {
+  )
+
+  it.prop(
+    '∀r_Record_≡AMatchingCacheKeyRemembersExactlyTheReusableStatuses',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const decision = onlyDecision(subject(matchingCommandOf(record)))
+      if (decision === undefined) {
         return false
       }
-      const decision = result.success[0]
-      return (
-        S.is(MutantRemembered)(decision) &&
-        decision.mutantId === mutant.id &&
-        decision.status === status &&
-        decision.testsCompleted === testsCompleted &&
-        decision.coveredBy?.[0] === mutant.id &&
-        decision.killedBy?.[0] === mutant.id
-      )
+      return remembers(record)
+        ? S.is(MutantRemembered)(decision) && decision.mutantId === record.mutantId && decision.status === record.status
+        : S.is(MutantToRun)(decision) &&
+          decision.refusal === (unreproducedWallClock(record) ? 'timeoutUnreproduced' : 'noPriorRecord')
     },
   )
 
   it.prop(
-    '∀ilt_StableFile_≡RememberedCarriesPreviousFields',
+    '∀rd_RecordAndReproductions_≡AWallClockTimeoutIsRememberedExactlyWhenItReproduced',
+    { of: [PreviousReuseRecordSchema, S.Natural], subject: incrementalDiff },
+    (subject, [record, reproductions]) => {
+      const prior = { ...record, status: 'Timeout' as const, timeoutKind: 'wallClock' as const, reproductions }
+      const decision = onlyDecision(subject(matchingCommandOf(prior)))
+      if (decision === undefined) {
+        return false
+      }
+      return reproductions >= 1
+        ? S.is(MutantRemembered)(decision) && decision.status === 'Timeout' && decision.timeoutKind === 'wallClock' &&
+          decision.reproductions === reproductions
+        : S.is(MutantToRun)(decision) && decision.refusal === 'timeoutUnreproduced' &&
+          decision.priorTimeout?.timeoutKind === 'wallClock'
+    },
+  )
+
+  it.prop(
+    '∀r_Record_≡AHitLimitTimeoutIsRememberedOnFirstSight',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const prior = { ...record, status: 'Timeout' as const, timeoutKind: 'hitLimit' as const, reproductions: 0 }
+      const decision = onlyDecision(subject(matchingCommandOf(prior)))
+      return decision !== undefined && S.is(MutantRemembered)(decision) && decision.status === 'Timeout'
+    },
+  )
+
+  it.prop(
+    '∀is_RecordAndDigest_≡AChangedClosureDigestRunsNamingClosureChanged',
+    { of: [PreviousReuseRecordSchema, S.NonEmptyString], subject: incrementalDiff },
+    (subject, [record, drawn]) => {
+      const current = record.closureDigest ?? ''
+      const changed = drawn === current ? `${drawn}-changed` : drawn
+      const result = subject(matchingCommandOf(record, {
+        closureDigestsByMutantId: { [record.mutantId]: changed },
+      }))
+      return runsWithRefusal(result, 'closureChanged')
+    },
+  )
+
+  it.prop(
+    '∀r_Record_≡SemanticsOutranksEveryOtherRefusal',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const result = subject(commandOf([mutantOf(record.mutantId)], [record], {
+        closureDigestsByMutantId: { [record.mutantId]: `${record.closureDigest ?? ''}-drifted` },
+        verdictSemanticsVersion: record.verdictSemanticsVersion + 1,
+        mutantSetPolicy: record.mutantSetPolicy === 'default' ? 'full' : 'default',
+        runInputsDigest: `${record.runInputsDigest}-drifted`,
+      }))
+      return runsWithRefusal(result, 'semanticsChanged')
+    },
+  )
+
+  it.prop(
+    '∀r_Record_≡PolicyOutranksRunInputsAndClosure',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const result = subject(commandOf([mutantOf(record.mutantId)], [record], {
+        closureDigestsByMutantId: { [record.mutantId]: `${record.closureDigest ?? ''}-drifted` },
+        verdictSemanticsVersion: record.verdictSemanticsVersion,
+        mutantSetPolicy: record.mutantSetPolicy === 'default' ? 'full' : 'default',
+        runInputsDigest: `${record.runInputsDigest}-drifted`,
+      }))
+      return runsWithRefusal(result, 'policyChanged')
+    },
+  )
+
+  it.prop(
+    '∀r_RecordWithAKey_≡AFailedClosureAnalysisRunsNamingClosureChanged',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) =>
+      runsWithRefusal(subject(matchingCommandOf(record, { closureAnalysisFailed: true })), 'closureChanged'),
+  )
+
+  it.prop(
+    '∀r_Record_≡RunInputsOutrankClosure',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const result = subject(commandOf([mutantOf(record.mutantId)], [record], {
+        closureDigestsByMutantId: { [record.mutantId]: `${record.closureDigest ?? ''}-drifted` },
+        verdictSemanticsVersion: record.verdictSemanticsVersion,
+        mutantSetPolicy: record.mutantSetPolicy,
+        runInputsDigest: `${record.runInputsDigest}-drifted`,
+      }))
+      return runsWithRefusal(result, 'runInputsChanged')
+    },
+  )
+
+  it.prop(
+    '∀iss_Records_≡TheNewerOfTwoRecordsWithTheSameKeyWins',
     {
-      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, S.Finite, Mutant.Position.fields.line],
+      of: [Mutant.MutantId, Mutant.MutantStatusSchema, Mutant.MutantStatusSchema],
       subject: incrementalDiff,
     },
-    (subject, [id, status, testsCompleted, line]) => {
-      const mutant = mutantOf(id, line)
-      const result = subject(
-        commandOf(mutant, { location: lineDriftedLocationOf(mutant) }, status, testsCompleted),
-      )
-      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
+    (subject, [id, olderStatus, newerStatus]) => {
+      const older = recordOf(id, olderStatus, 'digest')
+      const newer = recordOf(id, newerStatus, 'digest')
+      const decision = onlyDecision(subject(matchingCommandOf(older, { previousRecords: [older, newer] })))
+      if (decision === undefined) {
+        return false
+      }
+      const reusableInOrder = remembers(newer) ? newer : remembers(older) ? older : undefined
+      return reusableInOrder === undefined
+        ? S.is(MutantToRun)(decision)
+        : S.is(MutantRemembered)(decision) && decision.status === reusableInOrder.status
     },
   )
 
   it.prop(
-    '∀il_IdentityDrift_≡ToRun',
-    {
-      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, S.Finite, Mutant.Position.fields.line],
-      subject: incrementalDiff,
-    },
-    (subject, [id, status, testsCompleted, line]) => {
-      const mutant = mutantOf(id, line)
-      const result = subject(
-        commandOf(mutant, { claimed: driftedIdentity(IDENTITY) }, status, testsCompleted),
-      )
-      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
-    },
-  )
-
-  it.prop(
-    '∀il_MissingClaimedIdentity_≡ToRun',
-    {
-      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, S.Finite, Mutant.Position.fields.line],
-      subject: incrementalDiff,
-    },
-    (subject, [id, status, testsCompleted, line]) => {
-      const mutant = mutantOf(id, line)
-      const result = subject(
-        IncrementalDiffCommand.make({
-          currentMutants: [mutant],
-          relativeFileByMutantId: { [mutant.id]: mutant.fileName },
-          previousFiles: {
-            [mutant.fileName]: {
-              source: mutant.fileName,
-              mutants: [previousMutantOf(mutant, status, testsCompleted)],
-              formatIdentity: IDENTITY,
-            },
-          },
-          previousTestFiles: {},
-          currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
-          testIdsByRelativeFile: {},
-          coveringTestFilesByMutantId: {},
-          identitiesByFile: {},
-          force: false,
-        }),
-      )
-      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
+    '∀rf_RecordAndFlakyId_≡AStaticMutantIsFlakyDependentWheneverTheFlakeSetIsNotEmpty',
+    { of: [PreviousReuseRecordSchema, Mutant.MutantId], subject: incrementalDiff },
+    (subject, [record, flakyId]) => {
+      const mutant = Mutant.Mutant.make({ ...mutantOf(record.mutantId), static: true })
+      const result = subject(commandOf([mutant], [record], {
+        closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
+        verdictSemanticsVersion: record.verdictSemanticsVersion,
+        mutantSetPolicy: record.mutantSetPolicy,
+        runInputsDigest: record.runInputsDigest,
+        flakyMutantIds: [flakyId],
+      }))
+      return runsWithRefusal(result, 'flakyDependency')
     },
   )
 
   it.prop(
-    '∀il_MissingRecordedIdentity_≡ToRun',
-    {
-      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, S.Finite, Mutant.Position.fields.line],
-      subject: incrementalDiff,
-    },
-    (subject, [id, status, testsCompleted, line]) => {
-      const mutant = mutantOf(id, line)
-      const result = subject(
-        IncrementalDiffCommand.make({
-          currentMutants: [mutant],
-          relativeFileByMutantId: { [mutant.id]: mutant.fileName },
-          previousFiles: {
-            [mutant.fileName]: {
-              source: mutant.fileName,
-              mutants: [previousMutantOf(mutant, status, testsCompleted)],
-            },
-          },
-          previousTestFiles: {},
-          currentRelativeFiles: { [mutant.fileName]: mutant.fileName },
-          testIdsByRelativeFile: {},
-          coveringTestFilesByMutantId: {},
-          identitiesByFile: { [mutant.fileName]: IDENTITY },
-          force: false,
-        }),
-      )
-      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
+    '∀r_Record_≡AStaticMutantWithoutFlakesIsRememberedExactlyLikeAnyOtherMutant',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const mutant = Mutant.Mutant.make({ ...mutantOf(record.mutantId), static: true })
+      const decision = onlyDecision(subject(commandOf([mutant], [record], {
+        closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
+        verdictSemanticsVersion: record.verdictSemanticsVersion,
+        mutantSetPolicy: record.mutantSetPolicy,
+        runInputsDigest: record.runInputsDigest,
+        flakyMutantIds: [],
+      })))
+      if (decision === undefined) {
+        return false
+      }
+      return remembers(record) ? S.is(MutantRemembered)(decision) : S.is(MutantToRun)(decision)
     },
   )
 
   it.prop(
-    '∀il_EphemeralStatus_≡ToRun',
-    { of: [Mutant.MutantId, Mutant.EphemeralStatusSchema, Mutant.Position.fields.line], subject: incrementalDiff },
-    (subject, [id, status, line]) => {
-      const mutant = mutantOf(id, line)
-      const result = subject(commandOf(mutant, {}, status, line))
-      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
-    },
-  )
-
-  it.prop(
-    '∀il_ChangedSourceFile_≡ToRun',
-    { of: [Mutant.MutantId, Mutant.RememberedStatusSchema, Mutant.Position.fields.line], subject: incrementalDiff },
-    (subject, [id, status, line]) => {
-      const mutant = mutantOf(id, line)
-      const result = subject(
-        commandOf(mutant, { source: `${mutant.fileName}~previous` }, status, line),
-      )
-      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
-    },
-  )
-
-  it.prop(
-    '∀ilt_ChangedCoverage_≡ToRun',
-    {
-      of: [Mutant.MutantId, Mutant.RememberedStatusSchema, Mutant.Position.fields.line, S.NonEmptyString],
-      subject: incrementalDiff,
-    },
-    (subject, [id, status, line, testFile]) => {
-      const mutant = mutantOf(id, line)
-      const result = subject(
-        commandOf(
-          mutant,
-          {
-            previousTestFiles: { [testFile]: { source: `${testFile}~previous` } },
-            testIdsByRelativeFile: { [testFile]: [mutant.id] },
-            coveringTestFilesByMutantId: { [mutant.id]: [testFile] },
-          },
-          status,
-          line,
-        ),
-      )
-      return Result.isSuccess(result) && result.success.length === 1 && S.is(MutantToRun)(result.success[0])
+    '∀c_Command_≡DecisionsPartitionThePlannedMutants',
+    { of: [partitionCommandArb], subject: incrementalDiff },
+    (subject, [command]) => {
+      const result = subject(command)
+      return Result.isSuccess(result) && result.success.length === command.currentMutants.length &&
+        Arr.every(result.success, (decision) =>
+          S.is(MutantRemembered)(decision)
+            ? isReusable(decision.status)
+            : S.is(MutantToRun)(decision) && S.is(ReuseRefusalReasonSchema)(decision.refusal))
     },
   )
 })

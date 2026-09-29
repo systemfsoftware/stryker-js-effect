@@ -41,10 +41,17 @@ export const DryRunResultSchema = S.Union([
     status: S.Literal('complete'),
     tests: S.Array(TestResultSchema),
     mutantCoverage: S.optionalKey(MutantCoverageSchema),
+    globalTestInputs: S.String.pipe(S.Array, S.optionalKey),
   }),
   S.Struct({ status: S.Literal('timeout'), reason: S.optionalKey(S.String) }),
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
 ])
+
+export const ExecutedTestSchema = S.Struct({
+  id: TestId,
+  timeSpentMs: NonNegativeFinite,
+})
+export type ExecutedTest = typeof ExecutedTestSchema.Type
 
 export const MutantRunResultSchema = S.Union([
   S.Struct({
@@ -52,8 +59,13 @@ export const MutantRunResultSchema = S.Union([
     killedBy: S.Array(TestId),
     failureMessage: S.String,
     nrOfTests: NonNegativeInt,
+    executedTests: S.Array(ExecutedTestSchema),
   }),
-  S.Struct({ status: S.Literal('survived'), nrOfTests: NonNegativeInt }),
+  S.Struct({
+    status: S.Literal('survived'),
+    nrOfTests: NonNegativeInt,
+    executedTests: S.Array(ExecutedTestSchema),
+  }),
   S.Struct({ status: S.Literal('timeout'), reason: S.optionalKey(S.String) }),
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
 ])
@@ -107,6 +119,7 @@ export type TestResult = FailedTestResult | SkippedTestResult | SuccessTestResul
 export interface CompleteDryRunResult {
   readonly tests: readonly TestResult[]
   readonly mutantCoverage?: MutantCoverage
+  readonly globalTestInputs?: readonly string[]
   readonly status: 'complete'
 }
 
@@ -132,11 +145,13 @@ export interface KilledMutantRunResult {
   readonly killedBy: readonly TestId[]
   readonly failureMessage: string
   readonly nrOfTests: number
+  readonly executedTests: readonly ExecutedTest[]
 }
 
 export interface SurvivedMutantRunResult {
   readonly status: 'survived'
   readonly nrOfTests: number
+  readonly executedTests: readonly ExecutedTest[]
 }
 
 export interface ErrorMutantRunResult {

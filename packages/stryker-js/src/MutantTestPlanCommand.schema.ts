@@ -11,6 +11,7 @@ export class MutantTestPlanCommand extends S.TaggedClass<MutantTestPlanCommand>(
   hitsByMutantId: S.Record(Mutant.MutantId, Report.NonNegativeInt),
   staticCoverage: S.optional(S.Record(Mutant.MutantId, Report.NonNegativeInt)),
   testsByMutantId: S.Record(Mutant.MutantId, S.Array(TestRunner.TestId)),
+  priorKilledByByMutantId: S.optional(S.Record(Mutant.MutantId, S.Array(TestRunner.TestId))),
   testTimeById: S.Record(TestRunner.TestId, Report.NonNegativeFinite),
   options: S.Struct({
     coverageAnalysis: Options.CoverageAnalysisMode,

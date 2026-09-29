@@ -30,13 +30,22 @@ it.prop(
               (dryRunResult.reason === undefined || decision.reason === dryRunResult.reason)
           }
           const failed = dryRunResult.tests.filter((test) => test.status === 'failed')
-          const nrOfTests = dryRunResult.tests.filter((test) => test.status !== 'skipped').length
+          const executed = dryRunResult.tests.filter((test) => test.status !== 'skipped')
+          const nrOfTests = executed.length
+          const reportsEveryExecutedTiming = (reported: readonly TestRunner.ExecutedTest[]) =>
+            reported.length === executed.length &&
+            executed.every((test, index) =>
+              reported.at(index)?.id === test.id && reported.at(index)?.timeSpentMs === test.timeSpentMs
+            )
           const firstFailed = failed.at(0)
           if (firstFailed === undefined) {
-            return S.is(MutantRunSurvived)(decision) && decision.nrOfTests === nrOfTests
+            return S.is(MutantRunSurvived)(decision) &&
+              decision.nrOfTests === nrOfTests &&
+              reportsEveryExecutedTiming(decision.executedTests)
           }
           return S.is(MutantRunKilled)(decision) &&
             decision.nrOfTests === nrOfTests &&
+            reportsEveryExecutedTiming(decision.executedTests) &&
             decision.failureMessage === firstFailed.failureMessage &&
             decision.killedBy.length === failed.length &&
             failed.every((test, index) => decision.killedBy[index] === test.id)

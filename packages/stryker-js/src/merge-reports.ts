@@ -1,6 +1,7 @@
 import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import { Options, Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
@@ -26,6 +27,8 @@ import { MutationReportFileName } from './reporting/report-assembly.schema.js'
 const OUT_REPORT = MutationReportFileName.literal
 const OUT_HTML = 'mutation-report.html'
 const OUT_SUMMARY = 'summary.md'
+const OUT_INCREMENTAL = 'stryker-incremental.json'
+export const INCREMENTAL_PART_NAME = /^stryker-incremental.*\.json$/
 const SURVIVOR_CAP = 100
 const ALL_PACKAGES = '**all**'
 const STEP_SUMMARY = 'GITHUB_STEP_SUMMARY'
@@ -39,6 +42,7 @@ export type MergeCommand = typeof MergeReportPartsCommand.Encoded & {
   readonly partsDir: string
   readonly skipped: readonly string[]
   readonly unreadable: readonly string[]
+  readonly incrementalUnion: string | undefined
   readonly mode: OutputMode.OutputMode
 }
 
@@ -115,6 +119,7 @@ export const decodeMerge = (raw: {
     readonly metaText: string | undefined
     readonly reportText: string | undefined
     readonly streamText: string | undefined
+    readonly incrementalTexts: readonly string[]
   }[]
 }) =>
   Result.map(expectedPackages(raw.packagesRaw), (packages) => {
@@ -124,6 +129,7 @@ export const decodeMerge = (raw: {
       command: {
         parts,
         expectedPackages: packages,
+        incrementalUnion: unionIncrementalReports(raw.bytes.flatMap((bytes) => bytes.incrementalTexts)),
       },
       skipped: reads.flatMap((read) => Option.match(read.part, { onNone: () => [read.dir], onSome: () => [] })),
       unreadable: reads.flatMap((read) =>
@@ -214,6 +220,66 @@ const encodeReport = Effect.fn(SpanTaxonomy.Spans.mergeReportsEncodeReport.name)
   return yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(report).pipe(Effect.orDie)
 })
 
+type Json = S.Schema.Type<typeof S.Json>
+
+const objectOptionOf = (value: Json | undefined): Option.Option<Record<string, Json>> =>
+  Option.liftPredicate(
+    value,
+    (candidate): candidate is Record<string, Json> => Match.record(candidate),
+  )
+
+const objectOf = (value: Json | undefined): Record<string, Json> | undefined =>
+  Option.getOrUndefined(objectOptionOf(value))
+
+const fieldOf = (object: Record<string, Json> | undefined, key: string): Json | undefined =>
+  object === undefined ? undefined : object[key]
+
+const filesOf = (report: Record<string, Json>): Record<string, Json> =>
+  Option.getOrElse(Option.fromUndefinedOr(objectOf(fieldOf(report, 'files'))), (): Record<string, Json> => ({}))
+
+const mutantsOfFile = (file: Record<string, Json> | undefined): readonly Json[] =>
+  Option.getOrElse(Option.filter(Option.fromUndefinedOr(fieldOf(file, 'mutants')), Array.isArray), () => [])
+
+const mutantIdOf = (mutant: Json): string | undefined =>
+  Option.getOrUndefined(
+    Option.liftPredicate(fieldOf(objectOf(mutant), 'id'), (id): id is string => typeof id === 'string'),
+  )
+
+const mutantEntriesOf = (mutants: readonly Json[]): readonly (readonly [string, Json])[] =>
+  mutants.flatMap((mutant) =>
+    Option.toArray(Option.map(Option.fromUndefinedOr(mutantIdOf(mutant)), (id) => [id, mutant] as const))
+  )
+
+const unionFileOf = (reports: readonly Record<string, Json>[], name: string): readonly [string, Json] => {
+  const files = reports.flatMap((report) => Option.toArray(objectOptionOf(filesOf(report)[name])))
+  const byMutantId = new Map(files.flatMap((file) => mutantEntriesOf(mutantsOfFile(file))))
+  const base = Option.getOrElse(Arr.last(files), (): Record<string, Json> => ({}))
+  return [name, { ...base, mutants: [...byMutantId.values()] }]
+}
+
+const unionFilesOf = (reports: readonly Record<string, Json>[]): Record<string, Json> =>
+  Object.fromEntries(
+    [...new Set(reports.flatMap((report) => Object.keys(filesOf(report))))].sort().map((name) =>
+      unionFileOf(reports, name)
+    ),
+  )
+
+const unionTestFilesOf = (reports: readonly Record<string, Json>[]): Record<string, Json> =>
+  Object.fromEntries(reports.flatMap((report) => Object.entries(objectOf(fieldOf(report, 'testFiles')) ?? {})))
+
+const decodedReportOf = (text: string): Option.Option<Record<string, Json>> =>
+  S.decodeOption(S.fromJsonString(S.Json))(text).pipe(Option.flatMap(objectOptionOf))
+
+export const unionIncrementalReports = (texts: readonly string[]): string | undefined => {
+  const reports = texts.flatMap((text) => Option.toArray(decodedReportOf(text)))
+  const first = reports[0]
+  if (first === undefined) {
+    return undefined
+  }
+  const union = { ...first, files: unionFilesOf(reports), testFiles: unionTestFilesOf(reports) }
+  return Option.getOrUndefined(S.encodeOption(S.fromJsonString(S.Json, { space: 2 }))(union))
+}
+
 const putFile = Effect.fn(SpanTaxonomy.Spans.mergeReportsPutFile.name)(function*(
   file: string,
   content: string,
@@ -276,6 +342,10 @@ export const writeEncoded = Effect.fn(SpanTaxonomy.Spans.mergeReportsWriteFiles.
       ),
   })
   yield* putFile(path.join(raw.out, OUT_SUMMARY), body.summary, false)
+  yield* Option.match(Option.fromUndefinedOr(raw.incrementalUnion), {
+    onNone: () => Effect.void,
+    onSome: (union) => putFile(path.join(raw.out, OUT_INCREMENTAL), union, false),
+  })
   const step = yield* Config.String(STEP_SUMMARY).pipe(Effect.option)
   yield* Option.match(step, {
     onNone: () => Effect.void,

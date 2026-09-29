@@ -18,6 +18,7 @@
     ]
   },
   "include": [
+    "tests",
     "src/**/*.test.ts",
     "src/**/__tests__"
   ],

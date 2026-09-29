@@ -1,5 +1,5 @@
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { createVitest as createVitestOriginal, type Vitest } from 'vitest/node'
+import { BaseSequencer, createVitest as createVitestOriginal, type TestSpecification, type Vitest } from 'vitest/node'
 
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
@@ -11,10 +11,13 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
+import * as Record from 'effect/Record'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
 import { onClose } from './drivers/vitest-node.js'
+import { SortTestFiles, sortTestFiles } from './sort-test-files.workflow.js'
 import {
   dispose as disposeStandbyThreads,
   initializer as standbyThreadsInitializer,
@@ -217,6 +220,47 @@ export interface VitestRuntimeInput {
   readonly lifetime: Scope.Scope
 }
 
+export interface PublishedTestFileOrder {
+  readonly order: readonly string[]
+  readonly priority: readonly string[]
+}
+
+export const testFileOrder: { current: PublishedTestFileOrder } = { current: { order: [], priority: [] } }
+
+const orderedModuleIdsOf = (
+  published: PublishedTestFileOrder,
+  files: readonly TestSpecification[],
+): readonly string[] =>
+  Result.getOrThrow(
+    sortTestFiles(
+      SortTestFiles.make({
+        order: [...published.order],
+        files: files.map((file) => file.moduleId),
+        priority: [...published.priority],
+      }),
+    ),
+  ).map((entry) => entry.moduleId)
+
+const orderSpecifications = (
+  files: readonly TestSpecification[],
+  moduleIds: readonly string[],
+): readonly TestSpecification[] => {
+  const byModuleId = Object.fromEntries(files.map((file) => [file.moduleId, file] as const))
+  return moduleIds.flatMap((moduleId) => Option.toArray(Record.get(byModuleId, moduleId)))
+}
+
+const priorityOrdered = (published: PublishedTestFileOrder, base: TestSpecification[]): TestSpecification[] =>
+  published.priority.length > 0 ? [...orderSpecifications(base, orderedModuleIdsOf(published, base))] : base
+
+export class TestFileOrderSequencer extends BaseSequencer {
+  override sort(files: TestSpecification[]): Promise<TestSpecification[]> {
+    const published = testFileOrder.current
+    return published.order.length > 0
+      ? Promise.resolve([...orderSpecifications(files, orderedModuleIdsOf(published, files))])
+      : super.sort(files).then((base) => priorityOrdered(published, base))
+  }
+}
+
 const createVitestConfig = (input: VitestRuntimeInput, standbyThreads: StandbyThreadsPool) => ({
   config: input.vitestOptions.configFile,
   coverage: { enabled: false },
@@ -224,6 +268,7 @@ const createVitestConfig = (input: VitestRuntimeInput, standbyThreads: StandbyTh
   maxConcurrency: 1,
   watch: false,
   root: input.projectRoot,
+  sequence: { sequencer: TestFileOrderSequencer },
   ...Option.match(
     Option.map(Option.fromNullishOr(input.vitestOptions.dir), (dir) => input.projectRoot + '/' + dir),
     { onNone: () => ({}), onSome: (dir) => ({ dir }) },

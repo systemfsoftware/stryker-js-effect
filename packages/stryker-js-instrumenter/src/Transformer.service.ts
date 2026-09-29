@@ -1,12 +1,19 @@
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant as ApiMutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
+import {
+  type AridCallee,
+  aridCode,
+  AridCodeCommand,
+  type AridCodeDecision,
+  type AridFrame,
+} from './arid-code.workflow.js'
 import {
   type ArrowFunctionExpression,
   arrowFunctionExpression,
@@ -21,6 +28,7 @@ import {
   formatKeyOf,
   type FunctionExpression,
   identifier,
+  type IdentifierName,
   type IdentifierReference,
   ifStatement,
   isExpressionKind,
@@ -34,6 +42,7 @@ import {
   sequenceExpression,
   spanOf,
   type Statement,
+  type StaticMemberExpression,
   stringLiteral,
   switchCase,
   traverse,
@@ -60,6 +69,7 @@ import { InstrumentError } from './Instrument.schema.js'
 import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.js'
 import { lineStartsOf, locationOf, positionAt } from './Location.js'
 import type { LineStarts, ScriptOrigin } from './Location.schema.js'
+import { mutantIdOf, type MutantTuple, mutantTupleKey } from './MutantIdentity.js'
 import {
   applyMutant,
   createMutant,
@@ -67,6 +77,8 @@ import {
   type MutatorContext,
   type MutatorEntry,
   type MutatorOptions,
+  relationalSiteFacts,
+  relationalSufficientReplacement,
 } from './Mutator.service.js'
 import { type ParseFailed } from './Parser.service.js'
 import {
@@ -112,16 +124,21 @@ export interface TransformerOptions extends MutatorOptions {
 }
 
 export interface MutantCollector {
-  readonly nextIndex: number
+  /** 0-based, counting this collector's earlier occurrences of the same tuple. */
+  readonly ordinalOf: (tuple: MutantTuple) => number
   readonly append: (mutants: readonly Mutant[]) => void
   readonly map: <A>(transform: (mutant: Mutant) => A) => readonly A[]
 }
 
 export const createMutantCollector = (): MutantCollector => {
   const mutants: Mutant[] = []
+  const occurrences = new Map<string, number>()
   return {
-    get nextIndex(): number {
-      return mutants.length
+    ordinalOf: (tuple) => {
+      const key = mutantTupleKey(tuple)
+      const ordinal = occurrences.get(key) ?? 0
+      occurrences.set(key, ordinal + 1)
+      return ordinal
     },
     append: (added) => {
       mutants.push(...added)
@@ -685,6 +702,7 @@ interface MutableCandidate {
   readonly node: Node
   readonly replacement: Node
   readonly data: MutantCandidate
+  readonly aridReason: Option.Option<string>
 }
 
 function isMutateRangeList(value: MutateDescription): value is readonly ApiMutant.Location[] {
@@ -728,12 +746,13 @@ interface PlacementContext {
   readonly mutatorEntries: readonly MutatorEntry[]
   readonly allMutatorNames: readonly string[]
   readonly excludedMutations: readonly string[]
+  readonly mutantSetPolicy: Options.MutantSetPolicyType
   readonly ignorers: readonly Ignorer[]
+  readonly ordinalOf: (tuple: MutantTuple) => number
 }
 
 interface FoldState {
   readonly directiveRule: MutantRule
-  readonly nextIndex: number
   readonly mutants: readonly Mutant[]
   readonly warnings: readonly string[]
   readonly claims: readonly ClaimedSite[]
@@ -741,9 +760,8 @@ interface FoldState {
   readonly hasLiveMutants: boolean
 }
 
-const initialFoldState = (firstIndex: number): FoldState => ({
+const initialFoldState = (): FoldState => ({
   directiveRule: [],
-  nextIndex: firstIndex,
   mutants: [],
   warnings: [],
   claims: [],
@@ -820,29 +838,109 @@ const ignorersReasonFor = (
     Option.none<string>(),
   )
 
+interface NamedCallee extends StaticMemberExpression {
+  readonly object: IdentifierReference
+  readonly property: IdentifierName
+}
+
+const hasKey = <B = unknown>(node: object, key: string): node is Record<string, B> => key in node
+
+const readKey = <B = unknown>(
+  node: object,
+  key: string,
+): B | undefined => (hasKey<B>(node, key) ? node[key] : undefined)
+
+const isMemberExpressionValue = (node: Node): boolean => nodeType(node) === 'MemberExpression'
+
+const isIdentifierValue = (value: Node | undefined): boolean =>
+  value !== undefined && readKey<string>(value, 'type') === 'Identifier'
+
+const hasIdentifierParts = (member: Node): boolean =>
+  [isIdentifierValue(readKey<Node>(member, 'property')), isIdentifierValue(readKey<Node>(member, 'object'))]
+    .every(Boolean)
+
+const isMemberOfIdentifierParts = (node: Node): node is NamedCallee =>
+  isMemberExpressionValue(node) && hasIdentifierParts(node)
+
+function isNamedCallee(node: Node): node is NamedCallee {
+  return isMemberOfIdentifierParts(node) && readKey<boolean>(node, 'computed') === false
+}
+
+const aridCalleeOf = (callee: Expression): Option.Option<AridCallee> =>
+  Match.value(callee).pipe(
+    Match.when(isNamedCallee, (named) =>
+      Option.some<AridCallee>({ object: named.object.name, member: named.property.name })),
+    Match.orElse(() =>
+      Option.none<AridCallee>()
+    ),
+  )
+
+const aridFrameFor = (child: Node, ancestor: Node): Option.Option<AridFrame> =>
+  ancestor.type === 'CallExpression'
+    ? Option.some({
+      callee: aridCalleeOf(ancestor.callee),
+      childIsArgument: ancestor.arguments.some((argument) => argument === child),
+    })
+    : Option.none()
+
+const aridFramesOf = (frame: NodeFrame): readonly AridFrame[] =>
+  framesUpward(frame).flatMap((current) =>
+    Option.match(Option.fromNullishOr(current.parent), {
+      onNone: (): readonly AridFrame[] => [],
+      onSome: (parent) => Option.toArray(aridFrameFor(current.node, parent.node)),
+    })
+  )
+
+const aridStatusReason = (decision: AridCodeDecision): Option.Option<string> =>
+  Match.value(decision).pipe(
+    Match.tag('AridSuppressed', (suppressed) => Option.some(`${suppressed.ruleId}: ${suppressed.detail}`)),
+    Match.tag('AridKept', () => Option.none<string>()),
+    Match.exhaustive,
+  )
+
+const aridReasonOf = (frame: NodeFrame, policy: Options.MutantSetPolicyType): Option.Option<string> =>
+  Match.value(aridCode(AridCodeCommand.make({ policy, frames: [...aridFramesOf(frame)] }))).pipe(
+    Match.when(Result.isSuccess, (decided) => aridStatusReason(decided.success)),
+    Match.orElse(() => Option.none<string>()),
+  )
+
 const mutablesFor = (
   frame: NodeFrame,
   location: ApiMutant.Location,
   context: PlacementContext,
 ): readonly MutableCandidate[] => {
   const ancestors = ancestorsOfFrame(frame)
-  const mutatorContext = toMutatorContext(ancestors)
+  const mutatorContext = toMutatorContext(ancestors, context.mutantSetPolicy)
   const replacements = context.mutatorEntries.flatMap(([mutatorName, mutate]) =>
     [...mutate(frame.node, mutatorContext)].map((replacement) => ({ mutatorName, replacement }))
   )
   const ignorerReason = replacements.length === 0
     ? undefined
     : Option.getOrUndefined(ignorersReasonFor(frame.node, ancestors, context.ignorers))
-  return replacements.map(({ mutatorName, replacement }): MutableCandidate => ({
-    node: frame.node,
-    replacement,
-    data: {
-      mutatorName,
-      replacementCode: printNode(replacement),
-      location,
-      ignorerReason,
-    },
-  }))
+  const aridReason = aridReasonOf(frame, context.mutantSetPolicy)
+  const originalCode = printNode(frame.node)
+  const relationalSite = relationalSiteFacts(frame.node, mutatorContext)
+  return replacements.map(({ mutatorName, replacement }): MutableCandidate => {
+    const replacementCode = printNode(replacement)
+    const tuple: MutantTuple = { fileName: context.fileName, mutatorName, originalCode, replacementCode }
+    return {
+      node: frame.node,
+      replacement,
+      aridReason,
+      data: {
+        id: mutantIdOf({ ...tuple, ordinal: context.ordinalOf(tuple) }),
+        mutatorName,
+        replacementCode,
+        location,
+        ignorerReason,
+        mutantSet: {
+          originalCode,
+          replacementCode,
+          relationalSufficient: relationalSufficientReplacement(relationalSite, replacement),
+        },
+      },
+    }
+  })
 }
 
 const mutateRangesOf = (mutateDescription: MutateDescription): Option.Option<readonly ApiMutant.Location[]> =>
@@ -958,6 +1056,20 @@ const attachPlaceable = (
     Match.exhaustive,
   )
 
+const aridReasonAt = (candidates: readonly MutableCandidate[], index: number): Option.Option<string> =>
+  Option.flatMap(Option.fromNullishOr(candidates[index]), (candidate) => candidate.aridReason)
+
+const withAridReason = (mutant: PlannedMutant, reason: Option.Option<string>): PlannedMutant =>
+  Option.match(reason, {
+    onNone: () => mutant,
+    onSome: (text) => (mutant.ignoreReason === undefined ? { ...mutant, ignoreReason: text } : mutant),
+  })
+
+const withAridReasons = (
+  candidates: readonly MutableCandidate[],
+  planned: readonly PlannedMutant[],
+): readonly PlannedMutant[] => planned.map((mutant, index) => withAridReason(mutant, aridReasonAt(candidates, index)))
+
 const collectPlan = (
   frame: NodeFrame,
   candidates: readonly MutableCandidate[],
@@ -965,20 +1077,26 @@ const collectPlan = (
   state: FoldState,
   context: PlacementContext,
 ): Result.Result<FoldState, InstrumentationRefusal> => {
-  const collected = plannedWithNodes(candidates, plan.mutants, context.fileName, () => true)
+  const planned = withAridReasons(candidates, plan.mutants)
+  const collected = plannedWithNodes(candidates, planned, context.fileName, () => true)
   const nextState: FoldState = {
     ...state,
     mutants: [...state.mutants, ...collected],
     warnings: [...state.warnings, ...plan.warnings],
-    nextIndex: plan.nextIndex,
   }
   return Match.value(plan).pipe(
-    Match.tag('MutantsPlanned', (planned) => {
-      const placeable = new Set(planned.placeableIds)
+    Match.tag('MutantsPlanned', (plannedPlan) => {
+      const placeable = new Set(plannedPlan.placeableIds)
+      const live = plannedWithNodes(
+        candidates,
+        planned,
+        context.fileName,
+        (mutant) => placeable.has(mutant.id) && mutant.ignoreReason === undefined,
+      )
       return attachPlaceable(
-        plannedWithNodes(candidates, plan.mutants, context.fileName, (mutant) => placeable.has(mutant.id)),
+        live,
         frame,
-        { ...nextState, hasLiveMutants: true },
+        { ...nextState, hasLiveMutants: nextState.hasLiveMutants || live.length > 0 },
         context,
       )
     }),
@@ -998,7 +1116,6 @@ const planMutantsAt = (
   const plan = planMutants(
     PlanMutantsCommand.make({
       fileName: context.fileName,
-      firstIndex: state.nextIndex,
       offset: context.offset,
       line: location.start.line,
       mutatorNames: [...context.allMutatorNames],
@@ -1006,6 +1123,7 @@ const planMutantsAt = (
       rule: [...state.directiveRule],
       directives: [...directives],
       candidates: candidates.map((candidate) => candidate.data),
+      mutantSetPolicy: context.mutantSetPolicy,
     }),
   )
   return Match.value(plan).pipe(
@@ -1156,11 +1274,10 @@ const foldPlacements = (
 
 const planInstrumentation = (
   root: Program,
-  firstIndex: number,
   context: PlacementContext,
 ): Result.Result<InstrumentationPlan, InstrumentationRefusal> =>
   Result.map(
-    foldPlacements({ node: root, parent: null }, initialFoldState(firstIndex), context),
+    foldPlacements({ node: root, parent: null }, initialFoldState(), context),
     (state) => ({
       mutants: state.mutants,
       placements: state.placements,
@@ -1266,11 +1383,13 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
       mutatorEntries: options.mutators.active,
       allMutatorNames: options.mutators.known.map((name) => name.toLowerCase()),
       excludedMutations: options.excludedMutations,
+      mutantSetPolicy: options.mutantSetPolicy,
       ignorers: options.ignorers,
+      ordinalOf: mutantCollector.ordinalOf,
     }
 
     const planned = yield* Effect.try({
-      try: () => planInstrumentation(root, mutantCollector.nextIndex, context),
+      try: () => planInstrumentation(root, context),
       catch: traversalFailure,
     })
     const plan = yield* Match.value(planned).pipe(
@@ -1301,11 +1420,12 @@ export const transformScript: {
   ): (ast: ScriptAst) => Effect.Effect<readonly string[], ParseFailed | InstrumentError>
 } = dual((args: IArguments): boolean => args.length >= 3, transformScriptDataFirst)
 
-function toMutatorContext(ancestors: readonly Node[]): MutatorContext {
+function toMutatorContext(ancestors: readonly Node[], mutantSetPolicy: Options.MutantSetPolicyType): MutatorContext {
   return {
     parent: ancestors[0],
     grandParent: ancestors[1],
     ancestors: [...ancestors],
+    mutantSetPolicy,
   }
 }
 

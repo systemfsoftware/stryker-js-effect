@@ -114,8 +114,10 @@ const makeHarness = (bootRefusals = 0) =>
     return { client, gate, received } satisfies SilentWorkerHarness
   })
 
+const idOf = (seed: string): Mutant.MutantId => Mutant.MutantId.make(seed.padStart(16, '0'))
+
 const mutantWith = (id: string): Checker.CheckerMutantWire => ({
-  id: Mutant.MutantId.make(id),
+  id: idOf(id),
   fileName: Mutant.CanonicalFileName.make('src/core.ts'),
   mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
   replacement: '-',
@@ -183,8 +185,8 @@ Feature('Settling checker requests against a worker that goes silent or boots sl
         Then('the new request is answered by the recovered worker')((s, expect) =>
           Effect.gen(function*() {
             const received = yield* Ref.get(s.silent.received)
-            return { status: s.answer['2']?.status, lastReceivedId: received.at(-1)?.id }
-          }).pipe(Effect.map((facts) => expect(facts).toEqual({ status: 'passed', lastReceivedId: '2' })))
+            return { status: s.answer[idOf('2')]?.status, lastReceivedId: received.at(-1)?.id }
+          }).pipe(Effect.map((facts) => expect(facts).toEqual({ status: 'passed', lastReceivedId: idOf('2') })))
         ),
       ),
     )
@@ -222,8 +224,8 @@ Feature('Settling checker requests against a worker that goes silent or boots sl
               })
             }
             const received = yield* Ref.get(s.booted.received)
-            return { status: outcome.success['3']?.status, lastReceivedId: received.at(-1)?.id }
-          }).pipe(Effect.map((facts) => expect(facts).toEqual({ status: 'passed', lastReceivedId: '3' })))
+            return { status: outcome.success[idOf('3')]?.status, lastReceivedId: received.at(-1)?.id }
+          }).pipe(Effect.map((facts) => expect(facts).toEqual({ status: 'passed', lastReceivedId: idOf('3') })))
         ),
       ),
     )

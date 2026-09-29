@@ -262,6 +262,7 @@ const instrumentOxcCode = (code: string) =>
   Instrument.instrument([{ name: 'synthetic.ts', content: code, mutate: true }], {
     excludedMutations: [],
     ignorers: [],
+    mutantSetPolicy: 'full',
     mutators: Mutator.selectMutators(Mutator.stockRegistry, []),
   })
 
@@ -494,6 +495,7 @@ const instrumenterSliceOf = (fixture: SliceFixture) => (file: SliceSource) =>
     Instrument.instrument([{ name: file.name, content: file.content, mutate: true }], {
       ignorers: [],
       excludedMutations: [...fixture.slice.excludedMutations],
+      mutantSetPolicy: 'full',
       mutators: fixture.mutators.selection,
     }),
     (result) => mirroredSliceOf(result.mutants),

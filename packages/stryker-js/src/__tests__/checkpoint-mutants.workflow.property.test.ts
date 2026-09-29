@@ -11,20 +11,14 @@ import {
   CheckpointPendingMutant,
   CheckpointSettledMutant,
 } from '../checkpoint-mutants.workflow.js'
-import { incrementalDiff, IncrementalDiffCommand, MutantRemembered, MutantToRun } from '../incremental-diff.workflow.js'
-import type { FormatIdentity } from '../IncrementalDiff.schema.js'
 
 const SUBJECT_FILE = 'src/subject.ts'
 
-const IDENTITY: FormatIdentity = {
-  formatId: 'typescript',
-  ownerModule: '@systemfsoftware/stryker-js-instrumenter',
-  ownerVersion: '1.0.0',
-}
+const hexIdOf = (index: number): Mutant.MutantId => Mutant.MutantId.make(index.toString(16).padStart(16, '0'))
 
 const mutantOf = (index: number): Mutant.Mutant =>
   Mutant.Mutant.make({
-    id: Mutant.MutantId.make(`${index}`),
+    id: hexIdOf(index),
     fileName: Mutant.CanonicalFileName.make(SUBJECT_FILE),
     mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
     replacement: `${index}`,
@@ -53,39 +47,6 @@ const settledIdsOf = (command: CheckpointMutantsCommand) => new Set(command.sett
 
 const rowsByIdOf = (rows: ReadonlyArray<CheckpointMutantRow>): Record<string, CheckpointMutantRow> =>
   Object.fromEntries(rows.map((row) => [row.mutant.id, row] as const))
-
-const statusOfRow = (row: CheckpointMutantRow): Mutant.MutantStatus => {
-  if (S.is(CheckpointSettledMutant)(row)) {
-    return row.status
-  }
-  return 'Pending'
-}
-
-const previousMutantOf = (row: CheckpointMutantRow) => ({
-  mutatorName: row.mutant.mutatorName,
-  replacement: row.mutant.replacement,
-  location: row.mutant.location,
-  status: statusOfRow(row),
-  ...(S.is(CheckpointSettledMutant)(row) && row.killedBy !== undefined ? { killedBy: [...row.killedBy] } : {}),
-})
-
-const unchangedFileCommandOf = (
-  plannedMutants: readonly Mutant.Mutant[],
-  rows: ReadonlyArray<CheckpointMutantRow>,
-) =>
-  IncrementalDiffCommand.make({
-    currentMutants: [...plannedMutants],
-    relativeFileByMutantId: Object.fromEntries(plannedMutants.map((mutant) => [mutant.id, SUBJECT_FILE])),
-    previousFiles: {
-      [SUBJECT_FILE]: { source: SUBJECT_FILE, mutants: rows.map(previousMutantOf), formatIdentity: IDENTITY },
-    },
-    previousTestFiles: {},
-    currentRelativeFiles: { [SUBJECT_FILE]: SUBJECT_FILE },
-    testIdsByRelativeFile: {},
-    coveringTestFilesByMutantId: {},
-    identitiesByFile: { [SUBJECT_FILE]: IDENTITY },
-    force: false,
-  })
 
 describe('checkpointMutants', () => {
   it.prop(
@@ -142,33 +103,6 @@ describe('checkpointMutants', () => {
     (subject, [command]) => {
       const result = subject(command)
       return Result.isSuccess(result) && result.success.every((row) => !S.is(CheckpointPendingMutant)(row))
-    },
-  )
-
-  it.prop(
-    '∀c_PendingRows_≡ScheduledToRun',
-    { of: [checkpointCommandArb], subject: checkpointMutants },
-    (subject, [command]) => {
-      const result = subject(command)
-      if (!Result.isSuccess(result)) {
-        return false
-      }
-      const diff = incrementalDiff(unchangedFileCommandOf(command.plannedMutants, result.success))
-      if (!Result.isSuccess(diff) || diff.success.length !== result.success.length) {
-        return false
-      }
-      return result.success.every((row, index) => {
-        const decision = diff.success[index]
-        if (decision === undefined) {
-          return false
-        }
-        if (S.is(CheckpointSettledMutant)(row)) {
-          return S.is(MutantRemembered)(decision) &&
-            decision.mutantId === row.mutant.id &&
-            decision.status === row.status
-        }
-        return S.is(MutantToRun)(decision) && decision.mutant.id === row.mutant.id
-      })
     },
   )
 })

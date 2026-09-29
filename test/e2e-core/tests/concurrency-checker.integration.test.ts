@@ -85,6 +85,7 @@ const instrumentedWires = (layout: FixtureLayout) =>
     const instrumented = yield* Instrument.instrument(files, {
       ignorers: [],
       excludedMutations: [],
+      mutantSetPolicy: 'full',
       mutators: Mutator.selectMutators(Mutator.stockRegistry, LIVE_OPT_IN_MUTATIONS),
     })
     return instrumented.mutants

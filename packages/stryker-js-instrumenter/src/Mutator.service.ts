@@ -1,6 +1,6 @@
 import { type AST, RegExpParser, visitRegExpAST } from '@eslint-community/regexpp'
 import type { StockCatalog } from '@systemfsoftware/stryker-js-cli-contract'
-import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant as ApiMutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { MutatorCatalog } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -16,6 +16,7 @@ import type {
   BooleanLiteral,
   CallExpression,
   ClassBody,
+  ConditionalExpression,
   DoWhileStatement,
   Expression,
   ForStatement,
@@ -43,6 +44,11 @@ import type {
 } from './Ast.handle.js'
 import { MutantNotApplied } from './Instrument.schema.js'
 import type { PlannedMutant } from './plan-mutants.workflow.js'
+import {
+  isRelationalOperator,
+  type RelationalOperator,
+  SUFFICIENT_RELATIONAL_SETS,
+} from './relational-sufficient-sets.js'
 
 import { dual } from 'effect/Function'
 import {
@@ -193,6 +199,7 @@ export interface MutatorContext {
   readonly parent: Node | undefined
   readonly grandParent: Node | undefined
   readonly ancestors: readonly Node[]
+  readonly mutantSetPolicy: Options.MutantSetPolicyType
 }
 
 /**
@@ -208,6 +215,7 @@ export type Mutator = (node: Node, context: MutatorContext) => Iterable<Node>
 export interface MutatorOptions {
   excludedMutations: string[]
   mutators: MutatorSelection
+  mutantSetPolicy: Options.MutantSetPolicyType
   noHeader?: boolean
 }
 
@@ -734,15 +742,42 @@ const booleanOperators = Object.freeze(['!=', '!==', '&&', '<', '<=', '==', '===
 
 const conditionalExpressionMutator: Mutator = (node, context) =>
   Match.value(isTestOfLoop(node, context)).pipe(
-    Match.when(true, () => [booleanLiteral(false)]),
+    Match.when(true, () => withSufficientConditional(node, context, [booleanLiteral(false)])),
     Match.orElse(() => conditionTestMutants(node, context)),
   )
 
 function conditionTestMutants(node: Node, context: MutatorContext): readonly Node[] {
   return Match.value(isTestOfCondition(node, context)).pipe(
-    Match.when(true, () => [booleanLiteral(true), booleanLiteral(false)]),
+    Match.when(true, () => withSufficientConditional(node, context, [booleanLiteral(true), booleanLiteral(false)])),
     Match.orElse(() => booleanExpressionMutants(node, context)),
   )
+}
+
+function withSufficientConditional(
+  node: Node,
+  context: MutatorContext,
+  replacements: readonly Node[],
+): readonly Node[] {
+  const literal = sufficientRelationalLiteral(node, context)
+  return literal === undefined ? replacements : appendBooleanLiteral(replacements, literal)
+}
+
+function sufficientRelationalLiteral(node: Node, context: MutatorContext): boolean | undefined {
+  return Option.getOrUndefined(
+    Option.map(
+      Option.filter(
+        Option.fromNullishOr(relationalSiteFacts(node, context)),
+        (facts) => [facts.inConditionPosition, context.mutantSetPolicy === 'default'].every(Boolean),
+      ),
+      (facts) => SUFFICIENT_RELATIONAL_SETS[facts.operator].literal,
+    ),
+  )
+}
+
+function appendBooleanLiteral(replacements: readonly Node[], literal: boolean): readonly Node[] {
+  return replacements.some((replacement) => isBooleanLiteral(replacement) && replacement.value === literal)
+    ? replacements
+    : [...replacements, booleanLiteral(literal)]
 }
 
 function booleanExpressionMutants(node: Node, context: MutatorContext): readonly Node[] {
@@ -842,6 +877,73 @@ function testOfStatement(node: Node | undefined): Node | undefined {
   )
 }
 
+const isConditionalExpression = (node: Node): node is ConditionalExpression => node.type === 'ConditionalExpression'
+
+function isTestOfConditionalExpression(node: Node, context: MutatorContext): boolean {
+  return Option.exists(
+    Option.filter(Option.fromNullishOr(context.parent), isConditionalExpression),
+    (parent) => parent.test === node,
+  )
+}
+
+function isConditionPosition(node: Node, context: MutatorContext): boolean {
+  return [isTestOfLoop(node, context), isTestOfCondition(node, context), isTestOfConditionalExpression(node, context)]
+    .some(Boolean)
+}
+
+function binaryOperatorOf(node: Node): string | undefined {
+  return node.type === 'BinaryExpression' ? node.operator : undefined
+}
+
+const isRelationalComparison = (node: Node): boolean =>
+  Option.exists(Option.fromNullishOr(binaryOperatorOf(node)), isRelationalOperator)
+
+export interface RelationalSiteFacts {
+  readonly operator: RelationalOperator
+  readonly inConditionPosition: boolean
+}
+
+const relationalSiteFactsDataFirst = (node: Node, context: MutatorContext): RelationalSiteFacts | undefined =>
+  Option.getOrUndefined(
+    Option.map(
+      Option.filter(Option.fromNullishOr(binaryOperatorOf(node)), isRelationalOperator),
+      (operator) => ({ operator, inConditionPosition: isConditionPosition(node, context) }),
+    ),
+  )
+
+export const relationalSiteFacts: {
+  (node: Node, context: MutatorContext): RelationalSiteFacts | undefined
+  (context: MutatorContext): (node: Node) => RelationalSiteFacts | undefined
+} = dual((args: IArguments): boolean => args.length >= 2, relationalSiteFactsDataFirst)
+
+const relationalSufficientDataFirst = (facts: RelationalSiteFacts | undefined, replacement: Node): boolean =>
+  facts === undefined ? true : sufficientInCondition(facts, replacement)
+
+function sufficientInCondition(facts: RelationalSiteFacts, replacement: Node): boolean {
+  return facts.inConditionPosition ? sufficientReplacementOf(facts, replacement) : true
+}
+
+function sufficientReplacementOf(facts: RelationalSiteFacts, replacement: Node): boolean {
+  return Match.value(replacement).pipe(
+    Match.when(isBooleanLiteral, (literal) => literal.value === SUFFICIENT_RELATIONAL_SETS[facts.operator].literal),
+    Match.when(isBinaryExpressionNode, (binary) => isSufficientOperator(facts, binary.operator)),
+    Match.orElse(() => true),
+  )
+}
+
+export const relationalSufficientReplacement: {
+  (facts: RelationalSiteFacts | undefined, replacement: Node): boolean
+  (replacement: Node): (facts: RelationalSiteFacts | undefined) => boolean
+} = dual((args: IArguments): boolean => args.length >= 2, relationalSufficientDataFirst)
+
+function isSufficientOperator(facts: RelationalSiteFacts, operator: string): boolean {
+  return SUFFICIENT_RELATIONAL_SETS[facts.operator].replacements.some((sufficient) => sufficient === operator)
+}
+
+function isBinaryExpressionNode(node: Node): node is BinaryExpression {
+  return node.type === 'BinaryExpression'
+}
+
 function isBooleanExpression(node: Node): node is BinaryExpression | LogicalExpression {
   return isOperatorExpression(node) && booleanOperators.includes(node.operator)
 }
@@ -865,9 +967,9 @@ const EQUALITY_OPERATOR_KEYS: readonly string[] = Object.keys(operators)
 
 type EqualityBinary = BinaryExpression & { operator: keyof typeof operators }
 
-const equalityOperatorMutator: Mutator = (node) =>
+const equalityOperatorMutator: Mutator = (node, context) =>
   Match.value(node).pipe(
-    Match.when(isEqualityBinary, (binary) => mutatedEqualityOperators(binary)),
+    Match.when(isEqualityBinary, (binary) => mutatedEqualityOperators(binary, context)),
     Match.orElse(() => NO_MUTANTS),
   )
 
@@ -875,8 +977,22 @@ function isEqualityBinary(node: Node): node is EqualityBinary {
   return node.type === 'BinaryExpression' && EQUALITY_OPERATOR_KEYS.includes(node.operator)
 }
 
-function mutatedEqualityOperators(binary: EqualityBinary): readonly Node[] {
-  return operators[binary.operator].map((operator) => withOperator(binary, operator))
+function mutatedEqualityOperators(binary: EqualityBinary, context: MutatorContext): readonly Node[] {
+  const base = operators[binary.operator].map((operator) => withOperator(binary, operator))
+  return isRelationalConditionSite(binary, context) ? [...base, ...sufficientAdditions(binary)] : base
+}
+
+function isRelationalConditionSite(node: Node, context: MutatorContext): boolean {
+  return [context.mutantSetPolicy === 'default', isRelationalComparison(node), isConditionPosition(node, context)]
+    .every(Boolean)
+}
+
+function sufficientAdditions(binary: EqualityBinary): readonly Node[] {
+  return isRelationalOperator(binary.operator)
+    ? SUFFICIENT_RELATIONAL_SETS[binary.operator].replacements
+      .filter((operator) => !operators[binary.operator].some((replacement) => replacement === operator))
+      .map((operator) => withOperator(binary, operator))
+    : NO_MUTANTS
 }
 
 const logicalOperatorReplacements = Object.freeze(

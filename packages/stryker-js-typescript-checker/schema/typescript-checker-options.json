@@ -10,13 +10,7 @@
       "additionalProperties": false,
       "type": "object",
       "default": {},
-      "properties": {
-        "prioritizePerformanceOverAccuracy": {
-          "description": "Configures the performance of the TypescriptChecker. Setting this to false results in a slower, but more accurate result.",
-          "type": "boolean",
-          "default": true
-        }
-      }
+      "properties": {}
     }
   }
 }

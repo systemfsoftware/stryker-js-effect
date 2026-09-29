@@ -4,7 +4,7 @@ import { defineConfig as defineVitestConfig } from 'vitest/config'
 
 import { isAgent, isCI, isOpenTelemetryEnabled } from './env.js'
 import { exists, firstExisting, readJson } from './files.js'
-import { propertyRuns } from './property-runs.js'
+import { propertyCheck } from './property-runs.js'
 
 export { isCI }
 
@@ -198,7 +198,7 @@ export const sharedConfig = {
     passWithNoTests: true,
     testTimeout: sharedTestTimeout,
     silent: isAgent ? 'passed-only' : false,
-    provide: { '@systemfsoftware/vitest:property-check': { runs: propertyRuns } },
+    provide: { '@systemfsoftware/vitest:property-check': propertyCheck },
     coverage: {
       enabled: isCI || process.env['COVERAGE'] === 'true',
       provider: 'v8',

@@ -1,3 +1,4 @@
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 
@@ -29,7 +30,6 @@ const silencingReason = (
   const planned = planMutants(
     PlanMutantsCommand.make({
       fileName: 'probe.ts',
-      firstIndex: 0,
       offset: { line: 1, columnShift: 0 },
       line,
       mutatorNames: [mutatorName.toLowerCase()],
@@ -37,10 +37,13 @@ const silencingReason = (
       rule,
       directives: [],
       candidates: [{
+        id: Mutant.MutantId.make('0000000000000000'),
         mutatorName,
         replacementCode: 'n - 1',
         location: { start: { line, column: 1 }, end: { line, column: 2 } },
+        mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
       }],
+      mutantSetPolicy: 'default',
     }),
   )
   return Result.isSuccess(planned) ? planned.success.mutants.at(0)?.ignoreReason : undefined
@@ -65,7 +68,8 @@ describe('foldRule', () => {
       const disable = acted(drawn, 'disable')
       const name = reachedNameOf(disable)
       return name !== undefined &&
-        silencingReason(folding(subject, [], disable), name, disable.governedLine) === disable.directive.reason
+        silencingReason(folding(subject, [], disable), name, disable.governedLine) ===
+          `directive: ${disable.directive.reason}`
     },
   )
 
@@ -88,7 +92,7 @@ describe('foldRule', () => {
         at,
         governedLine,
       }
-      const expected = second.directive.action === 'disable' ? second.directive.reason : undefined
+      const expected = second.directive.action === 'disable' ? `directive: ${second.directive.reason}` : undefined
       return silencingReason(folding(subject, folding(subject, [], first), second), name, governedLine) === expected
     },
   )

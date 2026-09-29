@@ -43,6 +43,9 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
         testIds: Option.getOrUndefined(
           Option.map(Option.fromNullishOr(command.testFilter), (ids) => [...ids]),
         ),
+        priorKillerTestIds: Option.getOrUndefined(
+          Option.map(Option.fromNullishOr(command.priorKillerTestIds), (ids) => [...ids]),
+        ),
         relatedFiles: [command.sandboxFileName],
       })
       const hitCount = yield* deps.hitCount
@@ -77,8 +80,20 @@ export const makeMutantRunCell = (deps: MutantRunCellDeps) =>
             () => [],
           ),
           nrOfTests: killed.tests.length,
+          executedTests: killed.executedTests.map((test) => ({
+            id: TestRunner.TestId.make(test.id),
+            timeSpentMs: test.timeSpentMs,
+          })),
         }),
-      Survived: (survived) => Effect.succeed({ status: 'survived' as const, nrOfTests: survived.tests.length }),
+      Survived: (survived) =>
+        Effect.succeed({
+          status: 'survived' as const,
+          nrOfTests: survived.tests.length,
+          executedTests: survived.executedTests.map((test) => ({
+            id: TestRunner.TestId.make(test.id),
+            timeSpentMs: test.timeSpentMs,
+          })),
+        }),
       Timeout: (timeout) =>
         Effect.succeed({
           status: 'timeout' as const,

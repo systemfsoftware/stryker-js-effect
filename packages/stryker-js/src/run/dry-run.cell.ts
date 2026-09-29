@@ -1,7 +1,10 @@
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { type Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, type Plugin, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -10,13 +13,23 @@ import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as MutableHashSet from 'effect/MutableHashSet'
 import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
+import { detectDryRunFlakes, DetectDryRunFlakesCommand } from '../detect-dry-run-flakes.workflow.js'
+import { type DryRunCoverage, type DryRunPass, ReportedDryRunCoverageSchema } from '../dry-run-coverage.schema.js'
+import {
+  DryRunCoverageReused,
+  dryRunReuse,
+  DryRunReuseCommand,
+  type DryRunReuseDecision,
+} from '../dry-run-reuse.workflow.js'
 import { dryRun, DryRunCommand, DryRunError, DryRunFailed, FailedTestSummary } from '../dry-run.workflow.js'
+import { analyzeImportClosure, type ImportClosureAnalysis } from '../import-closure.cell.js'
 import {
   DryRunObservation,
   type DryRunObservationDecision,
@@ -25,14 +38,18 @@ import {
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
+import type { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { originalFileFor, sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.blueprint.js'
+import { runInputsDigestOf } from '../verdict-semantics.js'
 import { testRunnerConfigOf } from '../vm-runner.js'
-import { IdGenerator } from '../Worker.service.js'
+import { IdGenerator, type IdGeneratorShape } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
+import { incrementalReportTextsOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
+import type { PhaseClock } from './phase-clock.service.js'
 import {
   ConfiguredPluginModulePath,
   ConfiguredPluginName,
@@ -40,7 +57,7 @@ import {
   WorkerSpawnCommand,
   type WorkerSpawnResolved,
 } from './resolve-configured-plugin.workflow.js'
-import { phaseEntered } from './RunEnvironment.service.js'
+import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
 export interface DryRunDone extends InstrumentDone {
@@ -49,12 +66,21 @@ export interface DryRunDone extends InstrumentDone {
   readonly timeOverhead: EffectDuration.Duration
 }
 
+interface DryRunExtras {
+  readonly reused?: DryRunCoverage | undefined
+  readonly globalTestInputs: readonly string[]
+  readonly flakyTestIds: readonly string[]
+  readonly flakyMutantIds: readonly string[]
+  readonly testClosureDigest: string
+  readonly runInputsDigest: string
+}
+
 export type DryRunRaw = typeof DryRunCommand.Encoded & {
   readonly prev: InstrumentDone
   readonly rawResult: TestRunner.DryRunResult
   readonly capabilities: TestRunner.TestRunnerCapabilities
   readonly gross: EffectDuration.Duration
-}
+} & DryRunExtras
 
 const sandboxPathsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
   Result.all(fileNames.map((fileName) => sandboxFileFor(sandbox, fileName)))
@@ -103,9 +129,204 @@ const buildDryRunFiles = (command: InstrumentDone) =>
 
 const resolveDryRunFiles = Effect.fn(SpanTaxonomy.Spans.dryRunResolveFiles.name)(function*(command: InstrumentDone) {
   return yield* Effect.fromResult(buildDryRunFiles(command)).pipe(
-    Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Failed to resolve sandbox file', cause })),
+    Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Failed to resolve sandbox files', cause })),
   )
 })
+
+const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
+
+const coverageOfReportText = (text: string): Option.Option<DryRunCoverage> =>
+  Option.flatMap(
+    S.decodeOption(S.fromJsonString(ReportedDryRunCoverageSchema))(text),
+    (report) => Option.fromNullishOr(report.dryRunCoverage),
+  )
+
+const priorCoveragesOf = Effect.fnUntraced(function*(command: InstrumentDone, basePath: string) {
+  const texts = yield* incrementalReportTextsOf({ basePath, options: command.options })
+  return Arr.getSomes(texts.map(coverageOfReportText))
+})
+
+const closureAnalysisOf = (
+  command: InstrumentDone,
+  rootDir: string,
+  globalInputs: readonly string[],
+) =>
+  Effect.option(
+    analyzeImportClosure({
+      rootDir,
+      projectFiles: Arr.dedupe([...MutableHashMap.keys(command.project.files), ...command.project.testFiles]),
+      testFiles: [...command.project.testFiles],
+      globalInputs: [...globalInputs],
+    }),
+  )
+
+const closureDigestOf = (analysis: ImportClosureAnalysis): string =>
+  hashOf(
+    [
+      ...analysis.closures.map((closure) => `${closure.testFile}\u0000${closure.digest}`).sort(),
+      analysis.projectDigest,
+    ].join('\n'),
+  )
+
+const closureDigestOptionOf = (analysis: Option.Option<ImportClosureAnalysis>): Option.Option<string> =>
+  Option.map(analysis, closureDigestOf)
+
+const globalInputsOfCoverage = (coverage: Option.Option<DryRunCoverage>): readonly string[] =>
+  Option.getOrElse(Option.map(coverage, (present) => [...present.globalTestInputs]), () => [])
+
+const originalGlobalInputsOf = (command: InstrumentDone, result: TestRunner.DryRunResult): readonly string[] =>
+  Option.getOrElse(
+    Option.map(
+      Option.liftPredicate(result, (value): value is TestRunner.CompleteDryRunResult => value.status === 'complete'),
+      (complete) => (complete.globalTestInputs ?? []).map((file) => originalFileFor(command.sandbox, file)),
+    ),
+    () => [],
+  )
+
+const decisionOfCoverage = (
+  prior: Option.Option<DryRunCoverage>,
+  currentTestClosureDigest: Option.Option<string>,
+  runInputsDigest: string,
+  force: boolean,
+): DryRunReuseDecision =>
+  Result.getOrElse(
+    dryRunReuse(
+      DryRunReuseCommand.make({
+        prior: Option.getOrUndefined(
+          Option.map(prior, (coverage) => ({
+            testClosureDigest: coverage.testClosureDigest,
+            runInputsDigest: coverage.runInputsDigest,
+          })),
+        ),
+        currentTestClosureDigest: Option.getOrUndefined(currentTestClosureDigest),
+        currentRunInputsDigest: runInputsDigest,
+        force,
+      }),
+    ),
+    (never: never) => never,
+  )
+
+interface PriorChoice {
+  readonly prior: Option.Option<DryRunCoverage>
+  readonly decision: DryRunReuseDecision
+}
+
+const priorChoiceOf = (
+  candidates: readonly DryRunCoverage[],
+  currentTestClosureDigest: Option.Option<string>,
+  runInputsDigest: string,
+  force: boolean,
+): PriorChoice => {
+  const attempts = candidates.map((coverage): PriorChoice => ({
+    prior: Option.some(coverage),
+    decision: decisionOfCoverage(Option.some(coverage), currentTestClosureDigest, runInputsDigest, force),
+  }))
+  return Option.getOrElse(
+    Arr.findFirst(attempts, (attempt) => S.is(DryRunCoverageReused)(attempt.decision)),
+    () =>
+      Option.getOrElse(
+        Arr.head(attempts),
+        (): PriorChoice => ({
+          prior: Option.none(),
+          decision: decisionOfCoverage(Option.none(), currentTestClosureDigest, runInputsDigest, force),
+        }),
+      ),
+  )
+}
+
+const rawOf = (
+  command: InstrumentDone,
+  rawResult: TestRunner.DryRunResult,
+  capabilities: TestRunner.TestRunnerCapabilities,
+  gross: EffectDuration.Duration,
+  extras: DryRunExtras,
+): DryRunRaw => {
+  const observation = DryRunObservation.make({
+    dryRunResult: rawResult,
+    allowEmpty: command.options.allowEmpty,
+  })
+  const decision = Result.getOrElse(interpretDryRunObservation(observation), (never: never) => never)
+  return {
+    ...dryRunCommandOfDecision(decision, command.options.allowEmpty),
+    prev: command,
+    rawResult,
+    capabilities,
+    gross,
+    ...extras,
+  }
+}
+
+const reusedRawOf = (command: InstrumentDone, coverage: DryRunCoverage): DryRunRaw =>
+  rawOf(
+    command,
+    {
+      status: 'complete',
+      tests: [...coverage.tests],
+      globalTestInputs: [...coverage.globalTestInputs],
+      ...(coverage.mutantCoverage === undefined ? {} : { mutantCoverage: coverage.mutantCoverage }),
+    },
+    { reloadEnvironment: false },
+    EffectDuration.zero,
+    {
+      reused: coverage,
+      globalTestInputs: [...coverage.globalTestInputs],
+      flakyTestIds: [...coverage.flakyTestIds],
+      flakyMutantIds: [...coverage.flakyMutantIds],
+      testClosureDigest: coverage.testClosureDigest,
+      runInputsDigest: coverage.runInputsDigest,
+    },
+  )
+
+const dryRunOptionsOf = (
+  command: InstrumentDone,
+  files: readonly string[],
+  testFiles: readonly string[] | undefined,
+  timeout: number,
+): TestRunner.DryRunOptions => ({
+  timeout,
+  coverageAnalysis: command.options.coverageAnalysis,
+  disableBail: command.options.disableBail,
+  files,
+  ...Option.match(Option.fromUndefinedOr(testFiles), {
+    onNone: () => ({}),
+    onSome: (present) => ({ testFiles: present }),
+  }),
+})
+
+const completePassOf = (result: TestRunner.DryRunResult): Option.Option<DryRunPass> =>
+  Option.map(
+    Option.liftPredicate(result, (value): value is TestRunner.CompleteDryRunResult => value.status === 'complete'),
+    (complete) => ({
+      tests: [...complete.tests],
+      ...(complete.mutantCoverage === undefined ? {} : { mutantCoverage: complete.mutantCoverage }),
+    }),
+  )
+
+interface DryRunFlakes {
+  readonly flakyTestIds: readonly string[]
+  readonly flakyMutantIds: readonly string[]
+}
+
+const NO_FLAKES: DryRunFlakes = { flakyTestIds: [], flakyMutantIds: [] }
+
+const flakesOf = (first: TestRunner.DryRunResult, second: Option.Option<TestRunner.DryRunResult>): DryRunFlakes =>
+  Option.match(Option.all([completePassOf(first), Option.flatMap(second, completePassOf)]), {
+    onNone: () => NO_FLAKES,
+    onSome: ([firstPass, secondPass]) =>
+      Match.value(
+        Result.getOrElse(
+          detectDryRunFlakes(DetectDryRunFlakesCommand.make({ first: firstPass, second: secondPass })),
+          (never: never) => never,
+        ),
+      ).pipe(
+        Match.tag('DryRunFlakesDetected', (detected): DryRunFlakes => ({
+          flakyTestIds: [...detected.flakyTestIds],
+          flakyMutantIds: [...detected.flakyMutantIds],
+        })),
+        Match.tag('DryRunFlakesAbsent', (): DryRunFlakes => NO_FLAKES),
+        Match.exhaustive,
+      ),
+  })
 
 const dryRunCommandOfDecision = (
   decision: DryRunObservationDecision,
@@ -211,7 +432,7 @@ const hitsByMutantIdOf = (mutantCoverage: Mutant.Coverage) =>
     MutableHashMap.empty<string, number>(),
   )
 
-const testCoverageFrom = (result: Readonly<TestRunner.CompleteDryRunResult>) => {
+const testCoverageFrom = (result: Readonly<TestRunner.CompleteDryRunResult>, dryRunCoverage: DryRunCoverage) => {
   const testsById = testsByIdOf(result)
   const mutantCoverage = Option.fromNullishOr(result.mutantCoverage)
   return {
@@ -228,6 +449,7 @@ const testCoverageFrom = (result: Readonly<TestRunner.CompleteDryRunResult>) => 
       onNone: () => MutableHashMap.empty<string, number>(),
       onSome: (coverage) => hitsByMutantIdOf(coverage),
     }),
+    dryRunCoverage,
   }
 }
 
@@ -255,32 +477,71 @@ const announceDryRunOutcome = (
     ),
   )
 
+const reportDryRunCompleted = (
+  raw: DryRunRaw,
+  tests: readonly TestRunner.TestResult[],
+  overheadMillis: number,
+): Effect.Effect<void> =>
+  offerReporterEvent(
+    raw.prev.reporterStage,
+    Reporter.DryRunCompleted.make({
+      timing: { net: totalTestTime(tests), overhead: overheadMillis },
+      capabilities: { reloadEnvironment: raw.capabilities.reloadEnvironment },
+      testCount: tests.length,
+      tests: [...tests],
+    }),
+  ).pipe(Effect.ignoreCause)
+
+const freshCoverageOf = (
+  raw: DryRunRaw,
+  dryRunResult: TestRunner.CompleteDryRunResult,
+  overheadMillis: number,
+): DryRunCoverage => ({
+  tests: [...dryRunResult.tests],
+  ...(dryRunResult.mutantCoverage === undefined ? {} : { mutantCoverage: dryRunResult.mutantCoverage }),
+  globalTestInputs: [...raw.globalTestInputs],
+  timeOverheadMs: overheadMillis,
+  flakyTestIds: [...raw.flakyTestIds],
+  flakyMutantIds: [...raw.flakyMutantIds],
+  testClosureDigest: raw.testClosureDigest,
+  runInputsDigest: raw.runInputsDigest,
+})
+
+const dryRunDoneOf = (
+  raw: DryRunRaw,
+  dryRunResult: TestRunner.CompleteDryRunResult,
+  coverage: DryRunCoverage,
+): DryRunDone => ({
+  ...raw.prev,
+  dryRunResult,
+  testCoverage: testCoverageFrom(dryRunResult, coverage),
+  timeOverhead: EffectDuration.millis(coverage.timeOverheadMs),
+})
+
+const completeFreshDryRun = Effect.fnUntraced(function*(
+  raw: DryRunRaw,
+  dryRunResult: TestRunner.CompleteDryRunResult,
+) {
+  const overheadMillis = overheadMillisOf(EffectDuration.toMillis(raw.gross), dryRunResult.tests)
+  yield* reportDryRunCompleted(raw, dryRunResult.tests, overheadMillis)
+  yield* announceDryRunOutcome(dryRunResult.tests, raw.prev, raw.gross, overheadMillis)
+  return dryRunDoneOf(raw, dryRunResult, freshCoverageOf(raw, dryRunResult, overheadMillis))
+})
+
 const completeDryRunResultOf = Effect.fn(SpanTaxonomy.Spans.dryRunComplete.name)(function*(
   raw: DryRunRaw,
   rawResult: TestRunner.CompleteDryRunResult,
 ) {
   const tests = withOriginalFileNames(rawResult.tests, raw.prev)
   const dryRunResult = { ...rawResult, tests, status: 'complete' } as const
-  const overheadMillis = overheadMillisOf(EffectDuration.toMillis(raw.gross), tests)
-
-  yield* offerReporterEvent(
-    raw.prev.reporterStage,
-    Reporter.DryRunCompleted.make({
-      timing: { net: totalTestTime(tests), overhead: overheadMillis },
-      capabilities: { reloadEnvironment: raw.capabilities.reloadEnvironment },
-      testCount: tests.length,
-      tests: [...dryRunResult.tests],
-    }),
-  ).pipe(Effect.ignoreCause)
-
-  yield* announceDryRunOutcome(tests, raw.prev, raw.gross, overheadMillis)
-
-  return {
-    ...raw.prev,
-    dryRunResult,
-    testCoverage: testCoverageFrom(dryRunResult),
-    timeOverhead: EffectDuration.millis(overheadMillis),
-  }
+  return yield* Option.match(Option.fromUndefinedOr(raw.reused), {
+    onNone: () => completeFreshDryRun(raw, dryRunResult),
+    onSome: (coverage) =>
+      Effect.as(
+        Effect.logDebug('Reusing the dry-run coverage from the incremental report; skipping the initial test run.'),
+        dryRunDoneOf(raw, dryRunResult, coverage),
+      ),
+  })
 })
 
 const completeDryRunPassed = (raw: DryRunRaw) =>
@@ -293,19 +554,20 @@ const completeDryRunPassed = (raw: DryRunRaw) =>
     Match.exhaustive,
   )
 
-const readDryRun: (command: InstrumentDone) => Effect.Effect<
-  DryRunRaw,
-  StageError,
-  Scope.Scope | IdGenerator | ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | WorkerLauncher
-> = Effect.fnUntraced(function*(command: InstrumentDone) {
-  yield* Scope.Scope
-  const idGenerator = yield* IdGenerator
-
+const runFreshDryRun = Effect.fnUntraced(function*(
+  command: InstrumentDone,
+  idGenerator: IdGeneratorShape,
+  currentTestClosureDigest: Option.Option<string>,
+  runInputsDigest: string,
+) {
+  const env = yield* RunEnvironment
   const { files, testFiles } = yield* resolveDryRunFiles(command)
   const dryRunTimeout = command.options.dryRunTimeoutMinutes * 60 * 1000
+  const options = dryRunOptionsOf(command, files, testFiles, dryRunTimeout)
 
   yield* Effect.logInfo('Starting dry run')
-  const { rawResult, capabilities, gross } = yield* Effect.scoped(
+
+  const { first, second, capabilities, gross } = yield* Effect.scoped(
     Effect.gen(function*() {
       const childRunnerEffect = Effect.suspend(() => {
         const runnerConfigured = command.options.testRunner
@@ -334,31 +596,29 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
         },
         childRunnerEffect,
       )
-      const extra: { testFiles?: readonly string[] } = Option.match(Option.fromUndefinedOr(testFiles), {
-        onNone: () => ({}),
-        onSome: (present) => ({ testFiles: present }),
-      })
-      const timed = yield* Effect.timed(
-        runner
-          .dryRun({
-            timeout: dryRunTimeout,
-            coverageAnalysis: command.options.coverageAnalysis,
-            disableBail: command.options.disableBail,
-            files,
-            ...extra,
-          })
-          .pipe(
-            Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Dry run failed', cause })),
-          ),
-      )
-      const gross = timed[0]
-      const rawResult = timed[1]
       const capabilities = yield* runner.capabilities.pipe(
         Effect.mapError((cause) =>
           StageError.make({ stage: 'dryRun', reason: 'Failed to get test runner capabilities', cause })
         ),
       )
-      return { rawResult, capabilities, gross }
+      const timedPass = Effect.timed(
+        runner
+          .dryRun(options)
+          .pipe(
+            Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Dry run failed', cause })),
+          ),
+      )
+      const firstPass = yield* timedPass
+      const secondPass = yield* Boolean.match(firstPass[1].status === 'complete', {
+        onTrue: () => Effect.map(timedPass, Option.some<readonly [EffectDuration.Duration, TestRunner.DryRunResult]>),
+        onFalse: () => Effect.succeed(Option.none<readonly [EffectDuration.Duration, TestRunner.DryRunResult]>()),
+      })
+      return {
+        first: firstPass[1],
+        second: Option.map(secondPass, ([, result]) => result),
+        capabilities,
+        gross: firstPass[0],
+      }
     }),
   ).pipe(
     Effect.mapError((cause) =>
@@ -374,29 +634,106 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
     ),
   )
 
-  const observation = DryRunObservation.make({
-    dryRunResult: rawResult,
-    allowEmpty: command.options.allowEmpty,
+  const flakes = flakesOf(first, second)
+  const globalTestInputs = originalGlobalInputsOf(command, first)
+  const testClosureDigest = Option.getOrElse(
+    closureDigestOptionOf(yield* closureAnalysisOf(command, env.basePath, globalTestInputs)),
+    () => Option.getOrElse(currentTestClosureDigest, () => ''),
+  )
+  return rawOf(command, first, capabilities, gross, {
+    globalTestInputs,
+    flakyTestIds: flakes.flakyTestIds,
+    flakyMutantIds: flakes.flakyMutantIds,
+    testClosureDigest,
+    runInputsDigest,
   })
-  const decision = yield* Effect.fromResult(interpretDryRunObservation(observation))
-  return {
-    ...dryRunCommandOfDecision(decision, command.options.allowEmpty),
-    prev: command,
-    rawResult,
-    capabilities,
-    gross,
-  }
+})
+
+const readDryRun: (command: InstrumentDone) => Effect.Effect<
+  DryRunRaw,
+  StageError,
+  | Scope.Scope
+  | IdGenerator
+  | ChildProcessSpawner.ChildProcessSpawner
+  | FileSystem.FileSystem
+  | Path.Path
+  | WorkerLauncher
+  | RunEnvironment
+  | RunEvents
+  | PhaseClock
+> = Effect.fnUntraced(function*(command: InstrumentDone) {
+  yield* Scope.Scope
+  const idGenerator = yield* IdGenerator
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const env = yield* RunEnvironment
+
+  yield* phaseEntered('dry-run')
+
+  const candidates = yield* priorCoveragesOf(command, env.basePath)
+  const runInputsDigest = yield* runInputsDigestOf(fs, path, env.basePath, command.options)
+  const currentTestClosureDigest = closureDigestOptionOf(
+    yield* closureAnalysisOf(command, env.basePath, globalInputsOfCoverage(Arr.head(candidates))),
+  )
+  const { prior, decision } = priorChoiceOf(
+    candidates,
+    currentTestClosureDigest,
+    runInputsDigest,
+    command.options.force,
+  )
+
+  yield* Match.value(decision).pipe(
+    Match.tag(
+      'DryRunCoverageReused',
+      () => Effect.logInfo('Reusing the persisted dry-run coverage; skipping the initial test run'),
+    ),
+    Match.tag(
+      'DryRunCoverageStale',
+      ({ reason }) =>
+        Effect.logInfo(
+          [
+            `Running the initial test run: dry-run coverage reuse refused (${reason})`,
+            `  prior closure digest:     ${
+              Option.getOrElse(
+                Option.map(prior, (coverage) => coverage.testClosureDigest),
+                () => '(no prior coverage)',
+              )
+            }`,
+            `  current closure digest:   ${Option.getOrElse(currentTestClosureDigest, () => '(unavailable)')}`,
+            `  prior run-inputs digest:  ${
+              Option.getOrElse(
+                Option.map(prior, (coverage) => coverage.runInputsDigest),
+                () => '(no prior coverage)',
+              )
+            }`,
+            `  prior coverage records:   ${candidates.length}`,
+            `  current run-inputs digest: ${runInputsDigest}`,
+          ].join('\n'),
+        ),
+    ),
+    Match.exhaustive,
+  )
+
+  return yield* Match.value(decision).pipe(
+    Match.tag('DryRunCoverageReused', () =>
+      Option.match(prior, {
+        onNone: () =>
+          Effect.die(StageError.make({ stage: 'dryRun', reason: 'Coverage reuse decided without prior coverage' })),
+        onSome: (coverage) => Effect.succeed(reusedRawOf(command, coverage)),
+      })),
+    Match.tag(
+      'DryRunCoverageStale',
+      () => runFreshDryRun(command, idGenerator, currentTestClosureDigest, runInputsDigest),
+    ),
+    Match.exhaustive,
+  )
 })
 
 const writeDryRunPassed = Effect.fn(SpanTaxonomy.Spans.dryRunWritePassed.name)(function*(raw: DryRunRaw) {
   return yield* withPhaseSpan(
     SpanTaxonomy.Spans.dryRunPhase,
     {},
-    () =>
-      Effect.gen(function*() {
-        yield* phaseEntered('dry-run')
-        return yield* completeDryRunPassed(raw)
-      }),
+    () => completeDryRunPassed(raw),
   )
 })
 
@@ -424,7 +761,6 @@ const writeDryRunFailed = Effect.fn(SpanTaxonomy.Spans.dryRunWriteFailed.name)(f
     {},
     () =>
       Effect.gen(function*() {
-        yield* phaseEntered('dry-run')
         const detail = failedTestsDetail(failedTests)
         yield* Effect.logError(
           `Initial test run failed. ${failedTestCount} of ${testCount} test(s) failed:\n${detail}`,

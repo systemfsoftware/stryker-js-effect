@@ -76,7 +76,7 @@ const reportFixture = (): Report.MutationTestResult => ({
       source: `export const marker = '${MARKER}'`,
       mutants: [
         {
-          id: Mutant.MutantId.make('0'),
+          id: Mutant.MutantId.make('0000000000000000'),
           mutatorName: 'BlockStatement',
           status: 'Killed',
           location: { start: { line: 1, column: 1 }, end: { line: 1, column: 11 } },

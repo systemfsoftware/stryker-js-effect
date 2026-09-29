@@ -20,13 +20,38 @@ export namespace Engine {
 }
 
 // @public (undocumented)
+export namespace GitDiff {
+    export { GitDiff, GitDiffInput, GitDiffShape };
+}
+
+// @public (undocumented)
+export namespace GitDiffSchema {
+    export { DiffHunk, DiffScopeCommand, DiffScopeDecision, DiffScoped, FullScope, GitCommandFailed, GitDiffError, GitDiffResult, GitRefUnresolved };
+}
+
+// @public (undocumented)
+export namespace ImportClosure {
+    export { ImportClosureAnalysis, ImportClosureInput, TestFileClosureDigest, analyzeImportClosure };
+}
+
+// @public (undocumented)
+export namespace Mcp {
+    export { McpServerOptions, MutantDetail, MutantUnusable, RerunMutantFailure, ShowMutantFailure, mcpServerLayer, mcpToolkit };
+}
+
+// @public (undocumented)
 export namespace Plugin {
     export { AnyPluginDescriptor, AnyWorkerPluginDescriptor, AnyWorkerPluginSource, EvaluatorPluginDescriptor, EvaluatorPluginSource, Framework, Ignorer, LoadedPlugins, Node_2 as Node, PluginDescriptor, PluginDescriptorOf, PluginKind, PluginSource, PooledTestRunner, PooledTestRunnerError, REPORTER_EVENT_BATCH_BOUND, ReporterStage, ReporterWorkerClient, SpawnReporterWorkerParams, TestRunnerBuildContext, WorkerPluginDescriptor, WorkerPluginSource, buildTestRunner, isCommandRunner, isVmRunner, makeChildProcessTestRunner, reporterWorkerFactory, spawnReporterWorker, testRunnerConfigOf, vmRunnerPluginUrl, vmTestRunnerConfig };
 }
 
 // @public (undocumented)
 export namespace RunEvent {
-    export { MetricsResultFromReport, ResolvedMode, ResolvedModeInput, RunEventDrain, RunEventDrainLive, RunEventStream, RunEvents, RunIdentity, RunIdentityShape, VerdictEnvelope, makeRunEventStream, metricsResultFromFiles };
+    export { MetricsResultFromReport, ResolvedMode, ResolvedModeInput, RunEventDrain, RunEventDrainLive, RunEventStream, RunEvents, RunIdentity, RunIdentityShape, VerdictEnvelope, buildVerdictEnvelope, makeRunEventStream, metricsResultFromFiles, staticVerdictOf };
+}
+
+// @public (undocumented)
+export namespace Serve {
+    export { msp_framing_schema_d_exports as Framing, msp_schema_d_exports as Protocol, ServeError, ServeRequest, serveMutationServer };
 }
 
 // @public (undocumented)

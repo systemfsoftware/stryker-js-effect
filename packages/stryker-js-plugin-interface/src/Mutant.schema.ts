@@ -28,7 +28,11 @@ export type EphemeralStatus = typeof EphemeralStatusSchema.Type
 export const ActionableStatusSchema = S.Literals(['Survived', 'NoCoverage', 'Timeout', 'RuntimeError'])
 export type ActionableStatus = typeof ActionableStatusSchema.Type
 
-export const MutantId = S.String.check(S.isPattern(/^(0|[1-9][0-9]*)$/)).pipe(S.brand('MutantId'))
+export const MutantId = S.String.check(
+  S.isPattern(/^[0-9a-f]{16}$/, {
+    expected: 'a 16-character lowercase hexadecimal mutant id',
+  }),
+).pipe(S.brand('MutantId'))
 export type MutantId = typeof MutantId.Type
 
 export const MutatorNameGrammar = S.String.check(
@@ -94,12 +98,37 @@ export const MutantRunOptionsSchema = S.Struct({
   mutantActivation: MutantActivationSchema,
   reloadEnvironment: S.Boolean,
   testFilter: S.String.pipe(S.Array, S.optionalKey),
+  priorKillerTestIds: S.String.pipe(S.Array, S.optionalKey),
   hitLimit: S.optionalKey(HitCount),
 })
 
+const asMutantIdKeyed = (counts: Record<string, number>): Record<MutantId, number> =>
+  Object.fromEntries(Object.entries(counts).filter(([key]) => S.is(MutantId)(key)))
+
+const asStringKeyed = (counts: Record<MutantId, number>): Record<string, number> =>
+  Object.fromEntries(Object.entries(counts))
+
+const MutantIdKeyedHitCounts = S.Record(S.String, HitCount).pipe(
+  S.check(
+    S.makeFilter(
+      (counts: Record<string, number>) => {
+        const unknownKey = Object.keys(counts).find((key) => !S.is(MutantId)(key))
+        return unknownKey === undefined
+          ? undefined
+          : { path: [unknownKey], issue: `hit counts must be keyed by mutant ids, got '${unknownKey}'` }
+      },
+      { arbitraryConstraint: { patterns: [{ source: '^[0-9a-f]{16}$', flags: '' }] } },
+    ),
+  ),
+  S.decodeTo(S.Record(MutantId, HitCount), {
+    decode: SGetter.transform(asMutantIdKeyed),
+    encode: SGetter.transform(asStringKeyed),
+  }),
+)
+
 export const MutantCoverageSchema = S.Struct({
-  perTest: S.Record(S.String, S.Record(MutantId, HitCount)),
-  static: S.Record(MutantId, HitCount),
+  perTest: S.Record(S.String, MutantIdKeyedHitCounts),
+  static: MutantIdKeyedHitCounts,
 })
 export type MutantCoverage = typeof MutantCoverageSchema.Type
 
@@ -119,6 +148,7 @@ export interface RunOptions {
 
 export interface MutantRunOptions extends RunOptions {
   readonly testFilter?: readonly string[]
+  readonly priorKillerTestIds?: readonly string[]
   readonly hitLimit?: number
   readonly activeMutant: Mutant
   readonly sandboxFileName: string
@@ -152,6 +182,14 @@ export type RunMutantResult = Mutant & {
   readonly killedBy?: readonly string[] | undefined
   readonly coveredBy?: readonly string[] | undefined
   readonly static?: boolean | undefined
+  readonly cost?: MutantCost | undefined
+}
+
+export interface MutantCost {
+  readonly fixedOverheadMs: number
+  readonly testBodyMs: number
+  readonly testsExecuted: number
+  readonly shared: boolean
 }
 
 export type MutantRunPlan = RunPlan
@@ -193,6 +231,7 @@ const namedByASubset = (status: string): boolean => namedStatusSubsets.some((sub
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const Arr = await import('effect/Array')
+  const Option = await import('effect/Option')
 
   const boundaryNames = [
     '',
@@ -211,6 +250,42 @@ if (import.meta.vitest !== void 0) {
     '∀n_MutatorNameRefusal_≡ProviderGrammar',
     { of: [S.String], subject: acceptsMutatorName },
     (subject, [drawn]) => Arr.every(withBoundaries(drawn), (value) => subject(value) === readsAsMutatorName(value)),
+  )
+
+  const boundaryIds: ReadonlyArray<string> = [
+    '',
+    '0',
+    '1',
+    '00',
+    '0123456789abcdef',
+    '0123456789ABCDEF',
+    'fedcba9876543210',
+    '0123456789abcde',
+    '0123456789abcdef0',
+    'g123456789abcdef',
+    '-123456789abcdef',
+  ]
+  const withIdBoundaries = (drawn: string): ReadonlyArray<string> => Arr.prepend(boundaryIds, drawn)
+  const readsAsMutantId = (value: string): boolean => /^[0-9a-f]{16}$/.test(value)
+
+  it.prop(
+    '∀id_MutantIdRefusal_≡ExactlySixteenLowercaseHexDigits',
+    { of: [S.String], subject: (value: string) => S.is(MutantId)(value) },
+    (subject, [drawn]) => Arr.every(withIdBoundaries(drawn), (value) => subject(value) === readsAsMutantId(value)),
+  )
+
+  const coverageKeyedBy = (key: string): MutantCoverage => ({
+    perTest: { 'src/calc.ts::adds': { [key]: 1 } },
+    static: { [key]: 1 },
+  })
+  const decodedCoverageOrNull = (key: string) =>
+    Option.getOrNull(S.decodeOption(MutantCoverageSchema)(coverageKeyedBy(key)))
+
+  it.prop(
+    '∀key_CoverageKeyRefusal_≡MutantIdKeyedHitCounts',
+    { of: [S.String], subject: decodedCoverageOrNull },
+    (subject, [drawn]) =>
+      Arr.every(withIdBoundaries(drawn), (key) => (subject(key) === null) === !readsAsMutantId(key)),
   )
 
   const statusProbes = Arr.appendAll([...MutantStatusSchema.literals], ['NotAStatus'])

@@ -25,11 +25,15 @@ import { AnsiCode, type AnsiColor } from './reporting/ansi.schema.js'
 interface TerminalReport {
   readonly report: Report.MutationTestResult
   readonly metrics: Report.MetricsResult
+  readonly static: Report.StaticClassSummary | undefined
 }
 
 const terminalReportOf = Filter.make((event: Reporter.ReporterEvent): Result.Result<TerminalReport, 'not-terminal'> =>
   Match.value(event).pipe(
-    Match.tag('mutationTestReportReady', (ready) => Result.succeed({ report: ready.report, metrics: ready.metrics })),
+    Match.tag(
+      'mutationTestReportReady',
+      (ready) => Result.succeed({ report: ready.report, metrics: ready.metrics, static: ready.static }),
+    ),
     Match.orElse(() => Result.fail('not-terminal' as const)),
   )
 )
@@ -59,6 +63,7 @@ const readClearTextReport = (input: {
       _tag: 'ClearTextReportCommand' as const,
       reported: Option.getOrUndefined(Option.map(terminal, (ready) => ready.report)),
       computed: Option.getOrUndefined(Option.map(terminal, (ready) => ready.metrics)),
+      static: Option.getOrUndefined(Option.flatMap(terminal, (ready) => Option.fromUndefinedOr(ready.static))),
       render: renderOptionsOf(input.options),
       rendered: true,
     }),

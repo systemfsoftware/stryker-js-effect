@@ -18,6 +18,8 @@ The instrumenter is used internally by the Stryker mutation testing framework to
 
 File formats resolve through a format registry: `coreFormatRegistry` carries the built-in `js`/`ts`/`tsx` entries, `frameworkEntryOf` adapts a framework's `Framework` object into an entry, and `registerEntries` folds additions into a registry (an extension already claimed stays with the earlier entry). `instrument(files, options, registry)` and `disableTypeChecks(file, registry)` accept that registry — defaulting to the core one — and `instrument` returns the files it skipped because no entry claimed their extension.
 
+`options.mutantSetPolicy` states which mutant set the run wants and is required: `'default'` is the product default, and `'full'` turns off the mutant-set pruning the instrumenter would otherwise apply, so the run keeps every mutation the selected mutators can plant.
+
 ## Opt-in mutators
 
 Three mutators that plant Effect concurrency faults are available on request and stay out of the default set. Enable any subset in your Stryker config:

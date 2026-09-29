@@ -22,6 +22,7 @@ export class MutantRunKilled extends S.TaggedClass<MutantRunKilled>()('Killed', 
   failureMessage: S.String,
   killedBy: S.Array(TestRunner.TestId),
   nrOfTests: S.Natural,
+  executedTests: S.Array(TestRunner.ExecutedTestSchema),
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
 
@@ -30,6 +31,7 @@ export class MutantRunKilled extends S.TaggedClass<MutantRunKilled>()('Killed', 
       failureMessage: this.failureMessage,
       killedBy: this.killedBy,
       nrOfTests: this.nrOfTests,
+      executedTests: this.executedTests,
       status: 'killed',
     }
   }
@@ -37,11 +39,12 @@ export class MutantRunKilled extends S.TaggedClass<MutantRunKilled>()('Killed', 
 
 export class MutantRunSurvived extends S.TaggedClass<MutantRunSurvived>()('Survived', {
   nrOfTests: S.Natural,
+  executedTests: S.Array(TestRunner.ExecutedTestSchema),
 }) {
   readonly [MutantRunDecisionTypeId] = MutantRunDecisionTypeId
 
   get asResult(): TestRunner.MutantRunResult {
-    return { nrOfTests: this.nrOfTests, status: 'survived' }
+    return { nrOfTests: this.nrOfTests, executedTests: this.executedTests, status: 'survived' }
   }
 }
 
@@ -73,6 +76,9 @@ const failedTestsOf = (tests: readonly TestRunner.TestResult[]) =>
 const countedTestsOf = (tests: readonly TestRunner.TestResult[]) =>
   tests.filter((test) => test.status !== 'skipped').length
 
+const executedTestsOf = (tests: readonly TestRunner.TestResult[]): ReadonlyArray<TestRunner.ExecutedTest> =>
+  tests.filter((test) => test.status !== 'skipped').map((test) => ({ id: test.id, timeSpentMs: test.timeSpentMs }))
+
 const firstFailedTestOf = (failed: readonly TestRunner.FailedTestResult[]) => Option.fromUndefinedOr(failed.at(0))
 
 const decide = (command: InterpretDryRunResultCommand) =>
@@ -80,13 +86,16 @@ const decide = (command: InterpretDryRunResultCommand) =>
     Match.discriminator('status')('complete', (complete) => {
       const failed = failedTestsOf(complete.tests)
       const nrOfTests = countedTestsOf(complete.tests)
+      const executedTests = executedTestsOf(complete.tests)
       return Option.match(firstFailedTestOf(failed), {
-        onNone: (): Result.Result<MutantRunDecision> => Result.succeed(MutantRunSurvived.make({ nrOfTests })),
+        onNone: (): Result.Result<MutantRunDecision> =>
+          Result.succeed(MutantRunSurvived.make({ nrOfTests, executedTests: [...executedTests] })),
         onSome: (firstFailed): Result.Result<MutantRunDecision> =>
           Result.succeed(MutantRunKilled.make({
             failureMessage: firstFailed.failureMessage,
             killedBy: failed.map((test) => test.id),
             nrOfTests,
+            executedTests: [...executedTests],
           })),
       })
     }),

@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -96,6 +97,37 @@ const hitLimitForCount = (hitCount: number) => hitCount * 100
 
 const hitLimitOf = (hitCount: Option.Option<number>) => Option.map(hitCount, hitLimitForCount)
 
+const priorKillerTestIdsOf = (
+  command: MutantTestPlanCommand,
+  mutantId: Mutant.MutantId,
+): readonly TestRunner.TestId[] =>
+  Option.getOrElse(
+    Option.map(
+      Option.flatMap(
+        Option.fromUndefinedOr(command.priorKilledByByMutantId),
+        (byMutantId) => Record.get(byMutantId, mutantId),
+      ),
+      (killers) => killers.filter((killer) => Record.has(command.testTimeById, killer)),
+    ),
+    (): readonly TestRunner.TestId[] => [],
+  )
+
+const priorKillerField = (
+  command: MutantTestPlanCommand,
+  mutantId: Mutant.MutantId,
+  testFilter: readonly string[] | undefined,
+): { readonly priorKillerTestIds?: readonly TestRunner.TestId[] } =>
+  Boolean.match(testFilter === undefined, {
+    onFalse: () => ({} as const),
+    onTrue: () => {
+      const killers = priorKillerTestIdsOf(command, mutantId)
+      return Boolean.match(killers.length === 0, {
+        onTrue: () => ({} as const),
+        onFalse: () => ({ priorKillerTestIds: killers } as const),
+      })
+    },
+  })
+
 const mutantActivationOf = (testFilter: readonly string[] | undefined) =>
   Option.match(Option.fromUndefinedOr(testFilter), {
     onNone: () => 'static' as const,
@@ -115,6 +147,17 @@ const reloadEnvironmentOf = (testFilter: readonly string[] | undefined, isStatic
       }),
   })
 
+const MUTANT_TIMEOUT_FLOOR_MS = 100
+
+const flooredTimeoutOf = (timeout: number): number =>
+  Boolean.match(timeout < MUTANT_TIMEOUT_FLOOR_MS, {
+    onTrue: () => MUTANT_TIMEOUT_FLOOR_MS,
+    onFalse: () => timeout,
+  })
+
+const mutantTimeoutOf = (command: MutantTestPlanCommand, netTime: number): number =>
+  flooredTimeoutOf(command.options.timeoutFactor * netTime + command.options.timeoutMS + command.timeOverheadMS)
+
 const toRunPlan = (
   mutant: Mutant.Mutant,
   command: MutantTestPlanCommand,
@@ -123,7 +166,7 @@ const toRunPlan = (
   isStatic: boolean | undefined,
   coveredBy: readonly string[] | undefined,
 ): Result.Result<PlannedRunMutant, MutantTimeoutNotFinite> => {
-  const timeout = command.options.timeoutFactor * netTime + command.options.timeoutMS + command.timeOverheadMS
+  const timeout = mutantTimeoutOf(command, netTime)
   return Boolean.match(Number.isFinite(timeout), {
     onTrue: () =>
       Result.succeed(PlannedRunMutant.make({
@@ -139,6 +182,7 @@ const toRunPlan = (
           disableBail: command.options.disableBail,
           reloadEnvironment: reloadEnvironmentOf(testFilter, isStatic),
           ...testFilterField(testFilter),
+          ...priorKillerField(command, mutant.id, testFilter),
           ...Option.match(hitLimitOf(Record.get(command.hitsByMutantId, mutant.id)), {
             onNone: () => ({} as const),
             onSome: (hitLimit) => ({ hitLimit } as const),
@@ -169,20 +213,62 @@ const toEarlyResultPlan = (
     ...coveredByField(coveredBy),
   })
 
-const IGNORED_STATIC_MUTANT_REASON = 'Static mutant (and "ignoreStatic" was enabled)' as const
+const RULE_SEPARATOR = ': '
+
+const IGNORED_STATIC_MUTANT_REASON = `ignore-static${RULE_SEPARATOR}Static mutant (and "ignoreStatic" was enabled)`
+
+const timeOfTestOf = (command: MutantTestPlanCommand, testId: TestRunner.TestId): number =>
+  Option.getOrElse(Record.get(command.testTimeById, testId), () => 0)
+
+const priorKillerOf = (
+  command: MutantTestPlanCommand,
+  mutantId: Mutant.MutantId,
+  tests: readonly TestRunner.TestId[],
+): TestRunner.TestId | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(
+      Option.flatMap(
+        Option.fromUndefinedOr(command.priorKilledByByMutantId),
+        (byMutantId) => Record.get(byMutantId, mutantId),
+      ),
+      (killers) => Option.fromUndefinedOr(killers.find((killer) => tests.includes(killer))),
+    ),
+  )
+
+const orderedTestsOf = (
+  command: MutantTestPlanCommand,
+  mutantId: Mutant.MutantId,
+  tests: readonly TestRunner.TestId[],
+): readonly TestRunner.TestId[] => {
+  const killer = priorKillerOf(command, mutantId, tests)
+  const rest = tests
+    .map((testId, index) => ({ testId, index, time: timeOfTestOf(command, testId) }))
+    .filter((entry) => entry.testId !== killer)
+    .sort((left, right) =>
+      Option.getOrElse(
+        Arr.findFirst([left.time - right.time, left.index - right.index], (rank) => rank !== 0),
+        () => 0,
+      )
+    )
+    .map((entry) => entry.testId)
+  return Option.match(Option.fromUndefinedOr(killer), {
+    onNone: () => rest,
+    onSome: (present) => [present, ...rest],
+  })
+}
 
 const runWithCoveredTests = (
   mutant: Mutant.Mutant,
   command: MutantTestPlanCommand,
   isStatic: boolean,
-  tests: readonly string[],
+  tests: readonly TestRunner.TestId[],
   coveredBy: readonly string[],
 ) =>
   toRunPlan(
     mutant,
     command,
     calculateTotalTimeForIds(tests, command.testTimeById),
-    coveredBy,
+    orderedTestsOf(command, mutant.id, tests),
     isStatic,
     coveredBy,
   )
@@ -204,7 +290,10 @@ const planForStaticallyCovered = (
   command: MutantTestPlanCommand,
   isStatic: boolean,
 ) => {
-  const tests = Option.getOrElse(Record.get(command.testsByMutantId, mutant.id), (): readonly string[] => [])
+  const tests = Option.getOrElse(
+    Record.get(command.testsByMutantId, mutant.id),
+    (): readonly TestRunner.TestId[] => [],
+  )
   const coveredBy = [...tests]
   const useCovered = Boolean.match(isStatic, {
     onTrue: () => Boolean.and(command.options.ignoreStatic, tests.length > 0),
@@ -223,7 +312,7 @@ const mutantIsCovered = (command: MutantTestPlanCommand, mutantId: Mutant.Mutant
   })
 
 const coveringTestIdsOf = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId) =>
-  Option.getOrElse(Record.get(command.testsByMutantId, mutantId), (): readonly string[] => [])
+  Option.getOrElse(Record.get(command.testsByMutantId, mutantId), (): readonly TestRunner.TestId[] => [])
 
 const isPerTestUncoveredNonStatic = (
   command: MutantTestPlanCommand,

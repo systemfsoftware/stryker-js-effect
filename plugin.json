@@ -2,7 +2,7 @@
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "stryker-mutation-testing",
   "version": "1.0.0",
-  "description": "Agent plugin and skill for setting up, configuring, and running Stryker mutation testing in TypeScript and JavaScript repositories.",
+  "description": "Agent plugin and skill for setting up, configuring, and running Stryker mutation testing in TypeScript and JavaScript repositories. Ships the gate, annotate, SARIF, and MCP surfaces so CI and agents act on survivors without parsing a report.",
   "author": {
     "name": "System F Software",
     "url": "https://github.com/systemfsoftware/stryker-js-effect"
@@ -18,6 +18,7 @@
     "testing",
     "quality-gate",
     "coverage",
-    "agent-skill"
+    "agent-skill",
+    "mcp"
   ]
 }

@@ -1,11 +1,13 @@
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { type LocatedDirective, LocatedDirectiveSchema } from '../directives/directive.schema.js'
+import { MutantKept, mutantSetPolicy, MutantSetPolicyCommand } from '../mutant-set-policy.workflow.js'
 import {
-  MutantsFullyIgnored,
+  type MutantCandidate,
   MutantsPlanned,
   MutantWithoutLocation,
   planMutants,
@@ -25,19 +27,65 @@ const reasonFromRule = (rule: readonly LocatedDirective[], mutatorName: string, 
   return last.directive.action === 'disable' ? last.directive.reason : undefined
 }
 
-const silencingReason = (command: PlanMutantsCommand, mutatorName: string): string | undefined => {
+const policyReasonOf = (command: PlanMutantsCommand, candidate: MutantCandidate): string | undefined => {
+  const outcomes = Result.match(
+    mutantSetPolicy(
+      MutantSetPolicyCommand.make({ policy: command.mutantSetPolicy, candidates: [candidate.mutantSet] }),
+    ),
+    { onFailure: () => [], onSuccess: (decided) => decided },
+  )
+  const first = outcomes.at(0)
+  if (first === undefined || S.is(MutantKept)(first)) {
+    return undefined
+  }
+  return `${first.ruleId}: ${first.detail}`
+}
+
+const silencingReason = (command: PlanMutantsCommand, candidate: MutantCandidate): string | undefined => {
+  const mutatorName = candidate.mutatorName
   const directive = reasonFromRule(command.rule, mutatorName, command.line)
   if (directive !== undefined) {
-    return directive
+    return `directive: ${directive}`
   }
   if (command.excludedMutations.includes(mutatorName)) {
-    return `Ignored because of excluded mutation "${mutatorName}"`
+    return `excluded-mutator: Ignored because of excluded mutation "${mutatorName}"`
   }
-  return command.candidates.find((candidate) => candidate.mutatorName === mutatorName)?.ignorerReason
+  const provider = candidate.ignorerReason
+  if (provider !== undefined) {
+    return `ignorer: ${provider}`
+  }
+  return policyReasonOf(command, candidate)
 }
 
 const Namespace = Arbitrary.schema(S.Literals(['acme', 'beta']))
 const PascalName = Arbitrary.schema(S.String.check(S.isPattern(/^[A-Z][A-Za-z0-9]*$/)))
+
+const probeFile = 'probe.ts'
+
+const commandOf = (
+  candidates: readonly MutantCandidate[],
+  overrides: {
+    readonly fileName?: string
+    readonly line?: number
+    readonly rule?: readonly LocatedDirective[]
+    readonly directives?: readonly LocatedDirective[]
+    readonly mutatorNames?: readonly string[]
+    readonly excludedMutations?: readonly string[]
+    readonly mutantSetPolicy?: PlanMutantsCommand['mutantSetPolicy']
+  } = {},
+): PlanMutantsCommand =>
+  PlanMutantsCommand.make({
+    fileName: overrides.fileName ?? probeFile,
+    offset: { line: 1, columnShift: 0 },
+    line: overrides.line ?? 2,
+    mutatorNames: overrides.mutatorNames ??
+      [...new Set(candidates.map((candidate) => candidate.mutatorName.toLowerCase()))],
+    excludedMutations: overrides.excludedMutations ?? [],
+    rule: overrides.rule ?? [],
+    directives: overrides.directives ?? [],
+    candidates: [...candidates],
+    mutantSetPolicy: overrides.mutantSetPolicy ?? 'default',
+  })
 
 const providerDirective = (mutatorName: string, reason: string): LocatedDirective => ({
   directive: { action: 'disable', scope: 'next-line', mutatorNames: [mutatorName], reason },
@@ -45,35 +93,26 @@ const providerDirective = (mutatorName: string, reason: string): LocatedDirectiv
   governedLine: 2,
 })
 
-const providerCandidate = (mutatorName: string) => ({
+const providerCandidate = (mutatorName: string): MutantCandidate => ({
+  id: Mutant.MutantId.make('0000000000000000'),
   mutatorName,
   replacementCode: 'n - 1',
   location: { start: { line: 2, column: 1 }, end: { line: 2, column: 2 } },
+  mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
 })
 
 describe('planMutants', () => {
   it.prop(
-    '∀c_Command_≡IdsRunFromTheFoldState',
+    '∀c_Command_≡EveryPlannedMutantCarriesItsCandidatesId',
     { of: [PlanMutantsCommand], subject: planMutants },
     (subject, [command]) => {
       const planned = subject(command)
-      const withoutLocation = command.candidates.find((candidate) => candidate.location === undefined)
-      if (withoutLocation !== undefined) {
-        return Result.isFailure(planned) && S.is(MutantWithoutLocation)(planned.failure) &&
-          planned.failure.mutatorName === withoutLocation.mutatorName
-      }
       if (Result.isFailure(planned)) {
-        return false
+        return command.candidates.some((candidate) => candidate.location === undefined)
       }
-      const plan = planned.success
-      const firstMutant = plan.mutants.at(0)
-      const lastMutant = plan.mutants.at(-1)
-      const lastIndex = command.firstIndex + command.candidates.length - 1
-      return plan.mutants.length === command.candidates.length &&
-        plan.nextIndex === command.firstIndex + command.candidates.length &&
-        (firstMutant === undefined || firstMutant.id === `${command.firstIndex}`) &&
-        (lastMutant === undefined || lastMutant.id === `${lastIndex}`) &&
-        (S.is(MutantsFullyIgnored)(plan) ? plan.mutants.every((mutant) => mutant.ignoreReason !== undefined) : true)
+      const plannedIds = planned.success.mutants.map((mutant) => mutant.id)
+      return plannedIds.length === command.candidates.length &&
+        plannedIds.every((id, index) => id === command.candidates[index]?.id)
     },
   )
 
@@ -114,7 +153,7 @@ describe('planMutants', () => {
       if (Result.isFailure(planned)) {
         return false
       }
-      return planned.success.mutants.at(0)?.ignoreReason === silencingReason(command, candidate.mutatorName)
+      return planned.success.mutants.at(0)?.ignoreReason === silencingReason(command, candidate)
     },
   )
 
@@ -123,29 +162,25 @@ describe('planMutants', () => {
     { of: [LocatedDirectiveSchema, LocatedDirectiveSchema], subject: planMutants },
     (subject, [earlier, later]) => {
       const mutatorName = 'ArithmeticOperator'
-      const command = PlanMutantsCommand.make({
-        fileName: 'probe.ts',
-        firstIndex: 0,
-        offset: { line: 1, columnShift: 0 },
-        line: later.governedLine,
-        mutatorNames: [mutatorName],
-        excludedMutations: [],
-        rule: [
-          { ...earlier, directive: { ...earlier.directive, action: 'disable', mutatorNames: [mutatorName] } },
-          { ...later, directive: { ...later.directive, action: 'restore', mutatorNames: [mutatorName] } },
-        ],
-        directives: [],
-        candidates: [
-          {
-            mutatorName,
-            replacementCode: 'n - 1',
-            location: {
-              start: { ...later.at, line: later.governedLine },
-              end: { ...later.at, line: later.governedLine },
-            },
+      const command = commandOf(
+        [{
+          id: Mutant.MutantId.make('0000000000000000'),
+          mutatorName,
+          replacementCode: 'n - 1',
+          location: {
+            start: { ...later.at, line: later.governedLine },
+            end: { ...later.at, line: later.governedLine },
           },
-        ],
-      })
+          mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
+        }],
+        {
+          line: later.governedLine,
+          rule: [
+            { ...earlier, directive: { ...earlier.directive, action: 'disable', mutatorNames: [mutatorName] } },
+            { ...later, directive: { ...later.directive, action: 'restore', mutatorNames: [mutatorName] } },
+          ],
+        },
+      )
       const planned = subject(command)
       return Result.isSuccess(planned) && planned.success.mutants.at(0)?.ignoreReason === undefined
     },
@@ -156,19 +191,28 @@ describe('planMutants', () => {
     { of: [Namespace, PascalName], subject: planMutants },
     (subject, [namespace, name]) => {
       const mutatorName = `${namespace}/${name}`
-      const command = PlanMutantsCommand.make({
-        fileName: 'probe.ts',
-        firstIndex: 0,
-        offset: { line: 1, columnShift: 0 },
+      const command = commandOf([providerCandidate(mutatorName)], {
         line: 2,
         mutatorNames: [mutatorName.toLowerCase()],
-        excludedMutations: [],
         rule: [providerDirective(mutatorName, 'the provider said so')],
-        directives: [],
-        candidates: [providerCandidate(mutatorName)],
       })
       const planned = subject(command)
-      return Result.isSuccess(planned) && planned.success.mutants.at(0)?.ignoreReason === 'the provider said so'
+      return Result.isSuccess(planned) &&
+        planned.success.mutants.at(0)?.ignoreReason === 'directive: the provider said so'
+    },
+  )
+
+  it.prop(
+    '∀c_Command_≡EveryIgnoreReasonNamesItsRule',
+    { of: [PlanMutantsCommand], subject: planMutants },
+    (subject, [command]) => {
+      const planned = subject(command)
+      if (Result.isFailure(planned)) {
+        return S.is(MutantWithoutLocation)(planned.failure)
+      }
+      return planned.success.mutants.every((mutant) =>
+        mutant.ignoreReason === undefined || S.is(Mutant.IgnoreStatusReasonText)(mutant.ignoreReason)
+      )
     },
   )
 
@@ -177,16 +221,10 @@ describe('planMutants', () => {
     { of: [Namespace, PascalName], subject: planMutants },
     (subject, [namespace, name]) => {
       const mutatorName = `${namespace}/${name}`
-      const command = PlanMutantsCommand.make({
-        fileName: 'probe.ts',
-        firstIndex: 0,
-        offset: { line: 1, columnShift: 0 },
+      const command = commandOf([providerCandidate('ArithmeticOperator')], {
         line: 2,
         mutatorNames: [],
-        excludedMutations: [],
-        rule: [],
         directives: [providerDirective(mutatorName, 'the provider said so')],
-        candidates: [providerCandidate('ArithmeticOperator')],
       })
       const planned = subject(command)
       return Result.isSuccess(planned) &&

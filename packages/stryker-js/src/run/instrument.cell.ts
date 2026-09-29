@@ -24,6 +24,7 @@ import { StageError } from '../Run.schema.js'
 import { makeSandbox } from '../Sandbox.blueprint.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { explainFileSkip, ExplainFileSkipCommand, type FrameworkClaimant } from './explain-file-skip.workflow.js'
+import { PhaseClock } from './phase-clock.service.js'
 import type { PrepareDone } from './prepare.cell.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 
@@ -169,6 +170,7 @@ const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(funct
   const instrumentResult = yield* Instrument.instrument(filesToMutate, {
     ignorers: [...command.ignorers],
     excludedMutations: [...excludedMutations],
+    mutantSetPolicy: command.options.mutator.mutantSetPolicy,
     mutators: Mutator.selectMutators(
       Mutator.registryOf(
         command.mutatorCatalogs,
@@ -216,6 +218,7 @@ export const instrumentCell: Cell.Cell<
   InstrumentDone,
   StageError,
   | Scope.Scope
+  | PhaseClock
   | RunEnvironment
   | ProjectFiles
   | RunEvents

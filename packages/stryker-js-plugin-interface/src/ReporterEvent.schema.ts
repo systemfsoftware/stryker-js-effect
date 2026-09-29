@@ -4,7 +4,7 @@ import type { StandardSchemaV1 } from 'effect/StandardSchema'
 
 import { MutationTestResult } from './generated/report.schema.js'
 import { Location } from './Location.schema.js'
-import { MetricsResultSchema, NonNegativeFinite, NonNegativeInt } from './Metrics.schema.js'
+import { MetricsResultSchema, NonNegativeFinite, NonNegativeInt, StaticClassSummarySchema } from './Metrics.schema.js'
 import { CanonicalFileName, MutantId, MutantStatusSchema, MutatorName } from './Mutant.schema.js'
 import type { StrykerOptions } from './stryker-options.schema.js'
 import { TestResultSchema, TestRunnerCapabilitiesSchema } from './TestRunner.schema.js'
@@ -56,6 +56,7 @@ export class MutationTestReportReady extends S.TaggedClass<MutationTestReportRea
   {
     report: MutationTestResult,
     metrics: MetricsResultSchema,
+    static: S.optional(StaticClassSummarySchema),
   },
 ) {}
 

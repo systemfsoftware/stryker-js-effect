@@ -24,6 +24,7 @@ import { Reporter } from '../reporter.service.js'
 import type { RunEventStream } from '../run-event-stream.service.js'
 import { RunEvents } from '../run-events.service.js'
 import { IdGenerator } from '../Worker.service.js'
+import { PhaseClock } from './phase-clock.service.js'
 import type { EnginePorts, RunStageServices } from './StageServices.service.js'
 
 export interface RunEnvironmentShape {
@@ -51,34 +52,7 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
     (
       env: RunEnvironmentShape,
       events?: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
-    ): Layer.Layer<RunStageServices, never, EnginePorts> => {
-      const eventsLayer: Layer.Layer<RunEvents> = Match.value(events).pipe(
-        Match.when(
-          undefined,
-          () => Layer.effect(RunEvents, Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)),
-        ),
-        Match.orElse((queue) => Layer.succeed(RunEvents, queue)),
-      )
-      const stageLayer = Layer.mergeAll(
-        Layer.succeed(RunEnvironment, env),
-        eventsLayer,
-        IdGenerator.layer,
-        ProjectFiles.layer,
-        Layer.effect(
-          Scope.Scope,
-          Effect.gen(function*() {
-            const stageScope = yield* Scope.make()
-            yield* Effect.addFinalizer(() => Scope.close(stageScope, Exit.void))
-            return stageScope
-          }),
-        ),
-      )
-      return Layer.mergeAll(
-        stageLayer,
-        MutationReporting.layer.pipe(Layer.provide(stageLayer)),
-        Reporter.layer.pipe(Layer.provide(ReporterOutput.layer), Layer.provide(stageLayer)),
-      )
-    },
+    ): Layer.Layer<RunStageServices, never, EnginePorts> => stageLayerOf(env, events),
   )
 
   static readonly forStream: {
@@ -122,11 +96,47 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
   )
 }
 
+const stageLayerOf = (
+  env: RunEnvironmentShape,
+  events?: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
+): Layer.Layer<RunStageServices, never, EnginePorts> => {
+  const eventsLayer: Layer.Layer<RunEvents> = Match.value(events).pipe(
+    Match.when(
+      undefined,
+      () => Layer.effect(RunEvents, Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)),
+    ),
+    Match.orElse((queue) => Layer.succeed(RunEvents, queue)),
+  )
+  const stageLayer = Layer.mergeAll(
+    Layer.succeed(RunEnvironment, env),
+    eventsLayer,
+    PhaseClock.layer(env.runStartedAt),
+    IdGenerator.layer,
+    ProjectFiles.layer,
+    Layer.effect(
+      Scope.Scope,
+      Effect.gen(function*() {
+        const stageScope = yield* Scope.make()
+        yield* Effect.addFinalizer(() => Scope.close(stageScope, Exit.void))
+        return stageScope
+      }),
+    ),
+  )
+  return Layer.mergeAll(
+    stageLayer,
+    MutationReporting.layer.pipe(Layer.provide(stageLayer)),
+    Reporter.layer.pipe(Layer.provide(ReporterOutput.layer), Layer.provide(stageLayer)),
+  )
+}
+
 export const phaseEntered = Effect.fn(SpanTaxonomy.Spans.phaseEntered.name)(
   function*(phase: RunEvent.PhaseEntered['phase']) {
     const env = yield* RunEnvironment
     const now = yield* Clock.currentTimeMillis
     const queue = yield* RunEvents
-    yield* Queue.offer(queue, RunEvent.PhaseEntered.make({ phase, elapsedMs: now - env.runStartedAt }))
+    const clock = yield* PhaseClock
+    const elapsedMs = now - env.runStartedAt
+    yield* clock.markAt(phase, elapsedMs)
+    yield* Queue.offer(queue, RunEvent.PhaseEntered.make({ phase, elapsedMs }))
   },
 )

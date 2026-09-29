@@ -1,8 +1,10 @@
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as Metric from 'effect/Metric'
 import * as Option from 'effect/Option'
+import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -16,6 +18,18 @@ export type ValidMutantStatus = Mutant.MutantStatus
 
 export const toReportedMutant = (mutant: Mutant.Mutant): Mutant.MutantTestCoverage =>
   Object.assign(mutant, { coveredBy: mutant.coveredBy, static: mutant.static })
+
+export interface PlannedResults {
+  readonly planned: readonly Mutant.Mutant[]
+  readonly results: readonly Mutant.RunMutantResult[]
+}
+
+export const inPlannedOrder = ({ planned, results }: PlannedResults): readonly Mutant.RunMutantResult[] => {
+  const rankById: Readonly<Record<string, number>> = Object.fromEntries(
+    planned.map((mutant, index) => [mutant.id, index] as const),
+  )
+  return Arr.sortWith(results, (result) => rankById[result.id] ?? planned.length, Order.Number)
+}
 
 const sandboxFilePairsOf = (sandbox: SandboxHandle, fileNames: readonly string[]) =>
   Result.all(

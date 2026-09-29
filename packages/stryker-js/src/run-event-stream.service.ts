@@ -243,6 +243,8 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
     stream.runId,
     basePath,
     pathService,
+    Option.none(),
+    null,
   )
   return Queue.offer(
     stream.queue,
@@ -256,6 +258,10 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
       reportFile: envelope.reportFile,
       counts: envelope.counts,
       mutants: envelope.mutants,
+      scope: envelope.scope,
+      mutantSetPolicy: envelope.mutantSetPolicy,
+      phaseDurations: envelope.phaseDurations,
+      static: envelope.static,
     }),
   )
 }
