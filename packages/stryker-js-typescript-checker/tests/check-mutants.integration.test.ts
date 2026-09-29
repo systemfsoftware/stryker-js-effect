@@ -116,6 +116,8 @@ const classCase: Case = {
 }
 
 const RE_EXPORT_BROKEN_ID = '0000000000000004'
+const CALLEE_ID = '0000000000000005'
+const STATEMENT_ID = '0000000000000006'
 
 const reExportCase: Case = {
   fixture: 'per-mutant-check-reexport',
@@ -130,6 +132,40 @@ const reExportCase: Case = {
       mutatorName: 'ObjectLiteral',
       replacement: '{}',
       location: { start: { line: 2, column: 22 }, end: { line: 2, column: 32 } },
+    },
+  ],
+}
+
+const calleeCase: Case = {
+  fixture: 'per-mutant-callee',
+  brokenId: CALLEE_ID,
+  observedIds: [CALLEE_ID],
+  importerFile: 'dep.ts',
+  mutatedFile: 'dep.ts',
+  wires: (join) => [
+    {
+      id: CALLEE_ID,
+      fileName: join('dep.ts'),
+      mutatorName: 'X',
+      replacement: 'self => self',
+      location: { start: { line: 2, column: 42 }, end: { line: 2, column: 52 } },
+    },
+  ],
+}
+
+const statementCase: Case = {
+  fixture: 'per-mutant-statement',
+  brokenId: STATEMENT_ID,
+  observedIds: [STATEMENT_ID],
+  importerFile: 'dep.ts',
+  mutatedFile: 'dep.ts',
+  wires: (join) => [
+    {
+      id: STATEMENT_ID,
+      fileName: join('dep.ts'),
+      mutatorName: 'BlockStatement',
+      replacement: '{}',
+      location: { start: { line: 3, column: 33 }, end: { line: 5, column: 2 } },
     },
   ],
 }
@@ -193,6 +229,32 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
             batches: [[RE_EXPORT_BROKEN_ID]],
             statuses: { [RE_EXPORT_BROKEN_ID]: 'compileError' },
             brokenBlamesTheImporter: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'An arrow replacement in callee position is checked the way it runs',
+      Gherkin.Do.pipe(
+        When('the identity callee is replaced by an arrow')('seen', () => checkFixture(calleeCase)),
+        Then('the mutant passes because the parenthesized call compiles')((s, expect) =>
+          expect({ batches: s.seen.batches, statuses: s.seen.statuses }).toEqual({
+            batches: [[CALLEE_ID]],
+            statuses: { [CALLEE_ID]: 'passed' },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A block replacement keeps the statement it replaces',
+      Gherkin.Do.pipe(
+        When('a function body is replaced by an empty block')('seen', () => checkFixture(statementCase)),
+        Then('the mutant passes because the block is spliced as a statement')((s, expect) =>
+          expect({ batches: s.seen.batches, statuses: s.seen.statuses }).toEqual({
+            batches: [[STATEMENT_ID]],
+            statuses: { [STATEMENT_ID]: 'passed' },
           })
         ),
       ),

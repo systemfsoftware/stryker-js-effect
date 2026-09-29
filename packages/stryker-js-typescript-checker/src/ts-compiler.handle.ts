@@ -1,5 +1,6 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -58,6 +59,7 @@ import {
   make as makeTSFiles,
   mutateFile,
   resetFile,
+  type ScriptFile,
   setOverrides,
   type TSFiles,
   tsFileSystem,
@@ -372,13 +374,123 @@ const programsOf = (rt: TSCompilerRuntime): Effect.Effect<ReadonlyArray<Program>
 
 const resolveFileName = (rt: TSCompilerRuntime, fileName: string) => normalizeFileName(rt.pathService.resolve(fileName))
 
-const applyMutant = (rt: TSCompilerRuntime, mutant: Checker.CheckerMutantWire): Effect.Effect<void, CompilerFailed> =>
+type SourceFileLookup = HashMap.HashMap<string, Option.Option<SourceFile>>
+
+const nodeSpanOf = (node: Node): { readonly start: number; readonly end: number } => ({
+  start: node.getStart(node.getSourceFile()),
+  end: node.end,
+})
+
+const childrenOf = (node: Node): ReadonlyArray<Node> => {
+  const children: Array<Node> = []
+  node.forEachChild((child) => {
+    children.push(child)
+  })
+  return children
+}
+
+const spanEqualsOf = (node: Node, start: number, end: number): boolean => {
+  const span = nodeSpanOf(node)
+  return span.start === start && span.end === end
+}
+
+const spanContainsOf = (node: Node, start: number, end: number): boolean => {
+  const span = nodeSpanOf(node)
+  return span.start <= start && end <= span.end
+}
+
+const deepestNodeAtSpanOf = (node: Node, start: number, end: number): Option.Option<Node> =>
+  Option.orElse(
+    Option.flatMap(
+      Option.fromUndefinedOr(childrenOf(node).find((child) => spanContainsOf(child, start, end))),
+      (child) => deepestNodeAtSpanOf(child, start, end),
+    ),
+    () => Option.filter(Option.some(node), (found) => spanEqualsOf(found, start, end)),
+  )
+
+const splicesAsIsKind = (kind: SyntaxKind): boolean =>
+  Boolean.or(
+    Boolean.and(kind >= SyntaxKind.FirstStatement, kind <= SyntaxKind.LastStatement),
+    Boolean.or(
+      kind === SyntaxKind.Block,
+      Boolean.or(kind === SyntaxKind.CaseClause, kind === SyntaxKind.DefaultClause),
+    ),
+  )
+
+const parenthesizesAtSpanOf = (sourceFile: SourceFile, start: number, end: number): boolean =>
+  Option.match(deepestNodeAtSpanOf(sourceFile, start, end), {
+    onNone: () => false,
+    onSome: (found) => !splicesAsIsKind(found.kind),
+  })
+
+const parenthesizesMutantOf = (file: ScriptFile, mutant: Checker.CheckerMutantWire, sourceFile: SourceFile): boolean =>
+  Option.match(
+    Option.all([offsetAt(file.lineStarts, mutant.location.start), offsetAt(file.lineStarts, mutant.location.end)]),
+    { onNone: () => false, onSome: ([start, end]) => parenthesizesAtSpanOf(sourceFile, start, end) },
+  )
+
+const replacementOf = (
+  lookup: SourceFileLookup,
+  file: ScriptFile,
+  fileName: string,
+  mutant: Checker.CheckerMutantWire,
+): string =>
+  Option.match(Option.flatMap(HashMap.get(lookup, fileName), (found) => found), {
+    onNone: () => mutant.replacement,
+    onSome: (sourceFile) =>
+      Boolean.match(parenthesizesMutantOf(file, mutant, sourceFile), {
+        onTrue: () => '(' + mutant.replacement + ')',
+        onFalse: () => mutant.replacement,
+      }),
+  })
+
+const sourceFileLookupOf = (
+  projects: ReadonlyArray<Project>,
+  fileNames: ReadonlyArray<string>,
+): Effect.Effect<SourceFileLookup> =>
+  Effect.map(
+    Effect.forEach(
+      fileNames,
+      (fileName) =>
+        Effect.map(projectOfFile(projects, fileName), (owned) =>
+          [fileName, Option.map(owned, (found) => found.sourceFile)] as const),
+      { concurrency: 1 },
+    ),
+    HashMap.fromIterable,
+  )
+
+const replacementsOf = (
+  rt: TSCompilerRuntime,
+  mutants: readonly Checker.CheckerMutantWire[],
+  lookup: SourceFileLookup,
+): Effect.Effect<HashMap.HashMap<string, string>> =>
+  Effect.map(
+    Effect.forEach(
+      mutants,
+      (mutant) => {
+        const fileName = resolveFileName(rt, mutant.fileName)
+        return Effect.map(getFile(rt.files, fileName), (file) =>
+          Option.match(file, {
+            onNone: () => [mutant.id, mutant.replacement] as const,
+            onSome: (found) => [mutant.id, replacementOf(lookup, found, fileName, mutant)] as const,
+          }))
+      },
+      { concurrency: 1 },
+    ),
+    HashMap.fromIterable,
+  )
+
+const applyMutant = (
+  rt: TSCompilerRuntime,
+  mutant: Checker.CheckerMutantWire,
+  replacement: string,
+): Effect.Effect<void, CompilerFailed> =>
   Effect.flatMap(getFile(rt.files, resolveFileName(rt, mutant.fileName)), (file) =>
     Effect.flatMap(
       Effect.fromOption(file, () => CompilerFailed.make({ reason: 'file-not-in-project', subject: mutant.fileName })),
       () =>
         Effect.mapError(
-          mutateFile(rt.files, resolveFileName(rt, mutant.fileName), mutant),
+          mutateFile(rt.files, resolveFileName(rt, mutant.fileName), { location: mutant.location, replacement }),
           (error) =>
             Match.value(error).pipe(
               Match.tag('HybridFileNotFoundError', () =>
@@ -979,12 +1091,13 @@ const checkedIn = (
 const checkOne = (
   rt: TSCompilerRuntime,
   state: CompilerState,
+  replacements: HashMap.HashMap<string, string>,
   mutant: Checker.CheckerMutantWire,
   previousMutants: ReadonlyArray<Checker.CheckerMutantWire>,
 ): Effect.Effect<MutantCheck, CompilerFailed> =>
   Effect.gen(function*() {
     yield* resetMutatedFiles(rt, previousMutants)
-    yield* applyMutant(rt, mutant)
+    yield* applyMutant(rt, mutant, Option.getOrElse(HashMap.get(replacements, mutant.id), () => mutant.replacement))
     const fileName = resolveFileName(rt, mutant.fileName)
     const previousFileNames = Arr.map(previousMutants, (previous) => resolveFileName(rt, previous.fileName))
     yield* refreshSnapshot(rt, Arr.dedupe([...previousFileNames, fileName]))
@@ -1024,12 +1137,14 @@ export const check: {
     yield* resetMutatedFiles(rt, state.lastMutants)
     const batchFileNames = Arr.dedupe(Arr.map(mutants, (mutant) => resolveFileName(rt, mutant.fileName)))
     yield* refreshSnapshot(rt, Arr.dedupe([...state.lastMutatedFileNames, ...batchFileNames]))
+    const sourceFiles = yield* sourceFileLookupOf(yield* projectsOf(rt), batchFileNames)
+    const replacements = yield* replacementsOf(rt, mutants, sourceFiles)
     const accumulated = yield* Effect.reduce(
       mutants,
       (): CheckAccumulator => ({ previous: Option.none(), results: [] }),
       (previous, mutant) =>
         Effect.map(
-          checkOne(rt, state, mutant, Option.toArray(previous.previous)),
+          checkOne(rt, state, replacements, mutant, Option.toArray(previous.previous)),
           (result): CheckAccumulator => ({ previous: Option.some(mutant), results: [...previous.results, result] }),
         ),
     )
