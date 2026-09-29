@@ -6,6 +6,7 @@ topic: state-of-the-art-mutation-testing
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
+supersedes: docs/plans/2026-09-28-0310-feat-state-of-the-art-mutation-testing-plan.md
 ---
 
 # State-of-the-Art Mutation Testing - Plan
@@ -264,6 +265,7 @@ Planning resolved the other questions the brainstorm deferred: cost order (KTD7)
 - KTD17. **Servers are subcommands of the same CLI and run the same engine.** `stryker serve stdio|socket` speaks the Mutation Server Protocol with Content-Length framing; `stryker mcp` serves MCP over stdio through `effect/unstable/ai` `McpServer`. Each request runs the existing run pipeline with restricted `mutate` ranges or ids, one run at a time per server, and both bypass the output-mode probe so nothing but protocol reaches stdout. The protocol has no authentication, and `mutationTest` runs project test code, so socket mode binds loopback (`127.0.0.1`) by default. A non-loopback `--address` must be given explicitly and prints a warning naming the exposure. No new npm dependency. Governs R33, R35, R36.
 - KTD18. **Stream additions are closed structs under one stream-version bump.** New lines: `reuse`, `mutant-detail`, `feedback`. `mutant` gains `static` and `cost`; `verdict` gains `scope`, `mutantSetPolicy`, `phaseDurations`, `static`. No rest records (`docs/solutions/test-failures/stream-schema-must-not-carry-json-rest-records.md`). `StreamSchemaVersion` moves to `2.0` and the committed contract documents are regenerated. Governs R24, R37–R39.
 - KTD19. **Per-mutant spans follow OpenTelemetry semantic conventions.** `stryker.testRunner.mutantRun` gains `test.suite.name` (file and mutator), `test.suite.run.status` (Killed maps to `failure`, Survived to `success`, Timeout to `timed_out`, CompileError and RuntimeError to `aborted`, NoCoverage and Ignored to `skipped`), and `cicd.pipeline.run.id` and `cicd.pipeline.name` when CI supplies them. `TRACEPARENT` parenting already exists (`packages/stryker-js/src/reporter-stream.service.ts`) and is kept. Governs R40.
+- KTD20. **The TypeScript checker decides each mutant alone, and the compiler decides every file that can see it.** One warm TypeScript 7 program per checker worker. For each mutant: reset the previous mutant and apply this one in one snapshot update, then take semantic diagnostics for the mutated file. Errors mean `CompileError`, blamed on that mutant and no other. With no errors, diagnostics of the mutated file's transitive importers decide, and a file that affects global scope (a script file or one with `declare global`) checks the whole program. There is no export-signature comparison. A hand-built signature gives false passes wherever it misses a type change: a review found four such holes, and printing foreign types made one file's check run for more than 30 minutes. The API has no declaration emit to compare instead, and a whole-program check costs 10.5 s per mutant through the API (measured). Groups become RPC batches only, and conflict rounds, group splitting, retests, and `prioritizePerformanceOverAccuracy` are deleted. This is how mutest-rs, Stryker.NET, and Mull let the compiler decide validity. Governs R14, R23.
 
 ### High-Level Technical Design
 
@@ -395,6 +397,7 @@ Phases run in order; units inside a phase with disjoint files can run in paralle
 | U24  | Mutation Server Protocol server                 | `msp-protocol.workflow.ts`, `msp-framing.schema.ts`                                    | U23               |
 | U25  | MCP server and usefulness feedback              | `mcp-server.cell.ts`, `record-feedback.workflow.ts`                                    | U23               |
 | U26  | Dogfood adoption, docs, changesets              | `scripts/mutation-job.ts`, `README.md`, `.changeset/*`                                 | all               |
+| U27  | Exact per-mutant TypeScript check               | `ts-compiler.handle.ts`, `CheckerRuntime.service.ts`                                   | U13               |
 
 ### U1. Content-derived mutant ids
 
@@ -892,6 +895,45 @@ Phases run in order; units inside a phase with disjoint files can run in paralle
   - E2E fixtures under `test/e2e/` whose annotations assert per-mutator sets (pin `mutantSetPolicy: 'full'`)
 - **Test expectation:** none -- documentation, configuration, and changesets; behavior is covered by the units above.
 - **Verification:** `./scripts/check-changeset.ts $(git merge-base HEAD origin/main)` passes, and the PR body lists the two workflow edits a human must apply (weekly backstop for R7, pull-request mutation for F1).
+
+### U27. Exact per-mutant TypeScript check
+
+- **Goal:** Each mutant's `CompileError` status comes from checking that mutant alone, over the mutated file and every file that imports it.
+- **Requirements:** R14, R23; KTD20.
+- **Dependencies:** U13.
+- **Files:**
+  - `packages/stryker-js-typescript-checker/src/ts-compiler.handle.ts` (per-mutant check; transitive importers; export-signature rendering deleted)
+  - `packages/stryker-js-typescript-checker/src/CheckerRuntime.service.ts`, `check-mutants.workflow.ts`, `group-mutants.workflow.ts` (groups become batches; blame, retest, and conflict rounds deleted)
+  - `packages/stryker-js-typescript-checker/src/Checker.schema.ts` (`prioritizePerformanceOverAccuracy` removed)
+- **Test scenarios:**
+  - A mutant that empties an exported schema struct compiles in its own file but breaks an importer, and is `CompileError` (in-process integration test through the checker runtime on a two-file fixture; the re-export and class-field scenarios stay).
+  - Covered without new tests: an own-file error is already pinned by the checker package tests, and mixed statuses in one batch by the `attribution` journey of `test/e2e/testResources/typescript-checker-fixture`.
+- **Verification:** The in-process checker oracle over every checked mutant of the proxy run matches the HEAD checker's statuses exactly, then one full-set proxy run matches status for status on all 6026 mutants.
+
+## SOTA Realignment (2026-09-28 review)
+
+Measured on the proxy benchmark at `e1ace1b29` (whole `packages/stryker-js`, 8 workers):
+
+| Criterion      | Target                        | Measured                     |
+| -------------- | ----------------------------- | ---------------------------- |
+| Cold           | ≤ 537 s (2x under 1074 s)     | 902–907 s                    |
+| Warm           | ≤ 108 s                       | 137–143 s                    |
+| Default policy | ≥ 30% fewer mutants than full | 0 of 6026 (same ids as full) |
+
+Where the cost goes: 3225 of 6026 mutants (53.5%) are `CompileError`. By mutator: ArrowFunction 1556/1812, ObjectLiteral 784/1213, StringLiteral 419/1313, ArrayDeclaration 165/367, BlockStatement 114/164, MethodExpression 98/162. Four checker workers stay saturated for most of the cold run, re-checking the importers of every group and splitting failed groups. Warm runs re-check all 3225 because `CompileError` is never reused. The default policy's rules match imperative JavaScript (`if` conditions, logging, annotated arrows), and Effect code has none of them.
+
+| Technique                                           | Reference tools                                                           | Here before the review                                         | Action                                                                                                                                                                           |
+| --------------------------------------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Compiler decides validity once per mutant           | mutest-rs, Stryker.NET compile-and-roll-back, Mull                        | Group checks over whole import closures, then split and retest | U27                                                                                                                                                                              |
+| Incremental re-check driven by export signatures    | `tsc -b` builder (declaration emit as signature)                          | Every transitive importer re-checked for every group           | Not adopted: the TypeScript 7 API has no declaration emit, and a hand-built signature showed four false-pass holes and a 30-minute hang; U27 checks transitive importers instead |
+| Unviable results reused across runs                 | cargo-mutants `--iterate` (`unviable.txt`), self-described as a heuristic | `CompileError` never cached                                    | Not adopted: with U27 the warm run re-checks every `CompileError` and still takes 83 s, and an exact key would have to cover the mutated file's importers                        |
+| Type-query screen before checking                   | cargo-mutants and PIT return values chosen by type                        | Probe: 100% precise, 22% recall, 0.65 s pass                   | Not adopted: U27's own-file check costs about 82 ms per mutant, so the screen saves little and adds a rule set                                                                   |
+| Per-test coverage, skip uncovered, kill-first order | PIT, FaMT                                                                 | Present (U12)                                                  | none                                                                                                                                                                             |
+| Batching disjoint mutants                           | mutest-rs, Stryker.NET mix-mutants                                        | Dropped after measuring 1.5% fewer runs (U14)                  | none                                                                                                                                                                             |
+| Content-keyed incremental reuse                     | Bazel, Gradle, Ekstazi                                                    | Present (U4–U6)                                                | none                                                                                                                                                                             |
+| Diff scope, sharding, SARIF                         | Arcmutate, cargo-mutants, Mull                                            | Present (U20, U22, `scripts/mutation-job.ts`)                  | none                                                                                                                                                                             |
+
+Probe evidence: a per-mutant check (mutated file only) on one warm program took 402 s for 4916 mutants in one process. It agrees with the engine on every tested mutant, finds 95 real compile errors among `NoCoverage` mutants (never checked), and misses 177 `CompileError`s whose error is in an importer (`{}` or `[]` in exported `S.Struct` schemas). U27's importer check covers those 177.
 
 ---
 

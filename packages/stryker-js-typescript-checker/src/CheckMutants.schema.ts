@@ -1,9 +1,8 @@
 /// <reference types="vitest/importMeta" />
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-/** A file name the node map can be keyed by: non-empty, and naming an extension. */
 export const SourceFileSchema = S.NonEmptyString.pipe(S.check(S.isPattern(/\.[^./\\]+$/)))
 
 export const DiagnosticSeveritySchema = S.Literals(['error', 'warning', 'suggestion', 'message'])
@@ -27,20 +26,16 @@ export interface NodeDecodedShape {
   readonly children: readonly NodeDecodedShape[]
 }
 
-export const TSFileNodeSchema: S.Codec<NodeDecodedShape, NodeDecodedShape> = S.suspend(() =>
-  S.Struct({
-    fileName: SourceFileSchema,
-    parents: S.Array(TSFileNodeSchema),
-    children: S.Array(TSFileNodeSchema),
-  })
-)
+export class MutantVerdict extends S.Class<MutantVerdict>('MutantVerdict')({
+  id: Mutant.MutantId,
+  diagnostics: S.Array(DiagnosticLine),
+}) {}
 
 export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput>()(
   'CheckMutantsInput',
   {
     mutants: S.Array(Checker.CheckerMutantWire),
-    diagnostics: S.Array(DiagnosticLine),
-    nodes: S.Record(SourceFileSchema, TSFileNodeSchema),
+    verdicts: S.Array(MutantVerdict),
   },
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const

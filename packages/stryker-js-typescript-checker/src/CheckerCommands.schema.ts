@@ -2,17 +2,12 @@ import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-import { SourceFileSchema, TSFileNodeSchema } from './CheckMutants.schema.js'
 import { TsConfigDocumentSchema } from './Tsconfig.schema.js'
 
 export class GroupMutantsCommand extends S.TaggedClass<GroupMutantsCommand>()('GroupMutantsCommand', {
   mutants: S.Array(Checker.CheckerMutantWire),
-  nodes: S.Record(SourceFileSchema, TSFileNodeSchema),
-  prioritizePerformanceOverAccuracy: S.Boolean,
 }) {
-  static readonly [Workflow.InstrumentationBrand] = {
-    prioritizePerformanceOverAccuracy: 'stryker.typescript_checker.prioritize_performance',
-  } as const
+  static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
 export class TraceAffectedFilesCommand extends S.TaggedClass<TraceAffectedFilesCommand>()(

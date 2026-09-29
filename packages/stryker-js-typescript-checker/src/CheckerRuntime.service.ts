@@ -2,6 +2,7 @@ import { Cell } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
 import * as Context from 'effect/Context'
@@ -12,22 +13,21 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as S from 'effect/Schema'
 import type { Diagnostic } from 'typescript/unstable/async'
 import type { CheckMutantsAnswer } from './check-mutants.workflow.js'
 import { checkCell } from './Checker.cell.js'
 import { CheckMutantsCommand } from './Checker.schema.js'
-import { type CompilerError, DryRunCompileErrors, NodeNotInGraph } from './Compiler.schema.js'
+import { type CompilerError, DryRunCompileErrors } from './Compiler.schema.js'
 import { make as makeCompilerBlueprint } from './ts-compiler.blueprint.js'
 import { describeDiagnostics, groups, init, type TSCompiler } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
 
-type RunAnswers = CheckMutantsAnswer['results']
+type CheckEvent = CheckMutantsAnswer[number]
 
 const refuse = (
   options: {
     readonly mutantIds: readonly Mutant.MutantId[]
-    readonly cause: CompilerError | DryRunCompileErrors | NodeNotInGraph
+    readonly cause: CompilerError | DryRunCompileErrors
   },
 ): Checker.CheckerFailed =>
   Checker.CheckerFailed.make({
@@ -40,33 +40,15 @@ export interface CheckerRuntimeShape {
   readonly checker: Effect.Effect<Checker.Checker['Service'], Cause.Cause<Checker.CheckerFailed>>
 }
 
-const getPrioritize = (options: Options.StrykerOptions) =>
-  Match.value(options.checkers[0]).pipe(
-    Match.when(Match.undefined, () => false),
-    Match.orElse((first) =>
-      Match.value(first.options).pipe(
-        Match.when(Match.undefined, () => false),
-        Match.orElse((checkerOptions) => checkerOptions['prioritizePerformanceOverAccuracy'] === true),
-      )
-    ),
-  )
-
-const toCheckResult = (answer: RunAnswers[string]) =>
-  Match.value(answer).pipe(
-    Match.discriminator('status')('passed', () => ({ status: 'passed' as const })),
-    Match.discriminator('status')(
-      'compileError',
-      (failed) => ({ status: 'compileError' as const, reason: failed.reason }),
-    ),
+const toCheckResult = (event: CheckEvent): Checker.CheckResult =>
+  Match.value(event).pipe(
+    Match.tag('MutantPassed', () => ({ status: 'passed' as const })),
+    Match.tag('MutantFailed', (failed) => ({ status: 'compileError' as const, reason: failed.reason })),
     Match.exhaustive,
   )
 
-const mergeAnswers = (runs: ReadonlyArray<RunAnswers>) =>
-  runs.reduce(
-    (merged, answers) =>
-      Object.entries(answers).reduce((into, [id, answer]) => HashMap.set(into, id, toCheckResult(answer)), merged),
-    HashMap.empty<string, Checker.CheckResult>(),
-  )
+const checkResultsOf = (events: ReadonlyArray<CheckEvent>): HashMap.HashMap<string, Checker.CheckResult> =>
+  HashMap.fromIterable(Arr.map(events, (event) => [event.id, toCheckResult(event)] as const))
 
 const makeChecker = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerRuntimeMakeChecker.name)(function*(
   options: Options.StrykerOptions,
@@ -78,26 +60,6 @@ const makeChecker = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerRuntimeMakeChe
     Effect.map(
       describeDiagnostics(compiler, errors),
       (diagnostics) => diagnostics.map((entry) => entry.rendered).join('\n'),
-    )
-
-  const soloRound = (mutant: (typeof Checker.CheckerMutantWire)['Encoded']) =>
-    S.decodeEffect(Checker.CheckerMutantWire)(mutant).pipe(
-      Effect.orDie,
-      Effect.flatMap((decoded) => verify.run(CheckMutantsCommand.make({ mutants: [decoded] }))),
-      Effect.withSpan(SpanTaxonomy.Spans.typescriptCheckerSoloRound.name, {
-        attributes: { 'stryker.mutant.id': mutant.id },
-      }),
-      Effect.map((decision) => decision.results),
-    )
-
-  const soloRounds = (decision: CheckMutantsAnswer) =>
-    Match.value(decision).pipe(
-      Match.tag('CheckFinished', () => Effect.succeed<ReadonlyArray<RunAnswers>>([])),
-      Match.tag('RetestRequired', (retest) =>
-        verify.run(CheckMutantsCommand.make({ mutants: [] })).pipe(
-          Effect.flatMap(() => Effect.forEach(retest.needsRetest, soloRound)),
-        )),
-      Match.exhaustive,
     )
 
   const service: Checker.Checker['Service'] = {
@@ -122,16 +84,13 @@ const makeChecker = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerRuntimeMakeChe
 
     check: (mutants) =>
       verify.run(CheckMutantsCommand.make({ mutants: [...mutants] })).pipe(
-        Effect.flatMap((first) => Effect.map(soloRounds(first), (rounds) => mergeAnswers([first.results, ...rounds]))),
+        Effect.map((events) => checkResultsOf(events)),
         Effect.withSpan(SpanTaxonomy.Spans.typescriptCheckerCheck.name, {
           attributes: { 'stryker.mutants.count': mutants.length },
         }),
       ),
 
-    group: (mutants) =>
-      groups(compiler, mutants, getPrioritize(options)).pipe(
-        Effect.mapError((cause) => refuse({ mutantIds: mutants.map((mutant) => mutant.id), cause })),
-      ),
+    group: (mutants) => groups([...mutants]),
   }
 
   yield* service.init
