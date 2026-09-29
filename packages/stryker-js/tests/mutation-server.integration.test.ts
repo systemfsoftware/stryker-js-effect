@@ -44,6 +44,8 @@ const TARGET_SOURCE = [
 
 const BUSY_CODE = -32000
 const BUSY_MESSAGE = 'a mutation test is already running'
+const METHOD_NOT_FOUND_CODE = -32601
+const PROTOTYPE_KEY_METHOD = '__proto__'
 const LISTENING_PREFIX = 'msp:listening '
 const EXPOSURE_MARKER = 'not loopback'
 const LINE_WAIT = '60 seconds'
@@ -82,6 +84,7 @@ interface FrameSource {
 
 interface Session {
   readonly send: (id: number, method: string, params: S.Json) => Effect.Effect<void, never, never>
+  readonly notify: (method: string, params: S.Json) => Effect.Effect<void, never, never>
   readonly answer: (id: number) => Effect.Effect<JsonRpcResponse, never, never>
   readonly awaitProgress: Effect.Effect<ProgressNotification, never, never>
   readonly notifications: Effect.Effect<ReadonlyArray<ProgressNotification>, never, never>
@@ -105,6 +108,8 @@ interface StdioObserved {
   readonly everyResultSurvived: boolean
   readonly busyCode: number
   readonly busyMessage: string
+  readonly unknownMethodCode: number
+  readonly unknownMethodMessage: string
   readonly reDiscoveredFiles: ReadonlyArray<string>
   readonly stdoutLeftoverBytes: number
 }
@@ -255,6 +260,7 @@ const sessionOf = (wire: Wire, source: FrameSource): Effect.Effect<Session, neve
     return {
       send: (id: number, method: string, params: S.Json) =>
         wire.write(messageFrameOf({ jsonrpc: '2.0', id, method, params })),
+      notify: (method: string, params: S.Json) => wire.write(messageFrameOf({ jsonrpc: '2.0', method, params })),
       answer,
       awaitProgress,
       notifications: Ref.get(observed),
@@ -438,6 +444,9 @@ const stdioSessionObserved = (): Effect.Effect<StdioObserved, never, Engine.Engi
     const tested = decodedResultsOf(yield* session.answer(3))
     yield* session.send(5, 'discover', { files: [{ path: TARGET_FILE }] })
     const again = decodedFilesOf(yield* session.answer(5))
+    yield* session.notify('configure', {})
+    yield* session.send(6, PROTOTYPE_KEY_METHOD, {})
+    const unknownMethod = yield* session.answer(6)
     const notifications = yield* session.notifications
     const leftover = yield* session.leftover
     yield* Queue.end(harness.input)
@@ -454,6 +463,8 @@ const stdioSessionObserved = (): Effect.Effect<StdioObserved, never, Engine.Engi
       everyResultSurvived: everyResultSurvived(tested),
       busyCode: busy.error?.code ?? 0,
       busyMessage: busy.error?.message ?? 'none',
+      unknownMethodCode: unknownMethod.error?.code ?? 0,
+      unknownMethodMessage: unknownMethod.error?.message ?? 'none',
       reDiscoveredFiles: Object.keys(again.files).sort(),
       stdoutLeftoverBytes: leftover,
     }
@@ -584,7 +595,7 @@ Feature('Serving the Mutation Server Protocol over stdio and sockets', { timeout
   .live('the mutation server drives the engine for a client that speaks the protocol')
   .body(({ scenario }) => {
     scenario(
-      'A client configures, discovers and mutation-tests, and a concurrent run is refused',
+      'A client configures, discovers and mutation-tests, a concurrent run is refused, and a notification or unknown method starts nothing',
       Gherkin.Do.pipe(
         Given('a consumer project whose test command kills nothing')('workspace', () => writeWorkspace()),
         When('a client speaks framed JSON-RPC over stdio against the engine in process')(
@@ -594,7 +605,9 @@ Feature('Serving the Mutation Server Protocol over stdio and sockets', { timeout
               Effect.ensuring(removeWorkspace(s.workspace.directory)),
             ),
         ),
-        Then('every request is answered from the engine, one run at a time, and stdout holds only frames')(
+        Then(
+          'every request is answered from the engine, one run at a time, notifications get no reply, and stdout holds only frames',
+        )(
           (s: { readonly observed: StdioObserved }, expect) =>
             expect({
               version: s.observed.version,
@@ -605,6 +618,8 @@ Feature('Serving the Mutation Server Protocol over stdio and sockets', { timeout
               everyResultSurvived: s.observed.everyResultSurvived,
               busyCode: s.observed.busyCode,
               busyMessage: s.observed.busyMessage,
+              unknownMethodCode: s.observed.unknownMethodCode,
+              unknownMethodMessage: s.observed.unknownMethodMessage,
               reDiscoveredFiles: s.observed.reDiscoveredFiles,
               stdoutLeftoverBytes: s.observed.stdoutLeftoverBytes,
             }).toEqual({
@@ -616,6 +631,8 @@ Feature('Serving the Mutation Server Protocol over stdio and sockets', { timeout
               everyResultSurvived: true,
               busyCode: BUSY_CODE,
               busyMessage: BUSY_MESSAGE,
+              unknownMethodCode: METHOD_NOT_FOUND_CODE,
+              unknownMethodMessage: `unknown method "${PROTOTYPE_KEY_METHOD}"`,
               reDiscoveredFiles: [TARGET_FILE],
               stdoutLeftoverBytes: 0,
             }),
