@@ -12,19 +12,6 @@ const lawModule = '@systemfsoftware/effect-schema-law'
 const lawsBinding = '__schemaLaws'
 
 /**
- * @param {string} srcDir
- * @returns {ReadonlyMap<string, ReadonlyArray<string>>}
- */
-const schemaNamesByModule = (srcDir) => {
-  /** @type {Map<string, string[]>} */
-  const byModule = new Map()
-  for (const { filePath, name } of findExportedSchemas(srcDir)) {
-    byModule.set(filePath, [...(byModule.get(filePath) ?? []), name])
-  }
-  return byModule
-}
-
-/**
  * @param {ReadonlyArray<string>} names
  * @returns {string}
  */
@@ -39,20 +26,35 @@ const lawBlockOf = (names) =>
     '}',
   ].join('\n')
 
+/**
+ * @param {string} srcDir
+ * @returns {ReadonlyMap<string, string>}
+ */
+const lawBlocksByModule = (srcDir) => {
+  /** @type {Map<string, string[]>} */
+  const namesByModule = new Map()
+  for (const { filePath, name } of findExportedSchemas(srcDir)) {
+    const names = namesByModule.get(filePath)
+    if (names === undefined) namesByModule.set(filePath, [name])
+    else names.push(name)
+  }
+  return new Map([...namesByModule].map(([filePath, names]) => [filePath, lawBlockOf(names)]))
+}
+
 /** @returns {Plugin} */
 export const inSourceSchemaLaws = () => {
   const budgets = recursionBudgetTransform()
-  /** @type {ReadonlyMap<string, ReadonlyArray<string>>} */
-  let lawsByModule = new Map()
+  /** @type {ReadonlyMap<string, string>} */
+  let lawBlocks = new Map()
   return {
     name: '@systemfsoftware/vitest-config:in-source-schema-laws',
     enforce: 'pre',
     configResolved(config) {
-      lawsByModule = schemaNamesByModule(resolve(config.root, 'src'))
+      lawBlocks = lawBlocksByModule(resolve(config.root, 'src'))
     },
     configureVitest({ project }) {
       const base = project.config.dir || project.config.root
-      const notYetCollected = [...lawsByModule.keys()].filter((file) => !project.matchesTestGlob(file))
+      const notYetCollected = [...lawBlocks.keys()].filter((file) => !project.matchesTestGlob(file))
       project.config.include.push(...notYetCollected.map((file) => relative(base, file)))
     },
     resolveId(source) {
@@ -62,9 +64,9 @@ export const inSourceSchemaLaws = () => {
     },
     transform(code, id) {
       const budgeted = budgets.transform(code, id)
-      const names = lawsByModule.get(id.split('?')[0] ?? id)
-      if (names === undefined) return budgeted
-      return `${budgeted ?? code}\n${lawBlockOf(names)}\n`
+      const lawBlock = lawBlocks.get(id.split('?')[0] ?? id)
+      if (lawBlock === undefined) return budgeted
+      return `${budgeted ?? code}\n${lawBlock}\n`
     },
   }
 }
