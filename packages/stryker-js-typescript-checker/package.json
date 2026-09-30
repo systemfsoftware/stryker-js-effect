@@ -62,7 +62,6 @@
     "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/effect-gherkin-spec": "catalog:",
     "@systemfsoftware/effect-schema-law": "catalog:",
-    "@systemfsoftware/effect-schema-vite": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/stryker-config": "workspace:^",
     "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "catalog:stryker",

@@ -35,7 +35,6 @@ catalog:
   "@systemfsoftware/effect-schema-discovery": ^2.0.0
   "@systemfsoftware/effect-schema-law": ^4.0.1
   "@systemfsoftware/effect-schema-recursion-budget": ^1.0.2
-  "@systemfsoftware/effect-schema-vite": ^2.3.0
   "@systemfsoftware/oxlint-config-recommended": ^3.4.0
   "@systemfsoftware/trace-spec": ^0.5.2
   "@systemfsoftware/trace-taxonomy": ^0.0.2
