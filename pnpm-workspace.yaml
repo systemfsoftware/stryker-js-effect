@@ -32,7 +32,9 @@ catalog:
   "@systemfsoftware/effect-microsandbox": ^4.0.2
   "@systemfsoftware/effect-readiness": ^0.5.0
   "@systemfsoftware/effect-gherkin-spec": ^6.0.1
+  "@systemfsoftware/effect-schema-discovery": ^2.0.0
   "@systemfsoftware/effect-schema-law": ^4.0.1
+  "@systemfsoftware/effect-schema-recursion-budget": ^1.0.2
   "@systemfsoftware/effect-schema-vite": ^2.3.0
   "@systemfsoftware/oxlint-config-recommended": ^3.4.0
   "@systemfsoftware/trace-spec": ^0.5.2

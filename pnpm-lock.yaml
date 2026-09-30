@@ -81,9 +81,15 @@ catalogs:
     '@systemfsoftware/effect-readiness':
       specifier: ^0.5.0
       version: 0.5.0
+    '@systemfsoftware/effect-schema-discovery':
+      specifier: ^2.0.0
+      version: 2.0.0
     '@systemfsoftware/effect-schema-law':
       specifier: ^4.0.1
       version: 4.0.1
+    '@systemfsoftware/effect-schema-recursion-budget':
+      specifier: ^1.0.2
+      version: 1.0.2
     '@systemfsoftware/effect-schema-vite':
       specifier: ^2.3.0
       version: 2.3.0
@@ -1525,6 +1531,15 @@ importers:
       '@opentelemetry/sdk-trace-base':
         specifier: 'catalog:'
         version: 2.11.0(@opentelemetry/api@1.9.1)
+      '@systemfsoftware/effect-schema-discovery':
+        specifier: 'catalog:'
+        version: 2.0.0
+      '@systemfsoftware/effect-schema-law':
+        specifier: 'catalog:'
+        version: 4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1)
+      '@systemfsoftware/effect-schema-recursion-budget':
+        specifier: 'catalog:'
+        version: 1.0.2(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
