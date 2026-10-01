@@ -1,10 +1,10 @@
-import { inlineSchemaTests } from '@systemfsoftware/effect-schema-vite'
 import type {} from '@systemfsoftware/vitest'
 import { defineConfig, sharedConfig } from '@systemfsoftware/vitest-config'
+import { inSourceSchemaLaws } from '@systemfsoftware/vitest-config/schema-laws'
 
 export default defineConfig({
   ...sharedConfig,
-  plugins: [inlineSchemaTests()],
+  plugins: [inSourceSchemaLaws()],
   test: {
     ...sharedConfig.test,
     include: ['src/**/*.test.ts'],

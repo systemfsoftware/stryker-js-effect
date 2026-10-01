@@ -61,7 +61,8 @@ returned the right keys, so the fault depends on what the parser read before.
 - `stream-document.differential.test.ts` in the CLI contract package compares
   the committed document with the wire codec on lines generated from both, and
   requires them to refuse the same lines and reproduce the same JSON.
-- Run the law file under CI settings (`env -u AGENT CI=true vitest run
-  schema-laws.test.ts`) several times; each run draws new seeds.
+- Run the CLI contract package's suite under CI settings (`env -u AGENT CI=true
+  vitest run`) several times; each run draws new seeds for the generated laws,
+  which run in each schema's own module.
 - Code smell: a `Report.*` schema, `Schema.Record(Schema.String, Schema.Json)`
   or `StructWithRest` referenced from `run-event.schema.ts`.

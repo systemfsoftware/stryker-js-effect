@@ -81,12 +81,15 @@ catalogs:
     '@systemfsoftware/effect-readiness':
       specifier: ^0.5.0
       version: 0.5.0
+    '@systemfsoftware/effect-schema-discovery':
+      specifier: ^2.0.0
+      version: 2.0.0
     '@systemfsoftware/effect-schema-law':
       specifier: ^4.0.1
       version: 4.0.1
-    '@systemfsoftware/effect-schema-vite':
-      specifier: ^2.3.0
-      version: 2.3.0
+    '@systemfsoftware/effect-schema-recursion-budget':
+      specifier: ^1.0.2
+      version: 1.0.2
     '@systemfsoftware/oxlint-config-recommended':
       specifier: ^3.4.0
       version: 3.4.0
@@ -750,9 +753,6 @@ importers:
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
         version: 4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1)
-      '@systemfsoftware/effect-schema-vite':
-        specifier: 'catalog:'
-        version: 2.3.0(@systemfsoftware/effect-schema-law@4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)
       '@systemfsoftware/oxlint-config-recommended':
         specifier: 'catalog:'
         version: 3.4.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
@@ -883,9 +883,6 @@ importers:
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
         version: 4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1)
-      '@systemfsoftware/effect-schema-vite':
-        specifier: 'catalog:'
-        version: 2.3.0(@systemfsoftware/effect-schema-law@4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)
       '@systemfsoftware/oxlint-config-recommended':
         specifier: 'catalog:'
         version: 3.4.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
@@ -1114,9 +1111,6 @@ importers:
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
         version: 4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1)
-      '@systemfsoftware/effect-schema-vite':
-        specifier: 'catalog:'
-        version: 2.3.0(@systemfsoftware/effect-schema-law@4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)
       '@systemfsoftware/oxlint-config-recommended':
         specifier: 'catalog:'
         version: 3.4.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
@@ -1190,9 +1184,6 @@ importers:
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
         version: 4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1)
-      '@systemfsoftware/effect-schema-vite':
-        specifier: 'catalog:'
-        version: 2.3.0(@systemfsoftware/effect-schema-law@4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)
       '@systemfsoftware/oxlint-config-recommended':
         specifier: 'catalog:'
         version: 3.4.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
@@ -1290,9 +1281,6 @@ importers:
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
         version: 4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1)
-      '@systemfsoftware/effect-schema-vite':
-        specifier: 'catalog:'
-        version: 2.3.0(@systemfsoftware/effect-schema-law@4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)
       '@systemfsoftware/oxlint-config-recommended':
         specifier: 'catalog:'
         version: 3.4.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
@@ -1525,6 +1513,15 @@ importers:
       '@opentelemetry/sdk-trace-base':
         specifier: 'catalog:'
         version: 2.11.0(@opentelemetry/api@1.9.1)
+      '@systemfsoftware/effect-schema-discovery':
+        specifier: 'catalog:'
+        version: 2.0.0
+      '@systemfsoftware/effect-schema-law':
+        specifier: 'catalog:'
+        version: 4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1)
+      '@systemfsoftware/effect-schema-recursion-budget':
+        specifier: 'catalog:'
+        version: 1.0.2(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
@@ -1640,9 +1637,6 @@ importers:
       '@systemfsoftware/effect-schema-law':
         specifier: 'catalog:'
         version: 4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1)
-      '@systemfsoftware/effect-schema-vite':
-        specifier: 'catalog:'
-        version: 2.3.0(@systemfsoftware/effect-schema-law@4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)
       '@systemfsoftware/oxlint-config-recommended':
         specifier: 'catalog:'
         version: 3.4.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
@@ -2955,14 +2949,6 @@ packages:
     resolution: {integrity: sha512-nliRyP4hLxnJv10O5qiFtAspioQmf9mQK+r6upeokOTY6UGtjTT/kPGqSsp+26Yq3UZ4j9sxkS/3/VcAicFXag==}
     peerDependencies:
       effect: 4.0.0-rc.117
-
-  '@systemfsoftware/effect-schema-vite@2.3.0':
-    resolution: {integrity: sha512-gYmGp9d2mkyhwddizXL4qj6FdsBXFANV7690Tv3OldR407izuIdViWDoa0KDXGTpIsZpOJ9c77+TnhDqf5JQZg==}
-    peerDependencies:
-      '@systemfsoftware/effect-schema-law': 4.0.1
-      effect: 4.0.0-rc.117
-      vite: '>5.0.0'
-      vitest: ^5
 
   '@systemfsoftware/effect-sim-kernel@0.2.0':
     resolution: {integrity: sha512-MNMinhFS3Poc48WRhKVKtcpTpE5K954koOuETcIrSYrSYeSzyOEsjK6ra0iHBouhQqM8vyiowXW8VvtBFe0vAA==}
@@ -5629,17 +5615,6 @@ snapshots:
       '@oxc-project/types': 0.150.0
       effect: 4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934)
       oxc-parser: 0.150.0
-
-  '@systemfsoftware/effect-schema-vite@2.3.0(@systemfsoftware/effect-schema-law@4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))(vitest@5.0.1)':
-    dependencies:
-      '@oxc-project/types': 0.150.0
-      '@systemfsoftware/effect-schema-discovery': 2.0.0
-      '@systemfsoftware/effect-schema-law': 4.0.1(@systemfsoftware/vitest@0.3.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1))(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))(vitest@5.0.1)
-      '@systemfsoftware/effect-schema-recursion-budget': 1.0.2(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))
-      effect: 4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934)
-      oxc-parser: 0.150.0
-      vite: 8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1)
-      vitest: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
 
   '@systemfsoftware/effect-sim-kernel@0.2.0(effect@4.0.0-rc.117(patch_hash=635de9a05fbcdf6cf31c5934b959002a4c785471a1269200c6c06a29a17ae934))':
     dependencies:

@@ -1,5 +1,5 @@
-import { inlineSchemaTests } from '@systemfsoftware/effect-schema-vite'
 import { defineConfig, sharedConfig } from '@systemfsoftware/vitest-config'
+import { inSourceSchemaLaws } from '@systemfsoftware/vitest-config/schema-laws'
 
 const ownNameResolvesToSourceNotDogfoodCopy = [
   { find: /^@systemfsoftware\/stryker-js$/, replacement: new URL('./src/mod.ts', import.meta.url).pathname },
@@ -18,7 +18,7 @@ export default defineConfig({
       ...Object.entries(sharedConfig.resolve?.alias ?? {}).map(([find, replacement]) => ({ find, replacement })),
     ],
   },
-  plugins: [inlineSchemaTests()],
+  plugins: [inSourceSchemaLaws()],
   test: {
     ...sharedConfig.test,
     include: [
