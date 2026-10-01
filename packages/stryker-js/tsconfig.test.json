@@ -14,10 +14,6 @@
       "@systemfsoftware/source"
     ],
     "skipLibCheck": true,
-    "paths": {
-      "@systemfsoftware/stryker-js": ["./src/mod.ts"],
-      "@systemfsoftware/stryker-js/*": ["./src/*/mod.ts"]
-    },
     "types": [
       "node",
       "vitest/globals"
