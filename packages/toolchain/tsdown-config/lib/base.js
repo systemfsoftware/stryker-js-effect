@@ -27,8 +27,11 @@ export const withSourceFirst = (entry, dtsExt) => {
 /**
  * @param {object} [options]
  * @param {string} [options.dtsExt]
+ * @param {readonly string[]} [options.documents] files published as they are,
+ *   such as JSON contracts: each maps to `{ default }` because no declaration
+ *   file exists for it to name as `types`
  */
-export const sourceExports = ({ dtsExt = '.d.ts' } = {}) => ({
+export const sourceExports = ({ dtsExt = '.d.ts', documents = [] } = {}) => ({
   devExports: SOURCE_CONDITION,
   /** @param {Record<string, any>} exports */
   customExports: (exports) => {
@@ -36,6 +39,7 @@ export const sourceExports = ({ dtsExt = '.d.ts' } = {}) => ({
       if (key === './package.json') continue
       exports[key] = withSourceFirst(value, dtsExt)
     }
+    for (const document of documents) exports[document] = { default: document }
     return exports
   },
 })
