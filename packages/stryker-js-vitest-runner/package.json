@@ -85,6 +85,7 @@
     "vitest": "catalog:"
   },
   "publishConfig": {
+    "access": "public",
     "provenance": true,
     "exports": {
       ".": {
