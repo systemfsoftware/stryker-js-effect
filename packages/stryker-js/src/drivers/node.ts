@@ -3,6 +3,7 @@ import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChild
 import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Crypto from 'effect/Crypto'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -20,6 +21,8 @@ import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle
 import { layerWorkerProtocol } from '../worker-protocol.blueprint.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 import { WorkerLauncher, type WorkerSpawnParams } from '../WorkerLauncher.service.js'
+
+const WORKER_TERMINATION_GRACE = Duration.seconds(5)
 
 const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string) =>
   fs.chmod(file, 0o600).pipe(
@@ -62,6 +65,7 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
                 extendEnv: true,
                 env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath, ...childEnv, ...params.env },
                 stderr: 'inherit',
+                forceKillAfter: WORKER_TERMINATION_GRACE,
               },
             ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
 

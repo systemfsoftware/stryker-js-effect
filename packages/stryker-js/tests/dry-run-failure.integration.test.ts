@@ -123,6 +123,30 @@ const OPTIONS: Options.PartialStrykerOptions = {
   checkers: [],
 }
 
+const FROZEN_RUNNER_PLUGIN = new URL('./__fixtures__/frozen-runner/index.mjs', import.meta.url).href
+
+interface FrozenRunnerOutcome {
+  readonly outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>
+  readonly workerPid: number
+}
+
+const runWithFrozenRunner = (
+  project: ProjectFixture,
+): Effect.Effect<FrozenRunnerOutcome, PlatformError, Engine.EnginePorts | FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const pidFile = path.join(project.root, 'frozen-runner.pid')
+    const outcome = yield* runFromProject(project.root, {
+      ...OPTIONS,
+      testRunner: { plugin: FROZEN_RUNNER_PLUGIN, options: { pidFile } },
+    })
+    const workerPid = Number(yield* fs.readFileString(pidFile))
+    return { outcome, workerPid }
+  })
+
+const isProcessAlive = (pid: number): boolean => Result.isSuccess(Result.try(() => globalThis.process.kill(pid, 0)))
+
 const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
 
 Feature('Reporting why a dry run failed')
@@ -177,6 +201,29 @@ Feature('Reporting why a dry run failed')
             logCountsTheFailures: true,
           })
         }),
+      ),
+    )
+    scenario(
+      'A test runner that stops responding fails the dry run instead of hanging it forever',
+      Gherkin.Do.pipe(
+        Given('a project whose test runner stops responding and ignores requests to shut down')(
+          'project',
+          () => writeProject(),
+        ),
+        When('the mutation run performs its initial test run')(
+          'run',
+          (s) =>
+            runWithFrozenRunner(s.project).pipe(
+              Effect.provide(capturingLogger(s.project)),
+              Effect.ensuring(removeProject(s.project.root)),
+            ),
+        ),
+        Then('the dry run fails and the unresponsive test runner does not outlive the run')((s, expect) =>
+          expect({
+            stage: failureOf(s.run.outcome).stage,
+            workerAlive: isProcessAlive(s.run.workerPid),
+          }).toEqual({ stage: 'dryRun', workerAlive: false })
+        ),
       ),
     )
   })
