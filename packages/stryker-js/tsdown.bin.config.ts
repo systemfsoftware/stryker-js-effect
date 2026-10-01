@@ -33,13 +33,5 @@ export default defineConfig({
   shims: true,
   alias: { 'oxc-parser': parserEntry },
   copy: [{ from: wasiModule, rename: 'parser.wasm32-wasi.wasm' }],
-  exports: {
-    packageJson: true,
-    exclude: [
-      'main',
-    ],
-    inlinedDependencies: false,
-    bin: { stryker: './src/bin/main.ts' },
-  },
   deps: { alwaysBundle: [/./], onlyImport: [/^node:/], onlyBundle: false },
 })

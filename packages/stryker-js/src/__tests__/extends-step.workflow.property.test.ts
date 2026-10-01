@@ -1,8 +1,8 @@
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Equal from 'effect/Equal'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { type ConfigDocument, ExtendsStepStateSchema } from '../Config.schema.js'
 import { mergeConfigs } from '../config/merge-config.js'

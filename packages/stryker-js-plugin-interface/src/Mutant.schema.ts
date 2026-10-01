@@ -29,14 +29,14 @@ export const ActionableStatusSchema = S.Literals(['Survived', 'NoCoverage', 'Tim
 export type ActionableStatus = typeof ActionableStatusSchema.Type
 
 export const MutantId = S.String.check(
-  S.isPattern(/^[0-9a-f]{16}$/, {
+  S.isPattern(/^[0-9a-f]{16}$/u, {
     expected: 'a 16-character lowercase hexadecimal mutant id',
   }),
 ).pipe(S.brand('MutantId'))
 export type MutantId = typeof MutantId.Type
 
 export const MutatorNameGrammar = S.String.check(
-  S.isPattern(/^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/)?[A-Z][A-Za-z0-9]*$/, {
+  S.isPattern(/^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/)?[A-Z][A-Za-z0-9]*$/u, {
     expected: 'a PascalCase mutator name, optionally prefixed by a lowercase kebab-case namespace and a slash',
   }),
 )
@@ -45,7 +45,7 @@ export const MutatorName = MutatorNameGrammar.pipe(S.brand('MutatorName'))
 export type MutatorName = typeof MutatorName.Type
 
 export const CanonicalFileName = S.String.pipe(
-  S.decodeTo(S.String.pipe(S.check(S.isPattern(/^[^\\]+$/)), S.brand('CanonicalFileName')), {
+  S.decodeTo(S.String.pipe(S.check(S.isPattern(/^[^\\]+$/u)), S.brand('CanonicalFileName')), {
     decode: SGetter.transform((fileName) => fileName.replace(/\\/g, '/')),
     encode: SGetter.transform((canonical) => canonical),
   }),

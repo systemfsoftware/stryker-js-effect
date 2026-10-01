@@ -4,14 +4,14 @@ import * as Effect from 'effect/Effect'
 import * as S from 'effect/Schema'
 export const TraceparentHeader = S.Literal('traceparent')
 export const TracestateHeader = S.Literal('tracestate')
-const VERSION = S.String.pipe(S.check(S.isPattern(/^([0-9a-e][0-9a-f]|[0-9a-f][0-9a-e])$/)))
+const VERSION = S.String.pipe(S.check(S.isPattern(/^([0-9a-e][0-9a-f]|[0-9a-f][0-9a-e])$/u)))
 const TRACE_ID = S.String.pipe(
-  S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
-  S.check(S.isLengthBetween(32, 32)),
+  S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/u)),
+  S.check(S.isBetweenLength(32, 32)),
 )
 const SPAN_ID = S.String.pipe(
-  S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/)),
-  S.check(S.isLengthBetween(16, 16)),
+  S.check(S.isPattern(/^[0-9a-f]*[1-9a-f][0-9a-f]*$/u)),
+  S.check(S.isBetweenLength(16, 16)),
 )
 
 export const TraceContextPartsSchema = S.Struct({
@@ -95,7 +95,10 @@ export const Traceparent = S.String.pipe(
 
 const TRACESTATE_MEMBER = '[a-z][_0-9a-z\\-*/]{0,255}=[\\x20-\\x2b\\x2d-\\x3c\\x3e-\\x7e]{0,255}'
 const TRACESTATE_OWS = '[ \\t]*'
-const TRACESTATE = new RegExp(`^${TRACESTATE_MEMBER}(${TRACESTATE_OWS},${TRACESTATE_OWS}${TRACESTATE_MEMBER}){0,31}$`)
+const TRACESTATE = new RegExp(
+  `^${TRACESTATE_MEMBER}(${TRACESTATE_OWS},${TRACESTATE_OWS}${TRACESTATE_MEMBER}){0,31}$`,
+  'u',
+)
 
 export const Tracestate = S.String.pipe(
   S.check(S.isPattern(TRACESTATE, { expected: 'a W3C tracestate: comma-separated key=value members' })),

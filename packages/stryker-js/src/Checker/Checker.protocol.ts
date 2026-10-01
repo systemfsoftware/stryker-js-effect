@@ -24,7 +24,7 @@ export interface PartitionedMutants {
 }
 
 const partitionMutantsForWire = (plans: readonly Mutant.RunPlan[]): PartitionedMutants => {
-  const [undescribable, wire] = Array.separate(Array.map(plans, (plan) => wireRecordOf(plan.mutant)))
+  const [wire, undescribable] = Array.separate(Array.map(plans, (plan) => wireRecordOf(plan.mutant)))
   return { wire, undescribable }
 }
 
@@ -63,7 +63,7 @@ const wireOrFallbackOf = (mutant: Mutant.Mutant, lookup: WireLookup) =>
   )
 
 const selectedFromLookup = (plans: readonly Mutant.RunPlan[], lookup: WireLookup): PartitionedMutants => {
-  const [undescribable, wire] = Array.separate(Array.map(plans, (plan) => wireOrFallbackOf(plan.mutant, lookup)))
+  const [wire, undescribable] = Array.separate(Array.map(plans, (plan) => wireOrFallbackOf(plan.mutant, lookup)))
   return { wire, undescribable }
 }
 

@@ -30,8 +30,8 @@ const RULE_ID_ALTERNATION = RULE_IDS.map(asLiteralPattern).join('|')
 const REASON_SOURCE = `^(?:${RULE_ID_ALTERNATION})${SEPARATOR}[\\s\\S]*$`
 
 export const IgnoreStatusReasonText = S.String.check(
-  S.isPattern(new RegExp(REASON_SOURCE), {
-    arbitraryConstraint: { patterns: [{ source: REASON_SOURCE, flags: '' }] },
+  S.isPattern(new RegExp(REASON_SOURCE, 'u'), {
+    arbitraryConstraint: { patterns: [{ source: REASON_SOURCE, flags: 'u' }] },
   }),
 )
 

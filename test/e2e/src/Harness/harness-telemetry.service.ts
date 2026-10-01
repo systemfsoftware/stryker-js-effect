@@ -1,6 +1,6 @@
 import * as TestTelemetry from '@systemfsoftware/vitest-config/telemetry'
 import { Effect, type Layer } from 'effect'
-import type { OtlpExporter } from 'effect/unstable/observability'
+import type { OtlpExporter } from 'effect/observability'
 
 export const COMPONENT_ATTRIBUTE = 'e2e.component'
 

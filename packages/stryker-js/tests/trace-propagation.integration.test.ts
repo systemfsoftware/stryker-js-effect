@@ -5,11 +5,11 @@ import { Plugin } from '@systemfsoftware/stryker-js'
 import { Options, Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace as RuntimeTrace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
+import * as Headers from 'effect/http/Headers'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
-import * as Headers from 'effect/unstable/http/Headers'
 
 import {
   makeTraceWorkerRecord,

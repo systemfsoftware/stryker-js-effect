@@ -3,7 +3,6 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   incrementalDiff,
@@ -100,21 +99,18 @@ const runsWithRefusal = (
   Result.isSuccess(result) && result.success.length === 1 &&
   S.is(MutantToRun)(result.success[0]) && result.success[0].refusal === refusal
 
-const partitionCommandArb = Arbitrary.schema(
-  S.Array(S.Struct({
-    id: Mutant.MutantId,
-    digest: S.String,
-    status: Mutant.MutantStatusSchema,
-  })),
-).pipe(
-  Arbitrary.map((entries) =>
-    commandOf(
-      entries.map((entry) => mutantOf(entry.id)),
-      entries.map((entry) => recordOf(entry.id, entry.status, entry.digest)),
-      { closureDigestsByMutantId: Object.fromEntries(entries.map((entry) => [entry.id, entry.digest])) },
-    )
-  ),
-)
+interface PartitionEntry {
+  readonly id: Mutant.MutantId
+  readonly digest: string
+  readonly status: Mutant.MutantStatus
+}
+
+const partitionCommandOf = (entries: readonly PartitionEntry[]) =>
+  commandOf(
+    entries.map((entry) => mutantOf(entry.id)),
+    entries.map((entry) => recordOf(entry.id, entry.status, entry.digest)),
+    { closureDigestsByMutantId: Object.fromEntries(entries.map((entry) => [entry.id, entry.digest])) },
+  )
 
 describe('incrementalDiff', () => {
   it.prop(
@@ -303,8 +299,12 @@ describe('incrementalDiff', () => {
 
   it.prop(
     '∀c_Command_≡DecisionsPartitionThePlannedMutants',
-    { of: [partitionCommandArb], subject: incrementalDiff },
-    (subject, [command]) => {
+    {
+      of: [S.Array(S.Struct({ id: Mutant.MutantId, digest: S.String, status: Mutant.MutantStatusSchema }))],
+      subject: incrementalDiff,
+    },
+    (subject, [entries]) => {
+      const command = partitionCommandOf(entries)
       const result = subject(command)
       return Result.isSuccess(result) && result.success.length === command.currentMutants.length &&
         Arr.every(result.success, (decision) =>

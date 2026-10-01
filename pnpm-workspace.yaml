@@ -11,10 +11,10 @@ catalog:
   "@commitlint/config-conventional": ^21
   "@commitlint/types": ^21
   "@effect/tsgo": ^0.45.0
-  "@effect/platform-node": 4.0.0-rc.117
-  "@effect/platform-node-shared": 4.0.0-rc.117
-  "@effect/vitest": 4.0.0-rc.117
-  "@effect/opentelemetry": 4.0.0-rc.117
+  "@effect/platform-node": ^4.0.0
+  "@effect/platform-node-shared": ^4.0.0
+  "@effect/vitest": ^4.0.0
+  "@effect/opentelemetry": ^4.0.0
   "@eslint-community/regexpp": ^4.12.2
   angular-html-parser: ~10.12.0
   "@microsoft/api-extractor": ^7
@@ -27,19 +27,19 @@ catalog:
   "@testing-library/svelte": ^5.4.2
   vite: ^8.3.0
   "@systemfsoftware/arethetypeswrong-cli": ^4.2.0
-  "@systemfsoftware/differential-spec": ^0.6.1
-  "@systemfsoftware/effect-cell-types": ^11.0.0
-  "@systemfsoftware/effect-microsandbox": ^4.0.2
-  "@systemfsoftware/effect-readiness": ^0.5.0
-  "@systemfsoftware/effect-gherkin-spec": ^6.0.1
+  "@systemfsoftware/differential-spec": ^1.0.0
+  "@systemfsoftware/effect-cell-types": ^12.0.0
+  "@systemfsoftware/effect-microsandbox": ^5.0.0
+  "@systemfsoftware/effect-readiness": ^1.0.0
+  "@systemfsoftware/effect-gherkin-spec": ^7.0.0
   "@systemfsoftware/effect-schema-discovery": ^2.0.0
-  "@systemfsoftware/effect-schema-law": ^4.0.1
-  "@systemfsoftware/effect-schema-recursion-budget": ^1.0.2
-  "@systemfsoftware/oxlint-config-recommended": ^3.4.0
-  "@systemfsoftware/trace-spec": ^0.5.2
-  "@systemfsoftware/trace-taxonomy": ^0.0.2
+  "@systemfsoftware/effect-schema-law": ^5.0.0
+  "@systemfsoftware/effect-schema-recursion-budget": ^2.0.0
+  "@systemfsoftware/oxlint-config-recommended": ^4.0.0
+  "@systemfsoftware/trace-spec": ^1.0.0
+  "@systemfsoftware/trace-taxonomy": ^1.0.0
   "@systemfsoftware/tsconfig": ^2.0.1
-  "@systemfsoftware/vitest": ^0.3.0
+  "@systemfsoftware/vitest": ^1.0.0
   "@types/estree": ^1.0.5
   "@types/node": ^24
   happy-dom: ^20
@@ -53,7 +53,7 @@ catalog:
   "@vitest/browser-playwright": ^5
   "@vitest/coverage-v8": ^5
   fast-check: ^4
-  effect: 4.0.0-rc.117
+  effect: ^4.0.0
   husky: ^9
   lint-staged: ^17
   microsandbox: 0.7.2
@@ -82,6 +82,8 @@ catalogs:
     mutation-testing-report-schema: 3.9.0
 minimumReleaseAgeExclude:
   - "@systemfsoftware/*"
+  - effect
+  - "@effect/*"
 packages:
   - test/*
   - packages/*
@@ -89,5 +91,4 @@ packages:
   - packages/ignorers/*
   - packages/frameworks/*
 patchedDependencies:
-  "@systemfsoftware/differential-spec@0.6.1": patches/@systemfsoftware__differential-spec@0.6.1.patch
-  effect@4.0.0-rc.117: patches/effect@4.0.0-rc.117.patch
+  "@systemfsoftware/differential-spec@1.0.0": patches/@systemfsoftware__differential-spec@1.0.0.patch

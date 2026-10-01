@@ -1,11 +1,11 @@
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Tool, Toolkit } from 'effect/ai'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
-import { Tool, Toolkit } from 'effect/unstable/ai'
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
 
 import { FeedbackUnusable } from '../Feedback/Feedback.schema.js'
 import { GitDiff } from '../git-diff.service.js'

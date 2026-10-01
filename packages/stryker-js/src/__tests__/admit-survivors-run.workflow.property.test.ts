@@ -3,11 +3,11 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
 import * as Equivalence from 'effect/Equivalence'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   admitSurvivorsRun,
@@ -79,8 +79,8 @@ const recordOf = <A>(value: Arbitrary.Arbitrary<A>): Arbitrary.Arbitrary<Record<
 
 type CleanConfig = Record<string, string | number | boolean>
 
-const cleanConfigArb: Arbitrary.Arbitrary<CleanConfig> = recordOf(
-  Arbitrary.schema(S.Union([S.String, S.Int, S.Boolean])),
+const cleanConfigArb: Arbitrary.Arbitrary<CleanConfig> = Arbitrary.schema(S.Union([S.String, S.Int, S.Boolean])).pipe(
+  recordOf,
 )
 
 const sourceArb = Arbitrary.schema(S.String.check(S.isMaxLength(16), S.isPattern(/^[\x20-\x7E]*$/)))

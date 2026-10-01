@@ -1,8 +1,8 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import type * as Effect from 'effect/Effect'
 import type * as Layer from 'effect/Layer'
-import type * as RpcClient from 'effect/unstable/rpc/RpcClient'
-import type * as Socket from 'effect/unstable/socket/Socket'
+import type * as RpcClient from 'effect/rpc/RpcClient'
+import type * as Socket from 'effect/socket/Socket'
 
 import type { WorkerExit } from './Worker.schema.js'
 

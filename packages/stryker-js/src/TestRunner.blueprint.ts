@@ -6,9 +6,9 @@ import type * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import type { RpcClientError } from 'effect/rpc/RpcClientError'
 import type * as Scope from 'effect/Scope'
-import * as ChildProcessSpawner from 'effect/unstable/process/ChildProcessSpawner'
-import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
 
 import { commandRunner, isCommandRunner } from './command-runner.blueprint.js'
 import {

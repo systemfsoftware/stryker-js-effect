@@ -1,5 +1,6 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as ConfigProvider from 'effect/ConfigProvider'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -7,7 +8,6 @@ import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { decodeMerge, writeEncoded } from '../merge-reports.js'
@@ -101,7 +101,7 @@ const printedSummaryOf = (mode: 'human' | 'machine', summary: string) =>
 describe('merge-reports', () => {
   it.effect.prop(
     '∀ms_StreamedMutants_≡DecodedMergeRebuildsEachIntoItsFile',
-    { of: [Arbitrary.schema(S.Array(RunEvent.RunMutantTested))], subject: partFromMutants },
+    { of: [RunEvent.RunMutantTested.pipe(S.Array, Arbitrary.schema)], subject: partFromMutants },
     (subject, [mutants]) =>
       Effect.map(subject(mutants), (part) => {
         if (part === undefined) {

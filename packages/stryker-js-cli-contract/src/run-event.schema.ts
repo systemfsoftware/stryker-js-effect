@@ -11,7 +11,7 @@ export const RunPhase = S.Literals(['prepare', 'instrument', 'dry-run', 'mutatio
 export type RunPhase = typeof RunPhase.Type
 
 export const RunId = S.String.pipe(
-  S.check(S.isPattern(/^[0-9A-HJKMNP-TV-Z]{26}$/)),
+  S.check(S.isPattern(/^[0-9A-HJKMNP-TV-Z]{26}$/u)),
   S.brand('RunId'),
 )
 export type RunId = typeof RunId.Type

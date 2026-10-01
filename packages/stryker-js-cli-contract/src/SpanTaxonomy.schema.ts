@@ -2,14 +2,14 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 export const SpanName = S.String.check(
-  S.isPattern(/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)*$/, {
+  S.isPattern(/^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)*$/u, {
     expected: 'a dot-separated span name whose segments start with a letter, such as "stryker.checker.check"',
   }),
 ).pipe(S.brand('SpanName'))
 export type SpanName = typeof SpanName.Type
 
 export const SpanAttributeKey = S.String.check(
-  S.isPattern(/^[A-Za-z][A-Za-z0-9_.-]*$/, {
+  S.isPattern(/^[A-Za-z][A-Za-z0-9_.-]*$/u, {
     expected: 'an attribute key starting with a letter, such as "stryker.checker.name"',
   }),
 ).pipe(S.brand('SpanAttributeKey'))

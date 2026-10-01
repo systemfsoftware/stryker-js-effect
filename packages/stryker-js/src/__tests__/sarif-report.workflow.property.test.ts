@@ -1,11 +1,11 @@
 import { Mutant, type Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { sarifReport, SarifReportCommand, SarifReportRendered } from '../sarif-report.workflow.js'
 import type { SurvivorRef } from '../surfacing.schema.js'
@@ -26,7 +26,7 @@ const mutantArb = (status: Arbitrary.Arbitrary<Mutant.MutantStatus>): Arbitrary.
     mutatorName: Arbitrary.schema(Mutant.MutatorName),
     location: Arbitrary.schema(Mutant.Location),
     status,
-    description: Arbitrary.schema(S.UndefinedOr(S.String)),
+    description: S.String.pipe(S.UndefinedOr, Arbitrary.schema),
   }).pipe(
     Arbitrary.map(({ description, ...rest }) => description === undefined ? rest : { ...rest, description }),
   )
@@ -34,8 +34,8 @@ const mutantArb = (status: Arbitrary.Arbitrary<Mutant.MutantStatus>): Arbitrary.
 const survivorFileArb: Arbitrary.Arbitrary<Report.FileResult> = Arbitrary.all({
   language: Arbitrary.Constant('javascript'),
   source: sourceArb,
-  others: Arbitrary.array(mutantArb(Arbitrary.schema(Mutant.MutantStatusSchema)), { maxLength: 2 }),
-  survivor: mutantArb(Arbitrary.schema(Mutant.SurvivorStatusSchema)),
+  others: Arbitrary.array(Mutant.MutantStatusSchema.pipe(Arbitrary.schema, mutantArb), { maxLength: 2 }),
+  survivor: Mutant.SurvivorStatusSchema.pipe(Arbitrary.schema, mutantArb),
 }).pipe(Arbitrary.map(({ language, source, others, survivor }) => ({
   language,
   source,

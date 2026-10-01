@@ -1,8 +1,8 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   type CheckpointMutantRow,
@@ -35,7 +35,10 @@ const commandOf = (reached: ReadonlyArray<Mutant.RememberedStatus | null>): Chec
 
 const maxRows = { maxLength: 5 }
 
-const checkpointCommandArb = Arbitrary.array(Arbitrary.schema(S.NullOr(Mutant.RememberedStatusSchema)), maxRows).pipe(
+const checkpointCommandArb = Arbitrary.array(
+  Mutant.RememberedStatusSchema.pipe(S.NullOr, Arbitrary.schema),
+  maxRows,
+).pipe(
   Arbitrary.map(commandOf),
 )
 

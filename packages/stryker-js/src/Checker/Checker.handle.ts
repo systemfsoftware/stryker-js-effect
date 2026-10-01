@@ -6,9 +6,9 @@ import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Metric from 'effect/Metric'
-import type * as RpcClient from 'effect/unstable/rpc/RpcClient'
-import type { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
-import type * as RpcGroup from 'effect/unstable/rpc/RpcGroup'
+import type * as RpcClient from 'effect/rpc/RpcClient'
+import type { RpcClientError } from 'effect/rpc/RpcClientError'
+import type * as RpcGroup from 'effect/rpc/RpcGroup'
 
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 

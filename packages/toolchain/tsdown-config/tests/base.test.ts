@@ -1,7 +1,7 @@
 import { SOURCE_CONDITION, sourceExports, typesPathFor, withSourceFirst } from '@systemfsoftware/tsdown-config'
 import { describe, it } from '@systemfsoftware/vitest'
 import { Schema as S } from 'effect'
-import { Arbitrary } from 'effect/unstable/arbitrary'
+import * as Arbitrary from 'effect/Arbitrary'
 
 type Entry = Record<string, string | undefined>
 

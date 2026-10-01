@@ -3,10 +3,10 @@ import * as S from 'effect/Schema'
 
 export const MutatorNameSchema = S.String.pipe(
   S.check(
-    S.isPattern(/^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/)?[a-zA-Z][a-zA-Z0-9]*(?: [a-zA-Z][a-zA-Z0-9]*)*$/),
+    S.isPattern(/^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\/)?[a-zA-Z][a-zA-Z0-9]*(?: [a-zA-Z][a-zA-Z0-9]*)*$/u),
   ),
 )
-const DirectiveReasonSchema = S.String.pipe(S.check(S.isPattern(/^\S(?:[^\r\n\u2028\u2029]*\S)?$/)))
+const DirectiveReasonSchema = S.String.pipe(S.check(S.isPattern(/^\S(?:[^\r\n\u2028\u2029]*\S)?$/u)))
 
 export const DirectiveSchema = S.Struct({
   action: S.Literals(['disable', 'restore']),

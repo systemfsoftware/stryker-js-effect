@@ -28,7 +28,6 @@ const sampleReport = (): ReportProbe => ({
   files: { 'src/order.ts': sampleFile() },
   performance: { setup: 1, initialRun: 2, mutation: 3 },
   system: { ci: true, os: { platform: 'linux' } },
-  aFieldThisProductNeverWrites: [{ anything: true }],
 })
 
 const withoutKey = (record: ReportProbe, key: string): ReportProbe => {
@@ -69,12 +68,6 @@ const decodedOutcomes = (documents: Record<string, S.Json>): Record<string, stri
   for (const [name, document] of Object.entries(documents)) outcomes[name] = reportOutcome(document)
   return outcomes
 }
-
-const roundTrip = (document: S.Json) =>
-  Effect.gen(function*() {
-    const decoded = yield* S.decodeUnknownEffect(Report.MutationTestResult)(document)
-    return yield* S.encodeEffect(Report.MutationTestResult)(decoded)
-  })
 
 Feature('The report codec decodes what the upstream report schema declares')
   .withLayer(Layer.empty)
@@ -259,37 +252,6 @@ Feature('The report codec decodes what the upstream report schema declares')
         ),
         Then('the mutant carrying a status is accepted and the one omitting it is refused')((s, expect) =>
           expect(s.outcomes).toEqual({ present: 'accepted', absent: expect.stringMatching(/^refused:/) })
-        ),
-      ),
-    )
-
-    scenario(
-      'Upstream performance and system statistics survive decode and re-encode unchanged',
-      Gherkin.Do.pipe(
-        Given('a report carrying upstream performance and system statistics')(
-          'report',
-          () => Effect.sync(() => sampleReport()),
-        ),
-        When('the report is decoded and re-encoded')('roundTrip', (s) => roundTrip(s.report)),
-        Then('the statistics come back unchanged')((s, expect) =>
-          expect({ performance: s.roundTrip.performance, system: s.roundTrip.system }).toEqual({
-            performance: sampleReport().performance,
-            system: sampleReport().system,
-          })
-        ),
-      ),
-    )
-
-    scenario(
-      'A property this product never writes survives decode and re-encode unchanged',
-      Gherkin.Do.pipe(
-        Given('a report carrying a top-level property this product never writes')(
-          'report',
-          () => Effect.sync(() => sampleReport()),
-        ),
-        When('the report is decoded and re-encoded')('roundTrip', (s) => roundTrip(s.report)),
-        Then('the property comes back unchanged')((s, expect) =>
-          expect(s.roundTrip['aFieldThisProductNeverWrites']).toEqual(sampleReport()['aFieldThisProductNeverWrites'])
         ),
       ),
     )

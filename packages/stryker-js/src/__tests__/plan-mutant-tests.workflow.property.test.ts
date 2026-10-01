@@ -2,13 +2,13 @@ import { describe, it } from '@systemfsoftware/vitest'
 
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
 import {

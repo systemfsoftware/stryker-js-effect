@@ -75,7 +75,7 @@ export const BoundaryErrorSchema = S.Union([
 ])
 export type BoundaryError = typeof BoundaryErrorSchema.Type
 
-const FILE_URL_PREFIX = /^file:\/\//
+const FILE_URL_PREFIX = /^file:\/\//u
 
 export const WorkerEntryUrl = S.String.check(
   S.isPattern(FILE_URL_PREFIX, { expected: 'a file: URL of the worker program' }),

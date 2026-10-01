@@ -1,8 +1,8 @@
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { compileGlob, CompileGlobCommand, type CompileGlobDecision, GlobUnmatchable } from '../compile-glob.workflow.js'
 

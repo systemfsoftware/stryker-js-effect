@@ -3,7 +3,7 @@ import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export const SourceFileSchema = S.NonEmptyString.pipe(S.check(S.isPattern(/\.[^./\\]+$/)))
+export const SourceFileSchema = S.NonEmptyString.pipe(S.check(S.isPattern(/\.[^./\\]+$/u)))
 
 export const DiagnosticSeveritySchema = S.Literals(['error', 'warning', 'suggestion', 'message'])
 export type DiagnosticSeverity = S.Schema.Type<typeof DiagnosticSeveritySchema>

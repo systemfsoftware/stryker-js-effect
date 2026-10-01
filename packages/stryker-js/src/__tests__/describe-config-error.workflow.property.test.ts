@@ -1,7 +1,7 @@
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   ConfigErrorDescribed,
@@ -10,7 +10,7 @@ import {
   DescribeConfigErrorCommand,
 } from '../run/describe-config-error.workflow.js'
 
-const errorsArb = Arbitrary.schema(S.Array(S.String))
+const errorsArb = Arbitrary.schema(ConfigErrorDescribed.fields.errors)
 
 const issueArb = Arbitrary.schema(
   S.Struct({

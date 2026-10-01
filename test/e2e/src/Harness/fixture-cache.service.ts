@@ -7,7 +7,6 @@ import {
   Context,
   Crypto,
   Effect,
-  Encoding,
   FileSystem,
   Layer,
   Match,
@@ -18,8 +17,9 @@ import {
   Scope,
   Stream,
 } from 'effect'
+import { Hex } from 'effect/encoding'
 import type { PlatformError } from 'effect/PlatformError'
-import { ChildProcess, ChildProcessSpawner } from 'effect/unstable/process'
+import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 import {
   type FileBytes,
@@ -372,8 +372,7 @@ const canonicalFile = (file: FileBytes): FileBytes => ({
   bytes: canonicalBytes(file.relativePath, file.bytes),
 })
 
-const hashOf = (crypto: Crypto.Crypto, bytes: Uint8Array) =>
-  Effect.map(crypto.digest('SHA-256', bytes), Encoding.encodeHex)
+const hashOf = (crypto: Crypto.Crypto, bytes: Uint8Array) => Effect.map(crypto.digest('SHA-256', bytes), Hex.encode)
 
 const keysRecordOf = (fixtures: ReadonlyArray<BakedFixture>): FixtureKeys =>
   Object.fromEntries(fixtures.map((fixture) => [fixture.fixtureId, fixture.key]))
