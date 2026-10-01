@@ -20,7 +20,7 @@
   },
   "scripts": {
     "clean": "rimraf dist",
-    "build": "pnpm run typecheck && rimraf dist && tsdown --config tsdown.bin.config.ts && tsdown --config tsdown.config.ts",
+    "build": "pnpm run typecheck && tsdown",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "mutation": "stryker run",
