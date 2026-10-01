@@ -200,7 +200,7 @@ export const sharedConfig = {
     silent: isAgent ? 'passed-only' : false,
     provide: { '@systemfsoftware/vitest:property-check': propertyCheck },
     coverage: {
-      enabled: isCI || process.env['COVERAGE'] === 'true',
+      enabled: process.env['COVERAGE'] === 'true',
       provider: 'v8',
       reporter: ['json', 'html', 'lcov'],
     },
