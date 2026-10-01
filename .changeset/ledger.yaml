@@ -76,6 +76,10 @@
   intents:
     - cli-contract-publishes-the-stream-and-catalog
     - rerun-by-id
+"@systemfsoftware/stryker-js-cli-contract@0.2.0":
+  dir: packages/stryker-js-cli-contract
+  intents:
+    - effect-4-stable
 "@systemfsoftware/stryker-js-cli@9.0.0":
   dir: apps/stryker-js-cli
   intents:
@@ -130,6 +134,10 @@
   dir: packages/stryker-js-html-reporter
   intents:
     - systemfsoftware-latest-packages-2026-09-26
+"@systemfsoftware/stryker-js-html-reporter@6.0.0":
+  dir: packages/stryker-js-html-reporter
+  intents:
+    - effect-4-stable
 "@systemfsoftware/stryker-js-instrumenter@10.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -147,6 +155,10 @@
   dir: packages/stryker-js-instrumenter
   intents:
     - instrumenter-namespaces-and-two-placement-fixes
+"@systemfsoftware/stryker-js-instrumenter@12.0.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - effect-4-stable
 "@systemfsoftware/stryker-js-instrumenter@7.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -216,6 +228,10 @@
   intents:
     - coverage-keys-must-be-mutant-ids
     - surfacing-caps
+"@systemfsoftware/stryker-js-plugin-interface@12.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - effect-4-stable
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -298,6 +314,10 @@
   dir: packages/stryker-js-plugin-runtime
   intents:
     - systemfsoftware-latest-packages-2026-09-26
+"@systemfsoftware/stryker-js-plugin-runtime@7.0.0":
+  dir: packages/stryker-js-plugin-runtime
+  intents:
+    - effect-4-stable
 "@systemfsoftware/stryker-js-svelte@0.0.0":
   dir: packages/frameworks/svelte
   intents:
@@ -363,6 +383,10 @@
     - queue-handoff-hang
     - typescript-checker-checks-each-mutant
     - typescript-checker-runtime-subpath-and-diagnostic-reason
+"@systemfsoftware/stryker-js-typescript-checker@8.1.1":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - effect-4-stable
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -426,6 +450,10 @@
   dir: packages/stryker-js-vitest-runner
   intents:
     - queue-handoff-hang
+"@systemfsoftware/stryker-js-vitest-runner@8.0.3":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - effect-4-stable
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -541,6 +569,10 @@
     - verdict-semantics-content-keyed-cache
     - version-bump-keeps-closure-digests
     - warm-initial-test-run
+"@systemfsoftware/stryker-js@15.0.0":
+  dir: packages/stryker-js
+  intents:
+    - effect-4-stable
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
