@@ -1001,51 +1001,78 @@ if (import.meta.vitest !== void 0) {
     (subject, [mutant, result]) => Effect.map(subject(mutant, result), (mapped) => carriesClassOutcome(result, mapped)),
   )
 
-  const expectedTimeoutKind = (
-    result: Parameters<typeof timeoutFieldsOf>[0],
-    evidence: { readonly timeoutKind: TimeoutKind; readonly reproductions: number },
-  ): TimeoutKind =>
-    Match.value(result.statusReason).pipe(
-      Match.when('wall-clock-timeout', (): TimeoutKind => 'wallClock'),
-      Match.when(
-        (reason: string | undefined): boolean =>
-          reason !== undefined && /^Hit limit reached \(\d+\/\d+\)$/.test(reason),
-        (): TimeoutKind => 'hitLimit',
-      ),
-      Match.orElse((): TimeoutKind => evidence.timeoutKind),
-    )
+  const TimeoutStatus = S.Union([S.Literal('Timeout'), MutantStatusSchema])
+  const TimeoutReason = S.UndefinedOr(
+    S.Union([TestRunner.WallClockTimeoutReason, TestRunner.HitLimitReasonText, S.String]),
+  )
+  const isReason = (drawn: unknown): drawn is string | undefined => drawn === undefined || typeof drawn === 'string'
+  const isWallClockReason = (reason: string | undefined): boolean =>
+    reason === TestRunner.WallClockTimeoutReason.literal
+  const isHitLimitReason = (reason: string | undefined): boolean =>
+    Option.isSome(S.decodeUnknownOption(TestRunner.HitLimitReason)(reason))
+  const isKindlessReason = (reason: string | undefined): boolean =>
+    isWallClockReason(reason) === false && isHitLimitReason(reason) === false
 
-  const expectedReproductions = (
-    timeoutKind: TimeoutKind,
-    evidence: { readonly timeoutKind: TimeoutKind },
-  ): number =>
-    Match.value(timeoutKind).pipe(
-      Match.when('wallClock', () =>
-        Match.value(evidence.timeoutKind).pipe(
-          Match.when('wallClock', () => 1),
-          Match.orElse(() => 0),
-        )),
-      Match.orElse(() => 0),
+  const expectedTimeoutKind = (
+    reason: string | undefined,
+    evidence: TimeoutEvidence | undefined,
+  ): TimeoutKind | undefined =>
+    Match.value(reason).pipe(
+      Match.when(isWallClockReason, (): TimeoutKind | undefined => 'wallClock'),
+      Match.when(isHitLimitReason, (): TimeoutKind | undefined => 'hitLimit'),
+      Match.orElse((): TimeoutKind | undefined => evidence?.timeoutKind),
     )
 
   const expectedTimeoutFields = (
-    result: Parameters<typeof timeoutFieldsOf>[0],
-    evidence: { readonly timeoutKind: TimeoutKind; readonly reproductions: number },
-  ) =>
-    Match.value(result.status === 'Timeout').pipe(
-      Match.when(true, () => ({
-        timeoutKind: expectedTimeoutKind(result, evidence),
-        reproductions: expectedReproductions(expectedTimeoutKind(result, evidence), evidence),
-      })),
-      Match.orElse(() => ({ timeoutKind: undefined, reproductions: undefined })),
+    status: typeof TimeoutStatus.Type,
+    reason: string | undefined,
+    evidence: TimeoutEvidence | undefined,
+  ): { readonly timeoutKind?: TimeoutKind; readonly reproductions?: number } =>
+    Option.match(
+      Option.filter(Option.fromUndefinedOr(expectedTimeoutKind(reason, evidence)), () => status === 'Timeout'),
+      {
+        onNone: () => ({}),
+        onSome: (timeoutKind) => ({
+          timeoutKind,
+          reproductions: Number(holds([timeoutKind === 'wallClock', evidence?.timeoutKind === 'wallClock'])),
+        }),
+      },
     )
 
   it.prop(
     '∀mse_MutantStatusAndEvidence_≡PersistedTimeoutFieldsFollowTheReproductionRule',
-    { of: [Mutant, MutantStatusSchema, TimeoutEvidenceSchema], subject: timeoutFieldsOf },
-    (subject, [mutant, status, evidence]) => {
-      const result: Parameters<typeof timeoutFieldsOf>[0] = { ...mutant, status }
-      return JSON.stringify(subject(result, evidence)) === JSON.stringify(expectedTimeoutFields(result, evidence))
+    {
+      of: [Mutant, TimeoutStatus, TimeoutReason, S.UndefinedOr(TimeoutEvidenceSchema)],
+      subject: timeoutFieldsOf,
+      cover: {
+        wallClockTimeout: [
+          (_mutant, status, reason) => isReason(reason) && holds([status === 'Timeout', isWallClockReason(reason)]),
+          0.05,
+        ],
+        hitLimitTimeout: [
+          (_mutant, status, reason) => isReason(reason) && holds([status === 'Timeout', isHitLimitReason(reason)]),
+          0.05,
+        ],
+        evidenceOnlyTimeout: [
+          (_mutant, status, reason, evidence) =>
+            isReason(reason) && holds([status === 'Timeout', isKindlessReason(reason), evidence !== undefined]),
+          0.05,
+        ],
+        kindlessTimeout: [
+          (_mutant, status, reason, evidence) =>
+            isReason(reason) && holds([status === 'Timeout', isKindlessReason(reason), evidence === undefined]),
+          0.02,
+        ],
+      },
+    },
+    (subject, [mutant, status, reason, evidence]) => {
+      const result: Parameters<typeof timeoutFieldsOf>[0] = {
+        ...mutant,
+        status,
+        ...presentField('statusReason', reason),
+      }
+      return JSON.stringify(subject(result, evidence)) ===
+        JSON.stringify(expectedTimeoutFields(status, reason, evidence))
     },
   )
 }
