@@ -1,8 +1,8 @@
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { decodeStream, DecodeStreamCommand, StreamLineUndecodable } from '../decode-stream.workflow.js'
 

@@ -3,11 +3,11 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
 import * as Equivalence from 'effect/Equivalence'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   admitSurvivorsRun,

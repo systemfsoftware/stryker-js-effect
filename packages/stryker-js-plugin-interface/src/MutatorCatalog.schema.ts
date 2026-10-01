@@ -4,7 +4,7 @@ import * as S from 'effect/Schema'
 import { MutatorName } from './Mutant.schema.js'
 
 export const Id = S.String.check(
-  S.isPattern(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/, { expected: 'a lowercase kebab-case catalog entry id' }),
+  S.isPattern(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u, { expected: 'a lowercase kebab-case catalog entry id' }),
 ).pipe(S.brand('MutatorCatalogId'))
 export type Id = typeof Id.Type
 
@@ -47,7 +47,7 @@ export const Entry = EntryShape.check(carriesExamples, carriesASnippet)
 export type Entry = typeof Entry.Type
 
 export const Provider = S.String.check(
-  S.isPattern(/^(?:stryker|[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$/, {
+  S.isPattern(/^(?:stryker|[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$/u, {
     expected: 'the stock provider "stryker" or a lowercase kebab-case plugin namespace',
   }),
 ).pipe(S.brand('MutatorProvider'))

@@ -6,11 +6,11 @@ import * as FiberSet from 'effect/FiberSet'
 import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
 import * as Ref from 'effect/Ref'
-import * as RpcClient from 'effect/unstable/rpc/RpcClient'
-import { RpcClientError } from 'effect/unstable/rpc/RpcClientError'
-import type { FromServerEncoded } from 'effect/unstable/rpc/RpcMessage'
-import * as RpcSerialization from 'effect/unstable/rpc/RpcSerialization'
-import * as Socket from 'effect/unstable/socket/Socket'
+import * as RpcClient from 'effect/rpc/RpcClient'
+import { RpcClientError } from 'effect/rpc/RpcClientError'
+import type { FromServerEncoded } from 'effect/rpc/RpcMessage'
+import * as RpcSerialization from 'effect/rpc/RpcSerialization'
+import * as Socket from 'effect/socket/Socket'
 
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js/WorkerProtocol')
 export type TypeId = typeof TypeId

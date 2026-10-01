@@ -1,7 +1,7 @@
 import { layer as nodeFileSystemLayer } from '@effect/platform-node/NodeFileSystem'
 import { Observation, RemoteObservation, TempoTraceStore } from '@systemfsoftware/trace-spec'
 import { Duration, Effect, FileSystem, Layer } from 'effect'
-import { FetchHttpClient } from 'effect/unstable/http'
+import { FetchHttpClient } from 'effect/http'
 
 import { tempoBaseUrl } from './tempo-endpoint.js'
 

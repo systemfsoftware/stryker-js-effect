@@ -9,13 +9,13 @@ export const Scope = S.Literals(['Line', 'Declaration', 'File'])
 export type Scope = typeof Scope.Type
 
 export const TsCode = S.String.pipe(
-  S.check(S.isPattern(/^TS[0-9]+$/, { expected: 'a TypeScript diagnostic code such as TS2322' })),
+  S.check(S.isPattern(/^TS[0-9]+$/u, { expected: 'a TypeScript diagnostic code such as TS2322' })),
   S.brand('TsCode'),
 )
 export type TsCode = typeof TsCode.Type
 
 export const ErrorClass = S.String.pipe(
-  S.check(S.isPattern(/^[A-Z][A-Za-z0-9]*$/, { expected: 'an error class name such as TypeError' })),
+  S.check(S.isPattern(/^[A-Z][A-Za-z0-9]*$/u, { expected: 'an error class name such as TypeError' })),
   S.brand('ErrorClass'),
 )
 export type ErrorClass = typeof ErrorClass.Type

@@ -1,8 +1,8 @@
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { DiffHunk, DiffScopeCommand, DiffScoped, DiffScopeDecision, FullScope } from '../git-diff.schema.js'
 import { gitDiff } from '../git-diff.workflow.js'

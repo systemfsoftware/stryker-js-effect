@@ -166,7 +166,7 @@ const WarningOptions = openStruct({
   slow: defaulted(S.Boolean, true),
 })
 const ConcurrencyCount = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
-const ConcurrencyPercent = S.String.pipe(S.check(S.isPattern(/^(100|[1-9]?[0-9])%$/)))
+const ConcurrencyPercent = S.String.pipe(S.check(S.isPattern(/^(100|[1-9]?[0-9])%$/u)))
 
 const PLUGIN_ARBITRARY_SPECIFIERS: readonly [string, ...string[]] = [
   'file:///project/node_modules/@systemfsoftware/stryker-js-angular/index.mjs',

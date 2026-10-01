@@ -1,8 +1,8 @@
 import type { Schema } from 'effect'
 import * as Context from 'effect/Context'
 import * as Option from 'effect/Option'
-import * as Rpc from 'effect/unstable/rpc/Rpc'
-import * as RpcMiddleware from 'effect/unstable/rpc/RpcMiddleware'
+import * as Rpc from 'effect/rpc/Rpc'
+import * as RpcMiddleware from 'effect/rpc/RpcMiddleware'
 
 import type { TraceContextParts } from './TraceContext.schema.js'
 

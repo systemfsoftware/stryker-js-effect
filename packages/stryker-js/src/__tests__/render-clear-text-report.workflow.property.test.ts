@@ -1,10 +1,10 @@
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   ClearTextRenderOptions,

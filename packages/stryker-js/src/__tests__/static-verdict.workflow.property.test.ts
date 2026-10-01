@@ -1,7 +1,7 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { staticVerdictOf } from '../reporting/static-verdict.js'
 

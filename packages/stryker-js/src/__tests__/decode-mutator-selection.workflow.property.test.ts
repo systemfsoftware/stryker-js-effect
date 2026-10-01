@@ -1,11 +1,11 @@
 import { StockCatalog } from '@systemfsoftware/stryker-js-cli-contract'
 import { MutatorCatalog } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import {
   decodeMutatorSelection,

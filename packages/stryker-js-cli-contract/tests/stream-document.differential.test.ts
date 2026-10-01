@@ -1,11 +1,11 @@
 import { Differential } from '@systemfsoftware/differential-spec'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 import * as fc from 'fast-check'
 
 import committedStreamDocument from '../contract/stream.schema.json' with { type: 'json' }

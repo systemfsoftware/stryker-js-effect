@@ -1,9 +1,9 @@
 import { Mutant, MutatorCatalog } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { Arbitrary } from 'effect/unstable/arbitrary'
 
 import { type CatalogEntryRef, type PlacementWaiver } from '../closure.schema.js'
 import {

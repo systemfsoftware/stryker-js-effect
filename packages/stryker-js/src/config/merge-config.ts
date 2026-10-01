@@ -153,7 +153,7 @@ if (import.meta.vitest !== void 0) {
   const Arr = await import('effect/Array')
   const Equal = await import('effect/Equal')
   const S = await import('effect/Schema')
-  const { Arbitrary } = await import('effect/unstable/arbitrary')
+  const Arbitrary = await import('effect/Arbitrary')
   type DocumentRecord<A = unknown> = { readonly [key: string]: A }
   const OptionValueSchema = S.Union([S.String, S.Finite, S.Boolean, S.Null, S.Undefined])
   const DocumentSchema = S.Record(S.String, OptionValueSchema)

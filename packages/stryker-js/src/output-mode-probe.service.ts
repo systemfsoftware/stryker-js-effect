@@ -1,12 +1,12 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import * as CliError from 'effect/cli/CliError'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Stdio from 'effect/Stdio'
-import * as CliError from 'effect/unstable/cli/CliError'
 
 import type { ResolvedMode } from './output-mode.schema.js'
 import { ModeConflictError, ResolveModeCommand, resolveOutputMode } from './resolve-output-mode.workflow.js'

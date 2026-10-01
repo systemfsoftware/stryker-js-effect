@@ -3,6 +3,10 @@
     "strict": true,
     "noImplicitOverride": true
   },
+  "minimumDependencyAge": {
+    "age": "P1D",
+    "exclude": ["npm:effect"]
+  },
   "imports": {
     "@std/assert": "jsr:@std/assert@1",
     "@std/async/pool": "jsr:@std/async@1/pool",
@@ -15,7 +19,7 @@
     "@std/fs/expand-glob": "jsr:@std/fs@1/expand-glob",
     "@std/path": "jsr:@std/path@1",
     "@std/yaml": "jsr:@std/yaml@1",
-    "effect": "npm:effect@4.0.0-rc.117",
+    "effect": "npm:effect@^4.0.0",
     "octokit": "npm:octokit@^4"
   }
 }

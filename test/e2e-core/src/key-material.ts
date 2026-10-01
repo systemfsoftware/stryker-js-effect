@@ -42,12 +42,12 @@ const bakeKeyMaterialOf = (packs: PackInput, fixtures: ReadonlyArray<FixtureInpu
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const Encoding = await import('effect/Encoding')
+  const Hex = await import('effect/encoding/Hex')
   const S = await import('effect/Schema')
 
   const textBytes = (text: string): Uint8Array => new TextEncoder().encode(text)
   const fileOf = (relativePath: string, seed: string): FileBytes => ({ relativePath, bytes: textBytes(seed) })
-  const hexOf = (bytes: Uint8Array): string => Encoding.encodeHex(bytes)
+  const hexOf = (bytes: Uint8Array): string => Hex.encode(bytes)
 
   const packsOf = (baseImage: string, seed: string): PackInput => ({
     baseImage,

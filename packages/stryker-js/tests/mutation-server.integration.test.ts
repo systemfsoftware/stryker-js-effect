@@ -16,9 +16,9 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Sink from 'effect/Sink'
+import * as Socket from 'effect/socket/Socket'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
-import * as Socket from 'effect/unstable/socket/Socket'
 
 import {
   ConfigureResult,

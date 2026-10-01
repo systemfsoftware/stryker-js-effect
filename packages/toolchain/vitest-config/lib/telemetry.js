@@ -1,7 +1,7 @@
 import { context, trace } from '@opentelemetry/api'
 import { Effect, Layer, Tracer } from 'effect'
-import { FetchHttpClient } from 'effect/unstable/http'
-import { OtlpExporter, OtlpSerialization, OtlpTracer } from 'effect/unstable/observability'
+import { FetchHttpClient } from 'effect/http'
+import { OtlpExporter, OtlpSerialization, OtlpTracer } from 'effect/observability'
 
 import { isOpenTelemetryEnabled } from './env.js'
 import { serviceName, tracesUrl } from './otel-target.js'
