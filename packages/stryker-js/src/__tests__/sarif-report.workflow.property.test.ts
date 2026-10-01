@@ -26,7 +26,7 @@ const mutantArb = (status: Arbitrary.Arbitrary<Mutant.MutantStatus>): Arbitrary.
     mutatorName: Arbitrary.schema(Mutant.MutatorName),
     location: Arbitrary.schema(Mutant.Location),
     status,
-    description: Arbitrary.schema(S.UndefinedOr(S.String)),
+    description: S.String.pipe(S.UndefinedOr, Arbitrary.schema),
   }).pipe(
     Arbitrary.map(({ description, ...rest }) => description === undefined ? rest : { ...rest, description }),
   )
@@ -34,8 +34,8 @@ const mutantArb = (status: Arbitrary.Arbitrary<Mutant.MutantStatus>): Arbitrary.
 const survivorFileArb: Arbitrary.Arbitrary<Report.FileResult> = Arbitrary.all({
   language: Arbitrary.Constant('javascript'),
   source: sourceArb,
-  others: Arbitrary.array(mutantArb(Arbitrary.schema(Mutant.MutantStatusSchema)), { maxLength: 2 }),
-  survivor: mutantArb(Arbitrary.schema(Mutant.SurvivorStatusSchema)),
+  others: Arbitrary.array(Mutant.MutantStatusSchema.pipe(Arbitrary.schema, mutantArb), { maxLength: 2 }),
+  survivor: Mutant.SurvivorStatusSchema.pipe(Arbitrary.schema, mutantArb),
 }).pipe(Arbitrary.map(({ language, source, others, survivor }) => ({
   language,
   source,

@@ -10,7 +10,7 @@ import {
   DescribeConfigErrorCommand,
 } from '../run/describe-config-error.workflow.js'
 
-const errorsArb = Arbitrary.schema(S.Array(S.String))
+const errorsArb = Arbitrary.schema(ConfigErrorDescribed.fields.errors)
 
 const issueArb = Arbitrary.schema(
   S.Struct({

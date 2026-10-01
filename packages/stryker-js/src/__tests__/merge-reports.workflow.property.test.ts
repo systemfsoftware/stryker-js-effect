@@ -101,7 +101,7 @@ const printedSummaryOf = (mode: 'human' | 'machine', summary: string) =>
 describe('merge-reports', () => {
   it.effect.prop(
     '∀ms_StreamedMutants_≡DecodedMergeRebuildsEachIntoItsFile',
-    { of: [Arbitrary.schema(S.Array(RunEvent.RunMutantTested))], subject: partFromMutants },
+    { of: [RunEvent.RunMutantTested.pipe(S.Array, Arbitrary.schema)], subject: partFromMutants },
     (subject, [mutants]) =>
       Effect.map(subject(mutants), (part) => {
         if (part === undefined) {

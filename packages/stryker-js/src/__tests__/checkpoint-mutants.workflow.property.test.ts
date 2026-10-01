@@ -35,7 +35,10 @@ const commandOf = (reached: ReadonlyArray<Mutant.RememberedStatus | null>): Chec
 
 const maxRows = { maxLength: 5 }
 
-const checkpointCommandArb = Arbitrary.array(Arbitrary.schema(S.NullOr(Mutant.RememberedStatusSchema)), maxRows).pipe(
+const checkpointCommandArb = Arbitrary.array(
+  Mutant.RememberedStatusSchema.pipe(S.NullOr, Arbitrary.schema),
+  maxRows,
+).pipe(
   Arbitrary.map(commandOf),
 )
 

@@ -14,7 +14,6 @@ import {
 import { type ReportTestId, reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow.js'
 
 const testFilesArb = Arbitrary.schema(ReuseTestFilesSchema)
-const attributedIdsArb = Arbitrary.schema(S.Array(S.String))
 
 const MUTANT_ID = Mutant.MutantId.make('00000000000000ab')
 
@@ -85,7 +84,7 @@ const resolvesLikeTheListedTests = (
 describe('reportTestIds', () => {
   it.prop(
     '∀tkm_ListedTestsAndMutantAttributions_≡APersistedReportRestoresTheListedRunnerTestIds',
-    { of: [testFilesArb, attributedIdsArb], subject: reportTestIds },
+    { of: [testFilesArb, S.Array(S.String)], subject: reportTestIds },
     (subject, [testFiles, attributedIds]) => {
       const persisted = persistedOf(reportOf(testFiles, attributedIds))
       return Option.match(persisted, {
