@@ -17,9 +17,14 @@
       url = "github:Scrumplex/importPnpmLock.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # gritlint, compiled from source at the locked commit. Its nixpkgs is not
+    # followed: the crate vendor hash is fixed against upstream's own lock.
+    # Only the `gritlint` package and the dev shell reference this input, so
+    # building any other package never fetches it.
+    systemfsoftware.url = "github:systemfsoftware/systemfsoftware";
   };
 
-  outputs = { self, nixpkgs, comment-checker, importPnpmLock }:
+  outputs = { self, nixpkgs, comment-checker, importPnpmLock, systemfsoftware }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forEachSystem = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
@@ -40,6 +45,10 @@
           deno = pkgs.deno;
           comment-checker = sandboxed;
           comment-checker-unwrapped = unwrapped;
+          # The bwrap-sandboxed upstream `gritlint` needs unprivileged user
+          # namespaces, which Ubuntu 24.04 runners refuse without a workflow
+          # step this repo's read-only workflows cannot add.
+          gritlint = systemfsoftware.packages.${pkgs.stdenv.hostPlatform.system}.gritlint-unwrapped;
           default = dprint;
         });
 
@@ -51,6 +60,7 @@
           packages = [
             self.packages.${pkgs.stdenv.hostPlatform.system}.dprint
             self.packages.${pkgs.stdenv.hostPlatform.system}.comment-checker
+            self.packages.${pkgs.stdenv.hostPlatform.system}.gritlint
             pkgs.nodejs_24
             pkgs.deno
             pkgs.process-compose

@@ -21,6 +21,28 @@
         "type": "github"
       }
     },
+    "comment-checker_2": {
+      "inputs": {
+        "nixpkgs": [
+          "systemfsoftware",
+          "nixpkgs"
+        ],
+        "rust-overlay": "rust-overlay_2"
+      },
+      "locked": {
+        "lastModified": 1789259917,
+        "narHash": "sha256-ciFWJFfpl8xTFJTnoquMb58RA7iVqvpi4Sfda9qyFTw=",
+        "owner": "systemfsoftware",
+        "repo": "comment-checker",
+        "rev": "00cc6a6bac7756d1e59d30fd566623e9b21443eb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "systemfsoftware",
+        "repo": "comment-checker",
+        "type": "github"
+      }
+    },
     "importPnpmLock": {
       "inputs": {
         "nixpkgs": [
@@ -58,11 +80,28 @@
         "type": "github"
       }
     },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1790185690,
+        "narHash": "sha256-xJ+X4hBtOcAFGBOe5nAMyMUeF9foJBmIOu3NjBqBycU=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "4975466d324710c576dc11ad614684e6bd8cad8e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "comment-checker": "comment-checker",
         "importPnpmLock": "importPnpmLock",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "systemfsoftware": "systemfsoftware"
       }
     },
     "rust-overlay": {
@@ -83,6 +122,69 @@
       "original": {
         "owner": "oxalica",
         "repo": "rust-overlay",
+        "type": "github"
+      }
+    },
+    "rust-overlay_2": {
+      "inputs": {
+        "nixpkgs": [
+          "systemfsoftware",
+          "comment-checker",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1787367552,
+        "narHash": "sha256-YT4Fs2k7bi+7YzuLt93EtIRgjpwHK5ZfsQEIh5dEQSk=",
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "rev": "fd2ebb9cc4323d0c5a1336138dab5c3c5a5d8bd9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "type": "github"
+      }
+    },
+    "rust-overlay_3": {
+      "inputs": {
+        "nixpkgs": [
+          "systemfsoftware",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790234952,
+        "narHash": "sha256-tjQa1vDoHJir4lasZTakz/xgmsfB6SRjeQqaIbefFOk=",
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "rev": "ed34466c59b766481248959a21a6e46cf0c60468",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "type": "github"
+      }
+    },
+    "systemfsoftware": {
+      "inputs": {
+        "comment-checker": "comment-checker_2",
+        "nixpkgs": "nixpkgs_2",
+        "rust-overlay": "rust-overlay_3"
+      },
+      "locked": {
+        "lastModified": 1790888692,
+        "narHash": "sha256-miDhWYSq+Zr1myF64iFaWFlcTjUn5CYeRVJ1hKt2sNc=",
+        "owner": "systemfsoftware",
+        "repo": "systemfsoftware",
+        "rev": "031205f93e42384de0da20261cb86d560f43283c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "systemfsoftware",
+        "repo": "systemfsoftware",
         "type": "github"
       }
     },
