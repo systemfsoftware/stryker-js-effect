@@ -17,17 +17,22 @@ const parserEntry = resolvePath('oxc-parser/src-js/wasm.js')
 const wasiModule = resolvePath('@oxc-parser/binding-wasm32-wasi/parser.wasm32-wasi.wasm')
 const htmlReporterClientBundle = resolvePath('mutation-testing-elements/dist/mutation-test-elements.js')
 
+const shared = {
+  format: 'esm' as const,
+  tsconfig: './tsconfig.build.json',
+  define: { 'import.meta.vitest': 'undefined' },
+}
+
 export default defineConfig([
   {
+    ...shared,
     entry: {
       index: './src/mod.ts',
       config: './src/config/mod.ts',
       promises: './src/promises/mod.ts',
       events: './src/events/mod.ts',
     },
-    format: 'esm',
     dts: true,
-    tsconfig: './tsconfig.build.json',
     exports: sourceExports({ dtsExt: '.d.mts' }),
 
     deps: {
@@ -42,18 +47,16 @@ export default defineConfig([
         '@systemfsoftware/stryker-js-plugin-runtime',
       ],
     },
-    define: { 'import.meta.vitest': 'undefined' },
   },
   {
+    ...shared,
     entry: {
       main: './src/bin/main.ts',
     },
-    format: 'esm',
     dts: false,
     outExtensions: () => ({ js: '.mjs' }),
-    tsconfig: './tsconfig.build.json',
     define: {
-      'import.meta.vitest': 'undefined',
+      ...shared.define,
       __STRYKER_HTML_REPORTER_CLIENT_BUNDLE__: JSON.stringify(readFileSync(htmlReporterClientBundle, 'utf8')),
     },
     platform: 'node',
