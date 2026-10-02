@@ -61,6 +61,14 @@ const manifestWithOptionalSelfArb = Arbitrary.flatMap(
       : manifestArb,
 )
 
+const DocumentPath = S.String.check(S.isPattern(/^\.\/[A-Za-z0-9/._-]+\.json$/))
+const documentsArb = Arbitrary.array(Arbitrary.schema(DocumentPath))
+
+const exportsWithDocuments = (
+  manifest: Record<string, Entry | string>,
+  documents: ReadonlyArray<string>,
+): Record<string, unknown> => sourceExports({ dtsExt: '.d.mts', documents }).customExports({ ...manifest })
+
 describe('typesPathFor', () => {
   it.prop(
     '∀ path, ext: exactly one trailing .mjs is swapped for ext, everything else is untouched',
@@ -186,6 +194,19 @@ describe('sourceExports', () => {
     (subject, [manifest]) => {
       const once = subject({ ...manifest })
       return sameShape(once, subject({ ...once }))
+    },
+  )
+
+  it.prop(
+    '∀ manifest, documents: each document maps to { default } alone and every other key maps as it does without documents',
+    { of: [manifestWithOptionalSelfArb, documentsArb], subject: exportsWithDocuments },
+    (subject, [manifest, documents]) => {
+      const others = Object.fromEntries(Object.entries(manifest).filter(([key]) => !documents.includes(key)))
+      const expected = {
+        ...config.customExports(others),
+        ...Object.fromEntries(documents.map((document) => [document, { default: document }])),
+      }
+      return sameShape(subject(manifest, documents), expected)
     },
   )
 })

@@ -22,7 +22,7 @@ tags: [tsdown, exports, self-reference, build-order, workspace-imports, pnpm-lin
 
 `@systemfsoftware/stryker-js` builds two ways from one package: a library
 config (`tsdown.config.ts`, five entries, `exports: sourceExports({ dtsExt })`)
-and a binary config (`tsdown.bin.config.ts`, one `main` entry, with its own
+and a binary config (a second config file, one `main` entry, with its own
 `exports` option). After `pnpm build`, the package could no longer import
 itself: every file under `packages/stryker-js/tests/` failed with
 `TS2307: Cannot find module '@systemfsoftware/stryker-js'`, and the same imports
@@ -50,16 +50,24 @@ the later one simply wins.
 
 ## Solution
 
-Let the config that owns the map be the one that writes last, and move cleaning
-out of a config that no longer runs first:
+Build both from one tsdown run. `tsdown.config.ts` exports an array: the library
+entry declares `exports: sourceExports({ dtsExt })`, the binary entry declares no
+`exports`, and neither disables `clean`.
 
 ```json
-"build": "rimraf dist && tsdown --config tsdown.bin.config.ts && tsdown --config tsdown.config.ts"
+"build": "pnpm run typecheck && tsdown"
 ```
 
-with `clean: false` on the library config (`tsdown.config.ts`) and `rimraf dist`
-in the script, because the library config's `clean: true` would otherwise delete
-`dist/main.mjs` when it runs last.
+In one process tsdown cleans `dist/` once, for every config, before any bundle
+starts. It then writes `package.json` once per package, after that package's last
+bundle, from the configs that declare `exports`. No ordering can go wrong, and
+no window opens with a half-written manifest.
+
+The first fix kept two processes and ordered them (`rimraf dist`, then the binary
+config, then the library config, both with `clean: false`). That still opened a
+window: the binary pass rewrote `exports` down to `./package.json` before the
+library pass restored it. A turbo task that read the manifest during that window
+failed with `"./config" is not exported`.
 
 Verify it holds after a build, not by reading the config:
 
@@ -68,31 +76,32 @@ pnpm --filter @systemfsoftware/stryker-js build
 jq -r '.exports | keys[]' packages/stryker-js/package.json
 ```
 
-A correct map lists every subpath. `{"./package.json"}` means the second config
-won again.
+A correct map lists every subpath. `{"./package.json"}` means a second process
+wrote the manifest again.
 
 ## Architectural invariants
 
-**1. One writer per generated manifest field.** `exports` is a build output, not
-a source file. When a package has more than one build configuration, exactly one
-of them owns each generated field, and owning it means writing it last — order is
-the entire mechanism.
+**1. One process writes each generated manifest.** `exports` is a build output,
+not a source file. A package with more than one build configuration builds all
+of them in one tsdown run. There tsdown merges them, refuses two configs that both
+declare `exports`, and writes the manifest once. Across processes nothing is
+merged: the last write wins.
 
-$$ \text{final}(\texttt{exports}) = \text{write}_{\text{last config}} \;\neq\; \bigcup_{\text{configs}} \text{entries} $$
+$$ \text{final}(\texttt{exports}) = \text{write}_{\text{last process}} \;\neq\; \bigcup_{\text{configs}} \text{entries} $$
 
-tsdown implements no union across processes, so `config_a && config_b` and
-`config_b && config_a` are different packages.
+In the meantime, every intermediate state is visible to anything that reads the
+manifest.
 
-**2. Cleaning is a property of the chain, not of a config.** A config that stops
-running first loses the right to `clean: true`, because it now runs after the
-output it would delete was written by the config ahead of it. Move the clean to
-the script that owns the order:
+**2. Cleaning belongs to the run, not to a config.** One run cleans once, before
+every bundle, so every config keeps `clean` on. When the configs run as separate
+processes, cleaning has to move into the script, and the `clean: false` that
+requires leaves orphaned output in `dist/`:
 
 ```jsonc
-// wrong — the library config runs last, and its clean:true deletes what the bin config wrote
-//   "build": "tsdown --config lib && tsdown --config bin"    // lib: clean true,  bin: clean false
-// right — the clean moves to the script that owns the order; both configs are write-only
+// wrong: two processes. Order decides which exports map survives, and the clean moves to the script
 //   "build": "rimraf dist && tsdown --config bin && tsdown --config lib"  // both: clean false
+// right: one process with one clean and one manifest write
+//   "build": "tsdown"  // tsdown.config.ts exports [lib, bin], clean on
 ```
 
 **3. A package is its own consumer.** Resolution through `exports` serves the
@@ -107,13 +116,14 @@ one that runs a build and then inspects the manifest.
 
 ## Prevention
 
-- Any package with more than one tsdown config: check `exports` after a build,
-  not after editing the config. The map is a build output.
+- Any package with more than one tsdown config: put them in one
+  `defineConfig([...])` array and run `tsdown` once. Check `exports` after a
+  build, not after editing the config. The map is a build output.
 - A package whose `tests/` tree self-imports by name needs the **source
   condition** in its top-level `exports`. Self-referencing resolves through that
   map, so a complete `publishConfig.exports` is not enough.
-- When a config stops running first, re-check its `clean`. Build order and
-  cleaning are coupled.
+- Never disable `clean` to make a multi-config build work. Merge the configs
+  into one run instead.
 - A stale pnpm link state looks like a missing dependency: `pnpm install` can
   report "Already up to date" while a manifest-declared workspace dependency has
   no symlink. Delete the packages' `node_modules` and reinstall before

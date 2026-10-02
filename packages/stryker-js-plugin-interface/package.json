@@ -65,7 +65,9 @@
         "default": "./dist/index.mjs"
       },
       "./package.json": "./package.json",
-      "./contract/report.schema.json": "./contract/report.schema.json"
+      "./contract/report.schema.json": {
+        "default": "./contract/report.schema.json"
+      }
     }
   },
   "exports": {
@@ -75,6 +77,8 @@
       "default": "./dist/index.mjs"
     },
     "./package.json": "./package.json",
-    "./contract/report.schema.json": "./contract/report.schema.json"
+    "./contract/report.schema.json": {
+      "default": "./contract/report.schema.json"
+    }
   }
 }
