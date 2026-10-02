@@ -4,7 +4,6 @@ import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
-import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
@@ -117,7 +116,7 @@ const stageLayerOf = (
       Scope.Scope,
       Effect.gen(function*() {
         const stageScope = yield* Scope.make()
-        yield* Effect.addFinalizer(() => Scope.close(stageScope, Exit.void))
+        yield* Effect.addFinalizer((exit) => Scope.close(stageScope, exit))
         return stageScope
       }),
     ),

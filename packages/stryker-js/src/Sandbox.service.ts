@@ -12,26 +12,14 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import type * as Scope from 'effect/Scope'
 
-import { keepTempDir, KeepTempDirAlways, KeepTempDirCommand, KeepTempDirOnFailure } from './keep-temp-dir.workflow.js'
+import { keepTempDir, KeepTempDirCommand } from './keep-temp-dir.workflow.js'
 
 export interface TemporaryDirectoryShape {
   readonly path: string
 }
 
-const keepTempDirCommand = <A, E>(
-  exit: Exit.Exit<A, E>,
-  cleanTempDir: 'always' | boolean,
-): KeepTempDirCommand =>
-  KeepTempDirCommand.make({
-    cleanTempDir: Match.value(cleanTempDir).pipe(
-      Match.when('always', () => KeepTempDirAlways.make({})),
-      Match.orElse((onFailure) => KeepTempDirOnFailure.make({ failed: onFailure })),
-    ),
-    failed: Exit.isFailure(exit),
-  })
-
 const removesTempDir = <A = unknown, E = unknown>(exit: Exit.Exit<A, E>, cleanTempDir: 'always' | boolean): boolean =>
-  Result.match(keepTempDir(keepTempDirCommand(exit, cleanTempDir)), {
+  Result.match(keepTempDir(KeepTempDirCommand.make({ cleanTempDir, failed: Exit.isFailure(exit) })), {
     onFailure: () => false,
     onSuccess: (decision) =>
       Match.value(decision).pipe(
@@ -86,7 +74,7 @@ const makeTemporaryDirectory = Effect.fn(SpanTaxonomy.Spans.sandboxMakeTempDir.n
   yield* Effect.addFinalizer((exit) =>
     Boolean.match(removesTempDir(exit, options.cleanTempDir), {
       onTrue: () => removeTempDirectory(tmp, parent, fs),
-      onFalse: () => Effect.logDebug('Not removing the temp dir because an error occurred'),
+      onFalse: () => Effect.logDebug(`Keeping stryker temp directory ${tmp}`),
     }).pipe(Effect.orDie)
   )
 

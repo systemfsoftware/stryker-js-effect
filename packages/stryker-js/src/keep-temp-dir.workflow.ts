@@ -6,18 +6,7 @@ import * as S from 'effect/Schema'
 const KeepTempDirTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/KeepTempDir')
 type KeepTempDirTypeId = typeof KeepTempDirTypeId
 
-export class KeepTempDirAlways extends S.TaggedClass<KeepTempDirAlways>()('KeepTempDirAlways', {}) {
-  readonly [KeepTempDirTypeId] = KeepTempDirTypeId
-}
-
-export class KeepTempDirOnFailure extends S.TaggedClass<KeepTempDirOnFailure>()('KeepTempDirOnFailure', {
-  failed: S.Boolean,
-}) {
-  readonly [KeepTempDirTypeId] = KeepTempDirTypeId
-}
-
-export const KeepTempDirOption = S.Union([KeepTempDirAlways, KeepTempDirOnFailure])
-export type KeepTempDirOption = typeof KeepTempDirOption.Type
+const CleanTempDirOption = S.Literals(['always', false, true])
 
 export class TempDirKept extends S.TaggedClass<TempDirKept>()('TempDirKept', {}) {
   readonly [KeepTempDirTypeId] = KeepTempDirTypeId
@@ -30,24 +19,25 @@ export class TempDirRemoved extends S.TaggedClass<TempDirRemoved>()('TempDirRemo
 export type KeepTempDirOutcome = TempDirKept | TempDirRemoved
 
 export class KeepTempDirCommand extends S.TaggedClass<KeepTempDirCommand>()('KeepTempDirCommand', {
-  cleanTempDir: KeepTempDirOption,
+  cleanTempDir: CleanTempDirOption,
   failed: S.Boolean,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-const keepOf = (failed: boolean): Result.Result<KeepTempDirOutcome, never> =>
-  Match.value(failed).pipe(
+const keptIff = (kept: boolean): KeepTempDirOutcome =>
+  Match.value(kept).pipe(
     Match.when(true, () => TempDirKept.make({})),
     Match.when(false, () => TempDirRemoved.make({})),
     Match.exhaustive,
-    Result.succeed,
   )
 const decide = (command: KeepTempDirCommand): Result.Result<KeepTempDirOutcome, never> =>
   Match.value(command.cleanTempDir).pipe(
-    Match.tag('KeepTempDirAlways', () => Result.succeed(TempDirRemoved.make({}))),
-    Match.tag('KeepTempDirOnFailure', (option) => keepOf(option.failed)),
+    Match.when(false, () => TempDirKept.make({})),
+    Match.when(true, () => keptIff(command.failed)),
+    Match.when('always', () => TempDirRemoved.make({})),
     Match.exhaustive,
+    Result.succeed,
   )
 export const keepTempDir = Workflow.make({
   command: KeepTempDirCommand,
