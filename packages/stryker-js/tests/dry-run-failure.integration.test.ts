@@ -106,7 +106,7 @@ const OPTIONS: Options.PartialStrykerOptions = {
 const FROZEN_RUNNER_PLUGIN = new URL('./__fixtures__/frozen-runner/index.mjs', import.meta.url).href
 
 interface FrozenRunnerOutcome {
-  readonly outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>
+  readonly outcome: Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>
   readonly workerPid: number
 }
 
@@ -181,15 +181,11 @@ Feature('Reporting why a dry run failed')
         ),
         When('the mutation run performs its initial test run')(
           'run',
-          (s) =>
-            runWithFrozenRunner(s.project).pipe(
-              Effect.provide(capturingLogger(s.project)),
-              Effect.ensuring(removeProject(s.project.root)),
-            ),
+          (s) => runWithFrozenRunner(s.project).pipe(Effect.ensuring(removeProject(s.project.root))),
         ),
         Then('the dry run fails and the unresponsive test runner does not outlive the run')((s, expect) =>
           expect({
-            stage: failureOf(s.run.outcome).stage,
+            stage: failureOf(s.run.outcome).evidence.stage,
             workerAlive: isProcessAlive(s.run.workerPid),
           }).toEqual({ stage: 'dryRun', workerAlive: false })
         ),
