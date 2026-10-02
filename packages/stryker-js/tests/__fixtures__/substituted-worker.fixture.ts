@@ -1,4 +1,5 @@
 import { Worker } from '@systemfsoftware/stryker-js'
+import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
@@ -6,6 +7,7 @@ import * as NetAddress from 'effect/net/NetAddress'
 import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
+import * as Result from 'effect/Result'
 import * as Rpc from 'effect/rpc/Rpc'
 import * as RpcClient from 'effect/rpc/RpcClient'
 import * as RpcGroup from 'effect/rpc/RpcGroup'
@@ -80,15 +82,21 @@ const unboundAddress = (): Socket.SocketError =>
     reason: Socket.SocketOpenError.make({ kind: 'Unknown', cause: 'the substituted worker never bound its address' }),
   })
 
+const refusingSocket: Socket.Socket = Socket.make({
+  reader: Effect.fail(unboundAddress()),
+  writer: Effect.succeed({
+    write: () => Effect.void,
+    writeAll: () => Effect.void,
+  }),
+})
+
 const clientProtocol = (
   behaviour: ChildBehaviour,
   socket: Socket.Socket,
-): Layer.Layer<RpcClient.Protocol, Socket.SocketError> => {
-  if (behaviour !== 'acceptsConnection') {
-    return Layer.effect(RpcClient.Protocol)(unboundAddress().pipe(Effect.fail))
-  }
-  return Worker.layerWorkerProtocol(Layer.succeed(Socket.Socket, socket))
-}
+): Layer.Layer<RpcClient.Protocol, Socket.SocketError> =>
+  Worker.layerWorkerProtocol(
+    Layer.succeed(Socket.Socket, behaviour === 'acceptsConnection' ? socket : refusingSocket),
+  )
 
 const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, Worker.WorkerExit> => {
   if (behaviour === 'crashes') {
@@ -155,3 +163,52 @@ export const substitutedLauncher = (
     clientLayer: (socket) => clientProtocol(behaviour, socket),
     exited: exitOf(behaviour),
   })
+
+export const WORKING_DIRECTORY = '/project/.stryker-tmp/sandbox-1'
+export const EXEC_ARGV: readonly string[] = ['--enable-source-maps']
+export const PLUGIN_OPTIONS = { plugins: ['file:///project/node_modules/@acme/stryker-runner/dist/worker.mjs'] }
+export const TEMP_DIR_PREFIX = 'stryker-plugin-'
+
+export interface BootOutcome<E = unknown> {
+  readonly answer: Result.Result<string, E>
+  readonly spawns: readonly Worker.WorkerSpawnParams[]
+  readonly options: Options.StrykerOptions
+}
+
+export const bootPingWorker = (
+  behaviour: ChildBehaviour,
+): Effect.Effect<BootOutcome> =>
+  Effect.gen(function*() {
+    const options = yield* Schema.decodeEffect(Options.StrykerOptionsSchema)(PLUGIN_OPTIONS).pipe(Effect.orDie)
+    const launcher = yield* substitutedLauncher(behaviour)
+    const answer = yield* Worker.makeWorkerClient({
+      rpcs: PingRpcs,
+      options,
+      entrypoint: WORKER_ENTRYPOINT,
+      workingDirectory: WORKING_DIRECTORY,
+      execArgv: EXEC_ARGV,
+      tempDirPrefix: TEMP_DIR_PREFIX,
+      env: undefined,
+    }).pipe(
+      Effect.flatMap((client) => client.ping({ message: 'boot' })),
+      Effect.provide(launcher.layer),
+      Effect.result,
+    )
+    return { answer, spawns: yield* Ref.get(launcher.spawns), options }
+  }).pipe(Effect.scoped)
+
+export const bootFailure = <E = unknown>(boot: BootOutcome<E>): E =>
+  Result.match(boot.answer, {
+    onFailure: (error) => error,
+    onSuccess: (answer) => {
+      throw new Error(`the boot was expected to fail, but the worker answered ${answer}`)
+    },
+  })
+
+export const timeoutOf = (boot: BootOutcome): Worker.WorkerBootTimeoutError => {
+  const failure = bootFailure(boot)
+  if (Schema.is(Worker.WorkerBootTimeoutError)(failure)) {
+    return failure
+  }
+  throw new Error('the boot was expected to fail as a boot timeout', { cause: failure })
+}
