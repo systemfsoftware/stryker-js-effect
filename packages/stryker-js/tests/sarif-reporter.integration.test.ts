@@ -20,7 +20,7 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
-import { ReproducerList, SarifDocument } from './__fixtures__/sarif-reporter.schema.js'
+import { FailureSarifDocument, ReproducerList, SarifDocument } from './__fixtures__/sarif-reporter.schema.js'
 
 const Feature = makeFeature({ it })
 
@@ -235,15 +235,15 @@ interface AnnotateRun {
   readonly stderr: string
 }
 
-const runAnnotate = (
+const spawnStryker = (
   root: string,
-  args: ReadonlyArray<string>,
+  argv: ReadonlyArray<string>,
 ): Effect.Effect<AnnotateRun, never, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.scoped(
     Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       const handle = yield* spawner.spawn(
-        ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, 'annotate', ...args], {
+        ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, ...argv], {
           cwd: root,
           stdin: 'ignore',
           stdout: 'pipe',
@@ -260,8 +260,41 @@ const runAnnotate = (
     }),
   ).pipe(Effect.orDie)
 
+const runAnnotate = (
+  root: string,
+  args: ReadonlyArray<string>,
+): Effect.Effect<AnnotateRun, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  spawnStryker(root, ['annotate', ...args])
+
 const annotationLinesOf = (stdout: string): ReadonlyArray<string> =>
   Arr.filter(stdout.split('\n'), (line) => line.startsWith('::'))
+
+const FAILING_CONSUMER_CONFIG = `export default {
+  testRunner: 'command',
+  commandRunner: { command: 'false' },
+  mutate: ['src/**/*.ts'],
+  coverageAnalysis: 'off',
+  concurrency: 1,
+  reporters: ['json', 'sarif'],
+}
+`
+
+const FAILING_TARGET_SOURCE = 'export const target = (value: number): number => value + 1\n'
+
+const writeFailingWorkspace = (): Effect.Effect<Workspace, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const directory = yield* fs.makeTempDirectory({ prefix: 'stryker-sarif-fail-' })
+    yield* fs.makeDirectory(path.join(directory, 'src'), { recursive: true })
+    yield* fs.writeFileString(path.join(directory, 'package.json'), '{ "type": "commonjs" }\n')
+    yield* fs.writeFileString(path.join(directory, 'src', 'target.ts'), FAILING_TARGET_SOURCE)
+    yield* fs.writeFileString(path.join(directory, 'stryker.config.mjs'), FAILING_CONSUMER_CONFIG)
+    return { directory }
+  }).pipe(Effect.orDie)
+
+const parseFailureSarif = (text: string | undefined): Option.Option<FailureSarifDocument> =>
+  text === undefined ? Option.none() : Result.getSuccess(S.decodeResult(S.fromJsonString(FailureSarifDocument))(text))
 
 Feature('Survivors reaching code scanning, annotations, and reproducers', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
@@ -376,6 +409,56 @@ Feature('Survivors reaching code scanning, annotations, and reproducers', { time
             })
           },
         ),
+      ),
+    )
+    scenario(
+      'A failed run with the sarif reporter writes a failed invocation with one notification for its record',
+      Gherkin.Do.pipe(
+        Given('a workspace whose test command fails the baseline')(
+          'workspace',
+          () => writeFailingWorkspace().pipe(Effect.provide(filePorts)),
+        ),
+        When('stryker run executes with the json and sarif reporters')(
+          'observation',
+          (s) =>
+            Effect.gen(function*() {
+              const run = yield* spawnStryker(s.workspace.directory, ['run'])
+              const sarifText = yield* FileSystem.FileSystem.pipe(
+                Effect.flatMap((fs) => fs.readFileString(sarifFileOf(s.workspace.directory)).pipe(Effect.option)),
+                Effect.provide(filePorts),
+              )
+              return { run, sarif: Option.getOrUndefined(Option.flatMap(sarifText, parseFailureSarif)) }
+            }).pipe(
+              Effect.ensuring(removeWorkspace(s.workspace.directory).pipe(Effect.provide(filePorts))),
+            ),
+        ),
+        Then('the SARIF invocation is failed at exit 5 and notifies the record')((s, expect) => {
+          const sarif = s.observation.sarif
+          const run = sarif === undefined ? undefined : Option.getOrUndefined(Arr.head(sarif.runs))
+          const invocation = run === undefined ? undefined : Option.getOrUndefined(Arr.head(run.invocations))
+          const notification = invocation === undefined
+            ? undefined
+            : Option.getOrUndefined(Arr.head(invocation.toolExecutionNotifications))
+          return expect({
+            exitCode: s.observation.run.exitCode,
+            version: sarif?.version,
+            executionSuccessful: invocation?.executionSuccessful,
+            invocationExitCode: invocation?.exitCode,
+            notificationCount: invocation?.toolExecutionNotifications.length,
+            descriptorId: notification?.descriptor.id,
+            level: notification?.level,
+            textNamesTheRecord: notification?.message.text.includes('BaselineTestsFailed'),
+          }).toEqual({
+            exitCode: 5,
+            version: '2.1.0',
+            executionSuccessful: false,
+            invocationExitCode: 5,
+            notificationCount: 1,
+            descriptorId: 'BaselineTestsFailed',
+            level: 'error',
+            textNamesTheRecord: true,
+          })
+        }),
       ),
     )
   })

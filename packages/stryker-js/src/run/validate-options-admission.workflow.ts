@@ -194,9 +194,13 @@ const unknownOptionWarnings = (
   schema: ValidationSchemaDocument,
 ): readonly string[] => {
   const excessNames = excessOptionNames(options, schema)
-  return excessNames.map((excess) => `Unknown stryker config option "${excess}".`).concat(
-    POSSIBLE_CAUSES_OF(pluginsJson(options)),
-  )
+  return Boolean.match(excessNames.length > 0, {
+    onFalse: (): readonly string[] => [],
+    onTrue: () => [
+      ...excessNames.map((excess) => `Unknown stryker config option "${excess}".`),
+      POSSIBLE_CAUSES_OF(pluginsJson(options)),
+    ],
+  })
 }
 
 const excessOptionWarningsOf = (

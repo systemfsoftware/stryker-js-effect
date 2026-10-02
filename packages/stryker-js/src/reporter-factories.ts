@@ -21,7 +21,7 @@ import { progressReportCell } from './progress-report.cell.js'
 import type { ProgressState, ProgressTally } from './render-progress-report.workflow.js'
 import { failAsProgress } from './reporter-failures.js'
 import { ReporterOutput } from './reporter-output.service.js'
-import { sarifReport, SarifReportCommand } from './sarif-report.workflow.js'
+import { sarifReport, SarifReportCommand, SurvivorsReportSource } from './sarif-report.workflow.js'
 import { sarifFileNameOf } from './stryker-outputs.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import { surfacedSurvivorsOf } from './surfacing.js'
@@ -85,6 +85,12 @@ export const progressReporterFactory = (
 const SARIF_MAX_RESULTS = 5000
 const STRYKER_INFORMATION_URI = 'https://stryker-mutator.io'
 
+export const SARIF_TOOL = {
+  name: 'StrykerJS',
+  version: StrykerPackage.version,
+  informationUri: STRYKER_INFORMATION_URI,
+} as const
+
 const failAsSarif = <E = unknown>(cause: E): Reporter.ReporterFailed =>
   Reporter.ReporterFailed.make({
     reporterName: 'sarif',
@@ -117,17 +123,15 @@ const writeSarifReport = (options: Options.StrykerOptions, report: Report.Mutati
     const rendered = Result.getOrThrow(
       sarifReport(
         SarifReportCommand.make({
-          report,
-          survivors: surfacedSurvivorsOf(report, {
-            perLine: options.surfacing.perLine,
-            perFile: options.surfacing.perFile,
+          source: SurvivorsReportSource.make({
+            report,
+            survivors: surfacedSurvivorsOf(report, {
+              perLine: options.surfacing.perLine,
+              perFile: options.surfacing.perFile,
+            }),
+            maxResults: SARIF_MAX_RESULTS,
           }),
-          tool: {
-            name: 'StrykerJS',
-            version: StrykerPackage.version,
-            informationUri: STRYKER_INFORMATION_URI,
-          },
-          maxResults: SARIF_MAX_RESULTS,
+          tool: SARIF_TOOL,
         }),
       ),
     )

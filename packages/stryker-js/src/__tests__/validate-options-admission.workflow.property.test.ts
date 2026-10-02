@@ -1,24 +1,44 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { forkOptionsSchema } from '../Config.schema.js'
 import {
   OptionsRefused,
   OptionsValidated,
   type OptionsValidationDecision,
   validateOptionsAdmission,
   ValidateOptionsCommand,
+  type ValidationSchemaDocument,
 } from '../run/validate-options-admission.workflow.js'
 
-const commandOf = <A>(options: Record<string, A>): ValidateOptionsCommand =>
-  ValidateOptionsCommand.make({ options, schema: {} })
+const CORE_SCHEMA_DOCUMENT: ValidationSchemaDocument = S.toJsonSchemaDocument(forkOptionsSchema).schema
 
-const decide = <A>(subject: typeof validateOptionsAdmission, options: Record<string, A>) =>
-  subject(commandOf(options)).pipe(Result.getOrElse((neverError) => neverError))
+const commandOf = <A>(
+  options: Record<string, A>,
+  schema: ValidationSchemaDocument = {},
+): ValidateOptionsCommand => ValidateOptionsCommand.make({ options, schema })
+
+const decide = <A>(
+  subject: typeof validateOptionsAdmission,
+  options: Record<string, A>,
+  schema?: ValidationSchemaDocument,
+) => subject(commandOf(options, schema)).pipe(Result.getOrElse((neverError) => neverError))
 
 const refusedWith = (decision: OptionsValidationDecision, fragment: string): boolean =>
   S.is(OptionsRefused)(decision) && decision.errors.some((error) => error.includes(fragment))
+
+const warningsIn = (decision: OptionsValidationDecision): readonly string[] =>
+  Match.valueTags(decision, {
+    OptionsRefused: (refused) => refused.warnings,
+    OptionsUndecodable: (undecodable) => undecodable.warnings,
+    OptionsValidated: (validated) => validated.warnings,
+  })
+
+const hasUnknownOptionWarning = (warnings: readonly string[]): boolean =>
+  warnings.some((warning) => warning.includes('Unknown stryker config option') || warning.includes('Possible causes'))
 
 const rangeArb = Arbitrary.schema(S.Struct({
   startLine: S.Int.check(S.isBetween({ minimum: 0, maximum: 8 })),
@@ -29,6 +49,16 @@ const globArb = Arbitrary.schema(S.Struct({
   globChar: S.optional(S.Literals(['*', '?', '[', '{'])),
   name: S.String.check(S.isPattern(/^[a-z][a-z0-9]{0,4}$/)),
 }))
+
+const unknownOptionArb = Arbitrary.schema(S.Struct({
+  include: S.Boolean,
+  name: S.String.check(S.isPattern(/^k[a-z0-9]{0,4}$/)),
+}))
+
+const optionsWith = (include: boolean, name: string): Record<string, boolean | number> => {
+  const known: Record<string, boolean | number> = { warnings: true }
+  return include ? { ...known, [name]: 42 } : known
+}
 
 describe('validateOptionsAdmission', () => {
   it.prop(
@@ -82,6 +112,17 @@ describe('validateOptionsAdmission', () => {
       return ignoreStatic && perTest === false
         ? refusedWith(decision, 'ignoreStatic')
         : S.is(OptionsValidated)(decision)
+    },
+  )
+
+  it.prop(
+    '∀k_Included_≡UnknownOptionIsWarnedExactlyWhenTheSchemaOmitsIt',
+    { of: [unknownOptionArb], subject: validateOptionsAdmission },
+    (subject, [{ include, name }]) => {
+      const decision = decide(subject, optionsWith(include, name), CORE_SCHEMA_DOCUMENT)
+      const warnings = warningsIn(decision)
+      const namesTheOption = warnings.some((warning) => warning.includes(`Unknown stryker config option "${name}".`))
+      return namesTheOption === include && hasUnknownOptionWarning(warnings) === include
     },
   )
 })

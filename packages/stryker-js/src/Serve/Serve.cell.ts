@@ -14,14 +14,15 @@
  */
 import { NodeSocketServer } from '@effect/platform-node'
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
-import type { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import type * as Cause from 'effect/Cause'
+import { type Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as FiberSet from 'effect/FiberSet'
 import * as FileSystem from 'effect/FileSystem'
@@ -39,6 +40,8 @@ import * as SocketServer from 'effect/socket/SocketServer'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 
+import { classifyRunOutcome, type RunOutcomeDecision } from '../classify-run-outcome.workflow.js'
+import { runOutcomeCommandOf } from '../conclude-run.js'
 import { concurrencyCell } from '../concurrency.cell.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
 import { readProjectCell } from '../read-project.cell.js'
@@ -107,6 +110,28 @@ interface EngineRun {
   readonly env: RunEnvironmentShape
   readonly context: Context.Context<RunStageServices>
 }
+
+const engineDecisionOf = <A, E>(exit: Exit.Exit<A, E>, basePath: string): RunOutcomeDecision =>
+  Result.getOrElse(
+    classifyRunOutcome(runOutcomeCommandOf({ exit, argv: [], cwd: basePath, traceId: null })),
+    (impossible) => impossible,
+  )
+
+const engineFailureOf = <A, E>(
+  exit: Exit.Exit<A, E>,
+  basePath: string,
+  reason: string,
+): Effect.Effect<A, ServeError> =>
+  Exit.match(exit, {
+    onSuccess: (value) => Effect.succeed(value),
+    onFailure: (cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : Match.value(engineDecisionOf(Exit.failCause(cause), basePath)).pipe(
+          Match.tag('RunFailed', (failed) => Effect.fail(ServeError.make({ reason, cause: failed.record }))),
+          Match.orElse(() => Effect.die(new Error(reason))),
+        ),
+  })
 
 const serveEnvironment = (basePath: string, startedAt: number): RunEnvironmentShape => ({
   runId: generateRunId(DateTime.makeUnsafe(startedAt)),
@@ -299,14 +324,15 @@ const runDiscover = (
   withEngine(() => Effect.void, ({ env, context }) =>
     Effect.gen(function*() {
       const path = yield* Path.Path
-      const done = yield* Cell.provideContext(discoverStageCell, context).run({
-        cliOptions: options,
-        targetMutatePatterns: targetMutatePatterns === undefined ? undefined : [...targetMutatePatterns],
-      })
+      const exit = yield* Effect.exit(
+        Cell.provideContext(discoverStageCell, context).run({
+          cliOptions: options,
+          targetMutatePatterns: targetMutatePatterns === undefined ? undefined : [...targetMutatePatterns],
+        }),
+      )
+      const done = yield* engineFailureOf(exit, env.basePath, 'discovery failed')
       return { files: discoveredFilesOf(done.mutants, (fileName) => path.relative(env.basePath, fileName)) }
-    }).pipe(
-      Effect.mapError((failure) => ServeError.make({ reason: describe(failure, 'discovery failed'), cause: failure })),
-    ))
+    }))
 
 const runMutationTest = (
   options: ServeOptions,
@@ -322,16 +348,15 @@ const runMutationTest = (
     ({ env, context }) =>
       Effect.gen(function*() {
         const path = yield* Path.Path
-        const done = yield* Cell.provideContext(mutationTestCell, context).run({
-          cliOptions: options,
-          targetMutatePatterns: targetMutatePatterns === undefined ? undefined : [...targetMutatePatterns],
-        })
+        const exit = yield* Effect.exit(
+          Cell.provideContext(mutationTestCell, context).run({
+            cliOptions: options,
+            targetMutatePatterns: targetMutatePatterns === undefined ? undefined : [...targetMutatePatterns],
+          }),
+        )
+        const done = yield* engineFailureOf(exit, env.basePath, 'the mutation test failed')
         return { files: mutationTestFilesOf(done.results, (fileName) => path.relative(env.basePath, fileName)) }
-      }).pipe(
-        Effect.mapError((failure) =>
-          ServeError.make({ reason: describe(failure, 'the mutation test failed'), cause: failure })
-        ),
-      ),
+      }),
   )
 
 const respond = (connection: Connection, id: JsonRpcId, result: S.Json): Effect.Effect<void, ServeError> =>
@@ -345,10 +370,34 @@ const respondError = (
   id: JsonRpcId | null,
   code: number,
   message: string,
+  data?: S.Json,
 ): Effect.Effect<void, ServeError> =>
   Effect.flatMap(
-    encodedOr(encodeJsonRpcResponse({ jsonrpc: '2.0' as const, id, error: { code, message } }), 'an error response'),
+    encodedOr(
+      encodeJsonRpcResponse({
+        jsonrpc: '2.0' as const,
+        id,
+        error: { code, message, ...(data === undefined ? {} : { data }) },
+      }),
+      'an error response',
+    ),
     (payload) => connection.write(payload),
+  )
+
+const respondFailure = (
+  connection: Connection,
+  id: JsonRpcId,
+  failure: ServeError,
+): Effect.Effect<void, ServeError> =>
+  Option.match(
+    Option.flatMap(
+      Option.fromUndefinedOr(failure.cause),
+      (cause) => S.decodeUnknownOption(FailureRecord.FailureRecord)(cause),
+    ),
+    {
+      onNone: () => respondError(connection, id, MSP_INTERNAL_ERROR, failure.reason),
+      onSome: (record) => respondError(connection, id, MSP_INTERNAL_ERROR, failure.reason, record),
+    },
   )
 
 const notifyProgress = (
@@ -382,7 +431,7 @@ const runRequested = (
           runDiscover(optionsOf(invocation, yield* state), restrictPatternsOf(params.files)),
         )
         yield* Result.match(result, {
-          onFailure: (failure) => respondError(connection, id, MSP_INTERNAL_ERROR, failure.reason),
+          onFailure: (failure) => respondFailure(connection, id, failure),
           onSuccess: (files) => respond(connection, id, files),
         })
       })),
@@ -396,7 +445,7 @@ const runRequested = (
           ),
         )
         yield* Result.match(result, {
-          onFailure: (failure) => respondError(connection, id, MSP_INTERNAL_ERROR, failure.reason),
+          onFailure: (failure) => respondFailure(connection, id, failure),
           onSuccess: (files) => respond(connection, id, files),
         })
       })),

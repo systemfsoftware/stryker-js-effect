@@ -1,16 +1,21 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { FailureRecord, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import type * as FileSystem from 'effect/FileSystem'
+import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { RunExit, RunOutcomeDecision } from './classify-run-outcome.workflow.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { planRunConclusion, type PlanRunConclusionCommand } from './plan-run-conclusion.workflow.js'
+import { SARIF_TOOL } from './reporter-factories.js'
 import type { RunEventDrain, RunEventStream, RunEventStreamPort } from './run-event-stream.service.js'
+import { FailureReportSource, sarifReport, SarifReportCommand } from './sarif-report.workflow.js'
 import { StrykerError } from './stryker-error.schema.js'
-import { FAILURE_RECORD_FILE } from './stryker-outputs.js'
+import { FAILURE_RECORD_FILE, sarifFileNameOf } from './stryker-outputs.js'
 
 export interface RunConclusionInput {
   readonly mode: ResolvedMode
@@ -20,6 +25,7 @@ export interface RunConclusionInput {
   readonly fileSystem: FileSystem.FileSystem
   readonly runEvents: RunEventStreamPort
   readonly decision: RunOutcomeDecision
+  readonly resolvedOptions: Options.StrykerOptions | null
 }
 
 export type RunConclusionRaw = (typeof PlanRunConclusionCommand)['Encoded'] & {
@@ -58,6 +64,52 @@ const removeStaleFailureRecord = (conclusion: RunConclusionInput) =>
     Effect.ignore,
   )
 
+const SARIF_REPORTER_NAME = 'sarif'
+
+const sarifFailureFileOf = (conclusion: RunConclusionInput): string | null =>
+  Option.getOrNull(
+    Option.map(
+      Option.filter(
+        Option.fromNullishOr(conclusion.resolvedOptions),
+        (options) => options.reporters.includes(SARIF_REPORTER_NAME),
+      ),
+      (options) => conclusion.pathService.resolve(conclusion.basePath, sarifFileNameOf(options.jsonReporter.fileName)),
+    ),
+  )
+
+const writeSarifFailureLog = (
+  conclusion: RunConclusionInput,
+  file: string,
+  exitCode: number,
+  record: FailureRecord.FailureRecord,
+) =>
+  Effect.gen(function*() {
+    const rendered = Result.getOrThrow(
+      sarifReport(
+        SarifReportCommand.make({
+          source: FailureReportSource.make({ records: [record], exitCode }),
+          tool: SARIF_TOOL,
+        }),
+      ),
+    )
+    const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(rendered.log)
+    yield* conclusion.fileSystem.makeDirectory(conclusion.pathService.dirname(file), { recursive: true })
+    yield* conclusion.fileSystem.writeFileString(file, json)
+  }).pipe(
+    Effect.tapError((error) => Effect.logWarning(`could not write the SARIF failure log: ${error.message}`)),
+    Effect.ignore,
+  )
+
+const writeFailureSarif = (
+  conclusion: RunConclusionInput,
+  exitCode: number,
+  record: FailureRecord.FailureRecord,
+) =>
+  Effect.forEach(
+    Option.toArray(Option.fromNullishOr(sarifFailureFileOf(conclusion))),
+    (file) => writeSarifFailureLog(conclusion, file, exitCode, record),
+  ).pipe(Effect.asVoid)
+
 const closeAndExit = (conclusion: RunConclusionInput, exitCode: number) =>
   Effect.andThen(conclusion.stream.closeAndDrain, Effect.fail(RunExit.make({ code: exitCode })))
 
@@ -89,6 +141,7 @@ export const concludeRunCell = Sandwich.named(SpanTaxonomy.Spans.runConclude.nam
       ),
     RunConclusionFailed: (decision, raw) =>
       writeFailureRecord(raw.conclusion, decision.record).pipe(
+        Effect.andThen(writeFailureSarif(raw.conclusion, decision.exitCode, decision.record)),
         Effect.andThen(
           raw.conclusion.runEvents.emitFailureRecord(raw.conclusion.stream, decision.exitCode, decision.record),
         ),

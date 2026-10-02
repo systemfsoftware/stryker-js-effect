@@ -1,5 +1,5 @@
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import type { Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Options, Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
@@ -13,6 +13,7 @@ import * as Option from 'effect/Option'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
+import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
@@ -34,6 +35,7 @@ export interface RunEnvironmentShape {
   readonly basePath: string
   readonly builtinReporters: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
   readonly allowConsoleColors: boolean
+  readonly resolvedOptions?: Ref.Ref<Options.StrykerOptions | null> | undefined
 }
 
 export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironmentShape>()(
@@ -81,9 +83,11 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
         readonly builtinReporters: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
       },
     ): Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem> =>
-      Effect.map(
-        Effect.flatMap(FileSystem.FileSystem, (fs) => fs.realPath('.')),
-        (basePath) => ({
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const basePath = yield* fs.realPath('.')
+        const resolvedOptions = yield* Ref.make<Options.StrykerOptions | null>(null)
+        return {
           runId: stream.runId,
           resolvedMode: mode,
           runStartedAt: stream.startedAt,
@@ -91,8 +95,9 @@ export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironme
           builtinReporters: host.builtinReporters,
           allowConsoleColors: mode.mode === 'human' &&
             Option.isNone(Option.filter(Option.fromUndefinedOr(host.noColor), S.is(S.NonEmptyString))),
-        }),
-      ),
+          resolvedOptions,
+        }
+      }),
   )
 }
 

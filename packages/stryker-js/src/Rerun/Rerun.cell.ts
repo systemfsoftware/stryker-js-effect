@@ -13,6 +13,7 @@ import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { PriorReportDocument } from '../Survivors/Survivors.schema.js'
 import { admitMutantRerun, type PriorMutantShape, RerunRefused } from './admit-mutant-rerun.workflow.js'
+import type { RerunEngineUnusable } from './rerun.schema.js'
 
 export type MutantRerunSettled = void | MutationTestDone
 
@@ -23,7 +24,7 @@ export interface MutantRerunRun {
 }
 
 export interface MutantRerunSettlement {
-  readonly runAdmitted: (run: MutantRerunRun) => Effect.Effect<MutantRerunSettled, never, EnginePorts>
+  readonly runAdmitted: (run: MutantRerunRun) => Effect.Effect<MutantRerunSettled, RerunEngineUnusable, EnginePorts>
 }
 
 export interface MutantRerunInput {

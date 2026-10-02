@@ -1,7 +1,9 @@
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 import { FeedbackUnusable } from '../Feedback/Feedback.schema.js'
+import { RerunEngineUnusable } from '../Rerun/rerun.schema.js'
 
 export const MutantDetail = S.Struct({
   id: Mutant.MutantId,
@@ -31,6 +33,12 @@ export class RerunUnusable extends S.TaggedError<RerunUnusable>()('RerunUnusable
   }
 }
 
+export const FailureLookup = S.Struct({ failure: S.NullOr(FailureRecord.FailureRecord) })
+
+export type FailureLookup = typeof FailureLookup.Type
+
 export const ShowMutantFailure = S.Union([MutantUnusable, FeedbackUnusable])
 
-export const RerunMutantFailure = S.Union([MutantUnusable, RerunUnusable])
+export const RerunMutantFailure = S.Union([MutantUnusable, RerunUnusable, RerunEngineUnusable])
+
+export type RerunMutantFailure = typeof RerunMutantFailure.Type
