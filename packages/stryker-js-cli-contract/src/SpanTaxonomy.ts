@@ -1,7 +1,13 @@
 import { Mutant, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-import { SpanAttributeCount, SpanAttributeText, type SpanMember, SpanRunStatus } from './SpanTaxonomy.schema.js'
+import {
+  SpanAttributeCount,
+  SpanAttributeOptionalText,
+  SpanAttributeText,
+  type SpanMember,
+  SpanRunStatus,
+} from './SpanTaxonomy.schema.js'
 
 const protocolMethods: ReadonlyArray<string> = [
   ...new Set([
@@ -31,7 +37,7 @@ export const Spans = {
     attributes: {
       'stryker.run.outcome': SpanAttributeText,
       'stryker.run.exit_code': SpanAttributeCount,
-      'stryker.run.error': SpanAttributeText,
+      'stryker.failure.code': SpanAttributeOptionalText,
     },
   },
   commandRunnerRun: { name: 'stryker.command_runner.run', attributes: {} },

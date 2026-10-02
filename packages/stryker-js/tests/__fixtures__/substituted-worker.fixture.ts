@@ -96,12 +96,15 @@ const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, Worker.WorkerEx
       Worker.ChildProcessCrashedError.make({
         pid: WORKER_PID,
         exit: { _tag: 'Code', code: 9 },
+        workerKind: 'testRunner',
         cause: 'the substituted worker died during boot',
       }),
     )
   }
   if (behaviour === 'runsOutOfMemory') {
-    return Effect.fail(Worker.OutOfMemoryError.make({ pid: WORKER_PID, exitCode: 137 }))
+    return Effect.fail(
+      Worker.OutOfMemoryError.make({ pid: WORKER_PID, exitCode: 137, workerKind: 'testRunner' }),
+    )
   }
   return Effect.never
 }

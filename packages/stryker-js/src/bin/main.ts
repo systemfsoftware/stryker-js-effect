@@ -7,7 +7,7 @@ import { AggregationTemporalityPreference, OTLPMetricExporter } from '@opentelem
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics'
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base'
-import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
 import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Boolean from 'effect/Boolean'
@@ -21,6 +21,7 @@ import * as Console from 'effect/Console'
 import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
+import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import * as Match from 'effect/Match'
@@ -33,16 +34,15 @@ import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
 import { inheritableCompileCacheDirectory } from './enable-compile-cache.js'
 
-import { classifyRunOutcome, RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
+import { classifyRunOutcome, RunExit, type RunOutcomeDecision } from '../classify-run-outcome.workflow.js'
 import { concludeRunCell } from '../conclude-run.cell.js'
 import { runOutcomeCommandOf } from '../conclude-run.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
 import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
-import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
 import { environmentParentContext } from '../reporter-stream.service.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
-import { errorEnvelopeFromOutcome, runExitCodeFromOutcome } from '../reporting/run-failure.js'
+import { runExitCodeFromOutcome } from '../reporting/run-failure.js'
 import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
 import { type CliAnswer, type CliEnvironment } from '../run-request.cell.js'
 import { RunEnvironment } from '../run/RunEnvironment.service.js'
@@ -118,9 +118,11 @@ const otlpTelemetryLayer = (options: {
   )
 }
 
+const tracingEnabled = Config.Boolean('OTEL_ENABLED').pipe(Config.withDefault(false))
+
 const telemetryLayer: Layer.Layer<never> = Layer.unwrap(
   Effect.all([
-    Config.Boolean('OTEL_ENABLED').pipe(Config.withDefault(false)),
+    tracingEnabled,
     Config.String('OTEL_SERVICE_NAME').pipe(Config.withDefault('stryker-js')),
     Config.String('OTEL_EXPORTER_OTLP_ENDPOINT').pipe(Config.withDefault('http://127.0.0.1:4318')),
     Config.Number('OTEL_METRIC_EXPORT_INTERVAL').pipe(Config.withDefault(DEFAULT_METRIC_EXPORT_INTERVAL_MILLIS)),
@@ -168,7 +170,7 @@ const cliLayer = Layer.mergeAll(
   NodeTerminal.layer,
 ).pipe(Layer.provideMerge(nodePlatform))
 
-const USAGE_EXIT_CODE = runExitCodeFromOutcome(RunParseFailed.make({})).code
+const USAGE_EXIT_CODE = FailureRecord.FailureCatalog.ArgumentsInvalid.exitCode
 
 const PROTOCOL_SERVER_SUBCOMMANDS: ReadonlyArray<string> = ['serve', 'mcp']
 
@@ -180,11 +182,23 @@ const servedInvocation = (argv: ReadonlyArray<string>): boolean =>
     (subcommand) => PROTOCOL_SERVER_SUBCOMMANDS.some((served) => served === subcommand),
   )
 
-const SPAN_ERROR_LIMIT = 1024
-const TRUNCATION_SUFFIX = '…[truncated]'
+const exportedTraceId = Effect.gen(function*() {
+  const enabled = yield* Effect.orElseSucceed(tracingEnabled, () => false)
+  const span = yield* Effect.option(Effect.currentSpan)
+  return Option.getOrNull(
+    Option.flatMap(
+      Option.filter(span, () => enabled),
+      (active) => S.decodeOption(FailureRecord.TraceId)(active.traceId),
+    ),
+  )
+})
 
-const boundedErrorText = (text: string): string =>
-  text.length > SPAN_ERROR_LIMIT ? text.slice(0, SPAN_ERROR_LIMIT) + TRUNCATION_SUFFIX : text
+const failureCodeAttributeOf = (decision: RunOutcomeDecision): Record<string, string> =>
+  Match.valueTags(decision, {
+    RunOk: () => ({}),
+    RunVerdictFailed: () => ({}),
+    RunFailed: ({ record }) => ({ 'stryker.failure.code': record._tag }),
+  })
 
 const strykerProgram = Effect.gen(function*() {
   const stdio = yield* Stdio.Stdio
@@ -240,35 +254,26 @@ const strykerProgram = Effect.gen(function*() {
             ),
           ),
         )
-        const conclusionCommand = runOutcomeCommandOf({ exit, argv: args })
-        const outcome = classifyRunOutcome(conclusionCommand)
-        const classified = Result.getOrElse(
-          outcome,
-          (interrupted) => interrupted,
-        )
-        const machineConsoleService = yield* MachineConsole
-        const errorText = Option.getOrElse(
-          Option.map(
-            Option.liftPredicate(S.is(FailedRunOutcomeSchema))(classified),
-            (failure) =>
-              boundedErrorText(
-                errorEnvelopeFromOutcome({ error: failure, captured: machineConsoleService.read() }).error,
-              ),
-          ),
-          () => '',
-        )
+        const conclusionCommand = runOutcomeCommandOf({
+          exit,
+          argv: args,
+          cwd: host.basePath,
+          traceId: yield* exportedTraceId,
+        })
+        const decision = Result.getOrElse(classifyRunOutcome(conclusionCommand), (impossible) => impossible)
         yield* Effect.annotateCurrentSpan({
-          'stryker.run.outcome': classified._tag,
-          'stryker.run.exit_code': runExitCodeFromOutcome(classified).code,
-          'stryker.run.error': errorText,
+          'stryker.run.outcome': decision._tag,
+          'stryker.run.exit_code': runExitCodeFromOutcome(decision).code,
+          ...failureCodeAttributeOf(decision),
         })
         return yield* concludeRunCell.run({
           mode,
           stream,
           basePath: host.basePath,
           pathService,
+          fileSystem: yield* FileSystem.FileSystem,
           runEvents,
-          concluded: { command: conclusionCommand, outcome, error: errorText },
+          decision,
         })
       }),
     )

@@ -51,7 +51,7 @@ export namespace Reporter {
 
 // @public (undocumented)
 export namespace TestRunner {
-    export { BaseTestResult, CompleteDryRunResult, CoverageAnalysis, CoverageAnalysisSchema, DryRunOptions, DryRunOptionsSchema, DryRunResult, DryRunResultSchema, DryRunStatus, ErrorDryRunResult, ErrorMutantRunResult, ExecutedTest, ExecutedTestSchema, FailedTestResult, HitLimitReason, HitLimitReasonPrefix, HitLimitReasonText, KilledMutantRunResult, MutantRunResult, MutantRunResultSchema, MutantRunStatus, SkippedTestResult, SuccessTestResult, SurvivedMutantRunResult, TestId, TestResult, TestResultSchema, TestRunner, TestRunnerCapabilities, TestRunnerCapabilitiesSchema, TestRunnerFailed, TestRunnerService, TestStatus, TimeoutDryRunResult, TimeoutMutantRunResult, WallClockTimeoutReason };
+    export { BaseTestResult, CompleteDryRunResult, CoverageAnalysis, CoverageAnalysisSchema, DryRunOptions, DryRunOptionsSchema, DryRunResult, DryRunResultSchema, DryRunStatus, ErrorDryRunResult, ErrorMutantRunResult, ExecutedTest, ExecutedTestSchema, FailedTestResult, HitLimitReason, HitLimitReasonPrefix, HitLimitReasonText, KilledMutantRunResult, MutantRunResult, MutantRunResultSchema, MutantRunStatus, SkippedTestResult, SuccessTestResult, SurvivedMutantRunResult, TestFailureLocation, TestId, TestResult, TestResultSchema, TestRunner, TestRunnerCapabilities, TestRunnerCapabilitiesSchema, TestRunnerFailed, TestRunnerService, TestStatus, TimeoutDryRunResult, TimeoutMutantRunResult, WallClockTimeoutReason };
 }
 
 // @public (undocumented)

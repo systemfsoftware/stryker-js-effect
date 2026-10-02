@@ -4,7 +4,7 @@ import * as Match from 'effect/Match'
 import { concurrencyCell } from '../concurrency.cell.js'
 import type { ConfigReadError } from '../ConfigError.schema.js'
 import { readProjectCell } from '../read-project.cell.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import { dryRunCell } from './dry-run.cell.js'
 import { instrumentCell } from './instrument.cell.js'
 import { loadConfigCell } from './load-config.cell.js'
@@ -25,11 +25,23 @@ const prepareStageCell = Cell.andThen(
     Cell.andThen(
       Cell.mapError(
         loadConfigCell,
-        (cause) => StageError.make({ stage: 'prepare', reason: configReadReasonOf(cause), cause }),
+        (cause) => {
+          const detail = configReadReasonOf(cause)
+          return RunFailure.make({
+            evidence: { _tag: 'ConfigInvalid', stage: 'config', detail },
+            detail,
+            cause,
+          })
+        },
       ),
       Cell.mapError(
         readProjectCell,
-        (cause) => StageError.make({ stage: 'prepare', reason: 'Failed to read project', cause }),
+        (cause) =>
+          RunFailure.make({
+            evidence: { _tag: 'SandboxPreparationFailed', stage: 'prepare' },
+            detail: 'Failed to read project',
+            cause,
+          }),
       ),
     ),
     prepareCell,
@@ -40,5 +52,5 @@ const prepareStageCell = Cell.andThen(
   ),
 )
 
-export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, StageError, StageServices> =
+export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, RunFailure, StageServices> =
   prepareStageCell

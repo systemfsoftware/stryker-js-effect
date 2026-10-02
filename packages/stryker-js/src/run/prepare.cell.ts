@@ -36,7 +36,7 @@ import {
   planMutatorCatalogs,
   PlanMutatorCatalogsCommand,
 } from '../plan-mutator-catalogs.workflow.js'
-import { pluginLoadFailureEvents, reportPluginLoad } from '../plugin-load-report.service.js'
+import { pluginLoadPhaseEvent, reportPluginLoad } from '../plugin-load-report.service.js'
 import { loadPlugins, pluginUrlsFromOptions } from '../plugin-loader.service.js'
 import { type LoadedPlugins, type PluginDescriptor } from '../Plugins.schema.js'
 import type { Project } from '../Project.schema.js'
@@ -53,7 +53,7 @@ import { type ReporterChoice, reporterInputsOf } from '../reporter-wiring.servic
 import { Reporter } from '../reporter.service.js'
 import { AnsiCode } from '../reporting/ansi.schema.js'
 import { RunEvents } from '../run-events.service.js'
-import { PrepareError, StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import { TemporaryDirectory } from '../Sandbox.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { admitNonEmptyProject, NonEmptyProjectCommand, ProjectEmpty } from './admit-non-empty-project.workflow.js'
@@ -134,7 +134,7 @@ const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
   command: ReadProjectDone,
 ): Effect.fn.Return<
   PrepareRaw,
-  StageError,
+  RunFailure,
   Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
 > {
   yield* Scope.Scope
@@ -160,13 +160,13 @@ const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
   }
   const descriptors: readonly string[] = pluginUrlsFromOptions(options)
   const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
-    Effect.tapError((error) =>
+    Effect.tapError(() =>
       Clock.currentTimeMillis.pipe(
-        Effect.flatMap((failedAt) => pluginLoadFailureEvents(error, failedAt - env.runStartedAt)),
-        Effect.flatMap((events) => Effect.forEach(events, (event) => Queue.offer(queue, event), { discard: true })),
+        Effect.map((failedAt) => pluginLoadPhaseEvent(failedAt - env.runStartedAt)),
+        Effect.flatMap((event) => Queue.offer(queue, event)),
       )
     ),
-    Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: 'Failed to load plugins', cause })),
+    Effect.mapError((cause) => RunFailure.make({ evidence: cause.evidence, detail: 'Failed to load plugins', cause })),
   )
   const stockCatalog = yield* Effect.orDie(S.decodeEffect(MutatorCatalog.Catalog)(StockCatalog.StockCatalog))
   const providers = loaded.mutators.map((provider) => ({
@@ -183,7 +183,14 @@ const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
   const plannedCatalogs = yield* Effect.fromResult(
     Result.mapError(
       planMutatorCatalogs(PlanMutatorCatalogsCommand.make({ stock: stockCatalog, providers })),
-      (refused) => StageError.make({ stage: 'prepare', reason: refused.message, cause: refused }),
+      (refused) => {
+        const detail = refused.message
+        return RunFailure.make({
+          evidence: { _tag: 'ConfigInvalid', stage: 'config', detail },
+          detail,
+          cause: refused,
+        })
+      },
     ),
   )
   const mutatorCatalogs = plannedCatalogs.catalogs
@@ -196,7 +203,14 @@ const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
           optInMutations: [...options.mutator.optInMutations],
         }),
       ),
-      (refused) => StageError.make({ stage: 'prepare', reason: refused.message, cause: refused }),
+      (refused) => {
+        const detail = refused.message
+        return RunFailure.make({
+          evidence: { _tag: 'ConfigInvalid', stage: 'config', detail },
+          detail,
+          cause: refused,
+        })
+      },
     ),
   )
   const registry = Format.registerEntries(
@@ -208,12 +222,14 @@ const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
   const record = { ...options }
   yield* validateOptions(record, mergedSchema).pipe(
     Effect.mapError(
-      (cause) =>
-        StageError.make({
-          stage: 'prepare',
-          reason: 'Failed to revalidate options with plugin schema',
+      (cause) => {
+        const detail = 'Failed to revalidate options with plugin schema'
+        return RunFailure.make({
+          evidence: { _tag: 'ConfigInvalid', stage: 'config', detail },
+          detail,
           cause,
-        }),
+        })
+      },
     ),
   )
   const ignorers: readonly Ignorer[] = loaded.ignorers
@@ -264,7 +280,7 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
   span: PhaseSpan,
   reporters: readonly string[],
   raw: PrepareRaw,
-): Effect.fn.Return<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> {
+): Effect.fn.Return<PrepareDone, RunFailure, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> {
   const mutateCount = pipe(raw.project.filesToMutate, MutableHashMap.size)
   yield* announceSummary({
     env: raw.env,
@@ -274,25 +290,31 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
     raw.options.reporters,
     [...HashMap.values(raw.reporterChoicesByName)].map((choice) => choice.name),
   ).pipe(
-    Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
+    Effect.mapError((cause) => {
+      const detail = cause.message
+      return RunFailure.make({
+        evidence: { _tag: 'ConfigInvalid', stage: 'config', detail },
+        detail,
+        cause,
+      })
+    }),
   )
   const admission = admitNonEmptyProject(
     NonEmptyProjectCommand.make({ fileCount: pipe(raw.project.files, MutableHashMap.size) }),
   )
   const emptyAdmission = Option.filter(Result.getSuccess(admission), S.is(ProjectEmpty))
-  const emptyProjectGuard: Result.Result<void, StageError> = Option.getOrElse(
+  const emptyProjectGuard: Result.Result<void, RunFailure> = Option.getOrElse(
     Option.map(
       emptyAdmission,
-      (): Result.Result<void, StageError> =>
+      (): Result.Result<void, RunFailure> =>
         Result.fail(
-          StageError.make({
-            stage: 'prepare',
-            reason: 'No input files found.',
-            cause: PrepareError.make({ stage: 'prepare', reason: 'No input files found.' }),
+          RunFailure.make({
+            evidence: { _tag: 'NoInputFiles', stage: 'prepare' },
+            detail: 'No input files found.',
           }),
         ),
     ),
-    (): Result.Result<void, StageError> => Result.succeed(undefined),
+    (): Result.Result<void, RunFailure> => Result.succeed(undefined),
   )
   yield* Effect.fromResult(emptyProjectGuard)
   const temporaryDirectoryPath = yield* Effect.map(
@@ -300,7 +322,11 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
     (temporaryDirectory) => Context.get(temporaryDirectory, TemporaryDirectory).path,
   ).pipe(
     Effect.mapError((cause) =>
-      StageError.make({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
+      RunFailure.make({
+        evidence: { _tag: 'SandboxPreparationFailed', stage: 'prepare' },
+        detail: 'Failed to create temporary directory',
+        cause,
+      })
     ),
   )
   const reporterInputs = yield* reporterInputsOf(
@@ -331,18 +357,19 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
 const writePrepare = (
   reporters: readonly string[],
   raw: PrepareRaw,
-): Effect.Effect<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<PrepareDone, RunFailure, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
   withPhaseSpan(SpanTaxonomy.Spans.preparePhase, {}, (span) => applyPrepare(span, reporters, raw))
 
 export const prepareCell: Cell.Cell<
   ReadProjectDone,
   PrepareDone,
-  StageError,
+  RunFailure,
   Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
 > = Sandwich.named(SpanTaxonomy.Spans.prepare.name)(readPrepare)
   .decide(planPrepare)
   .write({
     HumanReporters: ({ reporters }, raw) => writePrepare(reporters, raw),
     MachineReporters: ({ reporters }, raw) => writePrepare(reporters, raw),
-    CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'prepare', reason: issue })),
+    CommandRejected: ({ issue }) =>
+      Effect.fail(RunFailure.make({ evidence: { _tag: 'InvariantBroken', stage: 'prepare' }, detail: issue })),
   })

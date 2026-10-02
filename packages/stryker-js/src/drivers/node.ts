@@ -1,7 +1,7 @@
 import { NodeFileSystem, NodePath, NodeSocket, NodeStdio } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeCrypto from '@effect/platform-node-shared/NodeCrypto'
-import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Crypto from 'effect/Crypto'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -14,15 +14,41 @@ import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
+import {
+  classifyWorkerExit,
+  ClassifyWorkerExitCommand,
+  type ClassifyWorkerExitDecision,
+} from '../classify-worker-exit.workflow.js'
 import { GitDiff } from '../git-diff.service.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
 import { layerWorkerProtocol } from '../worker-protocol.blueprint.js'
-import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
+import { ChildProcessCrashedError, OutOfMemoryError, type WorkerExit } from '../Worker.schema.js'
 import { WorkerLauncher, type WorkerSpawnParams } from '../WorkerLauncher.service.js'
 
 const WORKER_TERMINATION_GRACE = Duration.seconds(5)
+
+const workerExitError = (
+  decision: ClassifyWorkerExitDecision,
+  workerKind: FailureRecord.WorkerKind,
+): WorkerExit =>
+  Match.value(decision).pipe(
+    Match.tag(
+      'WorkerOutOfMemory',
+      ({ pid, exitCode }): WorkerExit => OutOfMemoryError.make({ pid, exitCode, workerKind }),
+    ),
+    Match.tag(
+      'WorkerCrashed',
+      ({ pid, exitCode }): WorkerExit =>
+        ChildProcessCrashedError.make({
+          pid,
+          exit: { _tag: 'Code', code: exitCode },
+          workerKind,
+          cause: 'worker exited before it accepted the RPC connection',
+        }),
+    ),
+    Match.exhaustive,
+  )
 
 const restrictToOwnerOrWarn = (fs: FileSystem.FileSystem, file: string) =>
   fs.chmod(file, 0o600).pipe(
@@ -43,82 +69,61 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
       const path = yield* Path.Path
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
 
-      return {
-        spawn: Effect.fn(SpanTaxonomy.Spans.workerSpawn.name)(
-          function*(params: WorkerSpawnParams) {
-            const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
-            const workerId = yield* crypto.randomUUIDv4
-            const socketPath = Match.value(globalThis.process.platform).pipe(
-              Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${workerId}`),
-              Match.orElse(() => path.join(workerDir, 'worker.sock')),
-            )
-            const optionsFile = path.join(workerDir, 'options.json')
-            yield* fs.writeFileString(optionsFile, params.optionsJson)
-            yield* restrictToOwnerOrWarn(fs, optionsFile)
+      const spawnWorker = Effect.fn(SpanTaxonomy.Spans.workerSpawn.name)(function*(params: WorkerSpawnParams) {
+        const workerDir = yield* fs.makeTempDirectoryScoped({ prefix: params.tempDirPrefix })
+        const workerId = yield* crypto.randomUUIDv4
+        const socketPath = Match.value(globalThis.process.platform).pipe(
+          Match.when('win32', () => `\\\\.\\pipe\\stryker-worker-${workerId}`),
+          Match.orElse(() => path.join(workerDir, 'worker.sock')),
+        )
+        const optionsFile = path.join(workerDir, 'options.json')
+        yield* fs.writeFileString(optionsFile, params.optionsJson)
+        yield* restrictToOwnerOrWarn(fs, optionsFile)
 
-            const entrypointPath = yield* path.fromFileUrl(new URL(params.entrypoint))
-            const handle = yield* ChildProcess.make(
-              globalThis.process.execPath,
-              [...params.execArgv, entrypointPath],
-              {
-                cwd: params.workingDirectory,
-                extendEnv: true,
-                env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath, ...childEnv, ...params.env },
-                stderr: 'inherit',
-                forceKillAfter: WORKER_TERMINATION_GRACE,
-              },
-            ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
-
-            const clientLayer = layerWorkerProtocol(NodeSocket.layerNet({ path: socketPath }))
-
-            const exited = handle.exitCode.pipe(
-              Effect.orDie,
-              Effect.flatMap((exitCode) =>
-                Result.match(
-                  classifyWorkerExit(ClassifyWorkerExitCommand.make({ pid: Number(handle.pid), exitCode })),
-                  {
-                    onFailure: (refused) => Effect.fail(refused),
-                    onSuccess: (decision) =>
-                      Match.value(decision).pipe(
-                        Match.tag(
-                          'WorkerOutOfMemory',
-                          (outOfMemory) =>
-                            Effect.fail(
-                              OutOfMemoryError.make({ pid: outOfMemory.pid, exitCode: outOfMemory.exitCode }),
-                            ),
-                        ),
-                        Match.tag(
-                          'WorkerCrashed',
-                          (crashed) =>
-                            Effect.fail(
-                              ChildProcessCrashedError.make({
-                                pid: crashed.pid,
-                                exit: { _tag: 'Code', code: crashed.exitCode },
-                                cause: 'worker exited before it accepted the RPC connection',
-                              }),
-                            ),
-                        ),
-                        Match.exhaustive,
-                      ),
-                  },
-                )
-              ),
-            )
-
-            return makeSpawnedSocketWorker({ pid: Number(handle.pid), clientLayer, exited })
+        const entrypointPath = yield* path.fromFileUrl(new URL(params.entrypoint))
+        const handle = yield* ChildProcess.make(
+          globalThis.process.execPath,
+          [...params.execArgv, entrypointPath],
+          {
+            cwd: params.workingDirectory,
+            extendEnv: true,
+            env: { STRYKER_WORKER_DIR: workerDir, STRYKER_SOCKET: socketPath, ...childEnv, ...params.env },
+            stderr: 'inherit',
+            forceKillAfter: WORKER_TERMINATION_GRACE,
           },
-          (spawned) =>
-            spawned.pipe(
-              Effect.catchIf(S.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
-                Effect.fail(
-                  ChildProcessCrashedError.make({
-                    pid: 0,
-                    exit: { _tag: 'Code', code: 1 },
-                    cause: 'worker spawn failed',
-                  }),
-                )),
-            ),
-        ),
+        ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
+
+        const clientLayer = layerWorkerProtocol(NodeSocket.layerNet({ path: socketPath }))
+
+        const exited = handle.exitCode.pipe(
+          Effect.orDie,
+          Effect.flatMap((exitCode) =>
+            Result.match(
+              classifyWorkerExit(ClassifyWorkerExitCommand.make({ pid: Number(handle.pid), exitCode })),
+              {
+                onFailure: (refused) => Effect.fail(refused),
+                onSuccess: (decision) => Effect.fail(workerExitError(decision, params.workerKind)),
+              },
+            )
+          ),
+        )
+
+        return makeSpawnedSocketWorker({ pid: Number(handle.pid), clientLayer, exited })
+      })
+
+      return {
+        spawn: (params: WorkerSpawnParams) =>
+          spawnWorker(params).pipe(
+            Effect.catchIf(S.is(ChildProcessCrashedError), (error) => Effect.fail(error), () =>
+              Effect.fail(
+                ChildProcessCrashedError.make({
+                  pid: 0,
+                  workerKind: params.workerKind,
+                  exit: { _tag: 'Code', code: 1 },
+                  cause: 'worker spawn failed',
+                }),
+              )),
+          ),
       }
     }),
   )

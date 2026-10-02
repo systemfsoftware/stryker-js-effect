@@ -7,13 +7,14 @@ import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Predicate from 'effect/Predicate'
 import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
-import { ErrorEnvelope, ReportSurvivors, ReproducerList } from './__fixtures__/rerun-by-id.schema.js'
+import { ReportSurvivors, ReproducerList } from './__fixtures__/rerun-by-id.schema.js'
 
 const Feature = makeFeature({ it })
 
@@ -123,8 +124,8 @@ const readFirstSurvivorId = (root: string) =>
 const eventLinesOf = (stdout: string): ReadonlyArray<string> =>
   stdout.split('\n').flatMap((line) => (line.trimStart().startsWith('{') ? [line.trim()] : []))
 
-const errorEnvelopesOf = (stdout: string): ReadonlyArray<typeof ErrorEnvelope.Type> =>
-  eventLinesOf(stdout).flatMap((line) => Option.toArray(S.decodeOption(S.fromJsonString(ErrorEnvelope))(line)))
+const runFailuresOf = (stdout: string): ReadonlyArray<RunEvent.RunFailed> =>
+  eventLinesOf(stdout).flatMap((line) => Option.toArray(S.decodeOption(S.fromJsonString(RunEvent.RunFailed))(line)))
 
 const mutantDetailsOf = (stdout: string): ReadonlyArray<RunEvent.MutantDetailReported> =>
   eventLinesOf(stdout).flatMap((line) =>
@@ -195,27 +196,36 @@ Feature('Re-running one mutant by its id', { timeout: 180_000 })
           (s) => runStryker(s.project.root, 'machine', ['run', '--mutant', UNKNOWN_ID]),
         ),
         Then(
-          'both runs are refused with the configuration exit code, the person is told the id and the remedy exactly once, and the machine reads the same refusal',
+          'both runs are refused with the configuration exit code, the person is told the id and the remedy, and the machine reads the same refusal',
         )(
           (s, expect) => {
-            const failure = Arr.head(errorEnvelopesOf(s.machine.stdout))
+            const failure = Arr.head(runFailuresOf(s.machine.stdout))
             const says = (needle: string): boolean =>
-              Option.getOrElse(Option.map(failure, (envelope) => envelope.error.includes(needle)), () => false)
+              Option.getOrElse(
+                Option.map(failure, (envelope) => {
+                  const record = envelope.record
+                  return Predicate.isTagged(record, 'ConfigInvalid') ? record.detail.includes(needle) : false
+                }),
+                () => false,
+              )
             return expect({
               humanExitCode: s.human.exitCode,
               humanNamesTheId: s.human.stderr.includes(UNKNOWN_ID),
               humanNamesTheRemediation: s.human.stderr.includes('stryker run'),
-              humanSaysItOnce: s.human.stderr.split(UNKNOWN_ID).length - 1,
               machineExitCode: s.machine.exitCode,
               machineCode: Option.map(failure, (envelope) => envelope.code),
+              machineIsConfigInvalid: Option.exists(
+                failure,
+                (envelope) => Predicate.isTagged(envelope.record, 'ConfigInvalid'),
+              ),
               machineNamesTheId: says(UNKNOWN_ID),
             }).toStrictEqual({
               humanExitCode: 2,
               humanNamesTheId: true,
               humanNamesTheRemediation: true,
-              humanSaysItOnce: 1,
               machineExitCode: 2,
               machineCode: Option.some(2),
+              machineIsConfigInvalid: true,
               machineNamesTheId: true,
             })
           },

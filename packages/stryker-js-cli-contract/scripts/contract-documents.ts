@@ -2,6 +2,7 @@ import * as JsonSchema from 'effect/JsonSchema'
 import * as Result from 'effect/Result'
 import * as Schema from 'effect/Schema'
 
+import { failureCatalogEntries } from '../src/failure-catalog.js'
 import { RunEvent } from '../src/RunEvent/mod.js'
 import { spanMembers } from '../src/SpanTaxonomy.js'
 import { SpanDocuments, type SpanMember } from '../src/SpanTaxonomy.schema.js'
@@ -18,6 +19,8 @@ export const streamDocumentSource = (): string => {
 }
 
 export const stockCatalogDocumentSource = (): string => `${JSON.stringify(StockCatalog.entries, null, 2)}\n`
+
+export const failureCatalogDocumentSource = (): string => `${JSON.stringify(failureCatalogEntries, null, 2)}\n`
 
 export const spanDocumentOf = (member: SpanMember) => ({
   id: member.name,

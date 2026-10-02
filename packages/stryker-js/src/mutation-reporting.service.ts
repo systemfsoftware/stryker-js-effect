@@ -415,11 +415,10 @@ const reportMutantOf = (
   ...timeoutFieldsOf(mutant, evidence),
 })
 
-const reportTestOf = (test: TestRunner.TestResult, remap: TestIdRemap) =>
-  Option.match(Option.fromUndefinedOr(test.startPosition), {
-    onNone: () => ({ id: remap.testId(test.id), name: test.name }),
-    onSome: (start) => ({ id: remap.testId(test.id), name: test.name, location: { start } }),
-  })
+const reportTestOf = (test: TestRunner.TestResult, remap: TestIdRemap) => ({
+  id: remap.testId(test.id),
+  name: test.name,
+})
 
 const groupMutants = (input: FileResultsInput): Effect.Effect<HashMap.HashMap<string, MutantGroup>> =>
   Stream.fromIterable(input.mutants).pipe(

@@ -1,3 +1,4 @@
+import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
 import * as Result from 'effect/Result'
@@ -15,7 +16,7 @@ const observationArb = Arbitrary.schema(DryRunObservation)
 
 describe('interpretDryRunObservation', () => {
   it.prop(
-    '∀o_Complete_≡CountsTestsAndFailures',
+    '∀o_Complete_≡CarriesFailedTestEvidenceInOrder',
     { of: [observationArb], subject: interpretDryRunObservation },
     (subject, [observation]) =>
       Result.match(subject(observation), {
@@ -24,16 +25,30 @@ describe('interpretDryRunObservation', () => {
           if (observation.dryRunResult.status !== 'complete') {
             return true
           }
-          const failed = observation.dryRunResult.tests.filter((test) => test.status === 'failed')
+          const failed = observation.dryRunResult.tests.filter(
+            (test): test is TestRunner.FailedTestResult => test.status === 'failed',
+          )
           return S.is(DryRunObservedComplete)(decision) &&
             decision.testCount === observation.dryRunResult.tests.length &&
             decision.failedTestCount === failed.length &&
             decision.failedTests.length === failed.length &&
-            decision.failedTests.every((summary, index) => {
+            decision.failedTests.every((evidence, index) => {
               const expected = failed[index]
-              return expected !== undefined &&
-                summary.name === expected.name &&
-                summary.failureMessage === expected.failureMessage
+              if (expected === undefined) {
+                return false
+              }
+              const location = expected.location
+              return evidence.id === expected.id &&
+                evidence.name === expected.name &&
+                evidence.file === (expected.fileName ?? null) &&
+                (location === undefined
+                  ? evidence.location === null
+                  : evidence.location !== null &&
+                    evidence.location.file === location.file &&
+                    evidence.location.line === location.line &&
+                    evidence.location.column === location.column) &&
+                evidence.message === expected.failureMessage &&
+                evidence.stack === (expected.stack ?? null)
             })
         },
       }),

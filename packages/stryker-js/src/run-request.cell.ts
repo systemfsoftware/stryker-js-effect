@@ -344,12 +344,6 @@ const writeDecidedBaseline = (
 const reportUnchecked = (unchecked: ReadonlyArray<Mutant.MutantId>): Effect.Effect<void> =>
   Effect.logInfo(`stryker gate: ${unchecked.length} mutant(s) unchecked (in scope with no verdict)`)
 
-const GATE_REMEDIATION_LINE =
-  'accept the new survivors with `stryker gate --update-baseline`, or kill them before the next run'
-
-const explainGateRefusal = (failure: GateRejected | GateInputUnusable): Effect.Effect<void> =>
-  Effect.andThen(Effect.logError(failure.message), Effect.logInfo(GATE_REMEDIATION_LINE))
-
 const gateReport = (
   gate: { readonly baseline: string; readonly updateBaseline: boolean },
   channel: CliRead,
@@ -499,7 +493,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
         mode: channel.environment.mode.mode,
       }),
     CliCompareRequested: (compare) => compareReports(compare),
-    CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(explainGateRefusal)),
+    CliGateRequested: (gate, channel) => gateReport(gate, channel),
     CliAnnotateRequested: (annotate, channel) => annotateReport(annotate, channel),
     CliFeedbackRequested: (feedback, channel) => feedbackRoute(feedback, channel),
     CliMcpRequested: (_, channel) =>

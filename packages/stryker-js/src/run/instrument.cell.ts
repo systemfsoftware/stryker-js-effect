@@ -20,7 +20,7 @@ import { ProjectFiles } from '../project-files.service.js'
 import type { Project, ProjectFile } from '../Project.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
 import { RunEvents } from '../run-events.service.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import { makeSandbox } from '../Sandbox.blueprint.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { explainFileSkip, ExplainFileSkipCommand, type FrameworkClaimant } from './explain-file-skip.workflow.js'
@@ -162,7 +162,11 @@ const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(funct
     (readFiles) => readFiles.map(([file, content]) => ({ content, mutate: file.mutate, name: file.name })),
   ).pipe(
     Effect.mapError((cause) =>
-      StageError.make({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
+      RunFailure.make({
+        evidence: { _tag: 'InstrumentationFailed', stage: 'instrument' },
+        detail: 'Failed to read files to mutate',
+        cause,
+      })
     ),
   )
 
@@ -179,7 +183,13 @@ const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(funct
       optInMutations,
     ),
   }, command.formatRegistry).pipe(
-    Effect.mapError((cause) => StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
+    Effect.mapError((cause) =>
+      RunFailure.make({
+        evidence: { _tag: 'InstrumentationFailed', stage: 'instrument' },
+        detail: 'Instrumenter failed',
+        cause,
+      })
+    ),
   )
 
   const instrumentedProject = withInstrumentedFiles(command.project, instrumentResult.files)
@@ -194,7 +204,11 @@ const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(funct
     formatRegistry: command.formatRegistry,
   }).pipe(
     Effect.mapError((cause) =>
-      StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })
+      RunFailure.make({
+        evidence: { _tag: 'SandboxPreparationFailed', stage: 'instrument' },
+        detail: 'Sandbox initialization failed',
+        cause,
+      })
     ),
   )
 
@@ -216,7 +230,7 @@ const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(funct
 export const instrumentCell: Cell.Cell<
   PrepareDone & { readonly concurrency: { readonly testRunners: number; readonly checkers: number } },
   InstrumentDone,
-  StageError,
+  RunFailure,
   | Scope.Scope
   | PhaseClock
   | RunEnvironment
@@ -228,7 +242,13 @@ export const instrumentCell: Cell.Cell<
 > = Sandwich.named(SpanTaxonomy.Spans.instrument.name)(readInstrument).decide(planInstrumentation).write({
   InPlaceInstrument: (_decision, raw) => writeInstrument(raw),
   EphemeralInstrument: (_decision, raw) => writeInstrument(raw),
-  CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'instrument', reason: issue })),
+  CommandRejected: ({ issue }) =>
+    Effect.fail(
+      RunFailure.make({
+        evidence: { _tag: 'InvariantBroken', stage: 'instrument' },
+        detail: issue,
+      }),
+    ),
 })
 
 const projectOf = (seeds: readonly ProjectFile[]): Project => {

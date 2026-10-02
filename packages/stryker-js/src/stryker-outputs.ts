@@ -1,6 +1,7 @@
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 
 export const REPRODUCERS_FILE = 'reports/mutation/reproducers.json'
+export const FAILURE_RECORD_FILE = 'reports/mutation/failure.json'
 
 export const sarifFileNameOf = (jsonReportFileName: string): string =>
   `${jsonReportFileName.replace(/\.[^./\\]*$/, '')}.sarif`
@@ -18,4 +19,5 @@ export const strykerOutputFilesOf = (
   options.jsonReporter.fileName,
   sarifFileNameOf(options.jsonReporter.fileName),
   REPRODUCERS_FILE,
+  FAILURE_RECORD_FILE,
 ]

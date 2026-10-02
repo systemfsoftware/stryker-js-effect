@@ -23,7 +23,7 @@ import {
 import type { Project } from '../Project.schema.js'
 import { offerReporterEvent, type ReporterStage } from '../reporter-stream.service.js'
 import { RunEvents } from '../run-events.service.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { OrderedRunPlan, SortRunPlans, sortRunPlans } from '../sort-run-plans.workflow.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
@@ -125,7 +125,7 @@ const plannedPlanOf = (
 const materializeDecision = Effect.fnUntraced(function*(
   decision: EncodedPlannedDecision,
   command: MutantTestPlanRaw,
-): Effect.fn.Return<Mutant.TestPlan, StageError> {
+): Effect.fn.Return<Mutant.TestPlan, RunFailure> {
   const mutant = yield* Option.match(Record.get(command.mutantsById, decision.mutantId), {
     onNone: () =>
       Effect.die(
@@ -180,21 +180,27 @@ const planMutantTestsCell = Sandwich.named(SpanTaxonomy.Spans.mutationTestPlanMu
     PlannedEarlyResultMutant: (decision, command) => materializeDecision(decision, command),
     CoveredMutantHitCountMissing: ({ missingIds }) =>
       Effect.fail(
-        StageError.make({
-          stage: 'mutationTest',
-          reason: `covered mutant missing dry-run hit count: ${missingIds.join(', ')}`,
+        RunFailure.make({
+          evidence: { _tag: 'InvariantBroken', stage: 'mutationTest' },
+          detail: `covered mutant missing dry-run hit count: ${missingIds.join(', ')}`,
           cause: CoveredMutantHitCountMissing.make({ missingIds }),
         }),
       ),
     MutantTimeoutNotFinite: ({ mutantId }) =>
       Effect.fail(
-        StageError.make({
-          stage: 'mutationTest',
-          reason: `mutant ${mutantId} has a non-finite timeout`,
+        RunFailure.make({
+          evidence: { _tag: 'InvariantBroken', stage: 'mutationTest' },
+          detail: `mutant ${mutantId} has a non-finite timeout`,
           cause: MutantTimeoutNotFinite.make({ mutantId: Mutant.MutantId.make(mutantId) }),
         }),
       ),
-    CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'mutationTest', reason: issue })),
+    CommandRejected: ({ issue }) =>
+      Effect.fail(
+        RunFailure.make({
+          evidence: { _tag: 'InvariantBroken', stage: 'mutationTest' },
+          detail: issue,
+        }),
+      ),
   })
 
 export interface MutationTestPlanInput {

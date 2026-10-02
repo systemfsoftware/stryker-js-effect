@@ -93,6 +93,5 @@ export const mutantRerunAdmissionCell = Sandwich.named(SpanTaxonomy.Spans.rerun.
         resolvedOptions: raw.resolvedOptions,
       }),
     RerunRefused: (refused) => Effect.flatMap(S.decodeEffect(RerunRefused)(refused), (decoded) => Effect.fail(decoded)),
-    CommandRejected: ({ issue }) =>
-      Effect.fail(RerunRefused.make({ exitClass: 'ConfigError', unknownIds: [], reason: issue })),
+    CommandRejected: ({ issue }) => Effect.fail(RerunRefused.make({ unknownIds: [], reason: issue })),
   })

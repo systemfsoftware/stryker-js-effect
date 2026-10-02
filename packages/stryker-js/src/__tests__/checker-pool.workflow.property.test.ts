@@ -38,7 +38,7 @@ import {
   partitionCheckedPlans,
   PartitionCheckedPlansCommand,
 } from '../Checker/partition-checked-plans.workflow.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 
 type CheckedPlans = readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResult])[]
@@ -113,34 +113,34 @@ const checkerSlotOf = (checkerName: string, checker: CheckerResourceService): Ch
 
 const checkerSlotPoolOf = <R>(
   size: number,
-  acquire: Effect.Effect<CheckerSlot, StageError | CheckerCrash, R>,
+  acquire: Effect.Effect<CheckerSlot, RunFailure | CheckerCrash, R>,
 ): Effect.Effect<CheckerPool, never, R | Scope.Scope> =>
-  Pool.make<CheckerSlot, StageError | CheckerCrash, R>({
+  Pool.make<CheckerSlot, RunFailure | CheckerCrash, R>({
     acquire,
     size,
   })
 
-const causeTagOf = (stageError: StageError): string =>
+const causeTagOf = (runFailure: RunFailure): string =>
   Option.match(
-    Option.flatMap(Option.fromNullishOr(stageError.cause), S.decodeUnknownOption(S.Struct({ _tag: S.String }))),
+    Option.flatMap(Option.fromNullishOr(runFailure.cause), S.decodeUnknownOption(S.Struct({ _tag: S.String }))),
     { onNone: () => 'none', onSome: (decoded) => decoded._tag },
   )
 
-const stageErrorShapeOf = (error: StageError | CheckerCrash) =>
+const runFailureShapeOf = (error: RunFailure | CheckerCrash) =>
   Match.value(error).pipe(
-    Match.tag('StageError', (stageError) => ({
-      tag: stageError._tag,
-      stage: stageError.stage,
-      cause: causeTagOf(stageError),
+    Match.tag('RunFailure', (runFailure) => ({
+      tag: runFailure._tag,
+      stage: runFailure.evidence.stage,
+      cause: causeTagOf(runFailure),
     })),
     Match.orElse((crash) => ({ tag: crash._tag, stage: 'none', cause: 'none' })),
   )
 
-const crashTagOf = (error: StageError | CheckerCrash): string =>
+const crashTagOf = (error: RunFailure | CheckerCrash): string =>
   Match.value(error).pipe(
     Match.tag('OutOfMemoryError', () => 'OutOfMemoryError'),
     Match.tag('ChildProcessCrashedError', () => 'ChildProcessCrashedError'),
-    Match.orElse(() => 'StageError'),
+    Match.orElse(() => 'RunFailure'),
   )
 
 const poolBoundVerdictOf = (observed: {
@@ -167,7 +167,7 @@ const crashVerdictOf = (observed: {
 const breachVerdictOf = (
   observed: { readonly tag: string; readonly stage: string; readonly cause: string },
   breachTag: string,
-) => holds([observed.tag === 'StageError', observed.stage === 'mutationTest', observed.cause === breachTag])
+) => holds([observed.tag === 'RunFailure', observed.stage === 'check', observed.cause === breachTag])
 
 const backgroundReleaseVerdictOf = (observed: {
   readonly beforeRelease: number
@@ -185,8 +185,13 @@ const groupPlansOf = (prefix: string, seed: number) => {
 
 const crashOf = (tag: string) =>
   tag === 'OutOfMemoryError'
-    ? OutOfMemoryError.make({ pid: 1, exitCode: 137 })
-    : ChildProcessCrashedError.make({ pid: 2, exit: { _tag: 'Code', code: 1 }, cause: 'the checker died' })
+    ? OutOfMemoryError.make({ pid: 1, exitCode: 137, workerKind: 'checker' })
+    : ChildProcessCrashedError.make({
+      pid: 2,
+      exit: { _tag: 'Code', code: 1 },
+      workerKind: 'checker',
+      cause: 'the checker died',
+    })
 
 const resultOf = (outcome: CheckedHistoryEntry['outcome']): Checker.CheckResult =>
   outcome === 'passed' ? { status: 'passed' } : { status: 'compileError', reason: outcome }
@@ -294,7 +299,7 @@ describe('checker pool', () => {
   )
 
   it.effect.prop(
-    '∀breach_CheckerBreach_≡StageError',
+    '∀breach_CheckerBreach_≡RunFailure',
     {
       of: [S.Literals(['CheckerFailed', 'CheckerAnsweredUnrequested', 'CheckerSkippedRequested'])],
       subject: checkPlans,
@@ -324,7 +329,7 @@ describe('checker pool', () => {
         })
         const pool = yield* checkerSlotPoolOf(1, Effect.succeed(checkerSlotOf('c', checker)))
         const error = yield* subject(makeCheckerPoolHandle(pool), plans).pipe(Effect.flip)
-        return breachVerdictOf(stageErrorShapeOf(error), breachTag)
+        return breachVerdictOf(runFailureShapeOf(error), breachTag)
       }),
   )
 
@@ -353,7 +358,12 @@ describe('checker pool', () => {
           Effect.gen(function*() {
             const failed = Effect.andThen(
               subject(acquire),
-              Effect.fail(StageError.make({ stage: 'mutationTest', reason: 'the checks failed' })),
+              Effect.fail(
+                RunFailure.make({
+                  evidence: { _tag: 'TestRunnerFailed', stage: 'mutationTest' },
+                  detail: 'the checks failed',
+                }),
+              ),
             )
             const outcome = yield* Effect.scoped(failed).pipe(Effect.exit)
             const releasedAfter = yield* Ref.get(released)

@@ -27,6 +27,8 @@ export interface SpanMember {
 
 export const SpanAttributeText = S.String
 
+export const SpanAttributeOptionalText = S.optionalKey(SpanAttributeText)
+
 export const SpanAttributeCount = S.Finite
 
 export const SpanRunStatus = S.Literals(['success', 'failure', 'timed_out', 'aborted', 'skipped'])

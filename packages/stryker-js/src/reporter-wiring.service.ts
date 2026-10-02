@@ -12,7 +12,7 @@ import * as Scope from 'effect/Scope'
 import type { LoadedPlugins } from './Plugins.schema.js'
 import { PluginNotFoundError } from './PluginsError.schema.js'
 import { type AttachReporterInput, reporterWorkerFactory, spawnReporterWorker } from './reporter-stream.service.js'
-import { StageError } from './Run.schema.js'
+import { RunFailure } from './Run.schema.js'
 import {
   ConfiguredPluginName,
   resolveConfiguredPlugin,
@@ -33,7 +33,7 @@ const spawnPluginReporterFactory = Effect.fn(SpanTaxonomy.Spans.reporterWiringSp
     options: Options.StrykerOptions,
   ): Effect.fn.Return<
     InterfaceReporter.ReporterFactory,
-    StageError,
+    RunFailure,
     Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
   > {
     const entry = yield* Effect.mapError(
@@ -47,9 +47,9 @@ const spawnPluginReporterFactory = Effect.fn(SpanTaxonomy.Spans.reporterWiringSp
         ),
       ),
       (missing) =>
-        StageError.make({
-          stage: 'prepare',
-          reason: missing.reason,
+        RunFailure.make({
+          evidence: { _tag: 'PluginNotFound', stage: 'config', descriptor: missing.descriptor },
+          detail: missing.reason,
           cause: PluginNotFoundError.make({ descriptor: missing.descriptor }),
         }),
     )
@@ -61,7 +61,11 @@ const spawnPluginReporterFactory = Effect.fn(SpanTaxonomy.Spans.reporterWiringSp
       tempDirPrefix: 'stryker-reporter-',
     }).pipe(
       Effect.mapError((cause) =>
-        StageError.make({ stage: 'prepare', reason: `Failed to start the reporter worker "${name}"`, cause })
+        RunFailure.make({
+          evidence: { _tag: 'ReporterFailed', stage: 'report', reporter: name },
+          detail: `Failed to start the reporter worker "${name}"`,
+          cause,
+        })
       ),
     )
     return reporterWorkerFactory(client)
@@ -96,7 +100,7 @@ export const reporterInputsOf: {
     names: readonly string[],
   ) => Effect.Effect<
     readonly AttachReporterInput[],
-    StageError,
+    RunFailure,
     Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
   >
   (
@@ -107,7 +111,7 @@ export const reporterInputsOf: {
     options: Options.StrykerOptions,
   ): Effect.Effect<
     readonly AttachReporterInput[],
-    StageError,
+    RunFailure,
     Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
   >
 } = dual(
@@ -120,7 +124,7 @@ export const reporterInputsOf: {
     options: Options.StrykerOptions,
   ): Effect.Effect<
     readonly AttachReporterInput[],
-    StageError,
+    RunFailure,
     Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path
   > =>
     Effect.forEach(

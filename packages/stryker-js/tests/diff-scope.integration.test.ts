@@ -46,7 +46,7 @@ interface Observation {
   readonly scope: string | undefined
   readonly mutatedFiles: readonly string[]
   readonly mutantLines: readonly number[]
-  readonly failure: { readonly stage: string; readonly exitClass: string; readonly namesRef: boolean } | undefined
+  readonly failure: { readonly evidenceTag: string; readonly stage: string; readonly namesRef: boolean } | undefined
   readonly refsSeen: readonly string[]
 }
 
@@ -137,10 +137,10 @@ const runProject = (
           onFailure: (cause) =>
             Option.match(Cause.findErrorOption(cause), {
               onNone: () => undefined,
-              onSome: (stageError) => ({
-                stage: stageError.stage,
-                exitClass: stageError.exitClass,
-                namesRef: S.is(GitDiffSchema.GitRefUnresolved)(stageError.cause),
+              onSome: (failure) => ({
+                evidenceTag: failure.evidence._tag,
+                stage: failure.evidence.stage,
+                namesRef: S.is(GitDiffSchema.GitRefUnresolved)(failure.cause),
               }),
             }),
           onSuccess: () => undefined,
@@ -215,7 +215,7 @@ Feature('Scoping a mutation run to the changed lines since a git ref')
     )
 
     scenario(
-      'An unknown ref fails the run with a named preparation error and exit class 2',
+      'An unknown ref fails the run while preparing, naming the ref',
       Gherkin.Do.pipe(
         Given('a project whose git ref cannot be resolved')(
           'observation',
@@ -226,8 +226,12 @@ Feature('Scoping a mutation run to the changed lines since a git ref')
               (ref) => Effect.fail(GitDiffSchema.GitRefUnresolved.make({ ref, detail: 'unknown revision' })),
             ),
         ),
-        Then('the run fails while preparing, naming the ref, with the configuration exit class')((s, expect) =>
-          expect(s.observation.failure).toEqual({ stage: 'prepare', exitClass: 'ConfigError', namesRef: true })
+        Then('the run fails while preparing, naming the unresolvable ref')((s, expect) =>
+          expect(s.observation.failure).toEqual({
+            evidenceTag: 'SandboxPreparationFailed',
+            stage: 'prepare',
+            namesRef: true,
+          })
         ),
       ),
     )

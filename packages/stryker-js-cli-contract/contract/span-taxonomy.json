@@ -63,7 +63,7 @@
       "stryker.run.exit_code": {
         "type": "number"
       },
-      "stryker.run.error": {
+      "stryker.failure.code": {
         "type": "string"
       }
     }

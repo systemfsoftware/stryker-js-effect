@@ -1,0 +1,288 @@
+[
+  {
+    "id": "ArgumentsInvalid",
+    "name": "ArgumentsInvalid",
+    "meaning": "The command line named an option, argument or subcommand the CLI does not accept.",
+    "exitCode": 2,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "ConfigInvalid",
+    "name": "ConfigInvalid",
+    "meaning": "The configuration could not be read or failed validation.",
+    "exitCode": 2,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "PluginNotFound",
+    "name": "PluginNotFound",
+    "meaning": "The configuration names a plugin that is not installed or not registered.",
+    "exitCode": 2,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "PluginLoadFailed",
+    "name": "PluginLoadFailed",
+    "meaning": "A configured plugin refused to load: a peer is missing or unsupported, or its contribution is invalid.",
+    "exitCode": 2,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "PluginImportFailed",
+    "name": "PluginImportFailed",
+    "meaning": "A configured plugin module threw while it was being imported.",
+    "exitCode": 4,
+    "nextAction": {
+      "primary": "reportToolDefect",
+      "otherwise": "fixConfiguration"
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "SurvivorsUnavailable",
+    "name": "SurvivorsUnavailable",
+    "meaning": "Survivors were requested but no matching mutation report exists.",
+    "exitCode": 2,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "NoInputFiles",
+    "name": "NoInputFiles",
+    "meaning": "The configured file patterns matched no input files.",
+    "exitCode": 2,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "SandboxPreparationFailed",
+    "name": "SandboxPreparationFailed",
+    "meaning": "The project could not be read or copied into the sandbox.",
+    "exitCode": 3,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": "retryInfrastructure"
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "InstrumentationFailed",
+    "name": "InstrumentationFailed",
+    "meaning": "The instrumenter could not read or mutate a source file.",
+    "exitCode": 3,
+    "nextAction": {
+      "primary": "reportToolDefect",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "CheckerFailed",
+    "name": "CheckerFailed",
+    "meaning": "A checker failed or broke its protocol while checking mutants.",
+    "exitCode": 3,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": "reportToolDefect"
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "TestRunnerFailed",
+    "name": "TestRunnerFailed",
+    "meaning": "The test runner could not be started or failed outside of any test.",
+    "exitCode": 3,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": "reportToolDefect"
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "BaselineTestsFailed",
+    "name": "BaselineTestsFailed",
+    "meaning": "One or more tests failed in the initial test run, before any mutant was applied.",
+    "exitCode": 5,
+    "nextAction": {
+      "primary": "fixCode",
+      "otherwise": "fixTest"
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "BaselineTimedOut",
+    "name": "BaselineTimedOut",
+    "meaning": "The initial test run did not finish within its time limit.",
+    "exitCode": 5,
+    "nextAction": {
+      "primary": "fixTest",
+      "otherwise": "retryInfrastructure"
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "BaselineErrored",
+    "name": "BaselineErrored",
+    "meaning": "The initial test run errored outside of any test.",
+    "exitCode": 5,
+    "nextAction": {
+      "primary": "fixTest",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "BaselineFoundNoTests",
+    "name": "BaselineFoundNoTests",
+    "meaning": "The initial test run found no tests to run.",
+    "exitCode": 2,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "WorkerBootTimedOut",
+    "name": "WorkerBootTimedOut",
+    "meaning": "A worker process did not finish booting before its boot window closed.",
+    "exitCode": 3,
+    "nextAction": {
+      "primary": "retryInfrastructure",
+      "otherwise": "reportToolDefect"
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "WorkerOutOfMemory",
+    "name": "WorkerOutOfMemory",
+    "meaning": "A worker process was killed for running out of memory.",
+    "exitCode": 3,
+    "nextAction": {
+      "primary": "retryInfrastructure",
+      "otherwise": null
+    },
+    "capsule": "outOfMemory"
+  },
+  {
+    "id": "WorkerCrashed",
+    "name": "WorkerCrashed",
+    "meaning": "A worker process exited unexpectedly.",
+    "exitCode": 3,
+    "nextAction": {
+      "primary": "retryInfrastructure",
+      "otherwise": "reportToolDefect"
+    },
+    "capsule": "workerCrashed"
+  },
+  {
+    "id": "ReporterFailed",
+    "name": "ReporterFailed",
+    "meaning": "A reporter could not be started or failed while reporting.",
+    "exitCode": 3,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "RunInterrupted",
+    "name": "RunInterrupted",
+    "meaning": "The run was interrupted by a signal before it finished.",
+    "exitCode": 130,
+    "nextAction": {
+      "primary": "retryInfrastructure",
+      "otherwise": null
+    },
+    "capsule": "interrupted"
+  },
+  {
+    "id": "NewSurvivors",
+    "name": "NewSurvivors",
+    "meaning": "Mutants the change can affect survived every test and are absent from the accepted survivor baseline.",
+    "exitCode": 1,
+    "nextAction": {
+      "primary": "killSurvivor",
+      "otherwise": "refactorAwayEquivalent"
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "InvariantBroken",
+    "name": "InvariantBroken",
+    "meaning": "Stryker reached a state its own design rules out; this is a defect in Stryker.",
+    "exitCode": 4,
+    "nextAction": {
+      "primary": "reportToolDefect",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "CatalogGap",
+    "name": "CatalogGap",
+    "meaning": "A failure no catalog entry classifies; the record carries its full cause.",
+    "exitCode": 4,
+    "nextAction": {
+      "primary": "reportToolDefect",
+      "otherwise": null
+    },
+    "capsule": "replays"
+  },
+  {
+    "id": "RecordMissing",
+    "name": "RecordMissing",
+    "meaning": "A CI job ended without a failure record or a report.",
+    "exitCode": null,
+    "nextAction": {
+      "primary": "reportToolDefect",
+      "otherwise": null
+    },
+    "capsule": "recordMissing"
+  },
+  {
+    "id": "JobTimedOut",
+    "name": "JobTimedOut",
+    "meaning": "A CI job was killed for exceeding its time limit.",
+    "exitCode": null,
+    "nextAction": {
+      "primary": "retryInfrastructure",
+      "otherwise": null
+    },
+    "capsule": "jobTimedOut"
+  },
+  {
+    "id": "BinaryMissing",
+    "name": "BinaryMissing",
+    "meaning": "A CI job could not find a binary it needs.",
+    "exitCode": null,
+    "nextAction": {
+      "primary": "fixConfiguration",
+      "otherwise": null
+    },
+    "capsule": "binaryMissing"
+  }
+]

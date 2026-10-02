@@ -18,9 +18,10 @@ import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 
-import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
+import type { RunOk } from './classify-run-outcome.workflow.js'
 import { defaultOptions } from './config/default-options.js'
 import {
   frameRunEvent,
@@ -31,11 +32,18 @@ import {
 } from './frame-run-event.workflow.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { MachineConsole } from './reporting/machine-console.service.js'
-import { errorEnvelopeFromOutcome } from './reporting/run-failure.js'
 import { buildVerdictEnvelope, generateRunId } from './reporting/verdict-envelope.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 
 export type { ResolvedModeInput } from './frame-run-event.workflow.js'
+
+type RunOkFacts = (typeof RunOk)['Encoded']
+
+const stderrTextOf = (stderr: NonNullable<FrameRunEventDecision['stderr']>): string =>
+  Match.valueTags(stderr, {
+    StderrText: ({ text }) => text,
+    StderrRecord: ({ record }) => FailureRecord.terminalTextOf(record),
+  })
 
 export const TICK_INTERVAL_MS = 10_000
 
@@ -222,7 +230,7 @@ export interface EmitNullScoreVerdictOptions<Config = unknown> {
 export interface EmitMachineModeOutputOptions {
   readonly stream: RunEventStream
   readonly mode: ResolvedMode
-  readonly outcome: Result.Result<RunOutcomeDecision, RunOutcomeError>
+  readonly ok: RunOkFacts
   readonly basePath: string
   readonly pathService: Path.Path
 }
@@ -266,23 +274,15 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
   )
 }
 
-const offerFailureEnvelope = (
+const emitFailureRecord = (
   stream: RunEventStream,
-  failed: FailedRunOutcome,
-  captured: string,
-): Effect.Effect<void> => {
-  const envelope = errorEnvelopeFromOutcome({ error: failed, captured })
-  return Queue.offer(
+  code: Plugin.ExitCode,
+  record: FailureRecord.FailureRecord,
+): Effect.Effect<void> =>
+  Queue.offer(
     stream.queue,
-    RunEvent.RunFailed.make({
-      schemaVersion: envelope.schemaVersion,
-      code: envelope.code,
-      error: envelope.error,
-      remediation: envelope.remediation,
-      reason: null,
-    }),
-  )
-}
+    RunEvent.RunFailed.make({ schemaVersion: RunEvent.StreamSchemaVersion.literal, code, record }),
+  ).pipe(Effect.asVoid)
 
 const emitHelpEnvelope = (stream: RunEventStream, help: string): Effect.Effect<void> =>
   Queue.offer(
@@ -294,7 +294,7 @@ const emitHelpEnvelope = (stream: RunEventStream, help: string): Effect.Effect<v
     }),
   )
 
-const helpPayload = (ok: RunOk, captured: string): Option.Option<string> =>
+const helpPayload = (ok: RunOkFacts, captured: string): Option.Option<string> =>
   Boolean.match(ok.help || captured.length > 0, {
     onTrue: () => Option.some(captured),
     onFalse: () => Option.none<string>(),
@@ -332,29 +332,11 @@ const emitNullScoreVerdictWhenOpen = (
 const emitMachineModeOutput = Effect.fn(SpanTaxonomy.Spans.runEventStreamEmitMachineModeOutput.name)(function*(
   params: EmitMachineModeOutputOptions,
 ) {
-  const { stream, mode, outcome, basePath, pathService } = params
+  const { stream, mode, ok, basePath, pathService } = params
   const captured = (yield* MachineConsole).read()
-  return yield* Result.match(outcome, {
-    onSuccess: (decision) =>
-      Match.value(decision).pipe(
-        Match.tag('RunOk', (ok): Effect.Effect<void> =>
-          Option.match(helpPayload(ok, captured), {
-            onSome: (help) => emitHelpEnvelope(stream, help),
-            onNone: () =>
-              emitNullScoreVerdictWhenOpen(
-                stream,
-                mode,
-                basePath,
-                pathService,
-              ),
-          })),
-        Match.tag('RunParseFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
-        Match.tag('RunSurvivorsRejected', (failed) => offerFailureEnvelope(stream, failed, captured)),
-        Match.tag('RunConfigFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
-        Match.tag('RunFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
-        Match.exhaustive,
-      ),
-    onFailure: (failure) => offerFailureEnvelope(stream, failure, captured),
+  return yield* Option.match(helpPayload(ok, captured), {
+    onSome: (help) => emitHelpEnvelope(stream, help),
+    onNone: () => emitNullScoreVerdictWhenOpen(stream, mode, basePath, pathService),
   })
 })
 
@@ -366,6 +348,11 @@ export interface RunEventStreamPort {
     params: EmitNullScoreVerdictOptions<Config>,
   ) => Effect.Effect<void>
   readonly emitMachineModeOutput: (params: EmitMachineModeOutputOptions) => Effect.Effect<void, never, MachineConsole>
+  readonly emitFailureRecord: (
+    stream: RunEventStream,
+    code: Plugin.ExitCode,
+    record: FailureRecord.FailureRecord,
+  ) => Effect.Effect<void>
 }
 
 export class RunEventStreamPortTag extends Context.Service<RunEventStreamPortTag, RunEventStreamPort>()(
@@ -377,6 +364,7 @@ export class RunEventStreamPortTag extends Context.Service<RunEventStreamPortTag
       createRunEventStream: (resolved) => makeRunEventStream(resolved),
       emitNullScoreVerdict,
       emitMachineModeOutput,
+      emitFailureRecord,
     }),
   )
 }
@@ -473,9 +461,9 @@ export const makeRunEventStream = Effect.fn(SpanTaxonomy.Spans.runEventStreamMak
         Option.match(decision, {
           onNone: () => Effect.void,
           onSome: (d) =>
-            Option.match(Option.fromNullishOr(d.stderrLine), {
+            Option.match(Option.fromNullishOr(d.stderr), {
               onNone: () => Effect.void,
-              onSome: (line) => writeStderr(stdio, line),
+              onSome: (stderr) => writeStderr(stdio, stderrTextOf(stderr)),
             }),
         })
       ),

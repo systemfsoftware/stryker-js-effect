@@ -6,7 +6,7 @@ import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 import type { Vitest } from 'vitest/node'
 
-import type { VitestTestRecord } from '../vitest-run-command.schema.js'
+import type { VitestFailureFrame, VitestTestRecord } from '../vitest-run-command.schema.js'
 
 export type VitestValue = S.Schema.Type<typeof S.Unknown>
 
@@ -160,13 +160,48 @@ const stringFieldOf = <A = VitestValue>(value: A, key: string): Option.Option<st
 const numberFieldOf = <A = VitestValue>(value: A, key: string): Option.Option<number> =>
   Option.filter(propertyOf<A, VitestValue>(value, key), Predicate.isNumber)
 
-const firstErrorMessageOf = <A = VitestValue>(result: A): Option.Option<string> =>
+const firstErrorOf = <A = VitestValue>(result: A): Option.Option<VitestValue> =>
   Option.flatMap(
     Option.flatMap(propertyOf<A, VitestValue>(result, 'errors'), (errors) =>
       Option.flatMap(Option.liftPredicate(errors, Array.isArray), (list) => Option.fromNullishOr(list[0]))),
     (first) =>
-      stringFieldOf(first, 'message'),
+      Option.liftPredicate(first, Predicate.isObject),
   )
+
+const frameOf = (value: VitestValue): Option.Option<VitestFailureFrame> =>
+  Option.flatMap(
+    stringFieldOf(value, 'file'),
+    (file) =>
+      Option.flatMap(numberFieldOf(value, 'line'), (line) =>
+        Option.map(numberFieldOf(value, 'column'), (column) => ({ file, line, column }))),
+  )
+
+export const failureFramesOf = <A = VitestValue>(error: A): readonly VitestFailureFrame[] =>
+  Option.getOrElse(
+    Option.map(
+      Option.filter(propertyOf<A, VitestValue>(error, 'stacks'), Array.isArray),
+      (list) => list.flatMap((entry) => Option.toArray(frameOf(entry))),
+    ),
+    (): readonly VitestFailureFrame[] => [],
+  )
+
+const causeTextsOf = <A = VitestValue>(error: A): readonly string[] =>
+  Option.match(propertyOf<A, VitestValue>(error, 'cause'), {
+    onNone: (): readonly string[] => [],
+    onSome: (cause) => Option.toArray(errorTextOf(cause)),
+  })
+
+export const errorTextOf = <A = VitestValue>(error: A): Option.Option<string> =>
+  Option.map(stringFieldOf(error, 'message'), (message) => [message, ...causeTextsOf(error)].join('\n'))
+
+const errorTextOfResult = <A = VitestValue>(result: A): Option.Option<string> =>
+  Option.flatMap(firstErrorOf(result), errorTextOf)
+
+const failureNameOf = <A = VitestValue>(result: A): Option.Option<string> =>
+  Option.flatMap(firstErrorOf(result), (error) => stringFieldOf(error, 'name'))
+
+const failureStackOf = <A = VitestValue>(result: A): Option.Option<string> =>
+  Option.flatMap(firstErrorOf(result), (error) => stringFieldOf(error, 'stack'))
 
 const suiteNamesOf = <A = VitestValue>(suite: A): readonly string[] =>
   Option.match(recordOption(suite), {
@@ -182,20 +217,27 @@ const suiteErrorOf = <A = VitestValue>(suite: A): string | undefined =>
   Option.match(recordOption(suite), {
     onNone: (): string | undefined => undefined,
     onSome: (record) =>
-      Option.match(firstErrorMessageOf(fieldOf(record, 'result')), {
+      Option.match(errorTextOfResult(fieldOf(record, 'result')), {
         onNone: () => suiteErrorOf(fieldOf(record, 'suite')),
         onSome: (message) => message,
       }),
   })
 
-export const testRecordOf = <A = VitestValue>(test: A): VitestTestRecord => ({
-  name: textFieldOf(test, 'name'),
-  fullTestName: Option.getOrUndefined(stringFieldOf(test, 'fullTestName')),
-  suiteNames: suiteNamesOf(fieldOf(test, 'suite')),
-  fileName: Option.getOrUndefined(stringFieldOf(fieldOf(test, 'file'), 'filepath')),
-  mode: Option.getOrUndefined(stringFieldOf(test, 'mode')),
-  state: Option.getOrUndefined(stringFieldOf(fieldOf(test, 'result'), 'state')),
-  durationMs: Option.getOrUndefined(numberFieldOf(fieldOf(test, 'result'), 'duration')),
-  errorMessage: Option.getOrUndefined(firstErrorMessageOf(fieldOf(test, 'result'))),
-  suiteErrorMessage: suiteErrorOf(fieldOf(test, 'suite')),
-})
+export const testRecordOf = <A = VitestValue>(test: A): VitestTestRecord => {
+  const result = fieldOf(test, 'result')
+  const error = firstErrorOf(result)
+  return {
+    name: textFieldOf(test, 'name'),
+    fullTestName: Option.getOrUndefined(stringFieldOf(test, 'fullTestName')),
+    suiteNames: suiteNamesOf(fieldOf(test, 'suite')),
+    fileName: Option.getOrUndefined(stringFieldOf(fieldOf(test, 'file'), 'filepath')),
+    mode: Option.getOrUndefined(stringFieldOf(test, 'mode')),
+    state: Option.getOrUndefined(stringFieldOf(result, 'state')),
+    durationMs: Option.getOrUndefined(numberFieldOf(result, 'duration')),
+    errorMessage: Option.getOrUndefined(errorTextOfResult(result)),
+    errorName: Option.getOrUndefined(failureNameOf(result)),
+    errorStack: Option.getOrUndefined(failureStackOf(result)),
+    errorFrames: Option.getOrUndefined(Option.map(error, failureFramesOf)),
+    suiteErrorMessage: suiteErrorOf(fieldOf(test, 'suite')),
+  }
+}

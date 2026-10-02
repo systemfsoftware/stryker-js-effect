@@ -3,6 +3,15 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
+const VitestSourceOrdinal = S.Int.check(S.isGreaterThanOrEqualTo(1))
+
+export const VitestFailureFrame = S.Struct({
+  file: S.String,
+  line: VitestSourceOrdinal,
+  column: VitestSourceOrdinal,
+})
+export type VitestFailureFrame = S.Schema.Type<typeof VitestFailureFrame>
+
 export const VitestTestRecord = S.Struct({
   name: S.String,
   fullTestName: S.optional(S.String),
@@ -12,6 +21,9 @@ export const VitestTestRecord = S.Struct({
   state: S.optional(S.String),
   durationMs: S.optional(Report.NonNegativeFinite),
   errorMessage: S.optional(S.String),
+  errorName: S.optional(S.String),
+  errorStack: S.optional(S.String),
+  errorFrames: S.Array(VitestFailureFrame).pipe(S.optional),
   suiteErrorMessage: S.optional(S.String),
 })
 export type VitestTestRecord = S.Schema.Type<typeof VitestTestRecord>
@@ -19,6 +31,8 @@ export type VitestTestRecord = S.Schema.Type<typeof VitestTestRecord>
 export const VitestFileFailure = S.Struct({
   fileName: S.String,
   message: S.String,
+  stack: S.optional(S.String),
+  frames: S.Array(VitestFailureFrame).pipe(S.optional),
 })
 export type VitestFileFailure = S.Schema.Type<typeof VitestFileFailure>
 

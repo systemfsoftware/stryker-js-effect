@@ -16,7 +16,7 @@ import { mutantCostOf, testBodyMsOf } from '../mutant-cost.js'
 import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
 import { type PooledTestRunner } from '../pooled-test-runner.handle.js'
 import { offerReporterEvent } from '../reporter-stream.service.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import { isMutantStatus, toReportedMutant, type ValidMutantStatus } from './mutation-test-plan.js'
@@ -196,7 +196,7 @@ export const makeCheckpointWriter = Effect.fnUntraced(function*(
 
 export interface RunOnePlanArgs {
   readonly context: RunContext
-  readonly testRunnerPool: Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError>
+  readonly testRunnerPool: Pool.Pool<PooledTestRunner, RunFailure | PooledTestRunnerError>
   readonly checkpoint: CheckpointWriter
   readonly plan: Mutant.MutantRunPlan
 }

@@ -78,6 +78,7 @@ const makeHarness = () =>
       rpcs: Plugin.CheckerRpcs,
       tempDirPrefix: 'checker-',
       workingDirectory: '/project',
+      workerKind: 'checker',
     }).pipe(Effect.provide(launcherLayer))
 
     return { client, receivedRef } satisfies CheckerHarness

@@ -52,6 +52,7 @@ const acquire = Effect.fnUntraced(function*(spec: CheckerSpec) {
     workingDirectory: spec.workingDirectory,
     execArgv: [...nodeArgsOf(spec.options)],
     tempDirPrefix: TEMP_DIR_PREFIX,
+    workerKind: 'checker',
   }).pipe(
     Effect.mapError((error) =>
       Match.value(error).pipe(

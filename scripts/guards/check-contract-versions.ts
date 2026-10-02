@@ -15,6 +15,7 @@ const KIND_BY_BASENAME: Record<string, ContractKind> = {
   'stream.schema.json': 'json-schema',
   'report.schema.json': 'json-schema',
   'stock-catalog.json': 'catalog',
+  'failure-catalog.json': 'catalog',
   'span-taxonomy.json': 'taxonomy',
 }
 

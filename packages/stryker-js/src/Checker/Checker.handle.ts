@@ -63,7 +63,7 @@ export interface CheckerResourceService {
 }
 
 export const connectionCrashed = (cause: string): ChildProcessCrashedError =>
-  ChildProcessCrashedError.make({ pid: 0, exit: { _tag: 'Code', code: 1 }, cause })
+  ChildProcessCrashedError.make({ pid: 0, exit: { _tag: 'Code', code: 1 }, workerKind: 'checker', cause })
 
 const recordCheckerCall = <A>(
   span: SpanTaxonomy.SpanMember,

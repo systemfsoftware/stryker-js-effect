@@ -1,13 +1,15 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import type * as Cause from 'effect/Cause'
+import { FailureRecord, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Predicate from 'effect/Predicate'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
@@ -175,10 +177,18 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 const incrementalFileOf = (directory: string): string => `${directory}/reports/stryker-incremental.json`
 
 interface RunObservation {
-  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
+  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.RunFailure>
   readonly events: ReadonlyArray<RunEvent.RunEvent>
   readonly incrementalState: string
 }
+
+const failureEvidenceOf = (run: RunObservation): FailureRecord.FailureEvidence | undefined =>
+  Option.getOrUndefined(
+    Exit.match(run.exit, {
+      onFailure: (cause) => Option.map(Cause.findErrorOption(cause), (failure) => failure.evidence),
+      onSuccess: () => Option.none(),
+    }),
+  )
 
 const incrementalStateOf = (directory: string): Effect.Effect<string, never, FileSystem.FileSystem> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(incrementalFileOf(directory))).pipe(
@@ -254,6 +264,7 @@ Feature('Framework plugins joining a mutation run')
             const row = skipped?.files.find((file) => file.file.endsWith('widget.svelte'))
             return expect({
               runSucceeded: Exit.isSuccess(s.observation.exit),
+              failure: failureEvidenceOf(s.observation),
               verdictCount: verdicts.length,
               skippedExtension: row?.extension,
               skippedReasonNamesFramework: row?.reason.includes('@systemfsoftware/stryker-js-svelte') ?? false,
@@ -262,6 +273,7 @@ Feature('Framework plugins joining a mutation run')
               verdictHasSvelteMutant: verdicts[0]?.mutants.some((mutant) => mutant.file.endsWith('.svelte')) ?? true,
             }).toEqual({
               runSucceeded: true,
+              failure: undefined,
               verdictCount: 1,
               skippedExtension: '.svelte',
               skippedReasonNamesFramework: true,
@@ -292,27 +304,30 @@ Feature('Framework plugins joining a mutation run')
           'the run refuses before touching any file, naming the missing peer, with no verdict and no files examined',
         )(
           (s, expect) => {
-            const failure = s.observation.events.find((event): event is RunEvent.RunFailed =>
-              S.is(RunEvent.RunFailed)(event)
-            )
+            const evidence = failureEvidenceOf(s.observation)
+            const load = evidence !== undefined && Predicate.isTagged(evidence, 'PluginLoadFailed')
+              ? evidence
+              : undefined
             const phases = s.observation.events
               .filter((event): event is RunEvent.PhaseEntered => S.is(RunEvent.PhaseEntered)(event))
               .map((phase) => phase.phase)
             return expect({
               runFailed: Exit.isFailure(s.observation.exit),
-              reason: failure?.reason?._tag,
-              code: failure?.code,
-              errorNamesPeer: failure?.error.includes('peer-missing') ?? false,
-              remediationNamesPeerDependency: failure?.remediation.includes('peer dependency') ?? false,
+              tag: evidence?._tag,
+              stage: evidence?.stage,
+              code: evidence === undefined ? undefined : FailureRecord.FailureCatalog[evidence._tag].exitCode,
+              descriptorNamesPeer: load?.descriptor.includes('peer-missing') ?? false,
+              reasonTag: load?.reason._tag,
               phases,
               reachedVerdict: s.observation.events.some((event) => S.is(RunEvent.VerdictReached)(event)),
               reportedSkippedFiles: s.observation.events.some((event) => S.is(RunEvent.SkippedReported)(event)),
             }).toEqual({
               runFailed: true,
-              reason: 'PeerMissing',
+              tag: 'PluginLoadFailed',
+              stage: 'config',
               code: 2,
-              errorNamesPeer: true,
-              remediationNamesPeerDependency: true,
+              descriptorNamesPeer: true,
+              reasonTag: 'PeerMissing',
               phases: ['prepare'],
               reachedVerdict: false,
               reportedSkippedFiles: false,
@@ -351,43 +366,44 @@ Feature('Framework plugins joining a mutation run')
         Then(
           'the resolved-formats report names the claimed type, its mutant is exercised, and the run state records the claim',
         )(
-          (s, expect) =>
-            Effect.map(
-              S.decodeEffect(S.fromJsonString(Engine.IncrementalReportSchema))(s.observation.incrementalState),
-              (state) => {
-                const formats = s.observation.events.find(
-                  (event): event is RunEvent.FormatRegistryResolved => S.is(RunEvent.FormatRegistryResolved)(event),
-                )
-                const formatRow = formats?.rows.find((candidate) => candidate.extension === '.fixture')
-                const tested = s.observation.events.filter(
-                  (event): event is RunEvent.RunMutantTested => S.is(RunEvent.RunMutantTested)(event),
-                )
-                const fromClaimed = tested.find((mutant) => mutant.fileName.endsWith('widget.fixture'))
-                return expect({
-                  runSucceeded: Exit.isSuccess(s.observation.exit),
-                  formatOwner: formatRow?.ownerModule,
-                  formatId: formatRow?.formatId,
-                  formatLanguage: formatRow?.language,
-                  claimedMutantStatus: fromClaimed?.status,
-                  stateLanguage: state.files['src/widget.fixture']?.language,
-                  stateFormatIdentity: state.files['src/widget.fixture']?.formatIdentity,
-                  scriptLanguage: state.files['src/math.js']?.language,
-                }).toEqual({
-                  runSucceeded: true,
-                  formatOwner: pluginUrlOf('valid-framework.fixture.mjs'),
-                  formatId: 'fixture',
-                  formatLanguage: 'fixture',
-                  claimedMutantStatus: 'NoCoverage',
-                  stateLanguage: 'fixture',
-                  stateFormatIdentity: {
-                    formatId: 'fixture',
-                    ownerModule: pluginUrlOf('valid-framework.fixture.mjs'),
-                    ownerVersion: '1.0.0',
-                  },
-                  scriptLanguage: 'javascript',
-                })
+          (s, expect) => {
+            const state = Option.getOrUndefined(
+              S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(s.observation.incrementalState),
+            )
+            const formats = s.observation.events.find(
+              (event): event is RunEvent.FormatRegistryResolved => S.is(RunEvent.FormatRegistryResolved)(event),
+            )
+            const formatRow = formats?.rows.find((candidate) => candidate.extension === '.fixture')
+            const tested = s.observation.events.filter(
+              (event): event is RunEvent.RunMutantTested => S.is(RunEvent.RunMutantTested)(event),
+            )
+            const fromClaimed = tested.find((mutant) => mutant.fileName.endsWith('widget.fixture'))
+            return expect({
+              runSucceeded: Exit.isSuccess(s.observation.exit),
+              failure: failureEvidenceOf(s.observation),
+              formatOwner: formatRow?.ownerModule,
+              formatId: formatRow?.formatId,
+              formatLanguage: formatRow?.language,
+              claimedMutantStatus: fromClaimed?.status,
+              stateLanguage: state?.files['src/widget.fixture']?.language,
+              stateFormatIdentity: state?.files['src/widget.fixture']?.formatIdentity,
+              scriptLanguage: state?.files['src/math.js']?.language,
+            }).toEqual({
+              runSucceeded: true,
+              failure: undefined,
+              formatOwner: pluginUrlOf('valid-framework.fixture.mjs'),
+              formatId: 'fixture',
+              formatLanguage: 'fixture',
+              claimedMutantStatus: 'NoCoverage',
+              stateLanguage: 'fixture',
+              stateFormatIdentity: {
+                formatId: 'fixture',
+                ownerModule: pluginUrlOf('valid-framework.fixture.mjs'),
+                ownerVersion: '1.0.0',
               },
-            ),
+              scriptLanguage: 'javascript',
+            })
+          },
         ),
       ),
     )
@@ -464,19 +480,22 @@ Feature('Framework plugins joining a mutation run')
           (s) => runOver(s.workspace),
         ),
         Then('the run refuses with an internal-error exit code naming the failing module')((s, expect) => {
-          const failure = s.observation.events.find((event): event is RunEvent.RunFailed =>
-            S.is(RunEvent.RunFailed)(event)
-          )
+          const evidence = failureEvidenceOf(s.observation)
+          const imported = evidence !== undefined && Predicate.isTagged(evidence, 'PluginImportFailed')
+            ? evidence
+            : undefined
           return expect({
             runFailed: Exit.isFailure(s.observation.exit),
-            reason: failure?.reason?._tag,
-            code: failure?.code,
-            errorNamesModule: failure?.error.includes('throws-on-import') ?? false,
+            tag: evidence?._tag,
+            stage: evidence?.stage,
+            code: evidence === undefined ? undefined : FailureRecord.FailureCatalog[evidence._tag].exitCode,
+            descriptorNamesModule: imported?.descriptor.includes('throws-on-import') ?? false,
           }).toEqual({
             runFailed: true,
-            reason: 'ImportFailed',
+            tag: 'PluginImportFailed',
+            stage: 'config',
             code: 4,
-            errorNamesModule: true,
+            descriptorNamesModule: true,
           })
         }),
       ),
@@ -498,19 +517,24 @@ Feature('Framework plugins joining a mutation run')
           (s) => runOver(s.workspace),
         ),
         Then('the run refuses with a configuration exit code naming the plugin module')((s, expect) => {
-          const failure = s.observation.events.find((event): event is RunEvent.RunFailed =>
-            S.is(RunEvent.RunFailed)(event)
-          )
+          const evidence = failureEvidenceOf(s.observation)
+          const load = evidence !== undefined && Predicate.isTagged(evidence, 'PluginLoadFailed')
+            ? evidence
+            : undefined
           return expect({
             runFailed: Exit.isFailure(s.observation.exit),
-            reason: failure?.reason?._tag,
-            code: failure?.code,
-            errorNamesModule: failure?.error.includes('malformed') ?? false,
+            tag: evidence?._tag,
+            stage: evidence?.stage,
+            code: evidence === undefined ? undefined : FailureRecord.FailureCatalog[evidence._tag].exitCode,
+            descriptorNamesModule: load?.descriptor.includes('malformed') ?? false,
+            reasonTag: load?.reason._tag,
           }).toEqual({
             runFailed: true,
-            reason: 'InvalidContribution',
+            tag: 'PluginLoadFailed',
+            stage: 'config',
             code: 2,
-            errorNamesModule: true,
+            descriptorNamesModule: true,
+            reasonTag: 'InvalidContribution',
           })
         }),
       ),
@@ -535,27 +559,30 @@ Feature('Framework plugins joining a mutation run')
           'the run refuses before touching any file, naming the unrecognized peer, with no verdict and no files examined',
         )(
           (s, expect) => {
-            const failure = s.observation.events.find((event): event is RunEvent.RunFailed =>
-              S.is(RunEvent.RunFailed)(event)
-            )
+            const evidence = failureEvidenceOf(s.observation)
+            const load = evidence !== undefined && Predicate.isTagged(evidence, 'PluginLoadFailed')
+              ? evidence
+              : undefined
             const phases = s.observation.events
               .filter((event): event is RunEvent.PhaseEntered => S.is(RunEvent.PhaseEntered)(event))
               .map((phase) => phase.phase)
             return expect({
               runFailed: Exit.isFailure(s.observation.exit),
-              reason: failure?.reason?._tag,
-              code: failure?.code,
-              errorNamesPeer: failure?.error.includes('peer-unrecognized') ?? false,
-              remediationNamesRecognition: failure?.remediation.includes('recognizes') ?? false,
+              tag: evidence?._tag,
+              stage: evidence?.stage,
+              code: evidence === undefined ? undefined : FailureRecord.FailureCatalog[evidence._tag].exitCode,
+              descriptorNamesPeer: load?.descriptor.includes('peer-unrecognized') ?? false,
+              reasonTag: load?.reason._tag,
               phases,
               reachedVerdict: s.observation.events.some((event) => S.is(RunEvent.VerdictReached)(event)),
               reportedSkippedFiles: s.observation.events.some((event) => S.is(RunEvent.SkippedReported)(event)),
             }).toEqual({
               runFailed: true,
-              reason: 'PeerUnrecognized',
+              tag: 'PluginLoadFailed',
+              stage: 'config',
               code: 2,
-              errorNamesPeer: true,
-              remediationNamesRecognition: true,
+              descriptorNamesPeer: true,
+              reasonTag: 'PeerUnrecognized',
               phases: ['prepare'],
               reachedVerdict: false,
               reportedSkippedFiles: false,

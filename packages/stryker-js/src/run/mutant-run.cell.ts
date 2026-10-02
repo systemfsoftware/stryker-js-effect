@@ -12,7 +12,7 @@ import type * as Scope from 'effect/Scope'
 import { interpretMutantRun, NoCoveringTestExecutedReason } from '../interpret-mutant-run.workflow.js'
 import { cicdAttributesOf, spanRunStatusOf, testSuiteNameOf } from '../mutant-run-span.js'
 import { invalidatesRunnerPool } from '../pooled-test-runner.handle.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import { recycleAndSettleMutantRun, type RunOnePlanArgs, settleMutantRun } from './mutant-run.js'
 
@@ -110,7 +110,7 @@ const readMutantRunAttempt = Effect.fnUntraced(function*(input: MutantRunAttempt
 const attemptCell: Cell.Cell<
   MutantRunAttemptArgs,
   Mutant.RunMutantResult,
-  StageError | PooledTestRunnerError,
+  RunFailure | PooledTestRunnerError,
   Scope.Scope
 > = Cell.suspend(() =>
   Sandwich.named(SpanTaxonomy.Spans.mutantRun.name)(readMutantRunAttempt)
@@ -133,13 +133,18 @@ const attemptCell: Cell.Cell<
             }),
         ),
       CommandRejected: ({ issue }) =>
-        Effect.fail(StageError.make({ stage: 'mutationTest', reason: `mutant run command rejected: ${issue}` })),
+        Effect.fail(
+          RunFailure.make({
+            evidence: { _tag: 'InvariantBroken', stage: 'mutationTest' },
+            detail: `mutant run command rejected: ${issue}`,
+          }),
+        ),
     })
 )
 
 export const mutantRunCell: Cell.Cell<
   RunOnePlanArgs,
   Mutant.RunMutantResult,
-  StageError | PooledTestRunnerError,
+  RunFailure | PooledTestRunnerError,
   Scope.Scope
 > = Cell.mapInput(attemptCell, (args: RunOnePlanArgs): MutantRunAttemptArgs => ({ ...args, attempt: 0 }))

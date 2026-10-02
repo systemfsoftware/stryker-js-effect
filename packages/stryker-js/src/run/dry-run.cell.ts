@@ -1,7 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { type Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, type Plugin, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
@@ -28,7 +28,7 @@ import {
   DryRunReuseCommand,
   type DryRunReuseDecision,
 } from '../dry-run-reuse.workflow.js'
-import { dryRun, DryRunCommand, DryRunError, DryRunFailed, FailedTestSummary } from '../dry-run.workflow.js'
+import { dryRun, DryRunCommand } from '../dry-run.workflow.js'
 import { analyzeImportClosure, type ImportClosureAnalysis } from '../import-closure.cell.js'
 import {
   DryRunObservation,
@@ -39,7 +39,7 @@ import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
 import type { RunEvents } from '../run-events.service.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import { originalFileFor, sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.blueprint.js'
@@ -92,19 +92,18 @@ const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
   )
 
 const workerSpawnOf = (
-  stage: StageError['stage'],
   loaded: Pick<LoadedPlugins, 'pluginSources'>,
   kind: Plugin.WorkerPluginKind,
   configured: ConfiguredPluginName | ConfiguredPluginModulePath,
-): Effect.Effect<WorkerSpawnResolved, StageError> =>
+): Effect.Effect<WorkerSpawnResolved, RunFailure> =>
   Effect.mapError(
     Effect.fromResult(
       resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind, configured })),
     ),
     (missing) =>
-      StageError.make({
-        stage,
-        reason: missing.reason,
+      RunFailure.make({
+        evidence: { _tag: 'PluginNotFound', stage: 'config', descriptor: missing.descriptor },
+        detail: missing.reason,
         cause: PluginNotFoundError.make({ descriptor: missing.descriptor }),
       }),
   )
@@ -129,7 +128,13 @@ const buildDryRunFiles = (command: InstrumentDone) =>
 
 const resolveDryRunFiles = Effect.fn(SpanTaxonomy.Spans.dryRunResolveFiles.name)(function*(command: InstrumentDone) {
   return yield* Effect.fromResult(buildDryRunFiles(command)).pipe(
-    Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Failed to resolve sandbox files', cause })),
+    Effect.mapError((cause) =>
+      RunFailure.make({
+        evidence: { _tag: 'SandboxPreparationFailed', stage: 'dryRun' },
+        detail: 'Failed to resolve sandbox files',
+        cause,
+      })
+    ),
   )
 })
 
@@ -548,9 +553,19 @@ const completeDryRunPassed = (raw: DryRunRaw) =>
   Match.value(raw.rawResult).pipe(
     Match.discriminator('status')('complete', (rawResult) => completeDryRunResultOf(raw, rawResult)),
     Match.discriminator('status')('error', () =>
-      Effect.fail(StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }))),
+      Effect.fail(
+        RunFailure.make({
+          evidence: { _tag: 'InvariantBroken', stage: 'dryRun' },
+          detail: 'Unexpected dry-run status after decision',
+        }),
+      )),
     Match.discriminator('status')('timeout', () =>
-      Effect.fail(StageError.make({ stage: 'dryRun', reason: 'Unexpected dry-run status after decision' }))),
+      Effect.fail(
+        RunFailure.make({
+          evidence: { _tag: 'InvariantBroken', stage: 'dryRun' },
+          detail: 'Unexpected dry-run status after decision',
+        }),
+      )),
     Match.exhaustive,
   )
 
@@ -571,7 +586,7 @@ const runFreshDryRun = Effect.fnUntraced(function*(
     Effect.gen(function*() {
       const childRunnerEffect = Effect.suspend(() => {
         const runnerConfigured = command.options.testRunner
-        return workerSpawnOf('dryRun', command.loadedPlugins, 'TestRunner', configuredPluginOf(runnerConfigured))
+        return workerSpawnOf(command.loadedPlugins, 'TestRunner', configuredPluginOf(runnerConfigured))
           .pipe(
             Effect.flatMap((resolved) =>
               makeChildProcessTestRunner({
@@ -598,14 +613,24 @@ const runFreshDryRun = Effect.fnUntraced(function*(
       )
       const capabilities = yield* runner.capabilities.pipe(
         Effect.mapError((cause) =>
-          StageError.make({ stage: 'dryRun', reason: 'Failed to get test runner capabilities', cause })
+          RunFailure.make({
+            evidence: { _tag: 'TestRunnerFailed', stage: 'dryRun' },
+            detail: 'Failed to get test runner capabilities',
+            cause,
+          })
         ),
       )
       const timedPass = Effect.timed(
         runner
           .dryRun(options)
           .pipe(
-            Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Dry run failed', cause })),
+            Effect.mapError((cause) =>
+              RunFailure.make({
+                evidence: { _tag: 'TestRunnerFailed', stage: 'dryRun' },
+                detail: 'Dry run failed',
+                cause,
+              })
+            ),
           ),
       )
       const firstPass = yield* timedPass
@@ -624,11 +649,15 @@ const runFreshDryRun = Effect.fnUntraced(function*(
     Effect.mapError((cause) =>
       Match.value({ cause }).pipe(
         Match.when(
-          { cause: (candidate: unknown): candidate is StageError => S.is(StageError)(candidate) },
+          { cause: (candidate: unknown): candidate is RunFailure => S.is(RunFailure)(candidate) },
           ({ cause }) => cause,
         ),
         Match.orElse(({ cause }) =>
-          StageError.make({ stage: 'dryRun', reason: 'Dry run failed to start test runner', cause })
+          RunFailure.make({
+            evidence: { _tag: 'TestRunnerFailed', stage: 'dryRun' },
+            detail: 'Dry run failed to start test runner',
+            cause,
+          })
         ),
       )
     ),
@@ -651,7 +680,7 @@ const runFreshDryRun = Effect.fnUntraced(function*(
 
 const readDryRun: (command: InstrumentDone) => Effect.Effect<
   DryRunRaw,
-  StageError,
+  RunFailure,
   | Scope.Scope
   | IdGenerator
   | ChildProcessSpawner.ChildProcessSpawner
@@ -718,7 +747,12 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
     Match.tag('DryRunCoverageReused', () =>
       Option.match(prior, {
         onNone: () =>
-          Effect.die(StageError.make({ stage: 'dryRun', reason: 'Coverage reuse decided without prior coverage' })),
+          Effect.die(
+            RunFailure.make({
+              evidence: { _tag: 'InvariantBroken', stage: 'dryRun' },
+              detail: 'Coverage reuse decided without prior coverage',
+            }),
+          ),
         onSome: (coverage) => Effect.succeed(reusedRawOf(command, coverage)),
       })),
     Match.tag(
@@ -739,48 +773,68 @@ const writeDryRunPassed = Effect.fn(SpanTaxonomy.Spans.dryRunWritePassed.name)(f
 
 const FAILED_TESTS_REASON = 'There were failed tests in the initial test run.'
 
-const failedTestsDetail = (failedTests: readonly FailedTestSummary[]): string =>
-  failedTests
-    .map((test) => `  ${test.name}${test.failureMessage.length > 0 ? `: ${test.failureMessage}` : ''}`)
-    .join('\n')
+const projectFileOf = (path: Path.Path, sandboxDirectory: string) => (file: string): string =>
+  Option.getOrElse(
+    Option.filter(Option.some(path.relative(sandboxDirectory, file)), (relative) => !relative.startsWith('..')),
+    () => file,
+  )
 
-const reasonWithFailedTests = (detail: string): string =>
-  detail.length > 0 ? `${FAILED_TESTS_REASON}\n${detail}` : FAILED_TESTS_REASON
+const projectTestOf =
+  (path: Path.Path, sandboxDirectory: string) =>
+  (test: FailureRecord.FailedTestEvidence): FailureRecord.FailedTestEvidence => ({
+    ...test,
+    file: Option.getOrNull(Option.map(Option.fromNullishOr(test.file), projectFileOf(path, sandboxDirectory))),
+    stack: Option.getOrNull(
+      Option.map(Option.fromNullishOr(test.stack), (stack) => stack.replaceAll(`${sandboxDirectory}${path.sep}`, '')),
+    ),
+  })
 
 const writeDryRunFailed = Effect.fn(SpanTaxonomy.Spans.dryRunWriteFailed.name)(function*({
   testCount,
-  failedTestCount,
   failedTests,
+  sandboxDirectory,
 }: {
   readonly testCount: number
-  readonly failedTestCount: number
-  readonly failedTests: readonly FailedTestSummary[]
+  readonly failedTests: readonly FailureRecord.FailedTestEvidence[]
+  readonly sandboxDirectory: string
 }) {
+  const path = yield* Path.Path
+  const projectTests = failedTests.map(projectTestOf(path, sandboxDirectory))
   return yield* withPhaseSpan(
     SpanTaxonomy.Spans.dryRunPhase,
     {},
     () =>
-      Effect.gen(function*() {
-        const detail = failedTestsDetail(failedTests)
-        yield* Effect.logError(
-          `Initial test run failed. ${failedTestCount} of ${testCount} test(s) failed:\n${detail}`,
-        )
-        return yield* StageError.make({
-          stage: 'dryRun',
-          reason: reasonWithFailedTests(detail),
-          cause: DryRunFailed.make({ testCount, failedTestCount, failedTests }),
-        })
+      Arr.match(projectTests, {
+        onEmpty: () =>
+          Effect.fail(
+            RunFailure.make({
+              evidence: { _tag: 'InvariantBroken', stage: 'dryRun' },
+              detail: 'The dry run reported failed tests but carried none',
+            }),
+          ),
+        onNonEmpty: (tests) =>
+          Effect.fail(
+            RunFailure.make({
+              evidence: { _tag: 'BaselineTestsFailed', stage: 'dryRun', testCount, tests },
+              detail: FAILED_TESTS_REASON,
+            }),
+          ),
       }),
   )
 })
 
-export const dryRunCell: Cell.Cell<InstrumentDone, DryRunDone, StageError, StageServices> = Sandwich.named(
+export const dryRunCell: Cell.Cell<InstrumentDone, DryRunDone, RunFailure, StageServices> = Sandwich.named(
   SpanTaxonomy.Spans.dryRun.name,
 )(readDryRun).decide(dryRun).write({
   DryRunPassed: (_decision, raw) => writeDryRunPassed(raw),
-  DryRunFailed: ({ testCount, failedTestCount, failedTests }, _raw) =>
-    writeDryRunFailed({ testCount, failedTestCount, failedTests }),
-  DryRunError: ({ stage, reason }) =>
-    Effect.fail(StageError.make({ stage, reason, cause: DryRunError.make({ stage, reason }) })),
-  CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'dryRun', reason: issue })),
+  DryRunFailed: ({ testCount, failedTests }, raw) =>
+    writeDryRunFailed({ testCount, failedTests, sandboxDirectory: raw.prev.sandbox.workingDirectory }),
+  RunFailure: (failure) => Effect.fail(RunFailure.make(failure)),
+  CommandRejected: ({ issue }) =>
+    Effect.fail(
+      RunFailure.make({
+        evidence: { _tag: 'InvariantBroken', stage: 'dryRun' },
+        detail: issue,
+      }),
+    ),
 })

@@ -1,9 +1,11 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Equal from 'effect/Equal'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { dryRun, DryRunCommand, DryRunError, DryRunFailed, DryRunPassed } from '../dry-run.workflow.js'
+import { dryRun, DryRunCommand, DryRunFailed, DryRunPassed } from '../dry-run.workflow.js'
+import { RunFailure } from '../Run.schema.js'
 
 describe('dryRun', () => {
   it.prop(
@@ -14,22 +16,25 @@ describe('dryRun', () => {
       if (command.status === 'Error') {
         return (
           Result.isFailure(result) &&
-          S.is(DryRunError)(result.failure) &&
-          result.failure.stage === 'dryRun'
+          S.is(RunFailure)(result.failure) &&
+          Predicate.isTagged(result.failure.evidence, 'BaselineErrored') &&
+          result.failure.evidence.stage === 'dryRun'
         )
       }
       if (command.status === 'Timeout') {
         return (
           Result.isFailure(result) &&
-          S.is(DryRunError)(result.failure) &&
-          result.failure.stage === 'dryRun'
+          S.is(RunFailure)(result.failure) &&
+          Predicate.isTagged(result.failure.evidence, 'BaselineTimedOut') &&
+          result.failure.evidence.stage === 'dryRun'
         )
       }
       if (command.testCount === 0 && command.allowEmpty === false) {
         return (
           Result.isFailure(result) &&
-          S.is(DryRunError)(result.failure) &&
-          result.failure.stage === 'dryRunNoTests'
+          S.is(RunFailure)(result.failure) &&
+          Predicate.isTagged(result.failure.evidence, 'BaselineFoundNoTests') &&
+          result.failure.evidence.stage === 'dryRun'
         )
       }
       if (command.failedTestCount > 0) {

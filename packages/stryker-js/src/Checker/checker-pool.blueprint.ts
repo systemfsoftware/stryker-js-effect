@@ -10,7 +10,7 @@ import type * as Scope from 'effect/Scope'
 
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import {
   ConfiguredPluginModulePath,
   resolveConfiguredPlugin,
@@ -36,15 +36,15 @@ const CHECKER_ACQUIRE_RETRIES = 2
 const checkerWorkerSpawnOf = (
   loaded: Pick<LoadedPlugins, 'pluginSources'>,
   configured: ConfiguredPluginModulePath,
-): Effect.Effect<WorkerSpawnResolved, StageError> =>
+): Effect.Effect<WorkerSpawnResolved, RunFailure> =>
   Effect.mapError(
     Effect.fromResult(
       resolveConfiguredPlugin(WorkerSpawnCommand.make({ sources: loaded.pluginSources, kind: 'Checker', configured })),
     ),
     (missing) =>
-      StageError.make({
-        stage: 'mutationTest',
-        reason: missing.reason,
+      RunFailure.make({
+        evidence: { _tag: 'PluginNotFound', stage: 'config', descriptor: missing.descriptor },
+        detail: missing.reason,
         cause: PluginNotFoundError.make({ descriptor: missing.descriptor }),
       }),
   )

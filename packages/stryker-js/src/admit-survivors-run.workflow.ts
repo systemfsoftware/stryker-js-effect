@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
@@ -49,6 +50,10 @@ export class SurvivorsRejection extends S.TaggedError<SurvivorsRejection>()('Sur
   remediation: S.String,
 }) {
   readonly [SurvivorsAdmissionTypeId] = SurvivorsAdmissionTypeId
+
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'SurvivorsUnavailable', stage: 'config', reason: this.reason }
+  }
 
   override get message(): string {
     return this.remediation

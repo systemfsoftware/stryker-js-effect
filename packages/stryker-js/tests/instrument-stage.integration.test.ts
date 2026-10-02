@@ -40,7 +40,7 @@ const runFromProject = (
   root: string,
   options: Options.PartialStrykerOptions,
 ): Effect.Effect<
-  Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
+  Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>,
   never,
   Engine.EnginePorts
 > =>
@@ -58,13 +58,15 @@ const runFromProject = (
   )
 
 const failureOf = (
-  outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
-): Engine.StageError => {
+  outcome: Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>,
+): Engine.RunFailure => {
   if (Result.isSuccess(outcome)) {
     throw new Error('the run was expected to be refused, but it completed')
   }
-  if (!S.is(Engine.StageError)(outcome.failure)) {
-    throw new Error(`the run was expected to be refused as a stage, not a platform failure: ${String(outcome.failure)}`)
+  if (!S.is(Engine.RunFailure)(outcome.failure)) {
+    throw new Error(
+      `the run was expected to be refused as a run failure, not a platform failure: ${String(outcome.failure)}`,
+    )
   }
   return outcome.failure
 }
@@ -72,7 +74,7 @@ const failureOf = (
 const carriesMessage = (value: unknown): value is { readonly message: string } =>
   typeof value === 'object' && value !== null && 'message' in value && typeof value.message === 'string'
 
-const textOf = (cause: Engine.StageError['cause']): string =>
+const textOf = (cause: Engine.RunFailure['cause']): string =>
   carriesMessage(cause) ? cause.message : 'the refused cause carried no message'
 
 const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
@@ -99,14 +101,14 @@ Feature('Opting a mutation run into extra mutations')
             const failure = failureOf(s.outcome)
             const cause = textOf(failure.cause)
             return expect({
-              stage: failure.stage,
-              exitClass: failure['exitClass'],
-              unknownEntryNamed: failure.message.includes(UNKNOWN_NAME),
+              evidenceTag: failure.evidence._tag,
+              stage: failure.evidence.stage,
+              detailNamesTheUnknownEntry: failure.detail.includes(UNKNOWN_NAME),
               causeNamesTheUnknownEntry: cause.includes(UNKNOWN_NAME),
             }).toEqual({
-              stage: 'prepare',
-              exitClass: 'ConfigError',
-              unknownEntryNamed: true,
+              evidenceTag: 'ConfigInvalid',
+              stage: 'config',
+              detailNamesTheUnknownEntry: true,
               causeNamesTheUnknownEntry: true,
             })
           },

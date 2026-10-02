@@ -4,15 +4,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { MutationTestCommand } from './MutationTest.schema.js'
-
-export class MutationTestError extends S.TaggedError<MutationTestError>()('MutationTestError', {
-  stage: S.Literal('mutationTest'),
-  reason: S.String,
-}) {
-  override get message(): string {
-    return this.reason
-  }
-}
+import { RunFailure } from './Run.schema.js'
 
 const MutationTestDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutationTestDecision')
 type MutationTestDecisionTypeId = typeof MutationTestDecisionTypeId
@@ -31,7 +23,7 @@ export class MutationTestNoTests extends S.TaggedClass<MutationTestNoTests>()('M
 
 export type MutationTestDecision = MutationTestProceed | MutationTestDryRunOnly | MutationTestNoTests
 
-const decide = (command: MutationTestCommand): Result.Result<MutationTestDecision, MutationTestError> =>
+const decide = (command: MutationTestCommand): Result.Result<MutationTestDecision, RunFailure> =>
   Match.value({
     invalid: command.testCount < 0,
     dryRunOnly: command.dryRunOnly,
@@ -39,9 +31,13 @@ const decide = (command: MutationTestCommand): Result.Result<MutationTestDecisio
     allowEmpty: command.allowEmpty,
   }).pipe(
     Match.when({ invalid: true }, () =>
-      Result.fail(MutationTestError.make({ stage: 'mutationTest', reason: 'Invalid test count' }))),
-    Match.when({ dryRunOnly: true }, () =>
-      Result.succeed(MutationTestDryRunOnly.make({}))),
+      Result.fail(
+        RunFailure.make({
+          evidence: { _tag: 'InvariantBroken', stage: 'mutationTest' },
+          detail: 'Invalid test count',
+        }),
+      )),
+    Match.when({ dryRunOnly: true }, () => Result.succeed(MutationTestDryRunOnly.make({}))),
     Match.when({ isZero: true, allowEmpty: true }, () => Result.succeed(MutationTestNoTests.make({}))),
     Match.orElse(() => Result.succeed(MutationTestProceed.make({}))),
   )
@@ -49,6 +45,6 @@ const decide = (command: MutationTestCommand): Result.Result<MutationTestDecisio
 export const admitMutationTest = Workflow.make({
   command: MutationTestCommand,
   decision: S.Union([MutationTestProceed, MutationTestDryRunOnly, MutationTestNoTests]),
-  error: MutationTestError,
+  error: RunFailure,
   decide,
 })

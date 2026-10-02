@@ -1,4 +1,5 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
+import type { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace, Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Context from 'effect/Context'
@@ -29,6 +30,7 @@ export interface WorkerClientParams<Rpcs extends Rpc.Any> {
   readonly workingDirectory: string
   readonly execArgv: readonly string[]
   readonly tempDirPrefix: string
+  readonly workerKind: FailureRecord.WorkerKind
   readonly env?: Readonly<Record<string, string>> | undefined
 }
 
@@ -45,6 +47,7 @@ const WorkerClients = <Rpcs extends Rpc.Any>() =>
           execArgv: params.execArgv,
           optionsJson,
           tempDirPrefix: params.tempDirPrefix,
+          workerKind: params.workerKind,
           env: params.env,
         })
         const protocol = yield* worker.pipe(
@@ -52,7 +55,8 @@ const WorkerClients = <Rpcs extends Rpc.Any>() =>
           Layer.build,
           Effect.retry(connectRetry),
           Effect.raceFirst(worker.exited),
-          Effect.catchTag('SocketError', () => Effect.fail(WorkerBootTimeoutError.make({ pid: worker.pid }))),
+          Effect.catchTag('SocketError', () =>
+            Effect.fail(WorkerBootTimeoutError.make({ pid: worker.pid, workerKind: params.workerKind }))),
         )
         const traceContext = yield* Layer.build(Trace.layerTraceContextClient)
 

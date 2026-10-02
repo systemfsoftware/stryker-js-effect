@@ -1,3 +1,4 @@
+import type { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Context from 'effect/Context'
 import type * as Effect from 'effect/Effect'
 import type * as Scope from 'effect/Scope'
@@ -10,6 +11,7 @@ export interface WorkerSpawnParams {
   readonly execArgv: readonly string[]
   readonly optionsJson: string
   readonly tempDirPrefix: string
+  readonly workerKind: FailureRecord.WorkerKind
   readonly env?: Readonly<Record<string, string>> | undefined
 }
 

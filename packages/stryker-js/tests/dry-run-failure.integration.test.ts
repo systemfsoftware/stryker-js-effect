@@ -4,7 +4,6 @@ import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
-import * as Logger from 'effect/Logger'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
@@ -12,7 +11,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 
-import { DryRunFailedCause, type DryRunFailedView } from './__fixtures__/dry-run-failure.schema.js'
+import { BaselineTestsFailedEvidence } from './__fixtures__/dry-run-failure.schema.js'
 
 const Feature = makeFeature({ it })
 
@@ -42,14 +41,8 @@ const TEST_CONTENT = [
   '})',
 ].join('\n')
 
-interface LogEntry {
-  readonly level: string
-  readonly text: string
-}
-
 interface ProjectFixture {
   readonly root: string
-  readonly logs: Array<LogEntry>
 }
 
 const writeProject = (): Effect.Effect<ProjectFixture, PlatformError, FileSystem.FileSystem | Path.Path> =>
@@ -61,7 +54,7 @@ const writeProject = (): Effect.Effect<ProjectFixture, PlatformError, FileSystem
     yield* fs.makeDirectory(path.join(root, 'test'), { recursive: true })
     yield* fs.writeFileString(path.join(root, SOURCE_FILE), SOURCE_CONTENT)
     yield* fs.writeFileString(path.join(root, TEST_FILE), TEST_CONTENT)
-    return { root, logs: [] }
+    return { root }
   })
 
 const removeProject = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
@@ -69,21 +62,11 @@ const removeProject = (root: string): Effect.Effect<void, never, FileSystem.File
     Effect.flatMap((fs) => fs.remove(root, { recursive: true })),
   ))
 
-const capturingLogger = (fixture: ProjectFixture): Layer.Layer<never> =>
-  Logger.layer([
-    Logger.make((entry) => {
-      fixture.logs.push({
-        level: entry.logLevel,
-        text: [entry.message].flat().map(String).join(' '),
-      })
-    }),
-  ])
-
 const runFromProject = (
   root: string,
   options: Options.PartialStrykerOptions,
 ): Effect.Effect<
-  Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
+  Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>,
   never,
   Engine.EnginePorts
 > =>
@@ -101,19 +84,16 @@ const runFromProject = (
   )
 
 const failureOf = (
-  outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
-): Engine.StageError => {
+  outcome: Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>,
+): Engine.RunFailure => {
   if (Result.isSuccess(outcome)) {
     throw new Error('the run was expected to fail its dry run, but it completed')
   }
-  if (!S.is(Engine.StageError)(outcome.failure)) {
-    throw new Error(`the run was expected to fail as a stage, not a platform failure: ${String(outcome.failure)}`)
+  if (!S.is(Engine.RunFailure)(outcome.failure)) {
+    throw new Error(`the run was expected to fail as a run failure, not a platform failure: ${String(outcome.failure)}`)
   }
   return outcome.failure
 }
-
-const dryRunFailedCauseOf = (cause: Engine.StageError['cause']): Option.Option<DryRunFailedView> =>
-  S.decodeUnknownOption(DryRunFailedCause)(cause)
 
 const OPTIONS: Options.PartialStrykerOptions = {
   testRunner: 'vm',
@@ -126,7 +106,7 @@ const OPTIONS: Options.PartialStrykerOptions = {
 const FROZEN_RUNNER_PLUGIN = new URL('./__fixtures__/frozen-runner/index.mjs', import.meta.url).href
 
 interface FrozenRunnerOutcome {
-  readonly outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>
+  readonly outcome: Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>
   readonly workerPid: number
 }
 
@@ -159,46 +139,35 @@ Feature('Reporting why a dry run failed')
         Given('a project whose test suite fails two of its three tests')('project', () => writeProject()),
         When('the mutation run performs its initial test run')(
           'outcome',
-          (s) =>
-            runFromProject(s.project.root, OPTIONS).pipe(
-              Effect.provide(capturingLogger(s.project)),
-              Effect.ensuring(removeProject(s.project.root)),
-            ),
+          (s) => runFromProject(s.project.root, OPTIONS).pipe(Effect.ensuring(removeProject(s.project.root))),
         ),
         Then(
-          'the refusal names every failing test with its failure message, in the cause, the reason, and the log',
+          'the refusal reports every failing test by id, name and file',
         )((s, expect) => {
           const failure = failureOf(s.outcome)
-          const cause = Option.getOrUndefined(dryRunFailedCauseOf(failure.cause))
-          const messages = cause?.failedTests.map((test) => test.failureMessage) ?? []
-          const errorLog = s.project.logs
-            .filter((entry) => entry.level === 'Error')
-            .map((entry) => entry.text)
-            .join('\n')
+          const evidence = Option.getOrUndefined(
+            S.decodeUnknownOption(BaselineTestsFailedEvidence)(failure.evidence),
+          )
+          const tests = evidence?.tests ?? []
+          const messages = tests.map((test) => test.message)
           return expect({
-            stage: failure.stage,
-            causeTag: cause?._tag,
-            causeTestCount: cause?.testCount,
-            causeFailedTestCount: cause?.failedTestCount,
-            causeFailedNames: cause?.failedTests.map((test) => test.name),
-            reasonNamesEveryFailure: FAILING_TEST_NAMES.every((name) => failure.reason.includes(name)),
-            reasonCarriesEveryMessage: messages.every((message) => failure.reason.includes(message)),
+            evidenceTag: failure.evidence._tag,
+            stage: failure.evidence.stage,
+            testCount: evidence?.testCount,
+            failedTestCount: tests.length,
+            failedNames: tests.map((test) => test.name),
+            idsNameTheirFileAndTest: tests.every((test) => test.id === `${TEST_FILE}#${test.name}`),
+            filesNameTheirTestFile: tests.every((test) => test.file === TEST_FILE),
             messagesAreAssertions: messages.every((message) => message.includes('expected')),
-            logNamesEveryFailure: FAILING_TEST_NAMES.every((name) => errorLog.includes(name)),
-            logCarriesEveryMessage: messages.every((message) => errorLog.includes(message)),
-            logCountsTheFailures: errorLog.includes('2 of 3 test(s) failed'),
           }).toEqual({
+            evidenceTag: 'BaselineTestsFailed',
             stage: 'dryRun',
-            causeTag: 'DryRunFailed',
-            causeTestCount: 3,
-            causeFailedTestCount: 2,
-            causeFailedNames: FAILING_TEST_NAMES,
-            reasonNamesEveryFailure: true,
-            reasonCarriesEveryMessage: true,
+            testCount: 3,
+            failedTestCount: 2,
+            failedNames: FAILING_TEST_NAMES,
+            idsNameTheirFileAndTest: true,
+            filesNameTheirTestFile: true,
             messagesAreAssertions: true,
-            logNamesEveryFailure: true,
-            logCarriesEveryMessage: true,
-            logCountsTheFailures: true,
           })
         }),
       ),
@@ -212,15 +181,11 @@ Feature('Reporting why a dry run failed')
         ),
         When('the mutation run performs its initial test run')(
           'run',
-          (s) =>
-            runWithFrozenRunner(s.project).pipe(
-              Effect.provide(capturingLogger(s.project)),
-              Effect.ensuring(removeProject(s.project.root)),
-            ),
+          (s) => runWithFrozenRunner(s.project).pipe(Effect.ensuring(removeProject(s.project.root))),
         ),
         Then('the dry run fails and the unresponsive test runner does not outlive the run')((s, expect) =>
           expect({
-            stage: failureOf(s.run.outcome).stage,
+            stage: failureOf(s.run.outcome).evidence.stage,
             workerAlive: isProcessAlive(s.run.workerPid),
           }).toEqual({ stage: 'dryRun', workerAlive: false })
         ),

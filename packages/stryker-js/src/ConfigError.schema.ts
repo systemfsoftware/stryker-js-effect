@@ -1,3 +1,4 @@
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import * as S from 'effect/Schema'
 
 export class ConfigFileNotFoundError extends S.TaggedError<ConfigFileNotFoundError>()(
@@ -6,7 +7,9 @@ export class ConfigFileNotFoundError extends S.TaggedError<ConfigFileNotFoundErr
     file: S.String,
   },
 ) {
-  readonly exitClass = 'ConfigError' as const
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'ConfigInvalid', stage: 'config', detail: this.message }
+  }
 
   override get message(): string {
     return `Config file not found: ${this.file}`
@@ -20,7 +23,9 @@ export class ConfigFileUnsupportedError extends S.TaggedError<ConfigFileUnsuppor
     hint: S.String,
   },
 ) {
-  readonly exitClass = 'ConfigError' as const
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'ConfigInvalid', stage: 'config', detail: this.message }
+  }
 
   override get message(): string {
     return this.hint
@@ -34,7 +39,9 @@ export class ConfigFileUnreadableError extends S.TaggedError<ConfigFileUnreadabl
     cause: S.Unknown,
   },
 ) {
-  readonly exitClass = 'ConfigError' as const
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'ConfigInvalid', stage: 'config', detail: this.message }
+  }
 
   override get message(): string {
     return `Config file is unreadable: ${this.file}`
@@ -48,7 +55,9 @@ export class ConfigFileInvalidError extends S.TaggedError<ConfigFileInvalidError
     cause: S.Unknown,
   },
 ) {
-  readonly exitClass = 'ConfigError' as const
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'ConfigInvalid', stage: 'config', detail: this.message }
+  }
 
   override get message(): string {
     return `Invalid config file: ${this.file}`
@@ -59,7 +68,9 @@ export class ConfigFactoryFailed extends S.TaggedError<ConfigFactoryFailed>()('C
   message: S.String,
   cause: S.Defect(),
 }) {
-  readonly exitClass = 'ConfigError' as const
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'ConfigInvalid', stage: 'config', detail: this.message }
+  }
 }
 
 export class ConfigModuleUnloadable extends S.TaggedError<ConfigModuleUnloadable>()('ConfigModuleUnloadable', {
@@ -68,13 +79,17 @@ export class ConfigModuleUnloadable extends S.TaggedError<ConfigModuleUnloadable
   file: S.String,
   cause: S.Defect(),
 }) {
-  readonly exitClass = 'ConfigError' as const
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'ConfigInvalid', stage: 'config', detail: this.message }
+  }
 }
 
 export class ConfigError extends S.TaggedError<ConfigError>()('ConfigError', {
   message: S.String,
 }) {
-  readonly exitClass = 'ConfigError' as const
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'ConfigInvalid', stage: 'config', detail: this.message }
+  }
 }
 
 export type ConfigReadError =
