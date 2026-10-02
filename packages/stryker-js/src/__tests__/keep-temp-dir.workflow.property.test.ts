@@ -1,48 +1,26 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
 
-import {
-  keepTempDir,
-  KeepTempDirAlways,
-  KeepTempDirCommand,
-  KeepTempDirOnFailure,
-  type KeepTempDirOutcome,
-} from '../keep-temp-dir.workflow.js'
+import { keepTempDir, KeepTempDirCommand, type KeepTempDirOutcome } from '../keep-temp-dir.workflow.js'
 
-const fateOf = (decision: KeepTempDirOutcome): 'kept' | 'removed' =>
+const removed = (decision: KeepTempDirOutcome): boolean =>
   Match.value(decision).pipe(
-    Match.tag('TempDirKept', () => 'kept' as const),
-    Match.tag('TempDirRemoved', () => 'removed' as const),
+    Match.tag('TempDirKept', () => false),
+    Match.tag('TempDirRemoved', () => true),
     Match.exhaustive,
   )
 
 describe('keepTempDir', () => {
   it.prop(
-    '∀a_Always_≡Removed',
-    { of: [S.Boolean], subject: keepTempDir },
-    (subject, [failed]) => {
-      const always = KeepTempDirCommand.make({ cleanTempDir: KeepTempDirAlways.make({}), failed })
-      return Result.match(subject(always), {
+    '∀c_KeepTempDir_⊨CleanTempDirContract',
+    { of: [KeepTempDirCommand], subject: keepTempDir },
+    (subject, [command]) =>
+      Result.match(subject(command), {
         onFailure: () => false,
-        onSuccess: (decision) => fateOf(decision) === 'removed',
-      })
-    },
-  )
-
-  it.prop(
-    '∀f_OnFailure_≡KeptIffFailed',
-    { of: [S.Boolean], subject: keepTempDir },
-    (subject, [failed]) => {
-      const onFailure = KeepTempDirCommand.make({
-        cleanTempDir: KeepTempDirOnFailure.make({ failed }),
-        failed,
-      })
-      return Result.match(subject(onFailure), {
-        onFailure: () => false,
-        onSuccess: (decision) => (failed ? fateOf(decision) === 'kept' : fateOf(decision) === 'removed'),
-      })
-    },
+        onSuccess: (decision) =>
+          removed(decision) ===
+            (command.cleanTempDir === 'always' || (command.cleanTempDir === true && !command.failed)),
+      }),
   )
 })

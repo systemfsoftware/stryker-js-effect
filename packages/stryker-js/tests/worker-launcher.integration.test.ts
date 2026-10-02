@@ -5,61 +5,21 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
-  type ChildBehaviour,
-  PingRpcs,
-  substitutedLauncher,
+  bootFailure,
+  type BootOutcome,
+  bootPingWorker,
+  EXEC_ARGV,
+  TEMP_DIR_PREFIX,
   WORKER_ENTRYPOINT,
   WORKER_PID,
+  WORKING_DIRECTORY,
 } from './__fixtures__/substituted-worker.fixture.js'
 
 const Feature = makeFeature({ it })
-
-const WORKING_DIRECTORY = '/project/.stryker-tmp/sandbox-1'
-const EXEC_ARGV: readonly string[] = ['--enable-source-maps']
-const PLUGIN_OPTIONS = { plugins: ['file:///project/node_modules/@acme/stryker-runner/dist/worker.mjs'] }
-const TEMP_DIR_PREFIX = 'stryker-plugin-'
-
-interface BootOutcome<E = unknown> {
-  readonly answer: Result.Result<string, E>
-  readonly spawns: readonly Worker.WorkerSpawnParams[]
-  readonly options: Options.StrykerOptions
-}
-
-const bootPingWorker = (
-  behaviour: ChildBehaviour,
-): Effect.Effect<BootOutcome> =>
-  Effect.gen(function*() {
-    const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)(PLUGIN_OPTIONS).pipe(Effect.orDie)
-    const launcher = yield* substitutedLauncher(behaviour)
-    const answer = yield* Worker.makeWorkerClient({
-      rpcs: PingRpcs,
-      options,
-      entrypoint: WORKER_ENTRYPOINT,
-      workingDirectory: WORKING_DIRECTORY,
-      execArgv: EXEC_ARGV,
-      tempDirPrefix: TEMP_DIR_PREFIX,
-      workerKind: 'testRunner',
-      env: undefined,
-    }).pipe(
-      Effect.flatMap((client) => client.ping({ message: 'boot' })),
-      Effect.provide(launcher.layer),
-      Effect.result,
-    )
-    return { answer, spawns: yield* Ref.get(launcher.spawns), options }
-  }).pipe(Effect.scoped)
-
-const bootFailure = <E = unknown>(boot: BootOutcome<E>): E =>
-  Result.match(boot.answer, {
-    onFailure: (error) => error,
-    onSuccess: (answer) => {
-      throw new Error(`the boot was expected to fail, but the worker answered ${answer}`)
-    },
-  })
 
 const bootAnswer = (boot: BootOutcome): string =>
   Result.match(boot.answer, {
@@ -68,14 +28,6 @@ const bootAnswer = (boot: BootOutcome): string =>
     },
     onSuccess: (answer) => answer,
   })
-
-const timeoutOf = (boot: BootOutcome): Worker.WorkerBootTimeoutError => {
-  const failure = bootFailure(boot)
-  if (S.is(Worker.WorkerBootTimeoutError)(failure)) {
-    return failure
-  }
-  throw new Error('the boot was expected to fail as a boot timeout', { cause: failure })
-}
 
 const crashOf = (boot: BootOutcome): Worker.ChildProcessCrashedError => {
   const failure = bootFailure(boot)
@@ -149,23 +101,6 @@ Feature('Running each plugin worker as its own process')
               env: undefined,
             })
           ))
-        ),
-      ),
-    )
-
-    scenario(
-      'A worker that never accepts the connection is reported, not hung on',
-      Gherkin.Do.pipe(
-        Given('a plugin whose own worker entry never accepts a connection')(
-          'boot',
-          () => bootPingWorker('neverBinds'),
-        ),
-        When('the host starts that plugin')(
-          'timeout',
-          (s) => Effect.sync(() => timeoutOf(s.boot)),
-        ),
-        Then('the host reports that the worker never came up, naming the child it started')((s, expect) =>
-          expect(s.timeout.pid).toEqual(WORKER_PID)
         ),
       ),
     )

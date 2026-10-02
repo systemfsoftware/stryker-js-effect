@@ -69,9 +69,9 @@ Measured on 2026-09-30 against `packages/stryker-js`, in-source plugin:
 - The same 2,801 non-`CompileError` mutants run under the old upstream law
   plugin and under `inSourceSchemaLaws`: 0 status flips.
 
-Capture gotcha: `--cleanTempDir false` does not keep the sandbox after a
-successful run, because the `Sandbox` service's `keepTempDirCommand` maps every
-boolean to keep-on-failure. Copy the sandbox while the dry run is still running.
+Capture tip: run with `--cleanTempDir false` to keep the sandbox after the run
+ends, whether it succeeded or failed; the default (`true`) removes it after a
+successful run.
 
 ## Prevention
 

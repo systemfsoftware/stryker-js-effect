@@ -3,13 +3,13 @@ import type { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace, Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Context from 'effect/Context'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import type * as Rpc from 'effect/rpc/Rpc'
 import * as RpcClient from 'effect/rpc/RpcClient'
 import type { RpcClientError } from 'effect/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/rpc/RpcGroup'
-import * as Schedule from 'effect/Schedule'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 
@@ -21,7 +21,7 @@ import { WorkerLauncher } from './WorkerLauncher.service.js'
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js/WorkerClient')
 export type TypeId = typeof TypeId
 
-const connectRetry = Schedule.max([Schedule.spaced(50), Schedule.recurs(100)])
+const WORKER_BOOT_TIMEOUT = Duration.seconds(30)
 
 export interface WorkerClientParams<Rpcs extends Rpc.Any> {
   readonly rpcs: RpcGroup.RpcGroup<Rpcs>
@@ -50,13 +50,14 @@ const WorkerClients = <Rpcs extends Rpc.Any>() =>
           workerKind: params.workerKind,
           env: params.env,
         })
+        const bootTimedOut = () =>
+          Effect.fail(WorkerBootTimeoutError.make({ pid: worker.pid, workerKind: params.workerKind }))
         const protocol = yield* worker.pipe(
           clientLayer,
           Layer.build,
-          Effect.retry(connectRetry),
           Effect.raceFirst(worker.exited),
-          Effect.catchTag('SocketError', () =>
-            Effect.fail(WorkerBootTimeoutError.make({ pid: worker.pid, workerKind: params.workerKind }))),
+          Effect.timeoutOrElse({ duration: WORKER_BOOT_TIMEOUT, orElse: bootTimedOut }),
+          Effect.catchTag('SocketError', bootTimedOut),
         )
         const traceContext = yield* Layer.build(Trace.layerTraceContextClient)
 

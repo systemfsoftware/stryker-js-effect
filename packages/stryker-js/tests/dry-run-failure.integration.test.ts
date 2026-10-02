@@ -1,6 +1,7 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
-import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -104,23 +105,30 @@ const OPTIONS: Options.PartialStrykerOptions = {
 }
 
 const FROZEN_RUNNER_PLUGIN = new URL('./__fixtures__/frozen-runner/index.mjs', import.meta.url).href
+const DEAF_RUNNER_PLUGIN = new URL('./__fixtures__/deaf-runner/index.mjs', import.meta.url).href
 
-interface FrozenRunnerOutcome {
+interface WorkerRunnerOutcome {
   readonly outcome: Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>
   readonly workerPid: number
 }
 
-const runWithFrozenRunner = (
+const runWithRunnerPlugin = (
   project: ProjectFixture,
-): Effect.Effect<FrozenRunnerOutcome, PlatformError, Engine.EnginePorts | FileSystem.FileSystem | Path.Path> =>
+  plugin: string,
+): Effect.Effect<WorkerRunnerOutcome, PlatformError, Engine.EnginePorts | FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const pidFile = path.join(project.root, 'frozen-runner.pid')
+    const pidFile = path.join(project.root, 'test-runner.pid')
     const outcome = yield* runFromProject(project.root, {
       ...OPTIONS,
-      testRunner: { plugin: FROZEN_RUNNER_PLUGIN, options: { pidFile } },
-    })
+      testRunner: { plugin, options: { pidFile } },
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: Duration.seconds(50),
+        orElse: () => Effect.die(new Error('the run was still waiting on its test runner after 50s')),
+      }),
+    )
     const workerPid = Number(yield* fs.readFileString(pidFile))
     return { outcome, workerPid }
   })
@@ -129,7 +137,7 @@ const isProcessAlive = (pid: number): boolean => Result.isSuccess(Result.try(() 
 
 const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
 
-Feature('Reporting why a dry run failed')
+Feature('Reporting why a dry run failed', { timeout: 120_000 })
   .withLayer(runLayer)
   .live('the scenario writes and removes a real project directory, so the dry run waits on real filesystem I/O')
   .body(({ scenario }) => {
@@ -181,13 +189,52 @@ Feature('Reporting why a dry run failed')
         ),
         When('the mutation run performs its initial test run')(
           'run',
-          (s) => runWithFrozenRunner(s.project).pipe(Effect.ensuring(removeProject(s.project.root))),
+          (s) =>
+            runWithRunnerPlugin(s.project, FROZEN_RUNNER_PLUGIN).pipe(
+              Effect.ensuring(removeProject(s.project.root)),
+            ),
         ),
         Then('the dry run fails and the unresponsive test runner does not outlive the run')((s, expect) =>
           expect({
             stage: failureOf(s.run.outcome).evidence.stage,
             workerAlive: isProcessAlive(s.run.workerPid),
           }).toEqual({ stage: 'dryRun', workerAlive: false })
+        ),
+      ),
+    )
+    scenario(
+      'A test runner that never accepts its connection fails the run with a boot error instead of hanging it',
+      Gherkin.Do.pipe(
+        Given('a project whose test runner never accepts its connection')('project', () => writeProject()),
+        When('the mutation run performs its initial test run')(
+          'run',
+          (s) =>
+            runWithRunnerPlugin(s.project, DEAF_RUNNER_PLUGIN).pipe(
+              Effect.ensuring(removeProject(s.project.root)),
+            ),
+        ),
+        Then('the dry run fails and the worker that never accepted its connection does not outlive the run')(
+          (s, expect) => {
+            const failure = failureOf(s.run.outcome)
+            const bootCause = S.is(TestRunner.TestRunnerFailed)(failure.cause) ? failure.cause : undefined
+            return expect({
+              stage: failure.evidence.stage,
+              causeTag: bootCause?._tag,
+              causePhase: bootCause?.phase,
+              namesTheWorkerPid: bootCause?.cause.includes(`Worker ${s.run.workerPid}`) ?? false,
+              namesTheBootWindow: bootCause?.cause.includes(
+                'did not accept the RPC connection before its boot window closed',
+              ) ?? false,
+              workerAlive: isProcessAlive(s.run.workerPid),
+            }).toEqual({
+              stage: 'dryRun',
+              causeTag: 'TestRunnerFailed',
+              causePhase: 'init',
+              namesTheWorkerPid: true,
+              namesTheBootWindow: true,
+              workerAlive: false,
+            })
+          },
         ),
       ),
     )
