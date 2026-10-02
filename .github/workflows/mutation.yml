@@ -51,12 +51,93 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
-  mutation:
-    name: mutation · ${{ matrix.job.name }}
+  preflight:
+    name: preflight · one dry run per package
     needs: plan
     if: ${{ needs.plan.result == 'success' && needs.plan.outputs.jobs != '[]' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OTEL_ENABLED: "true"
+      OTEL_SERVICE_NAME: stryker-js-mutation
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+      OUT_DIR: mutation-telemetry
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: denoland/setup-deno@v2
+      - name: Build
+        run: pnpm exec turbo run build --output-logs=errors-only --log-order=stream ${{ join(fromJSON(needs.plan.outputs.jobs).*.filters, ' ') }}
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: .stryker-incremental
+          key: stryker-incremental-${{ github.run_id }}
+          restore-keys: |
+            stryker-incremental-
+      - name: Place incremental files
+        run: if [ -d .stryker-incremental ]; then cp -a .stryker-incremental/. .; fi
+
+      - name: Install process-compose (pinned)
+        run: |
+          curl -sSfL -o /tmp/pc.tar.gz https://github.com/F1bonacc1/process-compose/releases/download/v1.122.0/process-compose_linux_amd64.tar.gz
+          echo '9b6dbc38324c0b0481f1cd1dd828ffdc78117129ec797678f4bf8c4023311281  /tmp/pc.tar.gz' | sha256sum -c -
+          sudo tar xzf /tmp/pc.tar.gz -C /usr/local/bin process-compose
+      - name: Start LGTM (blocks until probe-ready)
+        run: |
+          echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
+          pnpm lgtm:up
+
+      - name: Preflight
+        env:
+          JOBS: ${{ needs.plan.outputs.jobs }}
+        run: $MUTATION_JOB preflight --cap-seconds "$TARGET_SECONDS"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mutation-preflight
+          path: preflight/
+          if-no-files-found: ignore
+          retention-days: 1
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: mutation-preflight-evidence
+          path: preflight-evidence/
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Export telemetry
+        if: always()
+        continue-on-error: true
+        run: ./test/e2e/scripts/export-traces.ts
+      - name: Package telemetry
+        if: always()
+        run: if [ -d mutation-telemetry ]; then tar czf mutation-telemetry.tar.gz mutation-telemetry; fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mutation-telemetry-${{ github.run_id }}-preflight
+          path: mutation-telemetry.tar.gz
+          if-no-files-found: ignore
+          retention-days: 30
+
+  mutation:
+    name: mutation · ${{ matrix.job.name }}
+    needs: [plan, preflight]
+    if: ${{ needs.preflight.result == 'success' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 75
+    env:
+      OTEL_ENABLED: "true"
+      OTEL_SERVICE_NAME: stryker-js-mutation
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+      OUT_DIR: mutation-telemetry
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +162,21 @@ jobs:
             stryker-incremental-
       - name: Place incremental files
         run: if [ -d .stryker-incremental ]; then cp -a .stryker-incremental/. .; fi
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: mutation-preflight
+          path: .
+
+      - name: Install process-compose (pinned)
+        run: |
+          curl -sSfL -o /tmp/pc.tar.gz https://github.com/F1bonacc1/process-compose/releases/download/v1.122.0/process-compose_linux_amd64.tar.gz
+          echo '9b6dbc38324c0b0481f1cd1dd828ffdc78117129ec797678f4bf8c4023311281  /tmp/pc.tar.gz' | sha256sum -c -
+          sudo tar xzf /tmp/pc.tar.gz -C /usr/local/bin process-compose
+      - name: Start LGTM (blocks until probe-ready)
+        run: |
+          echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
+          pnpm lgtm:up
 
       - name: Mutation
         env:
@@ -107,7 +203,22 @@ jobs:
           name: mutation-part-${{ matrix.job.id }}
           path: mutation-parts/
           if-no-files-found: ignore
-          retention-days: 1
+          retention-days: 30
+
+      - name: Export telemetry
+        if: always()
+        continue-on-error: true
+        run: ./test/e2e/scripts/export-traces.ts
+      - name: Package telemetry
+        if: always()
+        run: if [ -d mutation-telemetry ]; then tar czf mutation-telemetry.tar.gz mutation-telemetry; fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mutation-telemetry-${{ github.run_id }}-${{ matrix.job.id }}
+          path: mutation-telemetry.tar.gz
+          if-no-files-found: ignore
+          retention-days: 30
 
   timings:
     name: record mutation timings
@@ -138,13 +249,14 @@ jobs:
 
   report:
     name: Mutation report
-    needs: [plan, mutation]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.jobs != '[]' }}
+    needs: [plan, preflight, mutation]
+    if: ${{ !cancelled() && needs.preflight.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
       contents: read
       actions: write
+      security-events: write
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -194,8 +306,31 @@ jobs:
           path: mutation-merged/*
           retention-days: 14
 
-      - name: Delete per-job artifacts
+      - name: Merge SARIF
         if: always()
+        run: $MUTATION_JOB sarif --parts mutation-parts --out mutation-sarif/mutation.sarif
+      - uses: github/codeql-action/upload-sarif@v4
+        if: ${{ always() && hashFiles('mutation-sarif/mutation.sarif') != '' }}
+        with:
+          sarif_file: mutation-sarif/mutation.sarif
+          category: mutation
+
+      - name: Survivor baseline
+        if: ${{ env.MUTATION_REPORT_COMPLETE == 'true' && github.ref == 'refs/heads/main' }}
+        run: |
+          mkdir -p mutation-gate/reports/mutation
+          cp mutation-merged/mutation-report.json mutation-gate/reports/mutation/mutation.json
+          cd mutation-gate
+          "$GITHUB_WORKSPACE/packages/stryker-js/node_modules/.bin/stryker" gate --baseline mutation-survivor-baseline.json --update-baseline
+      - uses: actions/upload-artifact@v7
+        if: ${{ env.MUTATION_REPORT_COMPLETE == 'true' && github.ref == 'refs/heads/main' }}
+        with:
+          name: mutation-survivor-baseline
+          path: mutation-gate/mutation-survivor-baseline.json
+          retention-days: 90
+
+      - name: Delete per-job artifacts
+        if: ${{ always() && needs.mutation.result == 'success' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}

@@ -1,21 +1,29 @@
 import { assertEquals, assertStringIncludes, assertThrows } from '@std/assert'
+import * as Option from 'effect/Option'
 
 import {
+  buildPreflightError,
+  buildPreflightSummary,
   buildRequireError,
   buildSummary,
   combineParts,
   decodeInput,
   decodeJson,
   emptyRecord,
+  evaluatedOf,
+  evaluatedSummaryOf,
   JobOrNullSchema,
   JobsSchema,
   loadState,
   mergeRecord,
+  mergeSarif,
   type Part,
   PartMetaSchema,
   planJobs,
   PnpmWorkspaceSchema,
+  PREFLIGHT_FILE,
   ReportSchema,
+  SarifLogSchema,
   type StagedPart,
   type SummaryInput,
   type TimingRecord,
@@ -239,4 +247,85 @@ Deno.test('decodeInput names the workspace file when packages is malformed', () 
     Error,
     'pnpm-workspace.yaml',
   )
+})
+
+Deno.test('a passing preflight names where its coverage went, or that every shard repeats the dry run', async () => {
+  const state = await loadState(dir, readFileFor({}))
+  const passed = inputOf({ outcome: 'success', exitCode: 0 })
+  assertStringIncludes(buildPreflightSummary(passed, state, true), `packages/x/${PREFLIGHT_FILE}`)
+  assertStringIncludes(buildPreflightSummary(passed, state, false), 'every shard runs its own dry run')
+  assertEquals(buildPreflightSummary(passed, state, true).includes('RecordMissing'), false)
+  assertEquals(buildPreflightError(passed, state), null)
+})
+
+Deno.test('a failing preflight renders its terminal record and annotates it', async () => {
+  const state = await loadState(dir, readFileFor({ [`${dir}/mutation-stream.jsonl`]: failureStream }))
+  const failed = inputOf({ exitCode: 5 })
+  assertStringIncludes(buildPreflightSummary(failed, state, false), 'BaselineTestsFailed')
+  assertStringIncludes(buildPreflightError(failed, state) ?? '', 'BaselineTestsFailed')
+})
+
+const reuseLine = (ran: number): string => `${JSON.stringify({ _tag: 'reuse', reused: 4, ran, refused: {} })}\n`
+
+Deno.test('evaluatedOf sums the mutants every part ran and reports evaluated-none when that sum is zero', () => {
+  assertEquals(evaluatedOf([reuseLine(2), reuseLine(3), '{"_tag":"tick"}\n']), Option.some(5))
+  assertStringIncludes(evaluatedSummaryOf(evaluatedOf([reuseLine(0), reuseLine(0)])), 'no mutants')
+  assertEquals(evaluatedOf(['{"_tag":"tick"}\n']), Option.none())
+})
+
+const sarifOf = (
+  rules: readonly string[],
+  results: readonly (readonly [string, string])[],
+  invocations?: unknown[],
+) => ({
+  $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
+  version: '2.1.0' as const,
+  runs: [{
+    tool: {
+      driver: {
+        name: 'StrykerJS',
+        version: '1',
+        informationUri: 'https://stryker-mutator.io',
+        rules: rules.map((id) => ({ id })),
+      },
+    },
+    results: results.map(([ruleId, uri]) => ({
+      ruleId,
+      ruleIndex: rules.indexOf(ruleId),
+      locations: [{ physicalLocation: { artifactLocation: { uri }, region: { startLine: 1 } } }],
+    })),
+    ...(invocations === undefined ? {} : { invocations }),
+  }],
+})
+
+Deno.test('mergeSarif folds every package into one run with repository paths and re-indexed rules', () => {
+  const notification = {
+    descriptor: { id: 'BaselineTestsFailed' },
+    locations: [{ physicalLocation: { artifactLocation: { uri: 'src/b.test.ts' }, region: { startLine: 3 } } }],
+  }
+  const merged = Option.getOrThrow(mergeSarif([
+    { dir: 'packages/a', log: decodeInput(SarifLogSchema, sarifOf(['Z'], [['Z', 'src/a.ts']]), 'a') },
+    {
+      dir: 'packages/b',
+      log: decodeInput(
+        SarifLogSchema,
+        sarifOf(['A', 'Z'], [['A', 'src/b.ts']], [{ toolExecutionNotifications: [notification] }]),
+        'b',
+      ),
+    },
+  ]))
+  const [run] = merged.runs
+  assertEquals(merged.runs.length, 1)
+  assertEquals(run?.tool.driver.rules.map((rule) => rule.id), ['A', 'Z'])
+  assertEquals(
+    run?.results.map((
+      result,
+    ) => [result.ruleId, result['ruleIndex'], result.locations[0]?.physicalLocation.artifactLocation.uri]),
+    [['Z', 1, 'packages/a/src/a.ts'], ['A', 0, 'packages/b/src/b.ts']],
+  )
+  assertEquals(
+    run?.invocations?.[0]?.toolExecutionNotifications?.[0]?.locations?.[0]?.physicalLocation.artifactLocation.uri,
+    'packages/b/src/b.test.ts',
+  )
+  assertEquals(mergeSarif([]), Option.none())
 })

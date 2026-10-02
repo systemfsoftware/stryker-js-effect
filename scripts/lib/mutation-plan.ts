@@ -364,6 +364,123 @@ export const buildRequireError = (input: SummaryInput, state: ReportState): stri
   return annotationsOf(recordFor(input, state)).join('\n')
 }
 
+export const PREFLIGHT_FILE = 'reports/stryker-incremental-preflight.json'
+
+export const buildPreflightSummary = (input: SummaryInput, state: ReportState, published: boolean): string => {
+  const header = [`#### Mutation preflight · **${input.package}**`, '']
+  if (input.outcome === 'failure') {
+    return `${[...header, '- **Dry run**: **failure**', markdownOf(recordFor(input, state))].join('\n')}\n`
+  }
+  const coverage = published
+    ? `- **Dry-run coverage**: published at **${input.package}/${PREFLIGHT_FILE}**; shards whose digests match reuse it`
+    : '- **Dry-run coverage**: not published by this CLI; every shard runs its own dry run'
+  return `${[...header, '- **Dry run**: **passed**', coverage].join('\n')}\n`
+}
+
+export const buildPreflightError = (input: SummaryInput, state: ReportState): string | null =>
+  input.outcome === 'success' ? null : annotationsOf(recordFor(input, state)).join('\n')
+
+export const evaluatedOf = (streams: readonly string[]): Option.Option<number> => {
+  const reuses = streams.flatMap((stream) => Option.toArray(reuseOf(stream)))
+  return reuses.length === 0 ? Option.none() : Option.some(reuses.reduce((sum, reuse) => sum + reuse.ran, 0))
+}
+
+export const evaluatedSummaryOf = (evaluated: Option.Option<number>): string =>
+  Option.match(evaluated, {
+    onNone: () => '- **Evaluated**: no part reported which mutants it ran',
+    onSome: (ran) =>
+      ran === 0
+        ? '- **Evaluated**: **no mutants**; every verdict was reused, so this run tested nothing'
+        : `- **Evaluated**: **${ran}** mutant(s); every other verdict was reused`,
+  })
+
+const SarifRest = [S.Record(S.String, S.Json)] as const
+const SarifArtifactLocationSchema = S.StructWithRest(S.Struct({ uri: S.String }), SarifRest)
+const SarifPhysicalLocationSchema = S.StructWithRest(
+  S.Struct({ artifactLocation: SarifArtifactLocationSchema }),
+  SarifRest,
+)
+const SarifLocationSchema = S.StructWithRest(S.Struct({ physicalLocation: SarifPhysicalLocationSchema }), SarifRest)
+const SarifRuleSchema = S.StructWithRest(S.Struct({ id: S.String }), SarifRest)
+const SarifResultSchema = S.StructWithRest(
+  S.Struct({ ruleId: S.String, locations: S.Array(SarifLocationSchema) }),
+  SarifRest,
+)
+const SarifNotificationSchema = S.StructWithRest(
+  S.Struct({ locations: S.optionalKey(S.Array(SarifLocationSchema)) }),
+  SarifRest,
+)
+const SarifInvocationSchema = S.StructWithRest(
+  S.Struct({ toolExecutionNotifications: S.optionalKey(S.Array(SarifNotificationSchema)) }),
+  SarifRest,
+)
+const SarifDriverSchema = S.StructWithRest(S.Struct({ name: S.String, rules: S.Array(SarifRuleSchema) }), SarifRest)
+const SarifRunSchema = S.Struct({
+  tool: S.Struct({ driver: SarifDriverSchema }),
+  results: S.Array(SarifResultSchema),
+  invocations: S.optionalKey(S.Array(SarifInvocationSchema)),
+})
+export const SarifLogSchema = S.Struct({
+  $schema: S.String,
+  version: S.Literal('2.1.0'),
+  runs: S.Array(SarifRunSchema),
+})
+export type SarifLog = S.Schema.Type<typeof SarifLogSchema>
+type SarifLocation = S.Schema.Type<typeof SarifLocationSchema>
+type SarifRun = S.Schema.Type<typeof SarifRunSchema>
+
+export type PackageSarif = { readonly dir: string; readonly log: SarifLog }
+
+const underDir = (dir: string) => (location: SarifLocation): SarifLocation => ({
+  ...location,
+  physicalLocation: {
+    ...location.physicalLocation,
+    artifactLocation: {
+      ...location.physicalLocation.artifactLocation,
+      uri: `${dir}/${location.physicalLocation.artifactLocation.uri}`,
+    },
+  },
+})
+
+const invocationsUnder = (dir: string, run: SarifRun) =>
+  (run.invocations ?? []).map((invocation) => ({
+    ...invocation,
+    ...(invocation.toolExecutionNotifications === undefined ? {} : {
+      toolExecutionNotifications: invocation.toolExecutionNotifications.map((notification) => ({
+        ...notification,
+        ...(notification.locations === undefined ? {} : { locations: notification.locations.map(underDir(dir)) }),
+      })),
+    }),
+  }))
+
+export const mergeSarif = (packages: readonly PackageSarif[]): Option.Option<SarifLog> => {
+  const runs = packages.flatMap(({ dir, log }) => log.runs.map((run) => ({ dir, run })))
+  return Option.map(Arr.head(runs), ({ run: first }) => {
+    const rules = Arr.dedupeWith(
+      runs.flatMap(({ run }) => run.tool.driver.rules).sort((a, b) => a.id.localeCompare(b.id)),
+      (a, b) => a.id === b.id,
+    )
+    const ruleIndex = new Map(rules.map((rule, index) => [rule.id, index] as const))
+    const results = runs.flatMap(({ dir, run }) =>
+      run.results.map((result) => ({
+        ...result,
+        ruleIndex: ruleIndex.get(result.ruleId) ?? 0,
+        locations: result.locations.map(underDir(dir)),
+      }))
+    )
+    const invocations = runs.flatMap(({ dir, run }) => invocationsUnder(dir, run))
+    return {
+      $schema: packages[0]?.log.$schema ?? '',
+      version: '2.1.0',
+      runs: [{
+        tool: { driver: { ...first.tool.driver, rules } },
+        results,
+        ...(invocations.length === 0 ? {} : { invocations }),
+      }],
+    }
+  })
+}
+
 export const combineParts = (parts: readonly StagedPart[]): Map<string, CombinedPart> => {
   const byPackage = Map.groupBy(parts, (part) => part.meta.package)
   const combined = new Map<string, CombinedPart>()

@@ -13,7 +13,7 @@ const restoredShardReports = ['reports/stryker-incremental-*.json']
 
 export const sharedConfig = {
   packageManager: 'pnpm',
-  reporters: isAgent || isCI ? ['json', 'html'] : ['progress', 'html', 'json'],
+  reporters: isAgent ? ['json', 'html'] : isCI ? ['json', 'html', 'sarif'] : ['progress', 'html', 'json'],
   htmlReporter: { fileName: 'reports/mutation-report.html' },
   jsonReporter: { fileName: 'reports/mutation-report.json' },
   coverageAnalysis: 'perTest',
