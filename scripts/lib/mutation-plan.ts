@@ -333,7 +333,7 @@ export const recordFor = (input: SummaryInput, state: ReportState): FailureRecor
 const outcomeLabelOf = (input: SummaryInput, state: ReportState): string =>
   Option.match(state.reuse, {
     onNone: () => input.outcome,
-    onSome: (reuse) => (reuse.ran === 0 ? 'evaluated no mutants' : input.outcome),
+    onSome: (reuse) => (reuse.ran === 0 ? `${input.outcome}, evaluated no mutants` : input.outcome),
   })
 
 export const buildSummary = (input: SummaryInput, state: ReportState): string => {

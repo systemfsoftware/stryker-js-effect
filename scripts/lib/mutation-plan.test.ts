@@ -177,6 +177,20 @@ Deno.test('a reuse line with ran: 0 reports the evaluated-none outcome and a non
   assertEquals(buildRequireError(input, state) !== null, true)
 })
 
+Deno.test('a failed run that reused every verdict keeps its failure outcome next to evaluated-none', async () => {
+  const state = await loadState(
+    dir,
+    readFileFor({
+      [`${dir}/mutation-report.json`]: '{"schemaVersion":"1.0","files":{}}',
+      [`${dir}/mutation-stream.jsonl`]: '{"_tag":"reuse","reused":4,"ran":0,"refused":{}}\n',
+    }),
+  )
+  assertStringIncludes(
+    buildSummary(inputOf({ outcome: 'failure', exitCode: 1 }), state),
+    '**failure, evaluated no mutants**',
+  )
+})
+
 Deno.test('a cleared reports dir cannot satisfy the no-report gate', async () => {
   const stale = await loadState(
     dir,
