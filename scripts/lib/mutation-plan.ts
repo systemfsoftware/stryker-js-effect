@@ -1,6 +1,16 @@
+import * as Arr from 'effect/Array'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+
+import { type RecordContext, recordOf } from '../../packages/stryker-js-cli-contract/src/failure-catalog.ts'
+import {
+  type Capsule,
+  type FailureEvidence,
+  FailureRecord,
+} from '../../packages/stryker-js-cli-contract/src/failure-record.schema.ts'
+import { annotationsOf, markdownOf } from '../../packages/stryker-js-cli-contract/src/render-failure.ts'
 
 export const ShardSchema = S.Struct({ index: S.Int, count: S.Int })
 export type Shard = S.Schema.Type<typeof ShardSchema>
@@ -205,27 +215,6 @@ export const summaryTable = (parts: readonly Part[], target: number, taskName = 
   ].join('\n')
 }
 
-const tagOf = (value: unknown): unknown => {
-  if (typeof value !== 'object' || value === null || !('_tag' in value)) return undefined
-  return value._tag
-}
-
-const countMutantLines = (text: string): number => {
-  let n = 0
-  for (const raw of text.split('\n')) {
-    const line = raw.trim()
-    if (line.length === 0) continue
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(line)
-    } catch {
-      continue
-    }
-    if (tagOf(parsed) === 'mutant') n += 1
-  }
-  return n
-}
-
 const isCompleteReport = (text: string): boolean => {
   let parsed: unknown
   try {
@@ -240,7 +229,39 @@ const isCompleteReport = (text: string): boolean => {
     typeof files === 'object' && files !== null
 }
 
-export type ReportState = { reportText: string | null; streamText: string | null }
+type FailureRecordType = S.Schema.Type<typeof FailureRecord>
+
+const RunFailedLineSchema = S.Struct({
+  _tag: S.Literal('error'),
+  schemaVersion: S.Literal('3.0'),
+  code: S.Int,
+  record: FailureRecord,
+})
+
+const ReuseLineSchema = S.Struct({
+  _tag: S.Literal('reuse'),
+  ran: S.Int.check(S.isGreaterThanOrEqualTo(0)),
+})
+
+const decodedLines = <A>(streamText: string | null, schema: S.ConstraintDecoder<A>): ReadonlyArray<A> =>
+  (streamText ?? '').split('\n').flatMap((line) =>
+    Option.toArray(S.decodeUnknownOption(S.fromJsonString(schema))(line))
+  )
+
+const terminalRecordOf = (streamText: string | null): Option.Option<FailureRecordType> =>
+  Option.map(Arr.last(decodedLines(streamText, RunFailedLineSchema)), (line) => line.record)
+
+export type ReuseState = { readonly ran: number }
+
+const reuseOf = (streamText: string | null): Option.Option<ReuseState> =>
+  Option.map(Arr.last(decodedLines(streamText, ReuseLineSchema)), (line) => ({ ran: line.ran }))
+
+export type ReportState = {
+  reportText: string | null
+  streamText: string | null
+  failure: Option.Option<FailureRecordType>
+  reuse: Option.Option<ReuseState>
+}
 
 export const loadState = async (
   reportsDir: string,
@@ -248,19 +269,80 @@ export const loadState = async (
 ): Promise<ReportState> => {
   const reportText = await readFile(`${reportsDir}/mutation-report.json`).catch(() => null)
   const streamText = await readFile(`${reportsDir}/mutation-stream.jsonl`).catch(() => null)
-  return { reportText, streamText }
+  return { reportText, streamText, failure: terminalRecordOf(streamText), reuse: reuseOf(streamText) }
 }
 
 export interface SummaryInput {
   readonly package: string
   readonly outcome: Outcome
   readonly reportsDir: string
+  readonly exitCode: number | null
+  readonly cwd: string
+  readonly limitSeconds?: number
 }
+
+const TIMEOUT_EXIT_CODE = 124
+const BINARY_MISSING_EXIT_CODE = 127
+const CI_BINARY = 'pnpm'
+
+type CiEvidence = Extract<FailureEvidence, { _tag: 'RecordMissing' | 'JobTimedOut' | 'BinaryMissing' }>
+
+const ciEvidenceOf = (input: SummaryInput): CiEvidence =>
+  Match.value(input.exitCode).pipe(
+    Match.when(TIMEOUT_EXIT_CODE, (): CiEvidence => ({
+      _tag: 'JobTimedOut',
+      stage: 'ci',
+      limitSeconds: input.limitSeconds ?? 0,
+    })),
+    Match.when(BINARY_MISSING_EXIT_CODE, (): CiEvidence => ({
+      _tag: 'BinaryMissing',
+      stage: 'ci',
+      binary: CI_BINARY,
+    })),
+    Match.orElse((): CiEvidence => ({ _tag: 'RecordMissing', stage: 'ci', exitCode: input.exitCode })),
+  )
+
+const standInOf = (input: SummaryInput): string =>
+  `stryker mutation --filter ${input.package} (exit ${input.exitCode === null ? 'unknown' : input.exitCode})`
+
+const capsuleOf = (evidence: CiEvidence, input: SummaryInput): Capsule =>
+  Match.value(evidence).pipe(
+    Match.tagsExhaustive({
+      RecordMissing: (): Capsule => ({ _tag: 'DoesNotReplay', why: 'recordMissing', standIn: standInOf(input) }),
+      JobTimedOut: (): Capsule => ({ _tag: 'DoesNotReplay', why: 'jobTimedOut', standIn: standInOf(input) }),
+      BinaryMissing: (): Capsule => ({ _tag: 'DoesNotReplay', why: 'binaryMissing', standIn: standInOf(input) }),
+    }),
+  )
+
+const ciRecordOf = (input: SummaryInput): FailureRecordType => {
+  const evidence = ciEvidenceOf(input)
+  const context: RecordContext = {
+    cause: [],
+    cwd: input.cwd,
+    argv: ['stryker', 'mutation', '--filter', input.package],
+    env: [],
+    capsule: capsuleOf(evidence, input),
+    traceId: null,
+  }
+  return recordOf(evidence, context)
+}
+
+export const recordFor = (input: SummaryInput, state: ReportState): FailureRecordType =>
+  Option.getOrElse(state.failure, () => ciRecordOf(input))
+
+const outcomeLabelOf = (input: SummaryInput, state: ReportState): string =>
+  Option.match(state.reuse, {
+    onNone: () => input.outcome,
+    onSome: (reuse) => (reuse.ran === 0 ? `${input.outcome}, evaluated no mutants` : input.outcome),
+  })
 
 export const buildSummary = (input: SummaryInput, state: ReportState): string => {
   const reportPath = `${input.reportsDir}/mutation-report.json`
-  const streamPath = `${input.reportsDir}/mutation-stream.jsonl`
-  const lines = [`#### Mutation · **${input.package}**`, '', `- **Stryker outcome**: **${input.outcome}**`]
+  const lines = [
+    `#### Mutation · **${input.package}**`,
+    '',
+    `- **Stryker outcome**: **${outcomeLabelOf(input, state)}**`,
+  ]
 
   if (state.reportText !== null) {
     if (isCompleteReport(state.reportText)) {
@@ -273,30 +355,13 @@ export const buildSummary = (input: SummaryInput, state: ReportState): string =>
     return `${lines.join('\n')}\n`
   }
 
-  const mutants = state.streamText === null ? 0 : countMutantLines(state.streamText)
-  if (mutants === 0) {
-    lines.push(
-      `- **Result**: no final report and zero completed mutants — infrastructure failure (missing binary, crashed run or timeout). Stream: **${streamPath}**`,
-    )
-  } else {
-    lines.push(
-      `- **Result**: no final report (run interrupted) — ${mutants} completed mutant(s) recorded, marked incomplete in the merged report. Stream: **${streamPath}**`,
-    )
-  }
+  lines.push(markdownOf(recordFor(input, state)))
   return `${lines.join('\n')}\n`
 }
 
 export const buildRequireError = (input: SummaryInput, state: ReportState): string | null => {
   if (state.reportText !== null) return null
-  const mutants = state.streamText === null ? 0 : countMutantLines(state.streamText)
-  if (mutants === 0) {
-    return [
-      `::error title=Mutation produced no report::${input.package}: stryker exited '${input.outcome}' with zero mutant results — infrastructure failure (missing binary, crashed run or timeout), not a score outcome. Stream artifact: ${input.reportsDir}/mutation-stream.jsonl`,
-    ].join('')
-  }
-  return [
-    `::error title=Mutation produced no report::${input.package}: stryker exited '${input.outcome}' after ${mutants} completed mutant(s) without a final report — infrastructure failure, not a score outcome. Partial stream: ${input.reportsDir}/mutation-stream.jsonl`,
-  ].join('')
+  return annotationsOf(recordFor(input, state)).join('\n')
 }
 
 export const combineParts = (parts: readonly StagedPart[]): Map<string, CombinedPart> => {

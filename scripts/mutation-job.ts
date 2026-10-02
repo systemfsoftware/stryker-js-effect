@@ -114,7 +114,7 @@ const runJob = async (job: Job, capSeconds: number, budgetSeconds: number): Prom
     }
     const outcome: Outcome = exitCode === 0 ? 'success' : 'failure'
     const reportsDir = join(dir, 'reports')
-    const input = { package: labelOf(dir, shard), outcome, reportsDir }
+    const input = { package: labelOf(dir, shard), outcome, reportsDir, exitCode, cwd: Deno.cwd(), limitSeconds: cap }
     const state = await loadState(reportsDir, readText)
     console.log(buildSummary(input, state))
     const missing = buildRequireError(input, state)

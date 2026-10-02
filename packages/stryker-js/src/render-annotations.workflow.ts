@@ -59,6 +59,7 @@ export class RenderAnnotationsCommand extends S.TaggedClass<RenderAnnotationsCom
   report: Report.MutationTestResult,
   survivors: S.Array(SurvivorRef),
   baseline: S.Array(Mutant.MutantId),
+  failureAnnotations: S.String.pipe(S.Array, S.optional),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -118,18 +119,27 @@ const lineOf = (entry: AnnotationEntry): string =>
     ].join(',')
   }::${escapeMessage(messageOf(entry))}`
 
-const linesOf = (command: RenderAnnotationsCommand): ReadonlyArray<string> => {
-  const byId = entriesByIdOf(command.report)
-  const baseline = HashSet.fromIterable(command.baseline)
+const survivorLinesOf = (
+  report: Report.MutationTestResult,
+  survivors: ReadonlyArray<SurvivorRef>,
+  baseline: ReadonlyArray<Mutant.MutantId>,
+): ReadonlyArray<string> => {
+  const byId = entriesByIdOf(report)
+  const baselineSet = HashSet.fromIterable(baseline)
   return Arr.flatMap(
-    command.survivors,
+    survivors,
     (ref) =>
-      Boolean.match(HashSet.has(baseline, ref.id), {
+      Boolean.match(HashSet.has(baselineSet, ref.id), {
         onTrue: (): ReadonlyArray<string> => [],
         onFalse: () => Arr.flatMap(Option.toArray(HashMap.get(byId, ref.id)), (entry) => [lineOf(entry)]),
       }),
   )
 }
+
+const linesOf = (command: RenderAnnotationsCommand): ReadonlyArray<string> => [
+  ...survivorLinesOf(command.report, command.survivors, command.baseline),
+  ...Option.fromUndefinedOr(command.failureAnnotations).pipe(Option.getOrElse((): ReadonlyArray<string> => [])),
+]
 
 const decide = (command: RenderAnnotationsCommand): RenderAnnotationsDecision => {
   const lines = linesOf(command)

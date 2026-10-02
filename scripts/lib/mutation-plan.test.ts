@@ -17,6 +17,7 @@ import {
   PnpmWorkspaceSchema,
   ReportSchema,
   type StagedPart,
+  type SummaryInput,
   type TimingRecord,
 } from './mutation-plan.ts'
 
@@ -25,21 +26,26 @@ const readFileFor = (files: Record<string, string>) => (path: string): Promise<s
 
 const dir = 'packages/x/reports'
 
-Deno.test('a package whose reports dir has no report requires one, with or without stream mutants', async () => {
-  const base = { package: 'packages/x', outcome: 'failure', reportsDir: dir } as const
+const inputOf = (overrides: Partial<SummaryInput> = {}): SummaryInput => ({
+  package: 'packages/x',
+  outcome: 'failure',
+  reportsDir: dir,
+  exitCode: 3,
+  cwd: '/repo',
+  ...overrides,
+})
 
-  const empty = readFileFor({})
-  const zero = buildRequireError(base, await loadState(dir, empty))
-  assertStringIncludes(zero ?? '', 'zero mutant results')
+Deno.test('a package whose reports dir has no report requires one, naming the exit code', async () => {
+  const state = await loadState(dir, readFileFor({}))
+  assertStringIncludes(buildRequireError(inputOf({ exitCode: 7 }), state) ?? '', 'exit code: 7')
+})
 
-  const streaming = readFileFor({
-    [`${dir}/mutation-stream.jsonl`]: '{"_tag":"phase"}\n{"_tag":"mutant","id":"m1"}\n{"_tag":"mutant","id":"m2"}\n',
-  })
-  const partial = buildRequireError(base, await loadState(dir, streaming))
-  assertStringIncludes(partial ?? '', 'after 2 completed mutant(s)')
-
-  const complete = readFileFor({ [`${dir}/mutation-report.json`]: '{"schemaVersion":"1.0","files":{}}' })
-  assertEquals(buildRequireError(base, await loadState(dir, complete)), null)
+Deno.test('a complete report needs no record and no gate failure', async () => {
+  const state = await loadState(
+    dir,
+    readFileFor({ [`${dir}/mutation-report.json`]: '{"schemaVersion":"1.0","files":{}}' }),
+  )
+  assertEquals(buildRequireError(inputOf(), state), null)
 })
 
 const shardPart = (index: number, files: string[]): StagedPart => ({
@@ -102,7 +108,28 @@ Deno.test('mergeRecord keeps the previous duration when a shard is missing, sums
   assertEquals(mergeRecord(previous, complete, 'new').packages['p'], { seconds: 200, sha: 'new' })
 })
 
-const input = { package: 'packages/x', outcome: 'failure', reportsDir: dir } as const
+const input = inputOf()
+
+const failureRecord = {
+  _tag: 'BaselineTestsFailed',
+  stage: 'dryRun',
+  testCount: 1,
+  tests: [{
+    id: 'math.test.ts > adds numbers',
+    name: 'adds numbers',
+    file: 'src/math.test.ts',
+    location: { file: 'src/math.test.ts', line: 12, column: 3 },
+    message: 'expected 3 to be 4',
+    stack: null,
+    reproduce: ['vitest', 'run', 'src/math.test.ts', '-t', 'adds numbers'],
+  }],
+  cause: [{ kind: 'AssertionError', message: 'expected 3 to be 4', stack: null }],
+  capsule: { _tag: 'DoesNotReplay', why: 'interrupted', standIn: 'npx vitest run src/math.test.ts' },
+  nextAction: { primary: 'fixCode', otherwise: 'fixTest' },
+  traceId: null,
+} as const
+
+const failureStream = `${JSON.stringify({ _tag: 'error', schemaVersion: '3.0', code: 5, record: failureRecord })}\n`
 
 Deno.test('buildSummary marks a report with schemaVersion and files as complete', async () => {
   const state = await loadState(
@@ -124,19 +151,44 @@ Deno.test('buildSummary flags a report that is not a valid Stryker report', asyn
   assertStringIncludes(buildSummary(input, state), 'not a valid Stryker report')
 })
 
-Deno.test('buildSummary reports zero mutants when there is no report and no stream', async () => {
-  const state = await loadState(dir, readFileFor({}))
-  assertStringIncludes(buildSummary(input, state), 'zero completed mutants')
+Deno.test('a terminal BaselineTestsFailed record yields a summary with the code, test location and capsule', async () => {
+  const state = await loadState(dir, readFileFor({ [`${dir}/mutation-stream.jsonl`]: failureStream }))
+  const summary = buildSummary(input, state)
+  assertStringIncludes(summary, 'BaselineTestsFailed')
+  assertStringIncludes(summary, 'src/math.test.ts:12:3')
+  assertStringIncludes(summary, 'adds numbers')
+  assertStringIncludes(summary, '**Replay:**')
+  assertEquals(summary.includes('infrastructure'), false)
 })
 
-Deno.test('buildSummary counts completed mutants from a partial stream', async () => {
+Deno.test('a run with neither report nor terminal record yields a RecordMissing summary naming the exit code', async () => {
+  const state = await loadState(dir, readFileFor({}))
+  const summary = buildSummary(inputOf({ exitCode: 6 }), state)
+  assertStringIncludes(summary, 'RecordMissing')
+  assertStringIncludes(summary, 'exit code: 6')
+})
+
+Deno.test('a reuse line with ran: 0 reports the evaluated-none outcome and a non-zero gate', async () => {
+  const state = await loadState(
+    dir,
+    readFileFor({ [`${dir}/mutation-stream.jsonl`]: '{"_tag":"reuse","reused":4,"ran":0,"refused":{}}\n' }),
+  )
+  assertStringIncludes(buildSummary(input, state), 'evaluated no mutants')
+  assertEquals(buildRequireError(input, state) !== null, true)
+})
+
+Deno.test('a failed run that reused every verdict keeps its failure outcome next to evaluated-none', async () => {
   const state = await loadState(
     dir,
     readFileFor({
-      [`${dir}/mutation-stream.jsonl`]: '{"_tag":"mutant","id":"m1"}\n{"_tag":"phase"}\n{"_tag":"mutant","id":"m2"}\n',
+      [`${dir}/mutation-report.json`]: '{"schemaVersion":"1.0","files":{}}',
+      [`${dir}/mutation-stream.jsonl`]: '{"_tag":"reuse","reused":4,"ran":0,"refused":{}}\n',
     }),
   )
-  assertStringIncludes(buildSummary(input, state), '2 completed mutant(s)')
+  assertStringIncludes(
+    buildSummary(inputOf({ outcome: 'failure', exitCode: 1 }), state),
+    '**failure, evaluated no mutants**',
+  )
 })
 
 Deno.test('a cleared reports dir cannot satisfy the no-report gate', async () => {
@@ -149,7 +201,7 @@ Deno.test('a cleared reports dir cannot satisfy the no-report gate', async () =>
   assertEquals(buildRequireError(input, stale), null)
 
   const cleared = await loadState(dir, readFileFor({}))
-  assertStringIncludes(buildRequireError(input, cleared) ?? '', 'zero mutant results')
+  assertEquals(buildRequireError(input, cleared) !== null, true)
 })
 
 Deno.test('decodeJson rejects a malformed part meta, naming the source', () => {
