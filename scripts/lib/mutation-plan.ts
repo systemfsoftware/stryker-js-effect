@@ -29,6 +29,8 @@ export const EntrySchema = S.Struct({
   seconds: S.Number,
   exitCode: S.Union([S.Int, S.Null]),
   shard: S.optional(ShardSchema),
+  ran: S.optional(S.Int),
+  reused: S.optional(S.Int),
 })
 export type Entry = S.Schema.Type<typeof EntrySchema>
 
@@ -176,6 +178,19 @@ export const planJobs = (
   return { jobs: [...shardJobs, ...wholeJobs] }
 }
 
+const fullSetSecondsOf = (entry: Entry): number =>
+  entry.ran === undefined || entry.reused === undefined || entry.ran === 0
+    ? entry.seconds
+    : Math.round((entry.seconds * (entry.ran + entry.reused)) / entry.ran)
+
+const measuredOf = (entries: readonly Entry[]): number | undefined => {
+  const count = entries[0]?.shard?.count
+  if (count === undefined) return Math.max(...entries.map(fullSetSecondsOf))
+  const indices = new Set(entries.map((entry) => entry.shard?.index))
+  const complete = Array.from({ length: count }, (_unused, i) => i + 1).every((index) => indices.has(index))
+  return complete ? entries.reduce((sum, entry) => sum + fullSetSecondsOf(entry), 0) : undefined
+}
+
 export const mergeRecord = (previous: TimingRecord, parts: readonly Part[], sha: string): TimingRecord => {
   const packages: Record<string, Measured> = { ...previous.packages }
   const byPackage = new Map<string, Entry[]>()
@@ -183,14 +198,10 @@ export const mergeRecord = (previous: TimingRecord, parts: readonly Part[], sha:
     byPackage.set(entry.package, [...(byPackage.get(entry.package) ?? []), entry])
   }
   for (const [name, entries] of byPackage) {
-    const count = entries[0]?.shard?.count
-    if (count === undefined) {
-      packages[name] = { seconds: Math.max(...entries.map((entry) => entry.seconds)), sha }
-      continue
-    }
-    const indices = new Set(entries.map((entry) => entry.shard?.index))
-    const complete = Array.from({ length: count }, (_unused, i) => i + 1).every((index) => indices.has(index))
-    if (complete) packages[name] = { seconds: entries.reduce((sum, entry) => sum + entry.seconds, 0), sha }
+    const evaluatedNothing = entries.some((entry) => entry.ran === 0)
+    const seconds = measuredOf(entries)
+    if (seconds === undefined || (evaluatedNothing && previous.packages[name] !== undefined)) continue
+    packages[name] = { seconds, sha }
   }
   return { version: 1, packages }
 }
@@ -241,6 +252,7 @@ const RunFailedLineSchema = S.Struct({
 const ReuseLineSchema = S.Struct({
   _tag: S.Literal('reuse'),
   ran: S.Int.check(S.isGreaterThanOrEqualTo(0)),
+  reused: S.Int.check(S.isGreaterThanOrEqualTo(0)),
 })
 
 const decodedLines = <A>(streamText: string | null, schema: S.ConstraintDecoder<A>): ReadonlyArray<A> =>
@@ -251,10 +263,10 @@ const decodedLines = <A>(streamText: string | null, schema: S.ConstraintDecoder<
 const terminalRecordOf = (streamText: string | null): Option.Option<FailureRecordType> =>
   Option.map(Arr.last(decodedLines(streamText, RunFailedLineSchema)), (line) => line.record)
 
-export type ReuseState = { readonly ran: number }
+export type ReuseState = { readonly ran: number; readonly reused: number }
 
 const reuseOf = (streamText: string | null): Option.Option<ReuseState> =>
-  Option.map(Arr.last(decodedLines(streamText, ReuseLineSchema)), (line) => ({ ran: line.ran }))
+  Option.map(Arr.last(decodedLines(streamText, ReuseLineSchema)), (line) => ({ ran: line.ran, reused: line.reused }))
 
 export type ReportState = {
   reportText: string | null

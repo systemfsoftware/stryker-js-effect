@@ -3,6 +3,7 @@ name: Mutation
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -57,6 +58,8 @@ jobs:
     if: ${{ needs.plan.result == 'success' && needs.plan.outputs.jobs != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      coverage: ${{ steps.preflight.outputs.coverage }}
     env:
       OTEL_ENABLED: "true"
       OTEL_SERVICE_NAME: stryker-js-mutation
@@ -93,7 +96,8 @@ jobs:
           echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
           pnpm lgtm:up
 
-      - name: Preflight
+      - id: preflight
+        name: Preflight
         env:
           JOBS: ${{ needs.plan.outputs.jobs }}
         run: $MUTATION_JOB preflight --cap-seconds "$TARGET_SECONDS"
@@ -163,7 +167,7 @@ jobs:
       - name: Place incremental files
         run: if [ -d .stryker-incremental ]; then cp -a .stryker-incremental/. .; fi
       - uses: actions/download-artifact@v8
-        continue-on-error: true
+        if: ${{ needs.preflight.outputs.coverage == 'true' }}
         with:
           name: mutation-preflight
           path: .
@@ -223,7 +227,7 @@ jobs:
   timings:
     name: record mutation timings
     needs: [plan, mutation]
-    if: ${{ always() && needs.plan.result == 'success' }}
+    if: ${{ always() && needs.plan.result == 'success' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -280,7 +284,7 @@ jobs:
           path: .stryker-incremental
           merge-multiple: true
       - uses: actions/cache/save@v6
-        if: ${{ hashFiles('.stryker-incremental/**') != '' }}
+        if: ${{ github.event_name != 'pull_request' && hashFiles('.stryker-incremental/**') != '' }}
         with:
           path: .stryker-incremental
           key: stryker-incremental-${{ github.run_id }}
@@ -328,6 +332,28 @@ jobs:
           name: mutation-survivor-baseline
           path: mutation-gate/mutation-survivor-baseline.json
           retention-days: 90
+
+      - name: Survivor baseline from main
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p mutation-gate/reports/mutation
+          id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=mutation-survivor-baseline&per_page=100" \
+            --jq '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == "main")][0].id // empty') || id=
+          if [ -n "$id" ] && gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > mutation-gate/baseline.zip; then
+            unzip -o -q mutation-gate/baseline.zip -d mutation-gate
+          fi
+      - name: Gate new survivors
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          if [ ! -f mutation-gate/mutation-survivor-baseline.json ]; then
+            echo "::warning title=Mutation gate skipped::main has published no survivor baseline yet, so this run cannot tell a new survivor from an accepted one"
+            exit 0
+          fi
+          cp mutation-merged/mutation-report.json mutation-gate/reports/mutation/mutation.json
+          cd mutation-gate
+          "$GITHUB_WORKSPACE/packages/stryker-js/node_modules/.bin/stryker" gate --baseline mutation-survivor-baseline.json
 
       - name: Delete per-job artifacts
         if: ${{ always() && needs.mutation.result == 'success' }}
