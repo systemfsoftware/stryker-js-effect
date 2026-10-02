@@ -1,6 +1,7 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -16,6 +17,43 @@ import { VitestMutantRunCommand } from '../vitest-run-command.schema.js'
 const TRAP_MUTANT_ID = Mutant.MutantId.make('0000000000000000')
 const OTHER_MUTANT_ID = Mutant.MutantId.make('0000000000000001')
 const TRAP_FILE = 'b.ts'
+
+const holds = (conditions: readonly boolean[]): boolean => conditions.every((condition) => condition)
+
+type MutantRunCoverValue = VitestMutantRunCommand | TestRunner.TestResult | string
+
+const isTestResult = (value: MutantRunCoverValue): value is TestRunner.TestResult =>
+  typeof value === 'object' && 'status' in value
+
+const isCommand = (value: MutantRunCoverValue): value is VitestMutantRunCommand =>
+  typeof value === 'object' && ('status' in value) === false
+
+const commandOf = (value: MutantRunCoverValue): VitestMutantRunCommand | undefined =>
+  isCommand(value) ? value : undefined
+
+const limitOf = (value: MutantRunCoverValue): number => commandOf(value)?.hitLimit ?? 0
+
+const externalError = (value: MutantRunCoverValue): boolean => commandOf(value)?.hasExternalError === true
+
+const testsOf = (value: MutantRunCoverValue): readonly TestRunner.TestResult[] => commandOf(value)?.tests ?? []
+
+const anyFailedTest = (tests: readonly TestRunner.TestResult[]): boolean =>
+  tests.some((test) => test.status === 'failed')
+
+const anySkippedTest = (tests: readonly TestRunner.TestResult[]): boolean =>
+  tests.some((test) => test.status === 'skipped')
+
+const statusOf = (value: MutantRunCoverValue): TestRunner.TestStatus | undefined =>
+  isTestResult(value) ? value.status : undefined
+
+const textCharacterArb = Arbitrary.schema(S.Literals(['a', 'b', 'x', '1', '-', ' ']))
+
+const errorTextArb: Arbitrary.Arbitrary<string> = Arbitrary.schema(
+  S.Int.check(S.isBetween({ minimum: 1, maximum: 32 })),
+).pipe(
+  Arbitrary.flatMap((length) => Arbitrary.array(textCharacterArb, { minLength: length, maxLength: length })),
+  Arbitrary.map((characters) => characters.join('')),
+)
 
 const commandWith = (
   input: VitestMutantRunCommand,
@@ -47,7 +85,14 @@ const commandWith = (
 describe('interpretVitestMutantRun', (it) => {
   it.prop(
     '→h_HitLimitOnNamedTrap_=Timeout',
-    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    {
+      of: [VitestMutantRunCommand],
+      subject: interpretVitestMutantRun,
+      cover: {
+        hitLimitAtZero: [(input) => limitOf(input) === 0, 0.2],
+        hitLimitPositive: [(input) => limitOf(input) > 0, 0.05],
+      },
+    },
     (subject, [input]) => {
       const hitLimit = input.hitLimit ?? 0
       const hitCount = hitLimit + 1
@@ -67,7 +112,14 @@ describe('interpretVitestMutantRun', (it) => {
 
   it.prop(
     '→h_HitLimitOnTrapFile_=Timeout',
-    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    {
+      of: [VitestMutantRunCommand],
+      subject: interpretVitestMutantRun,
+      cover: {
+        hitLimitAtZero: [(input) => limitOf(input) === 0, 0.2],
+        hitLimitPositive: [(input) => limitOf(input) > 0, 0.05],
+      },
+    },
     (subject, [input]) => {
       const hitLimit = input.hitLimit ?? 0
       const command = commandWith(input, {
@@ -85,7 +137,14 @@ describe('interpretVitestMutantRun', (it) => {
 
   it.prop(
     '→h_HitLimitOnOtherMutant_=Killed',
-    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    {
+      of: [VitestMutantRunCommand],
+      subject: interpretVitestMutantRun,
+      cover: {
+        hitLimitAtZero: [(input) => limitOf(input) === 0, 0.2],
+        hitLimitPositive: [(input) => limitOf(input) > 0, 0.05],
+      },
+    },
     (subject, [input]) => {
       const hitLimit = input.hitLimit ?? 0
       const command = commandWith(input, {
@@ -106,7 +165,18 @@ describe('interpretVitestMutantRun', (it) => {
 
   it.prop(
     '→h_HitCountAtBound_≠Timeout',
-    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    {
+      of: [VitestMutantRunCommand],
+      subject: interpretVitestMutantRun,
+      cover: {
+        noHitKilled: [(input) => anyFailedTest(testsOf(input)), 0.2],
+        noHitExternalError: [(input) => holds([anyFailedTest(testsOf(input)) === false, externalError(input)]), 0.05],
+        noHitSurvived: [
+          (input) => holds([anyFailedTest(testsOf(input)) === false, externalError(input) === false]),
+          0.05,
+        ],
+      },
+    },
     (subject, [input]) => {
       const hitLimit = input.hitLimit ?? 0
       const command = commandWith(input, {
@@ -123,7 +193,14 @@ describe('interpretVitestMutantRun', (it) => {
 
   it.prop(
     '→f_FailedTestPlusHitBound_=Killed',
-    { of: [VitestMutantRunCommand, TestRunner.TestResultSchema], subject: interpretVitestMutantRun },
+    {
+      of: [VitestMutantRunCommand, TestRunner.TestResultSchema],
+      subject: interpretVitestMutantRun,
+      cover: {
+        hitLimitAtZero: [(input) => limitOf(input) === 0, 0.2],
+        hitLimitPositive: [(input) => limitOf(input) > 0, 0.05],
+      },
+    },
     (subject, [input, test]) => {
       const hitLimit = input.hitLimit ?? 0
       const command = commandWith(input, {
@@ -144,7 +221,15 @@ describe('interpretVitestMutantRun', (it) => {
 
   it.prop(
     '∀t_TestResult_≡KilledIffFailed',
-    { of: [VitestMutantRunCommand, TestRunner.TestResultSchema], subject: interpretVitestMutantRun },
+    {
+      of: [VitestMutantRunCommand, TestRunner.TestResultSchema],
+      subject: interpretVitestMutantRun,
+      cover: {
+        failedTest: [(_input, test) => statusOf(test) === 'failed', 0.1],
+        skippedTest: [(_input, test) => statusOf(test) === 'skipped', 0.1],
+        successTest: [(_input, test) => statusOf(test) === 'success', 0.1],
+      },
+    },
     (subject, [input, test]) => {
       const command = commandWith(input, {
         tests: [test],
@@ -167,8 +252,12 @@ describe('interpretVitestMutantRun', (it) => {
   it.prop(
     '∀c_MutantRunCommand_≡DryErrorNamesTheExternalError',
     {
-      of: [VitestMutantRunCommand, S.String.check(S.isMinLength(1), S.isMaxLength(32))],
+      of: [VitestMutantRunCommand, errorTextArb],
       subject: interpretVitestMutantRun,
+      cover: {
+        shortExternalErrorText: [(_input, text) => typeof text === 'string' && text.length <= 16, 0.2],
+        longExternalErrorText: [(_input, text) => typeof text === 'string' && text.length > 16, 0.1],
+      },
     },
     (subject, [input, externalErrorText]) => {
       const command = commandWith(input, {
@@ -189,7 +278,15 @@ describe('interpretVitestMutantRun', (it) => {
 
   it.prop(
     '∀c_MutantRunCommand_≡ScorableOutcomesReportEveryExecutedTest',
-    { of: [VitestMutantRunCommand], subject: interpretVitestMutantRun },
+    {
+      of: [VitestMutantRunCommand],
+      subject: interpretVitestMutantRun,
+      cover: {
+        anyFailedTest: [(input) => anyFailedTest(testsOf(input)), 0.2],
+        noFailedTest: [(input) => anyFailedTest(testsOf(input)) === false, 0.05],
+        anySkippedTest: [(input) => anySkippedTest(testsOf(input)), 0.2],
+      },
+    },
     (subject, [input]) => {
       const command = commandWith(input, {
         tests: input.tests,
