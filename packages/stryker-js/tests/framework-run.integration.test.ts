@@ -264,6 +264,7 @@ Feature('Framework plugins joining a mutation run')
             const row = skipped?.files.find((file) => file.file.endsWith('widget.svelte'))
             return expect({
               runSucceeded: Exit.isSuccess(s.observation.exit),
+              failure: failureEvidenceOf(s.observation),
               verdictCount: verdicts.length,
               skippedExtension: row?.extension,
               skippedReasonNamesFramework: row?.reason.includes('@systemfsoftware/stryker-js-svelte') ?? false,
@@ -272,6 +273,7 @@ Feature('Framework plugins joining a mutation run')
               verdictHasSvelteMutant: verdicts[0]?.mutants.some((mutant) => mutant.file.endsWith('.svelte')) ?? true,
             }).toEqual({
               runSucceeded: true,
+              failure: undefined,
               verdictCount: 1,
               skippedExtension: '.svelte',
               skippedReasonNamesFramework: true,
@@ -364,43 +366,44 @@ Feature('Framework plugins joining a mutation run')
         Then(
           'the resolved-formats report names the claimed type, its mutant is exercised, and the run state records the claim',
         )(
-          (s, expect) =>
-            Effect.map(
-              S.decodeEffect(S.fromJsonString(Engine.IncrementalReportSchema))(s.observation.incrementalState),
-              (state) => {
-                const formats = s.observation.events.find(
-                  (event): event is RunEvent.FormatRegistryResolved => S.is(RunEvent.FormatRegistryResolved)(event),
-                )
-                const formatRow = formats?.rows.find((candidate) => candidate.extension === '.fixture')
-                const tested = s.observation.events.filter(
-                  (event): event is RunEvent.RunMutantTested => S.is(RunEvent.RunMutantTested)(event),
-                )
-                const fromClaimed = tested.find((mutant) => mutant.fileName.endsWith('widget.fixture'))
-                return expect({
-                  runSucceeded: Exit.isSuccess(s.observation.exit),
-                  formatOwner: formatRow?.ownerModule,
-                  formatId: formatRow?.formatId,
-                  formatLanguage: formatRow?.language,
-                  claimedMutantStatus: fromClaimed?.status,
-                  stateLanguage: state.files['src/widget.fixture']?.language,
-                  stateFormatIdentity: state.files['src/widget.fixture']?.formatIdentity,
-                  scriptLanguage: state.files['src/math.js']?.language,
-                }).toEqual({
-                  runSucceeded: true,
-                  formatOwner: pluginUrlOf('valid-framework.fixture.mjs'),
-                  formatId: 'fixture',
-                  formatLanguage: 'fixture',
-                  claimedMutantStatus: 'NoCoverage',
-                  stateLanguage: 'fixture',
-                  stateFormatIdentity: {
-                    formatId: 'fixture',
-                    ownerModule: pluginUrlOf('valid-framework.fixture.mjs'),
-                    ownerVersion: '1.0.0',
-                  },
-                  scriptLanguage: 'javascript',
-                })
+          (s, expect) => {
+            const state = Option.getOrUndefined(
+              S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(s.observation.incrementalState),
+            )
+            const formats = s.observation.events.find(
+              (event): event is RunEvent.FormatRegistryResolved => S.is(RunEvent.FormatRegistryResolved)(event),
+            )
+            const formatRow = formats?.rows.find((candidate) => candidate.extension === '.fixture')
+            const tested = s.observation.events.filter(
+              (event): event is RunEvent.RunMutantTested => S.is(RunEvent.RunMutantTested)(event),
+            )
+            const fromClaimed = tested.find((mutant) => mutant.fileName.endsWith('widget.fixture'))
+            return expect({
+              runSucceeded: Exit.isSuccess(s.observation.exit),
+              failure: failureEvidenceOf(s.observation),
+              formatOwner: formatRow?.ownerModule,
+              formatId: formatRow?.formatId,
+              formatLanguage: formatRow?.language,
+              claimedMutantStatus: fromClaimed?.status,
+              stateLanguage: state?.files['src/widget.fixture']?.language,
+              stateFormatIdentity: state?.files['src/widget.fixture']?.formatIdentity,
+              scriptLanguage: state?.files['src/math.js']?.language,
+            }).toEqual({
+              runSucceeded: true,
+              failure: undefined,
+              formatOwner: pluginUrlOf('valid-framework.fixture.mjs'),
+              formatId: 'fixture',
+              formatLanguage: 'fixture',
+              claimedMutantStatus: 'NoCoverage',
+              stateLanguage: 'fixture',
+              stateFormatIdentity: {
+                formatId: 'fixture',
+                ownerModule: pluginUrlOf('valid-framework.fixture.mjs'),
+                ownerVersion: '1.0.0',
               },
-            ),
+              scriptLanguage: 'javascript',
+            })
+          },
         ),
       ),
     )
