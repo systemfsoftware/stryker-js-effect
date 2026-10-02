@@ -1,6 +1,7 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Context from 'effect/Context'
+import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as FiberSet from 'effect/FiberSet'
 import * as HashMap from 'effect/HashMap'
@@ -39,12 +40,16 @@ const makeWorkerProtocol = Effect.fn(SpanTaxonomy.Spans.workerProtocolMake.name)
 ) {
   const responseHandlers = yield* Ref.make(HashMap.empty<number, ResponseHandler>())
   const liveConnections = yield* FiberSet.make<never, never>()
+  const connected = yield* Deferred.make<void>()
 
   const hooks = Layer.succeed(RpcClient.ConnectionHooks, {
-    onConnect: FiberSet.run(
-      liveConnections,
-      Effect.never.pipe(Effect.onInterrupt(() => failInFlightRequests(responseHandlers))),
-    ).pipe(Effect.asVoid),
+    onConnect: Deferred.succeed(connected, undefined).pipe(
+      Effect.andThen(FiberSet.run(
+        liveConnections,
+        Effect.never.pipe(Effect.onInterrupt(() => failInFlightRequests(responseHandlers))),
+      )),
+      Effect.asVoid,
+    ),
     onDisconnect: FiberSet.clear(liveConnections),
   })
 
@@ -53,6 +58,7 @@ const makeWorkerProtocol = Effect.fn(SpanTaxonomy.Spans.workerProtocolMake.name)
     Layer.build,
     Effect.map(Context.get(RpcClient.Protocol)),
   )
+  yield* Deferred.await(connected)
 
   return RpcClient.Protocol.of({
     ...protocol,
