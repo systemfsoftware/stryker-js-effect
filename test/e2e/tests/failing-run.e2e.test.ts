@@ -13,7 +13,7 @@ const FAILING_TEST_NAME = 'isEven reports three as even'
 const FAILING_TEST_FILE = 'src/thing.test.ts'
 const FAILING_TEST_LINE = 7
 const FAILURE_RECORD_FILE = 'reports/mutation/failure.json'
-const FAILING_DRY_RUN_ARGV: ReadonlyArray<string> = ['stryker', 'run']
+const FAILING_TEST_REPLAY_ARGV: ReadonlyArray<string> = ['vitest', 'run', FAILING_TEST_FILE, '-t', FAILING_TEST_NAME]
 const BASELINE_TESTS_FAILED_NEXT_ACTION: FailureRecord.NextAction = { primary: 'fixCode', otherwise: 'fixTest' }
 
 const failureRecordOf = (terminal: RunEvent.RunEvent): FailureRecord.FailureRecord | undefined =>
@@ -76,7 +76,7 @@ const verifyTypedErrorDocument = (
     recordTag: 'BaselineTestsFailed',
     stage: 'dryRun',
     capsuleReplays: true,
-    argv: FAILING_DRY_RUN_ARGV,
+    argv: FAILING_TEST_REPLAY_ARGV,
     nextAction: BASELINE_TESTS_FAILED_NEXT_ACTION,
     carriesVerdict: false,
     testCount: 1,
