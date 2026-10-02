@@ -80,19 +80,6 @@ describe('classifyRunOutcome', () => {
   )
 
   it.prop(
-    '∀evidence_RunOutcome_≡ReplayableRecordsReplayTheSameCommandAndOthersSayWhyNot',
-    { of: [FailureRecord.FailureEvidence], subject: outcomeOf },
-    (subject, [evidence]) => {
-      const capsule = failedOf(subject(Cause.fail({ evidence })))?.record.capsule
-      const rule = FailureRecord.FailureCatalog[evidence._tag].capsule
-      return rule === 'replays'
-        ? Predicate.isTagged(capsule, 'Replays') && capsule.cwd === CWD &&
-          capsule.argv.join(' ') === ['stryker', ...ARGS].join(' ')
-        : Predicate.isTagged(capsule, 'DoesNotReplay') && capsule.why === rule
-    },
-  )
-
-  it.prop(
     '∀fiber_RunOutcome_≡AnInterruptOnlyRunExits130WithARunInterruptedRecord',
     { of: [S.Int.check(S.isGreaterThanOrEqualTo(0))], subject: outcomeOf },
     (subject, [fiberId]) => {

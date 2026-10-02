@@ -39,6 +39,15 @@ const projectRelativeId = (id: string, projectRoot: string): string => {
   })
 }
 
+const projectRelativeFileOf = (record: VitestTestRecord, projectRoot: string): string =>
+  projectRelativePath(stripProjectRoot(fileNameOf(record), projectRoot))
+
+const reproduceArgvOf = (testName: string, file: string): readonly [string, ...string[]] =>
+  Boolean.match(testName === file, {
+    onTrue: (): readonly [string, ...string[]] => ['vitest', 'run', file],
+    onFalse: (): readonly [string, ...string[]] => ['vitest', 'run', file, '-t', testName],
+  })
+
 const testNameOf = (record: VitestTestRecord): string =>
   Option.getOrElse(
     Option.fromNullishOr(record.fullTestName),
@@ -121,9 +130,11 @@ const failureEvidenceOfRecord = (
   failureEvidenceOf(locationOf(record.errorFrames, projectRoot), record.errorStack)
 
 const resultOf = (record: VitestTestRecord, projectRoot: string): TestResultEncoded => {
+  const name = testNameOf(record)
+  const reproduce = reproduceArgvOf(name, projectRelativeFileOf(record, projectRoot))
   const base = {
-    id: projectRelativeId(`${fileNameOf(record)}#${testNameOf(record)}`, projectRoot),
-    name: testNameOf(record),
+    id: projectRelativeId(`${fileNameOf(record)}#${name}`, projectRoot),
+    name,
     timeSpentMs: timeSpentOf(record),
     ...fileNameFieldOf(record),
   }
@@ -134,6 +145,7 @@ const resultOf = (record: VitestTestRecord, projectRoot: string): TestResultEnco
         ...base,
         status: 'failed',
         failureMessage: failureMessageOf(record),
+        reproduce,
         ...failureEvidenceOfRecord(record, projectRoot),
       }),
     ),
@@ -146,6 +158,7 @@ const resultOf = (record: VitestTestRecord, projectRoot: string): TestResultEnco
             ...base,
             status: 'failed',
             failureMessage,
+            reproduce,
             ...failureEvidenceOfRecord(record, projectRoot),
           }),
         }),
@@ -163,6 +176,7 @@ const fileFailureResultOf = (failure: VitestFileFailure, projectRoot: string): T
     status: 'failed',
     failureMessage: failure.message,
     fileName: failure.fileName,
+    reproduce: reproduceArgvOf(file, file),
     ...failureEvidenceOf(locationOf(failure.frames, projectRoot), failure.stack),
   }
 }
@@ -193,6 +207,12 @@ if (import.meta.vitest !== void 0) {
     only: TestResultEncoded,
   ): Option.Option<NonNullable<FailedTestResultEncoded['location']>> =>
     Option.flatMap(Option.liftPredicate(only, isFailedResult), (failed) => Option.fromNullishOr(failed.location))
+
+  const reproduceOf = (only: TestResultEncoded): Option.Option<readonly string[]> =>
+    Option.flatMap(Option.liftPredicate(only, isFailedResult), (failed) => Option.fromNullishOr(failed.reproduce))
+
+  const sameArgv = (actual: readonly string[], expected: readonly string[]): boolean =>
+    actual.length === expected.length && expected.every((value, index) => actual[index] === value)
 
   const positionsEqual = (
     location: NonNullable<FailedTestResultEncoded['location']>,
@@ -286,6 +306,19 @@ if (import.meta.vitest !== void 0) {
     },
   )
 
+  it.prop(
+    '∀f_FileFailure_≡ReproduceRunsTheFile',
+    { of: [FileStem], subject: interpretVitestTestRun },
+    (subject, [stem]) => {
+      const [only] = subject({
+        projectRoot: '/project',
+        records: [],
+        fileFailures: [{ fileName: `/project/tests/${stem}.spec.ts`, message: 'load failed' }],
+      })
+      return Option.exists(reproduceOf(only), (argv) => sameArgv(argv, ['vitest', 'run', `tests/${stem}.spec.ts`]))
+    },
+  )
+
   const SourceOrdinal = S.Int.check(S.isGreaterThanOrEqualTo(1))
 
   const failingRecord = (overrides: Partial<VitestTestRecord>): VitestTestRecord => ({
@@ -293,6 +326,23 @@ if (import.meta.vitest !== void 0) {
     suiteNames: [],
     ...overrides,
   })
+
+  const TestName = S.String.check(S.isPattern(/^[a-z][a-z ]{0,11}$/))
+
+  it.prop(
+    '∀r_FailedTest_≡ReproduceNamesFileAndTest',
+    { of: [TestName, FileStem], subject: interpretVitestTestRun },
+    (subject, [name, stem]) => {
+      const file = `tests/${stem}.spec.ts`
+      const record = failingRecord({ name, fullTestName: name, fileName: `/project/${file}` })
+      const [only] = subject(singleRecordRun(record, '/project'))
+      const expected = Boolean.match(name === file, {
+        onTrue: (): readonly string[] => ['vitest', 'run', file],
+        onFalse: (): readonly string[] => ['vitest', 'run', file, '-t', name],
+      })
+      return Option.exists(reproduceOf(only), (argv) => sameArgv(argv, expected))
+    },
+  )
 
   it.prop(
     '∀r_ProjectFrame_≡LocatedThere',

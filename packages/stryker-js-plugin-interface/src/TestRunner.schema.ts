@@ -40,6 +40,7 @@ export const TestResultSchema = S.Union([
     failureMessage: S.String,
     location: S.optionalKey(TestFailureLocation),
     stack: S.optionalKey(S.String),
+    reproduce: S.String.pipe(S.NonEmptyArray, S.optionalKey),
   }),
   S.Struct({ ...TestResultBase, status: S.Literal('skipped') }),
   S.Struct({ ...TestResultBase, status: S.Literal('success') }),
@@ -114,6 +115,7 @@ export interface FailedTestResult extends BaseTestResult {
   readonly failureMessage: string
   readonly location?: TestFailureLocation
   readonly stack?: string
+  readonly reproduce?: readonly [string, ...string[]]
 }
 
 export interface SkippedTestResult extends BaseTestResult {

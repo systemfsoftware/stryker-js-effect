@@ -1,6 +1,6 @@
 import { dual } from 'effect/Function'
 
-import type { CapsuleRule, CatalogEntry } from './failure-catalog.schema.js'
+import type { CatalogEntry } from './failure-catalog.schema.js'
 import {
   type Capsule,
   type CauseLink,
@@ -183,13 +183,9 @@ export interface RecordContext {
   readonly cwd: string
   readonly argv: readonly [string, ...Array<string>]
   readonly env: ReadonlyArray<EnvEntry>
+  readonly capsule: Capsule
   readonly traceId: TraceId | null
 }
-
-const capsuleOf = (rule: CapsuleRule, context: RecordContext): Capsule =>
-  rule === 'replays'
-    ? { _tag: 'Replays', cwd: context.cwd, argv: context.argv, env: context.env }
-    : { _tag: 'DoesNotReplay', why: rule, standIn: context.argv.join(' ') }
 
 export const recordOf: {
   (context: RecordContext): (evidence: FailureEvidence) => FailureRecord
@@ -197,7 +193,7 @@ export const recordOf: {
 } = dual(2, (evidence: FailureEvidence, context: RecordContext): FailureRecord => ({
   ...evidence,
   cause: context.cause,
-  capsule: capsuleOf(FailureCatalog[evidence._tag].capsule, context),
+  capsule: context.capsule,
   nextAction: FailureCatalog[evidence._tag].nextAction,
   traceId: context.traceId,
 }))

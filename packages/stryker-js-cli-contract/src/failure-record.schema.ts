@@ -73,6 +73,7 @@ export const FailedTestEvidence = S.Struct({
   location: S.NullOr(SourceLocation),
   message: S.String,
   stack: S.NullOr(S.String),
+  reproduce: S.String.pipe(S.NonEmptyArray, S.NullOr),
 })
 export type FailedTestEvidence = typeof FailedTestEvidence.Type
 

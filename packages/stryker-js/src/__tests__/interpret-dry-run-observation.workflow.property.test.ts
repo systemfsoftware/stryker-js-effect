@@ -1,6 +1,7 @@
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
+import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -48,6 +49,7 @@ describe('interpretDryRunObservation', () => {
                     evidence.location.line === location.line &&
                     evidence.location.column === location.column) &&
                 evidence.message === expected.failureMessage &&
+                Equal.equals(evidence.reproduce ?? null, expected.reproduce ?? null) &&
                 evidence.stack === (expected.stack ?? null)
             })
         },

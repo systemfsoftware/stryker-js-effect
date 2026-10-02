@@ -3701,6 +3701,25 @@
                               "type": "null"
                             }
                           ]
+                        },
+                        "reproduce": {
+                          "anyOf": [
+                            {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "string"
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "string"
+                              }
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         }
                       },
                       "required": [
@@ -3709,7 +3728,8 @@
                         "file",
                         "location",
                         "message",
-                        "stack"
+                        "stack",
+                        "reproduce"
                       ],
                       "additionalProperties": true
                     }
@@ -3775,6 +3795,25 @@
                             "type": "null"
                           }
                         ]
+                      },
+                      "reproduce": {
+                        "anyOf": [
+                          {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": [
+                              {
+                                "type": "string"
+                              }
+                            ],
+                            "additionalItems": {
+                              "type": "string"
+                            }
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": [
@@ -3783,7 +3822,8 @@
                       "file",
                       "location",
                       "message",
-                      "stack"
+                      "stack",
+                      "reproduce"
                     ],
                     "additionalProperties": true
                   }
