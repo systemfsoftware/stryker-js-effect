@@ -165,12 +165,20 @@ Feature('Gating a pull request on survivors the committed baseline has never see
           'ran',
           (s) => runGate(s.project.root, 'human', ['--baseline', COMMITTED_BASELINE]),
         ),
-        Then('the process exits 1 and stderr names only the new survivor once')((s, expect) =>
+        Then('the process exits 1, replays the new survivor, and never suggests --update-baseline')((s, expect) =>
           expect({
             exitCode: s.ran.exitCode,
             namesOnlyTheNewSurvivor: namesOnlyTheNewSurvivor(s.ran.stderr),
             newIdAppearances: s.ran.stderr.split(NEW_SURVIVOR).length - 1,
-          }).toStrictEqual({ exitCode: 1, namesOnlyTheNewSurvivor: true, newIdAppearances: 1 })
+            replaysTheSurvivor: s.ran.stderr.includes(`stryker run --mutant ${NEW_SURVIVOR}`),
+            neverSuggestsUpdateBaseline: !s.ran.stderr.includes('--update-baseline'),
+          }).toStrictEqual({
+            exitCode: 1,
+            namesOnlyTheNewSurvivor: true,
+            newIdAppearances: 2,
+            replaysTheSurvivor: true,
+            neverSuggestsUpdateBaseline: true,
+          })
         ),
       ),
     )

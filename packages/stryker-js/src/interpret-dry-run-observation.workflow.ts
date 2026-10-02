@@ -49,6 +49,7 @@ const failedTestEvidenceOf = (test: TestRunner.FailedTestResult): FailureRecord.
   location: orNullOf(test.location),
   message: test.failureMessage,
   stack: orNullOf(test.stack),
+  reproduce: orNullOf(test.reproduce),
 })
 
 const failedTestEvidencesOf = (

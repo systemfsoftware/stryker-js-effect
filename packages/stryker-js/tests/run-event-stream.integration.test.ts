@@ -22,7 +22,14 @@ const HEARTBEAT = CliContract.Heartbeat.make({ elapsedMs: 2, completed: 1, total
 const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '3.0', code: 0, help: 'usage' })
 const RUN_FAILED_RECORD = FailureRecord.recordOf(
   { _tag: 'TestRunnerFailed', stage: 'mutationTest' },
-  { cause: [], cwd: '/base', argv: ['stryker', 'run'], env: [], traceId: null },
+  {
+    cause: [],
+    cwd: '/base',
+    argv: ['stryker', 'run'],
+    env: [],
+    capsule: { _tag: 'Replays', cwd: '/base', argv: ['stryker', 'run'], env: [] },
+    traceId: null,
+  },
 )
 const RUN_FAILED = CliContract.RunFailed.make({
   schemaVersion: '3.0',

@@ -1,5 +1,5 @@
 import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
-import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
 import * as CliError from 'effect/cli/CliError'
@@ -9,8 +9,10 @@ import { pipe } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { reproductionCapsule, ReproductionCapsuleCommand } from './reproduction-capsule.workflow.js'
 import {
   type ObservedFailure,
   RunFailedObservation,
@@ -23,6 +25,11 @@ import {
 
 const CLI_BIN = 'stryker'
 const MAX_CAUSE_DEPTH = 10
+
+const WORKER_ENV_MARKER: FailureRecord.EnvEntry = {
+  name: 'STRYKER_WORKER_DIR',
+  value: Options.StrykerTempDirName.literal,
+}
 
 const asEvidence = Option.liftPredicate(S.is(FailureRecord.FailureEvidence))
 const asExitClass = Option.liftPredicate(S.is(Plugin.ExitClass))
@@ -132,6 +139,22 @@ interface RunContext {
   readonly traceId: FailureRecord.TraceId | null
 }
 
+const decidedCapsuleOf = (
+  evidence: FailureRecord.FailureEvidence,
+  context: RunContext,
+): FailureRecord.Capsule =>
+  Result.getOrElse(
+    reproductionCapsule(
+      ReproductionCapsuleCommand.make({
+        evidence,
+        argv: [CLI_BIN, ...context.argv],
+        cwd: context.cwd,
+        envMarker: WORKER_ENV_MARKER,
+      }),
+    ),
+    (impossible: never) => impossible,
+  )
+
 const observedOf = (
   evidence: FailureRecord.FailureEvidence,
   cause: ReadonlyArray<FailureRecord.CauseLink>,
@@ -142,6 +165,7 @@ const observedOf = (
     cwd: context.cwd,
     argv: [CLI_BIN, ...context.argv],
     env: [],
+    capsule: decidedCapsuleOf(evidence, context),
     traceId: context.traceId,
   }),
   exitCode: FailureRecord.FailureCatalog[evidence._tag].exitCode ?? CI_ONLY_EXIT_CODE,

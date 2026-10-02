@@ -53,7 +53,14 @@ const refusal = RunEvent.RunFailed.make({
       descriptor: frameworkModule,
       reason: { _tag: 'PeerMissing', peer: frameworkModule },
     },
-    { cause: [], cwd: '/project', argv: ['stryker', 'run'], env: [], traceId: null },
+    {
+      cause: [],
+      cwd: '/project',
+      argv: ['stryker', 'run'],
+      env: [],
+      capsule: { _tag: 'Replays', cwd: '/project', argv: ['stryker', 'run'], env: [] },
+      traceId: null,
+    },
   ),
 })
 
