@@ -49,6 +49,7 @@ const verifyTypedErrorDocument = (
   const record = failureRecordOf(terminal)
   const capsule = record?.capsule
   const tags = events.map((event) => event._tag)
+  const failed = failingTestOf(record)
 
   return expect({
     terminalTag: terminal._tag,
@@ -60,6 +61,14 @@ const verifyTypedErrorDocument = (
     argv: capsule?._tag === 'Replays' ? capsule.argv : undefined,
     nextAction: record?.nextAction,
     carriesVerdict: tags.includes('verdict'),
+    testCount: record?._tag === 'BaselineTestsFailed' ? record.testCount : undefined,
+    failedTestCount: record?._tag === 'BaselineTestsFailed' ? record.tests.length : undefined,
+    name: failed?.name,
+    fileNameNamesTheFailingTest: (failed?.file ?? '').endsWith(FAILING_TEST_FILE),
+    locationFile: failed?.location?.file,
+    locationLine: failed?.location?.line,
+    locationColumnIsPositive: (failed?.location?.column ?? 0) >= 1,
+    messageNamesTheFailure: /\S/.test(failed?.message ?? '') && (failed?.message ?? '').includes('expected'),
   }).toStrictEqual({
     terminalTag: 'error',
     schemaVersion: STREAM_SCHEMA_VERSION,
@@ -70,23 +79,6 @@ const verifyTypedErrorDocument = (
     argv: FAILING_DRY_RUN_ARGV,
     nextAction: BASELINE_TESTS_FAILED_NEXT_ACTION,
     carriesVerdict: false,
-  })
-}
-
-const verifyErrorDocumentNamesTheFailingTest = (expect: Expect, terminal: RunEvent.RunEvent): Check => {
-  const record = failureRecordOf(terminal)
-  const failed = failingTestOf(record)
-
-  return expect({
-    testCount: record?._tag === 'BaselineTestsFailed' ? record.testCount : undefined,
-    failedTestCount: record?._tag === 'BaselineTestsFailed' ? record.tests.length : undefined,
-    name: failed?.name,
-    fileNameNamesTheFailingTest: (failed?.file ?? '').endsWith(FAILING_TEST_FILE),
-    locationFile: failed?.location?.file,
-    locationLine: failed?.location?.line,
-    locationColumnIsPositive: (failed?.location?.column ?? 0) >= 1,
-    messageNamesTheFailure: /\S/.test(failed?.message ?? '') && (failed?.message ?? '').includes('expected'),
-  }).toStrictEqual({
     testCount: 1,
     failedTestCount: 1,
     name: FAILING_TEST_NAME,
@@ -102,14 +94,7 @@ const verifyPersistedFailureRecord = (
   expect: Expect,
   terminal: RunEvent.RunEvent,
   persisted: FailureRecord.FailureRecord,
-): Check =>
-  expect({
-    terminalIsTheFailureRecord: terminal._tag === 'error',
-    persisted,
-  }).toStrictEqual({
-    terminalIsTheFailureRecord: true,
-    persisted: failureRecordOf(terminal),
-  })
+): Check => expect(persisted).toStrictEqual(failureRecordOf(terminal))
 
 const Feature = makeFeature({ it })
 
@@ -135,12 +120,9 @@ Feature('Failing a mutation run at the process boundary')
         ),
         Then('every machine event is a tagged record')((s, expect) => verifyStreamCleanliness(expect, s.events)),
         When('the terminal event of the decoded stream is read')('terminal', (s) => terminalEvent(s.events)),
-        Then('the run emits a structured error document carrying the baseline failure record and no verdict')(
-          (s, expect) => verifyTypedErrorDocument(expect, s.terminal, s.events),
-        ),
-        Then('the failure record names the failing test with its file, line and failure message')((s, expect) =>
-          verifyErrorDocumentNamesTheFailingTest(expect, s.terminal)
-        ),
+        Then(
+          'the run emits a structured error document whose baseline failure record names the failing test with its file, line and failure message, and no verdict',
+        )((s, expect) => verifyTypedErrorDocument(expect, s.terminal, s.events)),
         When('the failure record the run wrote to disk is read')(
           'persistedRecord',
           (s) => Effect.flatMap(s.run.output.readFile(FAILURE_RECORD_FILE), decodeFailureRecord),

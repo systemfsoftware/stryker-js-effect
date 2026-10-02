@@ -342,8 +342,8 @@ if (import.meta.vitest !== void 0) {
       Match.orElse((): ReadonlyArray<string> => []),
     )
 
-  const summaryOnly = (annotations: ReadonlyArray<string>): boolean =>
-    annotations.length === 1 && Arr.every(annotations, (line) => line.startsWith('::error title='))
+  const summaryOnly = (annotations: ReadonlyArray<string>, code: FailureCode): boolean =>
+    annotations.length === 1 && Arr.every(annotations, (line) => line.startsWith(`::error title=${code}::`))
 
   const sameAnnotations = (actual: ReadonlyArray<string>, expected: ReadonlyArray<string>): boolean =>
     actual.length === expected.length && actual.every((line, index) => line === expected[index])
@@ -354,7 +354,7 @@ if (import.meta.vitest !== void 0) {
     (subject, [record]) => {
       const expected = expectedAnnotationsOf(record)
       const annotations = subject(record)
-      return expected.length === 0 ? summaryOnly(annotations) : sameAnnotations(annotations, expected)
+      return expected.length === 0 ? summaryOnly(annotations, record._tag) : sameAnnotations(annotations, expected)
     },
   )
 
