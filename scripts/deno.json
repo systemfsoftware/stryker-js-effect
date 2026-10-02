@@ -1,8 +1,10 @@
 {
   "compilerOptions": {
     "strict": true,
-    "noImplicitOverride": true
+    "noImplicitOverride": true,
+    "types": ["vitest/importMeta"]
   },
+  "unstable": ["sloppy-imports"],
   "minimumDependencyAge": {
     "age": "P1D",
     "exclude": ["npm:effect"]
@@ -19,6 +21,8 @@
     "@std/fs/expand-glob": "jsr:@std/fs@1/expand-glob",
     "@std/path": "jsr:@std/path@1",
     "@std/yaml": "jsr:@std/yaml@1",
+    "@systemfsoftware/vitest": "npm:@systemfsoftware/vitest@^1.0.0",
+    "vitest": "npm:vitest@^5",
     "effect": "npm:effect@^4.0.0",
     "octokit": "npm:octokit@^4"
   }

@@ -1,6 +1,7 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as CliError from 'effect/cli/CliError'
@@ -61,6 +62,7 @@ import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import { serveMutationServer, type ServeRequest } from './Serve/Serve.cell.js'
 import { StrykerError } from './stryker-error.schema.js'
+import { FAILURE_RECORD_FILE } from './stryker-outputs.js'
 import { annotationLinesOf, surfacedSurvivorsOf } from './surfacing.js'
 import { type SurfacingCaps, SurfacingFields } from './surfacing.schema.js'
 import type { SurvivorsAdmissionInput, SurvivorsSettlement } from './Survivors/mod.js'
@@ -385,6 +387,7 @@ const surfacingCapsOf = (report: Report.MutationTestResult): SurfacingCaps =>
   Option.getOrElse(Option.map(surfacingFieldsOf(report), capsOf), () => SURFACING_DEFAULTS)
 
 const decodeAnnotateReport = S.decodeUnknownResult(S.fromJsonString(Report.MutationTestResult))
+const decodeAnnotateFailure = S.decodeUnknownOption(FailureRecord.FailureRecordFile)
 
 const readAnnotateReport = (
   file: string,
@@ -405,6 +408,21 @@ const readAnnotateReport = (
                 reason: `cannot decode the finished mutation report at ${file}: ${error.message}`,
               }),
           ),
+        )
+      ),
+    ))
+
+const readAnnotateFailureAnnotations = (
+  file: string,
+): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem> =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) =>
+    fs.readFileString(file).pipe(
+      Effect.asSome,
+      Effect.catchTag('PlatformError', () => Effect.succeed(Option.none<string>())),
+      Effect.map((text) =>
+        Option.flatMap(text, decodeAnnotateFailure).pipe(
+          Option.map(FailureRecord.annotationsOf),
+          Option.getOrElse((): ReadonlyArray<string> => []),
         )
       ),
     ))
@@ -435,6 +453,7 @@ const annotateReport = (
     const path = yield* Path.Path
     const basePath = channel.environment.basePath
     const report = yield* readAnnotateReport(path.resolve(basePath, GATE_REPORT_FILE))
+    const failureAnnotations = yield* readAnnotateFailureAnnotations(path.resolve(basePath, FAILURE_RECORD_FILE))
     const baseline = yield* Effect.forEach(
       Option.toArray(Option.fromUndefinedOr(annotate.baseline)),
       (file) => readAnnotateBaseline(path.resolve(basePath, file)),
@@ -445,6 +464,7 @@ const annotateReport = (
           report,
           survivors: surfacedSurvivorsOf(report, surfacingCapsOf(report)),
           baseline: baseline.flat(),
+          failureAnnotations,
         }),
       ),
     )
