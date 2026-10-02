@@ -1,6 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { RunEvent } from '@systemfsoftware/stryker-js'
-import { RunEvent as CliContract } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, RunEvent as CliContract } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -19,14 +19,17 @@ const Feature = makeFeature({ it })
 const PLAN_KNOWN = CliContract.PlanKnown.make({ total: 4 })
 const PHASE_ENTERED = CliContract.PhaseEntered.make({ phase: 'dry-run', elapsedMs: 1 })
 const HEARTBEAT = CliContract.Heartbeat.make({ elapsedMs: 2, completed: 1, total: 4 })
-const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '2.0', code: 0, help: 'usage' })
+const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '3.0', code: 0, help: 'usage' })
+const RUN_FAILED_RECORD = FailureRecord.recordOf(
+  { _tag: 'TestRunnerFailed', stage: 'mutationTest' },
+  { cause: [], cwd: '/base', argv: ['stryker', 'run'], env: [], traceId: null },
+)
 const RUN_FAILED = CliContract.RunFailed.make({
-  schemaVersion: '2.0',
+  schemaVersion: '3.0',
   code: 3,
-  error: 'x',
-  remediation: 'y',
-  reason: null,
+  record: RUN_FAILED_RECORD,
 })
+const RUN_FAILED_TEXT = FailureRecord.terminalTextOf(RUN_FAILED_RECORD)
 
 const pathService = Effect.runSync(Effect.provide(Path.Path, Path.layer))
 
@@ -255,7 +258,7 @@ Feature('Streaming a run to machine readers')
             tags: ['stream', 'plan', 'phase', 'tick', 'help'],
             newlineTerminated: true,
             stderr: [],
-            opening: { mode: 'machine', signal: 'tty', schemaVersion: '2.0', runIdIsNonEmpty: true },
+            opening: { mode: 'machine', signal: 'tty', schemaVersion: '3.0', runIdIsNonEmpty: true },
           })
         }),
       ),
@@ -287,7 +290,7 @@ Feature('Streaming a run to machine readers')
             open: s.result.open,
           }).toEqual({
             stdout: [],
-            stderr: ['plan 4 mutants', 'phase dry-run', 'error x'],
+            stderr: ['plan 4 mutants', 'phase dry-run', RUN_FAILED_TEXT],
             open: false,
           })
         ),
@@ -364,7 +367,7 @@ Feature('Streaming a run to machine readers')
             }),
         ),
         Then(
-          'the consumer receives only the opening header and the error document, which carries the failure code, error message, and remediation guidance, and the stream is permanently closed',
+          'the consumer receives only the opening header and the failure document, which carries the failure code and its structured record, and the stream is permanently closed',
         )((s, expect) => {
           const failure = Option.filter(decodedEventAt(s.result.stdout, 1), S.is(CliContract.RunFailed))
           return expect({
@@ -373,15 +376,14 @@ Feature('Streaming a run to machine readers')
               onNone: () => null,
               onSome: (failed) => ({
                 code: failed.code,
-                error: failed.error,
-                remediation: failed.remediation,
+                tag: failed.record._tag,
                 schemaVersion: failed.schemaVersion,
               }),
             }),
             open: s.result.open,
           }).toEqual({
             tags: ['stream', 'error'],
-            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '2.0' },
+            failure: { code: 3, tag: 'TestRunnerFailed', schemaVersion: '3.0' },
             open: false,
           })
         }),

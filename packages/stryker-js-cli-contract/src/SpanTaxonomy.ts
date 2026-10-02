@@ -31,7 +31,7 @@ export const Spans = {
     attributes: {
       'stryker.run.outcome': SpanAttributeText,
       'stryker.run.exit_code': SpanAttributeCount,
-      'stryker.run.error': SpanAttributeText,
+      'stryker.failure.code': SpanAttributeText,
     },
   },
   commandRunnerRun: { name: 'stryker.command_runner.run', attributes: {} },

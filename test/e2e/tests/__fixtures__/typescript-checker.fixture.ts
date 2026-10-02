@@ -1,4 +1,4 @@
-import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, type RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
@@ -86,6 +86,9 @@ export const reportEnvelopeOf = (run: ExecResult, report: Report.MutationTestRes
 export const verifyReportEnvelope = (expect: Expect, envelope: ReportEnvelope): Check =>
   expect(envelope).toStrictEqual({ exitCode: 0, schemaVersion: '1.0' })
 
+const BROKEN_CHECKER_EXIT_CODE = 3
+const MISSING_TSCONFIG = 'non-existent-tsconfig.json'
+
 export const verifyBrokenCheckerError = (
   expect: Expect,
   run: ExecResult,
@@ -93,20 +96,27 @@ export const verifyBrokenCheckerError = (
   terminal: RunEvent.RunEvent,
 ): Check => {
   const kinds = events.map((event) => event._tag)
-  const errorDocument: RunEvent.RunFailed | undefined = terminal._tag === 'error' ? terminal : undefined
+  const failure: RunEvent.RunFailed | undefined = terminal._tag === 'error' ? terminal : undefined
+  const record: FailureRecord.FailureRecord | undefined = failure?.record
 
   return expect({
-    exitCodeIsZero: run.exitCode === 0,
+    exitCode: run.exitCode,
     lastKind: kinds.at(-1),
     carriesVerdict: kinds.includes('verdict'),
     terminalTag: terminal._tag,
-    errorNamesTsconfig: (errorDocument?.error ?? '').includes('non-existent-tsconfig.json'),
+    schemaVersion: failure?.schemaVersion,
+    recordTag: record?._tag,
+    checker: record?._tag === 'CheckerFailed' ? record.checker : undefined,
+    causeNamesTsconfig: (record?.cause ?? []).some((link) => link.message.includes(MISSING_TSCONFIG)),
   }).toStrictEqual({
-    exitCodeIsZero: false,
+    exitCode: BROKEN_CHECKER_EXIT_CODE,
     lastKind: 'error',
     carriesVerdict: false,
     terminalTag: 'error',
-    errorNamesTsconfig: true,
+    schemaVersion: '3.0',
+    recordTag: 'CheckerFailed',
+    checker: 'typescript',
+    causeNamesTsconfig: true,
   })
 }
 

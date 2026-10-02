@@ -257,6 +257,7 @@ export const spawnReporterWorker = (
     workingDirectory: params.projectBasePath,
     execArgv: [...params.execArgv],
     tempDirPrefix: params.tempDirPrefix,
+    workerKind: 'reporter',
   })
 
 const warnEventDropped = (attachment: ReporterAttachment): Effect.Effect<void> =>

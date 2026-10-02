@@ -4,7 +4,7 @@ import type * as Cause from 'effect/Cause'
 import type * as Effect from 'effect/Effect'
 import type * as Queue from 'effect/Queue'
 
-import type { StageError } from '../Run.schema.js'
+import type { RunFailure } from '../Run.schema.js'
 import type { MutationTestDone } from './mutation-test.cell.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
@@ -16,4 +16,4 @@ export interface HostServices {
 export type StrykerRun = (
   options: Options.PartialStrykerOptions,
   targetMutatePatterns?: string[],
-) => Effect.Effect<MutationTestDone, StageError, never>
+) => Effect.Effect<MutationTestDone, RunFailure, never>

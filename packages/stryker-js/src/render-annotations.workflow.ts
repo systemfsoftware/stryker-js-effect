@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant, Plugin, Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as HashMap from 'effect/HashMap'
@@ -27,7 +28,9 @@ const decodeMutantStatus = S.decodeOption(MUTANT_STATUSES)
 export class AnnotationsUnusable extends S.TaggedError<AnnotationsUnusable>()('AnnotationsUnusable', {
   reason: S.String,
 }) {
-  readonly exitClass = 'ConfigError' satisfies Plugin.ExitClass
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'ConfigInvalid', stage: 'config', detail: this.reason }
+  }
 
   override get message(): string {
     return `stryker annotate: ${this.reason}`

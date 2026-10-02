@@ -1,67 +1,28 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import {
-  RunConfigFailed,
-  RunFailed,
-  RunInterrupted,
-  RunParseFailed,
-  RunSurvivorsRejected,
-} from './classify-run-outcome.workflow.js'
-import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
+import { type RunFailed, RunOk, RunOutcomeDecision, type RunVerdictFailed } from './classify-run-outcome.workflow.js'
 
 const PlanRunConclusionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/PlanRunConclusion')
 type PlanRunConclusionTypeId = typeof PlanRunConclusionTypeId
 
-export const FailedRunOutcomeSchema = S.Union([
-  RunParseFailed,
-  RunSurvivorsRejected,
-  RunConfigFailed,
-  RunFailed,
-  RunInterrupted,
-])
-
-export const RunOutcomeTag = S.Literals([
-  'RunOk',
-  'RunParseFailed',
-  'RunSurvivorsRejected',
-  'RunConfigFailed',
-  'RunFailed',
-  'RunInterrupted',
-])
-export type RunOutcomeTag = typeof RunOutcomeTag.Type
-
 export class PlanRunConclusionCommand extends S.TaggedClass<PlanRunConclusionCommand>()('PlanRunConclusionCommand', {
-  command: RunOutcomeCommand,
+  decision: RunOutcomeDecision,
   machine: S.Boolean,
-  exitCode: Plugin.ExitCode,
-  outcome: RunOutcomeTag,
-  error: S.String,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     machine: 'stryker.run_conclusion.machine',
-    exitCode: 'stryker.run.exit_code',
-    outcome: 'stryker.run.outcome',
-    error: 'stryker.run.error',
   } as const
 }
 
 export class RunConclusionEmittedOk extends S.TaggedClass<RunConclusionEmittedOk>()('RunConclusionEmittedOk', {
-  command: RunOutcomeCommand,
+  ok: RunOk,
 }) {
-  readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
-}
-
-export class RunConclusionEmittedFailed extends S.TaggedClass<RunConclusionEmittedFailed>()(
-  'RunConclusionEmittedFailed',
-  {
-    command: RunOutcomeCommand,
-    exitCode: Plugin.ExitCode,
-  },
-) {
   readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
 }
 
@@ -69,38 +30,48 @@ export class RunConclusionQuietOk extends S.TaggedClass<RunConclusionQuietOk>()(
   readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
 }
 
-export class RunConclusionQuietFailed extends S.TaggedClass<RunConclusionQuietFailed>()('RunConclusionQuietFailed', {
+export class RunConclusionVerdictFailed extends S.TaggedClass<RunConclusionVerdictFailed>()(
+  'RunConclusionVerdictFailed',
+  { exitCode: Plugin.ExitCode },
+) {
+  readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
+}
+
+export class RunConclusionFailed extends S.TaggedClass<RunConclusionFailed>()('RunConclusionFailed', {
   exitCode: Plugin.ExitCode,
+  record: FailureRecord.FailureRecord,
 }) {
   readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
 }
 
 export const PlanRunConclusionDecision = S.Union([
   RunConclusionEmittedOk,
-  RunConclusionEmittedFailed,
   RunConclusionQuietOk,
-  RunConclusionQuietFailed,
+  RunConclusionVerdictFailed,
+  RunConclusionFailed,
 ])
 export type PlanRunConclusionDecision = typeof PlanRunConclusionDecision.Type
 
-const emittedOf = (command: PlanRunConclusionCommand): PlanRunConclusionDecision =>
-  Boolean.match(command.exitCode === 0, {
-    onTrue: () => RunConclusionEmittedOk.make({ command: command.command }),
-    onFalse: () => RunConclusionEmittedFailed.make({ command: command.command, exitCode: command.exitCode }),
+const okConclusionOf = (ok: RunOk, machine: boolean): PlanRunConclusionDecision =>
+  Boolean.match(machine, {
+    onTrue: () => RunConclusionEmittedOk.make({ ok }),
+    onFalse: () => RunConclusionQuietOk.make({}),
   })
 
-const quietOf = (command: PlanRunConclusionCommand): PlanRunConclusionDecision =>
-  Boolean.match(command.exitCode === 0, {
-    onTrue: () => RunConclusionQuietOk.make({}),
-    onFalse: () => RunConclusionQuietFailed.make({ exitCode: command.exitCode }),
-  })
+const verdictConclusionOf = (failed: RunVerdictFailed): PlanRunConclusionDecision =>
+  RunConclusionVerdictFailed.make({ exitCode: failed.code })
+
+const failedConclusionOf = (failed: RunFailed): PlanRunConclusionDecision =>
+  RunConclusionFailed.make({ exitCode: failed.code, record: failed.record })
 
 const decide = (command: PlanRunConclusionCommand): Result.Result<PlanRunConclusionDecision, never> =>
   Result.succeed(
-    Boolean.match(command.machine, {
-      onTrue: () => emittedOf(command),
-      onFalse: () => quietOf(command),
-    }),
+    Match.value(command.decision).pipe(
+      Match.tag('RunOk', (ok) => okConclusionOf(ok, command.machine)),
+      Match.tag('RunVerdictFailed', verdictConclusionOf),
+      Match.tag('RunFailed', failedConclusionOf),
+      Match.exhaustive,
+    ),
   )
 
 export const planRunConclusion = Workflow.make({

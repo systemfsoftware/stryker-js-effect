@@ -1,4 +1,5 @@
 /// <reference types="vitest/importMeta" />
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import { Match, Schema as S } from 'effect'
 
 // ---------------------------------------------------------------------------
@@ -46,11 +47,11 @@ export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedE
   {
     pid: ProcessId,
     exit: ChildExit,
+    workerKind: FailureRecord.WorkerKind,
     cause: S.optional(S.String),
   },
 ) {
   readonly [WorkerExitTypeId] = WorkerExitTypeId
-  readonly exitClass = 'InternalError' as const
 
   override get message(): string {
     const exit = Match.valueTags(this.exit, {
@@ -59,17 +60,42 @@ export class ChildProcessCrashedError extends S.TaggedError<ChildProcessCrashedE
     })
     return `Worker child process ${this.pid} crashed (${exit})`
   }
+
+  get evidence(): FailureRecord.FailureEvidence {
+    const { exitCode, signal } = Match.valueTags(this.exit, {
+      Code: ({ code }) => ({ exitCode: code, signal: null }),
+      Signal: ({ signal }) => ({ exitCode: null, signal }),
+    })
+    return {
+      _tag: 'WorkerCrashed',
+      stage: 'mutationTest',
+      workerKind: this.workerKind,
+      pid: this.pid,
+      exitCode,
+      signal,
+    }
+  }
 }
 
 export class OutOfMemoryError extends S.TaggedError<OutOfMemoryError>()('OutOfMemoryError', {
   pid: ProcessId,
   exitCode: ChildExitCode,
+  workerKind: FailureRecord.WorkerKind,
 }) {
   readonly [WorkerExitTypeId] = WorkerExitTypeId
-  readonly exitClass = 'RuntimeError' as const
 
   override get message(): string {
     return `Worker process ${this.pid} ran out of memory (exit code ${this.exitCode})`
+  }
+
+  get evidence(): FailureRecord.FailureEvidence {
+    return {
+      _tag: 'WorkerOutOfMemory',
+      stage: 'mutationTest',
+      workerKind: this.workerKind,
+      pid: this.pid,
+      exitCode: this.exitCode,
+    }
   }
 }
 
@@ -81,12 +107,20 @@ export class WorkerBootTimeoutError extends S.TaggedError<WorkerBootTimeoutError
   'WorkerBootTimeoutError',
   {
     pid: ProcessId,
+    workerKind: FailureRecord.WorkerKind,
   },
 ) {
-  readonly exitClass = 'InternalError' as const
-
   override get message(): string {
     return `Worker process ${this.pid} did not boot before the boot window closed`
+  }
+
+  get evidence(): FailureRecord.FailureEvidence {
+    return {
+      _tag: 'WorkerBootTimedOut',
+      stage: 'mutationTest',
+      workerKind: this.workerKind,
+      pid: this.pid,
+    }
   }
 }
 

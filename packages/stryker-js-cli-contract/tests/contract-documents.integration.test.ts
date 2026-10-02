@@ -7,6 +7,7 @@ import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 
 import {
+  failureCatalogDocumentSource,
   spanTaxonomyDocumentSource,
   stockCatalogDocumentSource,
   streamDocumentSource,
@@ -49,6 +50,23 @@ Feature('Regenerating the published CLI contract documents')
         When('the generator reconstructs the document from the catalog')(
           'regenerated',
           () => Effect.sync(() => stockCatalogDocumentSource()),
+        ),
+        Then('the regenerated document equals the committed bytes')((s, expect) =>
+          expect(s.regenerated).toEqual(s.committed)
+        ),
+      ),
+    )
+
+    scenario(
+      'The committed failure catalog document is byte for byte what the generator writes from the catalog',
+      Gherkin.Do.pipe(
+        Given('the committed failure catalog document')(
+          'committed',
+          () => readCommitted('contract/failure-catalog.json'),
+        ),
+        When('the generator reconstructs the document from the failure catalog')(
+          'regenerated',
+          () => Effect.sync(() => failureCatalogDocumentSource()),
         ),
         Then('the regenerated document equals the committed bytes')((s, expect) =>
           expect(s.regenerated).toEqual(s.committed)

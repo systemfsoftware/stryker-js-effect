@@ -1,7 +1,7 @@
 export { nodePlatformLayer } from '../drivers/node.js'
 export { IncrementalReportSchema } from '../IncrementalReport.schema.js'
 export type { Project, ProjectFile } from '../Project.schema.js'
-export { StageError } from '../Run.schema.js'
+export { RunFailure } from '../Run.schema.js'
 export type { DryRunDone } from '../run/dry-run.cell.js'
 export type { StrykerRun } from '../run/host.service.js'
 export type { InstrumentDone } from '../run/instrument.cell.js'

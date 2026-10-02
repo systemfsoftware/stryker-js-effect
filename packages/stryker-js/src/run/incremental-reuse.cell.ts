@@ -34,7 +34,7 @@ import {
 } from '../IncrementalDiff.schema.js'
 import type { Project } from '../Project.schema.js'
 import { reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import { originalFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from '../verdict-semantics.js'
@@ -477,7 +477,12 @@ const incrementalReuseCell = Sandwich.named(SpanTaxonomy.Spans.incrementalReuse.
     MutantToRun: (decision, command) => mutantToRunPart(decision, command),
     MutantRemembered: (decision, command) => rememberedMutantPart(decision, command),
     CommandRejected: ({ issue }) =>
-      Effect.die(StageError.make({ stage: 'mutationTest', reason: `incremental reuse command rejected: ${issue}` })),
+      Effect.die(
+        RunFailure.make({
+          evidence: { _tag: 'InvariantBroken', stage: 'mutationTest' },
+          detail: `incremental reuse command rejected: ${issue}`,
+        }),
+      ),
   })
 
 export interface IncrementalReuseInput {

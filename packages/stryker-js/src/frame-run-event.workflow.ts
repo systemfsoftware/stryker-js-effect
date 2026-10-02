@@ -1,5 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { OutputMode, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, OutputMode, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
@@ -32,10 +32,16 @@ export class FrameRunEventCommand extends S.TaggedClass<FrameRunEventCommand>()(
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
+const StderrOutput = S.Union([
+  S.TaggedStruct('StderrText', { text: S.String }),
+  S.TaggedStruct('StderrRecord', { record: FailureRecord.FailureRecord }),
+])
+type StderrOutput = typeof StderrOutput.Type
+
 export class EventFramed extends S.TaggedClass<EventFramed>()('EventFramed', {
   state: FramingState,
   event: RunEvent.RunEvent,
-  stderrLine: S.NullOr(S.String),
+  stderr: S.NullOr(StderrOutput),
 }) {
   readonly [FrameRunEventTypeId] = FrameRunEventTypeId
 }
@@ -44,7 +50,7 @@ export class EventSuppressed extends S.TaggedClass<EventSuppressed>()(
   'EventSuppressed',
   {
     state: FramingState,
-    stderrLine: S.NullOr(S.String),
+    stderr: S.NullOr(StderrOutput),
   },
 ) {
   readonly [FrameRunEventTypeId] = FrameRunEventTypeId
@@ -111,19 +117,21 @@ const formatTotal = (total: number | null): string =>
     onSome: (val) => String(val),
   })
 
-const formatStderrEvent = (event: RunEvent.RunEvent): string | null =>
+const text = (line: string): StderrOutput => ({ _tag: 'StderrText', text: line })
+
+const formatStderrEvent = (event: RunEvent.RunEvent): StderrOutput | null =>
   Match.value(event).pipe(
-    Match.tag('plan', (e) => `plan ${e.total} mutants`),
-    Match.tag('phase', (e) => `phase ${e.phase}`),
+    Match.tag('plan', (e) => text(`plan ${e.total} mutants`)),
+    Match.tag('phase', (e) => text(`phase ${e.phase}`)),
     Match.tag(
       'tick',
-      (e) => `${e.completed}/${formatTotal(e.total)} elapsed ${e.elapsedMs}ms`,
+      (e) => text(`${e.completed}/${formatTotal(e.total)} elapsed ${e.elapsedMs}ms`),
     ),
     Match.tag(
       'verdict',
-      (e) => `score ${formatScore(e.score)} killed ${e.counts.killed} survived ${e.counts.survived}`,
+      (e) => text(`score ${formatScore(e.score)} killed ${e.counts.killed} survived ${e.counts.survived}`),
     ),
-    Match.tag('error', (e) => `error ${e.error}`),
+    Match.tag('error', (e): StderrOutput => ({ _tag: 'StderrRecord', record: e.record })),
     Match.tag('stream', () => null),
     Match.tag('mutantTested', () => null),
     Match.tag('help', () => null),
@@ -134,7 +142,7 @@ const formatStderrEvent = (event: RunEvent.RunEvent): string | null =>
     Match.exhaustive,
   )
 
-const stderrLineFor = (state: FramingState, event: RunEvent.RunEvent): string | null =>
+const stderrFor = (state: FramingState, event: RunEvent.RunEvent): StderrOutput | null =>
   Boolean.match(Boolean.and(state.mode === 'human', !state.terminalSeen), {
     onTrue: () => formatStderrEvent(event),
     onFalse: () => null,
@@ -146,7 +154,7 @@ const decideFrame = (
   command: FrameRunEventCommand,
 ): Result.Result<FrameRunEventDecision, never> => {
   const nextState = noteState(command.state, command.event)
-  const stderrLine = stderrLineFor(command.state, command.event)
+  const stderr = stderrFor(command.state, command.event)
   const framed = shouldFrame(command.state)
 
   return Match.value(framed).pipe(
@@ -155,14 +163,14 @@ const decideFrame = (
         EventFramed.make({
           state: nextState,
           event: command.event,
-          stderrLine,
+          stderr,
         }),
       )),
     Match.when(false, () =>
       Result.succeed(
         EventSuppressed.make({
           state: nextState,
-          stderrLine,
+          stderr,
         }),
       )),
     Match.exhaustive,

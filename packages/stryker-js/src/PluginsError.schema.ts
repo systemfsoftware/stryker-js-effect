@@ -1,12 +1,14 @@
 import { Schema as S } from 'effect'
+import * as Predicate from 'effect/Predicate'
 
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { FailureRecord, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 
 export class PluginNotFoundError extends S.TaggedError<PluginNotFoundError>()('PluginNotFoundError', {
   descriptor: S.String,
 }) {
-  readonly exitClass = 'ConfigError' as const
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'PluginNotFound', stage: 'config', descriptor: this.descriptor }
+  }
 
   override get message(): string {
     return `Plugin "${this.descriptor}" was not found`
@@ -16,14 +18,6 @@ export class PluginNotFoundError extends S.TaggedError<PluginNotFoundError>()('P
 export const PeerFailureTag = S.Literals(['PeerMissing', 'PeerVersionUnsupported', 'PeerUnrecognized'])
 export type PeerFailureTag = typeof PeerFailureTag.Type
 
-const FAILURE_EXIT_CLASS: Record<RunEvent.PluginLoadFailureReason['_tag'], Plugin.ExitClass> = {
-  PeerMissing: 'ConfigError',
-  PeerVersionUnsupported: 'ConfigError',
-  PeerUnrecognized: 'ConfigError',
-  InvalidContribution: 'ConfigError',
-  ImportFailed: 'InternalError',
-}
-
 export class PluginLoadRefusedError extends S.TaggedError<PluginLoadRefusedError>()(
   'PluginLoadRefusedError',
   {
@@ -31,8 +25,10 @@ export class PluginLoadRefusedError extends S.TaggedError<PluginLoadRefusedError
     reason: RunEvent.PluginLoadFailureReason,
   },
 ) {
-  get exitClass(): Plugin.ExitClass {
-    return FAILURE_EXIT_CLASS[this.reason._tag]
+  get evidence(): FailureRecord.FailureEvidence {
+    return Predicate.isTagged(this.reason, 'ImportFailed')
+      ? { _tag: 'PluginImportFailed', stage: 'config', descriptor: this.descriptor }
+      : { _tag: 'PluginLoadFailed', stage: 'config', descriptor: this.descriptor, reason: this.reason }
   }
 
   override get message(): string {

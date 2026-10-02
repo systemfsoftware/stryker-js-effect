@@ -1,12 +1,10 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { type Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
-import { PrepareError } from '@systemfsoftware/stryker-js/events'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
@@ -50,7 +48,7 @@ const runFromProject = (
   root: string,
   options: Options.PartialStrykerOptions,
 ): Effect.Effect<
-  Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
+  Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>,
   never,
   Engine.EnginePorts
 > =>
@@ -78,26 +76,25 @@ const reportedFilesOf = (
     return report.files
   }).pipe(Effect.orDie)
 
-const verdictOf = (outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>) =>
+const verdictOf = (outcome: Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>) =>
   Result.match(outcome, {
     onFailure: (failure) => `refused: ${failure.message}`,
     onSuccess: (done) => done.verdict,
   })
 
-const refusalOf = (outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>) =>
+const refusalOf = (outcome: Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>) =>
   Result.match(outcome, {
     onFailure: (failure) =>
       Match.value(failure).pipe(
-        Match.tag('StageError', (refused) => ({
-          stage: refused.stage,
-          causeMessage: Option.getOrNull(
-            Option.map(S.decodeUnknownOption(PrepareError)(refused.cause), (cause) => cause.message),
-          ),
+        Match.tag('RunFailure', (refused) => ({
+          evidenceTag: refused.evidence._tag,
+          stage: refused.evidence.stage,
+          detail: refused.detail,
         })),
-        Match.tag('PlatformError', (platform) => ({ stage: null, causeMessage: platform.message })),
+        Match.tag('PlatformError', (platform) => ({ evidenceTag: null, stage: null, detail: platform.message })),
         Match.exhaustive,
       ),
-    onSuccess: () => ({ stage: null, causeMessage: null }),
+    onSuccess: () => ({ evidenceTag: null, stage: null, detail: null }),
   })
 
 const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
@@ -119,7 +116,11 @@ Feature('Running mutation testing when no file is selected')
             runFromProject(s.root, { testRunner: 'vm', checkers: [] }).pipe(Effect.ensuring(removeProject(s.root))),
         ),
         Then('the run stops while preparing, naming the missing input files')((s, expect) =>
-          expect(refusalOf(s.outcome)).toEqual({ stage: 'prepare', causeMessage: 'No input files found.' })
+          expect(refusalOf(s.outcome)).toEqual({
+            evidenceTag: 'NoInputFiles',
+            stage: 'prepare',
+            detail: 'No input files found.',
+          })
         ),
       ),
     )

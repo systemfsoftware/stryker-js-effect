@@ -279,7 +279,7 @@ const withVmRunner = <A, R>(
 const describeDryRunFailure = (dry: Exclude<TestRunner.DryRunResult, { readonly status: 'complete' }>): string =>
   dry.status === 'error' ? `the vm dry run failed: ${dry.errorMessage}` : `the vm dry run ended in ${dry.status}`
 
-const vmTestOutcomes = (root: string, path: Path.Path): Effect.Effect<Outcomes> =>
+const vmTestOutcomes = (root: string): Effect.Effect<Outcomes> =>
   serialized(
     withVmRunner(root, (runner) =>
       Effect.gen(function*() {
@@ -292,7 +292,7 @@ const vmTestOutcomes = (root: string, path: Path.Path): Effect.Effect<Outcomes> 
         return recordOf(dry.tests.map((test): readonly [string, string] => {
           const hash = test.id.lastIndexOf('#')
           const file = hash === -1 ? '' : test.id.slice(0, hash)
-          const name = test.name === path.join(root, file) ? FILE_FAILED_WITHOUT_FAILING_TEST : test.name
+          const name = test.name === file ? FILE_FAILED_WITHOUT_FAILING_TEST : test.name
           return [`${file}#${name}`, test.status]
         }))
       })),
@@ -658,7 +658,7 @@ const generatedRealOutcomes = (suite: GeneratedSuite): Effect.Effect<Outcomes> =
   )
 
 const generatedVmOutcomes = (suite: GeneratedSuite): Effect.Effect<Outcomes> =>
-  withGeneratedSuite(suite, (directory, path) => vmTestOutcomes(directory, path)).pipe(
+  withGeneratedSuite(suite, (directory) => vmTestOutcomes(directory)).pipe(
     Effect.provide(Engine.nodePlatformLayer),
     dieOnFailure,
     labelled('the vm runner failed'),

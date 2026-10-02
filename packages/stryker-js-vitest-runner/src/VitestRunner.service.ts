@@ -15,10 +15,10 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type { RunnerTask, RunnerTestCase, RunnerTestFile, RunnerTestSuite } from 'vitest'
 
-import { testRecordOf } from './drivers/vitest-node.js'
+import { errorTextOf, failureFramesOf, testRecordOf } from './drivers/vitest-node.js'
 import { interpretVitestDryRun } from './interpret-vitest-dry-run.workflow.js'
 import { makeMutantRunCell } from './MutantRun.cell.js'
-import { VitestDryRunCommand } from './vitest-run-command.schema.js'
+import { VitestDryRunCommand, type VitestFileFailure } from './vitest-run-command.schema.js'
 import { interpretVitestTestRun } from './vitest-test-run.js'
 import { CoverageDecodeFailed, type TestRunnerPhase } from './VitestRunner.schema.js'
 import { testFileOrder } from './VitestRuntime.blueprint.js'
@@ -92,18 +92,37 @@ const collectTestsFromSuite = (suite: RunnerTestSuite): readonly RunnerTestCase[
     })
   )
 
-const messageOfError = (error: { readonly message?: string }): Option.Option<string> =>
-  Option.filter(Option.fromNullishOr(error.message), (message) => message.length > 0)
-
 const fileFailureMessages = (file: RunnerTestFile): readonly string[] =>
   Option.match(Option.fromNullishOr(file.result?.errors), {
     onNone: (): readonly string[] => [],
-    onSome: (errors) => errors.flatMap((error) => Option.toArray(messageOfError(error))),
+    onSome: (errors) =>
+      errors.flatMap((error) => Option.toArray(Option.filter(errorTextOf(error), (message) => message.length > 0))),
   })
 
 const fileFailureMessage = (file: RunnerTestFile): string => {
   const messages = fileFailureMessages(file)
   return messages.length === 0 ? 'StrykerJS: the test file failed to load' : messages.join('\n')
+}
+
+const fileFailureOf = (file: RunnerTestFile): VitestFileFailure => {
+  const first = Option.flatMap(
+    Option.fromNullishOr(file.result?.errors),
+    (errors) => Option.fromNullishOr(errors[0]),
+  )
+  return {
+    fileName: file.filepath,
+    message: fileFailureMessage(file),
+    ...Option.match(first, {
+      onNone: () => ({}),
+      onSome: (error) => ({
+        ...Option.match(Option.fromNullishOr(error.stack), {
+          onNone: () => ({}),
+          onSome: (stack) => ({ stack }),
+        }),
+        frames: failureFramesOf(error),
+      }),
+    }),
+  }
 }
 
 const SKIPPED_TEST_MODES: ReadonlySet<string> = new Set(['skip', 'todo'])
@@ -331,9 +350,7 @@ const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*
     }))
     const records = collected.flatMap((entry) => entry.tests).map(testRecordOf)
     const fileFailures = collected.flatMap(({ file, tests }) =>
-      fileFailedWithoutFailingTest(file, tests)
-        ? [{ fileName: file.filepath, message: fileFailureMessage(file) }]
-        : []
+      fileFailedWithoutFailingTest(file, tests) ? [fileFailureOf(file)] : []
     )
     const externalError = hasExternalErrors(self)
     yield* Effect.annotateCurrentSpan({

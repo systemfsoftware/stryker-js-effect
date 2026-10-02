@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as HashSet from 'effect/HashSet'
@@ -18,9 +19,6 @@ export const GateEntry = S.Struct({
 })
 
 export type GateEntry = typeof GateEntry.Type
-
-const GATE_EXIT_CLASS = 'VerdictFail' satisfies Plugin.ExitClass
-const GATE_REMEDIATION = 'kill the new survivors, or accept them with `stryker gate --update-baseline`'
 
 /**
  * R28: `Survived` and `NoCoverage` are survivors; a `Timeout` or a runtime
@@ -55,28 +53,33 @@ export class GateNewSurvivorsCommand extends S.TaggedClass<GateNewSurvivorsComma
 }
 
 export class GateRejected extends S.TaggedError<GateRejected>()('GateRejected', {
-  newSurvivors: S.Array(GateEntry),
+  newSurvivors: S.NonEmptyArray(GateEntry),
   unchecked: Mutant.MutantId.pipe(S.Array),
 }) {
-  readonly exitClass = GATE_EXIT_CLASS
+  get evidence(): FailureRecord.FailureEvidence {
+    return {
+      _tag: 'NewSurvivors',
+      stage: 'gate',
+      survivors: Arr.map(this.newSurvivors, (entry) => ({
+        mutantId: entry.id,
+        file: entry.fileName,
+        line: entry.line,
+      })),
+      unchecked: this.unchecked.length,
+    }
+  }
 
   override get message(): string {
-    return [
-      `stryker gate: ${this.newSurvivors.length} new survivor(s) absent from the committed baseline:`,
-      ...this.newSurvivors.map((entry) => `  ${entry.fileName}:${entry.line} ${entry.id}`),
-      ...Option.match(Option.liftPredicate(this.unchecked, (unchecked) => unchecked.length > 0), {
-        onNone: (): ReadonlyArray<string> => [],
-        onSome: (unchecked) => [`${unchecked.length} mutant(s) unchecked`],
-      }),
-      GATE_REMEDIATION,
-    ].join('\n')
+    return `stryker gate: ${this.newSurvivors.length} new survivor(s) absent from the committed baseline`
   }
 }
 
 export class GateInputUnusable extends S.TaggedError<GateInputUnusable>()('GateInputUnusable', {
   reason: S.String,
 }) {
-  readonly exitClass = 'ConfigError' satisfies Plugin.ExitClass
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'ConfigInvalid', stage: 'gate', detail: this.reason }
+  }
 
   override get message(): string {
     return `stryker gate: ${this.reason}`
@@ -130,9 +133,9 @@ const clearedOrRejected = (
 ): Result.Result<GateCleared, GateRejected> => {
   const unchecked = uncheckedIdsOf(command.entries)
   const newSurvivors = newSurvivorsOf(command.entries, committed)
-  return Option.match(Arr.head(newSurvivors), {
-    onNone: () => Result.succeed(GateCleared.make({ baseline: null, unchecked })),
-    onSome: () => Result.fail(GateRejected.make({ newSurvivors, unchecked })),
+  return Arr.match(newSurvivors, {
+    onEmpty: () => Result.succeed(GateCleared.make({ baseline: null, unchecked })),
+    onNonEmpty: (survivors) => Result.fail(GateRejected.make({ newSurvivors: survivors, unchecked })),
   })
 }
 

@@ -35,7 +35,7 @@ interface Workspace {
 }
 
 interface ObservedRun {
-  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
+  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.RunFailure>
   readonly observation: Option.Option<SlowReporterObservation>
   readonly report: Option.Option<Report.MutationTestResult>
 }

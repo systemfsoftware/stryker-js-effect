@@ -67,7 +67,7 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 })
 
 interface ObservedRun {
-  readonly outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>
+  readonly outcome: Result.Result<Engine.MutationTestDone, Engine.RunFailure | PlatformError>
   readonly events: ReadonlyArray<RunEvent.RunEvent>
   readonly report: Option.Option<Report.MutationTestResult>
 }
@@ -153,12 +153,19 @@ const reportOf = (run: ObservedRun): Report.MutationTestResult =>
   Option.getOrThrowWith(run.report, () => new Error('the run wrote no JSON report'))
 
 const failureTextOf = (run: ObservedRun): string =>
-  Result.isFailure(run.outcome) && S.is(Engine.StageError)(run.outcome.failure)
-    ? run.outcome.failure.message
+  Result.isFailure(run.outcome) && S.is(Engine.RunFailure)(run.outcome.failure)
+    ? run.outcome.failure.detail
     : 'no prepare refusal'
 
 const stageOf = (run: ObservedRun): string | null =>
-  Result.isFailure(run.outcome) && S.is(Engine.StageError)(run.outcome.failure) ? run.outcome.failure.stage : null
+  Result.isFailure(run.outcome) && S.is(Engine.RunFailure)(run.outcome.failure)
+    ? run.outcome.failure.evidence.stage
+    : null
+
+const tagOf = (run: ObservedRun): string | null =>
+  Result.isFailure(run.outcome) && S.is(Engine.RunFailure)(run.outcome.failure)
+    ? run.outcome.failure.evidence._tag
+    : null
 
 Feature('A plugin contributing a namespaced mutator catalog')
   .withLayer(Layer.empty)
@@ -193,19 +200,19 @@ Feature('A plugin contributing a namespaced mutator catalog')
       Gherkin.Do.pipe(
         Given('two provider modules declaring the same namespace')('plugins', () => Effect.succeed([PROVIDER, RIVAL])),
         When('a mutation run loads both')('observation', (s) => runAndClean(s.plugins)),
-        Then('the run is refused while preparing, and the refusal names both modules')((s, expect) => {
+        Then('the run is refused as a configuration error, and the refusal names both modules')((s, expect) => {
           const message = failureTextOf(s.observation)
           return expect({
             refused: Result.isFailure(s.observation.outcome),
+            tag: tagOf(s.observation),
             stage: stageOf(s.observation),
-            prepareFailureNamed: message.includes('Prepare failed'),
             providerNamed: message.includes('mutator-provider/index.mjs'),
             rivalNamed: message.includes('mutator-provider/rival.mjs'),
             namespaceNamed: message.includes('acme'),
           }).toEqual({
             refused: true,
-            stage: 'prepare',
-            prepareFailureNamed: true,
+            tag: 'ConfigInvalid',
+            stage: 'config',
             providerNamed: true,
             rivalNamed: true,
             namespaceNamed: true,

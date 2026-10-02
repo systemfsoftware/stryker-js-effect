@@ -109,6 +109,7 @@ const makeHarness = (bootRefusals = 0) =>
       rpcs: Plugin.CheckerRpcs,
       tempDirPrefix: 'checker-',
       workingDirectory: '/project',
+      workerKind: 'checker',
     }).pipe(Effect.provide(launcherLayer))
 
     return { client, gate, received } satisfies SilentWorkerHarness

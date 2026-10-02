@@ -10,7 +10,7 @@ import * as S from 'effect/Schema'
 
 import { checkerMutantsSkipped } from '../Checker/Checker.handle.js'
 import { CheckerMutantFromMutant } from '../Checker/Checker.schema.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import { sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 
 export const isMutantStatus = S.is(Mutant.MutantStatusSchema)
@@ -48,12 +48,16 @@ export interface SandboxFilesInput {
 
 export const sandboxFilesOf: (
   input: SandboxFilesInput,
-) => Effect.Effect<readonly (readonly [string, string])[], StageError> = Effect.fn(
+) => Effect.Effect<readonly (readonly [string, string])[], RunFailure> = Effect.fn(
   SpanTaxonomy.Spans.mutationTestSandboxFiles.name,
 )(function*(input: SandboxFilesInput) {
   return yield* Effect.fromResult(sandboxFilePairsOf(input.sandbox, input.fileNames)).pipe(
     Effect.mapError((cause) =>
-      StageError.make({ stage: 'mutationTest', reason: 'Failed to resolve sandbox file', cause })
+      RunFailure.make({
+        evidence: { _tag: 'SandboxPreparationFailed', stage: 'mutationTest' },
+        detail: 'Failed to resolve sandbox file',
+        cause,
+      })
     ),
   )
 })

@@ -1,5 +1,5 @@
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import { describe, it } from '@systemfsoftware/vitest'
-import * as Equal from 'effect/Equal'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -8,27 +8,11 @@ import {
   planRunConclusion,
   PlanRunConclusionCommand,
   type PlanRunConclusionDecision,
-  RunConclusionEmittedFailed,
   RunConclusionEmittedOk,
-  RunConclusionQuietFailed,
+  RunConclusionFailed,
   RunConclusionQuietOk,
+  RunConclusionVerdictFailed,
 } from '../plan-run-conclusion.workflow.js'
-
-type ConclusionVariant = 'emitted-ok' | 'emitted-failed' | 'quiet-ok' | 'quiet-failed'
-
-const variantOf = (machine: boolean, exitCode: number): ConclusionVariant =>
-  machine
-    ? (exitCode === 0 ? 'emitted-ok' : 'emitted-failed')
-    : (exitCode === 0 ? 'quiet-ok' : 'quiet-failed')
-
-const isVariant = (variant: ConclusionVariant, decision: PlanRunConclusionDecision): boolean =>
-  Match.value(variant).pipe(
-    Match.when('emitted-ok', () => S.is(RunConclusionEmittedOk)(decision)),
-    Match.when('emitted-failed', () => S.is(RunConclusionEmittedFailed)(decision)),
-    Match.when('quiet-ok', () => S.is(RunConclusionQuietOk)(decision)),
-    Match.when('quiet-failed', () => S.is(RunConclusionQuietFailed)(decision)),
-    Match.exhaustive,
-  )
 
 const decisionOf = (
   subject: typeof planRunConclusion,
@@ -39,33 +23,32 @@ const decisionOf = (
     onSuccess: (decision) => decision,
   })
 
-const commandCarried = (command: PlanRunConclusionCommand, decision: PlanRunConclusionDecision): boolean =>
-  Match.value(variantOf(command.machine, command.exitCode)).pipe(
-    Match.when(
-      'emitted-ok',
-      () => S.is(RunConclusionEmittedOk)(decision) && Equal.equals(decision.command, command.command),
+const sameRecord = (left: FailureRecord.FailureRecord, right: FailureRecord.FailureRecord): boolean =>
+  S.toEquivalence(FailureRecord.FailureRecord)(left, right)
+
+const concludesAsPlanned = (command: PlanRunConclusionCommand, decision: PlanRunConclusionDecision): boolean =>
+  Match.value(command.decision).pipe(
+    Match.tag(
+      'RunOk',
+      () => command.machine ? S.is(RunConclusionEmittedOk)(decision) : S.is(RunConclusionQuietOk)(decision),
     ),
-    Match.when('emitted-failed', () =>
-      S.is(RunConclusionEmittedFailed)(decision) &&
-      Equal.equals(decision.command, command.command) &&
-      decision.exitCode === command.exitCode),
-    Match.when('quiet-ok', () => S.is(RunConclusionQuietOk)(decision)),
-    Match.when(
-      'quiet-failed',
-      () => S.is(RunConclusionQuietFailed)(decision) && decision.exitCode === command.exitCode,
+    Match.tag(
+      'RunVerdictFailed',
+      (failed) => S.is(RunConclusionVerdictFailed)(decision) && decision.exitCode === failed.code,
     ),
+    Match.tag('RunFailed', (failed) =>
+      S.is(RunConclusionFailed)(decision) && decision.exitCode === failed.code &&
+      sameRecord(decision.record, failed.record)),
     Match.exhaustive,
   )
 
 describe('planRunConclusion', () => {
   it.prop(
-    '∀command_Plan_≡VariantAndEffectFollowMachineAndExitCode',
+    '∀command_Plan_≡AFailedRunConcludesWithItsRecordInEveryModeAndOnlyMachineModeEmitsSuccess',
     { of: [PlanRunConclusionCommand], subject: planRunConclusion },
     (subject, [command]) => {
       const decision = decisionOf(subject, command)
-      return decision !== undefined &&
-        isVariant(variantOf(command.machine, command.exitCode), decision) &&
-        commandCarried(command, decision)
+      return decision !== undefined && concludesAsPlanned(command, decision)
     },
   )
 })

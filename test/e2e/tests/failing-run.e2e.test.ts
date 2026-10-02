@@ -1,17 +1,38 @@
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, type RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Check, Expect } from '@systemfsoftware/vitest'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
-import { decodeStream, terminalEvent } from './__fixtures__/machine-stream.fixture.js'
+import { decodeStream, MachineStreamError, terminalEvent } from './__fixtures__/machine-stream.fixture.js'
 
-const FAILING_DRY_RUN_RUNTIME_ERROR_CODE = 3
+const BASELINE_TESTS_FAILED_EXIT_CODE = 5
+const STREAM_SCHEMA_VERSION = '3.0'
 const FAILING_FIXTURE_URL = new URL('../testResources/failing-fixture', import.meta.url)
 const FAILING_TEST_NAME = 'isEven reports three as even'
+const FAILING_TEST_FILE = 'src/thing.test.ts'
+const FAILING_TEST_LINE = 7
+const FAILURE_RECORD_FILE = 'reports/mutation/failure.json'
+const FAILING_DRY_RUN_ARGV: ReadonlyArray<string> = ['stryker', 'run']
+const BASELINE_TESTS_FAILED_NEXT_ACTION: FailureRecord.NextAction = { primary: 'fixCode', otherwise: 'fixTest' }
+
+const failureRecordOf = (terminal: RunEvent.RunEvent): FailureRecord.FailureRecord | undefined =>
+  terminal._tag === 'error' ? terminal.record : undefined
+
+const failingTestOf = (
+  record: FailureRecord.FailureRecord | undefined,
+): FailureRecord.FailedTestEvidence | undefined => record?._tag === 'BaselineTestsFailed' ? record.tests[0] : undefined
+
+const decodeFailureRecord = (
+  text: string,
+): Effect.Effect<FailureRecord.FailureRecord, MachineStreamError> =>
+  Effect.mapError(
+    Schema.decodeUnknownEffect(FailureRecord.FailureRecordFile)(text),
+    (issue) => new MachineStreamError({ line: text.slice(0, 400), detail: `failure record: ${issue.message}` }),
+  )
 
 const verifyFailingDryRunExit = (expect: Expect, run: ExecResult): Check =>
-  expect(run.exitCode).toBe(FAILING_DRY_RUN_RUNTIME_ERROR_CODE)
+  expect(run.exitCode).toBe(BASELINE_TESTS_FAILED_EXIT_CODE)
 
 const verifyStreamCleanliness = (expect: Expect, events: ReadonlyArray<RunEvent.RunEvent>): Check =>
   expect({
@@ -24,31 +45,71 @@ const verifyTypedErrorDocument = (
   terminal: RunEvent.RunEvent,
   events: ReadonlyArray<RunEvent.RunEvent>,
 ): Check => {
-  const errorDocument: RunEvent.RunFailed | undefined = terminal._tag === 'error' ? terminal : undefined
+  const failure: RunEvent.RunFailed | undefined = terminal._tag === 'error' ? terminal : undefined
+  const record = failureRecordOf(terminal)
+  const capsule = record?.capsule
   const tags = events.map((event) => event._tag)
 
   return expect({
     terminalTag: terminal._tag,
-    schemaVersion: errorDocument?.schemaVersion,
-    code: errorDocument?.code,
-    errorIsString: typeof errorDocument?.error === 'string',
-    remediationHasContent: /\S/.test(errorDocument?.remediation ?? ''),
+    schemaVersion: failure?.schemaVersion,
+    code: failure?.code,
+    recordTag: record?._tag,
+    stage: record?.stage,
+    capsuleReplays: capsule?._tag === 'Replays',
+    argv: capsule?._tag === 'Replays' ? capsule.argv : undefined,
+    nextAction: record?.nextAction,
     carriesVerdict: tags.includes('verdict'),
   }).toStrictEqual({
     terminalTag: 'error',
-    schemaVersion: '2.0',
-    code: FAILING_DRY_RUN_RUNTIME_ERROR_CODE,
-    errorIsString: true,
-    remediationHasContent: true,
+    schemaVersion: STREAM_SCHEMA_VERSION,
+    code: BASELINE_TESTS_FAILED_EXIT_CODE,
+    recordTag: 'BaselineTestsFailed',
+    stage: 'dryRun',
+    capsuleReplays: true,
+    argv: FAILING_DRY_RUN_ARGV,
+    nextAction: BASELINE_TESTS_FAILED_NEXT_ACTION,
     carriesVerdict: false,
   })
 }
 
-const verifyErrorDocumentNamesTheFailingTest = (expect: Expect, errorText: string): Check =>
+const verifyErrorDocumentNamesTheFailingTest = (expect: Expect, terminal: RunEvent.RunEvent): Check => {
+  const record = failureRecordOf(terminal)
+  const failed = failingTestOf(record)
+
+  return expect({
+    testCount: record?._tag === 'BaselineTestsFailed' ? record.testCount : undefined,
+    failedTestCount: record?._tag === 'BaselineTestsFailed' ? record.tests.length : undefined,
+    name: failed?.name,
+    fileNameNamesTheFailingTest: (failed?.file ?? '').endsWith(FAILING_TEST_FILE),
+    locationFile: failed?.location?.file,
+    locationLine: failed?.location?.line,
+    locationColumnIsPositive: (failed?.location?.column ?? 0) >= 1,
+    messageNamesTheFailure: /\S/.test(failed?.message ?? '') && (failed?.message ?? '').includes('expected'),
+  }).toStrictEqual({
+    testCount: 1,
+    failedTestCount: 1,
+    name: FAILING_TEST_NAME,
+    fileNameNamesTheFailingTest: true,
+    locationFile: FAILING_TEST_FILE,
+    locationLine: FAILING_TEST_LINE,
+    locationColumnIsPositive: true,
+    messageNamesTheFailure: true,
+  })
+}
+
+const verifyPersistedFailureRecord = (
+  expect: Expect,
+  terminal: RunEvent.RunEvent,
+  persisted: FailureRecord.FailureRecord,
+): Check =>
   expect({
-    namesFailingTest: errorText.includes(FAILING_TEST_NAME),
-    carriesFailureMessage: /\S/.test(errorText) && errorText.includes('expected'),
-  }).toStrictEqual({ namesFailingTest: true, carriesFailureMessage: true })
+    terminalIsTheFailureRecord: terminal._tag === 'error',
+    persisted,
+  }).toStrictEqual({
+    terminalIsTheFailureRecord: true,
+    persisted: failureRecordOf(terminal),
+  })
 
 const Feature = makeFeature({ it })
 
@@ -65,7 +126,7 @@ Feature('Failing a mutation run at the process boundary')
           'run',
           () => runStryker({ fixture: FAILING_FIXTURE_URL, label: 'failing-fixture', args: ['run'] }),
         ),
-        Then('the process exits with the failing dry run code')((s, expect) =>
+        Then('the process exits with the baseline tests failed code')((s, expect) =>
           verifyFailingDryRunExit(expect, s.run.output.result)
         ),
         When('the stdout event stream decodes to run events')(
@@ -74,15 +135,18 @@ Feature('Failing a mutation run at the process boundary')
         ),
         Then('every machine event is a tagged record')((s, expect) => verifyStreamCleanliness(expect, s.events)),
         When('the terminal event of the decoded stream is read')('terminal', (s) => terminalEvent(s.events)),
-        Then('the run emits a structured error document and no verdict')((s, expect) =>
-          verifyTypedErrorDocument(expect, s.terminal, s.events)
+        Then('the run emits a structured error document carrying the baseline failure record and no verdict')(
+          (s, expect) => verifyTypedErrorDocument(expect, s.terminal, s.events),
         ),
-        When('the failure text carried by the error document is read')(
-          'errorText',
-          (s) => Effect.succeed(s.terminal._tag === 'error' ? s.terminal.error : ''),
+        Then('the failure record names the failing test with its file, line and failure message')((s, expect) =>
+          verifyErrorDocumentNamesTheFailingTest(expect, s.terminal)
         ),
-        Then('the error document names the failing test with its failure message')((s, expect) =>
-          verifyErrorDocumentNamesTheFailingTest(expect, s.errorText)
+        When('the failure record the run wrote to disk is read')(
+          'persistedRecord',
+          (s) => Effect.flatMap(s.run.output.readFile(FAILURE_RECORD_FILE), decodeFailureRecord),
+        ),
+        Then('the persisted failure record is the one the terminal event carries')((s, expect) =>
+          verifyPersistedFailureRecord(expect, s.terminal, s.persistedRecord)
         ),
       ),
     )

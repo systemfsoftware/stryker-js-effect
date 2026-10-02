@@ -12,7 +12,7 @@ import type * as Scope from 'effect/Scope'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import type { PooledTestRunner } from '../pooled-test-runner.handle.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import {
   ConfiguredPluginModulePath,
   ConfiguredPluginName,
@@ -51,7 +51,7 @@ const configuredPluginOf = (configured: string | { readonly plugin: string }) =>
 const testRunnerWorkerSpawnOf = (
   loaded: Pick<LoadedPlugins, 'pluginSources'>,
   configured: ConfiguredPluginName | ConfiguredPluginModulePath,
-): Effect.Effect<WorkerSpawnResolved, StageError> =>
+): Effect.Effect<WorkerSpawnResolved, RunFailure> =>
   Effect.mapError(
     Effect.fromResult(
       resolveConfiguredPlugin(
@@ -59,9 +59,9 @@ const testRunnerWorkerSpawnOf = (
       ),
     ),
     (missing) =>
-      StageError.make({
-        stage: 'mutationTest',
-        reason: missing.reason,
+      RunFailure.make({
+        evidence: { _tag: 'PluginNotFound', stage: 'config', descriptor: missing.descriptor },
+        detail: missing.reason,
         cause: PluginNotFoundError.make({ descriptor: missing.descriptor }),
       }),
   )
@@ -69,7 +69,7 @@ const testRunnerWorkerSpawnOf = (
 const acquire: (
   spec: TestRunnerPoolSpec,
 ) => Effect.Effect<
-  Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError>,
+  Pool.Pool<PooledTestRunner, RunFailure | PooledTestRunnerError>,
   never,
   Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | WorkerLauncher
 > = Effect.fnUntraced(function*(spec: TestRunnerPoolSpec) {
@@ -113,7 +113,7 @@ export type TestRunnerPoolBlueprint = Blueprint.Of<typeof TestRunnerPools>
 export const scoped = (
   spec: TestRunnerPoolSpec,
 ): Effect.Effect<
-  Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError>,
+  Pool.Pool<PooledTestRunner, RunFailure | PooledTestRunnerError>,
   never,
   Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | WorkerLauncher
 > => TestRunnerPools.of(spec).scoped

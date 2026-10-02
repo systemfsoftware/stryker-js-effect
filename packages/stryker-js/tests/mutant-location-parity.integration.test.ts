@@ -95,7 +95,7 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 })
 
 interface ObservedRun {
-  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
+  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.RunFailure>
   readonly events: ReadonlyArray<RunEvent.RunEvent>
   readonly report: Option.Option<Report.MutationTestResult>
 }

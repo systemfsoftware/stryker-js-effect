@@ -10,7 +10,7 @@ import * as Predicate from 'effect/Predicate'
 
 import type { ResolvedMode } from '../output-mode.schema.js'
 import { makeRunEventStream, RunEventDrainLive } from '../run-event-stream.service.js'
-import { StageError } from '../Run.schema.js'
+import type { RunFailure } from '../Run.schema.js'
 import type { MutationTestDone } from './mutation-test.cell.js'
 import { mutationTestCell } from './run-stages.cell.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
@@ -33,12 +33,12 @@ export const strykerCell: {
   (
     options: Options.PartialStrykerOptions,
     targetMutatePatterns?: readonly string[],
-  ): Effect.Effect<MutationTestDone, StageError | PlatformError, EnginePorts>
+  ): Effect.Effect<MutationTestDone, RunFailure | PlatformError, EnginePorts>
   (
     targetMutatePatterns?: readonly string[],
   ): (
     options: Options.PartialStrykerOptions,
-  ) => Effect.Effect<MutationTestDone, StageError | PlatformError, EnginePorts>
+  ) => Effect.Effect<MutationTestDone, RunFailure | PlatformError, EnginePorts>
 } = dual(
   (args) => Predicate.isObject(args[0]),
   (options: Options.PartialStrykerOptions, targetMutatePatterns?: readonly string[]) =>

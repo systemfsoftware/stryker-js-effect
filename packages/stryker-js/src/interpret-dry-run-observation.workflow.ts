@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -12,8 +13,6 @@ export class DryRunObservation extends S.TaggedClass<DryRunObservation>()('DryRu
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-const FailureSummarySchema = S.Struct({ name: S.String, failureMessage: S.String })
-
 const DryRunObservationDecisionTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js/DryRunObservationDecision',
 )
@@ -22,7 +21,7 @@ type DryRunObservationDecisionTypeId = typeof DryRunObservationDecisionTypeId
 export class DryRunObservedComplete extends S.TaggedClass<DryRunObservedComplete>()('DryRunObservedComplete', {
   testCount: S.Finite,
   failedTestCount: S.Finite,
-  failedTests: S.Array(FailureSummarySchema),
+  failedTests: S.Array(FailureRecord.FailedTestEvidence),
 }) {
   readonly [DryRunObservationDecisionTypeId] = DryRunObservationDecisionTypeId
 }
@@ -41,12 +40,21 @@ export class DryRunObservedTimedOut extends S.TaggedClass<DryRunObservedTimedOut
 
 export type DryRunObservationDecision = DryRunObservedComplete | DryRunObservedFailed | DryRunObservedTimedOut
 
-const failedTestSummariesOf = (
+const orNullOf = <A>(value: A | undefined): A | null => Option.fromUndefinedOr(value).pipe(Option.getOrNull)
+
+const failedTestEvidenceOf = (test: TestRunner.FailedTestResult): FailureRecord.FailedTestEvidence => ({
+  id: test.id,
+  name: test.name,
+  file: orNullOf(test.fileName),
+  location: orNullOf(test.location),
+  message: test.failureMessage,
+  stack: orNullOf(test.stack),
+})
+
+const failedTestEvidencesOf = (
   tests: readonly TestRunner.TestResult[],
-): readonly (typeof FailureSummarySchema.Type)[] =>
-  tests
-    .filter((test): test is TestRunner.FailedTestResult => test.status === 'failed')
-    .map((test) => ({ name: test.name, failureMessage: test.failureMessage }))
+): readonly FailureRecord.FailedTestEvidence[] =>
+  tests.filter((test): test is TestRunner.FailedTestResult => test.status === 'failed').map(failedTestEvidenceOf)
 
 const decide = (command: DryRunObservation): Result.Result<DryRunObservationDecision, never> =>
   Match.value(command.dryRunResult).pipe(
@@ -55,7 +63,7 @@ const decide = (command: DryRunObservation): Result.Result<DryRunObservationDeci
         DryRunObservedComplete.make({
           testCount: complete.tests.length,
           failedTestCount: complete.tests.filter((test) => test.status === 'failed').length,
-          failedTests: failedTestSummariesOf(complete.tests),
+          failedTests: failedTestEvidencesOf(complete.tests),
         }),
       )),
     Match.discriminator('status')(

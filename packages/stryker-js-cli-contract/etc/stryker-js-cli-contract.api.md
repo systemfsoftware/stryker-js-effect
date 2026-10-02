@@ -5,6 +5,11 @@
 ```ts
 
 // @public (undocumented)
+export namespace FailureRecord {
+    export { Capsule, CapsuleRule, CatalogEntry, CatalogExitCode, CauseLink, DoesNotReplay, EnvEntry, FailedTestEvidence, FailureCatalog, FailureCode, FailureEvidence, FailureRecord, FailureRecordFile, FailureStage, NextAction, NextActionKind, NonReplayReason, PluginLoadRefusal, RecordContext, Replays, SourceLocation, TraceId, WorkerKind, annotationsOf, failureCatalogEntries, markdownOf, recordOf, sarifTextOf, terminalTextOf };
+}
+
+// @public (undocumented)
 export namespace OutputMode {
     export { ModeSignal, OutputMode };
 }

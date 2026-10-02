@@ -14,7 +14,7 @@ import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
 import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.plans.js'
 import {
@@ -29,7 +29,7 @@ export type TypeId = typeof TypeId
 
 export type CheckerSlot = { readonly checkerName: string; readonly checker: CheckerResourceService }[]
 
-export type CheckerPool = Pool.Pool<CheckerSlot, StageError | CheckerCrash>
+export type CheckerPool = Pool.Pool<CheckerSlot, RunFailure | CheckerCrash>
 
 export interface CheckedPlans {
   readonly passedPlans: readonly Mutant.MutantRunPlan[]
@@ -44,31 +44,36 @@ export const isCheckerPoolHandle = CheckerPoolHandle.is
 
 export const makeCheckerPoolHandle = (pool: CheckerPool): CheckerPoolHandle => CheckerPoolHandle.make({}, pool)
 
-export const isCheckerCrash = (error: StageError | CheckerCrash): boolean =>
+export const isCheckerCrash = (error: RunFailure | CheckerCrash): boolean =>
   Match.value(error).pipe(
     Match.tag('ChildProcessCrashedError', 'OutOfMemoryError', () => true),
     Match.orElse(() => false),
   )
 
-const checkerBreachToStageError = (error: CheckerContractBroken | Checker.CheckerFailed): StageError =>
+const checkerBreachToRunFailure = (error: CheckerContractBroken | Checker.CheckerFailed): RunFailure =>
   Match.value(error).pipe(
     Match.tag(
       'CheckerFailed',
-      (failed) => StageError.make({ stage: 'mutationTest', reason: failed.cause, cause: failed }),
+      (failed) =>
+        RunFailure.make({
+          evidence: { _tag: 'CheckerFailed', stage: 'check', checker: failed.checkerName },
+          detail: failed.cause,
+          cause: failed,
+        }),
     ),
     Match.tag('CheckerAnsweredUnrequested', (breach) =>
-      StageError.make({
-        stage: 'mutationTest',
-        reason:
+      RunFailure.make({
+        evidence: { _tag: 'CheckerFailed', stage: 'check', checker: breach.checkerName },
+        detail:
           `Checker "${breach.checkerName}" answered about mutants it was not asked about (${breach.phase} phase): ${
             breach.unrequestedIds.join(', ')
           }`,
         cause: breach,
       })),
     Match.tag('CheckerSkippedRequested', (breach) =>
-      StageError.make({
-        stage: 'mutationTest',
-        reason: `Checker "${breach.checkerName}" skipped requested mutants (${breach.phase} phase): ${
+      RunFailure.make({
+        evidence: { _tag: 'CheckerFailed', stage: 'check', checker: breach.checkerName },
+        detail: `Checker "${breach.checkerName}" skipped requested mutants (${breach.phase} phase): ${
           breach.missingIds.join(', ')
         }`,
         cause: breach,
@@ -88,7 +93,7 @@ const onCheckerSlot = <A>(
   run: (
     checker: CheckerResourceService,
   ) => Effect.Effect<A, CheckerCrash | Checker.CheckerFailed | CheckerContractBroken>,
-): Effect.Effect<A, StageError | CheckerCrash> =>
+): Effect.Effect<A, RunFailure | CheckerCrash> =>
   Pool.use(pool, (slot) =>
     Option.match(Option.fromUndefinedOr(slot[checkerIndex]), {
       onNone: () => Effect.die(new Error(`checker slot has no entry at index ${checkerIndex}`)),
@@ -97,9 +102,9 @@ const onCheckerSlot = <A>(
           Effect.catchTags({
             OutOfMemoryError: (error) => invalidateSlot(pool, slot, error),
             ChildProcessCrashedError: (error) => invalidateSlot(pool, slot, error),
-            CheckerFailed: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
-            CheckerAnsweredUnrequested: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
-            CheckerSkippedRequested: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
+            CheckerFailed: (error) => error.pipe(checkerBreachToRunFailure, Effect.fail),
+            CheckerAnsweredUnrequested: (error) => error.pipe(checkerBreachToRunFailure, Effect.fail),
+            CheckerSkippedRequested: (error) => error.pipe(checkerBreachToRunFailure, Effect.fail),
           }),
         ),
     }))
@@ -135,12 +140,12 @@ export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitCh
   return { passedPlans, failedChecks }
 })
 
-const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], StageError | CheckerCrash> =>
+const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], RunFailure | CheckerCrash> =>
   Pool.use(pool, (slot) => Effect.succeed(slot.map(({ checkerName }) => checkerName)))
 
 const failedElement = (
   failedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[],
-): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
+): Stream.Stream<CheckedPlans, RunFailure | CheckerCrash> =>
   Option.match(Array.head(failedChecks), {
     onNone: () => Stream.empty,
     onSome: () => Stream.succeed<CheckedPlans>({ passedPlans: noPassedPlans, failedChecks }),
@@ -151,7 +156,7 @@ const checkedGroupsFor = (
   checkerNames: readonly string[],
   checkerIndex: number,
   plans: readonly Mutant.MutantRunPlan[],
-): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
+): Stream.Stream<CheckedPlans, RunFailure | CheckerCrash> =>
   Option.match(Array.get(checkerNames, checkerIndex), {
     onNone: () => Stream.succeed<CheckedPlans>({ passedPlans: plans, failedChecks: noFailedChecks }),
     onSome: (checkerName) =>
@@ -182,17 +187,17 @@ const checkedGroupsFor = (
 export const checkPlansStream: {
   (
     plans: readonly Mutant.MutantRunPlan[],
-  ): (checkerPool: CheckerPoolHandle | undefined) => Stream.Stream<CheckedPlans, StageError | CheckerCrash>
+  ): (checkerPool: CheckerPoolHandle | undefined) => Stream.Stream<CheckedPlans, RunFailure | CheckerCrash>
   (
     checkerPool: CheckerPoolHandle | undefined,
     plans: readonly Mutant.MutantRunPlan[],
-  ): Stream.Stream<CheckedPlans, StageError | CheckerCrash>
+  ): Stream.Stream<CheckedPlans, RunFailure | CheckerCrash>
 } = dual(
   2,
   (
     checkerPool: CheckerPoolHandle | undefined,
     plans: readonly Mutant.MutantRunPlan[],
-  ): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
+  ): Stream.Stream<CheckedPlans, RunFailure | CheckerCrash> =>
     Option.fromNullishOr(checkerPool).pipe(
       Option.match({
         onNone: () => Stream.succeed<CheckedPlans>({ passedPlans: plans, failedChecks: noFailedChecks }),
@@ -230,18 +235,18 @@ export const runCheckedPlans: {
   <A, E>(
     execution: CheckedPlansExecution<A, E>,
   ): (
-    self: Stream.Stream<CheckedPlans, StageError | CheckerCrash>,
-  ) => Stream.Stream<A, E | StageError | CheckerCrash>
+    self: Stream.Stream<CheckedPlans, RunFailure | CheckerCrash>,
+  ) => Stream.Stream<A, E | RunFailure | CheckerCrash>
   <A, E>(
-    self: Stream.Stream<CheckedPlans, StageError | CheckerCrash>,
+    self: Stream.Stream<CheckedPlans, RunFailure | CheckerCrash>,
     execution: CheckedPlansExecution<A, E>,
-  ): Stream.Stream<A, E | StageError | CheckerCrash>
+  ): Stream.Stream<A, E | RunFailure | CheckerCrash>
 } = dual(
   2,
   <A, E>(
-    self: Stream.Stream<CheckedPlans, StageError | CheckerCrash>,
+    self: Stream.Stream<CheckedPlans, RunFailure | CheckerCrash>,
     execution: CheckedPlansExecution<A, E>,
-  ): Stream.Stream<A, E | StageError | CheckerCrash> =>
+  ): Stream.Stream<A, E | RunFailure | CheckerCrash> =>
     self.pipe(
       Stream.flatMap(({ passedPlans, failedChecks }) =>
         Stream.fromIterable<() => Effect.Effect<A, E>>([

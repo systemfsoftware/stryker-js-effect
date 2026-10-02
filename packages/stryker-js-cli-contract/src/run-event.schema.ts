@@ -3,8 +3,8 @@ import { Plugin, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { SchemaGetter } from 'effect'
 import * as S from 'effect/Schema'
 
+import { FailureRecord } from './failure-record.schema.js'
 import { ModeSignal, OutputMode } from './output-mode.schema.js'
-import { PluginLoadFailureReason } from './plugin-load-failure-reason.schema.js'
 import { StreamSchemaVersion } from './stream-version.schema.js'
 
 export const RunPhase = S.Literals(['prepare', 'instrument', 'dry-run', 'mutation-test'])
@@ -256,9 +256,7 @@ export class FeedbackReported extends S.TaggedClass<FeedbackReported>()('feedbac
 export class RunFailed extends S.TaggedClass<RunFailed>()('error', {
   schemaVersion: StreamSchemaVersion,
   code: Plugin.ExitCode,
-  error: S.String,
-  remediation: S.String,
-  reason: S.NullOr(PluginLoadFailureReason),
+  record: FailureRecord,
 }) {}
 
 export class HelpRendered extends S.TaggedClass<HelpRendered>()('help', {

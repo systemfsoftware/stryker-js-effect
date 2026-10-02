@@ -16,7 +16,7 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
-import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
+import { admitMutationTest } from '../admit-mutation-test.workflow.js'
 import { scoped as checkerPoolsScoped } from '../Checker/checker-pool.blueprint.js'
 import {
   checkPlansStream as checkPlansWithConfiguredCheckers,
@@ -29,8 +29,9 @@ import { MutationTestCommand } from '../MutationTest.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
 import { mutantDetailEventsOf, requestedIdsOf, restrictedToRequestedIds } from '../Rerun/rerun-selection.js'
 import { RunEvents } from '../run-events.service.js'
-import { StageError } from '../Run.schema.js'
+import { RunFailure } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
+import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
 import { readIncrementalReuse } from './incremental-reuse.cell.js'
@@ -212,18 +213,24 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
   return outcomeResult
 })
 
-const mapMutationTestCause = (
-  cause: PooledTestRunnerError | PlatformError | StageError,
-): StageError =>
-  Match.value({ cause }).pipe(
-    Match.when({ cause: (candidate: unknown): candidate is StageError => S.is(StageError)(candidate) }, ({ cause }) =>
-      cause),
-    Match.orElse(({ cause }) =>
-      StageError.make({ stage: 'mutationTest', reason: 'Mutation testing failed', cause })
+const workerFailureOf = (error: ChildProcessCrashedError | OutOfMemoryError): RunFailure =>
+  RunFailure.make({ evidence: error.evidence, detail: error.message, cause: error })
+
+const mapMutationTestCause = (cause: PooledTestRunnerError | PlatformError | RunFailure): RunFailure =>
+  Match.value(cause).pipe(
+    Match.tag('RunFailure', (failure) => failure),
+    Match.tag('ChildProcessCrashedError', (crashed) => workerFailureOf(crashed)),
+    Match.tag('OutOfMemoryError', (outOfMemory) => workerFailureOf(outOfMemory)),
+    Match.orElse((cause) =>
+      RunFailure.make({
+        evidence: { _tag: 'TestRunnerFailed', stage: 'mutationTest' },
+        detail: 'Mutation testing failed',
+        cause,
+      })
     ),
   )
 
-const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<MutationTestDone, StageError, StageServices> =>
+const writeMutationTestProceed = (raw: MutationTestRaw): Effect.Effect<MutationTestDone, RunFailure, StageServices> =>
   proceedPipeline(raw).pipe(Effect.mapError(mapMutationTestCause))
 
 const writeMutationTestOutcome = ({
@@ -231,8 +238,8 @@ const writeMutationTestOutcome = ({
   outcome,
 }: {
   readonly raw: MutationTestRaw
-  readonly outcome: Effect.Effect<MutationTestDone, StageError, StageServices>
-}): Effect.Effect<MutationTestDone, StageError, StageServices> =>
+  readonly outcome: Effect.Effect<MutationTestDone, RunFailure, StageServices>
+}): Effect.Effect<MutationTestDone, RunFailure, StageServices> =>
   withPhaseSpan(
     SpanTaxonomy.Spans.mutationTestPhase,
     {
@@ -268,7 +275,7 @@ export const mutationTestCell = Sandwich.named(
   MutationTestDryRunOnly: (_decision, raw) => writeMutationTestOutcome({ raw, outcome: writeMutationTestDryRunOnly() }),
   MutationTestNoTests: (_decision, raw) => writeMutationTestOutcome({ raw, outcome: writeMutationTestNoTests() }),
   MutationTestProceed: (_decision, raw) => writeMutationTestOutcome({ raw, outcome: writeMutationTestProceed(raw) }),
-  MutationTestError: ({ stage, reason }) =>
-    Effect.fail(StageError.make({ stage, reason, cause: MutationTestError.make({ stage, reason }) })),
-  CommandRejected: ({ issue }) => Effect.fail(StageError.make({ stage: 'mutationTest', reason: issue })),
+  RunFailure: (failure) => Effect.fail(RunFailure.make(failure)),
+  CommandRejected: ({ issue }) =>
+    Effect.fail(RunFailure.make({ evidence: { _tag: 'InvariantBroken', stage: 'mutationTest' }, detail: issue })),
 })

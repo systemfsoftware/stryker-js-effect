@@ -1,7 +1,8 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
 const Feature = makeFeature({ it })
@@ -43,11 +44,17 @@ const skippedReport = RunEvent.SkippedReported.make({
 })
 
 const refusal = RunEvent.RunFailed.make({
-  schemaVersion: '2.0',
+  schemaVersion: '3.0',
   code: 2,
-  error: `Failed to load plugin "${frameworkModule}" (PeerMissing)`,
-  remediation: 'install the peer dependency the plugin needs',
-  reason: { _tag: 'PeerMissing', peer: frameworkModule },
+  record: FailureRecord.recordOf(
+    {
+      _tag: 'PluginLoadFailed',
+      stage: 'config',
+      descriptor: frameworkModule,
+      reason: { _tag: 'PeerMissing', peer: frameworkModule },
+    },
+    { cause: [], cwd: '/project', argv: ['stryker', 'run'], env: [], traceId: null },
+  ),
 })
 
 type ReportEvent =
@@ -113,13 +120,23 @@ Feature('Reporting framework plugins on the machine wire')
           'seen',
           (s) => decodedOf(s.line),
         ),
-        Then('the failure names the reason, the configuration code, and the remedy')((s, expect) =>
-          expect({ reason: s.seen.reason, code: s.seen.code, remediation: s.seen.remediation }).toEqual({
+        Then('the failure names the reason, the configuration code, and the remedy')((s, expect) => {
+          const record = s.seen.record
+          const load = Predicate.isTagged(record, 'PluginLoadFailed') ? record : undefined
+          return expect({
+            tag: record._tag,
+            descriptor: load?.descriptor,
+            reason: load?.reason,
+            code: s.seen.code,
+            next: record.nextAction.primary,
+          }).toEqual({
+            tag: 'PluginLoadFailed',
+            descriptor: frameworkModule,
             reason: { _tag: 'PeerMissing', peer: frameworkModule },
             code: 2,
-            remediation: 'install the peer dependency the plugin needs',
+            next: 'fixConfiguration',
           })
-        ),
+        }),
       ),
     )
 

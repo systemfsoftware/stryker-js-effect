@@ -107,6 +107,7 @@ const scopedOf: (
       workingDirectory: params.sandboxWorkingDirectory,
       execArgv: [...execArgv],
       tempDirPrefix: 'stryker-test-runner-',
+      workerKind: 'testRunner',
       env: {
         NODE_ENV: 'test',
         VITEST: '1',

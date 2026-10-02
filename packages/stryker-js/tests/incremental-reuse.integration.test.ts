@@ -44,7 +44,7 @@ const mutantsOf = (text: string): readonly RecordedMutant[] =>
   })
 
 interface RunObservation {
-  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
+  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.RunFailure>
   readonly events: ReadonlyArray<RunEvent.RunEvent>
   readonly reuse: RunEvent.ReuseReported | undefined
   readonly verdict: RunEvent.VerdictReached | undefined

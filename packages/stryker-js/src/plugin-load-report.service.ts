@@ -1,6 +1,5 @@
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
-import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
@@ -8,50 +7,11 @@ import { dual } from 'effect/Function'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Queue from 'effect/Queue'
-import * as S from 'effect/Schema'
 
 import type { LoadedPlugins } from './Plugins.schema.js'
-import { type PluginLoadRefusedError } from './PluginsError.schema.js'
 
-const PLUGIN_FAILURE_REMEDIATION: Record<RunEvent.PluginLoadFailureReason['_tag'], string> = {
-  PeerMissing: 'install the peer dependency the plugin needs',
-  PeerVersionUnsupported: 'install a supported version of the peer dependency',
-  PeerUnrecognized: 'install a peer version the plugin recognizes, or a matching plugin version',
-  InvalidContribution: 'fix the contribution the plugin declares',
-  ImportFailed: 'fix the plugin so that it imports cleanly',
-}
-
-const exitCodeOfClass = (exitClass: Plugin.ExitClass): Effect.Effect<number> =>
-  Effect.orDie(S.decodeEffect(Plugin.ExitCodeFromClass)(exitClass))
-
-export const pluginLoadFailureEvents: {
-  (
-    elapsedMs: number,
-  ): (error: PluginLoadRefusedError) => Effect.Effect<readonly [RunEvent.PhaseEntered, RunEvent.RunFailed]>
-  (
-    error: PluginLoadRefusedError,
-    elapsedMs: number,
-  ): Effect.Effect<readonly [RunEvent.PhaseEntered, RunEvent.RunFailed]>
-} = dual(
-  2,
-  (
-    error: PluginLoadRefusedError,
-    elapsedMs: number,
-  ): Effect.Effect<readonly [RunEvent.PhaseEntered, RunEvent.RunFailed]> =>
-    Effect.map(
-      exitCodeOfClass(error.exitClass),
-      (code): readonly [RunEvent.PhaseEntered, RunEvent.RunFailed] => [
-        RunEvent.PhaseEntered.make({ phase: 'prepare', elapsedMs }),
-        RunEvent.RunFailed.make({
-          schemaVersion: RunEvent.StreamSchemaVersion.literal,
-          code,
-          error: error.message,
-          remediation: PLUGIN_FAILURE_REMEDIATION[error.reason._tag],
-          reason: error.reason,
-        }),
-      ],
-    ),
-)
+export const pluginLoadPhaseEvent = (elapsedMs: number): RunEvent.PhaseEntered =>
+  RunEvent.PhaseEntered.make({ phase: 'prepare', elapsedMs })
 
 type FrameworkContributionModule = LoadedPlugins['frameworks'][number]
 

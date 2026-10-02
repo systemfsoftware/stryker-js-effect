@@ -1,7 +1,6 @@
 /// <reference types="vitest/importMeta" />
 import * as S from 'effect/Schema'
 
-import { Position } from './Location.schema.js'
 import { NonNegativeFinite, NonNegativeInt } from './Metrics.schema.js'
 import { MutantCoverageSchema, RunOptionsFields } from './Mutant.schema.js'
 import type { MutantCoverage, RunOptions } from './Mutant.schema.js'
@@ -27,11 +26,21 @@ const TestResultBase = {
   name: S.String,
   timeSpentMs: NonNegativeFinite,
   fileName: S.optionalKey(S.String),
-  startPosition: S.optionalKey(Position),
 }
 
+const SourceOrdinal = S.Int.check(S.isGreaterThanOrEqualTo(1))
+
+export const TestFailureLocation = S.Struct({ file: S.NonEmptyString, line: SourceOrdinal, column: SourceOrdinal })
+export type TestFailureLocation = typeof TestFailureLocation.Type
+
 export const TestResultSchema = S.Union([
-  S.Struct({ ...TestResultBase, status: S.Literal('failed'), failureMessage: S.String }),
+  S.Struct({
+    ...TestResultBase,
+    status: S.Literal('failed'),
+    failureMessage: S.String,
+    location: S.optionalKey(TestFailureLocation),
+    stack: S.optionalKey(S.String),
+  }),
   S.Struct({ ...TestResultBase, status: S.Literal('skipped') }),
   S.Struct({ ...TestResultBase, status: S.Literal('success') }),
 ])
@@ -98,12 +107,13 @@ export interface BaseTestResult {
   readonly name: string
   readonly timeSpentMs: number
   readonly fileName?: string
-  readonly startPosition?: Position
 }
 
 export interface FailedTestResult extends BaseTestResult {
   readonly status: 'failed'
   readonly failureMessage: string
+  readonly location?: TestFailureLocation
+  readonly stack?: string
 }
 
 export interface SkippedTestResult extends BaseTestResult {

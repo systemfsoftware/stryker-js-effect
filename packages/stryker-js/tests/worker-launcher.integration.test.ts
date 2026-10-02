@@ -43,6 +43,7 @@ const bootPingWorker = (
       workingDirectory: WORKING_DIRECTORY,
       execArgv: EXEC_ARGV,
       tempDirPrefix: TEMP_DIR_PREFIX,
+      workerKind: 'testRunner',
       env: undefined,
     }).pipe(
       Effect.flatMap((client) => client.ping({ message: 'boot' })),

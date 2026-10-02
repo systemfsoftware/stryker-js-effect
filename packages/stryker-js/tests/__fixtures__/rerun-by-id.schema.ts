@@ -13,5 +13,3 @@ export const ReportSurvivors = S.Struct({
     S.Struct({ mutants: S.Array(S.Struct({ id: S.String, status: S.String })) }),
   ),
 })
-
-export const ErrorEnvelope = S.TaggedStruct('error', { code: S.Finite, error: S.String })

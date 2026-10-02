@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Option from 'effect/Option'
@@ -29,11 +30,14 @@ export class RerunAdmitted extends S.TaggedClass<RerunAdmitted>()('RerunAdmitted
 }
 
 export class RerunRefused extends S.TaggedClass<RerunRefused>()('RerunRefused', {
-  exitClass: S.Literal('ConfigError'),
   unknownIds: S.Array(Mutant.MutantId),
   reason: S.String,
 }) {
   readonly [MutantRerunTypeId] = MutantRerunTypeId
+
+  get evidence(): FailureRecord.FailureEvidence {
+    return { _tag: 'ConfigInvalid', stage: 'config', detail: this.reason }
+  }
 }
 
 export const MutantRerunAdmission = S.Union([RerunAdmitted, RerunRefused])
@@ -57,7 +61,6 @@ const mutateSpansOf = (command: AdmitMutantRerunCommand): ReadonlyArray<string> 
 
 const refusalOf = (command: AdmitMutantRerunCommand, unknownIds: ReadonlyArray<Mutant.MutantId>): RerunRefused =>
   RerunRefused.make({
-    exitClass: 'ConfigError',
     unknownIds,
     reason: `Unknown mutant id(s): ${
       Arr.join(unknownIds, ', ')

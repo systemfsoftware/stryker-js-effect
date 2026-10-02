@@ -228,14 +228,16 @@ Feature('Configuring a Stryker run from a module config file')
             const hint = hintOf(failure)
             return expect({
               tag: failure['_tag'],
-              exitClass: failure['exitClass'],
+              evidenceTag: failure.evidence._tag,
+              evidenceStage: failure.evidence.stage,
               namesTheAbandonedFile: fileOf(failure).endsWith(row.file),
               hintNamesLegacyFormats: hint.includes('JSON or CommonJS'),
               hintNamesEveryModuleFormat: ['.ts', '.mts', '.js', '.mjs'].every((extension) => hint.includes(extension)),
               hintNamesModuleDefaultExport: hint.includes('export default'),
             }).toEqual({
               tag: 'ConfigFileUnsupportedError',
-              exitClass: 'ConfigError',
+              evidenceTag: 'ConfigInvalid',
+              evidenceStage: 'config',
               namesTheAbandonedFile: true,
               hintNamesLegacyFormats: true,
               hintNamesEveryModuleFormat: true,

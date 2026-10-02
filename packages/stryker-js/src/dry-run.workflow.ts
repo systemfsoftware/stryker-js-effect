@@ -1,27 +1,16 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-export class DryRunError extends S.TaggedError<DryRunError>()('DryRunError', {
-  stage: S.Literals(['dryRun', 'dryRunNoTests']),
-  reason: S.String,
-}) {
-  override get message(): string {
-    return this.reason
-  }
-}
-
-export class FailedTestSummary extends S.Class<FailedTestSummary>('FailedTestSummary')({
-  name: S.String,
-  failureMessage: S.String,
-}) {}
+import { RunFailure } from './Run.schema.js'
 
 export class DryRunCommand extends S.TaggedClass<DryRunCommand>()('DryRunCommand', {
   status: S.Literals(['Complete', 'Error', 'Timeout']),
   testCount: S.Finite,
   failedTestCount: S.Finite,
-  failedTests: S.Array(FailedTestSummary),
+  failedTests: S.Array(FailureRecord.FailedTestEvidence),
   allowEmpty: S.Boolean,
   errorMessage: S.optional(S.String),
   reason: S.optional(S.String),
@@ -46,7 +35,7 @@ export class DryRunPassed extends S.TaggedClass<DryRunPassed>()('DryRunPassed', 
 export class DryRunFailed extends S.TaggedClass<DryRunFailed>()('DryRunFailed', {
   testCount: S.Finite,
   failedTestCount: S.Finite,
-  failedTests: S.Array(FailedTestSummary),
+  failedTests: S.Array(FailureRecord.FailedTestEvidence),
 }) {
   readonly [DryRunDecisionTypeId] = DryRunDecisionTypeId
 }
@@ -62,7 +51,7 @@ const completeOutcomeOf = (command: DryRunCommand): CompleteOutcome =>
     Match.orElse((): CompleteOutcome => 'passed'),
   )
 
-const decideComplete = (command: DryRunCommand): Result.Result<DryRunDecision, DryRunError> =>
+const decideComplete = (command: DryRunCommand): Result.Result<DryRunDecision, RunFailure> =>
   Match.value({
     outcome: completeOutcomeOf(command),
     testCount: command.testCount,
@@ -71,9 +60,9 @@ const decideComplete = (command: DryRunCommand): Result.Result<DryRunDecision, D
   }).pipe(
     Match.when({ outcome: 'noTests' }, () =>
       Result.fail(
-        DryRunError.make({
-          stage: 'dryRunNoTests',
-          reason: 'No tests were executed. Stryker will exit prematurely. Please check your configuration.',
+        RunFailure.make({
+          evidence: { _tag: 'BaselineFoundNoTests', stage: 'dryRun' },
+          detail: 'No tests were executed. Stryker will exit prematurely. Please check your configuration.',
         }),
       )),
     Match.when({ outcome: 'failed' }, ({ testCount, failedTestCount, failedTests }) =>
@@ -99,28 +88,29 @@ const reasonOrDefault = (reason: string | undefined, fallback: string): string =
     Match.orElse((present) => present),
   )
 
-const decide = (command: DryRunCommand): Result.Result<DryRunDecision, DryRunError> =>
+const decide = (command: DryRunCommand): Result.Result<DryRunDecision, RunFailure> =>
   Match.value(command.status).pipe(
     Match.when('Error', () =>
       Result.fail(
-        DryRunError.make({
-          stage: 'dryRun',
-          reason: reasonOrDefault(command.errorMessage, 'Dry run error'),
+        RunFailure.make({
+          evidence: { _tag: 'BaselineErrored', stage: 'dryRun' },
+          detail: reasonOrDefault(command.errorMessage, 'Dry run error'),
         }),
       )),
     Match.when('Timeout', () =>
       Result.fail(
-        DryRunError.make({
-          stage: 'dryRun',
-          reason: reasonOrDefault(command.reason, 'Initial test run timed out'),
+        RunFailure.make({
+          evidence: { _tag: 'BaselineTimedOut', stage: 'dryRun' },
+          detail: reasonOrDefault(command.reason, 'Initial test run timed out'),
         }),
       )),
     Match.when('Complete', () => decideComplete(command)),
     Match.exhaustive,
   )
+
 export const dryRun = Workflow.make({
   command: DryRunCommand,
   decision: S.Union([DryRunPassed, DryRunFailed]),
-  error: DryRunError,
+  error: RunFailure,
   decide,
 })
