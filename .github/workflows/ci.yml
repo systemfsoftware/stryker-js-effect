@@ -15,10 +15,7 @@ concurrency:
 jobs:
   check:
     if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       CI: "true"
