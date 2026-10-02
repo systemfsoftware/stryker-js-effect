@@ -106,12 +106,18 @@ const runJob = async (job: Job, capSeconds: number, budgetSeconds: number): Prom
       console.log(`${name}: skipped, the job's ${budgetSeconds}s budget is spent`)
       ok = false
     }
+    const seconds = Math.round((Date.now() - started) / 1000)
+    const outcome: Outcome = exitCode === 0 ? 'success' : 'failure'
+    const reportsDir = join(dir, 'reports')
+    const input = { package: labelOf(dir, shard), outcome, reportsDir, exitCode, cwd: Deno.cwd(), limitSeconds: cap }
+    const state = await loadState(reportsDir, readText)
     if (exitCode !== null) {
       entries.push({
         package: name,
-        seconds: Math.round((Date.now() - started) / 1000),
+        seconds,
         exitCode,
         ...(shard === undefined ? {} : { shard }),
+        ...Option.match(state.reuse, { onNone: () => ({}), onSome: ({ ran, reused }) => ({ ran, reused }) }),
       })
       await Deno.mkdir('.timings', { recursive: true })
       await Deno.writeTextFile(
@@ -119,10 +125,6 @@ const runJob = async (job: Job, capSeconds: number, budgetSeconds: number): Prom
         JSON.stringify({ job: job.id, entries } satisfies Part),
       )
     }
-    const outcome: Outcome = exitCode === 0 ? 'success' : 'failure'
-    const reportsDir = join(dir, 'reports')
-    const input = { package: labelOf(dir, shard), outcome, reportsDir, exitCode, cwd: Deno.cwd(), limitSeconds: cap }
-    const state = await loadState(reportsDir, readText)
     console.log(buildSummary(input, state))
     const missing = buildRequireError(input, state)
     if (missing !== null) {
@@ -178,9 +180,12 @@ const preflightPackage = async (name: string, dir: string, capSeconds: number): 
 
 const preflight = async (jobs: readonly Job[], capSeconds: number): Promise<boolean> => {
   let ok = true
+  let coverage = false
   for (const [dir, name] of [...namedPackagesOf(jobs)].sort(([a], [b]) => a.localeCompare(b))) {
     if (!await preflightPackage(name, dir, capSeconds)) ok = false
+    if ((await readIfPresent(join('preflight', dir, PREFLIGHT_FILE))) !== undefined) coverage = true
   }
+  await appendTo('GITHUB_OUTPUT', `coverage=${coverage}\n`)
   return ok
 }
 

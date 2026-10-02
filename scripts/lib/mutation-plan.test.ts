@@ -329,3 +329,12 @@ Deno.test('mergeSarif folds every package into one run with repository paths and
   )
   assertEquals(mergeSarif([]), Option.none())
 })
+
+Deno.test('mergeRecord scales a reuse-shrunk duration to the full mutant set and keeps the record when nothing ran', () => {
+  const previous: TimingRecord = { version: 1, packages: { p: { seconds: 500, sha: 'old' } } }
+  const scaled: Part[] = [{ job: 'p', entries: [{ package: 'p', seconds: 100, exitCode: 0, ran: 10, reused: 90 }] }]
+  assertEquals(mergeRecord(previous, scaled, 'new').packages['p'], { seconds: 1000, sha: 'new' })
+  const nothing: Part[] = [{ job: 'p', entries: [{ package: 'p', seconds: 20, exitCode: 0, ran: 0, reused: 100 }] }]
+  assertEquals(mergeRecord(previous, nothing, 'new').packages['p'], { seconds: 500, sha: 'old' })
+  assertEquals(mergeRecord(emptyRecord, nothing, 'new').packages['p'], { seconds: 20, sha: 'new' })
+})

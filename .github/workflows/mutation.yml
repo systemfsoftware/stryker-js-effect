@@ -58,6 +58,8 @@ jobs:
     if: ${{ needs.plan.result == 'success' && needs.plan.outputs.jobs != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      coverage: ${{ steps.preflight.outputs.coverage }}
     env:
       OTEL_ENABLED: "true"
       OTEL_SERVICE_NAME: stryker-js-mutation
@@ -94,7 +96,8 @@ jobs:
           echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
           pnpm lgtm:up
 
-      - name: Preflight
+      - id: preflight
+        name: Preflight
         env:
           JOBS: ${{ needs.plan.outputs.jobs }}
         run: $MUTATION_JOB preflight --cap-seconds "$TARGET_SECONDS"
@@ -164,7 +167,7 @@ jobs:
       - name: Place incremental files
         run: if [ -d .stryker-incremental ]; then cp -a .stryker-incremental/. .; fi
       - uses: actions/download-artifact@v8
-        continue-on-error: true
+        if: ${{ needs.preflight.outputs.coverage == 'true' }}
         with:
           name: mutation-preflight
           path: .
