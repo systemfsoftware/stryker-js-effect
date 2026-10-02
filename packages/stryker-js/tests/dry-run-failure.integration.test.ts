@@ -132,40 +132,21 @@ interface WorkerRunnerOutcome {
   readonly workerPid: number
 }
 
-const runWithFrozenRunner = (
+const runWithRunnerPlugin = (
   project: ProjectFixture,
+  plugin: string,
 ): Effect.Effect<WorkerRunnerOutcome, PlatformError, Engine.EnginePorts | FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const pidFile = path.join(project.root, 'frozen-runner.pid')
+    const pidFile = path.join(project.root, 'test-runner.pid')
     const outcome = yield* runFromProject(project.root, {
       ...OPTIONS,
-      testRunner: { plugin: FROZEN_RUNNER_PLUGIN, options: { pidFile } },
-    })
-    const workerPid = Number(yield* fs.readFileString(pidFile))
-    return { outcome, workerPid }
-  })
-
-const runWithDeafRunner = (
-  project: ProjectFixture,
-): Effect.Effect<WorkerRunnerOutcome, PlatformError, Engine.EnginePorts | FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const pidFile = path.join(project.root, 'deaf-runner.pid')
-    const outcome = yield* Effect.flatMap(
-      Effect.timeoutOption(
-        runFromProject(project.root, {
-          ...OPTIONS,
-          testRunner: { plugin: DEAF_RUNNER_PLUGIN, options: { pidFile } },
-        }),
-        Duration.seconds(50),
-      ),
-      Option.match({
-        onNone: () =>
-          Effect.die(new Error('the run was still waiting on a worker that never accepted its connection after 50s')),
-        onSome: (result) => Effect.succeed(result),
+      testRunner: { plugin, options: { pidFile } },
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: Duration.seconds(50),
+        orElse: () => Effect.die(new Error('the run was still waiting on its test runner after 50s')),
       }),
     )
     const workerPid = Number(yield* fs.readFileString(pidFile))
@@ -240,7 +221,7 @@ Feature('Reporting why a dry run failed', { timeout: 120_000 })
         When('the mutation run performs its initial test run')(
           'run',
           (s) =>
-            runWithFrozenRunner(s.project).pipe(
+            runWithRunnerPlugin(s.project, FROZEN_RUNNER_PLUGIN).pipe(
               Effect.provide(capturingLogger(s.project)),
               Effect.ensuring(removeProject(s.project.root)),
             ),
@@ -260,7 +241,7 @@ Feature('Reporting why a dry run failed', { timeout: 120_000 })
         When('the mutation run performs its initial test run')(
           'run',
           (s) =>
-            runWithDeafRunner(s.project).pipe(
+            runWithRunnerPlugin(s.project, DEAF_RUNNER_PLUGIN).pipe(
               Effect.provide(capturingLogger(s.project)),
               Effect.ensuring(removeProject(s.project.root)),
             ),
