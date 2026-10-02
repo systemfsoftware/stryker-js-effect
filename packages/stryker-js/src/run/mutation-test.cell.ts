@@ -70,7 +70,15 @@ const writeMutationTestNoTests = Effect.fn(SpanTaxonomy.Spans.mutationTestNoTest
   return { results: [], verdict: null }
 })
 
-const writeMutationTestDryRunOnly = Effect.fn(SpanTaxonomy.Spans.mutationTestDryRunOnly.name)(function*() {
+const writeMutationTestDryRunOnly = Effect.fn(SpanTaxonomy.Spans.mutationTestDryRunOnly.name)(function*(
+  raw: MutationTestRaw,
+) {
+  const reporting = yield* MutationReporting
+  const env = yield* RunEnvironment
+  yield* reporting.publishDryRunCoverage(reportingInputOf({ prev: raw.prev, env, results: [] })).pipe(
+    Effect.tapCause((cause) => Effect.logWarning('Failed to publish the dry-run coverage', cause)),
+    Effect.ignoreCause,
+  )
   yield* phaseEntered('mutation-test')
   yield* Effect.logInfo('The dry-run has been completed successfully. No mutations have been executed.')
   return { results: [], verdict: null }
@@ -272,7 +280,8 @@ export const mutationTestCell = Sandwich.named(
     return raw
   })
 ).decide(admitMutationTest).write({
-  MutationTestDryRunOnly: (_decision, raw) => writeMutationTestOutcome({ raw, outcome: writeMutationTestDryRunOnly() }),
+  MutationTestDryRunOnly: (_decision, raw) =>
+    writeMutationTestOutcome({ raw, outcome: writeMutationTestDryRunOnly(raw) }),
   MutationTestNoTests: (_decision, raw) => writeMutationTestOutcome({ raw, outcome: writeMutationTestNoTests() }),
   MutationTestProceed: (_decision, raw) => writeMutationTestOutcome({ raw, outcome: writeMutationTestProceed(raw) }),
   RunFailure: (failure) => Effect.fail(RunFailure.make(failure)),

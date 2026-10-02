@@ -3,27 +3,38 @@
 import { parseArgs } from '@std/cli/parse-args'
 import { expandGlob } from '@std/fs/expand-glob'
 import { dirname, join } from '@std/path'
+import * as Option from 'effect/Option'
 
 import {
+  buildPreflightError,
+  buildPreflightSummary,
   buildRequireError,
   buildSummary,
   type CombinedPart,
   combineParts,
   decodeJson,
   type Entry,
+  evaluatedOf,
+  evaluatedSummaryOf,
   type Job,
   JobOrNullSchema,
   JobsSchema,
   loadState,
+  mergeSarif,
   type Outcome,
+  type PackageSarif,
   type Part,
   type PartMeta,
   PartMetaSchema,
+  PREFLIGHT_FILE,
   ReportSchema,
+  SarifLogSchema,
   type Shard,
   slugOf,
   type StagedPart,
 } from './lib/mutation-plan.ts'
+
+const PART_SARIF = 'mutation.sarif'
 
 const incrementalFileOf = (shard: Shard | undefined): string =>
   shard === undefined
@@ -59,18 +70,14 @@ const removeOutputsOfEarlierRun = async (reportsDir: string): Promise<void> => {
   }
 }
 
-const strykerUnderCap = async (name: string, shard: Shard | undefined, capSeconds: number): Promise<number> => {
+const strykerUnderCap = async (
+  name: string,
+  shard: Shard | undefined,
+  capSeconds: number,
+  args: readonly string[],
+): Promise<number> => {
   const { code } = await new Deno.Command('timeout', {
-    args: [
-      '--kill-after=60',
-      String(capSeconds),
-      'pnpm',
-      '--filter',
-      name,
-      'mutation',
-      '--incrementalFile',
-      incrementalFileOf(shard),
-    ],
+    args: ['--kill-after=60', String(capSeconds), 'pnpm', '--filter', name, 'mutation', ...args],
     env: { STRYKER_SHARD: shard === undefined ? '' : `${shard.index}/${shard.count}` },
     stdout: 'inherit',
     stderr: 'inherit',
@@ -93,7 +100,7 @@ const runJob = async (job: Job, capSeconds: number, budgetSeconds: number): Prom
     await removeOutputsOfEarlierRun(join(dir, 'reports'))
     if (cap > 0) {
       console.log(`::group::mutation ${labelOf(dir, shard)}`)
-      exitCode = await strykerUnderCap(name, shard, cap)
+      exitCode = await strykerUnderCap(name, shard, cap, ['--incrementalFile', incrementalFileOf(shard)])
       console.log('::endgroup::')
     } else {
       console.log(`${name}: skipped, the job's ${budgetSeconds}s budget is spent`)
@@ -131,12 +138,68 @@ const runJob = async (job: Job, capSeconds: number, budgetSeconds: number): Prom
     )
     await copyIfPresent(join(reportsDir, 'mutation-report.json'), join(part, 'mutation-report.json'))
     await copyIfPresent(join(reportsDir, 'mutation-stream.jsonl'), join(part, 'mutation-stream.jsonl'))
+    await copyIfPresent(join(reportsDir, 'mutation-report.sarif'), join(part, PART_SARIF))
+    await copyIfPresent(join(reportsDir, 'mutation', 'failure.json'), join(part, 'failure.json'))
     await copyIfPresent(join(dir, incrementalFile), join('incremental', dir, incrementalFile))
   }
   return ok
 }
 
 const plannedPackages = (jobs: readonly Job[]): string[] => [...new Set(jobs.flatMap((job) => job.dirs))].sort()
+
+const namedPackagesOf = (jobs: readonly Job[]): ReadonlyMap<string, string> =>
+  new Map(jobs.flatMap((job) => job.dirs.map((dir, position) => [dir, job.packages[position] ?? dir] as const)))
+
+const preflightPackage = async (name: string, dir: string, capSeconds: number): Promise<boolean> => {
+  const reportsDir = join(dir, 'reports')
+  await removeOutputsOfEarlierRun(reportsDir)
+  console.log(`::group::preflight ${dir}`)
+  const exitCode = await strykerUnderCap(name, undefined, capSeconds, [
+    '--dryRunOnly',
+    '--incrementalFile',
+    PREFLIGHT_FILE,
+  ])
+  console.log('::endgroup::')
+  const outcome: Outcome = exitCode === 0 ? 'success' : 'failure'
+  const input = { package: dir, outcome, reportsDir, exitCode, cwd: Deno.cwd(), limitSeconds: capSeconds }
+  const state = await loadState(reportsDir, readText)
+  const published = (await readIfPresent(join(dir, PREFLIGHT_FILE))) !== undefined
+  console.log(buildPreflightSummary(input, state, published))
+  const error = buildPreflightError(input, state)
+  if (error !== null) console.log(error)
+  await copyIfPresent(join(dir, PREFLIGHT_FILE), join('preflight', dir, PREFLIGHT_FILE))
+  await copyIfPresent(
+    join(reportsDir, 'mutation-stream.jsonl'),
+    join('preflight-evidence', dir, 'mutation-stream.jsonl'),
+  )
+  await copyIfPresent(join(reportsDir, 'mutation', 'failure.json'), join('preflight-evidence', dir, 'failure.json'))
+  return outcome === 'success'
+}
+
+const preflight = async (jobs: readonly Job[], capSeconds: number): Promise<boolean> => {
+  let ok = true
+  for (const [dir, name] of [...namedPackagesOf(jobs)].sort(([a], [b]) => a.localeCompare(b))) {
+    if (!await preflightPackage(name, dir, capSeconds)) ok = false
+  }
+  return ok
+}
+
+const readPackageSarifs = async (root: string): Promise<PackageSarif[]> => {
+  const sarifs: PackageSarif[] = []
+  for await (const marker of expandGlob('**/mutation-part.json', { root })) {
+    const sarifPath = join(dirname(marker.path), PART_SARIF)
+    const text = await readIfPresent(sarifPath)
+    if (text === undefined) continue
+    const meta = decodeJson(PartMetaSchema, await Deno.readTextFile(marker.path), marker.path)
+    sarifs.push({ dir: meta.package, log: decodeJson(SarifLogSchema, text, sarifPath) })
+  }
+  return sarifs
+}
+
+const appendTo = async (variable: string, text: string): Promise<void> => {
+  const file = Deno.env.get(variable)
+  if (file !== undefined && file !== '') await Deno.writeTextFile(file, text, { append: true })
+}
 
 const readStagedParts = async (root: string): Promise<StagedPart[]> => {
   const parts: StagedPart[] = []
@@ -178,19 +241,42 @@ const main = async (): Promise<void> => {
     if (!await runJob(job, Number(args['cap-seconds']), Number(args['budget-seconds']))) Deno.exit(1)
     return
   }
+  if (command === 'preflight') {
+    if (args['cap-seconds'] === undefined) throw new Error('preflight needs --cap-seconds')
+    const jobs = decodeJson(JobsSchema, Deno.env.get('JOBS') ?? '[]', 'JOBS')
+    if (!await preflight(jobs, Number(args['cap-seconds']))) Deno.exit(1)
+    return
+  }
   if (command === 'combine') {
     if (args.parts === undefined || args.out === undefined) throw new Error('combine needs --parts and --out')
     const jobs = decodeJson(JobsSchema, Deno.env.get('JOBS') ?? '[]', 'JOBS')
-    await writeCombined(args.out, combineParts(await readStagedParts(args.parts)))
-    const envFile = Deno.env.get('GITHUB_ENV')
+    const staged = await readStagedParts(args.parts)
+    const combined = combineParts(staged)
+    await writeCombined(args.out, combined)
     const packages = JSON.stringify(plannedPackages(jobs))
-    if (envFile !== undefined && envFile !== '') {
-      await Deno.writeTextFile(envFile, `PACKAGES=${packages}\n`, { append: true })
+    const complete = combined.size > 0 && [...combined.values()].every((part) => part.report !== undefined)
+    await appendTo('GITHUB_ENV', `PACKAGES=${packages}\nMUTATION_REPORT_COMPLETE=${complete}\n`)
+    const evaluated = evaluatedOf(staged.flatMap((part) => (part.stream === undefined ? [] : [part.stream])))
+    const evaluatedLine = evaluatedSummaryOf(evaluated)
+    await appendTo('GITHUB_STEP_SUMMARY', `${evaluatedLine}\n`)
+    if (Option.contains(evaluated, 0)) {
+      console.log('::notice title=Mutation evaluated no mutants::every verdict was reused, so this run tested nothing')
     }
     console.log(`planned packages: ${packages}`)
+    console.log(evaluatedLine)
     return
   }
-  throw new Error(`unknown command ${command ?? '(none)'}: expected run or combine`)
+  if (command === 'sarif') {
+    if (args.parts === undefined || args.out === undefined) throw new Error('sarif needs --parts and --out')
+    const merged = Option.getOrUndefined(mergeSarif(await readPackageSarifs(args.parts)))
+    if (merged !== undefined) {
+      await Deno.mkdir(dirname(args.out), { recursive: true })
+      await Deno.writeTextFile(args.out, JSON.stringify(merged))
+    }
+    console.log(merged === undefined ? 'no part carried a SARIF log' : `wrote ${args.out}`)
+    return
+  }
+  throw new Error(`unknown command ${command ?? '(none)'}: expected run, preflight, combine or sarif`)
 }
 
 if (import.meta.main) await main()

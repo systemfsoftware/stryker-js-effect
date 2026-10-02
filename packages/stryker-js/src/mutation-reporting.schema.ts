@@ -10,3 +10,5 @@ export class ManifestUnreadable extends S.TaggedError<ManifestUnreadable>()('Man
 }
 
 export const ManifestSchema = S.Struct({ version: S.optional(S.String) })
+
+export const IncrementalReportObjectSchema = S.Record(S.String, S.Json)

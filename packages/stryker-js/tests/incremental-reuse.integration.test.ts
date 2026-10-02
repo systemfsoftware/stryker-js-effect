@@ -441,6 +441,106 @@ Feature('Content-keyed reuse across incremental reports')
     )
 
     scenario(
+      'A dry-run-only preflight publishes its coverage, and a run reading it through incrementalSources skips its own dry run',
+      Gherkin.Do.pipe(
+        Given('a workspace whose command runner appends every spawn to a log file')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const root = yield* writeFixture([['src/math.ts', SOURCE]])
+              const spawnLog = yield* fs.makeTempFile({ prefix: 'runner-spawns', suffix: '.txt' })
+              const commandRunner = { command: `echo spawned >> ${spawnLog}` }
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const cold = yield* runOnce(
+                    root,
+                    optionsOf(root, { commandRunner, incrementalFile: `${root}/reports/cold.json` }),
+                  )
+                  const spawnsInColdRun = yield* lineCountOf(spawnLog)
+                  yield* runOnce(
+                    root,
+                    optionsOf(root, {
+                      commandRunner,
+                      dryRunOnly: true,
+                      incrementalFile: `${root}/reports/preflight.json`,
+                    }),
+                  )
+                  const spawnsAfterPreflight = yield* lineCountOf(spawnLog)
+                  const preflighted = yield* runOnce(
+                    root,
+                    optionsOf(root, { commandRunner, incrementalSources: ['reports/preflight.json'] }),
+                  )
+                  const spawnsAfterPreflighted = yield* lineCountOf(spawnLog)
+                  return {
+                    cold,
+                    preflighted,
+                    spawnsInColdRun,
+                    spawnsInPreflight: spawnsAfterPreflight - spawnsInColdRun,
+                    spawnsInPreflightedRun: spawnsAfterPreflighted - spawnsAfterPreflight,
+                  }
+                }),
+                Effect.andThen(removeFixture(root), Effect.orDie(fs.remove(spawnLog, { force: true }))),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then(
+          'the preflight spawns exactly the dry run a cold run spawns, and the preflighted run spawns only its mutants',
+        )((s, expect) => {
+          const coldDryRunSpawns = s.fixture.spawnsInColdRun - (s.fixture.cold.reuse?.ran ?? 0)
+          return expect({
+            coldRanMutants: (s.fixture.cold.reuse?.ran ?? 0) > 0,
+            coldDryRunSpawned: coldDryRunSpawns > 0,
+            preflightSpawns: s.fixture.spawnsInPreflight,
+            preflightedRan: s.fixture.preflighted.reuse?.ran,
+            preflightedDryRunSpawns: s.fixture.spawnsInPreflightedRun - (s.fixture.preflighted.reuse?.ran ?? 0),
+          }).toEqual({
+            coldRanMutants: true,
+            coldDryRunSpawned: true,
+            preflightSpawns: coldDryRunSpawns,
+            preflightedRan: s.fixture.cold.reuse?.ran,
+            preflightedDryRunSpawns: 0,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A dry-run-only run into an existing incremental file keeps the verdicts it holds',
+      Gherkin.Do.pipe(
+        Given('a workspace whose incremental file already holds every verdict')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writeFixture([['src/math.ts', SOURCE]])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const first = yield* runOnce(root, optionsOf(root))
+                  yield* runOnce(root, optionsOf(root, { dryRunOnly: true }))
+                  const after = yield* runOnce(root, optionsOf(root))
+                  return { first, after }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then('the run after the dry-run-only run reuses every verdict the first run wrote')((s, expect) =>
+          expect({
+            plannedNonZero: s.fixture.first.mutants.length > 0,
+            after: {
+              reused: s.fixture.after.reuse?.reused,
+              ran: s.fixture.after.reuse?.ran,
+              refused: s.fixture.after.reuse?.refused,
+            },
+          }).toEqual({
+            plannedNonZero: true,
+            after: { reused: s.fixture.first.mutants.length, ran: 0, refused: ZERO_REFUSALS },
+          })
+        ),
+      ),
+    )
+
+    scenario(
       'A verdict written under another report path is reused through the incrementalSources globs',
       Gherkin.Do.pipe(
         Given('a workspace whose incremental report has been relocated to a shard path')(
