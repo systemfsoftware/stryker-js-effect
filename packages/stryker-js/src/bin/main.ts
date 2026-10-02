@@ -9,6 +9,7 @@ import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics'
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { FailureRecord, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { HtmlReporter } from '@systemfsoftware/stryker-js-html-reporter'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import cliPkgJson from '@systemfsoftware/stryker-js/package.json' with { type: 'json' }
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
@@ -49,6 +50,25 @@ import { RunEnvironment } from '../run/RunEnvironment.service.js'
 import { makeStrykerCommand } from './cli-command.js'
 
 globalThis.process.title = 'stryker'
+
+const WASI_WARNING_MENTION = 'WASI'
+
+const isWasiExperimentalWarning = (warning: Error): boolean =>
+  Boolean.and(warning.name === 'ExperimentalWarning', warning.message.includes(WASI_WARNING_MENTION))
+
+const NODE_WARNING_PRINTERS = globalThis.process.listeners('warning')
+
+globalThis.process.removeAllListeners('warning')
+
+globalThis.process.on('warning', (warning) =>
+  Boolean.match(isWasiExperimentalWarning(warning), {
+    onFalse: () => {
+      for (const print of NODE_WARNING_PRINTERS) {
+        print(warning)
+      }
+    },
+    onTrue: () => undefined,
+  }))
 
 const EXPORT_TIMEOUT_MILLIS = 5000
 const SHUTDOWN_TIMEOUT = EffectDuration.millis(EXPORT_TIMEOUT_MILLIS + 1_000)
@@ -266,11 +286,16 @@ const strykerProgram = Effect.gen(function*() {
           'stryker.run.exit_code': runExitCodeFromOutcome(decision).code,
           ...failureCodeAttributeOf(decision),
         })
+        const resolvedOptions = yield* Option.match(Option.fromUndefinedOr(host.resolvedOptions), {
+          onNone: () => Effect.succeed<Options.StrykerOptions | null>(null),
+          onSome: (resolved) => Ref.get(resolved),
+        })
         return yield* concludeRunCell.run({
           mode,
           stream,
           basePath: host.basePath,
           pathService,
+          resolvedOptions,
           fileSystem: yield* FileSystem.FileSystem,
           runEvents,
           decision,

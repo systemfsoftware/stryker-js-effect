@@ -22,6 +22,7 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
+import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 
@@ -130,6 +131,15 @@ const buildMergedSchema = <A = unknown>(
     core,
   )
 
+const publishResolvedOptions = (
+  env: RunEnvironmentShape,
+  options: Options.StrykerOptions,
+): Effect.Effect<void> =>
+  Option.match(Option.fromUndefinedOr(env.resolvedOptions), {
+    onNone: () => Effect.void,
+    onSome: (resolved) => Ref.set(resolved, options),
+  })
+
 const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
   command: ReadProjectDone,
 ): Effect.fn.Return<
@@ -158,6 +168,7 @@ const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(function*(
       allowColor: env.allowConsoleColors,
     },
   }
+  yield* publishResolvedOptions(env, options)
   const descriptors: readonly string[] = pluginUrlsFromOptions(options)
   const loaded = yield* loadPlugins(descriptors, env.basePath).pipe(
     Effect.tapError(() =>

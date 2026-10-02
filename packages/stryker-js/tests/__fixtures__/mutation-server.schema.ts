@@ -9,7 +9,7 @@ export const ExitValue = S.declare<Exit.Exit<void, Serve.ServeError>>((
 export const JsonRpcId = S.Union([S.String, S.Finite, S.Null])
 export type JsonRpcId = typeof JsonRpcId.Type
 
-export const JsonRpcError = S.Struct({ code: S.Int, message: S.String })
+export const JsonRpcError = S.Struct({ code: S.Int, message: S.String, data: S.optionalKey(S.Json) })
 
 export const JsonRpcResponse = S.Struct({
   jsonrpc: S.Literal('2.0'),

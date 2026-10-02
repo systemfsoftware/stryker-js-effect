@@ -11,7 +11,7 @@ import { FeedbackUnusable } from '../Feedback/Feedback.schema.js'
 import { GitDiff } from '../git-diff.service.js'
 import { SurvivorRef } from '../surfacing.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
-import { MutantDetail, RerunMutantFailure, ShowMutantFailure } from './mcp-tools.schema.js'
+import { FailureLookup, MutantDetail, RerunMutantFailure, ShowMutantFailure } from './mcp-tools.schema.js'
 
 const reportDependencies = [FileSystem.FileSystem, Path.Path]
 
@@ -63,4 +63,11 @@ export const ReportUsefulness = Tool.make('report_usefulness', {
   dependencies: reportDependencies,
 })
 
-export const mcpToolkit = Toolkit.make(ListSurvivors, ShowMutant, RerunMutant, ReportUsefulness)
+export const GetFailure = Tool.make('get_failure', {
+  description:
+    'Read the failure record the last finished run wrote to reports/mutation/failure.json: its stable code, evidence, reproduction and next action. Answers null when no failed run left a record.',
+  success: FailureLookup,
+  dependencies: reportDependencies,
+})
+
+export const mcpToolkit = Toolkit.make(ListSurvivors, ShowMutant, RerunMutant, ReportUsefulness, GetFailure)

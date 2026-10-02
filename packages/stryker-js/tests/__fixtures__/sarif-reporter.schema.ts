@@ -36,6 +36,30 @@ export const SarifDocument = S.Struct({
 
 export type SarifDocument = typeof SarifDocument.Type
 
+export const FailureSarifDocument = S.Struct({
+  version: S.String,
+  runs: S.Array(
+    S.Struct({
+      invocations: S.Array(
+        S.Struct({
+          executionSuccessful: S.Boolean,
+          exitCode: S.Int,
+          toolExecutionNotifications: S.Array(
+            S.Struct({
+              descriptor: S.Struct({ id: S.String }),
+              level: S.String,
+              message: S.Struct({ text: S.String }),
+              locations: S.Array(S.Unknown),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
+})
+
+export type FailureSarifDocument = typeof FailureSarifDocument.Type
+
 export const ReproducerList = S.Array(
   S.Struct({ id: S.String, fileName: S.String, diff: S.String, command: S.String }),
 )

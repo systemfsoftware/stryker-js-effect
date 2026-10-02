@@ -1,6 +1,7 @@
 import { NodeSocket } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine, Serve } from '@systemfsoftware/stryker-js'
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
@@ -63,6 +64,10 @@ const CONFIG = `export default {
   cleanTempDir: 'always',
 }
 `
+
+const FAILING_CONFIG = CONFIG.replace("command: 'true'", "command: 'false'")
+
+const INTERNAL_ERROR_CODE = -32603
 
 const UTF8 = new TextEncoder()
 const DECODE = new TextDecoder()
@@ -387,17 +392,19 @@ const everyProgressIsNative = (notifications: ReadonlyArray<ProgressNotification
   notifications.length > 0 &&
   notifications.every((notification) => Object.keys(notification.params.files).length > 0)
 
-const writeWorkspace = (): Effect.Effect<Workspace, never, never> =>
+const writeWorkspaceWith = (config: string): Effect.Effect<Workspace, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: 'stryker-msp-' }))
     yield* fs.writeFileString(path.join(directory, 'package.json'), '{ "name": "msp-consumer", "type": "module" }\n')
-    yield* fs.writeFileString(path.join(directory, 'stryker.config.mjs'), CONFIG)
+    yield* fs.writeFileString(path.join(directory, 'stryker.config.mjs'), config)
     yield* fs.makeDirectory(path.join(directory, 'src'), { recursive: true })
     yield* fs.writeFileString(path.join(directory, TARGET_FILE), TARGET_SOURCE)
     return { directory }
   }).pipe(Effect.orDie, Effect.provide(Engine.nodePlatformLayer))
+
+const writeWorkspace = (): Effect.Effect<Workspace, never, never> => writeWorkspaceWith(CONFIG)
 
 const removeWorkspace = (directory: string): Effect.Effect<void, never, never> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true })).pipe(
@@ -590,6 +597,46 @@ const exposedAddressObserved = (): Effect.Effect<ExposedObserved, never, Engine.
     }
   }))
 
+interface FailureObserved {
+  readonly errorCode: number
+  readonly failureTag: string | null
+  readonly failureExitCode: number | null
+  readonly stillServing: boolean
+}
+
+const failingEngineObserved = (): Effect.Effect<FailureObserved, never, Engine.EnginePorts> =>
+  Effect.scoped(Effect.gen(function*() {
+    const harness = yield* makeHarness()
+    const server = yield* Serve.serveMutationServer({ channel: 'stdio' }).pipe(
+      Effect.provideService(Stdio.Stdio, harness.stdio),
+      Effect.scoped,
+      Effect.forkScoped,
+    )
+    const session = yield* sessionOf(
+      { write: (bytes) => Queue.offer(harness.input, bytes).pipe(Effect.asVoid) },
+      yield* frameSourceOf(harness.output),
+    )
+    yield* session.send(1, 'mutationTest', { files: [{ path: TARGET_FILE }] })
+    const failed = yield* session.answer(1)
+    yield* session.send(2, 'configure', {})
+    const reconnected = versionOf(yield* session.answer(2))
+    yield* Queue.end(harness.input)
+    yield* Fiber.interrupt(server)
+
+    const record = Option.getOrNull(
+      Option.flatMap(
+        Option.fromUndefinedOr(failed.error?.data),
+        (data) => S.decodeUnknownOption(FailureRecord.FailureRecord)(data),
+      ),
+    )
+    return {
+      errorCode: failed.error?.code ?? 0,
+      failureTag: record === null ? null : record._tag,
+      failureExitCode: record === null ? null : FailureRecord.FailureCatalog[record._tag].exitCode,
+      stillServing: reconnected === '0.4.0',
+    }
+  }))
+
 Feature('Serving the Mutation Server Protocol over stdio and sockets', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the mutation server drives the engine for a client that speaks the protocol')
@@ -693,6 +740,36 @@ Feature('Serving the Mutation Server Protocol over stdio and sockets', { timeout
               warningNamesTheAddress: s.observed.warningNamesTheAddress,
               announced: s.observed.announced,
             }).toEqual({ warned: true, warningNamesTheAddress: true, announced: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A mutationTest whose engine fails answers the failure record and the server keeps serving',
+      Gherkin.Do.pipe(
+        Given('a consumer project whose test command fails')('workspace', () => writeWorkspaceWith(FAILING_CONFIG)),
+        When('a client asks for a mutation test over stdio')(
+          'observed',
+          (s: { readonly workspace: Workspace }) =>
+            withDirectory(s.workspace.directory, failingEngineObserved()).pipe(
+              Effect.ensuring(removeWorkspace(s.workspace.directory)),
+            ),
+        ),
+        Then(
+          'the JSON-RPC error carries the same failure record the stream would carry, and a later request is answered',
+        )(
+          (s: { readonly observed: FailureObserved }, expect) =>
+            expect({
+              errorCode: s.observed.errorCode,
+              failureTag: s.observed.failureTag,
+              failureExitCode: s.observed.failureExitCode,
+              stillServing: s.observed.stillServing,
+            }).toEqual({
+              errorCode: INTERNAL_ERROR_CODE,
+              failureTag: 'BaselineTestsFailed',
+              failureExitCode: 5,
+              stillServing: true,
+            }),
         ),
       ),
     )

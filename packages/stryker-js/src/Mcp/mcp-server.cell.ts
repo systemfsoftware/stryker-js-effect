@@ -1,39 +1,45 @@
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, type Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { McpProtocol, McpServer } from 'effect/ai'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { ReproducerSchema } from '../build-reproducers.workflow.js'
+import { classifyRunOutcome, type RunOutcomeDecision } from '../classify-run-outcome.workflow.js'
+import { runOutcomeCommandOf } from '../conclude-run.js'
 import type { ConfigReadError } from '../ConfigError.schema.js'
 import { recordFeedbackCell } from '../Feedback/Feedback.cell.js'
 import { FeedbackUnusable } from '../Feedback/Feedback.schema.js'
 import { readMutationReport, readSurfacedSurvivors } from '../Feedback/read-report.js'
 import { ResolvedMode } from '../output-mode.schema.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
-import { mutantRerunAdmissionCell, RerunRefused } from '../Rerun/mod.js'
+import { mutantRerunAdmissionCell, RerunEngineUnusable, RerunRefused } from '../Rerun/mod.js'
 import { mutantDetailEventsOf } from '../Rerun/rerun-selection.js'
 import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import { mutationTestCell } from '../run/run-stages.cell.js'
 import { RunEnvironment, type RunEnvironmentShape } from '../run/RunEnvironment.service.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
+import { FAILURE_RECORD_FILE } from '../stryker-outputs.js'
 import { StrykerPackage } from '../stryker-package.schema.js'
 import { mcpToolkit } from './mcp-tools.js'
-import { MutantDetail, MutantUnusable, RerunUnusable } from './mcp-tools.schema.js'
+import { FailureLookup, MutantDetail, MutantUnusable, RerunMutantFailure, RerunUnusable } from './mcp-tools.schema.js'
 
 const MCP_RUN_ID = RunEvent.RunId.make('01ARZ3NDEKTSV4RRFFQ69G5FAM')
 
 const REPRODUCERS_FILE = 'reports/mutation/reproducers.json'
 
 const MCP_SERVER_INSTRUCTIONS =
-  'Stryker mutation testing. Use list_survivors to read the surfaced survivors of the finished report, show_mutant to inspect one, rerun_mutant to re-run one through the run pipeline, and report_usefulness to record whether a survivor was worth acting on.'
+  'Stryker mutation testing. Use list_survivors to read the surfaced survivors of the finished report, show_mutant to inspect one, rerun_mutant to re-run one through the run pipeline, report_usefulness to record whether a survivor was worth acting on, and get_failure to read the failure record the last failed run left behind.'
 
 const MCP_MODE = ResolvedMode.make({ mode: 'machine', signal: 'tool', stdoutIsTTY: false })
 
@@ -123,10 +129,30 @@ const restrictedOptionsOf = ({
   incremental: true,
 })
 
+const engineDecisionOf = <A, E>(exit: Exit.Exit<A, E>, basePath: string): RunOutcomeDecision =>
+  Result.getOrElse(
+    classifyRunOutcome(runOutcomeCommandOf({ exit, argv: [], cwd: basePath, traceId: null })),
+    (impossible) => impossible,
+  )
+
+const engineRefusalOf = <A, E>(
+  exit: Exit.Exit<A, E>,
+  basePath: string,
+): Option.Option<RerunEngineUnusable> =>
+  Match.value(engineDecisionOf(exit, basePath)).pipe(
+    Match.tag('RunFailed', (failed) =>
+      Option.some(RerunEngineUnusable.make({ code: failed.code, record: failed.record }))),
+    Match.orElse(() =>
+      Option.none<RerunEngineUnusable>()
+    ),
+  )
+
+const NO_RESULTS: MutationTestDone = { results: [], verdict: null }
+
 const runRestricted = (
   basePath: string,
   options: Options.PartialStrykerOptions,
-): Effect.Effect<MutationTestDone, never, EnginePorts> =>
+): Effect.Effect<MutationTestDone, RerunEngineUnusable, EnginePorts> =>
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const environment: RunEnvironmentShape = {
@@ -141,12 +167,22 @@ const runRestricted = (
       RunEnvironment.stage(environment, queue),
       MachineConsole.captureLayer.pipe(Layer.provide(MachineConsole.layer)),
     )
-    return yield* mutationTestCell
-      .run({ cliOptions: options, targetMutatePatterns: undefined })
-      .pipe(Effect.provide(runLayer), Effect.scoped, Effect.orDie)
+    const exit = yield* Effect.exit(
+      mutationTestCell
+        .run({ cliOptions: options, targetMutatePatterns: undefined })
+        .pipe(Effect.provide(runLayer), Effect.scoped),
+    )
+    return yield* Exit.match(exit, {
+      onSuccess: (done) => Effect.succeed(done),
+      onFailure: (cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Option.match(engineRefusalOf(Exit.failCause(cause), basePath), {
+            onNone: () => Effect.die(new Error('an engine failure did not classify as a run failure')),
+            onSome: (refusal) => Effect.fail(refusal),
+          }),
+    })
   })
-
-const NO_RESULTS: MutationTestDone = { results: [], verdict: null }
 
 const resultsOf = (settled: void | MutationTestDone): ReadonlyArray<Mutant.RunMutantResult> =>
   (settled ?? NO_RESULTS).results
@@ -162,14 +198,20 @@ const reportedOf = (
 const reasonOfRerun = (error: RerunRefused | ConfigReadError): string =>
   S.is(RerunRefused)(error) ? error.reason : error.message
 
-const rerunFailureOf =
-  (id: Mutant.MutantId) => (error: RerunRefused | ConfigReadError | MutantUnusable): MutantUnusable | RerunUnusable =>
-    S.is(MutantUnusable)(error) ? error : RerunUnusable.make({ id, reason: reasonOfRerun(error) })
+const isRerunRefusal = (error: unknown): error is MutantUnusable | RerunEngineUnusable =>
+  S.is(MutantUnusable)(error) || S.is(RerunEngineUnusable)(error)
+
+const rerunFailureOf = (
+  id: Mutant.MutantId,
+) =>
+(
+  error: RerunRefused | ConfigReadError | MutantUnusable | RerunEngineUnusable,
+): RerunMutantFailure => isRerunRefusal(error) ? error : RerunUnusable.make({ id, reason: reasonOfRerun(error) })
 
 const rerunMutant = (
   basePath: string,
   id: Mutant.MutantId,
-): Effect.Effect<MutantDetail, MutantUnusable | RerunUnusable, EnginePorts> =>
+): Effect.Effect<MutantDetail, RerunMutantFailure, EnginePorts> =>
   Effect.gen(function*() {
     const settled = yield* mutantRerunAdmissionCell.run({
       ids: [id],
@@ -196,6 +238,16 @@ const rerunMutant = (
     }
   })
 
+const readFailure = (basePath: string): Effect.Effect<FailureLookup, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const text = yield* fs.readFileString(path.resolve(basePath, FAILURE_RECORD_FILE)).pipe(
+      Effect.orElseSucceed(() => ''),
+    )
+    return { failure: Option.getOrNull(S.decodeOption(FailureRecord.FailureRecordFile)(text)) }
+  })
+
 const handlers = (basePath: string) =>
   mcpToolkit.toLayer({
     list_survivors: () => readSurfacedSurvivors(basePath),
@@ -203,6 +255,7 @@ const handlers = (basePath: string) =>
     rerun_mutant: ({ id }) => rerunMutant(basePath, id),
     report_usefulness: ({ id, judgment, reason }) =>
       recordFeedbackCell({ basePath, id, judgment, reason: reason ?? null }),
+    get_failure: () => readFailure(basePath),
   })
 
 export const mcpServerLayer = ({ basePath }: McpServerOptions) =>

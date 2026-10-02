@@ -6,3 +6,4 @@ export {
   type MutantRerunSettled,
   type MutantRerunSettlement,
 } from './Rerun.cell.js'
+export { RerunEngineUnusable } from './rerun.schema.js'

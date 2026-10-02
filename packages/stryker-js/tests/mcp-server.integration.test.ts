@@ -1,8 +1,9 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine, Mcp } from '@systemfsoftware/stryker-js'
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { FailureRecord, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
+import * as Equal from 'effect/Equal'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import * as Option from 'effect/Option'
@@ -44,6 +45,10 @@ const CONFIG = `export default {
   cleanTempDir: 'always',
 }
 `
+
+const FAILING_CONFIG = CONFIG.replace("command: 'true'", "command: 'false'")
+
+const FAILURE_FILE = 'reports/mutation/failure.json'
 
 const UTF8 = new TextEncoder()
 
@@ -88,17 +93,19 @@ interface Client {
   ) => Effect.Effect<JsonRpcMessage, never, never>
 }
 
-const writeWorkspace = (): Effect.Effect<Workspace, never, never> =>
+const writeWorkspaceWith = (config: string): Effect.Effect<Workspace, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: 'stryker-mcp-' }))
     yield* fs.writeFileString(path.join(directory, 'package.json'), '{ "name": "mcp-consumer", "type": "module" }\n')
-    yield* fs.writeFileString(path.join(directory, 'stryker.config.mjs'), CONFIG)
+    yield* fs.writeFileString(path.join(directory, 'stryker.config.mjs'), config)
     yield* fs.makeDirectory(path.join(directory, 'src'), { recursive: true })
     yield* fs.writeFileString(path.join(directory, TARGET_FILE), TARGET_SOURCE)
     return { directory }
   }).pipe(Effect.orDie, Effect.provide(Engine.nodePlatformLayer))
+
+const writeWorkspace = (): Effect.Effect<Workspace, never, never> => writeWorkspaceWith(CONFIG)
 
 const removeWorkspace = (directory: string): Effect.Effect<void, never, never> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true })).pipe(
@@ -289,6 +296,108 @@ const drive = (directory: string): Effect.Effect<Omit<Observed, 'runCompleted'>,
     }),
   ).pipe(Effect.orDie, Effect.provide(Engine.nodePlatformLayer))
 
+const rawToolCallOf = (
+  response: JsonRpcMessage,
+): { readonly failed: boolean; readonly structured: S.Json | undefined; readonly text: string } =>
+  Option.match(toolEnvelopeOf(response), {
+    onNone: () => ({ failed: true, structured: undefined, text: '' }),
+    onSome: (call) => ({
+      failed: call.isError === true,
+      structured: call.structuredContent,
+      text: call.content.map((part) => part.text ?? '').join('\n'),
+    }),
+  })
+
+const withMcpClient = <A>(
+  directory: string,
+  use: (client: Client) => Effect.Effect<A, never, never>,
+): Effect.Effect<A, never, never> =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      const handle = yield* spawner.spawn(
+        ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, 'mcp'], {
+          cwd: directory,
+          stdin: 'pipe',
+          stdout: 'pipe',
+          stderr: 'pipe',
+          env: { STRYKER_MODE: 'machine', NO_COLOR: '1' },
+          extendEnv: true,
+        }),
+      )
+      const client = yield* makeClient(handle)
+      yield* client.initialize
+      yield* client.notify('notifications/initialized')
+      return yield* use(client)
+    }),
+  ).pipe(Effect.orDie, Effect.provide(Engine.nodePlatformLayer))
+
+const rewriteConfig = (directory: string, config: string): Effect.Effect<void, never, never> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    yield* fs.writeFileString(path.join(directory, 'stryker.config.mjs'), config)
+  }).pipe(Effect.orDie, Effect.provide(Engine.nodePlatformLayer))
+
+interface FailureLookupObserved {
+  readonly runFailed: boolean
+  readonly failed: boolean
+  readonly recordTag: string | null
+  readonly recordMatchesFile: boolean
+}
+
+const driveFailureLookup = (directory: string): Effect.Effect<Omit<FailureLookupObserved, 'runFailed'>, never, never> =>
+  withMcpClient(directory, (client) =>
+    Effect.gen(function*() {
+      const call = rawToolCallOf(yield* client.call(2, 'tools/call', { name: 'get_failure', arguments: {} }))
+      const lookup = Option.getOrUndefined(S.decodeUnknownOption(Mcp.FailureLookup)(call.structured))
+      const fileText = yield* readText(directory, FAILURE_FILE)
+      const fileRecord = Option.getOrNull(S.decodeOption(FailureRecord.FailureRecordFile)(fileText))
+      return {
+        failed: call.failed,
+        recordTag: lookup?.failure == null ? null : lookup.failure._tag,
+        recordMatchesFile: lookup?.failure != null && fileRecord !== null &&
+          Equal.equals(lookup.failure, fileRecord),
+      }
+    }))
+
+interface NoFailureObserved {
+  readonly failed: boolean
+  readonly absent: boolean
+}
+
+const driveNoFailureLookup = (directory: string): Effect.Effect<NoFailureObserved, never, never> =>
+  withMcpClient(directory, (client) =>
+    Effect.gen(function*() {
+      const call = rawToolCallOf(yield* client.call(2, 'tools/call', { name: 'get_failure', arguments: {} }))
+      const lookup = Option.getOrUndefined(S.decodeUnknownOption(Mcp.FailureLookup)(call.structured))
+      return { failed: call.failed, absent: lookup !== undefined && lookup.failure === null }
+    }))
+
+interface RerunFailureObserved {
+  readonly failed: boolean
+  readonly recordTag: string | null
+  readonly exitCode: number | null
+  readonly stillServing: boolean
+}
+
+const driveRerunFailure = (directory: string): Effect.Effect<RerunFailureObserved, never, never> =>
+  withMcpClient(directory, (client) =>
+    Effect.gen(function*() {
+      const surfaced = survivorsOf(yield* client.call(2, 'tools/call', { name: 'list_survivors', arguments: {} }))
+      const id = Option.getOrElse(Option.map(Option.fromNullishOr(surfaced[0]), (ref) => ref.id), () => '')
+      yield* rewriteConfig(directory, FAILING_CONFIG)
+      const rerun = rawToolCallOf(yield* client.call(3, 'tools/call', { name: 'rerun_mutant', arguments: { id } }))
+      const followed = rawToolCallOf(yield* client.call(4, 'tools/call', { name: 'show_mutant', arguments: { id } }))
+      const refusal = Option.getOrNull(S.decodeOption(S.fromJsonString(Mcp.RerunEngineUnusable))(rerun.text))
+      return {
+        failed: rerun.failed,
+        recordTag: refusal === null ? null : refusal.record._tag,
+        exitCode: refusal === null ? null : refusal.code,
+        stillServing: followed.failed === false,
+      }
+    }))
+
 Feature('An agent listing, inspecting and re-running mutants over MCP', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker mcp server speaks JSON-RPC over stdio against a project the engine mutated')
@@ -346,7 +455,7 @@ Feature('An agent listing, inspecting and re-running mutants over MCP', { timeou
           }).toEqual({
             runCompleted: true,
             initialized: true,
-            toolNames: ['list_survivors', 'report_usefulness', 'rerun_mutant', 'show_mutant'],
+            toolNames: ['get_failure', 'list_survivors', 'report_usefulness', 'rerun_mutant', 'show_mutant'],
             surfacedAtLeastOne: true,
             surfacedIdIsInTheReport: true,
             shownFailed: false,
@@ -366,6 +475,86 @@ Feature('An agent listing, inspecting and re-running mutants over MCP', { timeou
             recordedReason: 'it looks wrong',
           })
         }),
+      ),
+    )
+
+    scenario(
+      'A client reads the failure record the last failed run wrote',
+      Gherkin.Do.pipe(
+        Given('a consumer project whose test command fails')('workspace', () => writeWorkspaceWith(FAILING_CONFIG)),
+        When('the CLI runs and then an MCP client asks for the failure')(
+          'observed',
+          (s: { readonly workspace: Workspace }) =>
+            Effect.gen(function*() {
+              const seeded = yield* runStryker(s.workspace.directory, ['run'])
+              const driven = yield* driveFailureLookup(s.workspace.directory)
+              return { runFailed: seeded.exitCode === 5, ...driven }
+            }).pipe(Effect.ensuring(removeWorkspace(s.workspace.directory))),
+        ),
+        Then('get_failure returns the record written to reports/mutation/failure.json')(
+          (s: { readonly observed: FailureLookupObserved }, expect) =>
+            expect({
+              runFailed: s.observed.runFailed,
+              failed: s.observed.failed,
+              recordTag: s.observed.recordTag,
+              recordMatchesFile: s.observed.recordMatchesFile,
+            }).toEqual({
+              runFailed: true,
+              failed: false,
+              recordTag: 'BaselineTestsFailed',
+              recordMatchesFile: true,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A client asks for the failure when no failed run left a record',
+      Gherkin.Do.pipe(
+        Given('a consumer project with no failed run')('workspace', () => writeWorkspaceWith(CONFIG)),
+        When('an MCP client asks for the failure')(
+          'observed',
+          (s: { readonly workspace: Workspace }) =>
+            driveNoFailureLookup(s.workspace.directory).pipe(
+              Effect.ensuring(removeWorkspace(s.workspace.directory)),
+            ),
+        ),
+        Then('get_failure answers that there is no failure')(
+          (s: { readonly observed: NoFailureObserved }, expect) =>
+            expect({ failed: s.observed.failed, absent: s.observed.absent }).toEqual({ failed: false, absent: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A rerun whose engine fails returns the refusal with the record and the server keeps serving',
+      Gherkin.Do.pipe(
+        Given('a consumer project whose test command kills nothing')('workspace', () => writeWorkspace()),
+        When('the project is mutated, the test command is broken, and a client re-runs a survivor')(
+          'observed',
+          (s: { readonly workspace: Workspace }) =>
+            Effect.gen(function*() {
+              const seeded = yield* runStryker(s.workspace.directory, ['run'])
+              const driven = yield* driveRerunFailure(s.workspace.directory)
+              return { runCompleted: seeded.exitCode === 0, ...driven }
+            }).pipe(Effect.ensuring(removeWorkspace(s.workspace.directory))),
+        ),
+        Then('rerun_mutant refuses with the record and a later call is answered')(
+          (s: { readonly observed: RerunFailureObserved & { readonly runCompleted: boolean } }, expect) =>
+            expect({
+              runCompleted: s.observed.runCompleted,
+              failed: s.observed.failed,
+              recordTag: s.observed.recordTag,
+              exitCode: s.observed.exitCode,
+              stillServing: s.observed.stillServing,
+            }).toEqual({
+              runCompleted: true,
+              failed: true,
+              recordTag: 'BaselineTestsFailed',
+              exitCode: 5,
+              stillServing: true,
+            }),
+        ),
       ),
     )
   })

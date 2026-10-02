@@ -36,7 +36,7 @@ export namespace ImportClosure {
 
 // @public (undocumented)
 export namespace Mcp {
-    export { McpServerOptions, MutantDetail, MutantUnusable, RerunMutantFailure, ShowMutantFailure, mcpServerLayer, mcpToolkit };
+    export { FailureLookup, GetFailure, McpServerOptions, MutantDetail, MutantUnusable, RerunEngineUnusable, RerunMutantFailure, ShowMutantFailure, mcpServerLayer, mcpToolkit };
 }
 
 // @public (undocumented)

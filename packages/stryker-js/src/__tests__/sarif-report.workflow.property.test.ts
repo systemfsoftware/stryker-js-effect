@@ -1,16 +1,27 @@
+import { FailureRecord } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, type Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { sarifReport, SarifReportCommand, SarifReportRendered } from '../sarif-report.workflow.js'
+import {
+  FailureReportSource,
+  SarifFailureReportRendered,
+  sarifReport,
+  SarifReportCommand,
+  type SarifReportDecision,
+  SarifReportRendered,
+  SurvivorsReportSource,
+} from '../sarif-report.workflow.js'
 import type { SurvivorRef } from '../surfacing.schema.js'
 
 const GENEROUS_BUDGET = Number.MAX_SAFE_INTEGER
+const TEST_TOOL = { name: 'StrykerJS', version: '0.0.0', informationUri: 'https://stryker-mutator.io' } as const
 type Subject = typeof sarifReport
 
 const isSurvivorStatus = (status: string): boolean => status === 'Survived' || status === 'NoCoverage'
@@ -76,37 +87,69 @@ const refsOf = (report: Report.MutationTestResult): ReadonlyArray<SurvivorRef> =
 
 const commandArb: Arbitrary.Arbitrary<SarifReportCommand> = Arbitrary.all({
   report: reportArb,
-  tool: Arbitrary.all({
-    name: Arbitrary.schema(S.String),
-    version: Arbitrary.schema(S.String),
-    informationUri: Arbitrary.schema(S.String),
-  }),
   maxResults: Arbitrary.schema(S.Natural),
 }).pipe(
-  Arbitrary.map(({ report, ...rest }) => SarifReportCommand.make({ report, survivors: refsOf(report), ...rest })),
+  Arbitrary.map(({ report, maxResults }) =>
+    SarifReportCommand.make({
+      source: SurvivorsReportSource.make({ report, survivors: refsOf(report), maxResults }),
+      tool: TEST_TOOL,
+    })
+  ),
 )
 
 const withBudget = (
   command: SarifReportCommand,
   survivors: ReadonlyArray<SurvivorRef>,
   maxResults: number,
-): SarifReportCommand => SarifReportCommand.make({ report: command.report, survivors, tool: command.tool, maxResults })
+): SarifReportCommand => {
+  const source = command.source
+  return SarifReportCommand.make({
+    source: S.is(SurvivorsReportSource)(source)
+      ? SurvivorsReportSource.make({ report: source.report, survivors, maxResults })
+      : source,
+    tool: command.tool,
+  })
+}
+
+const survivorsOf = (command: SarifReportCommand): ReadonlyArray<SurvivorRef> =>
+  S.is(SurvivorsReportSource)(command.source) ? [...command.source.survivors] : []
 
 const decisionOf = (subject: Subject, command: SarifReportCommand) => subject(command).pipe(Result.getOrThrow)
 
 const runOf = (subject: Subject, command: SarifReportCommand) =>
   Option.getOrThrow(Arr.head(decisionOf(subject, command).log.runs))
 
+const failureDecisionOf = (source: FailureReportSource): SarifReportDecision =>
+  sarifReport(SarifReportCommand.make({ source, tool: TEST_TOOL })).pipe(Result.getOrThrow)
+
+const failureRunOf = (decision: SarifReportDecision) =>
+  Option.getOrThrow(
+    Arr.head(Option.getOrThrow(Option.liftPredicate(decision, S.is(SarifFailureReportRendered))).log.runs),
+  )
+
+const failureCodeOf = (record: FailureRecord.FailureRecord): FailureRecord.FailureCode =>
+  Option.getOrThrow(Arr.findFirst(FailureRecord.FailureCode.literals, (code) => Predicate.isTagged(record, code)))
+
+const recordLocationsOf = (record: FailureRecord.FailureRecord): ReadonlyArray<FailureRecord.SourceLocation> =>
+  Match.value(record).pipe(
+    Match.tag(
+      'BaselineTestsFailed',
+      (evidence) => Arr.flatMap(evidence.tests, (test) => Option.toArray(Option.fromNullishOr(test.location))),
+    ),
+    Match.orElse((): ReadonlyArray<FailureRecord.SourceLocation> => []),
+  )
+
 describe('sarifReport', () => {
   it.prop(
     '∀c_SarifReportCommand_≡AGenerousBudgetEmitsOneResultPerCommandedSurvivor',
     { of: [commandArb], subject: sarifReport },
     (subject, [command]) => {
-      const results = runOf(subject, withBudget(command, command.survivors, GENEROUS_BUDGET)).results
+      const survivors = survivorsOf(command)
+      const results = runOf(subject, withBudget(command, survivors, GENEROUS_BUDGET)).results
       const fingerprints = Arr.map(results, (result) => result.partialFingerprints.primaryLocationLineHash)
-      return results.length === command.survivors.length &&
+      return results.length === survivors.length &&
         new Set(fingerprints).size === results.length &&
-        fingerprints.every((id) => command.survivors.some((ref) => ref.id === id))
+        fingerprints.every((id) => survivors.some((ref) => ref.id === id))
     },
   )
 
@@ -123,20 +166,60 @@ describe('sarifReport', () => {
     '∀c_SarifReportCommand_≡AGenerousBudgetNeverTruncates',
     { of: [commandArb], subject: sarifReport },
     (subject, [command]) =>
-      S.is(SarifReportRendered)(decisionOf(subject, withBudget(command, command.survivors, GENEROUS_BUDGET))),
+      S.is(SarifReportRendered)(decisionOf(subject, withBudget(command, survivorsOf(command), GENEROUS_BUDGET))),
   )
 
   it.prop(
     '∀c_SarifReportCommand_≡AZeroResultBudgetEmitsNoResultAndDeclaresTheOmission',
     { of: [commandArb], subject: sarifReport },
     (subject, [command]) => {
-      const decision = decisionOf(subject, withBudget(command, command.survivors, 0))
+      const decision = decisionOf(subject, withBudget(command, survivorsOf(command), 0))
       const results = Option.getOrThrow(Arr.head(decision.log.runs)).results
       return Match.value(decision).pipe(
-        Match.tag('SarifReportRendered', () => results.length === 0 && command.survivors.length === 0),
+        Match.tag('SarifReportRendered', () => results.length === 0 && survivorsOf(command).length === 0),
         Match.tag('SarifReportTruncated', (truncated) => results.length === 0 && truncated.omitted > 0),
+        Match.tag('SarifFailureReportRendered', () => false),
         Match.exhaustive,
       )
+    },
+  )
+})
+
+describe('sarifReport failure notifications', () => {
+  it.prop(
+    '∀s_FailureReportSource_≡AFailedInvocationNotifiesOncePerRecord',
+    { of: [FailureReportSource], subject: failureDecisionOf },
+    (subject, [source]) => {
+      const invocation = Option.getOrThrow(Arr.head(failureRunOf(subject(source)).invocations))
+      return invocation.exitCode === source.exitCode &&
+        invocation.toolExecutionNotifications.length === source.records.length &&
+        Arr.every(
+          Arr.zip(source.records, invocation.toolExecutionNotifications),
+          ([record, notification]) =>
+            notification.descriptor.id === failureCodeOf(record) &&
+            notification.message.text === FailureRecord.sarifTextOf(record),
+        )
+    },
+  )
+
+  it.prop(
+    '∀s_FailureReportSource_≡OnlyLocatedBaselineTestsCarryAPhysicalLocation',
+    { of: [FailureReportSource], subject: failureDecisionOf },
+    (subject, [source]) => {
+      const notifications = Option.getOrThrow(Arr.head(failureRunOf(subject(source)).invocations))
+        .toolExecutionNotifications
+      return notifications.length === source.records.length &&
+        Arr.every(Arr.zip(source.records, notifications), ([record, notification]) => {
+          const expected = recordLocationsOf(record)
+          return notification.locations.length === expected.length &&
+            Arr.every(
+              Arr.zip(expected, notification.locations),
+              ([location, projected]) =>
+                decodeURIComponent(projected.physicalLocation.artifactLocation.uri) === location.file.toWellFormed() &&
+                projected.physicalLocation.region.startLine === location.line &&
+                projected.physicalLocation.region.startColumn === location.column,
+            )
+        })
     },
   )
 })
