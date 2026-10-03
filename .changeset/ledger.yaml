@@ -573,6 +573,12 @@
   dir: packages/stryker-js
   intents:
     - effect-4-stable
+"@systemfsoftware/stryker-js@15.0.1":
+  dir: packages/stryker-js
+  intents:
+    - clean-temp-dir-follows-run-outcome
+    - unresponsive-worker-teardown
+    - worker-boot-timeout
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
