@@ -1,4 +1,5 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
+import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
@@ -8,11 +9,17 @@ import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
 
 const Feature = makeFeature({ it })
 
-const FILE_PORTS = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+const FILE_AND_PATH = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+
+const FILE_PORTS = Layer.mergeAll(
+  FILE_AND_PATH,
+  NodeChildProcessSpawner.layer.pipe(Layer.provide(FILE_AND_PATH)),
+)
 
 const OBJECT_BROKEN_ID = '0000000000000001'
 const OBJECT_SIBLING_ID = '0000000000000002'
@@ -59,7 +66,13 @@ const observedOf = (
   }),
 })
 
-const checkFixture = (testCase: Case): Effect.Effect<Observation, never, FileSystem.FileSystem | Path.Path> =>
+const checkFixture = (
+  testCase: Case,
+): Effect.Effect<
+  Observation,
+  never,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> =>
   Effect.gen(function*() {
     const pathService = yield* Path.Path
     const here = yield* Effect.orDie(pathService.fromFileUrl(new URL(import.meta.url)))
@@ -194,6 +207,43 @@ const importCase: Case = {
   ],
 }
 
+const TCE_EQUIVALENT_ID = '0000000000000008'
+const TCE_KEPT_ID = '0000000000000009'
+const TCE_DUPLICATE_ID = '0000000000000010'
+
+const TCE_SITE = { start: { line: 1, column: 47 }, end: { line: 1, column: 52 } } as const
+
+const tceCase: Case = {
+  fixture: 'per-mutant-tce',
+  brokenId: TCE_EQUIVALENT_ID,
+  observedIds: [TCE_EQUIVALENT_ID, TCE_KEPT_ID, TCE_DUPLICATE_ID],
+  importerFile: 'dep.ts',
+  mutatedFile: 'dep.ts',
+  wires: (join) => [
+    {
+      id: TCE_EQUIVALENT_ID,
+      fileName: join('dep.ts'),
+      mutatorName: 'ArithmeticOperator',
+      replacement: 'a * 1',
+      location: TCE_SITE,
+    },
+    {
+      id: TCE_KEPT_ID,
+      fileName: join('dep.ts'),
+      mutatorName: 'ArithmeticOperator',
+      replacement: 'a / 1',
+      location: TCE_SITE,
+    },
+    {
+      id: TCE_DUPLICATE_ID,
+      fileName: join('dep.ts'),
+      mutatorName: 'ArithmeticOperator',
+      replacement: 'a/1',
+      location: TCE_SITE,
+    },
+  ],
+}
+
 Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
   .withLayer(FILE_PORTS)
   .live('one warm TypeScript 7 program and the real filesystem settle batches in process')
@@ -297,6 +347,23 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
             batches: [[IMPORT_ID]],
             statuses: { [IMPORT_ID]: 'compileError' },
             missingModule: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A mutant that emits the same JavaScript as the original or a sibling is ignored',
+      Gherkin.Do.pipe(
+        When('three mutants of one site are handed to the checker runtime')('seen', () => checkFixture(tceCase)),
+        Then('the original-equal and duplicate mutants are ignored while the changed one passes')((s, expect) =>
+          expect({ batches: s.seen.batches, statuses: s.seen.statuses }).toEqual({
+            batches: [[TCE_EQUIVALENT_ID, TCE_KEPT_ID, TCE_DUPLICATE_ID]],
+            statuses: {
+              [TCE_EQUIVALENT_ID]: 'ignored',
+              [TCE_KEPT_ID]: 'passed',
+              [TCE_DUPLICATE_ID]: 'ignored',
+            },
           })
         ),
       ),

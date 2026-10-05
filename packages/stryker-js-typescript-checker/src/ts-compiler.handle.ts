@@ -5,13 +5,14 @@ import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interf
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
-import type * as FileSystem from 'effect/FileSystem'
+import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type * as Path from 'effect/Path'
+import * as Path from 'effect/Path'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
@@ -46,6 +47,13 @@ import {
   type DiagnosticSeverity,
   type NodeDecodedShape,
 } from './CheckMutants.schema.js'
+import {
+  classifyTce,
+  ClassifyTceCommand,
+  type TceCandidate,
+  type TceClassification,
+  type TceDecision,
+} from './classify-tce.workflow.js'
 import { type CompilerError, CompilerFailed, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
 import { groupMutants } from './group-mutants.workflow.js'
 import { overrideTsconfigOptions } from './override-tsconfig-options.workflow.js'
@@ -53,6 +61,7 @@ import { parseTsconfigText } from './parse-tsconfig-text.workflow.js'
 import { planDiagnosticBatches } from './plan-diagnostic-batches.workflow.js'
 import { planResolutionCandidates } from './plan-resolution-candidates.workflow.js'
 import { requestAffectedFiles } from './request-affected-files.workflow.js'
+import { emitNormalized } from './tce-emit.js'
 import { traceAffectedFiles } from './trace-affected-files.workflow.js'
 import {
   getFile,
@@ -118,6 +127,7 @@ interface TSCompilerRuntime {
   readonly options: Options.StrykerOptions
   readonly host: FileSystem.FileSystem
   readonly pathService: Path.Path
+  readonly spawner: ChildProcessSpawner.ChildProcessSpawner['Service']
   readonly files: TSFiles
   readonly sourceFileSystem: TSFileSystem
   readonly state: SynchronizedRef.SynchronizedRef<CompilerState>
@@ -137,16 +147,28 @@ const decided = <A>(result: Result.Result<A, never>): A =>
 export const make: {
   (
     options: Options.StrykerOptions,
-    services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
+    services: {
+      readonly host: FileSystem.FileSystem
+      readonly pathService: Path.Path
+      readonly spawner: ChildProcessSpawner.ChildProcessSpawner['Service']
+    },
   ): Effect.Effect<TSCompiler>
   (
-    services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
+    services: {
+      readonly host: FileSystem.FileSystem
+      readonly pathService: Path.Path
+      readonly spawner: ChildProcessSpawner.ChildProcessSpawner['Service']
+    },
   ): (options: Options.StrykerOptions) => Effect.Effect<TSCompiler>
 } = dual(
   2,
   Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerMake.name)(function*(
     options: Options.StrykerOptions,
-    services: { readonly host: FileSystem.FileSystem; readonly pathService: Path.Path },
+    services: {
+      readonly host: FileSystem.FileSystem
+      readonly pathService: Path.Path
+      readonly spawner: ChildProcessSpawner.ChildProcessSpawner['Service']
+    },
   ) {
     const files = makeTSFiles(services.host)
     const tsconfigFile = normalizeFileName(options.tsconfigFile)
@@ -165,6 +187,7 @@ export const make: {
       options,
       host: services.host,
       pathService: services.pathService,
+      spawner: services.spawner,
       files,
       sourceFileSystem: tsFileSystem(files),
       state,
@@ -949,6 +972,7 @@ interface OwnedSourceFile {
 export interface MutantCheck {
   readonly mutantId: Checker.CheckerMutantWire['id']
   readonly diagnostics: ReadonlyArray<Diagnostic>
+  readonly tce?: TceClassification
 }
 
 const projectOfFile = (
@@ -1083,6 +1107,132 @@ interface CheckAccumulator {
   readonly results: ReadonlyArray<MutantCheck>
 }
 
+const siteKeyOf = (mutant: Checker.CheckerMutantWire): string =>
+  `${mutant.fileName}:${mutant.location.start.line}:${mutant.location.start.column}:${mutant.location.end.line}:${mutant.location.end.column}`
+
+const splicedContentOf = (file: ScriptFile, mutant: Checker.CheckerMutantWire): Option.Option<string> =>
+  Option.map(
+    Option.all([
+      offsetAt(file.lineStarts, mutant.location.start),
+      offsetAt(file.lineStarts, mutant.location.end),
+    ]),
+    ([start, end]) => file.originalContent.slice(0, start) + mutant.replacement + file.originalContent.slice(end),
+  )
+
+interface TceEntry {
+  readonly key: string
+  readonly content: string
+  readonly site: string
+}
+
+const tceEntriesOf = (
+  script: ScriptFile,
+  fileMutants: readonly Checker.CheckerMutantWire[],
+): ReadonlyArray<TceEntry> =>
+  Arr.getSomes(
+    Arr.map(
+      fileMutants,
+      (mutant): Option.Option<TceEntry> =>
+        Option.map(splicedContentOf(script, mutant), (content) => ({
+          key: mutant.id,
+          content,
+          site: siteKeyOf(mutant),
+        })),
+    ),
+  )
+
+const tceCandidatesOf = (
+  entries: ReadonlyArray<TceEntry>,
+  byKey: HashMap.HashMap<string, string>,
+): ReadonlyArray<TceCandidate> =>
+  Arr.getSomes(
+    Arr.map(entries, (entry): Option.Option<TceCandidate> =>
+      Option.map(HashMap.get(byKey, entry.key), (emit) => ({
+        id: entry.key,
+        site: entry.site,
+        emit,
+      }))),
+  )
+
+const emitForFile = (
+  rt: TSCompilerRuntime,
+  tsconfigFile: string,
+  fileName: string,
+  script: ScriptFile,
+  entries: ReadonlyArray<TceEntry>,
+) =>
+  emitNormalized({
+    tsconfigFile,
+    sourceExtension: rt.pathService.extname(fileName),
+    originalContent: script.originalContent,
+    mutants: Arr.map(entries, (entry) => ({ key: entry.key, content: entry.content })),
+  }).pipe(
+    Effect.provideService(FileSystem.FileSystem, rt.host),
+    Effect.provideService(Path.Path, rt.pathService),
+    Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, rt.spawner),
+  )
+
+const decisionsOfFile = Effect.fnUntraced(function*(
+  rt: TSCompilerRuntime,
+  tsconfigFile: string,
+  fileName: string,
+  fileMutants: readonly Checker.CheckerMutantWire[],
+): Effect.fn.Return<ReadonlyArray<TceDecision>> {
+  const file = yield* getFile(rt.files, fileName)
+  const entries = Option.match(file, {
+    onNone: (): ReadonlyArray<TceEntry> => [],
+    onSome: (script) => tceEntriesOf(script, fileMutants),
+  })
+  const emitted = yield* Option.match(Option.liftPredicate(entries, (present) => present.length > 0), {
+    onNone: () => Effect.succeedNone,
+    onSome: (present) => emitForFile(rt, tsconfigFile, fileName, Option.getOrThrow(file), present),
+  })
+  return Option.match(emitted, {
+    onNone: (): ReadonlyArray<TceDecision> => [],
+    onSome: (result) =>
+      decided(
+        classifyTce(
+          ClassifyTceCommand.make({
+            originalEmit: result.original,
+            candidates: tceCandidatesOf(entries, result.byKey),
+          }),
+        ),
+      ),
+  })
+})
+
+const classifyBatchTce = Effect.fnUntraced(function*(
+  rt: TSCompilerRuntime,
+  tsconfigFile: string,
+  mutants: readonly Checker.CheckerMutantWire[],
+  checked: ReadonlyArray<MutantCheck>,
+): Effect.fn.Return<ReadonlyArray<MutantCheck>> {
+  const passedIds = HashSet.fromIterable(
+    Arr.map(Arr.filter(checked, (entry) => entry.diagnostics.length === 0), (entry) => entry.mutantId),
+  )
+  const passedMutants = Arr.filter(mutants, (mutant) => HashSet.has(passedIds, mutant.id))
+  const fileNames = Arr.dedupe(Arr.map(passedMutants, (mutant) => resolveFileName(rt, mutant.fileName)))
+  const perFile = yield* Effect.forEach(
+    fileNames,
+    (fileName) =>
+      decisionsOfFile(
+        rt,
+        tsconfigFile,
+        fileName,
+        Arr.filter(passedMutants, (mutant) => resolveFileName(rt, mutant.fileName) === fileName),
+      ),
+  )
+  const decisions = Arr.flatten(perFile)
+  return Arr.map(
+    checked,
+    (entry) =>
+      Option.match(Arr.findFirst(decisions, (decision) => decision.id === entry.mutantId), {
+        onNone: () => entry,
+        onSome: (decision) => ({ ...entry, tce: decision.classification }),
+      }),
+  )
+})
+
 export const check: {
   (
     mutants: readonly Checker.CheckerMutantWire[],
@@ -1115,16 +1265,20 @@ export const check: {
           (result): CheckAccumulator => ({ previous: Option.some(mutant), results: [...previous.results, result] }),
         ),
     )
-    const checked = accumulated.results
+    const checked = yield* classifyBatchTce(rt, state.tsconfigFile, mutants, accumulated.results)
     yield* SynchronizedRef.update(rt.state, (prev) => ({
       ...prev,
       lastMutants: [...mutants],
       lastMutatedFileNames: batchFileNames,
     }))
     const failed = Arr.filter(checked, (entry) => entry.diagnostics.length > 0)
+    const equivalentToOriginal = Arr.filter(checked, (entry) => entry.tce === 'original').length
+    const duplicateAtSite = Arr.filter(checked, (entry) => entry.tce === 'sibling').length
     yield* Effect.annotateCurrentSpan({
       'typescript.diagnostics.count': Arr.reduce(checked, 0, (total, entry) => total + entry.diagnostics.length),
       'typescript.compile_errors.count': failed.length,
+      'typescript.tce.equivalent_to_original.count': equivalentToOriginal,
+      'typescript.tce.duplicate_at_site.count': duplicateAtSite,
     })
     yield* annotateDiagnosticSample(Arr.flatten(Arr.map(failed, (entry) => entry.diagnostics)))
     return checked

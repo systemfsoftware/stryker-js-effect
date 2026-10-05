@@ -13,6 +13,11 @@ const FailedCheckResultSchema = S.Struct({
   reason: S.String,
 })
 
+const IgnoredCheckResultSchema = S.Struct({
+  status: S.Literal('ignored'),
+  reason: S.String,
+})
+
 export class CheckedPlanPassed extends S.TaggedClass<CheckedPlanPassed>()('CheckedPlanPassed', {
   mutantId: Mutant.MutantId,
   entryIndex: S.Int,
@@ -29,7 +34,16 @@ export class CheckedPlanFailed extends S.TaggedClass<CheckedPlanFailed>()('Check
   readonly [CheckedPlanTypeId] = CheckedPlanTypeId
 }
 
-export type CheckedPlanDecision = CheckedPlanPassed | CheckedPlanFailed
+export class CheckedPlanIgnored extends S.TaggedClass<CheckedPlanIgnored>()('CheckedPlanIgnored', {
+  mutantId: Mutant.MutantId,
+  entryIndex: S.Int,
+  reason: S.String,
+  result: IgnoredCheckResultSchema,
+}) {
+  readonly [CheckedPlanTypeId] = CheckedPlanTypeId
+}
+
+export type CheckedPlanDecision = CheckedPlanPassed | CheckedPlanFailed | CheckedPlanIgnored
 
 export class PartitionCheckedPlansCommand extends S.TaggedClass<PartitionCheckedPlansCommand>()(
   'PartitionCheckedPlansCommand',
@@ -40,7 +54,9 @@ export class PartitionCheckedPlansCommand extends S.TaggedClass<PartitionChecked
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-const isFailed = (result: Checker.CheckResult): result is Checker.FailedCheckResult => result.status !== 'passed'
+const isFailed = (result: Checker.CheckResult): result is Checker.FailedCheckResult => result.status === 'compileError'
+
+const isIgnored = (result: Checker.CheckResult): result is Checker.IgnoredCheckResult => result.status === 'ignored'
 
 const failedReasonOf = (failed: Checker.FailedCheckResult): string => failed.reason
 
@@ -49,10 +65,14 @@ const decideCheckedPlan = (
   result: Checker.CheckResult,
   entryIndex: number,
 ): CheckedPlanDecision =>
-  Option.match(Option.liftPredicate(result, isFailed), {
-    onNone: () => CheckedPlanPassed.make({ mutantId, entryIndex }),
-    onSome: (failed) =>
-      CheckedPlanFailed.make({ mutantId, entryIndex, reason: failedReasonOf(failed), result: failed }),
+  Option.match(Option.liftPredicate(result, isIgnored), {
+    onSome: (ignored) => CheckedPlanIgnored.make({ mutantId, entryIndex, reason: ignored.reason, result: ignored }),
+    onNone: () =>
+      Option.match(Option.liftPredicate(result, isFailed), {
+        onNone: () => CheckedPlanPassed.make({ mutantId, entryIndex }),
+        onSome: (failed) =>
+          CheckedPlanFailed.make({ mutantId, entryIndex, reason: failedReasonOf(failed), result: failed }),
+      }),
   })
 
 const decide = (
@@ -64,7 +84,7 @@ const decide = (
 
 export const partitionCheckedPlans = Workflow.make({
   command: PartitionCheckedPlansCommand,
-  decision: S.Array(S.Union([CheckedPlanPassed, CheckedPlanFailed])),
+  decision: S.Array(S.Union([CheckedPlanPassed, CheckedPlanFailed, CheckedPlanIgnored])),
   error: S.Never,
   decide,
 })

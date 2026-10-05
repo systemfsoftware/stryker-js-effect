@@ -250,6 +250,11 @@ export class ReuseReported extends S.TaggedClass<ReuseReported>()('reuse', {
   refused: ReuseRefusals,
 }) {}
 
+export class TceReported extends S.TaggedClass<TceReported>()('tce', {
+  equivalentToOriginal: Report.NonNegativeInt,
+  duplicateAtSite: Report.NonNegativeInt,
+}) {}
+
 export class MutantDetailReported extends S.TaggedClass<MutantDetailReported>()('mutant-detail', {
   id: Mutant.MutantId,
   status: Mutant.MutantStatusSchema,
@@ -301,6 +306,7 @@ export const RunEvent = Object.assign(
     FormatRegistryResolved,
     SkippedReported,
     ReuseReported,
+    TceReported,
     MutantDetailReported,
     FeedbackReported,
     VerdictReached,

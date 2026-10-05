@@ -19,6 +19,7 @@ import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
 import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.plans.js'
 import {
   CheckedPlanFailed,
+  CheckedPlanIgnored,
   CheckedPlanPassed,
   partitionCheckedPlans,
   PartitionCheckedPlansCommand,
@@ -34,6 +35,7 @@ export type CheckerPool = Pool.Pool<CheckerSlot, StageError | CheckerCrash>
 export interface CheckedPlans {
   readonly passedPlans: readonly Mutant.MutantRunPlan[]
   readonly failedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[]
+  readonly ignoredChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.IgnoredCheckResult])[]
 }
 
 const CheckerPoolHandle = Handle.make<Record<never, never>, CheckerPool>()(TypeId)
@@ -108,6 +110,8 @@ const noPassedPlans: readonly Mutant.MutantRunPlan[] = []
 
 const noFailedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[] = []
 
+const noIgnoredChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.IgnoredCheckResult])[] = []
+
 export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitChecked.name)(function*(
   checked: readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResult])[],
 ) {
@@ -132,7 +136,17 @@ export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitCh
           Option.toArray(Option.map(Array.get(checked, failed.entryIndex), ([plan]) => [plan, failed.result] as const)),
       }),
   )
-  return { passedPlans, failedChecks }
+  const ignoredChecks = decisions.flatMap(
+    (decision): readonly (readonly [Mutant.MutantRunPlan, Checker.IgnoredCheckResult])[] =>
+      Option.match(Option.liftPredicate(decision, S.is(CheckedPlanIgnored)), {
+        onNone: () => [],
+        onSome: (ignored) =>
+          Option.toArray(
+            Option.map(Array.get(checked, ignored.entryIndex), ([plan]) => [plan, ignored.result] as const),
+          ),
+      }),
+  )
+  return { passedPlans, failedChecks, ignoredChecks }
 })
 
 const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], StageError | CheckerCrash> =>
@@ -143,7 +157,17 @@ const failedElement = (
 ): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
   Option.match(Array.head(failedChecks), {
     onNone: () => Stream.empty,
-    onSome: () => Stream.succeed<CheckedPlans>({ passedPlans: noPassedPlans, failedChecks }),
+    onSome: () =>
+      Stream.succeed<CheckedPlans>({ passedPlans: noPassedPlans, failedChecks, ignoredChecks: noIgnoredChecks }),
+  })
+
+const ignoredElement = (
+  ignoredChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.IgnoredCheckResult])[],
+): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
+  Option.match(Array.head(ignoredChecks), {
+    onNone: () => Stream.empty,
+    onSome: () =>
+      Stream.succeed<CheckedPlans>({ passedPlans: noPassedPlans, failedChecks: noFailedChecks, ignoredChecks }),
   })
 
 const checkedGroupsFor = (
@@ -153,7 +177,12 @@ const checkedGroupsFor = (
   plans: readonly Mutant.MutantRunPlan[],
 ): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
   Option.match(Array.get(checkerNames, checkerIndex), {
-    onNone: () => Stream.succeed<CheckedPlans>({ passedPlans: plans, failedChecks: noFailedChecks }),
+    onNone: () =>
+      Stream.succeed<CheckedPlans>({
+        passedPlans: plans,
+        failedChecks: noFailedChecks,
+        ignoredChecks: noIgnoredChecks,
+      }),
     onSome: (checkerName) =>
       Stream.unwrap(
         onCheckerSlot(pool, checkerIndex, (checker) => groupPlansWithChecker(checker, checkerName, plans)).pipe(
@@ -169,8 +198,11 @@ const checkedGroupsFor = (
               ),
               Stream.flatMap((split) =>
                 Stream.concat(
-                  failedElement(split.failedChecks),
-                  checkedGroupsFor(pool, checkerNames, checkerIndex + 1, split.passedPlans),
+                  ignoredElement(split.ignoredChecks),
+                  Stream.concat(
+                    failedElement(split.failedChecks),
+                    checkedGroupsFor(pool, checkerNames, checkerIndex + 1, split.passedPlans),
+                  ),
                 )
               ),
             )
@@ -195,7 +227,12 @@ export const checkPlansStream: {
   ): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
     Option.fromNullishOr(checkerPool).pipe(
       Option.match({
-        onNone: () => Stream.succeed<CheckedPlans>({ passedPlans: plans, failedChecks: noFailedChecks }),
+        onNone: () =>
+          Stream.succeed<CheckedPlans>({
+            passedPlans: plans,
+            failedChecks: noFailedChecks,
+            ignoredChecks: noIgnoredChecks,
+          }),
         onSome: (handle) =>
           checkerNamesOf(CheckerPoolHandle.slot(handle)).pipe(
             Effect.map((checkerNames) => checkedGroupsFor(CheckerPoolHandle.slot(handle), checkerNames, 0, plans)),
@@ -213,15 +250,18 @@ export const checkPlans = Effect.fnUntraced(function*(
   const checkedGroups = yield* Stream.runCollect(checkPlansStream(checkerPool, plans))
   const passedPlans: Mutant.MutantRunPlan[] = []
   const failedChecks: (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[] = []
+  const ignoredChecks: (readonly [Mutant.MutantRunPlan, Checker.IgnoredCheckResult])[] = []
   for (const group of checkedGroups) {
     passedPlans.push(...group.passedPlans)
     failedChecks.push(...group.failedChecks)
+    ignoredChecks.push(...group.ignoredChecks)
   }
-  return { passedPlans, failedChecks } satisfies CheckedPlans
+  return { passedPlans, failedChecks, ignoredChecks } satisfies CheckedPlans
 })
 
 export interface CheckedPlansExecution<A, E> {
   readonly settleFailure: (plan: Mutant.MutantRunPlan, result: Checker.FailedCheckResult) => Effect.Effect<A, E>
+  readonly settleIgnored: (plan: Mutant.MutantRunPlan, result: Checker.IgnoredCheckResult) => Effect.Effect<A, E>
   readonly runPlan: (plan: Mutant.MutantRunPlan) => Effect.Effect<A, E>
   readonly concurrency: number
 }
@@ -243,9 +283,10 @@ export const runCheckedPlans: {
     execution: CheckedPlansExecution<A, E>,
   ): Stream.Stream<A, E | StageError | CheckerCrash> =>
     self.pipe(
-      Stream.flatMap(({ passedPlans, failedChecks }) =>
+      Stream.flatMap(({ passedPlans, failedChecks, ignoredChecks }) =>
         Stream.fromIterable<() => Effect.Effect<A, E>>([
           ...failedChecks.map(([plan, result]) => () => execution.settleFailure(plan, result)),
+          ...ignoredChecks.map(([plan, result]) => () => execution.settleIgnored(plan, result)),
           ...passedPlans.map((plan) => () => execution.runPlan(plan)),
         ])
       ),

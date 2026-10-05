@@ -7,11 +7,13 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 
 import { checkMutants, type CheckOutcome } from '../check-mutants.workflow.js'
-import { CheckMutantsInput, type DiagnosticDecoded } from '../CheckMutants.schema.js'
+import { CheckMutantsInput, type DiagnosticDecoded, MutantVerdict } from '../CheckMutants.schema.js'
+
+type Status = 'passed' | 'compileError' | 'ignored'
 
 interface Expected {
   readonly id: string
-  readonly failed: boolean
+  readonly status: Status
   readonly reason: string
 }
 
@@ -19,23 +21,38 @@ const renderedLine = (diagnostic: DiagnosticDecoded): string =>
   diagnostic.position + diagnostic.severity + ' TS' + diagnostic.code + ': ' + diagnostic.text
 
 const expectedOutcomes = (input: CheckMutantsInput): ReadonlyArray<Expected> => {
-  const diagnostics = HashMap.fromIterable(
-    Arr.map(input.verdicts, (verdict) => [verdict.id, verdict.diagnostics] as const),
-  )
+  const verdicts = HashMap.fromIterable(Arr.map(input.verdicts, (verdict) => [verdict.id, verdict] as const))
   return Arr.map(input.mutants, (mutant) => {
-    const reason = Arr.map(
-      Option.getOrElse(HashMap.get(diagnostics, mutant.id), (): ReadonlyArray<DiagnosticDecoded> => []),
-      renderedLine,
-    ).join('\n')
-    return { id: mutant.id, failed: reason !== '', reason }
+    const verdict: MutantVerdict = Option.getOrElse(
+      HashMap.get(verdicts, mutant.id),
+      () => MutantVerdict.make({ id: mutant.id, diagnostics: [] }),
+    )
+    const reason = Arr.map(verdict.diagnostics, renderedLine).join('\n')
+    if (reason !== '') return { id: mutant.id, status: 'compileError' as const, reason }
+    if (verdict.tce === 'original') {
+      return { id: mutant.id, status: 'ignored' as const, reason: 'equivalent-to-original: tce' }
+    }
+    if (verdict.tce === 'sibling') {
+      return { id: mutant.id, status: 'ignored' as const, reason: 'duplicate-at-site: tce' }
+    }
+    return { id: mutant.id, status: 'passed' as const, reason: '' }
   })
 }
 
 const observedOutcomes = (outcomes: ReadonlyArray<CheckOutcome>): ReadonlyArray<Expected> =>
   Arr.map(outcomes, (outcome) =>
     Match.value(outcome).pipe(
-      Match.tag('MutantPassed', (passed): Expected => ({ id: passed.id, failed: false, reason: '' })),
-      Match.tag('MutantFailed', (failed): Expected => ({ id: failed.id, failed: true, reason: failed.reason })),
+      Match.tag('MutantPassed', (passed): Expected => ({ id: passed.id, status: 'passed', reason: '' })),
+      Match.tag('MutantFailed', (failed): Expected => ({
+        id: failed.id,
+        status: 'compileError',
+        reason: failed.reason,
+      })),
+      Match.tag('MutantIgnored', (ignored): Expected => ({
+        id: ignored.id,
+        status: 'ignored',
+        reason: ignored.reason,
+      })),
       Match.exhaustive,
     ))
 

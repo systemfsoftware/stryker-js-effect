@@ -50,6 +50,15 @@ import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 import { scoped as testRunnerPoolScoped } from './test-runner-pool.blueprint.js'
 
+const TCE_EQUIVALENT_TO_ORIGINAL_REASON = 'equivalent-to-original: tce'
+
+const TCE_DUPLICATE_AT_SITE_REASON = 'duplicate-at-site: tce'
+
+const countIgnoredByReason = (
+  results: readonly Mutant.RunMutantResult[],
+  reason: string,
+): number => results.filter((result) => result.status === 'Ignored' && result.statusReason === reason).length
+
 export interface MutationTestDone {
   readonly results: readonly Mutant.RunMutantResult[]
   readonly verdict: Plugin.ExitClass | null
@@ -180,6 +189,10 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
             reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result).pipe(
               Effect.flatMap(settleReported),
             ),
+          settleIgnored: (mutantPlan, result) =>
+            reporting.reportIgnored(toReportedMutant(mutantPlan.mutant), result).pipe(
+              Effect.flatMap(settleReported),
+            ),
           runPlan: (runPlan) =>
             Option.match(Option.liftPredicate(runPlan, isNoCoveragePlan), {
               onNone: () => Effect.scoped(mutantRunCell.run({ context, testRunnerPool, checkpoint, plan: runPlan })),
@@ -209,6 +222,13 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     mutantDetailEventsOf({ requested: requestedIdsOf(prev.options), results: allResults }),
     (detail) => Queue.offer(progressQueue, detail),
     { discard: true },
+  )
+  yield* Queue.offer(
+    progressQueue,
+    RunEvent.TceReported.make({
+      equivalentToOriginal: countIgnoredByReason(allResults, TCE_EQUIVALENT_TO_ORIGINAL_REASON),
+      duplicateAtSite: countIgnoredByReason(allResults, TCE_DUPLICATE_AT_SITE_REASON),
+    }),
   )
   const outcomeResult = yield* reporting.reportAll({
     ...reportingInputOf({ prev, env, results: allResults }),

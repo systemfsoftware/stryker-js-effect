@@ -32,6 +32,9 @@
       "$ref": "#/definitions/reuseEncoded"
     },
     {
+      "$ref": "#/definitions/tceEncoded"
+    },
+    {
       "$ref": "#/definitions/mutant-detailEncoded"
     },
     {
@@ -605,6 +608,31 @@
         "reused",
         "ran",
         "refused"
+      ],
+      "additionalProperties": true
+    },
+    "tceEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "tce"
+          ]
+        },
+        "equivalentToOriginal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duplicateAtSite": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "_tag",
+        "equivalentToOriginal",
+        "duplicateAtSite"
       ],
       "additionalProperties": true
     },
