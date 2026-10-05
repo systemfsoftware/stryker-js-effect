@@ -55,7 +55,12 @@ const DISCARD_TEXTS: Readonly<
   Record<DiscardReason, (command: ReadProjectCommand, discard: IncrementalReportDiscardShape) => string>
 > = {
   noPriorRecord: (command) =>
-    `Unable to parse incremental result file at ${command.incrementalFile}; a full mutation testing run will be performed.`,
+    `Unable to parse incremental result file at ${command.incrementalFile}${
+      Option.match(Option.fromUndefinedOr(command.decodeError), {
+        onNone: () => '',
+        onSome: (error) => `: ${error}`,
+      })
+    }; a full mutation testing run will be performed.`,
   cacheLayoutChanged: (command, discard) =>
     `Incremental result file at ${command.incrementalFile} has cache layout version ${
       discard.actual ?? ''
@@ -187,13 +192,22 @@ const resolveInputFileNames = (
 
 const parseAndDecodeIncrementalReport = S.decodeUnknownResult(S.fromJsonString(IncrementalReportSchema))
 
-const reportOf = (contents: string | undefined) =>
-  Option.getOrUndefined(
-    Option.flatMap(
-      Option.fromUndefinedOr(contents),
-      (text) => Result.getSuccess(parseAndDecodeIncrementalReport(text)),
-    ),
-  )
+const decodeFailureText = (failure: S.SchemaError): string => failure.message.replace(/\s+/gu, ' ').trim()
+
+interface IncrementalReportRead {
+  readonly report?: IncrementalReport | undefined
+  readonly decodeError?: string | undefined
+}
+
+const reportReadOf = (contents: string | undefined): IncrementalReportRead =>
+  Option.match(Option.fromUndefinedOr(contents), {
+    onNone: (): IncrementalReportRead => ({}),
+    onSome: (text) =>
+      Result.match(parseAndDecodeIncrementalReport(text), {
+        onFailure: (failure): IncrementalReportRead => ({ decodeError: decodeFailureText(failure) }),
+        onSuccess: (report): IncrementalReportRead => ({ report }),
+      }),
+  })
 
 const incrementalContentsOf = (
   fs: FileSystem.FileSystem,
@@ -331,6 +345,7 @@ type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
   readonly incremental: boolean
   readonly incrementalFile: string
   readonly contents: string | undefined
+  readonly decodeError: string | undefined
   readonly fileDescriptions: Record<string, { readonly mutate: Instrument.MutateDescription }>
   readonly testFiles: readonly string[]
 }
@@ -379,9 +394,10 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
   )
   const runInputsDigest = yield* runInputsDigestOf(fs, pathService, input.basePath, options)
   const contents = Option.getOrUndefined(yield* incrementalContentsOf(fs, options))
+  const reportRead = reportReadOf(contents)
   const command: ReadProjectCommand = {
     _tag: 'AdmitIncrementalReportCommand',
-    report: reportOf(contents),
+    report: reportRead.report,
     expectedIncrementalVersion: INCREMENTAL_CACHE_VERSION,
     verdictSemanticsVersion: VERDICT_SEMANTICS_VERSION,
     mutantSetPolicy: options.mutator.mutantSetPolicy,
@@ -392,6 +408,7 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
     incremental: options.incremental,
     incrementalFile: options.incrementalFile,
     contents,
+    decodeError: reportRead.decodeError,
     fileDescriptions: decision.fileDescriptions,
     testFiles: [...decision.testFiles],
   }
