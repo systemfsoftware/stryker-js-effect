@@ -163,7 +163,8 @@ export const routeCliRequest = Workflow.make({
             updateBudgetBaseline: gate.updateBudgetBaseline,
           }),
         )),
-      Match.tag('annotate', (annotate) => Result.succeed(CliAnnotateRequested.make({ baseline: annotate.baseline }))),
+      Match.tag('annotate', (annotate) =>
+        Result.succeed(CliAnnotateRequested.make({ baseline: annotate.baseline }))),
       Match.tag('plan', (plan) =>
         Result.succeed(
           CliPlanRequested.make({
