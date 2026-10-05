@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      full:
+        description: Re-verify every mutant instead of reusing the incremental cache
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 3 * * *"
 
 concurrency:
   group: mutation-${{ github.ref }}
@@ -13,54 +20,83 @@ permissions:
   contents: read
 
 env:
-  TIMINGS: deno run --config=scripts/deno.json --allow-read --allow-write --allow-env scripts/mutation-timings.ts
-  MUTATION_JOB: deno run --config=scripts/deno.json --allow-read --allow-write --allow-env --allow-run=timeout scripts/mutation-job.ts
-  TARGET_SECONDS: 900
+  TARGET_SECONDS: 300
+  MAX_SHARDS: 20
+  PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,test/e2e-core
+  PUBLISHED_CLI: ${{ github.workspace }}/packages/stryker-js/node_modules/.bin/stryker
+  PLAN: plan.json
+  INCREMENTAL_REPORTS: |
+    packages/stryker-js/reports/stryker-incremental.json
+    packages/stryker-js-typescript-checker/reports/stryker-incremental.json
+    packages/stryker-js-vitest-runner/reports/stryker-incremental.json
+    test/e2e-core/reports/stryker-incremental.json
+  BUDGET_BASELINE: .stryker/budget-baseline.json
 
 jobs:
   plan:
-    name: plan · mutation jobs from recorded timings
+    name: plan · shards from the incremental cost record
     if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     permissions:
       contents: read
-      actions: read
     outputs:
-      jobs: ${{ steps.plan.outputs.jobs }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+      incrementalKey: ${{ steps.cache-key.outputs.key }}
     steps:
       - uses: actions/checkout@v7
-      - uses: denoland/setup-deno@v2
-      - name: Latest timing record from main
+
+      - id: cache-key
+        name: Content key of the incremental report
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p .timings/previous
-          id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=mutation-timings&per_page=100" \
-            --jq '[.artifacts[] | select(.expired | not) | select(.workflow_run.head_branch == "main")][0].id // empty') || id=
-          if [ -n "$id" ] && gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > .timings/previous.zip; then
-            unzip -o -q .timings/previous.zip -d .timings/previous || true
-          fi
-          ls .timings/previous
+          KEY: mutation-incremental-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'packages/**/src/**', 'packages/**/stryker.config.ts', 'test/e2e-core/src/**', 'test/e2e-core/stryker.config.ts') }}
+        run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Restore the incremental report of the last run
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.INCREMENTAL_REPORTS }}
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            mutation-incremental-
+
       - id: plan
-        run: $TIMINGS plan --target "$TARGET_SECONDS" --max-jobs 20 --unknown-seconds "$TARGET_SECONDS" --record .timings/previous/mutation-timings.json
+        name: Plan
+        env:
+          FULL: ${{ (github.event_name == 'schedule' || github.event.inputs.full == 'true') && '--full' || '' }}
+        run: |
+          $PUBLISHED_CLI plan \
+            --target-seconds "$TARGET_SECONDS" \
+            --max-shards "$MAX_SHARDS" \
+            --projects "$PROJECTS" \
+            --out "$PLAN" \
+            $FULL
+          echo "matrix=$(jq -c '.matrix' "$PLAN")" >> "$GITHUB_OUTPUT"
+          echo "count=$(jq '.matrix.include | length' "$PLAN")" >> "$GITHUB_OUTPUT"
+
       - uses: actions/upload-artifact@v7
         with:
-          name: mutation-timings-previous
-          path: .timings/previous/
-          if-no-files-found: ignore
+          name: shard-plan
+          path: ${{ env.PLAN }}
           retention-days: 1
 
   mutation:
-    name: mutation · ${{ matrix.job.name }}
+    name: mutation · shard ${{ matrix.shard }}
     needs: plan
-    if: ${{ needs.plan.result == 'success' && needs.plan.outputs.jobs != '[]' }}
+    if: ${{ needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        job: ${{ fromJSON(needs.plan.outputs.jobs) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -69,79 +105,58 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: denoland/setup-deno@v2
-      - name: Build
-        run: pnpm exec turbo run build --output-logs=errors-only --log-order=stream ${{ matrix.job.filters }}
-
-      - uses: actions/cache/restore@v6
+      - uses: actions/download-artifact@v8
         with:
-          path: .stryker-incremental
-          key: stryker-incremental-${{ github.run_id }}
+          name: shard-plan
+
+      - name: Build the projects this shard mutates
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          mapfile -t filters < <(
+            jq -r --arg shard "$SHARD" \
+              '.shards[] | select("\(.index)/\(.count)" == $shard) | .projects[].project' "$PLAN" \
+              | sort -u | sed 's|^|--filter=./|'
+          )
+          pnpm exec turbo run build --output-logs=errors-only --log-order=stream "${filters[@]}"
+
+      - name: Restore the incremental report of the last run
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.INCREMENTAL_REPORTS }}
+          key: ${{ needs.plan.outputs.incrementalKey }}
           restore-keys: |
-            stryker-incremental-
-      - name: Place incremental files
-        run: if [ -d .stryker-incremental ]; then cp -a .stryker-incremental/. .; fi
+            mutation-incremental-
+
+      - id: shard
+        name: Name the shard output
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: echo "slug=${SHARD//\//of}" >> "$GITHUB_OUTPUT"
 
       - name: Mutation
         env:
-          JOB: ${{ toJSON(matrix.job) }}
-        run: $MUTATION_JOB run --cap-seconds "$((TARGET_SECONDS * 2))" --budget-seconds "$((TARGET_SECONDS * 4))"
+          SHARD: ${{ matrix.shard }}
+        run: |
+          $PUBLISHED_CLI run \
+            --plan "$PLAN" \
+            --shard "$SHARD" \
+            --out "reports/shards/${{ steps.shard.outputs.slug }}"
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: mutation-timings-part-${{ matrix.job.id }}
-          path: .timings/${{ matrix.job.id }}.json
-          if-no-files-found: ignore
+          name: mutation-shard-${{ steps.shard.outputs.slug }}
+          path: reports/shards/${{ steps.shard.outputs.slug }}
+          if-no-files-found: error
           retention-days: 1
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: mutation-incremental-${{ matrix.job.id }}
-          path: incremental/
-          if-no-files-found: ignore
-          retention-days: 1
-      - uses: actions/upload-artifact@v7
-        if: always()
-        with:
-          name: mutation-part-${{ matrix.job.id }}
-          path: mutation-parts/
-          if-no-files-found: ignore
-          retention-days: 1
-
-  timings:
-    name: record mutation timings
-    needs: [plan, mutation]
-    if: ${{ always() && needs.plan.result == 'success' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-      - uses: denoland/setup-deno@v2
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: mutation-timings-part-*
-          path: .timings/parts
-          merge-multiple: true
-      - uses: actions/download-artifact@v8
-        continue-on-error: true
-        with:
-          name: mutation-timings-previous
-          path: .timings/previous
-      - name: Merge this run into the record
-        run: $TIMINGS merge --target "$TARGET_SECONDS" --previous .timings/previous/mutation-timings.json --parts .timings/parts --out .timings/mutation-timings.json --sha "$GITHUB_SHA"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: mutation-timings
-          path: .timings/mutation-timings.json
-          retention-days: 30
 
   report:
     name: Mutation report
     needs: [plan, mutation]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.jobs != '[]' }}
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     permissions:
       contents: read
       actions: write
@@ -153,53 +168,84 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: denoland/setup-deno@v2
-
-      - uses: actions/cache/restore@v6
+      - uses: actions/download-artifact@v8
         with:
-          path: .stryker-incremental
-          key: stryker-incremental-${{ github.run_id }}
+          name: shard-plan
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: mutation-shard-*
+          path: shards
+
+      - name: Restore the incremental report of the last run
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.INCREMENTAL_REPORTS }}
+          key: ${{ needs.plan.outputs.incrementalKey }}
           restore-keys: |
-            stryker-incremental-
-      - uses: actions/download-artifact@v8
-        continue-on-error: true
-        with:
-          pattern: mutation-incremental-*
-          path: .stryker-incremental
-          merge-multiple: true
-      - uses: actions/cache/save@v6
-        if: ${{ hashFiles('.stryker-incremental/**') != '' }}
-        with:
-          path: .stryker-incremental
-          key: stryker-incremental-${{ github.run_id }}
+            mutation-incremental-
 
-      - uses: actions/download-artifact@v8
-        continue-on-error: true
-        with:
-          path: mutation-parts
-          pattern: mutation-part-*
-      - name: Fold shard parts into one part per package
-        env:
-          JOBS: ${{ needs.plan.outputs.jobs }}
-        run: $MUTATION_JOB combine --parts mutation-parts --out mutation-combined
-      - name: Merge
+      - name: Merge the shards
         run: |
-          pnpm --filter @systemfsoftware/stryker-js exec stryker merge-reports \
-            --parts "$GITHUB_WORKSPACE/mutation-combined" \
-            --out "$GITHUB_WORKSPACE/mutation-merged" \
-            --packages "$PACKAGES"
+          shards=()
+          while read -r shard; do
+            shards+=("shards/mutation-shard-${shard//\//of}")
+          done < <(jq -r '.shards[] | "\(.index)/\(.count)"' "$PLAN")
+          $PUBLISHED_CLI merge \
+            --plan "$PLAN" \
+            "${shards[@]}" \
+            --out reports/mutation
+
+      - id: gate
+        name: Gate the merged report
+        run: |
+          if [ ! -f "$BUDGET_BASELINE" ]; then
+            echo "::notice title=No budget baseline::$BUDGET_BASELINE is absent; writing it from this run and uploading it for a maintainer to commit"
+            $PUBLISHED_CLI gate --budget-baseline "$BUDGET_BASELINE" --update-budget-baseline
+            echo "bootstrapped=true" >> "$GITHUB_OUTPUT"
+          else
+            $PUBLISHED_CLI gate --budget-baseline "$BUDGET_BASELINE"
+            echo "bootstrapped=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ steps.gate.outputs.bootstrapped == 'true' }}
+        with:
+          name: budget-baseline-${{ github.run_number }}
+          path: ${{ env.BUDGET_BASELINE }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Seed each project's incremental report from its own merged report
+        run: |
+          for dir in ${PROJECTS//,/ }; do
+            merged="reports/mutation/$dir/stryker-incremental.json"
+            if [ ! -f "$merged" ]; then
+              echo "::error title=No merged incremental report::$merged is missing, so $dir cannot reuse a verdict next run"
+              exit 1
+            fi
+            mkdir -p "$dir/reports"
+            cp "$merged" "$dir/reports/stryker-incremental.json"
+          done
+
+      - uses: actions/cache/save@v6
+        if: ${{ hashFiles('packages/stryker-js/reports/stryker-incremental.json') != '' }}
+        with:
+          path: ${{ env.INCREMENTAL_REPORTS }}
+          key: ${{ needs.plan.outputs.incrementalKey }}
+
       - uses: actions/upload-artifact@v7
         with:
           name: mutation-report-${{ github.run_number }}
-          path: mutation-merged/*
+          path: reports/mutation/*
           retention-days: 14
 
-      - name: Delete per-job artifacts
+      - name: Delete per-shard artifacts
         if: always()
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
-            --jq '.artifacts[] | select(.name | startswith("mutation-part-") or startswith("mutation-incremental-")) | .id' \
+            --jq '.artifacts[] | select(.name | startswith("mutation-shard-")) | .id' \
           | while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"; done
