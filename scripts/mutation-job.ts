@@ -11,6 +11,7 @@ import {
   combineParts,
   decodeJson,
   type Entry,
+  entryResultFor,
   type Job,
   JobOrNullSchema,
   JobsSchema,
@@ -99,11 +100,16 @@ const runJob = async (job: Job, capSeconds: number, budgetSeconds: number): Prom
       console.log(`${name}: skipped, the job's ${budgetSeconds}s budget is spent`)
       ok = false
     }
+    const outcome: Outcome = exitCode === 0 ? 'success' : 'failure'
+    const reportsDir = join(dir, 'reports')
+    const input = { package: labelOf(dir, shard), outcome, reportsDir }
+    const state = await loadState(reportsDir, readText)
     if (exitCode !== null) {
       entries.push({
         package: name,
         seconds: Math.round((Date.now() - started) / 1000),
         exitCode,
+        result: entryResultFor(exitCode, state),
         ...(shard === undefined ? {} : { shard }),
       })
       await Deno.mkdir('.timings', { recursive: true })
@@ -112,10 +118,6 @@ const runJob = async (job: Job, capSeconds: number, budgetSeconds: number): Prom
         JSON.stringify({ job: job.id, entries } satisfies Part),
       )
     }
-    const outcome: Outcome = exitCode === 0 ? 'success' : 'failure'
-    const reportsDir = join(dir, 'reports')
-    const input = { package: labelOf(dir, shard), outcome, reportsDir }
-    const state = await loadState(reportsDir, readText)
     console.log(buildSummary(input, state))
     const missing = buildRequireError(input, state)
     if (missing !== null) {

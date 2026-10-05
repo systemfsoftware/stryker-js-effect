@@ -14,10 +14,14 @@ export const TimingRecordSchema = S.Struct({
 })
 export type TimingRecord = S.Schema.Type<typeof TimingRecordSchema>
 
+export const EntryResultSchema = S.Literals(['complete', 'timeout', 'incomplete'] as const)
+export type EntryResult = S.Schema.Type<typeof EntryResultSchema>
+
 export const EntrySchema = S.Struct({
   package: S.String,
   seconds: S.Number,
   exitCode: S.Union([S.Int, S.Null]),
+  result: S.optional(EntryResultSchema),
   shard: S.optional(ShardSchema),
 })
 export type Entry = S.Schema.Type<typeof EntrySchema>
@@ -166,6 +170,14 @@ export const planJobs = (
   return { jobs: [...shardJobs, ...wholeJobs] }
 }
 
+const killedByCap = (exitCode: number | null): boolean => exitCode === 124 || exitCode === 137
+
+export const entryResultOf = (entry: Entry): EntryResult => {
+  if (entry.result !== undefined) return entry.result
+  if (killedByCap(entry.exitCode)) return 'timeout'
+  return entry.exitCode === 0 ? 'complete' : 'incomplete'
+}
+
 export const mergeRecord = (previous: TimingRecord, parts: readonly Part[], sha: string): TimingRecord => {
   const packages: Record<string, Measured> = { ...previous.packages }
   const byPackage = new Map<string, Entry[]>()
@@ -173,14 +185,26 @@ export const mergeRecord = (previous: TimingRecord, parts: readonly Part[], sha:
     byPackage.set(entry.package, [...(byPackage.get(entry.package) ?? []), entry])
   }
   for (const [name, entries] of byPackage) {
+    const previousSeconds = previous.packages[name]?.seconds
+    const results = entries.map(entryResultOf)
     const count = entries[0]?.shard?.count
     if (count === undefined) {
-      packages[name] = { seconds: Math.max(...entries.map((entry) => entry.seconds)), sha }
+      if (results.includes('incomplete')) continue
+      const measured = Math.max(...entries.map((entry) => entry.seconds))
+      packages[name] = {
+        seconds: results.includes('timeout') ? Math.max(previousSeconds ?? 0, measured) : measured,
+        sha,
+      }
       continue
     }
     const indices = new Set(entries.map((entry) => entry.shard?.index))
     const complete = Array.from({ length: count }, (_unused, i) => i + 1).every((index) => indices.has(index))
-    if (complete) packages[name] = { seconds: entries.reduce((sum, entry) => sum + entry.seconds, 0), sha }
+    if (!complete || results.includes('incomplete')) continue
+    const summed = entries.reduce((sum, entry) => sum + entry.seconds, 0)
+    packages[name] = {
+      seconds: results.includes('timeout') ? Math.max(previousSeconds ?? 0, summed) : summed,
+      sha,
+    }
   }
   return { version: 1, packages }
 }
@@ -226,7 +250,7 @@ const countMutantLines = (text: string): number => {
   return n
 }
 
-const isCompleteReport = (text: string): boolean => {
+export const isCompleteReport = (text: string): boolean => {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
@@ -249,6 +273,12 @@ export const loadState = async (
   const reportText = await readFile(`${reportsDir}/mutation-report.json`).catch(() => null)
   const streamText = await readFile(`${reportsDir}/mutation-stream.jsonl`).catch(() => null)
   return { reportText, streamText }
+}
+
+export const entryResultFor = (exitCode: number | null, state: ReportState): EntryResult => {
+  if (killedByCap(exitCode)) return 'timeout'
+  if (state.reportText !== null && isCompleteReport(state.reportText)) return 'complete'
+  return 'incomplete'
 }
 
 export interface SummaryInput {
