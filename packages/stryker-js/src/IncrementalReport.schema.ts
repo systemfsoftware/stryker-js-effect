@@ -3,6 +3,7 @@ import * as S from 'effect/Schema'
 import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 
 import { FormatIdentitySchema } from './IncrementalDiff.schema.js'
+import { MutantCosts } from './MutantCost.schema.js'
 
 const MutantResultLikeSchema = S.Struct({
   id: S.String,
@@ -51,6 +52,7 @@ export const IncrementalReportSchema = S.StructWithRest(
     runInputsDigest: S.String,
     thresholds: ThresholdsLikeSchema,
     files: S.Record(S.String, FileResultLikeSchema),
+    costs: MutantCosts,
     testFiles: S.optional(S.Record(S.String, TestFileLikeSchema)),
     dryRunCoverage: S.optionalKey(S.Unknown),
   }),

@@ -19,7 +19,7 @@ export const VERDICT_SEMANTICS_SURFACE: readonly string[] = [
 
 export const VERDICT_SEMANTICS_VERSION = 2
 
-export const INCREMENTAL_CACHE_VERSION = '2'
+export const INCREMENTAL_CACHE_VERSION = '3'
 
 type Json = S.Schema.Type<typeof S.Json>
 
