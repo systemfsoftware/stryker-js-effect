@@ -13,7 +13,7 @@ import {
 } from '../frame-run-event.workflow.js'
 
 const arbitraryTerminalEvent = Arbitrary.schema(
-  S.Union([RunEvent.VerdictReached, RunEvent.RunFailed, RunEvent.HelpRendered]),
+  S.Union([RunEvent.VerdictReached, RunEvent.RunFailed, RunEvent.HelpRendered, RunEvent.Refused]),
 )
 
 const arbitraryNonTerminalEvent = Arbitrary.schema(

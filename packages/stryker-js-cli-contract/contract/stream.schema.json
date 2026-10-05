@@ -42,6 +42,9 @@
     },
     {
       "$ref": "#/definitions/helpEncoded"
+    },
+    {
+      "$ref": "#/definitions/refusedEncoded"
     }
   ],
   "definitions": {
@@ -57,7 +60,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "2.0"
+            "3.0"
           ]
         },
         "runId": {
@@ -724,7 +727,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "2.0"
+            "3.0"
           ]
         },
         "runId": {
@@ -1006,7 +1009,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "2.0"
+            "3.0"
           ]
         },
         "code": {
@@ -1151,7 +1154,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "2.0"
+            "3.0"
           ]
         },
         "code": {
@@ -1173,6 +1176,39 @@
         "schemaVersion",
         "code",
         "help"
+      ],
+      "additionalProperties": true
+    },
+    "refusedEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "refused"
+          ]
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "3.0"
+          ]
+        },
+        "rule": {
+          "type": "string",
+          "enum": [
+            "mutation-runs-on-main-ci"
+          ]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "_tag",
+        "schemaVersion",
+        "rule",
+        "message"
       ],
       "additionalProperties": true
     }

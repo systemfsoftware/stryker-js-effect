@@ -4,6 +4,7 @@ import * as Match from 'effect/Match'
 import { concurrencyCell } from '../concurrency.cell.js'
 import type { ConfigReadError } from '../ConfigError.schema.js'
 import { readProjectCell } from '../read-project.cell.js'
+import { refuseLocalMutationCell } from '../refuse-local-mutation.cell.js'
 import { StageError } from '../Run.schema.js'
 import { dryRunCell } from './dry-run.cell.js'
 import { instrumentCell } from './instrument.cell.js'
@@ -23,9 +24,12 @@ const configReadReasonOf = (cause: ConfigReadError): string =>
 const prepareStageCell = Cell.andThen(
   Cell.andThen(
     Cell.andThen(
-      Cell.mapError(
-        loadConfigCell,
-        (cause) => StageError.make({ stage: 'prepare', reason: configReadReasonOf(cause), cause }),
+      Cell.andThen(
+        Cell.mapError(
+          loadConfigCell,
+          (cause) => StageError.make({ stage: 'prepare', reason: configReadReasonOf(cause), cause }),
+        ),
+        (loaded) => refuseLocalMutationCell(loaded),
       ),
       Cell.mapError(
         readProjectCell,

@@ -12,6 +12,7 @@ const guestEnvironment = (env: {
   readonly OTEL_EXPORTER_OTLP_ENDPOINT?: string | undefined
 }) => ({
   STRYKER_MODE: 'machine',
+  ALLOW_LOCAL_MUTATION: '1',
   OTEL_ENABLED: env['OTEL_ENABLED'] ?? 'false',
   OTEL_SERVICE_NAME: env['OTEL_SERVICE_NAME'] ?? 'stryker-e2e',
   OTEL_EXPORTER_OTLP_ENDPOINT: (env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? 'http://127.0.0.1:4318')

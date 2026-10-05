@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Plugin, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
@@ -39,6 +40,11 @@ export const RunGenericFailureObservation = S.TaggedStruct('RunGenericFailureObs
   diagnostic: S.NullOr(S.String),
 })
 
+export const RunRefusedObservation = S.TaggedStruct('RunRefusedObservation', {
+  rule: RunEvent.RefusalRule,
+  message: S.String,
+})
+
 export const RunOutcomeObservation = S.Union([
   RunSucceededClean,
   RunSucceededVerdict,
@@ -49,6 +55,7 @@ export const RunOutcomeObservation = S.Union([
   RunSchemaErrorObservation,
   RunClassedObservation,
   RunGenericFailureObservation,
+  RunRefusedObservation,
 ])
 export type RunOutcomeObservation = typeof RunOutcomeObservation.Type
 
@@ -59,6 +66,7 @@ export type RunSurvivorsRejectedObservation = typeof RunSurvivorsRejectedObserva
 export type RunSchemaErrorObservation = typeof RunSchemaErrorObservation.Type
 export type RunClassedObservation = typeof RunClassedObservation.Type
 export type RunGenericFailureObservation = typeof RunGenericFailureObservation.Type
+export type RunRefusedObservation = typeof RunRefusedObservation.Type
 
 export class RunOutcomeCommand extends S.TaggedClass<RunOutcomeCommand>()('RunOutcomeCommand', {
   observation: RunOutcomeObservation,

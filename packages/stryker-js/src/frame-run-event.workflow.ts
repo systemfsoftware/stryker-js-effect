@@ -60,7 +60,7 @@ export type ResolvedModeInput = typeof ResolvedModeInput.Type
 
 const nextFramingState = (state: FramingState, event: RunEvent.RunEvent): FramingState =>
   Match.value(event).pipe(
-    Match.tag('verdict', 'error', 'help', () =>
+    Match.tag('verdict', 'error', 'help', 'refused', () =>
       FramingState.make({
         mode: state.mode,
         signal: state.signal,
@@ -124,6 +124,7 @@ const formatStderrEvent = (event: RunEvent.RunEvent): string | null =>
       (e) => `score ${formatScore(e.score)} killed ${e.counts.killed} survived ${e.counts.survived}`,
     ),
     Match.tag('error', (e) => `error ${e.error}`),
+    Match.tag('refused', (e) => `refused ${e.rule}`),
     Match.tag('stream', () => null),
     Match.tag('mutantTested', () => null),
     Match.tag('help', () => null),

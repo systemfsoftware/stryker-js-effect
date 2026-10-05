@@ -17,6 +17,8 @@ export {
   PhaseEntered,
   PlanKnown,
   PluginsReported,
+  RefusalRule,
+  Refused,
   ReuseRefusals,
   ReuseReported,
   RunEvent,

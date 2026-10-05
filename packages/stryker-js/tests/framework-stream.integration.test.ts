@@ -43,7 +43,7 @@ const skippedReport = RunEvent.SkippedReported.make({
 })
 
 const refusal = RunEvent.RunFailed.make({
-  schemaVersion: '2.0',
+  schemaVersion: '3.0',
   code: 2,
   error: `Failed to load plugin "${frameworkModule}" (PeerMissing)`,
   remediation: 'install the peer dependency the plugin needs',
