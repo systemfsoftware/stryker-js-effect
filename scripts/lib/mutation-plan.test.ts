@@ -102,6 +102,59 @@ Deno.test('mergeRecord keeps the previous duration when a shard is missing, sums
   assertEquals(mergeRecord(previous, complete, 'new').packages['p'], { seconds: 200, sha: 'new' })
 })
 
+Deno.test('mergeRecord keeps the previous 1800s when a dry-run failure records only 150s', () => {
+  const previous: TimingRecord = { version: 1, packages: { p: { seconds: 1800, sha: 'old' } } }
+  const parts: Part[] = [{
+    job: 'group-1',
+    entries: [{ package: 'p', seconds: 150, exitCode: 1, result: 'incomplete' }],
+  }]
+  assertEquals(mergeRecord(previous, parts, 'new').packages['p'], { seconds: 1800, sha: 'old' })
+})
+
+Deno.test('mergeRecord raises a 150s record to 1800s when the job cap killed the run', () => {
+  const previous: TimingRecord = { version: 1, packages: { p: { seconds: 150, sha: 'old' } } }
+  const parts: Part[] = [{
+    job: 'group-1',
+    entries: [{ package: 'p', seconds: 1800, exitCode: 124, result: 'timeout' }],
+  }]
+  assertEquals(mergeRecord(previous, parts, 'new').packages['p'], { seconds: 1800, sha: 'new' })
+})
+
+Deno.test('mergeRecord records a completed run at its measured seconds', () => {
+  const parts: Part[] = [{
+    job: 'group-1',
+    entries: [{ package: 'p', seconds: 600, exitCode: 0, result: 'complete' }],
+  }]
+  assertEquals(mergeRecord(emptyRecord, parts, 'new').packages['p'], { seconds: 600, sha: 'new' })
+})
+
+Deno.test('mergeRecord leaves a package unknown when an incomplete run has no previous record', () => {
+  const parts: Part[] = [{
+    job: 'group-1',
+    entries: [{ package: 'p', seconds: 150, exitCode: 1, result: 'incomplete' }],
+  }]
+  assertEquals(mergeRecord(emptyRecord, parts, 'new').packages['p'], undefined)
+})
+
+Deno.test('planJobs shards a cap-killed package once its honest lower bound is recorded', () => {
+  const previous: TimingRecord = { version: 1, packages: { p: { seconds: 150, sha: 'old' } } }
+  const parts: Part[] = [{
+    job: 'group-1',
+    entries: [{ package: 'p', seconds: 1800, exitCode: 137, result: 'timeout' }],
+  }]
+  const record = mergeRecord(previous, parts, 'new')
+  const plan = planJobs([{ name: 'p', dir: 'packages/p' }], record, {
+    target: 900,
+    maxJobs: 20,
+    unknownSeconds: 900,
+  })
+  assertEquals(plan.jobs.map((job) => job.id), ['p-1', 'p-2'])
+  assertEquals(
+    plan.jobs.every((job) => job.shard?.count === 2 && job.predicted === 900 && job.packages[0] === 'p'),
+    true,
+  )
+})
+
 const input = { package: 'packages/x', outcome: 'failure', reportsDir: dir } as const
 
 Deno.test('buildSummary marks a report with schemaVersion and files as complete', async () => {
