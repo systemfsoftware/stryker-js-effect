@@ -10,7 +10,6 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import type { PlatformError } from 'effect/PlatformError'
 import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -72,10 +71,9 @@ const optionsOf = (root: string, command: string): Options.PartialStrykerOptions
   incrementalFile: `${root}/reports/main.json`,
 })
 
-const runLayerOf = (root: string) =>
+const runLayerOf = (root: string, ports: Layer.Layer<Engine.EnginePorts> = Engine.nodePlatformLayer) =>
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
-    const ports = Engine.nodePlatformLayer
     return {
       queue,
       layer: Layer.merge(Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports), ports),
@@ -93,6 +91,49 @@ const runToCompletion = (root: string, command: string): Effect.Effect<string, n
     return yield* fs.readFileString(path.join(root, 'reports', 'main.json'))
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
+interface RecordedFsOp {
+  readonly op: 'write' | 'rename'
+  readonly path: string
+  readonly to?: string
+}
+
+const recordingFileSystemLayer = (ops: RecordedFsOp[]): Layer.Layer<FileSystem.FileSystem> =>
+  Layer.effect(
+    FileSystem.FileSystem,
+    Effect.map(FileSystem.FileSystem, (base): FileSystem.FileSystem => ({
+      ...base,
+      writeFileString: (path, data, options) =>
+        base.writeFileString(path, data, options).pipe(
+          Effect.tap(() => Effect.sync(() => ops.push({ op: 'write', path }))),
+        ),
+      rename: (from, to) =>
+        base.rename(from, to).pipe(
+          Effect.tap(() => Effect.sync(() => ops.push({ op: 'rename', path: from, to }))),
+        ),
+    })),
+  ).pipe(Layer.provide(NodeFileSystem.layer))
+
+const writesTo = (ops: readonly RecordedFsOp[], target: string) =>
+  ops.filter((op) => op.op === 'write').filter((op) => op.path === target)
+
+const renamesTo = (ops: readonly RecordedFsOp[], target: string) =>
+  ops.filter((op) => op.op === 'rename').filter((op) => op.to === target)
+
+const runToCompletionRecordingWrites = (
+  root: string,
+  command: string,
+  ops: RecordedFsOp[],
+): Effect.Effect<{ readonly directWrites: number; readonly renamed: boolean }, never, never> =>
+  Effect.gen(function*() {
+    const pathService = yield* Path.Path
+    const target = pathService.join(root, 'reports', 'main.json')
+    const { layer } = yield* runLayerOf(root, Layer.merge(Engine.nodePlatformLayer, recordingFileSystemLayer(ops)))
+    yield* Engine.mutationTestCell
+      .run({ cliOptions: optionsOf(root, command), targetMutatePatterns: undefined })
+      .pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)
+    return { directWrites: writesTo(ops, target).length, renamed: renamesTo(ops, target).length > 0 }
+  }).pipe(Effect.orDie, Effect.provide(filePorts))
+
 const interruptAtFirstCheckpoint = (root: string, command: string): Effect.Effect<string, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -102,17 +143,18 @@ const interruptAtFirstCheckpoint = (root: string, command: string): Effect.Effec
       .run({ cliOptions: optionsOf(root, command), targetMutatePatterns: undefined })
       .pipe(Effect.provide(layer), Effect.scoped, Effect.exit, Effect.forkChild)
     const file = path.join(root, 'reports', 'main.json')
-    const waitForFile = (attempts: number): Effect.Effect<boolean, PlatformError> =>
-      fs.exists(file).pipe(
-        Effect.flatMap((present) =>
-          present
+    const waitForDecodable = (attempts: number): Effect.Effect<boolean, never> =>
+      fs.readFileString(file).pipe(
+        Effect.orElseSucceed(() => ''),
+        Effect.flatMap((text) =>
+          decodedOf(text).decoded
             ? Effect.succeed(true)
             : attempts <= 0
             ? Effect.succeed(false)
-            : Effect.andThen(Effect.sleep(25), waitForFile(attempts - 1))
+            : Effect.andThen(Effect.sleep(25), waitForDecodable(attempts - 1))
         ),
       )
-    const appeared = yield* waitForFile(2000)
+    const appeared = yield* waitForDecodable(2000)
     yield* Fiber.interrupt(fiber)
     return appeared ? yield* fs.readFileString(file).pipe(Effect.orElseSucceed(() => '')) : ''
   }).pipe(Effect.orDie, Effect.provide(filePorts))
@@ -209,6 +251,27 @@ Feature('Reading the incremental report the engine writes')
             slimReport: !s.observed.shape.carriesFramework && !s.observed.shape.carriesConfig,
             carriesPendingMutants: s.observed.shape.carriesPendingMutants,
           }).toEqual({ decoded: true, error: '', slimReport: true, carriesPendingMutants: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'A completed incremental run writes the report by renaming a completed temporary file',
+      Gherkin.Do.pipe(
+        Given('a workspace whose incremental run completes under a filesystem that records its writes')(
+          'observed',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writeFixture([['src/math.ts', SOURCE]])
+              const ops: RecordedFsOp[] = []
+              return yield* Effect.ensuring(
+                runToCompletionRecordingWrites(root, 'true', ops),
+                removeFixture(root),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then('the incremental report path is only ever produced by renaming a completed temporary file')(
+          (s, expect) => expect(s.observed).toEqual({ directWrites: 0, renamed: true }),
         ),
       ),
     )

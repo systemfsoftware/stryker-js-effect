@@ -29,6 +29,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
+import { writeFileAtomic } from './atomic-write.cell.js'
 import { buildReproducers, BuildReproducersCommand } from './build-reproducers.workflow.js'
 import {
   type CheckpointMutantRow,
@@ -762,7 +763,6 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
   report: Report.MutationTestResult,
   identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>,
 ) {
-  yield* deps.fs.makeDirectory(deps.path.dirname(input.options.incrementalFile), { recursive: true })
   const runInputsDigest = yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options)
   const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
     incrementalVersion: INCREMENTAL_CACHE_VERSION,
@@ -773,7 +773,7 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
     files: stampFileIdentities(stampClosureDigests(report.files, input.closureDigestsByMutantId), identities),
     ...dryRunCoverageFieldOf(input.testCoverage),
   }).pipe(Effect.orDie)
-  yield* deps.fs.writeFileString(input.options.incrementalFile, json)
+  yield* writeFileAtomic(deps, input.options.incrementalFile, json)
 })
 
 const writeReproducers = (
@@ -839,19 +839,6 @@ const reportAll = Effect.fn(SpanTaxonomy.Spans.mutationReportingReportAll.name)(
     onFalse: () => Effect.void,
   })
   return { results: input.results, verdict: finalVerdict } satisfies MutationTestDone
-})
-
-const writeAtomic = Effect.fn(SpanTaxonomy.Spans.mutationReportingWriteAtomic.name)(function*(
-  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
-  file: string,
-  content: string,
-) {
-  yield* deps.fs.makeDirectory(deps.path.dirname(file), { recursive: true })
-  const tmp = `${file}.tmp`
-  yield* deps.fs.writeFileString(tmp, content)
-  yield* deps.fs.rename(tmp, file).pipe(
-    Effect.catch(() => deps.fs.copyFile(tmp, file).pipe(Effect.andThen(deps.fs.remove(tmp)))),
-  )
 })
 
 const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlimIncrementalReport.name)(function*(
@@ -921,7 +908,7 @@ const checkpointIncremental = Effect.fn(SpanTaxonomy.Spans.mutationReportingChec
 ) {
   const report = yield* slimIncrementalReport(deps, input, checkpointResultsOf(input, plannedMutants))
   const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(report).pipe(Effect.orDie)
-  yield* writeAtomic(deps, input.options.incrementalFile, json)
+  yield* writeFileAtomic(deps, input.options.incrementalFile, json)
 })
 
 const checkpoint = (
