@@ -23,7 +23,7 @@ import {
 import { ShardMergeFailed } from './shard-merge.schema.js'
 
 const STREAM_FILE = 'mutation-stream.jsonl'
-const REPORT_FILE = 'mutation-report.json'
+const REPORT_FILE = 'mutation.json'
 const INCREMENTAL_FILE = 'stryker-incremental.json'
 const DEFAULT_OUT = 'reports/mutation'
 const DEFAULT_SCHEMA_VERSION = '1.0'

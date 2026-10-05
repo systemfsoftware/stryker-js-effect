@@ -174,7 +174,7 @@ const runAndMerge = (
       Effect.die(new Error(`merge exited ${merged.exitCode}: ${merged.output}`)),
       Effect.succeed(merged.exitCode !== 0),
     )
-    const mergedReport = yield* fs.readFileString(path.join(root, 'reports', 'merged', 'mutation-report.json'))
+    const mergedReport = yield* fs.readFileString(path.join(root, 'reports', 'merged', 'mutation.json'))
     const duplicate = ids[0] ?? 'no-id'
     const half = Math.ceil(ids.length / 2)
     const doctoredPlan = planOf(ids.slice(0, half), [duplicate, ...ids.slice(half)])
