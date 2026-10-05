@@ -13,6 +13,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
+import { writeFileAtomic } from './atomic-write.cell.js'
 import {
   MergeReportPartsCommand,
   MergeSurvivor as MergeSurvivorSchema,
@@ -285,14 +286,12 @@ const putFile = Effect.fn(SpanTaxonomy.Spans.mergeReportsPutFile.name)(function*
   content: string,
   append: boolean,
 ) {
-  yield* FileSystem.FileSystem.pipe(
-    Effect.flatMap((fs) =>
-      Match.value(append).pipe(
-        Match.when(true, () => fs.writeFileString(file, content, { flag: 'a' })),
-        Match.when(false, () => fs.writeFileString(file, content)),
-        Match.exhaustive,
-      )
-    ),
+  const fs = yield* FileSystem.FileSystem
+  const pathService = yield* Path.Path
+  yield* Match.value(append).pipe(
+    Match.when(true, () => fs.writeFileString(file, content, { flag: 'a' })),
+    Match.when(false, () => writeFileAtomic({ fs, path: pathService }, file, content)),
+    Match.exhaustive,
     Effect.catchCause(() => failReason(`cannot write ${file}`)),
   )
 })

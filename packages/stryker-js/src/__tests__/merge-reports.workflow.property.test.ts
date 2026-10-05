@@ -73,6 +73,9 @@ const MODE_ARB: Arbitrary.Arbitrary<'human' | 'machine'> = Arbitrary.schema(S.Li
 const writeLayers = Layer.mergeAll(
   FileSystem.layerNoop({
     makeDirectory: () => Effect.void,
+    makeTempFile: (options) => Effect.succeed(`${options?.directory ?? '.'}/write.tmp`),
+    remove: () => Effect.void,
+    rename: () => Effect.void,
     writeFileString: () => Effect.void,
   }),
   Path.layer,
