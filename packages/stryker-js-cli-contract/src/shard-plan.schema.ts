@@ -1,4 +1,3 @@
-/* oxlint-disable effecttsgo/schema-number */
 import * as S from 'effect/Schema'
 
 export const ShardPlanVersion = S.Literal(1)
@@ -11,14 +10,14 @@ export const ShardProject = S.Struct({
 export const Shard = S.Struct({
   index: S.Int, // 1-based
   count: S.Int,
-  predictedSeconds: S.Number,
+  predictedSeconds: S.Finite,
   projects: S.Array(ShardProject),
 })
 
 export const ShardPlan = S.Struct({
   version: ShardPlanVersion,
-  targetSeconds: S.Number,
+  targetSeconds: S.Finite,
   shards: S.Array(Shard),
-  matrix: S.Struct({ include: S.Array(S.Struct({ shard: S.String, predictedSeconds: S.Number })) }), // shard = "k/N"
+  matrix: S.Struct({ include: S.Array(S.Struct({ shard: S.String, predictedSeconds: S.Finite })) }), // shard = "k/N"
 })
 export type ShardPlan = typeof ShardPlan.Type

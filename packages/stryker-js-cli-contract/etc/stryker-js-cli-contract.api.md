@@ -20,7 +20,7 @@ export namespace RunEvent {
 export const Shard: S.Struct<{
     readonly index: S.Int;
     readonly count: S.Int;
-    readonly predictedSeconds: S.Number;
+    readonly predictedSeconds: S.Finite;
     readonly projects: S.$Array<S.Struct<{
         readonly project: S.String;
         readonly mutants: S.$Array<S.String>;
@@ -30,11 +30,11 @@ export const Shard: S.Struct<{
 // @public (undocumented)
 export const ShardPlan: S.Struct<{
     readonly version: S.Literal<1>;
-    readonly targetSeconds: S.Number;
+    readonly targetSeconds: S.Finite;
     readonly shards: S.$Array<S.Struct<{
         readonly index: S.Int;
         readonly count: S.Int;
-        readonly predictedSeconds: S.Number;
+        readonly predictedSeconds: S.Finite;
         readonly projects: S.$Array<S.Struct<{
             readonly project: S.String;
             readonly mutants: S.$Array<S.String>;
@@ -43,7 +43,7 @@ export const ShardPlan: S.Struct<{
     readonly matrix: S.Struct<{
         readonly include: S.$Array<S.Struct<{
             readonly shard: S.String;
-            readonly predictedSeconds: S.Number;
+            readonly predictedSeconds: S.Finite;
         }>>;
     }>;
 }>;

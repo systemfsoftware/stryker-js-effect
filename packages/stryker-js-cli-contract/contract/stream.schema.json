@@ -152,19 +152,7 @@
                   ]
                 },
                 "targetSeconds": {
-                  "anyOf": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "string",
-                      "enum": [
-                        "Infinity",
-                        "-Infinity",
-                        "NaN"
-                      ]
-                    }
-                  ]
+                  "type": "number"
                 },
                 "shards": {
                   "type": "array",
@@ -178,19 +166,7 @@
                         "type": "integer"
                       },
                       "predictedSeconds": {
-                        "anyOf": [
-                          {
-                            "type": "number"
-                          },
-                          {
-                            "type": "string",
-                            "enum": [
-                              "Infinity",
-                              "-Infinity",
-                              "NaN"
-                            ]
-                          }
-                        ]
+                        "type": "number"
                       },
                       "projects": {
                         "type": "array",
@@ -236,19 +212,7 @@
                             "type": "string"
                           },
                           "predictedSeconds": {
-                            "anyOf": [
-                              {
-                                "type": "number"
-                              },
-                              {
-                                "type": "string",
-                                "enum": [
-                                  "Infinity",
-                                  "-Infinity",
-                                  "NaN"
-                                ]
-                              }
-                            ]
+                            "type": "number"
                           }
                         },
                         "required": [
