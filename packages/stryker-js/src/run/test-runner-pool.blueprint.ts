@@ -1,6 +1,7 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import type * as FileSystem from 'effect/FileSystem'
@@ -12,6 +13,7 @@ import type * as Scope from 'effect/Scope'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import type { PooledTestRunner } from '../pooled-test-runner.handle.js'
+import { WorkerReports } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import {
   ConfiguredPluginModulePath,
@@ -71,10 +73,16 @@ const acquire: (
 ) => Effect.Effect<
   Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError>,
   never,
-  Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | WorkerLauncher
+  Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | WorkerLauncher | WorkerReports
 > = Effect.fnUntraced(function*(spec: TestRunnerPoolSpec) {
-  return yield* Pool.makeWithTTL({
-    acquire: buildTestRunner(
+  const reports = yield* WorkerReports
+  const acquireOne: Effect.Effect<
+    PooledTestRunner,
+    StageError | PooledTestRunnerError,
+    Scope.Scope | WorkerLauncher | ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem
+  > = Effect.gen(function*() {
+    const startedAt = yield* Clock.currentTimeMillis
+    const runner = yield* buildTestRunner(
       {
         options: spec.options,
         fileDescriptions: spec.fileDescriptions,
@@ -96,7 +104,12 @@ const acquire: (
           ),
         )
       ),
-    ),
+    )
+    yield* reports.report('testRunner', (yield* Clock.currentTimeMillis) - startedAt)
+    return runner
+  })
+  return yield* Pool.makeWithTTL({
+    acquire: acquireOne,
     min: spec.min,
     max: spec.max,
     timeToLive: IDLE_TIME_TO_LIVE,
@@ -115,5 +128,5 @@ export const scoped = (
 ): Effect.Effect<
   Pool.Pool<PooledTestRunner, StageError | PooledTestRunnerError>,
   never,
-  Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | WorkerLauncher
+  Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | WorkerLauncher | WorkerReports
 > => TestRunnerPools.of(spec).scoped

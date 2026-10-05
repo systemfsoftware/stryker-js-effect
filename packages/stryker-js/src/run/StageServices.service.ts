@@ -9,7 +9,7 @@ import { GitDiff } from '../git-diff.service.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import { ProjectFiles } from '../project-files.service.js'
 import { Reporter } from '../reporter.service.js'
-import { RunEvents } from '../run-events.service.js'
+import { RunEvents, WorkerReports } from '../run-events.service.js'
 import { IdGenerator } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { PhaseClock } from './phase-clock.service.js'
@@ -27,6 +27,7 @@ export type StageServices =
   | Reporter
   | RunEnvironment
   | RunEvents
+  | WorkerReports
   | Scope.Scope
   | Stdio.Stdio
   | WorkerLauncher
@@ -43,6 +44,7 @@ export type RunStageServices =
   | Reporter
   | RunEnvironment
   | RunEvents
+  | WorkerReports
   | IdGenerator
   | MutationReporting
   | PhaseClock

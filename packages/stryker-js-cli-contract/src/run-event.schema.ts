@@ -32,6 +32,16 @@ export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
   total: Report.NonNegativeInt,
 }) {}
 
+export const WorkerRole = S.Literals(['testRunner', 'checker'])
+export type WorkerRole = typeof WorkerRole.Type
+
+export class WorkerReported extends S.TaggedClass<WorkerReported>()('worker', {
+  schemaVersion: StreamSchemaVersion,
+  role: WorkerRole,
+  index: Report.NonNegativeInt,
+  startupMs: Report.NonNegativeFinite,
+}) {}
+
 export const MutantCost = S.Struct({
   fixedOverheadMs: Report.NonNegativeFinite,
   testBodyMs: Report.NonNegativeFinite,
@@ -280,6 +290,7 @@ export const RunEvent = Object.assign(
     RunStarted,
     PhaseEntered,
     PlanKnown,
+    WorkerReported,
     RunMutantTested,
     Heartbeat,
     PluginsReported,

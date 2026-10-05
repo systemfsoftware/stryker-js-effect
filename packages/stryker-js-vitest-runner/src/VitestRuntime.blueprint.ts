@@ -261,6 +261,17 @@ export class TestFileOrderSequencer extends BaseSequencer {
   }
 }
 
+const MODULE_CACHE_DIRNAME = '.vitest-module-cache'
+
+const moduleCacheEnabled = (input: VitestRuntimeInput): boolean => input.vitestOptions.fsModuleCache !== false
+
+const moduleCacheConfig = (
+  input: VitestRuntimeInput,
+): { readonly fsModuleCache: true; readonly fsModuleCachePath: string } | undefined =>
+  moduleCacheEnabled(input)
+    ? { fsModuleCache: true, fsModuleCachePath: input.projectRoot + '/' + MODULE_CACHE_DIRNAME }
+    : undefined
+
 const createVitestConfig = (input: VitestRuntimeInput, standbyThreads: StandbyThreadsPool) => ({
   config: input.vitestOptions.configFile,
   coverage: { enabled: false },
@@ -276,6 +287,10 @@ const createVitestConfig = (input: VitestRuntimeInput, standbyThreads: StandbyTh
   ...Option.match(
     Option.fromNullishOr(input.vitestOptions.pool),
     { onNone: () => ({}), onSome: () => ({ pool: standbyThreadsInitializer(standbyThreads) }) },
+  ),
+  ...Option.match(
+    Option.fromNullishOr(moduleCacheConfig(input)),
+    { onNone: () => ({}), onSome: (cache) => cache },
   ),
   bail: input.bail,
   onConsoleLog: () => false,
