@@ -39,6 +39,7 @@ const ALWAYS_IGNORE = Object.freeze([
   '.next',
   '.nuxt',
   '.svelte-kit',
+  '.turbo',
 ])
 
 const CRAWL_CONCURRENCY = 256
