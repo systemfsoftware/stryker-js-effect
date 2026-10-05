@@ -10,8 +10,8 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { writeFileAtomic } from '../atomic-write.cell.js'
-import { INCREMENTAL_PART_NAME, unionIncrementalReports } from '../merge-reports.js'
 import { reportFromStream, ReportFromStreamCommand, ReportFromStreamRebuilt } from '../report-from-stream.workflow.js'
+import { INCREMENTAL_PART_NAME, unionIncrementalReports } from './incremental-union.js'
 import {
   mergeShardReports,
   MergeShardReportsCommand,
