@@ -18,6 +18,8 @@ const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.u
 const REPORT_FILE = 'reports/mutation/mutation.json'
 const COMMITTED_BASELINE = 'baseline.json'
 const WRITTEN_BASELINE = 'written-baseline.json'
+const COMMITTED_BUDGET_BASELINE = 'budget-baseline.json'
+const WRITTEN_BUDGET_BASELINE = 'written-budget-baseline.json'
 
 const COMMITTED_A = '1a1a1a1a1a1a1a1a'
 const COMMITTED_B = '2b2b2b2b2b2b2b2b'
@@ -42,6 +44,9 @@ const mutantLine = (id: string, line: number, status: string): string =>
   `    { "id": "${id}", "mutatorName": "ArithmeticOperator", "replacement": "-", "status": "${status}", "location": { "start": { "line": ${line}, "column": 26 }, "end": { "line": ${line}, "column": 27 } } }`
 
 const REPORT_JSON = `{
+  "schemaVersion": "1.0",
+  "thresholds": { "high": 80, "low": 60, "break": null },
+  "budget": { "predictedSeconds": 1, "actualSeconds": 4 },
   "files": {
     "src/sum.js": {
       "source": "export const sum = (a, b) => a + b\\n",
@@ -65,7 +70,12 @@ ${
 const baselineJson = (survivorIds: ReadonlyArray<string>): string =>
   `{ "schemaVersion": 1, "survivors": [${survivorIds.map((id) => `"${id}"`).join(', ')}] }\n`
 
+const budgetBaselineJson = (actualSeconds: number): string =>
+  `{ "schemaVersion": 1, "actualSeconds": ${actualSeconds} }\n`
+
 const decodeBaselineFile = S.decodeUnknownEffect(S.fromJsonString(S.Struct({ survivors: S.Array(S.String) })))
+
+const decodeBudgetBaselineFile = S.decodeUnknownEffect(S.fromJsonString(S.Struct({ actualSeconds: S.Finite })))
 
 interface GateRun {
   readonly exitCode: number
@@ -80,6 +90,7 @@ interface GateProject {
 
 const prepareProject = (
   baseline: string | null,
+  budgetBaseline: string | null = null,
 ): Effect.Effect<GateProject, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -102,6 +113,10 @@ const prepareProject = (
     yield* Effect.when(
       fs.writeFileString(path.join(root, COMMITTED_BASELINE), baseline ?? ''),
       Effect.succeed(baseline !== null),
+    )
+    yield* Effect.when(
+      fs.writeFileString(path.join(root, COMMITTED_BUDGET_BASELINE), budgetBaseline ?? ''),
+      Effect.succeed(budgetBaseline !== null),
     )
     return { root, reportPath }
   }).pipe(Effect.orDie)
@@ -150,7 +165,19 @@ const namesOnlyTheNewSurvivor = (output: string): boolean =>
   !output.includes(COMMITTED_B) &&
   !output.includes(COMMITTED_C)
 
-Feature('Gating a pull request on survivors the committed baseline has never seen', { timeout: 180_000 })
+const readWrittenBudgetBaseline = (
+  reportPath: string,
+): Effect.Effect<number, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const text = yield* fs.readFileString(
+      path.join(path.dirname(path.dirname(path.dirname(reportPath))), WRITTEN_BUDGET_BASELINE),
+    )
+    return (yield* decodeBudgetBaselineFile(text)).actualSeconds
+  }).pipe(Effect.orDie)
+
+Feature('Gating a pull request on the committed survivor and time-budget baselines', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary reads the finished report and the committed baseline in a real Node process')
   .body(({ scenario }) => {
@@ -230,6 +257,100 @@ Feature('Gating a pull request on survivors the committed baseline has never see
             written: [COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR],
           })
         ),
+      ),
+    )
+
+    scenario(
+      'A run whose report took longer than the committed budget baseline plus tolerance exits 1 naming both durations',
+      Gherkin.Do.pipe(
+        Given('a project whose survivors are all committed and whose committed budget baseline is 3 seconds')(
+          'project',
+          () =>
+            prepareProject(baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR]), budgetBaselineJson(3)),
+        ),
+        When('stryker gates against both baselines')(
+          'ran',
+          (s) =>
+            runGate(s.project.root, 'human', [
+              '--baseline',
+              COMMITTED_BASELINE,
+              '--budget-baseline',
+              COMMITTED_BUDGET_BASELINE,
+            ]),
+        ),
+        Then('the process exits 1 and stderr names the baseline and the actual seconds')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesBaseline: s.ran.stderr.includes('3.00'),
+            namesActual: s.ran.stderr.includes('4.00'),
+          }).toStrictEqual({ exitCode: 1, namesBaseline: true, namesActual: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'A run within the committed budget baseline plus tolerance exits 0',
+      Gherkin.Do.pipe(
+        Given('a project whose survivors are all committed and whose committed budget baseline is 4 seconds')(
+          'project',
+          () =>
+            prepareProject(baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR]), budgetBaselineJson(4)),
+        ),
+        When('stryker gates against both baselines')(
+          'ran',
+          (s) =>
+            runGate(s.project.root, 'human', [
+              '--baseline',
+              COMMITTED_BASELINE,
+              '--budget-baseline',
+              COMMITTED_BUDGET_BASELINE,
+            ]),
+        ),
+        Then('the process exits 0')((s, expect) => expect({ exitCode: s.ran.exitCode }).toStrictEqual({ exitCode: 0 })),
+      ),
+    )
+
+    scenario(
+      '--update-budget-baseline writes the finished run’s actual seconds',
+      Gherkin.Do.pipe(
+        Given('a project with no committed budget baseline file')(
+          'project',
+          () => prepareProject(baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR]), null),
+        ),
+        When('stryker gates with --update-budget-baseline')(
+          'ran',
+          (s) =>
+            runGate(s.project.root, 'human', [
+              '--baseline',
+              WRITTEN_BASELINE,
+              '--update-baseline',
+              '--budget-baseline',
+              WRITTEN_BUDGET_BASELINE,
+              '--update-budget-baseline',
+            ]),
+        ),
+        When('the written budget baseline is read back')(
+          'written',
+          (s) => readWrittenBudgetBaseline(s.project.reportPath),
+        ),
+        Then('the process exits 0 and the baseline holds this run’s actual seconds')((s, expect) =>
+          expect({ exitCode: s.ran.exitCode, written: s.written }).toStrictEqual({ exitCode: 0, written: 4 })
+        ),
+      ),
+    )
+
+    scenario(
+      'A budget-only gate without --baseline skips the survivor check and passes within tolerance',
+      Gherkin.Do.pipe(
+        Given('a project with a committed budget baseline of 4 seconds and no committed survivor baseline')(
+          'project',
+          () => prepareProject(null, budgetBaselineJson(4)),
+        ),
+        When('stryker gates with only --budget-baseline')(
+          'ran',
+          (s) => runGate(s.project.root, 'human', ['--budget-baseline', COMMITTED_BUDGET_BASELINE]),
+        ),
+        Then('the process exits 0')((s, expect) => expect({ exitCode: s.ran.exitCode }).toStrictEqual({ exitCode: 0 })),
       ),
     )
   })

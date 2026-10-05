@@ -62,6 +62,14 @@ export const generateRunId = (now: DateTime.Utc): RunEvent.RunId => RunEvent.Run
 
 const isActionableStatus = S.is(Mutant.ActionableStatusSchema)
 
+const ZERO_BUDGET = RunEvent.Budget.make({ predictedSeconds: 0, actualSeconds: 0 })
+
+const budgetOf = (report: Report.MutationTestResult): RunEvent.Budget =>
+  Option.getOrElse(
+    Option.flatMap(Option.fromUndefinedOr(report['budget']), (raw) => S.decodeUnknownOption(RunEvent.Budget)(raw)),
+    () => ZERO_BUDGET,
+  )
+
 export const actionableMutants = (files: Report.MutationTestResult['files']): ReadonlyArray<RunEvent.VerdictMutant> =>
   Arr.flatMap(Object.entries(files), ([file, fileResult]) =>
     Arr.map(
@@ -177,6 +185,7 @@ export const buildVerdictEnvelope: {
       incrementalMode,
       phaseDurations: Option.getOrNull(phaseDurations),
       static: staticVerdict,
+      budget: budgetOf(report),
     })
   },
 )

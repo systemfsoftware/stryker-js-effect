@@ -170,6 +170,12 @@ export const StaticVerdict = S.Struct({
 })
 export type StaticVerdict = typeof StaticVerdict.Type
 
+export const Budget = S.Struct({
+  predictedSeconds: Report.NonNegativeFinite,
+  actualSeconds: Report.NonNegativeFinite,
+})
+export type Budget = typeof Budget.Type
+
 export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   schemaVersion: StreamSchemaVersion,
   runId: RunId,
@@ -185,6 +191,7 @@ export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   incrementalMode: S.optionalKey(IncrementalMode),
   phaseDurations: S.NullOr(PhaseDurations),
   static: S.NullOr(StaticVerdict),
+  budget: Budget,
 }) {}
 
 export const FrameworkContributionRow = S.Struct({

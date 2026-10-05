@@ -74,8 +74,11 @@ const CompareRequestSchema = S.TaggedStruct('compare', {
 export type CompareRequest = S.Schema.Type<typeof CompareRequestSchema>
 
 const GateRequestSchema = S.TaggedStruct('gate', {
-  baseline: S.String,
+  baseline: S.optional(S.String),
   updateBaseline: S.Boolean,
+  budgetBaseline: S.optional(S.String),
+  budgetTolerance: S.Finite,
+  updateBudgetBaseline: S.Boolean,
 })
 
 export type GateRequest = S.Schema.Type<typeof GateRequestSchema>

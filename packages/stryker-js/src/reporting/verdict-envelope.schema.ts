@@ -18,4 +18,5 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
   incrementalMode: RunEvent.IncrementalMode,
   phaseDurations: S.NullOr(RunEvent.PhaseDurations),
   static: S.NullOr(RunEvent.StaticVerdict),
+  budget: RunEvent.Budget,
 }) {}

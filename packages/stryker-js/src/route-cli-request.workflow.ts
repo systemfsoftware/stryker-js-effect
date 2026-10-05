@@ -48,8 +48,11 @@ export class CliCompareRequested extends S.TaggedClass<CliCompareRequested>()('C
 }
 
 export class CliGateRequested extends S.TaggedClass<CliGateRequested>()('CliGateRequested', {
-  baseline: S.String,
+  baseline: S.optional(S.String),
   updateBaseline: S.Boolean,
+  budgetBaseline: S.optional(S.String),
+  budgetTolerance: S.Finite,
+  updateBudgetBaseline: S.Boolean,
 }) {
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
@@ -134,7 +137,13 @@ export const routeCliRequest = Workflow.make({
         )),
       Match.tag('gate', (gate) =>
         Result.succeed(
-          CliGateRequested.make({ baseline: gate.baseline, updateBaseline: gate.updateBaseline }),
+          CliGateRequested.make({
+            baseline: gate.baseline,
+            updateBaseline: gate.updateBaseline,
+            budgetBaseline: gate.budgetBaseline,
+            budgetTolerance: gate.budgetTolerance,
+            updateBudgetBaseline: gate.updateBudgetBaseline,
+          }),
         )),
       Match.tag('annotate', (annotate) => Result.succeed(CliAnnotateRequested.make({ baseline: annotate.baseline }))),
       Match.tag('plan', (plan) =>

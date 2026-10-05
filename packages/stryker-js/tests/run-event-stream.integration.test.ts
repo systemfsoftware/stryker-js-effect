@@ -465,6 +465,7 @@ Feature('Streaming a run to machine readers')
                   mutantSetPolicy: envelope.mutantSetPolicy,
                   phaseDurations: envelope.phaseDurations,
                   static: envelope.static,
+                  budget: envelope.budget,
                 }),
               ])
               yield* s.fixture.stream.closeAndDrain
@@ -528,6 +529,7 @@ Feature('Streaming a run to machine readers')
                   mutantSetPolicy: envelope.mutantSetPolicy,
                   phaseDurations: envelope.phaseDurations,
                   static: envelope.static,
+                  budget: envelope.budget,
                 }),
               ])
               yield* s.fixture.stream.closeAndDrain

@@ -1158,6 +1158,24 @@
               "type": "null"
             }
           ]
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "predictedSeconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "actualSeconds": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "predictedSeconds",
+            "actualSeconds"
+          ],
+          "additionalProperties": true
         }
       },
       "required": [
@@ -1174,7 +1192,8 @@
         "scope",
         "mutantSetPolicy",
         "phaseDurations",
-        "static"
+        "static",
+        "budget"
       ],
       "additionalProperties": true
     },

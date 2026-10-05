@@ -1,3 +1,4 @@
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
@@ -24,6 +25,12 @@ const actionableIdsOf = (files: Report.FileResultDictionary): ReadonlyArray<stri
   Arr.flatMap(
     Object.values(files),
     (file) => file.mutants.filter((mutant) => ACTIONABLE_STATUSES[mutant.status] === true).map((mutant) => mutant.id),
+  )
+
+const budgetOf = (report: Report.MutationTestResult): RunEvent.Budget =>
+  Option.getOrElse(
+    Option.flatMap(Option.fromUndefinedOr(report['budget']), (raw) => S.decodeUnknownOption(RunEvent.Budget)(raw)),
+    () => RunEvent.Budget.make({ predictedSeconds: 0, actualSeconds: 0 }),
   )
 
 describe('buildVerdictEnvelope', () => {
@@ -53,6 +60,16 @@ describe('buildVerdictEnvelope', () => {
       const config = report.config ?? {}
       const reuses = config['incremental'] === true && config['force'] !== true
       return incrementalMode === (reuses ? 'incremental' : 'full')
+    },
+  )
+
+  it.prop(
+    '∀r_EnvelopeBudget_≡CarriedFromReport',
+    { of: [Report.MutationTestResult], subject: buildVerdictEnvelope },
+    (subject, [report]) => {
+      const { budget } = subject(report, 'machine', 'flag', fixedRunId, '/base', pathService, Option.none(), null)
+      const expected = budgetOf(report)
+      return budget.predictedSeconds === expected.predictedSeconds && budget.actualSeconds === expected.actualSeconds
     },
   )
 })

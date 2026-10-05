@@ -1,9 +1,11 @@
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 export const PriorReportDocument = S.Struct({
   config: S.optional(S.Record(S.String, S.Unknown)),
   framework: S.optional(S.Struct({ version: S.optional(S.String) })),
+  budget: S.optional(RunEvent.Budget),
   files: S.Record(
     S.String,
     S.Struct({
