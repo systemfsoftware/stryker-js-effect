@@ -246,7 +246,7 @@ export const StrykerOptionsSchema = S.StructWithRest(
     dryRunOnly: defaulted(S.Boolean, false),
     ignorePatterns: defaulted(S.Array(S.String), []),
     ignoreStatic: defaulted(S.Boolean, false),
-    incremental: defaulted(S.Boolean, false),
+    incremental: defaulted(S.Boolean, true),
     incrementalFile: defaulted(S.String, 'reports/stryker-incremental.json'),
     incrementalSources: defaulted(S.Array(S.String), []),
     progressStreamFile: defaulted(S.String, 'reports/mutation-stream.jsonl'),

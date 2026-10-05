@@ -96,9 +96,9 @@ const runOptions = {
       ),
       optional,
     ),
-  force: Flag.map(optional(Flag.Boolean('force')), absentWhenFalse).pipe(
+  full: Flag.map(optional(Flag.Boolean('full').pipe(Flag.withAlias('force'))), absentWhenFalse).pipe(
     Flag.withDescription(
-      'Run all mutants, even if --incremental is provided and an incremental file exists. Can be used to force a rebuild of the incremental file.',
+      'Re-verify every mutant, ignoring the incremental cache and the persisted dry run. The full run is the backstop for the incremental cache. Aliased by the historical `--force`.',
     ),
   ),
   mutate: Flag.String('mutate')
@@ -405,7 +405,7 @@ const readStrykerOptions = (config: RunParsedConfig): Options.PartialStrykerOpti
     ...entryOf('incrementalFile', config.incrementalFile),
     ...entryOf('progressStreamFile', config.progressStreamFile),
     ...entryOf('since', config.since),
-    ...trueEntryOf('force', config.force),
+    ...trueEntryOf('force', config.full),
     ...entryOf('mutate', config.mutate),
     ...entryOf('testFiles', config.testFiles),
     ...entryOf('buildCommand', config.buildCommand),

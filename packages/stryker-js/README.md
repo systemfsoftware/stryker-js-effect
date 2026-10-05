@@ -153,8 +153,8 @@ pnpm exec stryker run --mutant <id,...>
 # Re-test only surviving mutants from prior run
 pnpm exec stryker run --survivors
 
-# Enable incremental caching
-pnpm exec stryker run --incremental
+# Incremental caching is on by default; re-verify every mutant instead
+pnpm exec stryker run --full
 
 # Run with specific concurrency
 pnpm exec stryker run --concurrency 4
@@ -196,7 +196,7 @@ STRYKER_MODE=machine pnpm exec stryker run  # the same, named by environment
 
 `reporters` defaults to `['clear-text', 'progress', 'html']`. Add `sarif` to also write `reports/mutation/mutation.sarif` (SARIF 2.1.0, named from `jsonReporter.fileName`): each survivor is a `warning` result, each no-coverage mutant a `note`, the fingerprint is the mutant's content id, and the log is capped at 5,000 results. Every run writes `reports/mutation/reproducers.json`: one entry per mutant in the report, holding its mutated-lines diff and the `stryker run --mutant <id>` command that reproduces it.
 
-The incremental cache is keyed by content: a mutant's id, the import-closure digest of its covering tests, the run inputs, the verdict-semantics version, and the mutant-set policy. Nothing in the key names a shard, branch, report path, or machine, so verdicts from different runs union and are reused wherever their inputs match. `incrementalSources` accepts globs of further incremental reports to union beside `incrementalFile`, which is how a sharded CI workspace reuses the reports it restored from other shards. Each run's stream carries a `reuse` line with the reused, ran, and per-reason refused counts, and an unchanged project reuses its persisted initial test run instead of repeating it.
+Incremental reuse is on by default: an unchanged mutant whose covering tests are unchanged is re-used and the verdict records its `incrementalMode` (`incremental` or `full`). Pass `--full` to re-verify every mutant, ignoring the cache and the persisted dry run. The incremental cache is keyed by content: a mutant's id, the import-closure digest of its covering tests, the run inputs, the verdict-semantics version, and the mutant-set policy. Nothing in the key names a shard, branch, report path, or machine, so verdicts from different runs union and are reused wherever their inputs match. `incrementalSources` accepts globs of further incremental reports to union beside `incrementalFile`, which is how a sharded CI workspace reuses the reports it restored from other shards. Each run's stream carries a `reuse` line with the reused, ran, and per-reason refused counts, and an unchanged project reuses its persisted initial test run instead of repeating it.
 
 `mutator.mutantSetPolicy` defaults to `'default'`, which suppresses the mutants a rule proves redundant — a relational replacement outside the sufficient set, a conditional that collapses to a literal, a replacement equal to the original code, or a duplicate already planted at the site — and records the rule id in the mutant's report entry. Set `mutator: { mutantSetPolicy: 'full' }` to keep every variant. `surfacing` (`{ perLine: 1, perFile: 7 }`) caps how many survivors reach the review surfaces and SARIF, without changing what the engine computes.
 

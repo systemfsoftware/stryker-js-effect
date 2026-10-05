@@ -71,6 +71,7 @@ const strykerUnderCap = async (name: string, shard: Shard | undefined, capSecond
       'mutation',
       '--incrementalFile',
       incrementalFileOf(shard),
+      '--full',
     ],
     env: { STRYKER_SHARD: shard === undefined ? '' : `${shard.index}/${shard.count}` },
     stdout: 'inherit',

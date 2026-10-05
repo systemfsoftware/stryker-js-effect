@@ -35,6 +35,26 @@ describe('buildVerdictEnvelope', () => {
       return counts.totalMutants === mutantTotalOf(report)
     },
   )
+
+  it.prop(
+    '∀r_Report_≡TheEnvelopeReusesVerdictsExactlyWhenIncrementalIsOnAndNotForced',
+    { of: [Report.MutationTestResult], subject: buildVerdictEnvelope },
+    (subject, [report]) => {
+      const { incrementalMode } = subject(
+        report,
+        'machine',
+        'flag',
+        fixedRunId,
+        '/base',
+        pathService,
+        Option.none(),
+        null,
+      )
+      const config = report.config ?? {}
+      const reuses = config['incremental'] === true && config['force'] !== true
+      return incrementalMode === (reuses ? 'incremental' : 'full')
+    },
+  )
 })
 
 describe('actionableMutants', () => {
