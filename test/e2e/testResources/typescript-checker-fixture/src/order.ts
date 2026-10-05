@@ -12,7 +12,7 @@ export function calculateTotal(amount: number, taxRate: number): number {
   return amount + amount * taxRate
 }
 
-// @stryker-expect next-line NoCoverage: BlockStatement
+// @stryker-expect next-line CompileError(TS2355): BlockStatement
 export function formatId(id: string): string {
   // @stryker-expect next-line NoCoverage: StringLiteral
   return `ORDER-${id}`

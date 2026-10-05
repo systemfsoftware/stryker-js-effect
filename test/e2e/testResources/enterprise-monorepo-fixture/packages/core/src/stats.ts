@@ -54,7 +54,7 @@ export function primaryTag(): string {
   return tags[0].toUpperCase()
 }
 
-// @stryker-expect next-line NoCoverage: all
+// @stryker-expect next-line CompileError(TS2355): BlockStatement
 export function legacyRiskScore(signals: readonly string[]): number {
   let total = 0
   // @stryker-expect next-line NoCoverage: BlockStatement="{}"
