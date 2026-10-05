@@ -127,6 +127,7 @@ export interface MutationReportingService {
     mutant: Mutant.MutantTestCoverage,
     result: Exclude<Checker.CheckResult, Checker.PassedCheckResult>,
   ) => Effect.Effect<Mutant.RunMutantResult>
+  readonly reportNoCoverage: (mutant: Mutant.MutantTestCoverage) => Effect.Effect<Mutant.RunMutantResult>
   readonly reportMutantRunResult: (
     mutant: Mutant.MutantTestCoverage,
     result: TestRunner.MutantRunResult,
@@ -156,6 +157,7 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
       const deps: MutationReportingDeps = { fs, path: pathService, events, projectFiles, phaseClock }
       return MutationReporting.of({
         reportCheckFailure: (mutant, result) => reportCheckFailure(mutant, result),
+        reportNoCoverage: (mutant) => reportNoCoverage(mutant),
         reportMutantRunResult: (mutant, result) => mapRunResult(mutant, result),
         reportAll: (input) => reportAll(deps, input),
         checkpoint: (input, plannedMutants) => checkpoint(deps, input, plannedMutants),
@@ -210,6 +212,8 @@ const reportCheckFailure = (
   mutant: Mutant.MutantTestCoverage,
   result: Exclude<Checker.CheckResult, Checker.PassedCheckResult>,
 ) => reportMutantStatus(mutant, 'CompileError', result.reason)
+
+const reportNoCoverage = (mutant: Mutant.MutantTestCoverage) => reportMutantStatus(mutant, 'NoCoverage')
 
 const reasonedOutcomeOf = (reason: string | undefined) =>
   Option.match(Option.fromNullishOr(reason), {

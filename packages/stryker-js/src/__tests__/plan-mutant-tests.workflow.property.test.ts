@@ -70,6 +70,12 @@ const earlyResultReasonOf = (
 
 const isRunPlan = (decision: PlannedEarlyResultMutant | PlannedRunMutant): boolean => S.is(PlannedRunMutant)(decision)
 
+const isNoCoverageFilter = (filter: readonly string[] | undefined): boolean =>
+  filter !== undefined && filter.length === 0
+
+const isNoCoverageRunPlan = (decision: PlannedEarlyResultMutant | PlannedRunMutant): boolean =>
+  S.is(PlannedRunMutant)(decision) && isNoCoverageFilter(decision.runOptions.testFilter)
+
 const coverageCommandArb = Arbitrary.all([
   Arbitrary.schema(Mutant.Mutant),
   Arbitrary.schema(S.Literals(['off', 'all', 'perTest'])),
@@ -246,7 +252,7 @@ describe('planMutantTests', () => {
   )
 
   it.prop(
-    '∀p_PerTestUncoveredNonStatic_≡NoCoverageEarlyResult',
+    '∀p_PerTestUncoveredNonStatic_≡NoCoverageRunPlan',
     { of: [MutantTestPlanCommand], subject: planMutantTests },
     (subject, [command]) =>
       Result.match(subject(command), {
@@ -258,8 +264,27 @@ describe('planMutantTests', () => {
               onSome: (mutant) =>
                 Boolean.match(isPerTestUncoveredNonStatic(command, mutant), {
                   onFalse: () => true,
-                  onTrue: () => earlyResultStatusOf(decision) === 'NoCoverage',
+                  onTrue: () =>
+                    isNoCoverageRunPlan(decision) &&
+                    S.is(PlannedRunMutant)(decision) &&
+                    decision.netTime === 0,
                 }),
+            })
+          ),
+      }),
+  )
+
+  it.prop(
+    '∀r_RunPlan_≡AnEmptyTestFilterOnlyMarksAPerTestUncoveredMutant',
+    { of: [MutantTestPlanCommand], subject: planMutantTests },
+    (subject, [command]) =>
+      Result.match(subject(command), {
+        onFailure: () => true,
+        onSuccess: (decisions) =>
+          decisions.every((decision, index) =>
+            Option.match(Option.fromUndefinedOr(command.mutants[index]), {
+              onNone: () => false,
+              onSome: (mutant) => isNoCoverageRunPlan(decision) === isPerTestUncoveredNonStatic(command, mutant),
             })
           ),
       }),

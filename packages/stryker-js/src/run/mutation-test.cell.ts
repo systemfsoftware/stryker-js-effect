@@ -40,6 +40,7 @@ import { planMutationTest } from './mutation-test-plan.cell.js'
 import {
   configuredTestFilesOf,
   inPlannedOrder,
+  isNoCoveragePlan,
   partitionPlannable,
   reportDroppedMutants,
   sandboxFilesOf,
@@ -164,20 +165,29 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
   })
   const runResults = yield* Effect.scoped(Effect.gen(function*() {
     const checkpoint = yield* makeCheckpointWriter(context, settledResults)
+    const settleReported = (reported: Mutant.RunMutantResult) =>
+      Effect.gen(function*() {
+        yield* announceSettledMutant(context, reported)
+        yield* checkpoint.record(reported)
+        return reported
+      })
     return yield* withPhaseSpan(
       SpanTaxonomy.Spans.mutationTestBatch,
       { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
       () =>
         runCheckedPlans(checkedPlans, {
           settleFailure: (mutantPlan, result) =>
-            Effect.gen(function*() {
-              const reported = yield* reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result)
-              yield* announceSettledMutant(context, reported)
-              yield* checkpoint.record(reported)
-              return reported
-            }),
+            reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result).pipe(
+              Effect.flatMap(settleReported),
+            ),
           runPlan: (runPlan) =>
-            Effect.scoped(mutantRunCell.run({ context, testRunnerPool, checkpoint, plan: runPlan })),
+            Option.match(Option.liftPredicate(runPlan, isNoCoveragePlan), {
+              onNone: () => Effect.scoped(mutantRunCell.run({ context, testRunnerPool, checkpoint, plan: runPlan })),
+              onSome: (noCoverageRunPlan) =>
+                reporting.reportNoCoverage(toReportedMutant(noCoverageRunPlan.mutant)).pipe(
+                  Effect.flatMap(settleReported),
+                ),
+            }),
           concurrency: testRunnerCapacity,
         }).pipe(
           Stream.runFold(

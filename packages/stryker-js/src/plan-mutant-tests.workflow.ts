@@ -67,10 +67,13 @@ const coveredByField = (coveredBy: readonly string[] | undefined) =>
   })
 
 const testFilterField = (testFilter: readonly string[] | undefined) =>
-  Option.match(Option.filter(Option.fromUndefinedOr(testFilter), (filter) => filter.length > 0), {
+  Option.match(Option.fromUndefinedOr(testFilter), {
     onNone: () => ({} as const),
     onSome: (present) => ({ testFilter: [...present] } as const),
   })
+
+const nonEmptyTestFilterOf = (tests: readonly string[] | undefined): readonly string[] | undefined =>
+  Option.getOrUndefined(Option.filter(Option.fromUndefinedOr(tests), (present) => present.length > 0))
 
 const staticCoverageCountOf = (staticCoverage: Record<string, number> | undefined, mutantId: string) =>
   Option.getOrElse(
@@ -268,10 +271,21 @@ const runWithCoveredTests = (
     mutant,
     command,
     calculateTotalTimeForIds(tests, command.testTimeById),
-    orderedTestsOf(command, mutant.id, tests),
+    nonEmptyTestFilterOf(orderedTestsOf(command, mutant.id, tests)),
     isStatic,
     coveredBy,
   )
+
+const NO_COVERAGE_NET_TIME_MS = 0
+
+const NO_COVERAGE_TEST_FILTER: readonly TestRunner.TestId[] = []
+
+const toNoCoverageRunPlan = (
+  mutant: Mutant.Mutant,
+  command: MutantTestPlanCommand,
+  isStatic: boolean,
+  coveredBy: readonly string[],
+) => toRunPlan(mutant, command, NO_COVERAGE_NET_TIME_MS, NO_COVERAGE_TEST_FILTER, isStatic, coveredBy)
 
 const planForUncoveredStatic = (
   mutant: Mutant.Mutant,
@@ -282,7 +296,15 @@ const planForUncoveredStatic = (
   Boolean.match(command.options.ignoreStatic, {
     onTrue: () =>
       Result.succeed(toEarlyResultPlan(mutant, isStatic, 'Ignored', IGNORED_STATIC_MUTANT_REASON, coveredBy)),
-    onFalse: () => toRunPlan(mutant, command, command.timeSpentAllTests, command.globalTestFilter, isStatic, coveredBy),
+    onFalse: () =>
+      toRunPlan(
+        mutant,
+        command,
+        command.timeSpentAllTests,
+        nonEmptyTestFilterOf(command.globalTestFilter),
+        isStatic,
+        coveredBy,
+      ),
   })
 
 const planForStaticallyCovered = (
@@ -335,15 +357,19 @@ const decidePlanForMutant = (
       Result.succeed(toEarlyResultPlan(mutant, isStatic, status, mutant.statusReason, coveredByOfMutant(mutant))),
     onNone: () =>
       Boolean.match(isPerTestUncoveredNonStatic(command, mutant, isStatic), {
-        onTrue: () =>
-          Result.succeed(
-            toEarlyResultPlan(mutant, isStatic, 'NoCoverage', undefined, coveringTestIdsOf(command, mutant.id)),
-          ),
+        onTrue: () => toNoCoverageRunPlan(mutant, command, isStatic, coveringTestIdsOf(command, mutant.id)),
         onFalse: () =>
           Boolean.match(hasCoverageForPlan(command.staticCoverage), {
             onTrue: () => planForStaticallyCovered(mutant, command, isStatic),
             onFalse: () =>
-              toRunPlan(mutant, command, command.timeSpentAllTests, command.globalTestFilter, undefined, undefined),
+              toRunPlan(
+                mutant,
+                command,
+                command.timeSpentAllTests,
+                nonEmptyTestFilterOf(command.globalTestFilter),
+                undefined,
+                undefined,
+              ),
           }),
       }),
   })

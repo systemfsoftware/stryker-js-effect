@@ -19,6 +19,9 @@ export type ValidMutantStatus = Mutant.MutantStatus
 export const toReportedMutant = (mutant: Mutant.Mutant): Mutant.MutantTestCoverage =>
   Object.assign(mutant, { coveredBy: mutant.coveredBy, static: mutant.static })
 
+export const isNoCoveragePlan = (plan: Mutant.MutantRunPlan): boolean =>
+  plan.runOptions.testFilter !== undefined && plan.runOptions.testFilter.length === 0
+
 export interface PlannedResults {
   readonly planned: readonly Mutant.Mutant[]
   readonly results: readonly Mutant.RunMutantResult[]
