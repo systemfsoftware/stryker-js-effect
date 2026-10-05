@@ -255,7 +255,7 @@ Feature('Streaming a run to machine readers')
             tags: ['stream', 'plan', 'phase', 'tick', 'help'],
             newlineTerminated: true,
             stderr: [],
-            opening: { mode: 'machine', signal: 'tty', schemaVersion: '2.0', runIdIsNonEmpty: true },
+            opening: { mode: 'machine', signal: 'tty', schemaVersion: '3.0', runIdIsNonEmpty: true },
           })
         }),
       ),
@@ -381,7 +381,7 @@ Feature('Streaming a run to machine readers')
             open: s.result.open,
           }).toEqual({
             tags: ['stream', 'error'],
-            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '2.0' },
+            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '3.0' },
             open: false,
           })
         }),
