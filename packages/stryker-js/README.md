@@ -200,6 +200,10 @@ The incremental cache is keyed by content: a mutant's id, the import-closure dig
 
 `mutator.mutantSetPolicy` defaults to `'default'`, which suppresses the mutants a rule proves redundant — a relational replacement outside the sufficient set, a conditional that collapses to a literal, a replacement equal to the original code, or a duplicate already planted at the site — and records the rule id in the mutant's report entry. Set `mutator: { mutantSetPolicy: 'full' }` to keep every variant. `surfacing` (`{ perLine: 1, perFile: 7 }`) caps how many survivors reach the review surfaces and SARIF, without changing what the engine computes.
 
+### Upgrading from 13.x: the mutant set changed in 14.0.0
+
+14.0.0 made `'default'` the default `mutator.mutantSetPolicy`; 13.x generated what `'full'` generates now. A score produced under one policy grades a different mutant set from a score under the other, so the two are not comparable: removing a killed mutant lowers the score, removing a survivor raises it. Every run records its policy (the stream's `verdict.mutantSetPolicy` and the incremental report), and a cached verdict from the other policy is refused with `policyChanged`. To compare against a 13.x baseline, or to keep grading the 13.x mutant set, set `mutator: { mutantSetPolicy: 'full' }`.
+
 ## Programmatic API
 
 ### Effect 4 Native Interface
