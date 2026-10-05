@@ -12,6 +12,7 @@ import {
   type RunOutcomeDecision,
   type RunOutcomeError,
   RunParseFailed,
+  RunRefused,
   RunSurvivorsRejected,
 } from '../classify-run-outcome.workflow.js'
 import { RunOutcomeCommand } from '../RunOutcomeCommand.schema.js'
@@ -95,6 +96,13 @@ describe('classifyRunOutcome', () => {
         Match.tag(
           'RunGenericFailureObservation',
           (observation) => isRunFailed(result, 1, observation.diagnostic ?? undefined),
+        ),
+        Match.tag(
+          'RunRefusedObservation',
+          (observation) =>
+            Result.isSuccess(result) &&
+            S.is(RunRefused)(result.success) &&
+            result.success.message === observation.message,
         ),
         Match.exhaustive,
       )

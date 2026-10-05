@@ -21,6 +21,7 @@ export default defineConfig({
   plugins: [inSourceSchemaLaws()],
   test: {
     ...sharedConfig.test,
+    env: { ...sharedConfig.test?.env, ALLOW_LOCAL_MUTATION: '1' },
     include: [
       'tests/**/*.integration.test.ts',
       'tests/**/*.differential.test.ts',

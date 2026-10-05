@@ -20,7 +20,13 @@ import * as SynchronizedRef from 'effect/SynchronizedRef'
 
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { FailedRunOutcome, RunOk, RunOutcomeDecision, RunOutcomeError } from './classify-run-outcome.workflow.js'
+import type {
+  FailedRunOutcome,
+  RunOk,
+  RunOutcomeDecision,
+  RunOutcomeError,
+  RunRefused,
+} from './classify-run-outcome.workflow.js'
 import { defaultOptions } from './config/default-options.js'
 import {
   frameRunEvent,
@@ -284,6 +290,16 @@ const offerFailureEnvelope = (
   )
 }
 
+const offerRefusedEnvelope = (stream: RunEventStream, refused: RunRefused): Effect.Effect<void> =>
+  Queue.offer(
+    stream.queue,
+    RunEvent.Refused.make({
+      schemaVersion: RunEvent.StreamSchemaVersion.literal,
+      rule: refused.rule,
+      message: refused.message,
+    }),
+  )
+
 const emitHelpEnvelope = (stream: RunEventStream, help: string): Effect.Effect<void> =>
   Queue.offer(
     stream.queue,
@@ -351,6 +367,7 @@ const emitMachineModeOutput = Effect.fn(SpanTaxonomy.Spans.runEventStreamEmitMac
         Match.tag('RunParseFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
         Match.tag('RunSurvivorsRejected', (failed) => offerFailureEnvelope(stream, failed, captured)),
         Match.tag('RunConfigFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
+        Match.tag('RunRefused', (refused) => offerRefusedEnvelope(stream, refused)),
         Match.tag('RunFailed', (failed) => offerFailureEnvelope(stream, failed, captured)),
         Match.exhaustive,
       ),

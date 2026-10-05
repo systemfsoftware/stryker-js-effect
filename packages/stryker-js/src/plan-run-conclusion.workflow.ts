@@ -9,6 +9,7 @@ import {
   RunFailed,
   RunInterrupted,
   RunParseFailed,
+  RunRefused,
   RunSurvivorsRejected,
 } from './classify-run-outcome.workflow.js'
 import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
@@ -20,6 +21,7 @@ export const FailedRunOutcomeSchema = S.Union([
   RunParseFailed,
   RunSurvivorsRejected,
   RunConfigFailed,
+  RunRefused,
   RunFailed,
   RunInterrupted,
 ])
@@ -29,6 +31,7 @@ export const RunOutcomeTag = S.Literals([
   'RunParseFailed',
   'RunSurvivorsRejected',
   'RunConfigFailed',
+  'RunRefused',
   'RunFailed',
   'RunInterrupted',
 ])

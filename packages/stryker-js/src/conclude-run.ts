@@ -12,6 +12,7 @@ import * as Order from 'effect/Order'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
+import { LocalMutationRefused } from './refuse-local-mutation.workflow.js'
 import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
 import {
   RunClassedObservation,
@@ -20,6 +21,7 @@ import {
   RunHelpObservation,
   RunInterruptedObservation,
   type RunOutcomeObservation,
+  RunRefusedObservation,
   RunSchemaErrorObservation,
   RunSucceededClean,
   RunSucceededVerdict,
@@ -137,6 +139,19 @@ const collectExitClasses = <A, E>(exit: Exit.Exit<A, E>): Array<Plugin.ExitClass
   const seen = new WeakSet<object>()
   failurePayloads(exit).forEach((payload) =>
     visitReachableValue(payload, 0, seen, (node) => appendExitClass(node, out))
+  )
+  return out
+}
+
+const refusalsOf = <A, E>(exit: Exit.Exit<A, E>): ReadonlyArray<LocalMutationRefused> => {
+  const out: Array<LocalMutationRefused> = []
+  const seen = new WeakSet<object>()
+  failurePayloads(exit).forEach((payload) =>
+    visitReachableValue(payload, 0, seen, (node) => {
+      if (S.is(LocalMutationRefused)(node)) {
+        out.push(node)
+      }
+    })
   )
   return out
 }
@@ -340,16 +355,21 @@ const observationOf = <A, E>(
                       Boolean.match(carriesSchemaError(value), {
                         onTrue: () => RunSchemaErrorObservation.make({ configDetail }),
                         onFalse: () =>
-                          exit.pipe(
-                            collectExitClasses,
-                            highestExitClassOf,
-                            Option.fromUndefinedOr,
-                            Option.match({
-                              onSome: (exitClass) =>
-                                RunClassedObservation.make({ exitClass, configDetail, diagnostic }),
-                              onNone: () => RunGenericFailureObservation.make({ diagnostic }),
-                            }),
-                          ),
+                          Option.match(Option.fromNullishOr(refusalsOf(exit)[0]), {
+                            onSome: (refused) =>
+                              RunRefusedObservation.make({ rule: refused.rule, message: refused.message }),
+                            onNone: () =>
+                              exit.pipe(
+                                collectExitClasses,
+                                highestExitClassOf,
+                                Option.fromUndefinedOr,
+                                Option.match({
+                                  onSome: (exitClass) =>
+                                    RunClassedObservation.make({ exitClass, configDetail, diagnostic }),
+                                  onNone: () => RunGenericFailureObservation.make({ diagnostic }),
+                                }),
+                              ),
+                          }),
                       }),
                   }),
               }),

@@ -266,6 +266,15 @@ export class HelpRendered extends S.TaggedClass<HelpRendered>()('help', {
   code: S.Literals([0]),
   help: S.String,
 }) {}
+
+export const RefusalRule = S.Literal('mutation-runs-on-main-ci')
+export type RefusalRule = typeof RefusalRule.Type
+
+export class Refused extends S.TaggedClass<Refused>()('refused', {
+  schemaVersion: StreamSchemaVersion,
+  rule: RefusalRule,
+  message: S.String,
+}) {}
 export const RunEvent = Object.assign(
   S.Union([
     RunStarted,
@@ -282,9 +291,10 @@ export const RunEvent = Object.assign(
     VerdictReached,
     RunFailed,
     HelpRendered,
+    Refused,
   ]),
   { QUEUE_BOUND: 256 },
 )
 export type RunEvent = typeof RunEvent.Type
 
-export type RunTerminalEvent = VerdictReached | RunFailed | HelpRendered
+export type RunTerminalEvent = VerdictReached | RunFailed | HelpRendered | Refused

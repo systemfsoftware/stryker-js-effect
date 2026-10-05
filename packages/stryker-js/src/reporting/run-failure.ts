@@ -11,6 +11,7 @@ const CONFIG_CODE = 2
 const UNKNOWN_FAILURE = 'Unknown failure'
 const SIGNAL_REMEDIATION = 'the run was interrupted by a signal; re-run it to continue'
 const PARSE_REMEDIATION = 're-run with --help to see the full usage'
+const REFUSAL_REMEDIATION = 'run mutation testing on main CI (GitHub Actions)'
 const DEFAULT_REMEDIATION = 'see --reportFile or the verdict envelope on stdout'
 
 export const exitCodeOf = (outcome: RunOutcomeDecision | RunOutcomeError): Plugin.ExitCode =>
@@ -20,6 +21,7 @@ export const exitCodeOf = (outcome: RunOutcomeDecision | RunOutcomeError): Plugi
     Match.tag('RunParseFailed', () => CONFIG_CODE),
     Match.tag('RunSurvivorsRejected', () => CONFIG_CODE),
     Match.tag('RunConfigFailed', () => CONFIG_CODE),
+    Match.tag('RunRefused', () => CONFIG_CODE),
     Match.tag('RunFailed', (failed) => failed.code),
     Match.exhaustive,
   )
@@ -46,6 +48,7 @@ const failureTextOf = (error: FailedRunOutcome, captured: string) =>
     Match.tag('RunInterrupted', () =>
       capturedOrUnknown(captured)),
     Match.tag('RunConfigFailed', (failed) => capturedThenRecorded(captured, failed.detail)),
+    Match.tag('RunRefused', (failed) => failed.message),
     Match.tag('RunFailed', (failed) => capturedThenRecorded(captured, failed.diagnostic)),
     Match.exhaustive,
   )
@@ -62,6 +65,7 @@ const remediationTextOf = (error: FailedRunOutcome) =>
           `check the config file: ${detail}`,
         onNone: () => 'check the config file',
       })),
+    Match.tag('RunRefused', () => REFUSAL_REMEDIATION),
     Match.tag('RunFailed', () => DEFAULT_REMEDIATION),
     Match.exhaustive,
   )

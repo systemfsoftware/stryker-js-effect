@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
@@ -13,6 +14,7 @@ import {
   RunGenericFailureObservation,
   RunHelpObservation,
   RunOutcomeCommand,
+  RunRefusedObservation,
   RunSchemaErrorObservation,
   RunSucceededVerdict,
   RunSurvivorsRejectedObservation,
@@ -77,6 +79,13 @@ export class RunConfigFailed extends S.TaggedClass<RunConfigFailed>()('RunConfig
   readonly [RunOutcomeTypeId] = RunOutcomeTypeId
 }
 
+export class RunRefused extends S.TaggedClass<RunRefused>()('RunRefused', {
+  rule: RunEvent.RefusalRule,
+  message: S.String,
+}) {
+  readonly [RunOutcomeTypeId] = RunOutcomeTypeId
+}
+
 export class RunFailed extends S.TaggedClass<RunFailed>()('RunFailed', {
   code: Plugin.ExitCode,
   diagnostic: S.optional(S.String),
@@ -89,6 +98,7 @@ export type RunOutcomeDecision =
   | RunParseFailed
   | RunSurvivorsRejected
   | RunConfigFailed
+  | RunRefused
   | RunFailed
 
 export type RunOutcomeError = RunInterrupted
@@ -139,6 +149,9 @@ const classedOutcome = (observation: RunClassedObservation): RunOutcomeDecision 
 const genericFailureOutcome = (observation: RunGenericFailureObservation): RunOutcomeDecision =>
   RunFailed.make({ code: 1, diagnostic: Option.getOrUndefined(Option.fromNullishOr(observation.diagnostic)) })
 
+const refusedOutcome = (observation: RunRefusedObservation): RunOutcomeDecision =>
+  RunRefused.make({ rule: observation.rule, message: observation.message })
+
 const decide = (command: RunOutcomeCommand): Result.Result<RunOutcomeDecision, RunOutcomeError> =>
   Match.value(command.observation).pipe(
     Match.tag('RunSucceededClean', () => Result.succeed(succeededCleanOutcome())),
@@ -153,12 +166,13 @@ const decide = (command: RunOutcomeCommand): Result.Result<RunOutcomeDecision, R
     Match.tag('RunSchemaErrorObservation', (observation) => Result.succeed(schemaErrorOutcome(observation))),
     Match.tag('RunClassedObservation', (observation) => Result.succeed(classedOutcome(observation))),
     Match.tag('RunGenericFailureObservation', (observation) => Result.succeed(genericFailureOutcome(observation))),
+    Match.tag('RunRefusedObservation', (observation) => Result.succeed(refusedOutcome(observation))),
     Match.exhaustive,
   )
 
 export const classifyRunOutcome = Workflow.make({
   command: RunOutcomeCommand,
-  decision: S.Union([RunOk, RunParseFailed, RunSurvivorsRejected, RunConfigFailed, RunFailed]),
+  decision: S.Union([RunOk, RunParseFailed, RunSurvivorsRejected, RunConfigFailed, RunRefused, RunFailed]),
   error: RunInterrupted,
   decide,
 })

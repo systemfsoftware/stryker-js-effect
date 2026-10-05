@@ -8,6 +8,7 @@ import {
   RunInterrupted,
   RunOk,
   RunParseFailed,
+  RunRefused,
   RunSurvivorsRejected,
 } from '../classify-run-outcome.workflow.js'
 import { exitCodeOf } from '../reporting/run-failure.js'
@@ -25,6 +26,7 @@ describe('exitCodeOf', () => {
           RunParseFailed,
           RunSurvivorsRejected,
           RunConfigFailed,
+          RunRefused,
           RunFailed,
         ]),
       ],
