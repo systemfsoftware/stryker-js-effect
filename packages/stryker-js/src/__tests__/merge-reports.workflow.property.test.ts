@@ -101,7 +101,7 @@ const printedSummaryOf = (mode: 'human' | 'machine', summary: string) =>
     return machine.read()
   }).pipe(Effect.provide(writeLayers))
 
-describe('merge-reports', () => {
+describe('merge report parts', () => {
   it.effect.prop(
     '∀ms_StreamedMutants_≡DecodedMergeRebuildsEachIntoItsFile',
     { of: [RunEvent.RunMutantTested.pipe(S.Array, Arbitrary.schema)], subject: partFromMutants },

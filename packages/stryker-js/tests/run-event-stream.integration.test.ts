@@ -295,7 +295,7 @@ Feature('Streaming a run to machine readers')
     )
 
     scenario(
-      'A human run still writes the wire records to the progress stream file that merge-reports rebuilds from',
+      'A human run still writes the wire records to the progress stream file that stryker merge rebuilds from',
       Gherkin.Do.pipe(
         Given('a human run whose sinks are recorded')('fixture', () => recordingFixture('human')),
         When('the run opens, reports progress, and closes')(

@@ -56,7 +56,7 @@ export type EncodedMerge = {
 const refuse = (reason: string) => MergeReportsFailed.make({ reason })
 
 export const failReason = Effect.fn(SpanTaxonomy.Spans.mergeReportsFail.name)(function*(reason: string) {
-  yield* Console.error(`stryker merge-reports: ${reason}`)
+  yield* Console.error(`stryker merge: ${reason}`)
   return yield* MergeReportsFailed.make({ reason })
 })
 

@@ -22,7 +22,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
-export const CliCommandSchema = S.Literals(['run', 'merge-reports', 'serve', 'feedback', 'mcp'])
+export const CliCommandSchema = S.Literals(['run', 'merge', 'serve', 'feedback', 'mcp'])
 export type CliCommand = typeof CliCommandSchema.Type
 
 export const ServeChannelSchema = S.Literals(['stdio', 'socket'])
@@ -51,19 +51,26 @@ const ServeRouteRequestSchema = S.TaggedStruct('serve', {
 
 export type ServeRouteRequest = S.Schema.Type<typeof ServeRouteRequestSchema>
 
-const RunRequestSchema = S.TaggedStruct('run', { survivors: S.Boolean, mutants: S.Array(S.String).pipe(S.optional) })
+const RunRequestSchema = S.TaggedStruct('run', {
+  survivors: S.Boolean,
+  mutants: S.Array(S.String).pipe(S.optional),
+  plan: S.optional(S.String),
+  shard: S.optional(S.String),
+  project: S.optional(S.String),
+  out: S.optional(S.String),
+})
 
 export type RunRequest = S.Schema.Type<typeof RunRequestSchema> & {
   readonly options: Options.PartialStrykerOptions
 }
 
-const MergeReportsRequestSchema = S.TaggedStruct('merge-reports', {
-  parts: S.String,
-  out: S.String,
-  packages: S.optional(S.String),
+const MergeRequestSchema = S.TaggedStruct('merge', {
+  plan: S.String,
+  out: S.optional(S.String),
+  shards: S.Array(S.String),
 })
 
-export type MergeReportsRequest = S.Schema.Type<typeof MergeReportsRequestSchema>
+export type MergeRequest = S.Schema.Type<typeof MergeRequestSchema>
 
 const CompareRequestSchema = S.TaggedStruct('compare', {
   baseline: S.String,
@@ -101,7 +108,7 @@ export type PlanRequest = S.Schema.Type<typeof PlanRequestSchema>
 
 export type CliRequest =
   | RunRequest
-  | MergeReportsRequest
+  | MergeRequest
   | CompareRequest
   | GateRequest
   | AnnotateRequest
@@ -113,7 +120,7 @@ export type CliRequest =
 export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteCommand', {
   route: S.Union([
     S.TaggedStruct('help', {}),
-    MergeReportsRequestSchema,
+    MergeRequestSchema,
     RunRequestSchema,
     CompareRequestSchema,
     GateRequestSchema,

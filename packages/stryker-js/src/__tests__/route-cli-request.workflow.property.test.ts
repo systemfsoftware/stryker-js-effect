@@ -8,7 +8,7 @@ import { routeCliRequest } from '../route-cli-request.workflow.js'
 const matchesRoute = (command: CliRouteCommand, tag: string): boolean =>
   Match.value(command.route).pipe(
     Match.tag('help', () => tag === 'CliHelpRequested'),
-    Match.tag('merge-reports', () => tag === 'CliMergeReportsRequested'),
+    Match.tag('merge', () => tag === 'CliMergeRequested'),
     Match.tag('compare', () => tag === 'CliCompareRequested'),
     Match.tag('gate', () => tag === 'CliGateRequested'),
     Match.tag('annotate', () => tag === 'CliAnnotateRequested'),
@@ -17,7 +17,9 @@ const matchesRoute = (command: CliRouteCommand, tag: string): boolean =>
     Match.tag('feedback', () => tag === 'CliFeedbackRequested'),
     Match.tag('mcp', () => tag === 'CliMcpRequested'),
     Match.tag('run', (run) =>
-      run.mutants !== undefined && run.mutants.length > 0
+      run.plan !== undefined && run.shard !== undefined
+        ? (run.project !== undefined ? tag === 'CliShardLeafRequested' : tag === 'CliShardRunRequested')
+        : run.mutants !== undefined && run.mutants.length > 0
         ? tag === 'CliRerunRequested'
         : tag === (run.survivors ? 'CliSurvivorsRequested' : 'CliRunRequested')),
     Match.exhaustive,
@@ -29,7 +31,9 @@ const decides = (subject: typeof routeCliRequest, command: CliRouteCommand): str
     onSuccess: (decision) =>
       Match.value(decision).pipe(
         Match.tag('CliHelpRequested', () => 'CliHelpRequested'),
-        Match.tag('CliMergeReportsRequested', () => 'CliMergeReportsRequested'),
+        Match.tag('CliMergeRequested', () => 'CliMergeRequested'),
+        Match.tag('CliShardRunRequested', () => 'CliShardRunRequested'),
+        Match.tag('CliShardLeafRequested', () => 'CliShardLeafRequested'),
         Match.tag('CliCompareRequested', () => 'CliCompareRequested'),
         Match.tag('CliGateRequested', () => 'CliGateRequested'),
         Match.tag('CliAnnotateRequested', () => 'CliAnnotateRequested'),
