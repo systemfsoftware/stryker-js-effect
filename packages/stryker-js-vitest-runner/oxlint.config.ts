@@ -6,6 +6,7 @@ const userProjectSetupFile = 'sandbox/stryker-setup.ts'
 export default defineConfig({
   extends: [recommended],
   rules: {
+    'effecttsgo/unstable-api-usage': 'off',
     'typescript/no-unnecessary-condition': 'error',
     'typescript/strict-boolean-expressions': 'error',
     'typescript/no-non-null-assertion': 'error',

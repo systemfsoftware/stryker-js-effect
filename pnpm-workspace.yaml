@@ -10,7 +10,7 @@ catalog:
   "@commitlint/cli": ^21
   "@commitlint/config-conventional": ^21
   "@commitlint/types": ^21
-  "@effect/tsgo": ^0.45.0
+  "@effect/tsgo": ^0.47.2
   "@effect/platform-node": ^4.0.0
   "@effect/platform-node-shared": ^4.0.0
   "@effect/vitest": ^4.0.0
