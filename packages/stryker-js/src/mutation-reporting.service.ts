@@ -380,15 +380,20 @@ const reproducedCountOf = (timeoutKind: TimeoutKind, evidenceKind: TimeoutKind |
     Match.orElse(() => 0),
   )
 
+interface PersistedTimeoutFields {
+  readonly timeoutKind?: TimeoutKind
+  readonly reproductions?: number
+}
+
 const timeoutFieldsOf = (
   mutant: Mutant.RunMutantResult,
   evidence: TimeoutEvidence | undefined,
-): { readonly timeoutKind?: TimeoutKind; readonly reproductions?: number } =>
+): PersistedTimeoutFields =>
   Boolean.match(mutant.status === 'Timeout', {
-    onFalse: (): { readonly timeoutKind?: TimeoutKind; readonly reproductions?: number } => ({}),
+    onFalse: (): PersistedTimeoutFields => ({}),
     onTrue: () =>
       Option.match(Option.fromUndefinedOr(timeoutKindOf(mutant, evidence)), {
-        onNone: (): { readonly timeoutKind?: TimeoutKind; readonly reproductions?: number } => ({}),
+        onNone: (): PersistedTimeoutFields => ({}),
         onSome: (timeoutKind) => ({
           timeoutKind,
           reproductions: reproducedCountOf(timeoutKind, evidenceKindOf(evidence)),
@@ -931,9 +936,10 @@ const checkpoint = (
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const { Mutant: { Mutant, MutantStatusSchema }, TestRunner: { MutantRunResultSchema } } = await import(
-    '@systemfsoftware/stryker-js-plugin-interface'
-  )
+  const {
+    Mutant: { Mutant, MutantStatusSchema },
+    TestRunner: { MutantRunResultSchema, WallClockTimeoutReason },
+  } = await import('@systemfsoftware/stryker-js-plugin-interface')
 
   const MAX_SOURCE_COORDINATE = 1_000_000
 
@@ -1040,12 +1046,62 @@ if (import.meta.vitest !== void 0) {
       Match.orElse(() => ({ timeoutKind: undefined, reproductions: undefined })),
     )
 
+  interface TimeoutProbe {
+    readonly result: Mutant.RunMutantResult
+    readonly evidence: TimeoutEvidence | undefined
+    readonly expected: PersistedTimeoutFields
+  }
+
+  /**
+   * Inputs whose persisted timeout fields are known without the subject's logic: a wall-clock
+   * timeout is credited only beside wall-clock evidence, a hit-limit timeout is never credited
+   * as reproduced, and a non-timeout carries no timeout fields. The probes disagree with one
+   * another, so they refute a constant impostor even when the draw holds no timeout case for
+   * the model comparison to catch.
+   */
+  const timeoutProbes = (mutant: Mutant.Mutant): readonly TimeoutProbe[] => [
+    {
+      result: { ...mutant, status: 'Timeout', statusReason: WallClockTimeoutReason.literal },
+      evidence: { timeoutKind: 'wallClock', reproductions: 3 },
+      expected: { timeoutKind: 'wallClock', reproductions: 1 },
+    },
+    {
+      result: { ...mutant, status: 'Timeout', statusReason: WallClockTimeoutReason.literal },
+      evidence: { timeoutKind: 'hitLimit', reproductions: 7 },
+      expected: { timeoutKind: 'wallClock', reproductions: 0 },
+    },
+    {
+      result: { ...mutant, status: 'Timeout', statusReason: WallClockTimeoutReason.literal },
+      evidence: undefined,
+      expected: { timeoutKind: 'wallClock', reproductions: 0 },
+    },
+    {
+      result: { ...mutant, status: 'Timeout', statusReason: 'Hit limit reached (3/10)' },
+      evidence: { timeoutKind: 'wallClock', reproductions: 7 },
+      expected: { timeoutKind: 'hitLimit', reproductions: 0 },
+    },
+    {
+      result: { ...mutant, status: 'Survived', statusReason: WallClockTimeoutReason.literal },
+      evidence: { timeoutKind: 'wallClock', reproductions: 7 },
+      expected: {},
+    },
+  ]
+
+  const timeoutProbesHold = (subject: typeof timeoutFieldsOf, mutant: Mutant.Mutant): boolean =>
+    Arr.every(
+      timeoutProbes(mutant),
+      ({ result, evidence, expected }) => JSON.stringify(subject(result, evidence)) === JSON.stringify(expected),
+    )
+
   it.prop(
     '∀mse_MutantStatusAndEvidence_≡PersistedTimeoutFieldsFollowTheReproductionRule',
     { of: [Mutant, MutantStatusSchema, TimeoutEvidenceSchema], subject: timeoutFieldsOf },
     (subject, [mutant, status, evidence]) => {
       const result: Parameters<typeof timeoutFieldsOf>[0] = { ...mutant, status }
-      return JSON.stringify(subject(result, evidence)) === JSON.stringify(expectedTimeoutFields(result, evidence))
+      return holds([
+        JSON.stringify(subject(result, evidence)) === JSON.stringify(expectedTimeoutFields(result, evidence)),
+        timeoutProbesHold(subject, mutant),
+      ])
     },
   )
 }
