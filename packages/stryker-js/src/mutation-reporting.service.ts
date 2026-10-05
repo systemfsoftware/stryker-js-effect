@@ -41,6 +41,9 @@ import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
 import type { DryRunCoverage } from './dry-run-coverage.schema.js'
 import type { FormatIdentity, TimeoutEvidence, TimeoutKind } from './IncrementalDiff.schema.js'
 import { TimeoutEvidenceSchema } from './IncrementalDiff.schema.js'
+import { mutantCostsOf } from './mutant-cost-model.js'
+import { costTotalMsOf } from './mutant-cost.js'
+import type { MutantCost, MutantCostModel } from './MutantCost.schema.js'
 import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js'
@@ -118,6 +121,7 @@ export interface MutationReportingInput {
   readonly basePath: string
   readonly reporterStage: ReporterStage
   readonly formatRegistry: Format.FormatRegistry
+  readonly timeOverheadMs: number
   readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
   readonly timeoutEvidenceByMutantId?: Readonly<Record<string, TimeoutEvidence>>
 }
@@ -761,6 +765,44 @@ const dryRunCoverageFieldOf = (testCoverage: TestCoverage): { readonly dryRunCov
     onSome: (dryRunCoverage) => ({ dryRunCoverage }),
   })
 
+const testTimesOf = (tests: Iterable<TestRunner.TestResult>): readonly number[] =>
+  Arr.map([...tests], (test) => test.timeSpentMs)
+
+const executedEntryOf = (result: Mutant.RunMutantResult): ReadonlyArray<readonly [string, number]> =>
+  Option.match(Option.fromUndefinedOr(result.cost), {
+    onNone: (): ReadonlyArray<readonly [string, number]> => [],
+    onSome: (cost) => [[result.id, costTotalMsOf(cost) ?? 0] as const],
+  })
+
+const priorEntryOf = (entry: readonly [string, MutantCost]): ReadonlyArray<readonly [string, number]> =>
+  entry[1].actualMs === null ? [] : [[entry[0], entry[1].actualMs] as const]
+
+const priorCostsOf = (report: Project['incrementalReport']): Record<string, MutantCost> =>
+  Option.getOrElse(
+    Option.flatMap(Option.fromNullishOr(report), (present) => Option.fromNullishOr(present.costs)),
+    () => ({}),
+  )
+
+const mutantCostModelOf = (
+  input: MutationReportingInput,
+  results: readonly Mutant.RunMutantResult[],
+): MutantCostModel => ({
+  subjects: Arr.map(results, (result) => ({ id: result.id, static: result.static })),
+  staticCoverage: input.testCoverage.staticCoverage,
+  allTestTimesMs: Arr.map([...input.testCoverage.testsById], ([, test]) => test.timeSpentMs),
+  coveringTestTimesMsByMutantId: Object.fromEntries(
+    [...input.testCoverage.testsByMutantId].map(([mutantId, tests]) => [mutantId, testTimesOf(tests)] as const),
+  ),
+  executedActualMsByMutantId: Object.fromEntries(Arr.flatMap(results, executedEntryOf)),
+  priorActualMsByMutantId: Object.fromEntries(
+    Arr.flatMap(Object.entries(priorCostsOf(input.project.incrementalReport)), priorEntryOf),
+  ),
+  fixedOverheadMs: input.timeOverheadMs,
+})
+
+const costsOf = (input: MutationReportingInput, results: readonly Mutant.RunMutantResult[]) =>
+  mutantCostsOf(mutantCostModelOf(input, results))
+
 const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWriteIncrementalReport.name)(function*(
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
   input: MutationReportingInput,
@@ -775,6 +817,7 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
     runInputsDigest,
     ...report,
     files: stampFileIdentities(stampClosureDigests(report.files, input.closureDigestsByMutantId), identities),
+    costs: costsOf(input, input.results),
     ...dryRunCoverageFieldOf(input.testCoverage),
   }).pipe(Effect.orDie)
   yield* writeFileAtomic(deps, input.options.incrementalFile, json)
@@ -860,6 +903,7 @@ const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlim
     schemaVersion: Report.WrittenSchemaVersion.literal,
     thresholds: input.options.thresholds,
     files: stampFileIdentities(stampClosureDigests(files, input.closureDigestsByMutantId), identities),
+    costs: costsOf(input, results),
     testFiles,
     ...dryRunCoverageFieldOf(input.testCoverage),
   }
