@@ -43,10 +43,15 @@ interface ProjectReport {
   readonly report: Report.MutationTestResult
 }
 
+interface IncrementalGroup {
+  readonly project: string
+  readonly texts: readonly string[]
+}
+
 interface CollectedReports {
   readonly reports: readonly ReportedShardProject[]
   readonly projectReports: readonly ProjectReport[]
-  readonly incrementalTexts: readonly string[]
+  readonly incrementals: readonly IncrementalGroup[]
 }
 
 const readText = (file: string): Effect.Effect<string | undefined, never, FileSystem.FileSystem> =>
@@ -152,7 +157,7 @@ const collectProject = (
   {
     readonly reported: ReportedShardProject
     readonly projectReport: Option.Option<ProjectReport>
-    readonly incrementalTexts: readonly string[]
+    readonly incremental: IncrementalGroup
   },
   never,
   FileSystem.FileSystem
@@ -164,7 +169,7 @@ const collectProject = (
     return {
       reported: reportedOf(shard, project.project, report),
       projectReport: Option.map(report, (present) => ({ project: project.project, report: present })),
-      incrementalTexts,
+      incremental: { project: project.project, texts: incrementalTexts },
     }
   })
 
@@ -182,7 +187,7 @@ const collectShardReports = (
     Effect.map((parts) => ({
       reports: parts.map((part) => part.reported),
       projectReports: Arr.getSomes(parts.map((part) => part.projectReport)),
-      incrementalTexts: parts.flatMap((part) => part.incrementalTexts),
+      incrementals: parts.map((part) => part.incremental),
     })),
   )
 
@@ -207,7 +212,7 @@ const collectProjectReports = (
     Effect.map((parts) => ({
       reports: parts.flatMap((part) => part.reports),
       projectReports: parts.flatMap((part) => part.projectReports),
-      incrementalTexts: parts.flatMap((part) => part.incrementalTexts),
+      incrementals: parts.flatMap((part) => part.incrementals),
     })),
   )
 
@@ -219,6 +224,38 @@ const shardsOf = (input: ShardMergeInput) =>
 
 const outputDirOf = (input: ShardMergeInput, path: Path.Path): string =>
   path.resolve(input.basePath, input.out ?? DEFAULT_OUT)
+
+const incrementalsByProject = (
+  groups: readonly IncrementalGroup[],
+): Record<string, readonly string[]> =>
+  Arr.reduce(
+    groups,
+    Record.empty<string, readonly string[]>(),
+    (byProject, group) =>
+      Record.set(byProject, group.project, [
+        ...Option.getOrElse(Record.get(byProject, group.project), (): readonly string[] => []),
+        ...group.texts,
+      ]),
+  )
+
+const writeProjectIncrementals = (
+  path: Path.Path,
+  fs: FileSystem.FileSystem,
+  outDir: string,
+  groups: readonly IncrementalGroup[],
+) =>
+  Effect.forEach(
+    Record.toEntries(incrementalsByProject(groups)),
+    ([project, texts]) =>
+      Option.match(Option.fromUndefinedOr(unionIncrementalReports(texts)), {
+        onNone: () => Effect.void,
+        onSome: (incremental) =>
+          fs.makeDirectory(path.join(outDir, project), { recursive: true }).pipe(
+            Effect.andThen(writeFileAtomic({ fs, path }, path.join(outDir, project, INCREMENTAL_FILE), incremental)),
+          ),
+      }),
+    { concurrency: 1, discard: true },
+  )
 
 export const mergeShards = (
   input: ShardMergeInput,
@@ -245,10 +282,7 @@ export const mergeShards = (
       S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(mergedReportOf(collected.projectReports)),
     )
     yield* writeFileAtomic({ fs, path }, path.join(outDir, REPORT_FILE), json)
-    yield* Option.match(Option.fromUndefinedOr(unionIncrementalReports(collected.incrementalTexts)), {
-      onNone: () => Effect.void,
-      onSome: (incremental) => writeFileAtomic({ fs, path }, path.join(outDir, INCREMENTAL_FILE), incremental),
-    })
+    yield* writeProjectIncrementals(path, fs, outDir, collected.incrementals)
     yield* Effect.logInfo(
       `stryker merge: merged ${
         decision.projects.reduce((count, project) => count + project.mutants.length, 0)

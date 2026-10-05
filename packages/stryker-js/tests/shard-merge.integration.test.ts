@@ -175,6 +175,12 @@ const runAndMerge = (
       Effect.succeed(merged.exitCode !== 0),
     )
     const mergedReport = yield* fs.readFileString(path.join(root, 'reports', 'merged', 'mutation.json'))
+    const mergedIncremental = path.join(root, 'reports', 'merged', 'stryker-incremental.json')
+    const hasMergedIncremental = yield* fs.exists(mergedIncremental)
+    yield* Effect.when(
+      Effect.die(new Error(`merged per-project incremental missing at ${mergedIncremental}`)),
+      Effect.succeed(!hasMergedIncremental),
+    )
     const duplicate = ids[0] ?? 'no-id'
     const half = Math.ceil(ids.length / 2)
     const doctoredPlan = planOf(ids.slice(0, half), [duplicate, ...ids.slice(half)])
