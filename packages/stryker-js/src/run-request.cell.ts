@@ -46,6 +46,7 @@ import { mcpServerLayer } from './Mcp/mod.js'
 import { mergeReportsCell } from './merge-reports.cell.js'
 import { MergeReportsFailed } from './merge-reports.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
+import { planRequest } from './plan-request.cell.js'
 import { AnnotationsUnusable, renderAnnotations, RenderAnnotationsCommand } from './render-annotations.workflow.js'
 import {
   mutantRerunAdmissionCell,
@@ -501,6 +502,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
     CliCompareRequested: (compare) => compareReports(compare),
     CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(explainGateRefusal)),
     CliAnnotateRequested: (annotate, channel) => annotateReport(annotate, channel),
+    CliPlanRequested: (plan, channel) => planRequest({ request: plan, channel }),
     CliFeedbackRequested: (feedback, channel) => feedbackRoute(feedback, channel),
     CliMcpRequested: (_, channel) =>
       Layer.launch(mcpServerLayer({ basePath: channel.environment.basePath })).pipe(Effect.scoped, Effect.orDie),

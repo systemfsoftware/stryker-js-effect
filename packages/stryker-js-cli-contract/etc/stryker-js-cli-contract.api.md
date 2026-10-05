@@ -4,6 +4,8 @@
 
 ```ts
 
+import * as S from 'effect/Schema';
+
 // @public (undocumented)
 export namespace OutputMode {
     export { ModeSignal, OutputMode };
@@ -13,6 +15,50 @@ export namespace OutputMode {
 export namespace RunEvent {
     export { FeedbackJudgment, FeedbackReported, FormatClaimShadowingRow, FormatRegistryResolved, FormatRegistryRow, FrameworkContributionRow, FrameworkModuleRow, Heartbeat, HelpRendered, IncrementalMode, MutantCost, MutantDetailReported, MutantSetPolicy, PhaseDurations, PhaseEntered, PlanKnown, PluginLoadFailureReason, PluginsReported, RefusalRule, Refused, ReuseRefusals, ReuseReported, RunEvent, RunEventWireLine, RunFailed, RunId, RunMutantTested, RunMutantTestedEvent, RunPhase, RunScope, RunStarted, RunTerminalEvent, SkippedFileRow, SkippedReported, StaticVerdict, StreamSchemaVersion, VerdictCounts, VerdictLocation, VerdictMutant, VerdictReached, VerdictThresholds, WorkerReported, WorkerRole };
 }
+
+// @public (undocumented)
+export const Shard: S.Struct<{
+    readonly index: S.Int;
+    readonly count: S.Int;
+    readonly predictedSeconds: S.Number;
+    readonly projects: S.$Array<S.Struct<{
+        readonly project: S.String;
+        readonly mutants: S.$Array<S.String>;
+    }>>;
+}>;
+
+// @public (undocumented)
+export const ShardPlan: S.Struct<{
+    readonly version: S.Literal<1>;
+    readonly targetSeconds: S.Number;
+    readonly shards: S.$Array<S.Struct<{
+        readonly index: S.Int;
+        readonly count: S.Int;
+        readonly predictedSeconds: S.Number;
+        readonly projects: S.$Array<S.Struct<{
+            readonly project: S.String;
+            readonly mutants: S.$Array<S.String>;
+        }>>;
+    }>>;
+    readonly matrix: S.Struct<{
+        readonly include: S.$Array<S.Struct<{
+            readonly shard: S.String;
+            readonly predictedSeconds: S.Number;
+        }>>;
+    }>;
+}>;
+
+// @public (undocumented)
+export type ShardPlan = typeof ShardPlan.Type;
+
+// @public (undocumented)
+export const ShardPlanVersion: S.Literal<1>;
+
+// @public (undocumented)
+export const ShardProject: S.Struct<{
+    readonly project: S.String;
+    readonly mutants: S.$Array<S.String>;
+}>;
 
 // @public (undocumented)
 export namespace SpanTaxonomy {

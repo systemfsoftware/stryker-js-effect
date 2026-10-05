@@ -5,6 +5,7 @@ import * as S from 'effect/Schema'
 
 import { ModeSignal, OutputMode } from './output-mode.schema.js'
 import { PluginLoadFailureReason } from './plugin-load-failure-reason.schema.js'
+import { ShardPlan as ShardPlanDocument } from './shard-plan.schema.js'
 import { StreamSchemaVersion } from './stream-version.schema.js'
 
 export const RunPhase = S.Literals(['prepare', 'instrument', 'dry-run', 'mutation-test'])
@@ -30,6 +31,7 @@ export class PhaseEntered extends S.TaggedClass<PhaseEntered>()('phase', {
 
 export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
   total: Report.NonNegativeInt,
+  shardPlan: S.NullOr(ShardPlanDocument),
 }) {}
 
 export const WorkerRole = S.Literals(['testRunner', 'checker'])

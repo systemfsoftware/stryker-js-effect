@@ -359,6 +359,32 @@ const annotateOptions = {
   ),
 }
 
+const planOptions = {
+  targetSeconds: Flag.Finite('target-seconds').pipe(
+    Flag.withDescription(
+      'The wall-clock budget each shard is planned to fit; shard count = min(--max-shards, ceil(total predicted seconds / target)).',
+    ),
+  ),
+  maxShards: Flag.Int('max-shards').pipe(
+    Flag.withDescription('The greatest number of shards the plan may use.'),
+    optional,
+  ),
+  projects: Flag.String('projects').pipe(
+    Flag.withDescription(
+      'A comma separated list of project directories to plan; defaults to the current working directory.',
+    ),
+    Flag.map(splitOnComma),
+    optional,
+  ),
+  out: Flag.String('out').pipe(
+    Flag.withDescription('Write the shard plan JSON to this file instead of stdout.'),
+    optional,
+  ),
+  full: Flag.map(optional(Flag.Boolean('full')), absentWhenFalse).pipe(
+    Flag.withDescription('Plan every discovered mutant, ignoring the incremental report.'),
+  ),
+}
+
 const serveOptions = {
   port: Flag.Int('port').pipe(
     Flag.withDescription('The port the socket channel listens on. Required for the `socket` channel.'),
@@ -529,6 +555,26 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
       ),
     )
 
+  const planCommand = Command.make('plan', planOptions, (config) =>
+    runRequestCell.run({
+      route: CliRouteCommand.make({
+        route: {
+          _tag: 'plan',
+          targetSeconds: config.targetSeconds,
+          maxShards: Option.getOrUndefined(config.maxShards),
+          projects: Option.getOrUndefined(config.projects),
+          out: Option.getOrUndefined(config.out),
+          full: config.full === true,
+        },
+      }),
+      options: {},
+      environment,
+    }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer))).pipe(
+      Command.withDescription(
+        'Discover mutants without running tests, decide reuse against the incremental report, and pack them into deterministically LPT-scheduled shards',
+      ),
+    )
+
   const serveCommand = Command.make('serve', { ...serveOptions, ...serveArgs }, (config) =>
     runRequestCell.run({
       route: CliRouteCommand.make({
@@ -625,6 +671,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
       compareCommand,
       gateCommand,
       annotateCommand,
+      planCommand,
       serveCommand,
       feedbackCommand,
       mcpCommand,

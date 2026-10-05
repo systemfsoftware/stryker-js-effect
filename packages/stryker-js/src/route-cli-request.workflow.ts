@@ -60,6 +60,16 @@ export class CliAnnotateRequested extends S.TaggedClass<CliAnnotateRequested>()(
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
+export class CliPlanRequested extends S.TaggedClass<CliPlanRequested>()('CliPlanRequested', {
+  targetSeconds: S.Finite,
+  maxShards: S.optional(S.Int),
+  projects: S.Array(S.String).pipe(S.optional),
+  out: S.optional(S.String),
+  full: S.Boolean,
+}) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
+
 export class CliServeRequested extends S.TaggedClass<CliServeRequested>()('CliServeRequested', {
   channel: ServeChannelSchema,
   port: S.optional(S.Int),
@@ -89,6 +99,7 @@ export type CliRouteDecision =
   | CliCompareRequested
   | CliGateRequested
   | CliAnnotateRequested
+  | CliPlanRequested
   | CliServeRequested
   | CliFeedbackRequested
   | CliMcpRequested
@@ -104,6 +115,7 @@ export const routeCliRequest = Workflow.make({
     CliCompareRequested,
     CliGateRequested,
     CliAnnotateRequested,
+    CliPlanRequested,
     CliServeRequested,
     CliFeedbackRequested,
     CliMcpRequested,
@@ -125,6 +137,16 @@ export const routeCliRequest = Workflow.make({
           CliGateRequested.make({ baseline: gate.baseline, updateBaseline: gate.updateBaseline }),
         )),
       Match.tag('annotate', (annotate) => Result.succeed(CliAnnotateRequested.make({ baseline: annotate.baseline }))),
+      Match.tag('plan', (plan) =>
+        Result.succeed(
+          CliPlanRequested.make({
+            targetSeconds: plan.targetSeconds,
+            maxShards: plan.maxShards,
+            projects: plan.projects,
+            out: plan.out,
+            full: plan.full,
+          }),
+        )),
       Match.tag('serve', (serve) =>
         Result.succeed(
           CliServeRequested.make({ channel: serve.channel, port: serve.port, address: serve.address }),
