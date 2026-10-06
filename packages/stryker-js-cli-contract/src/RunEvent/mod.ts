@@ -36,6 +36,8 @@ export {
   VerdictMutant,
   VerdictReached,
   VerdictThresholds,
+  WorkerReported,
+  WorkerRole,
 } from '../run-event.schema.js'
 export type { RunTerminalEvent, VerdictCounts } from '../run-event.schema.js'
 export { StreamSchemaVersion } from '../stream-version.schema.js'

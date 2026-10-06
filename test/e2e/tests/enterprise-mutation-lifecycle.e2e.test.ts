@@ -9,6 +9,7 @@ import { compareAnnotatedRun, statusesOf } from './__fixtures__/annotation-oracl
 import { E2eHarnessLive } from './__fixtures__/e2e-harness.fixture.js'
 import { decodeStream, runIdsIn, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
 import { readReportOf } from './__fixtures__/run-artifacts.fixture.js'
+import { NON_TERMINAL_RUN_KINDS, TERMINAL_RUN_KINDS } from './__fixtures__/run-event-kinds.fixture.js'
 import { strykerLifecycleContract } from './__fixtures__/stryker-trace.fixture.js'
 import { TraceObservationLive } from './__fixtures__/trace-observation.fixture.js'
 
@@ -17,20 +18,6 @@ const ENTERPRISE_FIXTURE_URL = new URL('../testResources/enterprise-monorepo-fix
 const ENTERPRISE_FIXTURE_LABEL = 'enterprise-lifecycle-fixture'
 const LIFECYCLE_SLICE = 'stryker.config.ts'
 const LIFECYCLE_TIMEOUT_MILLIS = 2_400_000
-const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
-const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = [
-  'stream',
-  'phase',
-  'plan',
-  'mutantTested',
-  'tick',
-  'plugins',
-  'formats',
-  'skipped',
-  'reuse',
-  'mutant-detail',
-  'feedback',
-]
 const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutantTested', 'verdict']
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
 

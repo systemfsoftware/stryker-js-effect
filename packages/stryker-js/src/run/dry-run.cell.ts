@@ -6,6 +6,7 @@ import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, type Plugin, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as Clock from 'effect/Clock'
 import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -38,7 +39,7 @@ import {
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
-import type { RunEvents } from '../run-events.service.js'
+import { type RunEvents, WorkerReports } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { originalFileFor, sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
@@ -561,6 +562,7 @@ const runFreshDryRun = Effect.fnUntraced(function*(
   runInputsDigest: string,
 ) {
   const env = yield* RunEnvironment
+  const reports = yield* WorkerReports
   const { files, testFiles } = yield* resolveDryRunFiles(command)
   const dryRunTimeout = command.options.dryRunTimeoutMinutes * 60 * 1000
   const options = dryRunOptionsOf(command, files, testFiles, dryRunTimeout)
@@ -585,6 +587,7 @@ const runFreshDryRun = Effect.fnUntraced(function*(
           )
       })
 
+      const startedAt = yield* Clock.currentTimeMillis
       const runner = yield* buildTestRunner(
         {
           options: command.options,
@@ -596,6 +599,7 @@ const runFreshDryRun = Effect.fnUntraced(function*(
         },
         childRunnerEffect,
       )
+      yield* reports.report('testRunner', (yield* Clock.currentTimeMillis) - startedAt)
       const capabilities = yield* runner.capabilities.pipe(
         Effect.mapError((cause) =>
           StageError.make({ stage: 'dryRun', reason: 'Failed to get test runner capabilities', cause })
@@ -660,6 +664,7 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
   | WorkerLauncher
   | RunEnvironment
   | RunEvents
+  | WorkerReports
   | PhaseClock
 > = Effect.fnUntraced(function*(command: InstrumentDone) {
   yield* Scope.Scope

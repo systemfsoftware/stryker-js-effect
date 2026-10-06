@@ -7,22 +7,9 @@ import { verifyAnnotatedRun } from './__fixtures__/annotation-oracle.fixture.js'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
 import { decodeStream, MachineStreamError, runIdsIn, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
 import { readReportOf } from './__fixtures__/run-artifacts.fixture.js'
+import { NON_TERMINAL_RUN_KINDS, TERMINAL_RUN_KINDS } from './__fixtures__/run-event-kinds.fixture.js'
 
 const CALC_FIXTURE_URL = new URL('../testResources/calc-fixture', import.meta.url)
-const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
-const NON_TERMINAL_RUN_KINDS: ReadonlyArray<string> = [
-  'stream',
-  'phase',
-  'plan',
-  'mutantTested',
-  'tick',
-  'plugins',
-  'formats',
-  'skipped',
-  'reuse',
-  'mutant-detail',
-  'feedback',
-]
 const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[`)
 const STDERR_TAIL_CHARS = 3_000
 

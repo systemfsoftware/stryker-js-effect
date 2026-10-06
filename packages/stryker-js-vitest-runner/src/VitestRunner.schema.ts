@@ -14,6 +14,7 @@ export const VitestRunnerOptionsSchema = S.Struct({
   dir: S.optional(S.String),
   related: S.Boolean.pipe(S.withDecodingDefaultKey(Effect.succeed(true))),
   configFile: S.optional(S.String),
+  fsModuleCache: S.optional(S.Boolean),
   pool: S.optional(VitestRunnerPool),
   timeoutTrapFile: S.optional(S.String),
   timeoutTrapMutantId: S.optional(Mutant.MutantId),

@@ -11,6 +11,9 @@
       "$ref": "#/definitions/planEncoded"
     },
     {
+      "$ref": "#/definitions/workerEncoded"
+    },
+    {
       "$ref": "#/definitions/mutantTestedEncoded"
     },
     {
@@ -60,7 +63,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "3.0"
+            "4.0"
           ]
         },
         "runId": {
@@ -141,6 +144,46 @@
       "required": [
         "_tag",
         "total"
+      ],
+      "additionalProperties": true
+    },
+    "workerEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "worker"
+          ]
+        },
+        "schemaVersion": {
+          "type": "string",
+          "enum": [
+            "4.0"
+          ]
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "testRunner",
+            "checker"
+          ]
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startupMs": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "_tag",
+        "schemaVersion",
+        "role",
+        "index",
+        "startupMs"
       ],
       "additionalProperties": true
     },
@@ -727,7 +770,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "3.0"
+            "4.0"
           ]
         },
         "runId": {
@@ -1009,7 +1052,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "3.0"
+            "4.0"
           ]
         },
         "code": {
@@ -1154,7 +1197,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "3.0"
+            "4.0"
           ]
         },
         "code": {
@@ -1191,7 +1234,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "3.0"
+            "4.0"
           ]
         },
         "rule": {

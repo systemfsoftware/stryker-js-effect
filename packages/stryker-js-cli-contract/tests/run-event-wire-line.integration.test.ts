@@ -11,6 +11,8 @@ const LOCATION = '"location":{"start":{"line":1,"column":1},"end":{"line":1,"col
 
 const COST = '{"fixedOverheadMs":1,"testBodyMs":2,"testsExecuted":1,"shared":false}'
 
+const WORKER = '{"_tag":"worker","schemaVersion":"4.0","role":"testRunner","index":0,"startupMs":12.5}'
+
 const mutantLine = (status: string, file: string | null, cost: string): string =>
   `{"_tag":"mutant","id":"0000000000000001","status":"${status}",${
     file === null ? '' : `"file":"${file}",`
@@ -116,6 +118,30 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
         ),
         Then('the line is refused')((s, expect) =>
           expect(s.outcomes).toEqual({ unknownTag: expect.stringMatching(/^refused:/) })
+        ),
+      ),
+    )
+
+    scenario(
+      'A worker line carries its role and start-up cost, and one missing the cost is refused',
+      Gherkin.Do.pipe(
+        Given('a worker line carrying its start-up cost and one omitting startupMs')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              declared: WORKER,
+              undeclared: '{"_tag":"worker","schemaVersion":"4.0","role":"testRunner","index":0}',
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'outcomes',
+          (s) => Effect.sync(() => refusalsOf(s.probes)),
+        ),
+        Then('the declared line is accepted and the incomplete one is refused')((s, expect) =>
+          expect(s.outcomes).toEqual({
+            declared: 'accepted: worker',
+            undeclared: expect.stringMatching(/^refused:/),
+          })
         ),
       ),
     )

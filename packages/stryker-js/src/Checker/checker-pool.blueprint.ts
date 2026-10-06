@@ -1,6 +1,7 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
+import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
 import type * as FileSystem from 'effect/FileSystem'
 import type * as Path from 'effect/Path'
@@ -10,6 +11,7 @@ import type * as Scope from 'effect/Scope'
 
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
+import { WorkerReports } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import {
   ConfiguredPluginModulePath,
@@ -50,6 +52,7 @@ const checkerWorkerSpawnOf = (
   )
 
 const acquire = Effect.fnUntraced(function*(spec: CheckerPoolSpec) {
+  const reports = yield* WorkerReports
   return yield* Boolean.match(spec.options.checkers.length === 0, {
     onTrue: (): Effect.Effect<CheckerPool | undefined, never, Scope.Scope> => Effect.as(Effect.void, undefined),
     onFalse: () =>
@@ -60,11 +63,13 @@ const acquire = Effect.fnUntraced(function*(spec: CheckerPoolSpec) {
               spec.loadedPlugins,
               ConfiguredPluginModulePath.make({ modulePath: checker.plugin }),
             )
+            const startedAt = yield* Clock.currentTimeMillis
             const service = yield* checkerScoped({
               options: { ...spec.options, checkers: [checker] },
               workerEntrypoint: resolved.entrypoint,
               workingDirectory: spec.workingDirectory,
             }).pipe(Effect.retry({ times: CHECKER_ACQUIRE_RETRIES, while: isCheckerCrash }))
+            yield* reports.report('checker', (yield* Clock.currentTimeMillis) - startedAt)
             return { checkerName: resolved.name, checker: service }
           })),
         size: spec.size,
@@ -84,5 +89,10 @@ export const scoped = (
 ): Effect.Effect<
   CheckerPool | undefined,
   never,
-  Scope.Scope | ChildProcessSpawner.ChildProcessSpawner | WorkerLauncher | FileSystem.FileSystem | Path.Path
+  | Scope.Scope
+  | ChildProcessSpawner.ChildProcessSpawner
+  | WorkerLauncher
+  | FileSystem.FileSystem
+  | Path.Path
+  | WorkerReports
 > => CheckerPools.of(spec).scoped
