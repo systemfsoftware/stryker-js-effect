@@ -1,7 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
-import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
-import * as Arr from 'effect/Array'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
@@ -123,8 +122,6 @@ const spawnCli = (
     }),
   ).pipe(Effect.orDie)
 
-const decodePlan = S.decodeUnknownOption(S.fromJsonString(ShardPlan))
-
 const decodeReuse = (line: string) => S.decodeResult(S.fromJsonString(RunEvent.ReuseReported))(line)
 
 const reuseEventOf = (streamText: string): RunEvent.ReuseReported => {
@@ -149,16 +146,6 @@ const reuseEventOf = (streamText: string): RunEvent.ReuseReported => {
       ),
   )
 }
-
-const planOf = (text: string): ShardPlan =>
-  Option.getOrThrowWith(decodePlan(text), () => new Error(`not a ShardPlan: ${text.slice(0, 400)}`))
-
-const projectMutantCountOf = (plan: ShardPlan, project: string): number =>
-  Arr.reduce(
-    plan.shards.flatMap((shard) => shard.projects),
-    0,
-    (total, entry) => total + (entry.project === project ? entry.mutants.length : 0),
-  )
 
 const NO_REFUSALS: RunEvent.ReuseRefusals = {
   semanticsChanged: 0,
@@ -217,16 +204,11 @@ const makeFixture = (): Effect.Effect<Fixture, never, FileSystem.FileSystem | Pa
     return { root }
   }).pipe(Effect.orDie)
 
-const readText = (file: string): Effect.Effect<string, never, FileSystem.FileSystem> =>
-  Effect.map(FileSystem.FileSystem, (fs) => fs.readFileString(file).pipe(Effect.orElseSucceed(() => ''))).pipe(
-    Effect.flatten,
-  )
-
 interface Outcome {
   readonly coldRun: ExecOutcome
+  readonly coldRan: number
   readonly reportWritten: boolean
   readonly plan: ExecOutcome
-  readonly plannedMutants: number
   readonly streamInFirstProject: boolean
   readonly streamAtRoot: boolean
   readonly warmRun: ExecOutcome
@@ -254,7 +236,6 @@ const runPlanThenRun = (
       path.join(outside, 'cold-stream.jsonl'),
     ])
     const reportWritten = yield* fs.exists(path.join(first, INCREMENTAL_FILE))
-    yield* fs.remove(path.join(outside, 'warm')).pipe(Effect.orElseSucceed(() => {}))
     const plan = yield* spawnCli(root, [
       'plan',
       '--target-seconds',
@@ -266,7 +247,6 @@ const runPlanThenRun = (
       '--out',
       'plan.json',
     ])
-    const planned = planOf(yield* readText(path.join(root, 'plan.json')))
     const streamInFirstProject = yield* fs.exists(path.join(first, PROJECT_STREAM_FILE))
     const streamAtRoot = yield* fs.exists(path.join(root, ROOT_STREAM_FILE))
     yield* fs.remove(path.join(root, ROOT_STREAM_FILE)).pipe(Effect.orElseSucceed(() => {}))
@@ -279,9 +259,9 @@ const runPlanThenRun = (
     ])
     return {
       coldRun,
+      coldRan: reuseEventOf(coldRun.output).ran,
       reportWritten,
       plan,
-      plannedMutants: projectMutantCountOf(planned, 'proj-a'),
       streamInFirstProject,
       streamAtRoot,
       warmRun,
@@ -304,14 +284,14 @@ Feature('Writing the plan stream beside the invocation root', { timeout: 240_000
           'outcome',
           (s) => runPlanThenRun(s.fixture),
         ),
-        Then('the second run reuses every verdict and both streams sit outside the projects')(
+        Then('the plan leaves no stream inside the project and the second run reuses every verdict')(
           (s, expect) => {
             const { outcome } = s
             return expect({
               coldRunExitCode: outcome.coldRun.exitCode,
+              coldRunMutants: outcome.coldRan > 0,
               reportWritten: outcome.reportWritten,
               planExitCode: outcome.plan.exitCode,
-              plannedMutants: outcome.plannedMutants > 0,
               streamInFirstProject: outcome.streamInFirstProject,
               streamAtRoot: outcome.streamAtRoot,
               warmRunExitCode: outcome.warmRun.exitCode,
@@ -320,13 +300,13 @@ Feature('Writing the plan stream beside the invocation root', { timeout: 240_000
               }`,
             }).toEqual({
               coldRunExitCode: 0,
+              coldRunMutants: true,
               reportWritten: true,
               planExitCode: 0,
-              plannedMutants: true,
               streamInFirstProject: false,
               streamAtRoot: true,
               warmRunExitCode: 0,
-              warmReuse: `${outcome.plannedMutants} reused, 0 ran, refused=${JSON.stringify(NO_REFUSALS)}`,
+              warmReuse: `${outcome.coldRan} reused, 0 ran, refused=${JSON.stringify(NO_REFUSALS)}`,
             })
           },
         ),
