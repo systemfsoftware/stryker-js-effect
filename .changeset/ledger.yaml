@@ -251,6 +251,10 @@
   intents:
     - incremental-on-by-default
     - trivial-compiler-equivalence
+"@systemfsoftware/stryker-js-plugin-interface@14.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - mutant-timeout-starts-at-first-test
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -482,6 +486,10 @@
   intents:
     - runner-ignores-the-ambient-worker-cap
     - vitest-runner-fs-module-cache
+"@systemfsoftware/stryker-js-vitest-runner@8.1.1":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - mutant-timeout-starts-at-first-test
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -627,6 +635,11 @@
   dir: packages/stryker-js
   intents:
     - shard-run-settles-child-by-exit-class
+"@systemfsoftware/stryker-js@17.0.0":
+  dir: packages/stryker-js
+  intents:
+    - merge-carries-run-budget
+    - mutant-timeout-starts-at-first-test
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
