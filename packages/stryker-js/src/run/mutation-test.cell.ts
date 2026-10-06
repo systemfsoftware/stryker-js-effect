@@ -30,6 +30,7 @@ import { withPhaseSpan } from '../reporter-stream.service.js'
 import { mutantDetailEventsOf, requestedIdsOf, restrictedToRequestedIds } from '../Rerun/rerun-selection.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
+import { originalFileFor } from '../Sandbox.handle.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
@@ -125,7 +126,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     force: prev.options.force,
     options: prev.options,
     globalTestInputs: prev.dryRunResult.globalTestInputs ?? [],
-    sandbox: prev.sandbox,
+    originalFileOf: (file) => originalFileFor(prev.sandbox, file),
   })
   const rememberedResults = reuse.rememberedResults
   yield* Queue.offer(

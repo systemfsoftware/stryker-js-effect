@@ -13,7 +13,6 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
-import { concurrencyCell } from './concurrency.cell.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
 import { CostsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
@@ -22,9 +21,9 @@ import type { CliRead } from './run-request.cell.js'
 import { reusedTestCoverage } from './run/dry-run-coverage.js'
 import { readIncrementalReuse } from './run/incremental-reuse.cell.js'
 import { incrementalReportTextsOf } from './run/incremental-reuse.js'
-import { instrumentCell, type InstrumentDone } from './run/instrument.cell.js'
 import { loadConfigCell } from './run/load-config.cell.js'
-import { prepareCell } from './run/prepare.cell.js'
+import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
+import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import type { EnginePorts } from './run/StageServices.service.js'
 import type { TestCoverage } from './test-coverage.schema.js'
@@ -44,32 +43,37 @@ export interface PlanRequestInput {
 
 const DEFAULT_MUTANT_COST_MS = 1_000
 
-const discoverStageCell = Cell.andThen(
-  Cell.andThen(Cell.andThen(loadConfigCell, readProjectCell), prepareCell),
-  Cell.andThen(concurrencyCell, instrumentCell),
+const planStageCell = Cell.andThen(
+  Cell.andThen(Cell.andThen(loadConfigCell, readProjectCell), prepareForInstrumentCell),
+  planInstrumentCell,
 )
 
-const decodeCostEntry = (
-  decoded: typeof CostsFieldSchema.Type,
-  mutantId: string,
-): Option.Option<number> =>
-  Option.flatMap(
-    Option.fromUndefinedOr(decoded.costs),
-    (costs) =>
-      Option.flatMap(
-        Record.get(costs, mutantId),
-        (entry) => Option.orElse(Option.fromNullishOr(entry.actualMs), () => Option.fromNullishOr(entry.predictedMs)),
-      ),
-  )
-
-const costFromReport = (texts: readonly string[], mutantId: string): Option.Option<number> =>
-  Option.firstSomeOf(
-    texts.map((text) =>
-      Option.flatMap(
-        S.decodeOption(S.fromJsonString(CostsFieldSchema))(text),
-        (decoded) => decodeCostEntry(decoded, mutantId),
+const namedCostsOf = (
+  costs: NonNullable<typeof CostsFieldSchema.Type['costs']>,
+): Record<string, number> =>
+  Object.fromEntries(
+    Object.entries(costs).flatMap(([mutantId, entry]) =>
+      Option.toArray(
+        Option.map(
+          Option.orElse(Option.fromNullishOr(entry.actualMs), () => Option.fromNullishOr(entry.predictedMs)),
+          (costMs): readonly [string, number] => [mutantId, costMs],
+        ),
       )
     ),
+  )
+
+const reportCostsOf = (texts: readonly string[]): Record<string, number> =>
+  texts.reduce<Record<string, number>>(
+    (accumulated, text) =>
+      Option.match(S.decodeOption(S.fromJsonString(CostsFieldSchema))(text), {
+        onNone: () => accumulated,
+        onSome: (decoded) =>
+          Option.match(Option.fromUndefinedOr(decoded.costs), {
+            onNone: () => accumulated,
+            onSome: (costs) => ({ ...namedCostsOf(costs), ...accumulated }),
+          }),
+      }),
+    {},
   )
 
 const decodeCoverage = (text: string): Option.Option<DryRunCoverage> =>
@@ -112,13 +116,13 @@ const coveringCostOf = (
 
 const costOf = (
   mutantId: string,
-  texts: readonly string[],
+  reportCosts: Record<string, number>,
   coverage: Option.Option<DryRunCoverage>,
   testCoverage: TestCoverage,
 ): number =>
   Option.getOrElse(
     Option.orElse(
-      costFromReport(texts, mutantId),
+      Record.get(reportCosts, mutantId),
       () => Option.flatMap(coverage, (present) => coveringCostOf(present, testCoverage, mutantId)),
     ),
     () => DEFAULT_MUTANT_COST_MS,
@@ -155,13 +159,14 @@ const planProject = (
     const project = yield* fs.realPath(path.resolve(basePath, directory))
     const env = { ...channel.environment.host.env, basePath: project }
     const context = yield* Layer.build(RunEnvironment.stage(env, channel.environment.host.events))
-    const done: InstrumentDone = yield* Cell.provideContext(discoverStageCell, context).run({
+    const done: PlanInstrumentDone = yield* Cell.provideContext(planStageCell, context).run({
       cliOptions: { force: request.full },
       targetMutatePatterns: undefined,
     })
     const texts = yield* incrementalReportTextsOf({ basePath: project, options: done.options })
     const coverage = firstCoverageOf(texts)
     const testCoverage = Option.match(coverage, { onNone: emptyTestCoverage, onSome: reusedTestCoverage })
+    const reportCosts = reportCostsOf(texts)
     const reuse = yield* readIncrementalReuse({
       project: done.project,
       currentMutants: [...done.mutants],
@@ -172,11 +177,11 @@ const planProject = (
       globalTestInputs: Option.map(coverage, (present) => [...present.globalTestInputs]).pipe(
         Option.getOrElse((): ReadonlyArray<string> => []),
       ),
-      sandbox: done.sandbox,
+      originalFileOf: (file) => path.resolve(file),
     })
     const mutants = reuse.mutants.map((mutant) => ({
       id: mutant.id,
-      costMs: costOf(mutant.id, texts, coverage, testCoverage),
+      costMs: costOf(mutant.id, reportCosts, coverage, testCoverage),
     }))
     return { label: labelOf(path, labelBase, project), mutants }
   }).pipe(Effect.orDie)
