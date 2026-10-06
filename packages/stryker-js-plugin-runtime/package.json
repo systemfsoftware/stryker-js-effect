@@ -11,7 +11,8 @@
   "description": "The mutation-testing plugin runtime — the worker's RPC server layer, its OTel bootstrap, the worker-options wire codec, and the trace-context middleware implementations a plugin process runs.",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "clean": "rimraf dist",

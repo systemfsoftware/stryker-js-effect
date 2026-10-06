@@ -13,7 +13,8 @@
   "description": "The Stryker mutation testing tool — the stryker executable, the run engine, and the configuration surface.",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "bin": {
     "stryker": "./dist/main.mjs"

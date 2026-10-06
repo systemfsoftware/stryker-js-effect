@@ -11,7 +11,8 @@
   "description": "The code instrumenter used by the Stryker mutation runner",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "exports": {
     ".": {

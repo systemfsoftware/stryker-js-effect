@@ -12,7 +12,8 @@
   "type": "module",
   "files": [
     "dist",
-    "schema"
+    "schema",
+    "CHANGELOG.md"
   ],
   "exports": {
     ".": {
