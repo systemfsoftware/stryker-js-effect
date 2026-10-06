@@ -623,6 +623,10 @@
     - verdicts-record-run-budget
     - worker-boot-cost-on-stream
     - write-incremental-reports-atomically
+"@systemfsoftware/stryker-js@16.0.1":
+  dir: packages/stryker-js
+  intents:
+    - shard-run-settles-child-by-exit-class
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
