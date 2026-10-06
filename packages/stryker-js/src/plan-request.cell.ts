@@ -179,10 +179,13 @@ const planProject = (
       ),
       originalFileOf: (file) => path.resolve(file),
     })
-    const mutants = reuse.mutants.map((mutant) => ({
-      id: mutant.id,
-      costMs: costOf(mutant.id, reportCosts, coverage, testCoverage),
-    }))
+    const mutants = [
+      ...reuse.mutants.map((mutant) => ({
+        id: mutant.id,
+        costMs: costOf(mutant.id, reportCosts, coverage, testCoverage),
+      })),
+      ...reuse.rememberedResults.map((mutant) => ({ id: mutant.id, costMs: 0 })),
+    ]
     return { label: labelOf(path, labelBase, project), mutants }
   }).pipe(Effect.orDie)
 
