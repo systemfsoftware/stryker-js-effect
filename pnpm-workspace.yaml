@@ -27,7 +27,7 @@ catalog:
   "@testing-library/svelte": ^5.4.2
   vite: ^8.3.0
   "@systemfsoftware/arethetypeswrong-cli": ^4.2.0
-  "@systemfsoftware/differential-spec": ^1.0.0
+  "@systemfsoftware/differential-spec": ^1.0.1
   "@systemfsoftware/effect-cell-types": ^12.0.0
   "@systemfsoftware/effect-microsandbox": ^5.0.0
   "@systemfsoftware/effect-readiness": ^1.0.0
@@ -91,4 +91,4 @@ packages:
   - packages/ignorers/*
   - packages/frameworks/*
 patchedDependencies:
-  "@systemfsoftware/differential-spec@1.0.0": patches/@systemfsoftware__differential-spec@1.0.0.patch
+  "@systemfsoftware/differential-spec@1.0.1": patches/@systemfsoftware__differential-spec@1.0.1.patch
