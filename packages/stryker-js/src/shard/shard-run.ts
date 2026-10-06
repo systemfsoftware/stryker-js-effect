@@ -1,13 +1,20 @@
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
 import { selectShard, SelectShardCommand, type ShardUnknown } from './select-shard.workflow.js'
+import {
+  settleShardChild,
+  SettleShardChildCommand,
+  type SettleShardChildDecision,
+} from './settle-shard-child.workflow.js'
 import { ShardChildFailed } from './shard-run.schema.js'
 
 const SHARD_OUT_MARKER = 'reports/shards'
@@ -56,6 +63,19 @@ const seedIncremental = (
     yield* Effect.when(fs.copyFile(cached, target), Effect.succeed(hasCached && !hasTarget))
   })
 
+const settlementOf = (exitCode: number): SettleShardChildDecision =>
+  Result.getOrElse(settleShardChild(SettleShardChildCommand.make({ exitCode })), (neverError) => neverError)
+
+const subThresholdLine = (project: string): string =>
+  `stryker shard: ${project} scored below thresholds.break over this shard's mutants; the merged report carries the project verdict`
+
+const missingStreamFailure = (project: string, exitCode: number, streamFile: string): ShardChildFailed =>
+  ShardChildFailed.make({
+    project,
+    exitCode,
+    childOutput: `the shard child completed without leaving its progress stream at ${streamFile}`,
+  })
+
 export const runShard = (
   input: ShardRunInput,
 ): Effect.Effect<
@@ -80,6 +100,7 @@ export const runShard = (
         Effect.gen(function*() {
           const projectDir = path.resolve(input.planDirectory, project.project)
           const projectOut = path.join(outDir, project.project)
+          const streamFile = path.join(projectOut, STREAM_FILE)
           yield* fs.makeDirectory(projectOut, { recursive: true })
           yield* seedIncremental(path, fs, projectDir, projectOut)
           const handle = yield* spawner.spawn(
@@ -93,22 +114,32 @@ export const runShard = (
           )
           const stderr = yield* handle.stderr.pipe(Stream.decodeText, Stream.mkString)
           const exitCode = Number(yield* handle.exitCode)
-          yield* exitCode === 0
-            ? Effect.void
-            : Effect.fail(
-              ShardChildFailed.make({
-                project: project.project,
-                exitCode,
-                reason: stderr.slice(0, STDERR_LIMIT),
-              }),
-            )
+          yield* Match.value(settlementOf(exitCode)).pipe(
+            Match.tag('ShardChildCompleted', () => Effect.void),
+            Match.tag('ShardChildVerdictFailed', () => Effect.logInfo(subThresholdLine(project.project))),
+            Match.tag('ShardChildAborted', () =>
+              Effect.fail(
+                ShardChildFailed.make({
+                  project: project.project,
+                  exitCode,
+                  childOutput: stderr.slice(-STDERR_LIMIT),
+                }),
+              )),
+            Match.exhaustive,
+          )
+          const streamPresent = yield* fs.exists(streamFile)
+          yield* Match.value(streamPresent).pipe(
+            Match.when(true, () => Effect.void),
+            Match.when(false, () => Effect.fail(missingStreamFailure(project.project, exitCode, streamFile))),
+            Match.exhaustive,
+          )
         }).pipe(
           Effect.catchTag('PlatformError', (cause) =>
             Effect.fail(
               ShardChildFailed.make({
                 project: project.project,
                 exitCode: -1,
-                reason: cause.message,
+                childOutput: cause.message,
               }),
             )),
         ),

@@ -52,7 +52,10 @@ const commandCarried = (command: PlanRunConclusionCommand, decision: PlanRunConc
     Match.when('quiet-ok', () => S.is(RunConclusionQuietOk)(decision)),
     Match.when(
       'quiet-failed',
-      () => S.is(RunConclusionQuietFailed)(decision) && decision.exitCode === command.exitCode,
+      () =>
+        S.is(RunConclusionQuietFailed)(decision) &&
+        decision.exitCode === command.exitCode &&
+        decision.error === command.error,
     ),
     Match.exhaustive,
   )
