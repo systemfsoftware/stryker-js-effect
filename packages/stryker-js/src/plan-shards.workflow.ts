@@ -9,7 +9,8 @@ import * as S from 'effect/Schema'
 
 const { ceil, max, min, sign } = Math
 
-const CostMs = S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
+const MAX_COST_MS = Number.MAX_SAFE_INTEGER
+const CostMs = S.Finite.pipe(S.check(S.isBetween({ minimum: 0, maximum: MAX_COST_MS })))
 const PositiveSeconds = S.Finite.pipe(S.check(S.isGreaterThan(0)))
 const PositiveInt = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
 
@@ -125,3 +126,26 @@ export const planShards = Workflow.make({
   decide: (command: PlanShardsCommand): Result.Result<readonly PlannedShard[], never> =>
     Result.succeed(shardsOf(command)),
 })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+
+  const isRepresentableCostMs = (costMs: number): boolean =>
+    costMs === Math.min(Math.max(costMs, 0), Number.MAX_SAFE_INTEGER)
+
+  const unrepresentableCosts: ReadonlyArray<number> = [
+    3.4927206787701224e293,
+    Number.MAX_SAFE_INTEGER + 1,
+    Number.MAX_VALUE,
+    Number.POSITIVE_INFINITY,
+    Number.NaN,
+  ]
+
+  it.prop(
+    '∀c_CostMsRefusal_≡RepresentableCostMs',
+    { of: [S.Finite], subject: (costMs: number) => S.is(CostMs)(costMs) },
+    (subject, [drawn]) =>
+      Arr.every(Arr.append(unrepresentableCosts, drawn), (costMs) => subject(costMs) === isRepresentableCostMs(costMs)),
+  )
+}
