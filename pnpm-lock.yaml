@@ -25,8 +25,8 @@ catalogs:
       specifier: ^4.0.0
       version: 4.0.0
     '@effect/tsgo':
-      specifier: ^0.47.2
-      version: 0.47.2
+      specifier: ^0.48.0
+      version: 0.48.1
     '@eslint-community/regexpp':
       specifier: ^4.12.2
       version: 4.12.2
@@ -221,7 +221,7 @@ importers:
         version: 21.2.0
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
@@ -261,7 +261,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -316,7 +316,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -365,7 +365,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -481,7 +481,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -536,7 +536,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -584,7 +584,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -730,7 +730,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -866,7 +866,7 @@ importers:
         version: 4.0.0(effect@4.0.0)
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -942,7 +942,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -1030,7 +1030,7 @@ importers:
         version: 4.0.0(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -1091,7 +1091,7 @@ importers:
         version: 4.0.0(effect@4.0.0)
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -1167,7 +1167,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -1258,7 +1258,7 @@ importers:
         version: 4.0.0(effect@4.0.0)
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -1430,7 +1430,7 @@ importers:
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
@@ -1620,7 +1620,7 @@ importers:
         version: 4.0.0(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/tsgo':
         specifier: 'catalog:'
-        version: 0.47.2
+        version: 0.48.1
       '@systemfsoftware/differential-spec':
         specifier: 'catalog:'
         version: 1.0.0(patch_hash=1a2d25143a448f9ef8337d1ac418c504a7d6b04ae960f25d41ca6b09fdd45b00)(vitest@5.0.1)
@@ -1907,8 +1907,8 @@ packages:
     cpu: [arm64]
     os: [darwin]
 
-  '@effect/tsgo-darwin-arm64@0.47.2':
-    resolution: {integrity: sha512-sLYKt201VdTjSHG3rbyIdpLMNGEMiArm0OgO7kYfnA0yRV0ux0blgcucf97bx90gIvDJFSSL17QCSDPGs9jsKQ==}
+  '@effect/tsgo-darwin-arm64@0.48.1':
+    resolution: {integrity: sha512-DVLF9H0L+2cUqDnrkQjYYe1GyuBehYILQ1EUF3KHFafR/iBSDfZreezW5K+5zLZsLy/gJ5PV5AhbWCLTjZYqFA==}
     cpu: [arm64]
     os: [darwin]
 
@@ -1917,8 +1917,8 @@ packages:
     cpu: [x64]
     os: [darwin]
 
-  '@effect/tsgo-darwin-x64@0.47.2':
-    resolution: {integrity: sha512-gW0fdFjSIacCDOjLa+vS/xWmyElbM0jX3cCTlKXGzNCyMKsP/T0MkvT2GZO/njB2jIt/XXG9qEQ5FE/Rcqt7Zg==}
+  '@effect/tsgo-darwin-x64@0.48.1':
+    resolution: {integrity: sha512-BeEOf4+lLAK986uH36OBD+n/rA5kMvIxGMfHlsZOQufYl8b1lickDO8H/8IRIXnBPFb6cIUi8813SPwOtaE9sw==}
     cpu: [x64]
     os: [darwin]
 
@@ -1927,8 +1927,8 @@ packages:
     cpu: [arm64]
     os: [linux]
 
-  '@effect/tsgo-linux-arm64@0.47.2':
-    resolution: {integrity: sha512-hA3SoKGuLd0HNqJ34QcYEWwpE6tvit3xpKupwj1TaPtHpLLGdtSF7czBIknp6kR8fOvnuYLjB6aEkxXmJsTVWg==}
+  '@effect/tsgo-linux-arm64@0.48.1':
+    resolution: {integrity: sha512-MsoIwtFYaJQbSfpOaCGqnquV/TgHoP4x/gmGCxRg8gCZP7cOrv/5qcywVWTGfkLWpfmbI1nOVUBULV7DlPmGMg==}
     cpu: [arm64]
     os: [linux]
 
@@ -1937,8 +1937,8 @@ packages:
     cpu: [arm]
     os: [linux]
 
-  '@effect/tsgo-linux-arm@0.47.2':
-    resolution: {integrity: sha512-GT8fgQ3Pnzr0ax/AtYptztVquLAWeWoyLvQTpfI5APrs+Me+/rSwOLSA7//17ZVmNYbcGbKImX8laUYeDqByNQ==}
+  '@effect/tsgo-linux-arm@0.48.1':
+    resolution: {integrity: sha512-ydkNW7loScSD+6fPcliUEbSGfCAAShH4xYJ830f3DN9AJfLDF3GxNqgkayKyMEmuF9l6sU+/bbK8ER0qhn3GOw==}
     cpu: [arm]
     os: [linux]
 
@@ -1947,8 +1947,8 @@ packages:
     cpu: [x64]
     os: [linux]
 
-  '@effect/tsgo-linux-x64@0.47.2':
-    resolution: {integrity: sha512-vELwVsUQ5VlM2jbvv7zaIPOkFsxmaS0nLqq+p0RodtkQiuScg27febnLClzKAv/Tl6GrXTBz4IBh78aBF2CvbQ==}
+  '@effect/tsgo-linux-x64@0.48.1':
+    resolution: {integrity: sha512-TAnxBsMAOU0KG7v0YunhmVL6DLzRKXi7MrsGvRkeOAzhe1ooLv0tp4S1FFhj/oYE3LxcvFJDJiniaFwglF3z/A==}
     cpu: [x64]
     os: [linux]
 
@@ -1957,8 +1957,8 @@ packages:
     cpu: [arm64]
     os: [win32]
 
-  '@effect/tsgo-win32-arm64@0.47.2':
-    resolution: {integrity: sha512-FSwpJp3XaJK9o7cOXtJcYIsvZWR/mrY4ZZyyTuRgphEZju7FwOzLeVhLr9ziyScfmisOpX2i+8v1H+PlMMZ1TQ==}
+  '@effect/tsgo-win32-arm64@0.48.1':
+    resolution: {integrity: sha512-Atlc8JUYLahT8ShAX3FQ2Lsyjo6uz6Vu6H/cQ46dXEX3purIFaktdj3PFLzIvl4o9323Pjdlf8jbM5n9tIfnMQ==}
     cpu: [arm64]
     os: [win32]
 
@@ -1967,8 +1967,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@effect/tsgo-win32-x64@0.47.2':
-    resolution: {integrity: sha512-Lh/N7E2p6E0tBZM+uZ40Hv/AUG81WGtw76H4pLLPAG7wFANwGSx984NwKypXqGtOXBmKqb0R/cYpszDyzbNyYA==}
+  '@effect/tsgo-win32-x64@0.48.1':
+    resolution: {integrity: sha512-CDCaScEJ1gRwA8DRgRFn3Kh0mHPUCm1ln/gUwsRxC9qXJQdzqWEYzECa907b4Ts/dKW3uD4oFc47oKr+JQxYCg==}
     cpu: [x64]
     os: [win32]
 
@@ -1976,8 +1976,8 @@ packages:
     resolution: {integrity: sha512-gPG0ixVHgtYBUe5DbKX9vzHlhqd9+ZEfs4m/XWy0808av0A2XqMzaG3F5rnPBN7EUJRPlo9TluIi8WHx/pBV+A==}
     hasBin: true
 
-  '@effect/tsgo@0.47.2':
-    resolution: {integrity: sha512-mGIelPZhTJg8g+RgiAe7wrB8NLw/lOzPGntAYBBqEJS0/I8ir1/ULKcpFQyuAfPjwkDYrg93KWv1PDGwgsgBIA==}
+  '@effect/tsgo@0.48.1':
+    resolution: {integrity: sha512-yLgXNwPaUWfGxcQw7FwLYwOF7me69r+tY4oHYV5hwMFE16qClXbIRnotNPp8pZ5pnbeLgPeRvCE7AWGQyYqQ2A==}
     hasBin: true
 
   '@emnapi/core@2.0.0-alpha.3':
@@ -4868,43 +4868,43 @@ snapshots:
   '@effect/tsgo-darwin-arm64@0.45.0':
     optional: true
 
-  '@effect/tsgo-darwin-arm64@0.47.2':
+  '@effect/tsgo-darwin-arm64@0.48.1':
     optional: true
 
   '@effect/tsgo-darwin-x64@0.45.0':
     optional: true
 
-  '@effect/tsgo-darwin-x64@0.47.2':
+  '@effect/tsgo-darwin-x64@0.48.1':
     optional: true
 
   '@effect/tsgo-linux-arm64@0.45.0':
     optional: true
 
-  '@effect/tsgo-linux-arm64@0.47.2':
+  '@effect/tsgo-linux-arm64@0.48.1':
     optional: true
 
   '@effect/tsgo-linux-arm@0.45.0':
     optional: true
 
-  '@effect/tsgo-linux-arm@0.47.2':
+  '@effect/tsgo-linux-arm@0.48.1':
     optional: true
 
   '@effect/tsgo-linux-x64@0.45.0':
     optional: true
 
-  '@effect/tsgo-linux-x64@0.47.2':
+  '@effect/tsgo-linux-x64@0.48.1':
     optional: true
 
   '@effect/tsgo-win32-arm64@0.45.0':
     optional: true
 
-  '@effect/tsgo-win32-arm64@0.47.2':
+  '@effect/tsgo-win32-arm64@0.48.1':
     optional: true
 
   '@effect/tsgo-win32-x64@0.45.0':
     optional: true
 
-  '@effect/tsgo-win32-x64@0.47.2':
+  '@effect/tsgo-win32-x64@0.48.1':
     optional: true
 
   '@effect/tsgo@0.45.0':
@@ -4917,15 +4917,15 @@ snapshots:
       '@effect/tsgo-win32-arm64': 0.45.0
       '@effect/tsgo-win32-x64': 0.45.0
 
-  '@effect/tsgo@0.47.2':
+  '@effect/tsgo@0.48.1':
     optionalDependencies:
-      '@effect/tsgo-darwin-arm64': 0.47.2
-      '@effect/tsgo-darwin-x64': 0.47.2
-      '@effect/tsgo-linux-arm': 0.47.2
-      '@effect/tsgo-linux-arm64': 0.47.2
-      '@effect/tsgo-linux-x64': 0.47.2
-      '@effect/tsgo-win32-arm64': 0.47.2
-      '@effect/tsgo-win32-x64': 0.47.2
+      '@effect/tsgo-darwin-arm64': 0.48.1
+      '@effect/tsgo-darwin-x64': 0.48.1
+      '@effect/tsgo-linux-arm': 0.48.1
+      '@effect/tsgo-linux-arm64': 0.48.1
+      '@effect/tsgo-linux-x64': 0.48.1
+      '@effect/tsgo-win32-arm64': 0.48.1
+      '@effect/tsgo-win32-x64': 0.48.1
 
   '@emnapi/core@2.0.0-alpha.3':
     dependencies:
