@@ -1,6 +1,7 @@
 import { Plugin, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
+import * as Stream from 'effect/Stream'
 
 import { type TestRunnerPhase } from './VitestRunner.schema.js'
 
@@ -18,7 +19,10 @@ export const testRunnerHandlers = Plugin.TestRunnerRpcs.toLayer(
     return {
       capabilities: () => runner.capabilities.pipe(Effect.catchCause(runnerFailed('capabilities'))),
       dryRun: ({ options }) => runner.dryRun(options).pipe(Effect.catchCause(runnerFailed('dryRun'))),
-      mutantRun: ({ options }) => runner.mutantRun(options).pipe(Effect.catchCause(runnerFailed('mutantRun'))),
+      mutantRun: ({ options }) =>
+        runner.mutantRun(options).pipe(
+          Stream.catchCause((cause) => Stream.fail(cause.pipe(runnerFailed('mutantRun')))),
+        ),
     }
   }),
 )

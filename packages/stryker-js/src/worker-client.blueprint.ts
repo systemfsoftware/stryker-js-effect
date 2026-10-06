@@ -20,7 +20,7 @@ import { WorkerLauncher } from './WorkerLauncher.service.js'
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js/WorkerClient')
 export type TypeId = typeof TypeId
 
-const WORKER_BOOT_TIMEOUT = Duration.seconds(30)
+export const WORKER_BOOT_TIMEOUT = Duration.seconds(30)
 
 export interface WorkerClientParams<Rpcs extends Rpc.Any> {
   readonly rpcs: RpcGroup.RpcGroup<Rpcs>

@@ -9,11 +9,14 @@ import * as Option from 'effect/Option'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import type { RpcClientError } from 'effect/rpc/RpcClientError'
 import type * as Scope from 'effect/Scope'
+import * as Stream from 'effect/Stream'
 
 import { commandRunner, isCommandRunner } from './command-runner.blueprint.js'
 import {
+  deadlineArmedMutantRun,
   make as makePooledTestRunner,
   type PooledTestRunner,
+  withDryRunTimeout,
   withEnvironmentReload,
   withMaxReuse,
   withRetry,
@@ -119,7 +122,10 @@ const scopedOf: (
       dryRun: (options: TestRunner.DryRunOptions) =>
         client.dryRun({ options }).pipe(Effect.mapError(toRunnerFailure(runnerName, 'dryRun'))),
       mutantRun: (options: Mutant.MutantRunOptions) =>
-        client.mutantRun({ options }).pipe(Effect.mapError(toRunnerFailure(runnerName, 'mutantRun'))),
+        deadlineArmedMutantRun(
+          client.mutantRun({ options }).pipe(Stream.mapError(toRunnerFailure(runnerName, 'mutantRun'))),
+          options.timeout,
+        ),
     })
   },
 )
@@ -159,7 +165,7 @@ const decorateChildRunner = Effect.fnUntraced(function*<ChildRunnerError>(
   childProcessRunner: Effect.Effect<PooledTestRunner, ChildRunnerError, Scope.Scope | WorkerLauncher>,
 ) {
   const base: PooledTestRunner = yield* childProcessRunner
-  const timed = withTimeout(base)
+  const timed = withDryRunTimeout(base)
   const limited = yield* withMaxReuse(context.options, context.retire)(timed)
   const reloading = yield* withEnvironmentReload(context.retire)(limited)
   return withRetry(reloading)

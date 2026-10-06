@@ -30,7 +30,15 @@ import {
   type StrykerNamespace,
   type VitestRunnerOptions,
 } from './VitestRunner.schema.js'
-import { close, failRuntime, make, type VitestRuntime } from './VitestRuntime.handle.js'
+import {
+  close,
+  failRuntime,
+  make,
+  makeMutantRunStartedSignal,
+  type MutantRunStartedSignal,
+  notifyMutantRunStarted,
+  type VitestRuntime,
+} from './VitestRuntime.handle.js'
 
 export interface RawVitestRecord<A = unknown> {
   readonly [key: string]: A
@@ -272,7 +280,11 @@ const moduleCacheConfig = (
     ? { fsModuleCache: true, fsModuleCachePath: input.projectRoot + '/' + MODULE_CACHE_DIRNAME }
     : undefined
 
-const createVitestConfig = (input: VitestRuntimeInput, standbyThreads: StandbyThreadsPool) => ({
+const createVitestConfig = (
+  input: VitestRuntimeInput,
+  standbyThreads: StandbyThreadsPool,
+  mutantRunStarted: MutantRunStartedSignal,
+) => ({
   config: input.vitestOptions.configFile,
   coverage: { enabled: false },
   maxWorkers: 1,
@@ -295,7 +307,14 @@ const createVitestConfig = (input: VitestRuntimeInput, standbyThreads: StandbyTh
   bail: input.bail,
   onConsoleLog: () => false,
   silent: true,
-  reporters: [{ onInit(_vitest: Vitest) {} }],
+  reporters: [
+    {
+      onInit(_vitest: Vitest) {},
+      onTestModuleCollected() {
+        notifyMutantRunStarted(mutantRunStarted)
+      },
+    },
+  ],
 })
 
 const BROWSER_REFUSAL =
@@ -333,9 +352,10 @@ const openRuntime = Effect.fn(SpanTaxonomy.Spans.vitestRuntimeOpen.name)(functio
     Effect.catchDefect((cause) => Effect.fail(failRuntime('init')(cause))),
   )
   const standbyThreads = yield* makeStandbyThreadsPool().pipe(Scope.provide(input.lifetime))
+  const mutantRunStarted = makeMutantRunStartedSignal()
   const driver = yield* Effect.tryPromise({
     try: () =>
-      createVitest('test', createVitestConfig(input, standbyThreads), {
+      createVitest('test', createVitestConfig(input, standbyThreads, mutantRunStarted), {
         resolve: { alias: [...aliases], conditions: ['import'] },
         plugins: [sandboxSelfPlugin(aliases)],
       }),
@@ -348,6 +368,7 @@ const openRuntime = Effect.fn(SpanTaxonomy.Spans.vitestRuntimeOpen.name)(functio
     localSetupFile,
     namespace: input.namespace,
     mutantBail: input.bail,
+    mutantRunStarted,
   })
   yield* refuseBrowser(input, driver).pipe(Effect.onError(() => closeAfterFailure(runtime, fs)))
   return runtime

@@ -2,11 +2,13 @@ import type { Schema } from 'effect'
 import * as Rpc from 'effect/rpc/Rpc'
 import * as RpcGroup from 'effect/rpc/RpcGroup'
 
+import type * as RpcSchema from 'effect/rpc/RpcSchema'
+
 import { CheckerFailed } from './Checker.schema.js'
 import { ReporterFailed } from './ReporterEvent.schema.js'
 import {
   DryRunResultSchema,
-  MutantRunResultSchema,
+  MutantRunEventSchema,
   TestRunnerCapabilitiesSchema,
   TestRunnerFailed,
 } from './TestRunner.schema.js'
@@ -43,12 +45,13 @@ const dryRun: TracedRpc<
 const mutantRun: TracedRpc<
   'mutantRun',
   typeof TestRunnerMutantRunRequest,
-  typeof MutantRunResultSchema,
-  typeof TestRunnerFailed
+  RpcSchema.Stream<typeof MutantRunEventSchema, typeof TestRunnerFailed>,
+  typeof Schema.Never
 > = Rpc.make('mutantRun', {
   payload: TestRunnerMutantRunRequest,
-  success: MutantRunResultSchema,
+  success: MutantRunEventSchema,
   error: TestRunnerFailed,
+  stream: true,
 })
   .middleware(TraceContextMiddleware)
 
