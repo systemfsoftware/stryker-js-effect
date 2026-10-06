@@ -33,12 +33,19 @@ import { type StrykerNamespace, type TestRunnerPhase } from './VitestRunner.sche
 export const TypeId = Symbol.for('~systemfsoftware/stryker-js-vitest-runner/VitestRuntime')
 export type TypeId = typeof TypeId
 
+export interface MutantRunStartedSignal {
+  current: Option.Option<Effect.Effect<void>>
+}
+
+export const makeMutantRunStartedSignal = (): MutantRunStartedSignal => ({ current: Option.none() })
+
 const VitestRuntime = Handle.make<
   {
     readonly projectRoot: string
     readonly localSetupFile: string
     readonly mutantBail: number
     readonly globalTestInputs: readonly string[]
+    readonly mutantRunStarted: MutantRunStartedSignal
   },
   Vitest
 >()(TypeId)
@@ -98,6 +105,7 @@ export const make = (options: {
   readonly localSetupFile: string
   readonly namespace: StrykerNamespace
   readonly mutantBail: number
+  readonly mutantRunStarted: MutantRunStartedSignal
 }): VitestRuntime =>
   pinSerialWorkerCount(
     withApplicationSetup(
@@ -107,6 +115,7 @@ export const make = (options: {
           localSetupFile: options.localSetupFile,
           mutantBail: options.mutantBail,
           globalTestInputs: globalTestInputsOf(options.driver, [options.localSetupFile]),
+          mutantRunStarted: options.mutantRunStarted,
         },
         options.driver,
       ),
@@ -172,6 +181,23 @@ export const applyRunFilter: {
     },
   ),
 )
+
+export const armMutantRunStarted: {
+  (notify: Effect.Effect<void>): (self: VitestRuntime) => void
+  (self: VitestRuntime, notify: Effect.Effect<void>): void
+} = dual(2, (self: VitestRuntime, notify: Effect.Effect<void>): void => {
+  self.mutantRunStarted.current = Option.some(notify)
+})
+
+export const clearMutantRunStarted = (self: VitestRuntime): void => {
+  self.mutantRunStarted.current = Option.none()
+}
+
+export const notifyMutantRunStarted = (signal: MutantRunStartedSignal): void => {
+  const pending = signal.current
+  signal.current = Option.none()
+  Option.map(pending, (notify) => Effect.runSync(notify))
+}
 
 export const start: {
   (testFiles: string[] | undefined): (self: VitestRuntime) => Effect.Effect<void, TestRunner.TestRunnerFailed>

@@ -70,6 +70,15 @@ export const MutantRunResultSchema = S.Union([
   S.Struct({ status: S.Literal('error'), errorMessage: S.String }),
 ])
 
+export class MutantRunStarted extends S.TaggedClass<MutantRunStarted>()('MutantRunStarted', {}) {}
+
+export class MutantRunSettled
+  extends S.TaggedClass<MutantRunSettled>()('MutantRunSettled', { result: MutantRunResultSchema })
+{}
+
+export const MutantRunEventSchema = S.Union([MutantRunStarted, MutantRunSettled])
+export type MutantRunEvent = typeof MutantRunEventSchema.Type
+
 export const CoverageAnalysisSchema = S.Literals(['off', 'all', 'perTest'])
 
 export const DryRunOptionsSchema = S.Struct({

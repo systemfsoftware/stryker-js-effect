@@ -16,6 +16,8 @@ import * as Scope from 'effect/Scope'
 import { type StrykerNamespace, type VitestRunnerOptions, VitestRunnerOptionsSchema } from './VitestRunner.schema.js'
 import { create, resolveVitest, type VitestResolver } from './VitestRuntime.blueprint.js'
 import {
+  armMutantRunStarted,
+  clearMutantRunStarted,
   close,
   type HarnessKey,
   type HarnessValue,
@@ -42,6 +44,8 @@ export interface VitestSessionShape {
   readonly runtime: Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed>
   readonly setMode: (mode: 'dry-run' | 'mutant') => Effect.Effect<void, TestRunner.TestRunnerFailed>
   readonly provide: (key: HarnessKey, value: HarnessValue) => Effect.Effect<void, TestRunner.TestRunnerFailed>
+  readonly exposeRunStart: (notify: Effect.Effect<void>) => Effect.Effect<void, TestRunner.TestRunnerFailed>
+  readonly clearRunStart: Effect.Effect<void, TestRunner.TestRunnerFailed>
   readonly close: Effect.Effect<void, TestRunner.TestRunnerFailed>
 }
 
@@ -104,6 +108,8 @@ const assembleShape = (
   runtime,
   setMode: (mode) => write((self) => setMode(self, mode)),
   provide: (key, value) => write((self) => provideValue(self, key, value)),
+  exposeRunStart: (notify) => write((self) => armMutantRunStarted(self, notify)),
+  clearRunStart: write((self) => clearMutantRunStarted(self)),
   close: closeCurrent.pipe(Effect.provideService(FileSystem.FileSystem, fs)),
 })
 const closeOnShutdown = (created: Ref.Ref<VitestRuntime | undefined>) =>
