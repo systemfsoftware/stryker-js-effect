@@ -29,9 +29,51 @@ export class PhaseEntered extends S.TaggedClass<PhaseEntered>()('phase', {
   elapsedMs: Report.NonNegativeFinite,
 }) {}
 
+export const ReuseRefusals = S.Struct({
+  semanticsChanged: Report.NonNegativeInt,
+  policyChanged: Report.NonNegativeInt,
+  runInputsChanged: Report.NonNegativeInt,
+  closureChanged: Report.NonNegativeInt,
+  timeoutUnreproduced: Report.NonNegativeInt,
+  flakyDependency: Report.NonNegativeInt,
+  noPriorRecord: Report.NonNegativeInt,
+})
+export type ReuseRefusals = typeof ReuseRefusals.Type
+
+export const PlanReportDiscardReason = S.Literals([
+  'noPriorRecord',
+  'cacheLayoutChanged',
+  'semanticsChanged',
+  'policyChanged',
+  'runInputsChanged',
+])
+export type PlanReportDiscardReason = typeof PlanReportDiscardReason.Type
+
+/**
+ * Why a whole incremental report was discarded before planning: its reason
+ * vocabulary matches the engine's report admission, and `actual`/`expected`
+ * repeat the mismatching identity when the reason names one.
+ */
+export const PlanReportDiscard = S.Struct({
+  reason: PlanReportDiscardReason,
+  actual: S.optionalKey(S.String),
+  expected: S.String,
+})
+export type PlanReportDiscard = typeof PlanReportDiscard.Type
+
+export const PlanProjectReuse = S.Struct({
+  project: S.String,
+  reused: Report.NonNegativeInt,
+  ran: Report.NonNegativeInt,
+  refused: ReuseRefusals,
+  discard: S.optionalKey(PlanReportDiscard),
+})
+export type PlanProjectReuse = typeof PlanProjectReuse.Type
+
 export class PlanKnown extends S.TaggedClass<PlanKnown>()('plan', {
   total: Report.NonNegativeInt,
   shardPlan: S.NullOr(ShardPlanDocument),
+  projects: PlanProjectReuse.pipe(S.Array, S.optionalKey),
 }) {}
 
 export const WorkerRole = S.Literals(['testRunner', 'checker'])
@@ -241,17 +283,6 @@ export type SkippedFileRow = typeof SkippedFileRow.Type
 export class SkippedReported extends S.TaggedClass<SkippedReported>()('skipped', {
   files: S.Array(SkippedFileRow),
 }) {}
-
-export const ReuseRefusals = S.Struct({
-  semanticsChanged: Report.NonNegativeInt,
-  policyChanged: Report.NonNegativeInt,
-  runInputsChanged: Report.NonNegativeInt,
-  closureChanged: Report.NonNegativeInt,
-  timeoutUnreproduced: Report.NonNegativeInt,
-  flakyDependency: Report.NonNegativeInt,
-  noPriorRecord: Report.NonNegativeInt,
-})
-export type ReuseRefusals = typeof ReuseRefusals.Type
 
 export class ReuseReported extends S.TaggedClass<ReuseReported>()('reuse', {
   reused: Report.NonNegativeInt,

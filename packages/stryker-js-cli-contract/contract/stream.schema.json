@@ -244,6 +244,101 @@
               "type": "null"
             }
           ]
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "project": {
+                "type": "string"
+              },
+              "reused": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "ran": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "refused": {
+                "type": "object",
+                "properties": {
+                  "semanticsChanged": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "policyChanged": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "runInputsChanged": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "closureChanged": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "timeoutUnreproduced": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "flakyDependency": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "noPriorRecord": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "semanticsChanged",
+                  "policyChanged",
+                  "runInputsChanged",
+                  "closureChanged",
+                  "timeoutUnreproduced",
+                  "flakyDependency",
+                  "noPriorRecord"
+                ],
+                "additionalProperties": true
+              },
+              "discard": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "noPriorRecord",
+                      "cacheLayoutChanged",
+                      "semanticsChanged",
+                      "policyChanged",
+                      "runInputsChanged"
+                    ]
+                  },
+                  "actual": {
+                    "type": "string"
+                  },
+                  "expected": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "reason",
+                  "expected"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "project",
+              "reused",
+              "ran",
+              "refused"
+            ],
+            "additionalProperties": true
+          }
         }
       },
       "required": [

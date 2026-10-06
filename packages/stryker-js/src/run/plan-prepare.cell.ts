@@ -35,6 +35,7 @@ const writePrepareForInstrument = (
         formatRegistry: raw.formatRegistry,
         options: raw.options,
         frameworkClaimants: raw.frameworkClaimants,
+        incrementalReportDiscard: raw.incrementalReportDiscard,
       }
     }))
 

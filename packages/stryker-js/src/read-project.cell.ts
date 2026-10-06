@@ -19,7 +19,7 @@ import { admitDiscoveredEntry, DiscoveredEntryCommand, EntryIncluded } from './a
 import {
   admitIncrementalReport,
   AdmitIncrementalReportCommand,
-  type IncrementalReportDiscard,
+  IncrementalReportDiscard,
 } from './admit-incremental-report.workflow.js'
 import { defaultOptions } from './config/default-options.js'
 import { DiffScopeCommand, type DiffScopeDecision, FullScope } from './git-diff.schema.js'
@@ -421,6 +421,7 @@ export interface ReadProjectDone {
   readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
   readonly project: Project
+  readonly incrementalReportDiscard?: IncrementalReportDiscard | undefined
 }
 
 const addProjectFile = (
@@ -451,22 +452,35 @@ const makeProject = (
 const projectOf = ({
   command,
   report,
+  discard,
 }: {
   readonly command: ReadProjectCommand
   readonly report: IncrementalReport | undefined
+  readonly discard?: IncrementalReportDiscard | undefined
 }): ReadProjectDone => ({
   options: command.options,
   targetMutatePatterns: command.targetMutatePatterns,
   basePath: command.basePath,
   project: makeProject(command.fileDescriptions, report, command.testFiles),
+  incrementalReportDiscard: discard,
 })
+
+const discardInstanceOf = (discard: IncrementalReportDiscardShape): IncrementalReportDiscard =>
+  IncrementalReportDiscard.make({
+    reason: discard.reason,
+    expected: discard.expected,
+    actual: discard.actual,
+  })
 
 export const readProjectCell = Sandwich.named(SpanTaxonomy.Spans.projectRead.name)(readProject)
   .decide(admitIncrementalReport)
   .write({
     IncrementalReportKeep: (keep, command) => Effect.succeed(projectOf({ command, report: keep.report })),
     IncrementalReportDiscard: (discard, command) =>
-      Effect.as(discardLogOf({ command, discard }), projectOf({ command, report: undefined })),
+      Effect.as(
+        discardLogOf({ command, discard }),
+        projectOf({ command, report: undefined, discard: discardInstanceOf(discard) }),
+      ),
     CommandRejected: ({ issue }) =>
       Effect.fail(badArgument({ module: 'stryker-js', method: 'incremental-report.cell', description: issue })),
   })
