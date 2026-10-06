@@ -266,6 +266,7 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
       mutants: envelope.mutants,
       scope: envelope.scope,
       mutantSetPolicy: envelope.mutantSetPolicy,
+      incrementalMode: envelope.incrementalMode,
       phaseDurations: envelope.phaseDurations,
       static: envelope.static,
     }),

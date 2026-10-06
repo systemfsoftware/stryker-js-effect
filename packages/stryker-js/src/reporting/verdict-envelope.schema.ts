@@ -15,6 +15,7 @@ export class VerdictEnvelope extends S.Class<VerdictEnvelope>('VerdictEnvelope')
   mutants: S.Array(RunEvent.VerdictMutant),
   scope: RunEvent.RunScope,
   mutantSetPolicy: RunEvent.MutantSetPolicy,
+  incrementalMode: RunEvent.IncrementalMode,
   phaseDurations: S.NullOr(RunEvent.PhaseDurations),
   static: S.NullOr(RunEvent.StaticVerdict),
 }) {}

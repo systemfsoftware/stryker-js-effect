@@ -10,6 +10,7 @@ export {
   FrameworkModuleRow,
   Heartbeat,
   HelpRendered,
+  IncrementalMode,
   MutantCost,
   MutantDetailReported,
   MutantSetPolicy,

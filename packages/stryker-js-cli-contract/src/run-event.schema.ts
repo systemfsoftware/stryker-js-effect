@@ -151,6 +151,9 @@ export type RunScope = typeof RunScope.Type
 export const MutantSetPolicy = S.Literals(['default', 'full'])
 export type MutantSetPolicy = typeof MutantSetPolicy.Type
 
+export const IncrementalMode = S.Literals(['incremental', 'full'])
+export type IncrementalMode = typeof IncrementalMode.Type
+
 export const PhaseDurations = S.Struct({
   prepare: Report.NonNegativeFinite,
   instrument: Report.NonNegativeFinite,
@@ -177,6 +180,7 @@ export class VerdictReached extends S.TaggedClass<VerdictReached>()('verdict', {
   mutants: S.Array(VerdictMutant),
   scope: RunScope,
   mutantSetPolicy: MutantSetPolicy,
+  incrementalMode: S.optionalKey(IncrementalMode),
   phaseDurations: S.NullOr(PhaseDurations),
   static: S.NullOr(StaticVerdict),
 }) {}

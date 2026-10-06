@@ -77,6 +77,14 @@ export const actionableMutants = (files: Report.MutationTestResult['files']): Re
         }),
     ))
 
+const reusesVerdicts = (
+  config: { readonly incremental?: boolean | undefined; readonly force?: boolean | undefined },
+): boolean => config.incremental === true && config.force !== true
+
+const incrementalModeOf = (
+  decoded: Option.Option<{ readonly incremental?: boolean | undefined; readonly force?: boolean | undefined }>,
+): RunEvent.IncrementalMode => (Option.exists(decoded, reusesVerdicts) ? 'incremental' : 'full')
+
 const embeddedConfig = (report: Report.MutationTestResult) => {
   const JsonReporterSchema = S.Struct({ fileName: S.String })
   const MutatorSchema = S.StructWithRest(
@@ -88,6 +96,8 @@ const embeddedConfig = (report: Report.MutationTestResult) => {
       jsonReporter: S.optional(JsonReporterSchema),
       mutator: S.optional(MutatorSchema),
       since: S.optional(S.String),
+      incremental: S.optional(S.Boolean),
+      force: S.optional(S.Boolean),
     }),
     [S.Record(S.String, S.Unknown)],
   )
@@ -102,6 +112,7 @@ const embeddedConfig = (report: Report.MutationTestResult) => {
     jsonReporterFileName: Option.getOrUndefined(Option.map(jsonReporter, (reporter) => reporter.fileName)),
     mutantSetPolicy: Option.getOrElse(mutantSetPolicy, () => 'default' as const),
     scope: Option.isSome(since) ? ('diff' as const) : ('full' as const),
+    incrementalMode: incrementalModeOf(decoded),
   }
 }
 
@@ -138,7 +149,7 @@ export const buildVerdictEnvelope: {
     staticVerdict: RunEvent.StaticVerdict | null,
   ): VerdictEnvelope => {
     const metrics = Report.metricsFromMutants(Arr.flatMap(Object.values(report.files), (file) => file.mutants))
-    const { jsonReporterFileName, mutantSetPolicy, scope } = embeddedConfig(report)
+    const { jsonReporterFileName, mutantSetPolicy, scope, incrementalMode } = embeddedConfig(report)
     return VerdictEnvelope.make({
       schemaVersion: RunEvent.StreamSchemaVersion.literal,
       runId,
@@ -163,6 +174,7 @@ export const buildVerdictEnvelope: {
       mutants: actionableMutants(report.files),
       scope,
       mutantSetPolicy,
+      incrementalMode,
       phaseDurations: Option.getOrNull(phaseDurations),
       static: staticVerdict,
     })

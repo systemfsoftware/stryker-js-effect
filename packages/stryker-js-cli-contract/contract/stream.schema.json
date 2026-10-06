@@ -961,6 +961,13 @@
             "full"
           ]
         },
+        "incrementalMode": {
+          "type": "string",
+          "enum": [
+            "incremental",
+            "full"
+          ]
+        },
         "phaseDurations": {
           "anyOf": [
             {
