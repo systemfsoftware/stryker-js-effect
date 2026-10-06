@@ -14,14 +14,30 @@ export class CliHelpRequested extends S.TaggedClass<CliHelpRequested>()('CliHelp
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
-export class CliMergeReportsRequested extends S.TaggedClass<CliMergeReportsRequested>()(
-  'CliMergeReportsRequested',
+export class CliMergeRequested extends S.TaggedClass<CliMergeRequested>()(
+  'CliMergeRequested',
   {
-    parts: S.String,
-    out: S.String,
-    packages: S.optional(S.String),
+    plan: S.String,
+    out: S.optional(S.String),
+    shards: S.Array(S.String),
   },
 ) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
+
+export class CliShardRunRequested extends S.TaggedClass<CliShardRunRequested>()('CliShardRunRequested', {
+  plan: S.String,
+  shard: S.String,
+  out: S.optional(S.String),
+}) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
+
+export class CliShardLeafRequested extends S.TaggedClass<CliShardLeafRequested>()('CliShardLeafRequested', {
+  plan: S.String,
+  shard: S.String,
+  project: S.String,
+}) {
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
@@ -95,7 +111,9 @@ export class CliMcpRequested extends S.TaggedClass<CliMcpRequested>()('CliMcpReq
 
 export type CliRouteDecision =
   | CliHelpRequested
-  | CliMergeReportsRequested
+  | CliMergeRequested
+  | CliShardRunRequested
+  | CliShardLeafRequested
   | CliRunRequested
   | CliSurvivorsRequested
   | CliRerunRequested
@@ -111,7 +129,9 @@ export const routeCliRequest = Workflow.make({
   command: CliRouteCommand,
   decision: S.Union([
     CliHelpRequested,
-    CliMergeReportsRequested,
+    CliMergeRequested,
+    CliShardRunRequested,
+    CliShardLeafRequested,
     CliRunRequested,
     CliSurvivorsRequested,
     CliRerunRequested,
@@ -127,10 +147,8 @@ export const routeCliRequest = Workflow.make({
   decide: (command): Result.Result<CliRouteDecision, never> =>
     Match.value(command.route).pipe(
       Match.tag('help', () => Result.succeed(CliHelpRequested.make({}))),
-      Match.tag('merge-reports', (merge) =>
-        Result.succeed(
-          CliMergeReportsRequested.make({ parts: merge.parts, out: merge.out, packages: merge.packages }),
-        )),
+      Match.tag('merge', (merge) =>
+        Result.succeed(CliMergeRequested.make({ plan: merge.plan, out: merge.out, shards: merge.shards }))),
       Match.tag('compare', (compare) =>
         Result.succeed(
           CliCompareRequested.make({ baseline: compare.baseline, fresh: compare.fresh, noise: compare.noise }),
@@ -145,7 +163,8 @@ export const routeCliRequest = Workflow.make({
             updateBudgetBaseline: gate.updateBudgetBaseline,
           }),
         )),
-      Match.tag('annotate', (annotate) => Result.succeed(CliAnnotateRequested.make({ baseline: annotate.baseline }))),
+      Match.tag('annotate', (annotate) =>
+        Result.succeed(CliAnnotateRequested.make({ baseline: annotate.baseline }))),
       Match.tag('plan', (plan) =>
         Result.succeed(
           CliPlanRequested.make({
@@ -171,14 +190,25 @@ export const routeCliRequest = Workflow.make({
       Match.tag('mcp', () => Result.succeed(CliMcpRequested.make({}))),
       Match.tag('run', (run) =>
         Option.match(
-          Option.filter(Option.fromUndefinedOr(run.mutants), (ids) => ids.length > 0),
+          Option.all([Option.fromUndefinedOr(run.plan), Option.fromUndefinedOr(run.shard)]),
           {
-            onSome: (ids) => Result.succeed(CliRerunRequested.make({ ids: [...ids] })),
-            onNone: () =>
-              Boolean.match(run.survivors, {
-                onTrue: () => Result.succeed(CliSurvivorsRequested.make({})),
-                onFalse: () => Result.succeed(CliRunRequested.make({})),
+            onSome: ([plan, shard]) =>
+              Option.match(Option.fromUndefinedOr(run.project), {
+                onSome: (project) => Result.succeed(CliShardLeafRequested.make({ plan, shard, project })),
+                onNone: () => Result.succeed(CliShardRunRequested.make({ plan, shard, out: run.out })),
               }),
+            onNone: () =>
+              Option.match(
+                Option.filter(Option.fromUndefinedOr(run.mutants), (ids) => ids.length > 0),
+                {
+                  onSome: (ids) => Result.succeed(CliRerunRequested.make({ ids: [...ids] })),
+                  onNone: () =>
+                    Boolean.match(run.survivors, {
+                      onTrue: () => Result.succeed(CliSurvivorsRequested.make({})),
+                      onFalse: () => Result.succeed(CliRunRequested.make({})),
+                    }),
+                },
+              ),
           },
         )),
       Match.exhaustive,

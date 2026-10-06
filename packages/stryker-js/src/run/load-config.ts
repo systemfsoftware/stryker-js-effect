@@ -21,7 +21,7 @@ export type { ConfigReadError } from '../drivers/config.js'
 export type { ValidationSchemaDocument } from './validate-options-admission.workflow.js'
 
 export interface ConfigInvocation {
-  readonly command: 'run' | 'merge-reports'
+  readonly command: 'run' | 'merge'
   readonly mode: OutputMode.OutputMode
 }
 
@@ -38,7 +38,7 @@ const isCiEnvironment: Effect.Effect<boolean> = Config.String('CI').pipe(
 )
 
 export const configEnvOf = (input: {
-  readonly command: 'run' | 'merge-reports'
+  readonly command: 'run' | 'merge'
   readonly mode: OutputMode.OutputMode
   readonly isDryRun: boolean
 }): Effect.Effect<ConfigEnv> =>
