@@ -207,6 +207,73 @@ const statusMapOf = (verdicts: readonly Verdict[]): Readonly<Record<string, stri
     [...verdicts].sort((left, right) => left.id.localeCompare(right.id)).map((verdict) => [verdict.id, verdict.status]),
   )
 
+const decodeVerdictLine = S.decodeUnknownOption(S.fromJsonString(RunEvent.VerdictReached))
+
+const shardActualSecondsOf = (text: string): number =>
+  text.split('\n')
+    .flatMap((line) => Option.toArray(decodeVerdictLine(line.trim())))
+    .reduce((total, verdict) => total + verdict.budget.actualSeconds, 0)
+
+const decodeMergedBudget = S.decodeUnknownOption(
+  S.fromJsonString(S.Struct({ budget: S.optional(RunEvent.Budget) })),
+)
+
+const decodeBaselineSeconds = S.decodeUnknownOption(S.fromJsonString(S.Struct({ actualSeconds: S.Finite })))
+
+interface BudgetOutcome {
+  readonly slowestShardSeconds: number
+  readonly mergedBudget: Option.Option<RunEvent.Budget>
+  readonly gate: ExecOutcome
+  readonly baselineSeconds: Option.Option<number>
+}
+
+const mergeAndBootstrapBudget = (
+  fixture: Fixture,
+): Effect.Effect<
+  BudgetOutcome,
+  never,
+  FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const { root } = fixture
+    yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '1/2', '--out', 'reports/budget-1'])
+    yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '2/2', '--out', 'reports/budget-2'])
+    const merged = yield* spawnCli(root, [
+      'merge',
+      '--plan',
+      'plan.json',
+      'reports/budget-1',
+      'reports/budget-2',
+      '--out',
+      'reports/mutation',
+    ])
+    yield* Effect.when(
+      Effect.die(new Error(`merge exited ${merged.exitCode}: ${merged.output}`)),
+      Effect.succeed(merged.exitCode !== 0),
+    )
+    const firstStream = yield* fs.readFileString(path.join(root, 'reports', 'budget-1', 'mutation-stream.jsonl'))
+    const secondStream = yield* fs.readFileString(path.join(root, 'reports', 'budget-2', 'mutation-stream.jsonl'))
+    const report = yield* fs.readFileString(path.join(root, 'reports', 'mutation', 'mutation.json'))
+    const gate = yield* spawnCli(root, [
+      'gate',
+      '--budget-baseline',
+      '.stryker/budget-baseline.json',
+      '--update-budget-baseline',
+    ])
+    const baseline = yield* Effect.option(fs.readFileString(path.join(root, '.stryker', 'budget-baseline.json')))
+    return {
+      slowestShardSeconds: Math.max(shardActualSecondsOf(firstStream), shardActualSecondsOf(secondStream)),
+      mergedBudget: Option.flatMap(decodeMergedBudget(report), (decoded) => Option.fromUndefinedOr(decoded.budget)),
+      gate,
+      baselineSeconds: Option.map(
+        Option.flatMap(baseline, decodeBaselineSeconds),
+        (decoded) => decoded.actualSeconds,
+      ),
+    }
+  }).pipe(Effect.orDie)
+
 Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary runs a two-shard plan and merges it')
@@ -228,6 +295,29 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
               unsharded: statusMapOf(s.fixture.unsharded),
               doctoredFailed: true,
               doctoredNamesId: true,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'The merged report carries the slowest shard as the run budget, so the budget gate can write its baseline',
+      Gherkin.Do.pipe(
+        Given('a fixture whose unsharded run and two-shard plan are prepared')('fixture', () => prepareFixture()),
+        When('the shards run, merge, and the budget gate bootstraps its baseline')(
+          'outcome',
+          (s) => mergeAndBootstrapBudget(s.fixture),
+        ),
+        Then('the merged budget is the slowest shard against the plan, and the gate writes it as the baseline')(
+          (s, expect) =>
+            expect({
+              mergedBudget: s.outcome.mergedBudget,
+              gateExitCode: s.outcome.gate.exitCode,
+              baselineSeconds: s.outcome.baselineSeconds,
+            }).toEqual({
+              mergedBudget: Option.some({ predictedSeconds: 1, actualSeconds: s.outcome.slowestShardSeconds }),
+              gateExitCode: 0,
+              baselineSeconds: Option.some(s.outcome.slowestShardSeconds),
             }),
         ),
       ),

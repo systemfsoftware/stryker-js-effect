@@ -1,4 +1,4 @@
-import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -52,6 +52,7 @@ interface CollectedReports {
   readonly reports: readonly ReportedShardProject[]
   readonly projectReports: readonly ProjectReport[]
   readonly incrementals: readonly IncrementalGroup[]
+  readonly shardBudgets: ReadonlyArray<Option.Option<RunEvent.Budget>>
 }
 
 const readText = (file: string): Effect.Effect<string | undefined, never, FileSystem.FileSystem> =>
@@ -69,6 +70,34 @@ const rebuiltReportOf = (text: string | undefined): Option.Option<Report.Mutatio
     }))
 
 const resultOfReport = (text: string) => reportFromStream(ReportFromStreamCommand.make({ text }))
+
+const decodeVerdictLine = S.decodeOption(S.fromJsonString(RunEvent.VerdictReached))
+
+const budgetOfStream = (text: string | undefined): Option.Option<RunEvent.Budget> =>
+  Option.map(
+    Arr.last(
+      Option.match(Option.fromUndefinedOr(text), {
+        onNone: () => [],
+        onSome: (present) => present.split('\n').flatMap((line) => Option.toArray(decodeVerdictLine(line.trim()))),
+      }),
+    ),
+    (verdict) => verdict.budget,
+  )
+
+const shardBudgetOf = (budgets: ReadonlyArray<Option.Option<RunEvent.Budget>>): Option.Option<RunEvent.Budget> =>
+  Option.map(Option.all(budgets), (present) => ({
+    predictedSeconds: Arr.reduce(present, 0, (total, budget) => total + budget.predictedSeconds),
+    actualSeconds: Arr.reduce(present, 0, (total, budget) => total + budget.actualSeconds),
+  }))
+
+const mergedBudgetOf = (
+  plan: ShardPlan,
+  shardBudgets: ReadonlyArray<Option.Option<RunEvent.Budget>>,
+): Option.Option<RunEvent.Budget> =>
+  Option.map(Option.all(shardBudgets), (present) => ({
+    predictedSeconds: Arr.reduce(plan.shards, 0, (slowest, shard) => Math.max(slowest, shard.predictedSeconds)),
+    actualSeconds: Arr.reduce(present, 0, (slowest, budget) => Math.max(slowest, budget.actualSeconds)),
+  }))
 
 const incrementalTextsOf = (dir: string): Effect.Effect<readonly string[], never, FileSystem.FileSystem> =>
   Effect.gen(function*() {
@@ -124,11 +153,15 @@ const schemaVersionOf = (reports: readonly ProjectReport[]): string =>
 const thresholdsOf = (reports: readonly ProjectReport[]): Report.Thresholds =>
   Option.getOrElse(Option.map(headReportOf(reports), (first) => first.report.thresholds), () => DEFAULT_THRESHOLDS)
 
-const mergedReportOf = (reports: readonly ProjectReport[]): Report.MutationTestResult => ({
+const mergedReportOf = (
+  reports: readonly ProjectReport[],
+  budget: Option.Option<RunEvent.Budget>,
+): Report.MutationTestResult & { readonly budget?: RunEvent.Budget } => ({
   files: mergeFiles(reports),
   schemaVersion: schemaVersionOf(reports),
   thresholds: thresholdsOf(reports),
   config: {},
+  ...Option.match(budget, { onNone: () => ({}), onSome: (present) => ({ budget: present }) }),
 })
 
 const mutantsOfReport = (report: Report.MutationTestResult): readonly Report.MutantResult[] =>
@@ -158,18 +191,21 @@ const collectProject = (
     readonly reported: ReportedShardProject
     readonly projectReport: Option.Option<ProjectReport>
     readonly incremental: IncrementalGroup
+    readonly budget: Option.Option<RunEvent.Budget>
   },
   never,
   FileSystem.FileSystem
 > =>
   Effect.gen(function*() {
     const projectDir = path.join(path.resolve(input.basePath, dir), project.project)
-    const report = rebuiltReportOf(yield* readText(path.join(projectDir, STREAM_FILE)))
+    const stream = yield* readText(path.join(projectDir, STREAM_FILE))
+    const report = rebuiltReportOf(stream)
     const incrementalTexts = yield* incrementalTextsOf(projectDir)
     return {
       reported: reportedOf(shard, project.project, report),
       projectReport: Option.map(report, (present) => ({ project: project.project, report: present })),
       incremental: { project: project.project, texts: incrementalTexts },
+      budget: budgetOfStream(stream),
     }
   })
 
@@ -188,6 +224,7 @@ const collectShardReports = (
       reports: parts.map((part) => part.reported),
       projectReports: Arr.getSomes(parts.map((part) => part.projectReport)),
       incrementals: parts.map((part) => part.incremental),
+      shardBudgets: [shardBudgetOf(parts.map((part) => part.budget))],
     })),
   )
 
@@ -213,6 +250,7 @@ const collectProjectReports = (
       reports: parts.flatMap((part) => part.reports),
       projectReports: parts.flatMap((part) => part.projectReports),
       incrementals: parts.flatMap((part) => part.incrementals),
+      shardBudgets: parts.flatMap((part) => part.shardBudgets),
     })),
   )
 
@@ -279,7 +317,9 @@ export const mergeShards = (
     const outDir = outputDirOf(input, path)
     yield* fs.makeDirectory(outDir, { recursive: true })
     const json = yield* Effect.orDie(
-      S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(mergedReportOf(collected.projectReports)),
+      S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(
+        mergedReportOf(collected.projectReports, mergedBudgetOf(input.plan, collected.shardBudgets)),
+      ),
     )
     yield* writeFileAtomic({ fs, path }, path.join(outDir, REPORT_FILE), json)
     yield* writeProjectIncrementals(path, fs, outDir, collected.incrementals)
