@@ -196,24 +196,10 @@ jobs:
             "${shards[@]}" \
             --out reports/mutation
 
-      - id: gate
-        name: Gate the merged report
-        run: |
-          if [ ! -f "$BUDGET_BASELINE" ]; then
-            echo "::notice title=No budget baseline::$BUDGET_BASELINE is absent; writing it from this run and uploading it for a maintainer to commit"
-            $PUBLISHED_CLI gate --budget-baseline "$BUDGET_BASELINE" --update-budget-baseline
-            echo "bootstrapped=true" >> "$GITHUB_OUTPUT"
-          else
-            $PUBLISHED_CLI gate --budget-baseline "$BUDGET_BASELINE"
-            echo "bootstrapped=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - uses: actions/upload-artifact@v7
-        if: ${{ steps.gate.outputs.bootstrapped == 'true' }}
         with:
-          name: budget-baseline-${{ github.run_number }}
-          path: ${{ env.BUDGET_BASELINE }}
-          if-no-files-found: error
+          name: mutation-report-${{ github.run_number }}
+          path: reports/mutation/*
           retention-days: 14
 
       - name: Seed each project's incremental report from its own merged report
@@ -234,10 +220,24 @@ jobs:
           path: ${{ env.INCREMENTAL_REPORTS }}
           key: ${{ needs.plan.outputs.incrementalKey }}
 
+      - id: gate
+        name: Gate the merged report
+        run: |
+          if [ ! -f "$BUDGET_BASELINE" ]; then
+            echo "::notice title=No budget baseline::$BUDGET_BASELINE is absent; writing it from this run and uploading it for a maintainer to commit"
+            $PUBLISHED_CLI gate --budget-baseline "$BUDGET_BASELINE" --update-budget-baseline
+            echo "bootstrapped=true" >> "$GITHUB_OUTPUT"
+          else
+            $PUBLISHED_CLI gate --budget-baseline "$BUDGET_BASELINE"
+            echo "bootstrapped=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/upload-artifact@v7
+        if: ${{ steps.gate.outputs.bootstrapped == 'true' }}
         with:
-          name: mutation-report-${{ github.run_number }}
-          path: reports/mutation/*
+          name: budget-baseline-${{ github.run_number }}
+          path: ${{ env.BUDGET_BASELINE }}
+          if-no-files-found: error
           retention-days: 14
 
       - name: Delete per-shard artifacts
