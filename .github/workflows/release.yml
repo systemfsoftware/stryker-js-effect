@@ -1,156 +1,24 @@
+# The release flow is the single definition in
+# systemfsoftware/pnpm-release-management/.github/workflows/release.yml. This
+# caller only supplies the trigger and the permissions; the reusable derives
+# the phase from repository state, opens the version PR, and on a push that
+# leaves untagged versions it tags each one and cuts its GitHub Release. tools-ref
+# pins the toolchain revision — a back-edge to the shared tools, consumed per the
+# documented contract. There is no npm publish: distribution is this repo's Nix
+# flake outputs consumed from a git ref, and the <pkg>@vX.Y.Z git tag is the
+# durable record that a version shipped
 name: Release
 
 on:
   push:
     branches: [main]
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  plan:
-    name: plan · derive phase
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      phase: ${{ steps.plan.outputs.phase }}
-    env:
-      HUSKY: "0"
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-      - uses: denoland/setup-deno@v2
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Preflight intent consumption
-        run: pnpm version -r --dry-run
-      - id: plan
-        name: Decide release phase from repository state
-        run: ./scripts/plan-release.ts --output "$GITHUB_OUTPUT"
-
-  # The gate that makes a release conditional on the suite that guards it.
-  # Same `pnpm check:ci` the CI workflow runs — one definition, never
-  # re-enumerated here. Versioning and publishing both wait on this job, so a
-  # red suite blocks the release PR *and* the npm publish that follows it.
-  gate:
-    if: needs.plan.outputs.phase != 'none' && github.event.head_commit.author.username != 'github-actions[bot]'
-    needs: [plan]
-    name: gate · check:ci
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    timeout-minutes: 45
-    env:
-      CI: "true"
-      HUSKY: "0"
-      OXLINT_FORMAT: github
-      TSGO_FORMAT: github-actions
-    steps:
-      - uses: actions/checkout@v7
-      - uses: cachix/install-nix-action@v31
-      - name: dprint from the flake
-        run: echo "$(nix build --no-link --print-out-paths .#dprint)/bin" >> "$GITHUB_PATH"
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Turbo cache
-        uses: actions/cache@v6
-        with:
-          path: .turbo/cache
-          key: turbo-${{ runner.os }}-dist-${{ github.sha }}
-          restore-keys: |
-            turbo-${{ runner.os }}-dist-
-            turbo-${{ runner.os }}-
-      # Root package.json `check:ci` is the one definition. Never re-enumerate its steps here.
-      - name: Gate
-        run: pnpm check:ci
-
-  version:
-    if: needs.plan.outputs.phase == 'version' && !cancelled() && (needs.gate.result == 'success' || needs.gate.result == 'skipped')
-    needs: [plan, gate]
-    name: version · open release PR
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    env:
-      HUSKY: "0"
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: denoland/setup-deno@v2
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Consume pending change intents
-        run: pnpm version -r
-      - name: Capture release set
-        run: ./scripts/tag-released-packages.ts --dry-run --json --output /tmp/captured.json && cat /tmp/captured.json
-      - name: Assert release notes
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: ./scripts/create-github-releases.ts --assert --captured /tmp/captured.json
-      - name: Open or update the Release PR
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: changeset-release/main
-          BASE: ${{ github.event.repository.default_branch }}
-        run: ./scripts/open-release-pr.sh
-
-  publish:
-    if: needs.plan.outputs.phase == 'publish' && !cancelled() && (needs.gate.result == 'success' || needs.gate.result == 'skipped')
-    permissions:
-      contents: write
-      id-token: write
-    name: publish · oidc · tag
-    needs: [plan, gate]
-    runs-on: ubuntu-latest
-    env:
-      HUSKY: "0"
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-      - uses: denoland/setup-deno@v2
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Capture release set
-        run: ./scripts/tag-released-packages.ts --dry-run --json --output /tmp/captured.json
-      - name: Assert release notes
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: ./scripts/create-github-releases.ts --assert --captured /tmp/captured.json
-      - name: Build
-        run: pnpm build
-      - name: Publish unpublished versions via OIDC
-        run: ./scripts/tag-released-packages.ts --unpublished --captured /tmp/captured.json --publish
-      - name: Tag released versions
-        run: ./scripts/tag-released-packages.ts --captured /tmp/captured.json
-      - name: GitHub Releases from authored changelogs
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: ./scripts/create-github-releases.ts --captured /tmp/captured.json
+  release:
+    uses: systemfsoftware/pnpm-release-management/.github/workflows/release.yml@prm/toolchain
+    with:
+      tools-ref: prm/toolchain
