@@ -128,11 +128,17 @@ const progressStreamFileName = (options: Options.PartialStrykerOptions): string 
     () => RunEventDrain.DefaultProgressStreamFile,
   )
 
+const progressStreamFileOf = (invocation: CliInvocation): string =>
+  invocation.environment.pathService.resolve(
+    invocation.environment.basePath,
+    progressStreamFileName(invocation.options),
+  )
+
 const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(function*(
   invocation: CliInvocation,
 ): Effect.fn.Return<CliRead, CliError.CliError, Command.Environment | RunEventDrain> {
   const drain = yield* RunEventDrain
-  yield* drain.setProgressStreamFile(progressStreamFileName(invocation.options))
+  yield* drain.setProgressStreamFile(progressStreamFileOf(invocation))
   yield* invocation.environment.stream.open
   return {
     _tag: invocation.route._tag,
