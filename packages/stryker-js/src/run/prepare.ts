@@ -22,6 +22,7 @@ import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 
+import type { IncrementalReportDiscard } from '../admit-incremental-report.workflow.js'
 import {
   decodeMutatorSelection,
   DecodeMutatorSelectionCommand,
@@ -77,6 +78,7 @@ export interface PrepareForInstrument {
   readonly formatRegistry: Format.FormatRegistry
   readonly options: Options.StrykerOptions
   readonly frameworkClaimants: readonly FrameworkClaimant[]
+  readonly incrementalReportDiscard?: IncrementalReportDiscard | undefined
 }
 
 export type PrepareRaw = typeof PrepareDecoded.Encoded & {
@@ -93,6 +95,7 @@ export type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory>
   readonly reporterChoicesByName: HashMap.HashMap<string, ReporterChoice>
   readonly frameworkClaimants: readonly FrameworkClaimant[]
+  readonly incrementalReportDiscard?: IncrementalReportDiscard | undefined
 }
 
 const NO_PLUGIN_DESCRIPTORS: readonly PluginDescriptor[] = []
@@ -239,6 +242,7 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
     builtinReporterFactories,
     reporterChoicesByName,
     frameworkClaimants,
+    incrementalReportDiscard: command.incrementalReportDiscard,
   }
 })
 

@@ -13,13 +13,14 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
+import type { IncrementalReportDiscard } from './admit-incremental-report.workflow.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
 import { CostsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import { readProjectCell } from './read-project.cell.js'
 import type { CliRead } from './run-request.cell.js'
 import { reusedTestCoverage } from './run/dry-run-coverage.js'
-import { readIncrementalReuse } from './run/incremental-reuse.cell.js'
+import { readIncrementalReuse, type RefusalCounts } from './run/incremental-reuse.cell.js'
 import { incrementalReportTextsOf } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
@@ -136,9 +137,17 @@ const emptyTestCoverage = (): TestCoverage => ({
   dryRunCoverage: undefined,
 })
 
+interface ReuseObservation {
+  readonly reused: number
+  readonly ran: number
+  readonly refused: RefusalCounts
+  readonly discard?: IncrementalReportDiscard | undefined
+}
+
 interface ProjectPlan {
   readonly label: string
   readonly mutants: ReadonlyArray<{ readonly id: Mutant.MutantId; readonly costMs: number }>
+  readonly reuse: ReuseObservation
 }
 
 const labelOf = (path: Path.Path, basePath: string, project: string): string => {
@@ -186,7 +195,18 @@ const planProject = (
       })),
       ...reuse.rememberedResults.map((mutant) => ({ id: mutant.id, costMs: 0 })),
     ]
-    return { label: labelOf(path, labelBase, project), mutants }
+    return {
+      label: labelOf(path, labelBase, project),
+      mutants,
+      reuse: {
+        reused: reuse.rememberedResults.length,
+        ran: reuse.mutants.length,
+        refused: reuse.refusalCounts,
+        ...(done.incrementalReportDiscard === undefined
+          ? {}
+          : { discard: done.incrementalReportDiscard }),
+      },
+    }
   }).pipe(Effect.orDie)
 
 const assemblePlan = (request: PlanShardsRequest, planned: ReadonlyArray<PlannedMutant>): ShardPlan => {
@@ -251,6 +271,27 @@ const labelBaseOf = (path: Path.Path, basePath: string, out: string | undefined)
     () => basePath,
   )
 
+const planReuseRowOf = (entry: ProjectPlan): RunEvent.PlanProjectReuse =>
+  RunEvent.PlanProjectReuse.make({
+    project: entry.label,
+    reused: entry.reuse.reused,
+    ran: entry.reuse.ran,
+    refused: entry.reuse.refused,
+    ...Option.match(Option.fromUndefinedOr(entry.reuse.discard), {
+      onNone: (): Readonly<Record<string, never>> => ({}),
+      onSome: (discard) => ({
+        discard: RunEvent.PlanReportDiscard.make({
+          reason: discard.reason,
+          expected: discard.expected,
+          ...Option.match(Option.fromUndefinedOr(discard.actual), {
+            onNone: (): Readonly<Record<string, never>> => ({}),
+            onSome: (actual) => ({ actual }),
+          }),
+        }),
+      }),
+    }),
+  })
+
 export const planRequest = ({ request, channel }: PlanRequestInput): Effect.Effect<void, never, EnginePorts> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
@@ -270,7 +311,11 @@ export const planRequest = ({ request, channel }: PlanRequestInput): Effect.Effe
     const plan = assemblePlan(request, scheduled)
     yield* Queue.offer(
       channel.environment.host.events,
-      RunEvent.PlanKnown.make({ total: scheduled.length, shardPlan: plan }),
+      RunEvent.PlanKnown.make({
+        total: scheduled.length,
+        shardPlan: plan,
+        projects: planned.map(planReuseRowOf),
+      }),
     )
     yield* writePlan(request, channel, plan).pipe(Effect.orDie)
   }).pipe(Effect.scoped)

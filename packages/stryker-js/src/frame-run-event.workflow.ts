@@ -1,9 +1,11 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { OutputMode, RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -106,6 +108,44 @@ const formatScore = (score: number | null): string =>
     onSome: (val) => String(val),
   })
 
+const refusalSummaryOf = (refused: RunEvent.ReuseRefusals): string =>
+  Arr.join(
+    Arr.map(
+      Arr.filter(Object.entries(refused), ([, count]) => Predicate.isTruthy(count)),
+      ([reason, count]) => `${reason} ${count}`,
+    ),
+    ', ',
+  )
+
+const refusedLineOf = (refused: RunEvent.ReuseRefusals): Option.Option<string> =>
+  Option.map(
+    Option.liftPredicate(refusalSummaryOf(refused), Predicate.isTruthy),
+    (summary) => `refused ${summary}`,
+  )
+
+const discardSummaryOf = (discard: RunEvent.PlanReportDiscard): string =>
+  Option.match(Option.fromUndefinedOr(discard.actual), {
+    onNone: () => `prior report discarded (${discard.reason})`,
+    onSome: (actual) => `prior report discarded (${discard.reason}: ${actual} != ${discard.expected})`,
+  })
+
+const planProjectLineOf = (project: RunEvent.PlanProjectReuse): string =>
+  Arr.join(
+    [
+      `${project.project}: ${project.reused} reused, ${project.ran} to run`,
+      ...Option.toArray(refusedLineOf(project.refused)),
+      ...Option.toArray(Option.map(Option.fromUndefinedOr(project.discard), discardSummaryOf)),
+    ],
+    ', ',
+  )
+
+const planLinesOf = (event: RunEvent.PlanKnown): string =>
+  [
+    `plan ${event.total} mutants`,
+    ...Option.getOrElse(Option.fromUndefinedOr(event.projects), (): readonly RunEvent.PlanProjectReuse[] => [])
+      .map(planProjectLineOf),
+  ].join('\n')
+
 const formatTotal = (total: number | null): string =>
   Option.match(Option.fromNullishOr(total), {
     onNone: () => '?',
@@ -114,7 +154,7 @@ const formatTotal = (total: number | null): string =>
 
 const formatStderrEvent = (event: RunEvent.RunEvent): string | null =>
   Match.value(event).pipe(
-    Match.tag('plan', (e) => `plan ${e.total} mutants`),
+    Match.tag('plan', planLinesOf),
     Match.tag('phase', (e) => `phase ${e.phase}`),
     Match.tag(
       'tick',

@@ -13,7 +13,7 @@ export namespace OutputMode {
 
 // @public (undocumented)
 export namespace RunEvent {
-    export { Budget, FeedbackJudgment, FeedbackReported, FormatClaimShadowingRow, FormatRegistryResolved, FormatRegistryRow, FrameworkContributionRow, FrameworkModuleRow, Heartbeat, HelpRendered, IncrementalMode, MutantCost, MutantDetailReported, MutantSetPolicy, PhaseDurations, PhaseEntered, PlanKnown, PluginLoadFailureReason, PluginsReported, RefusalRule, Refused, ReuseRefusals, ReuseReported, RunEvent, RunEventWireLine, RunFailed, RunId, RunMutantTested, RunMutantTestedEvent, RunPhase, RunScope, RunStarted, RunTerminalEvent, SkippedFileRow, SkippedReported, StaticVerdict, StreamSchemaVersion, TceReported, VerdictCounts, VerdictLocation, VerdictMutant, VerdictReached, VerdictThresholds, WorkerReported, WorkerRole };
+    export { Budget, FeedbackJudgment, FeedbackReported, FormatClaimShadowingRow, FormatRegistryResolved, FormatRegistryRow, FrameworkContributionRow, FrameworkModuleRow, Heartbeat, HelpRendered, IncrementalMode, MutantCost, MutantDetailReported, MutantSetPolicy, PhaseDurations, PhaseEntered, PlanKnown, PlanProjectReuse, PlanReportDiscard, PlanReportDiscardReason, PluginLoadFailureReason, PluginsReported, RefusalRule, Refused, ReuseRefusals, ReuseReported, RunEvent, RunEventWireLine, RunFailed, RunId, RunMutantTested, RunMutantTestedEvent, RunPhase, RunScope, RunStarted, RunTerminalEvent, SkippedFileRow, SkippedReported, StaticVerdict, StreamSchemaVersion, TceReported, VerdictCounts, VerdictLocation, VerdictMutant, VerdictReached, VerdictThresholds, WorkerReported, WorkerRole };
 }
 
 // @public (undocumented)

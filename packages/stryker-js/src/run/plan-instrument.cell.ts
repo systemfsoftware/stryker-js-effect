@@ -4,6 +4,7 @@ import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 
+import type { IncrementalReportDiscard } from '../admit-incremental-report.workflow.js'
 import { InstrumentCommand, planInstrumentation } from '../plan-instrumentation.workflow.js'
 import type { ProjectFiles } from '../project-files.service.js'
 import type { Project } from '../Project.schema.js'
@@ -18,6 +19,7 @@ export interface PlanInstrumentDone {
   readonly project: Project
   readonly mutants: readonly Mutant.Mutant[]
   readonly options: Options.StrykerOptions
+  readonly incrementalReportDiscard?: IncrementalReportDiscard | undefined
 }
 
 type PlanInstrumentRaw = typeof InstrumentCommand.Encoded & {
@@ -54,6 +56,7 @@ const writePlanInstrument = (
         project: raw.instrumentedProject,
         mutants: raw.mutants,
         options: raw.prev.options,
+        incrementalReportDiscard: raw.prev.incrementalReportDiscard,
       },
     ),
   )
