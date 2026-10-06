@@ -80,6 +80,16 @@
   dir: packages/stryker-js-cli-contract
   intents:
     - effect-4-stable
+"@systemfsoftware/stryker-js-cli-contract@0.3.0":
+  dir: packages/stryker-js-cli-contract
+  intents:
+    - incremental-on-by-default
+    - machine-stream-budget-contract
+    - plan-shards-contract
+    - refuse-local-mutation
+    - shard-plan-schema
+    - stream-worker-line
+    - trivial-compiler-equivalence
 "@systemfsoftware/stryker-js-cli@9.0.0":
   dir: apps/stryker-js-cli
   intents:
@@ -159,6 +169,10 @@
   dir: packages/stryker-js-instrumenter
   intents:
     - effect-4-stable
+"@systemfsoftware/stryker-js-instrumenter@12.1.0":
+  dir: packages/stryker-js-instrumenter
+  intents:
+    - instrumenter-location-types-at-root
 "@systemfsoftware/stryker-js-instrumenter@7.0.0":
   dir: packages/stryker-js-instrumenter
   intents:
@@ -232,6 +246,11 @@
   dir: packages/stryker-js-plugin-interface
   intents:
     - effect-4-stable
+"@systemfsoftware/stryker-js-plugin-interface@13.0.0":
+  dir: packages/stryker-js-plugin-interface
+  intents:
+    - incremental-on-by-default
+    - trivial-compiler-equivalence
 "@systemfsoftware/stryker-js-plugin-interface@5.0.0":
   dir: packages/stryker-js-plugin-interface
   intents:
@@ -387,6 +406,10 @@
   dir: packages/stryker-js-typescript-checker
   intents:
     - effect-4-stable
+"@systemfsoftware/stryker-js-typescript-checker@8.2.0":
+  dir: packages/stryker-js-typescript-checker
+  intents:
+    - trivial-compiler-equivalence
 "@systemfsoftware/stryker-js-vitest-runner@5.0.0":
   dir: packages/stryker-js-vitest-runner
   intents:
@@ -454,6 +477,11 @@
   dir: packages/stryker-js-vitest-runner
   intents:
     - effect-4-stable
+"@systemfsoftware/stryker-js-vitest-runner@8.1.0":
+  dir: packages/stryker-js-vitest-runner
+  intents:
+    - runner-ignores-the-ambient-worker-cap
+    - vitest-runner-fs-module-cache
 "@systemfsoftware/stryker-js@10.0.0":
   dir: packages/stryker-js
   intents:
@@ -579,6 +607,22 @@
     - clean-temp-dir-follows-run-outcome
     - unresponsive-worker-teardown
     - worker-boot-timeout
+"@systemfsoftware/stryker-js@16.0.0":
+  dir: packages/stryker-js
+  intents:
+    - incremental-on-by-default
+    - mutant-set-policy-upgrade-note
+    - name-the-incremental-decode-failure
+    - per-mutant-cost-records
+    - refuse-local-mutation
+    - shard-plan-run-and-merge
+    - stryker-plan
+    - trivial-compiler-equivalence
+    - turbo-task-logs-stay-out-of-reuse
+    - uncovered-mutants-are-checked
+    - verdicts-record-run-budget
+    - worker-boot-cost-on-stream
+    - write-incremental-reports-atomically
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
