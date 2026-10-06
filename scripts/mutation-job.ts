@@ -26,10 +26,7 @@ import {
   type StagedPart,
 } from './lib/mutation-plan.ts'
 
-const incrementalFileOf = (shard: Shard | undefined): string =>
-  shard === undefined
-    ? 'reports/stryker-incremental.json'
-    : `reports/stryker-incremental-${shard.index}of${shard.count}.json`
+import { incrementalFileOf, publishedCliRunArgsOf } from './lib/mutation-run-args.ts'
 
 const labelOf = (dir: string, shard: Shard | undefined): string =>
   shard === undefined ? dir : `${dir} (${shard.index}/${shard.count})`
@@ -69,9 +66,7 @@ const strykerUnderCap = async (name: string, shard: Shard | undefined, capSecond
       '--filter',
       name,
       'mutation',
-      '--incrementalFile',
-      incrementalFileOf(shard),
-      '--full',
+      ...publishedCliRunArgsOf(shard),
     ],
     env: { STRYKER_SHARD: shard === undefined ? '' : `${shard.index}/${shard.count}` },
     stdout: 'inherit',
