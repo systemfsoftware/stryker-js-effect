@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
@@ -20,6 +21,19 @@ export const TceCandidate = S.Struct({
 })
 export type TceCandidate = typeof TceCandidate.Type
 
+const candidateIdsAreDistinct = S.makeFilter(
+  (candidates: ReadonlyArray<TceCandidate>): string | undefined =>
+    Option.getOrUndefined(
+      Option.map(
+        Option.fromUndefinedOr(Mutant.duplicatedValue(candidates.map((candidate) => candidate.id))),
+        (duplicated) => `candidate ids must identify distinct mutants, got "${duplicated}"`,
+      ),
+    ),
+  { arbitraryConstraint: { uniqueBy: (candidate: TceCandidate) => candidate.id } },
+)
+
+const DistinctCandidates = S.Array(TceCandidate).check(candidateIdsAreDistinct)
+
 export class TceDecision extends S.TaggedClass<TceDecision>()('TceDecision', {
   id: S.String,
   classification: TceClassification,
@@ -29,7 +43,7 @@ export class TceDecision extends S.TaggedClass<TceDecision>()('TceDecision', {
 
 export class ClassifyTceCommand extends S.TaggedClass<ClassifyTceCommand>()('ClassifyTceCommand', {
   originalEmit: S.String,
-  candidates: S.Array(TceCandidate),
+  candidates: DistinctCandidates,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }

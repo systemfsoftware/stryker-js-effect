@@ -80,6 +80,8 @@ const tsconfigTextOf = Effect.fnUntraced(function*(
     compilerOptions: compilerOptionsOf(outDir, directory),
     references: [],
     files,
+    include: [],
+    exclude: [],
   })
 })
 

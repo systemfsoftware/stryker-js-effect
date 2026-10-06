@@ -1053,6 +1053,22 @@ if (import.meta.vitest !== void 0) {
     (subject, [mutant, result]) => Effect.map(subject(mutant, result), (mapped) => carriesClassOutcome(result, mapped)),
   )
 
+  const reportTceIgnoredForLaw = (mutant: Mutant.Mutant, reason: string) =>
+    reportIgnored(coverageOf(mutant), { status: 'ignored', reason })
+
+  it.effect.prop(
+    '∀mr_ReportIgnored_≡IgnoredCarryingTheTceReason',
+    {
+      of: [Mutant, S.Literals(['equivalent-to-original: tce', 'duplicate-at-site: tce'])],
+      subject: reportTceIgnoredForLaw,
+    },
+    (subject, [mutant, reason]) =>
+      Effect.map(
+        subject(mutant, reason),
+        (mapped) => holds([mapped.status === 'Ignored', mapped.statusReason === reason]),
+      ),
+  )
+
   const expectedTimeoutKind = (
     result: Parameters<typeof timeoutFieldsOf>[0],
     evidence: { readonly timeoutKind: TimeoutKind; readonly reproductions: number },
