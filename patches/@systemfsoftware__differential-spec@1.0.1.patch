@@ -1,6 +1,3 @@
-diff --git a/CHANGELOG.md b/CHANGELOG.md
-deleted file mode 100644
-index 600a0e28d3dbcb349097ef295452b382533dbf31..0000000000000000000000000000000000000000
 diff --git a/dist/index.mjs b/dist/index.mjs
 index ac3fb290de735a15a979adc9158c47e74de37137..ca0e1b73c158b045c08b9bb130d695e6025a52ab 100644
 --- a/dist/index.mjs
