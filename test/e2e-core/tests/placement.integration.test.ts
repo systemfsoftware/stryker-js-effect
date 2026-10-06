@@ -1,4 +1,5 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
+import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Mutant, Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -36,7 +37,12 @@ const Feature = makeFeature({ it })
 
 const MARKER = /^\s*\/\/\s*@stryker-expect\b/
 
-const FILE_PORTS = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+const FILE_AND_PATH = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+
+const FILE_PORTS = Layer.mergeAll(
+  FILE_AND_PATH,
+  NodeChildProcessSpawner.layer.pipe(Layer.provide(FILE_AND_PATH)),
+)
 
 const fixtures = await Effect.runPromise(sliceFixtures.pipe(Effect.provide(FILE_PORTS)))
 
