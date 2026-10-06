@@ -2,7 +2,6 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { type Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Options, type Plugin, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -48,6 +47,7 @@ import { runInputsDigestOf } from '../verdict-semantics.js'
 import { testRunnerConfigOf } from '../vm-runner.js'
 import { IdGenerator, type IdGeneratorShape } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
+import { testCoverageOf } from './dry-run-coverage.js'
 import { incrementalReportTextsOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
 import type { PhaseClock } from './phase-clock.service.js'
@@ -386,74 +386,6 @@ const withOriginalFileNames = (
   prev: InstrumentDone,
 ): readonly TestRunner.TestResult[] => tests.map((test) => withOriginalFileName(test, prev))
 
-const testsByIdOf = (result: Readonly<TestRunner.CompleteDryRunResult>) =>
-  MutableHashMap.fromIterable(result.tests.map((test) => [test.id, test] as const))
-
-const coveredMutantIdsOf = (coverage: Mutant.CoverageData) =>
-  Object.entries(coverage).filter(([, count]) => count > 0).map(([mutantId]) => mutantId)
-
-const testsByMutantIdOf = (
-  mutantCoverage: Mutant.Coverage,
-  testsById: MutableHashMap.MutableHashMap<string, TestRunner.TestResult>,
-) =>
-  Object.entries(mutantCoverage.perTest).reduce(
-    (testsByMutantId, [testId, coverage]) =>
-      Option.match(MutableHashMap.get(testsById, testId), {
-        onNone: () => testsByMutantId,
-        onSome: (test) =>
-          coveredMutantIdsOf(coverage).reduce(
-            (acc, mutantId) =>
-              MutableHashMap.set(
-                acc,
-                mutantId,
-                MutableHashSet.add(
-                  Option.getOrElse(MutableHashMap.get(acc, mutantId), () =>
-                    MutableHashSet.empty<TestRunner.TestResult>()),
-                  test,
-                ),
-              ),
-            testsByMutantId,
-          ),
-      }),
-    MutableHashMap.empty<string, MutableHashSet.MutableHashSet<TestRunner.TestResult>>(),
-  )
-
-const hitsByMutantIdOf = (mutantCoverage: Mutant.Coverage) =>
-  [mutantCoverage.static, ...Object.values(mutantCoverage.perTest)].reduce(
-    (hitsByMutantId, coverage) =>
-      Object.entries(coverage).reduce(
-        (acc, [mutantId, count]) =>
-          MutableHashMap.set(
-            acc,
-            mutantId,
-            Option.getOrElse(MutableHashMap.get(acc, mutantId), () => 0) + count,
-          ),
-        hitsByMutantId,
-      ),
-    MutableHashMap.empty<string, number>(),
-  )
-
-const testCoverageFrom = (result: Readonly<TestRunner.CompleteDryRunResult>, dryRunCoverage: DryRunCoverage) => {
-  const testsById = testsByIdOf(result)
-  const mutantCoverage = Option.fromNullishOr(result.mutantCoverage)
-  return {
-    testsByMutantId: Option.match(mutantCoverage, {
-      onNone: () => MutableHashMap.empty<string, MutableHashSet.MutableHashSet<TestRunner.TestResult>>(),
-      onSome: (coverage) => testsByMutantIdOf(coverage, testsById),
-    }),
-    testsById,
-    staticCoverage: Option.match(mutantCoverage, {
-      onNone: () => undefined,
-      onSome: (coverage) => coverage.static,
-    }),
-    hitsByMutantId: Option.match(mutantCoverage, {
-      onNone: () => MutableHashMap.empty<string, number>(),
-      onSome: (coverage) => hitsByMutantIdOf(coverage),
-    }),
-    dryRunCoverage,
-  }
-}
-
 const announceDryRunOutcome = (
   tests: readonly TestRunner.TestResult[],
   prev: InstrumentDone,
@@ -515,7 +447,7 @@ const dryRunDoneOf = (
 ): DryRunDone => ({
   ...raw.prev,
   dryRunResult,
-  testCoverage: testCoverageFrom(dryRunResult, coverage),
+  testCoverage: testCoverageOf({ result: dryRunResult, dryRunCoverage: coverage }),
   timeOverhead: EffectDuration.millis(coverage.timeOverheadMs),
 })
 

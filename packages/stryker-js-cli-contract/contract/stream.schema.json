@@ -142,11 +142,114 @@
         "total": {
           "type": "integer",
           "minimum": 0
+        },
+        "shardPlan": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "number",
+                  "enum": [
+                    1
+                  ]
+                },
+                "targetSeconds": {
+                  "type": "number"
+                },
+                "shards": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "index": {
+                        "type": "integer"
+                      },
+                      "count": {
+                        "type": "integer"
+                      },
+                      "predictedSeconds": {
+                        "type": "number"
+                      },
+                      "projects": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "project": {
+                              "type": "string"
+                            },
+                            "mutants": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "project",
+                            "mutants"
+                          ],
+                          "additionalProperties": true
+                        }
+                      }
+                    },
+                    "required": [
+                      "index",
+                      "count",
+                      "predictedSeconds",
+                      "projects"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "matrix": {
+                  "type": "object",
+                  "properties": {
+                    "include": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "shard": {
+                            "type": "string"
+                          },
+                          "predictedSeconds": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "shard",
+                          "predictedSeconds"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "include"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "version",
+                "targetSeconds",
+                "shards",
+                "matrix"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "_tag",
-        "total"
+        "total",
+        "shardPlan"
       ],
       "additionalProperties": true
     },

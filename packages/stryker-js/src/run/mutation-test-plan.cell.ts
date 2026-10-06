@@ -246,7 +246,7 @@ export const planMutationTest = Effect.fn(SpanTaxonomy.Spans.mutationTestPlan.na
   const progressQueue = yield* RunEvents
   yield* Queue.offer(
     progressQueue,
-    RunEvent.PlanKnown.make({ total: plansForReporter.length + earlyResults.length }),
+    RunEvent.PlanKnown.make({ total: plansForReporter.length + earlyResults.length, shardPlan: null }),
   )
   return { runPlans: sortedPlans, earlyResults, plannedTotal, plansForReporter }
 })

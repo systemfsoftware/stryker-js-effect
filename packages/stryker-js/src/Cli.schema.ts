@@ -86,12 +86,23 @@ const AnnotateRequestSchema = S.TaggedStruct('annotate', {
 
 export type AnnotateRequest = S.Schema.Type<typeof AnnotateRequestSchema>
 
+const PlanRequestSchema = S.TaggedStruct('plan', {
+  targetSeconds: S.Finite,
+  maxShards: S.optional(S.Int),
+  projects: S.Array(S.String).pipe(S.optional),
+  out: S.optional(S.String),
+  full: S.Boolean,
+})
+
+export type PlanRequest = S.Schema.Type<typeof PlanRequestSchema>
+
 export type CliRequest =
   | RunRequest
   | MergeReportsRequest
   | CompareRequest
   | GateRequest
   | AnnotateRequest
+  | PlanRequest
   | ServeRouteRequest
   | FeedbackRouteRequest
   | McpRouteRequest
@@ -104,6 +115,7 @@ export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteC
     CompareRequestSchema,
     GateRequestSchema,
     AnnotateRequestSchema,
+    PlanRequestSchema,
     ServeRouteRequestSchema,
     FeedbackRouteRequestSchema,
     McpRouteRequestSchema,

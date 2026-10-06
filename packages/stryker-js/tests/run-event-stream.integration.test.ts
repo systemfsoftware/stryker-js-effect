@@ -16,7 +16,7 @@ import * as Stream from 'effect/Stream'
 
 const Feature = makeFeature({ it })
 
-const PLAN_KNOWN = CliContract.PlanKnown.make({ total: 4 })
+const PLAN_KNOWN = CliContract.PlanKnown.make({ total: 4, shardPlan: null })
 const PHASE_ENTERED = CliContract.PhaseEntered.make({ phase: 'dry-run', elapsedMs: 1 })
 const HEARTBEAT = CliContract.Heartbeat.make({ elapsedMs: 2, completed: 1, total: 4 })
 const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '5.0', code: 0, help: 'usage' })
