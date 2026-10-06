@@ -33,7 +33,7 @@ import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
 import { inheritableCompileCacheDirectory } from './enable-compile-cache.js'
 
-import { classifyRunOutcome, RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
+import { classifyRunOutcome, type FailedRunOutcome, RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
 import { concludeRunCell } from '../conclude-run.cell.js'
 import { runOutcomeCommandOf } from '../conclude-run.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
@@ -186,6 +186,15 @@ const TRUNCATION_SUFFIX = '…[truncated]'
 const boundedErrorText = (text: string): string =>
   text.length > SPAN_ERROR_LIMIT ? text.slice(0, SPAN_ERROR_LIMIT) + TRUNCATION_SUFFIX : text
 
+const failureTextOf = (failure: FailedRunOutcome, captured: string): string => {
+  const envelope = errorEnvelopeFromOutcome({ error: failure, captured })
+  return Match.value(envelope.remediation).pipe(
+    Match.when('', () => boundedErrorText(envelope.error)),
+    Match.when((remediation) => remediation.includes(envelope.error), (remediation) => boundedErrorText(remediation)),
+    Match.orElse((remediation) => `${boundedErrorText(envelope.error)} — ${remediation}`),
+  )
+}
+
 const strykerProgram = Effect.gen(function*() {
   const stdio = yield* Stdio.Stdio
   const args = [...(yield* stdio.args)]
@@ -250,10 +259,7 @@ const strykerProgram = Effect.gen(function*() {
         const errorText = Option.getOrElse(
           Option.map(
             Option.liftPredicate(S.is(FailedRunOutcomeSchema))(classified),
-            (failure) =>
-              boundedErrorText(
-                errorEnvelopeFromOutcome({ error: failure, captured: machineConsoleService.read() }).error,
-              ),
+            (failure) => failureTextOf(failure, machineConsoleService.read()),
           ),
           () => '',
         )

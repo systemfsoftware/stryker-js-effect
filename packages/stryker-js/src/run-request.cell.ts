@@ -431,16 +431,13 @@ const reportUnchecked = (unchecked: ReadonlyArray<Mutant.MutantId>): Effect.Effe
 const GATE_REMEDIATION_LINE =
   'accept the new survivors with `stryker gate --update-baseline`, or kill them before the next run'
 
-const explainGateRefusal = (
+const remediateGateRefusal = (
   failure: GateRejected | GateInputUnusable | BudgetExceeded | BudgetInputUnusable,
 ): Effect.Effect<void> =>
-  Effect.andThen(
-    Effect.logError(failure.message),
-    Boolean.match(S.is(BudgetExceeded)(failure) || S.is(BudgetInputUnusable)(failure), {
-      onTrue: () => Effect.void,
-      onFalse: () => Effect.logInfo(GATE_REMEDIATION_LINE),
-    }),
-  )
+  Boolean.match(S.is(BudgetExceeded)(failure) || S.is(BudgetInputUnusable)(failure), {
+    onTrue: () => Effect.void,
+    onFalse: () => Effect.logInfo(GATE_REMEDIATION_LINE),
+  })
 
 const gateReport = (
   gate: {
@@ -645,7 +642,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
         return yield* runStage({ ...channel, options })
       }),
     CliCompareRequested: (compare) => compareReports(compare),
-    CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(explainGateRefusal)),
+    CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(remediateGateRefusal)),
     CliAnnotateRequested: (annotate, channel) => annotateReport(annotate, channel),
     CliPlanRequested: (plan, channel) => planRequest({ request: plan, channel }),
     CliFeedbackRequested: (feedback, channel) => feedbackRoute(feedback, channel),
@@ -655,16 +652,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
       serveMutationServer(serveRequestOf(serve, channel.options)).pipe(Effect.scoped),
     CliRunRequested: (_, channel) => runStage(channel),
     CliSurvivorsRequested: (_, channel) => survivorsAdmissionCell.run(survivorsInputOf(channel)),
-    CliRerunRequested: (rerun, channel) =>
-      mutantRerunAdmissionCell.run(rerunInputOf(channel, rerun.ids)).pipe(
-        Effect.tapError((failure) =>
-          Effect.forEach(
-            Option.toArray(Option.liftPredicate(failure, S.is(RerunRefused))),
-            (refusal) => Effect.logError(refusal.reason),
-            { discard: true },
-          )
-        ),
-      ),
+    CliRerunRequested: (rerun, channel) => mutantRerunAdmissionCell.run(rerunInputOf(channel, rerun.ids)),
     CommandRejected: ({ issue }) =>
       Effect.fail(StrykerError.make({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
   })

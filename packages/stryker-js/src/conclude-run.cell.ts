@@ -3,6 +3,8 @@ import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import type * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
+import * as Stdio from 'effect/Stdio'
+import * as Stream from 'effect/Stream'
 
 import { RunExit, type RunOutcomeDecision, type RunOutcomeError } from './classify-run-outcome.workflow.js'
 import type { ResolvedMode } from './output-mode.schema.js'
@@ -54,6 +56,12 @@ const readConclusion = Effect.fn(SpanTaxonomy.Spans.runConclusionRead.name)(func
   }
 })
 
+const writeStderrLine = (line: string): Effect.Effect<void, never, Stdio.Stdio> =>
+  Effect.flatMap(
+    Stdio.Stdio,
+    (stdio) => Stream.run(Stream.succeed(`${line}\n`), stdio.stderr({ endOnDone: false })).pipe(Effect.ignore),
+  )
+
 export const concludeRunCell = Sandwich.named(SpanTaxonomy.Spans.runConclude.name)(readConclusion)
   .decide(planRunConclusion)
   .write({
@@ -86,7 +94,10 @@ export const concludeRunCell = Sandwich.named(SpanTaxonomy.Spans.runConclude.nam
     RunConclusionQuietFailed: (decision, raw) =>
       Effect.andThen(
         raw.conclusion.stream.closeAndDrain,
-        Effect.fail(RunExit.make({ code: decision.exitCode })),
+        Effect.andThen(
+          writeStderrLine(`exit ${decision.exitCode} (${decision.exitClass}): ${decision.error}`),
+          Effect.fail(RunExit.make({ code: decision.exitCode })),
+        ),
       ),
     CommandRejected: ({ issue }) =>
       Effect.fail(StrykerError.make({ message: `the run conclusion command was rejected: ${issue}` })),
