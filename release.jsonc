@@ -11,7 +11,7 @@
   "versioning": {
     "strategy": "pnpm",
   },
-  "gate": { "strategy": "turbo", "task": "build" },
+  "gate": { "strategy": "paths" },
   "pr": {
     "title": "chore(release): version packages",
     "body": "Consumes the pending .changeset intents via pnpm version -r",
