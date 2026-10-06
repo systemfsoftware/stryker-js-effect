@@ -640,6 +640,10 @@
   intents:
     - merge-carries-run-budget
     - mutant-timeout-starts-at-first-test
+"@systemfsoftware/stryker-js@17.0.1":
+  dir: packages/stryker-js
+  intents:
+    - solid-stars-deny
 "@systemfsoftware/stryker-js@5.0.0":
   dir: packages/stryker-js
   intents:
