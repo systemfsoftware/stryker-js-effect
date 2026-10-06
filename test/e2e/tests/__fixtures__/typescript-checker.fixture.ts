@@ -2,27 +2,11 @@ import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import type { ExecResult } from '../../src/Harness/guest-job.schema.js'
+import { RUN_EVENT_KINDS, TERMINAL_RUN_KINDS } from './run-event-kinds.fixture.js'
 
 export const FIXTURE_URL = new URL('../../testResources/typescript-checker-fixture', import.meta.url)
 export const FIXTURE_NAME = 'typescript-checker-fixture'
-export const TERMINAL_RUN_KINDS: ReadonlyArray<string> = ['verdict', 'error', 'help']
 export const REQUIRED_EVENT_KINDS: ReadonlyArray<string> = ['stream', 'phase', 'plan', 'mutantTested', 'verdict']
-export const RUN_EVENT_KINDS: ReadonlyArray<string> = [
-  'stream',
-  'phase',
-  'plan',
-  'mutantTested',
-  'plugins',
-  'formats',
-  'skipped',
-  'tick',
-  'reuse',
-  'mutant-detail',
-  'feedback',
-  'verdict',
-  'error',
-  'help',
-]
 
 const terminalIndexesIn = (kinds: ReadonlyArray<string>): ReadonlyArray<number> =>
   kinds
