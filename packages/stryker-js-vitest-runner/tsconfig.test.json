@@ -28,7 +28,8 @@
   },
   "include": [
     "src/**/*.test.ts",
-    "src/**/__tests__"
+    "src/**/__tests__",
+    "tests/**/*.integration.test.ts"
   ],
   "exclude": [
     "testResources"
