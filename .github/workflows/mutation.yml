@@ -3,6 +3,10 @@ name: Mutation
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - ".changeset/**"
+      - "docs/**"
   workflow_dispatch:
     inputs:
       full:
@@ -13,7 +17,7 @@ on:
     - cron: "17 3 * * *"
 
 concurrency:
-  group: mutation-${{ github.ref }}
+  group: ${{ github.event.head_commit.author.username == 'github-actions[bot]' && format('mutation-release-{0}', github.run_id) || format('mutation-{0}', github.ref) }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
