@@ -1,4 +1,4 @@
-import { installedPlugin, shardMutate, sharedConfig } from '@systemfsoftware/stryker-config'
+import { installedPlugin, sharedConfig } from '@systemfsoftware/stryker-config'
 import type { PartialStrykerOptions } from '@systemfsoftware/stryker-js/config'
 
 const config = {
@@ -11,14 +11,14 @@ const config = {
     import.meta.resolve('@systemfsoftware/stryker-ignorer-effect-schema-declarations'),
     import.meta.resolve('@systemfsoftware/stryker-ignorer-in-source-vitest-block'),
   ],
-  mutate: shardMutate([
+  mutate: [
     'src/**/*.workflow.ts',
     'src/**/*.schema.ts',
     '!src/**/*.test.ts',
     '!src/**/*.property.test.ts',
     '!src/**/*.d.ts',
     '!src/**/__tests__/**',
-  ]),
+  ],
   dryRunTimeoutMinutes: 10,
 } satisfies PartialStrykerOptions
 
