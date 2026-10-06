@@ -2,6 +2,7 @@ import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/ef
 import { Configuration, Engine, Plugin } from '@systemfsoftware/stryker-js'
 import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { strykerPlugins as vitestRunnerPlugins } from '@systemfsoftware/stryker-js-vitest-runner'
+import { vi } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -123,6 +124,18 @@ const verdictOf = (result: TestRunner.MutantRunResult) => ({
   executedTests: result.status === 'killed' ? result.executedTests.map((test) => test.id) : [],
 })
 
+const WORKER_CAP_VARIABLE = 'VITEST_MAX_WORKERS'
+
+const withWorkerCapInEnvironment = <A, E, R>(
+  cap: string,
+  use: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => vi.stubEnv(WORKER_CAP_VARIABLE, cap)),
+    () => use,
+    () => Effect.sync(() => vi.unstubAllEnvs()),
+  )
+
 Feature("Ordering each mutant's tests so its killer runs first")
   .withLayer(Engine.nodePlatformLayer)
   .live('each scenario starts a real vitest runner worker over a real project on disk')
@@ -190,6 +203,27 @@ Feature("Ordering each mutant's tests so its killer runs first")
           }).toEqual({
             leading: { status: 'killed', killedBy: [KILLER] },
             trailing: { status: 'killed', killedBy: [KILLER] },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A run stops at the killer even when the environment caps the worker count',
+      Gherkin.Do.pipe(
+        Given('a project whose killer test lives in the later test file')(
+          'project',
+          () => Effect.succeed({ killer: KILLER, addition: ADDITION }),
+        ),
+        When('the environment caps how many test files may run at once')(
+          'outcome',
+          () => withWorkerCapInEnvironment('2', runMutant({ testFilter: [KILLER, ADDITION] })),
+        ),
+        Then('the killer runs first and the run stops on its kill')((s, expect) =>
+          expect(verdictOf(s.outcome)).toEqual({
+            status: 'killed',
+            killedBy: [KILLER],
+            executedTests: [KILLER],
           })
         ),
       ),
