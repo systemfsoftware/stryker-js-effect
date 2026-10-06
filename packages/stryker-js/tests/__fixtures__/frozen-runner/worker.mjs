@@ -4,6 +4,7 @@ import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Stream from 'effect/Stream'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -22,7 +23,7 @@ const recordPidThenFreeze = Effect.promise(recordPid).pipe(
 const handlers = Plugin.TestRunnerRpcs.toLayer({
   capabilities: () => Effect.succeed({ reloadEnvironment: true }),
   dryRun: () => recordPidThenFreeze,
-  mutantRun: () => recordPidThenFreeze,
+  mutantRun: () => Stream.fromEffect(recordPidThenFreeze),
 })
 
 NodeRuntime.runMain(

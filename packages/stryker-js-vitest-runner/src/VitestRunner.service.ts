@@ -5,6 +5,7 @@ import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Crypto from 'effect/Crypto'
+import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -13,6 +14,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import * as Stream from 'effect/Stream'
 import type { RunnerTask, RunnerTestCase, RunnerTestFile, RunnerTestSuite } from 'vitest'
 
 import { testRecordOf } from './drivers/vitest-node.js'
@@ -432,8 +434,28 @@ const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*
       Effect.mapError(asRunnerFailure('dryRun')),
     )
 
-  const mutantRun = (options: Mutant.MutantRunOptions) =>
-    mutantRunCell.run(options).pipe(Effect.mapError(asRunnerFailure('mutantRun')))
+  const mutantRun = (
+    options: Mutant.MutantRunOptions,
+  ): Stream.Stream<TestRunner.MutantRunEvent, TestRunner.TestRunnerFailed> =>
+    Stream.unwrap(Effect.gen(function*() {
+      const started = yield* Deferred.make<boolean>()
+      yield* session.exposeRunStart(started.pipe(Deferred.succeed(true), Effect.asVoid, Effect.ignore))
+      const settled = initialized.pipe(
+        Effect.andThen(mutantRunCell.run(options).pipe(Effect.mapError(asRunnerFailure('mutantRun')))),
+        Effect.map((result): TestRunner.MutantRunEvent => TestRunner.MutantRunSettled.make({ result })),
+        Effect.ensuring(
+          session.clearRunStart.pipe(Effect.andThen(started.pipe(Deferred.succeed(false))), Effect.ignore),
+        ),
+      )
+      const began = Stream.fromEffect(started.pipe(Deferred.await)).pipe(
+        Stream.flatMap((didBegin) =>
+          didBegin
+            ? Stream.succeed<TestRunner.MutantRunEvent>(TestRunner.MutantRunStarted.make({}))
+            : Stream.empty
+        ),
+      )
+      return Stream.merge(began, Stream.fromEffect(settled))
+    }))
 
   const capabilities = Effect.succeed({ reloadEnvironment: true })
   const initialized = runtime.pipe(Effect.asVoid)
@@ -442,7 +464,7 @@ const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*
     capabilities: initialized.pipe(Effect.andThen(capabilities)),
     init: initialized,
     dryRun: (options) => initialized.pipe(Effect.andThen(dryRun(options))),
-    mutantRun: (options) => initialized.pipe(Effect.andThen(mutantRun(options))),
+    mutantRun,
     dispose: session.close,
   })
 })

@@ -5,13 +5,18 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
+import * as Deferred from 'effect/Deferred'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
+import * as Stream from 'effect/Stream'
 import type { PooledTestRunnerError } from './TestRunner.schema.js'
+import { WORKER_BOOT_TIMEOUT } from './worker-client.blueprint.js'
 import { OutOfMemoryError } from './Worker.schema.js'
 
 export const TypeId: unique symbol = Symbol.for('~systemfsoftware/stryker-js/PooledTestRunner')
@@ -46,6 +51,84 @@ export const make = (runner: {
   })
 
 type RunPolicy<A, E> = (self: Effect.Effect<A, E, never>) => Effect.Effect<A, E, never>
+
+const wallClockTimeoutResult: TestRunner.MutantRunResult = {
+  status: 'timeout',
+  reason: TestRunner.WallClockTimeoutReason.literal,
+}
+
+const endedWithoutResult = (): PooledTestRunnerError =>
+  TestRunner.TestRunnerFailed.make({
+    runnerName: 'test runner',
+    phase: 'mutantRun',
+    cause: 'the mutant run ended without reporting a result',
+  })
+
+type MutantRunEvents = Stream.Stream<TestRunner.MutantRunEvent, PooledTestRunnerError>
+
+export const deadlineArmedMutantRun: {
+  (timeoutMs: number): (events: MutantRunEvents) => Effect.Effect<TestRunner.MutantRunResult, PooledTestRunnerError>
+  (events: MutantRunEvents, timeoutMs: number): Effect.Effect<TestRunner.MutantRunResult, PooledTestRunnerError>
+} = dual(
+  2,
+  (events: MutantRunEvents, timeoutMs: number): Effect.Effect<TestRunner.MutantRunResult, PooledTestRunnerError> =>
+    Effect.scoped(Effect.gen(function*() {
+      const started = yield* Deferred.make<void>()
+      const settled = yield* Deferred.make<TestRunner.MutantRunResult, PooledTestRunnerError>()
+      const pump = events.pipe(
+        Stream.runForEach((event) =>
+          Match.value(event).pipe(
+            Match.tag('MutantRunStarted', () => Deferred.succeed(started, void 0)),
+            Match.tag('MutantRunSettled', ({ result }) => Deferred.succeed(settled, result)),
+            Match.exhaustive,
+            Effect.asVoid,
+          )
+        ),
+        Effect.onExit((exit) =>
+          Exit.match(exit, {
+            onFailure: (cause) => Deferred.failCause(settled, cause),
+            onSuccess: () => Deferred.fail(settled, endedWithoutResult()),
+          }).pipe(Effect.asVoid)
+        ),
+      )
+      yield* Effect.forkScoped(pump)
+      const deadline = Effect.raceFirst(
+        Deferred.await(started).pipe(Effect.as(true)),
+        Deferred.await(settled).pipe(Effect.as(false)),
+      ).pipe(
+        Effect.timeoutOption(WORKER_BOOT_TIMEOUT),
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.succeed(wallClockTimeoutResult),
+            onSome: (began) =>
+              began
+                ? Effect.sleep(Duration.millis(timeoutMs)).pipe(Effect.as(wallClockTimeoutResult))
+                : Deferred.await(settled),
+          }),
+        ),
+      )
+      return yield* Effect.raceFirst(deadline, Deferred.await(settled))
+    })),
+)
+
+/**
+ * The dry run keeps the configured absolute budget. A mutant run is bounded from
+ * its own start by {@link deadlineArmedMutantRun}, so it is not wrapped here.
+ */
+export const withDryRunTimeout: {
+  (inner: PooledTestRunner): PooledTestRunner
+} = (inner) =>
+  make({
+    ...inner,
+    dryRun: (options) =>
+      inner.dryRun(options).pipe(
+        Effect.timeoutOrElse({
+          duration: Duration.millis(options.timeout),
+          orElse: (): Effect.Effect<TestRunner.DryRunResult> =>
+            Effect.succeed({ status: 'timeout', reason: TestRunner.WallClockTimeoutReason.literal }),
+        }),
+      ),
+  })
 
 export const withTimeout: {
   (inner: PooledTestRunner): PooledTestRunner

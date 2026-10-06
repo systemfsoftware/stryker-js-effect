@@ -17,7 +17,7 @@ export const VERDICT_SEMANTICS_SURFACE: readonly string[] = [
   'packages/ignorers',
 ]
 
-export const VERDICT_SEMANTICS_VERSION = 3
+export const VERDICT_SEMANTICS_VERSION = 4
 
 export const INCREMENTAL_CACHE_VERSION = '3'
 
