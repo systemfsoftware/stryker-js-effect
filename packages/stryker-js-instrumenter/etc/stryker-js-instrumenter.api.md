@@ -24,8 +24,9 @@ export namespace Instrument {
     export { File, FileDescription, FileDescriptions, InstrumentError, InstrumentFileSkip, InstrumentResult, InstrumenterContext, InstrumenterOptions, MutateDescription, ParserOptions, disableTypeChecks, instrument };
 }
 
-// Warning: (ae-forgotten-export) The symbol "LineStarts" needs to be exported by the entry point index.d.mts
-//
+// @public (undocumented)
+export type LineStarts = Arr.NonEmptyReadonlyArray<Offset>;
+
 // @public (undocumented)
 export const lineStartsOf: (text: string) => LineStarts;
 
@@ -39,6 +40,12 @@ export const locationOf: {
 export namespace Mutator {
     export { Mutator, MutatorContext, MutatorEntry, MutatorRegistry, MutatorSelection, RegistryCatalog, RegistryContribution, defaultMutators, optInMutators, registryOf, selectMutators, stockRegistry };
 }
+
+// @public (undocumented)
+export const Offset: S.Int;
+
+// @public (undocumented)
+export type Offset = typeof Offset.Type;
 
 // @public (undocumented)
 export const offsetAt: {
@@ -59,15 +66,30 @@ export const positionAt: {
 };
 
 // @public (undocumented)
+export const ScriptOrigin: S.Struct<{
+    readonly line: S.Int;
+    readonly columnShift: S.Int;
+}>;
+
+// @public (undocumented)
+export type ScriptOrigin = typeof ScriptOrigin.Type;
+
+// @public (undocumented)
 export namespace Source {
     export { LineStarts, Offset, ScriptOrigin, Span };
 }
 
-// Warnings were encountered during analysis:
-//
-// dist/index.d.mts:1797:3 - (ae-forgotten-export) The symbol "Span" needs to be exported by the entry point index.d.mts
-// dist/index.d.mts:1801:3 - (ae-forgotten-export) The symbol "ScriptOrigin" needs to be exported by the entry point index.d.mts
-// dist/index.d.mts:1805:3 - (ae-forgotten-export) The symbol "Offset" needs to be exported by the entry point index.d.mts
+// @public (undocumented)
+export const Span: S.declare<{
+    readonly start: number;
+    readonly end: number;
+}, {
+    readonly start: number;
+    readonly end: number;
+}>;
+
+// @public (undocumented)
+export type Span = typeof Span.Type;
 
 // (No @packageDocumentation comment for this package)
 
