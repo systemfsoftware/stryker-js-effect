@@ -17,7 +17,7 @@ pnpm add @systemfsoftware/stryker-js-cli-contract
 The package groups its exports into namespaces. `RunEvent` holds the machine
 stream: the `RunEvent` union of every event kind the CLI emits, each event's
 class, the `RunEventWireLine` newline-delimited JSON codec a consumer decodes
-stdout with, and `StreamSchemaVersion` (`5.0`, the version the stream
+stdout with, and `StreamSchemaVersion` (`6.0`, the version the stream
 declares). `OutputMode` holds the output mode and its signal (`OutputMode`,
 `ModeSignal`) as the stream header carries them. `StockCatalog` holds the stock
 mutator catalog and its name vocabulary (`StockCatalog`, `StockMutatorName`,
