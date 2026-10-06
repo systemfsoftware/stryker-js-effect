@@ -7,6 +7,7 @@ import * as S from 'effect/Schema'
 import { CheckedEntry } from '../../tests/__fixtures__/partition-checked-plans-law.fixture.js'
 import {
   CheckedPlanFailed,
+  CheckedPlanIgnored,
   CheckedPlanPassed,
   partitionCheckedPlans,
   PartitionCheckedPlansCommand,
@@ -19,7 +20,10 @@ const passedCheck = (result: Checker.CheckResult): Option.Option<Checker.PassedC
   Option.liftPredicate(result, (candidate) => candidate.status === 'passed')
 
 const failedCheck = (result: Checker.CheckResult): Option.Option<Checker.FailedCheckResult> =>
-  Option.liftPredicate(result, (candidate) => candidate.status !== 'passed')
+  Option.liftPredicate(result, (candidate) => candidate.status === 'compileError')
+
+const ignoredCheck = (result: Checker.CheckResult): Option.Option<Checker.IgnoredCheckResult> =>
+  Option.liftPredicate(result, (candidate) => candidate.status === 'ignored')
 
 describe('partitionCheckedPlans', () => {
   it.prop(
@@ -63,6 +67,24 @@ describe('partitionCheckedPlans', () => {
               Option.match(Option.fromUndefinedOr(decisions[0]), {
                 onNone: () => false,
                 onSome: (decision) => S.is(CheckedPlanFailed)(decision) && decision.reason === failed.reason,
+              }),
+          }),
+      }),
+  )
+
+  it.prop(
+    '∀e_IgnoredCheck_≡DecidesIgnoredCarryingTheReason',
+    { of: [CheckedEntry], subject: partitionCheckedPlans },
+    (subject, [entry]) =>
+      Result.match(subject(commandOf(entry)), {
+        onFailure: () => false,
+        onSuccess: (decisions) =>
+          Option.match(ignoredCheck(entry.result), {
+            onNone: () => true,
+            onSome: (ignored) =>
+              Option.match(Option.fromUndefinedOr(decisions[0]), {
+                onNone: () => false,
+                onSome: (decision) => S.is(CheckedPlanIgnored)(decision) && decision.reason === ignored.reason,
               }),
           }),
       }),

@@ -129,7 +129,11 @@ export interface MutationReportingInput {
 export interface MutationReportingService {
   readonly reportCheckFailure: (
     mutant: Mutant.MutantTestCoverage,
-    result: Exclude<Checker.CheckResult, Checker.PassedCheckResult>,
+    result: Checker.FailedCheckResult,
+  ) => Effect.Effect<Mutant.RunMutantResult>
+  readonly reportIgnored: (
+    mutant: Mutant.MutantTestCoverage,
+    result: Checker.IgnoredCheckResult,
   ) => Effect.Effect<Mutant.RunMutantResult>
   readonly reportNoCoverage: (mutant: Mutant.MutantTestCoverage) => Effect.Effect<Mutant.RunMutantResult>
   readonly reportMutantRunResult: (
@@ -161,6 +165,7 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
       const deps: MutationReportingDeps = { fs, path: pathService, events, projectFiles, phaseClock }
       return MutationReporting.of({
         reportCheckFailure: (mutant, result) => reportCheckFailure(mutant, result),
+        reportIgnored: (mutant, result) => reportIgnored(mutant, result),
         reportNoCoverage: (mutant) => reportNoCoverage(mutant),
         reportMutantRunResult: (mutant, result) => mapRunResult(mutant, result),
         reportAll: (input) => reportAll(deps, input),
@@ -214,8 +219,13 @@ const reportMutantStatus = (
 
 const reportCheckFailure = (
   mutant: Mutant.MutantTestCoverage,
-  result: Exclude<Checker.CheckResult, Checker.PassedCheckResult>,
+  result: Checker.FailedCheckResult,
 ) => reportMutantStatus(mutant, 'CompileError', result.reason)
+
+const reportIgnored = (
+  mutant: Mutant.MutantTestCoverage,
+  result: Checker.IgnoredCheckResult,
+) => reportMutantStatus(mutant, 'Ignored', result.reason)
 
 const reportNoCoverage = (mutant: Mutant.MutantTestCoverage) => reportMutantStatus(mutant, 'NoCoverage')
 
@@ -1041,6 +1051,22 @@ if (import.meta.vitest !== void 0) {
     '∀mr_MapRunResult_≡CarriesClassOutcome',
     { of: [Mutant, MutantRunResultSchema], subject: mapForLaw },
     (subject, [mutant, result]) => Effect.map(subject(mutant, result), (mapped) => carriesClassOutcome(result, mapped)),
+  )
+
+  const reportTceIgnoredForLaw = (mutant: Mutant.Mutant, reason: string) =>
+    reportIgnored(coverageOf(mutant), { status: 'ignored', reason })
+
+  it.effect.prop(
+    '∀mr_ReportIgnored_≡IgnoredCarryingTheTceReason',
+    {
+      of: [Mutant, S.Literals(['equivalent-to-original: tce', 'duplicate-at-site: tce'])],
+      subject: reportTceIgnoredForLaw,
+    },
+    (subject, [mutant, reason]) =>
+      Effect.map(
+        subject(mutant, reason),
+        (mapped) => holds([mapped.status === 'Ignored', mapped.statusReason === reason]),
+      ),
   )
 
   const expectedTimeoutKind = (

@@ -15,6 +15,7 @@ export type CheckerMutantWire = typeof CheckerMutantWire.Type
 export const CheckResultSchema = S.Union([
   S.Struct({ status: S.Literal('passed') }),
   S.Struct({ status: S.Literal('compileError'), reason: S.String }),
+  S.Struct({ status: S.Literal('ignored'), reason: S.String }),
 ]).pipe(S.toTaggedUnion('status'))
 
 export const CheckStatus = S.Literals(CheckResultSchema.discriminants)
@@ -33,4 +34,5 @@ export class CheckerFailed extends S.TaggedError<CheckerFailed>()('CheckerFailed
 
 export type CheckResult = typeof CheckResultSchema.Type
 export type FailedCheckResult = Extract<CheckResult, { readonly status: 'compileError' }>
+export type IgnoredCheckResult = Extract<CheckResult, { readonly status: 'ignored' }>
 export type PassedCheckResult = Extract<CheckResult, { readonly status: 'passed' }>

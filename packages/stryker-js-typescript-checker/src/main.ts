@@ -1,5 +1,6 @@
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import { NodeFileSystem, NodePath, NodeSocketServer } from '@effect/platform-node'
+import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
@@ -18,10 +19,12 @@ const workerPlatformLayer = Layer.unwrap(
   Effect.gen(function*() {
     const telemetry = yield* Worker.WorkerTelemetry
     const socketPath = yield* Config.String('STRYKER_SOCKET')
+    const fileSystemAndPath = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
     return Layer.mergeAll(
       NodeSocketServer.layer({ path: socketPath }),
       NodeFileSystem.layer,
       NodePath.layer,
+      NodeChildProcessSpawner.layer.pipe(Layer.provide(fileSystemAndPath)),
       Boolean.match(telemetry.enabled, {
         onTrue: () =>
           NodeSdk.layer(() => ({

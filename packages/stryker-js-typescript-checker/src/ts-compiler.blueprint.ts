@@ -6,6 +6,7 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import type * as Scope from 'effect/Scope'
 
 import { close, make as makeTSCompiler, type TSCompiler } from './ts-compiler.handle.js'
@@ -13,23 +14,25 @@ import { close, make as makeTSCompiler, type TSCompiler } from './ts-compiler.ha
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TSCompilerResource')
 export type TypeId = typeof TypeId
 
+type CompilerPorts = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+
 const scopedOf: (
   spec: Options.StrykerOptions,
-) => Effect.Effect<TSCompiler, never, Scope.Scope | FileSystem.FileSystem | Path.Path> = Effect.fn(
+) => Effect.Effect<TSCompiler, never, Scope.Scope | CompilerPorts> = Effect.fn(
   SpanTaxonomy.Spans.typescriptCheckerCompilerScoped.name,
 )(function*(
   spec: Options.StrykerOptions,
-): Effect.fn.Return<TSCompiler, never, Scope.Scope | FileSystem.FileSystem | Path.Path> {
+): Effect.fn.Return<TSCompiler, never, Scope.Scope | CompilerPorts> {
   const host = yield* FileSystem.FileSystem
   const pathService = yield* Path.Path
-  const compiler = yield* makeTSCompiler(spec, { host, pathService })
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+  const compiler = yield* makeTSCompiler(spec, { host, pathService, spawner })
   yield* Effect.addFinalizer(() => close(compiler))
   return compiler
 })
 
 const layerOf =
-  (spec: Options.StrykerOptions) =>
-  <Id>(service: Context.Key<Id, TSCompiler>): Layer.Layer<Id, never, FileSystem.FileSystem | Path.Path> =>
+  (spec: Options.StrykerOptions) => <Id>(service: Context.Key<Id, TSCompiler>): Layer.Layer<Id, never, CompilerPorts> =>
     Layer.effect(service)(scopedOf(spec))
 
 const TSCompilerResource = Blueprint.make<Options.StrykerOptions>()(TypeId).steps({

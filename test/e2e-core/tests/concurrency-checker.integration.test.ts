@@ -1,4 +1,5 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
+import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner'
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -40,6 +41,8 @@ const expectedMutantCount = (): number =>
   LIVE_OPT_IN_MUTATIONS.reduce((total, mutatorName) => total + (EXPECTED_MUTANTS_BY_MUTATOR[mutatorName] ?? 0), 0)
 
 const runLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+
+const spawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(runLayer))
 
 interface FixtureLayout {
   readonly definitionFiles: ReadonlyArray<string>
@@ -111,7 +114,7 @@ const rigLayers = (
   Layer.unwrap(
     optionsFor(layout).pipe(
       Effect.orDie,
-      Effect.map((options) => CheckerRuntime.layer(options)),
+      Effect.map((options) => CheckerRuntime.layer(options).pipe(Layer.provide(spawnerLayer))),
     ),
   )
 

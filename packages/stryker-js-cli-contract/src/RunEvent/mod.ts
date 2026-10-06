@@ -33,6 +33,7 @@ export {
   SkippedFileRow,
   SkippedReported,
   StaticVerdict,
+  TceReported,
   VerdictLocation,
   VerdictMutant,
   VerdictReached,

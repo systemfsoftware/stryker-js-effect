@@ -13,6 +13,7 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import type { Diagnostic } from 'typescript/unstable/async'
 import type { CheckMutantsAnswer } from './check-mutants.workflow.js'
 import { checkCell } from './Checker.cell.js'
@@ -44,6 +45,7 @@ const toCheckResult = (event: CheckEvent): Checker.CheckResult =>
   Match.value(event).pipe(
     Match.tag('MutantPassed', () => ({ status: 'passed' as const })),
     Match.tag('MutantFailed', (failed) => ({ status: 'compileError' as const, reason: failed.reason })),
+    Match.tag('MutantIgnored', (ignored) => ({ status: 'ignored' as const, reason: ignored.reason })),
     Match.exhaustive,
   )
 
@@ -102,7 +104,11 @@ export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRunti
 ) {
   static readonly layer = (
     options: Options.StrykerOptions,
-  ): Layer.Layer<CheckerRuntime | TypeScriptCompiler, never, FileSystem.FileSystem | Path.Path> =>
+  ): Layer.Layer<
+    CheckerRuntime | TypeScriptCompiler,
+    never,
+    FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+  > =>
     Layer.effect(
       CheckerRuntime,
       Effect.gen(function*() {

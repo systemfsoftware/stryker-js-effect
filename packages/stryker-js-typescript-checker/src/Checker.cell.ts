@@ -7,7 +7,7 @@ import * as Option from 'effect/Option'
 
 import { checkMutants } from './check-mutants.workflow.js'
 import { CheckMutantsCommand } from './Checker.schema.js'
-import { CheckMutantsInput, MutantVerdict } from './CheckMutants.schema.js'
+import { CheckMutantsInput, MutantVerdict, tceFieldOf } from './CheckMutants.schema.js'
 import type { CompilerError } from './Compiler.schema.js'
 import { check, describeDiagnostics, type MutantCheck, type TSCompiler } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
@@ -34,7 +34,12 @@ const verdictsOf = (
     (entry) =>
       Effect.map(
         describeDiagnostics(compiler, entry.diagnostics),
-        (diagnostics) => MutantVerdict.make({ id: entry.mutantId, diagnostics: [...diagnostics] }),
+        (diagnostics) =>
+          MutantVerdict.make({
+            id: entry.mutantId,
+            diagnostics: [...diagnostics],
+            ...tceFieldOf(entry.tce),
+          }),
       ),
     { concurrency: 1 },
   )
@@ -59,5 +64,6 @@ export const checkCell = Sandwich.named(SpanTaxonomy.Spans.typescriptCheckerChec
   .write({
     MutantPassed: (outcome) => Effect.succeed(outcome),
     MutantFailed: (outcome) => Effect.succeed(outcome),
+    MutantIgnored: (outcome) => Effect.succeed(outcome),
     CommandRejected: ({ issue }) => Effect.fail(refuse({ mutantIds: [], cause: issue })),
   })

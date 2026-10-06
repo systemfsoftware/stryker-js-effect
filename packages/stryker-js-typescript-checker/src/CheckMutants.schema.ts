@@ -1,7 +1,17 @@
 /// <reference types="vitest/importMeta" />
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
+
+export const TceOutcome = S.Literals(['original', 'sibling'])
+export type TceOutcome = typeof TceOutcome.Type
+
+export const tceFieldOf = (tce: TceOutcome | undefined): { readonly tce?: TceOutcome } =>
+  Option.match(Option.fromUndefinedOr(tce), {
+    onNone: () => ({}),
+    onSome: (present) => ({ tce: present }),
+  })
 
 export const SourceFileSchema = S.NonEmptyString.pipe(S.check(S.isPattern(/\.[^./\\]+$/u)))
 
@@ -29,6 +39,7 @@ export interface NodeDecodedShape {
 export class MutantVerdict extends S.Class<MutantVerdict>('MutantVerdict')({
   id: Mutant.MutantId,
   diagnostics: S.Array(DiagnosticLine),
+  tce: S.optional(TceOutcome),
 }) {}
 
 export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput>()(
