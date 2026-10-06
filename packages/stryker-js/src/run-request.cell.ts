@@ -3,6 +3,7 @@ import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as CliError from 'effect/cli/CliError'
 import * as Command from 'effect/cli/Command'
@@ -46,8 +47,6 @@ import {
   GateRejected,
 } from './gate-new-survivors.workflow.js'
 import { mcpServerLayer } from './Mcp/mod.js'
-import { mergeReportsCell } from './merge-reports.cell.js'
-import { MergeReportsFailed } from './merge-reports.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { planRequest } from './plan-request.cell.js'
 import { AnnotationsUnusable, renderAnnotations, RenderAnnotationsCommand } from './render-annotations.workflow.js'
@@ -64,6 +63,13 @@ import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import { serveMutationServer, type ServeRequest } from './Serve/Serve.cell.js'
+import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
+import { mergeShards } from './shard/shard-merge.js'
+import type { ShardMergeFailed } from './shard/shard-merge.schema.js'
+import { loadShardPlan } from './shard/shard-plan.js'
+import type { ShardPlanInvalid } from './shard/shard-plan.schema.js'
+import { runShard } from './shard/shard-run.js'
+import type { ShardChildFailed } from './shard/shard-run.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
 import { annotationLinesOf, surfacedSurvivorsOf } from './surfacing.js'
 import { type SurfacingCaps, SurfacingFields } from './surfacing.schema.js'
@@ -110,7 +116,10 @@ export type CliFailure =
   | BudgetExceeded
   | BudgetInputUnusable
   | AnnotationsUnusable
-  | MergeReportsFailed
+  | ShardPlanInvalid
+  | ShardUnknown
+  | ShardChildFailed
+  | ShardMergeFailed
   | FeedbackUnusable
 
 const progressStreamFileName = (options: Options.PartialStrykerOptions): string =>
@@ -422,16 +431,13 @@ const reportUnchecked = (unchecked: ReadonlyArray<Mutant.MutantId>): Effect.Effe
 const GATE_REMEDIATION_LINE =
   'accept the new survivors with `stryker gate --update-baseline`, or kill them before the next run'
 
-const explainGateRefusal = (
+const remediateGateRefusal = (
   failure: GateRejected | GateInputUnusable | BudgetExceeded | BudgetInputUnusable,
 ): Effect.Effect<void> =>
-  Effect.andThen(
-    Effect.logError(failure.message),
-    Boolean.match(S.is(BudgetExceeded)(failure) || S.is(BudgetInputUnusable)(failure), {
-      onTrue: () => Effect.void,
-      onFalse: () => Effect.logInfo(GATE_REMEDIATION_LINE),
-    }),
-  )
+  Boolean.match(S.is(BudgetExceeded)(failure) || S.is(BudgetInputUnusable)(failure), {
+    onTrue: () => Effect.void,
+    onFalse: () => Effect.logInfo(GATE_REMEDIATION_LINE),
+  })
 
 const gateReport = (
   gate: {
@@ -591,16 +597,52 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
   .decide(routeCliRequest)
   .write({
     CliHelpRequested: () => Effect.void,
-    CliMergeReportsRequested: (merge, channel) =>
-      mergeReportsCell.run({
-        _tag: 'merge-reports',
-        parts: merge.parts,
-        out: merge.out,
-        packages: merge.packages,
-        mode: channel.environment.mode.mode,
+    CliMergeRequested: (merge, channel) =>
+      loadShardPlan(channel.environment.basePath, merge.plan).pipe(
+        Effect.flatMap((loaded) =>
+          mergeShards({
+            plan: loaded.plan,
+            planDirectory: loaded.directory,
+            shardDirs: merge.shards,
+            out: merge.out,
+            basePath: channel.environment.basePath,
+          })
+        ),
+      ),
+    CliShardRunRequested: (shard, channel) =>
+      loadShardPlan(channel.environment.basePath, shard.plan).pipe(
+        Effect.flatMap((loaded) =>
+          runShard({
+            plan: loaded.plan,
+            planFile: loaded.file,
+            planDirectory: loaded.directory,
+            shard: shard.shard,
+            out: shard.out,
+            basePath: channel.environment.basePath,
+          })
+        ),
+      ),
+    CliShardLeafRequested: (leaf, channel) =>
+      Effect.gen(function*() {
+        const loaded = yield* loadShardPlan(channel.environment.basePath, leaf.plan)
+        const selected = yield* Effect.fromResult(
+          selectShard(SelectShardCommand.make({ plan: loaded.plan, shard: leaf.shard })),
+        )
+        const project = yield* Effect.fromOption(
+          Arr.findFirst(selected.projects, (candidate) => candidate.project === leaf.project),
+        ).pipe(
+          Effect.mapError(() =>
+            ShardUnknown.make({
+              shard: leaf.shard,
+              reason: `shard ${leaf.shard} has no project ${leaf.project}`,
+            })
+          ),
+        )
+        const options = { ...channel.options, mutantIds: [...project.mutants] }
+        return yield* runStage({ ...channel, options })
       }),
     CliCompareRequested: (compare) => compareReports(compare),
-    CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(explainGateRefusal)),
+    CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(remediateGateRefusal)),
     CliAnnotateRequested: (annotate, channel) => annotateReport(annotate, channel),
     CliPlanRequested: (plan, channel) => planRequest({ request: plan, channel }),
     CliFeedbackRequested: (feedback, channel) => feedbackRoute(feedback, channel),
@@ -610,16 +652,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
       serveMutationServer(serveRequestOf(serve, channel.options)).pipe(Effect.scoped),
     CliRunRequested: (_, channel) => runStage(channel),
     CliSurvivorsRequested: (_, channel) => survivorsAdmissionCell.run(survivorsInputOf(channel)),
-    CliRerunRequested: (rerun, channel) =>
-      mutantRerunAdmissionCell.run(rerunInputOf(channel, rerun.ids)).pipe(
-        Effect.tapError((failure) =>
-          Effect.forEach(
-            Option.toArray(Option.liftPredicate(failure, S.is(RerunRefused))),
-            (refusal) => Effect.logError(refusal.reason),
-            { discard: true },
-          )
-        ),
-      ),
+    CliRerunRequested: (rerun, channel) => mutantRerunAdmissionCell.run(rerunInputOf(channel, rerun.ids)),
     CommandRejected: ({ issue }) =>
       Effect.fail(StrykerError.make({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
   })

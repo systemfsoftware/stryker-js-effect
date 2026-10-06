@@ -4,7 +4,6 @@ import * as Argument from 'effect/cli/Argument'
 import * as CliError from 'effect/cli/CliError'
 import * as Command from 'effect/cli/Command'
 import * as Flag from 'effect/cli/Flag'
-import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -282,6 +281,34 @@ const runOptions = {
       Flag.map(splitOnComma),
       optional,
     ),
+  plan: Flag.String('plan')
+    .pipe(
+      Flag.withDescription(
+        'Run one shard of a shard plan JSON produced by `stryker plan`. From a repo root, runs every project the shard lists, each through a child CLI in that project directory.',
+      ),
+      optional,
+    ),
+  shard: Flag.String('shard')
+    .pipe(
+      Flag.withDescription(
+        'The shard to run as `k/N`, matching the plan. Exits 2 naming the plan when no such shard exists.',
+      ),
+      optional,
+    ),
+  project: Flag.String('project')
+    .pipe(
+      Flag.withDescription(
+        'Internal: run this single planned project in-process. Set by the shard orchestrator for each child CLI.',
+      ),
+      optional,
+    ),
+  out: Flag.String('out')
+    .pipe(
+      Flag.withDescription(
+        'The directory the shard orchestrator collects each project shard report into. Defaults to `reports/shards/<k>`.',
+      ),
+      optional,
+    ),
 }
 
 const runArgs = {
@@ -304,20 +331,23 @@ const runConfig = {
   ...runArgs,
 }
 
-const mergeReportsOptions = {
-  parts: Flag.String('parts').pipe(
-    Flag.withDescription('The directory holding the downloaded mutation report parts (any download layout).'),
+const mergeOptions = {
+  plan: Flag.String('plan').pipe(
+    Flag.withDescription('The shard plan JSON produced by `stryker plan`.'),
   ),
   out: Flag.String('out').pipe(
-    Flag.withDescription('The directory to write the merged report, its html view, and the summary into.'),
-  ),
-  packages: Flag.String('packages')
-    .pipe(
-      Flag.withDescription(
-        'A JSON array of the package names the run expected, falling back to the PACKAGES environment variable.',
-      ),
-      optional,
+    Flag.withDescription(
+      'The directory to write the merged report and incremental report into. Defaults to `reports/mutation`.',
     ),
+    optional,
+  ),
+}
+
+const mergeArgs = {
+  shardDirs: Argument.String('shardOutputDir').pipe(
+    Argument.withDescription("One directory per shard, in plan order, holding that shard's per-project reports."),
+    Argument.variadic(),
+  ),
 }
 
 const compareOptions = {
@@ -495,7 +525,15 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
       onNone: () =>
         runRequestCell.run({
           route: CliRouteCommand.make({
-            route: { _tag: 'run', survivors: config.survivors === true, mutants: Option.getOrUndefined(config.mutant) },
+            route: {
+              _tag: 'run',
+              survivors: config.survivors === true,
+              mutants: Option.getOrUndefined(config.mutant),
+              plan: Option.getOrUndefined(config.plan),
+              shard: Option.getOrUndefined(config.shard),
+              project: Option.getOrUndefined(config.project),
+              out: Option.getOrUndefined(config.out),
+            },
           }),
           options: readStrykerOptions(config),
           environment,
@@ -503,28 +541,23 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
     })
   }).pipe(Command.withDescription('Run mutation testing'))
 
-  const mergeReportsCommand = Command.make(
-    'merge-reports',
-    { ...mergeReportsOptions, ...formatOptions },
+  const mergeCommand = Command.make(
+    'merge',
+    { ...mergeOptions, ...mergeArgs, ...formatOptions },
     (config) =>
-      Config.String('PACKAGES').pipe(
-        Effect.option,
-        Effect.flatMap((fromEnvironment) =>
-          runRequestCell.run({
-            route: CliRouteCommand.make({
-              route: {
-                _tag: 'merge-reports',
-                parts: config.parts,
-                out: config.out,
-                packages: Option.getOrUndefined(config.packages) ?? Option.getOrUndefined(fromEnvironment),
-              },
-            }),
-            options: {},
-            environment,
-          }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer))
-        ),
-      ),
-  ).pipe(Command.withDescription('Merge per-package mutation reports into one report'))
+      runRequestCell.run({
+        route: CliRouteCommand.make({
+          route: {
+            _tag: 'merge',
+            plan: config.plan,
+            out: Option.getOrUndefined(config.out),
+            shards: [...config.shardDirs],
+          },
+        }),
+        options: {},
+        environment,
+      }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer)),
+  ).pipe(Command.withDescription('Merge shard mutation reports into one mutation report and one incremental report'))
 
   const compareCommand = Command.make('compare', compareOptions, (config) =>
     runRequestCell.run({
@@ -692,7 +725,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
   return root.pipe(
     Command.withSubcommands([
       runCommand,
-      mergeReportsCommand,
+      mergeCommand,
       compareCommand,
       gateCommand,
       annotateCommand,

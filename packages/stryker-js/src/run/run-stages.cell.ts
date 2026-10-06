@@ -1,5 +1,4 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import * as Match from 'effect/Match'
 
 import { concurrencyCell } from '../concurrency.cell.js'
 import type { ConfigReadError } from '../ConfigError.schema.js'
@@ -15,11 +14,7 @@ import { prepareCell } from './prepare.cell.js'
 import type { PrepareExecutorArgs } from './prepare.cell.js'
 import type { StageServices } from './StageServices.service.js'
 
-const configReadReasonOf = (cause: ConfigReadError): string =>
-  Match.value(cause).pipe(
-    Match.tag('ConfigError', (refused) => refused.message),
-    Match.orElse(() => 'Failed to read config'),
-  )
+const configReadReasonOf = (cause: ConfigReadError): string => cause.message
 
 const prepareStageCell = Cell.andThen(
   Cell.andThen(

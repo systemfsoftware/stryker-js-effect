@@ -160,7 +160,7 @@ pnpm exec stryker run --full
 pnpm exec stryker run --concurrency 4
 
 # Merge partial mutation reports from parallel CI shards
-pnpm exec stryker merge-reports --parts reports/shards --out reports/mutation
+pnpm exec stryker merge --plan plan.json reports/shards/1 reports/shards/2 --out reports/mutation
 
 # Fail on survivors absent from a committed baseline
 pnpm exec stryker gate --baseline .stryker-baseline.json
@@ -190,7 +190,7 @@ pnpm exec stryker run --json                # wire records on stdout, diagnostic
 STRYKER_MODE=machine pnpm exec stryker run  # the same, named by environment
 ```
 
-`--format text` names the human format explicitly; `--json` together with `--format text` is a usage error (exit 2). Under `--json`, `stdout` carries wire records and nothing else — progress lines and log output stay on `stderr`. Every run also writes the same records to `reports/mutation-stream.jsonl` (`--progressStreamFile`) in both modes, which is the artifact `stryker merge-reports` rebuilds a shard's partial report from.
+`--format text` names the human format explicitly; `--json` together with `--format text` is a usage error (exit 2). Under `--json`, `stdout` carries wire records and nothing else — progress lines and log output stay on `stderr`. Every run also writes the same records to `reports/mutation-stream.jsonl` (`--progressStreamFile`) in both modes, which is the artifact `stryker merge` rebuilds a shard's partial report from.
 
 ## Reporters, Sidecars, and Verdict Reuse
 

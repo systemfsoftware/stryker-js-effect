@@ -7,7 +7,7 @@ problem_type: workflow_issue
 component: tooling
 severity: high
 applies_when:
-  - "Changing the Mutation workflow, the mutation-job runner, or its no-report gate"
+  - "Changing the Mutation workflow, the shard/merge CLI path, or its no-report gate"
   - "Deciding which file or exit code proves that a Stryker run produced a result"
   - "Pointing a package's Stryker config at a runner or checker plugin that is also a workspace package"
 symptoms:

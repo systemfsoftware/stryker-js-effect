@@ -218,7 +218,7 @@ export default defineConfig(({ isCi }) => ({
 
 ### Environment-Aware Configuration
 
-`defineConfig` accepts a callback instead of a static object. It receives a `ConfigEnv` of `{ command, isDryRun, mode, isCi }`, where `command` is `'run'` or `'merge-reports'` and `mode` is the resolved output mode:
+`defineConfig` accepts a callback instead of a static object. It receives a `ConfigEnv` of `{ command, isDryRun, mode, isCi }`, where `command` is `'run'` or `'merge'` and `mode` is the resolved output mode:
 
 ```ts
 import { defineConfig } from '@systemfsoftware/stryker-js/config'
@@ -299,7 +299,7 @@ $ pnpm exec stryker run --json
 {"_tag":"verdict","schemaVersion":"1.1","runId":"06GDK68202ZB44HJQQ270G8WQ4","mode":"machine","signal":"flag","score":85.71428571428571,"thresholds":{"high":100,"low":80,"break":null},"reportFile":"reports/mutation/mutation.json","counts":{"pending":0,"killed":6,"timeout":0,"survived":1,"noCoverage":0,"runtimeErrors":0,"compileErrors":0,"ignored":0},"mutants":[{"id":"5","file":"src/calc.ts","location":{"start":{"line":3,"column":55},"end":{"line":3,"column":64}},"mutator":"EqualityOperator","replacement":"value >= 0","status":"Survived"}]}
 ```
 
-Under `--json`, `stdout` carries wire records and nothing else — progress status lines and log output stay on `stderr`. In both modes the same records are also written to `reports/mutation-stream.jsonl` (`--progressStreamFile`), the artifact `stryker merge-reports` rebuilds partial reports from.
+Under `--json`, `stdout` carries wire records and nothing else — progress status lines and log output stay on `stderr`. In both modes the same records are also written to `reports/mutation-stream.jsonl` (`--progressStreamFile`), the artifact `stryker merge` rebuilds partial reports from.
 
 ---
 

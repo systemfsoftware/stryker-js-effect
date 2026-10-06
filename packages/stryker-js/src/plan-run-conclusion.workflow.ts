@@ -1,6 +1,8 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -74,6 +76,8 @@ export class RunConclusionQuietOk extends S.TaggedClass<RunConclusionQuietOk>()(
 
 export class RunConclusionQuietFailed extends S.TaggedClass<RunConclusionQuietFailed>()('RunConclusionQuietFailed', {
   exitCode: Plugin.ExitCode,
+  exitClass: S.Union([Plugin.ExitClass, RunOutcomeTag]),
+  error: S.String,
 }) {
   readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
 }
@@ -92,10 +96,30 @@ const emittedOf = (command: PlanRunConclusionCommand): PlanRunConclusionDecision
     onFalse: () => RunConclusionEmittedFailed.make({ command: command.command, exitCode: command.exitCode }),
   })
 
+const BASELINE_CLASSES: ReadonlyArray<readonly [Plugin.ExitCode, Plugin.ExitClass]> = Arr.filterMap(
+  Plugin.ExitClass.literals,
+  (exitClass) =>
+    Result.fromOption(
+      Option.map(S.decodeOption(Plugin.ExitCodeFromClass)(exitClass), (code) => [code, exitClass] as const),
+      () => exitClass,
+    ),
+)
+
+const baselineClassOf = (exitCode: Plugin.ExitCode): Option.Option<Plugin.ExitClass> =>
+  Option.map(Arr.findFirst(BASELINE_CLASSES, ([code]) => code === exitCode), ([, exitClass]) => exitClass)
+
+const exitClassNameOf = (command: PlanRunConclusionCommand): Plugin.ExitClass | RunOutcomeTag =>
+  Option.getOrElse(baselineClassOf(command.exitCode), () => command.outcome)
+
 const quietOf = (command: PlanRunConclusionCommand): PlanRunConclusionDecision =>
   Boolean.match(command.exitCode === 0, {
     onTrue: () => RunConclusionQuietOk.make({}),
-    onFalse: () => RunConclusionQuietFailed.make({ exitCode: command.exitCode }),
+    onFalse: () =>
+      RunConclusionQuietFailed.make({
+        exitCode: command.exitCode,
+        exitClass: exitClassNameOf(command),
+        error: command.error,
+      }),
   })
 
 const decide = (command: PlanRunConclusionCommand): Result.Result<PlanRunConclusionDecision, never> =>

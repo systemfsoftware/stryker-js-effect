@@ -16,6 +16,4 @@ export interface SharedConfig {
 
 export const sharedConfig: SharedConfig
 
-export function shardMutate(patterns: readonly string[]): string[]
-
 export function installedPlugin(specifier: string, configUrl: string | URL): string
