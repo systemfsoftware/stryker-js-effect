@@ -1,4 +1,26 @@
+import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
+
+const CAUSE_DEPTH = 4
+
+const ownMessageOf = <A>(value: A): Option.Option<string> =>
+  Option.filter(
+    Option.map(Option.liftPredicate(value, Predicate.hasProperty('message')), (carrier) => String(carrier.message)),
+    S.is(S.NonEmptyString),
+  )
+
+const causeMessagesOf = <A>(value: A, depth: number): ReadonlyArray<string> =>
+  depth === 0 ? [] : [
+    ...Option.toArray(ownMessageOf(value)),
+    ...Option.match(Option.liftPredicate(value, Predicate.hasProperty('cause')), {
+      onNone: () => [],
+      onSome: (carrier) => causeMessagesOf(carrier.cause, depth - 1),
+    }),
+  ]
+
+const causeTextOf = <A>(cause: A): Option.Option<string> =>
+  Option.liftPredicate(causeMessagesOf(cause, CAUSE_DEPTH).join(': '), S.is(S.NonEmptyString))
 
 export class ConfigFileNotFoundError extends S.TaggedError<ConfigFileNotFoundError>()(
   'ConfigFileNotFoundError',
@@ -37,7 +59,10 @@ export class ConfigFileUnreadableError extends S.TaggedError<ConfigFileUnreadabl
   readonly exitClass = 'ConfigError' as const
 
   override get message(): string {
-    return `Config file is unreadable: ${this.file}`
+    return Option.match(causeTextOf(this.cause), {
+      onNone: () => `Config file is unreadable: ${this.file}`,
+      onSome: (cause) => `Config file is unreadable: ${this.file}: ${cause}`,
+    })
   }
 }
 
