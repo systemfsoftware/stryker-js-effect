@@ -1172,20 +1172,24 @@ const emitForFile = (
     Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, rt.spawner),
   )
 
+const tceScriptOf = <A>(file: Option.Option<A>, fileName: string): Result.Result<A, CompilerFailed> =>
+  Option.match(file, {
+    onNone: () => Result.fail(CompilerFailed.make({ reason: 'file-not-in-project', subject: fileName })),
+    onSome: (script) => Result.succeed(script),
+  })
+
 const decisionsOfFile = Effect.fnUntraced(function*(
   rt: TSCompilerRuntime,
   tsconfigFile: string,
   fileName: string,
   fileMutants: readonly Checker.CheckerMutantWire[],
-): Effect.fn.Return<ReadonlyArray<TceDecision>> {
+): Effect.fn.Return<ReadonlyArray<TceDecision>, CompilerFailed> {
   const file = yield* getFile(rt.files, fileName)
-  const entries = Option.match(file, {
-    onNone: (): ReadonlyArray<TceEntry> => [],
-    onSome: (script) => tceEntriesOf(script, fileMutants),
-  })
+  const script = yield* Effect.fromResult(tceScriptOf(file, fileName))
+  const entries = tceEntriesOf(script, fileMutants)
   const emitted = yield* Option.match(Option.liftPredicate(entries, (present) => present.length > 0), {
     onNone: () => Effect.succeedNone,
-    onSome: (present) => emitForFile(rt, tsconfigFile, fileName, Option.getOrThrow(file), present),
+    onSome: (present) => emitForFile(rt, tsconfigFile, fileName, script, present),
   })
   return Option.match(emitted, {
     onNone: (): ReadonlyArray<TceDecision> => [],
@@ -1206,7 +1210,7 @@ const classifyBatchTce = Effect.fnUntraced(function*(
   tsconfigFile: string,
   mutants: readonly Checker.CheckerMutantWire[],
   checked: ReadonlyArray<MutantCheck>,
-): Effect.fn.Return<ReadonlyArray<MutantCheck>> {
+): Effect.fn.Return<ReadonlyArray<MutantCheck>, CompilerFailed> {
   const passedIds = HashSet.fromIterable(
     Arr.map(Arr.filter(checked, (entry) => entry.diagnostics.length === 0), (entry) => entry.mutantId),
   )
@@ -1396,3 +1400,24 @@ export const close = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerClose
   })
   yield* Effect.annotateCurrentSpan('typescript.server.released', released)
 })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  const failsNamingTheFile = (refused: CompilerFailed, fileName: string): boolean =>
+    refused.reason === 'file-not-in-project' && refused.subject === fileName
+
+  it.prop(
+    '∀fs_TceScriptOf_≡ScriptKeptOrRefusalNamingTheFile',
+    {
+      of: [S.Literals(['present', 'absent']), S.String, S.String],
+      subject: (presence: 'present' | 'absent', content: string, fileName: string) =>
+        tceScriptOf(presence === 'present' ? Option.some(content) : Option.none(), fileName),
+    },
+    (subject, [presence, content, fileName]) =>
+      Result.match(subject(presence, content, fileName), {
+        onFailure: (refused) => presence === 'absent' && failsNamingTheFile(refused, fileName),
+        onSuccess: (kept) => presence === 'present' && kept === content,
+      }),
+  )
+}
