@@ -86,6 +86,17 @@ const verdictsOfReport = (text: string): readonly Verdict[] =>
       ),
   })
 
+const decodeMergedCosts = S.decodeUnknownOption(
+  S.fromJsonString(S.Struct({ costs: S.optional(S.Record(S.String, S.Unknown)) })),
+)
+
+const mergedCostIdsOf = (text: string): readonly string[] =>
+  Option.match(decodeMergedCosts(text), {
+    onNone: () => [],
+    onSome: (decoded) =>
+      Arr.sort(Object.keys(Option.getOrElse(Option.fromUndefinedOr(decoded.costs), () => ({}))), Order.String),
+  })
+
 const planOf = (first: ReadonlyArray<string>, second: ReadonlyArray<string>): ShardPlan => ({
   version: 1,
   targetSeconds: 1,
@@ -141,6 +152,7 @@ const prepareFixture = (): Effect.Effect<
 
 interface MergeOutcome {
   readonly merged: readonly Verdict[]
+  readonly mergedCostIds: readonly string[]
   readonly doctored: { readonly id: string; readonly exitCode: number; readonly output: string }
 }
 
@@ -181,6 +193,7 @@ const runAndMerge = (
       Effect.die(new Error(`merged per-project incremental missing at ${mergedIncremental}`)),
       Effect.succeed(!hasMergedIncremental),
     )
+    const mergedCostIds = mergedCostIdsOf(yield* fs.readFileString(mergedIncremental))
     const duplicate = ids[0] ?? 'no-id'
     const half = Math.ceil(ids.length / 2)
     const doctoredPlan = planOf(ids.slice(0, half), [duplicate, ...ids.slice(half)])
@@ -198,6 +211,7 @@ const runAndMerge = (
     ])
     return {
       merged: verdictsOfReport(mergedReport),
+      mergedCostIds,
       doctored: { id: duplicate, exitCode: doctored.exitCode, output: doctored.output },
     }
   }).pipe(Effect.orDie)
@@ -283,16 +297,20 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
       Gherkin.Do.pipe(
         Given('a fixture whose unsharded run and two-shard plan are prepared')('fixture', () => prepareFixture()),
         When('the shards run and merge, and a doctored plan is merged')('outcome', (s) => runAndMerge(s.fixture)),
-        Then('the merged statuses equal the unsharded ones and the doctored merge fails naming the id')(
+        Then('the merged statuses and costs cover every mutant and the doctored merge fails naming the id')(
           (s, expect) =>
             expect({
               merged: statusMapOf(s.outcome.merged),
+              mergedCostIds: s.outcome.mergedCostIds,
               unsharded: statusMapOf(s.fixture.unsharded),
+              unshardedIds: s.fixture.ids,
               doctoredFailed: s.outcome.doctored.exitCode !== 0,
               doctoredNamesId: s.outcome.doctored.output.includes(s.outcome.doctored.id),
             }).toEqual({
               merged: statusMapOf(s.fixture.unsharded),
+              mergedCostIds: s.fixture.ids,
               unsharded: statusMapOf(s.fixture.unsharded),
+              unshardedIds: s.fixture.ids,
               doctoredFailed: true,
               doctoredNamesId: true,
             }),
