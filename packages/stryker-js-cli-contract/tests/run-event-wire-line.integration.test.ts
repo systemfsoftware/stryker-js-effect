@@ -11,7 +11,7 @@ const LOCATION = '"location":{"start":{"line":1,"column":1},"end":{"line":1,"col
 
 const COST = '{"fixedOverheadMs":1,"testBodyMs":2,"testsExecuted":1,"shared":false}'
 
-const WORKER = '{"_tag":"worker","schemaVersion":"5.0","role":"testRunner","index":0,"startupMs":12.5}'
+const WORKER = '{"_tag":"worker","schemaVersion":"6.0","role":"testRunner","index":0,"startupMs":12.5}'
 
 const mutantLine = (status: string, file: string | null, cost: string): string =>
   `{"_tag":"mutant","id":"0000000000000001","status":"${status}",${
@@ -130,7 +130,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           () =>
             Effect.sync(() => ({
               declared: WORKER,
-              undeclared: '{"_tag":"worker","schemaVersion":"5.0","role":"testRunner","index":0}',
+              undeclared: '{"_tag":"worker","schemaVersion":"6.0","role":"testRunner","index":0}',
             })),
         ),
         When('each line is decoded through the wire codec')(

@@ -12,6 +12,7 @@ import {
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
+import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -30,6 +31,7 @@ import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
 import { writeFileAtomic } from './atomic-write.cell.js'
+import { budgetOf } from './budget.js'
 import { buildReproducers, BuildReproducersCommand } from './build-reproducers.workflow.js'
 import {
   type CheckpointMutantRow,
@@ -124,6 +126,8 @@ export interface MutationReportingInput {
   readonly timeOverheadMs: number
   readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
   readonly timeoutEvidenceByMutantId?: Readonly<Record<string, TimeoutEvidence>>
+  readonly concurrency: number
+  readonly runStartedAt: number
 }
 
 export interface MutationReportingService {
@@ -655,6 +659,11 @@ const mutationTestReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingMutatio
     Effect.flatMap(S.decodeEffect(S.fromJsonString(S.Record(S.String, S.Json)))),
     Effect.orDie,
   )
+  const budget = budgetOf({
+    results,
+    concurrency: input.concurrency,
+    actualSeconds: ((yield* Clock.currentTimeMillis) - input.runStartedAt) / 1000,
+  })
   return {
     report: {
       files,
@@ -664,6 +673,7 @@ const mutationTestReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingMutatio
       projectRoot: input.basePath,
       config,
       framework: { ...STRYKER_FRAMEWORK, dependencies },
+      budget,
     },
     identities,
   }
@@ -766,6 +776,7 @@ const emitVerdict = Effect.fn(SpanTaxonomy.Spans.mutationReportingEmitVerdict.na
       incrementalMode: envelope.incrementalMode,
       phaseDurations: envelope.phaseDurations,
       static: envelope.static,
+      budget: envelope.budget,
     }),
   )
 })
@@ -916,6 +927,11 @@ const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlim
     files: stampFileIdentities(stampClosureDigests(files, input.closureDigestsByMutantId), identities),
     costs: costsOf(input, results),
     testFiles,
+    budget: budgetOf({
+      results,
+      concurrency: input.concurrency,
+      actualSeconds: ((yield* Clock.currentTimeMillis) - input.runStartedAt) / 1000,
+    }),
     ...dryRunCoverageFieldOf(input.testCoverage),
   }
 })

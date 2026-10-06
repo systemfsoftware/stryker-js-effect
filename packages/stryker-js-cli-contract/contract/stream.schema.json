@@ -66,7 +66,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "5.0"
+            "6.0"
           ]
         },
         "runId": {
@@ -265,7 +265,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "5.0"
+            "6.0"
           ]
         },
         "role": {
@@ -901,7 +901,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "5.0"
+            "6.0"
           ]
         },
         "runId": {
@@ -1158,6 +1158,24 @@
               "type": "null"
             }
           ]
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "predictedSeconds": {
+              "type": "number",
+              "minimum": 0
+            },
+            "actualSeconds": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "predictedSeconds",
+            "actualSeconds"
+          ],
+          "additionalProperties": true
         }
       },
       "required": [
@@ -1174,7 +1192,8 @@
         "scope",
         "mutantSetPolicy",
         "phaseDurations",
-        "static"
+        "static",
+        "budget"
       ],
       "additionalProperties": true
     },
@@ -1190,7 +1209,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "5.0"
+            "6.0"
           ]
         },
         "code": {
@@ -1335,7 +1354,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "5.0"
+            "6.0"
           ]
         },
         "code": {
@@ -1372,7 +1391,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "5.0"
+            "6.0"
           ]
         },
         "rule": {

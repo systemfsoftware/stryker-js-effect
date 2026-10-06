@@ -56,6 +56,8 @@ export const reportingInputOf = (input: ReportingInputArgs): MutationReportingIn
   basePath: input.env.basePath,
   reporterStage: input.prev.reporterStage,
   formatRegistry: input.prev.formatRegistry,
+  concurrency: input.prev.concurrency.testRunners + input.prev.concurrency.checkers,
+  runStartedAt: input.env.runStartedAt,
 })
 
 const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, result: Mutant.RunMutantResult) {

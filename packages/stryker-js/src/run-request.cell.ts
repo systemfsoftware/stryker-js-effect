@@ -3,6 +3,7 @@ import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Boolean from 'effect/Boolean'
 import * as CliError from 'effect/cli/CliError'
 import * as Command from 'effect/cli/Command'
 import type * as Console from 'effect/Console'
@@ -17,6 +18,8 @@ import type { SchemaError } from 'effect/Schema'
 
 import { type Admitted } from './admit-survivors-run.workflow.js'
 import { Baseline } from './Baseline.schema.js'
+import { BudgetExceeded, budgetGate, BudgetGateCommand, BudgetInputUnusable } from './budget-gate.workflow.js'
+import { BudgetBaseline } from './BudgetBaseline.schema.js'
 import { addressFields, portFields } from './cli-route-fields.js'
 import { CliRouteCommand, type FeedbackJudgment, type ServeChannel } from './Cli.schema.js'
 import {
@@ -104,6 +107,8 @@ export type CliFailure =
   | VerdictsDiffer
   | GateRejected
   | GateInputUnusable
+  | BudgetExceeded
+  | BudgetInputUnusable
   | AnnotationsUnusable
   | MergeReportsFailed
   | FeedbackUnusable
@@ -342,37 +347,132 @@ const writeDecidedBaseline = (
     { discard: true },
   )
 
+const decodeBudgetBaseline = S.decodeUnknownResult(S.fromJsonString(BudgetBaseline))
+
+const readBudgetBaseline = (
+  file: string,
+): Effect.Effect<Option.Option<BudgetBaseline>, never, FileSystem.FileSystem> =>
+  Effect.option(
+    Effect.flatMap(
+      FileSystem.FileSystem,
+      (fs) => fs.readFileString(file).pipe(Effect.flatMap((text) => Effect.fromResult(decodeBudgetBaseline(text)))),
+    ),
+  )
+
+const writeBudgetBaseline = (
+  file: string,
+  baseline: BudgetBaseline,
+): Effect.Effect<void, BudgetInputUnusable, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const text = yield* Effect.orDie(S.encodeEffect(S.fromJsonString(BudgetBaseline, { space: 2 }))(baseline))
+    yield* fs.makeDirectory(path.dirname(file), { recursive: true }).pipe(
+      Effect.andThen(fs.writeFileString(file, text)),
+      Effect.mapError(() => BudgetInputUnusable.make({ reason: `cannot write the budget baseline at ${file}` })),
+    )
+  })
+
+const runBudgetGate = (
+  gate: {
+    readonly budgetBaseline?: string | undefined
+    readonly budgetTolerance: number
+    readonly updateBudgetBaseline: boolean
+  },
+  report: PriorReportDocument,
+  basePath: string,
+): Effect.Effect<void, BudgetExceeded | BudgetInputUnusable, FileSystem.FileSystem | Path.Path> =>
+  Effect.forEach(
+    Option.toArray(Option.fromUndefinedOr(gate.budgetBaseline)),
+    (budgetBaselineFlag) =>
+      Effect.gen(function*() {
+        const path = yield* Path.Path
+        const actual = yield* Effect.fromOption(
+          Option.map(Option.fromUndefinedOr(report.budget), (recorded) => recorded.actualSeconds),
+          () =>
+            BudgetInputUnusable.make({
+              reason: 'the finished mutation report records no budget; run `stryker run` with a build that records it',
+            }),
+        )
+        const file = path.resolve(basePath, budgetBaselineFlag)
+        const baseline = yield* readBudgetBaseline(file)
+        const decision = yield* Effect.fromResult(
+          budgetGate(
+            BudgetGateCommand.make({
+              actualSeconds: actual,
+              baseline: Option.getOrNull(baseline),
+              tolerance: gate.budgetTolerance,
+              updateBaseline: gate.updateBudgetBaseline,
+              baselineFile: budgetBaselineFlag,
+            }),
+          ),
+        )
+        yield* Effect.forEach(
+          Option.toArray(Option.fromNullishOr(decision.baseline)),
+          (next) => writeBudgetBaseline(file, next),
+          { discard: true },
+        )
+      }),
+    { discard: true },
+  )
+
 const reportUnchecked = (unchecked: ReadonlyArray<Mutant.MutantId>): Effect.Effect<void> =>
   Effect.logInfo(`stryker gate: ${unchecked.length} mutant(s) unchecked (in scope with no verdict)`)
 
 const GATE_REMEDIATION_LINE =
   'accept the new survivors with `stryker gate --update-baseline`, or kill them before the next run'
 
-const explainGateRefusal = (failure: GateRejected | GateInputUnusable): Effect.Effect<void> =>
-  Effect.andThen(Effect.logError(failure.message), Effect.logInfo(GATE_REMEDIATION_LINE))
+const explainGateRefusal = (
+  failure: GateRejected | GateInputUnusable | BudgetExceeded | BudgetInputUnusable,
+): Effect.Effect<void> =>
+  Effect.andThen(
+    Effect.logError(failure.message),
+    Boolean.match(S.is(BudgetExceeded)(failure) || S.is(BudgetInputUnusable)(failure), {
+      onTrue: () => Effect.void,
+      onFalse: () => Effect.logInfo(GATE_REMEDIATION_LINE),
+    }),
+  )
 
 const gateReport = (
-  gate: { readonly baseline: string; readonly updateBaseline: boolean },
+  gate: {
+    readonly baseline?: string | undefined
+    readonly updateBaseline: boolean
+    readonly budgetBaseline?: string | undefined
+    readonly budgetTolerance: number
+    readonly updateBudgetBaseline: boolean
+  },
   channel: CliRead,
-): Effect.Effect<void, GateRejected | GateInputUnusable, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<
+  void,
+  GateRejected | GateInputUnusable | BudgetExceeded | BudgetInputUnusable,
+  FileSystem.FileSystem | Path.Path
+> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const basePath = channel.environment.basePath
-    const baselineFile = path.resolve(basePath, gate.baseline)
     const report = yield* readGateReport(path.resolve(basePath, GATE_REPORT_FILE))
-    const committed = yield* readCommittedBaseline(baselineFile)
-    const decision = yield* Effect.fromResult(
-      gateNewSurvivors(
-        GateNewSurvivorsCommand.make({
-          entries: gateEntriesOf(report),
-          committed: Option.getOrNull(Option.map(committed, (baseline) => baseline.survivors)),
-          baselineFile: gate.baseline,
-          updateBaseline: gate.updateBaseline,
+    yield* Effect.forEach(
+      Option.toArray(Option.fromUndefinedOr(gate.baseline)),
+      (baselineFlag) =>
+        Effect.gen(function*() {
+          const baselineFile = path.resolve(basePath, baselineFlag)
+          const committed = yield* readCommittedBaseline(baselineFile)
+          const decision = yield* Effect.fromResult(
+            gateNewSurvivors(
+              GateNewSurvivorsCommand.make({
+                entries: gateEntriesOf(report),
+                committed: Option.getOrNull(Option.map(committed, (baseline) => baseline.survivors)),
+                baselineFile: baselineFlag,
+                updateBaseline: gate.updateBaseline,
+              }),
+            ),
+          )
+          yield* writeDecidedBaseline(baselineFile, decision.baseline)
+          yield* reportUnchecked(decision.unchecked)
         }),
-      ),
+      { discard: true },
     )
-    yield* writeDecidedBaseline(baselineFile, decision.baseline)
-    yield* reportUnchecked(decision.unchecked)
+    yield* runBudgetGate(gate, report, basePath)
   })
 
 const SURFACING_DEFAULTS: SurfacingCaps = { perLine: 1, perFile: 7 }

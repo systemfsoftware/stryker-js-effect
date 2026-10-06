@@ -242,35 +242,39 @@ const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOpti
     projectRoot: basePath,
     framework: { name: 'StrykerJS', version: StrykerPackage.version },
   }
-  const envelope = buildVerdictEnvelope(
-    report,
-    mode.mode,
-    mode.signal,
-    stream.runId,
-    basePath,
-    pathService,
-    Option.none(),
-    null,
-  )
-  return Queue.offer(
-    stream.queue,
-    RunEvent.VerdictReached.make({
-      schemaVersion: envelope.schemaVersion,
-      runId: envelope.runId,
-      mode: envelope.mode,
-      signal: envelope.signal,
-      score: envelope.score,
-      thresholds: envelope.thresholds,
-      reportFile: envelope.reportFile,
-      counts: envelope.counts,
-      mutants: envelope.mutants,
-      scope: envelope.scope,
-      mutantSetPolicy: envelope.mutantSetPolicy,
-      incrementalMode: envelope.incrementalMode,
-      phaseDurations: envelope.phaseDurations,
-      static: envelope.static,
-    }),
-  )
+  return Effect.gen(function*() {
+    const now = yield* Clock.currentTimeMillis
+    const envelope = buildVerdictEnvelope(
+      { ...report, budget: { predictedSeconds: 0, actualSeconds: (now - stream.startedAt) / 1000 } },
+      mode.mode,
+      mode.signal,
+      stream.runId,
+      basePath,
+      pathService,
+      Option.none(),
+      null,
+    )
+    yield* Queue.offer(
+      stream.queue,
+      RunEvent.VerdictReached.make({
+        schemaVersion: envelope.schemaVersion,
+        runId: envelope.runId,
+        mode: envelope.mode,
+        signal: envelope.signal,
+        score: envelope.score,
+        thresholds: envelope.thresholds,
+        reportFile: envelope.reportFile,
+        counts: envelope.counts,
+        mutants: envelope.mutants,
+        scope: envelope.scope,
+        mutantSetPolicy: envelope.mutantSetPolicy,
+        incrementalMode: envelope.incrementalMode,
+        phaseDurations: envelope.phaseDurations,
+        static: envelope.static,
+        budget: envelope.budget,
+      }),
+    )
+  })
 }
 
 const offerFailureEnvelope = (

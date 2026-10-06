@@ -338,14 +338,36 @@ const compareOptions = {
 }
 
 const gateOptions = {
-  baseline: Flag.String('baseline').pipe(
-    Flag.withDescription(
-      'The committed baseline of accepted survivor ids. `stryker gate` fails on survivors absent from it and passes every survivor it already holds.',
+  baseline: Flag.String('baseline')
+    .pipe(
+      Flag.withDescription(
+        'The committed baseline of accepted survivor ids. `stryker gate` fails on survivors absent from it and passes every survivor it already holds. Optional when a budget baseline is given.',
+      ),
+      optional,
     ),
-  ),
   updateBaseline: Flag.map(optional(Flag.Boolean('update-baseline')), absentWhenFalse).pipe(
     Flag.withDescription(
       'Rewrite the baseline file with exactly the survivors of the finished report and exit 0, instead of gating against it.',
+    ),
+  ),
+  budgetBaseline: Flag.String('budget-baseline')
+    .pipe(
+      Flag.withDescription(
+        'A committed budget baseline of one run duration. `stryker gate` fails when the finished report took longer than that baseline plus the tolerance.',
+      ),
+      optional,
+    ),
+  budgetTolerance: Flag.map(
+    optional(Flag.Finite('budget-tolerance')),
+    (value) => Option.getOrElse(value, () => 0.25),
+  ).pipe(
+    Flag.withDescription(
+      'The fractional slack allowed over the budget baseline before gating fails. Default 0.25 (25%).',
+    ),
+  ),
+  updateBudgetBaseline: Flag.map(optional(Flag.Boolean('update-budget-baseline')), absentWhenFalse).pipe(
+    Flag.withDescription(
+      'Rewrite the budget baseline file with the finished run duration and exit 0, instead of gating against it.',
     ),
   ),
 }
@@ -527,8 +549,11 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
       route: CliRouteCommand.make({
         route: {
           _tag: 'gate',
-          baseline: config.baseline,
+          baseline: Option.getOrUndefined(config.baseline),
           updateBaseline: config.updateBaseline === true,
+          budgetBaseline: Option.getOrUndefined(config.budgetBaseline),
+          budgetTolerance: config.budgetTolerance,
+          updateBudgetBaseline: config.updateBudgetBaseline === true,
         },
       }),
       options: {},

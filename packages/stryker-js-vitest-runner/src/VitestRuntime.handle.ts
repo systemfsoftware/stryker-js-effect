@@ -81,6 +81,17 @@ const withApplicationSetup = (self: VitestRuntime, namespace: StrykerNamespace):
   return self
 }
 
+const SERIAL_WORKER_COUNT = 1
+
+const pinSerialWorkerCount = (self: VitestRuntime): VitestRuntime => {
+  const driver = driverOf(self)
+  driver.config.maxWorkers = SERIAL_WORKER_COUNT
+  driver.projects.forEach((project) => {
+    project.config.maxWorkers = SERIAL_WORKER_COUNT
+  })
+  return self
+}
+
 export const make = (options: {
   readonly driver: Vitest
   readonly projectRoot: string
@@ -88,17 +99,19 @@ export const make = (options: {
   readonly namespace: StrykerNamespace
   readonly mutantBail: number
 }): VitestRuntime =>
-  withApplicationSetup(
-    VitestRuntime.make(
-      {
-        projectRoot: options.projectRoot,
-        localSetupFile: options.localSetupFile,
-        mutantBail: options.mutantBail,
-        globalTestInputs: globalTestInputsOf(options.driver, [options.localSetupFile]),
-      },
-      options.driver,
+  pinSerialWorkerCount(
+    withApplicationSetup(
+      VitestRuntime.make(
+        {
+          projectRoot: options.projectRoot,
+          localSetupFile: options.localSetupFile,
+          mutantBail: options.mutantBail,
+          globalTestInputs: globalTestInputsOf(options.driver, [options.localSetupFile]),
+        },
+        options.driver,
+      ),
+      options.namespace,
     ),
-    options.namespace,
   )
 
 const DRY_RUN_REPORTS_EVERY_FAILURE = 0
