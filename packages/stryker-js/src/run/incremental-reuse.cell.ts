@@ -35,7 +35,6 @@ import {
 import type { Project } from '../Project.schema.js'
 import { reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow.js'
 import { StageError } from '../Run.schema.js'
-import { originalFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from '../verdict-semantics.js'
 import { incrementalReportTextsOf } from './incremental-reuse.js'
@@ -297,7 +296,7 @@ const closureAnalysisOf = (
       rootDir: input.basePath,
       projectFiles: Arr.dedupe([...MutableHashMap.keys(input.project.files), ...input.project.testFiles]),
       testFiles: [...input.project.testFiles],
-      globalInputs: input.globalTestInputs.map((file) => originalFileFor(input.sandbox, file)),
+      globalInputs: input.globalTestInputs.map((file) => input.originalFileOf(file)),
     }).pipe(
       Effect.tapCause((cause: Cause.Cause<PlatformError>) =>
         Effect.logWarning(
@@ -488,7 +487,7 @@ export interface IncrementalReuseInput {
   readonly force: boolean
   readonly options: Options.StrykerOptions
   readonly globalTestInputs: readonly string[]
-  readonly sandbox: SandboxHandle
+  readonly originalFileOf: (file: string) => string
 }
 
 export type RefusalCounts = Record<ReuseRefusalReason, number>
