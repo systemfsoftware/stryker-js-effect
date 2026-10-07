@@ -92,10 +92,63 @@ jobs:
           path: ${{ env.PLAN }}
           retention-days: 1
 
+  build:
+    name: build · once for every shard
+    if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Hashed before install, so node_modules and dist never enter the key. Turbo re-hashes
+      # every task's inputs on restore, so a stale or partial cache only costs a rebuild.
+      - id: key
+        name: Content key of the build
+        env:
+          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**', 'test/e2e-core/**') }}
+        run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - id: restore
+        name: Restore the build cache of the last run
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: ${{ steps.key.outputs.key }}
+          restore-keys: |
+            mutation-build-${{ runner.os }}-
+
+      - name: Build every mutated project
+        run: |
+          mapfile -t filters < <(tr ',' '\n' <<< "$PROJECTS" | sed 's|^|--filter=./|')
+          pnpm exec turbo run build --output-logs=errors-only --log-order=stream --summarize "${filters[@]}"
+
+      - name: Drop restored cache entries this build did not use
+        if: steps.restore.outputs.cache-hit != 'true'
+        run: |
+          jq -r '.tasks[].hash' .turbo/runs/*.json | sort -u > /tmp/keep
+          find .turbo/cache -maxdepth 1 -type f -printf '%f\n' \
+            | while read -r file; do grep -qxF "${file%%[-.]*}" /tmp/keep || rm -f ".turbo/cache/$file"; done
+
+      - name: Save the build cache
+        if: steps.restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .turbo/cache
+          key: ${{ steps.key.outputs.key }}
+
   mutation:
     name: mutation · shard ${{ matrix.shard }}
-    needs: plan
-    if: ${{ needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
+    needs: [plan, build]
+    if: ${{ needs.plan.result == 'success' && needs.build.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -112,6 +165,12 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: shard-plan
+
+      - name: Restore the build every shard shares
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: ${{ needs.build.outputs.key }}
 
       - name: Build the projects this shard mutates
         env:
