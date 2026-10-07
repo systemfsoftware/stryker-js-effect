@@ -230,23 +230,20 @@ const isSupportedTypeScriptVersion = (version: string) => {
   return numeric && isNewerOrSame(parsed, minimumTypeScriptVersion)
 }
 
-const readTypescriptVersion = Effect.fnUntraced(function*(rt: TSCompilerRuntime) {
-  const packagePath = yield* rt.pathService.fromFileUrl(new URL(import.meta.resolve('typescript/package.json')))
-  const text = yield* rt.host.readFileString(packagePath)
-  return Result.match(S.decodeResult(S.fromJsonString(S.Struct({ version: S.String })))(text), {
-    onFailure: () => '',
-    onSuccess: (pkg) => pkg.version,
-  })
-})
-
-const readCheckerVersion = Effect.fnUntraced(function*(rt: TSCompilerRuntime) {
-  const packagePath = yield* rt.pathService.fromFileUrl(new URL('../package.json', import.meta.url))
+const readPackageVersion = Effect.fnUntraced(function*(rt: TSCompilerRuntime, packageUrl: URL | string) {
+  const packagePath = yield* rt.pathService.fromFileUrl(new URL(packageUrl)).pipe(Effect.orElseSucceed(() => ''))
   const text = yield* rt.host.readFileString(packagePath).pipe(Effect.orElseSucceed(() => ''))
   return Result.match(S.decodeResult(S.fromJsonString(S.Struct({ version: S.String })))(text), {
     onFailure: () => '',
     onSuccess: (pkg) => pkg.version,
   })
 })
+
+const readTypescriptVersion = (rt: TSCompilerRuntime) =>
+  readPackageVersion(rt, import.meta.resolve('typescript/package.json'))
+
+const readCheckerVersion = (rt: TSCompilerRuntime) =>
+  readPackageVersion(rt, new URL('../package.json', import.meta.url))
 
 type JsonValue = S.Schema.Type<typeof S.Json>
 
@@ -276,6 +273,8 @@ const checkerOptionsJsonOf = (options: Options.StrykerOptions): Effect.Effect<st
       }),
   })
 
+const DIGEST_READ_CONCURRENCY = 32
+
 const readProgramFiles = (
   rt: TSCompilerRuntime,
   root: string,
@@ -294,7 +293,7 @@ const readProgramFiles = (
           digest: sha256HexOf(content),
         }),
       ),
-    { concurrency: 1 },
+    { concurrency: DIGEST_READ_CONCURRENCY },
   )
 
 const sortedSourceFileNamesOf = (programs: ReadonlyArray<Program>): Effect.Effect<readonly string[]> =>
@@ -325,8 +324,8 @@ export const programDigest = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompi
   const rt = runtimeOf(self)
   const programs = yield* programsOf(rt)
   const state = yield* SynchronizedRef.get(rt.state)
-  const typescriptVersion = yield* readTypescriptVersion(rt).pipe(Effect.orElseSucceed(() => ''))
-  const checkerVersion = yield* readCheckerVersion(rt).pipe(Effect.orElseSucceed(() => ''))
+  const typescriptVersion = yield* readTypescriptVersion(rt)
+  const checkerVersion = yield* readCheckerVersion(rt)
   yield* Boolean.match(Boolean.or(typescriptVersion === '', checkerVersion === ''), {
     onTrue: () =>
       Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: 'toolchain version' })),
@@ -347,7 +346,7 @@ export const programDigest = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompi
 
 const guardTypescriptVersion = (rt: TSCompilerRuntime): Effect.Effect<void, UnsupportedTypeScriptVersionError> =>
   Effect.flatMap(
-    readTypescriptVersion(rt).pipe(Effect.orElseSucceed(() => '')),
+    readTypescriptVersion(rt),
     (version) =>
       Boolean.match(isSupportedTypeScriptVersion(version), {
         onFalse: () => Effect.fail(UnsupportedTypeScriptVersionError.make({ version })),

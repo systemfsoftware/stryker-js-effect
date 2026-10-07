@@ -95,32 +95,22 @@ const digestOf = (digest: string | undefined): string => Option.getOrElse(Option
 
 const isCompileErrorRecord = (record: PreviousReuseRecord): boolean => record.status === 'CompileError'
 
-const cacheKeyOf = (mutantId: string, closureDigest: string | undefined, components: CacheKeyComponents): string =>
+const keyOf = (mutantId: string, digest: string | undefined, components: CacheKeyComponents): string =>
   [
     mutantId,
-    digestOf(closureDigest),
-    String(components.verdictSemanticsVersion),
-    components.mutantSetPolicy,
-    components.runInputsDigest,
-  ].join('\u0000')
-
-const programKeyOf = (mutantId: string, programDigest: string | undefined, components: CacheKeyComponents): string =>
-  [
-    mutantId,
-    digestOf(programDigest),
+    digestOf(digest),
     String(components.verdictSemanticsVersion),
     components.mutantSetPolicy,
     components.runInputsDigest,
   ].join('\u0000')
 
 const currentKeyOf = (command: IncrementalDiffCommand, mutantId: Mutant.MutantId): string =>
-  cacheKeyOf(mutantId, command.closureDigestsByMutantId[mutantId], command)
+  keyOf(mutantId, command.closureDigestsByMutantId[mutantId], command)
 
 const matchingProgramKey = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
   Boolean.and(
     digestOf(record.programDigest) !== '',
-    programKeyOf(record.mutantId, record.programDigest, record) ===
-      programKeyOf(record.mutantId, command.programDigest, command),
+    keyOf(record.mutantId, record.programDigest, record) === keyOf(record.mutantId, command.programDigest, command),
   )
 
 const matchingKey = (command: IncrementalDiffCommand, record: RememberedReuseRecord): boolean =>
@@ -128,8 +118,7 @@ const matchingKey = (command: IncrementalDiffCommand, record: RememberedReuseRec
     Boolean.not(command.closureAnalysisFailed),
     Boolean.match(isCompileErrorRecord(record), {
       onTrue: () => matchingProgramKey(command, record),
-      onFalse: () =>
-        cacheKeyOf(record.mutantId, record.closureDigest, record) === currentKeyOf(command, record.mutantId),
+      onFalse: () => keyOf(record.mutantId, record.closureDigest, record) === currentKeyOf(command, record.mutantId),
     }),
   )
 

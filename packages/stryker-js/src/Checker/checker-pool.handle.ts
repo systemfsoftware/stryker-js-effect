@@ -1,5 +1,3 @@
-import { sha256 } from '@noble/hashes/sha2.js'
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -18,6 +16,7 @@ import * as Stream from 'effect/Stream'
 
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { StageError } from '../Run.schema.js'
+import { sha256HexOf } from '../verdict-semantics.js'
 import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
 import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.plans.js'
 import {
@@ -32,8 +31,6 @@ export const TypeId: unique symbol = Symbol.for('~systemfsoftware/stryker-js/Che
 export type TypeId = typeof TypeId
 
 export type CheckerSlot = { readonly checkerName: string; readonly checker: CheckerResourceService }[]
-
-const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
 export type CheckerPool = Pool.Pool<CheckerSlot, StageError | CheckerCrash>
 
@@ -197,7 +194,9 @@ const answeredProgramDigestOf = Effect.fn(SpanTaxonomy.Spans.checkerPoolProgramD
   handle: CheckerPoolHandle,
 ) {
   const lines = yield* Pool.use(CheckerPoolHandle.slot(handle), (slot) => Effect.forEach(slot, digestLineOf))
-  return Option.getOrUndefined(Option.map(Option.all(lines), (answered) => hashOf([...answered].sort().join('\n'))))
+  return Option.getOrUndefined(
+    Option.map(Option.all(lines), (answered) => sha256HexOf([...answered].sort().join('\n'))),
+  )
 })
 
 const failedElement = (

@@ -67,7 +67,7 @@ const digestField = (digest: string | undefined) =>
     onSome: (present) => ({ closureDigest: present }),
   })
 
-const optionalField = <A>(field: string, value: A | undefined) =>
+export const optionalField = <A>(field: string, value: A | undefined) =>
   Option.match(Option.fromUndefinedOr(value), {
     onNone: (): Readonly<Record<string, never>> => ({}),
     onSome: (present) => ({ [field]: present }),

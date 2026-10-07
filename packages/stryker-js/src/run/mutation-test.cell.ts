@@ -37,7 +37,7 @@ import { originalFileFor } from '../Sandbox.handle.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import { IdGenerator } from '../Worker.service.js'
 import type { DryRunDone } from './dry-run.cell.js'
-import { readIncrementalReuse } from './incremental-reuse.cell.js'
+import { optionalField, readIncrementalReuse } from './incremental-reuse.cell.js'
 import { mutantRunCell } from './mutant-run.cell.js'
 import { announceSettledMutant, makeCheckpointWriter, reportingInputOf, type RunContext } from './mutant-run.js'
 import { planMutationTest } from './mutation-test-plan.cell.js'
@@ -102,12 +102,6 @@ const writeMutationTestDryRunOnly = Effect.fn(SpanTaxonomy.Spans.mutationTestDry
   yield* Effect.logInfo('The dry-run has been completed successfully. No mutations have been executed.')
   return { results: [], verdict: null }
 })
-
-const programDigestFieldOf = (programDigest: string | undefined): Record<string, string> =>
-  Option.match(Option.fromUndefinedOr(programDigest), {
-    onNone: (): Record<string, string> => ({}),
-    onSome: (present) => ({ programDigest: present }),
-  })
 
 const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
   const prev = raw.prev
@@ -269,7 +263,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     ...reportingInputOf({ prev, env, results: allResults }),
     closureDigestsByMutantId: reuse.closureDigestsByMutantId,
     timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
-    ...programDigestFieldOf(reuse.programDigest),
+    ...optionalField('programDigest', reuse.programDigest),
   })
   yield* Fiber.await(checkerRelease)
   const doneNow = yield* Clock.currentTimeMillis

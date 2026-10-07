@@ -44,7 +44,7 @@ const LOCKFILE_NAMES: readonly string[] = [
 
 const NODE_MAJOR = globalThis.process.versions.node.split('.')[0] ?? ''
 
-const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
+export const sha256HexOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
 const isJsonObject = (value: Json): value is JsonObject => Match.record(value)
 
@@ -121,7 +121,7 @@ export const packageManifestInputOf = (content: string): Effect.Effect<string, n
   )
 
 const runInputsDigestOfParts = (inputs: RunInputs): string =>
-  hashOf([inputs.optionsFingerprint, inputs.packageManifest, inputs.lockfile, inputs.nodeMajor].join('\u0000'))
+  sha256HexOf([inputs.optionsFingerprint, inputs.packageManifest, inputs.lockfile, inputs.nodeMajor].join('\u0000'))
 
 const existsAsOption = (
   fs: FileSystem.FileSystem,
