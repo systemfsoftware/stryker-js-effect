@@ -59,7 +59,12 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
    `node_modules` and sibling workspace imports outside the project root. All
    177 test closures were open, and main Mutation runs 37528187988 (#203) and
    37538468691 (#206) each re-ran 4833 of 5131 mutants after a one-file edit
-   (closure digests compared between consecutive merged reports).
+   (closure digests compared between consecutive merged reports). After #215,
+   130 of 177 were still open for a third cause: a linked sibling package's
+   files are keyed by absolute path, and the package lookup searched
+   `node_modules` from the project root instead of from the importing file. So
+   `@oxc-project/types`, which only `@systemfsoftware/stryker-ignorer-interface`
+   installs, went unresolved.
 
 ## Architectural Invariants
 
@@ -85,12 +90,16 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
 - **A closure opens only on a dynamic specifier.** Workspace links are followed
   and their sources hashed; an installed file the runner reports (a setup file)
   is a content-hashed leaf whose imports are not followed, because the
-  lockfile and manifest digest covers `node_modules`. The closure's test set is
+  lockfile and manifest digest covers `node_modules`. A bare specifier resolves
+  as Node resolves it: from the importing file's real directory upwards,
+  nearest `node_modules` first, so a linked package's own dependencies are
+  external rather than unresolved. The closure's test set is
   the configured test files plus every test file the dry run observed, so a
   runner-discovered test cannot leave its closure unhashed. Gate:
   `pnpm --filter @systemfsoftware/stryker-js exec vitest run tests/import-closure.integration.test.ts tests/incremental-reuse.integration.test.ts`
-  fails when an installed setup file, a workspace import, or an observed-only
-  test file opens a closure or goes unhashed.
+  fails when an installed setup file, a workspace import, a linked package's
+  own dependency, or an observed-only test file opens a closure or goes
+  unhashed.
 - **Only reproducible verdicts are cached.** A wall-clock Timeout is reused
   only after it reproduces; a hit-limit Timeout is reused on first sight.
 - **Verdict semantics are declared per branch.** A commit trailer
