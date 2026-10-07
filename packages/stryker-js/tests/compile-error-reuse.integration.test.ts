@@ -63,6 +63,21 @@ const UNRELATED_TEST_SOURCE = [
 ].join('\n')
 
 const TSCONFIG_SOURCE = JSON.stringify({ compilerOptions: { target: 'ES2022' }, include: ['src'] }, null, 2) + '\n'
+const CHANGED_TSCONFIG_SOURCE = JSON.stringify(
+  { compilerOptions: { target: 'ES2022', strict: false }, include: ['src'] },
+  null,
+  2,
+) + '\n'
+
+const BASE_TSCONFIG_FILE = 'tsconfig.base.json'
+const BASE_TSCONFIG_SOURCE = JSON.stringify({ compilerOptions: { target: 'ES2022', strict: true } }, null, 2) + '\n'
+const CHANGED_BASE_TSCONFIG_SOURCE = JSON.stringify({ compilerOptions: { target: 'ES2022', strict: false } }, null, 2) +
+  '\n'
+const EXTENDS_TSCONFIG_SOURCE = JSON.stringify(
+  { extends: `./${BASE_TSCONFIG_FILE}`, compilerOptions: { target: 'ES2022' }, include: ['src'] },
+  null,
+  2,
+) + '\n'
 
 const VITEST_CONFIG_SOURCE = 'export default { test: { testTimeout: 600_000, hookTimeout: 600_000 } }\n'
 
@@ -72,23 +87,26 @@ interface Workspace {
 
 const incrementalFileOf = (directory: string): string => `${directory}/reports/main.json`
 
-const writeWorkspace = (): Effect.Effect<Workspace, never, FileSystem.FileSystem | Path.Path> =>
+const DEFAULT_FILES: Readonly<Record<string, string>> = {
+  'package.json': '{ "type": "commonjs" }\n',
+  'vitest.config.ts': VITEST_CONFIG_SOURCE,
+  [TSCONFIG_FILE]: TSCONFIG_SOURCE,
+  [SUBJECT_FILE]: SUBJECT_SOURCE,
+  [CHAIN_FILE]: CHAIN_SOURCE,
+  [DECLARATION_FILE]: DECLARATION_SOURCE,
+  'test/sample.test.mjs': TEST_SOURCE,
+  [UNRELATED_TEST_FILE]: UNRELATED_TEST_SOURCE,
+}
+
+const writeWorkspace = (
+  files: Readonly<Record<string, string>> = DEFAULT_FILES,
+): Effect.Effect<Workspace, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.makeTempDirectory()
-    const files: ReadonlyArray<readonly [string, string]> = [
-      ['package.json', '{ "type": "commonjs" }\n'],
-      ['vitest.config.ts', VITEST_CONFIG_SOURCE],
-      [TSCONFIG_FILE, TSCONFIG_SOURCE],
-      [SUBJECT_FILE, SUBJECT_SOURCE],
-      [CHAIN_FILE, CHAIN_SOURCE],
-      [DECLARATION_FILE, DECLARATION_SOURCE],
-      ['test/sample.test.mjs', TEST_SOURCE],
-      [UNRELATED_TEST_FILE, UNRELATED_TEST_SOURCE],
-    ]
     yield* Effect.forEach(
-      files,
+      Object.entries(files),
       ([name, content]) =>
         Effect.gen(function*() {
           const target = path.join(directory, name)
@@ -220,9 +238,10 @@ const runTwice = (
 
 const withWorkspace = <A>(
   use: (workspace: Workspace) => Effect.Effect<A, never, never>,
+  files?: Readonly<Record<string, string>>,
 ): Effect.Effect<A, never, never> =>
   Effect.gen(function*() {
-    const workspace = yield* writeWorkspace()
+    const workspace = yield* writeWorkspace(files)
     return yield* use(workspace).pipe(Effect.ensuring(removeWorkspace(workspace.directory)))
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
@@ -306,7 +325,9 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
         Given('a project whose checker digests its tsconfig')(
           'runs',
           () =>
-            withWorkspace((workspace) => runTwice(workspace, (inner) => appendComment(inner.directory, TSCONFIG_FILE))),
+            withWorkspace((workspace) =>
+              runTwice(workspace, (inner) => rewriteFile(inner.directory, TSCONFIG_FILE, CHANGED_TSCONFIG_SOURCE))
+            ),
         ),
         Then('the second run refuses the remembered verdicts naming the changed program')((s, expect) =>
           expect({
@@ -351,6 +372,39 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             secondRanNothing: 0,
             secondReusedAll: true,
             secondProgramRefusals: 0,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'editing only a base tsconfig the root extends re-checks every CompileError',
+      Gherkin.Do.pipe(
+        Given('a project whose root tsconfig extends a base holding its compiler options')(
+          'runs',
+          () =>
+            withWorkspace(
+              (workspace) =>
+                runTwice(workspace, (inner) =>
+                  rewriteFile(inner.directory, BASE_TSCONFIG_FILE, CHANGED_BASE_TSCONFIG_SOURCE)),
+              {
+                ...DEFAULT_FILES,
+                [TSCONFIG_FILE]: EXTENDS_TSCONFIG_SOURCE,
+                [BASE_TSCONFIG_FILE]: BASE_TSCONFIG_SOURCE,
+              },
+            ),
+        ),
+        Then('the second run refuses the remembered verdicts naming the changed program')((s, expect) =>
+          expect({
+            firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
+            secondSucceeded: Exit.isSuccess(s.runs.second.exit),
+            secondRanChecks: ranOf(s.runs.second) > 0,
+            secondRefusedForProgram: programChangedOf(s.runs.second) > 0,
+          }).toEqual({
+            firstCompileErrors: true,
+            secondSucceeded: true,
+            secondRanChecks: true,
+            secondRefusedForProgram: true,
           })
         ),
       ),

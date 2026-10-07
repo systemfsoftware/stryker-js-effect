@@ -7,15 +7,39 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { relative, resolve } from 'node:path'
 
-const PROGRAM_FILES = ['tsconfig.json', 'src/lib/chain.ts', 'src/lib/subject.ts', 'src/types/transitive.d.ts']
+const PROGRAM_FILES = ['src/lib/chain.ts', 'src/lib/subject.ts', 'src/types/transitive.d.ts']
+
+const CONFIG_FILE = 'tsconfig.json'
 
 const MUTATED_FILE = 'src/lib/subject.ts'
 const REJECTION_REASON = 'rejected by the fixture checker'
 
+const relativeToCwd = (file) => relative(process.cwd(), resolve(file)).replaceAll('\\', '/')
+
+const configFileChain = async () => {
+  const files = []
+  const seen = new Set()
+  const pending = [CONFIG_FILE]
+  while (pending.length > 0) {
+    const configFile = pending.pop()
+    if (seen.has(configFile)) {
+      continue
+    }
+    seen.add(configFile)
+    files.push(configFile)
+    const config = JSON.parse(await readFile(configFile, 'utf8'))
+    for (const specifier of [].concat(config.extends ?? [])) {
+      pending.push(relativeToCwd(specifier))
+    }
+  }
+  return files
+}
+
 const programDigestOf = async () => {
   const lines = []
-  for (const file of [...PROGRAM_FILES].sort()) {
+  for (const file of [...PROGRAM_FILES, ...(await configFileChain())].sort()) {
     lines.push(`${file}\u0000${await readFile(file, 'utf8')}`)
   }
   return createHash('sha256').update(lines.join('\n')).digest('hex')

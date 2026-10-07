@@ -42,6 +42,26 @@ const STRICT_TSCONFIG_SOURCE = JSON.stringify(
   2,
 ) + '\n'
 
+const BASE_TSCONFIG_FILE = 'tsconfig.base.json'
+const BASE_TSCONFIG_SOURCE = JSON.stringify(
+  { compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true } },
+  null,
+  2,
+) + '\n'
+const CHANGED_BASE_TSCONFIG_SOURCE = JSON.stringify(
+  { compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: false } },
+  null,
+  2,
+) + '\n'
+const EXTENDS_TSCONFIG_SOURCE = JSON.stringify({ extends: `./${BASE_TSCONFIG_FILE}`, include: ['src'] }, null, 2) +
+  '\n'
+const PACKAGE_BASE_TSCONFIG_FILE = 'node_modules/@probe/tsconfig-base/tsconfig.json'
+const PACKAGE_EXTENDS_TSCONFIG_SOURCE = JSON.stringify(
+  { extends: '@probe/tsconfig-base/tsconfig.json', include: ['src'] },
+  null,
+  2,
+) + '\n'
+
 const MAIN_SOURCE = [
   "import { shifted } from './chain.js'",
   '',
@@ -65,20 +85,23 @@ interface Workspace {
   readonly directory: string
 }
 
-const writeWorkspace = (): Effect.Effect<Workspace, never, FileSystem.FileSystem | Path.Path> =>
+const DEFAULT_FILES: Readonly<Record<string, string>> = {
+  [TSCONFIG_FILE]: TSCONFIG_SOURCE,
+  [MAIN_FILE]: MAIN_SOURCE,
+  [CHAIN_FILE]: CHAIN_SOURCE,
+  [DECLARATION_FILE]: DECLARATION_SOURCE,
+  [OUTSIDE_FILE]: OUTSIDE_SOURCE,
+}
+
+const writeWorkspace = (
+  files: Readonly<Record<string, string>> = DEFAULT_FILES,
+): Effect.Effect<Workspace, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const directory = yield* fs.makeTempDirectory()
-    const files: ReadonlyArray<readonly [string, string]> = [
-      [TSCONFIG_FILE, TSCONFIG_SOURCE],
-      [MAIN_FILE, MAIN_SOURCE],
-      [CHAIN_FILE, CHAIN_SOURCE],
-      [DECLARATION_FILE, DECLARATION_SOURCE],
-      [OUTSIDE_FILE, OUTSIDE_SOURCE],
-    ]
     yield* Effect.forEach(
-      files,
+      Object.entries(files),
       ([name, content]) =>
         Effect.gen(function*() {
           const target = path.join(directory, name)
@@ -136,9 +159,10 @@ const digestTwice = (
 
 const withWorkspace = <A>(
   use: (workspace: Workspace) => Effect.Effect<A, never, never>,
+  files?: Readonly<Record<string, string>>,
 ): Effect.Effect<A, never, never> =>
   Effect.gen(function*() {
-    const workspace = yield* writeWorkspace()
+    const workspace = yield* writeWorkspace(files)
     return yield* use(workspace).pipe(Effect.ensuring(removeWorkspace(workspace.directory)))
   }).pipe(Effect.orDie, Effect.provide(FILE_PORTS))
 
@@ -212,6 +236,56 @@ Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_00
         ),
         Then('the digest is unchanged')((s, expect) =>
           expect({ stable: s.observed.first === s.observed.second }).toEqual({ stable: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'editing a base tsconfig the root extends moves the digest',
+      Gherkin.Do.pipe(
+        Given('a program whose tsconfig extends a sibling base config')(
+          'observed',
+          () =>
+            withWorkspace(
+              (workspace) =>
+                digestTwice(
+                  workspace.directory,
+                  (directory) => rewriteFile(directory, BASE_TSCONFIG_FILE, CHANGED_BASE_TSCONFIG_SOURCE),
+                ),
+              {
+                ...DEFAULT_FILES,
+                [TSCONFIG_FILE]: EXTENDS_TSCONFIG_SOURCE,
+                [BASE_TSCONFIG_FILE]: BASE_TSCONFIG_SOURCE,
+              },
+            ),
+        ),
+        Then('the digest moves')((s, expect) =>
+          expect({ moved: s.observed.first !== s.observed.second }).toEqual({ moved: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'editing a base tsconfig the root extends by package specifier moves the digest',
+      Gherkin.Do.pipe(
+        Given('a program whose tsconfig extends a base config through node_modules')(
+          'observed',
+          () =>
+            withWorkspace(
+              (workspace) =>
+                digestTwice(
+                  workspace.directory,
+                  (directory) => rewriteFile(directory, PACKAGE_BASE_TSCONFIG_FILE, CHANGED_BASE_TSCONFIG_SOURCE),
+                ),
+              {
+                ...DEFAULT_FILES,
+                [TSCONFIG_FILE]: PACKAGE_EXTENDS_TSCONFIG_SOURCE,
+                [PACKAGE_BASE_TSCONFIG_FILE]: BASE_TSCONFIG_SOURCE,
+              },
+            ),
+        ),
+        Then('the digest moves')((s, expect) =>
+          expect({ moved: s.observed.first !== s.observed.second }).toEqual({ moved: true })
         ),
       ),
     )

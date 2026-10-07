@@ -307,7 +307,10 @@ export const programDigest = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompi
   })
   const checkerOptionsJson = yield* checkerOptionsJsonOf(rt.options)
   const sourceFiles = yield* readProgramFiles(rt, yield* sortedSourceFileNamesOf(programs))
-  const tsconfigs = yield* readProgramFiles(rt, Arr.sort(Arr.fromIterable(state.allTSConfigFiles), Order.String))
+  const tsconfigs = yield* readProgramFiles(
+    rt,
+    yield* tsConfigChainOf(rt, Arr.sort(Arr.fromIterable(state.allTSConfigFiles), Order.String)),
+  )
   return yield* decidedProgramIdentity(
     IdentifyProgramCommand.make({ typescriptVersion, checkerVersion, checkerOptionsJson, sourceFiles, tsconfigs }),
   )
@@ -360,6 +363,104 @@ const referencedProjectsOf = (
         onFalse: () => rt.pathService.join(resolved, 'tsconfig.json'),
       }),
     )
+  })
+
+const TS_CONFIG_JSON_EXTENSION = '.json'
+
+const NODE_MODULES_DIRECTORY = 'node_modules'
+
+const tsConfigExtendsOf = (config: TsConfigDocument): ReadonlyArray<string> => {
+  const declared = config['extends']
+  return declared === undefined ? [] : typeof declared === 'string' ? [declared] : [...declared]
+}
+
+const ancestorDirectoriesOf = (pathService: Path.Path, from: string): ReadonlyArray<string> => {
+  const directories: Array<string> = [from]
+  let current = from
+  let parent = pathService.dirname(current)
+  while (parent !== current) {
+    directories.push(parent)
+    current = parent
+    parent = pathService.dirname(current)
+  }
+  return directories
+}
+
+const isRelativeSpecifier = (specifier: string): boolean => specifier.startsWith('./') || specifier.startsWith('../')
+
+const withJsonExtension = (base: string): ReadonlyArray<string> =>
+  base.endsWith(TS_CONFIG_JSON_EXTENSION) ? [base] : [base, `${base}${TS_CONFIG_JSON_EXTENSION}`]
+
+const tsConfigExtendsCandidatesOf = (
+  pathService: Path.Path,
+  fromDirName: string,
+  specifier: string,
+): ReadonlyArray<string> =>
+  Boolean.match(pathService.isAbsolute(specifier) || isRelativeSpecifier(specifier), {
+    onTrue: () => withJsonExtension(normalizeFileName(pathService.resolve(fromDirName, specifier))),
+    onFalse: () =>
+      Arr.flatMap(ancestorDirectoriesOf(pathService, fromDirName), (directory) =>
+        Arr.flatMap(withJsonExtension(specifier), (candidate) => [
+          normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate)),
+          ...Boolean.match(candidate.endsWith(TS_CONFIG_JSON_EXTENSION), {
+            onTrue: (): ReadonlyArray<string> => [],
+            onFalse: () => [
+              normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate, 'tsconfig.json')),
+            ],
+          }),
+        ])),
+  })
+
+const isFileOf = (rt: TSCompilerRuntime, fileName: string): Effect.Effect<boolean> =>
+  rt.host.stat(fileName).pipe(
+    Effect.map((info) => info.type === 'File'),
+    Effect.orElseSucceed(() => false),
+  )
+
+const resolveTsConfigExtends = (
+  rt: TSCompilerRuntime,
+  fromDirName: string,
+  specifier: string,
+): Effect.Effect<string, CompilerError> =>
+  Effect.gen(function*() {
+    const candidates = tsConfigExtendsCandidatesOf(rt.pathService, fromDirName, specifier)
+    for (const candidate of candidates) {
+      if (yield* isFileOf(rt, candidate)) {
+        return candidate
+      }
+    }
+    return yield* Effect.fail(
+      CompilerFailed.make({ reason: 'program-digest-unavailable', subject: `tsconfig extends "${specifier}"` }),
+    )
+  })
+
+const tsConfigChainOf = (
+  rt: TSCompilerRuntime,
+  seeds: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<string>, CompilerError> =>
+  Effect.gen(function*() {
+    const visited = new Set<string>()
+    const chain: Array<string> = []
+    const pending: Array<string> = [...seeds]
+    while (pending.length > 0) {
+      const fileName = pending.pop() as string
+      if (visited.has(fileName)) {
+        continue
+      }
+      visited.add(fileName)
+      chain.push(fileName)
+      const jsonText = yield* readTsConfigText(rt, HashMap.empty(), fileName)
+      const parsed = parseTsConfig(fileName, jsonText)
+      if (Result.isFailure(parsed)) {
+        return yield* Effect.fail(parsed.failure)
+      }
+      const extended = yield* Effect.forEach(
+        tsConfigExtendsOf(parsed.success),
+        (specifier) => resolveTsConfigExtends(rt, rt.pathService.dirname(fileName), specifier),
+      )
+      pending.push(...extended)
+    }
+    return chain
   })
 
 interface TsConfigWalk {

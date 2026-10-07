@@ -31,8 +31,11 @@ export const TsConfigCompilerOptionsSchema = JsonRecord
 
 export type TsConfigCompilerOptions = S.Schema.Type<typeof TsConfigCompilerOptionsSchema>
 
+export const TsConfigExtendsSchema = S.Union([S.String, S.Array(S.String)])
+
 export const TsConfigDocumentSchema = S.StructWithRest(
   S.Struct({
+    extends: S.optional(TsConfigExtendsSchema),
     references: S.optional(S.Array(ProjectReferenceSchema)),
     compilerOptions: S.optional(TsConfigCompilerOptionsSchema),
   }),
@@ -53,14 +56,18 @@ if (import.meta.vitest !== void 0) {
 
   const isJsonObject = S.is(S.Record(S.String, S.Json))
   const isJsonArray = S.is(S.Array(S.Json))
+  const isStringArray = (value: JsonValue): boolean =>
+    isJsonArray(value) && value.every((entry) => typeof entry === 'string')
   const isReference = (value: JsonValue): boolean => isJsonObject(value) && typeof value['path'] === 'string'
   const referencesHold = (references: JsonValue): boolean => isJsonArray(references) && references.every(isReference)
   const compilerOptionsHold = (compilerOptions: JsonValue): boolean => isJsonObject(compilerOptions)
+  const extendsHold = (extended: JsonValue): boolean => typeof extended === 'string' || isStringArray(extended)
   const fieldHolds = (field: JsonValue | undefined, holds: (value: JsonValue) => boolean): boolean =>
     field === undefined || holds(field)
   const isDocument = (value: JsonValue): boolean =>
     isJsonObject(value) &&
     Arr.every([
+      fieldHolds(value['extends'], extendsHold),
       fieldHolds(value['references'], referencesHold),
       fieldHolds(value['compilerOptions'], compilerOptionsHold),
     ], (
@@ -73,6 +80,10 @@ if (import.meta.vitest !== void 0) {
     'tsconfig',
     [],
     {},
+    { extends: './base.json' },
+    { extends: ['./base.json', '@tsconfig/node20/tsconfig.json'] },
+    { extends: [1] },
+    { extends: {} },
     { references: [] },
     { references: [{}] },
     { references: [{ path: 'p' }] },
