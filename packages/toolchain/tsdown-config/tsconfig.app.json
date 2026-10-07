@@ -8,7 +8,12 @@
     "outDir": "node_modules/.cache/tsc/app",
     "tsBuildInfoFile": "node_modules/.cache/tsconfig.app.tsbuildinfo",
     "allowJs": true,
-    "checkJs": true
+    "checkJs": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service"
+      }
+    ]
   },
   "include": ["lib"]
 }

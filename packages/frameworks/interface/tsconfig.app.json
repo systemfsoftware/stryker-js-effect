@@ -8,7 +8,12 @@
     "tsBuildInfoFile": "node_modules/.cache/tsconfig.app.tsbuildinfo",
     "outDir": "node_modules/.cache/tsc/app",
     "types": [],
-    "customConditions": ["@systemfsoftware/source"]
+    "customConditions": ["@systemfsoftware/source"],
+    "plugins": [
+      {
+        "name": "@effect/language-service"
+      }
+    ]
   },
   "include": ["src"],
   "exclude": ["src/**/__tests__/**", "src/**/*.test.ts", "src/**/*.spec.ts"]
