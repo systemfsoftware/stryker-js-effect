@@ -6,7 +6,7 @@ component: api-extractor / tsdown
 tags: [api-extractor, api-report, tsdown, chunk-hashing, ci-divergence]
 severity: medium
 date: 2026-09-22
-last_updated: 2026-09-24
+last_updated: 2026-10-07
 ---
 
 ## Symptoms
@@ -36,3 +36,4 @@ A forgotten export can also name a chunk file: `// dist/<chunk>-<hash>.d.mts:<li
 
 - When an `etc/*.api.md` diff contains a `$N`/`_N`-suffixed forgotten symbol or a hashed `dist/*-<hash>.d.mts` path, export the type the public signature reaches. Do not regenerate the report and hope for a stable alias.
 - The oxc `Node` that the exported `Node` alias wraps is still a forgotten export (`Node$1$1`). It has stayed stable so far. If it starts to rotate, the same fix applies.
+- The exported `Node` still splits by machine inside `export namespace Plugin`. CI renders `Node_2 as Node` and local builds render `Node`. A change that moves dist chunk order makes a local `api:update` and a local `api:check` agree on `Node`, and CI still fails. That happened on #227 (run 37626449206). A local byte-identical regeneration does not prove a report: when the only api diff is this alias, keep main's rendering, since CI produced it. The gate is CI's `api:check`, not the local one.
