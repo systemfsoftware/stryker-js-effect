@@ -2,6 +2,7 @@ import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -24,6 +25,7 @@ import {
   makeCheckerPoolHandle,
   runCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
+import { checkOnlyCostOf, decidedWithoutATest } from '../mutant-cost.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
@@ -59,6 +61,12 @@ const countIgnoredByReason = (
   results: readonly Mutant.RunMutantResult[],
   reason: string,
 ): number => results.filter((result) => result.status === 'Ignored' && result.statusReason === reason).length
+
+const withMeasuredCheckCost = (result: Mutant.RunMutantResult, checkMs: number): Mutant.RunMutantResult =>
+  Boolean.match(Boolean.and(result.cost === undefined, decidedWithoutATest(result.status)), {
+    onFalse: () => result,
+    onTrue: () => ({ ...result, cost: checkOnlyCostOf(checkMs) }),
+  })
 
 export interface MutationTestDone {
   readonly results: readonly Mutant.RunMutantResult[]
@@ -169,7 +177,10 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     plannedMutants: [...rememberedResults, ...reuse.mutants],
     pathService,
   }
-  const settledResults = [...rememberedResults, ...plan.earlyResults]
+  const settledResults = [
+    ...rememberedResults,
+    ...plan.earlyResults.map((result) => withMeasuredCheckCost(result, 0)),
+  ]
   yield* Effect.forEach(settledResults, (result) => announceSettledMutant(context, result), {
     concurrency: 1,
     discard: true,
@@ -187,19 +198,22 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
       { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
       () =>
         runCheckedPlans(checkedPlans, {
-          settleFailure: (mutantPlan, result) =>
+          settleFailure: (mutantPlan, result, checkMs) =>
             reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result).pipe(
+              Effect.map((reported) => withMeasuredCheckCost(reported, checkMs)),
               Effect.flatMap(settleReported),
             ),
           settleIgnored: (mutantPlan, result) =>
             reporting.reportIgnored(toReportedMutant(mutantPlan.mutant), result).pipe(
+              Effect.map((reported) => withMeasuredCheckCost(reported, 0)),
               Effect.flatMap(settleReported),
             ),
-          runPlan: (runPlan) =>
+          runPlan: (runPlan, checkMs) =>
             Option.match(Option.liftPredicate(runPlan, isNoCoveragePlan), {
               onNone: () => Effect.scoped(mutantRunCell.run({ context, testRunnerPool, checkpoint, plan: runPlan })),
               onSome: (noCoverageRunPlan) =>
                 reporting.reportNoCoverage(toReportedMutant(noCoverageRunPlan.mutant)).pipe(
+                  Effect.map((reported) => withMeasuredCheckCost(reported, checkMs)),
                   Effect.flatMap(settleReported),
                 ),
             }),
