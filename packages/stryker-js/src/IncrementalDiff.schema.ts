@@ -14,6 +14,7 @@ export const ReuseRefusalReasonSchema = S.Literals([
   'policyChanged',
   'runInputsChanged',
   'closureChanged',
+  'closureAnalysisFailed',
   'programChanged',
   'flakyDependency',
   'timeoutUnreproduced',

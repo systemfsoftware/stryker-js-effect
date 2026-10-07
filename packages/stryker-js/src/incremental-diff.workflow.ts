@@ -133,25 +133,26 @@ const matchingKey = (command: IncrementalDiffCommand, record: RememberedReuseRec
     }),
   )
 
-const closureChanged = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
-  Boolean.or(
-    command.closureAnalysisFailed,
-    Boolean.and(
-      Boolean.not(isCompileErrorRecord(record)),
-      digestOf(record.closureDigest) !== digestOf(command.closureDigestsByMutantId[record.mutantId]),
-    ),
+const closureDigestChanged = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
+  Boolean.and(
+    Boolean.not(isCompileErrorRecord(record)),
+    digestOf(record.closureDigest) !== digestOf(command.closureDigestsByMutantId[record.mutantId]),
   )
 
 const programChanged = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
   Boolean.and(isCompileErrorRecord(record), Boolean.not(matchingProgramKey(command, record)))
 
 const reasonAfterClosure = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
-  Boolean.match(closureChanged(command, record), {
-    onTrue: (): ReuseRefusalReason => 'closureChanged',
-    onFalse: (): ReuseRefusalReason =>
-      Boolean.match(isUnreproducedWallClockTimeout(record), {
-        onTrue: () => 'timeoutUnreproduced',
-        onFalse: () => 'noPriorRecord',
+  Boolean.match(command.closureAnalysisFailed, {
+    onTrue: (): ReuseRefusalReason => 'closureAnalysisFailed',
+    onFalse: () =>
+      Boolean.match(closureDigestChanged(command, record), {
+        onTrue: (): ReuseRefusalReason => 'closureChanged',
+        onFalse: (): ReuseRefusalReason =>
+          Boolean.match(isUnreproducedWallClockTimeout(record), {
+            onTrue: () => 'timeoutUnreproduced',
+            onFalse: () => 'noPriorRecord',
+          }),
       }),
   })
 

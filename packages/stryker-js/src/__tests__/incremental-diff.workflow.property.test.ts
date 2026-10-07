@@ -276,13 +276,26 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
-    '∀r_RecordWithAKey_≡AFailedClosureAnalysisNamesTheProgramGateForAnUnkeyedCompileError',
+    '∀r_RecordWithAKey_≡AFailedClosureAnalysisNamesItselfUnlessTheProgramGateOutranksIt',
     { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
     (subject, [record]) => {
       const result = subject(matchingCommandOf(record, { closureAnalysisFailed: true }))
       return record.status === 'CompileError' && (record.programDigest ?? '') === ''
         ? runsWithRefusal(result, 'programChanged')
-        : runsWithRefusal(result, 'closureChanged')
+        : runsWithRefusal(result, 'closureAnalysisFailed')
+    },
+  )
+
+  it.prop(
+    '∀r_RecordWithAKey_≡AFailedClosureAnalysisNamesItselfWhenTheProgramMatches',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const programDigest = 'a'.repeat(64)
+      const prior = { ...record, status: 'CompileError' as const, programDigest }
+      return runsWithRefusal(
+        subject(matchingCommandOf(prior, { closureAnalysisFailed: true })),
+        'closureAnalysisFailed',
+      )
     },
   )
 
