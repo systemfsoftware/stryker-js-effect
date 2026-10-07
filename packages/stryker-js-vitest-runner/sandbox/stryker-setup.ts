@@ -12,10 +12,22 @@ const ns: Types.Mutable<Instrument.InstrumenterContext> = globalThis[globalNames
   (globalThis[globalNamespace] = {})
 
 interface SuiteWithTaskMeta {
-  meta: { hitCount?: number; mutantCoverage?: Mutant.MutantCoverage }
+  meta: {
+    hitCount?: number
+    mutantCoverage?: Mutant.MutantCoverage
+    testFileModules?: string[]
+  }
 }
 
 ns.hitLimit = inject('hitLimit')
+
+const evaluatedModuleKeysOf = (): string[] | undefined => {
+  const workerState = Reflect.get(globalThis, '__vitest_worker__')
+  if (typeof workerState !== 'object' || workerState === null) return undefined
+  const info = 'moduleExecutionInfo' in workerState ? workerState.moduleExecutionInfo : undefined
+  if (!(info instanceof Map)) return undefined
+  return [...info.keys()].filter((key): key is string => typeof key === 'string' && !key.startsWith('node:'))
+}
 
 const registerMutantRunHooks = () => {
   beforeAll(() => {
@@ -51,6 +63,10 @@ const registerDryRunHooks = () => {
 
   afterAll(({}, suite: SuiteWithTaskMeta) => {
     suite.meta.mutantCoverage = ns.mutantCoverage
+    const evaluatedModules = evaluatedModuleKeysOf()
+    if (evaluatedModules !== undefined) {
+      suite.meta.testFileModules = evaluatedModules
+    }
   })
 }
 

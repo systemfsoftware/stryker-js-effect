@@ -35,6 +35,7 @@ import {
   metaOf,
   reportAllKillersOf,
   start,
+  testFileModulesOf,
 } from './VitestRuntime.handle.js'
 import { VitestSession, type VitestSessionInput } from './VitestSession.service.js'
 
@@ -285,6 +286,17 @@ const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*
     })
   })
 
+  const readTestFileModules = Effect.gen(function*() {
+    const self = yield* runtime.pipe(Effect.mapError((cause) => new CoverageDecodeFailed({ cause })))
+    const entries = files(self).flatMap((file) =>
+      Option.match(testFileModulesOf(file), {
+        onNone: () => [],
+        onSome: (modules) => [[file.filepath, [...modules]] as const],
+      })
+    )
+    return entries.length > 0 ? Object.fromEntries(entries) : undefined
+  })
+
   const collectRaw = Effect.fn(SpanTaxonomy.Spans.vitestRunnerCollectRaw.name)(function*(filter: RunFilter) {
     const self = yield* runtime
     const options = yield* vitestOptions
@@ -384,6 +396,7 @@ const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*
   const completeDryRun = Effect.fn(SpanTaxonomy.Spans.vitestRunnerCompleteDryRun.name)(
     function*(tests: readonly TestRunner.TestResult[]) {
       const mutantCoverage = yield* readMutantCoverage.pipe(Effect.mapError(asRunnerFailure('dryRun')))
+      const testFileModules = yield* readTestFileModules.pipe(Effect.mapError(asRunnerFailure('dryRun')))
       const globalTestInputs = yield* runtime.pipe(
         Effect.map((self) => self.globalTestInputs),
         Effect.mapError(asRunnerFailure('dryRun')),
@@ -391,14 +404,22 @@ const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*
       yield* Effect.annotateCurrentSpan({
         'stryker.vitest.test_count': tests.length,
         'stryker.vitest.has_mutant_coverage': mutantCoverage !== undefined,
+        'stryker.vitest.test_file_modules_count': testFileModules === undefined
+          ? 0
+          : Object.keys(testFileModules).length,
+      })
+      const evidence = Option.match(Option.fromNullishOr(testFileModules), {
+        onNone: (): Partial<TestRunner.CompleteDryRunResult> => ({}),
+        onSome: (modules): Partial<TestRunner.CompleteDryRunResult> => ({ testFileModules: modules }),
       })
       return Option.match(Option.fromNullishOr(mutantCoverage), {
-        onNone: (): TestRunner.DryRunResult => ({ status: 'complete', tests, globalTestInputs }),
+        onNone: (): TestRunner.DryRunResult => ({ status: 'complete', tests, globalTestInputs, ...evidence }),
         onSome: (coverage): TestRunner.DryRunResult => ({
           status: 'complete',
           tests,
           mutantCoverage: coverage,
           globalTestInputs,
+          ...evidence,
         }),
       })
     },
