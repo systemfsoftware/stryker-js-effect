@@ -1,24 +1,51 @@
-#!/usr/bin/env -S deno run --allow-read
+#!/usr/bin/env -S deno run --allow-read --allow-run=pnpm
 import { expandGlob } from '@std/fs/expand-glob'
+import { join } from '@std/path'
 import { parse } from '@std/yaml'
+import { run } from '../lib/run.ts'
 
 const WORKSPACE_MANIFEST = 'pnpm-workspace.yaml'
 const PARKED_DIRECTORY = '.changeset/changelogs'
 
-interface Workspace {
-  readonly patterns: ReadonlyArray<string>
-  readonly storage: unknown
+interface Member {
+  readonly name: string
+  readonly version: string
+  readonly dir: string
 }
 
-const workspaceOf = (text: string): Workspace => {
-  const document = parse(text) as {
-    packages?: ReadonlyArray<string>
-    versioning?: { changelog?: { storage?: unknown } }
-  } | null
-  return {
-    patterns: document?.packages ?? [],
-    storage: document?.versioning?.changelog?.storage,
+const publicMembers = async (): Promise<readonly Member[]> => {
+  const raw = JSON.parse(await run('pnpm', ['ls', '-r', '--depth=-1', '--json'])) as readonly {
+    name?: unknown
+    version?: unknown
+    path?: unknown
+    private?: unknown
+  }[]
+  return raw.flatMap((entry) =>
+    entry.private !== true && typeof entry.name === 'string' && typeof entry.version === 'string' &&
+      typeof entry.path === 'string'
+      ? [{ name: entry.name, version: entry.version, dir: entry.path }]
+      : []
+  )
+}
+
+type ChangelogStorage = 'repository' | 'registry'
+
+export class ChangelogStorageInvalid extends Error {
+  override readonly name = 'ChangelogStorageInvalid'
+  constructor(readonly found: unknown) {
+    super(
+      `pnpm-workspace.yaml: versioning.changelog.storage is ${
+        found === undefined ? 'missing' : JSON.stringify(found)
+      }; expected "repository" or "registry"`,
+    )
   }
+}
+
+export const changelogStorageOf = (workspaceYaml: string): ChangelogStorage => {
+  const document = parse(workspaceYaml) as { versioning?: { changelog?: { storage?: unknown } } } | null
+  const found = document?.versioning?.changelog?.storage
+  if (found === 'repository' || found === 'registry') return found
+  throw new ChangelogStorageInvalid(found)
 }
 
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -35,7 +62,7 @@ export const sectionViolations = (
     : [`${name}@${version}: CHANGELOG.md has ${headings} "## ${version}" sections, expected exactly one`]
 }
 
-export const parkedViolations = (storage: unknown, parked: ReadonlyArray<string>): ReadonlyArray<string> =>
+export const parkedViolations = (storage: ChangelogStorage, parked: ReadonlyArray<string>): ReadonlyArray<string> =>
   storage === 'repository'
     ? parked.map((file) =>
       `${PARKED_DIRECTORY}/${file}: a parked changelog section under storage: repository is never published; fold it into the package's CHANGELOG.md`
@@ -93,6 +120,37 @@ const selftest = (): number => {
         if (found.length !== 0) throw new Error(JSON.stringify(found))
       },
     },
+    {
+      name: 'refuses a workspace with no changelog storage',
+      run: () => {
+        try {
+          changelogStorageOf('packages:\n  - packages/*\n')
+        } catch (error) {
+          if (error instanceof ChangelogStorageInvalid && error.found === undefined) return
+          throw error
+        }
+        throw new Error('accepted a missing storage')
+      },
+    },
+    {
+      name: 'refuses a misspelt changelog storage',
+      run: () => {
+        try {
+          changelogStorageOf('versioning:\n  changelog:\n    storage: repostiory\n')
+        } catch (error) {
+          if (error instanceof ChangelogStorageInvalid && error.found === 'repostiory') return
+          throw error
+        }
+        throw new Error('accepted a misspelt storage')
+      },
+    },
+    {
+      name: 'reads repository storage',
+      run: () => {
+        const found = changelogStorageOf('versioning:\n  changelog:\n    storage: repository\n')
+        if (found !== 'repository') throw new Error(found)
+      },
+    },
   ]
 
   let failures = 0
@@ -119,26 +177,19 @@ const readOrNull = (path: string): Promise<string | null> => Deno.readTextFile(p
 const main = async (): Promise<number> => {
   if (Deno.args.includes('--selftest')) return selftest()
 
-  const workspace = workspaceOf(await Deno.readTextFile(WORKSPACE_MANIFEST))
+  const storage = changelogStorageOf(await Deno.readTextFile(WORKSPACE_MANIFEST))
+  const members = await publicMembers()
+  if (members.length === 0) throw new Error('pnpm ls -r found no publishable workspace package')
   const violations: string[] = []
-  let checked = 0
-  for (const pattern of workspace.patterns) {
-    for await (const entry of expandGlob(`${pattern}/package.json`, { exclude: ['**/node_modules/**'] })) {
-      const manifest = JSON.parse(await Deno.readTextFile(entry.path)) as {
-        name?: string
-        version?: string
-        private?: boolean
-      }
-      if (manifest.private === true || manifest.name === undefined || manifest.version === undefined) continue
-      checked++
-      const changelog = await readOrNull(entry.path.replace(/package\.json$/, 'CHANGELOG.md'))
-      violations.push(...sectionViolations(manifest.name, manifest.version, changelog))
-    }
+  for (const member of members) {
+    const changelog = await readOrNull(join(member.dir, 'CHANGELOG.md'))
+    violations.push(...sectionViolations(member.name, member.version, changelog))
   }
+  const checked = members.length
 
   const parked: string[] = []
   for await (const entry of expandGlob(`${PARKED_DIRECTORY}/*.md`)) parked.push(entry.name)
-  violations.push(...parkedViolations(workspace.storage, parked))
+  violations.push(...parkedViolations(storage, parked))
 
   if (violations.length > 0) {
     for (const violation of violations) console.error(`error[CHANGELOG-SECTIONS]: ${violation}`)
