@@ -34,6 +34,7 @@ export const ReuseRefusals = S.Struct({
   policyChanged: Report.NonNegativeInt,
   runInputsChanged: Report.NonNegativeInt,
   closureChanged: Report.NonNegativeInt,
+  programChanged: Report.NonNegativeInt,
   timeoutUnreproduced: Report.NonNegativeInt,
   flakyDependency: Report.NonNegativeInt,
   noPriorRecord: Report.NonNegativeInt,

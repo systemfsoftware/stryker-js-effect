@@ -1,4 +1,4 @@
-import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
@@ -30,7 +30,22 @@ const isReusable = S.is(Mutant.RememberedStatusSchema)
 const unreproducedWallClock = (record: PreviousReuseRecord): boolean =>
   record.status === 'Timeout' && record.timeoutKind !== 'hitLimit' && (record.reproductions ?? 0) < 1
 
-const remembers = (record: PreviousReuseRecord): boolean => isReusable(record.status) && !unreproducedWallClock(record)
+const matchingProgramRecordDigest = (record: PreviousReuseRecord, digest: string | undefined): boolean =>
+  (record.programDigest ?? '') !== '' && record.programDigest === digest
+
+const remembersWith = (record: PreviousReuseRecord, programDigest: string | undefined): boolean =>
+  isReusable(record.status) &&
+  !unreproducedWallClock(record) &&
+  (record.status === 'CompileError' ? matchingProgramRecordDigest(record, programDigest) : true)
+
+const remembers = (record: PreviousReuseRecord): boolean => remembersWith(record, record.programDigest)
+
+const refusalOfTheMatchingCommand = (record: PreviousReuseRecord): string =>
+  record.status === 'CompileError' && (record.programDigest ?? '') === ''
+    ? 'programChanged'
+    : unreproducedWallClock(record)
+    ? 'timeoutUnreproduced'
+    : 'noPriorRecord'
 
 const recordOf = (
   mutantId: Mutant.MutantId,
@@ -53,6 +68,7 @@ interface CommandFields {
   readonly verdictSemanticsVersion?: number
   readonly mutantSetPolicy?: Options.MutantSetPolicy
   readonly runInputsDigest?: string
+  readonly programDigest?: string
   readonly force?: boolean
   readonly previousRecords?: ReadonlyArray<PreviousReuseRecord>
   readonly flakyMutantIds?: ReadonlyArray<Mutant.MutantId>
@@ -71,6 +87,7 @@ const commandOf = (
     verdictSemanticsVersion: fields.verdictSemanticsVersion ?? 1,
     mutantSetPolicy: fields.mutantSetPolicy ?? 'default',
     runInputsDigest: fields.runInputsDigest ?? 'run-inputs',
+    ...(fields.programDigest === undefined ? {} : { programDigest: fields.programDigest }),
     force: fields.force ?? false,
     ...(fields.flakyMutantIds === undefined ? {} : { flakyMutantIds: [...fields.flakyMutantIds] }),
   })
@@ -84,6 +101,7 @@ const matchingCommandOf = (
     verdictSemanticsVersion: record.verdictSemanticsVersion,
     mutantSetPolicy: record.mutantSetPolicy,
     runInputsDigest: record.runInputsDigest,
+    ...(record.programDigest === undefined ? {} : { programDigest: record.programDigest }),
     ...fields,
   })
 
@@ -146,10 +164,41 @@ describe('incrementalDiff', () => {
       if (decision === undefined) {
         return false
       }
-      return remembers(record)
+      return remembersWith(record, record.programDigest)
         ? S.is(MutantRemembered)(decision) && decision.mutantId === record.mutantId && decision.status === record.status
-        : S.is(MutantToRun)(decision) &&
-          decision.refusal === (unreproducedWallClock(record) ? 'timeoutUnreproduced' : 'noPriorRecord')
+        : S.is(MutantToRun)(decision) && decision.refusal === refusalOfTheMatchingCommand(record)
+    },
+  )
+
+  it.prop(
+    '∀r_RecordWithAProgramDigest_≡AMatchingProgramDigestRemembersACompileError',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const programDigest = 'a'.repeat(64)
+      const prior = { ...record, status: 'CompileError' as const, programDigest }
+      const decision = onlyDecision(subject(matchingCommandOf(prior)))
+      return decision !== undefined && S.is(MutantRemembered)(decision) && decision.status === 'CompileError'
+    },
+  )
+
+  it.prop(
+    '∀rd_RecordAndDigest_≡AChangedProgramDigestRunsNamingProgramChanged',
+    { of: [PreviousReuseRecordSchema, Checker.ProgramDigest], subject: incrementalDiff },
+    (subject, [record, drawn]) => {
+      const programDigest = 'a'.repeat(64)
+      const current = drawn === programDigest ? `b${drawn.slice(1)}` : drawn
+      const prior = { ...record, status: 'CompileError' as const, programDigest }
+      return runsWithRefusal(subject(matchingCommandOf(prior, { programDigest: current })), 'programChanged')
+    },
+  )
+
+  it.prop(
+    '∀r_Record_≡ACompileErrorWithoutAProgramDigestRunsNamingProgramChanged',
+    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
+    (subject, [record]) => {
+      const { programDigest: _absent, ...withoutProgramDigest } = record
+      const prior = { ...withoutProgramDigest, status: 'CompileError' as const }
+      return runsWithRefusal(subject(matchingCommandOf(prior)), 'programChanged')
     },
   )
 
@@ -181,15 +230,20 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
-    '∀is_RecordAndDigest_≡AChangedClosureDigestRunsNamingClosureChanged',
+    '∀is_RecordAndDigest_≡AChangedClosureDigestNamesClosureChangedUnlessTheRecordIsACompileError',
     { of: [PreviousReuseRecordSchema, S.NonEmptyString], subject: incrementalDiff },
     (subject, [record, drawn]) => {
       const current = record.closureDigest ?? ''
       const changed = drawn === current ? `${drawn}-changed` : drawn
-      const result = subject(matchingCommandOf(record, {
+      const decision = onlyDecision(subject(matchingCommandOf(record, {
         closureDigestsByMutantId: { [record.mutantId]: changed },
-      }))
-      return runsWithRefusal(result, 'closureChanged')
+      })))
+      if (decision === undefined) {
+        return false
+      }
+      return record.status === 'CompileError'
+        ? !S.is(MutantToRun)(decision) || decision.refusal !== 'closureChanged'
+        : S.is(MutantToRun)(decision) && decision.refusal === 'closureChanged'
     },
   )
 
@@ -222,10 +276,14 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
-    '∀r_RecordWithAKey_≡AFailedClosureAnalysisRunsNamingClosureChanged',
+    '∀r_RecordWithAKey_≡AFailedClosureAnalysisNamesTheProgramGateForAnUnkeyedCompileError',
     { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) =>
-      runsWithRefusal(subject(matchingCommandOf(record, { closureAnalysisFailed: true })), 'closureChanged'),
+    (subject, [record]) => {
+      const result = subject(matchingCommandOf(record, { closureAnalysisFailed: true }))
+      return record.status === 'CompileError' && (record.programDigest ?? '') === ''
+        ? runsWithRefusal(result, 'programChanged')
+        : runsWithRefusal(result, 'closureChanged')
+    },
   )
 
   it.prop(
@@ -279,21 +337,23 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
-    '∀r_Record_≡AStaticMutantWithoutFlakesIsRememberedExactlyLikeAnyOtherMutant',
-    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) => {
-      const mutant = Mutant.Mutant.make({ ...mutantOf(record.mutantId), static: true })
-      const decision = onlyDecision(subject(commandOf([mutant], [record], {
-        closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
-        verdictSemanticsVersion: record.verdictSemanticsVersion,
-        mutantSetPolicy: record.mutantSetPolicy,
-        runInputsDigest: record.runInputsDigest,
-        flakyMutantIds: [],
-      })))
-      if (decision === undefined) {
-        return false
-      }
-      return remembers(record) ? S.is(MutantRemembered)(decision) : S.is(MutantToRun)(decision)
+    '∀d_ProgramDigest_≡AKeyedCompileErrorRecordIsRememberedByItsOwnDigestAndRunsUnderAnother',
+    { of: [Checker.ProgramDigest], subject: incrementalDiff },
+    (subject, [drawn]) => {
+      const id = Mutant.MutantId.make('0000000000000000')
+      const digest = 'a'.repeat(64)
+      const current = drawn === digest ? `b${drawn.slice(1)}` : drawn
+      const record = recordOf(id, 'CompileError', 'digest', { programDigest: digest })
+      const remembered = onlyDecision(subject(matchingCommandOf(record)))
+      const refused = onlyDecision(subject(matchingCommandOf(record, { programDigest: current })))
+      return remembered !== undefined &&
+        S.is(MutantRemembered)(remembered) &&
+        remembered.mutantId === id &&
+        remembered.status === 'CompileError' &&
+        refused !== undefined &&
+        S.is(MutantToRun)(refused) &&
+        refused.mutant.id === id &&
+        refused.refusal === 'programChanged'
     },
   )
 

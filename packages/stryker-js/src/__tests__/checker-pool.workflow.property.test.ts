@@ -101,10 +101,16 @@ const passedAnswers = (mutants: readonly Checker.CheckerMutantWire[]): Record<st
 const singletonGroups = (mutants: readonly Checker.CheckerMutantWire[]): readonly (readonly string[])[] =>
   mutants.map((mutant) => [mutant.id])
 
+const UNUSED_DIGEST = Checker.ProgramDigest.make('0'.repeat(64))
+
 const checkerServiceOf = (handlers: {
   readonly group: CheckerResourceService['group']
   readonly check: CheckerResourceService['check']
-}): CheckerResourceService => ({ group: handlers.group, check: handlers.check })
+}): CheckerResourceService => ({
+  group: handlers.group,
+  check: handlers.check,
+  digest: () => Effect.succeed(UNUSED_DIGEST),
+})
 
 const checkerSlotOf = (checkerName: string, checker: CheckerResourceService): CheckerSlot => [{
   checkerName,

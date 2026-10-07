@@ -5,18 +5,30 @@ import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 
-const REJECTED_FILE = 'src/lib/rejected.ts'
+const PROGRAM_FILES = ['tsconfig.json', 'src/lib/chain.ts', 'src/lib/subject.ts', 'src/types/transitive.d.ts']
+
+const MUTATED_FILE = 'src/lib/subject.ts'
 const REJECTION_REASON = 'rejected by the fixture checker'
 
+const programDigestOf = async () => {
+  const lines = []
+  for (const file of [...PROGRAM_FILES].sort()) {
+    lines.push(`${file}\u0000${await readFile(file, 'utf8')}`)
+  }
+  return createHash('sha256').update(lines.join('\n')).digest('hex')
+}
+
 const answerOf = (mutant) =>
-  mutant.fileName === REJECTED_FILE || mutant.fileName.endsWith(`/${REJECTED_FILE}`)
+  mutant.fileName === MUTATED_FILE || mutant.fileName.endsWith(`/${MUTATED_FILE}`)
     ? { status: 'compileError', reason: REJECTION_REASON }
     : { status: 'passed' }
 
 const handlers = Plugin.CheckerRpcs.toLayer({
   group: ({ mutants }) => Effect.succeed([mutants.map((mutant) => mutant.id)]),
-  digest: () => Effect.succeed('0123456789abcdef'.repeat(4)),
+  digest: () => Effect.promise(programDigestOf),
   check: ({ mutants }) =>
     Effect.succeed(
       Object.fromEntries(mutants.map((mutant) => [mutant.id, answerOf(mutant)])),

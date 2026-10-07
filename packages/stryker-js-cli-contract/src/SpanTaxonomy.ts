@@ -17,6 +17,10 @@ export const Spans = {
     attributes: { 'stryker.checker.name': SpanAttributeText, 'stryker.mutants.count': SpanAttributeCount },
   },
   checkerCheckPlans: { name: 'stryker.checker.check_plans', attributes: {} },
+  checkerDigest: {
+    name: 'stryker.checker.digest',
+    attributes: { 'stryker.checker.name': SpanAttributeText },
+  },
   checkerGroup: {
     name: 'stryker.checker.group',
     attributes: { 'stryker.checker.name': SpanAttributeText, 'stryker.mutants.count': SpanAttributeCount },
@@ -24,6 +28,7 @@ export const Spans = {
   checkerGroupPlans: { name: 'stryker.checker.group_plans', attributes: {} },
   checkerLogSkipped: { name: 'stryker.checker.log_skipped', attributes: {} },
   checkerPoolCheckPlans: { name: 'stryker.checker_pool.check_plans', attributes: {} },
+  checkerPoolProgramDigest: { name: 'stryker.checker_pool.program_digest', attributes: {} },
   checkerPoolSplitChecked: { name: 'stryker.checker_pool.split_checked', attributes: {} },
   checkerRecordSkipped: { name: 'stryker.checker.record_skipped', attributes: {} },
   cliRun: {
@@ -159,6 +164,7 @@ export const Spans = {
   rpcClientInit: { name: 'RpcClient.init', attributes: {} },
   rpcClientMutantRun: { name: 'RpcClient.mutantRun', attributes: {} },
   rpcClientOnEventBatch: { name: 'RpcClient.onEventBatch', attributes: {} },
+  rpcDigest: { name: 'rpc.digest', attributes: { 'rpc.method': SpanAttributeText } },
   rpcDryRun: { name: 'rpc.dryRun', attributes: { 'rpc.method': SpanAttributeText } },
   rpcFlush: { name: 'rpc.flush', attributes: { 'rpc.method': SpanAttributeText } },
   rpcGroup: { name: 'rpc.group', attributes: { 'rpc.method': SpanAttributeText } },
@@ -240,6 +246,10 @@ export const Spans = {
   typescriptCheckerCompilerLineAndCharacter: { name: 'typescript-checker.compiler.lineAndCharacter', attributes: {} },
   typescriptCheckerCompilerMake: { name: 'typescript-checker.compiler.make', attributes: {} },
   typescriptCheckerCompilerNodes: { name: 'typescript-checker.compiler.nodes', attributes: {} },
+  typescriptCheckerCompilerProgramDigest: {
+    name: 'typescript-checker.compiler.programDigest',
+    attributes: {},
+  },
   typescriptCheckerCompilerScoped: { name: 'typescript-checker.compiler.scoped', attributes: {} },
   typescriptCheckerRuntimeMakeChecker: { name: 'typescript-checker.runtime.makeChecker', attributes: {} },
   typescriptCheckerSoloRound: {
@@ -274,6 +284,7 @@ export const spanMembers: ReadonlyArray<SpanMember> = Object.values(Spans)
 const rpcServedSpans: ReadonlyMap<string, SpanMember> = new Map<string, SpanMember>([
   ['capabilities', Spans.rpcCapabilities],
   ['check', Spans.rpcCheck],
+  ['digest', Spans.rpcDigest],
   ['dryRun', Spans.rpcDryRun],
   ['flush', Spans.rpcFlush],
   ['group', Spans.rpcGroup],

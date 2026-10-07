@@ -12,6 +12,20 @@ export const CheckerMutantWire = S.Struct({
 })
 export type CheckerMutantWire = typeof CheckerMutantWire.Type
 
+/**
+ * The digest of the TypeScript program a checker loaded: SHA-256 over the sorted
+ * hashes of every source file in the program (lib and node_modules declarations
+ * included), every tsconfig in its chain, the TypeScript version, the checker
+ * plugin version, and the checker's options. A `CompileError` verdict is reusable
+ * only when two runs' digests are byte-equal, so a missing digest is never a match.
+ */
+export const ProgramDigest = S.String.check(
+  S.isPattern(/^[0-9a-f]{64}$/u, {
+    expected: 'a 64-character lowercase hexadecimal program digest',
+  }),
+).pipe(S.brand('ProgramDigest'))
+export type ProgramDigest = typeof ProgramDigest.Type
+
 export const CheckResultSchema = S.Union([
   S.Struct({ status: S.Literal('passed') }),
   S.Struct({ status: S.Literal('compileError'), reason: S.String }),

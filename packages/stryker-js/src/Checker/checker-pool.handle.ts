@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -30,6 +32,8 @@ export const TypeId: unique symbol = Symbol.for('~systemfsoftware/stryker-js/Che
 export type TypeId = typeof TypeId
 
 export type CheckerSlot = { readonly checkerName: string; readonly checker: CheckerResourceService }[]
+
+const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
 export type CheckerPool = Pool.Pool<CheckerSlot, StageError | CheckerCrash>
 
@@ -175,6 +179,26 @@ export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitCh
 
 const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], StageError | CheckerCrash> =>
   Pool.use(pool, (slot) => Effect.succeed(slot.map(({ checkerName }) => checkerName)))
+
+const digestLineOf = ({ checkerName, checker }: CheckerSlot[number]): Effect.Effect<Option.Option<string>> =>
+  checker.digest(checkerName).pipe(
+    Effect.map((digest) => Option.some(`${checkerName}\u0000${digest}`)),
+    Effect.catchTags({
+      CheckerFailed: () => Effect.succeed(Option.none<string>()),
+      ChildProcessCrashedError: () => Effect.succeed(Option.none<string>()),
+      OutOfMemoryError: () => Effect.succeed(Option.none<string>()),
+    }),
+  )
+
+export const programDigestOf = (handle: CheckerPoolHandle): Effect.Effect<string | undefined> =>
+  Effect.orElseSucceed(answeredProgramDigestOf(handle), () => undefined)
+
+const answeredProgramDigestOf = Effect.fn(SpanTaxonomy.Spans.checkerPoolProgramDigest.name)(function*(
+  handle: CheckerPoolHandle,
+) {
+  const lines = yield* Pool.use(CheckerPoolHandle.slot(handle), (slot) => Effect.forEach(slot, digestLineOf))
+  return Option.getOrUndefined(Option.map(Option.all(lines), (answered) => hashOf([...answered].sort().join('\n'))))
+})
 
 const failedElement = (
   failedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[],

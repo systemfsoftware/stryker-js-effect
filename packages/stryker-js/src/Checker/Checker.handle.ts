@@ -60,6 +60,9 @@ export interface CheckerResourceService {
     checkerName: string,
     mutants: readonly Checker.CheckerMutantWire[],
   ) => Effect.Effect<readonly (readonly string[])[], CheckerCrash | Checker.CheckerFailed>
+  readonly digest: (
+    checkerName: string,
+  ) => Effect.Effect<Checker.ProgramDigest, CheckerCrash | Checker.CheckerFailed>
 }
 
 export const connectionCrashed = (cause: string): ChildProcessCrashedError =>
@@ -118,6 +121,11 @@ const groupOf = (self: CheckerHandle, checkerName: string, mutants: readonly Che
     CheckerHandle.slot(self).group({ checkerName, mutants: [...mutants] }),
   )
 
+const digestOf = (self: CheckerHandle, checkerName: string) =>
+  CheckerHandle.slot(self).digest({ checkerName }).pipe(
+    Effect.withSpan(SpanTaxonomy.Spans.checkerDigest.name, { attributes: { 'stryker.checker.name': checkerName } }),
+  )
+
 export const check: {
   (
     checkerName: string,
@@ -148,6 +156,19 @@ export const group: {
   (args) => isCheckerHandle(args[0]),
   (self: CheckerHandle, checkerName: string, mutants: readonly Checker.CheckerMutantWire[]) =>
     groupOf(self, checkerName, mutants),
+)
+
+export const digest: {
+  (
+    checkerName: string,
+  ): (self: CheckerHandle) => Effect.Effect<Checker.ProgramDigest, CheckerCrash | Checker.CheckerFailed>
+  (
+    self: CheckerHandle,
+    checkerName: string,
+  ): Effect.Effect<Checker.ProgramDigest, CheckerCrash | Checker.CheckerFailed>
+} = dual(
+  (args) => isCheckerHandle(args[0]),
+  (self: CheckerHandle, checkerName: string) => digestOf(self, checkerName),
 )
 
 export const makeCheckerHandle = (client: CheckerClient): CheckerHandle => CheckerHandle.make({}, client)

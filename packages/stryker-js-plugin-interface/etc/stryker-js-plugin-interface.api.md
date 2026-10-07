@@ -6,7 +6,7 @@
 
 // @public (undocumented)
 export namespace Checker {
-    export { CheckResult, CheckResultSchema, CheckStatus, Checker, CheckerFailed, CheckerMutantWire, CheckerService, FailedCheckResult, IgnoredCheckResult, PassedCheckResult };
+    export { CheckResult, CheckResultSchema, CheckStatus, Checker, CheckerFailed, CheckerMutantWire, CheckerService, FailedCheckResult, IgnoredCheckResult, PassedCheckResult, ProgramDigest };
 }
 
 // @public (undocumented)
@@ -36,7 +36,7 @@ export namespace Options {
 
 // @public (undocumented)
 export namespace Plugin {
-    export { BoundaryError, BoundaryErrorSchema, BoundaryPayloadRejected, BoundaryUnrecognizedSignal, CheckerCheckResult, CheckerGroupResult, CheckerRequest, CheckerRpcs, EvaluatorPluginKind, ExitClass, ExitCode, ExitCodeFromClass, PluginKind, PluginKindSchema, ReporterAck, ReporterDrained, ReporterEventBatch, ReporterInitOptions, ReporterRpcs, TestRunnerDryRunRequest, TestRunnerMutantRunRequest, TestRunnerRpcs, WorkerEntryUrl, WorkerPluginKind, WorkerPluginSpawn, WorkerPluginSpawnSchema };
+    export { BoundaryError, BoundaryErrorSchema, BoundaryPayloadRejected, BoundaryUnrecognizedSignal, CheckerCheckResult, CheckerDigestRequest, CheckerGroupResult, CheckerRequest, CheckerRpcs, EvaluatorPluginKind, ExitClass, ExitCode, ExitCodeFromClass, PluginKind, PluginKindSchema, ReporterAck, ReporterDrained, ReporterEventBatch, ReporterInitOptions, ReporterRpcs, TestRunnerDryRunRequest, TestRunnerMutantRunRequest, TestRunnerRpcs, WorkerEntryUrl, WorkerPluginKind, WorkerPluginSpawn, WorkerPluginSpawnSchema };
 }
 
 // @public (undocumented)

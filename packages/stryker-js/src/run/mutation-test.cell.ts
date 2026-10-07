@@ -23,6 +23,7 @@ import {
   checkPlansStream as checkPlansWithConfiguredCheckers,
   inOwnScope,
   makeCheckerPoolHandle,
+  programDigestOf,
   runCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
 import { checkOnlyCostOf, decidedWithoutATest } from '../mutant-cost.js'
@@ -102,6 +103,12 @@ const writeMutationTestDryRunOnly = Effect.fn(SpanTaxonomy.Spans.mutationTestDry
   return { results: [], verdict: null }
 })
 
+const programDigestFieldOf = (programDigest: string | undefined): Record<string, string> =>
+  Option.match(Option.fromUndefinedOr(programDigest), {
+    onNone: (): Record<string, string> => ({}),
+    onSome: (present) => ({ programDigest: present }),
+  })
+
 const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
   const prev = raw.prev
   const testRunnerCapacity = prev.concurrency.testRunners + prev.concurrency.checkers
@@ -134,6 +141,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
   })
   const reporting = yield* MutationReporting
   const progressQueue = yield* RunEvents
+  const checkerHandle = Option.map(Option.fromNullishOr(checkers.resources), makeCheckerPoolHandle)
   const reuse = yield* readIncrementalReuse({
     project: prev.project,
     currentMutants: plannableMutants,
@@ -144,6 +152,10 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     globalTestInputs: prev.dryRunResult.globalTestInputs ?? [],
     observedModules: prev.dryRunResult.testFileModules,
     originalFileOf: (file) => originalFileFor(prev.sandbox, file),
+    programDigestOf: Option.match(checkerHandle, {
+      onNone: () => Effect.as(Effect.void, undefined),
+      onSome: (handle) => programDigestOf(handle),
+    }),
   })
   const rememberedResults = reuse.rememberedResults
   yield* Queue.offer(
@@ -171,7 +183,6 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     rememberedCount: rememberedResults.length,
     reporterStage: prev.reporterStage,
   })
-  const checkerHandle = Option.map(Option.fromNullishOr(checkers.resources), makeCheckerPoolHandle)
   const checkedPlans = checkPlansWithConfiguredCheckers(Option.getOrUndefined(checkerHandle), plan.runPlans)
   const completedRef = yield* Ref.make(0)
   const pathService = yield* Path.Path
@@ -258,6 +269,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     ...reportingInputOf({ prev, env, results: allResults }),
     closureDigestsByMutantId: reuse.closureDigestsByMutantId,
     timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
+    ...programDigestFieldOf(reuse.programDigest),
   })
   yield* Fiber.await(checkerRelease)
   const doneNow = yield* Clock.currentTimeMillis

@@ -5,6 +5,7 @@ export {
   BoundaryPayloadRejected,
   BoundaryUnrecognizedSignal,
   CheckerCheckResult,
+  CheckerDigestRequest,
   CheckerGroupResult,
   CheckerRequest,
   EvaluatorPluginKind,

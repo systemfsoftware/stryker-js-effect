@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
@@ -11,6 +13,7 @@ import * as HashMap from 'effect/HashMap'
 import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Order from 'effect/Order'
 import * as Path from 'effect/Path'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Result from 'effect/Result'
@@ -56,10 +59,12 @@ import {
 } from './classify-tce.workflow.js'
 import { type CompilerError, CompilerFailed, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
 import { groupMutants } from './group-mutants.workflow.js'
+import { identifyProgram as identifyProgramWorkflow, IdentifyProgramCommand } from './identify-program.workflow.js'
 import { overrideTsconfigOptions } from './override-tsconfig-options.workflow.js'
 import { parseTsconfigText } from './parse-tsconfig-text.workflow.js'
 import { planDiagnosticBatches } from './plan-diagnostic-batches.workflow.js'
 import { planResolutionCandidates } from './plan-resolution-candidates.workflow.js'
+import { type ProgramFile } from './program-digest.schema.js'
 import { requestAffectedFiles } from './request-affected-files.workflow.js'
 import { emitNormalized } from './tce-emit.js'
 import { traceAffectedFiles } from './trace-affected-files.workflow.js'
@@ -232,6 +237,80 @@ const readTypescriptVersion = Effect.fnUntraced(function*(rt: TSCompilerRuntime)
     onFailure: () => '',
     onSuccess: (pkg) => pkg.version,
   })
+})
+
+const readCheckerVersion = Effect.fnUntraced(function*(rt: TSCompilerRuntime) {
+  const packagePath = yield* rt.pathService.fromFileUrl(new URL('../package.json', import.meta.url))
+  const text = yield* rt.host.readFileString(packagePath).pipe(Effect.orElseSucceed(() => ''))
+  return Result.match(S.decodeResult(S.fromJsonString(S.Struct({ version: S.String })))(text), {
+    onFailure: () => '',
+    onSuccess: (pkg) => pkg.version,
+  })
+})
+
+const checkerOptionsJsonOf = (options: Options.StrykerOptions): Effect.Effect<string> =>
+  S.encodeEffect(S.fromJsonString(S.Json))(
+    Option.getOrElse(S.decodeUnknownOption(S.Json)(options['typescriptChecker']), () => ({})),
+  ).pipe(Effect.orDie)
+
+const readProgramFiles = (
+  rt: TSCompilerRuntime,
+  fileNames: readonly string[],
+): Effect.Effect<readonly ProgramFile[], CompilerError> =>
+  Effect.forEach(
+    fileNames,
+    (fileName): Effect.Effect<ProgramFile, CompilerError> =>
+      Effect.map(
+        Effect.mapError(
+          rt.host.readFileString(fileName),
+          () => CompilerFailed.make({ reason: 'program-digest-unavailable', subject: fileName }),
+        ),
+        (content): ProgramFile => ({ fileName, digest: sha256HexOf(content) }),
+      ),
+    { concurrency: 1 },
+  )
+
+const sortedSourceFileNamesOf = (programs: ReadonlyArray<Program>): Effect.Effect<readonly string[]> =>
+  Effect.map(
+    Effect.forEach(programs, (program) => Effect.promise(() => program.getSourceFileNames())),
+    (perProgram) => Arr.sort(Arr.dedupe(Arr.map(Arr.flatten(perProgram), normalizeFileName)), Order.String),
+  )
+
+const sha256HexOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
+
+const decidedProgramIdentity = (
+  command: IdentifyProgramCommand,
+): Effect.Effect<Checker.ProgramDigest, CompilerError> => {
+  const identity = decided(identifyProgramWorkflow(command))
+  return Match.value(identity).pipe(
+    Match.tag('ProgramIdentified', ({ key }) => Effect.succeed(Checker.ProgramDigest.make(sha256HexOf(key)))),
+    Match.tag(
+      'ProgramUnidentified',
+      ({ reason }) => Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: reason })),
+    ),
+    Match.exhaustive,
+  )
+}
+
+export const programDigest = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerProgramDigest.name)(function*(
+  self: TSCompiler,
+): Effect.fn.Return<Checker.ProgramDigest, CompilerError> {
+  const rt = runtimeOf(self)
+  const programs = yield* programsOf(rt)
+  const state = yield* SynchronizedRef.get(rt.state)
+  const typescriptVersion = yield* readTypescriptVersion(rt).pipe(Effect.orElseSucceed(() => ''))
+  const checkerVersion = yield* readCheckerVersion(rt).pipe(Effect.orElseSucceed(() => ''))
+  yield* Boolean.match(Boolean.or(typescriptVersion === '', checkerVersion === ''), {
+    onTrue: () =>
+      Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: 'toolchain version' })),
+    onFalse: () => Effect.void,
+  })
+  const checkerOptionsJson = yield* checkerOptionsJsonOf(rt.options)
+  const sourceFiles = yield* readProgramFiles(rt, yield* sortedSourceFileNamesOf(programs))
+  const tsconfigs = yield* readProgramFiles(rt, Arr.sort(Arr.fromIterable(state.allTSConfigFiles), Order.String))
+  return yield* decidedProgramIdentity(
+    IdentifyProgramCommand.make({ typescriptVersion, checkerVersion, checkerOptionsJson, sourceFiles, tsconfigs }),
+  )
 })
 
 const guardTypescriptVersion = (rt: TSCompilerRuntime): Effect.Effect<void, UnsupportedTypeScriptVersionError> =>

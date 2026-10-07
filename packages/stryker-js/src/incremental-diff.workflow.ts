@@ -33,6 +33,7 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
   runInputsDigest: S.String,
   force: S.Boolean,
   flakyMutantIds: S.String.pipe(S.Array, S.optional),
+  programDigest: S.optional(S.String),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     force: 'stryker.incremental_diff.force',
@@ -92,6 +93,8 @@ const timeoutEvidenceOf = (record: PreviousReuseRecord): Option.Option<TimeoutEv
 
 const digestOf = (digest: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(digest), () => '')
 
+const isCompileErrorRecord = (record: PreviousReuseRecord): boolean => record.status === 'CompileError'
+
 const cacheKeyOf = (mutantId: string, closureDigest: string | undefined, components: CacheKeyComponents): string =>
   [
     mutantId,
@@ -101,20 +104,46 @@ const cacheKeyOf = (mutantId: string, closureDigest: string | undefined, compone
     components.runInputsDigest,
   ].join('\u0000')
 
+const programKeyOf = (mutantId: string, programDigest: string | undefined, components: CacheKeyComponents): string =>
+  [
+    mutantId,
+    digestOf(programDigest),
+    String(components.verdictSemanticsVersion),
+    components.mutantSetPolicy,
+    components.runInputsDigest,
+  ].join('\u0000')
+
 const currentKeyOf = (command: IncrementalDiffCommand, mutantId: Mutant.MutantId): string =>
   cacheKeyOf(mutantId, command.closureDigestsByMutantId[mutantId], command)
+
+const matchingProgramKey = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
+  Boolean.and(
+    digestOf(record.programDigest) !== '',
+    programKeyOf(record.mutantId, record.programDigest, record) ===
+      programKeyOf(record.mutantId, command.programDigest, command),
+  )
 
 const matchingKey = (command: IncrementalDiffCommand, record: RememberedReuseRecord): boolean =>
   Boolean.and(
     Boolean.not(command.closureAnalysisFailed),
-    cacheKeyOf(record.mutantId, record.closureDigest, record) === currentKeyOf(command, record.mutantId),
+    Boolean.match(isCompileErrorRecord(record), {
+      onTrue: () => matchingProgramKey(command, record),
+      onFalse: () =>
+        cacheKeyOf(record.mutantId, record.closureDigest, record) === currentKeyOf(command, record.mutantId),
+    }),
   )
 
 const closureChanged = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
   Boolean.or(
     command.closureAnalysisFailed,
-    digestOf(record.closureDigest) !== digestOf(command.closureDigestsByMutantId[record.mutantId]),
+    Boolean.and(
+      Boolean.not(isCompileErrorRecord(record)),
+      digestOf(record.closureDigest) !== digestOf(command.closureDigestsByMutantId[record.mutantId]),
+    ),
   )
+
+const programChanged = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
+  Boolean.and(isCompileErrorRecord(record), Boolean.not(matchingProgramKey(command, record)))
 
 const reasonAfterClosure = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
   Boolean.match(closureChanged(command, record), {
@@ -129,7 +158,11 @@ const reasonAfterClosure = (command: IncrementalDiffCommand, record: PreviousReu
 const reasonAfterRunInputs = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
   Boolean.match(record.runInputsDigest !== command.runInputsDigest, {
     onTrue: (): ReuseRefusalReason => 'runInputsChanged',
-    onFalse: () => reasonAfterClosure(command, record),
+    onFalse: () =>
+      Boolean.match(programChanged(command, record), {
+        onTrue: (): ReuseRefusalReason => 'programChanged',
+        onFalse: () => reasonAfterClosure(command, record),
+      }),
   })
 
 const reasonAfterPolicy = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>

@@ -280,6 +280,10 @@
                     "type": "integer",
                     "minimum": 0
                   },
+                  "programChanged": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
                   "timeoutUnreproduced": {
                     "type": "integer",
                     "minimum": 0
@@ -298,6 +302,7 @@
                   "policyChanged",
                   "runInputsChanged",
                   "closureChanged",
+                  "programChanged",
                   "timeoutUnreproduced",
                   "flakyDependency",
                   "noPriorRecord"
@@ -776,6 +781,10 @@
               "type": "integer",
               "minimum": 0
             },
+            "programChanged": {
+              "type": "integer",
+              "minimum": 0
+            },
             "timeoutUnreproduced": {
               "type": "integer",
               "minimum": 0
@@ -794,6 +803,7 @@
             "policyChanged",
             "runInputsChanged",
             "closureChanged",
+            "programChanged",
             "timeoutUnreproduced",
             "flakyDependency",
             "noPriorRecord"

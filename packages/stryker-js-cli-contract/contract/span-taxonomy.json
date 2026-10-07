@@ -17,6 +17,15 @@
     "attributes": {}
   },
   {
+    "id": "stryker.checker.digest",
+    "name": "stryker.checker.digest",
+    "attributes": {
+      "stryker.checker.name": {
+        "type": "string"
+      }
+    }
+  },
+  {
     "id": "stryker.checker.group",
     "name": "stryker.checker.group",
     "attributes": {
@@ -41,6 +50,11 @@
   {
     "id": "stryker.checker_pool.check_plans",
     "name": "stryker.checker_pool.check_plans",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.checker_pool.program_digest",
+    "name": "stryker.checker_pool.program_digest",
     "attributes": {}
   },
   {
@@ -658,6 +672,15 @@
     "attributes": {}
   },
   {
+    "id": "rpc.digest",
+    "name": "rpc.digest",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
     "id": "rpc.dryRun",
     "name": "rpc.dryRun",
     "attributes": {
@@ -1057,6 +1080,11 @@
   {
     "id": "typescript-checker.compiler.nodes",
     "name": "typescript-checker.compiler.nodes",
+    "attributes": {}
+  },
+  {
+    "id": "typescript-checker.compiler.programDigest",
+    "name": "typescript-checker.compiler.programDigest",
     "attributes": {}
   },
   {
