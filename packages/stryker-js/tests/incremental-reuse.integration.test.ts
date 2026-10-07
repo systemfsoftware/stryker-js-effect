@@ -37,6 +37,7 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 interface RecordedMutant {
   readonly id: string
   readonly status: string
+  readonly statusReason?: string | undefined
 }
 
 const mutantsOf = (text: string): readonly RecordedMutant[] =>
@@ -275,6 +276,56 @@ const VM_ADDING_TEST = [
   '})',
   '',
 ].join('\n')
+
+const VM_REACH_LEFT_SOURCE = [
+  "import { offset } from './left-helper.mjs'",
+  '',
+  'export const base = 1 + 1',
+  'export const shifted = () => base + offset()',
+  '',
+].join('\n')
+
+const VM_REACH_LEFT_HELPER_SOURCE = 'export const offset = () => 0\n'
+
+const VM_REACH_LEFT_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { base } from '../src/left.mjs'",
+  '',
+  "test('the module-level base is two', () => {",
+  '  expect(base).toBe(2)',
+  '})',
+  '',
+].join('\n')
+
+const VM_REACH_RIGHT_SOURCE = [
+  'export function label() {',
+  "  return 'left' + 'right'",
+  '}',
+  '',
+].join('\n')
+
+const VM_REACH_RIGHT_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { label } from '../src/right.mjs'",
+  '',
+  "test('labels', () => {",
+  "  expect(label()).toBe('leftright')",
+  '})',
+  '',
+].join('\n')
+
+const VM_REACH_LOADER_TEST = [
+  "import { expect, test } from 'vitest'",
+  '',
+  'const load = (name) => import(name)',
+  '',
+  "test('exposes a loader whose specifier cannot be traced', () => {",
+  "  expect(typeof load).toBe('function')",
+  '})',
+  '',
+].join('\n')
+
+const VM_UNREACHED_SOURCE = 'export const untouched = () => 0\n'
 
 const writeVmFixture = (
   files: ReadonlyArray<readonly [string, string]>,
@@ -893,6 +944,154 @@ Feature('Content-keyed reuse across incremental reports')
             runSucceeded: Exit.isSuccess(s.fixture.first.exit) && Exit.isSuccess(s.fixture.second.exit),
             measured: newTestOutcomeOf(s.fixture),
           }).toEqual({ runSucceeded: true, measured: NEW_TEST_MEASURED })
+        ),
+      ),
+    )
+
+    scenario(
+      'A module-level mutant keeps its verdict while an edit stays outside every test closure',
+      Gherkin.Do.pipe(
+        Given('a workspace whose module-level mutant sits beside a source file no test imports')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeVmFixture([
+                ['package.json', '{ "type": "module" }\n'],
+                ['src/left.mjs', VM_REACH_LEFT_SOURCE],
+                ['src/left-helper.mjs', VM_REACH_LEFT_HELPER_SOURCE],
+                ['src/right.mjs', VM_REACH_RIGHT_SOURCE],
+                ['src/unreached.mjs', VM_UNREACHED_SOURCE],
+                ['test/left.test.mjs', VM_REACH_LEFT_TEST],
+                ['test/right.test.mjs', VM_REACH_RIGHT_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root, { mutate: ['src/**/*.mjs'] })
+                  const first = yield* runOnce(root, options)
+                  yield* fs.writeFileString(
+                    path.join(root, 'src', 'unreached.mjs'),
+                    `${VM_UNREACHED_SOURCE}// an edit no test closure reaches\n`,
+                  )
+                  const afterUnrelatedEdit = yield* runOnce(root, options)
+                  yield* fs.writeFileString(
+                    path.join(root, 'src', 'left-helper.mjs'),
+                    `${VM_REACH_LEFT_HELPER_SOURCE}// an edit inside the reaching closure\n`,
+                  )
+                  const afterReachingEdit = yield* runOnce(root, options)
+                  return { first, afterUnrelatedEdit, afterReachingEdit }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the module-level mutants survive the unreached edit and re-run when their reaching closure changes')(
+          (s, expect) => {
+            const firstReport = reusableReportOf(s.fixture.first.incrementalText)
+            const staticIds = firstReport === undefined ? new Set<string>() : staticIdsOf(firstReport)
+            const leftStaticIds = firstReport === undefined
+              ? []
+              : mutantIdsInOf(firstReport, 'src/left.mjs').filter((id) => staticIds.has(id))
+            const reusedIdsOf = (observation: RunObservation): ReadonlySet<string> =>
+              new Set(
+                observation.mutants
+                  .filter((mutant) => mutant.statusReason === 'Remembered')
+                  .map((mutant) => mutant.id),
+              )
+            const firstStatuses = statusMapOf(s.fixture.first.mutants)
+            const unrelatedReused = reusedIdsOf(s.fixture.afterUnrelatedEdit)
+            const unrelatedStatuses = statusMapOf(s.fixture.afterUnrelatedEdit.mutants)
+            const reachingReused = reusedIdsOf(s.fixture.afterReachingEdit)
+            const reachingStatuses = statusMapOf(s.fixture.afterReachingEdit.mutants)
+            return expect({
+              runSucceeded: [s.fixture.first, s.fixture.afterUnrelatedEdit, s.fixture.afterReachingEdit]
+                .every((observation) => Exit.isSuccess(observation.exit)),
+              leftStaticMutantsPositive: leftStaticIds.length > 0,
+              keptOnUnreachedEdit: leftStaticIds.length > 0 &&
+                leftStaticIds.every((id) =>
+                  unrelatedReused.has(id) && unrelatedStatuses.get(id) === firstStatuses.get(id)
+                ),
+              reranOnReachingEdit: leftStaticIds.length > 0 &&
+                leftStaticIds.every((id) =>
+                  !reachingReused.has(id) && reachingStatuses.get(id) === firstStatuses.get(id)
+                ),
+            }).toEqual({
+              runSucceeded: true,
+              leftStaticMutantsPositive: true,
+              keptOnUnreachedEdit: true,
+              reranOnReachingEdit: true,
+            })
+          },
+        ),
+      ),
+    )
+
+    scenario(
+      'An edit outside every closed closure re-runs a module-level mutant when a test file cannot trace all of its imports',
+      Gherkin.Do.pipe(
+        Given('a workspace whose untraceable loader test sits beside two independent source and test pairs')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeVmFixture([
+                ['package.json', '{ "type": "module" }\n'],
+                ['src/left.mjs', VM_REACH_LEFT_SOURCE],
+                ['src/left-helper.mjs', VM_REACH_LEFT_HELPER_SOURCE],
+                ['src/right.mjs', VM_REACH_RIGHT_SOURCE],
+                ['src/unreached.mjs', VM_UNREACHED_SOURCE],
+                ['test/left.test.mjs', VM_REACH_LEFT_TEST],
+                ['test/right.test.mjs', VM_REACH_RIGHT_TEST],
+                ['test/loader.test.mjs', VM_REACH_LOADER_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root, { mutate: ['src/**/*.mjs'] })
+                  const first = yield* runOnce(root, options)
+                  yield* fs.writeFileString(
+                    path.join(root, 'src', 'unreached.mjs'),
+                    `${VM_UNREACHED_SOURCE}// an edit no closed closure reaches\n`,
+                  )
+                  const afterUnrelatedEdit = yield* runOnce(root, options)
+                  return { first, afterUnrelatedEdit }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the module-level mutants re-run because the untraceable test could load their file')(
+          (s, expect) => {
+            const firstReport = reusableReportOf(s.fixture.first.incrementalText)
+            const staticIds = firstReport === undefined ? new Set<string>() : staticIdsOf(firstReport)
+            const leftStaticIds = firstReport === undefined
+              ? []
+              : mutantIdsInOf(firstReport, 'src/left.mjs').filter((id) => staticIds.has(id))
+            const reusedIdsOf = (observation: RunObservation): ReadonlySet<string> =>
+              new Set(
+                observation.mutants
+                  .filter((mutant) => mutant.statusReason === 'Remembered')
+                  .map((mutant) => mutant.id),
+              )
+            const firstStatuses = statusMapOf(s.fixture.first.mutants)
+            const reusedAfterUnrelatedEdit = reusedIdsOf(s.fixture.afterUnrelatedEdit)
+            const statusesAfterUnrelatedEdit = statusMapOf(s.fixture.afterUnrelatedEdit.mutants)
+            return expect({
+              runSucceeded: Exit.isSuccess(s.fixture.first.exit) &&
+                Exit.isSuccess(s.fixture.afterUnrelatedEdit.exit),
+              leftStaticMutantsPositive: leftStaticIds.length > 0,
+              reranOnUnrelatedEdit: leftStaticIds.length > 0 &&
+                leftStaticIds.every((id) =>
+                  !reusedAfterUnrelatedEdit.has(id) &&
+                  statusesAfterUnrelatedEdit.get(id) === firstStatuses.get(id)
+                ),
+            }).toEqual({
+              runSucceeded: true,
+              leftStaticMutantsPositive: true,
+              reranOnUnrelatedEdit: true,
+            })
+          },
         ),
       ),
     )
