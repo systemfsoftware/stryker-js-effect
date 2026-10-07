@@ -4,6 +4,7 @@ import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-g
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
@@ -131,11 +132,15 @@ const appendComment = (directory: string, file: string): Effect.Effect<void, nev
     yield* fs.writeFileString(`${directory}/${file}`, `${text}// edited between runs\n`)
   }).pipe(Effect.orDie, Effect.provide(FILE_AND_PATH))
 
-const digestOf = (directory: string): Effect.Effect<string, never, never> =>
+const digestOf = (
+  directory: string,
+  checkerOptions?: Readonly<Record<string, unknown>>,
+): Effect.Effect<string, never, never> =>
   Effect.gen(function*() {
     const pathService = yield* Path.Path
     const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({
       tsconfigFile: pathService.join(directory, TSCONFIG_FILE),
+      ...(checkerOptions === undefined ? {} : { typescriptChecker: checkerOptions }),
     })
     return yield* Effect.gen(function*() {
       const runtime = yield* CheckerRuntime
@@ -143,6 +148,12 @@ const digestOf = (directory: string): Effect.Effect<string, never, never> =>
       return String(yield* Effect.orDie(checker.digest))
     }).pipe(Effect.provide(CheckerRuntime.layer(options)))
   }).pipe(Effect.orDie, Effect.provide(FILE_PORTS))
+
+const digestOutcomeOf = (
+  directory: string,
+  checkerOptions?: Readonly<Record<string, unknown>>,
+): Effect.Effect<Exit.Exit<string, never>, never, never> =>
+  Effect.exit(digestOf(directory, checkerOptions).pipe(Effect.provide(FILE_PORTS)))
 
 const DIGEST_SHAPE = /^[0-9a-f]{64}$/u
 
@@ -320,6 +331,42 @@ Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_00
         Then('both copies have the same digest')((s, expect) =>
           expect({ equal: s.observed.firstDigest === s.observed.secondDigest }).toEqual({ equal: true })
         ),
+      ),
+    )
+
+    scenario(
+      'the same checker options in a different key order keep one digest',
+      Gherkin.Do.pipe(
+        Given('one program digested with semantically equal checker options')(
+          'observed',
+          () =>
+            withWorkspace((workspace) =>
+              Effect.gen(function*() {
+                const first = yield* digestOf(workspace.directory, { alpha: 1, beta: 2 })
+                const second = yield* digestOf(workspace.directory, { beta: 2, alpha: 1 })
+                return { first, second }
+              })
+            ),
+        ),
+        Then('both digests are the same')((s, expect) =>
+          expect({ equal: s.observed.first === s.observed.second }).toEqual({ equal: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'checker options that cannot be encoded yield no digest',
+      Gherkin.Do.pipe(
+        Given('a program digested with a checker option that is not JSON')(
+          'observed',
+          () =>
+            withWorkspace((workspace) =>
+              Effect.map(digestOutcomeOf(workspace.directory, { probe: () => 1 }), (outcome) => ({
+                failed: Exit.isFailure(outcome),
+              }))
+            ),
+        ),
+        Then('the digest request fails')((s, expect) => expect(s.observed).toEqual({ failed: true })),
       ),
     )
   })

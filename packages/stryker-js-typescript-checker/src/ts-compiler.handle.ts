@@ -248,10 +248,33 @@ const readCheckerVersion = Effect.fnUntraced(function*(rt: TSCompilerRuntime) {
   })
 })
 
-const checkerOptionsJsonOf = (options: Options.StrykerOptions): Effect.Effect<string> =>
-  S.encodeEffect(S.fromJsonString(S.Json))(
-    Option.getOrElse(S.decodeUnknownOption(S.Json)(options['typescriptChecker']), () => ({})),
-  ).pipe(Effect.orDie)
+type JsonValue = S.Schema.Type<typeof S.Json>
+
+const isJsonObject = (value: JsonValue): value is Record<string, JsonValue> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const canonicalJsonOf = (value: JsonValue): string =>
+  Array.isArray(value)
+    ? `[${value.map(canonicalJsonOf).join(',')}]`
+    : isJsonObject(value)
+    ? `{${
+      Object.keys(value)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${canonicalJsonOf(value[key] as JsonValue)}`)
+        .join(',')
+    }}`
+    : JSON.stringify(value)
+
+const checkerOptionsJsonOf = (options: Options.StrykerOptions): Effect.Effect<string, CompilerError> =>
+  Option.match(Option.fromUndefinedOr(options['typescriptChecker']), {
+    onNone: () => Effect.succeed('{}'),
+    onSome: (configured) =>
+      Result.match(S.decodeUnknownResult(S.Json)(configured), {
+        onFailure: () =>
+          Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: 'checker options' })),
+        onSuccess: (value) => Effect.succeed(canonicalJsonOf(value)),
+      }),
+  })
 
 const readProgramFiles = (
   rt: TSCompilerRuntime,
