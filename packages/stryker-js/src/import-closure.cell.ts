@@ -409,17 +409,12 @@ const packageNameOf = (specifier: string): string => {
 
 const subpathOf = (specifier: string): string => specifier.slice(packageNameOf(specifier).length + 1)
 
-const directoryChainOf = (fromDirectory: string): readonly string[] => {
-  const parts = fromDirectory.split('/').filter((part) => part.length > 0)
-  return [...parts.map((_, index) => parts.slice(0, index + 1).join('/')), '']
-}
+const ancestorsOf = (path: Path.Path, directory: string): readonly string[] =>
+  path.dirname(directory) === directory ? [directory] : [directory, ...ancestorsOf(path, path.dirname(directory))]
 
-const packageCandidateOf = (directory: string, packageName: string): string =>
-  `${directory.length === 0 ? '' : `${directory}/`}node_modules/${packageName}`
-
-const packageCandidatesOf = (input: ResolveInput): readonly string[] =>
-  directoryChainOf(directoryOf(input.key)).map((directory) =>
-    packageCandidateOf(directory, packageNameOf(input.specifier))
+const packageCandidatesOf = (path: Path.Path, input: ResolveInput): readonly string[] =>
+  ancestorsOf(path, path.resolve(input.realRoot, directoryOf(input.key))).map((directory) =>
+    path.join(directory, 'node_modules', packageNameOf(input.specifier))
   )
 
 const existingFlagsOf = Effect.fnUntraced(function*(realRoot: string, candidates: readonly string[]) {
@@ -429,7 +424,7 @@ const existingFlagsOf = Effect.fnUntraced(function*(realRoot: string, candidates
 })
 
 const packageDirectoryOf = Effect.fnUntraced(function*(input: ResolveInput) {
-  const candidates = packageCandidatesOf(input)
+  const candidates = packageCandidatesOf(yield* Path.Path, input)
   const flags = yield* existingFlagsOf(input.realRoot, candidates)
   return firstFlaggedOf(candidates, flags)
 })

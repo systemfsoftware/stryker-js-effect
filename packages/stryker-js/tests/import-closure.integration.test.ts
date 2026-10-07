@@ -217,6 +217,35 @@ const WORKSPACE_LINK: FixtureSpec = {
 const vitestStubAt = (prefix: string): FixtureFiles =>
   Object.fromEntries(Object.entries(VITEST_STUB).map(([file, content]) => [`${prefix}/${file}`, content]))
 
+const SIBLING_LINK: FixtureSpec = {
+  files: {
+    ...vitestStubAt('app'),
+    'app/src/app.ts': "import { sibling } from '@fixture/sibling'\nexport const app = sibling\n",
+    'app/test/sibling.test.ts':
+      "import { test } from 'vitest'\nimport { app } from '../src/app.js'\ntest('app', () => { app })\n",
+    'sibling/package.json':
+      '{"name":"@fixture/sibling","exports":{".":{"@systemfsoftware/source":"./src/index.ts","default":"./dist/index.js"}}}',
+    'sibling/src/index.ts': "import { own } from 'sibling-only'\nexport const sibling = own\n",
+    'sibling/node_modules/sibling-only/package.json': '{"name":"sibling-only","main":"index.js"}',
+    'sibling/node_modules/sibling-only/index.js': 'export const own = 1\n',
+  },
+  links: { 'app/node_modules/@fixture/sibling': 'sibling' },
+  testFiles: ['test/sibling.test.ts'],
+}
+
+const observeSibling = (
+  root: string,
+): Effect.Effect<ImportClosureAnalysis, PlatformError, FileSystem.FileSystem | Path.Path> =>
+  Path.Path.pipe(
+    Effect.flatMap((path) =>
+      analyzeImportClosure({
+        rootDir: path.join(root, 'app'),
+        projectFiles: ['src/app.ts', 'test/sibling.test.ts'],
+        testFiles: [path.join(root, 'app', 'test/sibling.test.ts')],
+      })
+    ),
+  )
+
 const EXTERNAL_GLOBAL_INPUT: FixtureSpec = {
   files: {
     'node_modules/@fixture/guard/package.json': '{"name":"@fixture/guard","type":"module"}',
@@ -485,6 +514,29 @@ Feature('Mapping a test file to the import closure it can reach')
               open: openOf(s.observation.before, 'test/link.test.ts'),
             }).toEqual({ sourceConditionLink: true, mainFieldLink: true, outsideNodeModules: true, open: false })
           },
+        ),
+      ),
+    )
+
+    scenario(
+      'A linked package outside the project resolves its imports from its own node_modules',
+      Gherkin.Do.pipe(
+        Given('a project linking a sibling workspace package whose source imports a package only it installs')(
+          'root',
+          () => writeFixture(SIBLING_LINK),
+        ),
+        When('the closure of the project test file is analyzed')(
+          'analysis',
+          (s) => observeSibling(s.root).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the sibling source is listed and its installed import keeps the closure closed')(
+          (s, expect) =>
+            expect({
+              siblingListed: filesOf(s.analysis, 'test/sibling.test.ts').some((file) =>
+                file.endsWith('sibling/src/index.ts')
+              ),
+              open: openOf(s.analysis, 'test/sibling.test.ts'),
+            }).toEqual({ siblingListed: true, open: false }),
         ),
       ),
     )
