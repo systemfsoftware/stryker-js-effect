@@ -46,7 +46,7 @@ import { TimeoutEvidenceSchema } from './IncrementalDiff.schema.js'
 import { mutantCostsOf } from './mutant-cost-model.js'
 import { costTotalMsOf } from './mutant-cost.js'
 import type { MutantCost, MutantCostModel } from './MutantCost.schema.js'
-import { ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
+import { IncrementalReportObjectSchema, ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js'
 import type { Project, ProjectFile } from './Project.schema.js'
@@ -149,6 +149,7 @@ export interface MutationReportingService {
     input: MutationReportingInput,
     plannedMutants: readonly Mutant.Mutant[],
   ) => Effect.Effect<void, PlatformError>
+  readonly publishDryRunCoverage: (input: MutationReportingInput) => Effect.Effect<void, PlatformError>
 }
 
 export class MutationReporting extends Context.Service<MutationReporting, MutationReportingService>()(
@@ -174,6 +175,7 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
         reportMutantRunResult: (mutant, result) => mapRunResult(mutant, result),
         reportAll: (input) => reportAll(deps, input),
         checkpoint: (input, plannedMutants) => checkpoint(deps, input, plannedMutants),
+        publishDryRunCoverage: (input) => publishDryRunCoverage(deps, input),
       })
     }),
   )
@@ -995,6 +997,40 @@ const checkpoint = (
     onTrue: () => checkpointIncremental(deps, input, plannedMutants),
     onFalse: () => Effect.void,
   })
+
+const priorIncrementalObjectOf = (text: string): Option.Option<typeof IncrementalReportObjectSchema.Type> =>
+  S.decodeOption(S.fromJsonString(IncrementalReportObjectSchema))(text)
+
+const dryRunCoverageReportOf = Effect.fnUntraced(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  coverage: DryRunCoverage,
+) {
+  const prior = yield* deps.fs.readFileString(input.options.incrementalFile).pipe(Effect.option)
+  return yield* Option.match(Option.flatMap(prior, priorIncrementalObjectOf), {
+    onSome: (report) => Effect.succeed({ ...report, dryRunCoverage: coverage }),
+    onNone: () => slimIncrementalReport(deps, input, []),
+  })
+})
+
+const writeDryRunCoverage = Effect.fnUntraced(function*(
+  deps: MutationReportingDeps,
+  input: MutationReportingInput,
+  coverage: DryRunCoverage,
+) {
+  const report = yield* dryRunCoverageReportOf(deps, input, coverage)
+  const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(report).pipe(Effect.orDie)
+  yield* writeFileAtomic(deps, input.options.incrementalFile, json)
+})
+
+const publishDryRunCoverage = (deps: MutationReportingDeps, input: MutationReportingInput) =>
+  Option.match(
+    Option.filter(Option.fromUndefinedOr(input.testCoverage.dryRunCoverage), () => input.options.incremental),
+    {
+      onNone: () => Effect.void,
+      onSome: (coverage) => writeDryRunCoverage(deps, input, coverage),
+    },
+  )
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
