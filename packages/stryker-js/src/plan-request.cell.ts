@@ -186,6 +186,7 @@ const planProject = (
       globalTestInputs: Option.map(coverage, (present) => [...present.globalTestInputs]).pipe(
         Option.getOrElse((): ReadonlyArray<string> => []),
       ),
+      observedModules: Option.getOrUndefined(Option.map(coverage, (present) => present.testFileModules)),
       originalFileOf: (file) => path.resolve(file),
     })
     const mutants = [

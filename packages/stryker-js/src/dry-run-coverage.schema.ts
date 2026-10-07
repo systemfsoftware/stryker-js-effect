@@ -5,6 +5,7 @@ export const DryRunCoverageSchema = S.Struct({
   tests: S.Array(TestRunner.TestResultSchema),
   mutantCoverage: S.optional(Mutant.MutantCoverageSchema),
   globalTestInputs: S.Array(S.String),
+  testFileModules: S.optionalKey(S.Record(S.String, S.Array(S.String))),
   timeOverheadMs: S.Finite,
   flakyTestIds: S.Array(S.String),
   flakyMutantIds: S.Array(S.String),

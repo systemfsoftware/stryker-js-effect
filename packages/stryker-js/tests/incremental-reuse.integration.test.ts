@@ -319,8 +319,49 @@ const VM_REACH_LOADER_TEST = [
   '',
   'const load = (name) => import(name)',
   '',
-  "test('exposes a loader whose specifier cannot be traced', () => {",
-  "  expect(typeof load).toBe('function')",
+  "test('loads a module whose address only exists at runtime', async () => {",
+  "  const loaded = await load('data:text/javascript,export default 1')",
+  '  expect(loaded.default).toBe(1)',
+  '})',
+  '',
+].join('\n')
+
+const VM_WIRE_LEFT_SOURCE = [
+  'export const base = 1 + 1',
+  'export const add = (left, right) => left + right',
+  '',
+].join('\n')
+
+const VM_WIRE_PLUGIN_SOURCE = 'export const plugin = 1\n'
+
+const VM_WIRE_UNRELATED_SOURCE = 'export const untouched = () => 0\n'
+
+const VM_WIRE_LOADER_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { add, base } from '../src/left.mjs'",
+  '',
+  'const load = (name) => import(name)',
+  '',
+  "test('the module-level base is two and the runtime plugin loads', async () => {",
+  '  expect(base).toBe(2)',
+  '  expect(add(1, 2)).toBe(3)',
+  "  const plugin = await load(new URL('../src/plugin.mjs', import.meta.url).href)",
+  '  expect(plugin.plugin).toBe(1)',
+  '})',
+  '',
+].join('\n')
+
+const VM_WIRE_DATA_LOADER_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { add, base } from '../src/left.mjs'",
+  '',
+  'const load = (name) => import(name)',
+  '',
+  "test('the module-level base is two and the runtime module loads', async () => {",
+  '  expect(base).toBe(2)',
+  '  expect(add(1, 2)).toBe(3)',
+  "  const loaded = await load('data:text/javascript,export default 1')",
+  '  expect(loaded.default).toBe(1)',
   '})',
   '',
 ].join('\n')
@@ -1092,6 +1133,116 @@ Feature('Content-keyed reuse across incremental reports')
               reranOnUnrelatedEdit: true,
             })
           },
+        ),
+      ),
+    )
+
+    const wireObservationOf = (
+      loaderTest: string,
+      edit: 'plugin' | 'unrelated',
+    ): Effect.Effect<ReuseVariation, never, never> =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        const root = yield* writeVmFixture([
+          ['package.json', '{ "type": "module" }\n'],
+          ['src/left.mjs', VM_WIRE_LEFT_SOURCE],
+          ['src/plugin.mjs', VM_WIRE_PLUGIN_SOURCE],
+          ['src/unrelated.mjs', VM_WIRE_UNRELATED_SOURCE],
+          ['test/loader.test.mjs', loaderTest],
+        ]).pipe(Effect.orDie)
+        return yield* Effect.ensuring(
+          Effect.gen(function*() {
+            const options = vmOptionsOf(root, { mutate: ['src/**/*.mjs'] })
+            const first = yield* runOnce(root, options)
+            if (edit === 'plugin') {
+              yield* fs.writeFileString(
+                path.join(root, 'src', 'plugin.mjs'),
+                `${VM_WIRE_PLUGIN_SOURCE}// a changed plugin\n`,
+              )
+            } else {
+              yield* fs.writeFileString(
+                path.join(root, 'src', 'unrelated.mjs'),
+                `${VM_WIRE_UNRELATED_SOURCE}// an edit no closure reaches\n`,
+              )
+            }
+            const second = yield* runOnce(root, options)
+            return { first, second }
+          }),
+          removeFixture(root),
+        )
+      }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+    const leftMutantVerdictOf = (variation: ReuseVariation) => {
+      const firstReport = reusableReportOf(variation.first.incrementalText)
+      const leftIds = firstReport === undefined ? [] : mutantIdsInOf(firstReport, 'src/left.mjs')
+      const reusedIds = new Set(
+        variation.second.mutants
+          .filter((mutant) => mutant.statusReason === 'Remembered')
+          .map((mutant) => mutant.id),
+      )
+      const firstStatuses = statusMapOf(variation.first.mutants)
+      const secondStatuses = statusMapOf(variation.second.mutants)
+      return {
+        runSucceeded: Exit.isSuccess(variation.first.exit) && Exit.isSuccess(variation.second.exit),
+        leftMutantsPositive: leftIds.length > 0,
+        kept: leftIds.length > 0 &&
+          leftIds.every((id) => reusedIds.has(id) && secondStatuses.get(id) === firstStatuses.get(id)),
+        reran: leftIds.length > 0 &&
+          leftIds.every((id) => !reusedIds.has(id) && secondStatuses.get(id) === firstStatuses.get(id)),
+      }
+    }
+
+    scenario(
+      'A runtime module a test file loads keeps the closure closed around an unreached edit',
+      Gherkin.Do.pipe(
+        Given('a workspace whose loader test imports its source statically and a plugin at runtime')(
+          'variation',
+          () => wireObservationOf(VM_WIRE_LOADER_TEST, 'unrelated'),
+        ),
+        Then('the mutants covered by that test file are remembered across the unreached edit')((s, expect) =>
+          expect(leftMutantVerdictOf(s.variation)).toEqual({
+            runSucceeded: true,
+            leftMutantsPositive: true,
+            kept: true,
+            reran: false,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A change to the runtime module a test file loads re-runs the mutants it covers',
+      Gherkin.Do.pipe(
+        Given('a workspace whose loader test imports its source statically and a plugin at runtime')(
+          'variation',
+          () => wireObservationOf(VM_WIRE_LOADER_TEST, 'plugin'),
+        ),
+        Then('the mutants covered by that test file re-run when its runtime target changes')((s, expect) =>
+          expect(leftMutantVerdictOf(s.variation)).toEqual({
+            runSucceeded: true,
+            leftMutantsPositive: true,
+            kept: false,
+            reran: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A runtime module behind a data url keeps the closure open around an unreached edit',
+      Gherkin.Do.pipe(
+        Given('a workspace whose loader test loads a module addressed by a data url')(
+          'variation',
+          () => wireObservationOf(VM_WIRE_DATA_LOADER_TEST, 'unrelated'),
+        ),
+        Then('the mutants covered by that test file re-run because the closure stayed open')((s, expect) =>
+          expect(leftMutantVerdictOf(s.variation)).toEqual({
+            runSucceeded: true,
+            leftMutantsPositive: true,
+            kept: false,
+            reran: true,
+          })
         ),
       ),
     )

@@ -302,6 +302,7 @@ const closureAnalysisOf = (
       projectFiles: Arr.dedupe([...MutableHashMap.keys(input.project.files), ...input.project.testFiles]),
       testFiles: closureTestFilesOf(input),
       globalInputs: input.globalTestInputs.map((file) => input.originalFileOf(file)),
+      ...(input.observedModules === undefined ? {} : { observedModules: input.observedModules }),
     }).pipe(
       Effect.tapCause((cause: Cause.Cause<PlatformError>) =>
         Effect.logWarning(
@@ -492,6 +493,7 @@ export interface IncrementalReuseInput {
   readonly force: boolean
   readonly options: Options.StrykerOptions
   readonly globalTestInputs: readonly string[]
+  readonly observedModules: Readonly<Record<string, readonly string[]>> | undefined
   readonly originalFileOf: (file: string) => string
 }
 

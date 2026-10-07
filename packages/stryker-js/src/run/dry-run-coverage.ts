@@ -6,6 +6,11 @@ import * as Option from 'effect/Option'
 import type { DryRunCoverage } from '../dry-run-coverage.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 
+export const testFileModulesFieldOf = (
+  modules: Readonly<Record<string, readonly string[]>> | undefined,
+): { readonly testFileModules?: Readonly<Record<string, readonly string[]>> } =>
+  modules === undefined ? {} : { testFileModules: modules }
+
 const testsByIdOf = (result: Readonly<TestRunner.CompleteDryRunResult>) =>
   MutableHashMap.fromIterable(result.tests.map((test) => [test.id, test] as const))
 
@@ -85,6 +90,7 @@ export const reusedTestCoverage = (coverage: DryRunCoverage): TestCoverage =>
       status: 'complete',
       tests: [...coverage.tests],
       globalTestInputs: [...coverage.globalTestInputs],
+      ...testFileModulesFieldOf(coverage.testFileModules),
       ...(coverage.mutantCoverage === undefined ? {} : { mutantCoverage: coverage.mutantCoverage }),
     },
     dryRunCoverage: coverage,

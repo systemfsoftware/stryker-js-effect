@@ -126,6 +126,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     force: prev.options.force,
     options: prev.options,
     globalTestInputs: prev.dryRunResult.globalTestInputs ?? [],
+    observedModules: prev.dryRunResult.testFileModules,
     originalFileOf: (file) => originalFileFor(prev.sandbox, file),
   })
   const rememberedResults = reuse.rememberedResults
