@@ -3,6 +3,7 @@ import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import { dual } from 'effect/Function'
@@ -36,6 +37,7 @@ export interface CheckedPlans {
   readonly passedPlans: readonly Mutant.MutantRunPlan[]
   readonly failedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[]
   readonly ignoredChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.IgnoredCheckResult])[]
+  readonly checkMsByMutantId: Readonly<Record<string, number>>
 }
 
 const CheckerPoolHandle = Handle.make<Record<never, never>, CheckerPool>()(TypeId)
@@ -112,6 +114,28 @@ const noFailedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCh
 
 const noIgnoredChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.IgnoredCheckResult])[] = []
 
+const noCheckMs: Readonly<Record<string, number>> = {}
+
+const checkMsOf = (checkMsByMutantId: Readonly<Record<string, number>>, mutantId: string): number =>
+  Option.getOrElse(Option.fromUndefinedOr(checkMsByMutantId[mutantId]), () => 0)
+
+const chargedWith = (
+  carried: Readonly<Record<string, number>>,
+  group: readonly Mutant.MutantRunPlan[],
+  elapsedMs: number,
+): Readonly<Record<string, number>> => {
+  if (group.length === 0) {
+    return carried
+  }
+  const shareMs = elapsedMs / group.length
+  return {
+    ...carried,
+    ...Object.fromEntries(
+      group.map((plan) => [plan.mutant.id, checkMsOf(carried, plan.mutant.id) + shareMs] as const),
+    ),
+  }
+}
+
 export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitChecked.name)(function*(
   checked: readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResult])[],
 ) {
@@ -146,7 +170,7 @@ export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitCh
           ),
       }),
   )
-  return { passedPlans, failedChecks, ignoredChecks }
+  return { passedPlans, failedChecks, ignoredChecks } satisfies Omit<CheckedPlans, 'checkMsByMutantId'>
 })
 
 const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], StageError | CheckerCrash> =>
@@ -154,20 +178,32 @@ const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], Sta
 
 const failedElement = (
   failedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[],
+  checkMsByMutantId: Readonly<Record<string, number>>,
 ): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
   Option.match(Array.head(failedChecks), {
     onNone: () => Stream.empty,
     onSome: () =>
-      Stream.succeed<CheckedPlans>({ passedPlans: noPassedPlans, failedChecks, ignoredChecks: noIgnoredChecks }),
+      Stream.succeed<CheckedPlans>({
+        passedPlans: noPassedPlans,
+        failedChecks,
+        ignoredChecks: noIgnoredChecks,
+        checkMsByMutantId,
+      }),
   })
 
 const ignoredElement = (
   ignoredChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.IgnoredCheckResult])[],
+  checkMsByMutantId: Readonly<Record<string, number>>,
 ): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
   Option.match(Array.head(ignoredChecks), {
     onNone: () => Stream.empty,
     onSome: () =>
-      Stream.succeed<CheckedPlans>({ passedPlans: noPassedPlans, failedChecks: noFailedChecks, ignoredChecks }),
+      Stream.succeed<CheckedPlans>({
+        passedPlans: noPassedPlans,
+        failedChecks: noFailedChecks,
+        ignoredChecks,
+        checkMsByMutantId,
+      }),
   })
 
 const checkedGroupsFor = (
@@ -175,6 +211,7 @@ const checkedGroupsFor = (
   checkerNames: readonly string[],
   checkerIndex: number,
   plans: readonly Mutant.MutantRunPlan[],
+  carried: Readonly<Record<string, number>>,
 ): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
   Option.match(Array.get(checkerNames, checkerIndex), {
     onNone: () =>
@@ -182,6 +219,7 @@ const checkedGroupsFor = (
         passedPlans: plans,
         failedChecks: noFailedChecks,
         ignoredChecks: noIgnoredChecks,
+        checkMsByMutantId: carried,
       }),
     onSome: (checkerName) =>
       Stream.unwrap(
@@ -190,18 +228,26 @@ const checkedGroupsFor = (
             Stream.fromIterable(groups).pipe(
               Stream.mapEffect(
                 (group) =>
-                  onCheckerSlot(pool, checkerIndex, (checker) => checkPlansWithChecker(checker, checkerName, group))
-                    .pipe(
-                      Effect.flatMap((checked) => splitCheckedPlans(checked)),
-                    ),
+                  onCheckerSlot(pool, checkerIndex, (checker) =>
+                    Effect.timed(checkPlansWithChecker(checker, checkerName, group)).pipe(
+                      Effect.flatMap(([elapsed, checked]) =>
+                        Effect.map(
+                          splitCheckedPlans(checked),
+                          (split) => ({
+                            split,
+                            charged: chargedWith(carried, group, Duration.toMillis(elapsed)),
+                          }),
+                        )
+                      ),
+                    )),
                 { concurrency: 'unbounded', unordered: true },
               ),
-              Stream.flatMap((split) =>
+              Stream.flatMap(({ split, charged }) =>
                 Stream.concat(
-                  ignoredElement(split.ignoredChecks),
+                  ignoredElement(split.ignoredChecks, charged),
                   Stream.concat(
-                    failedElement(split.failedChecks),
-                    checkedGroupsFor(pool, checkerNames, checkerIndex + 1, split.passedPlans),
+                    failedElement(split.failedChecks, charged),
+                    checkedGroupsFor(pool, checkerNames, checkerIndex + 1, split.passedPlans, charged),
                   ),
                 )
               ),
@@ -232,10 +278,13 @@ export const checkPlansStream: {
             passedPlans: plans,
             failedChecks: noFailedChecks,
             ignoredChecks: noIgnoredChecks,
+            checkMsByMutantId: noCheckMs,
           }),
         onSome: (handle) =>
           checkerNamesOf(CheckerPoolHandle.slot(handle)).pipe(
-            Effect.map((checkerNames) => checkedGroupsFor(CheckerPoolHandle.slot(handle), checkerNames, 0, plans)),
+            Effect.map((checkerNames) =>
+              checkedGroupsFor(CheckerPoolHandle.slot(handle), checkerNames, 0, plans, noCheckMs)
+            ),
             Stream.unwrap,
           ),
       }),
@@ -251,18 +300,24 @@ export const checkPlans = Effect.fnUntraced(function*(
   const passedPlans: Mutant.MutantRunPlan[] = []
   const failedChecks: (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[] = []
   const ignoredChecks: (readonly [Mutant.MutantRunPlan, Checker.IgnoredCheckResult])[] = []
+  const checkMsByMutantId: Record<string, number> = {}
   for (const group of checkedGroups) {
     passedPlans.push(...group.passedPlans)
     failedChecks.push(...group.failedChecks)
     ignoredChecks.push(...group.ignoredChecks)
+    Object.assign(checkMsByMutantId, group.checkMsByMutantId)
   }
-  return { passedPlans, failedChecks, ignoredChecks } satisfies CheckedPlans
+  return { passedPlans, failedChecks, ignoredChecks, checkMsByMutantId } satisfies CheckedPlans
 })
 
 export interface CheckedPlansExecution<A, E> {
-  readonly settleFailure: (plan: Mutant.MutantRunPlan, result: Checker.FailedCheckResult) => Effect.Effect<A, E>
+  readonly settleFailure: (
+    plan: Mutant.MutantRunPlan,
+    result: Checker.FailedCheckResult,
+    checkMs: number,
+  ) => Effect.Effect<A, E>
   readonly settleIgnored: (plan: Mutant.MutantRunPlan, result: Checker.IgnoredCheckResult) => Effect.Effect<A, E>
-  readonly runPlan: (plan: Mutant.MutantRunPlan) => Effect.Effect<A, E>
+  readonly runPlan: (plan: Mutant.MutantRunPlan, checkMs: number) => Effect.Effect<A, E>
   readonly concurrency: number
 }
 
@@ -283,11 +338,13 @@ export const runCheckedPlans: {
     execution: CheckedPlansExecution<A, E>,
   ): Stream.Stream<A, E | StageError | CheckerCrash> =>
     self.pipe(
-      Stream.flatMap(({ passedPlans, failedChecks, ignoredChecks }) =>
+      Stream.flatMap(({ passedPlans, failedChecks, ignoredChecks, checkMsByMutantId }) =>
         Stream.fromIterable<() => Effect.Effect<A, E>>([
-          ...failedChecks.map(([plan, result]) => () => execution.settleFailure(plan, result)),
+          ...failedChecks.map(([plan, result]) => () =>
+            execution.settleFailure(plan, result, checkMsOf(checkMsByMutantId, plan.mutant.id))
+          ),
           ...ignoredChecks.map(([plan, result]) => () => execution.settleIgnored(plan, result)),
-          ...passedPlans.map((plan) => () => execution.runPlan(plan)),
+          ...passedPlans.map((plan) => () => execution.runPlan(plan, checkMsOf(checkMsByMutantId, plan.mutant.id))),
         ])
       ),
       Stream.mapEffect((work) => work(), { concurrency: Math.max(1, execution.concurrency), unordered: true }),
