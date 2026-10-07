@@ -17,4 +17,6 @@ Hashing the program needs the checker running, so a run that has one re-checks
 the mutants it must either way; only the per-mutant check is saved. The
 incremental report writes the program digest beside every `CompileError` verdict
 it records, and the reuse stream line counts a refusal to reuse one under the new
-`programChanged` reason, next to the existing refusal reasons.
+`programChanged` reason, next to the existing refusal reasons. A stream line
+without that count still decodes, so consumers of an earlier machine stream keep
+working.

@@ -302,7 +302,6 @@
                   "policyChanged",
                   "runInputsChanged",
                   "closureChanged",
-                  "programChanged",
                   "timeoutUnreproduced",
                   "flakyDependency",
                   "noPriorRecord"
@@ -803,7 +802,6 @@
             "policyChanged",
             "runInputsChanged",
             "closureChanged",
-            "programChanged",
             "timeoutUnreproduced",
             "flakyDependency",
             "noPriorRecord"
