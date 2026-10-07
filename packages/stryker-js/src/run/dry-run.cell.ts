@@ -47,7 +47,7 @@ import { runInputsDigestOf } from '../verdict-semantics.js'
 import { testRunnerConfigOf } from '../vm-runner.js'
 import { IdGenerator, type IdGeneratorShape } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
-import { testCoverageOf } from './dry-run-coverage.js'
+import { testCoverageOf, testFileModulesFieldOf } from './dry-run-coverage.js'
 import { incrementalReportTextsOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
 import type { PhaseClock } from './phase-clock.service.js'
@@ -70,6 +70,7 @@ export interface DryRunDone extends InstrumentDone {
 interface DryRunExtras {
   readonly reused?: DryRunCoverage | undefined
   readonly globalTestInputs: readonly string[]
+  readonly testFileModules: Readonly<Record<string, readonly string[]>> | undefined
   readonly flakyTestIds: readonly string[]
   readonly flakyMutantIds: readonly string[]
   readonly testClosureDigest: string
@@ -151,6 +152,7 @@ const closureAnalysisOf = (
   command: InstrumentDone,
   rootDir: string,
   globalInputs: readonly string[],
+  observedModules: Readonly<Record<string, readonly string[]>> | undefined,
 ) =>
   Effect.option(
     analyzeImportClosure({
@@ -158,6 +160,7 @@ const closureAnalysisOf = (
       projectFiles: Arr.dedupe([...MutableHashMap.keys(command.project.files), ...command.project.testFiles]),
       testFiles: [...command.project.testFiles],
       globalInputs: [...globalInputs],
+      ...(observedModules === undefined ? {} : { observedModules }),
     }),
   )
 
@@ -183,6 +186,73 @@ const originalGlobalInputsOf = (command: InstrumentDone, result: TestRunner.DryR
     ),
     () => [],
   )
+
+const sandboxOwnsPath = (command: InstrumentDone, value: string): boolean =>
+  value.startsWith(`${command.sandbox.workingDirectory}/`)
+
+const originalModuleValuesOf = (
+  command: InstrumentDone,
+  values: readonly string[],
+): Effect.Effect<readonly string[], never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const kept = yield* Effect.forEach(
+      values,
+      (value) =>
+        Boolean.match(sandboxOwnsPath(command, value), {
+          onFalse: () => Effect.succeedSome(value),
+          onTrue: () => {
+            const original = originalFileFor(command.sandbox, value)
+            return Effect.map(
+              fs.exists(original).pipe(Effect.orElseSucceed(() => false)),
+              (exists) => (exists ? Option.some(original) : Option.none()),
+            )
+          },
+        }),
+      { concurrency: 16 },
+    )
+    return Arr.getSomes(kept)
+  })
+
+const testFileModulesEntriesOf = (
+  command: InstrumentDone,
+  modules: Readonly<Record<string, readonly string[]>>,
+): Effect.Effect<Option.Option<Readonly<Record<string, readonly string[]>>>, never, FileSystem.FileSystem> =>
+  Effect.map(
+    Effect.forEach(
+      Object.entries(modules),
+      ([file, values]) =>
+        Effect.map(
+          originalModuleValuesOf(command, values),
+          (kept) => [originalFileFor(command.sandbox, file), kept] as const,
+        ),
+      { concurrency: 8 },
+    ),
+    (entries) => Option.some(Object.fromEntries(entries)),
+  )
+
+const originalTestFileModulesOf = (
+  command: InstrumentDone,
+  result: TestRunner.DryRunResult,
+): Effect.Effect<Readonly<Record<string, readonly string[]>> | undefined, never, FileSystem.FileSystem> =>
+  Effect.map(
+    Option.match(
+      Option.flatMap(
+        Option.liftPredicate(result, (value): value is TestRunner.CompleteDryRunResult => value.status === 'complete'),
+        (complete) => Option.fromUndefinedOr(complete.testFileModules),
+      ),
+      {
+        onNone: () => Effect.succeedNone,
+        onSome: (modules) => testFileModulesEntriesOf(command, modules),
+      },
+    ),
+    Option.getOrUndefined,
+  )
+
+const observedModulesOfCoverage = (
+  coverage: Option.Option<DryRunCoverage>,
+): Readonly<Record<string, readonly string[]>> | undefined =>
+  Option.getOrUndefined(Option.flatMap(coverage, (present) => Option.fromUndefinedOr(present.testFileModules)))
 
 const decisionOfCoverage = (
   prior: Option.Option<DryRunCoverage>,
@@ -264,6 +334,7 @@ const reusedRawOf = (command: InstrumentDone, coverage: DryRunCoverage): DryRunR
       status: 'complete',
       tests: [...coverage.tests],
       globalTestInputs: [...coverage.globalTestInputs],
+      ...testFileModulesFieldOf(coverage.testFileModules),
       ...(coverage.mutantCoverage === undefined ? {} : { mutantCoverage: coverage.mutantCoverage }),
     },
     { reloadEnvironment: false },
@@ -271,6 +342,7 @@ const reusedRawOf = (command: InstrumentDone, coverage: DryRunCoverage): DryRunR
     {
       reused: coverage,
       globalTestInputs: [...coverage.globalTestInputs],
+      testFileModules: coverage.testFileModules,
       flakyTestIds: [...coverage.flakyTestIds],
       flakyMutantIds: [...coverage.flakyMutantIds],
       testClosureDigest: coverage.testClosureDigest,
@@ -433,6 +505,7 @@ const freshCoverageOf = (
   tests: [...dryRunResult.tests],
   ...(dryRunResult.mutantCoverage === undefined ? {} : { mutantCoverage: dryRunResult.mutantCoverage }),
   globalTestInputs: [...raw.globalTestInputs],
+  ...testFileModulesFieldOf(raw.testFileModules),
   timeOverheadMs: overheadMillis,
   flakyTestIds: [...raw.flakyTestIds],
   flakyMutantIds: [...raw.flakyMutantIds],
@@ -466,7 +539,12 @@ const completeDryRunResultOf = Effect.fn(SpanTaxonomy.Spans.dryRunComplete.name)
   rawResult: TestRunner.CompleteDryRunResult,
 ) {
   const tests = withOriginalFileNames(rawResult.tests, raw.prev)
-  const dryRunResult = { ...rawResult, tests, status: 'complete' } as const
+  const dryRunResult = {
+    ...rawResult,
+    tests,
+    status: 'complete',
+    ...testFileModulesFieldOf(raw.testFileModules),
+  } as const
   return yield* Option.match(Option.fromUndefinedOr(raw.reused), {
     onNone: () => completeFreshDryRun(raw, dryRunResult),
     onSome: (coverage) =>
@@ -572,12 +650,14 @@ const runFreshDryRun = Effect.fnUntraced(function*(
 
   const flakes = flakesOf(first, second)
   const globalTestInputs = originalGlobalInputsOf(command, first)
+  const testFileModules = yield* originalTestFileModulesOf(command, first)
   const testClosureDigest = Option.getOrElse(
-    closureDigestOptionOf(yield* closureAnalysisOf(command, env.basePath, globalTestInputs)),
+    closureDigestOptionOf(yield* closureAnalysisOf(command, env.basePath, globalTestInputs, testFileModules)),
     () => Option.getOrElse(currentTestClosureDigest, () => ''),
   )
   return rawOf(command, first, capabilities, gross, {
     globalTestInputs,
+    testFileModules,
     flakyTestIds: flakes.flakyTestIds,
     flakyMutantIds: flakes.flakyMutantIds,
     testClosureDigest,
@@ -610,7 +690,12 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
   const candidates = yield* priorCoveragesOf(command, env.basePath)
   const runInputsDigest = yield* runInputsDigestOf(fs, path, env.basePath, command.options)
   const currentTestClosureDigest = closureDigestOptionOf(
-    yield* closureAnalysisOf(command, env.basePath, globalInputsOfCoverage(Arr.head(candidates))),
+    yield* closureAnalysisOf(
+      command,
+      env.basePath,
+      globalInputsOfCoverage(Arr.head(candidates)),
+      observedModulesOfCoverage(Arr.head(candidates)),
+    ),
   )
   const { prior, decision } = priorChoiceOf(
     candidates,
