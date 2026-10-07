@@ -43,6 +43,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@effect/opentelemetry": "catalog:",
+    "@noble/hashes": "catalog:",
     "@opentelemetry/exporter-trace-otlp-http": "catalog:",
     "@opentelemetry/sdk-node": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",

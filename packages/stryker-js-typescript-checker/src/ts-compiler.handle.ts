@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
@@ -11,6 +13,7 @@ import * as HashMap from 'effect/HashMap'
 import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Order from 'effect/Order'
 import * as Path from 'effect/Path'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Result from 'effect/Result'
@@ -56,10 +59,12 @@ import {
 } from './classify-tce.workflow.js'
 import { type CompilerError, CompilerFailed, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
 import { groupMutants } from './group-mutants.workflow.js'
+import { identifyProgram as identifyProgramWorkflow, IdentifyProgramCommand } from './identify-program.workflow.js'
 import { overrideTsconfigOptions } from './override-tsconfig-options.workflow.js'
 import { parseTsconfigText } from './parse-tsconfig-text.workflow.js'
 import { planDiagnosticBatches } from './plan-diagnostic-batches.workflow.js'
 import { planResolutionCandidates } from './plan-resolution-candidates.workflow.js'
+import { type ProgramFile } from './program-digest.schema.js'
 import { requestAffectedFiles } from './request-affected-files.workflow.js'
 import { emitNormalized } from './tce-emit.js'
 import { traceAffectedFiles } from './trace-affected-files.workflow.js'
@@ -225,18 +230,134 @@ const isSupportedTypeScriptVersion = (version: string) => {
   return numeric && isNewerOrSame(parsed, minimumTypeScriptVersion)
 }
 
-const readTypescriptVersion = Effect.fnUntraced(function*(rt: TSCompilerRuntime) {
-  const packagePath = yield* rt.pathService.fromFileUrl(new URL(import.meta.resolve('typescript/package.json')))
-  const text = yield* rt.host.readFileString(packagePath)
+const readPackageVersion = Effect.fnUntraced(function*(rt: TSCompilerRuntime, packageUrl: URL | string) {
+  const packagePath = yield* rt.pathService.fromFileUrl(new URL(packageUrl)).pipe(Effect.orElseSucceed(() => ''))
+  const text = yield* rt.host.readFileString(packagePath).pipe(Effect.orElseSucceed(() => ''))
   return Result.match(S.decodeResult(S.fromJsonString(S.Struct({ version: S.String })))(text), {
     onFailure: () => '',
     onSuccess: (pkg) => pkg.version,
   })
 })
 
+const readTypescriptVersion = (rt: TSCompilerRuntime) =>
+  readPackageVersion(rt, import.meta.resolve('typescript/package.json'))
+
+const readCheckerVersion = (rt: TSCompilerRuntime) =>
+  readPackageVersion(rt, new URL('../package.json', import.meta.url))
+
+type JsonValue = S.Schema.Type<typeof S.Json>
+
+const isNonNullObjectOf = (value: JsonValue): boolean => typeof value === 'object' && value !== null
+
+const isJsonObject = (value: JsonValue): value is Record<string, JsonValue> =>
+  isNonNullObjectOf(value) && !Array.isArray(value)
+
+const isJsonArray = (value: JsonValue): value is ReadonlyArray<JsonValue> =>
+  typeof value === 'object' && Array.isArray(value)
+
+const canonicalEntriesOf = (object: Record<string, JsonValue>): string =>
+  Arr.map(
+    Arr.sort(Object.keys(object), Order.String),
+    (key) => `${JSON.stringify(key)}:${canonicalJsonOf(object[key] ?? null)}`,
+  ).join(',')
+
+const canonicalObjectOf = (value: JsonValue): string =>
+  Option.match(Option.liftPredicate(value, isJsonObject), {
+    onNone: () => JSON.stringify(value),
+    onSome: (object) => `{${canonicalEntriesOf(object)}}`,
+  })
+
+const canonicalJsonOf = (value: JsonValue): string =>
+  Option.match(Option.liftPredicate(value, isJsonArray), {
+    onNone: () => canonicalObjectOf(value),
+    onSome: (array) => `[${Arr.map(array, canonicalJsonOf).join(',')}]`,
+  })
+
+const checkerOptionsJsonOf = (options: Options.StrykerOptions): Effect.Effect<string, CompilerError> =>
+  Option.match(Option.fromUndefinedOr(options['typescriptChecker']), {
+    onNone: () => Effect.succeed('{}'),
+    onSome: (configured) =>
+      Result.match(S.decodeUnknownResult(S.Json)(configured), {
+        onFailure: () =>
+          Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: 'checker options' })),
+        onSuccess: (value) => Effect.succeed(canonicalJsonOf(value)),
+      }),
+  })
+
+const DIGEST_READ_CONCURRENCY = 32
+
+const readProgramFiles = (
+  rt: TSCompilerRuntime,
+  root: string,
+  fileNames: readonly string[],
+): Effect.Effect<readonly ProgramFile[], CompilerError> =>
+  Effect.forEach(
+    fileNames,
+    (fileName): Effect.Effect<ProgramFile, CompilerError> =>
+      Effect.map(
+        Effect.mapError(
+          rt.host.readFileString(fileName),
+          () => CompilerFailed.make({ reason: 'program-digest-unavailable', subject: fileName }),
+        ),
+        (content): ProgramFile => ({
+          fileName: normalizeFileName(rt.pathService.relative(root, fileName)),
+          digest: sha256HexOf(content),
+        }),
+      ),
+    { concurrency: DIGEST_READ_CONCURRENCY },
+  )
+
+const sortedSourceFileNamesOf = (programs: ReadonlyArray<Program>): Effect.Effect<readonly string[]> =>
+  Effect.map(
+    Effect.forEach(programs, (program) => Effect.promise(() => program.getSourceFileNames())),
+    (perProgram) => Arr.sort(Arr.dedupe(Arr.map(Arr.flatten(perProgram), normalizeFileName)), Order.String),
+  )
+
+const sha256HexOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
+
+const decidedProgramIdentity = (
+  command: IdentifyProgramCommand,
+): Effect.Effect<Checker.ProgramDigest, CompilerError> => {
+  const identity = decided(identifyProgramWorkflow(command))
+  return Match.value(identity).pipe(
+    Match.tag('ProgramIdentified', ({ key }) => Effect.succeed(Checker.ProgramDigest.make(sha256HexOf(key)))),
+    Match.tag(
+      'ProgramUnidentified',
+      ({ reason }) => Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: reason })),
+    ),
+    Match.exhaustive,
+  )
+}
+
+export const programDigest = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerProgramDigest.name)(function*(
+  self: TSCompiler,
+): Effect.fn.Return<Checker.ProgramDigest, CompilerError> {
+  const rt = runtimeOf(self)
+  const programs = yield* programsOf(rt)
+  const state = yield* SynchronizedRef.get(rt.state)
+  const typescriptVersion = yield* readTypescriptVersion(rt)
+  const checkerVersion = yield* readCheckerVersion(rt)
+  yield* Boolean.match(Boolean.or(typescriptVersion === '', checkerVersion === ''), {
+    onTrue: () =>
+      Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: 'toolchain version' })),
+    onFalse: () => Effect.void,
+  })
+  const checkerOptionsJson = yield* checkerOptionsJsonOf(rt.options)
+  const root = rt.pathService.dirname(state.tsconfigFile)
+  const sourceFiles = yield* readProgramFiles(rt, root, yield* sortedSourceFileNamesOf(programs))
+  const tsconfigs = yield* readProgramFiles(
+    rt,
+    root,
+    yield* tsConfigChainOf(rt, Arr.sort(Arr.fromIterable(state.allTSConfigFiles), Order.String)),
+  )
+  return yield* decidedProgramIdentity(
+    IdentifyProgramCommand.make({ typescriptVersion, checkerVersion, checkerOptionsJson, sourceFiles, tsconfigs }),
+  )
+})
+
 const guardTypescriptVersion = (rt: TSCompilerRuntime): Effect.Effect<void, UnsupportedTypeScriptVersionError> =>
   Effect.flatMap(
-    readTypescriptVersion(rt).pipe(Effect.orElseSucceed(() => '')),
+    readTypescriptVersion(rt),
     (version) =>
       Boolean.match(isSupportedTypeScriptVersion(version), {
         onFalse: () => Effect.fail(UnsupportedTypeScriptVersionError.make({ version })),
@@ -282,6 +403,127 @@ const referencedProjectsOf = (
       }),
     )
   })
+
+const TS_CONFIG_JSON_EXTENSION = '.json'
+
+const NODE_MODULES_DIRECTORY = 'node_modules'
+
+const tsConfigExtendsOf = (config: TsConfigDocument): ReadonlyArray<string> =>
+  Option.match(Option.fromUndefinedOr(config['extends']), {
+    onNone: (): ReadonlyArray<string> => [],
+    onSome: (declared) => (typeof declared === 'string' ? [declared] : [...declared]),
+  })
+
+const ancestorDirectoriesOf = (pathService: Path.Path, from: string): ReadonlyArray<string> => {
+  const directories: Array<string> = [from]
+  let current = from
+  let parent = pathService.dirname(current)
+  while (parent !== current) {
+    directories.push(parent)
+    current = parent
+    parent = pathService.dirname(current)
+  }
+  return directories
+}
+
+const isRelativeSpecifier = (specifier: string): boolean => specifier.startsWith('./') || specifier.startsWith('../')
+
+const withJsonExtension = (base: string): ReadonlyArray<string> =>
+  base.endsWith(TS_CONFIG_JSON_EXTENSION) ? [base] : [base, `${base}${TS_CONFIG_JSON_EXTENSION}`]
+
+const tsConfigExtendsCandidatesOf = (
+  pathService: Path.Path,
+  fromDirName: string,
+  specifier: string,
+): ReadonlyArray<string> =>
+  Boolean.match(pathService.isAbsolute(specifier) || isRelativeSpecifier(specifier), {
+    onTrue: () => withJsonExtension(normalizeFileName(pathService.resolve(fromDirName, specifier))),
+    onFalse: () =>
+      Arr.flatMap(ancestorDirectoriesOf(pathService, fromDirName), (directory) =>
+        Arr.flatMap(withJsonExtension(specifier), (candidate) => [
+          normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate)),
+          ...Boolean.match(candidate.endsWith(TS_CONFIG_JSON_EXTENSION), {
+            onTrue: (): ReadonlyArray<string> => [],
+            onFalse: () => [
+              normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate, 'tsconfig.json')),
+            ],
+          }),
+        ])),
+  })
+
+const isFileOf = (rt: TSCompilerRuntime, fileName: string): Effect.Effect<boolean> =>
+  rt.host.stat(fileName).pipe(
+    Effect.map((info) => info.type === 'File'),
+    Effect.orElseSucceed(() => false),
+  )
+
+const firstExistingOf = (
+  rt: TSCompilerRuntime,
+  candidates: ReadonlyArray<string>,
+): Effect.Effect<Option.Option<string>, never> =>
+  Option.match(Arr.head(candidates), {
+    onNone: () => Effect.succeedNone,
+    onSome: (candidate) =>
+      Effect.flatMap(isFileOf(rt, candidate), (present) =>
+        Boolean.match(present, {
+          onTrue: () => Effect.succeedSome(candidate),
+          onFalse: () => firstExistingOf(rt, Arr.drop(candidates, 1)),
+        })),
+  })
+
+const resolveTsConfigExtends = (
+  rt: TSCompilerRuntime,
+  fromDirName: string,
+  specifier: string,
+): Effect.Effect<string, CompilerError> =>
+  Effect.flatMap(
+    firstExistingOf(rt, tsConfigExtendsCandidatesOf(rt.pathService, fromDirName, specifier)),
+    (found) =>
+      Effect.fromOption(found, () =>
+        CompilerFailed.make({ reason: 'program-digest-unavailable', subject: `tsconfig extends "${specifier}"` })),
+  )
+
+const extendedConfigsOf = (
+  rt: TSCompilerRuntime,
+  fileName: string,
+): Effect.Effect<ReadonlyArray<string>, CompilerError> =>
+  Effect.flatMap(
+    readTsConfigText(rt, HashMap.empty(), fileName),
+    (jsonText) =>
+      Result.match(parseTsConfig(fileName, jsonText), {
+        onFailure: (failure) => Effect.fail(failure),
+        onSuccess: (config) =>
+          Effect.forEach(
+            tsConfigExtendsOf(config),
+            (specifier) => resolveTsConfigExtends(rt, rt.pathService.dirname(fileName), specifier),
+          ),
+      }),
+  )
+
+const visitTsConfigChain = (
+  rt: TSCompilerRuntime,
+  pending: ReadonlyArray<string>,
+  visited: HashSet.HashSet<string>,
+  chain: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<string>, CompilerError> =>
+  Option.match(Arr.head(pending), {
+    onNone: () => Effect.succeed(chain),
+    onSome: (fileName) =>
+      Boolean.match(HashSet.has(visited, fileName), {
+        onTrue: () => visitTsConfigChain(rt, Arr.drop(pending, 1), visited, chain),
+        onFalse: () =>
+          Effect.flatMap(extendedConfigsOf(rt, fileName), (extended) =>
+            visitTsConfigChain(rt, [...Arr.drop(pending, 1), ...extended], HashSet.add(visited, fileName), [
+              ...chain,
+              fileName,
+            ])),
+      }),
+  })
+
+const tsConfigChainOf = (
+  rt: TSCompilerRuntime,
+  seeds: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<string>, CompilerError> => visitTsConfigChain(rt, seeds, HashSet.empty(), [])
 
 interface TsConfigWalk {
   readonly overrides: HashMap.HashMap<string, string>

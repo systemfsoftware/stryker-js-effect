@@ -19,7 +19,14 @@ export type MutantStatus = typeof MutantStatusSchema.Type
 export const SurvivorStatusSchema = S.Literals(['Survived', 'NoCoverage'])
 export type SurvivorStatus = typeof SurvivorStatusSchema.Type
 
-export const RememberedStatusSchema = S.Literals(['Survived', 'Killed', 'Timeout', 'NoCoverage', 'Ignored'])
+export const RememberedStatusSchema = S.Literals([
+  'Survived',
+  'Killed',
+  'Timeout',
+  'NoCoverage',
+  'Ignored',
+  'CompileError',
+])
 export type RememberedStatus = typeof RememberedStatusSchema.Type
 
 export const EphemeralStatusSchema = S.Literals(['CompileError', 'RuntimeError', 'Pending'])

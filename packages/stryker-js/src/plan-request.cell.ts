@@ -188,6 +188,7 @@ const planProject = (
       ),
       observedModules: Option.getOrUndefined(Option.map(coverage, (present) => present.testFileModules)),
       originalFileOf: (file) => path.resolve(file),
+      programDigestOf: Effect.as(Effect.void, undefined),
     })
     const mutants = [
       ...reuse.mutants.map((mutant) => ({

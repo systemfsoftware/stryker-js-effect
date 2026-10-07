@@ -56,6 +56,9 @@ export const checkerHandlers = Plugin.CheckerRpcs.toLayer(
         readonly checkerName: string
         readonly mutants: readonly Checker.CheckerMutantWire[]
       }) => resolve(runtime, checkerName, mutants).pipe(Effect.flatMap((checker) => checker.group([...mutants]))),
+
+      digest: ({ checkerName }: { readonly checkerName: string }) =>
+        resolve(runtime, checkerName, []).pipe(Effect.flatMap((checker) => checker.digest)),
     }
   }),
 )

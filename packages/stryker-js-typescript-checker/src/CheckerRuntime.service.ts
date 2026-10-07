@@ -20,7 +20,7 @@ import { checkCell } from './Checker.cell.js'
 import { CheckMutantsCommand } from './Checker.schema.js'
 import { type CompilerError, DryRunCompileErrors } from './Compiler.schema.js'
 import { make as makeCompilerBlueprint } from './ts-compiler.blueprint.js'
-import { describeDiagnostics, groups, init, type TSCompiler } from './ts-compiler.handle.js'
+import { describeDiagnostics, groups, init, programDigest, type TSCompiler } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
 
 type CheckEvent = CheckMutantsAnswer[number]
@@ -93,6 +93,8 @@ const makeChecker = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerRuntimeMakeChe
       ),
 
     group: (mutants) => groups([...mutants]),
+
+    digest: programDigest(compiler).pipe(Effect.mapError((cause) => refuse({ mutantIds: [], cause }))),
   }
 
   yield* service.init
