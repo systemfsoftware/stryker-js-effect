@@ -1,5 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
+import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashSet from 'effect/HashSet'
@@ -638,8 +639,6 @@ const projectDigestOf = (scanned: readonly ModuleScan[]): string => hashOf(scann
 const sortedKeys = (roots: Roots, files: readonly string[]): readonly string[] =>
   [...HashSet.fromIterable(files.map((file) => keyOf(roots, file)))].sort()
 
-const trackableGlobalInputOf = (key: string): boolean => !isNodeModulesKey(key)
-
 const commandOf = (
   input: ImportClosureInput,
   roots: Roots,
@@ -647,7 +646,7 @@ const commandOf = (
 ): ImportClosureCommand =>
   ImportClosureCommand.make({
     modules: modulesOf(scanned),
-    globalInputs: sortedKeys(roots, input.globalInputs ?? []).filter(trackableGlobalInputOf),
+    globalInputs: sortedKeys(roots, input.globalInputs ?? []),
     testFiles: sortedKeys(roots, input.testFiles),
   })
 
@@ -728,6 +727,35 @@ const scanReachable = (
 ): Effect.Effect<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path> =>
   scanPendingOf(roots, files, memo, MutableHashMap.empty<string, ModuleScan>(), seeds)
 
+const leafScanOf = Effect.fnUntraced(function*(roots: Roots, file: string) {
+  const loaded = yield* readProjectFile(roots, file)
+  return {
+    key: loaded.key,
+    contentHash: hashOf(loaded.content),
+    dependencies: [],
+    open: false,
+  }
+})
+
+const scannedKeysOf = (scanned: readonly ModuleScan[]): HashSet.HashSet<string> =>
+  HashSet.fromIterable(scanned.map((scan) => scan.key))
+
+const globalInputKeysOf = (
+  roots: Roots,
+  input: ImportClosureInput,
+  scanned: readonly ModuleScan[],
+): readonly string[] =>
+  sortedKeys(roots, input.globalInputs ?? []).filter((key) => !HashSet.has(scannedKeysOf(scanned), key))
+
+const hashGlobalInputsOf = Effect.fnUntraced(function*(roots: Roots, keys: readonly string[]) {
+  const scans = yield* Effect.forEach(
+    keys,
+    (key) => Effect.option(leafScanOf(roots, key)),
+    { concurrency: CONCURRENCY },
+  )
+  return Arr.getSomes(scans)
+})
+
 export const analyzeImportClosure = Effect.fnUntraced(function*(
   input: ImportClosureInput,
 ): Effect.fn.Return<ImportClosureAnalysis, PlatformError, FileSystem.FileSystem | Path.Path> {
@@ -735,7 +763,9 @@ export const analyzeImportClosure = Effect.fnUntraced(function*(
   const seeds = [...HashSet.fromIterable(input.projectFiles.map((file) => keyOf(roots, file)))]
   const files = HashSet.fromIterable(seeds)
   const memo = MutableHashMap.empty<string, Resolution>()
-  const scanned = yield* scanReachable(roots, files, memo, seeds)
+  const reachable = yield* scanReachable(roots, files, memo, seeds)
+  const globalScans = yield* hashGlobalInputsOf(roots, globalInputKeysOf(roots, input, reachable))
+  const scanned = [...reachable, ...globalScans]
   const projectDigest = projectDigestOf(scanned)
   const hashes = MutableHashMap.fromIterable(scanned.map((scan) => [scan.key, scan.contentHash] as const))
   const closures = Result.getOrElse(

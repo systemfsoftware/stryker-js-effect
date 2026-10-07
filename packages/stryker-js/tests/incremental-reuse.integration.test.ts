@@ -254,6 +254,33 @@ const VM_RIGHT_SOURCE = [
   '',
 ].join('\n')
 
+const VM_TARGET_SOURCE = [
+  'export function add(left, right) {',
+  '  return left + right',
+  '}',
+  '',
+].join('\n')
+
+const VM_TOUCHING_TEST = [
+  "import { test } from 'vitest'",
+  "import { add } from '../src/target.mjs'",
+  '',
+  "test('touches add', () => {",
+  '  add(1, 2)',
+  '})',
+  '',
+].join('\n')
+
+const VM_ADDING_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { add } from '../src/target.mjs'",
+  '',
+  "test('adds two numbers', () => {",
+  '  expect(add(1, 2)).toBe(3)',
+  '})',
+  '',
+].join('\n')
+
 const writeVmFixture = (
   files: ReadonlyArray<readonly [string, string]>,
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
@@ -348,6 +375,56 @@ const killerNamesOf = (text: string, mutantIds: ReadonlySet<string>): readonly s
 
 const statusesOf = (mutants: readonly RecordedMutant[]): readonly string[] =>
   [...mutants].sort((left, right) => left.id.localeCompare(right.id)).map((mutant) => `${mutant.id}:${mutant.status}`)
+
+const reportKeysOf = <A>(record: Readonly<Record<string, A>> | undefined): readonly string[] =>
+  Option.match(Option.fromNullishOr(record), {
+    onNone: (): readonly string[] => [],
+    onSome: (present) => Object.keys(present),
+  })
+
+const fileOfCoverageKey = (key: string): string => key.split('#', 1)[0] ?? key
+
+const statusMapOf = (mutants: readonly RecordedMutant[]): ReadonlyMap<string, string> =>
+  new Map(mutants.map((mutant) => [mutant.id, mutant.status]))
+
+const flippedToKilled = (
+  firstStatuses: ReadonlyMap<string, string>,
+  secondStatuses: ReadonlyMap<string, string>,
+): boolean => [...firstStatuses].some(([id, status]) => status === 'Survived' && secondStatuses.get(id) === 'Killed')
+
+const survivedAfterKilled = (
+  firstStatuses: ReadonlyMap<string, string>,
+  secondStatuses: ReadonlyMap<string, string>,
+): boolean => [...secondStatuses].some(([id, status]) => status === 'Survived' && firstStatuses.get(id) === 'Killed')
+
+interface ReuseVariation {
+  readonly first: RunObservation
+  readonly second: RunObservation
+}
+
+const NEW_TEST_MEASURED = {
+  newTestDiscovered: true,
+  newTestCovered: true,
+  dryRunDigestMoved: true,
+  flippedToKilled: true,
+  noVerdictRegressed: true,
+}
+
+const newTestOutcomeOf = (variation: ReuseVariation) => {
+  const report = reusableReportOf(variation.second.incrementalText)
+  const firstReport = reusableReportOf(variation.first.incrementalText)
+  const coverageFiles = reportKeysOf(report?.dryRunCoverage?.mutantCoverage?.perTest).map(fileOfCoverageKey)
+  const firstStatuses = statusMapOf(variation.first.mutants)
+  const secondStatuses = statusMapOf(variation.second.mutants)
+  return {
+    newTestDiscovered: reportKeysOf(report?.testFiles).includes('test/second.test.mjs'),
+    newTestCovered: coverageFiles.includes('test/second.test.mjs'),
+    dryRunDigestMoved: firstReport?.dryRunCoverage?.testClosureDigest !== undefined &&
+      firstReport.dryRunCoverage.testClosureDigest !== report?.dryRunCoverage?.testClosureDigest,
+    flippedToKilled: flippedToKilled(firstStatuses, secondStatuses),
+    noVerdictRegressed: !survivedAfterKilled(firstStatuses, secondStatuses),
+  }
+}
 
 Feature('Content-keyed reuse across incremental reports')
   .withLayer(Layer.empty)
@@ -754,6 +831,76 @@ Feature('Content-keyed reuse across incremental reports')
             statusesStable: true,
           })
         }),
+      ),
+    )
+
+    scenario(
+      'A test file the runner discovers under a configured test glob is measured before any verdict is reused',
+      Gherkin.Do.pipe(
+        Given('a workspace whose test glob will match a test file added between two runs')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeVmFixture([
+                ['package.json', '{ "type": "module" }\n'],
+                ['src/target.mjs', VM_TARGET_SOURCE],
+                ['test/first.test.mjs', VM_TOUCHING_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root, { mutate: ['src/**/*.mjs'] })
+                  const first = yield* runOnce(root, options)
+                  yield* fs.writeFileString(path.join(root, 'test', 'second.test.mjs'), VM_ADDING_TEST)
+                  const second = yield* runOnce(root, options)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the second run measures the discovered test and reaches its verdicts')((s, expect) =>
+          expect({
+            runSucceeded: Exit.isSuccess(s.fixture.first.exit) && Exit.isSuccess(s.fixture.second.exit),
+            measured: newTestOutcomeOf(s.fixture),
+          }).toEqual({ runSucceeded: true, measured: NEW_TEST_MEASURED })
+        ),
+      ),
+    )
+
+    scenario(
+      'A test file the runner discovers without a configured test list is measured before any verdict is reused',
+      Gherkin.Do.pipe(
+        Given('a workspace that lets the runner discover every test file')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeVmFixture([
+                ['package.json', '{ "type": "module" }\n'],
+                ['src/target.mjs', VM_TARGET_SOURCE],
+                ['test/first.test.mjs', VM_TOUCHING_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root, { testFiles: [], mutate: ['src/**/*.mjs'] })
+                  const first = yield* runOnce(root, options)
+                  yield* fs.writeFileString(path.join(root, 'test', 'second.test.mjs'), VM_ADDING_TEST)
+                  const second = yield* runOnce(root, options)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the second run measures the discovered test and reaches its verdicts')((s, expect) =>
+          expect({
+            runSucceeded: Exit.isSuccess(s.fixture.first.exit) && Exit.isSuccess(s.fixture.second.exit),
+            measured: newTestOutcomeOf(s.fixture),
+          }).toEqual({ runSucceeded: true, measured: NEW_TEST_MEASURED })
+        ),
       ),
     )
   })

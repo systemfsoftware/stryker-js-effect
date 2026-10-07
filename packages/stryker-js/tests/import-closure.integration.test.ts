@@ -220,7 +220,7 @@ const vitestStubAt = (prefix: string): FixtureFiles =>
 const EXTERNAL_GLOBAL_INPUT: FixtureSpec = {
   files: {
     'node_modules/@fixture/guard/package.json': '{"name":"@fixture/guard","type":"module"}',
-    'node_modules/@fixture/guard/guard.mjs': 'export const guard = 1\n',
+    'node_modules/@fixture/guard/guard.mjs': "import '@fixture/absent'\nexport const guard = 1\n",
     'src/shared.ts': 'export const shared = 1\n',
     'src/unreached.ts': 'export const unreached = 0\n',
     'test/one.test.ts':
@@ -229,6 +229,11 @@ const EXTERNAL_GLOBAL_INPUT: FixtureSpec = {
   testFiles: ['test/one.test.ts'],
   globalInputs: ['node_modules/@fixture/guard/guard.mjs'],
   changed: { 'src/unreached.ts': 'export const unreached = 1\n' },
+}
+
+const INSTALLED_SETUP_CHANGE: FixtureSpec = {
+  ...EXTERNAL_GLOBAL_INPUT,
+  changed: { 'node_modules/@fixture/guard/guard.mjs': "import '@fixture/absent'\nexport const guard = 2\n" },
 }
 
 const REACHED_CHANGE_UNDER_EXTERNAL_GLOBAL_INPUT: FixtureSpec = {
@@ -521,7 +526,7 @@ Feature('Mapping a test file to the import closure it can reach')
     )
 
     scenario(
-      'A runner-reported global input installed in node_modules leaves the closures closed',
+      'A runner-reported global input installed in node_modules joins every closure as a hashed leaf',
       Gherkin.Do.pipe(
         Given('a project whose test runner reports a setup file from an installed package')(
           'root',
@@ -531,17 +536,36 @@ Feature('Mapping a test file to the import closure it can reach')
           'observation',
           (s) => observe(s.root, EXTERNAL_GLOBAL_INPUT).pipe(Effect.ensuring(removeDirectory(s.root))),
         ),
-        Then('the setup file joins no closure, the closure stays closed, and the digest stands still')(
-          (s, expect) =>
-            expect({
-              files: filesOf(s.observation.before, 'test/one.test.ts'),
-              open: openOf(s.observation.before, 'test/one.test.ts'),
-              digestMoved: digestMoved(s.observation, 'test/one.test.ts'),
-            }).toEqual({
-              files: ['src/shared.ts', 'test/one.test.ts'],
-              open: false,
-              digestMoved: false,
-            }),
+        Then('the setup file is in the closure without its imports and the digest stands still')((s, expect) =>
+          expect({
+            files: filesOf(s.observation.before, 'test/one.test.ts'),
+            open: openOf(s.observation.before, 'test/one.test.ts'),
+            digestMoved: digestMoved(s.observation, 'test/one.test.ts'),
+          }).toEqual({
+            files: ['node_modules/@fixture/guard/guard.mjs', 'src/shared.ts', 'test/one.test.ts'],
+            open: false,
+            digestMoved: false,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A change to an installed setup file moves the digest of every closure it feeds',
+      Gherkin.Do.pipe(
+        Given('a project whose test runner reports a setup file from an installed package')(
+          'root',
+          () => writeFixture(INSTALLED_SETUP_CHANGE),
+        ),
+        When('the closure is analyzed before and after the setup file bytes change')(
+          'observation',
+          (s) => observe(s.root, INSTALLED_SETUP_CHANGE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure stays closed and the digest moves')((s, expect) =>
+          expect({
+            open: openOf(s.observation.before, 'test/one.test.ts'),
+            digestMoved: digestMoved(s.observation, 'test/one.test.ts'),
+          }).toEqual({ open: false, digestMoved: true })
         ),
       ),
     )
