@@ -143,6 +143,12 @@ const coveringTestFilesOf = (
     .filter(hasTestFileName)
     .map((result) => relativeNormalizedFileName(result.fileName, basePath))
 
+const observedTestFilesOf = (testCoverage: TestCoverage): readonly string[] =>
+  [...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName).map((result) => result.fileName)
+
+const closureTestFilesOf = (input: IncrementalReuseInput): readonly string[] =>
+  Arr.dedupe([...input.project.testFiles, ...observedTestFilesOf(input.testCoverage)])
+
 const digestOfEntries = (entries: readonly string[]): string => hashOf(entries.join('\n'))
 
 const digestTextOf = (digest: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(digest), () => '')
@@ -238,12 +244,7 @@ const mutantClosureDigestOf = (
 
 const wholeSuiteDigestOf = (
   closureEntries: readonly (readonly [string, string])[],
-  projectDigest: string,
-): string =>
-  digestOfEntries([
-    ...closureEntries.map(([testFile, digest]) => `${testFile}\u0000${digest}`).sort(),
-    projectDigest,
-  ])
+): string => digestOfEntries(closureEntries.map(([testFile, digest]) => `${testFile}\u0000${digest}`).sort())
 
 const entryDigestsOf = (analysis: ImportClosureAnalysis): Record<string, string> => {
   const digestByTestFile = Object.fromEntries(analysis.closures.map((closure) => [closure.testFile, closure.digest]))
@@ -272,7 +273,11 @@ const digestsFromAnalysisOf = (
   analysis: ImportClosureAnalysis,
 ): Record<string, string> => {
   const entryByTestFile = entryDigestsOf(analysis)
-  const wholeSuiteDigest = wholeSuiteDigestOf(closureEntriesOf(analysis, entryByTestFile), analysis.projectDigest)
+  const closureEntries = closureEntriesOf(analysis, entryByTestFile)
+  const wholeSuiteDigest = Boolean.match(closureEntries.length > 0, {
+    onTrue: () => wholeSuiteDigestOf(closureEntries),
+    onFalse: () => analysis.projectDigest,
+  })
   return Object.fromEntries(
     input.currentMutants.map((mutant) => [
       mutant.id,
@@ -295,8 +300,9 @@ const closureAnalysisOf = (
     analyzeImportClosure({
       rootDir: input.basePath,
       projectFiles: Arr.dedupe([...MutableHashMap.keys(input.project.files), ...input.project.testFiles]),
-      testFiles: [...input.project.testFiles],
+      testFiles: closureTestFilesOf(input),
       globalInputs: input.globalTestInputs.map((file) => input.originalFileOf(file)),
+      ...(input.observedModules === undefined ? {} : { observedModules: input.observedModules }),
     }).pipe(
       Effect.tapCause((cause: Cause.Cause<PlatformError>) =>
         Effect.logWarning(
@@ -487,6 +493,7 @@ export interface IncrementalReuseInput {
   readonly force: boolean
   readonly options: Options.StrykerOptions
   readonly globalTestInputs: readonly string[]
+  readonly observedModules: Readonly<Record<string, readonly string[]>> | undefined
   readonly originalFileOf: (file: string) => string
 }
 

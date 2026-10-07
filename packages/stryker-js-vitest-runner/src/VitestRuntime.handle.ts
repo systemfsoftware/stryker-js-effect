@@ -26,6 +26,7 @@ import {
   screenshotFailuresOff,
   setSetupFiles,
   setupFilesOf,
+  testFileModulesOf as testFileModulesDriverOf,
   type VitestValue,
 } from './drivers/vitest-node.js'
 import { type StrykerNamespace, type TestRunnerPhase } from './VitestRunner.schema.js'
@@ -235,6 +236,8 @@ export const externalErrorText = (self: VitestRuntime): string => {
 }
 
 export const metaOf = <A>(file: A): VitestValue => metaDriverOf(file)
+
+export const testFileModulesOf = <A>(file: A): Option.Option<readonly string[]> => testFileModulesDriverOf(file)
 
 export const dedupeFilesByName = <A = unknown>(files: readonly A[]): Record<string, A> =>
   Object.fromEntries(files.map((file) => [fileKeyOf(file), file]))

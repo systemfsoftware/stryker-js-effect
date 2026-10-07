@@ -1,3 +1,4 @@
+import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -31,8 +32,26 @@ export const matchesFile: {
   )
 })
 
-const stripBasePath = (raw: string, basePath: string): string =>
-  raw.startsWith(basePath) ? raw.slice(basePath.length).replace(/^\/+/, '') : raw
+const TRAILING_SEPARATORS = /[/\\]+$/
+const LEADING_SEPARATORS = /^[/\\]+/
+const SEPARATOR_BOUNDARY = /^[/\\]/
+
+const withinBase = (raw: string, base: string): boolean =>
+  Boolean.and(
+    raw.startsWith(base),
+    Boolean.or(raw === base, SEPARATOR_BOUNDARY.test(raw.slice(base.length))),
+  )
+
+const stripBasePath = (raw: string, basePath: string): string => {
+  const base = basePath.replace(TRAILING_SEPARATORS, '')
+  return Option.getOrElse(
+    Option.map(
+      Option.liftPredicate(raw, (value) => withinBase(value, base)),
+      (value) => value.slice(base.length).replace(LEADING_SEPARATORS, ''),
+    ),
+    () => raw,
+  )
+}
 
 const relativeTo = (raw: string, basePath: string): string => stripBasePath(raw, basePath).replace(/\\/g, '/')
 

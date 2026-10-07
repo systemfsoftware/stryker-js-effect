@@ -7,7 +7,12 @@
     "emitDeclarationOnly": true,
     "tsBuildInfoFile": "node_modules/.cache/tsconfig.test.tsbuildinfo",
     "outDir": "node_modules/.cache/tsc/test",
-    "types": ["node", "vitest/importMeta"]
+    "types": ["node", "vitest/importMeta"],
+    "plugins": [
+      {
+        "name": "@effect/language-service"
+      }
+    ]
   },
   "include": ["tests"],
   "references": [{ "path": "./tsconfig.app.json" }]

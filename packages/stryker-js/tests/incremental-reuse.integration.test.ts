@@ -13,6 +13,8 @@ import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
+import { type ReusableReport, reusableReportOf } from './__fixtures__/reusable-report.schema.js'
+
 const Feature = makeFeature({ it })
 
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
@@ -35,6 +37,7 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 interface RecordedMutant {
   readonly id: string
   readonly status: string
+  readonly statusReason?: string | undefined
 }
 
 const mutantsOf = (text: string): readonly RecordedMutant[] =>
@@ -42,6 +45,25 @@ const mutantsOf = (text: string): readonly RecordedMutant[] =>
     onNone: () => [],
     onSome: (value) => Object.values(value.files).flatMap((file) => file.mutants),
   })
+
+const mutantIdsInOf = (report: ReusableReport, file: string): readonly string[] =>
+  (report.files[file]?.mutants ?? []).map((mutant) => mutant.id)
+
+const staticIdsOf = (report: ReusableReport): ReadonlySet<string> =>
+  new Set(
+    Object.entries(report.dryRunCoverage?.mutantCoverage?.static ?? {})
+      .filter(([, count]) => count > 0)
+      .map(([id]) => id),
+  )
+
+const fileOfCoverageKey = (key: string): string => key.split('#', 1)[0] ?? key
+
+const coveringFilesOf = (report: ReusableReport, mutantId: string): ReadonlySet<string> =>
+  new Set(
+    Object.entries(report.dryRunCoverage?.mutantCoverage?.perTest ?? {})
+      .filter(([, coverage]) => (coverage[mutantId] ?? 0) > 0)
+      .map(([testId]) => fileOfCoverageKey(testId)),
+  )
 
 interface RunObservation {
   readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
@@ -198,6 +220,154 @@ const VM_OTHER_TEST = [
   '',
 ].join('\n')
 
+const VM_LEFT_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { add } from '../src/left.mjs'",
+  "import { offset } from './left-helper.mjs'",
+  '',
+  "test('adds two numbers', () => {",
+  '  expect(add(1, 2) + offset()).toBe(3)',
+  '})',
+  '',
+].join('\n')
+
+const VM_LEFT_SOURCE = [
+  'export function add(left, right) {',
+  '  return left + right',
+  '}',
+  '',
+].join('\n')
+
+const VM_LEFT_HELPER_SOURCE = 'export const offset = () => 0\n'
+
+const VM_RIGHT_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { label } from '../src/right.mjs'",
+  '',
+  "test('labels', () => {",
+  "  expect(label()).toBe('leftright')",
+  '})',
+  '',
+].join('\n')
+
+const VM_RIGHT_SOURCE = [
+  'export function label() {',
+  "  return 'left' + 'right'",
+  '}',
+  '',
+].join('\n')
+
+const VM_TOUCHING_TEST = [
+  "import { test } from 'vitest'",
+  "import { add } from '../src/target.mjs'",
+  '',
+  "test('touches add', () => {",
+  '  add(1, 2)',
+  '})',
+  '',
+].join('\n')
+
+const VM_ADDING_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { add } from '../src/target.mjs'",
+  '',
+  "test('adds two numbers', () => {",
+  '  expect(add(1, 2)).toBe(3)',
+  '})',
+  '',
+].join('\n')
+
+const VM_REACH_LEFT_SOURCE = [
+  "import { offset } from './left-helper.mjs'",
+  '',
+  'export const base = 1 + 1',
+  'export const shifted = () => base + offset()',
+  '',
+].join('\n')
+
+const VM_REACH_LEFT_HELPER_SOURCE = 'export const offset = () => 0\n'
+
+const VM_REACH_LEFT_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { base } from '../src/left.mjs'",
+  '',
+  "test('the module-level base is two', () => {",
+  '  expect(base).toBe(2)',
+  '})',
+  '',
+].join('\n')
+
+const VM_REACH_RIGHT_SOURCE = [
+  'export function label() {',
+  "  return 'left' + 'right'",
+  '}',
+  '',
+].join('\n')
+
+const VM_REACH_RIGHT_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { label } from '../src/right.mjs'",
+  '',
+  "test('labels', () => {",
+  "  expect(label()).toBe('leftright')",
+  '})',
+  '',
+].join('\n')
+
+const VM_REACH_LOADER_TEST = [
+  "import { expect, test } from 'vitest'",
+  '',
+  'const load = (name) => import(name)',
+  '',
+  "test('loads a module whose address only exists at runtime', async () => {",
+  "  const loaded = await load('data:text/javascript,export default 1')",
+  '  expect(loaded.default).toBe(1)',
+  '})',
+  '',
+].join('\n')
+
+const VM_WIRE_LEFT_SOURCE = [
+  'export const base = 1 + 1',
+  'export const add = (left, right) => left + right',
+  '',
+].join('\n')
+
+const VM_WIRE_PLUGIN_SOURCE = 'export const plugin = 1\n'
+
+const VM_WIRE_UNRELATED_SOURCE = 'export const untouched = () => 0\n'
+
+const VM_WIRE_LOADER_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { add, base } from '../src/left.mjs'",
+  '',
+  'const load = (name) => import(name)',
+  '',
+  "test('the module-level base is two and the runtime plugin loads', async () => {",
+  '  expect(base).toBe(2)',
+  '  expect(add(1, 2)).toBe(3)',
+  "  const plugin = await load(new URL('../src/plugin.mjs', import.meta.url).href)",
+  '  expect(plugin.plugin).toBe(1)',
+  '})',
+  '',
+].join('\n')
+
+const VM_WIRE_DATA_LOADER_TEST = [
+  "import { expect, test } from 'vitest'",
+  "import { add, base } from '../src/left.mjs'",
+  '',
+  'const load = (name) => import(name)',
+  '',
+  "test('the module-level base is two and the runtime module loads', async () => {",
+  '  expect(base).toBe(2)',
+  '  expect(add(1, 2)).toBe(3)',
+  "  const loaded = await load('data:text/javascript,export default 1')",
+  '  expect(loaded.default).toBe(1)',
+  '})',
+  '',
+].join('\n')
+
+const VM_UNREACHED_SOURCE = 'export const untouched = () => 0\n'
+
 const writeVmFixture = (
   files: ReadonlyArray<readonly [string, string]>,
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
@@ -292,6 +462,54 @@ const killerNamesOf = (text: string, mutantIds: ReadonlySet<string>): readonly s
 
 const statusesOf = (mutants: readonly RecordedMutant[]): readonly string[] =>
   [...mutants].sort((left, right) => left.id.localeCompare(right.id)).map((mutant) => `${mutant.id}:${mutant.status}`)
+
+const reportKeysOf = <A>(record: Readonly<Record<string, A>> | undefined): readonly string[] =>
+  Option.match(Option.fromNullishOr(record), {
+    onNone: (): readonly string[] => [],
+    onSome: (present) => Object.keys(present),
+  })
+
+const statusMapOf = (mutants: readonly RecordedMutant[]): ReadonlyMap<string, string> =>
+  new Map(mutants.map((mutant) => [mutant.id, mutant.status]))
+
+const flippedToKilled = (
+  firstStatuses: ReadonlyMap<string, string>,
+  secondStatuses: ReadonlyMap<string, string>,
+): boolean => [...firstStatuses].some(([id, status]) => status === 'Survived' && secondStatuses.get(id) === 'Killed')
+
+const survivedAfterKilled = (
+  firstStatuses: ReadonlyMap<string, string>,
+  secondStatuses: ReadonlyMap<string, string>,
+): boolean => [...secondStatuses].some(([id, status]) => status === 'Survived' && firstStatuses.get(id) === 'Killed')
+
+interface ReuseVariation {
+  readonly first: RunObservation
+  readonly second: RunObservation
+}
+
+const NEW_TEST_MEASURED = {
+  newTestDiscovered: true,
+  newTestCovered: true,
+  dryRunDigestMoved: true,
+  flippedToKilled: true,
+  noVerdictRegressed: true,
+}
+
+const newTestOutcomeOf = (variation: ReuseVariation) => {
+  const report = reusableReportOf(variation.second.incrementalText)
+  const firstReport = reusableReportOf(variation.first.incrementalText)
+  const coverageFiles = reportKeysOf(report?.dryRunCoverage?.mutantCoverage?.perTest).map(fileOfCoverageKey)
+  const firstStatuses = statusMapOf(variation.first.mutants)
+  const secondStatuses = statusMapOf(variation.second.mutants)
+  return {
+    newTestDiscovered: reportKeysOf(report?.testFiles).includes('test/second.test.mjs'),
+    newTestCovered: coverageFiles.includes('test/second.test.mjs'),
+    dryRunDigestMoved: firstReport?.dryRunCoverage?.testClosureDigest !== undefined &&
+      firstReport.dryRunCoverage.testClosureDigest !== report?.dryRunCoverage?.testClosureDigest,
+    flippedToKilled: flippedToKilled(firstStatuses, secondStatuses),
+    noVerdictRegressed: !survivedAfterKilled(firstStatuses, secondStatuses),
+  }
+}
 
 Feature('Content-keyed reuse across incremental reports')
   .withLayer(Layer.empty)
@@ -615,6 +833,417 @@ Feature('Content-keyed reuse across incremental reports')
             everyReportedKillerIsTheKillingTest: true,
           })
         }),
+      ),
+    )
+
+    scenario(
+      'A change to a helper only one covering test reaches re-runs only that test set',
+      Gherkin.Do.pipe(
+        Given('a workspace whose two mutated files are covered by different test files')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeVmFixture([
+                ['package.json', '{ "type": "module" }\n'],
+                ['src/left.mjs', VM_LEFT_SOURCE],
+                ['src/right.mjs', VM_RIGHT_SOURCE],
+                ['test/left-helper.mjs', VM_LEFT_HELPER_SOURCE],
+                ['test/left.test.mjs', VM_LEFT_TEST],
+                ['test/right.test.mjs', VM_RIGHT_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root, { testFiles: [], mutate: ['src/**/*.mjs'] })
+                  const first = yield* runOnce(root, options)
+                  yield* fs.writeFileString(
+                    path.join(root, 'test', 'left-helper.mjs'),
+                    `${VM_LEFT_HELPER_SOURCE}// a comment\n`,
+                  )
+                  const second = yield* runOnce(root, options)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('only mutants whose covering tests reach the changed helper are refused')((s, expect) => {
+          const firstReport = reusableReportOf(s.fixture.first.incrementalText)
+          const secondReport = reusableReportOf(s.fixture.second.incrementalText)
+          const secondMutants = secondReport === undefined
+            ? []
+            : Object.values(secondReport.files).flatMap((file) => file.mutants)
+          const firstById = new Map(s.fixture.first.mutants.map((mutant) => [mutant.id, mutant.status]))
+          const secondById = new Map(secondMutants.map((mutant) => [mutant.id, mutant.status]))
+          const mutantIds = firstReport === undefined
+            ? []
+            : [...mutantIdsInOf(firstReport, 'src/left.mjs'), ...mutantIdsInOf(firstReport, 'src/right.mjs')]
+          const staticIds = firstReport === undefined ? new Set<string>() : staticIdsOf(firstReport)
+          const changed = (mutantId: string): boolean =>
+            firstReport !== undefined &&
+            (staticIds.has(mutantId) || coveringFilesOf(firstReport, mutantId).has('test/left.test.mjs'))
+          const expectedReused = mutantIds.filter((mutantId) => !changed(mutantId))
+          const expectedRefused = mutantIds.filter(changed)
+          const reuse = s.fixture.second.reuse
+          const closureRefused = reuse?.refused.closureChanged ?? 0
+          const keptOrUnremembered = (reuse?.reused ?? 0) + (reuse?.refused.noPriorRecord ?? 0)
+          const refusedForOtherReasons = [
+            reuse?.refused.semanticsChanged,
+            reuse?.refused.policyChanged,
+            reuse?.refused.runInputsChanged,
+            reuse?.refused.flakyDependency,
+            reuse?.refused.timeoutUnreproduced,
+          ].reduce<number>((total, count) => total + (count ?? 0), 0)
+          return expect({
+            runSucceeded: Exit.isSuccess(s.fixture.first.exit),
+            secondRunSucceeded: Exit.isSuccess(s.fixture.second.exit),
+            plannedNonZero: mutantIds.length > 0,
+            bothOutcomesPresent: expectedReused.length > 0 && expectedRefused.length > 0,
+            closureRefused,
+            keptOrUnremembered,
+            refusedForOtherReasons,
+            statusesStable: mutantIds.length === secondById.size &&
+              mutantIds.every((mutantId) => firstById.get(mutantId) === secondById.get(mutantId)),
+          }).toEqual({
+            runSucceeded: true,
+            secondRunSucceeded: true,
+            plannedNonZero: true,
+            bothOutcomesPresent: true,
+            closureRefused: expectedRefused.length,
+            keptOrUnremembered: expectedReused.length,
+            refusedForOtherReasons: 0,
+            statusesStable: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A test file the runner discovers under a configured test glob is measured before any verdict is reused',
+      Gherkin.Do.pipe(
+        Given('a workspace whose test glob will match a test file added between two runs')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeVmFixture([
+                ['package.json', '{ "type": "module" }\n'],
+                ['src/target.mjs', VM_LEFT_SOURCE],
+                ['test/first.test.mjs', VM_TOUCHING_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root, { mutate: ['src/**/*.mjs'] })
+                  const first = yield* runOnce(root, options)
+                  yield* fs.writeFileString(path.join(root, 'test', 'second.test.mjs'), VM_ADDING_TEST)
+                  const second = yield* runOnce(root, options)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the second run measures the discovered test and reaches its verdicts')((s, expect) =>
+          expect({
+            runSucceeded: Exit.isSuccess(s.fixture.first.exit) && Exit.isSuccess(s.fixture.second.exit),
+            measured: newTestOutcomeOf(s.fixture),
+          }).toEqual({ runSucceeded: true, measured: NEW_TEST_MEASURED })
+        ),
+      ),
+    )
+
+    scenario(
+      'A test file the runner discovers without a configured test list is measured before any verdict is reused',
+      Gherkin.Do.pipe(
+        Given('a workspace that lets the runner discover every test file')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeVmFixture([
+                ['package.json', '{ "type": "module" }\n'],
+                ['src/target.mjs', VM_LEFT_SOURCE],
+                ['test/first.test.mjs', VM_TOUCHING_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root, { testFiles: [], mutate: ['src/**/*.mjs'] })
+                  const first = yield* runOnce(root, options)
+                  yield* fs.writeFileString(path.join(root, 'test', 'second.test.mjs'), VM_ADDING_TEST)
+                  const second = yield* runOnce(root, options)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the second run measures the discovered test and reaches its verdicts')((s, expect) =>
+          expect({
+            runSucceeded: Exit.isSuccess(s.fixture.first.exit) && Exit.isSuccess(s.fixture.second.exit),
+            measured: newTestOutcomeOf(s.fixture),
+          }).toEqual({ runSucceeded: true, measured: NEW_TEST_MEASURED })
+        ),
+      ),
+    )
+
+    scenario(
+      'A module-level mutant keeps its verdict while an edit stays outside every test closure',
+      Gherkin.Do.pipe(
+        Given('a workspace whose module-level mutant sits beside a source file no test imports')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeVmFixture([
+                ['package.json', '{ "type": "module" }\n'],
+                ['src/left.mjs', VM_REACH_LEFT_SOURCE],
+                ['src/left-helper.mjs', VM_REACH_LEFT_HELPER_SOURCE],
+                ['src/right.mjs', VM_REACH_RIGHT_SOURCE],
+                ['src/unreached.mjs', VM_UNREACHED_SOURCE],
+                ['test/left.test.mjs', VM_REACH_LEFT_TEST],
+                ['test/right.test.mjs', VM_REACH_RIGHT_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root, { mutate: ['src/**/*.mjs'] })
+                  const first = yield* runOnce(root, options)
+                  yield* fs.writeFileString(
+                    path.join(root, 'src', 'unreached.mjs'),
+                    `${VM_UNREACHED_SOURCE}// an edit no test closure reaches\n`,
+                  )
+                  const afterUnrelatedEdit = yield* runOnce(root, options)
+                  yield* fs.writeFileString(
+                    path.join(root, 'src', 'left-helper.mjs'),
+                    `${VM_REACH_LEFT_HELPER_SOURCE}// an edit inside the reaching closure\n`,
+                  )
+                  const afterReachingEdit = yield* runOnce(root, options)
+                  return { first, afterUnrelatedEdit, afterReachingEdit }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the module-level mutants survive the unreached edit and re-run when their reaching closure changes')(
+          (s, expect) => {
+            const firstReport = reusableReportOf(s.fixture.first.incrementalText)
+            const staticIds = firstReport === undefined ? new Set<string>() : staticIdsOf(firstReport)
+            const leftStaticIds = firstReport === undefined
+              ? []
+              : mutantIdsInOf(firstReport, 'src/left.mjs').filter((id) => staticIds.has(id))
+            const reusedIdsOf = (observation: RunObservation): ReadonlySet<string> =>
+              new Set(
+                observation.mutants
+                  .filter((mutant) => mutant.statusReason === 'Remembered')
+                  .map((mutant) => mutant.id),
+              )
+            const firstStatuses = statusMapOf(s.fixture.first.mutants)
+            const unrelatedReused = reusedIdsOf(s.fixture.afterUnrelatedEdit)
+            const unrelatedStatuses = statusMapOf(s.fixture.afterUnrelatedEdit.mutants)
+            const reachingReused = reusedIdsOf(s.fixture.afterReachingEdit)
+            const reachingStatuses = statusMapOf(s.fixture.afterReachingEdit.mutants)
+            return expect({
+              runSucceeded: [s.fixture.first, s.fixture.afterUnrelatedEdit, s.fixture.afterReachingEdit]
+                .every((observation) => Exit.isSuccess(observation.exit)),
+              leftStaticMutantsPositive: leftStaticIds.length > 0,
+              keptOnUnreachedEdit: leftStaticIds.length > 0 &&
+                leftStaticIds.every((id) =>
+                  unrelatedReused.has(id) && unrelatedStatuses.get(id) === firstStatuses.get(id)
+                ),
+              reranOnReachingEdit: leftStaticIds.length > 0 &&
+                leftStaticIds.every((id) =>
+                  !reachingReused.has(id) && reachingStatuses.get(id) === firstStatuses.get(id)
+                ),
+            }).toEqual({
+              runSucceeded: true,
+              leftStaticMutantsPositive: true,
+              keptOnUnreachedEdit: true,
+              reranOnReachingEdit: true,
+            })
+          },
+        ),
+      ),
+    )
+
+    scenario(
+      'An edit outside every closed closure re-runs a module-level mutant when a test file cannot trace all of its imports',
+      Gherkin.Do.pipe(
+        Given('a workspace whose untraceable loader test sits beside two independent source and test pairs')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeVmFixture([
+                ['package.json', '{ "type": "module" }\n'],
+                ['src/left.mjs', VM_REACH_LEFT_SOURCE],
+                ['src/left-helper.mjs', VM_REACH_LEFT_HELPER_SOURCE],
+                ['src/right.mjs', VM_REACH_RIGHT_SOURCE],
+                ['src/unreached.mjs', VM_UNREACHED_SOURCE],
+                ['test/left.test.mjs', VM_REACH_LEFT_TEST],
+                ['test/right.test.mjs', VM_REACH_RIGHT_TEST],
+                ['test/loader.test.mjs', VM_REACH_LOADER_TEST],
+              ])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = vmOptionsOf(root, { mutate: ['src/**/*.mjs'] })
+                  const first = yield* runOnce(root, options)
+                  yield* fs.writeFileString(
+                    path.join(root, 'src', 'unreached.mjs'),
+                    `${VM_UNREACHED_SOURCE}// an edit no closed closure reaches\n`,
+                  )
+                  const afterUnrelatedEdit = yield* runOnce(root, options)
+                  return { first, afterUnrelatedEdit }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the module-level mutants re-run because the untraceable test could load their file')(
+          (s, expect) => {
+            const firstReport = reusableReportOf(s.fixture.first.incrementalText)
+            const staticIds = firstReport === undefined ? new Set<string>() : staticIdsOf(firstReport)
+            const leftStaticIds = firstReport === undefined
+              ? []
+              : mutantIdsInOf(firstReport, 'src/left.mjs').filter((id) => staticIds.has(id))
+            const reusedIdsOf = (observation: RunObservation): ReadonlySet<string> =>
+              new Set(
+                observation.mutants
+                  .filter((mutant) => mutant.statusReason === 'Remembered')
+                  .map((mutant) => mutant.id),
+              )
+            const firstStatuses = statusMapOf(s.fixture.first.mutants)
+            const reusedAfterUnrelatedEdit = reusedIdsOf(s.fixture.afterUnrelatedEdit)
+            const statusesAfterUnrelatedEdit = statusMapOf(s.fixture.afterUnrelatedEdit.mutants)
+            return expect({
+              runSucceeded: Exit.isSuccess(s.fixture.first.exit) &&
+                Exit.isSuccess(s.fixture.afterUnrelatedEdit.exit),
+              leftStaticMutantsPositive: leftStaticIds.length > 0,
+              reranOnUnrelatedEdit: leftStaticIds.length > 0 &&
+                leftStaticIds.every((id) =>
+                  !reusedAfterUnrelatedEdit.has(id) &&
+                  statusesAfterUnrelatedEdit.get(id) === firstStatuses.get(id)
+                ),
+            }).toEqual({
+              runSucceeded: true,
+              leftStaticMutantsPositive: true,
+              reranOnUnrelatedEdit: true,
+            })
+          },
+        ),
+      ),
+    )
+
+    const wireObservationOf = (
+      loaderTest: string,
+      edit: 'plugin' | 'unrelated',
+    ): Effect.Effect<ReuseVariation, never, never> =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        const root = yield* writeVmFixture([
+          ['package.json', '{ "type": "module" }\n'],
+          ['src/left.mjs', VM_WIRE_LEFT_SOURCE],
+          ['src/plugin.mjs', VM_WIRE_PLUGIN_SOURCE],
+          ['src/unrelated.mjs', VM_WIRE_UNRELATED_SOURCE],
+          ['test/loader.test.mjs', loaderTest],
+        ]).pipe(Effect.orDie)
+        return yield* Effect.ensuring(
+          Effect.gen(function*() {
+            const options = vmOptionsOf(root, { mutate: ['src/**/*.mjs'] })
+            const first = yield* runOnce(root, options)
+            if (edit === 'plugin') {
+              yield* fs.writeFileString(
+                path.join(root, 'src', 'plugin.mjs'),
+                `${VM_WIRE_PLUGIN_SOURCE}// a changed plugin\n`,
+              )
+            } else {
+              yield* fs.writeFileString(
+                path.join(root, 'src', 'unrelated.mjs'),
+                `${VM_WIRE_UNRELATED_SOURCE}// an edit no closure reaches\n`,
+              )
+            }
+            const second = yield* runOnce(root, options)
+            return { first, second }
+          }),
+          removeFixture(root),
+        )
+      }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+    const leftMutantVerdictOf = (variation: ReuseVariation) => {
+      const firstReport = reusableReportOf(variation.first.incrementalText)
+      const leftIds = firstReport === undefined ? [] : mutantIdsInOf(firstReport, 'src/left.mjs')
+      const reusedIds = new Set(
+        variation.second.mutants
+          .filter((mutant) => mutant.statusReason === 'Remembered')
+          .map((mutant) => mutant.id),
+      )
+      const firstStatuses = statusMapOf(variation.first.mutants)
+      const secondStatuses = statusMapOf(variation.second.mutants)
+      return {
+        runSucceeded: Exit.isSuccess(variation.first.exit) && Exit.isSuccess(variation.second.exit),
+        leftMutantsPositive: leftIds.length > 0,
+        kept: leftIds.length > 0 &&
+          leftIds.every((id) => reusedIds.has(id) && secondStatuses.get(id) === firstStatuses.get(id)),
+        reran: leftIds.length > 0 &&
+          leftIds.every((id) => !reusedIds.has(id) && secondStatuses.get(id) === firstStatuses.get(id)),
+      }
+    }
+
+    scenario(
+      'A runtime module a test file loads keeps the closure closed around an unreached edit',
+      Gherkin.Do.pipe(
+        Given('a workspace whose loader test imports its source statically and a plugin at runtime')(
+          'variation',
+          () => wireObservationOf(VM_WIRE_LOADER_TEST, 'unrelated'),
+        ),
+        Then('the mutants covered by that test file are remembered across the unreached edit')((s, expect) =>
+          expect(leftMutantVerdictOf(s.variation)).toEqual({
+            runSucceeded: true,
+            leftMutantsPositive: true,
+            kept: true,
+            reran: false,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A change to the runtime module a test file loads re-runs the mutants it covers',
+      Gherkin.Do.pipe(
+        Given('a workspace whose loader test imports its source statically and a plugin at runtime')(
+          'variation',
+          () => wireObservationOf(VM_WIRE_LOADER_TEST, 'plugin'),
+        ),
+        Then('the mutants covered by that test file re-run when its runtime target changes')((s, expect) =>
+          expect(leftMutantVerdictOf(s.variation)).toEqual({
+            runSucceeded: true,
+            leftMutantsPositive: true,
+            kept: false,
+            reran: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A runtime module behind a data url keeps the closure open around an unreached edit',
+      Gherkin.Do.pipe(
+        Given('a workspace whose loader test loads a module addressed by a data url')(
+          'variation',
+          () => wireObservationOf(VM_WIRE_DATA_LOADER_TEST, 'unrelated'),
+        ),
+        Then('the mutants covered by that test file re-run because the closure stayed open')((s, expect) =>
+          expect(leftMutantVerdictOf(s.variation)).toEqual({
+            runSucceeded: true,
+            leftMutantsPositive: true,
+            kept: false,
+            reran: true,
+          })
+        ),
       ),
     )
   })

@@ -16,5 +16,6 @@ declare module 'vitest' {
   interface TaskMeta {
     hitCount: number | undefined
     mutantCoverage: Mutant.MutantCoverage | undefined
+    testFileModules: string[] | undefined
   }
 }

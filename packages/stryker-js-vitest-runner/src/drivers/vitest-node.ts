@@ -23,6 +23,12 @@ export const fileKeyOf = <A>(file: A): string => textFieldOf(file, 'projectName'
 
 export const metaOf = <A>(file: A): VitestValue => Option.getOrUndefined(propertyOf<A, VitestValue>(file, 'meta'))
 
+export const testFileModulesOf = <A = VitestValue>(file: A): Option.Option<readonly string[]> =>
+  Option.map(
+    Option.filter(propertyOf<VitestValue, VitestValue>(metaOf(file), 'testFileModules'), Array.isArray),
+    (entries) => entries.filter(Predicate.isString),
+  )
+
 export const errorCodeOf = <A>(cause: A): Option.Option<string> =>
   Option.filter(propertyOf<A, VitestValue>(cause, 'code'), Predicate.isString)
 

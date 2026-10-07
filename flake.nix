@@ -25,7 +25,7 @@
     # One `pnpm pack` tarball per workspace package, built offline from the
     # lockfile by the same builder systemfsoftware uses.
     pnpm-release-management = {
-      url = "github:systemfsoftware/pnpm-release-management/54629f2889039eb2e53ccf0179aaf8c7ef0c46a3";
+      url = "github:systemfsoftware/pnpm-release-management";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -33,7 +33,7 @@
   outputs = { self, nixpkgs, comment-checker, importPnpmLock, systemfsoftware, pnpm-release-management }:
     let
       lib = nixpkgs.lib;
-      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      systems = [ "x86_64-linux" "aarch64-linux" ];
       forEachSystem = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
       workspaceOf = pkgs:
         pnpm-release-management.lib.mkPnpmWorkspacePackages {
@@ -41,6 +41,7 @@
           src = self;
           pname = "stryker-js-effect";
           pnpm = pkgs.pnpm_11;
+          hash = "sha256-xf9ZSWYq2xskFvnXqSQJ8UoQENAZRxMVQDcYIwWfAiU=";
         };
     in
     {

@@ -1,5 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
+import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashSet from 'effect/HashSet'
@@ -27,6 +28,7 @@ export interface ImportClosureInput {
   readonly projectFiles: readonly string[]
   readonly testFiles: readonly string[]
   readonly globalInputs?: readonly string[]
+  readonly observedModules?: Readonly<Record<string, readonly string[]>>
 }
 
 export interface TestFileClosureDigest {
@@ -61,6 +63,14 @@ interface ModuleScan {
   readonly contentHash: string
   readonly dependencies: readonly string[]
   readonly open: boolean
+  readonly dynamicOpen: boolean
+}
+
+type OpenMode = 'Combined' | 'Structural'
+
+interface ObservedEvidence {
+  readonly roots: readonly string[]
+  readonly invalid: boolean
 }
 
 interface Extraction {
@@ -70,12 +80,12 @@ interface Extraction {
 
 interface Scan {
   readonly specifiers: readonly string[]
-  readonly open: boolean
+  readonly dynamicOpen: boolean
 }
 
 interface ScanState {
   readonly specifiers: HashSet.HashSet<string>
-  readonly open: boolean
+  readonly hidden: boolean
 }
 
 interface Resolution {
@@ -167,7 +177,7 @@ const MOCK_METHODS: Readonly<Record<string, true>> = {
 const LITERAL_TYPES: Readonly<Record<string, true>> = { Literal: true, StringLiteral: true }
 
 const NOTHING: Extraction = { specifier: undefined, hidden: false }
-const EMPTY_STATE: ScanState = { specifiers: HashSet.empty(), open: false }
+const EMPTY_STATE: ScanState = { specifiers: HashSet.empty(), hidden: false }
 const EXTERNAL_RESOLUTION: Resolution = { kind: 'External', file: '' }
 const UNRESOLVED_RESOLUTION: Resolution = { kind: 'Unresolved', file: '' }
 
@@ -266,7 +276,7 @@ const extractionOf = (node: AstNode): Extraction =>
 
 const mergeState = (state: ScanState, extraction: Extraction): ScanState => ({
   specifiers: specifierState(state, extraction),
-  open: state.open || extraction.hidden,
+  hidden: state.hidden || extraction.hidden,
 })
 
 const specifierState = (state: ScanState, extraction: Extraction): HashSet.HashSet<string> =>
@@ -279,7 +289,7 @@ const walk = (state: ScanState, node: AstNode): ScanState =>
 
 const scanProgram = (program: AstValue): Scan => {
   const state = isNode(program) ? walk(EMPTY_STATE, program) : EMPTY_STATE
-  return { specifiers: [...state.specifiers], open: state.open }
+  return { specifiers: [...state.specifiers], dynamicOpen: state.hidden }
 }
 
 const oxcModule = Effect.cached(Effect.promise(() => import('oxc-parser')))
@@ -288,7 +298,7 @@ const scanSource = Effect.fnUntraced(function*(content: string, absolute: string
   const oxc = yield* Effect.flatMap(oxcModule, (load) => load)
   const parsed = oxc.parseSync(absolute, content, { lang: language })
   const scan = scanProgram(parsed.program)
-  return { specifiers: scan.specifiers, open: scan.open || parsed.errors.length > 0 }
+  return { specifiers: scan.specifiers, dynamicOpen: scan.dynamicOpen, parseFailed: parsed.errors.length > 0 }
 })
 
 const extensionOf = (file: string): string => {
@@ -334,10 +344,12 @@ const applySegment = (kept: string[], segment: string): void => {
   resolveSegment(kept, segment)
 }
 
+const rootPrefixOf = (fromDirectory: string): string => fromDirectory.startsWith('/') ? '/' : ''
+
 const joinSpecifier = (fromDirectory: string, specifier: string): string => {
   const kept: string[] = []
   for (const segment of [...fromDirectory.split('/'), ...specifier.split('/')]) applySegment(kept, segment)
-  return kept.join('/')
+  return `${rootPrefixOf(fromDirectory)}${kept.join('/')}`
 }
 
 const directoryOf = (key: string): string => key.split('/').slice(0, -1).join('/')
@@ -355,13 +367,47 @@ const pathSpecifierKey = (input: ResolveInput): string =>
 
 const memberResolution = (file: string): Resolution => ({ kind: 'Member', file })
 
-const memberResolutionOf = (files: HashSet.HashSet<string>, candidate: string): Resolution => {
-  const member = memberOf(files, candidate)
-  return member === undefined ? UNRESOLVED_RESOLUTION : memberResolution(member)
-}
+const firstFlaggedOf = (candidates: readonly string[], flags: readonly boolean[]): string | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(Arr.findFirstIndex(flags, (flag) => flag), (index) => Arr.get(candidates, index)),
+  )
 
-const resolvePathSpecifier = (input: ResolveInput): Resolution =>
-  memberResolutionOf(input.files, pathSpecifierKey(input))
+const candidateFileOf = Effect.fnUntraced(function*(realRoot: string, specifier: string) {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const candidates = candidatesOf(specifier)
+  const flags = yield* Effect.forEach(candidates, (candidate) =>
+    fs.stat(path.resolve(realRoot, candidate)).pipe(
+      Effect.map((info) => info.type === 'File'),
+      Effect.orElseSucceed(() => false),
+    ))
+  return firstFlaggedOf(candidates, flags)
+})
+
+const resolutionOfFile = (file: string | undefined): Resolution =>
+  Option.match(Option.fromUndefinedOr(file), {
+    onNone: () => UNRESOLVED_RESOLUTION,
+    onSome: (present) => memberResolution(present),
+  })
+
+const candidateResolutionOf = Effect.fnUntraced(function*(realRoot: string, specifier: string) {
+  return resolutionOfFile(yield* candidateFileOf(realRoot, specifier))
+})
+
+const memberResolutionOf = Effect.fnUntraced(function*(
+  input: ResolveInput,
+  specifier: string,
+): Effect.fn.Return<Resolution, never, FileSystem.FileSystem | Path.Path> {
+  const member = Option.fromUndefinedOr(memberOf(input.files, specifier))
+  return yield* Option.match(member, {
+    onSome: (present) => Effect.succeed(memberResolution(present)),
+    onNone: () => candidateResolutionOf(input.realRoot, specifier),
+  })
+})
+
+const resolvePathSpecifier = Effect.fnUntraced(function*(input: ResolveInput) {
+  return yield* memberResolutionOf(input, pathSpecifierKey(input))
+})
 
 const packageNameOf = (specifier: string): string => {
   const segments = specifier.split('/')
@@ -372,17 +418,12 @@ const packageNameOf = (specifier: string): string => {
 
 const subpathOf = (specifier: string): string => specifier.slice(packageNameOf(specifier).length + 1)
 
-const directoryChainOf = (fromDirectory: string): readonly string[] => {
-  const parts = fromDirectory.split('/').filter((part) => part.length > 0)
-  return [...parts.map((_, index) => parts.slice(0, index + 1).join('/')), '']
-}
+const ancestorsOf = (path: Path.Path, directory: string): readonly string[] =>
+  path.dirname(directory) === directory ? [directory] : [directory, ...ancestorsOf(path, path.dirname(directory))]
 
-const packageCandidateOf = (directory: string, packageName: string): string =>
-  `${directory.length === 0 ? '' : `${directory}/`}node_modules/${packageName}`
-
-const packageCandidatesOf = (input: ResolveInput): readonly string[] =>
-  directoryChainOf(directoryOf(input.key)).map((directory) =>
-    packageCandidateOf(directory, packageNameOf(input.specifier))
+const packageCandidatesOf = (path: Path.Path, input: ResolveInput): readonly string[] =>
+  ancestorsOf(path, path.resolve(input.realRoot, directoryOf(input.key))).map((directory) =>
+    path.join(directory, 'node_modules', packageNameOf(input.specifier))
   )
 
 const existingFlagsOf = Effect.fnUntraced(function*(realRoot: string, candidates: readonly string[]) {
@@ -392,9 +433,9 @@ const existingFlagsOf = Effect.fnUntraced(function*(realRoot: string, candidates
 })
 
 const packageDirectoryOf = Effect.fnUntraced(function*(input: ResolveInput) {
-  const candidates = packageCandidatesOf(input)
+  const candidates = packageCandidatesOf(yield* Path.Path, input)
   const flags = yield* existingFlagsOf(input.realRoot, candidates)
-  return candidates.find((_, index) => flags[index] === true)
+  return firstFlaggedOf(candidates, flags)
 })
 
 const realPathOf = Effect.fnUntraced(function*(absolute: string) {
@@ -473,9 +514,9 @@ const followWorkspacePackage = Effect.fnUntraced(function*(
   packageKey: string,
 ) {
   const target = yield* packageTargetOf(packageDirectory, subpathOf(input.specifier))
-  return Option.match(target, {
-    onNone: () => UNRESOLVED_RESOLUTION,
-    onSome: (present) => memberResolutionOf(input.files, joinSpecifier(packageKey, present)),
+  return yield* Option.match(target, {
+    onNone: () => Effect.succeed(UNRESOLVED_RESOLUTION),
+    onSome: (present) => memberResolutionOf(input, joinSpecifier(packageKey, present)),
   })
 })
 
@@ -500,7 +541,7 @@ const resolvePackageSpecifier = Effect.fnUntraced(function*(input: ResolveInput)
 })
 
 const resolveSpecifier = Effect.fnUntraced(function*(input: ResolveInput) {
-  if (isPathSpecifier(input.specifier)) return resolvePathSpecifier(input)
+  if (isPathSpecifier(input.specifier)) return yield* resolvePathSpecifier(input)
   return yield* resolvePackageSpecifier(input)
 })
 
@@ -556,6 +597,7 @@ const unparsedScan = (loaded: LoadedFile, verdictContent: string): ModuleScan =>
   contentHash: hashOf(verdictContent),
   dependencies: [],
   open: INERT_EXTENSIONS[extensionOf(loaded.key)] !== true,
+  dynamicOpen: false,
 })
 
 const parsedScan = Effect.fnUntraced(function*(
@@ -569,7 +611,8 @@ const parsedScan = Effect.fnUntraced(function*(
     key: loaded.key,
     contentHash: hashOf(loaded.content),
     dependencies: dependencyFiles(resolutions),
-    open: scan.open || resolutions.some(opensClosure),
+    open: scan.parseFailed || resolutions.some(opensClosure),
+    dynamicOpen: scan.dynamicOpen,
   }
 })
 
@@ -592,13 +635,20 @@ const moduleScanOf = Effect.fnUntraced(function*(
     }))
 })
 
-const moduleEntry = (scan: ModuleScan): readonly [string, ImportClosureModule] => [
+const OPEN_COMBINERS: Readonly<Record<OpenMode, (scan: ModuleScan) => boolean>> = {
+  Combined: (scan) => scan.open || scan.dynamicOpen,
+  Structural: (scan) => scan.open,
+}
+
+const openFor = (mode: OpenMode, scan: ModuleScan): boolean => OPEN_COMBINERS[mode](scan)
+
+const moduleEntry = (mode: OpenMode) => (scan: ModuleScan): readonly [string, ImportClosureModule] => [
   scan.key,
-  { dependencies: scan.dependencies, open: scan.open },
+  { dependencies: scan.dependencies, open: openFor(mode, scan) },
 ]
 
-const modulesOf = (scanned: readonly ModuleScan[]): Record<string, ImportClosureModule> =>
-  Object.fromEntries(scanned.map(moduleEntry))
+const modulesOf = (mode: OpenMode, scanned: readonly ModuleScan[]): Record<string, ImportClosureModule> =>
+  Object.fromEntries(scanned.map(moduleEntry(mode)))
 
 const digestLine = (scan: ModuleScan): string => `${scan.key}\u0000${scan.contentHash}`
 
@@ -607,15 +657,20 @@ const projectDigestOf = (scanned: readonly ModuleScan[]): string => hashOf(scann
 const sortedKeys = (roots: Roots, files: readonly string[]): readonly string[] =>
   [...HashSet.fromIterable(files.map((file) => keyOf(roots, file)))].sort()
 
+const commandGlobalInputs = (roots: Roots, input: ImportClosureInput): readonly string[] =>
+  sortedKeys(roots, input.globalInputs ?? [])
+
 const commandOf = (
   input: ImportClosureInput,
   roots: Roots,
   scanned: readonly ModuleScan[],
+  testFiles: readonly string[],
+  mode: OpenMode,
 ): ImportClosureCommand =>
   ImportClosureCommand.make({
-    modules: modulesOf(scanned),
-    globalInputs: sortedKeys(roots, input.globalInputs ?? []),
-    testFiles: sortedKeys(roots, input.testFiles),
+    modules: modulesOf(mode, scanned),
+    globalInputs: commandGlobalInputs(roots, input),
+    testFiles,
   })
 
 const contentHashOf = (
@@ -648,23 +703,207 @@ const closureWithDigest = (
   digest: closureDigestOf(hashes, projectDigest, closure),
 })
 
+const scannedOf = (scanned: MutableHashMap.MutableHashMap<string, ModuleScan>): readonly ModuleScan[] => [
+  ...MutableHashMap.values(scanned),
+]
+
+const pendingDependenciesOf = (
+  scans: readonly ModuleScan[],
+  scanned: MutableHashMap.MutableHashMap<string, ModuleScan>,
+): readonly string[] =>
+  scans.flatMap((scan) => scan.dependencies).filter((dependency) => !MutableHashMap.has(scanned, dependency))
+
+const nextBatchOf = (pending: readonly string[]): Option.Option<readonly string[]> =>
+  Option.liftPredicate(pending, (waiting) => waiting.length > 0)
+
+const scanPendingOf = Effect.fnUntraced(function*(
+  roots: Roots,
+  files: HashSet.HashSet<string>,
+  memo: MutableHashMap.MutableHashMap<string, Resolution>,
+  scanned: MutableHashMap.MutableHashMap<string, ModuleScan>,
+  pending: readonly string[],
+): Effect.fn.Return<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path> {
+  const batch = Arr.dedupe(pending).filter((file) => !MutableHashMap.has(scanned, file))
+  const results = yield* Effect.forEach(
+    batch,
+    (file) => moduleScanOf(roots, files, memo, file),
+    { concurrency: CONCURRENCY },
+  )
+  yield* Effect.forEach(
+    results,
+    (scan) => Effect.sync(() => MutableHashMap.set(scanned, scan.key, scan)),
+    { discard: true },
+  )
+  const next = nextBatchOf(pendingDependenciesOf(results, scanned))
+  const entries = scannedOf(scanned)
+  return yield* Option.match(next, {
+    onNone: () => Effect.succeed(entries),
+    onSome: (waiting) => scanPendingOf(roots, files, memo, scanned, waiting),
+  })
+})
+
+const scanReachable = (
+  roots: Roots,
+  files: HashSet.HashSet<string>,
+  memo: MutableHashMap.MutableHashMap<string, Resolution>,
+  seeds: readonly string[],
+): Effect.Effect<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path> =>
+  scanPendingOf(roots, files, memo, MutableHashMap.empty<string, ModuleScan>(), seeds)
+
+const leafScanOf = Effect.fnUntraced(function*(roots: Roots, file: string) {
+  const loaded = yield* readProjectFile(roots, file)
+  return {
+    key: loaded.key,
+    contentHash: hashOf(loaded.content),
+    dependencies: [],
+    open: false,
+    dynamicOpen: false,
+  }
+})
+
+const scannedKeysOf = (scanned: readonly ModuleScan[]): HashSet.HashSet<string> =>
+  HashSet.fromIterable(scanned.map((scan) => scan.key))
+
+const globalInputKeysOf = (
+  roots: Roots,
+  input: ImportClosureInput,
+  scanned: readonly ModuleScan[],
+): readonly string[] =>
+  sortedKeys(roots, input.globalInputs ?? []).filter((key) => !HashSet.has(scannedKeysOf(scanned), key))
+
+const hashGlobalInputsOf = Effect.fnUntraced(function*(roots: Roots, keys: readonly string[]) {
+  const scans = yield* Effect.forEach(
+    keys,
+    (key) => Effect.option(leafScanOf(roots, key)),
+    { concurrency: CONCURRENCY },
+  )
+  return Arr.getSomes(scans)
+})
+
+const infoIsFile = (type: string | undefined): boolean => type === 'File'
+
+const statTypeOf = Effect.fnUntraced(function*(fs: FileSystem.FileSystem, path: Path.Path, value: string) {
+  if (!path.isAbsolute(value)) return undefined
+  return yield* fs.stat(value).pipe(Effect.map((info) => info.type), Effect.orElseSucceed(() => undefined))
+})
+
+const observedRootOf = Effect.fnUntraced(function*(roots: Roots, value: string) {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const type = yield* statTypeOf(fs, path, value)
+  return infoIsFile(type) ? Option.some(keyOf(roots, value)) : Option.none<string>()
+})
+
+const observedTestEvidenceOf = Effect.fnUntraced(function*(roots: Roots, keys: readonly string[]) {
+  const observed = yield* Effect.forEach(keys, (key) => observedRootOf(roots, key), { concurrency: CONCURRENCY })
+  return { roots: Arr.getSomes(observed), invalid: observed.some(Option.isNone) }
+})
+
+const observedEntries = (input: ImportClosureInput): readonly (readonly [string, readonly string[]])[] =>
+  Object.entries(input.observedModules ?? {})
+
+const observedEvidenceOf = Effect.fnUntraced(function*(roots: Roots, input: ImportClosureInput) {
+  const resolved = yield* Effect.forEach(
+    observedEntries(input),
+    ([testFile, keys]) =>
+      observedTestEvidenceOf(roots, keys).pipe(
+        Effect.map((entry) => [keyOf(roots, testFile), entry] as const),
+      ),
+    { concurrency: CONCURRENCY },
+  )
+  return new Map(resolved)
+})
+
+const unknownKeys = (known: HashSet.HashSet<string>, keys: readonly string[]): readonly string[] =>
+  [...HashSet.fromIterable(keys)].filter((key) => !HashSet.has(known, key))
+
+const observedScansOf = Effect.fnUntraced(function*(
+  roots: Roots,
+  files: HashSet.HashSet<string>,
+  memo: MutableHashMap.MutableHashMap<string, Resolution>,
+  known: readonly ModuleScan[],
+  keys: readonly string[],
+) {
+  const pending = unknownKeys(scannedKeysOf(known), keys)
+  const sourceKeys = pending.filter((key) => !isNodeModulesKey(key))
+  const nodeKeys = pending.filter(isNodeModulesKey)
+  const sourceScans = sourceKeys.length === 0 ? [] : yield* scanReachable(roots, files, memo, sourceKeys)
+  const leafScans = yield* Effect.forEach(
+    nodeKeys,
+    (key) => Effect.option(leafScanOf(roots, key)),
+    { concurrency: CONCURRENCY },
+  )
+  return [...sourceScans, ...Arr.getSomes(leafScans)]
+})
+
+const augmentModule = (member: ImportClosureModule, entry: ObservedEvidence): ImportClosureModule => ({
+  dependencies: [...HashSet.fromIterable([...member.dependencies, ...entry.roots])].sort(),
+  open: member.open || entry.invalid,
+})
+
+const augmentedModules = (
+  modules: Record<string, ImportClosureModule>,
+  evidence: ReadonlyMap<string, ObservedEvidence>,
+): Record<string, ImportClosureModule> =>
+  [...evidence].reduce((augmented, [testFile, entry]) => {
+    const member = augmented[testFile]
+    return member === undefined ? augmented : { ...augmented, [testFile]: augmentModule(member, entry) }
+  }, { ...modules })
+
+const evidenceCommandOf = (
+  input: ImportClosureInput,
+  roots: Roots,
+  scanned: readonly ModuleScan[],
+  evidence: ReadonlyMap<string, ObservedEvidence>,
+  testFiles: readonly string[],
+): ImportClosureCommand =>
+  ImportClosureCommand.make({
+    modules: augmentedModules(modulesOf('Structural', scanned), evidence),
+    globalInputs: commandGlobalInputs(roots, input),
+    testFiles,
+  })
+
+const closuresOf = (command: ImportClosureCommand): readonly TestFileClosure[] =>
+  Result.getOrElse(importClosure(command), (unreachable: never) => unreachable)
+
 export const analyzeImportClosure = Effect.fnUntraced(function*(
   input: ImportClosureInput,
 ): Effect.fn.Return<ImportClosureAnalysis, PlatformError, FileSystem.FileSystem | Path.Path> {
   const roots = yield* readRoots(input)
-  const files = HashSet.fromIterable(input.projectFiles.map((file) => keyOf(roots, file)))
+  const testKeys = sortedKeys(roots, input.testFiles)
+  const seeds = [...HashSet.fromIterable(input.projectFiles.map((file) => keyOf(roots, file)))]
+  const files = HashSet.fromIterable(seeds)
   const memo = MutableHashMap.empty<string, Resolution>()
-  const scanned = yield* Effect.forEach(
-    input.projectFiles,
-    (file) => moduleScanOf(roots, files, memo, file),
-    { concurrency: CONCURRENCY },
-  )
-  const projectDigest = projectDigestOf(scanned)
+  const reachable = yield* scanReachable(roots, files, memo, seeds)
+  const globalScans = yield* hashGlobalInputsOf(roots, globalInputKeysOf(roots, input, reachable))
+  const baseScanned = [...reachable, ...globalScans]
+  const projectDigest = projectDigestOf(baseScanned)
+  const baseHashes = MutableHashMap.fromIterable(baseScanned.map((scan) => [scan.key, scan.contentHash] as const))
+  const evidence = yield* observedEvidenceOf(roots, input)
+  const unevidenced = testKeys.filter((key) => !evidence.has(key))
+  const evidenced = testKeys.filter((key) => evidence.has(key))
+  const baseClosures = closuresOf(commandOf(input, roots, baseScanned, unevidenced, 'Combined'))
+  if (evidenced.length === 0) {
+    return {
+      closures: baseClosures.map((closure) => closureWithDigest(baseHashes, projectDigest, closure)),
+      projectDigest,
+    }
+  }
+  const baseKeys = scannedKeysOf(baseScanned)
+  const observedScans = (yield* observedScansOf(
+    roots,
+    files,
+    memo,
+    baseScanned,
+    Arr.dedupe([...evidence.values()].flatMap((entry) => entry.roots)),
+  )).filter((scan) => !HashSet.has(baseKeys, scan.key))
+  const scanned = [...baseScanned, ...observedScans]
   const hashes = MutableHashMap.fromIterable(scanned.map((scan) => [scan.key, scan.contentHash] as const))
-  const closures = Result.getOrElse(
-    importClosure(commandOf(input, roots, scanned)),
-    (unreachable: never) => unreachable,
+  const evidenceClosures = closuresOf(evidenceCommandOf(input, roots, scanned, evidence, evidenced))
+  const byTestFile = new Map(
+    [...baseClosures, ...evidenceClosures].map((closure) => [closure.testFile, closure] as const),
   )
+  const closures = testKeys.flatMap((key) => Option.toArray(Option.fromUndefinedOr(byTestFile.get(key))))
   return {
     closures: closures.map((closure) => closureWithDigest(hashes, projectDigest, closure)),
     projectDigest,

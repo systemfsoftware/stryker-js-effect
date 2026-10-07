@@ -23,6 +23,7 @@ interface FixtureSpec {
   readonly testFiles: readonly string[]
   readonly globalInputs?: readonly string[]
   readonly changed?: FixtureFiles
+  readonly observedModules?: Readonly<Record<string, readonly string[]>>
 }
 
 interface Observation {
@@ -76,6 +77,40 @@ const writeFixture = (spec: FixtureSpec): Effect.Effect<string, PlatformError, F
 const removeDirectory = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
   Effect.ignore(FileSystem.FileSystem.pipe(Effect.flatMap((fs) => fs.remove(root, { recursive: true }))))
 
+const OBSERVED_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/
+
+const observedModulesOf = (
+  path: Path.Path,
+  root: string,
+  observed: Readonly<Record<string, readonly string[]>> | undefined,
+): { readonly observedModules?: Readonly<Record<string, readonly string[]>> } =>
+  observed === undefined
+    ? {}
+    : {
+      observedModules: Object.fromEntries(
+        Object.entries(observed).map(([testFile, keys]) => [
+          path.join(root, testFile),
+          keys.map((key) => OBSERVED_SCHEME.test(key) ? key : path.join(root, key)),
+        ]),
+      ),
+    }
+
+interface ClosureInput {
+  readonly rootDir: string
+  readonly projectFiles: readonly string[]
+  readonly testFiles: readonly string[]
+  readonly globalInputs: readonly string[]
+  readonly observedModules?: Readonly<Record<string, readonly string[]>>
+}
+
+const inputOf = (path: Path.Path, root: string, spec: FixtureSpec): ClosureInput => ({
+  rootDir: root,
+  projectFiles: Object.keys({ ...VITEST_STUB, ...spec.files }).filter((file) => !file.startsWith('node_modules/')),
+  testFiles: spec.testFiles.map((file) => path.join(root, file)),
+  globalInputs: (spec.globalInputs ?? []).map((file) => path.join(root, file)),
+  ...observedModulesOf(path, root, spec.observedModules),
+})
+
 const observe = (
   root: string,
   spec: FixtureSpec,
@@ -83,15 +118,7 @@ const observe = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const projectFiles = Object.keys({ ...VITEST_STUB, ...spec.files }).filter(
-      (file) => !file.startsWith('node_modules/'),
-    )
-    const input = {
-      rootDir: root,
-      projectFiles,
-      testFiles: spec.testFiles.map((file) => path.join(root, file)),
-      globalInputs: (spec.globalInputs ?? []).map((file) => path.join(root, file)),
-    }
+    const input = inputOf(path, root, spec)
     const before = yield* analyzeImportClosure(input)
     yield* Effect.forEach(
       Object.entries(spec.changed ?? {}),
@@ -99,7 +126,29 @@ const observe = (
       { discard: true },
     )
     const after = yield* analyzeImportClosure(input)
-    return { before, after, projectFiles }
+    return { before, after, projectFiles: input.projectFiles }
+  })
+
+interface EvidenceObservation {
+  readonly before: ImportClosureAnalysis
+  readonly afterObserved: ImportClosureAnalysis
+  readonly afterUnreached: ImportClosureAnalysis
+}
+
+const observeEvidence = (
+  root: string,
+  spec: FixtureSpec,
+): Effect.Effect<EvidenceObservation, PlatformError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const input = inputOf(path, root, spec)
+    const before = yield* analyzeImportClosure(input)
+    yield* fs.writeFileString(path.join(root, 'src/plugin.ts'), 'export const plugin = 2\n')
+    const afterObserved = yield* analyzeImportClosure(input)
+    yield* fs.writeFileString(path.join(root, 'src/other.ts'), 'export const other = 1\n')
+    const afterUnreached = yield* analyzeImportClosure(input)
+    return { before, afterObserved, afterUnreached }
   })
 
 const closureOf = (analysis: ImportClosureAnalysis, testFile: string) =>
@@ -162,6 +211,31 @@ const NON_LITERAL: FixtureSpec = {
   changed: { 'src/unused.ts': 'export const unused = 1\n' },
 }
 
+const DYNAMIC_EVIDENCE: FixtureSpec = {
+  files: {
+    'src/plugin.ts': 'export const plugin = 1\n',
+    'src/other.ts': 'export const other = 0\n',
+    'test/plugin.test.ts':
+      "import { test } from 'vitest'\nconst name = '../src/plugin.js'\nexport const load = () => import(name)\ntest('plugin', () => { load })\n",
+  },
+  testFiles: ['test/plugin.test.ts'],
+}
+
+const WITH_EVIDENCE: FixtureSpec = {
+  ...DYNAMIC_EVIDENCE,
+  observedModules: { 'test/plugin.test.ts': ['src/plugin.ts'] },
+}
+
+const WITH_DATA_EVIDENCE: FixtureSpec = {
+  ...DYNAMIC_EVIDENCE,
+  observedModules: { 'test/plugin.test.ts': ['data:text/javascript,export default 1'] },
+}
+
+const WITH_MISSING_EVIDENCE: FixtureSpec = {
+  ...DYNAMIC_EVIDENCE,
+  observedModules: { 'test/plugin.test.ts': ['src/gone.ts'] },
+}
+
 const LITERALS: FixtureSpec = {
   files: {
     'src/lazy.ts': 'export const lazy = 1\n',
@@ -213,6 +287,108 @@ const WORKSPACE_LINK: FixtureSpec = {
   links: { 'node_modules/@fixture/lib': 'pkgs/lib', 'node_modules/@fixture/legacy': 'pkgs/legacy' },
   testFiles: ['test/link.test.ts'],
 }
+
+const vitestStubAt = (prefix: string): FixtureFiles =>
+  Object.fromEntries(Object.entries(VITEST_STUB).map(([file, content]) => [`${prefix}/${file}`, content]))
+
+const SIBLING_LINK: FixtureSpec = {
+  files: {
+    ...vitestStubAt('app'),
+    'app/src/app.ts': "import { sibling } from '@fixture/sibling'\nexport const app = sibling\n",
+    'app/test/sibling.test.ts':
+      "import { test } from 'vitest'\nimport { app } from '../src/app.js'\ntest('app', () => { app })\n",
+    'sibling/package.json':
+      '{"name":"@fixture/sibling","exports":{".":{"@systemfsoftware/source":"./src/index.ts","default":"./dist/index.js"}}}',
+    'sibling/src/index.ts': "import { own } from 'sibling-only'\nexport const sibling = own\n",
+    'sibling/node_modules/sibling-only/package.json': '{"name":"sibling-only","main":"index.js"}',
+    'sibling/node_modules/sibling-only/index.js': 'export const own = 1\n',
+  },
+  links: { 'app/node_modules/@fixture/sibling': 'sibling' },
+  testFiles: ['test/sibling.test.ts'],
+}
+
+const observeSibling = (
+  root: string,
+): Effect.Effect<ImportClosureAnalysis, PlatformError, FileSystem.FileSystem | Path.Path> =>
+  Path.Path.pipe(
+    Effect.flatMap((path) =>
+      analyzeImportClosure({
+        rootDir: path.join(root, 'app'),
+        projectFiles: ['src/app.ts', 'test/sibling.test.ts'],
+        testFiles: [path.join(root, 'app', 'test/sibling.test.ts')],
+      })
+    ),
+  )
+
+const EXTERNAL_GLOBAL_INPUT: FixtureSpec = {
+  files: {
+    'node_modules/@fixture/guard/package.json': '{"name":"@fixture/guard","type":"module"}',
+    'node_modules/@fixture/guard/guard.mjs': "import '@fixture/absent'\nexport const guard = 1\n",
+    'src/shared.ts': 'export const shared = 1\n',
+    'src/unreached.ts': 'export const unreached = 0\n',
+    'test/one.test.ts':
+      "import { test } from 'vitest'\nimport { shared } from '../src/shared.js'\ntest('one', () => { shared })\n",
+  },
+  testFiles: ['test/one.test.ts'],
+  globalInputs: ['node_modules/@fixture/guard/guard.mjs'],
+  changed: { 'src/unreached.ts': 'export const unreached = 1\n' },
+}
+
+const INSTALLED_SETUP_CHANGE: FixtureSpec = {
+  ...EXTERNAL_GLOBAL_INPUT,
+  changed: { 'node_modules/@fixture/guard/guard.mjs': "import '@fixture/absent'\nexport const guard = 2\n" },
+}
+
+const REACHED_CHANGE_UNDER_EXTERNAL_GLOBAL_INPUT: FixtureSpec = {
+  ...EXTERNAL_GLOBAL_INPUT,
+  changed: { 'src/shared.ts': 'export const shared = 2\n' },
+}
+
+const LINKED_ACROSS_ROOTS: FixtureSpec = {
+  files: {
+    ...vitestStubAt('app'),
+    'app/src/app.ts': "import { lib } from '@fixture/lib'\nexport const app = lib + 1\n",
+    'app/src/unreached.ts': 'export const unreached = 0\n',
+    'app/test/one.test.ts':
+      "import { test } from 'vitest'\nimport { app } from '../src/app.js'\ntest('app', () => { app })\n",
+    'app-lib/package.json':
+      '{"name":"@fixture/lib","exports":{".":{"@systemfsoftware/source":"./src/index.ts","default":"./index.mjs"}}}',
+    'app-lib/src/index.ts': 'export const lib = 1\n',
+  },
+  links: { 'app/node_modules/@fixture/lib': 'app-lib' },
+  testFiles: ['app/test/one.test.ts'],
+}
+
+interface LinkedObservation {
+  readonly before: ImportClosureAnalysis
+  readonly afterLinked: ImportClosureAnalysis
+  readonly afterUnreached: ImportClosureAnalysis
+  readonly linkedIndex: string
+}
+
+const observeLinked = (
+  root: string,
+  spec: FixtureSpec,
+): Effect.Effect<LinkedObservation, PlatformError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const projectRoot = path.join(root, 'app')
+    const projectFiles = Object.keys({ ...vitestStubAt('app'), ...spec.files })
+      .filter((file) => file.startsWith('app/') && !file.startsWith('app/node_modules/'))
+      .map((file) => path.join(root, file))
+    const input = {
+      rootDir: projectRoot,
+      projectFiles,
+      testFiles: spec.testFiles.map((file) => path.join(root, file)),
+    }
+    const before = yield* analyzeImportClosure(input)
+    yield* fs.writeFileString(path.join(root, 'app-lib', 'src', 'index.ts'), 'export const lib = 2\n')
+    const afterLinked = yield* analyzeImportClosure(input)
+    yield* fs.writeFileString(path.join(root, 'app', 'src', 'unreached.ts'), 'export const unreached = 1\n')
+    const afterUnreached = yield* analyzeImportClosure(input)
+    return { before, afterLinked, afterUnreached, linkedIndex: path.join(root, 'app-lib', 'src', 'index.ts') }
+  })
 
 const MANIFEST = '{"name":"@fixture/app","version":"1.0.0","type":"module"}'
 
@@ -417,6 +593,29 @@ Feature('Mapping a test file to the import closure it can reach')
     )
 
     scenario(
+      'A linked package outside the project resolves its imports from its own node_modules',
+      Gherkin.Do.pipe(
+        Given('a project linking a sibling workspace package whose source imports a package only it installs')(
+          'root',
+          () => writeFixture(SIBLING_LINK),
+        ),
+        When('the closure of the project test file is analyzed')(
+          'analysis',
+          (s) => observeSibling(s.root).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the sibling source is listed and its installed import keeps the closure closed')(
+          (s, expect) =>
+            expect({
+              siblingListed: filesOf(s.analysis, 'test/sibling.test.ts').some((file) =>
+                file.endsWith('sibling/src/index.ts')
+              ),
+              open: openOf(s.analysis, 'test/sibling.test.ts'),
+            }).toEqual({ siblingListed: true, open: false }),
+        ),
+      ),
+    )
+
+    scenario(
       'A release that only bumps the package version leaves the digest of a closure reading the manifest still',
       Gherkin.Do.pipe(
         Given('a project whose source imports its own package.json')('root', () => writeFixture(VERSION_BUMP)),
@@ -448,6 +647,187 @@ Feature('Mapping a test file to the import closure it can reach')
               manifestInClosure: filesOf(s.observation.before, 'test/version.test.ts').includes('package.json'),
               digestMoved: digestMoved(s.observation, 'test/version.test.ts'),
             }).toEqual({ manifestInClosure: true, digestMoved: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A runner-reported global input installed in node_modules joins every closure as a hashed leaf',
+      Gherkin.Do.pipe(
+        Given('a project whose test runner reports a setup file from an installed package')(
+          'root',
+          () => writeFixture(EXTERNAL_GLOBAL_INPUT),
+        ),
+        When('the closure is analyzed before and after a project file it never reaches changes')(
+          'observation',
+          (s) => observe(s.root, EXTERNAL_GLOBAL_INPUT).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the setup file is in the closure without its imports and the digest stands still')((s, expect) =>
+          expect({
+            files: filesOf(s.observation.before, 'test/one.test.ts'),
+            open: openOf(s.observation.before, 'test/one.test.ts'),
+            digestMoved: digestMoved(s.observation, 'test/one.test.ts'),
+          }).toEqual({
+            files: ['node_modules/@fixture/guard/guard.mjs', 'src/shared.ts', 'test/one.test.ts'],
+            open: false,
+            digestMoved: false,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A change to an installed setup file moves the digest of every closure it feeds',
+      Gherkin.Do.pipe(
+        Given('a project whose test runner reports a setup file from an installed package')(
+          'root',
+          () => writeFixture(INSTALLED_SETUP_CHANGE),
+        ),
+        When('the closure is analyzed before and after the setup file bytes change')(
+          'observation',
+          (s) => observe(s.root, INSTALLED_SETUP_CHANGE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure stays closed and the digest moves')((s, expect) =>
+          expect({
+            open: openOf(s.observation.before, 'test/one.test.ts'),
+            digestMoved: digestMoved(s.observation, 'test/one.test.ts'),
+          }).toEqual({ open: false, digestMoved: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'A change to a file the closure reaches still moves its digest under an installed setup file',
+      Gherkin.Do.pipe(
+        Given('a project whose test runner reports a setup file from an installed package')(
+          'root',
+          () => writeFixture(REACHED_CHANGE_UNDER_EXTERNAL_GLOBAL_INPUT),
+        ),
+        When('the closure is analyzed before and after the file its test imports changes')(
+          'observation',
+          (s) =>
+            observe(s.root, REACHED_CHANGE_UNDER_EXTERNAL_GLOBAL_INPUT).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure stays closed and the digest moves')(
+          (s, expect) =>
+            expect({
+              open: openOf(s.observation.before, 'test/one.test.ts'),
+              digestMoved: digestMoved(s.observation, 'test/one.test.ts'),
+            }).toEqual({ open: false, digestMoved: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A workspace package linked outside the project root is followed through its real sources',
+      Gherkin.Do.pipe(
+        Given('a project whose workspace link points at a sibling directory named after the project root')(
+          'root',
+          () => writeFixture(LINKED_ACROSS_ROOTS),
+        ),
+        When('the closure is analyzed, then the linked source changes, then an unreached project file changes')(
+          'observation',
+          (s) => observeLinked(s.root, LINKED_ACROSS_ROOTS).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the linked source joins a closed closure and only its change moves the digest')(
+          (s, expect) => {
+            const before = filesOf(s.observation.before, 'test/one.test.ts')
+            const digestOfBefore = digestOf(s.observation.before, 'test/one.test.ts')
+            return expect({
+              projectFileInClosure: before.includes('src/app.ts'),
+              linkedInClosure: before.includes(s.observation.linkedIndex),
+              unreachedInClosure: before.includes('src/unreached.ts'),
+              open: openOf(s.observation.before, 'test/one.test.ts'),
+              linkedChangeMoved: digestOfBefore !== digestOf(s.observation.afterLinked, 'test/one.test.ts'),
+              unreachedChangeMoved: digestOf(s.observation.afterLinked, 'test/one.test.ts') !==
+                digestOf(s.observation.afterUnreached, 'test/one.test.ts'),
+            }).toEqual({
+              projectFileInClosure: true,
+              linkedInClosure: true,
+              unreachedInClosure: false,
+              open: false,
+              linkedChangeMoved: true,
+              unreachedChangeMoved: false,
+            })
+          },
+        ),
+      ),
+    )
+
+    scenario(
+      'A computed dynamic import with no observed modules opens the closure',
+      Gherkin.Do.pipe(
+        Given('a project whose test file imports a module by a computed name')(
+          'root',
+          () => writeFixture(DYNAMIC_EVIDENCE),
+        ),
+        When('the closure is analyzed without runtime evidence')(
+          'observation',
+          (s) => observe(s.root, DYNAMIC_EVIDENCE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure is open')((s, expect) =>
+          expect({ open: openOf(s.observation.before, 'test/plugin.test.ts') }).toEqual({ open: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'Observed modules from the dry run close the closure around the file they name',
+      Gherkin.Do.pipe(
+        Given('a project whose dynamic import target a dry run observed')('root', () => writeFixture(WITH_EVIDENCE)),
+        When('the closure is analyzed, then the observed file changes, then an unrelated file changes')(
+          'observation',
+          (s) => observeEvidence(s.root, WITH_EVIDENCE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the observed file joins a closed closure and only its change moves the digest')(
+          (s, expect) =>
+            expect({
+              files: filesOf(s.observation.before, 'test/plugin.test.ts'),
+              open: openOf(s.observation.before, 'test/plugin.test.ts'),
+              observedChangeMoved: digestOf(s.observation.before, 'test/plugin.test.ts') !==
+                digestOf(s.observation.afterObserved, 'test/plugin.test.ts'),
+              unreachedChangeMoved: digestOf(s.observation.afterObserved, 'test/plugin.test.ts') !==
+                digestOf(s.observation.afterUnreached, 'test/plugin.test.ts'),
+            }).toEqual({
+              files: ['src/plugin.ts', 'test/plugin.test.ts'],
+              open: false,
+              observedChangeMoved: true,
+              unreachedChangeMoved: false,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'An observed key that is not a file path keeps the closure open',
+      Gherkin.Do.pipe(
+        Given('a project whose dynamic import target a dry run reported as a data url')(
+          'root',
+          () => writeFixture(WITH_DATA_EVIDENCE),
+        ),
+        When('the closure is analyzed with that evidence')(
+          'observation',
+          (s) => observe(s.root, WITH_DATA_EVIDENCE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure is open')((s, expect) =>
+          expect({ open: openOf(s.observation.before, 'test/plugin.test.ts') }).toEqual({ open: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'An observed key naming a file no longer on disk keeps the closure open',
+      Gherkin.Do.pipe(
+        Given('a project whose dry run observed a file since removed')(
+          'root',
+          () => writeFixture(WITH_MISSING_EVIDENCE),
+        ),
+        When('the closure is analyzed with that evidence')(
+          'observation',
+          (s) => observe(s.root, WITH_MISSING_EVIDENCE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure is open')((s, expect) =>
+          expect({ open: openOf(s.observation.before, 'test/plugin.test.ts') }).toEqual({ open: true })
         ),
       ),
     )
