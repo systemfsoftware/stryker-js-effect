@@ -1,7 +1,7 @@
 {
   // Consumed by the shared release toolchain
   // (systemfsoftware/pnpm-release-management) via the reusable workflows in
-  // .github/workflows/. Packages are versioned independently with pnpm, tagged
+  // .github/workflows/. Packages are versioned independently through the changesets libraries, tagged
   // <pkg>@vX.Y.Z, and distributed as this repo's Nix flake outputs consumed from
   // a git ref — not published to any npm registry.
   "base": "main",
@@ -9,7 +9,7 @@
   "changesetDir": ".changeset",
   "changelogDir": ".changeset/changelogs",
   "versioning": {
-    "strategy": "pnpm",
+    "strategy": "changesets",
   },
   "gate": { "strategy": "paths" },
   "pr": {
