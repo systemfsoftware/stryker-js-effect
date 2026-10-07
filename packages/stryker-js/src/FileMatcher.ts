@@ -37,10 +37,10 @@ const LEADING_SEPARATORS = /^[/\\]+/
 const SEPARATOR_BOUNDARY = /^[/\\]/
 
 const withinBase = (raw: string, base: string): boolean =>
-  Boolean.every([
+  Boolean.and(
     raw.startsWith(base),
     Boolean.or(raw === base, SEPARATOR_BOUNDARY.test(raw.slice(base.length))),
-  ])
+  )
 
 const stripBasePath = (raw: string, basePath: string): string => {
   const base = basePath.replace(TRAILING_SEPARATORS, '')

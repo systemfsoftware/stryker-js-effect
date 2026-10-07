@@ -55,11 +55,13 @@ const staticIdsOf = (report: ReusableReport): ReadonlySet<string> =>
       .map(([id]) => id),
   )
 
+const fileOfCoverageKey = (key: string): string => key.split('#', 1)[0] ?? key
+
 const coveringFilesOf = (report: ReusableReport, mutantId: string): ReadonlySet<string> =>
   new Set(
     Object.entries(report.dryRunCoverage?.mutantCoverage?.perTest ?? {})
       .filter(([, coverage]) => (coverage[mutantId] ?? 0) > 0)
-      .map(([testId]) => testId.split('#', 1)[0] ?? testId),
+      .map(([testId]) => fileOfCoverageKey(testId)),
   )
 
 interface RunObservation {
@@ -254,13 +256,6 @@ const VM_RIGHT_SOURCE = [
   '',
 ].join('\n')
 
-const VM_TARGET_SOURCE = [
-  'export function add(left, right) {',
-  '  return left + right',
-  '}',
-  '',
-].join('\n')
-
 const VM_TOUCHING_TEST = [
   "import { test } from 'vitest'",
   "import { add } from '../src/target.mjs'",
@@ -381,8 +376,6 @@ const reportKeysOf = <A>(record: Readonly<Record<string, A>> | undefined): reado
     onNone: (): readonly string[] => [],
     onSome: (present) => Object.keys(present),
   })
-
-const fileOfCoverageKey = (key: string): string => key.split('#', 1)[0] ?? key
 
 const statusMapOf = (mutants: readonly RecordedMutant[]): ReadonlyMap<string, string> =>
   new Map(mutants.map((mutant) => [mutant.id, mutant.status]))
@@ -845,7 +838,7 @@ Feature('Content-keyed reuse across incremental reports')
               const path = yield* Path.Path
               const root = yield* writeVmFixture([
                 ['package.json', '{ "type": "module" }\n'],
-                ['src/target.mjs', VM_TARGET_SOURCE],
+                ['src/target.mjs', VM_LEFT_SOURCE],
                 ['test/first.test.mjs', VM_TOUCHING_TEST],
               ])
               return yield* Effect.ensuring(
@@ -880,7 +873,7 @@ Feature('Content-keyed reuse across incremental reports')
               const path = yield* Path.Path
               const root = yield* writeVmFixture([
                 ['package.json', '{ "type": "module" }\n'],
-                ['src/target.mjs', VM_TARGET_SOURCE],
+                ['src/target.mjs', VM_LEFT_SOURCE],
                 ['test/first.test.mjs', VM_TOUCHING_TEST],
               ])
               return yield* Effect.ensuring(

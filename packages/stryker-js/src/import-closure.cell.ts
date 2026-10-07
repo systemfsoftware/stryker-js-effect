@@ -358,6 +358,11 @@ const pathSpecifierKey = (input: ResolveInput): string =>
 
 const memberResolution = (file: string): Resolution => ({ kind: 'Member', file })
 
+const firstFlaggedOf = (candidates: readonly string[], flags: readonly boolean[]): string | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(Arr.findFirstIndex(flags, (flag) => flag), (index) => Arr.get(candidates, index)),
+  )
+
 const candidateFileOf = Effect.fnUntraced(function*(realRoot: string, specifier: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
@@ -367,7 +372,7 @@ const candidateFileOf = Effect.fnUntraced(function*(realRoot: string, specifier:
       Effect.map((info) => info.type === 'File'),
       Effect.orElseSucceed(() => false),
     ))
-  return candidates.find((_, index) => flags[index] === true)
+  return firstFlaggedOf(candidates, flags)
 })
 
 const resolutionOfFile = (file: string | undefined): Resolution =>
@@ -426,7 +431,7 @@ const existingFlagsOf = Effect.fnUntraced(function*(realRoot: string, candidates
 const packageDirectoryOf = Effect.fnUntraced(function*(input: ResolveInput) {
   const candidates = packageCandidatesOf(input)
   const flags = yield* existingFlagsOf(input.realRoot, candidates)
-  return candidates.find((_, index) => flags[index] === true)
+  return firstFlaggedOf(candidates, flags)
 })
 
 const realPathOf = Effect.fnUntraced(function*(absolute: string) {
@@ -700,7 +705,7 @@ const scanPendingOf = Effect.fnUntraced(function*(
   scanned: MutableHashMap.MutableHashMap<string, ModuleScan>,
   pending: readonly string[],
 ): Effect.fn.Return<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path> {
-  const batch = [...new Set(pending)].filter((file) => !MutableHashMap.has(scanned, file))
+  const batch = Arr.dedupe(pending).filter((file) => !MutableHashMap.has(scanned, file))
   const results = yield* Effect.forEach(
     batch,
     (file) => moduleScanOf(roots, files, memo, file),
