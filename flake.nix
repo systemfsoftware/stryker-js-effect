@@ -83,6 +83,9 @@
             pkgs.nodejs_24
             pkgs.deno
             pkgs.process-compose
+            # version-management and github-release-management, which the
+            # reusable release workflow runs through `nix develop --command`
+            pnpm-release-management.packages.${pkgs.stdenv.hostPlatform.system}.release-tools
           ];
         };
       });

@@ -1,12 +1,14 @@
 # The release flow is the single definition in
 # systemfsoftware/pnpm-release-management/.github/workflows/release.yml. This
-# caller only supplies the trigger and the permissions; the reusable derives
-# the phase from repository state, opens the version PR, and on a push that
-# leaves untagged versions it tags each one and cuts its GitHub Release. tools-ref
-# pins the toolchain revision — a back-edge to the shared tools, consumed per the
-# documented contract. There is no npm publish: distribution is this repo's Nix
-# flake outputs consumed from a git ref, and the <pkg>@vX.Y.Z git tag is the
-# durable record that a version shipped
+# caller only supplies the trigger, the permissions every reusable job asks for,
+# and the CI workflow the reusable dispatches on the release PR branch (a PR the
+# workflow token opens starts no workflows on its own). The reusable derives the
+# phase from repository state, opens the version PR, and on a push that leaves
+# untagged versions it tags each one and cuts its GitHub Release. It runs the
+# release tools from this repo's dev shell, so flake.lock's
+# pnpm-release-management input pins their revision. There is no npm publish:
+# distribution is this repo's Nix flake outputs consumed from a git ref, and the
+# <pkg>@vX.Y.Z git tag is the durable record that a version shipped
 name: Release
 
 on:
@@ -14,6 +16,7 @@ on:
     branches: [main]
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -21,4 +24,4 @@ jobs:
   release:
     uses: systemfsoftware/pnpm-release-management/.github/workflows/release.yml@main
     with:
-      tools-ref: main
+      ci-workflow: ci.yml

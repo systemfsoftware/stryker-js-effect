@@ -40,5 +40,6 @@
     "typecheck": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} --continue typecheck typecheck:node",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit"
   },
-  "type": "module"
+  "type": "module",
+  "version": "0.0.0"
 }
