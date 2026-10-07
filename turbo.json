@@ -149,7 +149,6 @@
         "etc/*.api.md"
       ],
       "outputs": [
-        "dist/*.d.ts",
         "etc/*.api.md",
         "temp/**"
       ],

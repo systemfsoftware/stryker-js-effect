@@ -21,8 +21,6 @@ The release planner derives a phase from two numbers: the size of the release se
 
 The trap is the second number. `pnpm version -r` consumes an intent into the ledger on the version PR, but it unlinks the intent file only on a later `pnpm version -r`, after `confirmPublished()` sees those versions on npm. Counting `.changeset/*.md` therefore answers "how many intent files exist", never "how many are pending". Read that way, every release leaves the pipeline in the version phase forever, and each push to the default branch opens a `version-packages` pull request that deletes files the previous run already consumed.
 
-If `.changeset/changelogs/` is removed before that confirmation, pnpm never unlinks the matching intents. Those files are orphans, not pending work.
-
 ## Guidance
 
 Treat `.changeset/ledger.yaml` as the record of consumption, and count only intents whose stem is absent from it (`countPendingIntents`). Two properties of the ledger decide whether that count is right:
@@ -30,7 +28,7 @@ Treat `.changeset/ledger.yaml` as the record of consumption, and count only inte
 - **pnpm writes it.** `pnpm change` authors the intent; `pnpm version -r` consumes it and renders the ledger (`render_ledger` / `readLedger` in pnpm). No production code in this repository writes the file — the parser's own tests write throwaway copies in a temp directory — so a change that adds a ledger reader adds no writer.
 - **A bare, null-parsing key means an empty intent list.** A ledger entry's intents appear as a mapping (`dir:` plus `intents: [...]`), a sequence, or a key whose value parses as YAML null. Null is a release that consumed nothing — not an entry the parser failed to read. Contributing no stems is exactly what "empty" means; treating it as unparsed invents intents.
 
-`isPublished` owns the registry probe that sizes the release set. `openReleasePr` — the release-PR shell entry point — holds the second line of defence: it refuses to open a release PR unless a `packages/**/package.json` or a `.changeset/changelogs/` file was added or modified against the base branch, so a miscount cannot by itself produce an empty release PR. The changelog half matters: an intent folded into a version that is bumped but unpublished rewrites that version's changelog and leaves every `package.json` untouched, while confirming a published release only deletes changelogs.
+`isPublished` owns the registry probe that sizes the release set. `openReleasePr` — the release-PR shell entry point — holds the second line of defence: it refuses to open a release PR unless a `packages/**/package.json` or a `packages/**/CHANGELOG.md` file was added or modified against the base branch, so a miscount cannot by itself produce an empty release PR. The changelog half matters: an intent folded into a version that is bumped but unpublished rewrites that version's `CHANGELOG.md` section and leaves every `package.json` untouched.
 
 ## Why This Matters
 
@@ -48,7 +46,7 @@ The ledger makes consumption a fact recorded beside the intent, so an intent fil
 
 **Pending intents win over unpublished versions.** A failed publish leaves unpublished versions; a later merge can add intents. `decidePhase(owed, pending)` is `pending > 0 ? 'version' : owed > 0 ? 'publish' : 'none'`. Publishing while intents remain ships later commits under the previous changelog. `pnpm version -r` does not bump past an unpublished version: it folds the new intents into it, rewriting only that version's changelog and the ledger. Release run 36084519260 logged `@systemfsoftware/stryker-js: 11.0.0 → 11.0.0 (patch, via intent)` and then, under a `package.json`-only guard, `not opening a release PR`, so `pending` never reached zero and the versions whose publish failed in run 36075147080 were never retried.
 
-**Unlink is registry confirmation, not consumption.** Consumption writes the ledger and a changelog file; unlink waits for `confirmPublished()` / `verifyPublished()` on a subsequent version run. Deleting those changelog files out of band strands the intents as permanent orphans.
+**Unlink is registry confirmation, not consumption.** Consumption writes the ledger and the package's `CHANGELOG.md` section; unlink waits for `confirmPublished()` / `verifyPublished()` on a subsequent version run.
 
 **Release runs do not cancel each other.** The Release workflow concurrency group for the default-branch ref sets `cancel-in-progress: false`. A killed version job only mutates `changeset-release/main`. A killed publish job leaves registry 404s in `unpublishedOf()`, so `owed` remains until npm serves the versions.
 

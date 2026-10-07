@@ -12,7 +12,8 @@
   "type": "module",
   "files": [
     "dist",
-    "contract"
+    "contract",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "clean": "rimraf dist",

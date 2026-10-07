@@ -11,7 +11,8 @@
   "description": "HTML reporter plugin for the @systemfsoftware mutation engine.",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "clean": "rimraf dist",

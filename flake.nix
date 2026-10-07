@@ -22,12 +22,26 @@
     # Only the `gritlint` package and the dev shell reference this input, so
     # building any other package never fetches it.
     systemfsoftware.url = "github:systemfsoftware/systemfsoftware";
+    # One `pnpm pack` tarball per workspace package, built offline from the
+    # lockfile by the same builder systemfsoftware uses.
+    pnpm-release-management = {
+      url = "github:systemfsoftware/pnpm-release-management";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, comment-checker, importPnpmLock, systemfsoftware }:
+  outputs = { self, nixpkgs, comment-checker, importPnpmLock, systemfsoftware, pnpm-release-management }:
     let
+      lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forEachSystem = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
+      workspaceOf = pkgs:
+        pnpm-release-management.lib.mkPnpmWorkspacePackages {
+          inherit pkgs;
+          src = self;
+          pname = "stryker-js-effect";
+          pnpm = pkgs.pnpm_11;
+        };
     in
     {
       packages = forEachSystem (pkgs:
@@ -40,19 +54,24 @@
           sandboxed = pkgs.callPackage ./nix/comment-checker-sandbox.nix {
             comment-checker = unwrapped;
           };
-        in {
-          inherit dprint;
-          deno = pkgs.deno;
-          comment-checker = sandboxed;
-          comment-checker-unwrapped = unwrapped;
-          # The bwrap-sandboxed upstream `gritlint` needs unprivileged user
-          # namespaces, which Ubuntu 24.04 runners refuse without a workflow
-          # step this repo's read-only workflows cannot add.
-          gritlint = systemfsoftware.packages.${pkgs.stdenv.hostPlatform.system}.gritlint-unwrapped;
-          default = dprint;
-        });
+          workspace = workspaceOf pkgs;
+          own = {
+            inherit dprint;
+            deno = pkgs.deno;
+            comment-checker = sandboxed;
+            comment-checker-unwrapped = unwrapped;
+            # The bwrap-sandboxed upstream `gritlint` needs unprivileged user
+            # namespaces, which Ubuntu 24.04 runners refuse without a workflow
+            # step this repo's read-only workflows cannot add.
+            gritlint = systemfsoftware.packages.${pkgs.stdenv.hostPlatform.system}.gritlint-unwrapped;
+            default = dprint;
+          };
+          clashes = builtins.attrNames (builtins.intersectAttrs own workspace);
+        in
+        assert clashes == [ ] || throw "flake.nix: workspace packages ${lib.concatStringsSep ", " clashes} collide with flake packages";
+        workspace // own);
 
-      # pnpm is deliberately absent: `packageManager` pins pnpm@11.21.0 and
+      # pnpm is deliberately absent: `packageManager` pins pnpm@11.27.0 and
       # corepack is the one thing allowed to resolve it. A second pnpm on PATH
       # would answer `pnpm install` with a version the lockfile never saw.
       devShells = forEachSystem (pkgs: {

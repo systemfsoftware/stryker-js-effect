@@ -1,0 +1,67 @@
+name: Nix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: flake outputs · ${{ matrix.system }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - system: x86_64-linux
+            runner: ubuntu-latest
+          - system: aarch64-linux
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: Workspace tarballs rebuild bit-for-bit
+        run: |
+          nix build .#packages.${{ matrix.system }}.workspace-tarballs
+          nix build --rebuild .#packages.${{ matrix.system }}.workspace-tarballs
+
+  tarball-contents:
+    name: tarballs match pnpm pack of the source
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: nix build .#packages.x86_64-linux.workspace-tarballs --out-link tarballs
+      - run: pnpm -r --if-present run build
+      - name: Each tarball holds the files and CHANGELOG.md pnpm pack takes from the source
+        run: scripts/guards/check-tarball-contents.sh tarballs
+      - name: A tarball whose CHANGELOG.md differs from the source fails the check
+        run: |
+          sabotaged=$(mktemp -d)
+          cp -r tarballs/. "$sabotaged"
+          chmod -R u+w "$sabotaged"
+          file=$(jq -r '.[0].file' "$sabotaged/index.json")
+          unpacked=$(mktemp -d)
+          tar -xzf "$sabotaged/$file" -C "$unpacked"
+          echo sabotage >>"$unpacked/package/CHANGELOG.md"
+          tar -czf "$sabotaged/$file" -C "$unpacked" package
+          if scripts/guards/check-tarball-contents.sh "$sabotaged" 2>sabotage.log; then
+            echo "a tarball with an edited CHANGELOG.md passed the check" >&2
+            exit 1
+          fi
+          grep -q 'tarball CHANGELOG.md differs' sabotage.log

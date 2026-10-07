@@ -11,7 +11,8 @@
   "description": "Vitest test-runner plugin for Stryker",
   "type": "module",
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "exports": {
     ".": {

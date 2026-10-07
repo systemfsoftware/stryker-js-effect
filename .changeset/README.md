@@ -19,26 +19,22 @@ pnpm change --bump <none|patch|minor|major> --summary "<changelog entry>" [<pkg>
 - This README is NOT a changeset: the gate requires a file whose frontmatter
   parses as `"<pkg>": <none|patch|minor|major>`.
 
-## Two-stage intent deletion
+## Changelogs
 
-pnpm unlinks consumed intents only after the npm registry confirms the
-versions those intents produced. The cycle is:
+`pnpm-workspace.yaml` sets `versioning.changelog.storage: repository`, so
+`pnpm version -r` writes each release's `## <version>` section into the
+package's committed `CHANGELOG.md`, and that file ships in the package's
+tarball. Nothing is parked under `.changeset/changelogs/`.
 
-1. **Version PR.** `pnpm version -r` consumes pending intents, writes
-   `.changeset/changelogs/<pkg>@<ver>.md`, and records stems in
-   `ledger.yaml`. The new versions are not on npm yet, so
-   `confirmPublished()` fails and the intent `.md` files stay on disk.
-2. **Publish.** The version PR merges; CI publishes and pushes git tags.
-3. **Next version PR.** The next `pnpm version -r` scans
-   `.changeset/changelogs/`, `verifyPublished()` / `confirmPublished()`
-   against npm, deletes confirmed changelog files, and unlinks the
-   intent `.md` files whose releases are all confirmed.
+1. **Version PR.** `pnpm version -r` consumes pending intents, writes the
+   `## <version>` sections, and records the consumed stems in `ledger.yaml`.
+2. **Publish.** The version PR merges; CI publishes, pushes git tags, and
+   creates each GitHub Release from that version's `CHANGELOG.md` section.
 
-If `.changeset/changelogs/` is deleted out of band before that
-confirmation, the matching intent files become permanent orphans: pnpm
-has nothing left to verify, so it never unlinks them. Remove those
-stems by hand only after the ledger already records them and npm
-already serves the versions.
+`scripts/guards/check-changelog-sections.ts` holds every publishable
+package to exactly one section for its current version, refuses any file
+under `.changeset/changelogs/`, and fails when the storage setting is
+missing or misspelt.
 
 ## Interruption safety
 
