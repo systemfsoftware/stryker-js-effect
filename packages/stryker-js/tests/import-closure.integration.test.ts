@@ -23,6 +23,7 @@ interface FixtureSpec {
   readonly testFiles: readonly string[]
   readonly globalInputs?: readonly string[]
   readonly changed?: FixtureFiles
+  readonly observedModules?: Readonly<Record<string, readonly string[]>>
 }
 
 interface Observation {
@@ -76,6 +77,40 @@ const writeFixture = (spec: FixtureSpec): Effect.Effect<string, PlatformError, F
 const removeDirectory = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
   Effect.ignore(FileSystem.FileSystem.pipe(Effect.flatMap((fs) => fs.remove(root, { recursive: true }))))
 
+const OBSERVED_SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/
+
+const observedModulesOf = (
+  path: Path.Path,
+  root: string,
+  observed: Readonly<Record<string, readonly string[]>> | undefined,
+): { readonly observedModules?: Readonly<Record<string, readonly string[]>> } =>
+  observed === undefined
+    ? {}
+    : {
+      observedModules: Object.fromEntries(
+        Object.entries(observed).map(([testFile, keys]) => [
+          path.join(root, testFile),
+          keys.map((key) => OBSERVED_SCHEME.test(key) ? key : path.join(root, key)),
+        ]),
+      ),
+    }
+
+interface ClosureInput {
+  readonly rootDir: string
+  readonly projectFiles: readonly string[]
+  readonly testFiles: readonly string[]
+  readonly globalInputs: readonly string[]
+  readonly observedModules?: Readonly<Record<string, readonly string[]>>
+}
+
+const inputOf = (path: Path.Path, root: string, spec: FixtureSpec): ClosureInput => ({
+  rootDir: root,
+  projectFiles: Object.keys({ ...VITEST_STUB, ...spec.files }).filter((file) => !file.startsWith('node_modules/')),
+  testFiles: spec.testFiles.map((file) => path.join(root, file)),
+  globalInputs: (spec.globalInputs ?? []).map((file) => path.join(root, file)),
+  ...observedModulesOf(path, root, spec.observedModules),
+})
+
 const observe = (
   root: string,
   spec: FixtureSpec,
@@ -83,15 +118,7 @@ const observe = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const projectFiles = Object.keys({ ...VITEST_STUB, ...spec.files }).filter(
-      (file) => !file.startsWith('node_modules/'),
-    )
-    const input = {
-      rootDir: root,
-      projectFiles,
-      testFiles: spec.testFiles.map((file) => path.join(root, file)),
-      globalInputs: (spec.globalInputs ?? []).map((file) => path.join(root, file)),
-    }
+    const input = inputOf(path, root, spec)
     const before = yield* analyzeImportClosure(input)
     yield* Effect.forEach(
       Object.entries(spec.changed ?? {}),
@@ -99,7 +126,29 @@ const observe = (
       { discard: true },
     )
     const after = yield* analyzeImportClosure(input)
-    return { before, after, projectFiles }
+    return { before, after, projectFiles: input.projectFiles }
+  })
+
+interface EvidenceObservation {
+  readonly before: ImportClosureAnalysis
+  readonly afterObserved: ImportClosureAnalysis
+  readonly afterUnreached: ImportClosureAnalysis
+}
+
+const observeEvidence = (
+  root: string,
+  spec: FixtureSpec,
+): Effect.Effect<EvidenceObservation, PlatformError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const input = inputOf(path, root, spec)
+    const before = yield* analyzeImportClosure(input)
+    yield* fs.writeFileString(path.join(root, 'src/plugin.ts'), 'export const plugin = 2\n')
+    const afterObserved = yield* analyzeImportClosure(input)
+    yield* fs.writeFileString(path.join(root, 'src/other.ts'), 'export const other = 1\n')
+    const afterUnreached = yield* analyzeImportClosure(input)
+    return { before, afterObserved, afterUnreached }
   })
 
 const closureOf = (analysis: ImportClosureAnalysis, testFile: string) =>
@@ -160,6 +209,31 @@ const NON_LITERAL: FixtureSpec = {
   },
   testFiles: ['test/dynamic.test.ts'],
   changed: { 'src/unused.ts': 'export const unused = 1\n' },
+}
+
+const DYNAMIC_EVIDENCE: FixtureSpec = {
+  files: {
+    'src/plugin.ts': 'export const plugin = 1\n',
+    'src/other.ts': 'export const other = 0\n',
+    'test/plugin.test.ts':
+      "import { test } from 'vitest'\nconst name = '../src/plugin.js'\nexport const load = () => import(name)\ntest('plugin', () => { load })\n",
+  },
+  testFiles: ['test/plugin.test.ts'],
+}
+
+const WITH_EVIDENCE: FixtureSpec = {
+  ...DYNAMIC_EVIDENCE,
+  observedModules: { 'test/plugin.test.ts': ['src/plugin.ts'] },
+}
+
+const WITH_DATA_EVIDENCE: FixtureSpec = {
+  ...DYNAMIC_EVIDENCE,
+  observedModules: { 'test/plugin.test.ts': ['data:text/javascript,export default 1'] },
+}
+
+const WITH_MISSING_EVIDENCE: FixtureSpec = {
+  ...DYNAMIC_EVIDENCE,
+  observedModules: { 'test/plugin.test.ts': ['src/gone.ts'] },
 }
 
 const LITERALS: FixtureSpec = {
@@ -676,6 +750,84 @@ Feature('Mapping a test file to the import closure it can reach')
               unreachedChangeMoved: false,
             })
           },
+        ),
+      ),
+    )
+
+    scenario(
+      'A computed dynamic import with no observed modules opens the closure',
+      Gherkin.Do.pipe(
+        Given('a project whose test file imports a module by a computed name')(
+          'root',
+          () => writeFixture(DYNAMIC_EVIDENCE),
+        ),
+        When('the closure is analyzed without runtime evidence')(
+          'observation',
+          (s) => observe(s.root, DYNAMIC_EVIDENCE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure is open')((s, expect) =>
+          expect({ open: openOf(s.observation.before, 'test/plugin.test.ts') }).toEqual({ open: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'Observed modules from the dry run close the closure around the file they name',
+      Gherkin.Do.pipe(
+        Given('a project whose dynamic import target a dry run observed')('root', () => writeFixture(WITH_EVIDENCE)),
+        When('the closure is analyzed, then the observed file changes, then an unrelated file changes')(
+          'observation',
+          (s) => observeEvidence(s.root, WITH_EVIDENCE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the observed file joins a closed closure and only its change moves the digest')(
+          (s, expect) =>
+            expect({
+              files: filesOf(s.observation.before, 'test/plugin.test.ts'),
+              open: openOf(s.observation.before, 'test/plugin.test.ts'),
+              observedChangeMoved: digestOf(s.observation.before, 'test/plugin.test.ts') !==
+                digestOf(s.observation.afterObserved, 'test/plugin.test.ts'),
+              unreachedChangeMoved: digestOf(s.observation.afterObserved, 'test/plugin.test.ts') !==
+                digestOf(s.observation.afterUnreached, 'test/plugin.test.ts'),
+            }).toEqual({
+              files: ['src/plugin.ts', 'test/plugin.test.ts'],
+              open: false,
+              observedChangeMoved: true,
+              unreachedChangeMoved: false,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'An observed key that is not a file path keeps the closure open',
+      Gherkin.Do.pipe(
+        Given('a project whose dynamic import target a dry run reported as a data url')(
+          'root',
+          () => writeFixture(WITH_DATA_EVIDENCE),
+        ),
+        When('the closure is analyzed with that evidence')(
+          'observation',
+          (s) => observe(s.root, WITH_DATA_EVIDENCE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure is open')((s, expect) =>
+          expect({ open: openOf(s.observation.before, 'test/plugin.test.ts') }).toEqual({ open: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'An observed key naming a file no longer on disk keeps the closure open',
+      Gherkin.Do.pipe(
+        Given('a project whose dry run observed a file since removed')(
+          'root',
+          () => writeFixture(WITH_MISSING_EVIDENCE),
+        ),
+        When('the closure is analyzed with that evidence')(
+          'observation',
+          (s) => observe(s.root, WITH_MISSING_EVIDENCE).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure is open')((s, expect) =>
+          expect({ open: openOf(s.observation.before, 'test/plugin.test.ts') }).toEqual({ open: true })
         ),
       ),
     )
