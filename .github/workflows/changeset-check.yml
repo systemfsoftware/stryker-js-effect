@@ -14,6 +14,6 @@ permissions:
 
 jobs:
   check:
-    uses: systemfsoftware/pnpm-release-management/.github/workflows/changeset-check.yml@prm/toolchain
+    uses: systemfsoftware/pnpm-release-management/.github/workflows/changeset-check.yml@prm/repository-changelogs
     with:
-      tools-ref: prm/toolchain
+      tools-ref: prm/repository-changelogs

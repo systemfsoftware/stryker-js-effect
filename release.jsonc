@@ -7,7 +7,6 @@
   "base": "main",
   "branch": "changeset-release/main",
   "changesetDir": ".changeset",
-  "changelogDir": ".changeset/changelogs",
   "versioning": {
     "strategy": "pnpm",
   },

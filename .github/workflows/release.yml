@@ -19,6 +19,6 @@ permissions:
 
 jobs:
   release:
-    uses: systemfsoftware/pnpm-release-management/.github/workflows/release.yml@prm/toolchain
+    uses: systemfsoftware/pnpm-release-management/.github/workflows/release.yml@prm/repository-changelogs
     with:
-      tools-ref: prm/toolchain
+      tools-ref: prm/repository-changelogs
