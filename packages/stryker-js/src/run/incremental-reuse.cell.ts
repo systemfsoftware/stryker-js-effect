@@ -37,7 +37,7 @@ import { reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow
 import { StageError } from '../Run.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from '../verdict-semantics.js'
-import { incrementalReportTextsOf } from './incremental-reuse.js'
+import { incrementalReportTextsOf, optionalField } from './incremental-reuse.js'
 
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
@@ -65,12 +65,6 @@ const digestField = (digest: string | undefined) =>
   Option.match(Option.fromUndefinedOr(digest), {
     onNone: (): Readonly<Record<string, never>> => ({}),
     onSome: (present) => ({ closureDigest: present }),
-  })
-
-export const optionalField = <A>(field: string, value: A | undefined) =>
-  Option.match(Option.fromUndefinedOr(value), {
-    onNone: (): Readonly<Record<string, never>> => ({}),
-    onSome: (present) => ({ [field]: present }),
   })
 
 const optionalListField = (field: string, value: readonly string[] | undefined) =>

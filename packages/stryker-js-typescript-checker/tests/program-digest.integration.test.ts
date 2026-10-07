@@ -134,7 +134,7 @@ const appendComment = (directory: string, file: string): Effect.Effect<void, nev
 
 const digestOf = (
   directory: string,
-  checkerOptions?: Readonly<Record<string, unknown>>,
+  checkerOptions?: Readonly<Record<string, S.Json | object>>,
 ): Effect.Effect<string, never, never> =>
   Effect.gen(function*() {
     const pathService = yield* Path.Path
@@ -151,7 +151,7 @@ const digestOf = (
 
 const digestOutcomeOf = (
   directory: string,
-  checkerOptions?: Readonly<Record<string, unknown>>,
+  checkerOptions?: Readonly<Record<string, S.Json | object>>,
 ): Effect.Effect<Exit.Exit<string, never>, never, never> =>
   Effect.exit(digestOf(directory, checkerOptions).pipe(Effect.provide(FILE_PORTS)))
 

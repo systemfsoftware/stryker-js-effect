@@ -247,20 +247,31 @@ const readCheckerVersion = (rt: TSCompilerRuntime) =>
 
 type JsonValue = S.Schema.Type<typeof S.Json>
 
+const isNonNullObjectOf = (value: JsonValue): boolean => typeof value === 'object' && value !== null
+
 const isJsonObject = (value: JsonValue): value is Record<string, JsonValue> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
+  isNonNullObjectOf(value) && !Array.isArray(value)
+
+const isJsonArray = (value: JsonValue): value is ReadonlyArray<JsonValue> =>
+  typeof value === 'object' && Array.isArray(value)
+
+const canonicalEntriesOf = (object: Record<string, JsonValue>): string =>
+  Arr.map(
+    Arr.sort(Object.keys(object), Order.String),
+    (key) => `${JSON.stringify(key)}:${canonicalJsonOf(object[key] ?? null)}`,
+  ).join(',')
+
+const canonicalObjectOf = (value: JsonValue): string =>
+  Option.match(Option.liftPredicate(value, isJsonObject), {
+    onNone: () => JSON.stringify(value),
+    onSome: (object) => `{${canonicalEntriesOf(object)}}`,
+  })
 
 const canonicalJsonOf = (value: JsonValue): string =>
-  Array.isArray(value)
-    ? `[${value.map(canonicalJsonOf).join(',')}]`
-    : isJsonObject(value)
-    ? `{${
-      Object.keys(value)
-        .sort()
-        .map((key) => `${JSON.stringify(key)}:${canonicalJsonOf(value[key] as JsonValue)}`)
-        .join(',')
-    }}`
-    : JSON.stringify(value)
+  Option.match(Option.liftPredicate(value, isJsonArray), {
+    onNone: () => canonicalObjectOf(value),
+    onSome: (array) => `[${Arr.map(array, canonicalJsonOf).join(',')}]`,
+  })
 
 const checkerOptionsJsonOf = (options: Options.StrykerOptions): Effect.Effect<string, CompilerError> =>
   Option.match(Option.fromUndefinedOr(options['typescriptChecker']), {
@@ -397,10 +408,11 @@ const TS_CONFIG_JSON_EXTENSION = '.json'
 
 const NODE_MODULES_DIRECTORY = 'node_modules'
 
-const tsConfigExtendsOf = (config: TsConfigDocument): ReadonlyArray<string> => {
-  const declared = config['extends']
-  return declared === undefined ? [] : typeof declared === 'string' ? [declared] : [...declared]
-}
+const tsConfigExtendsOf = (config: TsConfigDocument): ReadonlyArray<string> =>
+  Option.match(Option.fromUndefinedOr(config['extends']), {
+    onNone: (): ReadonlyArray<string> => [],
+    onSome: (declared) => (typeof declared === 'string' ? [declared] : [...declared]),
+  })
 
 const ancestorDirectoriesOf = (pathService: Path.Path, from: string): ReadonlyArray<string> => {
   const directories: Array<string> = [from]
@@ -445,51 +457,73 @@ const isFileOf = (rt: TSCompilerRuntime, fileName: string): Effect.Effect<boolea
     Effect.orElseSucceed(() => false),
   )
 
+const firstExistingOf = (
+  rt: TSCompilerRuntime,
+  candidates: ReadonlyArray<string>,
+): Effect.Effect<Option.Option<string>, never> =>
+  Option.match(Arr.head(candidates), {
+    onNone: () => Effect.succeedNone,
+    onSome: (candidate) =>
+      Effect.flatMap(isFileOf(rt, candidate), (present) =>
+        Boolean.match(present, {
+          onTrue: () => Effect.succeedSome(candidate),
+          onFalse: () => firstExistingOf(rt, Arr.drop(candidates, 1)),
+        })),
+  })
+
 const resolveTsConfigExtends = (
   rt: TSCompilerRuntime,
   fromDirName: string,
   specifier: string,
 ): Effect.Effect<string, CompilerError> =>
-  Effect.gen(function*() {
-    const candidates = tsConfigExtendsCandidatesOf(rt.pathService, fromDirName, specifier)
-    for (const candidate of candidates) {
-      if (yield* isFileOf(rt, candidate)) {
-        return candidate
-      }
-    }
-    return yield* Effect.fail(
-      CompilerFailed.make({ reason: 'program-digest-unavailable', subject: `tsconfig extends "${specifier}"` }),
-    )
+  Effect.flatMap(
+    firstExistingOf(rt, tsConfigExtendsCandidatesOf(rt.pathService, fromDirName, specifier)),
+    (found) =>
+      Effect.fromOption(found, () =>
+        CompilerFailed.make({ reason: 'program-digest-unavailable', subject: `tsconfig extends "${specifier}"` })),
+  )
+
+const extendedConfigsOf = (
+  rt: TSCompilerRuntime,
+  fileName: string,
+): Effect.Effect<ReadonlyArray<string>, CompilerError> =>
+  Effect.flatMap(
+    readTsConfigText(rt, HashMap.empty(), fileName),
+    (jsonText) =>
+      Result.match(parseTsConfig(fileName, jsonText), {
+        onFailure: (failure) => Effect.fail(failure),
+        onSuccess: (config) =>
+          Effect.forEach(
+            tsConfigExtendsOf(config),
+            (specifier) => resolveTsConfigExtends(rt, rt.pathService.dirname(fileName), specifier),
+          ),
+      }),
+  )
+
+const visitTsConfigChain = (
+  rt: TSCompilerRuntime,
+  pending: ReadonlyArray<string>,
+  visited: HashSet.HashSet<string>,
+  chain: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<string>, CompilerError> =>
+  Option.match(Arr.head(pending), {
+    onNone: () => Effect.succeed(chain),
+    onSome: (fileName) =>
+      Boolean.match(HashSet.has(visited, fileName), {
+        onTrue: () => visitTsConfigChain(rt, Arr.drop(pending, 1), visited, chain),
+        onFalse: () =>
+          Effect.flatMap(extendedConfigsOf(rt, fileName), (extended) =>
+            visitTsConfigChain(rt, [...Arr.drop(pending, 1), ...extended], HashSet.add(visited, fileName), [
+              ...chain,
+              fileName,
+            ])),
+      }),
   })
 
 const tsConfigChainOf = (
   rt: TSCompilerRuntime,
   seeds: ReadonlyArray<string>,
-): Effect.Effect<ReadonlyArray<string>, CompilerError> =>
-  Effect.gen(function*() {
-    const visited = new Set<string>()
-    const chain: Array<string> = []
-    const pending: Array<string> = [...seeds]
-    while (pending.length > 0) {
-      const fileName = pending.pop() as string
-      if (visited.has(fileName)) {
-        continue
-      }
-      visited.add(fileName)
-      chain.push(fileName)
-      const jsonText = yield* readTsConfigText(rt, HashMap.empty(), fileName)
-      const parsed = parseTsConfig(fileName, jsonText)
-      if (Result.isFailure(parsed)) {
-        return yield* Effect.fail(parsed.failure)
-      }
-      const extended = yield* Effect.forEach(
-        tsConfigExtendsOf(parsed.success),
-        (specifier) => resolveTsConfigExtends(rt, rt.pathService.dirname(fileName), specifier),
-      )
-      pending.push(...extended)
-    }
-    return chain
-  })
+): Effect.Effect<ReadonlyArray<string>, CompilerError> => visitTsConfigChain(rt, seeds, HashSet.empty(), [])
 
 interface TsConfigWalk {
   readonly overrides: HashMap.HashMap<string, string>
