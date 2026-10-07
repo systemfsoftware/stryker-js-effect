@@ -214,6 +214,74 @@ const WORKSPACE_LINK: FixtureSpec = {
   testFiles: ['test/link.test.ts'],
 }
 
+const vitestStubAt = (prefix: string): FixtureFiles =>
+  Object.fromEntries(Object.entries(VITEST_STUB).map(([file, content]) => [`${prefix}/${file}`, content]))
+
+const EXTERNAL_GLOBAL_INPUT: FixtureSpec = {
+  files: {
+    'node_modules/@fixture/guard/package.json': '{"name":"@fixture/guard","type":"module"}',
+    'node_modules/@fixture/guard/guard.mjs': 'export const guard = 1\n',
+    'src/shared.ts': 'export const shared = 1\n',
+    'src/unreached.ts': 'export const unreached = 0\n',
+    'test/one.test.ts':
+      "import { test } from 'vitest'\nimport { shared } from '../src/shared.js'\ntest('one', () => { shared })\n",
+  },
+  testFiles: ['test/one.test.ts'],
+  globalInputs: ['node_modules/@fixture/guard/guard.mjs'],
+  changed: { 'src/unreached.ts': 'export const unreached = 1\n' },
+}
+
+const REACHED_CHANGE_UNDER_EXTERNAL_GLOBAL_INPUT: FixtureSpec = {
+  ...EXTERNAL_GLOBAL_INPUT,
+  changed: { 'src/shared.ts': 'export const shared = 2\n' },
+}
+
+const LINKED_ACROSS_ROOTS: FixtureSpec = {
+  files: {
+    ...vitestStubAt('app'),
+    'app/src/app.ts': "import { lib } from '@fixture/lib'\nexport const app = lib + 1\n",
+    'app/src/unreached.ts': 'export const unreached = 0\n',
+    'app/test/one.test.ts':
+      "import { test } from 'vitest'\nimport { app } from '../src/app.js'\ntest('app', () => { app })\n",
+    'app-lib/package.json':
+      '{"name":"@fixture/lib","exports":{".":{"@systemfsoftware/source":"./src/index.ts","default":"./index.mjs"}}}',
+    'app-lib/src/index.ts': 'export const lib = 1\n',
+  },
+  links: { 'app/node_modules/@fixture/lib': 'app-lib' },
+  testFiles: ['app/test/one.test.ts'],
+}
+
+interface LinkedObservation {
+  readonly before: ImportClosureAnalysis
+  readonly afterLinked: ImportClosureAnalysis
+  readonly afterUnreached: ImportClosureAnalysis
+  readonly linkedIndex: string
+}
+
+const observeLinked = (
+  root: string,
+  spec: FixtureSpec,
+): Effect.Effect<LinkedObservation, PlatformError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const projectRoot = path.join(root, 'app')
+    const projectFiles = Object.keys({ ...vitestStubAt('app'), ...spec.files })
+      .filter((file) => file.startsWith('app/') && !file.startsWith('app/node_modules/'))
+      .map((file) => path.join(root, file))
+    const input = {
+      rootDir: projectRoot,
+      projectFiles,
+      testFiles: spec.testFiles.map((file) => path.join(root, file)),
+    }
+    const before = yield* analyzeImportClosure(input)
+    yield* fs.writeFileString(path.join(root, 'app-lib', 'src', 'index.ts'), 'export const lib = 2\n')
+    const afterLinked = yield* analyzeImportClosure(input)
+    yield* fs.writeFileString(path.join(root, 'app', 'src', 'unreached.ts'), 'export const unreached = 1\n')
+    const afterUnreached = yield* analyzeImportClosure(input)
+    return { before, afterLinked, afterUnreached, linkedIndex: path.join(root, 'app-lib', 'src', 'index.ts') }
+  })
+
 const MANIFEST = '{"name":"@fixture/app","version":"1.0.0","type":"module"}'
 
 const manifestReadingSpecWith = (changedManifest: string): FixtureSpec => ({
@@ -448,6 +516,90 @@ Feature('Mapping a test file to the import closure it can reach')
               manifestInClosure: filesOf(s.observation.before, 'test/version.test.ts').includes('package.json'),
               digestMoved: digestMoved(s.observation, 'test/version.test.ts'),
             }).toEqual({ manifestInClosure: true, digestMoved: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A runner-reported global input installed in node_modules leaves the closures closed',
+      Gherkin.Do.pipe(
+        Given('a project whose test runner reports a setup file from an installed package')(
+          'root',
+          () => writeFixture(EXTERNAL_GLOBAL_INPUT),
+        ),
+        When('the closure is analyzed before and after a project file it never reaches changes')(
+          'observation',
+          (s) => observe(s.root, EXTERNAL_GLOBAL_INPUT).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the setup file joins no closure, the closure stays closed, and the digest stands still')(
+          (s, expect) =>
+            expect({
+              files: filesOf(s.observation.before, 'test/one.test.ts'),
+              open: openOf(s.observation.before, 'test/one.test.ts'),
+              digestMoved: digestMoved(s.observation, 'test/one.test.ts'),
+            }).toEqual({
+              files: ['src/shared.ts', 'test/one.test.ts'],
+              open: false,
+              digestMoved: false,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A change to a file the closure reaches still moves its digest under an installed setup file',
+      Gherkin.Do.pipe(
+        Given('a project whose test runner reports a setup file from an installed package')(
+          'root',
+          () => writeFixture(REACHED_CHANGE_UNDER_EXTERNAL_GLOBAL_INPUT),
+        ),
+        When('the closure is analyzed before and after the file its test imports changes')(
+          'observation',
+          (s) =>
+            observe(s.root, REACHED_CHANGE_UNDER_EXTERNAL_GLOBAL_INPUT).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure stays closed and the digest moves')(
+          (s, expect) =>
+            expect({
+              open: openOf(s.observation.before, 'test/one.test.ts'),
+              digestMoved: digestMoved(s.observation, 'test/one.test.ts'),
+            }).toEqual({ open: false, digestMoved: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A workspace package linked outside the project root is followed through its real sources',
+      Gherkin.Do.pipe(
+        Given('a project whose workspace link points at a sibling directory named after the project root')(
+          'root',
+          () => writeFixture(LINKED_ACROSS_ROOTS),
+        ),
+        When('the closure is analyzed, then the linked source changes, then an unreached project file changes')(
+          'observation',
+          (s) => observeLinked(s.root, LINKED_ACROSS_ROOTS).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the linked source joins a closed closure and only its change moves the digest')(
+          (s, expect) => {
+            const before = filesOf(s.observation.before, 'test/one.test.ts')
+            const digestOfBefore = digestOf(s.observation.before, 'test/one.test.ts')
+            return expect({
+              projectFileInClosure: before.includes('src/app.ts'),
+              linkedInClosure: before.includes(s.observation.linkedIndex),
+              unreachedInClosure: before.includes('src/unreached.ts'),
+              open: openOf(s.observation.before, 'test/one.test.ts'),
+              linkedChangeMoved: digestOfBefore !== digestOf(s.observation.afterLinked, 'test/one.test.ts'),
+              unreachedChangeMoved: digestOf(s.observation.afterLinked, 'test/one.test.ts') !==
+                digestOf(s.observation.afterUnreached, 'test/one.test.ts'),
+            }).toEqual({
+              projectFileInClosure: true,
+              linkedInClosure: true,
+              unreachedInClosure: false,
+              open: false,
+              linkedChangeMoved: true,
+              unreachedChangeMoved: false,
+            })
+          },
         ),
       ),
     )
