@@ -41,7 +41,6 @@
           src = self;
           pname = "stryker-js-effect";
           pnpm = pkgs.pnpm_11;
-          hash = "sha256-xf9ZSWYq2xskFvnXqSQJ8UoQENAZRxMVQDcYIwWfAiU=";
         };
     in
     {
