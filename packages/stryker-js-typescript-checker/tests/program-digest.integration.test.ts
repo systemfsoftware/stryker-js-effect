@@ -166,6 +166,19 @@ const withWorkspace = <A>(
     return yield* use(workspace).pipe(Effect.ensuring(removeWorkspace(workspace.directory)))
   }).pipe(Effect.orDie, Effect.provide(FILE_PORTS))
 
+const withTwoWorkspaces = <A>(
+  use: (first: Workspace, second: Workspace) => Effect.Effect<A, never, never>,
+): Effect.Effect<A, never, never> =>
+  Effect.gen(function*() {
+    const first = yield* writeWorkspace()
+    const second = yield* writeWorkspace()
+    return yield* use(first, second).pipe(
+      Effect.ensuring(
+        Effect.all([removeWorkspace(first.directory), removeWorkspace(second.directory)], { discard: true }),
+      ),
+    )
+  }).pipe(Effect.orDie, Effect.provide(FILE_PORTS))
+
 Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_000 })
   .withLayer(FILE_PORTS)
   .live('one real TypeScript checker runtime over a real program on disk')
@@ -286,6 +299,26 @@ Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_00
         ),
         Then('the digest moves')((s, expect) =>
           expect({ moved: s.observed.first !== s.observed.second }).toEqual({ moved: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'the same program copied into two temporary directories has one digest',
+      Gherkin.Do.pipe(
+        Given('two copies of one program under different temporary directories')(
+          'observed',
+          () =>
+            withTwoWorkspaces((first, second) =>
+              Effect.gen(function*() {
+                const firstDigest = yield* digestOf(first.directory)
+                const secondDigest = yield* digestOf(second.directory)
+                return { firstDigest, secondDigest }
+              })
+            ),
+        ),
+        Then('both copies have the same digest')((s, expect) =>
+          expect({ equal: s.observed.firstDigest === s.observed.secondDigest }).toEqual({ equal: true })
         ),
       ),
     )

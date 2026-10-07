@@ -255,6 +255,7 @@ const checkerOptionsJsonOf = (options: Options.StrykerOptions): Effect.Effect<st
 
 const readProgramFiles = (
   rt: TSCompilerRuntime,
+  root: string,
   fileNames: readonly string[],
 ): Effect.Effect<readonly ProgramFile[], CompilerError> =>
   Effect.forEach(
@@ -265,7 +266,10 @@ const readProgramFiles = (
           rt.host.readFileString(fileName),
           () => CompilerFailed.make({ reason: 'program-digest-unavailable', subject: fileName }),
         ),
-        (content): ProgramFile => ({ fileName, digest: sha256HexOf(content) }),
+        (content): ProgramFile => ({
+          fileName: normalizeFileName(rt.pathService.relative(root, fileName)),
+          digest: sha256HexOf(content),
+        }),
       ),
     { concurrency: 1 },
   )
@@ -306,9 +310,11 @@ export const programDigest = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompi
     onFalse: () => Effect.void,
   })
   const checkerOptionsJson = yield* checkerOptionsJsonOf(rt.options)
-  const sourceFiles = yield* readProgramFiles(rt, yield* sortedSourceFileNamesOf(programs))
+  const root = rt.pathService.dirname(state.tsconfigFile)
+  const sourceFiles = yield* readProgramFiles(rt, root, yield* sortedSourceFileNamesOf(programs))
   const tsconfigs = yield* readProgramFiles(
     rt,
+    root,
     yield* tsConfigChainOf(rt, Arr.sort(Arr.fromIterable(state.allTSConfigFiles), Order.String)),
   )
   return yield* decidedProgramIdentity(
