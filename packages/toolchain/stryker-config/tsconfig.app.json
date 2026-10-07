@@ -9,7 +9,12 @@
     "tsBuildInfoFile": "node_modules/.cache/tsconfig.app.tsbuildinfo",
     "allowJs": true,
     "checkJs": true,
-    "types": ["node"]
+    "types": ["node"],
+    "plugins": [
+      {
+        "name": "@effect/language-service"
+      }
+    ]
   },
   "include": ["lib"]
 }

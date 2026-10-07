@@ -23,6 +23,11 @@
     "types": [
       "node",
       "vitest/globals"
+    ],
+    "plugins": [
+      {
+        "name": "@effect/language-service"
+      }
     ]
   },
   "include": [
