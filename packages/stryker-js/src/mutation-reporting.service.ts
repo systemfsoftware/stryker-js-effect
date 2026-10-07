@@ -126,6 +126,7 @@ export interface MutationReportingInput {
   readonly timeOverheadMs: number
   readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
   readonly timeoutEvidenceByMutantId?: Readonly<Record<string, TimeoutEvidence>>
+  readonly programDigest?: string
   readonly concurrency: number
   readonly runStartedAt: number
 }
@@ -305,6 +306,29 @@ const stampClosureDigests = (
         ...file,
         mutants: file.mutants.map((mutant) => withClosureDigest(mutant, digests?.[mutant.id])),
       },
+    ]),
+  )
+
+const isCompileError = (mutant: Report.MutantResult): boolean => mutant.status === 'CompileError'
+
+const withProgramDigest = (mutant: Report.MutantResult, digest: string | undefined): Report.MutantResult =>
+  Option.match(Option.fromUndefinedOr(digest), {
+    onNone: () => mutant,
+    onSome: (present) =>
+      Boolean.match(isCompileError(mutant), {
+        onTrue: () => ({ ...mutant, programDigest: present }),
+        onFalse: () => mutant,
+      }),
+  })
+
+const stampProgramDigests = (
+  files: Record<string, Report.FileResult>,
+  digest: string | undefined,
+): Record<string, Report.FileResult> =>
+  Object.fromEntries(
+    Object.entries(files).map(([name, file]): readonly [string, Report.FileResult] => [
+      name,
+      { ...file, mutants: file.mutants.map((mutant) => withProgramDigest(mutant, digest)) },
     ]),
   )
 
@@ -840,7 +864,10 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
     mutantSetPolicy: input.options.mutator.mutantSetPolicy,
     runInputsDigest,
     ...report,
-    files: stampFileIdentities(stampClosureDigests(report.files, input.closureDigestsByMutantId), identities),
+    files: stampFileIdentities(
+      stampProgramDigests(stampClosureDigests(report.files, input.closureDigestsByMutantId), input.programDigest),
+      identities,
+    ),
     costs: costsOf(input, input.results),
     ...dryRunCoverageFieldOf(input.testCoverage),
   }).pipe(Effect.orDie)
@@ -926,7 +953,10 @@ const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlim
     runInputsDigest,
     schemaVersion: Report.WrittenSchemaVersion.literal,
     thresholds: input.options.thresholds,
-    files: stampFileIdentities(stampClosureDigests(files, input.closureDigestsByMutantId), identities),
+    files: stampFileIdentities(
+      stampProgramDigests(stampClosureDigests(files, input.closureDigestsByMutantId), input.programDigest),
+      identities,
+    ),
     costs: costsOf(input, results),
     testFiles,
     budget: budgetOf({

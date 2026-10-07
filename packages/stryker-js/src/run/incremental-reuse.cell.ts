@@ -37,7 +37,7 @@ import { reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow
 import { StageError } from '../Run.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from '../verdict-semantics.js'
-import { incrementalReportTextsOf } from './incremental-reuse.js'
+import { incrementalReportTextsOf, optionalField } from './incremental-reuse.js'
 
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
@@ -46,6 +46,8 @@ const emptyRefusalCounts = (): Record<ReuseRefusalReason, number> => ({
   policyChanged: 0,
   runInputsChanged: 0,
   closureChanged: 0,
+  closureAnalysisFailed: 0,
+  programChanged: 0,
   flakyDependency: 0,
   timeoutUnreproduced: 0,
   noPriorRecord: 0,
@@ -63,12 +65,6 @@ const digestField = (digest: string | undefined) =>
   Option.match(Option.fromUndefinedOr(digest), {
     onNone: (): Readonly<Record<string, never>> => ({}),
     onSome: (present) => ({ closureDigest: present }),
-  })
-
-const optionalField = <A>(field: string, value: A | undefined) =>
-  Option.match(Option.fromUndefinedOr(value), {
-    onNone: (): Readonly<Record<string, never>> => ({}),
-    onSome: (present) => ({ [field]: present }),
   })
 
 const optionalListField = (field: string, value: readonly string[] | undefined) =>
@@ -102,6 +98,7 @@ const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
       mutantId: mutant.id,
       status: mutant.status,
       ...digestField(mutant.closureDigest),
+      ...optionalField('programDigest', mutant.programDigest),
       verdictSemanticsVersion: report.verdictSemanticsVersion,
       mutantSetPolicy: report.mutantSetPolicy,
       runInputsDigest: report.runInputsDigest,
@@ -343,6 +340,7 @@ const readIncrementalReuseCommand = Effect.fn(SpanTaxonomy.Spans.incrementalReus
   const previousRecords = yield* previousRecordsOf(input)
   const closures = yield* closureDigestsOf(input)
   const runInputsDigest = yield* runInputsDigestOf(fs, path, input.basePath, input.options)
+  const programDigest = yield* input.programDigestOf
   const command: typeof IncrementalDiffCommand.Encoded = {
     _tag: 'IncrementalDiffCommand',
     currentMutants: [...input.currentMutants],
@@ -353,6 +351,10 @@ const readIncrementalReuseCommand = Effect.fn(SpanTaxonomy.Spans.incrementalReus
     mutantSetPolicy: input.options.mutator.mutantSetPolicy,
     runInputsDigest,
     force: input.force,
+    ...Option.match(Option.fromUndefinedOr(programDigest), {
+      onNone: () => ({}),
+      onSome: (present) => ({ programDigest: present }),
+    }),
     flakyMutantIds: Option.getOrElse(
       Option.map(Option.fromUndefinedOr(input.testCoverage.dryRunCoverage), (coverage) => [
         ...coverage.flakyMutantIds,
@@ -375,6 +377,7 @@ export interface IncrementalReusePart {
   readonly closureDigestsByMutantId: Record<string, string>
   readonly timeoutEvidenceByMutantId: Record<string, TimeoutEvidence>
   readonly priorKilledByByMutantId: Record<string, readonly string[]>
+  readonly programDigest: string | undefined
 }
 
 const priorTimeoutEvidenceOf = (decision: typeof MutantToRun.Encoded): Record<string, TimeoutEvidence> =>
@@ -413,6 +416,7 @@ const mutantToRunPart = Effect.fnUntraced(function*(
       onNone: () => ({}),
       onSome: (killedBy) => ({ [mutant.id]: [...killedBy] }),
     }),
+    programDigest: command.programDigest,
   })
 })
 
@@ -460,6 +464,7 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
         closureDigestsByMutantId: command.closureDigestsByMutantId,
         timeoutEvidenceByMutantId: {},
         priorKilledByByMutantId: {},
+        programDigest: command.programDigest,
       }),
     onSome: (mutant) =>
       Effect.map(
@@ -471,6 +476,7 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
           closureDigestsByMutantId: command.closureDigestsByMutantId,
           timeoutEvidenceByMutantId: rememberedTimeoutEvidenceOf(decision),
           priorKilledByByMutantId: {},
+          programDigest: command.programDigest,
         }),
       ),
   })
@@ -495,6 +501,7 @@ export interface IncrementalReuseInput {
   readonly globalTestInputs: readonly string[]
   readonly observedModules: Readonly<Record<string, readonly string[]>> | undefined
   readonly originalFileOf: (file: string) => string
+  readonly programDigestOf: Effect.Effect<string | undefined>
 }
 
 export type RefusalCounts = Record<ReuseRefusalReason, number>
@@ -506,6 +513,7 @@ export interface IncrementalReuse {
   readonly closureDigestsByMutantId: Record<string, string>
   readonly timeoutEvidenceByMutantId: Record<string, TimeoutEvidence>
   readonly priorKilledByByMutantId: Record<string, readonly string[]>
+  readonly programDigest: string | undefined
 }
 
 const closureDigestsOfParts = (parts: readonly IncrementalReusePart[]): Record<string, string> =>
@@ -513,6 +521,9 @@ const closureDigestsOfParts = (parts: readonly IncrementalReusePart[]): Record<s
     Option.map(Arr.head(parts), (part) => part.closureDigestsByMutantId),
     (): Record<string, string> => ({}),
   )
+
+const firstProgramDigestOfParts = (parts: readonly IncrementalReusePart[]): string | undefined =>
+  Option.flatMap(Arr.head(parts), (part) => Option.fromUndefinedOr(part.programDigest)).pipe(Option.getOrUndefined)
 
 const timeoutEvidenceOfParts = (parts: readonly IncrementalReusePart[]): Record<string, TimeoutEvidence> =>
   parts.reduce<Record<string, TimeoutEvidence>>(
@@ -537,4 +548,5 @@ export const readIncrementalReuse = (input: IncrementalReuseInput) =>
     closureDigestsByMutantId: closureDigestsOfParts(parts),
     timeoutEvidenceByMutantId: timeoutEvidenceOfParts(parts),
     priorKilledByByMutantId: priorKilledByOfParts(parts),
+    programDigest: firstProgramDigestOfParts(parts),
   }))

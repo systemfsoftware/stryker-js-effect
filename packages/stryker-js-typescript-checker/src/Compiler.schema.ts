@@ -56,6 +56,7 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
     'unknown-file-node',
     'file-not-in-project',
     'mutant-outside-file',
+    'program-digest-unavailable',
   ]),
   subject: S.optional(S.String),
 }) {
@@ -74,6 +75,10 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
       Match.when(
         'mutant-outside-file',
         () => `A mutant's location falls outside '${this.subject ?? 'a file'}'`,
+      ),
+      Match.when(
+        'program-digest-unavailable',
+        () => `The loaded TypeScript program could not be identified: ${this.subject ?? 'unknown input'}`,
       ),
       Match.exhaustive,
     )

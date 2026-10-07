@@ -27,6 +27,7 @@ const CHECK_DELAY = '25 millis'
 
 const handlers = Plugin.CheckerRpcs.toLayer({
   group: ({ mutants }) => Effect.succeed([mutants.map((mutant) => mutant.id)]),
+  digest: () => Effect.succeed('0123456789abcdef'.repeat(4)),
   check: ({ mutants }) =>
     Effect.as(
       Effect.sleep(CHECK_DELAY),

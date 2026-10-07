@@ -28,6 +28,9 @@ export type CheckerRequest = typeof CheckerRequest.Type
 export const CheckerCheckResult = S.Record(S.String, CheckResultSchema)
 export const CheckerGroupResult = S.String.pipe(S.Array, S.Array)
 
+export const CheckerDigestRequest = S.Struct({ checkerName: S.String })
+export type CheckerDigestRequest = typeof CheckerDigestRequest.Type
+
 export const ReporterInitOptions = S.Struct({
   traceparent: S.optionalKey(Traceparent),
   tracestate: S.optionalKey(Tracestate),

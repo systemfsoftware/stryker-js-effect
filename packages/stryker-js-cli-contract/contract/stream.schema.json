@@ -280,6 +280,14 @@
                     "type": "integer",
                     "minimum": 0
                   },
+                  "closureAnalysisFailed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "programChanged": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
                   "timeoutUnreproduced": {
                     "type": "integer",
                     "minimum": 0
@@ -773,6 +781,14 @@
               "minimum": 0
             },
             "closureChanged": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "closureAnalysisFailed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "programChanged": {
               "type": "integer",
               "minimum": 0
             },

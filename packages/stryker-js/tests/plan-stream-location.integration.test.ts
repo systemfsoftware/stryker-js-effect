@@ -152,6 +152,8 @@ const NO_REFUSALS: RunEvent.ReuseRefusals = {
   policyChanged: 0,
   runInputsChanged: 0,
   closureChanged: 0,
+  closureAnalysisFailed: 0,
+  programChanged: 0,
   timeoutUnreproduced: 0,
   flakyDependency: 0,
   noPriorRecord: 0,

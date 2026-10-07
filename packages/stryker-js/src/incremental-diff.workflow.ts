@@ -33,6 +33,7 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
   runInputsDigest: S.String,
   force: S.Boolean,
   flakyMutantIds: S.String.pipe(S.Array, S.optional),
+  programDigest: S.optional(S.String),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     force: 'stryker.incremental_diff.force',
@@ -92,44 +93,66 @@ const timeoutEvidenceOf = (record: PreviousReuseRecord): Option.Option<TimeoutEv
 
 const digestOf = (digest: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(digest), () => '')
 
-const cacheKeyOf = (mutantId: string, closureDigest: string | undefined, components: CacheKeyComponents): string =>
+const isCompileErrorRecord = (record: PreviousReuseRecord): boolean => record.status === 'CompileError'
+
+const keyOf = (mutantId: string, digest: string | undefined, components: CacheKeyComponents): string =>
   [
     mutantId,
-    digestOf(closureDigest),
+    digestOf(digest),
     String(components.verdictSemanticsVersion),
     components.mutantSetPolicy,
     components.runInputsDigest,
   ].join('\u0000')
 
 const currentKeyOf = (command: IncrementalDiffCommand, mutantId: Mutant.MutantId): string =>
-  cacheKeyOf(mutantId, command.closureDigestsByMutantId[mutantId], command)
+  keyOf(mutantId, command.closureDigestsByMutantId[mutantId], command)
+
+const matchingProgramKey = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
+  Boolean.and(
+    digestOf(record.programDigest) !== '',
+    keyOf(record.mutantId, record.programDigest, record) === keyOf(record.mutantId, command.programDigest, command),
+  )
 
 const matchingKey = (command: IncrementalDiffCommand, record: RememberedReuseRecord): boolean =>
   Boolean.and(
     Boolean.not(command.closureAnalysisFailed),
-    cacheKeyOf(record.mutantId, record.closureDigest, record) === currentKeyOf(command, record.mutantId),
+    Boolean.match(isCompileErrorRecord(record), {
+      onTrue: () => matchingProgramKey(command, record),
+      onFalse: () => keyOf(record.mutantId, record.closureDigest, record) === currentKeyOf(command, record.mutantId),
+    }),
   )
 
-const closureChanged = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
-  Boolean.or(
-    command.closureAnalysisFailed,
+const closureDigestChanged = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
+  Boolean.and(
+    Boolean.not(isCompileErrorRecord(record)),
     digestOf(record.closureDigest) !== digestOf(command.closureDigestsByMutantId[record.mutantId]),
   )
 
+const programChanged = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
+  Boolean.and(isCompileErrorRecord(record), Boolean.not(matchingProgramKey(command, record)))
+
 const reasonAfterClosure = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
-  Boolean.match(closureChanged(command, record), {
-    onTrue: (): ReuseRefusalReason => 'closureChanged',
-    onFalse: (): ReuseRefusalReason =>
-      Boolean.match(isUnreproducedWallClockTimeout(record), {
-        onTrue: () => 'timeoutUnreproduced',
-        onFalse: () => 'noPriorRecord',
+  Boolean.match(command.closureAnalysisFailed, {
+    onTrue: (): ReuseRefusalReason => 'closureAnalysisFailed',
+    onFalse: () =>
+      Boolean.match(closureDigestChanged(command, record), {
+        onTrue: (): ReuseRefusalReason => 'closureChanged',
+        onFalse: (): ReuseRefusalReason =>
+          Boolean.match(isUnreproducedWallClockTimeout(record), {
+            onTrue: () => 'timeoutUnreproduced',
+            onFalse: () => 'noPriorRecord',
+          }),
       }),
   })
 
 const reasonAfterRunInputs = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
   Boolean.match(record.runInputsDigest !== command.runInputsDigest, {
     onTrue: (): ReuseRefusalReason => 'runInputsChanged',
-    onFalse: () => reasonAfterClosure(command, record),
+    onFalse: () =>
+      Boolean.match(programChanged(command, record), {
+        onTrue: (): ReuseRefusalReason => 'programChanged',
+        onFalse: () => reasonAfterClosure(command, record),
+      }),
   })
 
 const reasonAfterPolicy = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>

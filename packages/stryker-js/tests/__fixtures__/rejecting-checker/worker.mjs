@@ -16,6 +16,7 @@ const answerOf = (mutant) =>
 
 const handlers = Plugin.CheckerRpcs.toLayer({
   group: ({ mutants }) => Effect.succeed([mutants.map((mutant) => mutant.id)]),
+  digest: () => Effect.succeed('0123456789abcdef'.repeat(4)),
   check: ({ mutants }) =>
     Effect.succeed(
       Object.fromEntries(mutants.map((mutant) => [mutant.id, answerOf(mutant)])),

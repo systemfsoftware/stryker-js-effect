@@ -16,6 +16,7 @@ import * as Stream from 'effect/Stream'
 
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { StageError } from '../Run.schema.js'
+import { sha256HexOf } from '../verdict-semantics.js'
 import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
 import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.plans.js'
 import {
@@ -175,6 +176,28 @@ export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitCh
 
 const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], StageError | CheckerCrash> =>
   Pool.use(pool, (slot) => Effect.succeed(slot.map(({ checkerName }) => checkerName)))
+
+const digestLineOf = ({ checkerName, checker }: CheckerSlot[number]): Effect.Effect<Option.Option<string>> =>
+  checker.digest(checkerName).pipe(
+    Effect.map((digest) => Option.some(`${checkerName}\u0000${digest}`)),
+    Effect.catchTags({
+      CheckerFailed: () => Effect.succeed(Option.none<string>()),
+      ChildProcessCrashedError: () => Effect.succeed(Option.none<string>()),
+      OutOfMemoryError: () => Effect.succeed(Option.none<string>()),
+    }),
+  )
+
+export const programDigestOf = (handle: CheckerPoolHandle): Effect.Effect<string | undefined> =>
+  Effect.orElseSucceed(answeredProgramDigestOf(handle), () => undefined)
+
+const answeredProgramDigestOf = Effect.fn(SpanTaxonomy.Spans.checkerPoolProgramDigest.name)(function*(
+  handle: CheckerPoolHandle,
+) {
+  const lines = yield* Pool.use(CheckerPoolHandle.slot(handle), (slot) => Effect.forEach(slot, digestLineOf))
+  return Option.getOrUndefined(
+    Option.map(Option.all(lines), (answered) => sha256HexOf([...answered].sort().join('\n'))),
+  )
+})
 
 const failedElement = (
   failedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[],
