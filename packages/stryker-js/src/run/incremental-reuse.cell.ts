@@ -143,6 +143,12 @@ const coveringTestFilesOf = (
     .filter(hasTestFileName)
     .map((result) => relativeNormalizedFileName(result.fileName, basePath))
 
+const observedTestFilesOf = (testCoverage: TestCoverage): readonly string[] =>
+  [...MutableHashMap.values(testCoverage.testsById)].filter(hasTestFileName).map((result) => result.fileName)
+
+const closureTestFilesOf = (input: IncrementalReuseInput): readonly string[] =>
+  Arr.dedupe([...input.project.testFiles, ...observedTestFilesOf(input.testCoverage)])
+
 const digestOfEntries = (entries: readonly string[]): string => hashOf(entries.join('\n'))
 
 const digestTextOf = (digest: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(digest), () => '')
@@ -295,7 +301,7 @@ const closureAnalysisOf = (
     analyzeImportClosure({
       rootDir: input.basePath,
       projectFiles: Arr.dedupe([...MutableHashMap.keys(input.project.files), ...input.project.testFiles]),
-      testFiles: [...input.project.testFiles],
+      testFiles: closureTestFilesOf(input),
       globalInputs: input.globalTestInputs.map((file) => input.originalFileOf(file)),
     }).pipe(
       Effect.tapCause((cause: Cause.Cause<PlatformError>) =>

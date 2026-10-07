@@ -1,5 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
+import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashSet from 'effect/HashSet'
@@ -334,10 +335,12 @@ const applySegment = (kept: string[], segment: string): void => {
   resolveSegment(kept, segment)
 }
 
+const rootPrefixOf = (fromDirectory: string): string => fromDirectory.startsWith('/') ? '/' : ''
+
 const joinSpecifier = (fromDirectory: string, specifier: string): string => {
   const kept: string[] = []
   for (const segment of [...fromDirectory.split('/'), ...specifier.split('/')]) applySegment(kept, segment)
-  return kept.join('/')
+  return `${rootPrefixOf(fromDirectory)}${kept.join('/')}`
 }
 
 const directoryOf = (key: string): string => key.split('/').slice(0, -1).join('/')
@@ -355,13 +358,47 @@ const pathSpecifierKey = (input: ResolveInput): string =>
 
 const memberResolution = (file: string): Resolution => ({ kind: 'Member', file })
 
-const memberResolutionOf = (files: HashSet.HashSet<string>, candidate: string): Resolution => {
-  const member = memberOf(files, candidate)
-  return member === undefined ? UNRESOLVED_RESOLUTION : memberResolution(member)
-}
+const firstFlaggedOf = (candidates: readonly string[], flags: readonly boolean[]): string | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(Arr.findFirstIndex(flags, (flag) => flag), (index) => Arr.get(candidates, index)),
+  )
 
-const resolvePathSpecifier = (input: ResolveInput): Resolution =>
-  memberResolutionOf(input.files, pathSpecifierKey(input))
+const candidateFileOf = Effect.fnUntraced(function*(realRoot: string, specifier: string) {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const candidates = candidatesOf(specifier)
+  const flags = yield* Effect.forEach(candidates, (candidate) =>
+    fs.stat(path.resolve(realRoot, candidate)).pipe(
+      Effect.map((info) => info.type === 'File'),
+      Effect.orElseSucceed(() => false),
+    ))
+  return firstFlaggedOf(candidates, flags)
+})
+
+const resolutionOfFile = (file: string | undefined): Resolution =>
+  Option.match(Option.fromUndefinedOr(file), {
+    onNone: () => UNRESOLVED_RESOLUTION,
+    onSome: (present) => memberResolution(present),
+  })
+
+const candidateResolutionOf = Effect.fnUntraced(function*(realRoot: string, specifier: string) {
+  return resolutionOfFile(yield* candidateFileOf(realRoot, specifier))
+})
+
+const memberResolutionOf = Effect.fnUntraced(function*(
+  input: ResolveInput,
+  specifier: string,
+): Effect.fn.Return<Resolution, never, FileSystem.FileSystem | Path.Path> {
+  const member = Option.fromUndefinedOr(memberOf(input.files, specifier))
+  return yield* Option.match(member, {
+    onSome: (present) => Effect.succeed(memberResolution(present)),
+    onNone: () => candidateResolutionOf(input.realRoot, specifier),
+  })
+})
+
+const resolvePathSpecifier = Effect.fnUntraced(function*(input: ResolveInput) {
+  return yield* memberResolutionOf(input, pathSpecifierKey(input))
+})
 
 const packageNameOf = (specifier: string): string => {
   const segments = specifier.split('/')
@@ -394,7 +431,7 @@ const existingFlagsOf = Effect.fnUntraced(function*(realRoot: string, candidates
 const packageDirectoryOf = Effect.fnUntraced(function*(input: ResolveInput) {
   const candidates = packageCandidatesOf(input)
   const flags = yield* existingFlagsOf(input.realRoot, candidates)
-  return candidates.find((_, index) => flags[index] === true)
+  return firstFlaggedOf(candidates, flags)
 })
 
 const realPathOf = Effect.fnUntraced(function*(absolute: string) {
@@ -473,9 +510,9 @@ const followWorkspacePackage = Effect.fnUntraced(function*(
   packageKey: string,
 ) {
   const target = yield* packageTargetOf(packageDirectory, subpathOf(input.specifier))
-  return Option.match(target, {
-    onNone: () => UNRESOLVED_RESOLUTION,
-    onSome: (present) => memberResolutionOf(input.files, joinSpecifier(packageKey, present)),
+  return yield* Option.match(target, {
+    onNone: () => Effect.succeed(UNRESOLVED_RESOLUTION),
+    onSome: (present) => memberResolutionOf(input, joinSpecifier(packageKey, present)),
   })
 })
 
@@ -500,7 +537,7 @@ const resolvePackageSpecifier = Effect.fnUntraced(function*(input: ResolveInput)
 })
 
 const resolveSpecifier = Effect.fnUntraced(function*(input: ResolveInput) {
-  if (isPathSpecifier(input.specifier)) return resolvePathSpecifier(input)
+  if (isPathSpecifier(input.specifier)) return yield* resolvePathSpecifier(input)
   return yield* resolvePackageSpecifier(input)
 })
 
@@ -648,17 +685,92 @@ const closureWithDigest = (
   digest: closureDigestOf(hashes, projectDigest, closure),
 })
 
+const scannedOf = (scanned: MutableHashMap.MutableHashMap<string, ModuleScan>): readonly ModuleScan[] => [
+  ...MutableHashMap.values(scanned),
+]
+
+const pendingDependenciesOf = (
+  scans: readonly ModuleScan[],
+  scanned: MutableHashMap.MutableHashMap<string, ModuleScan>,
+): readonly string[] =>
+  scans.flatMap((scan) => scan.dependencies).filter((dependency) => !MutableHashMap.has(scanned, dependency))
+
+const nextBatchOf = (pending: readonly string[]): Option.Option<readonly string[]> =>
+  Option.liftPredicate(pending, (waiting) => waiting.length > 0)
+
+const scanPendingOf = Effect.fnUntraced(function*(
+  roots: Roots,
+  files: HashSet.HashSet<string>,
+  memo: MutableHashMap.MutableHashMap<string, Resolution>,
+  scanned: MutableHashMap.MutableHashMap<string, ModuleScan>,
+  pending: readonly string[],
+): Effect.fn.Return<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path> {
+  const batch = Arr.dedupe(pending).filter((file) => !MutableHashMap.has(scanned, file))
+  const results = yield* Effect.forEach(
+    batch,
+    (file) => moduleScanOf(roots, files, memo, file),
+    { concurrency: CONCURRENCY },
+  )
+  yield* Effect.forEach(
+    results,
+    (scan) => Effect.sync(() => MutableHashMap.set(scanned, scan.key, scan)),
+    { discard: true },
+  )
+  const next = nextBatchOf(pendingDependenciesOf(results, scanned))
+  const entries = scannedOf(scanned)
+  return yield* Option.match(next, {
+    onNone: () => Effect.succeed(entries),
+    onSome: (waiting) => scanPendingOf(roots, files, memo, scanned, waiting),
+  })
+})
+
+const scanReachable = (
+  roots: Roots,
+  files: HashSet.HashSet<string>,
+  memo: MutableHashMap.MutableHashMap<string, Resolution>,
+  seeds: readonly string[],
+): Effect.Effect<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path> =>
+  scanPendingOf(roots, files, memo, MutableHashMap.empty<string, ModuleScan>(), seeds)
+
+const leafScanOf = Effect.fnUntraced(function*(roots: Roots, file: string) {
+  const loaded = yield* readProjectFile(roots, file)
+  return {
+    key: loaded.key,
+    contentHash: hashOf(loaded.content),
+    dependencies: [],
+    open: false,
+  }
+})
+
+const scannedKeysOf = (scanned: readonly ModuleScan[]): HashSet.HashSet<string> =>
+  HashSet.fromIterable(scanned.map((scan) => scan.key))
+
+const globalInputKeysOf = (
+  roots: Roots,
+  input: ImportClosureInput,
+  scanned: readonly ModuleScan[],
+): readonly string[] =>
+  sortedKeys(roots, input.globalInputs ?? []).filter((key) => !HashSet.has(scannedKeysOf(scanned), key))
+
+const hashGlobalInputsOf = Effect.fnUntraced(function*(roots: Roots, keys: readonly string[]) {
+  const scans = yield* Effect.forEach(
+    keys,
+    (key) => Effect.option(leafScanOf(roots, key)),
+    { concurrency: CONCURRENCY },
+  )
+  return Arr.getSomes(scans)
+})
+
 export const analyzeImportClosure = Effect.fnUntraced(function*(
   input: ImportClosureInput,
 ): Effect.fn.Return<ImportClosureAnalysis, PlatformError, FileSystem.FileSystem | Path.Path> {
   const roots = yield* readRoots(input)
-  const files = HashSet.fromIterable(input.projectFiles.map((file) => keyOf(roots, file)))
+  const seeds = [...HashSet.fromIterable(input.projectFiles.map((file) => keyOf(roots, file)))]
+  const files = HashSet.fromIterable(seeds)
   const memo = MutableHashMap.empty<string, Resolution>()
-  const scanned = yield* Effect.forEach(
-    input.projectFiles,
-    (file) => moduleScanOf(roots, files, memo, file),
-    { concurrency: CONCURRENCY },
-  )
+  const reachable = yield* scanReachable(roots, files, memo, seeds)
+  const globalScans = yield* hashGlobalInputsOf(roots, globalInputKeysOf(roots, input, reachable))
+  const scanned = [...reachable, ...globalScans]
   const projectDigest = projectDigestOf(scanned)
   const hashes = MutableHashMap.fromIterable(scanned.map((scan) => [scan.key, scan.contentHash] as const))
   const closures = Result.getOrElse(

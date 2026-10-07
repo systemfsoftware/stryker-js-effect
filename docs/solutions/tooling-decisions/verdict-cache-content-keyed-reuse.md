@@ -9,6 +9,7 @@ applies_when:
   - changing what enters the verdict-cache key or the run-inputs fingerprint
   - relocating, sharding, or merging incremental reports
   - widening the project-file crawl that feeds the test closure digest
+  - changing which inputs open a closure or how workspace and installed imports resolve
   - deciding whether a release must declare `Verdict-Semantics: changed`
 ---
 
@@ -51,6 +52,14 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
    them refuses every verdict whenever a report format changes.
 5. **Unreproducible verdicts.** Caching a wall-clock Timeout pins a flake
    forever; a timeout caused by the environment is not a property of the mutant.
+6. **Every closure open.** An open closure falls back to the whole-project
+   digest, so one input that can never resolve opens every covering test's
+   closure and any edit anywhere refuses every covered verdict. In
+   `@systemfsoftware/stryker-js` the causes were a runner-reported setup file under
+   `node_modules` and sibling workspace imports outside the project root. All
+   177 test closures were open, and main Mutation runs 37528187988 (#203) and
+   37538468691 (#206) each re-ran 4833 of 5131 mutants after a one-file edit
+   (closure digests compared between consecutive merged reports).
 
 ## Architectural Invariants
 
@@ -73,6 +82,15 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   closure changed, a flaky dependency, a timeout that has not reproduced, or no
   prior record - and the run's `reuse` line partitions reused, ran, and refused
   so the split is auditable.
+- **A closure opens only on a dynamic specifier.** Workspace links are followed
+  and their sources hashed; an installed file the runner reports (a setup file)
+  is a content-hashed leaf whose imports are not followed, because the
+  lockfile and manifest digest covers `node_modules`. The closure's test set is
+  the configured test files plus every test file the dry run observed, so a
+  runner-discovered test cannot leave its closure unhashed. Gate:
+  `pnpm --filter @systemfsoftware/stryker-js exec vitest run tests/import-closure.integration.test.ts tests/incremental-reuse.integration.test.ts`
+  fails when an installed setup file, a workspace import, or an observed-only
+  test file opens a closure or goes unhashed.
 - **Only reproducible verdicts are cached.** A wall-clock Timeout is reused
   only after it reproduces; a hit-limit Timeout is reused on first sight.
 - **Verdict semantics are declared per branch.** A commit trailer
@@ -102,7 +120,9 @@ reuse(mutant) = priorEntry with the same key, else refuse(named reason)
   shard.
 - Change a presentation option (reporters, console colors) and re-run: reuse is
   unchanged. Change the code of a helper two imports below a covering test, and
-  only that test's dependents are refused.
+  only that test's dependents are refused. On a real package, count open test
+  closures: anything beyond genuine `import(variable)` sites is a resolver gap
+  that turns every edit into a near-full run.
 - Compare a cached status table with two forced cold runs and subtract their
   own disagreement set: any remaining difference is a false reuse, which is why
   the cold backstop subtracts measured engine noise rather than trusting a
