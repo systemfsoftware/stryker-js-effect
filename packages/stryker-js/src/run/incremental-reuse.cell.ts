@@ -244,12 +244,7 @@ const mutantClosureDigestOf = (
 
 const wholeSuiteDigestOf = (
   closureEntries: readonly (readonly [string, string])[],
-  projectDigest: string,
-): string =>
-  digestOfEntries([
-    ...closureEntries.map(([testFile, digest]) => `${testFile}\u0000${digest}`).sort(),
-    projectDigest,
-  ])
+): string => digestOfEntries(closureEntries.map(([testFile, digest]) => `${testFile}\u0000${digest}`).sort())
 
 const entryDigestsOf = (analysis: ImportClosureAnalysis): Record<string, string> => {
   const digestByTestFile = Object.fromEntries(analysis.closures.map((closure) => [closure.testFile, closure.digest]))
@@ -278,7 +273,11 @@ const digestsFromAnalysisOf = (
   analysis: ImportClosureAnalysis,
 ): Record<string, string> => {
   const entryByTestFile = entryDigestsOf(analysis)
-  const wholeSuiteDigest = wholeSuiteDigestOf(closureEntriesOf(analysis, entryByTestFile), analysis.projectDigest)
+  const closureEntries = closureEntriesOf(analysis, entryByTestFile)
+  const wholeSuiteDigest = Boolean.match(closureEntries.length > 0, {
+    onTrue: () => wholeSuiteDigestOf(closureEntries),
+    onFalse: () => analysis.projectDigest,
+  })
   return Object.fromEntries(
     input.currentMutants.map((mutant) => [
       mutant.id,
