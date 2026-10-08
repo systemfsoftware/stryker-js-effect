@@ -28,19 +28,38 @@
       url = "github:systemfsoftware/pnpm-release-management";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # This repository at the commit of its latest release, `@systemfsoftware/stryker-js@v18.0.0`.
+    # The packages the workspace dogfoods (the mutation CLI, its runner,
+    # checker and ignorers) come from its tarballs, never from a registry.
+    # Nothing follows: its own lock reproduces the released tarballs byte for
+    # byte, the integrity each release tag records.
+    stryker-published.url = "github:systemfsoftware/stryker-js-effect/8cbf31518658e711f35c042c090bdf208fb80bbd";
   };
 
-  outputs = { self, nixpkgs, comment-checker, importPnpmLock, systemfsoftware, pnpm-release-management }:
+  outputs = { self, nixpkgs, comment-checker, importPnpmLock, systemfsoftware, pnpm-release-management, stryker-published }:
     let
       lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forEachSystem = fn: nixpkgs.lib.genAttrs systems (system: fn nixpkgs.legacyPackages.${system});
+      # Every tarball the release produced, renamed to `<name without scope>.tgz`
+      # so the `file:` paths in the manifests and the lockfile keep their
+      # spelling across releases; only their integrity moves.
+      publishedOf = pkgs:
+        let
+          released = stryker-published.packages.${pkgs.stdenv.hostPlatform.system}.workspace-tarballs;
+        in
+        pkgs.runCommand "stryker-published" { nativeBuildInputs = [ pkgs.jq ]; } ''
+          mkdir -p "$out"
+          jq -r '.[] | "\(.name | split("/") | last) \(.file)"' ${released}/index.json |
+            while read -r name file; do cp ${released}/"$file" "$out/$name.tgz"; done
+        '';
       workspaceOf = pkgs:
         pnpm-release-management.lib.mkPnpmWorkspacePackages {
           inherit pkgs;
           src = self;
           pname = "stryker-js-effect";
           pnpm = pkgs.pnpm_11;
+          files.".sfs-deps" = publishedOf pkgs;
         };
     in
     {
@@ -57,6 +76,7 @@
           workspace = workspaceOf pkgs;
           own = {
             inherit dprint;
+            stryker-published = publishedOf pkgs;
             deno = pkgs.deno;
             comment-checker = sandboxed;
             comment-checker-unwrapped = unwrapped;
@@ -75,21 +95,36 @@
       # fails evaluation unless `packageManager` pins that exact version, so the
       # shell's pnpm is the pinned one. The reusable release workflow needs it:
       # its workspace reader spawns `pnpm ls` and `pnpm config get`.
-      devShells = forEachSystem (pkgs: {
-        default = pkgs.mkShell {
-          packages = [
-            self.packages.${pkgs.stdenv.hostPlatform.system}.dprint
-            self.packages.${pkgs.stdenv.hostPlatform.system}.comment-checker
-            self.packages.${pkgs.stdenv.hostPlatform.system}.gritlint
-            pkgs.nodejs_24
-            pkgs.deno
-            pkgs.process-compose
-            pkgs.pnpm_11
-            # version-management and github-release-management, which the
-            # reusable release workflow runs through `nix develop --command`
-            pnpm-release-management.packages.${pkgs.stdenv.hostPlatform.system}.release-tools
-          ];
-        };
-      });
+      devShells = forEachSystem (pkgs:
+        let
+          system = pkgs.stdenv.hostPlatform.system;
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              self.packages.${system}.dprint
+              self.packages.${system}.comment-checker
+              self.packages.${system}.gritlint
+              pkgs.nodejs_24
+              pkgs.deno
+              pkgs.process-compose
+              pkgs.pnpm_11
+              # version-management and github-release-management, which the
+              # reusable release workflow runs through `nix develop --command`
+              pnpm-release-management.packages.${system}.release-tools
+              # The changeset check (`devshell: true`) runs inside it
+              pnpm-release-management.packages.${system}.sandbox
+            ];
+            # The lockfile names the released tarballs under `.sfs-deps/`. They
+            # are copied, not linked: the sandbox cannot read a store path
+            # outside its own closure.
+            shellHook = ''
+              sfs_deps="$(git rev-parse --show-toplevel 2>/dev/null || pwd)/.sfs-deps"
+              rm -rf "$sfs_deps" && mkdir -p "$sfs_deps"
+              cp ${self.packages.${system}.stryker-published}/*.tgz "$sfs_deps"/
+              chmod u+w "$sfs_deps"/*.tgz
+            '';
+          };
+        });
     };
 }

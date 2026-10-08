@@ -15,3 +15,5 @@ result
 result-*
 temp/
 .scratch/
+# the released tarballs the lockfile installs from: `nix build .#stryker-published --out-link .sfs-deps`
+.sfs-deps
