@@ -13,8 +13,10 @@ import * as Stream from 'effect/Stream'
 import {
   installClosure,
   InstallClosureCommand,
+  InstallClosureFailure,
   type PackedManifest,
   type PackedMember,
+  type StagedFixtureManifest,
 } from '@systemfsoftware/stryker-e2e-core'
 import { type NpmLockfile, NpmLockfileJson, NpmManifestJson } from './__fixtures__/npm-closure.schema.js'
 
@@ -28,8 +30,9 @@ const CLI = '@systemfsoftware/stryker-js'
 const RUNNER = '@systemfsoftware/stryker-js-vitest-runner'
 const RUNNER_ALIAS = '@systemfsoftware/stryker-js-vm-runner'
 const PLUGIN_INTERFACE = '@systemfsoftware/stryker-js-plugin-interface'
+const CHECKER = '@systemfsoftware/stryker-js-typescript-checker'
 
-const WORKSPACE = [CLI, RUNNER, PLUGIN_INTERFACE]
+const WORKSPACE = [CLI, RUNNER, PLUGIN_INTERFACE, CHECKER]
 
 const VERSION_ABSENT_FROM_THE_REGISTRY = '9999.0.0'
 
@@ -46,6 +49,14 @@ const CLOSURE: ReadonlyArray<PackedManifest> = [
   manifestOf(RUNNER, {}),
   manifestOf(PLUGIN_INTERFACE, {}),
 ]
+
+const memberOf = (manifest: PackedManifest): PackedMember => ({ tarballPath: `/packs/${manifest.name}.tgz`, manifest })
+
+const refusalOf = (members: ReadonlyArray<PackedMember>, fixtures: ReadonlyArray<StagedFixtureManifest>) =>
+  Effect.gen(function*() {
+    const planned = installClosure(InstallClosureCommand.make({ members, fixtures, workspace: WORKSPACE }))
+    return Result.isFailure(planned) ? yield* S.encodeEffect(InstallClosureFailure)(planned.failure) : null
+  })
 
 interface CommandOutcome {
   readonly exitCode: number
@@ -114,7 +125,7 @@ const installOffline = (manifests: ReadonlyArray<PackedManifest>) =>
     const root = yield* fs.makeTempDirectoryScoped({ prefix: 'install-closure-' })
     const members = yield* Effect.forEach(manifests, (manifest) => packMember(root, manifest))
     const install = yield* Effect.fromResult(
-      installClosure(InstallClosureCommand.make({ members, workspace: WORKSPACE })),
+      installClosure(InstallClosureCommand.make({ members, fixtures: [], workspace: WORKSPACE })),
     )
     const fixture = path.join(root, 'fixture')
     yield* fs.makeDirectory(fixture)
@@ -187,28 +198,87 @@ Feature('Installing the packed workspace closure')
     scenario(
       'A member that names a workspace package the closure did not pack refuses the install, naming the edge',
       Gherkin.Do.pipe(
-        Given('the closure without the runner tarball')('members', () =>
-          Effect.succeed(
-            CLOSURE.filter((manifest) => manifest.name !== RUNNER).map((manifest): PackedMember => ({
-              tarballPath: `/packs/${manifest.name}.tgz`,
-              manifest,
-            })),
-          )),
-        When('the closure install is planned')(
-          'planned',
-          (s) =>
-            Effect.succeed(installClosure(InstallClosureCommand.make({ members: s.members, workspace: WORKSPACE }))),
+        Given('the closure without the runner tarball')(
+          'members',
+          () => Effect.succeed(CLOSURE.filter((manifest) => manifest.name !== RUNNER).map(memberOf)),
         ),
+        When('the closure install is planned')('refused', (s) => refusalOf(s.members, [])),
         Then('the plan names the CLI, its alias, and the unpacked runner')((s, expect) =>
-          expect(
-            Result.isFailure(s.planned)
-              ? {
-                dependent: s.planned.failure.dependent,
-                dependency: s.planned.failure.dependency,
-                target: s.planned.failure.target,
-              }
-              : null,
-          ).toStrictEqual({ dependent: CLI, dependency: RUNNER_ALIAS, target: RUNNER })
+          expect(s.refused).toStrictEqual({
+            _tag: 'UnpackedWorkspaceDependency',
+            dependent: CLI,
+            dependency: RUNNER_ALIAS,
+            target: RUNNER,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Two members that alias one name to different workspace packages refuse the install, naming both targets',
+      Gherkin.Do.pipe(
+        Given('a closure where the plugin interface aliases the runner name to the checker')(
+          'members',
+          () =>
+            Effect.succeed([
+              ...CLOSURE.filter((manifest) => manifest.name !== PLUGIN_INTERFACE),
+              manifestOf(PLUGIN_INTERFACE, { [RUNNER_ALIAS]: `npm:${CHECKER}@^${VERSION_ABSENT_FROM_THE_REGISTRY}` }),
+              manifestOf(CHECKER, {}),
+            ].map(memberOf)),
+        ),
+        When('the closure install is planned')('refused', (s) => refusalOf(s.members, [])),
+        Then('the plan names the alias and both packages it would install as')((s, expect) =>
+          expect(s.refused).toStrictEqual({
+            _tag: 'ConflictingAliasTargets',
+            dependency: RUNNER_ALIAS,
+            targets: [CHECKER, RUNNER].sort(),
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A fixture that names a workspace package refuses the install, naming the fixture manifest',
+      Gherkin.Do.pipe(
+        Given('a fixture whose manifest names the CLI as a devDependency')(
+          'fixtures',
+          () =>
+            Effect.succeed<ReadonlyArray<StagedFixtureManifest>>([
+              {
+                path: 'calc-fixture/package.json',
+                manifest: { devDependencies: { [CLI]: `^${VERSION_ABSENT_FROM_THE_REGISTRY}` } },
+              },
+            ]),
+        ),
+        When('the closure install is planned')('refused', (s) => refusalOf(CLOSURE.map(memberOf), s.fixtures)),
+        Then('the plan names the fixture manifest and the workspace package')((s, expect) =>
+          expect(s.refused).toStrictEqual({
+            _tag: 'FixtureNamesWorkspacePackage',
+            fixture: 'calc-fixture/package.json',
+            dependency: CLI,
+            target: CLI,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'An optional peer on a workspace package the closure did not pack plans the install',
+      Gherkin.Do.pipe(
+        Given('a closure whose CLI declares the unpacked checker as an optional peer')('members', () =>
+          Effect.succeed(
+            [
+              {
+                ...manifestOf(CLI, {}),
+                peerDependencies: { [CHECKER]: `^${VERSION_ABSENT_FROM_THE_REGISTRY}` },
+                peerDependenciesMeta: { [CHECKER]: { optional: true } },
+              },
+              manifestOf(RUNNER, {}),
+            ].map(memberOf),
+          )),
+        When('the closure install is planned')('refused', (s) => refusalOf(s.members, [])),
+        Then('the plan is not refused, because npm never fetches an absent optional peer')((s, expect) =>
+          expect(s.refused).toBeNull()
         ),
       ),
     )

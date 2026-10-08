@@ -35,7 +35,7 @@ Let $T$ be the set of packed tarballs handed to one `npm install`, and let $e = 
 
 ### I1: Every closure edge is satisfied by a local spec
 
-_For every production edge (`dependencies`, `peerDependencies`, `optionalDependencies`) of every packed member whose target, by name or through `npm:`, is a closure member, the same `npm install` carries a spec that fills that edge's slot from the member's tarball._
+_For every edge npm installs for a packed member (`dependencies`, `optionalDependencies`, and `peerDependencies` not marked optional in `peerDependenciesMeta`) whose target, by name or through `npm:`, is a closure member, the same `npm install` carries a spec that fills that edge's slot from the member's tarball._
 
 ```ts
 specs = [...tarballs, ...aliasEdges.map((e) => `${e.alias}@file:${tarballOf(e.target)}`)]
@@ -43,15 +43,21 @@ specs = [...tarballs, ...aliasEdges.map((e) => `${e.alias}@file:${tarballOf(e.ta
 
 npm places `alias@file:<tgz>` at `node_modules/alias` and records the tarball's real `name`. The dependent's `npm:` edge then validates against it with no registry request.
 
-### I2: An unpacked workspace target refuses the plan
+### I2: A workspace target outside the plan refuses it
 
-_An edge whose target is a workspace package with no tarball in the closure fails global setup, naming the dependent, the edge and the target._ A registry fallback for a workspace package is never a valid outcome.
+_The plan fails global setup, naming the edge, when:_
+
+- _a packed member's installed edge targets a workspace package with no tarball in the closure (`UnpackedWorkspaceDependency`);_
+- _two edges give one alias name different targets, or an alias name is also a member's own name (`ConflictingAliasTargets`), because npm keeps whichever spec comes last;_
+- _a fixture manifest (`dependencies`, `devDependencies`, required peers, `optionalDependencies`) names a workspace package (`FixtureNamesWorkspacePackage`), because the fixture's own `npm install` runs before the closure specs and resolves that edge from the registry._
+
+A registry fallback for a workspace package is never a valid outcome. An optional peer npm will not install is not an edge.
 
 ### I3: Tarball lookup is exact
 
-_A member's tarball is `<scope>-<name>-<semver>.tgz`, not any file that starts with `<scope>-<name>-`._ With prefix matching, `@systemfsoftware/stryker-js` could select `systemfsoftware-stryker-js-vitest-runner-*.tgz`. That drops the CLI's own tarball from both the install and the bake cache key.
+_A member's tarball is `<scope>-<name>-<semver>.tgz`, not any file that starts with `<scope>-<name>-`._ With prefix matching, `@systemfsoftware/stryker-js` could select `systemfsoftware-stryker-js-vitest-runner-*.tgz`. That would drop the CLI's own tarball from the bake cache key, and now that the install is planned from the looked-up tarballs, from the install too.
 
-`installClosure` and its `UnpackedWorkspaceDependency` refusal in `@systemfsoftware/stryker-e2e-core` implement I1 and I2. The harness hands the plan to `bake-fixtures.sh` as arguments. The step that copied the packed runner over the alias directory is deleted.
+`installClosure` and its refusals in `@systemfsoftware/stryker-e2e-core` implement I1 and I2. The harness plans the install only when a fixture needs baking, and passes the plan to `bake-fixtures.sh` as arguments. The step that copied the packed runner over the alias directory is deleted.
 
 ## Anti-Pattern Code Smells
 
@@ -61,7 +67,7 @@ _A member's tarball is `<scope>-<name>-<semver>.tgz`, not any file that starts w
 
 ## Verification & Prevention
 
-- `install-closure.integration.test.ts` in `@systemfsoftware/stryker-e2e-core` runs under `pnpm test`. It packs a closure with the production alias shape and installs the plan with `npm install --package-lock-only --offline`, an empty cache and an unreachable registry. It then requires `file:` provenance for every workspace package in the lockfile. Any registry fallback for a closure member fails the install.
+- `install-closure.integration.test.ts` in `@systemfsoftware/stryker-e2e-core` runs under `pnpm test`. It packs a closure with the production alias shape and installs the plan with `npm install --package-lock-only --offline`, an empty cache and an unreachable registry. It then requires `file:` provenance for every workspace package in the lockfile. Any registry fallback for a closure member fails the install. Its other scenarios cover each I2 refusal and the optional-peer exemption.
 - Two-sided check (scratch evidence, not a committed fixture): the same offline install given the tarball list alone exits `ENOTCACHED` for `@systemfsoftware/stryker-js-vitest-runner`, and given the plan it exits 0.
 
 ## Related

@@ -25,6 +25,7 @@ import {
   type FileBytes,
   type FixtureInput,
   fixtureKeyBytes,
+  FixtureManifest,
   installClosure,
   InstallClosureCommand,
   missingFixtures as missingFixturesWorkflow,
@@ -36,6 +37,7 @@ import {
   packsKeyBytes,
   pruneStaleEntries as pruneStaleEntriesWorkflow,
   PruneStaleEntriesCommand,
+  type StagedFixtureManifest,
 } from '@systemfsoftware/stryker-e2e-core'
 
 import type { BakeOutcome, PackedPackage, PackedPackageLookup, TurboDryClosure } from './bake-key.schema.js'
@@ -578,11 +580,36 @@ const packedMemberOf = (tree: PackedTree) =>
     return { tarballPath: `${GuestJobs.GUEST_PACKS_ROOT}/${tree.fileName}`, manifest } satisfies PackedMember
   })
 
-const closureInstallOf = (environment: BakeEnvironment, packsInput: PackInput) =>
+const stagedManifestsOf = (input: FixtureInput) =>
+  Effect.forEach(
+    Array.filter(input.files, (file) => isManifestPath(file.relativePath)),
+    (file) =>
+      Schema.decodeEffect(Schema.fromJsonString(FixtureManifest))(new TextDecoder().decode(file.bytes)).pipe(
+        Effect.map((manifest): StagedFixtureManifest => ({
+          path: `${input.fixtureId}/${file.relativePath}`,
+          manifest,
+        })),
+        Effect.mapError(() =>
+          new PackFailure({
+            step: STEP_INSTALL_PLAN,
+            detail: `the fixture manifest ${input.fixtureId}/${file.relativePath} is not a readable package.json`,
+          })
+        ),
+      ),
+  )
+
+const closureInstallOf = (
+  environment: BakeEnvironment,
+  packsInput: PackInput,
+  fixtureInputs: ReadonlyArray<FixtureInput>,
+) =>
   Effect.gen(function*() {
     const workspace = yield* workspacePackagesOf(environment)
     const members = yield* Effect.forEach(packsInput.packs, packedMemberOf)
-    const install = yield* Effect.fromResult(installClosure(InstallClosureCommand.make({ members, workspace }))).pipe(
+    const fixtures = (yield* Effect.forEach(fixtureInputs, stagedManifestsOf)).flat()
+    const install = yield* Effect.fromResult(
+      installClosure(InstallClosureCommand.make({ members, fixtures, workspace })),
+    ).pipe(
       Effect.mapError((failure) => new PackFailure({ step: STEP_INSTALL_PLAN, detail: failure.message })),
     )
     return install.specs
@@ -651,9 +678,11 @@ const bakeMissing = (
   root: string,
   missing: ReadonlyArray<BakedFixture>,
   catalogs: WorkspaceCatalogs,
-  install: ReadonlyArray<string>,
+  packsInput: PackInput,
+  fixtureInputs: ReadonlyArray<FixtureInput>,
 ) =>
   Effect.gen(function*() {
+    const install = yield* closureInstallOf(environment, packsInput, fixtureInputs)
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const crypto = yield* Crypto.Crypto
@@ -697,7 +726,6 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
       const fixtureIds = yield* listFixtureIds(environment)
       const catalogs = yield* loadWorkspaceCatalogs(environment)
       const packsInput = yield* packsInputOf(environment, packs, scratch)
-      const install = yield* closureInstallOf(environment, packsInput)
       const fixtureInputs = yield* fixtureInputsOf(environment, fixtureIds, catalogs)
       const { packsKey, fixtures } = yield* deriveBakeKeys(packsInput, fixtureInputs)
       const root = path.join(environment.bakedCacheRoot, packsKey)
@@ -706,7 +734,7 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
       const missing = yield* missingFixtures(root, fixtures)
       yield* Boolean.match(missing.length === 0, {
         onTrue: () => Effect.void,
-        onFalse: () => bakeMissing(environment, packsDir, root, missing, catalogs, install),
+        onFalse: () => bakeMissing(environment, packsDir, root, missing, catalogs, packsInput, fixtureInputs),
       })
       return { root, keys: keysRecordOf(fixtures), lease }
     }).pipe(Effect.ensuring(fs.remove(scratch, { recursive: true, force: true }).pipe(Effect.orDie)))
