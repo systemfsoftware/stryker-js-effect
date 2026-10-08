@@ -1,5 +1,20 @@
 # @systemfsoftware/stryker-js-cli-contract
 
+## 0.4.0
+
+An incremental run now reuses `CompileError` verdicts instead of type-checking
+every one again. A verdict is kept only while nothing that fed the check
+changed: the mutant and its replacement, every file the checker's TypeScript
+program loaded (including transitive and bundled declaration files), every
+tsconfig in the `extends` chain and its project references, the TypeScript
+version, the checker version and its options. Otherwise the mutant is
+re-checked. The reuse stream line reports such refusals as `programChanged`
+(or `closureAnalysisFailed` when the closure analysis failed); lines without a
+count still decode.
+
+Breaking: a configured checker must answer the new `digest` RPC, so upgrade
+checker plugins together with this release. A `plan` stream line can now carry a `projects` array naming, for every planned project, how many mutants were reused, how many will run, the refused count per reason, and the reason a whole incremental report was discarded. The machine stream version is unchanged: a stream line without `projects` still decodes, and consumers that read reuse numbers from a plan can now see why a plan scheduled work it expected to reuse. The published package now includes its changelog. Enable the `@effect/language-service` tsgo plugin in every source package's `tsconfig.app.json` and `tsconfig.test.json`, and bump `@effect/tsgo` to `^0.50.0`. This turns on Effect-aware diagnostics during `effect-tsgo` type checking; it changes no runtime behaviour or public API.
+
 ## 0.3.1
 
 ### Patch Changes
