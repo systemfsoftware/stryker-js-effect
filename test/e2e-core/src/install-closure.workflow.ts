@@ -44,12 +44,17 @@ interface ClosureEdge {
 
 const NPM_ALIAS = /^npm:((?:@[^/@]+\/)?[^/@]+)(?:@.*)?$/
 
+const NO_EDGES: Readonly<Record<string, string>> = {}
+
 const targetOf = (dependency: string, spec: string): string =>
-  Option.getOrElse(Option.fromNullishOr(NPM_ALIAS.exec(spec)?.[1]), () => dependency)
+  Option.getOrElse(
+    Option.flatMap(Option.fromNullishOr(NPM_ALIAS.exec(spec)), (match) => Arr.get(match, 1)),
+    () => dependency,
+  )
 
 const edgesOf = (manifest: PackedManifest): ReadonlyArray<ClosureEdge> =>
   [manifest.dependencies, manifest.peerDependencies, manifest.optionalDependencies].flatMap((specs) =>
-    Object.entries(specs ?? {}).map(([dependency, spec]) => ({
+    Object.entries(Option.getOrElse(Option.fromUndefinedOr(specs), () => NO_EDGES)).map(([dependency, spec]) => ({
       dependent: manifest.name,
       dependency,
       target: targetOf(dependency, spec),

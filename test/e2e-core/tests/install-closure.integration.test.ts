@@ -16,6 +16,7 @@ import {
   type PackedManifest,
   type PackedMember,
 } from '@systemfsoftware/stryker-e2e-core'
+import { type NpmLockfile, NpmLockfileJson, NpmManifestJson } from './__fixtures__/npm-closure.schema.js'
 
 const Feature = makeFeature({ it })
 
@@ -46,10 +47,6 @@ const CLOSURE: ReadonlyArray<PackedManifest> = [
   manifestOf(PLUGIN_INTERFACE, {}),
 ]
 
-const LockEntry = S.Struct({ name: S.optional(S.String), resolved: S.optional(S.String) })
-
-const Lockfile = S.fromJsonString(S.Struct({ packages: S.Record(S.String, LockEntry) }))
-
 interface CommandOutcome {
   readonly exitCode: number
   readonly stdout: string
@@ -63,8 +60,8 @@ const runCommand = (argv: readonly [string, ...Array<string>], cwd: string) =>
     const handle = yield* spawner.spawn(ChildProcess.make(command, args, { cwd }))
     const [stdout, stderr, exitCode] = yield* Effect.all(
       [
-        Stream.runCollect(Stream.decodeText(handle.stdout)),
-        Stream.runCollect(Stream.decodeText(handle.stderr)),
+        handle.stdout.pipe(Stream.decodeText, Stream.runCollect),
+        handle.stderr.pipe(Stream.decodeText, Stream.runCollect),
         handle.exitCode,
       ] as const,
       { concurrency: 'unbounded' },
@@ -80,10 +77,12 @@ const packMember = (root: string, manifest: PackedManifest) =>
     const packs = path.join(root, 'packs')
     yield* fs.makeDirectory(source, { recursive: true })
     yield* fs.makeDirectory(packs, { recursive: true })
-    yield* fs.writeFileString(
-      path.join(source, 'package.json'),
-      JSON.stringify({ ...manifest, version: VERSION_ABSENT_FROM_THE_REGISTRY }),
-    )
+    const packageJson = yield* S.encodeEffect(NpmManifestJson)({
+      name: manifest.name,
+      version: VERSION_ABSENT_FROM_THE_REGISTRY,
+      dependencies: { ...manifest.dependencies },
+    })
+    yield* fs.writeFileString(path.join(source, 'package.json'), packageJson)
     const packed = yield* runCommand(['npm', 'pack', '--pack-destination', packs], source)
     const fileName = packed.stdout.trim().split('\n').at(-1) ?? ''
     return { tarballPath: path.join(packs, fileName), manifest } satisfies PackedMember
@@ -94,7 +93,7 @@ interface LockProvenance {
   readonly resolved: string
 }
 
-const provenanceOf = (lockfile: typeof Lockfile.Type): ReadonlyArray<LockProvenance> =>
+const provenanceOf = (lockfile: NpmLockfile): ReadonlyArray<LockProvenance> =>
   Object.entries(lockfile.packages)
     .filter(([location]) => location !== '')
     .map(([location, entry]) => ({
@@ -119,7 +118,8 @@ const installOffline = (manifests: ReadonlyArray<PackedManifest>) =>
     )
     const fixture = path.join(root, 'fixture')
     yield* fs.makeDirectory(fixture)
-    yield* fs.writeFileString(path.join(fixture, 'package.json'), JSON.stringify({ name: 'fixture', private: true }))
+    const fixtureJson = yield* S.encodeEffect(NpmManifestJson)({ name: 'fixture', version: '0.0.0', private: true })
+    yield* fs.writeFileString(path.join(fixture, 'package.json'), fixtureJson)
     const outcome = yield* runCommand(
       [
         'npm',
@@ -137,7 +137,7 @@ const installOffline = (manifests: ReadonlyArray<PackedManifest>) =>
       fixture,
     )
     const lock = yield* fs.readFileString(path.join(fixture, 'package-lock.json')).pipe(
-      Effect.flatMap(S.decodeEffect(Lockfile)),
+      Effect.flatMap(S.decodeEffect(NpmLockfileJson)),
       Effect.map(provenanceOf),
       Effect.orElseSucceed((): ReadonlyArray<LockProvenance> => []),
     )
