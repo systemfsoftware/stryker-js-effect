@@ -71,9 +71,10 @@
         assert clashes == [ ] || throw "flake.nix: workspace packages ${lib.concatStringsSep ", " clashes} collide with flake packages";
         workspace // own);
 
-      # pnpm is deliberately absent: `packageManager` pins pnpm@11.27.0 and
-      # corepack is the one thing allowed to resolve it. A second pnpm on PATH
-      # would answer `pnpm install` with a version the lockfile never saw.
+      # pnpm_11 is the pnpm `workspaceOf` builds with, and mkPnpmWorkspacePackages
+      # fails evaluation unless `packageManager` pins that exact version, so the
+      # shell's pnpm is the pinned one. The reusable release workflow needs it:
+      # its workspace reader spawns `pnpm ls` and `pnpm config get`.
       devShells = forEachSystem (pkgs: {
         default = pkgs.mkShell {
           packages = [
@@ -83,6 +84,7 @@
             pkgs.nodejs_24
             pkgs.deno
             pkgs.process-compose
+            pkgs.pnpm_11
             # version-management and github-release-management, which the
             # reusable release workflow runs through `nix develop --command`
             pnpm-release-management.packages.${pkgs.stdenv.hostPlatform.system}.release-tools
