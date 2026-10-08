@@ -1,5 +1,13 @@
 # @systemfsoftware/stryker-js-vitest-runner
 
+## 9.0.0
+
+The dry run now reports, as `testFileModules`, the modules each test file evaluated, including modules it imported at runtime through a computed `import()`. Mutant runs are unaffected. On Vitest setups where this information is not available, the field is left out. Effect moves to `4.0.0-rc.117`, together with the `@effect/*` packages these libraries use. Projects that install `effect` next to them need the same release.
+
+- The TypeScript checker and test-runner workers now bundle their own runtime, so the only modules they load from your project are the TypeScript compiler and your test framework.
+- The test-runner plugin supports the framework's fifth major release.
+- The ignorer interface re-exports the `oxc-parser` 0.150 AST, in which `FormalParameterRest.decorators` is `Array<Decorator>`. Vitest 4 is no longer supported: the `vitest` peer dependency is now `^5`. Upgrade your project to Vitest 5 before upgrading this package.
+
 ## 8.1.1
 
 ### Patch Changes

@@ -1,5 +1,24 @@
 # @systemfsoftware/stryker-js-plugin-interface
 
+## 15.0.0
+
+A checker plugin must now report the program it loaded. `CheckerService` gains a
+`digest` holding the digest of that program, the checker RPC exposes it as
+`digest`, and a TypeScript checker answers with the digest of the TypeScript
+program it built: the hashed content of every source file the program loaded
+(project files, declaration files and the ones TypeScript ships), the tsconfig
+files it was built from, the TypeScript version, the checker's own version, and
+its configured options. The digest is stable for an unchanged program and moves
+when any of those change.
+
+Breaking for checker plugin authors: a checker worker that does not answer the
+`digest` RPC no longer works with the engine. Add a `digest` handler that
+returns the digest of everything your check reads. A complete dry-run result can carry `testFileModules`: for each test file, the modules it evaluated while it ran. Test runners that know which modules each test file loaded can report them, so incremental runs can key a test file on what it actually loaded. Effect moves to `4.0.0-rc.117`, together with the `@effect/*` packages these libraries use. Projects that install `effect` next to them need the same release.
+
+- The TypeScript checker and test-runner workers now bundle their own runtime, so the only modules they load from your project are the TypeScript compiler and your test framework.
+- The test-runner plugin supports the framework's fifth major release.
+- The ignorer interface re-exports the `oxc-parser` 0.150 AST, in which `FormalParameterRest.decorators` is `Array<Decorator>`. Enable the `@effect/language-service` tsgo plugin in every source package's `tsconfig.app.json` and `tsconfig.test.json`, and bump `@effect/tsgo` to `^0.50.0`. This turns on Effect-aware diagnostics during `effect-tsgo` type checking; it changes no runtime behaviour or public API.
+
 ## 14.0.0
 
 ### Major Changes

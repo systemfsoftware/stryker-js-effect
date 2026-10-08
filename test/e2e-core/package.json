@@ -1,7 +1,7 @@
 {
   "name": "@systemfsoftware/stryker-e2e-core",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The e2e lane's functional core: annotation parsing, mutant matching, coverage closure, stream decoding and the witness registry. Imports contract packages only, never a Stryker implementation.",
   "license": "Apache-2.0",
   "type": "module",

@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-framework-interface
 
+## 0.0.1
+
+Enable the `@effect/language-service` tsgo plugin in every source package's `tsconfig.app.json` and `tsconfig.test.json`, and bump `@effect/tsgo` to `^0.50.0`. This turns on Effect-aware diagnostics during `effect-tsgo` type checking; it changes no runtime behaviour or public API.
+
 ## 0.0.0
 
 ### Minor Changes
