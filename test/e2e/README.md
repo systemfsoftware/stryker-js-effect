@@ -9,6 +9,8 @@ The suite resolves the workspace closure of the CLI and its plugins, packs each 
 - Full mutation runs against realistic test suites
 - Exit codes and typed machine-mode JSON error envelopes on failure
 
+The closure installs in one `npm install` with no `@systemfsoftware` workspace package taken from the registry. `pnpm pack` rewrites a workspace alias (`"@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^"`) to `npm:<target>@^<version>`, and npm resolves an `npm:` spec from the registry even when the target's tarball is in the same install. So the install passes every packed tarball plus one `<alias>@file:<target tarball>` spec per alias edge between closure members (`installClosure` in `@systemfsoftware/stryker-e2e-core`). A production edge to a workspace package that the closure did not pack fails global setup with `UnpackedWorkspaceDependency` instead of reaching the registry.
+
 ## Running locally
 
 Local runs need hardware virtualization and nothing else: no Docker daemon, Podman socket, or container CLI.

@@ -6,6 +6,19 @@ export type FileBytes = typeof FileBytes.Type
 export const PackedTree = S.Struct({ fileName: S.String, files: S.Array(FileBytes) })
 export type PackedTree = typeof PackedTree.Type
 
+const EdgeSpecs = S.optional(S.Record(S.String, S.String))
+
+export const PackedManifest = S.Struct({
+  name: S.String,
+  dependencies: EdgeSpecs,
+  peerDependencies: EdgeSpecs,
+  optionalDependencies: EdgeSpecs,
+})
+export type PackedManifest = typeof PackedManifest.Type
+
+export const PackedMember = S.Struct({ tarballPath: S.String, manifest: PackedManifest })
+export type PackedMember = typeof PackedMember.Type
+
 export const PackInput = S.Struct({
   baseImage: S.String,
   bakeScript: S.Uint8Array,
