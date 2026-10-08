@@ -25,12 +25,19 @@ import {
   type FileBytes,
   type FixtureInput,
   fixtureKeyBytes,
+  FixtureManifest,
+  installClosure,
+  InstallClosureCommand,
   missingFixtures as missingFixturesWorkflow,
   MissingFixturesCommand,
+  PackedManifest,
+  type PackedMember,
+  type PackedTree,
   type PackInput,
   packsKeyBytes,
   pruneStaleEntries as pruneStaleEntriesWorkflow,
   PruneStaleEntriesCommand,
+  type StagedFixtureManifest,
 } from '@systemfsoftware/stryker-e2e-core'
 
 import type { BakeOutcome, PackedPackage, PackedPackageLookup, TurboDryClosure } from './bake-key.schema.js'
@@ -41,7 +48,6 @@ import {
   MissingTarball,
   TurboClosure,
   TurboDryRun,
-  UnreadableVersion,
 } from './bake-key.schema.js'
 import type { WorkspaceCatalogs } from './catalog-resolution.js'
 import { parseFixtureManifest, parseWorkspaceCatalogs, resolveCatalogSpecs } from './catalog-resolution.js'
@@ -85,6 +91,7 @@ const STEP_BAKE = 'bake every fixture in the preparation microVM'
 const STEP_CLOSURE = 'build the packed workspace closure'
 const STEP_TARBALLS = 'read the packed tarballs'
 const STEP_KEY = 'derive the bake cache key'
+const STEP_INSTALL_PLAN = 'plan the workspace closure install'
 
 const TREE_CONCURRENCY = 16
 const UNPACK_CONCURRENCY = 4
@@ -99,7 +106,16 @@ const ENTRY_PACKAGES = [
 
 type Argv = readonly [string, ...Array<string>]
 
-const PACKED_TARBALL_VERSION = /-(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\.tgz$/
+const PACKED_VERSION = String.raw`\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`
+
+const REGEXP_SPECIAL = /[.*+?^${}()|[\]\\]/g
+
+const packedFileNameOf = (prefix: string): RegExp =>
+  new RegExp(`^${prefix.replace(REGEXP_SPECIAL, String.raw`\$&`)}(${PACKED_VERSION})\\.tgz$`)
+
+const PACKED_MANIFEST_PATH = 'package/package.json'
+
+const WorkspaceListing = Schema.fromJsonString(Schema.Array(Schema.Struct({ name: Schema.optional(Schema.String) })))
 
 const runCommand = (argv: Argv, cwd?: string) =>
   Effect.scoped(Effect.gen(function*() {
@@ -404,17 +420,21 @@ const lookupOf = (
   directory: string,
 ): PackedPackageLookup => {
   const prefix = `${packageName.slice(1).replace('/', '-')}-`
+  const packedFileName = packedFileNameOf(prefix)
   return Option.match(
-    Array.findFirst(fileNames, (candidate) => candidate.startsWith(prefix) && candidate.endsWith('.tgz')),
+    Array.findFirst(
+      fileNames,
+      (candidate) =>
+        Option.map(Option.fromNullishOr(packedFileName.exec(candidate)?.[1]), (version) => ({
+          fileName: candidate,
+          version,
+        })),
+    ),
     {
       onNone: (): PackedPackageLookup => MissingTarball.make({ prefix, directory }),
-      onSome: (fileName): PackedPackageLookup =>
-        Option.match(Option.fromNullishOr(PACKED_TARBALL_VERSION.exec(fileName)?.[1]), {
-          onNone: (): PackedPackageLookup => UnreadableVersion.make({ fileName }),
-          onSome: (version): PackedPackageLookup =>
-            FoundPackage.make({
-              pack: { name: packageName, version, fileName, tarballPath: `${directory}/${fileName}` },
-            }),
+      onSome: ({ fileName, version }): PackedPackageLookup =>
+        FoundPackage.make({
+          pack: { name: packageName, version, fileName, tarballPath: `${directory}/${fileName}` },
         }),
     },
   )
@@ -427,14 +447,7 @@ const packedTarballOf = (fileNames: ReadonlyArray<string>, packageName: string, 
       Effect.fail(
         new PackFailure({
           step: STEP_TARBALLS,
-          detail: `pnpm pack wrote no ${lookup.prefix}*.tgz into ${lookup.directory}`,
-        }),
-      )),
-    Match.tag('UnreadableVersion', (lookup) =>
-      Effect.fail(
-        new PackFailure({
-          step: STEP_TARBALLS,
-          detail: `the packed tarball ${lookup.fileName} carries no parseable version`,
+          detail: `pnpm pack wrote no ${lookup.prefix}<version>.tgz into ${lookup.directory}`,
         }),
       )),
     Match.exhaustive,
@@ -533,6 +546,75 @@ const packsInputOf = (
     return { baseImage: GuestJobs.BASE_IMAGE, bakeScript, packs: packedTrees }
   }).pipe(seamSpan(SpanNames.packsKey, { 'e2e.packs': packs.length }))
 
+const workspacePackagesOf = (environment: BakeEnvironment) =>
+  Effect.gen(function*() {
+    const listing = yield* runChecked(
+      STEP_INSTALL_PLAN,
+      ['pnpm', 'ls', '-r', '--depth', '-1', '--json'],
+      environment.repoRoot,
+    )
+    const projects = yield* Schema.decodeEffect(WorkspaceListing)(listing.stdout).pipe(
+      Effect.mapError(() =>
+        new PackFailure({ step: STEP_INSTALL_PLAN, detail: 'pnpm ls wrote no parseable workspace listing' })
+      ),
+    )
+    return projects.flatMap((project) => Option.toArray(Option.fromNullishOr(project.name)))
+  })
+
+const packedMemberOf = (tree: PackedTree) =>
+  Effect.gen(function*() {
+    const unreadable = new PackFailure({
+      step: STEP_INSTALL_PLAN,
+      detail: `the packed tarball ${tree.fileName} carries no readable ${PACKED_MANIFEST_PATH}`,
+    })
+    const manifestFile = yield* Option.match(
+      Array.findFirst(tree.files, (file) => file.relativePath === PACKED_MANIFEST_PATH),
+      {
+        onNone: () => Effect.fail(unreadable),
+        onSome: (found) => Effect.succeed(found),
+      },
+    )
+    const manifest = yield* Schema.decodeEffect(Schema.fromJsonString(PackedManifest))(
+      new TextDecoder().decode(manifestFile.bytes),
+    ).pipe(Effect.mapError(() => unreadable))
+    return { tarballPath: `${GuestJobs.GUEST_PACKS_ROOT}/${tree.fileName}`, manifest } satisfies PackedMember
+  })
+
+const stagedManifestsOf = (input: FixtureInput) =>
+  Effect.forEach(
+    Array.filter(input.files, (file) => isManifestPath(file.relativePath)),
+    (file) =>
+      Schema.decodeEffect(Schema.fromJsonString(FixtureManifest))(new TextDecoder().decode(file.bytes)).pipe(
+        Effect.map((manifest): StagedFixtureManifest => ({
+          path: `${input.fixtureId}/${file.relativePath}`,
+          manifest,
+        })),
+        Effect.mapError(() =>
+          new PackFailure({
+            step: STEP_INSTALL_PLAN,
+            detail: `the fixture manifest ${input.fixtureId}/${file.relativePath} is not a readable package.json`,
+          })
+        ),
+      ),
+  )
+
+const closureInstallOf = (
+  environment: BakeEnvironment,
+  packsInput: PackInput,
+  fixtureInputs: ReadonlyArray<FixtureInput>,
+) =>
+  Effect.gen(function*() {
+    const workspace = yield* workspacePackagesOf(environment)
+    const members = yield* Effect.forEach(packsInput.packs, packedMemberOf)
+    const fixtures = (yield* Effect.forEach(fixtureInputs, stagedManifestsOf)).flat()
+    const install = yield* Effect.fromResult(
+      installClosure(InstallClosureCommand.make({ members, fixtures, workspace })),
+    ).pipe(
+      Effect.mapError((failure) => new PackFailure({ step: STEP_INSTALL_PLAN, detail: failure.message })),
+    )
+    return install.specs
+  })
+
 const fixtureInputsOf = (
   environment: BakeEnvironment,
   fixtureIds: ReadonlyArray<string>,
@@ -596,8 +678,11 @@ const bakeMissing = (
   root: string,
   missing: ReadonlyArray<BakedFixture>,
   catalogs: WorkspaceCatalogs,
+  packsInput: PackInput,
+  fixtureInputs: ReadonlyArray<FixtureInput>,
 ) =>
   Effect.gen(function*() {
+    const install = yield* closureInstallOf(environment, packsInput, fixtureInputs)
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const crypto = yield* Crypto.Crypto
@@ -611,7 +696,7 @@ const bakeMissing = (
       const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
       yield* jobs.requireCleanExit(
         STEP_BAKE,
-        jobs.job(['sh', '-c', bakeScript], [
+        jobs.job(['sh', '-c', bakeScript, 'bake-fixtures', ...install], [
           { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
           { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
         ]),
@@ -649,7 +734,7 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
       const missing = yield* missingFixtures(root, fixtures)
       yield* Boolean.match(missing.length === 0, {
         onTrue: () => Effect.void,
-        onFalse: () => bakeMissing(environment, packsDir, root, missing, catalogs),
+        onFalse: () => bakeMissing(environment, packsDir, root, missing, catalogs, packsInput, fixtureInputs),
       })
       return { root, keys: keysRecordOf(fixtures), lease }
     }).pipe(Effect.ensuring(fs.remove(scratch, { recursive: true, force: true }).pipe(Effect.orDie)))

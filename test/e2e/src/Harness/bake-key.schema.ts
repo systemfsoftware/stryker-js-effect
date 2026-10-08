@@ -16,11 +16,7 @@ export class MissingTarball extends Schema.TaggedClass<MissingTarball>()('Missin
   directory: Schema.String,
 }) {}
 
-export class UnreadableVersion extends Schema.TaggedClass<UnreadableVersion>()('UnreadableVersion', {
-  fileName: Schema.String,
-}) {}
-
-export const PackedPackageLookup = Schema.Union([FoundPackage, MissingTarball, UnreadableVersion])
+export const PackedPackageLookup = Schema.Union([FoundPackage, MissingTarball])
 
 export type PackedPackageLookup = typeof PackedPackageLookup.Type
 
