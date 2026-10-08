@@ -27,6 +27,8 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - name: dprint from the flake
         run: echo "$(nix build --no-link --print-out-paths .#dprint)/bin" >> "$GITHUB_PATH"
+      - name: The released tarballs the lockfile installs from
+        run: nix build .#stryker-published --out-link .sfs-deps
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -77,8 +79,10 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
       - uses: cachix/install-nix-action@v31
+      - name: The released tarballs the lockfile installs from
+        run: nix build .#stryker-published --out-link .sfs-deps
+      - run: pnpm install --frozen-lockfile
       - name: deno from the flake
         run: echo "$(nix build --no-link --print-out-paths .#deno)/bin" >> "$GITHUB_PATH"
       - name: Install process-compose (pinned)

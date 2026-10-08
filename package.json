@@ -20,6 +20,7 @@
   "private": true,
   "scripts": {
     "attw": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} attw",
+    "bootstrap": "pnpm install --frozen-lockfile",
     "build": "turbo --concurrency=${TURBO_CONCURRENCY:-100%} build api:check",
     "check:ci": "s=0; pnpm format:check || s=1; pnpm lint:conventions || s=1; pnpm gate:tasks || s=1; pnpm gate:dist || s=1; exit $s",
     "clean": "turbo clean",

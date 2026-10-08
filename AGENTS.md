@@ -2,12 +2,12 @@
 
 ## Boundaries
 
-| Surface            | Target                                                                                          | Gate                                                               |
-| ------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| **Read-only**      | `commitlint.config.ts`, `.github/workflows/`, `CONSTITUTION.md`, `subtrees.toml`, `repos/**`    | Read-only                                                          |
-| **Dogfood**        | `catalogs.stryker` in `pnpm-workspace.yaml` and `catalog:stryker` on those workspace packages   | Do not retarget to `workspace:^`. Mutation runs the published CLI. |
-| **Human approval** | Releases, publishing, external credentials, `minimumReleaseAgeExclude` in `pnpm-workspace.yaml` | User confirmation                                                  |
-| **Editable**       | Workspace source, tests, documentation                                                          | Edit freely                                                        |
+| Surface            | Target                                                                                                                                                                         | Gate                                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Read-only**      | `commitlint.config.ts`, `.github/workflows/`, `CONSTITUTION.md`, `subtrees.toml`, `repos/**`                                                                                   | Read-only                                                                                                                     |
+| **Dogfood**        | The `stryker-published` flake input (the latest release tag's commit) and the `overrides` in `pnpm-workspace.yaml` that point every released package at `.sfs-deps/<name>.tgz` | Do not retarget to `workspace:^` or a registry version. Mutation runs the released CLI; a release moves the input to its tag. |
+| **Human approval** | Releases, publishing, external credentials, `minimumReleaseAgeExclude` in `pnpm-workspace.yaml`                                                                                | User confirmation                                                                                                             |
+| **Editable**       | Workspace source, tests, documentation                                                                                                                                         | Edit freely                                                                                                                   |
 
 ## Doctrine
 
@@ -21,11 +21,11 @@
 
 ## Definition of Done
 
-| ID        | Obligation                                             | Gate                                                                                                                                                                   |
-| --------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `START-1` | Code formatting matches dprint                         | `pnpm format:check`                                                                                                                                                    |
-| `START-2` | Workspace typecheck passes                             | `pnpm typecheck`                                                                                                                                                       |
-| `START-3` | All test suites pass                                   | `pnpm test`                                                                                                                                                            |
-| `START-4` | Workspace build and verification tasks pass            | `pnpm check:ci`                                                                                                                                                        |
-| `START-5` | Package changes include change intent                  | `./scripts/check-changeset.ts $(git merge-base HEAD origin/main)`                                                                                                      |
-| `START-6` | Mutation dogfood stays on `catalog:stryker` (`latest`) | `git grep -F 'catalog:stryker' -- packages/stryker-js/package.json packages/stryker-js-vitest-runner/package.json packages/stryker-js-typescript-checker/package.json` |
+| ID        | Obligation                                                          | Gate                                                                                                                                                                    |
+| --------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `START-1` | Code formatting matches dprint                                      | `pnpm format:check`                                                                                                                                                     |
+| `START-2` | Workspace typecheck passes                                          | `pnpm typecheck`                                                                                                                                                        |
+| `START-3` | All test suites pass                                                | `pnpm test`                                                                                                                                                             |
+| `START-4` | Workspace build and verification tasks pass                         | `pnpm check:ci`                                                                                                                                                         |
+| `START-5` | Package changes include change intent                               | `./scripts/check-changeset.ts $(git merge-base HEAD origin/main)`                                                                                                       |
+| `START-6` | Mutation dogfood installs the released tarballs, never the registry | `nix build .#stryker-published --out-link .sfs-deps && pnpm install --frozen-lockfile && ! git grep -qE "^  '@systemfsoftware/stryker-[a-z-]+@[0-9]" -- pnpm-lock.yaml` |
