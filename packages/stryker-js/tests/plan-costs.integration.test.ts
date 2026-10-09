@@ -14,6 +14,8 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
+import { recordedDryRunMsOf } from './__fixtures__/recorded-dry-run.schema.js'
+
 const Feature = makeFeature({ it })
 
 const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.url).pathname)
@@ -195,6 +197,7 @@ interface CostsOutcome {
   readonly edited: PlanObservation
   readonly runIds: readonly string[]
   readonly expectedEditedMs: number
+  readonly editedMutantsMs: number
   readonly allMutantsMs: number
 }
 
@@ -210,15 +213,15 @@ const runPlanEditPlan = (
     const path = yield* Path.Path
     const { root } = fixture
     const run = yield* spawnCli(root, ['run'])
-    const reported = Option.getOrThrow(
-      decodeReportedIncremental(yield* fs.readFileString(path.join(root, REPORT_FILE))),
-    )
+    const reportText = yield* fs.readFileString(path.join(root, REPORT_FILE))
+    const reported = Option.getOrThrow(decodeReportedIncremental(reportText))
     const runIds = sortedIds(mutantsOf(reported).map((mutant) => mutant.id))
     const alphaIds = sortedIds(
       reported.files['src/alpha.js']?.mutants.map((mutant) => mutant.id) ?? [],
     )
     const wholeSuiteIds = sortedIds(mutantsOf(reported).filter(runsWholeSuite).map((mutant) => mutant.id))
     const costMsById = costMsByIdOf(reported)
+    const editedMutantsMs = costedMillisecondsOf(costMsById, Arr.dedupe([...alphaIds, ...wholeSuiteIds]))
     const quietPlan = yield* spawnCli(root, [
       'plan',
       '--target-seconds',
@@ -245,7 +248,8 @@ const runPlanEditPlan = (
       quiet: planObservationOf(yield* fs.readFileString(path.join(root, 'plan-quiet.json'))),
       edited: planObservationOf(yield* fs.readFileString(path.join(root, 'plan-edited.json'))),
       runIds,
-      expectedEditedMs: costedMillisecondsOf(costMsById, Arr.dedupe([...alphaIds, ...wholeSuiteIds])),
+      expectedEditedMs: editedMutantsMs + recordedDryRunMsOf(reportText),
+      editedMutantsMs,
       allMutantsMs: costedMillisecondsOf(costMsById, runIds),
     }
   }).pipe(Effect.orDie)
@@ -281,7 +285,7 @@ Feature('Planning the shard costs of reused mutants', { timeout: 180_000 })
               editedShardCount: outcome.edited.shardCount,
               editedMilliseconds: Math.round(outcome.edited.predictedSeconds * 1000),
               expectedEditedMilliseconds: Math.round(outcome.expectedEditedMs),
-              someMutantsNeedNoRun: outcome.expectedEditedMs < outcome.allMutantsMs,
+              someMutantsNeedNoRun: outcome.editedMutantsMs < outcome.allMutantsMs,
             }).toEqual({
               runExitCode: 0,
               quietPlanExitCode: 0,
