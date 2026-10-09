@@ -24,17 +24,17 @@ const compareProjectThenId = (left: PlannedMutant, right: PlannedMutant): number
 const compareCostliestFirst = (left: PlannedMutant, right: PlannedMutant): number =>
   left.costMs === right.costMs ? compareProjectThenId(left, right) : Math.sign(right.costMs - left.costMs)
 
-const dryRunCostOf = (command: PlanShardsCommand, project: string): number => command.dryRunCosts[project] ?? 0
+const dryRunCostOf = (command: PlanShardsCommand, project: string): number =>
+  Object.hasOwn(command.dryRunCosts, project) ? (command.dryRunCosts[project] ?? 0) : 0
 
 const dependentCostByProjectOf = (command: PlanShardsCommand): ReadonlyArray<readonly [string, number]> => {
-  const totals = command.mutants.reduce<Record<string, number>>(
-    (accumulated, mutant) =>
-      mutant.dependsOnDryRun
-        ? { ...accumulated, [mutant.project]: (accumulated[mutant.project] ?? 0) + mutant.costMs }
-        : accumulated,
-    {},
-  )
-  return Object.entries(totals)
+  const totals = new Map<string, number>()
+  for (const mutant of command.mutants) {
+    if (mutant.dependsOnDryRun) {
+      totals.set(mutant.project, (totals.get(mutant.project) ?? 0) + mutant.costMs)
+    }
+  }
+  return [...totals]
 }
 
 const dryRunBinsNeededOf = (command: PlanShardsCommand, project: string, dependentCostMs: number): number => {
