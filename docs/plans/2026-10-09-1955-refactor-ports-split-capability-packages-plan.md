@@ -2,6 +2,7 @@
 title: Ports split from layers, then one package per engine capability - Plan
 type: refactor
 date: 2026-10-09
+supersedes: docs/plans/2026-10-09-1848-refactor-ports-split-capability-packages-plan.md
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
@@ -16,7 +17,7 @@ execution: code
 - Objective: a consumer of `@systemfsoftware/stryker-js-*` can depend on one engine capability (its contracts, the engine, the worker host, a reporter set, survivors, serve, mcp) without installing or importing the CLI, and can provide their own implementation of any service the engine needs, because every service contract is importable without its implementation.
 - Means: L1 moves every `Layer` out of the `*.service.ts` file that declares its tag, under a new ADR that supersedes ADR-0001's service row (KTD1, KTD2). L2 then cuts `packages/stryker-js` along the seams its import graph shows, into packages that each publish one namespace (KTD5, KTD6).
 - Authority: `CONSTITUTION.md` first, then the cell-architecture, boundary-testing, schema-laws, and package-topology packs, then the ADRs in `docs/adr/`, then this plan. Where `cell-architecture/ports-separate-from-layers.md` and the tier-2 clause of `cell-architecture/service-and-layer-boundaries.md` disagree, ports-separate-from-layers wins (KTD1).
-- Stop conditions: stop and ask when a unit needs to edit a read-only surface (`.github/workflows/`, `CONSTITUTION.md`, `repos/**`), needs a new third-party executable dependency, or would retarget the dogfood overrides in `pnpm-workspace.yaml`. Two grading-surface edits are approved: `attw` joins `check:ci` (U21), and the `*.service.ts` Layer rule joins the gritlint gate (U20). Any other grading-surface edit stops for approval. publint is not added, installed, or run until the root reports operator approval (U17). No local mutation runs.
+- Stop conditions: stop and ask when a unit needs to edit a read-only surface (`.github/workflows/`, `CONSTITUTION.md`, `repos/**`), needs a new third-party executable dependency, or would retarget the dogfood overrides in `pnpm-workspace.yaml`. One read-only exception is a root ruling: the L2 PR edits `.github/workflows/mutation.yml` itself to enrol the new packages (U18), overriding `AGENTS.md`'s read-only note on `.github/workflows/` for that file and that change only; the root reviews the diff. Two grading-surface edits are approved: `attw` joins `check:ci` (U21), and the `*.service.ts` Layer rule joins the gritlint gate (U20). Any other grading-surface edit stops for approval. No local mutation runs.
 - Execution profile: one stacked PR per layer. L1 is branch `stream-a/l1-ports-topology` off `main`. L2 is the next layer, cut from L1. No force-push; when `main` moves, merge `origin/main` upward.
 
 ---
@@ -47,7 +48,7 @@ Capability packages (L2)
 - R7. No workspace package imports a path another package's exports map does not declare.
 - R8. The workspace package graph is acyclic.
 - R9. Every in-repo consumer imports from the package that owns the symbol; no package re-exports another package's symbols as its own surface.
-- R10. arethetypeswrong runs in CI on every published package and passes (L1, U21). publint joins it once the operator approves it (U17); until then it is the one pending item.
+- R10. arethetypeswrong runs in CI on every published package and passes (L1, U21).
 - R11. The existing e2e lanes pass against the split packages.
 
 ### Success Criteria
@@ -65,10 +66,10 @@ Capability packages (L2)
 
 ### Key Decisions
 
-- The package list comes from the import graph, not the stream contract's list. The graph supports ten packages; it does not support `reporting` as one package or a separate `shard` package (KTD5, Appendix A).
+- The package list comes from the import graph, not the stream contract's list. The graph supports nine packages; it does not support `reporting` as one package or a separate `shard` package, and config gets no package of its own (KTD5, Appendix A).
 - Breaking changes are made, not shimmed (`BREAK-1`). `RunEventDrainLive` leaves `RunEvent`, and the core root's eleven namespaces move to their owning packages.
-- Config authoring path: undecided, routed to the root; U11 stays open with both branches written out. `docs/plans/2026-09-18-1505-refactor-stryker-facade-dismantle-language-plan.md` KTD2 made `@systemfsoftware/stryker-js/config` the authoring path as a user-directed decision ("zero auxiliary package installations") and rejected a `stryker-config` package as an unearned bucket. Keeping that path while `mergeConfig` lives below the engine needs a re-export from the CLI package, which `package-topology/one-access-path` and the stream contract's no-monolith-re-export rule both refuse. L1 does not depend on it.
-- Package-topology checks that attw and publint do not cover are gritlint rules in the existing gate, authored as a bundled pack in `systemfsoftware/systemfsoftware` `packs/` and reached through the flake input, never a repo-local script (KTD10). L1 lands the `*.service.ts` Layer rule.
+- Config authoring path (root ruling; keeps `docs/plans/2026-09-18-1505-refactor-stryker-facade-dismantle-language-plan.md` KTD2): `@systemfsoftware/stryker-js/config` stays the one access path, and the CLI package owns `defineConfig` and `mergeConfig` as its own modules, not re-exports. The config schema moves to contracts and config loading to the engine. No config package is created (KTD5.2, U11).
+- Package-topology checks that attw does not cover are gritlint rules in the existing gate, authored as a bundled pack in `systemfsoftware/systemfsoftware` `packs/` and reached through the flake input, never a repo-local script (KTD10). L1 lands the `*.service.ts` Layer rule.
 
 ### Sources
 
@@ -88,7 +89,7 @@ Capability packages (L2)
 - KTD4. `RunEnvironment.stage` and `RunEnvironment.forStream` move with the Layers they assemble into `src/drivers/run-stage.ts`; the `RunEnvironment` port file keeps the tag, `RunEnvironmentShape`, and `phaseEntered`.
 - KTD5. L2 packages, in dependency order (Appendix A has the evidence):
   1. `stryker-js-contracts`: every `*.schema.ts` imported across seams, every service port, and the pure helpers those reference (`FileMatcher.ts`, `classify-run-outcome.workflow.ts`, `stryker-outputs.ts`, `mutant-cost.ts`, `phase-durations.ts`). A service port is a `*.service.ts` that declares a `Context.Service` tag. That includes `run/RunEnvironment.service.ts` and `mutation-reporting.service.ts` (their implementations go to the engine). `*.service.ts` files that declare no tag are not ports: L2 renames and rehomes them with what they import. `surfacing.ts` and `admit-file-match.workflow.ts` stay out of contracts because they import a renderer, a survivors workflow, and an engine glob workflow (Appendix A). About 51 modules.
-  2. `stryker-js-config` (contingent on the config-path decision; see U11 for the other branch): `config/`, `Configuration/`, `drivers/config.ts`, and the config steps now under `run/` (`load-config*`, `extends-step`, `validate-options*`, `discover-config-file`, `resolve-config*`, `describe-config-*`). About 18.
+  2. Config (no package of its own; U11): the CLI keeps `config/define-config.ts`, the `mergeConfig` half of `config/merge-config.ts`, and `config/mod.ts` (the `./config` entry). `config/stryker-config.schema.ts` and `config/default-options.ts` go to contracts (`run-event-stream.service.ts`, a port, imports `defaultOptions`). The loading chain goes to the engine: `drivers/config.ts` minus `importModule`, `Configuration/`, `config/warning-enabled.workflow.ts`, the `mergeConfigs` half of `merge-config.ts` (extends inheritance, whose one production caller is `run/extends-step.workflow.ts`), and the `run/` config steps (`load-config*`, `extends-step`, `validate-options*`, `discover-config-file`, `resolve-config`, `describe-config-*`). `importModule` goes to worker-host, whose `plugin-loader.service.ts` imports it.
   3. `stryker-js-sandbox`: `Sandbox.*`, `keep-temp-dir.workflow.ts`, `atomic-write.cell.ts`. About 5.
   4. `stryker-js-worker-host`: the host side of the worker boundary: `Worker*`, `WorkerLauncher`, socket worker, worker client/protocol blueprints, `command-runner`, `pooled-test-runner`, `vm-runner`, plugin loading, `Plugin/`. About 18. Named `worker-host`, not `worker-runtime`, because `stryker-js-plugin-runtime` already is the worker-side runtime.
   5. `stryker-js-engine`: `run/` (minus the two port files above), `Checker/`, `Engine/`, `RunEvent/`, planning, instrumentation, incremental reuse, the `MutationReporting` implementation, the reporter host (`reporter-stream`, `reporter-wiring`), report assembly (`reporting/verdict-envelope*`, `static-verdict`, `metrics-from-report*`, `build-reproducers`, `report-test-ids`), `admit-file-match.workflow.ts`, and the platform layer `drivers/node.ts` (`nodePlatformLayer`), which the engine's own integration suites compose. About 88.
@@ -118,32 +119,26 @@ Package dependency direction after L2 (directional; arrows point at the dependen
 ```mermaid
 flowchart BT
   contracts[stryker-js-contracts]
-  config["stryker-js-config (contingent, U11)"] --> contracts
   sandbox[stryker-js-sandbox] --> contracts
   workerhost[stryker-js-worker-host] --> contracts
-  workerhost --> config
   engine[stryker-js-engine] --> contracts
-  engine --> config
   engine --> sandbox
   engine --> workerhost
   reporting[stryker-js-reporting] --> contracts
   survivors[stryker-js-survivors] --> engine
-  survivors --> config
   survivors --> contracts
   serve[stryker-js-serve] --> engine
-  serve --> config
   mcp[stryker-js-mcp] --> engine
   mcp --> survivors
   cli[stryker-js CLI] --> engine
   cli --> contracts
-  cli --> config
   cli --> reporting
   cli --> survivors
   cli --> serve
   cli --> mcp
 ```
 
-If the config package is not created, every `--> config` edge becomes an edge to whichever package U11's other branch puts those modules in (contracts for schemas and merge, engine for loading, the CLI for the authoring entry).
+No config package exists (KTD5.2): config schemas sit in contracts, loading in the engine, and the authoring entry in the CLI, so the edges above already cover them.
 
 ### Assumptions
 
@@ -152,7 +147,7 @@ If the config package is not created, every `--> config` edge becomes an edge to
 
 ### Risks & Dependencies
 
-- `.github/workflows/mutation.yml:29-36` hard-codes `PROJECTS` and `INCREMENTAL_REPORTS` to `packages/stryker-js` and three others, and mutates source, not the CLI bundle. After L2, workflows outside `packages/stryker-js` go unmutated until that list changes. The file is read-only to agents and the edit is routed to the root: it is a precondition for merging L2, not a follow-up.
+- `.github/workflows/mutation.yml:29-36` hard-codes `PROJECTS` and `INCREMENTAL_REPORTS` to `packages/stryker-js` and three others, and mutates source, not the CLI bundle. After L2, workflows outside `packages/stryker-js` go unmutated until that list changes. Root ruling: the L2 PR edits `mutation.yml` itself to enrol every new package (U18), overriding `AGENTS.md`'s read-only note on `.github/workflows/` for this change only, and the root reviews that diff. omp sessions already changed the file in #253 and #256.
 - Moving modules between packages resets their incremental mutation records, so the first `main` mutation run after L2 is a full run.
 - New packages are not in the released flake input, so the dogfood overrides cannot point at them until a release carries them (`AGENTS.md` Dogfood row).
 - The Layer rule needs an upstream `systemfsoftware/systemfsoftware` PR. L1 pins the flake input to that PR's head to run the gate; L1 cannot merge until the upstream PR merges and L1 re-pins to the merge commit.
@@ -161,29 +156,28 @@ If the config package is not created, every `--> config` edge becomes an edge to
 
 ## Implementation Units
 
-| U-ID | Title                                              | Files touched                                                                                                                                                                                                           | Depends on             |
-| ---- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| U1   | Declare package-topology pack                      | `.compound-engineering/config.yaml`                                                                                                                                                                                     | -                      |
-| U2   | ports ADR (next free number)                       | `docs/adr/<NNNN>-ports-separate-from-layers.md`                                                                                                                                                                         | -                      |
-| U3   | plugin-runtime layers to drivers                   | `packages/stryker-js-plugin-runtime/src/**`                                                                                                                                                                             | U2                     |
-| U4   | typescript-checker layers to drivers               | `packages/stryker-js-typescript-checker/src/**`, tests                                                                                                                                                                  | U3                     |
-| U5   | vitest-runner layers to drivers                    | `packages/stryker-js-vitest-runner/src/**`                                                                                                                                                                              | U3                     |
-| U6   | core platform-facing layers to drivers             | `packages/stryker-js/src/{git-diff,project-files,reporter-output,output-mode-probe,Sandbox}.service.ts`, `reporting/machine-console.service.ts`, `run-event-stream.service.ts`, `bin/main.ts`, `Mcp/mcp-server.cell.ts` | U2                     |
-| U7   | core run-scoped layers and stage wiring to drivers | `packages/stryker-js/src/{Worker,mutation-reporting,reporter,run-events}.service.ts`, `run/{RunEnvironment,phase-clock}.service.ts`, `drivers/run-stage.ts`                                                             | U6                     |
-| U8   | e2e harness layers to drivers                      | `test/e2e/src/Harness/**`                                                                                                                                                                                               | U2                     |
-| U9   | API reports and changesets for L1                  | `packages/*/etc/*.api.md`, `.changeset/*`                                                                                                                                                                               | U3-U7                  |
-| U20  | gritlint rule: no Layer from `*.service.ts`        | upstream `systemfsoftware/systemfsoftware` `packs/cell-architecture/**`; here `flake.lock`, `gritlint.json`                                                                                                             | U3-U8                  |
-| U21  | attw in `check:ci`                                 | `package.json`                                                                                                                                                                                                          | -                      |
-| U10  | contracts package                                  | `packages/stryker-js-contracts/**`                                                                                                                                                                                      | L1                     |
-| U11  | config package                                     | `packages/stryker-js-config/**`, framework READMEs                                                                                                                                                                      | U10                    |
-| U12  | sandbox and worker-host packages                   | `packages/stryker-js-sandbox/**`, `packages/stryker-js-worker-host/**`                                                                                                                                                  | U10, U11               |
-| U13  | engine package                                     | `packages/stryker-js-engine/**`                                                                                                                                                                                         | U12                    |
-| U14  | reporting package                                  | `packages/stryker-js-reporting/**`                                                                                                                                                                                      | U10                    |
-| U15  | survivors, serve, mcp packages                     | `packages/stryker-js-{survivors,serve,mcp}/**`                                                                                                                                                                          | U13, U14               |
-| U16  | CLI residue and core root surface                  | `packages/stryker-js/**`                                                                                                                                                                                                | U15                    |
-| U17  | publint in CI (pending operator approval)          | `package.json`, `packages/*/tsdown.config.ts`, `pnpm-workspace.yaml`                                                                                                                                                    | U16, operator approval |
-| U18  | flake, e2e closure, mutation projects              | `flake.nix`, `test/e2e*`, `mutation.yml` (operator)                                                                                                                                                                     | U16                    |
-| U19  | API reports and changesets for L2                  | `packages/*/etc/*.api.md`, `.changeset/*`                                                                                                                                                                               | U16                    |
+| U-ID | Title                                              | Files touched                                                                                                                                                                                                           | Depends on |
+| ---- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| U1   | Declare package-topology pack                      | `.compound-engineering/config.yaml`                                                                                                                                                                                     | -          |
+| U2   | ports ADR (next free number)                       | `docs/adr/<NNNN>-ports-separate-from-layers.md`                                                                                                                                                                         | -          |
+| U3   | plugin-runtime layers to drivers                   | `packages/stryker-js-plugin-runtime/src/**`                                                                                                                                                                             | U2         |
+| U4   | typescript-checker layers to drivers               | `packages/stryker-js-typescript-checker/src/**`, tests                                                                                                                                                                  | U3         |
+| U5   | vitest-runner layers to drivers                    | `packages/stryker-js-vitest-runner/src/**`                                                                                                                                                                              | U3         |
+| U6   | core platform-facing layers to drivers             | `packages/stryker-js/src/{git-diff,project-files,reporter-output,output-mode-probe,Sandbox}.service.ts`, `reporting/machine-console.service.ts`, `run-event-stream.service.ts`, `bin/main.ts`, `Mcp/mcp-server.cell.ts` | U2         |
+| U7   | core run-scoped layers and stage wiring to drivers | `packages/stryker-js/src/{Worker,mutation-reporting,reporter,run-events}.service.ts`, `run/{RunEnvironment,phase-clock}.service.ts`, `drivers/run-stage.ts`                                                             | U6         |
+| U8   | e2e harness layers to drivers                      | `test/e2e/src/Harness/**`                                                                                                                                                                                               | U2         |
+| U9   | API reports and changesets for L1                  | `packages/*/etc/*.api.md`, `.changeset/*`                                                                                                                                                                               | U3-U7      |
+| U20  | gritlint rule: no Layer from `*.service.ts`        | upstream `systemfsoftware/systemfsoftware` `packs/cell-architecture/**`; here `flake.lock`, `gritlint.json`                                                                                                             | U3-U8      |
+| U21  | attw in `check:ci`                                 | `package.json`                                                                                                                                                                                                          | -          |
+| U10  | contracts package                                  | `packages/stryker-js-contracts/**`                                                                                                                                                                                      | L1         |
+| U11  | config split without a config package              | `packages/stryker-js/src/config/**`, `drivers/config.ts`, `run/load-config*`, their callers                                                                                                                             | U10        |
+| U12  | sandbox and worker-host packages                   | `packages/stryker-js-sandbox/**`, `packages/stryker-js-worker-host/**`                                                                                                                                                  | U10, U11   |
+| U13  | engine package                                     | `packages/stryker-js-engine/**`                                                                                                                                                                                         | U12        |
+| U14  | reporting package                                  | `packages/stryker-js-reporting/**`                                                                                                                                                                                      | U10        |
+| U15  | survivors, serve, mcp packages                     | `packages/stryker-js-{survivors,serve,mcp}/**`                                                                                                                                                                          | U13, U14   |
+| U16  | CLI residue and core root surface                  | `packages/stryker-js/**`                                                                                                                                                                                                | U15        |
+| U18  | flake, e2e closure, mutation projects              | `flake.nix`, `test/e2e*`, `.github/workflows/mutation.yml` (root ruling)                                                                                                                                                | U16        |
+| U19  | API reports and changesets for L2                  | `packages/*/etc/*.api.md`, `.changeset/*`                                                                                                                                                                               | U16        |
 
 ### L1 (stream-a/l1-ports-topology)
 
@@ -324,17 +318,17 @@ If the config package is not created, every `--> config` edge becomes an edge to
   - Moved in-source refusal blocks still state each refined schema's refusal boundary and pass.
 - Verification: `pnpm --filter @systemfsoftware/stryker-js-contracts typecheck test build api:check attw`; its manifest lists no other `stryker-js-*` package from this split.
 
-### U11. Config package (open: config path routed to the root)
+### U11. Config split without a config package
 
-- Goal, branch A (config package): user config files import `defineConfig` from `@systemfsoftware/stryker-js-config`.
-- Goal, branch B (keep `@systemfsoftware/stryker-js/config`): config schemas and `mergeConfig` go to contracts, `load-config*` and the other `run/` config steps go to the engine, and the authoring entry stays in the CLI package with a declared exception to `one-access-path` for those names.
+- Goal: user config files keep importing `defineConfig` and `mergeConfig` from `@systemfsoftware/stryker-js/config`, the CLI package owns both as its own code, and no package below the CLI imports them.
 - Requirements: R6, R8, R9.
-- Files: new `packages/stryker-js-config/`; the modules KTD5.2 lists; framework and ignorer READMEs that show `import { defineConfig } from '@systemfsoftware/stryker-js/config'` (`packages/frameworks/angular/README.md`, `packages/frameworks/svelte/README.md`, `packages/ignorers/*/README.md`, `packages/stryker-js/README.md`), the repo's own `stryker.config.ts` files.
-- Approach: the `./config` subpath is a host contract (a config loader imports it without the runtime). The new package's root entry is that contract, so it needs no subpath. `load-config*` stops importing `RunEnvironment` by taking the values it reads as parameters, which removes the config -> engine edge.
+- Files: `packages/stryker-js/src/config/merge-config.ts` (split: `mergeConfig` stays; `mergeConfigs` moves beside `run/extends-step.workflow.ts`, with its half of the in-source vitest block), `config/mod.ts`, `drivers/config.ts` (`importModule` to its own driver module; the flag overlay becomes a parameter), `run/load-config.ts`, `run/load-config.cell.ts`, and their callers (`plan-request.cell.ts`, `run/run-stages.cell.ts`, `Serve/Serve.cell.ts`, `Survivors/Survivors.cell.ts`, `Rerun/Rerun.cell.ts`).
+- Approach: KTD5.2. U10 moves `config/stryker-config.schema.ts` and `config/default-options.ts` to contracts. `readConfigDocument` (`drivers/config.ts:443-453`) is the one engine-bound caller of `mergeConfig`: it lays the CLI flags over the file options. It stops importing `mergeConfig` and takes the overlay as an input field; the CLI passes its own `mergeConfig`, and Serve, Survivors and Rerun receive it from the CLI command that starts them. That avoids an engine -> cli edge without a second copy of the merge or a contracts helper the CLI would only wrap. U12 and U13 then carry `importModule` and the loading chain into worker-host and the engine. `config/mod.ts` keeps `defineConfig`, `mergeConfig`, and the authoring types its own signatures reach (`StrykerConfig`, `StrykerConfigExport`, `StrykerConfigFn`, `PartialStrykerOptions`, `StrykerOptions`); `ConfigEnv`, `Immutable`, `ImmutablePrimitive`, and `Primitive` are published by contracts only and leave `./config` (`package-topology/one-access-path`).
 - Test Scenarios:
-  - Existing config-loading integration tests pass: a `stryker.config.ts` importing the new specifier loads and validates.
+  - Existing config-loading integration tests pass: a `stryker.config.ts` importing `@systemfsoftware/stryker-js/config` loads, merges CLI flags over the file, and validates.
+  - The `mergeConfig` and `mergeConfigs` in-source property blocks pass in their new homes, including the `__proto__` refusal.
   - A config with an unknown option still fails with the existing typed `ConfigError`.
-- Verification: package `typecheck test build api:check`; e2e lanes load fixture configs through the new specifier.
+- Verification: `pnpm --filter @systemfsoftware/stryker-js typecheck test build api:check`; e2e lanes load fixture configs through `@systemfsoftware/stryker-js/config`.
 
 ### U12. Sandbox and worker-host packages
 
@@ -383,22 +377,13 @@ If the config package is not created, every `--> config` edge becomes an edge to
   - The released-CLI dogfood path still runs: `nix build .#stryker-published --out-link .sfs-deps && pnpm install --frozen-lockfile` succeeds (START-6).
 - Verification: `pnpm check:ci`.
 
-### U17. publint in CI (pending operator approval)
-
-- Goal: every published package's tarball passes publint in CI, beside attw (U21).
-- Requirements: R10.
-- Files: `package.json` (`check:ci`), each package's `tsdown.config.ts` (`publint: true`), `pnpm-workspace.yaml` catalog (`publint`, version named in the approval request).
-- Approach: publint runs inside tsdown's build through its `publint` option (tsdown 0.23.0 lists `publint ^0.3.8` as an optional peer). Nothing is added, installed, or run until the root reports operator approval. If approval has not arrived when L2 reaches this unit, this unit ships nothing and the L2 PR body lists publint as the one pending item.
-- Test Scenarios: once approved, show in the PR body an exports entry pointing at a missing file making the build exit non-zero. One-off evidence, not a committed test (CHK1).
-- Verification: once approved, `pnpm check:ci` runs publint and passes on the L2 head.
-
 ### U18. Flake, e2e closure, and mutation projects
 
 - Goal: the new packages build in the flake, pack into the e2e lanes, and are mutated on `main`.
 - Requirements: R11.
-- Files: `flake.nix` (workspace tarball set), `test/e2e/**` closure inputs if any are hand-listed, `.github/workflows/mutation.yml` `PROJECTS`/`INCREMENTAL_REPORTS` (operator edit).
-- Approach: the e2e lane derives its pack set from manifest closure (`docs/solutions/build-errors/e2e-lane-packed-a-subset-of-its-workspace-closure.md`), so new packages join it through the CLI's dependencies. The dogfood overrides gain the new packages only after a release carries them.
-- Test Scenarios: CI `e2e` jobs green on the L2 head; `nix build .#packages.x86_64-linux.workspace-tarballs` includes the new tarballs.
+- Files: `flake.nix` (workspace tarball set), `test/e2e/**` closure inputs if any are hand-listed, `.github/workflows/mutation.yml` `PROJECTS`/`INCREMENTAL_REPORTS`.
+- Approach: the e2e lane derives its pack set from manifest closure (`docs/solutions/build-errors/e2e-lane-packed-a-subset-of-its-workspace-closure.md`), so new packages join it through the CLI's dependencies. The dogfood overrides gain the new packages only after a release carries them. The L2 PR enrols each new package in `mutation.yml`'s `PROJECTS` and `INCREMENTAL_REPORTS` itself, under the root ruling that overrides `AGENTS.md`'s read-only note for this change; the root reviews that diff.
+- Test Scenarios: CI `e2e` jobs green on the L2 head; `nix build .#packages.x86_64-linux.workspace-tarballs` includes the new tarballs; the `mutation.yml` plan step on the L2 head lists every new package as a project.
 - Verification: CI on the exact L2 head.
 
 ### U19. API reports and changesets for L2
@@ -406,7 +391,7 @@ If the config package is not created, every `--> config` edge becomes an edge to
 - Goal: every surface change is versioned.
 - Requirements: R6, R9.
 - Files: `packages/*/etc/*.api.md`, `.changeset/*.md`.
-- Approach: `@systemfsoftware/stryker-js` major (root namespaces and `./config` removed); each new package debuts at its manifest version (`docs/solutions/tooling-decisions/first-publish-under-oidc-trusted-publishing.md`).
+- Approach: `@systemfsoftware/stryker-js` major (root namespaces move out; `./config` drops `ConfigEnv`, `Immutable`, `ImmutablePrimitive`, `Primitive`); each new package debuts at its manifest version (`docs/solutions/tooling-decisions/first-publish-under-oidc-trusted-publishing.md`).
 - Test Scenarios: Test expectation: none - generated reports.
 - Verification: `pnpm build` and CI `Changeset Check`.
 
@@ -416,7 +401,7 @@ If the config package is not created, every `--> config` edge becomes an edge to
 
 - Per layer: `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm check:ci` (START-1 to START-4, now including `attw` and the gritlint gate), CI `Changeset Check` (START-5), and the CI `e2e` jobs, all on the layer's exact head.
 - L1 (R3): the `cell-architecture` gritlint pack's bad fixtures are refused upstream; `pnpm lint:conventions` exits 0 on the L1 head and 1 with one `static readonly layer` planted back into a service file.
-- L2: a real `turbo run build` with and without a planted reverse dependency (R8, U13); a deep import of an undeclared path and a relative import escaping a package both fail typecheck (R7, shown once in the PR body); attw passes in `check:ci`, and publint once approved (R10).
+- L2: a real `turbo run build` with and without a planted reverse dependency (R8, U13); a deep import of an undeclared path and a relative import escaping a package both fail typecheck (R7, shown once in the PR body); attw passes in `check:ci` (R10).
 - No local mutation runs. New tests cite the latest `main` mutation report's mutant ids where one applies; L1 adds no tests for moved code (KTD9).
 
 ---
@@ -424,16 +409,14 @@ If the config package is not created, every `--> config` edge becomes an edge to
 ## Definition of Done
 
 - L1: U1-U9, U20, U21 on one PR whose head is green; ADR-0001 unchanged; the gritlint gate (with the `cell-architecture` pack) and `attw` run in `check:ci` and pass; the flake input is pinned to the merged upstream commit, not a PR head; no `*Live` statics remain in libraries.
-- L2: U10-U19 merged on one PR stacked on L1, green on its head; `packages/stryker-js/src/mod.ts` exports only CLI-owned names. L2 is not merged until `.github/workflows/mutation.yml` `PROJECTS` and `INCREMENTAL_REPORTS` cover every new package (operator edit, routed to the root).
+- L2: U10-U16, U18, U19 merged on one PR stacked on L1, green on its head; `packages/stryker-js/src/mod.ts` exports only CLI-owned names; `.github/workflows/mutation.yml` `PROJECTS` and `INCREMENTAL_REPORTS` cover every new package, edited in the L2 PR (root ruling).
 - Cleanup: no throwaway audit scripts, probes, scratch graphs, or empty `*.service.ts` shells remain; DEL1 grep for each removed identifier (`RunEventDrainLive`, `OutputModeProbeLive`, `WorkerReportsLive`) returns nothing.
 
 ---
 
 ## Outstanding Questions
 
-- publint: approval requested from the operator by the root. Until it arrives, U17 ships nothing.
-- `.github/workflows/mutation.yml` `PROJECTS`/`INCREMENTAL_REPORTS` for the new packages: routed to the root; blocks merging L2.
-- Config authoring path (U11 branch A or B): routed to the root; blocks U11 only.
+- `./config` authoring types: U11 drops `ConfigEnv`, `Immutable`, `ImmutablePrimitive`, and `Primitive` from `./config` so each has one access path. A config callback still gets `ConfigEnv` inferred through `defineConfig`. The root may overrule this before U11 runs.
 
 ---
 
@@ -447,12 +430,12 @@ File-level cycle: one strongly connected component of 17 modules: `mutation-repo
 
 Seam assignment as the contract named it, before any moves: every seam sits in one cycle. The largest back-edges were reporting -> engine (28), engine -> reporting (28), engine -> worker (25), config -> engine (9), survivors -> engine (10).
 
-After the KTD5 moves (cross-seam schemas and ports to contracts; config steps out of `run/`; report assembly to engine; plugins fused with the worker host; `shard/` to CLI), the remaining back-edges and the unit that closes each:
+After the KTD5 moves (cross-seam schemas and ports to contracts; config steps out of `run/`; report assembly to engine; plugins fused with the worker host; `shard/` to CLI), measured with config as its own seam, the remaining back-edges and the unit that closes each:
 
 - contracts -> others, from tagged port files that still hold their implementation: L1 removes them (U6, U7).
 - contracts -> others, from `surfacing.ts` (imports `reporting/render-annotations.workflow.ts` and `cap-survivors.workflow.ts`) and `admit-file-match.workflow.ts` (imports `compile-glob.workflow.ts`): those two modules leave contracts (KTD5.1); `surfacing.ts` goes to survivors with `cap-survivors`, and `reporter-factories.ts` takes it from there (U14, U15).
 - contracts -> others, from tagless `*.service.ts` files that are not ports (`plugin-loader`, `reporter-stream`, `reporter-wiring`, `framework-claimant`, `run/host`, `run/StageServices`): they are not contracts and move with what they import (U12, U13).
-- config -> engine (2): `run/load-config*.ts` read `RunEnvironment`. U11 removes them.
+- config -> engine (2): `run/load-config*.ts` read `RunEnvironment`. With the loading chain in the engine (KTD5.2) both edges are internal. Folding config into the engine and CLI adds two edges the measurement did not see: engine -> cli, `drivers/config.ts:22` imports `mergeConfig` (U11 makes the overlay a parameter), and worker-host -> engine, `plugin-loader.service.ts:17` imports `importModule` from `drivers/config.ts` (U11 moves `importModule` to worker-host).
 - engine -> cli (1): `Engine/mod.ts` re-exports `drivers/node.ts`. U13 moves `drivers/node.ts` into the engine.
 - engine -> survivors (1): `mutation-reporting.service.ts -> budget.ts`. U15 removes it.
 - worker-host -> engine (1): `Plugin/mod.ts -> reporter-stream.service.ts`. U12 removes it.
@@ -469,7 +452,6 @@ Twenty `*.service.ts` files declare a tag and export a Layer: 13 in `packages/st
 - turbo: present (`turbo.json`). Whether it refuses a cyclic package graph is unverified (P9); U13 proves it with a real run.
 - tsc composite projects: refuse a relative import that escapes the package (TS6059, TS6307; KTD8 probe), which covers the relative-path half of R7.
 - arethetypeswrong: the `@systemfsoftware/arethetypeswrong-cli` fork is in the catalog, every published package has `"attw": "attw --pack ."` (the private `test/e2e` and `test/e2e-core` do not), and `turbo.json:119` defines the task; U21 adds it to `check:ci`.
-- publint: not installed; tsdown 0.23.0 can run it inside the build once approved (U17).
 - api-extractor: `api:check` on every published package already gates `public-signature-types` (`ae-forgotten-export`) and records surface changes.
 - gritlint: `packs/source-resolution` (`gritlint.json:3-8`) checks export-map condition keys, which covers part of `condition-branch-agreement`; U20 adds the `cell-architecture` pack.
 - Nx, dependency-cruiser, madge: absent; not needed (KTD8).
