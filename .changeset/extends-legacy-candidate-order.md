@@ -2,4 +2,4 @@
 "@systemfsoftware/stryker-js-typescript-checker": patch
 ---
 
-A tsconfig `extends` that names a package without `exports` now resolves the way TypeScript 7 does: `<subpath>.json` is the base before the config inside a `<subpath>` directory, and a file named exactly `<subpath>` with no extension is never used. Previously the checker preferred the directory's config, so when a package shipped both, the program digest followed a base config the compiler doesn't load.
+A tsconfig `extends` that names a package without `exports` now picks the same base config as TypeScript 7. `<subpath>.json` comes before the config inside a `<subpath>` directory, a file named exactly `<subpath>` with no extension is never used, and inside a package directory the file its manifest names in a `tsconfig` field comes before that directory's own config. Previously the checker preferred the directory's config and ignored the `tsconfig` field, so the program digest could follow a base config the compiler doesn't load.
