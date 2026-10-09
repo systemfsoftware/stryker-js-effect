@@ -1,4 +1,8 @@
 import { describe } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
+import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -10,7 +14,7 @@ import {
 
 type JsonValue = S.Schema.Type<typeof S.Json>
 
-const resolvedTargetOf = (exports: JsonValue, subpath: string): string | undefined => {
+const resolvedTargetsOf = (exports: JsonValue, subpath: string): ReadonlyArray<string> | undefined => {
   const decision = Result.match(
     resolvePackageExports(ResolvePackageExportsCommand.make({ exports, subpath })),
     {
@@ -18,13 +22,30 @@ const resolvedTargetOf = (exports: JsonValue, subpath: string): string | undefin
       onSuccess: (value) => value,
     },
   )
-  return S.is(PackageExportsResolved)(decision) ? decision.target : undefined
+  return S.is(PackageExportsResolved)(decision) ? decision.targets : undefined
+}
+
+const resolvedTargetOf = (exports: JsonValue, subpath: string): string | undefined =>
+  Option.getOrUndefined(Option.flatMap(Option.fromUndefinedOr(resolvedTargetsOf(exports, subpath)), Arr.head))
+
+const sameOrderOf = (left: ReadonlyArray<string> | undefined, right: ReadonlyArray<string>): boolean => {
+  const targets = Option.getOrElse(Option.fromUndefinedOr(left), (): ReadonlyArray<string> => [])
+  return (
+    Arr.length(targets) === Arr.length(right) &&
+    Arr.every(
+      targets,
+      (target, index) =>
+        Option.match(Arr.get(right, index), { onNone: () => false, onSome: (value) => value === target }),
+    )
+  )
 }
 
 const escaped = (text: string): string =>
   Array.from(text, (character) => (character.codePointAt(0) ?? 0).toString(16)).join('.')
 
 const probeKeyOf = (subpath: string): string => `./probe/${escaped(subpath)}`
+
+const ESCAPING_PREFIX = './../'
 
 describe('resolvePackageExports', (it) => {
   it.prop(
@@ -239,6 +260,85 @@ describe('resolvePackageExports', (it) => {
     (subject, [subpath, target]) => {
       const [unresolved, resolved] = subject(subpath, target)
       return unresolved === undefined && resolved === `./${escaped(target)}`
+    },
+  )
+
+  it.prop(
+    '∀entries_ArrayOfResolvableTargets_≡EveryTargetInFallbackOrder',
+    {
+      of: [Arbitrary.array(Arbitrary.schema(S.String), { minLength: 2, maxLength: 4 })],
+      subject: (targets: ReadonlyArray<string>) => {
+        const key = './probe/array'
+        const entries = Arr.map(targets, (target) => `./${escaped(target)}.json`)
+        return resolvedTargetsOf({ [key]: entries }, key)
+      },
+    },
+    (subject, [targets]) =>
+      sameOrderOf(
+        subject(targets),
+        Arr.map(targets, (target) => `./${escaped(target)}.json`),
+      ),
+  )
+
+  it.prop(
+    '∀entries_ArrayWithEscapingTargets_≡OnlyResolvableTargetsInOrderAndNeverEscaping',
+    {
+      of: [
+        Arbitrary.array(Arbitrary.all([Arbitrary.schema(S.String), Arbitrary.schema(S.Boolean)]), { maxLength: 5 }),
+      ],
+      subject: (entries: ReadonlyArray<readonly [string, boolean]>) => {
+        const key = './probe/array'
+        const values = Arr.map(entries, ([leaf, escapes]) =>
+          Boolean.match(escapes, {
+            onTrue: () => `${ESCAPING_PREFIX}${escaped(leaf)}.json`,
+            onFalse: () => `./${escaped(leaf)}.json`,
+          }))
+        return resolvedTargetsOf({ [key]: values }, key)
+      },
+    },
+    (subject, [entries]) => {
+      const resolvable = Arr.map(
+        Arr.filter(entries, ([, escapes]) => !escapes),
+        ([leaf]) => `./${escaped(leaf)}.json`,
+      )
+      const escaping = Arr.map(
+        Arr.filter(entries, ([, escapes]) => escapes),
+        ([leaf]) => `${ESCAPING_PREFIX}${escaped(leaf)}.json`,
+      )
+      const targets = Option.getOrElse(Option.fromUndefinedOr(subject(entries)), (): ReadonlyArray<string> => [])
+      return (
+        sameOrderOf(targets, resolvable) && Arr.every(escaping, (value) => !Arr.contains(targets, value))
+      )
+    },
+  )
+
+  it.prop(
+    '∀entries_NullTerminatedListAtAnyDepth_≡LeadingTargetsOnly',
+    {
+      of: [
+        Arbitrary.array(Arbitrary.schema(S.String), { maxLength: 3 }),
+        Arbitrary.array(Arbitrary.schema(S.String), { maxLength: 3 }),
+        Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 3 }))),
+      ],
+      subject: (entries: ReadonlyArray<JsonValue>) => {
+        const key = './probe/array'
+        return resolvedTargetsOf({ [key]: entries }, key)
+      },
+    },
+    (subject, [before, after, depth]) => {
+      const leading = Arr.map(before, (leaf) => `./${escaped(leaf)}.json`)
+      const trailing = Arr.map(after, (leaf) => `./${escaped(leaf)}.json`)
+      const terminated: ReadonlyArray<JsonValue> = [...leading, null]
+      const nested = Arr.reduce(Arr.makeBy(depth, () => 0), terminated, (inner): ReadonlyArray<JsonValue> => [inner])
+      const entries = Boolean.match(depth === 0, {
+        onTrue: (): ReadonlyArray<JsonValue> => [...terminated, ...trailing],
+        onFalse: (): ReadonlyArray<JsonValue> => [...nested, ...trailing],
+      })
+      const targets = subject(entries)
+      return Boolean.match(Arr.isArrayNonEmpty(leading), {
+        onTrue: () => sameOrderOf(targets, leading),
+        onFalse: () => targets === undefined,
+      })
     },
   )
 })
