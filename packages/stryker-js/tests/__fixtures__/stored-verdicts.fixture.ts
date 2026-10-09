@@ -1,5 +1,5 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { type VerdictEntry, VerdictStore } from '@systemfsoftware/stryker-js/verdict-store'
+import { CheckerEntrySchema, type VerdictEntry, VerdictStore } from '@systemfsoftware/stryker-js/verdict-store'
 import { fsVerdictStoreLayer } from '@systemfsoftware/stryker-js/verdict-store/fs'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -16,7 +16,13 @@ export interface StoredVerdict {
   readonly status: string
   readonly costMs: number
   readonly settledAt: number
+  readonly programDigest: string | undefined
 }
+
+const programDigestOf = (entry: VerdictEntry): string | undefined =>
+  Option.getOrUndefined(
+    Option.map(Option.liftPredicate(entry, S.is(CheckerEntrySchema)), (checker) => checker.components.programDigest),
+  )
 
 const readableEntriesOf = (store: typeof VerdictStore.Service, mutantId: Mutant.MutantId) =>
   Effect.map(store.list(mutantId), (outcome) =>
@@ -38,6 +44,7 @@ const newestOf = (store: typeof VerdictStore.Service, mutantId: Mutant.MutantId)
         status: entry.status,
         costMs: entry.costMs,
         settledAt: entry.settledAt,
+        programDigest: programDigestOf(entry),
       })),
   )
 
@@ -68,20 +75,27 @@ export const storedVerdictsIn = (
     return Object.fromEntries(found.flatMap(Option.toArray))
   }).pipe(Effect.orDie)
 
-export interface Reseed {
+export interface StoreLocation {
   readonly projectRoot: string
-  readonly mutantIds: Iterable<string>
-  readonly from: string
-  readonly to: string
-  readonly rewrite: (entry: VerdictEntry) => VerdictEntry
+  readonly directory?: string
 }
 
+export interface Reseed {
+  readonly mutantIds: Iterable<string>
+  readonly from: StoreLocation
+  readonly to: StoreLocation
+  readonly rewrite?: (entry: VerdictEntry) => VerdictEntry
+}
+
+const storeIn = ({ projectRoot, directory = DEFAULT_VERDICT_DIRECTORY }: StoreLocation) =>
+  storeAt(projectRoot, directory)
+
 export const reseedVerdicts = (
-  { projectRoot, mutantIds, from, to, rewrite }: Reseed,
+  { mutantIds, from, to, rewrite = (entry) => entry }: Reseed,
 ): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
-    const source = yield* storeAt(projectRoot, from)
-    const target = yield* storeAt(projectRoot, to)
+    const source = yield* storeIn(from)
+    const target = yield* storeIn(to)
     const entries = (yield* Effect.forEach(mutantIdsOf(mutantIds), (id) => readableEntriesOf(source, id))).flat()
     yield* Effect.forEach(entries, (entry) => target.put(rewrite(entry)), { discard: true })
   }).pipe(Effect.orDie)

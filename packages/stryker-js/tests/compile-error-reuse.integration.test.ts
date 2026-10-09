@@ -15,6 +15,8 @@ import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
+import { reseedVerdicts, type StoredVerdict, storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
+
 const Feature = makeFeature({ it })
 
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
@@ -211,7 +213,6 @@ interface ReuseObservation {
   readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
   readonly reuse: RunEvent.ReuseReported | undefined
   readonly mutants: readonly MutantRow[]
-  readonly incrementalText: string
   readonly testRunnerStartups: number
   readonly dryRunTestRunners: number
 }
@@ -224,28 +225,21 @@ const beforeMutationTesting = (events: ReadonlyArray<RunEvent.RunEvent>): Readon
   return entered === -1 ? events : events.slice(0, entered)
 }
 
-const rowsOf = (text: string): readonly MutantRow[] => {
-  const rowSchema = S.Struct({
-    id: S.String,
-    status: S.String,
-    statusReason: S.optional(S.String),
-    programDigest: S.optional(S.String),
-    location: S.optional(S.Struct({ start: S.Struct({ line: S.Finite }) })),
+const rowsOf = (
+  exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>,
+  stored: Readonly<Record<string, StoredVerdict>>,
+): readonly MutantRow[] =>
+  Exit.match(exit, {
+    onFailure: (): readonly MutantRow[] => [],
+    onSuccess: (done) =>
+      done.results.map((result) => ({
+        id: result.id,
+        status: result.status,
+        statusReason: result.statusReason,
+        programDigest: stored[result.id]?.programDigest,
+        line: result.location.start.line,
+      })),
   })
-  const reportSchema = S.Struct({
-    files: S.Record(S.String, S.Struct({ mutants: S.Array(rowSchema) })),
-  })
-  return Option.getOrElse(
-    Option.map(
-      S.decodeOption(S.fromJsonString(reportSchema))(text),
-      (report) =>
-        Object.values(report.files).flatMap((file) =>
-          file.mutants.map(({ location, ...row }) => ({ ...row, line: location?.start.line }))
-        ),
-    ),
-    (): readonly MutantRow[] => [],
-  )
-}
 
 const DEFAULT_RUN_CLI_OPTIONS: Options.PartialStrykerOptions = {
   testRunner: 'vm',
@@ -269,7 +263,6 @@ const executeRunWith = (
   cliOptions: Options.PartialStrykerOptions,
 ): Effect.Effect<ReuseObservation, never, never> =>
   Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const runLayer = Layer.merge(
       Layer.provide(Engine.RunEnvironment.stage(environmentFor(workspace.directory), queue), Engine.nodePlatformLayer),
@@ -283,14 +276,17 @@ const executeRunWith = (
         Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
       )),
     ]
-    const incrementalText = yield* fs.readFileString(incrementalFileOf(workspace.directory)).pipe(
-      Effect.orElseSucceed(() => ''),
-    )
+    const stored = yield* storedVerdictsIn({
+      projectRoot: workspace.directory,
+      mutantIds: Exit.match(exit, {
+        onFailure: () => [],
+        onSuccess: (done) => done.results.map((result) => result.id),
+      }),
+    })
     return {
       exit,
       reuse: events.find((event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event)),
-      mutants: rowsOf(incrementalText),
-      incrementalText,
+      mutants: rowsOf(exit, stored),
       testRunnerStartups: startupsOf(events, 'testRunner'),
       dryRunTestRunners: startupsOf(beforeMutationTesting(events), 'testRunner'),
     }
@@ -738,6 +734,11 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
                   (directory) => inPlaceFilesOf(directory, report),
                   (inPlace) =>
                     Effect.gen(function*() {
+                      yield* reseedVerdicts({
+                        mutantIds: first.mutants.map((mutant) => mutant.id),
+                        from: { projectRoot: producer.directory },
+                        to: { projectRoot: inPlace.directory },
+                      }).pipe(Effect.provide(filePorts))
                       const plan = yield* executePlan(inPlace)
                       return { first, plan }
                     }),

@@ -15,7 +15,7 @@ import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
 import { type ReusableReport, reusableReportOf } from './__fixtures__/reusable-report.schema.js'
-import { DEFAULT_VERDICT_DIRECTORY, reseedVerdicts, storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
+import { reseedVerdicts, storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -159,15 +159,18 @@ const optionsOf = (
   ...extras,
 })
 
-const ZERO_REFUSALS = {
+const ZERO_REFUSALS: RunEvent.ReuseRefusals = {
   semanticsChanged: 0,
   policyChanged: 0,
   runInputsChanged: 0,
+  checkerConfigChanged: 0,
   closureChanged: 0,
   closureAnalysisFailed: 0,
   programChanged: 0,
   flakyDependency: 0,
   timeoutUnreproduced: 0,
+  entryUnreadable: 0,
+  storeUnavailable: 0,
   noPriorRecord: 0,
 }
 
@@ -811,10 +814,9 @@ Feature('Content-keyed reuse across incremental reports')
                 Effect.gen(function*() {
                   const first = yield* runOnce(root, vmOptionsOf(root))
                   yield* reseedVerdicts({
-                    projectRoot: root,
                     mutantIds: first.mutants.map((mutant) => mutant.id),
-                    from: DEFAULT_VERDICT_DIRECTORY,
-                    to: ANOTHER_ENGINE_STORE,
+                    from: { projectRoot: root },
+                    to: { projectRoot: root, directory: ANOTHER_ENGINE_STORE },
                     rewrite: asSettledByAnotherEngine,
                   })
                   const options = vmOptionsOf(root, { verdictStore: { kind: 'fs', directory: ANOTHER_ENGINE_STORE } })

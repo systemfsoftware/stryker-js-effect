@@ -156,15 +156,18 @@ const closureDigestOf = (report: string): string =>
     () => '',
   )
 
-const ZERO_REFUSALS = {
+const ZERO_REFUSALS: RunEvent.ReuseRefusals = {
   semanticsChanged: 0,
   policyChanged: 0,
   runInputsChanged: 0,
+  checkerConfigChanged: 0,
   closureChanged: 0,
   closureAnalysisFailed: 0,
   programChanged: 0,
   flakyDependency: 0,
   timeoutUnreproduced: 0,
+  entryUnreadable: 0,
+  storeUnavailable: 0,
   noPriorRecord: 0,
 }
 
