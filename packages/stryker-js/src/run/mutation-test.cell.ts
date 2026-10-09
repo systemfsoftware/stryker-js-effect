@@ -149,7 +149,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     originalFileOf: (file) => originalFileFor(prev.sandbox, file),
     programDigestOf: Option.match(checkerHandle, {
       onNone: () => Effect.as(Effect.void, undefined),
-      onSome: (handle) => programDigestOf(handle),
+      onSome: (handle) => programDigestOf(handle, env.basePath),
     }),
   })
   const rememberedResults = reuse.rememberedResults

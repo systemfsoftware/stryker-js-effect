@@ -66,6 +66,7 @@ import { planDiagnosticBatches } from './plan-diagnostic-batches.workflow.js'
 import { planResolutionCandidates } from './plan-resolution-candidates.workflow.js'
 import { type ProgramFile } from './program-digest.schema.js'
 import { requestAffectedFiles } from './request-affected-files.workflow.js'
+import { resolvePackageExports, ResolvePackageExportsCommand } from './resolve-package-exports.workflow.js'
 import { emitNormalized } from './tce-emit.js'
 import { traceAffectedFiles } from './trace-affected-files.workflow.js'
 import {
@@ -431,24 +432,113 @@ const isRelativeSpecifier = (specifier: string): boolean => specifier.startsWith
 const withJsonExtension = (base: string): ReadonlyArray<string> =>
   base.endsWith(TS_CONFIG_JSON_EXTENSION) ? [base] : [base, `${base}${TS_CONFIG_JSON_EXTENSION}`]
 
-const tsConfigExtendsCandidatesOf = (
+interface PackageSpecifier {
+  readonly packageName: string
+  readonly subpath: string
+}
+
+const SCOPE_SEGMENT_COUNT = 2
+
+const packageNameLengthOf = (specifier: string): number =>
+  Boolean.match(specifier.startsWith('@'), { onTrue: () => SCOPE_SEGMENT_COUNT, onFalse: () => 1 })
+
+const subpathOf = (rest: string): string =>
+  Boolean.match(rest === '', { onTrue: () => '.', onFalse: () => `./${rest}` })
+
+const packageSpecifierOf = (specifier: string): Option.Option<PackageSpecifier> => {
+  const segments = specifier.split('/')
+  const nameLength = packageNameLengthOf(specifier)
+  const packageName = segments.slice(0, nameLength).join('/')
+  const rest = segments.slice(nameLength).join('/')
+  return Option.map(
+    Option.liftPredicate(packageName, (name) => name !== ''),
+    (name) => ({ packageName: name, subpath: subpathOf(rest) }),
+  )
+}
+
+const readPackageExportsOf = (
+  rt: TSCompilerRuntime,
+  directory: string,
+  packageName: string,
+): Effect.Effect<Option.Option<JsonValue>, never> =>
+  rt.host.readFileString(
+    normalizeFileName(rt.pathService.join(directory, NODE_MODULES_DIRECTORY, packageName, 'package.json')),
+  ).pipe(
+    Effect.orElseSucceed(() => ''),
+    Effect.map((text) =>
+      Option.flatMap(
+        S.decodeOption(S.fromJsonString(S.Struct({ exports: S.optional(S.Json) })))(text),
+        (manifest) => Option.fromUndefinedOr(manifest.exports),
+      )
+    ),
+  )
+
+const defaultAncestorCandidatesOf = (
   pathService: Path.Path,
-  fromDirName: string,
+  directory: string,
   specifier: string,
 ): ReadonlyArray<string> =>
-  Boolean.match(pathService.isAbsolute(specifier) || isRelativeSpecifier(specifier), {
-    onTrue: () => withJsonExtension(normalizeFileName(pathService.resolve(fromDirName, specifier))),
+  Arr.flatMap(withJsonExtension(specifier), (candidate) => [
+    normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate)),
+    ...Boolean.match(candidate.endsWith(TS_CONFIG_JSON_EXTENSION), {
+      onTrue: (): ReadonlyArray<string> => [],
+      onFalse: () => [
+        normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate, 'tsconfig.json')),
+      ],
+    }),
+  ])
+
+const exportsCandidatesOf = (
+  pathService: Path.Path,
+  directory: string,
+  spec: PackageSpecifier,
+  exportsValue: JsonValue,
+): ReadonlyArray<string> =>
+  Match.value(
+    resolvePackageExports(ResolvePackageExportsCommand.make({ exports: exportsValue, subpath: spec.subpath })).pipe(
+      decided,
+    ),
+  ).pipe(
+    Match.tag('PackageExportsResolved', ({ target }) => [
+      normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, spec.packageName, target)),
+    ]),
+    Match.tag('PackageExportsUnresolved', (): ReadonlyArray<string> => []),
+    Match.exhaustive,
+  )
+
+const bareAncestorCandidatesOf = (
+  rt: TSCompilerRuntime,
+  directory: string,
+  specifier: string,
+  maybeSpec: Option.Option<PackageSpecifier>,
+): Effect.Effect<ReadonlyArray<string>, never> =>
+  Option.match(maybeSpec, {
+    onNone: () => Effect.succeed(defaultAncestorCandidatesOf(rt.pathService, directory, specifier)),
+    onSome: (spec) =>
+      readPackageExportsOf(rt, directory, spec.packageName).pipe(
+        Effect.map((maybeExports) =>
+          Option.match(maybeExports, {
+            onNone: () => defaultAncestorCandidatesOf(rt.pathService, directory, specifier),
+            onSome: (exportsValue) => exportsCandidatesOf(rt.pathService, directory, spec, exportsValue),
+          })
+        ),
+      ),
+  })
+
+const tsConfigExtendsCandidatesOf = (
+  rt: TSCompilerRuntime,
+  fromDirName: string,
+  specifier: string,
+): Effect.Effect<ReadonlyArray<string>, never> =>
+  Boolean.match(rt.pathService.isAbsolute(specifier) || isRelativeSpecifier(specifier), {
+    onTrue: () => Effect.succeed(withJsonExtension(normalizeFileName(rt.pathService.resolve(fromDirName, specifier)))),
     onFalse: () =>
-      Arr.flatMap(ancestorDirectoriesOf(pathService, fromDirName), (directory) =>
-        Arr.flatMap(withJsonExtension(specifier), (candidate) => [
-          normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate)),
-          ...Boolean.match(candidate.endsWith(TS_CONFIG_JSON_EXTENSION), {
-            onTrue: (): ReadonlyArray<string> => [],
-            onFalse: () => [
-              normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate, 'tsconfig.json')),
-            ],
-          }),
-        ])),
+      Effect.map(
+        Effect.forEach(ancestorDirectoriesOf(rt.pathService, fromDirName), (directory) =>
+          bareAncestorCandidatesOf(rt, directory, specifier, packageSpecifierOf(specifier))),
+        (candidateLists) =>
+          Arr.flatten(candidateLists),
+      ),
   })
 
 const isFileOf = (rt: TSCompilerRuntime, fileName: string): Effect.Effect<boolean> =>
@@ -477,10 +567,17 @@ const resolveTsConfigExtends = (
   specifier: string,
 ): Effect.Effect<string, CompilerError> =>
   Effect.flatMap(
-    firstExistingOf(rt, tsConfigExtendsCandidatesOf(rt.pathService, fromDirName, specifier)),
-    (found) =>
-      Effect.fromOption(found, () =>
-        CompilerFailed.make({ reason: 'program-digest-unavailable', subject: `tsconfig extends "${specifier}"` })),
+    tsConfigExtendsCandidatesOf(rt, fromDirName, specifier),
+    (candidates) =>
+      Effect.flatMap(
+        firstExistingOf(rt, candidates),
+        (found) =>
+          Effect.fromOption(found, () =>
+            CompilerFailed.make({
+              reason: 'program-digest-unavailable',
+              subject: `tsconfig extends "${specifier}"`,
+            })),
+      ),
   )
 
 const extendedConfigsOf = (
