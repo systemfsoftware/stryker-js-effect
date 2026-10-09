@@ -118,9 +118,17 @@
         "types": "./dist/verdict-store.d.mts",
         "default": "./dist/verdict-store.mjs"
       },
+      "./verdict-store/fs": {
+        "types": "./dist/verdict-store/fs.d.mts",
+        "default": "./dist/verdict-store/fs.mjs"
+      },
       "./verdict-store/laws": {
         "types": "./dist/verdict-store/laws.d.mts",
         "default": "./dist/verdict-store/laws.mjs"
+      },
+      "./verdict-store/memory": {
+        "types": "./dist/verdict-store/memory.d.mts",
+        "default": "./dist/verdict-store/memory.mjs"
       },
       "./package.json": "./package.json"
     }
@@ -151,10 +159,20 @@
       "types": "./dist/verdict-store.d.mts",
       "default": "./dist/verdict-store.mjs"
     },
+    "./verdict-store/fs": {
+      "@systemfsoftware/source": "./src/drivers/fs-verdict-store.layer.ts",
+      "types": "./dist/verdict-store/fs.d.mts",
+      "default": "./dist/verdict-store/fs.mjs"
+    },
     "./verdict-store/laws": {
       "@systemfsoftware/source": "./src/verdict-store/laws-mod.ts",
       "types": "./dist/verdict-store/laws.d.mts",
       "default": "./dist/verdict-store/laws.mjs"
+    },
+    "./verdict-store/memory": {
+      "@systemfsoftware/source": "./src/drivers/memory-verdict-store.ts",
+      "types": "./dist/verdict-store/memory.d.mts",
+      "default": "./dist/verdict-store/memory.mjs"
     },
     "./package.json": "./package.json"
   },

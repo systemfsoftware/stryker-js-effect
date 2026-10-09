@@ -12,8 +12,6 @@ import { VerdictStore } from '../verdict-store/VerdictStore.service.js'
 
 type Objects = HashMap.HashMap<string, string>
 
-const TORN_ENTRY = '{"components":{"_tag":"tested"'
-
 const childNameOf = (directory: string) => (name: string): Option.Option<string> =>
   Option.liftPredicate(
     name.slice(directory.length + 1),
@@ -37,7 +35,7 @@ const contextOf = (objects: Ref.Ref<Objects>): Context.Context<VerdictStore | Ve
     makeVerdictStore,
     (store) => Context.make(VerdictStore, store),
     Context.add(VerdictStoreHarness, {
-      corrupt: (name) => objects.pipe(Ref.update(HashMap.set(name, TORN_ENTRY))),
+      plant: (name, text) => objects.pipe(Ref.update(HashMap.set(name, text))),
       reset: objects.pipe(Ref.set(emptyObjects())),
     }),
   )

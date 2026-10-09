@@ -1,2 +1,2 @@
-export { registerVerdictStoreLaws, VerdictStoreHarness } from './laws.js'
-export type { VerdictStoreHarnessShape, VerdictStoreLawRegistrar, VerdictStoreOps } from './laws.js'
+export { VerdictStoreHarness, verdictStoreLaws } from './laws.js'
+export type { LawObservation, VerdictStoreHarnessShape, VerdictStoreLaw } from './laws.js'
