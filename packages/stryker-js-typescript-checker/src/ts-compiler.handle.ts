@@ -499,9 +499,9 @@ const exportsCandidatesOf = (
       decided,
     ),
   ).pipe(
-    Match.tag('PackageExportsResolved', ({ target }) => [
-      normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, spec.packageName, target)),
-    ]),
+    Match.tag('PackageExportsResolved', ({ targets }) =>
+      Arr.map(targets, (target) =>
+        normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, spec.packageName, target)))),
     Match.tag('PackageExportsUnresolved', (): ReadonlyArray<string> => []),
     Match.exhaustive,
   )

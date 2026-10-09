@@ -25,7 +25,7 @@ export class ResolvePackageExportsCommand extends S.TaggedClass<ResolvePackageEx
 }
 
 export class PackageExportsResolved extends S.TaggedClass<PackageExportsResolved>()('PackageExportsResolved', {
-  target: S.String,
+  targets: S.Array(S.String),
 }) {
   readonly [PackageExportsTypeId] = PackageExportsTypeId
 }
@@ -63,26 +63,26 @@ const substituteStar = (target: string, star: Option.Option<string>): string =>
     onSome: (capture) => target.replaceAll('*', capture),
   })
 
-const TargetResolved = S.TaggedStruct('TargetResolved', { target: S.String })
+const TargetsResolved = S.TaggedStruct('TargetsResolved', { targets: S.Array(S.String) })
 
 const SubpathExcluded = S.TaggedStruct('SubpathExcluded', {})
 
 const TryNextEntry = S.TaggedStruct('TryNextEntry', {})
 
-const TargetStep = S.Union([TargetResolved, SubpathExcluded, TryNextEntry])
+const TargetStep = S.Union([TargetsResolved, SubpathExcluded, TryNextEntry])
 type TargetStep = typeof TargetStep.Type
 
-const targetResolved = (target: string): TargetStep => TargetResolved.make({ target })
+const targetsResolved = (targets: ReadonlyArray<string>): TargetStep => TargetsResolved.make({ targets })
 
 const SUBPATH_EXCLUDED: TargetStep = SubpathExcluded.make({})
 
 const TRY_NEXT_ENTRY: TargetStep = TryNextEntry.make({})
 
-const targetOf = (step: TargetStep): Option.Option<string> =>
+const targetOf = (step: TargetStep): Option.Option<ReadonlyArray<string>> =>
   Match.value(step).pipe(
-    Match.tag('TargetResolved', ({ target }) => Option.some(target)),
-    Match.tag('SubpathExcluded', () => Option.none<string>()),
-    Match.tag('TryNextEntry', () => Option.none<string>()),
+    Match.tag('TargetsResolved', ({ targets }) => Option.some(targets)),
+    Match.tag('SubpathExcluded', () => Option.none<ReadonlyArray<string>>()),
+    Match.tag('TryNextEntry', () => Option.none<ReadonlyArray<string>>()),
     Match.exhaustive,
   )
 
@@ -91,9 +91,32 @@ const firstDecidedStepOf = <A>(entries: ReadonlyArray<A>, stepOf: (entry: A) => 
     onNone: () => TRY_NEXT_ENTRY,
     onSome: (entry) =>
       Match.value(stepOf(entry)).pipe(
-        Match.tag('TargetResolved', (resolved): TargetStep => resolved),
+        Match.tag('TargetsResolved', (resolved): TargetStep => resolved),
         Match.tag('SubpathExcluded', (excluded): TargetStep => excluded),
         Match.tag('TryNextEntry', () => firstDecidedStepOf(Arr.drop(entries, 1), stepOf)),
+        Match.exhaustive,
+      ),
+  })
+
+const appendTargets = (
+  entries: ReadonlyArray<JsonValue>,
+  star: Option.Option<string>,
+  accumulated: ReadonlyArray<string>,
+): TargetStep =>
+  Option.match(Arr.head(entries), {
+    onNone: () =>
+      Boolean.match(accumulated.length === 0, {
+        onTrue: () => TRY_NEXT_ENTRY,
+        onFalse: () => targetsResolved(accumulated),
+      }),
+    onSome: (entry) =>
+      Match.value(resolveTarget(entry, star)).pipe(
+        Match.tag(
+          'TargetsResolved',
+          ({ targets }) => appendTargets(Arr.drop(entries, 1), star, [...accumulated, ...targets]),
+        ),
+        Match.tag('SubpathExcluded', (excluded): TargetStep => excluded),
+        Match.tag('TryNextEntry', () => appendTargets(Arr.drop(entries, 1), star, accumulated)),
         Match.exhaustive,
       ),
   })
@@ -114,7 +137,7 @@ const isResolvableTarget = (target: string): boolean =>
 
 const resolveStringTarget = (target: string): TargetStep =>
   Boolean.match(isResolvableTarget(target), {
-    onTrue: () => targetResolved(target),
+    onTrue: () => targetsResolved([target]),
     onFalse: () => TRY_NEXT_ENTRY,
   })
 
@@ -126,7 +149,7 @@ function resolveTarget(value: JsonValue, star: Option.Option<string>): TargetSte
         onSome: (target) => resolveStringTarget(substituteStar(target, star)),
         onNone: () =>
           Option.match(Option.liftPredicate(value, isJsonArray), {
-            onSome: (entries) => firstDecidedStepOf(entries, (entry) => resolveTarget(entry, star)),
+            onSome: (entries) => appendTargets(entries, star, []),
             onNone: () =>
               Option.match(Option.liftPredicate(value, isJsonObject), {
                 onSome: (conditions) => resolveConditional(conditions, star),
@@ -206,7 +229,7 @@ const whenRootSubpath = <A>(subpath: string, atRoot: () => Option.Option<A>): Op
     onFalse: () => Option.none<A>(),
   })
 
-const resolveExports = (exports: JsonValue, subpath: string): Option.Option<string> =>
+const resolveExports = (exports: JsonValue, subpath: string): Option.Option<ReadonlyArray<string>> =>
   Option.match(Option.filter(Option.liftPredicate(exports, isJsonObject), hasSubpathKeys), {
     onSome: (map) =>
       Option.flatMap(subpathTargetOf(map, subpath), ([value, star]) => targetOf(resolveTarget(value, star))),
@@ -217,7 +240,7 @@ const decide = (command: ResolvePackageExportsCommand): Result.Result<PackageExp
   Result.succeed(
     Option.match(resolveExports(command.exports, command.subpath), {
       onNone: () => PackageExportsUnresolved.make({}),
-      onSome: (target) => PackageExportsResolved.make({ target }),
+      onSome: (targets) => PackageExportsResolved.make({ targets }),
     }),
   )
 
