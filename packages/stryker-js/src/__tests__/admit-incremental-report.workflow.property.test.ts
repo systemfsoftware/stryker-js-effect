@@ -18,7 +18,7 @@ type Report = S.Schema.Type<typeof IncrementalReportSchema>
 
 const identityOf = (report: Report) => ({
   expectedIncrementalVersion: report.incrementalVersion,
-  verdictSemanticsVersion: report.verdictSemanticsVersion,
+  engineDigest: report.engineDigest,
   mutantSetPolicy: report.mutantSetPolicy,
   runInputsDigest: report.runInputsDigest,
 })
@@ -60,7 +60,7 @@ describe('admitIncrementalReport', () => {
         AdmitIncrementalReportCommand.make({
           report,
           ...identityOf(report),
-          verdictSemanticsVersion: report.verdictSemanticsVersion ^ 1,
+          engineDigest: `${report.engineDigest}-changed`,
         }),
       )
       return discardReasonOf(result) === 'semanticsChanged'
@@ -117,7 +117,7 @@ describe('admitIncrementalReport', () => {
         AdmitIncrementalReportCommand.make({
           report: undefined,
           expectedIncrementalVersion,
-          verdictSemanticsVersion: 1,
+          engineDigest: 'engine',
           mutantSetPolicy: 'default',
           runInputsDigest: '',
         }),

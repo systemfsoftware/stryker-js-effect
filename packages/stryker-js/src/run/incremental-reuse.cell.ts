@@ -35,7 +35,7 @@ import type { Project } from '../Project.schema.js'
 import { reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow.js'
 import { StageError } from '../Run.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
-import { runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from '../verdict-semantics.js'
+import { engineDigestOf, runInputsDigestOf } from '../verdict-semantics.js'
 import { incrementalReportTextsOf, optionalField, reportOfText } from './incremental-reuse.js'
 
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
@@ -98,7 +98,7 @@ const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
       status: mutant.status,
       ...digestField(mutant.closureDigest),
       ...optionalField('programDigest', mutant.programDigest),
-      verdictSemanticsVersion: report.verdictSemanticsVersion,
+      engineDigest: report.engineDigest,
       mutantSetPolicy: report.mutantSetPolicy,
       runInputsDigest: report.runInputsDigest,
       ...optionalField('timeoutKind', mutant.timeoutKind),
@@ -345,7 +345,7 @@ const readIncrementalReuseCommand = Effect.fn(SpanTaxonomy.Spans.incrementalReus
     previousRecords: [...previousRecords],
     closureDigestsByMutantId: closures.digests,
     closureAnalysisFailed: closures.failed,
-    verdictSemanticsVersion: VERDICT_SEMANTICS_VERSION,
+    engineDigest: yield* engineDigestOf(fs, path),
     mutantSetPolicy: input.options.mutator.mutantSetPolicy,
     runInputsDigest,
     force: input.force,

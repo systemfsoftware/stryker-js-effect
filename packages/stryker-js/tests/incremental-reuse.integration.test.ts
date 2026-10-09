@@ -429,16 +429,16 @@ const costedMutantsOf = (events: ReadonlyArray<RunEvent.RunEvent>): readonly Cos
       : []
   )
 
-const SEMANTICS_BUMPED = 0
+const ANOTHER_ENGINE = 'a-digest-no-installed-engine-has'
 
-const withSemanticsBumped = (text: string): string =>
+const asWrittenByAnotherEngine = (text: string): string =>
   Option.getOrElse(
     Option.flatMap(
       S.decodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))(text),
       (report) =>
         S.encodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))({
           ...report,
-          verdictSemanticsVersion: SEMANTICS_BUMPED,
+          engineDigest: ANOTHER_ENGINE,
         }),
     ),
     () => text,
@@ -874,7 +874,7 @@ Feature('Content-keyed reuse across incremental reports')
                   const first = yield* runOnce(root, options)
                   yield* fs.writeFileString(
                     incrementalFile,
-                    withSemanticsBumped(yield* fs.readFileString(incrementalFile)),
+                    asWrittenByAnotherEngine(yield* fs.readFileString(incrementalFile)),
                   )
                   const second = yield* runOnce(root, options)
                   yield* fs.writeFileString(path.join(root, 'test', 'aaa-other.test.mjs'), VM_OTHER_TEST)

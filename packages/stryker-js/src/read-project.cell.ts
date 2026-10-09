@@ -29,7 +29,7 @@ import { type IncrementalReport, IncrementalReportSchema } from './IncrementalRe
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFilesDiscovered, ProjectSelectionCommand, selectProjectFiles } from './select-project-files.workflow.js'
 import { strykerOutputFilesOf } from './stryker-outputs.js'
-import { INCREMENTAL_CACHE_VERSION, runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from './verdict-semantics.js'
+import { engineDigestOf, INCREMENTAL_CACHE_VERSION, runInputsDigestOf } from './verdict-semantics.js'
 
 const ALWAYS_IGNORE = Object.freeze([
   'node_modules',
@@ -67,7 +67,7 @@ const DISCARD_TEXTS: Readonly<
       discard.actual ?? ''
     }, expected ${discard.expected}; a full mutation testing run will be performed.`,
   semanticsChanged: (command, discard) =>
-    `Incremental result file at ${command.incrementalFile} has verdict semantics version ${
+    `Incremental result file at ${command.incrementalFile} was written by the engine with digest ${
       discard.actual ?? ''
     }, expected ${discard.expected}; a full mutation testing run will be performed.`,
   policyChanged: (command, discard) =>
@@ -400,7 +400,7 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
     _tag: 'AdmitIncrementalReportCommand',
     report: reportRead.report,
     expectedIncrementalVersion: INCREMENTAL_CACHE_VERSION,
-    verdictSemanticsVersion: VERDICT_SEMANTICS_VERSION,
+    engineDigest: yield* engineDigestOf(fs, pathService),
     mutantSetPolicy: options.mutator.mutantSetPolicy,
     runInputsDigest,
     options,

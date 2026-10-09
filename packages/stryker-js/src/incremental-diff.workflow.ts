@@ -28,7 +28,7 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
   previousRecords: S.Array(PreviousReuseRecordSchema),
   closureDigestsByMutantId: S.Record(Mutant.MutantId, S.String),
   closureAnalysisFailed: S.Boolean,
-  verdictSemanticsVersion: S.Int,
+  engineDigest: S.String,
   mutantSetPolicy: Options.MutantSetPolicy,
   runInputsDigest: S.String,
   force: S.Boolean,
@@ -63,7 +63,7 @@ export class MutantToRun extends S.TaggedClass<MutantToRun>()('MutantToRun', {
 export type IncrementalDiffDecision = MutantRemembered | MutantToRun
 
 type CacheKeyComponents = {
-  readonly verdictSemanticsVersion: number
+  readonly engineDigest: string
   readonly mutantSetPolicy: Options.MutantSetPolicy
   readonly runInputsDigest: string
 }
@@ -99,7 +99,7 @@ const keyOf = (mutantId: string, digest: string | undefined, components: CacheKe
   [
     mutantId,
     digestOf(digest),
-    String(components.verdictSemanticsVersion),
+    components.engineDigest,
     components.mutantSetPolicy,
     components.runInputsDigest,
   ].join('\u0000')
@@ -162,7 +162,7 @@ const reasonAfterPolicy = (command: IncrementalDiffCommand, record: PreviousReus
   })
 
 const refusalOf = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
-  Boolean.match(record.verdictSemanticsVersion !== command.verdictSemanticsVersion, {
+  Boolean.match(record.engineDigest !== command.engineDigest, {
     onTrue: (): ReuseRefusalReason => 'semanticsChanged',
     onFalse: () => reasonAfterPolicy(command, record),
   })
