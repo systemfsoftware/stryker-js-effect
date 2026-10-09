@@ -19,7 +19,7 @@ origin: docs/brainstorms/2026-10-09-2030-perf-typescript-checker-tsgo-native-pla
 - **Stop conditions:** stop and report if the TypeScript 7.0.2 API cannot do something a unit needs (name the missing API with evidence; never fall back to TS5); if the parity lane shows any verdict difference that the position rule in R7 does not explain; if a corpus leg cannot finish inside its time budget at eight shards.
 - **Execution profile:** stacked PRs on trunk `main` via `gh stack` (root `AGENTS.md` OP13b), one concern per layer, no force-push. Locally only typecheck and the touched package's tests (S1); the corpus, e2e and mutation runs happen in CI only.
 - **Who ships:** the implementer opens and updates the stack and reports each layer's green head SHA; the operator merges bottom-up.
-- **Supervisor items:** OQ-P1 to OQ-P10 are ruled (`.omp-brief/rulings-plan.md`): every default is accepted. OQ-P5 (required check), OQ-P8 (where the port's entry lives, Stream A) and OQ-P9 (the surface shape, Stream I) are forwarded to the root; the defaults are built and the "Type-query surface for Stream I" stays provisional until Stream I confirms it.
+- **Supervisor items:** OQ-P1 to OQ-P10 are ruled (`.omp-brief/rulings-plan.md`): every default is accepted, and the root confirmed OQ-P5, OQ-P8 and OQ-P9 as defaulted. The root adds `checker-parity-report` to the ruleset after its first green main run (rulesets are never edited here). The plugin-interface `./type-query` entry holds the port only (schemas and service tag, no Layer); `TypeQueryLive` stays in the checker. The v1 shape is accepted with no extra fields, and the provisional marking stays until the supervisor lifts it.
 
 ---
 
