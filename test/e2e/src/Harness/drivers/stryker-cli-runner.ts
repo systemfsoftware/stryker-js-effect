@@ -1,8 +1,8 @@
 import { Config, Effect, Layer, Option } from 'effect'
 
+import { seamSpan, SpanNames } from '../seam-span.js'
 import { type ForkedRun, type ForkedStreamedRun, StrykerCliRunner } from '../stryker-cli-runner.service.js'
 import * as Warm from '../warm-sandbox.handle.js'
-import { seamSpan, SpanNames } from './harness-telemetry.js'
 
 const guestEnvironment = (env: {
   readonly OTEL_ENABLED?: string | undefined

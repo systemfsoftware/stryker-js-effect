@@ -3,7 +3,7 @@ import { Boolean, Effect, Layer, Match } from 'effect'
 
 import { GuestJobs } from '../guest-job.service.js'
 import { ExitFailure, GuestJobFailure, GuestSignaledFailure } from '../harness-failure.schema.js'
-import { seamSpan, SpanNames } from './harness-telemetry.js'
+import { seamSpan, SpanNames } from '../seam-span.js'
 
 export const layer = Layer.effect(
   GuestJobs,

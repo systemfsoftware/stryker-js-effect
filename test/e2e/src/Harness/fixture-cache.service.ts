@@ -47,10 +47,10 @@ import {
 } from './bake-key.schema.js'
 import type { WorkspaceCatalogs } from './catalog-resolution.js'
 import { parseFixtureManifest, parseWorkspaceCatalogs, resolveCatalogSpecs } from './catalog-resolution.js'
-import { seamSpan, SpanNames, withSeamSpan } from './drivers/harness-telemetry.js'
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
+import { seamSpan, SpanNames, withSeamSpan } from './seam-span.js'
 import * as Warm from './warm-sandbox.handle.js'
 
 export type BakePlatform =

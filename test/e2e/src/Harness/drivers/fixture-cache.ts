@@ -5,8 +5,8 @@ import type { BakePlatform } from '../fixture-cache.service.js'
 import { BakedFixtureCache, entryNameOf } from '../fixture-cache.service.js'
 import { FixtureMissingFailure } from '../harness-failure.schema.js'
 import type { HarnessError } from '../harness-failure.schema.js'
+import { seamSpan, SpanNames } from '../seam-span.js'
 import * as Warm from '../warm-sandbox.handle.js'
-import { seamSpan, SpanNames } from './harness-telemetry.js'
 
 const warmFixtureInto = (
   scope: Scope.Scope,
