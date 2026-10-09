@@ -10,6 +10,7 @@ catalog:
   "@commitlint/cli": ^21
   "@commitlint/config-conventional": ^21
   "@commitlint/types": ^21
+  "@aws-sdk/client-s3": 3.1095.0
   "@effect/tsgo": ^0.50.0
   "@effect/platform-node": ^4.0.0
   "@effect/platform-node-shared": ^4.0.0
@@ -52,6 +53,7 @@ catalog:
   "@opentelemetry/sdk-trace-base": ^2.2.0
   "@vitest/browser-playwright": ^5
   "@vitest/coverage-v8": ^5
+  emulate: 0.12.1
   fast-check: ^4
   effect: ^4.0.0
   husky: ^9
