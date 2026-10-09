@@ -98,6 +98,7 @@ const PACKAGE_CONDITIONS_EXPORTS_MANIFEST_SOURCE = JSON.stringify(
   2,
 ) + '\n'
 const PACKAGE_LEGACY_BASE_TSCONFIG_FILE = 'node_modules/@probe/tsconfig-base/strict.json'
+const PACKAGE_LEGACY_DIRECTORY_TSCONFIG_FILE = 'node_modules/@probe/tsconfig-base/strict/tsconfig.json'
 
 const NESTED_DIRECTORY = 'packages/app'
 const NESTED_TSCONFIG_FILE = `${NESTED_DIRECTORY}/${TSCONFIG_FILE}`
@@ -623,6 +624,46 @@ Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_00
         ),
         Then('both digests are 64-character digests and editing the outer package base moves the digest')(
           (s, expect) => expect(s.observed).toEqual({ shape: true, moved: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'a file named after the subpath is the base before a directory of that name',
+      Gherkin.Do.pipe(
+        Given('a program extending a package without exports that ships strict.json and strict/tsconfig.json')(
+          'files',
+          () =>
+            Effect.succeed({
+              ...DEFAULT_FILES,
+              [TSCONFIG_FILE]: PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE,
+              [PACKAGE_EXPORTS_MANIFEST_FILE]: PACKAGE_NO_EXPORTS_MANIFEST_SOURCE,
+              [PACKAGE_LEGACY_BASE_TSCONFIG_FILE]: BASE_TSCONFIG_SOURCE,
+              [PACKAGE_LEGACY_DIRECTORY_TSCONFIG_FILE]: BASE_TSCONFIG_SOURCE,
+            }),
+        ),
+        When('strict/tsconfig.json and then strict.json are edited between digests')(
+          'observed',
+          (s) =>
+            withWorkspace(
+              (workspace) =>
+                Effect.gen(function*() {
+                  const before = yield* digestOf(workspace.directory)
+                  yield* appendComment(workspace.directory, PACKAGE_LEGACY_DIRECTORY_TSCONFIG_FILE)
+                  const afterDirectoryEdit = yield* digestOf(workspace.directory)
+                  yield* appendComment(workspace.directory, PACKAGE_LEGACY_BASE_TSCONFIG_FILE)
+                  const afterFileEdit = yield* digestOf(workspace.directory)
+                  return {
+                    shape: [before, afterDirectoryEdit, afterFileEdit].every((digest) => DIGEST_SHAPE.test(digest)),
+                    directoryEditMoved: before !== afterDirectoryEdit,
+                    fileEditMoved: afterDirectoryEdit !== afterFileEdit,
+                  }
+                }),
+              s.files,
+            ),
+        ),
+        Then('editing strict/tsconfig.json leaves the digest alone and editing strict.json moves it')(
+          (s, expect) => expect(s.observed).toEqual({ shape: true, directoryEditMoved: false, fileEditMoved: true }),
         ),
       ),
     )

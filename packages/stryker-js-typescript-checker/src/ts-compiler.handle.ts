@@ -477,20 +477,21 @@ const readPackageExportsOf = (
     ),
   )
 
+const legacySpecifierCandidatesOf = (specifier: string): ReadonlyArray<string> => [
+  ...Arr.filter([specifier], (candidate) => candidate.endsWith(TS_CONFIG_JSON_EXTENSION)),
+  `${specifier}${TS_CONFIG_JSON_EXTENSION}`,
+  `${specifier}/tsconfig.json`,
+]
+
 const defaultAncestorCandidatesOf = (
   pathService: Path.Path,
   directory: string,
   specifier: string,
 ): ReadonlyArray<string> =>
-  Arr.flatMap(withJsonExtension(specifier), (candidate) => [
-    normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate)),
-    ...Boolean.match(candidate.endsWith(TS_CONFIG_JSON_EXTENSION), {
-      onTrue: (): ReadonlyArray<string> => [],
-      onFalse: () => [
-        normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate, 'tsconfig.json')),
-      ],
-    }),
-  ])
+  Arr.map(
+    legacySpecifierCandidatesOf(specifier),
+    (candidate) => normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate)),
+  )
 
 interface AncestorCandidates {
   readonly candidates: ReadonlyArray<string>
