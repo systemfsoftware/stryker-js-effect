@@ -62,9 +62,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: cachix/install-nix-action@v31
-      - name: The released tarballs the lockfile installs from
-        run: nix build .#stryker-published --out-link .sfs-deps
+      - uses: ./.github/actions/released-tarballs
       - run: pnpm install --frozen-lockfile
 
       - name: Restore the incremental report of the last run
@@ -118,9 +116,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: cachix/install-nix-action@v31
-      - name: The released tarballs the lockfile installs from
-        run: nix build .#stryker-published --out-link .sfs-deps
+      - uses: ./.github/actions/released-tarballs
       - run: pnpm install --frozen-lockfile
 
       - id: restore
@@ -167,9 +163,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: cachix/install-nix-action@v31
-      - name: The released tarballs the lockfile installs from
-        run: nix build .#stryker-published --out-link .sfs-deps
+      - uses: ./.github/actions/released-tarballs
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:
@@ -239,9 +233,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - uses: cachix/install-nix-action@v31
-      - name: The released tarballs the lockfile installs from
-        run: nix build .#stryker-published --out-link .sfs-deps
+      - uses: ./.github/actions/released-tarballs
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:
