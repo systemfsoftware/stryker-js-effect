@@ -209,13 +209,43 @@ jobs:
             --shard "$SHARD" \
             --out "reports/shards/${{ steps.shard.outputs.slug }}"
 
-      - uses: actions/upload-artifact@v7
+      - id: upload
+        name: Upload the shard report
         if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
         with:
           name: mutation-shard-${{ steps.shard.outputs.slug }}
-          path: reports/shards/${{ steps.shard.outputs.slug }}
+          path: reports/shards
           if-no-files-found: error
           retention-days: 1
+          overwrite: true
+      - name: Wait before retrying the upload
+        if: ${{ always() && steps.upload.outcome == 'failure' }}
+        run: sleep 30
+      - id: upload-retry
+        name: Upload the shard report (retry)
+        if: ${{ always() && steps.upload.outcome == 'failure' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-shard-${{ steps.shard.outputs.slug }}
+          path: reports/shards
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+      - name: Wait before the last upload attempt
+        if: ${{ always() && steps.upload-retry.outcome == 'failure' }}
+        run: sleep 90
+      - name: Upload the shard report (last attempt)
+        if: ${{ always() && steps.upload-retry.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-shard-${{ steps.shard.outputs.slug }}
+          path: reports/shards
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
 
   report:
     name: Mutation report
@@ -238,11 +268,13 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: shard-plan
-      - uses: actions/download-artifact@v8
+      - name: Download every shard report into shards/<k>of<n>
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           pattern: mutation-shard-*
           path: shards
+          merge-multiple: true
 
       - name: Restore the incremental report of the last run
         uses: actions/cache/restore@v6
@@ -256,7 +288,7 @@ jobs:
         run: |
           shards=()
           while read -r shard; do
-            shards+=("shards/mutation-shard-${shard//\//of}")
+            shards+=("shards/${shard//\//of}")
           done < <(jq -r '.shards[] | "\(.index)/\(.count)"' "$PLAN")
           $PUBLISHED_CLI merge \
             --plan "$PLAN" \
@@ -307,8 +339,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Delete per-shard artifacts
-        if: always()
+      - name: Delete per-shard artifacts once the report merged
+        if: success()
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
