@@ -1,7 +1,15 @@
+/// <reference types="vitest/importMeta" />
+import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
+import * as Match from 'effect/Match'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
+
+import type { CheckerCommand, CheckerContractBroken } from '../admit-checker-answer.workflow.js'
+import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
 
 export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('UndescribableMutant', {
   id: Mutant.MutantId,
@@ -35,3 +43,165 @@ export const CheckerMutantFromMutant = S.decodeTo<typeof CheckerMutant, typeof M
       }),
   }),
 )(Mutant.Mutant)
+
+const DescriptionCandidate = S.Struct({
+  id: Mutant.MutantId,
+  fileName: Mutant.CanonicalFileName,
+  mutant: S.Unknown,
+})
+
+/**
+ * Each candidate's `mutant` stays undecoded because whether it decodes is the decision;
+ * `id` and `fileName` name it when it is refused.
+ */
+export class DescribeCheckerMutantsCommand
+  extends S.TaggedClass<DescribeCheckerMutantsCommand>()('DescribeCheckerMutantsCommand', {
+    candidates: S.Array(DescriptionCandidate),
+  })
+{
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+const MutantDescriptionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/MutantDescription')
+type MutantDescriptionTypeId = typeof MutantDescriptionTypeId
+
+export class MutantDescribed extends S.TaggedClass<MutantDescribed>()('MutantDescribed', {
+  wire: Checker.CheckerMutantWire,
+}) {
+  readonly [MutantDescriptionTypeId] = MutantDescriptionTypeId
+}
+
+export class MutantUndescribable extends S.TaggedClass<MutantUndescribable>()('MutantUndescribable', {
+  undescribable: UndescribableMutant,
+}) {
+  readonly [MutantDescriptionTypeId] = MutantDescriptionTypeId
+}
+
+export const MutantDescription = S.Union([MutantDescribed, MutantUndescribable])
+export type MutantDescription = typeof MutantDescription.Type
+
+export interface PartitionedMutants {
+  readonly wire: readonly Checker.CheckerMutantWire[]
+  readonly undescribable: readonly UndescribableMutant[]
+}
+
+export const partitionedMutantsOf = (descriptions: readonly MutantDescription[]): PartitionedMutants => {
+  const [wire, undescribable] = Arr.partition(
+    descriptions,
+    Match.type<MutantDescription>().pipe(
+      Match.tagsExhaustive({
+        MutantDescribed: ({ wire }) => Result.succeed(wire),
+        MutantUndescribable: ({ undescribable }) => Result.fail(undescribable),
+      }),
+    ),
+  )
+  return { wire, undescribable }
+}
+
+export const compileErrorAnswersOf = (
+  undescribable: readonly UndescribableMutant[],
+): Readonly<Record<string, Checker.CheckResult>> =>
+  Object.fromEntries(
+    undescribable.map((mutant): readonly [string, Checker.CheckResult] => [
+      mutant.id,
+      { status: 'compileError', reason: mutant.reason },
+    ]),
+  )
+
+export const singletonGroupsOf = (undescribable: readonly UndescribableMutant[]): readonly (readonly string[])[] =>
+  undescribable.map((mutant) => [mutant.id])
+
+export const undescribableIdsOf = (undescribable: readonly UndescribableMutant[]): ReadonlySet<string> =>
+  new Set(undescribable.map((mutant) => mutant.id))
+
+export interface CheckerRequest {
+  readonly checker: CheckerResourceService
+  readonly checkerName: string
+  readonly plans: readonly Mutant.RunPlan[]
+}
+
+export type CheckRaw = typeof CheckerCommand.Encoded & CheckerRequest
+
+export type CheckerCellError = CheckerCrash | Checker.CheckerFailed | CheckerContractBroken
+
+export type GroupedPlansResult = readonly (readonly Mutant.RunPlan[])[]
+
+export type CheckedPlansResult = readonly (readonly [Mutant.RunPlan, Checker.CheckResult])[]
+
+export const describeCommandOf = (request: CheckerRequest): DescribeCheckerMutantsCommand =>
+  DescribeCheckerMutantsCommand.make({
+    candidates: request.plans.map((plan) => ({
+      id: plan.mutant.id,
+      fileName: plan.mutant.fileName,
+      mutant: plan.mutant,
+    })),
+  })
+
+export const plansByIdOf = (request: CheckerRequest): ReadonlyMap<string, Mutant.RunPlan> =>
+  new Map<string, Mutant.RunPlan>(request.plans.map((plan) => [plan.mutant.id, plan]))
+
+export interface RefusedCheckerCommand {
+  readonly issue: string
+  readonly input: CheckRaw
+}
+
+export const commandFailed = (refused: RefusedCheckerCommand): Checker.CheckerFailed =>
+  Checker.CheckerFailed.make({
+    cause: refused.issue,
+    checkerName: refused.input.checkerName,
+    mutantIds: refused.input.plans.map((plan) => plan.mutant.id),
+  })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  it.prop(
+    '∀d_Partition_≡InterleavesBackToTheDescriptions',
+    { of: [S.Array(MutantDescription)], subject: partitionedMutantsOf },
+    (subject, [descriptions]) => {
+      const { wire, undescribable } = subject(descriptions)
+      const rebuilt = Arr.reduce(
+        descriptions,
+        { wireAt: 0, undescribableAt: 0, agrees: wire.length + undescribable.length === descriptions.length },
+        (state, description) =>
+          Match.valueTags(description, {
+            MutantDescribed: (described) => ({
+              ...state,
+              wireAt: state.wireAt + 1,
+              agrees: state.agrees && wire[state.wireAt] === described.wire,
+            }),
+            MutantUndescribable: (refused) => ({
+              ...state,
+              undescribableAt: state.undescribableAt + 1,
+              agrees: state.agrees && undescribable[state.undescribableAt] === refused.undescribable,
+            }),
+          }),
+      )
+      return rebuilt.agrees
+    },
+  )
+
+  it.prop(
+    '∀u_CompileErrorAnswers_≡EachIdAnsweredWithItsLastReason',
+    { of: [S.Array(UndescribableMutant)], subject: compileErrorAnswersOf },
+    (subject, [undescribable]) => {
+      const answers = subject(undescribable)
+      const lastReasonById = new Map(undescribable.map((mutant) => [mutant.id, mutant.reason]))
+      return Object.keys(answers).length === lastReasonById.size &&
+        Arr.every(
+          [...lastReasonById],
+          ([id, reason]) => JSON.stringify(answers[id]) === JSON.stringify({ status: 'compileError', reason }),
+        )
+    },
+  )
+
+  it.prop(
+    '∀u_SingletonGroups_≡OneGroupPerMutantInOrder',
+    { of: [S.Array(UndescribableMutant)], subject: singletonGroupsOf },
+    (subject, [undescribable]) => {
+      const groups = subject(undescribable)
+      return groups.length === undescribable.length &&
+        Arr.every(Arr.zip(groups, undescribable), ([group, mutant]) => group.length === 1 && group[0] === mutant.id)
+    },
+  )
+}
