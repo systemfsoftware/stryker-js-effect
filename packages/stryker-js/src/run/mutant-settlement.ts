@@ -18,9 +18,11 @@ import * as Stream from 'effect/Stream'
 import { scoped as checkerPoolsScoped } from '../Checker/checker-pool.blueprint.js'
 import {
   type CheckedPlans,
+  checkerConfigDigestOf,
   type CheckerPoolHandle,
   inOwnScope,
   makeCheckerPoolHandle,
+  NO_CHECKER_CONFIG_DIGEST,
   programDigestOf,
   runCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
@@ -35,7 +37,6 @@ import { originalFileFor } from '../Sandbox.handle.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import type { TestBasis } from './dry-run.cell.js'
 import { type IncrementalReuse, readIncrementalReuse } from './incremental-reuse.cell.js'
-import { optionalField } from './incremental-reuse.js'
 import {
   announceSettledMutant,
   type CheckpointWriter,
@@ -47,6 +48,7 @@ import { draftMutationTestPlan, type MutationTestPlan } from './mutation-test-pl
 import { inPlannedOrder, toReportedMutant } from './mutation-test-plan.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
+import { putSettledVerdict } from './verdict-put.js'
 
 const TCE_EQUIVALENT_TO_ORIGINAL_REASON = 'equivalent-to-original: tce'
 
@@ -115,6 +117,12 @@ export const reuseAndPlan = Effect.fnUntraced(function*(input: ReuseAndPlanInput
     globalTestInputs: input.globalTestInputs,
     observedModules: input.observedModules,
     originalFileOf: (file) => originalFileFor(basis.sandbox, file),
+    fileContentDigests: basis.fileContentDigests,
+    store: basis.verdictStore,
+    checkerConfigDigestOf: Option.match(input.checkerHandle, {
+      onNone: () => Effect.succeed(NO_CHECKER_CONFIG_DIGEST),
+      onSome: (handle) => checkerConfigDigestOf(handle, env.basePath),
+    }),
     programDigestOf: Option.match(input.checkerHandle, {
       onNone: () => Effect.as(Effect.void, undefined),
       onSome: (handle) => programDigestOf(handle, env.basePath),
@@ -165,7 +173,6 @@ export interface Settlement<Passed extends Mutant.MutantRunPlan, E> {
   readonly reuse: IncrementalReuse
   readonly plan: MutationTestPlan
   readonly checkedPlans: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash>
-  readonly closureDigestsByMutantId: Record<string, string>
   readonly runPlanOf: (
     settling: PlanSettling,
   ) => (plan: Passed, checkMs: number) => Effect.Effect<Mutant.RunMutantResult, E>
@@ -176,6 +183,14 @@ export interface PlanSettling {
   readonly checkpoint: CheckpointWriter
   readonly settleChecked: (reported: Mutant.RunMutantResult, checkMs: number) => Effect.Effect<Mutant.RunMutantResult>
 }
+
+const warnOfStoreGaps = (unreadMutants: number, skippedPuts: number): Effect.Effect<void> =>
+  Effect.when(
+    Effect.logWarning(
+      `The verdict store could not be read for ${unreadMutants} mutants and did not store ${skippedPuts} verdicts; those mutants are tested again next run.`,
+    ),
+    Effect.succeed(unreadMutants + skippedPuts > 0),
+  ).pipe(Effect.asVoid)
 
 export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.MutantRunPlan, E>(
   settlement: Settlement<Passed, E>,
@@ -194,6 +209,8 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     }),
   )
   yield* announceMutationTestPlan(basis, plan)
+  const plannedMutants = [...rememberedResults, ...reuse.mutants]
+  const skippedPuts = yield* Ref.make(0)
   const context: RunContext = {
     prev: basis,
     env,
@@ -201,17 +218,16 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     progressQueue,
     completedRef: yield* Ref.make(0),
     plannedTotal: plan.plannedTotal,
-    plannedMutants: [...rememberedResults, ...reuse.mutants],
+    putVerdict: putSettledVerdict({ store: basis.verdictStore, reuse, skippedPuts }),
     pathService: yield* Path.Path,
   }
-  const settledResults = [
-    ...rememberedResults,
-    ...plan.earlyResults.map((result) => withMeasuredCheckCost(result, 0)),
-  ]
+  const earlyResults = plan.earlyResults.map((result) => withMeasuredCheckCost(result, 0))
+  const settledResults = [...rememberedResults, ...earlyResults]
   yield* Effect.forEach(settledResults, (result) => announceSettledMutant(context, result), {
     concurrency: 1,
     discard: true,
   })
+  yield* Effect.forEach(earlyResults, context.putVerdict, { discard: true })
   const capacity = basis.concurrency.testRunners + basis.concurrency.checkers
   const runResults = yield* Effect.scoped(Effect.gen(function*() {
     const checkpoint = yield* makeCheckpointWriter(context, settledResults)
@@ -252,7 +268,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
   }))
   const checkerRelease = yield* settlement.checkers.releaseInBackground
   const allResults = inPlannedOrder({
-    planned: context.plannedMutants,
+    planned: plannedMutants,
     results: [...settledResults, ...runResults],
   })
   yield* Effect.forEach(
@@ -267,12 +283,8 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
       duplicateAtSite: countIgnoredByReason(allResults, TCE_DUPLICATE_AT_SITE_REASON),
     }),
   )
-  const outcomeResult = yield* reporting.reportAll({
-    ...reportingInputOf({ prev: basis, env, results: allResults }),
-    closureDigestsByMutantId: settlement.closureDigestsByMutantId,
-    timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
-    ...optionalField('programDigest', reuse.programDigest),
-  })
+  const outcomeResult = yield* reporting.reportAll(reportingInputOf({ prev: basis, env, results: allResults }))
+  yield* warnOfStoreGaps(reuse.refusalCounts.storeUnavailable, yield* Ref.get(skippedPuts))
   yield* Fiber.await(checkerRelease)
   const doneNow = yield* Clock.currentTimeMillis
   yield* Effect.logInfo(`Done in ${Duration.format(Duration.millis(doneNow - env.runStartedAt))}.`)

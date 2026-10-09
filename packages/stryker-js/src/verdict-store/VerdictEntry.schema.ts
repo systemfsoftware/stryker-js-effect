@@ -14,12 +14,15 @@ const sharedComponentFields = {
   runInputsDigest: S.String,
   mutantSetPolicy: Options.MutantSetPolicy,
   mutantId: Mutant.MutantId,
-  fileName: S.String,
-  mutatorName: S.String,
+  fileName: Mutant.CanonicalFileName,
+  mutatorName: Mutant.MutatorName,
   replacementDigest: S.String,
   location: Mutant.Location,
   fileContentDigest: S.String,
 }
+
+export const SharedComponentsSchema = S.Struct(sharedComponentFields)
+export type SharedComponents = typeof SharedComponentsSchema.Type
 
 export const TestedComponentsSchema = S.TaggedStruct('tested', {
   ...sharedComponentFields,

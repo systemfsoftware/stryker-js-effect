@@ -35,7 +35,7 @@ export interface RunContext {
   readonly progressQueue: Queue.Queue<RunEvent.RunEvent, Cause.Done>
   readonly completedRef: Ref.Ref<number>
   readonly plannedTotal: number
-  readonly plannedMutants: readonly Mutant.Mutant[]
+  readonly putVerdict: (result: Mutant.RunMutantResult) => Effect.Effect<void>
   readonly pathService: Path.Path
 }
 
@@ -154,10 +154,7 @@ export const announceSettledMutant = Effect.fnUntraced(function*(
 })
 
 const writeCheckpoint = (context: RunContext, results: readonly Mutant.RunMutantResult[]) =>
-  context.reporting.checkpoint(
-    reportingInputOf({ prev: context.prev, env: context.env, results }),
-    context.plannedMutants,
-  ).pipe(
+  context.reporting.checkpoint(reportingInputOf({ prev: context.prev, env: context.env, results })).pipe(
     Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),
     Effect.ignoreCause,
   )
@@ -193,7 +190,10 @@ export const makeCheckpointWriter = Effect.fnUntraced(function*(
   )
   return {
     record: (result) =>
-      Effect.andThen(Ref.update(completed, (results) => [...results, result]), Queue.offer(signals, undefined)),
+      context.putVerdict(result).pipe(
+        Effect.andThen(Ref.update(completed, (results) => [...results, result])),
+        Effect.andThen(Queue.offer(signals, undefined)),
+      ),
   } satisfies CheckpointWriter
 })
 

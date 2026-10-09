@@ -438,30 +438,24 @@ const addProjectFile = (
   removable.forEach((target) => MutableHashMap.remove(target, name))
 }
 
-const makeProject = (
-  fileDescriptions: Instrument.FileDescriptions,
-  incrementalReport?: IncrementalReport,
-  testFiles: readonly string[] = [],
-): Project => {
+const makeProject = (fileDescriptions: Instrument.FileDescriptions, testFiles: readonly string[]): Project => {
   const files: MutableHashMap.MutableHashMap<string, ProjectFile> = MutableHashMap.empty<string, ProjectFile>()
   const filesToMutate: MutableHashMap.MutableHashMap<string, ProjectFile> = MutableHashMap.empty<string, ProjectFile>()
   Object.entries(fileDescriptions).forEach(([name, desc]) => addProjectFile(files, filesToMutate, name, desc))
-  return { fileDescriptions, incrementalReport, testFiles, files, filesToMutate }
+  return { fileDescriptions, testFiles, files, filesToMutate }
 }
 
 const projectOf = ({
   command,
-  report,
   discard,
 }: {
   readonly command: ReadProjectCommand
-  readonly report: IncrementalReport | undefined
   readonly discard?: IncrementalReportDiscard | undefined
 }): ReadProjectDone => ({
   options: command.options,
   targetMutatePatterns: command.targetMutatePatterns,
   basePath: command.basePath,
-  project: makeProject(command.fileDescriptions, report, command.testFiles),
+  project: makeProject(command.fileDescriptions, command.testFiles),
   incrementalReportDiscard: discard,
 })
 
@@ -475,11 +469,11 @@ const discardInstanceOf = (discard: IncrementalReportDiscardShape): IncrementalR
 export const readProjectCell = Sandwich.named(SpanTaxonomy.Spans.projectRead.name)(readProject)
   .decide(admitIncrementalReport)
   .write({
-    IncrementalReportKeep: (keep, command) => Effect.succeed(projectOf({ command, report: keep.report })),
+    IncrementalReportKeep: (_keep, command) => Effect.succeed(projectOf({ command })),
     IncrementalReportDiscard: (discard, command) =>
       Effect.as(
         discardLogOf({ command, discard }),
-        projectOf({ command, report: undefined, discard: discardInstanceOf(discard) }),
+        projectOf({ command, discard: discardInstanceOf(discard) }),
       ),
     CommandRejected: ({ issue }) =>
       Effect.fail(badArgument({ module: 'stryker-js', method: 'incremental-report.cell', description: issue })),

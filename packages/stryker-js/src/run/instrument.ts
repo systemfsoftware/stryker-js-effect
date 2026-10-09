@@ -14,6 +14,7 @@ import type { Project, ProjectFile } from '../Project.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
+import { sha256HexOf } from '../verdict-semantics.js'
 import { explainFileSkip, ExplainFileSkipCommand, type FrameworkClaimant } from './explain-file-skip.workflow.js'
 import type { PhaseClock } from './phase-clock.service.js'
 import type { PrepareForInstrument } from './prepare.js'
@@ -84,11 +85,15 @@ const withInstrumentedFiles = (
       ),
   )
 
+const originalDigestsByCanonicalName = (files: readonly Instrument.File[]): Readonly<Record<string, string>> =>
+  Object.fromEntries(files.map((file) => [file.name.replace(/\\/g, '/'), sha256HexOf(file.content)] as const))
+
 export const instrumentFiles = Effect.fnUntraced(function*(
   command: PrepareForInstrument,
 ): Effect.fn.Return<
   {
     readonly filesToMutate: readonly Instrument.File[]
+    readonly fileContentDigests: Readonly<Record<string, string>>
     readonly instrumentResult: Instrument.InstrumentResult
     readonly instrumentedProject: Project
   },
@@ -123,6 +128,7 @@ export const instrumentFiles = Effect.fnUntraced(function*(
 
   return {
     filesToMutate,
+    fileContentDigests: originalDigestsByCanonicalName(filesToMutate),
     instrumentResult,
     instrumentedProject: withInstrumentedFiles(command.project, instrumentResult.files),
   }
@@ -150,7 +156,6 @@ const projectOf = (seeds: readonly ProjectFile[]): Project => {
   const uniqueByName = [...new Map(seeds.map((seed) => [seed.name, seed])).values()]
   return {
     fileDescriptions: {},
-    incrementalReport: undefined,
     testFiles: [],
     files: MutableHashMap.fromIterable(uniqueByName.map((seed) => [seed.name, seed] as const)),
     filesToMutate: MutableHashMap.fromIterable(

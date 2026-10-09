@@ -23,6 +23,7 @@ import { acquireCheckers, asMutationTestError, reuseAndPlan, settleMutants } fro
 import type { MutationTestPlan } from './mutation-test-plan.cell.js'
 import { partitionPlannable, reportDroppedMutants } from './mutation-test-plan.js'
 import { mutationTestCell, type MutationTestDone } from './mutation-test.cell.js'
+import { priorEntriesOf } from './prior-entries.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
@@ -91,7 +92,6 @@ const checkerSettledRun = Effect.fnUntraced(function*(command: InstrumentDone) {
               reuse,
               plan,
               checkedPlans: Stream.succeed(checked),
-              closureDigestsByMutantId: {},
               runPlanOf: () => (runPlan) => absurd(runPlan),
             })
           }),
@@ -103,8 +103,10 @@ const enterDryRun = Effect.fnUntraced(function*(command: InstrumentDone) {
   yield* phaseEntered('dry-run')
   const env = yield* RunEnvironment
   const texts = yield* incrementalReportTextsOf({ basePath: env.basePath, options: command.options })
+  const plannable = plannableOf(command).plannable
+  const priorEntries = yield* priorEntriesOf(command.verdictStore, plannable.map((mutant) => mutant.id))
   const decision = Result.getOrElse(
-    requireDryRun(requireDryRunCommandOf({ options: command.options, mutants: plannableOf(command).plannable, texts })),
+    requireDryRun(requireDryRunCommandOf({ options: command.options, mutants: plannable, texts, priorEntries })),
     (never: never) => never,
   )
   return yield* Match.value(decision).pipe(

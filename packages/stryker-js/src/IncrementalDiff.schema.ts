@@ -1,32 +1,24 @@
-import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
-import { TimeoutKindSchema } from './verdict-store/VerdictEntry.schema.js'
-
-export const FormatIdentitySchema = S.Struct({
-  formatId: S.String,
-  ownerModule: S.String,
-  ownerVersion: S.String,
-})
-
-export type FormatIdentity = S.Schema.Type<typeof FormatIdentitySchema>
+import { SharedComponentsSchema, TimeoutKindSchema, VerdictKey } from './verdict-store/VerdictEntry.schema.js'
+import { ListedEntrySchema } from './verdict-store/VerdictStore.schema.js'
 
 export const ReuseRefusalReasonSchema = S.Literals([
   'semanticsChanged',
   'policyChanged',
   'runInputsChanged',
+  'checkerConfigChanged',
   'closureChanged',
   'closureAnalysisFailed',
   'programChanged',
   'flakyDependency',
   'timeoutUnreproduced',
+  'entryUnreadable',
+  'storeUnavailable',
   'noPriorRecord',
 ])
 
 export type ReuseRefusalReason = typeof ReuseRefusalReasonSchema.Type
-
-export const ClosureDigestsSchema = S.Record(Mutant.MutantId, S.String)
-
-export type ClosureDigests = S.Schema.Type<typeof ClosureDigestsSchema>
 
 export const TimeoutEvidenceSchema = S.Struct({
   timeoutKind: TimeoutKindSchema,
@@ -35,60 +27,22 @@ export const TimeoutEvidenceSchema = S.Struct({
 
 export type TimeoutEvidence = S.Schema.Type<typeof TimeoutEvidenceSchema>
 
-export const PreviousReuseRecordSchema = S.Struct({
-  mutantId: Mutant.MutantId,
-  status: Mutant.MutantStatusSchema,
+export const CurrentVerdictSchema = S.Struct({
+  shared: SharedComponentsSchema,
+  coveringTestIds: S.String.pipe(S.Array, S.optional),
   closureDigest: S.optional(S.String),
+  checkerConfigDigest: S.optional(S.String),
   programDigest: S.optional(S.String),
-  engineDigest: S.String,
-  mutantSetPolicy: Options.MutantSetPolicy,
-  runInputsDigest: S.String,
-  timeoutKind: S.optional(TimeoutKindSchema),
-  reproductions: S.optional(S.Natural),
-  testsCompleted: S.optional(S.Finite),
-  coveredBy: S.String.pipe(S.Array, S.optional),
-  killedBy: S.String.pipe(S.Array, S.optional),
 })
 
-export type PreviousReuseRecord = S.Schema.Type<typeof PreviousReuseRecordSchema>
+export type CurrentVerdict = S.Schema.Type<typeof CurrentVerdictSchema>
 
-const ReuseMutantSchema = S.Struct({
-  id: Mutant.MutantId,
-  status: Mutant.MutantStatusSchema,
-  closureDigest: S.optional(S.String),
-  programDigest: S.optional(S.String),
-  timeoutKind: S.optional(TimeoutKindSchema),
-  reproductions: S.optional(S.Natural),
-  testsCompleted: S.optional(S.Finite),
-  coveredBy: S.String.pipe(S.Array, S.optional),
-  killedBy: S.String.pipe(S.Array, S.optional),
+export const VerdictLookupSchema = S.Struct({
+  mutant: Mutant.Mutant,
+  current: CurrentVerdictSchema,
+  currentKeys: S.Array(VerdictKey),
+  entries: S.Array(ListedEntrySchema),
+  unavailable: S.Boolean,
 })
 
-const ReuseFileSchema = S.Struct({
-  mutants: S.Array(ReuseMutantSchema),
-})
-
-export const ReuseTestDefinitionSchema = S.Struct({
-  id: S.String,
-  name: S.String,
-})
-
-export const ReuseTestFileSchema = S.Struct({
-  tests: S.Array(ReuseTestDefinitionSchema),
-})
-
-export type ReuseTestFile = typeof ReuseTestFileSchema.Type
-
-export const ReuseTestFilesSchema = S.Record(S.String, ReuseTestFileSchema)
-
-export type ReuseTestFiles = typeof ReuseTestFilesSchema.Type
-
-export const ReuseReportSchema = S.Struct({
-  engineDigest: S.String,
-  mutantSetPolicy: Options.MutantSetPolicy,
-  runInputsDigest: S.String,
-  files: S.Record(S.String, ReuseFileSchema),
-  testFiles: S.optional(ReuseTestFilesSchema),
-})
-
-export type ReuseReport = S.Schema.Type<typeof ReuseReportSchema>
+export type VerdictLookup = S.Schema.Type<typeof VerdictLookupSchema>

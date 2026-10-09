@@ -18,7 +18,7 @@ const ENGINE_PACKAGE_SPECIFIERS: readonly string[] = [
   '@systemfsoftware/stryker-js-vm-runner',
 ]
 
-export const INCREMENTAL_CACHE_VERSION = '4'
+export const INCREMENTAL_CACHE_VERSION = '5'
 
 type Json = S.Schema.Type<typeof S.Json>
 

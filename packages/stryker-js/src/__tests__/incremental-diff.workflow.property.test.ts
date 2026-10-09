@@ -1,6 +1,7 @@
-import { Checker, Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -11,99 +12,125 @@ import {
   MutantRemembered,
   MutantToRun,
 } from '../incremental-diff.workflow.js'
-import { type PreviousReuseRecord, ReuseRefusalReasonSchema } from '../IncrementalDiff.schema.js'
-import { PreviousReuseRecordSchema } from '../IncrementalDiff.schema.js'
+import type { CurrentVerdict, VerdictLookup } from '../IncrementalDiff.schema.js'
+import { currentKeysOf } from '../run/current-verdict.js'
+import {
+  CheckerEntrySchema,
+  type SharedComponents,
+  type TestedEntry,
+  TestedEntrySchema,
+  type VerdictComponents,
+  type VerdictEntry,
+  VerdictEntrySchema,
+  type VerdictKind,
+} from '../verdict-store/VerdictEntry.schema.js'
+import { verdictKeyOf } from '../verdict-store/VerdictKey.js'
+import type { ListedEntry } from '../verdict-store/VerdictStore.schema.js'
 
-const FILE = Mutant.CanonicalFileName.make('src/subject.ts')
+const DRIFTS = [
+  'semanticsChanged',
+  'policyChanged',
+  'runInputsChanged',
+  'checkerConfigChanged',
+  'programChanged',
+  'closureAnalysisFailed',
+  'closureChanged',
+] as const
 
-const mutantOf = (id: Mutant.MutantId): Mutant.Mutant =>
-  Mutant.Mutant.make({
-    id,
-    fileName: FILE,
-    mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
-    replacement: '',
-    location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
+type Drift = typeof DRIFTS[number]
+
+const sharedOf = (components: VerdictComponents): SharedComponents => ({
+  engineDigest: components.engineDigest,
+  runInputsDigest: components.runInputsDigest,
+  mutantSetPolicy: components.mutantSetPolicy,
+  mutantId: components.mutantId,
+  fileName: components.fileName,
+  mutatorName: components.mutatorName,
+  replacementDigest: components.replacementDigest,
+  location: components.location,
+  fileContentDigest: components.fileContentDigest,
+})
+
+const staleOf = (entry: VerdictEntry): VerdictEntry =>
+  Match.valueTags(entry.components, {
+    tested: (components): VerdictEntry => ({
+      ...entry,
+      status: S.is(TestedEntrySchema)(entry) ? entry.status : 'Survived',
+      components: { ...components, engineDigest: drifted(components.engineDigest) },
+      settledAt: entry.settledAt + 1,
+    }),
+    checker: (components): VerdictEntry => ({
+      components: { ...components, engineDigest: drifted(components.engineDigest) },
+      status: 'CompileError',
+      costMs: entry.costMs,
+      settledAt: entry.settledAt + 1,
+    }),
   })
 
-const isReusable = S.is(Mutant.RememberedStatusSchema)
+const currentOf = (entry: VerdictEntry): CurrentVerdict =>
+  Match.valueTags(entry.components, {
+    tested: (tested): CurrentVerdict => ({
+      shared: sharedOf(tested),
+      coveringTestIds: tested.coveringTestIds,
+      closureDigest: tested.closureDigest,
+      checkerConfigDigest: tested.checkerConfigDigest,
+    }),
+    checker: (checker): CurrentVerdict => ({ shared: sharedOf(checker), programDigest: checker.programDigest }),
+  })
 
-const unreproducedWallClock = (record: PreviousReuseRecord): boolean =>
-  record.status === 'Timeout' && record.timeoutKind !== 'hitLimit' && (record.reproductions ?? 0) < 1
+const kindOf = (entry: VerdictEntry): VerdictKind =>
+  Match.valueTags(entry.components, { tested: (): VerdictKind => 'tested', checker: (): VerdictKind => 'checker' })
 
-const matchingProgramRecordDigest = (record: PreviousReuseRecord, digest: string | undefined): boolean =>
-  (record.programDigest ?? '') !== '' && record.programDigest === digest
+const readable = (entry: VerdictEntry): ListedEntry => ({
+  _tag: 'Readable',
+  kind: kindOf(entry),
+  key: verdictKeyOf(entry.components),
+  entry,
+})
 
-const remembersWith = (record: PreviousReuseRecord, programDigest: string | undefined): boolean =>
-  isReusable(record.status) &&
-  !unreproducedWallClock(record) &&
-  (record.status === 'CompileError' ? matchingProgramRecordDigest(record, programDigest) : true)
+const unreadable = (entry: VerdictEntry): ListedEntry => ({
+  _tag: 'Unreadable',
+  kind: kindOf(entry),
+  key: verdictKeyOf(entry.components),
+})
 
-const remembers = (record: PreviousReuseRecord): boolean => remembersWith(record, record.programDigest)
+const mutantOf = (current: CurrentVerdict, isStatic = false): Mutant.Mutant =>
+  Mutant.Mutant.make({
+    id: current.shared.mutantId,
+    fileName: current.shared.fileName,
+    mutatorName: current.shared.mutatorName,
+    replacement: '',
+    location: current.shared.location,
+    ...(isStatic ? { static: true } : {}),
+  })
 
-const refusalOfTheMatchingCommand = (record: PreviousReuseRecord): string =>
-  record.status === 'CompileError' && (record.programDigest ?? '') === ''
-    ? 'programChanged'
-    : unreproducedWallClock(record)
-    ? 'timeoutUnreproduced'
-    : 'noPriorRecord'
-
-const recordOf = (
-  mutantId: Mutant.MutantId,
-  status: Mutant.MutantStatus,
-  closureDigest: string | undefined,
-  overrides: Partial<PreviousReuseRecord> = {},
-): PreviousReuseRecord => ({
-  mutantId,
-  status,
-  ...(closureDigest === undefined ? {} : { closureDigest }),
-  engineDigest: 'engine',
-  mutantSetPolicy: 'default',
-  runInputsDigest: 'run-inputs',
-  ...overrides,
+const lookupOf = (
+  current: CurrentVerdict,
+  entries: ReadonlyArray<ListedEntry>,
+  fields: { readonly unavailable?: boolean; readonly static?: boolean } = {},
+): VerdictLookup => ({
+  mutant: mutantOf(current, fields.static),
+  current,
+  currentKeys: [...currentKeysOf(current)],
+  entries: [...entries],
+  unavailable: fields.unavailable ?? false,
 })
 
 interface CommandFields {
-  readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
   readonly closureAnalysisFailed?: boolean
-  readonly engineDigest?: string
-  readonly mutantSetPolicy?: Options.MutantSetPolicy
-  readonly runInputsDigest?: string
-  readonly programDigest?: string
   readonly force?: boolean
-  readonly previousRecords?: ReadonlyArray<PreviousReuseRecord>
   readonly flakyMutantIds?: ReadonlyArray<Mutant.MutantId>
 }
 
-const commandOf = (
-  currentMutants: ReadonlyArray<Mutant.Mutant>,
-  previousRecords: ReadonlyArray<PreviousReuseRecord>,
-  fields: CommandFields = {},
-): IncrementalDiffCommand =>
+const commandOf = (lookups: ReadonlyArray<VerdictLookup>, fields: CommandFields = {}): IncrementalDiffCommand =>
   IncrementalDiffCommand.make({
-    currentMutants: [...currentMutants],
-    previousRecords: [...(fields.previousRecords ?? previousRecords)],
-    closureDigestsByMutantId: fields.closureDigestsByMutantId ?? {},
+    lookups: [...lookups],
     closureAnalysisFailed: fields.closureAnalysisFailed ?? false,
-    engineDigest: fields.engineDigest ?? 'engine',
-    mutantSetPolicy: fields.mutantSetPolicy ?? 'default',
-    runInputsDigest: fields.runInputsDigest ?? 'run-inputs',
-    ...(fields.programDigest === undefined ? {} : { programDigest: fields.programDigest }),
     force: fields.force ?? false,
     ...(fields.flakyMutantIds === undefined ? {} : { flakyMutantIds: [...fields.flakyMutantIds] }),
   })
 
-const matchingCommandOf = (
-  record: PreviousReuseRecord,
-  fields: CommandFields = {},
-) =>
-  commandOf([mutantOf(record.mutantId)], [record], {
-    closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
-    engineDigest: record.engineDigest,
-    mutantSetPolicy: record.mutantSetPolicy,
-    runInputsDigest: record.runInputsDigest,
-    ...(record.programDigest === undefined ? {} : { programDigest: record.programDigest }),
-    ...fields,
-  })
+const matchingLookupOf = (entry: VerdictEntry): VerdictLookup => lookupOf(currentOf(entry), [readable(entry)])
 
 const onlyDecision = (
   result: Result.Result<readonly IncrementalDiffDecision[], never>,
@@ -113,101 +140,97 @@ const onlyDecision = (
 const runsWithRefusal = (
   result: Result.Result<readonly IncrementalDiffDecision[], never>,
   refusal: string,
-): boolean =>
-  Result.isSuccess(result) && result.success.length === 1 &&
-  S.is(MutantToRun)(result.success[0]) && result.success[0].refusal === refusal
-
-interface PartitionEntry {
-  readonly id: Mutant.MutantId
-  readonly digest: string
-  readonly status: Mutant.MutantStatus
+): boolean => {
+  const decision = onlyDecision(result)
+  return decision !== undefined && S.is(MutantToRun)(decision) && decision.refusal === refusal
 }
 
-const partitionCommandOf = (entries: readonly PartitionEntry[]) =>
-  commandOf(
-    entries.map((entry) => mutantOf(entry.id)),
-    entries.map((entry) => recordOf(entry.id, entry.status, entry.digest)),
-    { closureDigestsByMutantId: Object.fromEntries(entries.map((entry) => [entry.id, entry.digest])) },
-  )
+const remembersStatus = (result: Result.Result<readonly IncrementalDiffDecision[], never>, status: string): boolean => {
+  const decision = onlyDecision(result)
+  return decision !== undefined && S.is(MutantRemembered)(decision) && decision.status === status
+}
+
+const drifted = (value: string | undefined): string => `${value ?? ''}-drifted`
+
+interface Scenario {
+  readonly current: CurrentVerdict
+  readonly closureAnalysisFailed: boolean
+}
+
+const withShared = (scenario: Scenario, shared: Partial<SharedComponents>): Scenario => ({
+  ...scenario,
+  current: { ...scenario.current, shared: { ...scenario.current.shared, ...shared } },
+})
+
+const driftOf: Readonly<Record<Drift, (scenario: Scenario) => Scenario>> = {
+  semanticsChanged: (s) => withShared(s, { engineDigest: drifted(s.current.shared.engineDigest) }),
+  policyChanged: (s) =>
+    withShared(s, { mutantSetPolicy: s.current.shared.mutantSetPolicy === 'default' ? 'full' : 'default' }),
+  runInputsChanged: (s) => withShared(s, { runInputsDigest: drifted(s.current.shared.runInputsDigest) }),
+  checkerConfigChanged: (s) => ({
+    ...s,
+    current: { ...s.current, checkerConfigDigest: drifted(s.current.checkerConfigDigest) },
+  }),
+  programChanged: (s) => ({ ...s, current: { ...s.current, programDigest: drifted(s.current.programDigest) } }),
+  closureAnalysisFailed: (s) => {
+    const { closureDigest: _dropped, ...withoutClosure } = s.current
+    return { current: withoutClosure, closureAnalysisFailed: true }
+  },
+  closureChanged: (s) => withShared(s, { fileContentDigest: drifted(s.current.shared.fileContentDigest) }),
+}
+
+const appliesTo = (entry: VerdictEntry, drift: Drift): boolean =>
+  Match.valueTags(entry.components, {
+    tested: () => drift !== 'programChanged',
+    checker: () => drift !== 'checkerConfigChanged',
+  })
+
+const survivorOf = (entry: TestedEntry): TestedEntry => {
+  const { timeoutKind: _kind, reproductions: _reproductions, ...rest } = entry
+  return { ...rest, status: 'Survived' }
+}
 
 describe('incrementalDiff', () => {
   it.prop(
-    '∀m_Mutants_≡ForceRunsEveryMutantInOrderNamingNoPriorRecord',
-    { of: [S.Array(Mutant.MutantId)], subject: incrementalDiff },
-    (subject, [ids]) => {
-      const mutants = ids.map(mutantOf)
-      const result = subject(commandOf(mutants, [], { force: true }))
-      return Result.isSuccess(result) && result.success.length === mutants.length &&
+    '∀e_Entries_≡ForceRunsEveryMutantInOrderNamingNoPriorRecord',
+    { of: [S.Array(VerdictEntrySchema)], subject: incrementalDiff },
+    (subject, [entries]) => {
+      const lookups = entries.map(matchingLookupOf)
+      const result = subject(commandOf(lookups, { force: true }))
+      return Result.isSuccess(result) && result.success.length === lookups.length &&
         result.success.every((decision, index) =>
-          S.is(MutantToRun)(decision) && decision.mutant.id === mutants[index]?.id &&
+          S.is(MutantToRun)(decision) && decision.mutant.id === lookups[index]?.mutant.id &&
           decision.refusal === 'noPriorRecord'
         )
     },
   )
 
   it.prop(
-    '∀m_Mutants_≡WithoutAPriorRecordEveryMutantRunsNamingNoPriorRecord',
-    { of: [S.Array(Mutant.MutantId)], subject: incrementalDiff },
-    (subject, [ids]) => {
-      const mutants = ids.map(mutantOf)
-      const result = subject(commandOf(mutants, []))
-      return Result.isSuccess(result) && result.success.length === mutants.length &&
-        result.success.every((decision) => S.is(MutantToRun)(decision) && decision.refusal === 'noPriorRecord')
+    '∀ed_EntryAndDrifts_≡TheHighestRankedDriftNamesTheRefusalAndAnInapplicableDriftChangesNothing',
+    { of: [VerdictEntrySchema, S.Array(S.Literals(DRIFTS))], subject: incrementalDiff },
+    (subject, [entry, drifts]) => {
+      const scenario = Arr.dedupe(drifts).reduce(
+        (accumulated, drift) => driftOf[drift](accumulated),
+        { current: currentOf(entry), closureAnalysisFailed: false },
+      )
+      const result = subject(
+        commandOf([lookupOf(scenario.current, [readable(entry)])], {
+          closureAnalysisFailed: scenario.closureAnalysisFailed,
+        }),
+      )
+      const expected = DRIFTS.find((drift) => drifts.includes(drift) && appliesTo(entry, drift))
+      return expected !== undefined
+        ? runsWithRefusal(result, expected)
+        : JSON.stringify(result) === JSON.stringify(subject(commandOf([matchingLookupOf(entry)])))
     },
   )
 
   it.prop(
-    '∀r_Record_≡AMatchingCacheKeyRemembersExactlyTheReusableStatuses',
-    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) => {
-      const decision = onlyDecision(subject(matchingCommandOf(record)))
-      if (decision === undefined) {
-        return false
-      }
-      return remembersWith(record, record.programDigest)
-        ? S.is(MutantRemembered)(decision) && decision.mutantId === record.mutantId && decision.status === record.status
-        : S.is(MutantToRun)(decision) && decision.refusal === refusalOfTheMatchingCommand(record)
-    },
-  )
-
-  it.prop(
-    '∀r_RecordWithAProgramDigest_≡AMatchingProgramDigestRemembersACompileError',
-    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) => {
-      const programDigest = 'a'.repeat(64)
-      const prior = { ...record, status: 'CompileError' as const, programDigest }
-      const decision = onlyDecision(subject(matchingCommandOf(prior)))
-      return decision !== undefined && S.is(MutantRemembered)(decision) && decision.status === 'CompileError'
-    },
-  )
-
-  it.prop(
-    '∀rd_RecordAndDigest_≡AChangedProgramDigestRunsNamingProgramChanged',
-    { of: [PreviousReuseRecordSchema, Checker.ProgramDigest], subject: incrementalDiff },
-    (subject, [record, drawn]) => {
-      const programDigest = 'a'.repeat(64)
-      const current = drawn === programDigest ? `b${drawn.slice(1)}` : drawn
-      const prior = { ...record, status: 'CompileError' as const, programDigest }
-      return runsWithRefusal(subject(matchingCommandOf(prior, { programDigest: current })), 'programChanged')
-    },
-  )
-
-  it.prop(
-    '∀r_Record_≡ACompileErrorWithoutAProgramDigestRunsNamingProgramChanged',
-    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) => {
-      const { programDigest: _absent, ...withoutProgramDigest } = record
-      const prior = { ...withoutProgramDigest, status: 'CompileError' as const }
-      return runsWithRefusal(subject(matchingCommandOf(prior)), 'programChanged')
-    },
-  )
-
-  it.prop(
-    '∀rd_RecordAndReproductions_≡AWallClockTimeoutIsRememberedExactlyWhenItReproduced',
-    { of: [PreviousReuseRecordSchema, S.Natural], subject: incrementalDiff },
-    (subject, [record, reproductions]) => {
-      const prior = { ...record, status: 'Timeout' as const, timeoutKind: 'wallClock' as const, reproductions }
-      const decision = onlyDecision(subject(matchingCommandOf(prior)))
+    '∀er_EntryAndReproductions_≡AWallClockTimeoutIsRememberedExactlyWhenItReproduced',
+    { of: [TestedEntrySchema, S.Natural], subject: incrementalDiff },
+    (subject, [tested, reproductions]) => {
+      const entry: TestedEntry = { ...tested, status: 'Timeout', timeoutKind: 'wallClock', reproductions }
+      const decision = onlyDecision(subject(commandOf([matchingLookupOf(entry)])))
       if (decision === undefined) {
         return false
       }
@@ -220,170 +243,105 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
-    '∀r_Record_≡AHitLimitTimeoutIsRememberedOnFirstSight',
-    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) => {
-      const prior = { ...record, status: 'Timeout' as const, timeoutKind: 'hitLimit' as const, reproductions: 0 }
-      const decision = onlyDecision(subject(matchingCommandOf(prior)))
-      return decision !== undefined && S.is(MutantRemembered)(decision) && decision.status === 'Timeout'
+    '∀e_Entry_≡AHitLimitTimeoutIsRememberedOnFirstSight',
+    { of: [TestedEntrySchema], subject: incrementalDiff },
+    (subject, [tested]) => {
+      const entry: TestedEntry = { ...tested, status: 'Timeout', timeoutKind: 'hitLimit', reproductions: 0 }
+      return remembersStatus(subject(commandOf([matchingLookupOf(entry)])), 'Timeout')
     },
   )
 
   it.prop(
-    '∀is_RecordAndDigest_≡AChangedClosureDigestNamesClosureChangedUnlessTheRecordIsACompileError',
-    { of: [PreviousReuseRecordSchema, S.NonEmptyString], subject: incrementalDiff },
-    (subject, [record, drawn]) => {
-      const current = record.closureDigest ?? ''
-      const changed = drawn === current ? `${drawn}-changed` : drawn
-      const decision = onlyDecision(subject(matchingCommandOf(record, {
-        closureDigestsByMutantId: { [record.mutantId]: changed },
-      })))
-      if (decision === undefined) {
-        return false
+    '∀e_Entry_≡ACurrentEntryIsRememberedBesideANewerStaleOne',
+    { of: [TestedEntrySchema], subject: incrementalDiff },
+    (subject, [tested]) => {
+      const entry = survivorOf(tested)
+      const stale: TestedEntry = {
+        ...entry,
+        status: 'Killed',
+        components: { ...entry.components, engineDigest: drifted(entry.components.engineDigest) },
+        settledAt: entry.settledAt + 1,
       }
-      return record.status === 'CompileError'
-        ? !S.is(MutantToRun)(decision) || decision.refusal !== 'closureChanged'
-        : S.is(MutantToRun)(decision) && decision.refusal === 'closureChanged'
-    },
-  )
-
-  it.prop(
-    '∀r_Record_≡SemanticsOutranksEveryOtherRefusal',
-    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) => {
-      const result = subject(commandOf([mutantOf(record.mutantId)], [record], {
-        closureDigestsByMutantId: { [record.mutantId]: `${record.closureDigest ?? ''}-drifted` },
-        engineDigest: `${record.engineDigest}-drifted`,
-        mutantSetPolicy: record.mutantSetPolicy === 'default' ? 'full' : 'default',
-        runInputsDigest: `${record.runInputsDigest}-drifted`,
-      }))
-      return runsWithRefusal(result, 'semanticsChanged')
-    },
-  )
-
-  it.prop(
-    '∀r_Record_≡PolicyOutranksRunInputsAndClosure',
-    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) => {
-      const result = subject(commandOf([mutantOf(record.mutantId)], [record], {
-        closureDigestsByMutantId: { [record.mutantId]: `${record.closureDigest ?? ''}-drifted` },
-        engineDigest: record.engineDigest,
-        mutantSetPolicy: record.mutantSetPolicy === 'default' ? 'full' : 'default',
-        runInputsDigest: `${record.runInputsDigest}-drifted`,
-      }))
-      return runsWithRefusal(result, 'policyChanged')
-    },
-  )
-
-  it.prop(
-    '∀r_RecordWithAKey_≡AFailedClosureAnalysisNamesItselfUnlessTheProgramGateOutranksIt',
-    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) => {
-      const result = subject(matchingCommandOf(record, { closureAnalysisFailed: true }))
-      return record.status === 'CompileError' && (record.programDigest ?? '') === ''
-        ? runsWithRefusal(result, 'programChanged')
-        : runsWithRefusal(result, 'closureAnalysisFailed')
-    },
-  )
-
-  it.prop(
-    '∀r_RecordWithAKey_≡AFailedClosureAnalysisNamesItselfWhenTheProgramMatches',
-    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) => {
-      const programDigest = 'a'.repeat(64)
-      const prior = { ...record, status: 'CompileError' as const, programDigest }
-      return runsWithRefusal(
-        subject(matchingCommandOf(prior, { closureAnalysisFailed: true })),
-        'closureAnalysisFailed',
+      return remembersStatus(
+        subject(commandOf([lookupOf(currentOf(entry), [readable(stale), readable(entry)])])),
+        'Survived',
       )
     },
   )
 
   it.prop(
-    '∀r_Record_≡RunInputsOutrankClosure',
-    { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
-    (subject, [record]) => {
-      const result = subject(commandOf([mutantOf(record.mutantId)], [record], {
-        closureDigestsByMutantId: { [record.mutantId]: `${record.closureDigest ?? ''}-drifted` },
-        engineDigest: record.engineDigest,
-        mutantSetPolicy: record.mutantSetPolicy,
-        runInputsDigest: `${record.runInputsDigest}-drifted`,
-      }))
-      return runsWithRefusal(result, 'runInputsChanged')
-    },
-  )
-
-  it.prop(
-    '∀iss_Records_≡TheNewerOfTwoRecordsWithTheSameKeyWins',
-    {
-      of: [Mutant.MutantId, Mutant.MutantStatusSchema, Mutant.MutantStatusSchema],
-      subject: incrementalDiff,
-    },
-    (subject, [id, olderStatus, newerStatus]) => {
-      const older = recordOf(id, olderStatus, 'digest')
-      const newer = recordOf(id, newerStatus, 'digest')
-      const decision = onlyDecision(subject(matchingCommandOf(older, { previousRecords: [older, newer] })))
-      if (decision === undefined) {
-        return false
+    '∀ett_EntryAndTimes_≡WithoutACurrentEntryTheNewestStaleEntryNamesTheRefusal',
+    { of: [TestedEntrySchema, S.Natural, S.Natural], subject: incrementalDiff },
+    (subject, [entry, first, drawn]) => {
+      const second = drawn === first ? first + 1 : drawn
+      const semantics: TestedEntry = {
+        ...entry,
+        components: { ...entry.components, engineDigest: drifted(entry.components.engineDigest) },
+        settledAt: first,
       }
-      const reusableInOrder = remembers(newer) ? newer : remembers(older) ? older : undefined
-      return reusableInOrder === undefined
-        ? S.is(MutantToRun)(decision)
-        : S.is(MutantRemembered)(decision) && decision.status === reusableInOrder.status
+      const runInputs: TestedEntry = {
+        ...entry,
+        components: { ...entry.components, runInputsDigest: drifted(entry.components.runInputsDigest) },
+        settledAt: second,
+      }
+      const result = subject(commandOf([lookupOf(currentOf(entry), [readable(semantics), readable(runInputs)])]))
+      return runsWithRefusal(result, first > second ? 'semanticsChanged' : 'runInputsChanged')
     },
   )
 
   it.prop(
-    '∀rf_RecordAndFlakyId_≡AStaticMutantIsFlakyDependentWheneverTheFlakeSetIsNotEmpty',
-    { of: [PreviousReuseRecordSchema, Mutant.MutantId], subject: incrementalDiff },
-    (subject, [record, flakyId]) => {
-      const mutant = Mutant.Mutant.make({ ...mutantOf(record.mutantId), static: true })
-      const result = subject(commandOf([mutant], [record], {
-        closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
-        engineDigest: record.engineDigest,
-        mutantSetPolicy: record.mutantSetPolicy,
-        runInputsDigest: record.runInputsDigest,
-        flakyMutantIds: [flakyId],
-      }))
-      return runsWithRefusal(result, 'flakyDependency')
+    '∀e_Entry_≡AnUnreadableCurrentEntryNamesEntryUnreadableOverAReadableStaleOne',
+    { of: [VerdictEntrySchema], subject: incrementalDiff },
+    (subject, [entry]) => {
+      const stale = staleOf(entry)
+      return runsWithRefusal(
+        subject(commandOf([lookupOf(currentOf(entry), [unreadable(entry), readable(stale)])])),
+        'entryUnreadable',
+      )
     },
   )
 
   it.prop(
-    '∀d_ProgramDigest_≡AKeyedCompileErrorRecordIsRememberedByItsOwnDigestAndRunsUnderAnother',
-    { of: [Checker.ProgramDigest], subject: incrementalDiff },
-    (subject, [drawn]) => {
-      const id = Mutant.MutantId.make('0000000000000000')
-      const digest = 'a'.repeat(64)
-      const current = drawn === digest ? `b${drawn.slice(1)}` : drawn
-      const record = recordOf(id, 'CompileError', 'digest', { programDigest: digest })
-      const remembered = onlyDecision(subject(matchingCommandOf(record)))
-      const refused = onlyDecision(subject(matchingCommandOf(record, { programDigest: current })))
-      return remembered !== undefined &&
-        S.is(MutantRemembered)(remembered) &&
-        remembered.mutantId === id &&
-        remembered.status === 'CompileError' &&
-        refused !== undefined &&
-        S.is(MutantToRun)(refused) &&
-        refused.mutant.id === id &&
-        refused.refusal === 'programChanged'
+    '∀e_Entry_≡OnlyUnreadableStaleEntriesNameEntryUnreadable',
+    { of: [VerdictEntrySchema], subject: incrementalDiff },
+    (subject, [entry]) => {
+      const current = driftOf.semanticsChanged({ current: currentOf(entry), closureAnalysisFailed: false }).current
+      return runsWithRefusal(subject(commandOf([lookupOf(current, [unreadable(entry)])])), 'entryUnreadable')
     },
   )
 
   it.prop(
-    '∀c_Command_≡DecisionsPartitionThePlannedMutants',
-    {
-      of: [S.Array(S.Struct({ id: Mutant.MutantId, digest: S.String, status: Mutant.MutantStatusSchema }))],
-      subject: incrementalDiff,
+    '∀e_Entry_≡AnUnavailableStoreRunsTheMutantNamingStoreUnavailable',
+    { of: [VerdictEntrySchema], subject: incrementalDiff },
+    (subject, [entry]) =>
+      runsWithRefusal(
+        subject(commandOf([lookupOf(currentOf(entry), [], { unavailable: true })])),
+        'storeUnavailable',
+      ),
+  )
+
+  it.prop(
+    '∀efu_EntryFlakyIdAndAvailability_≡AStaticMutantIsFlakyDependentWheneverTheFlakeSetIsNotEmpty',
+    { of: [VerdictEntrySchema, Mutant.MutantId, S.Boolean], subject: incrementalDiff },
+    (subject, [entry, flakyId, unavailable]) => {
+      const lookup = lookupOf(currentOf(entry), unavailable ? [] : [readable(entry)], { unavailable, static: true })
+      return runsWithRefusal(subject(commandOf([lookup], { flakyMutantIds: [flakyId] })), 'flakyDependency')
     },
-    (subject, [entries]) => {
-      const command = partitionCommandOf(entries)
-      const result = subject(command)
-      return Result.isSuccess(result) && result.success.length === command.currentMutants.length &&
-        Arr.every(result.success, (decision) =>
-          S.is(MutantRemembered)(decision)
-            ? isReusable(decision.status)
-            : S.is(MutantToRun)(decision) && S.is(ReuseRefusalReasonSchema)(decision.refusal))
-    },
+  )
+
+  it.prop(
+    '∀e_Entry_≡ACheckerEntryIsRememberedWithoutATestedKey',
+    { of: [CheckerEntrySchema], subject: incrementalDiff },
+    (subject, [entry]) => remembersStatus(subject(commandOf([matchingLookupOf(entry)])), 'CompileError'),
+  )
+
+  it.prop(
+    '∀e_CheckerEntry_≡AFailedClosureAnalysisRunsAMatchingCompileErrorNamingClosureAnalysisFailed',
+    { of: [CheckerEntrySchema], subject: incrementalDiff },
+    (subject, [entry]) =>
+      runsWithRefusal(
+        subject(commandOf([matchingLookupOf(entry)], { closureAnalysisFailed: true })),
+        'closureAnalysisFailed',
+      ),
   )
 })

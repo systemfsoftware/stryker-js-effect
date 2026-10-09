@@ -13,6 +13,8 @@ import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
+import { storedVerdictsIn, type StoredVerdictsQuery } from './stored-verdicts.fixture.js'
+
 const PACKAGE_ROOT = decodeURIComponent(new URL('../..', import.meta.url).pathname).replace(/\/$/, '')
 
 const CHECKER_PLUGIN = new URL('./cost-checker/index.mjs', import.meta.url).href
@@ -165,45 +167,35 @@ export const removeWorkspace = (root: string): Effect.Effect<void, never, never>
     filePorts,
   )
 
-export interface MutantCostEntry {
-  readonly predictedMs: number
-  readonly actualMs: number | null
-  readonly coveringTests: number
-}
-
 export interface Observation {
-  readonly costs: Readonly<Record<string, MutantCostEntry>>
+  readonly costs: Readonly<Record<string, number>>
   readonly statuses: Readonly<Record<string, string>>
   readonly idsByFile: Readonly<Record<string, readonly string[]>>
   readonly streamCosts: Readonly<Record<string, number>>
   readonly verdictBudget: RunEvent.Budget | null
 }
 
-export type ReportObservation = Pick<Observation, 'costs' | 'statuses' | 'idsByFile'>
+export type StoreObservation = Pick<Observation, 'costs' | 'statuses'>
 
-const readReport = (text: string): ReportObservation =>
-  Option.match(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), {
-    onNone: () => ({ costs: {}, statuses: {}, idsByFile: {} }),
-    onSome: (report) => {
-      const files = Object.entries(report.files)
-      const mutants = files.flatMap(([, file]) => file.mutants)
-      return {
-        costs: report.costs,
-        statuses: Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant.status])),
-        idsByFile: Object.fromEntries(files.map(([file, entry]) => [file, entry.mutants.map((mutant) => mutant.id)])),
-      }
-    },
-  })
+export const storedObservationIn = (
+  query: StoredVerdictsQuery,
+): Effect.Effect<StoreObservation, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.map(storedVerdictsIn(query), (stored) => ({
+    costs: Object.fromEntries(Object.entries(stored).map(([id, verdict]) => [id, verdict.costMs] as const)),
+    statuses: Object.fromEntries(Object.entries(stored).map(([id, verdict]) => [id, verdict.status] as const)),
+  }))
 
-export const readReportIn = (
-  directory: string,
-): Effect.Effect<ReportObservation, never, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const text = yield* fs.readFileString(path.join(directory, REPORT_FILE)).pipe(Effect.orElseSucceed(() => ''))
-    return readReport(text)
-  }).pipe(Effect.orDie)
+const testedEventsOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<RunEvent.RunMutantTestedEvent> =>
+  events.filter(S.is(RunEvent.RunMutantTestedEvent))
+
+const idsByFileOf = (
+  tested: ReadonlyArray<RunEvent.RunMutantTestedEvent>,
+): Readonly<Record<string, readonly string[]>> =>
+  Object.fromEntries(
+    Object.entries(Arr.groupBy(tested, (event) => event.fileName)).map(([file, inFile]) =>
+      [file, inFile.map((event) => event.id)] as const
+    ),
+  )
 
 const streamCostsOf = (events: ReadonlyArray<RunEvent.RunEvent>): Readonly<Record<string, number>> =>
   Object.fromEntries(
@@ -222,8 +214,6 @@ const runEngineWith = (
   options: Options.PartialStrykerOptions,
 ): Effect.Effect<Observation, never, never> =>
   Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const ports = Engine.nodePlatformLayer
     const runLayer = Layer.merge(
@@ -237,8 +227,14 @@ const runEngineWith = (
       Effect.andThen(Queue.takeAll(queue)),
       Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
     )
-    const text = yield* fs.readFileString(path.join(directory, REPORT_FILE)).pipe(Effect.orElseSucceed(() => ''))
-    return { ...readReport(text), streamCosts: streamCostsOf(events), verdictBudget: verdictBudgetOf(events) }
+    const tested = testedEventsOf(events)
+    const stored = yield* storedObservationIn({ projectRoot: directory, mutantIds: tested.map((event) => event.id) })
+    return {
+      ...stored,
+      idsByFile: idsByFileOf(tested),
+      streamCosts: streamCostsOf(events),
+      verdictBudget: verdictBudgetOf(events),
+    }
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
 export const runEngine: {

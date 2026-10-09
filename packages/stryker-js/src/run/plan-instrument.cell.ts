@@ -18,6 +18,7 @@ import type { RunEnvironment } from './RunEnvironment.service.js'
 export interface PlanInstrumentDone {
   readonly project: Project
   readonly mutants: readonly Mutant.Mutant[]
+  readonly fileContentDigests: Readonly<Record<string, string>>
   readonly options: Options.StrykerOptions
   readonly incrementalReportDiscard?: IncrementalReportDiscard | undefined
 }
@@ -27,12 +28,13 @@ type PlanInstrumentRaw = typeof InstrumentCommand.Encoded & {
   readonly instrumentedProject: Project
   readonly instrumentResult: Instrument.InstrumentResult
   readonly mutants: readonly Mutant.Mutant[]
+  readonly fileContentDigests: Readonly<Record<string, string>>
 }
 
 const readPlanInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(function*(
   command: PrepareForInstrument,
 ) {
-  const { filesToMutate, instrumentResult, instrumentedProject } = yield* instrumentFiles(command)
+  const { filesToMutate, fileContentDigests, instrumentResult, instrumentedProject } = yield* instrumentFiles(command)
   return {
     _tag: 'InstrumentCommand' as const,
     fileCount: filesToMutate.length,
@@ -42,6 +44,7 @@ const readPlanInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(f
     instrumentedProject,
     instrumentResult,
     mutants: instrumentResult.mutants,
+    fileContentDigests,
   }
 })
 
@@ -55,6 +58,7 @@ const writePlanInstrument = (
       {
         project: raw.instrumentedProject,
         mutants: raw.mutants,
+        fileContentDigests: raw.fileContentDigests,
         options: raw.prev.options,
         incrementalReportDiscard: raw.prev.incrementalReportDiscard,
       },

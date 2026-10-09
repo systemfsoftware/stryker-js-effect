@@ -20,7 +20,8 @@ import {
 import { analyzeImportClosure, type ImportClosureAnalysis } from '../import-closure.cell.js'
 import { RequireDryRunCommand } from '../require-dry-run.workflow.js'
 import { runInputsDigestOf } from '../verdict-semantics.js'
-import { incrementalReportTextsOf, priorStatusesOf } from './incremental-reuse.js'
+import type { VerdictEntry } from '../verdict-store/VerdictEntry.schema.js'
+import { incrementalReportTextsOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
 
 export type DryRunTarget = Pick<InstrumentDone, 'project' | 'options'>
@@ -40,15 +41,18 @@ export interface RequireDryRunInput {
   readonly options: Options.StrykerOptions
   readonly mutants: readonly Pick<Mutant.Mutant, 'id' | 'static'>[]
   readonly texts: readonly string[]
+  readonly priorEntries: ReadonlyArray<VerdictEntry>
 }
 
-export const requireDryRunCommandOf = ({ options, mutants, texts }: RequireDryRunInput): RequireDryRunCommand =>
+export const requireDryRunCommandOf = (
+  { options, mutants, texts, priorEntries }: RequireDryRunInput,
+): RequireDryRunCommand =>
   RequireDryRunCommand.make({
     dryRunOnly: options.dryRunOnly,
     ignoreStatic: options.ignoreStatic,
     hasCheckers: options.checkers.length > 0,
     mutants: mutants.map((mutant) => ({ id: mutant.id, static: mutant.static === true })),
-    priorStatuses: priorStatusesOf(texts),
+    priorStatuses: priorEntries.map((entry) => ({ mutantId: entry.components.mutantId, status: entry.status })),
     priorFlakyMutantIds: Arr.dedupe(priorCoveragesOf(texts).flatMap((coverage) => coverage.flakyMutantIds)),
   })
 

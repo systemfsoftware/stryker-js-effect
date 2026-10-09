@@ -12,6 +12,8 @@ import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
+import { type StoredVerdict, storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
+
 const Feature = makeFeature({ it })
 
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
@@ -69,37 +71,13 @@ const optionsOf = (root: string): Options.PartialStrykerOptions => ({
   incrementalFile: `${root}/reports/main.json`,
 })
 
-interface MutantCost {
-  readonly predictedMs: number
-  readonly actualMs: number | null
-  readonly coveringTests: number
+interface RunRead {
+  readonly reused: number
+  readonly streamCosts: Readonly<Record<string, number>>
 }
 
-interface ReportRead {
-  readonly costs: Readonly<Record<string, MutantCost>>
-  readonly statuses: Readonly<Record<string, string>>
-}
-
-const readReport = (text: string): ReportRead =>
-  Option.match(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), {
-    onNone: () => ({ costs: {}, statuses: {} }),
-    onSome: (report) => {
-      const mutants = Object.values(report.files).flatMap((file) => file.mutants)
-      return {
-        costs: report.costs,
-        statuses: Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant.status])),
-      }
-    },
-  })
-
-const runOnce = (root: string): Effect.Effect<
-  { readonly text: string; readonly reused: number; readonly streamCosts: Readonly<Record<string, number>> },
-  never,
-  never
-> =>
+const runOnce = (root: string): Effect.Effect<RunRead, never, never> =>
   Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const ports = Engine.nodePlatformLayer
     const runLayer = Layer.merge(Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports), ports)
@@ -121,39 +99,30 @@ const runOnce = (root: string): Effect.Effect<
           : []
       ),
     )
-    const text = yield* fs.readFileString(path.join(root, 'reports', 'main.json')).pipe(
-      Effect.orElseSucceed(() => ''),
-    )
-    return { text, reused, streamCosts }
+    return { reused, streamCosts }
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
-const EXECUTED_STATUSES: Record<string, true> = { Killed: true, Survived: true, Timeout: true }
-
-interface FirstRead extends ReportRead {
-  readonly streamCosts: Readonly<Record<string, number>>
-}
-
 interface Observed {
-  readonly first: FirstRead
-  readonly second: ReportRead
+  readonly first: RunRead
+  readonly storedAfterFirst: Readonly<Record<string, StoredVerdict>>
+  readonly storedAfterSecond: Readonly<Record<string, StoredVerdict>>
   readonly reused: number
 }
 
 const costSummaryOf = (observed: Observed) => {
-  const firstIds = Object.keys(observed.first.costs)
-  const secondIds = Object.keys(observed.second.costs)
-  const costs = observed.first.costs
-  const executedIds = firstIds.filter((id) => EXECUTED_STATUSES[observed.first.statuses[id] ?? ''] === true)
+  const executedIds = Object.keys(observed.first.streamCosts)
   return {
-    firstHasCosts: firstIds.length > 0,
-    firstCoversEveryMutant: Object.keys(observed.first.statuses).every((id) => costs[id] !== undefined),
-    executedHaveActualMs: executedIds.length > 0 && executedIds.every((id) => costs[id]?.actualMs !== null),
-    secondCoversEveryMutant: secondIds.every((id) => observed.second.costs[id] !== undefined),
+    executedSome: executedIds.length > 0,
+    everyExecutedStored: executedIds.every((id) => observed.storedAfterFirst[id] !== undefined),
+    storedCostIsStreamCost: executedIds.every((id) =>
+      Option.contains(
+        Option.map(Option.fromUndefinedOr(observed.storedAfterFirst[id]), (stored) => stored.costMs),
+        observed.first.streamCosts[id],
+      )
+    ),
     secondReusedSome: observed.reused > 0,
-    carriedForward: secondIds.every((id) => observed.second.costs[id]?.actualMs === costs[id]?.actualMs),
-    streamMatchesRecord: executedIds.length > 0 &&
-      executedIds.every((id) => observed.first.streamCosts[id] === costs[id]?.actualMs),
-    predictionsAreNonNegative: Object.values(costs).every((cost) => cost.predictedMs >= 0 && cost.coveringTests >= 0),
+    reuseLeavesEntriesUnchanged: JSON.stringify(observed.storedAfterSecond) ===
+      JSON.stringify(observed.storedAfterFirst),
   }
 }
 
@@ -162,7 +131,7 @@ Feature('Per-mutant cost record')
   .live('the scenarios drive the real engine over the host filesystem, so report I/O is the real one')
   .body(({ scenario }) => {
     scenario(
-      'A run records costs for every mutant and carries actualMs forward when it reuses verdicts',
+      'A run stores each executed verdict with its measured cost, and a run that reuses those verdicts leaves them unchanged',
       Gherkin.Do.pipe(
         Given('a workspace whose incremental run completes twice')('observed', () =>
           Effect.gen(function*() {
@@ -170,29 +139,30 @@ Feature('Per-mutant cost record')
             return yield* Effect.ensuring(
               Effect.gen(function*() {
                 const first = yield* runOnce(root)
+                const storedAfterFirst = yield* storedVerdictsIn({
+                  projectRoot: root,
+                  mutantIds: Object.keys(first.streamCosts),
+                })
                 const second = yield* runOnce(root)
-                return {
-                  first: { ...readReport(first.text), streamCosts: first.streamCosts },
-                  second: readReport(second.text),
-                  reused: second.reused,
-                }
+                const storedAfterSecond = yield* storedVerdictsIn({
+                  projectRoot: root,
+                  mutantIds: Object.keys(first.streamCosts),
+                })
+                return { first, storedAfterFirst, storedAfterSecond, reused: second.reused }
               }),
               removeFixture(root),
             )
           }).pipe(Effect.orDie, Effect.provide(filePorts))),
         Then(
-          'the written report decodes with a cost for every mutant, an actualMs on each executed mutant, and the reused run carries the prior actualMs',
+          'every executed mutant has a stored entry whose cost is the stream cost, and the reusing run rewrote none of them',
         )(
           (s, expect) =>
             expect(costSummaryOf(s.observed)).toEqual({
-              firstHasCosts: true,
-              firstCoversEveryMutant: true,
-              executedHaveActualMs: true,
-              secondCoversEveryMutant: true,
+              executedSome: true,
+              everyExecutedStored: true,
+              storedCostIsStreamCost: true,
               secondReusedSome: true,
-              carriedForward: true,
-              streamMatchesRecord: true,
-              predictionsAreNonNegative: true,
+              reuseLeavesEntriesUnchanged: true,
             }),
         ),
       ),

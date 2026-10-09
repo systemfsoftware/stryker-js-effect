@@ -8,13 +8,13 @@ import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as MutableHashSet from 'effect/MutableHashSet'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Record from 'effect/Record'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { relativeNormalizedFileName } from '../FileMatcher.js'
@@ -25,18 +25,24 @@ import {
   type MutantRemembered,
   type MutantToRun,
 } from '../incremental-diff.workflow.js'
-import type {
-  PreviousReuseRecord,
-  ReuseRefusalReason,
-  ReuseReport,
-  TimeoutEvidence,
+import {
+  type CurrentVerdict,
+  type ReuseRefusalReason,
+  type TimeoutEvidence,
+  type VerdictLookup,
+  VerdictLookupSchema,
 } from '../IncrementalDiff.schema.js'
 import type { Project } from '../Project.schema.js'
-import { reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow.js'
 import { StageError } from '../Run.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { engineDigestOf, runInputsDigestOf } from '../verdict-semantics.js'
-import { incrementalReportTextsOf, optionalField, reportOfText } from './incremental-reuse.js'
+import type { SharedComponents, TestedComponents } from '../verdict-store/VerdictEntry.schema.js'
+import { verdictKeyOf } from '../verdict-store/VerdictKey.js'
+import type { ListedEntry, ListOutcome } from '../verdict-store/VerdictStore.schema.js'
+import type { VerdictStoreShape } from '../verdict-store/VerdictStore.service.js'
+import { currentKeysOf, testedComponentsOf } from './current-verdict.js'
+
+const LOOKUP_CONCURRENCY = 16
 
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
@@ -44,11 +50,14 @@ const emptyRefusalCounts = (): Record<ReuseRefusalReason, number> => ({
   semanticsChanged: 0,
   policyChanged: 0,
   runInputsChanged: 0,
+  checkerConfigChanged: 0,
   closureChanged: 0,
   closureAnalysisFailed: 0,
   programChanged: 0,
   flakyDependency: 0,
   timeoutUnreproduced: 0,
+  entryUnreadable: 0,
+  storeUnavailable: 0,
   noPriorRecord: 0,
 })
 
@@ -58,68 +67,6 @@ const countedRefusal = (
 ): Record<ReuseRefusalReason, number> => ({
   ...counts,
   [refusal]: Option.getOrElse(Option.fromUndefinedOr(counts[refusal]), () => 0) + 1,
-})
-
-const digestField = (digest: string | undefined) =>
-  Option.match(Option.fromUndefinedOr(digest), {
-    onNone: (): Readonly<Record<string, never>> => ({}),
-    onSome: (present) => ({ closureDigest: present }),
-  })
-
-const optionalListField = (field: string, value: readonly string[] | undefined) =>
-  Option.match(Option.fromUndefinedOr(value), {
-    onNone: (): Readonly<Record<string, never>> => ({}),
-    onSome: (present) => ({ [field]: [...present] }),
-  })
-
-const runnerTestIdTableOf = (report: ReuseReport): Readonly<Record<string, string>> =>
-  Object.fromEntries(
-    Result.getOrThrow(
-      reportTestIds(
-        ResolveReportTestIds.make(report.testFiles === undefined ? {} : { testFiles: report.testFiles }),
-      ),
-    ).map((entry) => [entry.positionalId, entry.runnerTestId] as const),
-  )
-
-const runnerTestIdsOf = (
-  runnerTestIdByPosition: Readonly<Record<string, string>>,
-  ids: readonly string[] | undefined,
-): readonly string[] | undefined =>
-  Option.getOrUndefined(
-    Option.map(Option.fromUndefinedOr(ids), (present) =>
-      Arr.map(present, (id) => Option.getOrElse(Record.get(runnerTestIdByPosition, id), () => id))),
-  )
-
-const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] => {
-  const runnerTestIdByPosition = runnerTestIdTableOf(report)
-  return Object.values(report.files).flatMap((file) =>
-    file.mutants.map((mutant): PreviousReuseRecord => ({
-      mutantId: mutant.id,
-      status: mutant.status,
-      ...digestField(mutant.closureDigest),
-      ...optionalField('programDigest', mutant.programDigest),
-      engineDigest: report.engineDigest,
-      mutantSetPolicy: report.mutantSetPolicy,
-      runInputsDigest: report.runInputsDigest,
-      ...optionalField('timeoutKind', mutant.timeoutKind),
-      ...optionalField('reproductions', mutant.reproductions),
-      ...optionalField('testsCompleted', mutant.testsCompleted),
-      ...optionalListField('coveredBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.coveredBy)),
-      ...optionalListField('killedBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.killedBy)),
-    }))
-  )
-}
-
-const recordsOfTexts = (texts: readonly string[]): readonly PreviousReuseRecord[] =>
-  texts.flatMap((text) =>
-    Option.match(reportOfText(text), {
-      onNone: (): readonly PreviousReuseRecord[] => [],
-      onSome: recordsOfReport,
-    })
-  )
-
-const previousRecordsOf = Effect.fnUntraced(function*(input: IncrementalReuseInput) {
-  return recordsOfTexts(yield* incrementalReportTextsOf(input))
 })
 
 const hasTestFileName = (
@@ -145,36 +92,6 @@ const closureTestFilesOf = (input: IncrementalReuseInput): readonly string[] =>
   Arr.dedupe([...input.project.testFiles, ...observedTestFilesOf(input.testCoverage)])
 
 const digestOfEntries = (entries: readonly string[]): string => hashOf(entries.join('\n'))
-
-const digestTextOf = (digest: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(digest), () => '')
-
-const currentDigestOf = (digests: Record<string, string>, mutantId: Mutant.MutantId): string =>
-  Option.getOrElse(Record.get(digests, mutantId), () => '')
-
-const priorKilledByOf = (
-  previousRecords: readonly PreviousReuseRecord[],
-  closureDigests: ClosureDigestsResult,
-): Record<string, readonly string[]> =>
-  previousRecords.reduce<Record<string, readonly string[]>>(
-    (accumulated, record) =>
-      Boolean.match(
-        Boolean.and(
-          Boolean.not(closureDigests.failed),
-          Boolean.and(
-            Option.isSome(Option.fromUndefinedOr(record.killedBy)),
-            digestTextOf(record.closureDigest) === currentDigestOf(closureDigests.digests, record.mutantId),
-          ),
-        ),
-        {
-          onTrue: () => ({
-            ...accumulated,
-            [record.mutantId]: [...Option.getOrElse(Option.fromUndefinedOr(record.killedBy), () => [])],
-          }),
-          onFalse: () => accumulated,
-        },
-      ),
-    {},
-  )
 
 const staticCoverageCountOf = (staticCoverage: Record<string, number> | undefined, mutantId: string): number =>
   Option.getOrElse(
@@ -321,10 +238,153 @@ const closureDigestsOf = (
       onSome: (present) => ({ digests: digestsFromAnalysisOf(input, present), failed: false }),
     }))
 
+interface RunDigests {
+  readonly engineDigest: string
+  readonly runInputsDigest: string
+  readonly mutantSetPolicy: Options.MutantSetPolicy
+  readonly checkerConfigDigest: string | undefined
+  readonly closures: ClosureDigestsResult
+}
+
+const fileContentDigestOf = (input: IncrementalReuseInput, mutant: Mutant.Mutant): string =>
+  Option.getOrThrowWith(
+    Record.get(input.fileContentDigests, mutant.fileName),
+    () => new Error(`the instrumenter read no original text for ${mutant.fileName}, which holds mutant ${mutant.id}`),
+  )
+
+const coveringTestIdsOf = (testCoverage: TestCoverage, mutantId: Mutant.MutantId): readonly string[] =>
+  Boolean.match(runsWholeSuite(testCoverage, mutantId), {
+    onTrue: () => [...MutableHashMap.keys(testCoverage.testsById)],
+    onFalse: () =>
+      [...Option.getOrElse(
+        MutableHashMap.get(testCoverage.testsByMutantId, mutantId),
+        () => MutableHashSet.empty<TestRunner.TestResult>(),
+      )].map((result) => result.id),
+  })
+
+const closureDigestOf = (closures: ClosureDigestsResult, mutantId: Mutant.MutantId): string | undefined =>
+  Option.getOrUndefined(Option.filter(Record.get(closures.digests, mutantId), () => Boolean.not(closures.failed)))
+
+const sharedComponentsOf = (
+  mutant: Mutant.Mutant,
+  run: RunDigests,
+  fileContentDigest: string,
+): SharedComponents => ({
+  engineDigest: run.engineDigest,
+  runInputsDigest: run.runInputsDigest,
+  mutantSetPolicy: run.mutantSetPolicy,
+  mutantId: mutant.id,
+  fileName: mutant.fileName,
+  mutatorName: mutant.mutatorName,
+  replacementDigest: hashOf(mutant.replacement),
+  location: mutant.location,
+  fileContentDigest,
+})
+
+const testedPartsOf = (input: IncrementalReuseInput, run: RunDigests, mutantId: Mutant.MutantId) =>
+  Boolean.match(input.testCoverage.dryRunCoverage !== undefined, {
+    onTrue: () => ({
+      coveringTestIds: coveringTestIdsOf(input.testCoverage, mutantId),
+      closureDigest: closureDigestOf(run.closures, mutantId),
+      checkerConfigDigest: run.checkerConfigDigest,
+    }),
+    onFalse: () => ({}),
+  })
+
+const currentVerdictOf =
+  (input: IncrementalReuseInput, run: RunDigests) => (mutant: Mutant.Mutant): CurrentVerdict => ({
+    shared: sharedComponentsOf(mutant, run, fileContentDigestOf(input, mutant)),
+    ...testedPartsOf(input, run, mutant.id),
+  })
+
+interface StoreLookup {
+  readonly entries: ReadonlyArray<ListedEntry>
+  readonly unavailable: boolean
+}
+
+const UNAVAILABLE: StoreLookup = { entries: [], unavailable: true }
+
+const NOT_LOOKED_UP: StoreLookup = { entries: [], unavailable: false }
+
+const lookupOfListing = (outcome: ListOutcome): StoreLookup =>
+  Match.valueTags(outcome, {
+    EntriesListed: ({ entries }): StoreLookup => ({ entries, unavailable: false }),
+    StoreUnavailable: (): StoreLookup => UNAVAILABLE,
+  })
+
+const listedLookupOf = (store: VerdictStoreShape, mutantId: Mutant.MutantId): Effect.Effect<StoreLookup> =>
+  Effect.map(store.list(mutantId), lookupOfListing)
+
+const withUnreadable = (components: TestedComponents) => (lookup: StoreLookup): StoreLookup => ({
+  ...lookup,
+  entries: [{ _tag: 'Unreadable', kind: 'tested', key: verdictKeyOf(components) }, ...lookup.entries],
+})
+
+const testedLookupOf = (store: VerdictStoreShape, components: TestedComponents): Effect.Effect<StoreLookup> =>
+  Effect.flatMap(store.get(components), (outcome) =>
+    Match.valueTags(outcome, {
+      EntryFound: ({ entry }) =>
+        Effect.succeed<StoreLookup>({
+          entries: [{ _tag: 'Readable', kind: 'tested', key: verdictKeyOf(components), entry }],
+          unavailable: false,
+        }),
+      EntryAbsent: () => listedLookupOf(store, components.mutantId),
+      EntryUnreadable: () => Effect.map(listedLookupOf(store, components.mutantId), withUnreadable(components)),
+      StoreUnavailable: () => Effect.succeed(UNAVAILABLE),
+    }))
+
+const storeLookupOf = (store: VerdictStoreShape, current: CurrentVerdict): Effect.Effect<StoreLookup> =>
+  Option.match(testedComponentsOf(current), {
+    onNone: () => listedLookupOf(store, current.shared.mutantId),
+    onSome: (components) => testedLookupOf(store, components),
+  })
+
+const lookupOf = (input: IncrementalReuseInput, current: CurrentVerdict): Effect.Effect<StoreLookup> =>
+  Boolean.match(input.force, {
+    onTrue: () => Effect.succeed(NOT_LOOKED_UP),
+    onFalse: () => storeLookupOf(input.store, current),
+  })
+
+const namesACheckerEntry = (lookup: StoreLookup): boolean => lookup.entries.some((entry) => entry.kind === 'checker')
+
+const verdictLookupOf = (mutant: Mutant.Mutant, current: CurrentVerdict, lookup: StoreLookup): VerdictLookup => ({
+  mutant,
+  current,
+  currentKeys: currentKeysOf(current),
+  ...lookup,
+})
+
+const withProgramDigest = (programDigest: string | undefined) => (lookup: VerdictLookup): VerdictLookup =>
+  verdictLookupOf(lookup.mutant, { ...lookup.current, programDigest }, lookup)
+
+const programDigestNeeded = (lookups: ReadonlyArray<VerdictLookup>): boolean =>
+  lookups.some((lookup) => namesACheckerEntry(lookup))
+
+const withProgramDigests = Effect.fnUntraced(function*(
+  lookups: ReadonlyArray<VerdictLookup>,
+  programDigestOf: Effect.Effect<string | undefined>,
+) {
+  const programDigest = yield* Boolean.match(programDigestNeeded(lookups), {
+    onTrue: () => programDigestOf,
+    onFalse: () => Effect.as(Effect.void, undefined),
+  })
+  return lookups.map((lookup) =>
+    Boolean.match(namesACheckerEntry(lookup), {
+      onTrue: () => withProgramDigest(programDigest)(lookup),
+      onFalse: () => lookup,
+    })
+  )
+})
+
+const checkerConfigDigestFor = (input: IncrementalReuseInput): Effect.Effect<string | undefined> =>
+  Boolean.match(input.testCoverage.dryRunCoverage !== undefined, {
+    onTrue: () => input.checkerConfigDigestOf,
+    onFalse: () => Effect.as(Effect.void, undefined),
+  })
+
 type IncrementalReuseRaw = typeof IncrementalDiffCommand.Encoded & {
   readonly mutantsById: Record<string, Mutant.Mutant>
-  readonly closureDigestsByMutantId: Record<string, string>
-  readonly priorKilledByByMutantId: Record<string, readonly string[]>
+  readonly currentByMutantId: Record<string, CurrentVerdict>
 }
 
 const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
@@ -335,24 +395,28 @@ const readIncrementalReuseCommand = Effect.fn(SpanTaxonomy.Spans.incrementalReus
 ) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const previousRecords = yield* previousRecordsOf(input)
-  const closures = yield* closureDigestsOf(input)
-  const runInputsDigest = yield* runInputsDigestOf(fs, path, input.basePath, input.options)
-  const programDigest = yield* input.programDigestOf
+  const run: RunDigests = {
+    engineDigest: yield* engineDigestOf(fs, path),
+    runInputsDigest: yield* runInputsDigestOf(fs, path, input.basePath, input.options),
+    mutantSetPolicy: input.options.mutator.mutantSetPolicy,
+    checkerConfigDigest: yield* checkerConfigDigestFor(input),
+    closures: yield* closureDigestsOf(input),
+  }
+  const currentOf = currentVerdictOf(input, run)
+  const lookups = yield* Effect.forEach(
+    input.currentMutants,
+    (mutant) => {
+      const current = currentOf(mutant)
+      return Effect.map(lookupOf(input, current), (lookup) => verdictLookupOf(mutant, current, lookup))
+    },
+    { concurrency: LOOKUP_CONCURRENCY },
+  )
+  const decided = yield* withProgramDigests(lookups, input.programDigestOf)
   const command: typeof IncrementalDiffCommand.Encoded = {
     _tag: 'IncrementalDiffCommand',
-    currentMutants: [...input.currentMutants],
-    previousRecords: [...previousRecords],
-    closureDigestsByMutantId: closures.digests,
-    closureAnalysisFailed: closures.failed,
-    engineDigest: yield* engineDigestOf(fs, path),
-    mutantSetPolicy: input.options.mutator.mutantSetPolicy,
-    runInputsDigest,
+    lookups: yield* S.encodeEffect(S.Array(VerdictLookupSchema))(decided).pipe(Effect.orDie),
+    closureAnalysisFailed: run.closures.failed,
     force: input.force,
-    ...Option.match(Option.fromUndefinedOr(programDigest), {
-      onNone: () => ({}),
-      onSome: (present) => ({ programDigest: present }),
-    }),
     flakyMutantIds: Option.getOrElse(
       Option.map(Option.fromUndefinedOr(input.testCoverage.dryRunCoverage), (coverage) => [
         ...coverage.flakyMutantIds,
@@ -363,8 +427,7 @@ const readIncrementalReuseCommand = Effect.fn(SpanTaxonomy.Spans.incrementalReus
   return {
     ...command,
     mutantsById: mutantsByIdOf(input.currentMutants),
-    closureDigestsByMutantId: closures.digests,
-    priorKilledByByMutantId: priorKilledByOf(previousRecords, closures),
+    currentByMutantId: Object.fromEntries(decided.map((lookup) => [lookup.mutant.id, lookup.current] as const)),
   }
 })
 
@@ -372,10 +435,9 @@ export interface IncrementalReusePart {
   readonly mutants: readonly Mutant.Mutant[]
   readonly rememberedResults: readonly Mutant.RunMutantResult[]
   readonly refusal: ReuseRefusalReason | undefined
-  readonly closureDigestsByMutantId: Record<string, string>
+  readonly currentByMutantId: Record<string, CurrentVerdict>
   readonly timeoutEvidenceByMutantId: Record<string, TimeoutEvidence>
   readonly priorKilledByByMutantId: Record<string, readonly string[]>
-  readonly programDigest: string | undefined
 }
 
 const priorTimeoutEvidenceOf = (decision: typeof MutantToRun.Encoded): Record<string, TimeoutEvidence> =>
@@ -408,13 +470,12 @@ const mutantToRunPart = Effect.fnUntraced(function*(
     mutants: [mutant],
     rememberedResults: [],
     refusal: decision.refusal,
-    closureDigestsByMutantId: command.closureDigestsByMutantId,
+    currentByMutantId: command.currentByMutantId,
     timeoutEvidenceByMutantId: priorTimeoutEvidenceOf(decision),
-    priorKilledByByMutantId: Option.match(Record.get(command.priorKilledByByMutantId, mutant.id), {
+    priorKilledByByMutantId: Option.match(Option.fromNullishOr(decision.priorKilledBy), {
       onNone: () => ({}),
       onSome: (killedBy) => ({ [mutant.id]: [...killedBy] }),
     }),
-    programDigest: command.programDigest,
   })
 })
 
@@ -459,10 +520,9 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
         mutants: [],
         rememberedResults: [],
         refusal: undefined,
-        closureDigestsByMutantId: command.closureDigestsByMutantId,
+        currentByMutantId: command.currentByMutantId,
         timeoutEvidenceByMutantId: {},
         priorKilledByByMutantId: {},
-        programDigest: command.programDigest,
       }),
     onSome: (mutant) =>
       Effect.map(
@@ -471,10 +531,9 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
           mutants: [],
           rememberedResults: [rememberedResultOf(mutant, decision, status)],
           refusal: undefined,
-          closureDigestsByMutantId: command.closureDigestsByMutantId,
+          currentByMutantId: command.currentByMutantId,
           timeoutEvidenceByMutantId: rememberedTimeoutEvidenceOf(decision),
           priorKilledByByMutantId: {},
-          programDigest: command.programDigest,
         }),
       ),
   })
@@ -499,6 +558,9 @@ export interface IncrementalReuseInput {
   readonly globalTestInputs: readonly string[]
   readonly observedModules: Readonly<Record<string, readonly string[]>> | undefined
   readonly originalFileOf: (file: string) => string
+  readonly fileContentDigests: Readonly<Record<string, string>>
+  readonly store: VerdictStoreShape
+  readonly checkerConfigDigestOf: Effect.Effect<string | undefined>
   readonly programDigestOf: Effect.Effect<string | undefined>
 }
 
@@ -508,20 +570,17 @@ export interface IncrementalReuse {
   readonly mutants: readonly Mutant.Mutant[]
   readonly rememberedResults: readonly Mutant.RunMutantResult[]
   readonly refusalCounts: RefusalCounts
-  readonly closureDigestsByMutantId: Record<string, string>
   readonly timeoutEvidenceByMutantId: Record<string, TimeoutEvidence>
   readonly priorKilledByByMutantId: Record<string, readonly string[]>
-  readonly programDigest: string | undefined
+  readonly currentByMutantId: Record<string, CurrentVerdict>
+  readonly programDigestOf: Effect.Effect<string | undefined>
 }
 
-const closureDigestsOfParts = (parts: readonly IncrementalReusePart[]): Record<string, string> =>
+const currentOfParts = (parts: readonly IncrementalReusePart[]): Record<string, CurrentVerdict> =>
   Option.getOrElse(
-    Option.map(Arr.head(parts), (part) => part.closureDigestsByMutantId),
-    (): Record<string, string> => ({}),
+    Option.map(Arr.head(parts), (part) => part.currentByMutantId),
+    (): Record<string, CurrentVerdict> => ({}),
   )
-
-const firstProgramDigestOfParts = (parts: readonly IncrementalReusePart[]): string | undefined =>
-  Option.flatMap(Arr.head(parts), (part) => Option.fromUndefinedOr(part.programDigest)).pipe(Option.getOrUndefined)
 
 const timeoutEvidenceOfParts = (parts: readonly IncrementalReusePart[]): Record<string, TimeoutEvidence> =>
   parts.reduce<Record<string, TimeoutEvidence>>(
@@ -538,13 +597,16 @@ const priorKilledByOfParts = (parts: readonly IncrementalReusePart[]): Record<st
     {},
   )
 
-export const readIncrementalReuse = (input: IncrementalReuseInput) =>
-  Effect.map(incrementalReuseCell.run(input), (parts) => ({
+export const readIncrementalReuse = Effect.fnUntraced(function*(input: IncrementalReuseInput) {
+  const programDigestOf = yield* Effect.cached(input.programDigestOf)
+  const parts = yield* incrementalReuseCell.run({ ...input, programDigestOf })
+  return {
     mutants: parts.flatMap((part) => part.mutants),
     rememberedResults: parts.flatMap((part) => part.rememberedResults),
     refusalCounts: parts.reduce(countRefusalOfPart, emptyRefusalCounts()),
-    closureDigestsByMutantId: closureDigestsOfParts(parts),
     timeoutEvidenceByMutantId: timeoutEvidenceOfParts(parts),
     priorKilledByByMutantId: priorKilledByOfParts(parts),
-    programDigest: firstProgramDigestOfParts(parts),
-  }))
+    currentByMutantId: currentOfParts(parts),
+    programDigestOf,
+  } satisfies IncrementalReuse
+})

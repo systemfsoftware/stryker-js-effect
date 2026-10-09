@@ -33,11 +33,14 @@ export const ReuseRefusals = S.Struct({
   semanticsChanged: Report.NonNegativeInt,
   policyChanged: Report.NonNegativeInt,
   runInputsChanged: Report.NonNegativeInt,
+  checkerConfigChanged: Report.NonNegativeInt,
   closureChanged: Report.NonNegativeInt,
   closureAnalysisFailed: S.optionalKey(Report.NonNegativeInt),
   programChanged: S.optionalKey(Report.NonNegativeInt),
   timeoutUnreproduced: Report.NonNegativeInt,
   flakyDependency: Report.NonNegativeInt,
+  entryUnreadable: Report.NonNegativeInt,
+  storeUnavailable: Report.NonNegativeInt,
   noPriorRecord: Report.NonNegativeInt,
 })
 export type ReuseRefusals = typeof ReuseRefusals.Type
