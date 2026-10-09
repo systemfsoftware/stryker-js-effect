@@ -11,14 +11,14 @@ export class AdmitIncrementalReportCommand extends S.TaggedClass<AdmitIncrementa
   {
     report: S.optional(IncrementalReportSchema),
     expectedIncrementalVersion: S.String,
-    verdictSemanticsVersion: S.Int,
+    engineDigest: S.String,
     mutantSetPolicy: Options.MutantSetPolicy,
     runInputsDigest: S.String,
   },
 ) {
   static readonly [Workflow.InstrumentationBrand] = {
     expectedIncrementalVersion: 'stryker.incremental_report.expected_version',
-    verdictSemanticsVersion: 'stryker.incremental_report.verdict_semantics_version',
+    engineDigest: 'stryker.incremental_report.engine_digest',
     runInputsDigest: 'stryker.incremental_report.run_inputs_digest',
   } as const
 }
@@ -78,9 +78,9 @@ const identityMismatchesOf = (
   },
   {
     reason: 'semanticsChanged',
-    actual: String(report.verdictSemanticsVersion),
-    expected: String(command.verdictSemanticsVersion),
-    matches: report.verdictSemanticsVersion === command.verdictSemanticsVersion,
+    actual: report.engineDigest,
+    expected: command.engineDigest,
+    matches: report.engineDigest === command.engineDigest,
   },
   {
     reason: 'policyChanged',

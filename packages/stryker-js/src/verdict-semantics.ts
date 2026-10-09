@@ -1,25 +1,24 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Order from 'effect/Order'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
+import * as Str from 'effect/String'
+import { EngineIdentityUnreadable, EngineManifestSchema } from './engine-identity.schema.js'
 
-export const VERDICT_SEMANTICS_SURFACE: readonly string[] = [
-  'packages/stryker-js',
-  'packages/stryker-js-instrumenter',
-  'packages/stryker-js-plugin-interface',
-  'packages/stryker-js-vitest-runner',
-  'packages/stryker-js-typescript-checker',
-  'packages/ignorers',
+const ENGINE_PACKAGE_SPECIFIERS: readonly string[] = [
+  '@systemfsoftware/stryker-js',
+  '@systemfsoftware/stryker-js-vm-runner',
 ]
 
-export const VERDICT_SEMANTICS_VERSION = 4
-
-export const INCREMENTAL_CACHE_VERSION = '3'
+export const INCREMENTAL_CACHE_VERSION = '4'
 
 type Json = S.Schema.Type<typeof S.Json>
 
@@ -174,6 +173,67 @@ export const runInputsDigestOf = Effect.fnUntraced(function*(
   })
 })
 
+const filesOfEntry = Effect.fnUntraced(function*(
+  fs: FileSystem.FileSystem,
+  pathService: Path.Path,
+  root: string,
+  entry: string,
+) {
+  const absolute = pathService.join(root, entry)
+  const info = yield* fs.stat(absolute)
+  return info.type === 'Directory'
+    ? yield* Effect.filter(
+      yield* fs.readDirectory(absolute, { recursive: true }),
+      (name) => Effect.map(fs.stat(pathService.join(absolute, name)), (child) => child.type === 'File'),
+    ).pipe(Effect.map((names) => names.map((name) => pathService.join(entry, name))))
+    : [pathService.normalize(entry)]
+})
+
+export const packageDigestOf = Effect.fnUntraced(function*(
+  fs: FileSystem.FileSystem,
+  pathService: Path.Path,
+  manifestPath: string,
+): Effect.fn.Return<string, EngineIdentityUnreadable> {
+  const root = pathService.dirname(manifestPath)
+  return yield* Effect.gen(function*() {
+    const manifestText = yield* fs.readFileString(manifestPath)
+    const manifest = yield* S.decodeEffect(S.fromJsonString(EngineManifestSchema))(manifestText)
+    const declared = yield* Effect.forEach(manifest.files, (entry) => filesOfEntry(fs, pathService, root, entry))
+    const files = Arr.sort(Arr.dedupe(declared.flat()), Order.String)
+    const contents = yield* Effect.forEach(files, (file) => fs.readFile(pathService.join(root, file)))
+    const hash = sha256.create().update(utf8ToBytes(manifestText))
+    Arr.zip(files, contents).forEach(([file, bytes]) => hash.update(utf8ToBytes(`\u0000${file}\u0000`)).update(bytes))
+    return bytesToHex(hash.digest())
+  }).pipe(Effect.mapError((cause) => EngineIdentityUnreadable.make({ manifest: manifestPath, cause })))
+})
+
+const manifestPathOf = (pathService: Path.Path, specifier: string): Effect.Effect<string, EngineIdentityUnreadable> =>
+  Effect.try({
+    try: () => new URL(import.meta.resolve(`${specifier}/package.json`)),
+    catch: (cause) => EngineIdentityUnreadable.make({ manifest: `${specifier}/package.json`, cause }),
+  }).pipe(
+    Effect.flatMap((url) =>
+      pathService.fromFileUrl(url).pipe(
+        Effect.mapError((cause) => EngineIdentityUnreadable.make({ manifest: url.href, cause })),
+      )
+    ),
+  )
+
+export const engineDigestOf = Effect.fnUntraced(function*(
+  fs: FileSystem.FileSystem,
+  pathService: Path.Path,
+): Effect.fn.Return<string, never> {
+  const digests = yield* Effect.forEach(
+    ENGINE_PACKAGE_SPECIFIERS,
+    (specifier) =>
+      manifestPathOf(pathService, specifier).pipe(
+        Effect.flatMap((manifestPath) => packageDigestOf(fs, pathService, manifestPath)),
+        Effect.map((digest) => `${specifier}\u0000${digest}`),
+      ),
+  ).pipe(Effect.orDie)
+  return sha256HexOf(digests.join('\u0000'))
+})
+
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
 
@@ -235,6 +295,65 @@ if (import.meta.vitest !== void 0) {
       Effect.map(
         Effect.all([subject(options), subject(verdictDriftedOf(options))]),
         ([baseline, drifted]) => drifted !== baseline,
+      ),
+  )
+
+  const { NodeFileSystem, NodePath } = await import('@effect/platform-node')
+
+  const SHIPPED = 'dist/chunks/run.mjs'
+
+  const manifestOf = S.encodeEffect(S.fromJsonString(EngineManifestSchema))({ files: ['dist', 'CHANGELOG.md'] })
+
+  const installedDigestOf = (files: ReadonlyArray<readonly [string, string]>) =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const pathService = yield* Path.Path
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: 'engine-identity-' })
+      const manifest = yield* Effect.orDie(manifestOf)
+      yield* Effect.forEach([['package.json', manifest] as const, ...files], ([file, content]) =>
+        fs.makeDirectory(pathService.dirname(pathService.join(root, file)), { recursive: true }).pipe(
+          Effect.andThen(fs.writeFileString(pathService.join(root, file), content)),
+        )).pipe(Effect.orDie)
+      return yield* packageDigestOf(fs, pathService, pathService.join(root, 'package.json')).pipe(Effect.option)
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
+
+  const sameDigest = Option.makeEquivalence(Str.Equivalence)
+
+  const CHANGELOG = ['CHANGELOG.md', '## 1.0.0\n'] as const
+
+  const sameBytes = (left: string, right: string): boolean =>
+    bytesToHex(utf8ToBytes(left)) === bytesToHex(utf8ToBytes(right))
+
+  it.effect.prop(
+    '∀ss_String_≡ShippedBytesDecideThePackageDigest',
+    { of: [S.String, S.String], subject: installedDigestOf },
+    (subject, [shipped, rebuilt]) =>
+      Effect.map(
+        Effect.all([subject([CHANGELOG, [SHIPPED, shipped]]), subject([CHANGELOG, [SHIPPED, rebuilt]])]),
+        ([before, after]) => Option.isSome(before) && sameDigest(before, after) === sameBytes(shipped, rebuilt),
+      ),
+  )
+
+  it.effect.prop(
+    '∀s_String_≡AnUnshippedFileKeepsThePackageDigest',
+    { of: [S.String], subject: installedDigestOf },
+    (subject, [unshipped]) =>
+      Effect.map(
+        Effect.all([
+          subject([CHANGELOG, [SHIPPED, unshipped]]),
+          subject([CHANGELOG, [SHIPPED, unshipped], ['.turbo/build.log', unshipped]]),
+        ]),
+        ([shippedOnly, withUnshipped]) => Option.isSome(shippedOnly) && sameDigest(withUnshipped, shippedOnly),
+      ),
+  )
+
+  it.effect.prop(
+    '∀s_String_≡AnUnbuiltShippedDirectoryRefusesThePackageDigest',
+    { of: [S.String], subject: installedDigestOf },
+    (subject, [changelog]) =>
+      Effect.map(
+        Effect.all([subject([['CHANGELOG.md', changelog]]), subject([['CHANGELOG.md', changelog], [SHIPPED, '']])]),
+        ([unbuilt, built]) => Option.isNone(unbuilt) && Option.isSome(built),
       ),
   )
 }

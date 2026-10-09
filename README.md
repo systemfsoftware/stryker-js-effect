@@ -324,7 +324,7 @@ By default `mutator.mutantSetPolicy` drops mutants a rule can prove redundant �
 
 ### Verdict reuse that survives a release
 
-The incremental cache is keyed by content, not by position: a mutant's id, the import-closure digest of its covering tests, the run inputs, the verdict-semantics version, and the mutant-set policy. Nothing in the key names a shard, branch, report path, or machine, so shard reports union and a verdict computed on one is reused on another when its inputs are identical. `incrementalSources` adds globs of further reports to union beside `incrementalFile`, and each run reports a `reuse` line with the verdicts it reused, ran, and refused, by reason.
+The incremental cache is keyed by content, not by position: a mutant's id, the import-closure digest of its covering tests, the run inputs, a digest of the engine's installed files, and the mutant-set policy. Nothing in the key names a shard, branch, report path, or machine, so shard reports union and a verdict computed on one is reused on another when its inputs are identical. A verdict written by another build of the engine is refused as `semanticsChanged`. `incrementalSources` adds globs of further reports to union beside `incrementalFile`, and each run reports a `reuse` line with the verdicts it reused, ran, and refused, by reason.
 
 An unchanged project also reuses the persisted initial test run instead of running it again. The fresh dry run runs twice to find flaky tests, and a mutant whose covering test is flaky — or a static mutant — is re-tested rather than trusted. Every `mutant` line carries a `static` flag and a measured `cost` (`fixedOverheadMs`, `testBodyMs`, `testsExecuted`, `shared`), and the final `verdict` adds the static-mutant aggregate as `{ count, costMs }`.
 
