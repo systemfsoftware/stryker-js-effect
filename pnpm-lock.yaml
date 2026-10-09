@@ -180,6 +180,9 @@ catalogs:
     vitest:
       specifier: ^5
       version: 5.0.1
+    yaml:
+      specifier: ^2.9.1
+      version: 2.9.1
   stryker:
     mutation-testing-elements:
       specifier: 3.9.0
@@ -908,6 +911,12 @@ importers:
       oxlint-tsgolint:
         specifier: 'catalog:'
         version: 7.0.2001
+      released-stryker-js-cli-contract:
+        specifier: file:../../.sfs-deps/stryker-js-cli-contract.tgz
+        version: '@systemfsoftware/stryker-js-cli-contract@file:.sfs-deps/stryker-js-cli-contract.tgz'
+      released-stryker-js-plugin-interface:
+        specifier: file:../../.sfs-deps/stryker-js-plugin-interface.tgz
+        version: '@systemfsoftware/stryker-js-plugin-interface@file:.sfs-deps/stryker-js-plugin-interface.tgz'
       rimraf:
         specifier: 'catalog:'
         version: 6.1.3
@@ -923,6 +932,9 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 5.0.1(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(@vitest/browser-playwright@5.0.1)(@vitest/coverage-v8@5.0.1)(@vitest/ui@5.0.1)(happy-dom@20.14.5)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.15)(yaml@2.9.1))
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.1
 
   packages/stryker-js-html-reporter:
     dependencies:

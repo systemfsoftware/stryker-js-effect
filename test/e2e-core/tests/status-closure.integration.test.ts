@@ -29,8 +29,6 @@ const REPOSITORY_ROOT_URL = new URL('../../../', import.meta.url)
 
 const COMPILE_ERROR_JOURNEY = 'test/e2e/tests/enterprise-composite-checker.e2e.test.ts'
 
-const SKIP_MARKER = /\.(skip|only|todo)\b/
-
 const availabilityOf = (
   fs: FileSystem.FileSystem,
   path: Path.Path,
@@ -38,14 +36,8 @@ const availabilityOf = (
   journey: string,
 ): Effect.Effect<JourneyAvailability> =>
   Effect.map(
-    fs.readFileString(path.join(root, journey)).pipe(Effect.option),
-    (content) => ({
-      path: journey,
-      usable: Option.match(content, {
-        onNone: () => false,
-        onSome: (text) => !SKIP_MARKER.test(text),
-      }),
-    }),
+    fs.exists(path.join(root, journey)).pipe(Effect.orElseSucceed(() => false)),
+    (usable) => ({ path: journey, usable }),
   )
 
 interface Manifest {

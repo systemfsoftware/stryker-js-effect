@@ -86,7 +86,7 @@ A ledger the parse must distinguish: one consumed intent, one still pending.
 ## Prevention
 
 - Keep a parser test for every ledger shape the reader tolerates, including the bare/null entry that means "empty".
-- Keep the phase derivation testable without a registry: feed a stubbed release set and a stubbed pending count, and assert the phase. Bind those tests through workspace `test:scripts` on `gate:tasks` so `check:ci` cannot skip them.
+- Keep the phase derivation testable without a registry: feed a stubbed release set and a stubbed pending count, and assert the phase. Bind those tests to a task `check:ci` runs, so it cannot skip them.
 - Keep the version-bump guard in the release-PR entry point. It is what makes a miscount survivable.
 - Do not invert `decidePhase` to prefer `owed > 0` over `pending > 0`. That publishes HEAD under the previous changelog and skips the version PR for the new intents.
 
