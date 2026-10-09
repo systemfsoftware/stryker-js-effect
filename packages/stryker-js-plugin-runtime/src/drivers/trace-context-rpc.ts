@@ -15,7 +15,7 @@ import * as Tracer from 'effect/Tracer'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 
-import { TraceContextPartsFromEffectSpan, TraceContextUnavailable } from './trace-parts.schema.js'
+import { TraceContextPartsFromEffectSpan, TraceContextUnavailable } from '../trace-parts.schema.js'
 
 const serializedTraceStateOf = (traceState: api.TraceState | undefined): Option.Option<string> =>
   Option.flatMap(

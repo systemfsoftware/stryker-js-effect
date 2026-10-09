@@ -11,7 +11,7 @@ export namespace Trace {
 
 // @public (undocumented)
 export namespace Worker {
-    export { WorkerOptions, WorkerOptionsWire, WorkerServerParams, WorkerTelemetry, workerServerLayer };
+    export { WorkerOptions, WorkerOptionsWire, WorkerServerParams, WorkerTelemetry, layer$1 as workerOptionsLayer, workerServerLayer, layer as workerTelemetryLayer };
 }
 
 // (No @packageDocumentation comment for this package)
