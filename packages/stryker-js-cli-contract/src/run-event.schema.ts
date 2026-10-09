@@ -96,16 +96,6 @@ export const MutantCost = S.Struct({
 })
 export type MutantCost = typeof MutantCost.Type
 
-const SettledStatus = Mutant.MutantStatusSchema.pick([
-  'Killed',
-  'Survived',
-  'NoCoverage',
-  'CompileError',
-  'RuntimeError',
-  'Timeout',
-  'Pending',
-])
-
 const mutantTestedFields = {
   id: Mutant.MutantId,
   fileName: Mutant.CanonicalFileName,
@@ -126,7 +116,7 @@ export class RunMutantIgnored extends S.TaggedClass<RunMutantIgnored>('RunMutant
 
 export class RunMutantSettled extends S.TaggedClass<RunMutantSettled>('RunMutantSettled')('mutantTested', {
   ...mutantTestedFields,
-  status: SettledStatus,
+  status: Mutant.SettledStatusSchema,
   statusReason: S.NullOr(S.String),
 }) {}
 
@@ -197,7 +187,7 @@ const RunMutantIgnoredLine = S.TaggedStruct('mutant', {
 
 const RunMutantSettledLine = S.TaggedStruct('mutant', {
   ...mutantWireFields,
-  status: SettledStatus,
+  status: Mutant.SettledStatusSchema,
   statusReason: S.NullOr(S.String),
 }).pipe(
   S.decodeTo(S.toType(RunMutantSettled), {

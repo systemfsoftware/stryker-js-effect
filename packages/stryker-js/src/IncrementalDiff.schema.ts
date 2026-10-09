@@ -76,15 +76,7 @@ const ReuseMutantSchema = S.Union([
   }),
   S.Struct({
     ...reuseMutantFields,
-    status: Mutant.MutantStatusSchema.pick([
-      'Killed',
-      'Survived',
-      'NoCoverage',
-      'CompileError',
-      'RuntimeError',
-      'Timeout',
-      'Pending',
-    ]),
+    status: Mutant.SettledStatusSchema,
     statusReason: S.optional(S.String),
   }),
 ])
