@@ -7,7 +7,7 @@ import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
 
-import { entryDirectoryOf, entryNameOf } from './verdict-blobs.js'
+import { entryDirectoryOf, entryNameAt, entryNameOf } from './verdict-blobs.js'
 import {
   type CheckerEntry,
   CheckerEntrySchema,
@@ -17,6 +17,7 @@ import {
   VerdictEntryJson,
 } from './VerdictEntry.schema.js'
 import { verdictKeyOf } from './VerdictKey.js'
+import type { VerdictKeyScheme } from './VerdictKeyScheme.schema.js'
 import type { GetOutcome, ListedEntry, ListOutcome, PutOutcome } from './VerdictStore.schema.js'
 import { VerdictStore } from './VerdictStore.service.js'
 
@@ -180,6 +181,8 @@ const put = (entry: VerdictEntry) => VerdictStore.use((store) => store.put(entry
 const list = (mutantId: Mutant.MutantId) =>
   VerdictStore.use((store) => store.list(mutantId)).pipe(Effect.map(describeList))
 
+const killingTests = (mutantId: Mutant.MutantId) => VerdictStore.use((store) => store.killingTests(mutantId))
+
 const plant = (name: string, text: string) => VerdictStoreHarness.use((harness) => harness.plant(name, text))
 
 const reset = VerdictStoreHarness.use((harness) => harness.reset)
@@ -333,6 +336,64 @@ const listingStaysWithItsMutant: FixtureLaw = {
     }),
 }
 
+const LATER_SCHEME: VerdictKeyScheme = {
+  layout: 'verdict-key-1',
+  keyDigest: 'blake3',
+  mutantIds: 'mutant-id-blake3',
+}
+
+const otherSchemeInvisible: FixtureLaw = {
+  law: 'verdicts written under another key scheme are never listed, read or counted as unreadable',
+  history: (f) =>
+    Effect.gen(function*() {
+      yield* plant(entryNameAt(LATER_SCHEME)(f.otherMutant.components), textOf(f.otherMutant))
+      const read = yield* get(f.otherMutant)
+      const listed = yield* list(f.otherMutant.components.mutantId)
+      const killing = yield* killingTests(f.otherMutant.components.mutantId)
+      return { observed: [read, ...listed, ...killing], expected: ['absent'] }
+    }),
+}
+
+const killedUnder = (
+  f: Fixtures,
+  runInputsDigest: string,
+  killedBy: ReadonlyArray<string>,
+  settledAt: number,
+): TestedEntry => ({
+  ...f.otherMutant,
+  components: { ...f.otherMutant.components, runInputsDigest },
+  killedBy,
+  settledAt,
+})
+
+const killingTestsNewestFirst: FixtureLaw = {
+  law: "a mutant's killing tests come from its Killed verdicts, newest first, each named once",
+  history: (f) =>
+    Effect.gen(function*() {
+      yield* put(killedUnder(f, digestOf('8'), ['rejects NaN', 'compares two numbers'], 2_400))
+      yield* put(killedUnder(f, digestOf('1'), ['compares two numbers', 'orders numbers'], 1_200))
+      yield* put({ ...killedUnder(f, digestOf('9'), ['never a killer'], 3_000), status: 'Survived' })
+      const torn = killedUnder(f, digestOf('a'), ['torn killer'], 4_000)
+      yield* plant(entryNameOf(torn.components), textOf(torn).slice(0, TORN_LENGTH))
+      const killing = yield* killingTests(f.otherMutant.components.mutantId)
+      return { observed: killing, expected: ['rejects NaN', 'compares two numbers', 'orders numbers'] }
+    }),
+}
+
+const killingTestsNeverFail: FixtureLaw = {
+  law: 'a mutant with no readable verdict has no killing tests',
+  history: (f) =>
+    Effect.gen(function*() {
+      const empty = yield* killingTests(f.otherMutant.components.mutantId)
+      yield* plant(entryNameOf(f.otherMutant.components), textOf(f.otherMutant).slice(0, TORN_LENGTH))
+      const tornOnly = yield* killingTests(f.otherMutant.components.mutantId)
+      return {
+        observed: [`empty store: ${empty.join(', ')}`, `torn verdict only: ${tornOnly.join(', ')}`],
+        expected: ['empty store: ', 'torn verdict only: '],
+      }
+    }),
+}
+
 const laws: ReadonlyArray<FixtureLaw> = [
   readAfterWrite,
   emptyStoreMisses,
@@ -343,6 +404,9 @@ const laws: ReadonlyArray<FixtureLaw> = [
   misplacedEntryMisses,
   strayFilesIgnored,
   listingStaysWithItsMutant,
+  otherSchemeInvisible,
+  killingTestsNewestFirst,
+  killingTestsNeverFail,
 ]
 
 export const verdictStoreLaws: ReadonlyArray<VerdictStoreLaw> = laws.map((fixtureLaw) => ({

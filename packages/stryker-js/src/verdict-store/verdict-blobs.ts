@@ -1,10 +1,13 @@
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
 
 import {
+  type TestedEntry,
   type VerdictComponents,
   type VerdictEntry,
   VerdictEntryJson,
@@ -12,7 +15,8 @@ import {
   type VerdictKind,
   VerdictKindSchema,
 } from './VerdictEntry.schema.js'
-import { verdictKeyOf } from './VerdictKey.js'
+import { verdictKeyOf, type VerdictLocation, verdictLocationAt } from './VerdictKey.js'
+import { schemeDirectoryOf, VerdictKeyScheme } from './VerdictKeyScheme.schema.js'
 import {
   EntriesListed,
   EntryAbsent,
@@ -35,7 +39,6 @@ export interface VerdictBlobs {
   readonly list: (directory: string) => Effect.Effect<ReadonlyArray<string>, VerdictBlobFailed>
 }
 
-const LAYOUT_DIRECTORY = 'v1'
 const LIST_CONCURRENCY = 8
 const ENTRY_FILE_NAME = /^(tested|checker)-([0-9a-f]{64})\.json$/u
 
@@ -44,13 +47,22 @@ const encodeEntry = S.encodeEffect(VerdictEntryJson)
 const decodeKind = S.decodeUnknownOption(VerdictKindSchema)
 const decodeKey = S.decodeUnknownOption(VerdictKey)
 
-export const entryDirectoryOf = (mutantId: Mutant.MutantId): string => `${LAYOUT_DIRECTORY}/${mutantId}`
+export const entryDirectoryOf: (mutantId: Mutant.MutantId) => string = schemeDirectoryOf(VerdictKeyScheme)
+
+const nameIn = (directory: string, kind: VerdictKind, key: VerdictKey): string => `${directory}/${kind}-${key}.json`
 
 const nameAt = (mutantId: Mutant.MutantId, kind: VerdictKind, key: VerdictKey): string =>
-  `${entryDirectoryOf(mutantId)}/${kind}-${key}.json`
+  nameIn(entryDirectoryOf(mutantId), kind, key)
 
-export const entryNameOf = (components: VerdictComponents): string =>
-  nameAt(components.mutantId, components._tag, verdictKeyOf(components))
+const locatedNameOf = (components: VerdictComponents, location: VerdictLocation): string =>
+  nameIn(location.directory, components._tag, location.key)
+
+export const entryNameAt = (scheme: VerdictKeyScheme) => (components: VerdictComponents): string =>
+  locatedNameOf(components, verdictLocationAt(scheme)(components))
+
+export const entryNameOf: (components: VerdictComponents) => string = entryNameAt(VerdictKeyScheme)
+
+const currentLocationOf: (components: VerdictComponents) => VerdictLocation = verdictLocationAt(VerdictKeyScheme)
 
 interface EntryFileName {
   readonly kind: VerdictKind
@@ -69,8 +81,9 @@ const entryAt = (text: string, file: EntryFileName): Option.Option<VerdictEntry>
 const unavailable = (failure: VerdictBlobFailed) => Effect.succeed(StoreUnavailable.make({ reason: failure.reason }))
 
 const getOf = (blobs: VerdictBlobs) => (components: VerdictComponents): Effect.Effect<GetOutcome> => {
-  const file: EntryFileName = { kind: components._tag, key: verdictKeyOf(components) }
-  return blobs.read(nameAt(components.mutantId, file.kind, file.key)).pipe(
+  const location = currentLocationOf(components)
+  const file: EntryFileName = { kind: components._tag, key: location.key }
+  return blobs.read(locatedNameOf(components, location)).pipe(
     Effect.map((text): GetOutcome =>
       Option.match(text, {
         onNone: () => EntryAbsent.make({}),
@@ -114,11 +127,12 @@ const listOf = (blobs: VerdictBlobs) => (mutantId: Mutant.MutantId): Effect.Effe
   )
 
 const putOf = (blobs: VerdictBlobs) => (entry: VerdictEntry): Effect.Effect<PutOutcome> => {
-  const key = verdictKeyOf(entry.components)
+  const location = currentLocationOf(entry.components)
+  const key = location.key
   return encodeEntry(entry).pipe(
     Effect.mapError((error) => `the entry does not encode: ${error.message}`),
     Effect.flatMap((text) =>
-      blobs.write(nameAt(entry.components.mutantId, entry.components._tag, key), text).pipe(
+      blobs.write(locatedNameOf(entry.components, location), text).pipe(
         Effect.mapError((failure) => failure.reason),
       )
     ),
@@ -129,8 +143,37 @@ const putOf = (blobs: VerdictBlobs) => (entry: VerdictEntry): Effect.Effect<PutO
   )
 }
 
+const newestFirst: Order.Order<VerdictEntry> = Order.mapInput(Order.flip(Order.Number), (entry) => entry.settledAt)
+
+const isKilled = (entry: VerdictEntry): entry is TestedEntry => entry.status === 'Killed'
+
+const killedByOf = (entry: VerdictEntry): ReadonlyArray<string> =>
+  Option.liftPredicate(entry, isKilled).pipe(
+    Option.flatMap((killed) => Option.fromUndefinedOr(killed.killedBy)),
+    Option.getOrElse((): ReadonlyArray<string> => []),
+  )
+
+const readableEntryOf = (listed: ListedEntry): ReadonlyArray<VerdictEntry> =>
+  Match.valueTags(listed, {
+    Readable: ({ entry }): ReadonlyArray<VerdictEntry> => [entry],
+    Unreadable: (): ReadonlyArray<VerdictEntry> => [],
+  })
+
+const readableEntriesOf = (outcome: ListOutcome): ReadonlyArray<VerdictEntry> =>
+  Match.valueTags(outcome, {
+    EntriesListed: ({ entries }) => entries.flatMap(readableEntryOf),
+    StoreUnavailable: (): ReadonlyArray<VerdictEntry> => [],
+  })
+
+const killingTestsOf = (blobs: VerdictBlobs) => (mutantId: Mutant.MutantId): Effect.Effect<ReadonlyArray<string>> =>
+  Effect.map(
+    listOf(blobs)(mutantId),
+    (outcome) => Arr.dedupe(Arr.sort(readableEntriesOf(outcome), newestFirst).flatMap(killedByOf)),
+  )
+
 export const makeVerdictStore = (blobs: VerdictBlobs): VerdictStoreShape => ({
   get: getOf(blobs),
   put: putOf(blobs),
   list: listOf(blobs),
+  killingTests: killingTestsOf(blobs),
 })

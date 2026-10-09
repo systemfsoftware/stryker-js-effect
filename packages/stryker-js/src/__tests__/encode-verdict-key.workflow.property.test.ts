@@ -14,7 +14,9 @@ import {
   type TestedComponents,
   TestedComponentsSchema,
   type VerdictComponents,
+  VerdictComponentsSchema,
 } from '../verdict-store/VerdictEntry.schema.js'
+import { schemeNameOf, VerdictKeyScheme, VerdictKeySchemeSchema } from '../verdict-store/VerdictKeyScheme.schema.js'
 
 type Subject = typeof encodeVerdictKey
 
@@ -24,7 +26,7 @@ interface Swap<C> {
 }
 
 const encodingOf = (subject: Subject, components: VerdictComponents): VerdictKeyEncoded =>
-  Result.merge(subject(EncodeVerdictKeyCommand.make({ components })))
+  Result.merge(subject(EncodeVerdictKeyCommand.make({ scheme: VerdictKeyScheme, components })))
 
 const sameCoveringSet = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean =>
   Arr.every(left, (id) => right.includes(id)) && Arr.every(right, (id) => left.includes(id))
@@ -128,5 +130,25 @@ describe('encodeVerdictKey', () => {
         .encoding !==
         encodingOf(subject, { ...components, engineDigest: head, runInputsDigest: `${shifted}\u0000${tail}` })
           .encoding,
+  )
+})
+
+describe('verdict key schemes', () => {
+  it.prop(
+    '∀ssc_TwoSchemes_≡DisjointKeysAndListings',
+    { of: [VerdictKeySchemeSchema, VerdictKeySchemeSchema, VerdictComponentsSchema], subject: encodeVerdictKey },
+    (subject, [left, right, components]) => {
+      const encodedAt = (scheme: VerdictKeyScheme) =>
+        Result.merge(subject(EncodeVerdictKeyCommand.make({ scheme, components })))
+      const sameScheme = schemeNameOf(left) === schemeNameOf(right)
+      const atLeft = encodedAt(left)
+      const atRight = encodedAt(right)
+      return Arr.every([
+        (atLeft.encoding === atRight.encoding) === sameScheme,
+        (atLeft.directory === atRight.directory) === sameScheme,
+        !atLeft.directory.startsWith(`${atRight.directory}/`),
+        !atRight.directory.startsWith(`${atLeft.directory}/`),
+      ], (holds) => holds)
+    },
   )
 })

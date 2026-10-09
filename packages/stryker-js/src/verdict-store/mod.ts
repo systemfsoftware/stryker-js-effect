@@ -5,7 +5,7 @@ export {
   TestedKeyEncoded,
 } from './encode-verdict-key.workflow.js'
 export type { VerdictKeyEncoded } from './encode-verdict-key.workflow.js'
-export { entryDirectoryOf, entryNameOf, makeVerdictStore } from './verdict-blobs.js'
+export { entryDirectoryOf, entryNameAt, entryNameOf, makeVerdictStore } from './verdict-blobs.js'
 export type { VerdictBlobs } from './verdict-blobs.js'
 export {
   CheckerComponentsSchema,
@@ -30,7 +30,9 @@ export type {
   VerdictEntry,
   VerdictKind,
 } from './VerdictEntry.schema.js'
-export { verdictKeyOf } from './VerdictKey.js'
+export { verdictKeyOf, verdictLocationAt } from './VerdictKey.js'
+export type { VerdictLocation } from './VerdictKey.js'
+export { schemeDirectoryOf, schemeNameOf, VerdictKeyScheme, VerdictKeySchemeSchema } from './VerdictKeyScheme.schema.js'
 export {
   EntriesListed,
   EntryAbsent,

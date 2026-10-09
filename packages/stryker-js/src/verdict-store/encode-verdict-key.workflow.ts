@@ -11,13 +11,18 @@ import {
   type VerdictComponents,
   VerdictComponentsSchema,
 } from './VerdictEntry.schema.js'
-
-const KEY_LAYOUT = 'verdict-key/1'
+import {
+  schemeDirectoryOf,
+  schemeNameOf,
+  type VerdictKeyScheme,
+  VerdictKeySchemeSchema,
+} from './VerdictKeyScheme.schema.js'
 
 const EncodeVerdictKeyTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/EncodeVerdictKey')
 type EncodeVerdictKeyTypeId = typeof EncodeVerdictKeyTypeId
 
 export class EncodeVerdictKeyCommand extends S.TaggedClass<EncodeVerdictKeyCommand>()('EncodeVerdictKeyCommand', {
+  scheme: VerdictKeySchemeSchema,
   components: VerdictComponentsSchema,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -25,12 +30,14 @@ export class EncodeVerdictKeyCommand extends S.TaggedClass<EncodeVerdictKeyComma
 
 export class TestedKeyEncoded extends S.TaggedClass<TestedKeyEncoded>()('TestedKeyEncoded', {
   encoding: S.String,
+  directory: S.String,
 }) {
   readonly [EncodeVerdictKeyTypeId] = EncodeVerdictKeyTypeId
 }
 
 export class CheckerKeyEncoded extends S.TaggedClass<CheckerKeyEncoded>()('CheckerKeyEncoded', {
   encoding: S.String,
+  directory: S.String,
 }) {
   readonly [EncodeVerdictKeyTypeId] = EncodeVerdictKeyTypeId
 }
@@ -41,8 +48,8 @@ const lengthPrefixed = (value: string): string => `${value.length}:${value}`
 
 const encodingOf = (parts: ReadonlyArray<string>): string => parts.map(lengthPrefixed).join('')
 
-const sharedPartsOf = (components: VerdictComponents): ReadonlyArray<string> => [
-  KEY_LAYOUT,
+const sharedPartsOf = (scheme: VerdictKeyScheme, components: VerdictComponents): ReadonlyArray<string> => [
+  schemeNameOf(scheme),
   components._tag,
   components.engineDigest,
   components.runInputsDigest,
@@ -58,11 +65,12 @@ const sharedPartsOf = (components: VerdictComponents): ReadonlyArray<string> => 
 
 const coveringTestIdsOf = (ids: ReadonlyArray<string>): ReadonlyArray<string> => Arr.sort(Arr.dedupe(ids), Order.String)
 
-const testedEncodingOf = (components: TestedComponents): TestedKeyEncoded => {
+const testedEncodingOf = (scheme: VerdictKeyScheme, components: TestedComponents): TestedKeyEncoded => {
   const covering = coveringTestIdsOf(components.coveringTestIds)
   return TestedKeyEncoded.make({
+    directory: schemeDirectoryOf(scheme)(components.mutantId),
     encoding: encodingOf([
-      ...sharedPartsOf(components),
+      ...sharedPartsOf(scheme, components),
       String(covering.length),
       ...covering,
       components.closureDigest,
@@ -71,18 +79,21 @@ const testedEncodingOf = (components: TestedComponents): TestedKeyEncoded => {
   })
 }
 
-const checkerEncodingOf = (components: CheckerComponents): CheckerKeyEncoded =>
-  CheckerKeyEncoded.make({ encoding: encodingOf([...sharedPartsOf(components), components.programDigest]) })
+const checkerEncodingOf = (scheme: VerdictKeyScheme, components: CheckerComponents): CheckerKeyEncoded =>
+  CheckerKeyEncoded.make({
+    directory: schemeDirectoryOf(scheme)(components.mutantId),
+    encoding: encodingOf([...sharedPartsOf(scheme, components), components.programDigest]),
+  })
 
-const encodedOf = (components: VerdictComponents): VerdictKeyEncoded =>
+const encodedOf = ({ scheme, components }: EncodeVerdictKeyCommand): VerdictKeyEncoded =>
   Match.valueTags(components, {
-    tested: testedEncodingOf,
-    checker: checkerEncodingOf,
+    tested: (tested) => testedEncodingOf(scheme, tested),
+    checker: (checker) => checkerEncodingOf(scheme, checker),
   })
 
 export const encodeVerdictKey = Workflow.make({
   command: EncodeVerdictKeyCommand,
   decision: S.Union([TestedKeyEncoded, CheckerKeyEncoded]),
   error: S.Never,
-  decide: (command): Result.Result<VerdictKeyEncoded, never> => Result.succeed(encodedOf(command.components)),
+  decide: (command): Result.Result<VerdictKeyEncoded, never> => Result.succeed(encodedOf(command)),
 })

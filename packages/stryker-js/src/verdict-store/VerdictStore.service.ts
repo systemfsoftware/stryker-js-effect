@@ -9,6 +9,7 @@ export interface VerdictStoreShape {
   readonly get: (components: VerdictComponents) => Effect.Effect<GetOutcome>
   readonly put: (entry: VerdictEntry) => Effect.Effect<PutOutcome>
   readonly list: (mutantId: Mutant.MutantId) => Effect.Effect<ListOutcome>
+  readonly killingTests: (mutantId: Mutant.MutantId) => Effect.Effect<ReadonlyArray<string>>
 }
 
 export class VerdictStore extends Context.Service<VerdictStore, VerdictStoreShape>()(
