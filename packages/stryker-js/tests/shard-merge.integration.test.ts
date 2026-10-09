@@ -15,6 +15,8 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
+import { DEFAULT_VERDICT_DIRECTORY, storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
+
 const Feature = makeFeature({ it })
 
 const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.url).pathname)
@@ -86,17 +88,6 @@ const verdictsOfReport = (text: string): readonly Verdict[] =>
       ),
   })
 
-const decodeMergedCosts = S.decodeUnknownOption(
-  S.fromJsonString(S.Struct({ costs: S.optional(S.Record(S.String, S.Unknown)) })),
-)
-
-const mergedCostIdsOf = (text: string): readonly string[] =>
-  Option.match(decodeMergedCosts(text), {
-    onNone: () => [],
-    onSome: (decoded) =>
-      Arr.sort(Object.keys(Option.getOrElse(Option.fromUndefinedOr(decoded.costs), () => ({}))), Order.String),
-  })
-
 const planOf = (first: ReadonlyArray<string>, second: ReadonlyArray<string>): ShardPlan => ({
   version: 1,
   targetSeconds: 1,
@@ -152,7 +143,7 @@ const prepareFixture = (): Effect.Effect<
 
 interface MergeOutcome {
   readonly merged: readonly Verdict[]
-  readonly mergedCostIds: readonly string[]
+  readonly storedIds: readonly string[]
   readonly doctored: { readonly id: string; readonly exitCode: number; readonly output: string }
 }
 
@@ -167,6 +158,7 @@ const runAndMerge = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const { root, ids } = fixture
+    yield* fs.remove(path.join(root, DEFAULT_VERDICT_DIRECTORY), { recursive: true, force: true })
     const first = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '1/2', '--out', 'reports/shard-1'])
     const second = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '2/2', '--out', 'reports/shard-2'])
     yield* Effect.when(
@@ -193,7 +185,10 @@ const runAndMerge = (
       Effect.die(new Error(`merged per-project incremental missing at ${mergedIncremental}`)),
       Effect.succeed(!hasMergedIncremental),
     )
-    const mergedCostIds = mergedCostIdsOf(yield* fs.readFileString(mergedIncremental))
+    const storedIds = Arr.sort(
+      Object.keys(yield* storedVerdictsIn({ projectRoot: root, mutantIds: ids })),
+      Order.String,
+    )
     const duplicate = ids[0] ?? 'no-id'
     const half = Math.ceil(ids.length / 2)
     const doctoredPlan = planOf(ids.slice(0, half), [duplicate, ...ids.slice(half)])
@@ -211,7 +206,7 @@ const runAndMerge = (
     ])
     return {
       merged: verdictsOfReport(mergedReport),
-      mergedCostIds,
+      storedIds,
       doctored: { id: duplicate, exitCode: doctored.exitCode, output: doctored.output },
     }
   }).pipe(Effect.orDie)
@@ -301,14 +296,14 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
           (s, expect) =>
             expect({
               merged: statusMapOf(s.outcome.merged),
-              mergedCostIds: s.outcome.mergedCostIds,
+              storedIds: s.outcome.storedIds,
               unsharded: statusMapOf(s.fixture.unsharded),
               unshardedIds: s.fixture.ids,
               doctoredFailed: s.outcome.doctored.exitCode !== 0,
               doctoredNamesId: s.outcome.doctored.output.includes(s.outcome.doctored.id),
             }).toEqual({
               merged: statusMapOf(s.fixture.unsharded),
-              mergedCostIds: s.fixture.ids,
+              storedIds: s.fixture.ids,
               unsharded: statusMapOf(s.fixture.unsharded),
               unshardedIds: s.fixture.ids,
               doctoredFailed: true,
