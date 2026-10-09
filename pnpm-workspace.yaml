@@ -97,7 +97,7 @@ overrides:
   "@systemfsoftware/stryker-js-svelte@*": file:.sfs-deps/stryker-js-svelte.tgz
   "@systemfsoftware/stryker-js-typescript-checker@*": file:.sfs-deps/stryker-js-typescript-checker.tgz
   "@systemfsoftware/stryker-js-vitest-runner@*": file:.sfs-deps/stryker-js-vitest-runner.tgz
-  "@systemfsoftware/stryker-js-vm-runner@npm:@systemfsoftware/stryker-js-vitest-runner@^9.0.0": file:.sfs-deps/stryker-js-vitest-runner.tgz
+  "@systemfsoftware/stryker-js-vm-runner@npm:@systemfsoftware/stryker-js-vitest-runner@^9.0.1": file:.sfs-deps/stryker-js-vitest-runner.tgz
 minimumReleaseAgeExclude:
   - "@systemfsoftware/*"
   - effect
