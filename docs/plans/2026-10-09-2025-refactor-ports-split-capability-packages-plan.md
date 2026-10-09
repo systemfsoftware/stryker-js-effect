@@ -2,7 +2,7 @@
 title: Ports split from layers, then one package per engine capability - Plan
 type: refactor
 date: 2026-10-09
-supersedes: docs/plans/2026-10-09-1848-refactor-ports-split-capability-packages-plan.md
+supersedes: docs/plans/2026-10-09-1955-refactor-ports-split-capability-packages-plan.md
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
@@ -18,7 +18,7 @@ execution: code
 - Means: L1 moves every `Layer` out of the `*.service.ts` file that declares its tag, under a new ADR that supersedes ADR-0001's service row (KTD1, KTD2). L2 then cuts `packages/stryker-js` along the seams its import graph shows, into packages that each publish one namespace (KTD5, KTD6).
 - Authority: `CONSTITUTION.md` first, then the cell-architecture, boundary-testing, schema-laws, and package-topology packs, then the ADRs in `docs/adr/`, then this plan. Where `cell-architecture/ports-separate-from-layers.md` and the tier-2 clause of `cell-architecture/service-and-layer-boundaries.md` disagree, ports-separate-from-layers wins (KTD1).
 - Stop conditions: stop and ask when a unit needs to edit a read-only surface (`.github/workflows/`, `CONSTITUTION.md`, `repos/**`), needs a new third-party executable dependency, or would retarget the dogfood overrides in `pnpm-workspace.yaml`. One read-only exception is a root ruling: the L2 PR edits `.github/workflows/mutation.yml` itself to enrol the new packages (U18), overriding `AGENTS.md`'s read-only note on `.github/workflows/` for that file and that change only; the root reviews the diff. Two grading-surface edits are approved: `attw` joins `check:ci` (U21), and the `*.service.ts` Layer rule joins the gritlint gate (U20). Any other grading-surface edit stops for approval. No local mutation runs.
-- Execution profile: one stacked PR per layer. L1 is branch `stream-a/l1-ports-topology` off `main`. L2 is the next layer, cut from L1. No force-push; when `main` moves, merge `origin/main` upward.
+- Execution profile: one stacked PR per layer. L1 is branch `stream-a/l1-ports-topology` off `main`. L2 is the next layer, cut from L1. No force-push; when `main` moves, including when streams F, G, H, or I land (KTD12), merge `origin/main` upward, never rebase.
 
 ---
 
@@ -98,12 +98,20 @@ Capability packages (L2)
   8. `stryker-js-serve`: `Serve/`. About 5.
   9. `stryker-js-mcp`: `Mcp/`. About 4.
   10. `stryker-js` keeps its name and the `stryker` bin: `bin/`, `run-request`, `conclude-run`, CLI routing, and `shard/` (only the CLI imports it). It imports the platform layer from the engine. About 18.
+  11. Instrumenter drivers (KTD12), outside the split: the existing `stryker-js-instrumenter` (JS driver) and stream F's reserved native addon package each provide a Layer for the `Instrumenter` port in contracts. Only the CLI depends on a driver.
 - KTD6. Existing packages are not merged into the new ones. `stryker-js-plugin-interface` stays the plugin boundary (L3's protocol home), and `stryker-js-cli-contract` stays the machine-stream wire contract. Engine ports are not plugin contracts, so they get `stryker-js-contracts`.
 - KTD7. The CLI keeps `deps.alwaysBundle: [/./]` (`packages/stryker-js/tsdown.config.ts:66`), so the released binary stays one self-contained bundle and the dogfood install shape does not change. Library consumers get each package's own `dist`.
 - KTD8. Package isolation uses what is already present. A bare deep import of an undeclared path fails typecheck because exports maps resolve through the `@systemfsoftware/source` condition (`packages/stryker-js/tsconfig.app.json:13`). A relative import that escapes the package is refused by tsc in every composite project: a throwaway probe in `packages/stryker-js-plugin-runtime/src` importing `../../stryker-js-cli-contract/src/mod.js` failed `tsc -b` with TS6059 ("is not under 'rootDir' ... 'rootDir' is expected to contain all source files") and TS6307 ("is not listed within the file list of project"), exit 2. Every new L2 package therefore keeps `composite: true` in each tsconfig, as the existing packages do. Acyclicity (R8) is not assumed from turbo: L2 shows it with a real run before relying on it (U13).
 - KTD9. L1 adds no tests for the moved code. It moves code without changing behavior, and the suites that build each moved Layer prove it (per-unit Test Scenarios). A test asserting where a Layer lives would be a source-text test (`CHK1`, OP12). R3's permanent gate is the gritlint rule (U20), whose own fixtures include violating inputs it refuses.
 - KTD10. gritlint rules ship as bundled packs. Packs live in `systemfsoftware/systemfsoftware` `packs/<pack>/` (`pack.json`, `rules/*.md`, `fixtures/<rule>/{bad,good}/<case>/`), embedded at build time by `include_dir!` in `apps/gritlint/src/main.rs`, and reach this repo through the `systemfsoftware` flake input (`flake.nix:25,87`) and `bin/gritlint`. The Layer rule is a new `cell-architecture` pack named for the compound pack whose rule it enforces. It lands upstream as its own PR, then L1 bumps the flake input and enables the pack in `gritlint.json`. Later package-topology rules go in a `package-topology` pack the same way.
 - KTD11. `attw` joins `check:ci` in L1 through the existing per-package `attw --pack .` scripts, the `@systemfsoftware/arethetypeswrong-cli` fork, and the existing turbo `attw` task (`turbo.json:119`); no new dependency.
+- KTD12. Driver seams for the parallel streams (F: native napi-rs instrumenter over oxc; G: execution engine and CI bench lane; H: checker on tsgo / TS 7 native; I: subsumption and SMT). Three port shapes are frozen for L2: L2 adds, removes, renames, or retypes no member of them, and the engine reaches each capability only through its port, so F, G, and H swap drivers without editing a contract package.
+  - `Checker` (`packages/stryker-js-plugin-interface/src/Checker.service.ts:8-21`): `init`; `check(mutants: readonly CheckerMutantWire[])` to `HashMap<string, CheckResult>`; `group(mutants)` to `readonly (readonly string[])[]`; `digest` to `ProgramDigest`; every member fails with `CheckerFailed`. Stream H's tsgo checker is a driver behind it.
+  - `TestRunner` (`packages/stryker-js-plugin-interface/src/TestRunner.service.ts:10-20`): `capabilities`; `init`; `dryRun(DryRunOptions)` to `DryRunResult`; `mutantRun(MutantRunOptions)` to `Stream<MutantRunEvent>`; `dispose`; every member fails with `TestRunnerFailed`. Stream G's execution engine drives runners through it.
+  - `Instrumenter` (new in `stryker-js-contracts`, U22): `instrument(files: readonly File[], selection)` to `InstrumentResult` and `disableTypeChecks(file: File)` to `File`, failing with `InstrumentError`, plus the activation contract that instrumented code and runners share, `InstrumenterContext.ACTIVE_MUTANT_ENV_VARIABLE` (`command-runner.blueprint.ts:61`). `selection` is data only: `optInMutations`, `excludedMutations`, `mutantSetPolicy`. Today the engine hands the JS instrumenter JS mutator objects, JS ignorer objects, and a format registry (`run/instrument.ts:109-120`), which a native addon cannot take; they become construction inputs of the JS driver's Layer, built at the CLI composition root.
+  - Placement: `Checker` and `TestRunner` stay in `stryker-js-plugin-interface`, the contract package every plugin already implements (KTD6, L3's protocol home); moving them into `stryker-js-contracts` breaks every plugin and gains no driver. `Instrumenter` goes to `stryker-js-contracts` because no plugin implements it. No contract package depends on an instrumenter driver: U22 measures every import of `@systemfsoftware/stryker-js-instrumenter` outside the CLI (today including type uses such as `Format.FormatRegistry` at `mutation-reporting.service.ts:24` and `Instrument` in `Project.schema.ts`) and closes each one.
+  - Reserved package: stream F's native addon is a driver package beside `stryker-js-instrumenter`, depending on contracts and composed by the CLI. L2 creates nothing in it and leaves its name to stream F.
+  - Stream I declares no port named here. Wherever its modules land on `main`, merging `origin/main` upward brings them in, and L2's moves rehome them by the same seam rules.
 
 ### Alternatives considered
 
@@ -131,6 +139,9 @@ flowchart BT
   mcp[stryker-js-mcp] --> engine
   mcp --> survivors
   cli[stryker-js CLI] --> engine
+  instrumenterjs[stryker-js-instrumenter: JS driver] --> contracts
+  instrumenternative["native instrumenter: stream F, reserved"] --> contracts
+  cli --> instrumenterjs
   cli --> contracts
   cli --> reporting
   cli --> survivors
@@ -170,8 +181,9 @@ No config package exists (KTD5.2): config schemas sit in contracts, loading in t
 | U20  | gritlint rule: no Layer from `*.service.ts`        | upstream `systemfsoftware/systemfsoftware` `packs/cell-architecture/**`; here `flake.lock`, `gritlint.json`                                                                                                             | U3-U8      |
 | U21  | attw in `check:ci`                                 | `package.json`                                                                                                                                                                                                          | -          |
 | U10  | contracts package                                  | `packages/stryker-js-contracts/**`                                                                                                                                                                                      | L1         |
+| U22  | Instrumenter port and driver seam                  | `packages/stryker-js-contracts/src/Instrumenter.service.ts`, `packages/stryker-js-instrumenter/src/**`, `run/instrument.ts`, `Sandbox.blueprint.ts`, `command-runner.blueprint.ts`                                      | U10        |
 | U11  | config split without a config package              | `packages/stryker-js/src/config/**`, `drivers/config.ts`, `run/load-config*`, their callers                                                                                                                             | U10        |
-| U12  | sandbox and worker-host packages                   | `packages/stryker-js-sandbox/**`, `packages/stryker-js-worker-host/**`                                                                                                                                                  | U10, U11   |
+| U12  | sandbox and worker-host packages                   | `packages/stryker-js-sandbox/**`, `packages/stryker-js-worker-host/**`                                                                                                                                                  | U11, U22   |
 | U13  | engine package                                     | `packages/stryker-js-engine/**`                                                                                                                                                                                         | U12        |
 | U14  | reporting package                                  | `packages/stryker-js-reporting/**`                                                                                                                                                                                      | U10        |
 | U15  | survivors, serve, mcp packages                     | `packages/stryker-js-{survivors,serve,mcp}/**`                                                                                                                                                                          | U13, U14   |
@@ -318,6 +330,17 @@ No config package exists (KTD5.2): config schemas sit in contracts, loading in t
   - Moved in-source refusal blocks still state each refined schema's refusal boundary and pass.
 - Verification: `pnpm --filter @systemfsoftware/stryker-js-contracts typecheck test build api:check attw`; its manifest lists no other `stryker-js-*` package from this split.
 
+### U22. Instrumenter port and driver seam
+
+- Goal: the engine instruments through an `Instrumenter` port in contracts and the JS instrumenter is one driver behind it, so stream F's native addon replaces it at the CLI composition root without editing contracts or the engine.
+- Requirements: R6, R7, R9.
+- Files: new `packages/stryker-js-contracts/src/Instrumenter.service.ts` (tag and shape only, KTD1) and the schema types the shape reaches; new `packages/stryker-js-instrumenter/src/drivers/instrumenter.ts` (the JS driver Layer); `packages/stryker-js/src/run/instrument.ts`, `Sandbox.blueprint.ts`, `command-runner.blueprint.ts`, and the other non-CLI importers of `@systemfsoftware/stryker-js-instrumenter`.
+- Approach: KTD12, with the shape it freezes. The JS driver Layer takes the mutator catalogs, plugin mutator contributions, ignorers, and format registry as construction inputs, and runs `Mutator.registryOf`/`Mutator.selectMutators` itself; `run/` keeps computing the selection data. Measure every import of `@systemfsoftware/stryker-js-instrumenter` from modules bound for contracts, engine, sandbox, worker-host, reporting, survivors, serve, and mcp. Driver-neutral targets (`ErrorText`, `Location`, the `Instrument` schema types) move to contracts; JS-specific ones (`Format`, `Mutator`) reach the engine only through the driver's construction inputs.
+- Test Scenarios:
+  - The existing instrumentation integration suites (`mutant-location-parity`, `plugin-mutator-provider`, `framework-run`) pass with the engine calling the port and the CLI providing the JS driver.
+  - One contract law suite runs against the JS driver and a substitute driver that returns a fixed `InstrumentResult` (`boundary-testing/fake-and-real-store-laws`). Stream F's driver runs the same suite to prove it can be swapped in. Admitted as a fake-versus-real adapter contract test (`write-contract-test`).
+- Verification: `pnpm --filter @systemfsoftware/stryker-js-instrumenter typecheck test build api:check attw`, then the same for contracts. After U15, no `package.json` under `packages/stryker-js-{contracts,engine,sandbox,worker-host,reporting,survivors,serve,mcp}` lists `@systemfsoftware/stryker-js-instrumenter`.
+
 ### U11. Config split without a config package
 
 - Goal: user config files keep importing `defineConfig` and `mergeConfig` from `@systemfsoftware/stryker-js/config`, the CLI package owns both as its own code, and no package below the CLI imports them.
@@ -391,7 +414,7 @@ No config package exists (KTD5.2): config schemas sit in contracts, loading in t
 - Goal: every surface change is versioned.
 - Requirements: R6, R9.
 - Files: `packages/*/etc/*.api.md`, `.changeset/*.md`.
-- Approach: `@systemfsoftware/stryker-js` major (root namespaces move out; `./config` drops `ConfigEnv`, `Immutable`, `ImmutablePrimitive`, `Primitive`); each new package debuts at its manifest version (`docs/solutions/tooling-decisions/first-publish-under-oidc-trusted-publishing.md`).
+- Approach: `@systemfsoftware/stryker-js` major (root namespaces move out; `./config` drops `ConfigEnv`, `Immutable`, `ImmutablePrimitive`, `Primitive`); `@systemfsoftware/stryker-js-instrumenter` major (`Instrument.instrument` and `Instrument.disableTypeChecks` give way to the driver Layer, and its driver-neutral modules move to contracts, U22); each new package debuts at its manifest version (`docs/solutions/tooling-decisions/first-publish-under-oidc-trusted-publishing.md`).
 - Test Scenarios: Test expectation: none - generated reports.
 - Verification: `pnpm build` and CI `Changeset Check`.
 
@@ -409,7 +432,7 @@ No config package exists (KTD5.2): config schemas sit in contracts, loading in t
 ## Definition of Done
 
 - L1: U1-U9, U20, U21 on one PR whose head is green; ADR-0001 unchanged; the gritlint gate (with the `cell-architecture` pack) and `attw` run in `check:ci` and pass; the flake input is pinned to the merged upstream commit, not a PR head; no `*Live` statics remain in libraries.
-- L2: U10-U16, U18, U19 merged on one PR stacked on L1, green on its head; `packages/stryker-js/src/mod.ts` exports only CLI-owned names; `.github/workflows/mutation.yml` `PROJECTS` and `INCREMENTAL_REPORTS` cover every new package, edited in the L2 PR (root ruling).
+- L2: U10-U16, U18, U19, U22 merged on one PR stacked on L1, green on its head; `packages/stryker-js/src/mod.ts` exports only CLI-owned names; the `Checker`, `TestRunner`, and `Instrumenter` shapes match KTD12; `.github/workflows/mutation.yml` `PROJECTS` and `INCREMENTAL_REPORTS` cover every new package, edited in the L2 PR (root ruling).
 - Cleanup: no throwaway audit scripts, probes, scratch graphs, or empty `*.service.ts` shells remain; DEL1 grep for each removed identifier (`RunEventDrainLive`, `OutputModeProbeLive`, `WorkerReportsLive`) returns nothing.
 
 ---
@@ -417,6 +440,7 @@ No config package exists (KTD5.2): config schemas sit in contracts, loading in t
 ## Outstanding Questions
 
 - `./config` authoring types: U11 drops `ConfigEnv`, `Immutable`, `ImmutablePrimitive`, and `Primitive` from `./config` so each has one access path. A config callback still gets `ConfigEnv` inferred through `defineConfig`. The root may overrule this before U11 runs.
+- Port placement (KTD12): the plan reads "keep the ports in contracts" as the contract packages. `Checker` and `TestRunner` stay in `stryker-js-plugin-interface`, and only `Instrumenter` goes to `stryker-js-contracts`. The root may instead move all three into `stryker-js-contracts`, which breaks every plugin package.
 
 ---
 
