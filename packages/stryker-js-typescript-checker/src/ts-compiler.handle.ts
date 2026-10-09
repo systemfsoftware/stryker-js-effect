@@ -456,6 +456,10 @@ const packageSpecifierOf = (specifier: string): Option.Option<PackageSpecifier> 
   )
 }
 
+const ABSENT_EXPORTS: ReadonlyArray<JsonValue> = [null, false, '']
+
+const declaresExports = (value: JsonValue): boolean => !ABSENT_EXPORTS.includes(value)
+
 const readPackageExportsOf = (
   rt: TSCompilerRuntime,
   directory: string,
@@ -468,7 +472,7 @@ const readPackageExportsOf = (
     Effect.map((text) =>
       Option.flatMap(
         S.decodeOption(S.fromJsonString(S.Struct({ exports: S.optional(S.Json) })))(text),
-        (manifest) => Option.fromUndefinedOr(manifest.exports),
+        (manifest) => Option.filter(Option.fromUndefinedOr(manifest.exports), declaresExports),
       )
     ),
   )
@@ -488,21 +492,29 @@ const defaultAncestorCandidatesOf = (
     }),
   ])
 
+interface AncestorCandidates {
+  readonly candidates: ReadonlyArray<string>
+  readonly stops: boolean
+}
+
 const exportsCandidatesOf = (
   pathService: Path.Path,
   directory: string,
   spec: PackageSpecifier,
   exportsValue: JsonValue,
-): ReadonlyArray<string> =>
+): AncestorCandidates =>
   Match.value(
     resolvePackageExports(ResolvePackageExportsCommand.make({ exports: exportsValue, subpath: spec.subpath })).pipe(
       decided,
     ),
   ).pipe(
-    Match.tag('PackageExportsResolved', ({ targets }) =>
-      Arr.map(targets, (target) =>
-        normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, spec.packageName, target)))),
-    Match.tag('PackageExportsUnresolved', (): ReadonlyArray<string> => []),
+    Match.tag('PackageExportsResolved', ({ targets, terminal }) => ({
+      candidates: Arr.map(targets, (target) =>
+        normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, spec.packageName, target))),
+      stops: terminal,
+    })),
+    Match.tag('PackageExportsExcluded', (): AncestorCandidates => ({ candidates: [], stops: true })),
+    Match.tag('PackageExportsUnresolved', (): AncestorCandidates => ({ candidates: [], stops: false })),
     Match.exhaustive,
   )
 
@@ -511,22 +523,32 @@ const bareAncestorCandidatesOf = (
   directory: string,
   specifier: string,
   maybeSpec: Option.Option<PackageSpecifier>,
-): Effect.Effect<ReadonlyArray<string>, never> =>
+): Effect.Effect<AncestorCandidates, never> =>
   Option.match(maybeSpec, {
-    onNone: () => Effect.succeed(defaultAncestorCandidatesOf(rt.pathService, directory, specifier)),
+    onNone: () =>
+      Effect.succeed({ candidates: defaultAncestorCandidatesOf(rt.pathService, directory, specifier), stops: false }),
     onSome: (spec) =>
       readPackageExportsOf(rt, directory, spec.packageName).pipe(
         Effect.map((maybeExports) =>
           Option.match(maybeExports, {
-            onNone: () => defaultAncestorCandidatesOf(rt.pathService, directory, specifier),
-            onSome: (exportsValue) => [
-              ...exportsCandidatesOf(rt.pathService, directory, spec, exportsValue),
-              ...defaultAncestorCandidatesOf(rt.pathService, directory, specifier),
-            ],
+            onNone: () => ({
+              candidates: defaultAncestorCandidatesOf(rt.pathService, directory, specifier),
+              stops: false,
+            }),
+            onSome: (exportsValue) => exportsCandidatesOf(rt.pathService, directory, spec, exportsValue),
           })
         ),
       ),
   })
+
+const throughFirstStopOf = (ancestors: ReadonlyArray<AncestorCandidates>): ReadonlyArray<string> =>
+  Arr.flatMap(
+    Option.match(Arr.findFirstIndex(ancestors, (ancestor) => ancestor.stops), {
+      onNone: () => ancestors,
+      onSome: (index) => Arr.take(ancestors, index + 1),
+    }),
+    (ancestor) => ancestor.candidates,
+  )
 
 const tsConfigExtendsCandidatesOf = (
   rt: TSCompilerRuntime,
@@ -542,7 +564,7 @@ const tsConfigExtendsCandidatesOf = (
           ancestorDirectoriesOf(rt.pathService, fromDirName),
           (directory) => bareAncestorCandidatesOf(rt, directory, specifier, maybeSpec),
         ),
-        (candidateLists) => Arr.flatten(candidateLists),
+        throughFirstStopOf,
       )
     },
   })
