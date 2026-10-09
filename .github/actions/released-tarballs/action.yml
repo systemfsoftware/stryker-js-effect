@@ -1,0 +1,52 @@
+name: Released tarballs
+description: >-
+  Puts the released tarballs the lockfile installs from into `.sfs-deps/`, as plain `.tgz`
+  files. They are cached under the `stryker-published` pin in flake.lock, so Nix builds them
+  only when the pin moves. `pnpm install --frozen-lockfile` still checks each tarball against
+  the integrity the lockfile records.
+
+outputs:
+  cache-hit:
+    description: "'true' when `.sfs-deps/` came from the cache"
+    value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - id: key
+      name: Key of the pinned release
+      shell: bash
+      run: |
+        pin=$(jq -er '.nodes["stryker-published"].locked | "\(.rev)-\(.narHash)"' flake.lock)
+        echo "key=sfs-deps-$RUNNER_OS-$(sha256sum <<< "$pin" | cut -c1-64)" >> "$GITHUB_OUTPUT"
+
+    - id: restore
+      uses: actions/cache/restore@v6
+      with:
+        path: .sfs-deps
+        key: ${{ steps.key.outputs.key }}
+
+    - id: nix
+      if: steps.restore.outputs.cache-hit != 'true'
+      name: Is Nix installed
+      shell: bash
+      run: echo "present=$(command -v nix >/dev/null && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+    - if: steps.restore.outputs.cache-hit != 'true' && steps.nix.outputs.present != 'true'
+      uses: cachix/install-nix-action@v31
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      name: Build the tarballs of the pinned release
+      shell: bash
+      run: |
+        published=$(nix build --no-link --print-out-paths .#stryker-published)
+        rm -rf .sfs-deps
+        mkdir .sfs-deps
+        cp "$published"/*.tgz .sfs-deps/
+        chmod u+w .sfs-deps/*.tgz
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: .sfs-deps
+        key: ${{ steps.key.outputs.key }}

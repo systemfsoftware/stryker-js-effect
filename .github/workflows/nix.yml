@@ -45,8 +45,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - name: The released tarballs the lockfile installs from
-        run: nix build .#stryker-published --out-link .sfs-deps
+      - uses: ./.github/actions/released-tarballs
       - run: pnpm install --frozen-lockfile
       - run: nix build .#packages.x86_64-linux.workspace-tarballs --out-link tarballs
       - run: pnpm -r --if-present run build
