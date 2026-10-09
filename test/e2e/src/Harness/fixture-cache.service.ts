@@ -2,19 +2,15 @@ import type { Readiness } from '@systemfsoftware/effect-readiness'
 import {
   Array,
   Boolean,
-  Cache,
-  Config,
   Context,
   Crypto,
   Effect,
   FileSystem,
-  Layer,
   Match,
   Option,
   Path,
   Result,
   Schema,
-  Scope,
   Stream,
 } from 'effect'
 import { Hex } from 'effect/encoding'
@@ -51,10 +47,10 @@ import {
 } from './bake-key.schema.js'
 import type { WorkspaceCatalogs } from './catalog-resolution.js'
 import { parseFixtureManifest, parseWorkspaceCatalogs, resolveCatalogSpecs } from './catalog-resolution.js'
+import { seamSpan, SpanNames, withSeamSpan } from './drivers/harness-telemetry.js'
 import { GuestJobs } from './guest-job.service.js'
-import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
+import { ExitFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
-import { seamSpan, SpanNames, withSeamSpan } from './harness-telemetry.service.js'
 import * as Warm from './warm-sandbox.handle.js'
 
 export type BakePlatform =
@@ -660,7 +656,7 @@ const deriveBakeKeys = (
     return { packsKey, fixtures }
   })
 
-const entryNameOf = (fixture: BakedFixture): string => `${fixture.fixtureId}.${fixture.key}`
+export const entryNameOf = (fixture: BakedFixture): string => `${fixture.fixtureId}.${fixture.key}`
 
 const missingFixtures = (root: string, fixtures: ReadonlyArray<BakedFixture>) =>
   Effect.gen(function*() {
@@ -740,35 +736,6 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
     }).pipe(Effect.ensuring(fs.remove(scratch, { recursive: true, force: true }).pipe(Effect.orDie)))
   })
 
-const warmFixtureInto = (
-  scope: Scope.Scope,
-  fixtureUrl: URL,
-): Effect.Effect<Warm.WarmSandbox, HarnessError, BakePlatform> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const hostFixtureDir = yield* path.fromFileUrl(fixtureUrl).pipe(Effect.orDie)
-    const fixtureId = path.basename(hostFixtureDir)
-    const stat = yield* Effect.option(fs.stat(hostFixtureDir))
-    yield* Boolean.match(Option.exists(stat, (info) => info.type === 'Directory'), {
-      onTrue: () => Effect.void,
-      onFalse: () => Effect.fail(new FixtureMissingFailure({ directory: hostFixtureDir })),
-    })
-    const bakedRoot = yield* resolveBakedRoot
-    const keys = yield* resolveFixtureKeys
-    const key = yield* Option.match(Option.fromNullishOr(keys[fixtureId]), {
-      onNone: () => Effect.fail(new FixtureMissingFailure({ directory: `${bakedRoot}/${fixtureId}` })),
-      onSome: (present) => Effect.succeed(present),
-    })
-    const entryDir = path.join(bakedRoot, entryNameOf({ fixtureId, key }))
-    const entryExists = yield* fs.exists(entryDir)
-    yield* Boolean.match(entryExists, {
-      onTrue: () => Effect.void,
-      onFalse: () => Effect.fail(new FixtureMissingFailure({ directory: entryDir })),
-    })
-    return yield* Warm.boot(entryDir, fixtureId).pipe(Scope.provide(scope))
-  }).pipe(seamSpan(SpanNames.install, { 'e2e.fixture': fixtureUrl.href }))
-
 const bakeEnvironment = Effect.gen(function*() {
   const path = yield* Path.Path
   const packageDir = yield* path.fromFileUrl(new URL('../../', import.meta.url)).pipe(Effect.orDie)
@@ -811,28 +778,4 @@ export class BakedFixtureCache extends Context.Service<BakedFixtureCache, BakedF
         ),
       )
     })
-
-  static readonly layer = Layer.effect(
-    BakedFixtureCache,
-    Effect.gen(function*() {
-      const scope = yield* Effect.scope
-      const root = yield* Effect.cached(resolveBakedRoot)
-      const warmed = yield* Cache.make({
-        capacity: 16,
-        lookup: (fixtureHref: string) => warmFixtureInto(scope, new URL(fixtureHref)),
-        requireServicesAt: 'lookup',
-      })
-      return {
-        root,
-        warm: (fixtureUrl: URL) => Cache.get(warmed, fixtureUrl.href),
-      }
-    }),
-  )
 }
-
-const resolveBakedRoot = Config.String(BakedFixtureCache.BAKED_ROOT_ENV)
-
-const resolveFixtureKeys = Config.schema(
-  Schema.fromJsonString(FixtureKeys),
-  BakedFixtureCache.BAKED_KEYS_ENV,
-)

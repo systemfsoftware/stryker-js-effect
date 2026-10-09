@@ -1,11 +1,10 @@
 import { MicroVM } from '@systemfsoftware/effect-microsandbox'
 import type { Readiness } from '@systemfsoftware/effect-readiness'
-import { Boolean, Context, Effect, Layer, Match } from 'effect'
+import { Context, Effect } from 'effect'
 import * as Crypto from 'effect/Crypto'
 import * as FileSystem from 'effect/FileSystem'
 
 import { ExitFailure, GuestJobFailure, GuestSignaledFailure } from './harness-failure.schema.js'
-import { seamSpan, SpanNames } from './harness-telemetry.service.js'
 
 export interface GuestJobsShape {
   readonly job: (
@@ -31,51 +30,4 @@ export class GuestJobs
   static readonly GUEST_BAKED_ROOT = '/baked'
   static readonly GUEST_PACKS_ROOT = '/packs'
   static readonly STDERR_TAIL_CHARS = 4000
-
-  static readonly layer = Layer.effect(
-    GuestJobs,
-    Effect.sync(() => {
-      const stderrTailOf = (stderr: Uint8Array) => new TextDecoder().decode(stderr).slice(-GuestJobs.STDERR_TAIL_CHARS)
-
-      const job = (cmd: readonly [string, ...Array<string>], mounts: ReadonlyArray<MicroVM.Mount>) =>
-        mounts.reduce(
-          (resource, mount) => resource.withMount(mount),
-          MicroVM.job(GuestJobs.BASE_IMAGE, cmd).withMemoryLimit(GuestJobs.GUEST_MEMORY_MIB),
-        )
-
-      const runGuestJob = (step: string, job: MicroVM.JobBlueprint) =>
-        Effect.scoped(job.run).pipe(
-          Effect.mapError((cause) => new GuestJobFailure({ step, cause })),
-          seamSpan(SpanNames.guestJob, { 'e2e.job.step': step }),
-        )
-
-      const requireExited = (step: string, completion: MicroVM.JobCompletion) =>
-        Match.value(completion.status).pipe(
-          Match.tag('JobSignaled', () =>
-            Effect.fail(
-              new GuestSignaledFailure({
-                step,
-                memoryMiB: GuestJobs.GUEST_MEMORY_MIB,
-                stderrTail: stderrTailOf(completion.stderr),
-              }),
-            )),
-          Match.tag('JobExited', (status) => Effect.succeed(status.code)),
-          Match.exhaustive,
-        )
-
-      const requireCleanExit = (step: string, job: MicroVM.JobBlueprint) =>
-        Effect.flatMap(
-          runGuestJob(step, job),
-          (completion) =>
-            Effect.flatMap(requireExited(step, completion), (code) =>
-              Boolean.match(code === 0, {
-                onTrue: () => Effect.void,
-                onFalse: () =>
-                  Effect.fail(new ExitFailure({ step, exitCode: code, stderrTail: stderrTailOf(completion.stderr) })),
-              })),
-        )
-
-      return { job, requireCleanExit }
-    }),
-  )
 }
