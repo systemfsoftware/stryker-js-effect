@@ -98,18 +98,6 @@ const resolutionOf = (step: TargetStep): PackageExportsResolution =>
     Match.exhaustive,
   )
 
-const firstDecidedStepOf = <A>(entries: ReadonlyArray<A>, stepOf: (entry: A) => TargetStep): TargetStep =>
-  Option.match(Arr.head(entries), {
-    onNone: () => TRY_NEXT_ENTRY,
-    onSome: (entry) =>
-      Match.value(stepOf(entry)).pipe(
-        Match.tag('TargetsResolved', (resolved): TargetStep => resolved),
-        Match.tag('SubpathExcluded', (excluded): TargetStep => excluded),
-        Match.tag('TryNextEntry', () => firstDecidedStepOf(Arr.drop(entries, 1), stepOf)),
-        Match.exhaustive,
-      ),
-  })
-
 const appendTargets = (
   entries: ReadonlyArray<JsonValue>,
   star: Option.Option<string>,
@@ -139,9 +127,10 @@ const appendTargets = (
   })
 
 const resolveConditional = (conditions: Record<string, JsonValue>, star: Option.Option<string>): TargetStep =>
-  firstDecidedStepOf(
-    Arr.filter(Object.entries(conditions), ([key]) => isActiveCondition(key)),
-    ([, entry]) => resolveTarget(entry, star),
+  appendTargets(
+    Arr.map(Arr.filter(Object.entries(conditions), ([key]) => isActiveCondition(key)), ([, entry]) => entry),
+    star,
+    [],
   )
 
 const INVALID_TARGET_SEGMENTS: ReadonlyArray<string> = ['.', '..', 'node_modules']

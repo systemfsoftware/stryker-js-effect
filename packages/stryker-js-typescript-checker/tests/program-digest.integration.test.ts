@@ -92,6 +92,12 @@ const PACKAGE_FALLBACK_EXPORTS_MANIFEST_SOURCE = JSON.stringify(
   null,
   2,
 ) + '\n'
+const PACKAGE_CONDITIONS_EXPORTS_MANIFEST_SOURCE = JSON.stringify(
+  { exports: { './strict': { types: './missing-base.json', default: './strict-base.json' } } },
+  null,
+  2,
+) + '\n'
+const PACKAGE_LEGACY_BASE_TSCONFIG_FILE = 'node_modules/@probe/tsconfig-base/strict.json'
 
 const NESTED_DIRECTORY = 'packages/app'
 const NESTED_TSCONFIG_FILE = `${NESTED_DIRECTORY}/${TSCONFIG_FILE}`
@@ -546,6 +552,46 @@ Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_00
         ),
         Then('editing strict.json leaves the digest alone and editing the outer package base moves it')(
           (s, expect) => expect(s.observed).toEqual({ shape: true, legacyEditMoved: false, outerEditMoved: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'a condition whose target is missing falls through to the next active condition',
+      Gherkin.Do.pipe(
+        Given('a program whose package export lists a missing types target before a default target')(
+          'files',
+          () =>
+            Effect.succeed({
+              ...DEFAULT_FILES,
+              [TSCONFIG_FILE]: PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE,
+              [PACKAGE_EXPORTS_MANIFEST_FILE]: PACKAGE_CONDITIONS_EXPORTS_MANIFEST_SOURCE,
+              [PACKAGE_EXPORTS_BASE_FILE]: BASE_TSCONFIG_SOURCE,
+              [PACKAGE_LEGACY_BASE_TSCONFIG_FILE]: BASE_TSCONFIG_SOURCE,
+            }),
+        ),
+        When('the package strict.json and then the default target are edited between digests')(
+          'observed',
+          (s) =>
+            withWorkspace(
+              (workspace) =>
+                Effect.gen(function*() {
+                  const before = yield* digestOf(workspace.directory)
+                  yield* appendComment(workspace.directory, PACKAGE_LEGACY_BASE_TSCONFIG_FILE)
+                  const afterLegacyEdit = yield* digestOf(workspace.directory)
+                  yield* appendComment(workspace.directory, PACKAGE_EXPORTS_BASE_FILE)
+                  const afterDefaultEdit = yield* digestOf(workspace.directory)
+                  return {
+                    shape: [before, afterLegacyEdit, afterDefaultEdit].every((digest) => DIGEST_SHAPE.test(digest)),
+                    legacyEditMoved: before !== afterLegacyEdit,
+                    defaultEditMoved: afterLegacyEdit !== afterDefaultEdit,
+                  }
+                }),
+              s.files,
+            ),
+        ),
+        Then('editing strict.json leaves the digest alone and editing the default target moves it')(
+          (s, expect) => expect(s.observed).toEqual({ shape: true, legacyEditMoved: false, defaultEditMoved: true }),
         ),
       ),
     )

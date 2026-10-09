@@ -2,6 +2,7 @@ import { describe } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -56,6 +57,30 @@ const escaped = (text: string): string =>
 const probeKeyOf = (subpath: string): string => `./probe/${escaped(subpath)}`
 
 const ESCAPING_PREFIX = './../'
+
+const ACTIVE_CONDITION_KEYS: ReadonlyArray<string> = ['require', 'types', 'node', 'default']
+
+interface ConditionWalk {
+  readonly targets: ReadonlyArray<string>
+  readonly stops: boolean
+}
+
+const UNWALKED: ConditionWalk = { targets: [], stops: false }
+
+const CONDITION_KEYS: ReadonlyArray<string> = ['import', 'require', 'browser', 'types', 'node', 'default']
+
+const conditionValueOf = (
+  kind: 'absent' | 'target' | 'null' | 'escaping' | 'nested-null',
+  leaf: string,
+): Option.Option<JsonValue> =>
+  Match.value(kind).pipe(
+    Match.when('absent', () => Option.none<JsonValue>()),
+    Match.when('target', () => Option.some<JsonValue>(`./${escaped(leaf)}.json`)),
+    Match.when('null', () => Option.some<JsonValue>(null)),
+    Match.when('escaping', () => Option.some<JsonValue>(`${ESCAPING_PREFIX}${escaped(leaf)}.json`)),
+    Match.when('nested-null', () => Option.some<JsonValue>([`./${escaped(leaf)}.json`, null])),
+    Match.exhaustive,
+  )
 
 describe('resolvePackageExports', (it) => {
   it.prop(
@@ -375,6 +400,58 @@ describe('resolvePackageExports', (it) => {
       })
       const nested = Arr.reduce(Arr.makeBy(depth, () => 0), inner, (list): ReadonlyArray<JsonValue> => [list])
       return subject([...nested, ...trailing]) === nullReached
+    },
+  )
+
+  it.prop(
+    '∀conditions_ActiveValuesInKeyOrder_≡FallbackListEndingAtTheFirstNull',
+    {
+      of: [
+        Arbitrary.array(
+          Arbitrary.all([
+            Arbitrary.schema(S.Literals(['absent', 'target', 'null', 'escaping', 'nested-null'])),
+            Arbitrary.schema(S.String),
+          ]),
+          { minLength: CONDITION_KEYS.length, maxLength: CONDITION_KEYS.length },
+        ),
+      ],
+      subject: (conditions: JsonValue) => {
+        const key = './probe/conditions'
+        return [resolvedTargetsOf({ [key]: conditions }, key), stopsTheSearchOf({ [key]: conditions }, key)] as const
+      },
+    },
+    (subject, [slots]) => {
+      const keyed = Arr.zip(CONDITION_KEYS, slots)
+      const conditions = Object.fromEntries(
+        Arr.flatMap(
+          keyed,
+          ([condition, [kind, leaf]]) =>
+            Option.toArray(Option.map(conditionValueOf(kind, leaf), (value) => [condition, value] as const)),
+        ),
+      )
+      const expected = Arr.reduce(
+        Arr.filter(keyed, ([condition]) => ACTIVE_CONDITION_KEYS.includes(condition)),
+        UNWALKED,
+        (walk, [, [kind, leaf]]): ConditionWalk =>
+          Boolean.match(walk.stops, {
+            onTrue: () => walk,
+            onFalse: () =>
+              Match.value(kind).pipe(
+                Match.when('target', () => ({ targets: [...walk.targets, `./${escaped(leaf)}.json`], stops: false })),
+                Match.when(
+                  'nested-null',
+                  () => ({ targets: [...walk.targets, `./${escaped(leaf)}.json`], stops: true }),
+                ),
+                Match.when('null', () => ({ targets: walk.targets, stops: true })),
+                Match.orElse(() => walk),
+              ),
+          }),
+      )
+      const [targets, stops] = subject(conditions)
+      return Boolean.match(Arr.isReadonlyArrayNonEmpty(expected.targets), {
+        onTrue: () => sameOrderOf(targets, expected.targets),
+        onFalse: () => targets === undefined,
+      }) && stops === expected.stops
     },
   )
 })
