@@ -15,6 +15,8 @@ const CONFIG_FILE = 'tsconfig.json'
 
 const MUTATED_FILE = 'src/lib/subject.ts'
 const REJECTION_REASON = 'rejected by the fixture checker'
+const CHAIN_FILE = 'src/lib/chain.ts'
+const ACCEPT_ALL_MARKER = 'checker-accepts-all'
 
 const relativeToCwd = (file) => relative(process.cwd(), resolve(file)).replaceAll('\\', '/')
 
@@ -45,18 +47,22 @@ const programDigestOf = async () => {
   return createHash('sha256').update(lines.join('\n')).digest('hex')
 }
 
-const answerOf = (mutant) =>
-  mutant.fileName === MUTATED_FILE || mutant.fileName.endsWith(`/${MUTATED_FILE}`)
-    ? { status: 'compileError', reason: REJECTION_REASON }
-    : { status: 'passed' }
+const rejects = (mutant) => mutant.fileName === MUTATED_FILE || mutant.fileName.endsWith(`/${MUTATED_FILE}`)
+
+const answersOf = async (mutants) => {
+  const acceptsAll = (await readFile(CHAIN_FILE, 'utf8')).includes(ACCEPT_ALL_MARKER)
+  return Object.fromEntries(
+    mutants.map((mutant) => [
+      mutant.id,
+      !acceptsAll && rejects(mutant) ? { status: 'compileError', reason: REJECTION_REASON } : { status: 'passed' },
+    ]),
+  )
+}
 
 const handlers = Plugin.CheckerRpcs.toLayer({
   group: ({ mutants }) => Effect.succeed([mutants.map((mutant) => mutant.id)]),
   digest: () => Effect.promise(programDigestOf),
-  check: ({ mutants }) =>
-    Effect.succeed(
-      Object.fromEntries(mutants.map((mutant) => [mutant.id, answerOf(mutant)])),
-    ),
+  check: ({ mutants }) => Effect.promise(() => answersOf(mutants)),
 })
 
 const platform = Layer.unwrap(

@@ -6,7 +6,9 @@ import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import * as HashSet from 'effect/HashSet'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -20,14 +22,17 @@ import type { IncrementalReportDiscard } from './admit-incremental-report.workfl
 import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.js'
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
+import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
 import { readProjectCell } from './read-project.cell.js'
+import { requireDryRun, RequireDryRunCommand, type RequireDryRunDecision } from './require-dry-run.workflow.js'
+import { dryRunChoiceOf } from './run/dry-run-choice.js'
 import { reusedTestCoverage } from './run/dry-run-coverage.js'
 import type { HostServices } from './run/host.service.js'
 import { readIncrementalReuse, type RefusalCounts } from './run/incremental-reuse.cell.js'
-import { incrementalReportTextsOf } from './run/incremental-reuse.js'
+import { incrementalReportTextsOf, priorStatusesOf } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
@@ -155,9 +160,21 @@ interface ReuseObservation {
   readonly discard?: IncrementalReportDiscard | undefined
 }
 
+const dependentMutantIdsOf = (decision: RequireDryRunDecision): ReadonlyArray<string> =>
+  Match.value(decision).pipe(
+    Match.tag('DryRunNeeded', (needed) => needed.dependentMutantIds),
+    Match.tag('DryRunSkippable', (): ReadonlyArray<string> => []),
+    Match.exhaustive,
+  )
+
 interface ProjectPlan {
   readonly label: string
-  readonly mutants: ReadonlyArray<{ readonly id: Mutant.MutantId; readonly costMs: number }>
+  readonly mutants: ReadonlyArray<{
+    readonly id: Mutant.MutantId
+    readonly costMs: number
+    readonly dependsOnDryRun: boolean
+  }>
+  readonly dryRunCostMs: number
   readonly reuse: ReuseObservation
 }
 
@@ -242,16 +259,48 @@ const planProject = (
       originalFileOf: (file) => path.resolve(file),
       programDigestOf: Effect.succeed(programDigest),
     })
+    const plannedIds = [
+      ...reuse.mutants.map((mutant) => mutant.id),
+      ...reuse.rememberedResults.map((mutant) => mutant.id),
+    ]
+    const dryRunDecision = Result.getOrElse(
+      requireDryRun(
+        RequireDryRunCommand.make({
+          dryRunOnly: done.options.dryRunOnly,
+          ignoreStatic: done.options.ignoreStatic,
+          hasCheckers: done.options.checkers.length > 0,
+          mutantIds: plannedIds,
+          priorStatuses: priorStatusesOf(texts),
+        }),
+      ),
+      (neverError) => neverError,
+    )
+    const dependentIds = HashSet.fromIterable(dependentMutantIdsOf(dryRunDecision))
+    const dryRunChoice = yield* dryRunChoiceOf(done, project)
+    const dryRunCostMs = Boolean.match(S.is(DryRunCoverageReused)(dryRunChoice.decision), {
+      onTrue: () => 0,
+      onFalse: () =>
+        Option.getOrElse(
+          Option.map(coverage, (present) => testsTimeOf(present.tests) + present.timeOverheadMs),
+          () => 0,
+        ),
+    })
     const mutants = [
       ...reuse.mutants.map((mutant) => ({
         id: mutant.id,
         costMs: costOf(mutant.id, reportCosts, coverage, testCoverage),
+        dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
       })),
-      ...reuse.rememberedResults.map((mutant) => ({ id: mutant.id, costMs: 0 })),
+      ...reuse.rememberedResults.map((mutant) => ({
+        id: mutant.id,
+        costMs: 0,
+        dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
+      })),
     ]
     return {
       label,
       mutants,
+      dryRunCostMs,
       reuse: {
         reused: reuse.rememberedResults.length,
         ran: reuse.mutants.length,
@@ -263,13 +312,18 @@ const planProject = (
     }
   }).pipe(Effect.orDie)
 
-const assemblePlan = (request: PlanShardsRequest, planned: ReadonlyArray<PlannedMutant>): ShardPlan => {
+const assemblePlan = (
+  request: PlanShardsRequest,
+  planned: ReadonlyArray<PlannedMutant>,
+  dryRunCosts: Record<string, number>,
+): ShardPlan => {
   const shards = Result.getOrElse(
     planShards(
       PlanShardsCommand.make({
         targetSeconds: request.targetSeconds,
         maxShards: request.maxShards,
         mutants: planned.map((mutant) => ({ ...mutant })),
+        dryRunCosts,
       }),
     ),
     (neverError) => neverError,
@@ -362,7 +416,10 @@ export const planRequest = ({ request, channel }: PlanRequestInput): Effect.Effe
       { concurrency: 1 },
     )
     const scheduled = planned.flatMap((entry) => entry.mutants.map((mutant) => ({ project: entry.label, ...mutant })))
-    const plan = assemblePlan(request, scheduled)
+    const dryRunCosts: Record<string, number> = Object.fromEntries(
+      planned.map((entry) => [entry.label, entry.dryRunCostMs]),
+    )
+    const plan = assemblePlan(request, scheduled, dryRunCosts)
     yield* Queue.offer(
       channel.environment.host.events,
       RunEvent.PlanKnown.make({

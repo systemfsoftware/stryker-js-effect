@@ -18,6 +18,7 @@ export const PlannedMutant = S.Struct({
   project: S.String,
   id: Mutant.MutantId,
   costMs: CostMs,
+  dependsOnDryRun: S.Boolean,
 })
 export type PlannedMutant = typeof PlannedMutant.Type
 
@@ -25,6 +26,7 @@ export class PlanShardsCommand extends S.TaggedClass<PlanShardsCommand>()('PlanS
   targetSeconds: PositiveSeconds,
   maxShards: S.optional(PositiveInt),
   mutants: S.Array(PlannedMutant),
+  dryRunCosts: S.Record(S.String, CostMs),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -58,39 +60,132 @@ const compareCostliestFirst = (left: PlannedMutant, right: PlannedMutant): numbe
 const totalCostMsOf = (mutants: readonly PlannedMutant[]): number =>
   mutants.reduce((total, mutant) => total + mutant.costMs, 0)
 
-const neededShardsOf = (command: PlanShardsCommand): number =>
-  max(1, ceil(totalCostMsOf(command.mutants) / 1000 / command.targetSeconds))
+const dryRunCostOf = (command: PlanShardsCommand, project: string): number =>
+  Option.getOrElse(Record.get(command.dryRunCosts, project), () => 0)
 
-const cappedShardsOf = (command: PlanShardsCommand): number =>
+interface DependentProject {
+  readonly project: string
+  readonly dependentCostMs: number
+  readonly dryRunCostMs: number
+  readonly mutants: ReadonlyArray<PlannedMutant>
+}
+
+const dependentProjectsOf = (command: PlanShardsCommand): ReadonlyArray<DependentProject> => {
+  const byProject = command.mutants.reduce<Record<string, ReadonlyArray<PlannedMutant>>>(
+    (accumulated, mutant) =>
+      Boolean.match(mutant.dependsOnDryRun, {
+        onTrue: () =>
+          Record.set(
+            accumulated,
+            mutant.project,
+            [
+              ...Option.getOrElse(Record.get(accumulated, mutant.project), (): ReadonlyArray<PlannedMutant> => []),
+              mutant,
+            ],
+          ),
+        onFalse: () => accumulated,
+      }),
+    {},
+  )
+  return [...Record.toEntries(byProject)]
+    .sort(([left], [right]) => compareText(left, right))
+    .map(([project, mutants]) => ({
+      project,
+      dependentCostMs: totalCostMsOf(mutants),
+      dryRunCostMs: dryRunCostOf(command, project),
+      mutants,
+    }))
+}
+
+const dryRunBinsNeededOf = (project: DependentProject, targetMs: number): number => {
+  const remainingMs = targetMs - project.dryRunCostMs
+  return Boolean.match(remainingMs > 0, {
+    onTrue: () => max(1, ceil(project.dependentCostMs / remainingMs)),
+    onFalse: () => Number.POSITIVE_INFINITY,
+  })
+}
+
+const plannedLoadMsOf = (
+  command: PlanShardsCommand,
+  projects: ReadonlyArray<DependentProject>,
+  targetMs: number,
+): number =>
+  totalCostMsOf(command.mutants) +
+  projects.reduce((total, project) => {
+    const bins = dryRunBinsNeededOf(project, targetMs)
+    return Boolean.match(Number.isFinite(bins), {
+      onTrue: () => total + bins * project.dryRunCostMs,
+      onFalse: () => total,
+    })
+  }, 0)
+
+const neededShardsOf = (command: PlanShardsCommand, loadMs: number): number =>
+  max(1, ceil(loadMs / 1000 / command.targetSeconds))
+
+const cappedShardsOf = (command: PlanShardsCommand, loadMs: number): number =>
   Option.match(Option.fromUndefinedOr(command.maxShards), {
-    onNone: () => neededShardsOf(command),
-    onSome: (maxShards) => max(1, min(maxShards, neededShardsOf(command))),
+    onNone: () => neededShardsOf(command, loadMs),
+    onSome: (maxShards) => max(1, min(maxShards, neededShardsOf(command, loadMs))),
   })
 
-const shardCountOf = (command: PlanShardsCommand): number =>
-  min(cappedShardsOf(command), max(command.mutants.length, 1))
+const shardCountOf = (command: PlanShardsCommand, loadMs: number): number =>
+  min(cappedShardsOf(command, loadMs), max(command.mutants.length, 1))
 
 interface Bin {
   readonly mutants: ReadonlyArray<PlannedMutant>
   readonly load: number
 }
 
+const EMPTY_BIN: Bin = { mutants: [], load: 0 }
+
 const emptyBins = (count: number): ReadonlyArray<Bin> =>
   Array.from({ length: count }, (): Bin => ({ mutants: [], load: 0 }))
 
-const placeIn = (bins: ReadonlyArray<Bin>, mutant: PlannedMutant): ReadonlyArray<Bin> => {
-  const loads = bins.map((bin) => bin.load)
-  const index = loads.indexOf(min(...loads))
-  return bins.map((bin, at) =>
+const indicesOf = (count: number): ReadonlyArray<number> => Array.from({ length: count }, (_unused, index) => index)
+
+const loadAt = (bins: ReadonlyArray<Bin>, index: number): number =>
+  Option.getOrElse(Option.fromUndefinedOr(bins[index]), () => EMPTY_BIN).load
+
+const leastLoadedOf = (bins: ReadonlyArray<Bin>, indices: ReadonlyArray<number>): number =>
+  indices.reduce(
+    (best, index) =>
+      Boolean.match(loadAt(bins, index) < loadAt(bins, best), { onTrue: () => index, onFalse: () => best }),
+    Option.getOrElse(Option.fromUndefinedOr(indices[0]), () => 0),
+  )
+
+interface LoadedBin {
+  readonly index: number
+  readonly load: number
+}
+
+const compareLoadedBins = (left: LoadedBin, right: LoadedBin): number =>
+  sign(sign(left.load - right.load) * 2 + sign(left.index - right.index))
+
+const leastLoadedIndicesOf = (bins: ReadonlyArray<Bin>, count: number): ReadonlyArray<number> =>
+  indicesOf(bins.length)
+    .map((index): LoadedBin => ({ index, load: loadAt(bins, index) }))
+    .sort(compareLoadedBins)
+    .slice(0, count)
+    .map((entry) => entry.index)
+
+const withMutantIn = (bins: ReadonlyArray<Bin>, index: number, mutant: PlannedMutant): ReadonlyArray<Bin> =>
+  bins.map((bin, at) =>
     Boolean.match(at === index, {
       onTrue: (): Bin => ({ mutants: [...bin.mutants, mutant], load: bin.load + mutant.costMs }),
       onFalse: () => bin,
     })
   )
-}
 
-const assignLpt = (mutants: readonly PlannedMutant[], count: number): ReadonlyArray<Bin> =>
-  [...mutants].sort(compareCostliestFirst).reduce((bins, mutant) => placeIn(bins, mutant), emptyBins(count))
+const placeIn = (bins: ReadonlyArray<Bin>, mutant: PlannedMutant): ReadonlyArray<Bin> =>
+  withMutantIn(bins, leastLoadedOf(bins, indicesOf(bins.length)), mutant)
+
+const reservedBin = (bins: ReadonlyArray<Bin>, index: number, costMs: number): ReadonlyArray<Bin> =>
+  bins.map((bin, at) =>
+    Boolean.match(at === index, {
+      onTrue: (): Bin => ({ mutants: bin.mutants, load: bin.load + costMs }),
+      onFalse: () => bin,
+    })
+  )
 
 const projectsOf = (mutants: readonly PlannedMutant[]): ReadonlyArray<typeof ShardProject.Type> => {
   const byProject = mutants.reduce<{ readonly [project: string]: ReadonlyArray<string> }>(
@@ -108,8 +203,43 @@ const projectsOf = (mutants: readonly PlannedMutant[]): ReadonlyArray<typeof Sha
 }
 
 const shardsOf = (command: PlanShardsCommand): ReadonlyArray<PlannedShard> => {
-  const count = shardCountOf(command)
-  return assignLpt(command.mutants, count).map((bin, index) =>
+  const targetMs = command.targetSeconds * 1000
+  const dependentProjects = dependentProjectsOf(command)
+  const count = shardCountOf(command, plannedLoadMsOf(command, dependentProjects, targetMs))
+  const reserved = dependentProjects.reduce<{
+    readonly bins: ReadonlyArray<Bin>
+    readonly indicesByProject: Readonly<Record<string, ReadonlyArray<number>>>
+  }>(
+    (accumulated, project) => {
+      const indices = leastLoadedIndicesOf(accumulated.bins, min(dryRunBinsNeededOf(project, targetMs), count))
+      return {
+        bins: indices.reduce((bins, index) => reservedBin(bins, index, project.dryRunCostMs), accumulated.bins),
+        indicesByProject: { ...accumulated.indicesByProject, [project.project]: indices },
+      }
+    },
+    { bins: emptyBins(count), indicesByProject: {} },
+  )
+  const dependents = command.mutants.filter((mutant) => mutant.dependsOnDryRun).sort(compareCostliestFirst)
+  const withDependents = dependents.reduce(
+    (bins, mutant) =>
+      withMutantIn(
+        bins,
+        leastLoadedOf(
+          bins,
+          Option.getOrElse(
+            Record.get(reserved.indicesByProject, mutant.project),
+            () => indicesOf(count),
+          ),
+        ),
+        mutant,
+      ),
+    reserved.bins,
+  )
+  const withRest = command.mutants
+    .filter((mutant) => Boolean.not(mutant.dependsOnDryRun))
+    .sort(compareCostliestFirst)
+    .reduce((bins, mutant) => placeIn(bins, mutant), withDependents)
+  return withRest.map((bin, index) =>
     PlannedShard.make({
       index: index + 1,
       count,

@@ -1,6 +1,6 @@
-import { Sandwich } from '@systemfsoftware/effect-cell-types'
+import { type Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Mutant, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
@@ -20,28 +20,32 @@ import * as Stream from 'effect/Stream'
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import { scoped as checkerPoolsScoped } from '../Checker/checker-pool.blueprint.js'
 import {
+  type CheckedPlans,
+  type CheckerPoolHandle,
+  checkPlans,
   checkPlansStream as checkPlansWithConfiguredCheckers,
   inOwnScope,
   makeCheckerPoolHandle,
   programDigestOf,
   runCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
+import type { CheckerCrash } from '../Checker/Checker.handle.js'
 import { checkOnlyCostOf, decidedWithoutATest } from '../mutant-cost.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
-import { withPhaseSpan } from '../reporter-stream.service.js'
+import { offerReporterEvent, type ReporterStage, withPhaseSpan } from '../reporter-stream.service.js'
 import { mutantDetailEventsOf, requestedIdsOf, restrictedToRequestedIds } from '../Rerun/rerun-selection.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { originalFileFor } from '../Sandbox.handle.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import { IdGenerator } from '../Worker.service.js'
-import type { DryRunDone } from './dry-run.cell.js'
+import { dryRunCell, type DryRunDone } from './dry-run.cell.js'
 import { readIncrementalReuse } from './incremental-reuse.cell.js'
 import { optionalField } from './incremental-reuse.js'
 import { mutantRunCell } from './mutant-run.cell.js'
 import { announceSettledMutant, makeCheckpointWriter, reportingInputOf, type RunContext } from './mutant-run.js'
-import { planMutationTest } from './mutation-test-plan.cell.js'
+import { draftMutationTestPlan, type MutationTestPlan } from './mutation-test-plan.cell.js'
 import {
   configuredTestFilesOf,
   inPlannedOrder,
@@ -104,13 +108,62 @@ const writeMutationTestDryRunOnly = Effect.fn(SpanTaxonomy.Spans.mutationTestDry
   return { results: [], verdict: null }
 })
 
+const testRunnerPoolOf = Effect.fnUntraced(function*(prev: DryRunDone, testRunnerCapacity: number) {
+  const idGenerator = yield* IdGenerator
+  const testFiles = yield* Effect.map(
+    sandboxFilesOf({ sandbox: prev.sandbox, fileNames: configuredTestFilesOf(prev) }),
+    (pairs) => pairs.map(([, sandboxFileName]) => sandboxFileName),
+  )
+  return yield* testRunnerPoolScoped({
+    options: prev.options,
+    fileDescriptions: prev.project.fileDescriptions,
+    sandboxWorkingDirectory: prev.sandbox.workingDirectory,
+    idGenerator: idGenerator,
+    testFiles: testFiles,
+    loadedPlugins: prev.loadedPlugins,
+    min: prev.concurrency.testRunners,
+    max: testRunnerCapacity,
+  })
+})
+
+const checkedWithoutTests = (
+  checkerHandle: Option.Option<CheckerPoolHandle>,
+  plan: MutationTestPlan,
+): Effect.Effect<Option.Option<CheckedPlans>, StageError | CheckerCrash> =>
+  Option.match(Option.filter(checkerHandle, () => plan.earlyResults.length === 0), {
+    onNone: () => Effect.succeedNone,
+    onSome: (handle) =>
+      Effect.map(
+        checkPlans(handle, plan.runPlans),
+        (checked) => Option.liftPredicate(checked, (candidate: CheckedPlans) => candidate.passedPlans.length === 0),
+      ),
+  })
+
+const announceMutationTestPlan = Effect.fnUntraced(function*(reporterStage: ReporterStage, plan: MutationTestPlan) {
+  yield* offerReporterEvent(
+    reporterStage,
+    Reporter.MutationTestingPlanReady.make({
+      total: plan.plannedTotal,
+      plans: plan.plansForReporter.map((runPlan) => ({
+        mutantId: runPlan.mutant.id,
+        plan: runPlan.plan,
+        netTime: runPlan.netTime,
+        reloadEnvironment: runPlan.runOptions.reloadEnvironment,
+      })),
+    }),
+  ).pipe(Effect.ignoreCause)
+  yield* Queue.offer(
+    yield* RunEvents,
+    RunEvent.PlanKnown.make({ total: plan.plansForReporter.length + plan.earlyResults.length, shardPlan: null }),
+  )
+})
+
 const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
   const prev = raw.prev
   const testRunnerCapacity = prev.concurrency.testRunners + prev.concurrency.checkers
   const plannableMutants = raw.plannableMutants
-  yield* reportDroppedMutants(raw.droppedMutants)
+  yield* Effect.when(reportDroppedMutants(raw.droppedMutants), Effect.succeed(Boolean.not(prev.dryRunDeferred)))
   yield* phaseEntered('mutation-test')
-  const idGenerator = yield* IdGenerator
   const env = yield* RunEnvironment
   const checkers = yield* inOwnScope(
     checkerPoolsScoped({
@@ -120,19 +173,9 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
       workingDirectory: env.basePath,
     }),
   )
-  const testFiles = yield* Effect.map(
-    sandboxFilesOf({ sandbox: prev.sandbox, fileNames: configuredTestFilesOf(prev) }),
-    (pairs) => pairs.map(([, sandboxFileName]) => sandboxFileName),
-  )
-  const testRunnerPool = yield* testRunnerPoolScoped({
-    options: prev.options,
-    fileDescriptions: prev.project.fileDescriptions,
-    sandboxWorkingDirectory: prev.sandbox.workingDirectory,
-    idGenerator: idGenerator,
-    testFiles: testFiles,
-    loadedPlugins: prev.loadedPlugins,
-    min: prev.concurrency.testRunners,
-    max: testRunnerCapacity,
+  const testRunnerPool = yield* Boolean.match(prev.dryRunDeferred, {
+    onTrue: () => Effect.succeedNone,
+    onFalse: () => Effect.asSome(testRunnerPoolOf(prev, testRunnerCapacity)),
   })
   const reporting = yield* MutationReporting
   const progressQueue = yield* RunEvents
@@ -153,15 +196,7 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     }),
   })
   const rememberedResults = reuse.rememberedResults
-  yield* Queue.offer(
-    progressQueue,
-    RunEvent.ReuseReported.make({
-      reused: rememberedResults.length,
-      ran: reuse.mutants.length,
-      refused: yield* S.decodeEffect(RunEvent.ReuseRefusals)(reuse.refusalCounts).pipe(Effect.orDie),
-    }),
-  )
-  const plan = yield* planMutationTest({
+  const plan = yield* draftMutationTestPlan({
     mutants: reuse.mutants,
     testCoverage: prev.testCoverage,
     options: {
@@ -178,99 +213,142 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     rememberedCount: rememberedResults.length,
     reporterStage: prev.reporterStage,
   })
-  const checkedPlans = checkPlansWithConfiguredCheckers(Option.getOrUndefined(checkerHandle), plan.runPlans)
-  const completedRef = yield* Ref.make(0)
-  const pathService = yield* Path.Path
-  const context: RunContext = {
-    prev,
-    env,
-    reporting,
-    progressQueue,
-    completedRef,
-    plannedTotal: plan.plannedTotal,
-    plannedMutants: [...rememberedResults, ...reuse.mutants],
-    pathService,
-  }
-  const settledResults = [
-    ...rememberedResults,
-    ...plan.earlyResults.map((result) => withMeasuredCheckCost(result, 0)),
-  ]
-  yield* Effect.forEach(settledResults, (result) => announceSettledMutant(context, result), {
-    concurrency: 1,
-    discard: true,
+  const checkedOnly = yield* Boolean.match(prev.dryRunDeferred, {
+    onTrue: () => checkedWithoutTests(checkerHandle, plan),
+    onFalse: () => Effect.succeedNone,
   })
-  const runResults = yield* Effect.scoped(Effect.gen(function*() {
-    const checkpoint = yield* makeCheckpointWriter(context, settledResults)
-    const settleReported = (reported: Mutant.RunMutantResult) =>
+  const testsNeeded = Boolean.and(prev.dryRunDeferred, Option.isNone(checkedOnly))
+  return yield* Boolean.match(testsNeeded, {
+    onTrue: () =>
       Effect.gen(function*() {
-        yield* announceSettledMutant(context, reported)
-        yield* checkpoint.record(reported)
-        return reported
-      })
-    return yield* withPhaseSpan(
-      SpanTaxonomy.Spans.mutationTestBatch,
-      { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
-      () =>
-        runCheckedPlans(checkedPlans, {
-          settleFailure: (mutantPlan, result, checkMs) =>
-            reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result).pipe(
-              Effect.map((reported) => withMeasuredCheckCost(reported, checkMs)),
-              Effect.flatMap(settleReported),
-            ),
-          settleIgnored: (mutantPlan, result) =>
-            reporting.reportIgnored(toReportedMutant(mutantPlan.mutant), result).pipe(
-              Effect.map((reported) => withMeasuredCheckCost(reported, 0)),
-              Effect.flatMap(settleReported),
-            ),
-          runPlan: (runPlan, checkMs) =>
-            Option.match(Option.liftPredicate(runPlan, isNoCoveragePlan), {
-              onNone: () => Effect.scoped(mutantRunCell.run({ context, testRunnerPool, checkpoint, plan: runPlan })),
-              onSome: (noCoverageRunPlan) =>
-                reporting.reportNoCoverage(toReportedMutant(noCoverageRunPlan.mutant)).pipe(
-                  Effect.map((reported) => withMeasuredCheckCost(reported, checkMs)),
-                  Effect.flatMap(settleReported),
+        yield* Effect.logInfo('A checker accepted a mutant this run; running the initial test run it needs.')
+        yield* checkers.releaseInBackground
+        const tested = yield* dryRunCell.run(prev)
+        return yield* mutationTestCell.run(tested)
+      }),
+    onFalse: () =>
+      Effect.gen(function*() {
+        yield* Effect.when(reportDroppedMutants(raw.droppedMutants), Effect.succeed(prev.dryRunDeferred))
+        yield* Queue.offer(
+          progressQueue,
+          RunEvent.ReuseReported.make({
+            reused: rememberedResults.length,
+            ran: reuse.mutants.length,
+            refused: yield* S.decodeEffect(RunEvent.ReuseRefusals)(reuse.refusalCounts).pipe(Effect.orDie),
+          }),
+        )
+        yield* announceMutationTestPlan(prev.reporterStage, plan)
+        const checkedPlans = Option.match(checkedOnly, {
+          onNone: () => checkPlansWithConfiguredCheckers(Option.getOrUndefined(checkerHandle), plan.runPlans),
+          onSome: (checked) => Stream.succeed(checked),
+        })
+        const completedRef = yield* Ref.make(0)
+        const pathService = yield* Path.Path
+        const context: RunContext = {
+          prev,
+          env,
+          reporting,
+          progressQueue,
+          completedRef,
+          plannedTotal: plan.plannedTotal,
+          plannedMutants: [...rememberedResults, ...reuse.mutants],
+          pathService,
+        }
+        const settledResults = [
+          ...rememberedResults,
+          ...plan.earlyResults.map((result) => withMeasuredCheckCost(result, 0)),
+        ]
+        yield* Effect.forEach(settledResults, (result) => announceSettledMutant(context, result), {
+          concurrency: 1,
+          discard: true,
+        })
+        const runResults = yield* Effect.scoped(Effect.gen(function*() {
+          const checkpoint = yield* makeCheckpointWriter(context, settledResults)
+          const settleReported = (reported: Mutant.RunMutantResult) =>
+            Effect.gen(function*() {
+              yield* announceSettledMutant(context, reported)
+              yield* checkpoint.record(reported)
+              return reported
+            })
+          return yield* withPhaseSpan(
+            SpanTaxonomy.Spans.mutationTestBatch,
+            { total: plan.plannedTotal, testRunners: prev.concurrency.testRunners },
+            () =>
+              runCheckedPlans(checkedPlans, {
+                settleFailure: (mutantPlan, result, checkMs) =>
+                  reporting.reportCheckFailure(toReportedMutant(mutantPlan.mutant), result).pipe(
+                    Effect.map((reported) => withMeasuredCheckCost(reported, checkMs)),
+                    Effect.flatMap(settleReported),
+                  ),
+                settleIgnored: (mutantPlan, result) =>
+                  reporting.reportIgnored(toReportedMutant(mutantPlan.mutant), result).pipe(
+                    Effect.map((reported) => withMeasuredCheckCost(reported, 0)),
+                    Effect.flatMap(settleReported),
+                  ),
+                runPlan: (runPlan, checkMs) =>
+                  Option.match(Option.liftPredicate(runPlan, isNoCoveragePlan), {
+                    onNone: () =>
+                      Option.match(testRunnerPool, {
+                        onNone: () =>
+                          Effect.die(
+                            StageError.make({
+                              stage: 'mutationTest',
+                              reason: 'A checker-only settlement reached a mutant that needs its tests',
+                            }),
+                          ),
+                        onSome: (pool) =>
+                          Effect.scoped(
+                            mutantRunCell.run({ context, testRunnerPool: pool, checkpoint, plan: runPlan }),
+                          ),
+                      }),
+                    onSome: (noCoverageRunPlan) =>
+                      reporting.reportNoCoverage(toReportedMutant(noCoverageRunPlan.mutant)).pipe(
+                        Effect.map((reported) => withMeasuredCheckCost(reported, checkMs)),
+                        Effect.flatMap(settleReported),
+                      ),
+                  }),
+                concurrency: testRunnerCapacity,
+              }).pipe(
+                Stream.runFold(
+                  (): Mutant.RunMutantResult[] => [],
+                  (acc, result) => {
+                    acc.push(result)
+                    return acc
+                  },
                 ),
-            }),
-          concurrency: testRunnerCapacity,
-        }).pipe(
-          Stream.runFold(
-            (): Mutant.RunMutantResult[] => [],
-            (acc, result) => {
-              acc.push(result)
-              return acc
-            },
-          ),
-        ),
-    )
-  }))
-  const checkerRelease = yield* checkers.releaseInBackground
-  const allResults = inPlannedOrder({
-    planned: context.plannedMutants,
-    results: [...settledResults, ...runResults],
+              ),
+          )
+        }))
+        const checkerRelease = yield* checkers.releaseInBackground
+        const allResults = inPlannedOrder({
+          planned: context.plannedMutants,
+          results: [...settledResults, ...runResults],
+        })
+        yield* Effect.forEach(
+          mutantDetailEventsOf({ requested: requestedIdsOf(prev.options), results: allResults }),
+          (detail) => Queue.offer(progressQueue, detail),
+          { discard: true },
+        )
+        yield* Queue.offer(
+          progressQueue,
+          RunEvent.TceReported.make({
+            equivalentToOriginal: countIgnoredByReason(allResults, TCE_EQUIVALENT_TO_ORIGINAL_REASON),
+            duplicateAtSite: countIgnoredByReason(allResults, TCE_DUPLICATE_AT_SITE_REASON),
+          }),
+        )
+        const outcomeResult = yield* reporting.reportAll({
+          ...reportingInputOf({ prev, env, results: allResults }),
+          closureDigestsByMutantId: reuse.closureDigestsByMutantId,
+          timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
+          ...optionalField('programDigest', reuse.programDigest),
+        })
+        yield* Fiber.await(checkerRelease)
+        const doneNow = yield* Clock.currentTimeMillis
+        const elapsed = Duration.millis(doneNow - env.runStartedAt)
+        yield* Effect.logInfo(`Done in ${Duration.format(elapsed)}.`)
+        return outcomeResult
+      }),
   })
-  yield* Effect.forEach(
-    mutantDetailEventsOf({ requested: requestedIdsOf(prev.options), results: allResults }),
-    (detail) => Queue.offer(progressQueue, detail),
-    { discard: true },
-  )
-  yield* Queue.offer(
-    progressQueue,
-    RunEvent.TceReported.make({
-      equivalentToOriginal: countIgnoredByReason(allResults, TCE_EQUIVALENT_TO_ORIGINAL_REASON),
-      duplicateAtSite: countIgnoredByReason(allResults, TCE_DUPLICATE_AT_SITE_REASON),
-    }),
-  )
-  const outcomeResult = yield* reporting.reportAll({
-    ...reportingInputOf({ prev, env, results: allResults }),
-    closureDigestsByMutantId: reuse.closureDigestsByMutantId,
-    timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
-    ...optionalField('programDigest', reuse.programDigest),
-  })
-  yield* Fiber.await(checkerRelease)
-  const doneNow = yield* Clock.currentTimeMillis
-  const elapsed = Duration.millis(doneNow - env.runStartedAt)
-  yield* Effect.logInfo(`Done in ${Duration.format(elapsed)}.`)
-  return outcomeResult
 })
 
 const mapMutationTestCause = (
@@ -304,7 +382,7 @@ const writeMutationTestOutcome = ({
     () => outcome,
   )
 
-export const mutationTestCell = Sandwich.named(
+export const mutationTestCell: Cell.Cell<DryRunDone, MutationTestDone, StageError, StageServices> = Sandwich.named(
   SpanTaxonomy.Spans.mutationTest.name,
 )((command: DryRunDone) =>
   Effect.gen(function*() {
@@ -318,7 +396,7 @@ export const mutationTestCell = Sandwich.named(
       dryRunOnly: prev.options.dryRunOnly,
       allowEmpty: prev.options.allowEmpty,
       testCount: prev.dryRunResult.tests.length,
-      isZero: prev.dryRunResult.tests.length === 0,
+      isZero: Boolean.and(Boolean.not(prev.dryRunDeferred), prev.dryRunResult.tests.length === 0),
       prev,
       plannableMutants: plannable,
       droppedMutants: dropped,

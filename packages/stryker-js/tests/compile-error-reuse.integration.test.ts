@@ -210,7 +210,11 @@ interface ReuseObservation {
   readonly reuse: RunEvent.ReuseReported | undefined
   readonly mutants: readonly MutantRow[]
   readonly incrementalText: string
+  readonly testRunnerStartups: number
 }
+
+const startupsOf = (events: ReadonlyArray<RunEvent.RunEvent>, role: RunEvent.WorkerRole): number =>
+  events.filter((event) => S.is(RunEvent.WorkerReported)(event) && event.role === role).length
 
 const rowsOf = (text: string): readonly MutantRow[] => {
   const rowSchema = S.Struct({
@@ -274,6 +278,7 @@ const executeRunWith = (
       reuse: events.find((event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event)),
       mutants: rowsOf(incrementalText),
       incrementalText,
+      testRunnerStartups: startupsOf(events, 'testRunner'),
     }
   }).pipe(Effect.provide(filePorts))
 
@@ -409,6 +414,46 @@ const ranOf = (observation: ReuseObservation): number => observation.reuse?.ran 
 const reusedOf = (observation: ReuseObservation): number => observation.reuse?.reused ?? -1
 
 const programChangedOf = (observation: ReuseObservation): number => observation.reuse?.refused.programChanged ?? -1
+
+const OTHER_FILE = 'src/lib/other.ts'
+
+const OTHER_SOURCE = 'export const tripled = (value: number): number => value * 3\n'
+
+const OTHER_TEST_SOURCE = [
+  "import { expect, test } from 'vitest'",
+  "import { tripled } from '../src/lib/other.ts'",
+  '',
+  "test('triples a number', () => {",
+  '  expect(tripled(2)).toBe(6)',
+  '})',
+  '',
+].join('\n')
+
+const ACCEPT_ALL_CHAIN_SOURCE = `${CHAIN_SOURCE}// checker-accepts-all\n`
+
+const twoModuleFilesOf = (directory: string): Readonly<Record<string, string>> => ({
+  ...configuredFilesOf(directory),
+  [OTHER_FILE]: OTHER_SOURCE,
+  'test/other.test.mjs': OTHER_TEST_SOURCE,
+  [CONFIG_FILE]: configSourceOf(directory).replace(
+    `mutate: ['${SUBJECT_FILE}'],`,
+    `mutate: ['${SUBJECT_FILE}', '${OTHER_FILE}'],`,
+  ),
+})
+
+const executeConfiguredRunWith = (
+  workspace: Workspace,
+  cliOptions: Options.PartialStrykerOptions & { readonly mutantIds?: ReadonlyArray<string> },
+): Effect.Effect<ReuseObservation, never, never> =>
+  withChdir(workspace.directory, executeRunWith(workspace, cliOptions))
+
+const idsOf = (rows: readonly MutantRow[]): readonly string[] => rows.map((row) => row.id)
+
+const statusesOf = (rows: readonly MutantRow[], ids: readonly string[]): Readonly<Record<string, string>> =>
+  Object.fromEntries(rows.filter((row) => ids.includes(row.id)).map((row) => [row.id, row.status]))
+
+const testedIdsOf = (rows: readonly MutantRow[]): readonly string[] =>
+  idsOf(rows.filter((row) => row.status !== 'CompileError'))
 
 Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_000 })
   .withLayer(Layer.empty)
@@ -675,6 +720,83 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
           }).toEqual({
             firstCompileErrors: true,
             inPlacePlanCheckerStartups: 0,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'a shard leaf holding only remembered CompileErrors of a changed program starts no test runner',
+      Gherkin.Do.pipe(
+        Given('a configured project with one module the checker rejects and one it accepts')(
+          'runs',
+          () =>
+            withConfiguredWorkspaceOf(twoModuleFilesOf, (workspace) =>
+              Effect.gen(function*() {
+                const first = yield* executeConfiguredRun(workspace)
+                const unchanged = yield* executeConfiguredRun(workspace)
+                const compileErrorIds = idsOf(compileErrorRows(first.mutants))
+                const testedIds = testedIdsOf(first.mutants)
+                yield* appendComment(workspace.directory, CHAIN_FILE)
+                const checkerOnly = yield* executeConfiguredRunWith(workspace, { mutantIds: compileErrorIds })
+                const tested = yield* executeConfiguredRunWith(workspace, { mutantIds: testedIds.slice(0, 1) })
+                return { first, unchanged, compileErrorIds, testedIds, checkerOnly, tested }
+              })),
+        ),
+        Then(
+          'the checker-only leaf keeps every CompileError without a test runner and the leaf holding a tested mutant starts one',
+        )((s, expect) =>
+          expect({
+            firstHasBothKinds: s.runs.compileErrorIds.length > 0 && s.runs.testedIds.length > 0,
+            unchangedVerdicts: statusesOf(s.runs.unchanged.mutants, idsOf(s.runs.first.mutants)),
+            checkerOnlySucceeded: Exit.isSuccess(s.runs.checkerOnly.exit),
+            checkerOnlyTestRunners: s.runs.checkerOnly.testRunnerStartups,
+            checkerOnlyVerdicts: statusesOf(s.runs.checkerOnly.mutants, s.runs.compileErrorIds),
+            testedSucceeded: Exit.isSuccess(s.runs.tested.exit),
+            testedStartedATestRunner: s.runs.tested.testRunnerStartups > 0,
+          }).toEqual({
+            firstHasBothKinds: true,
+            unchangedVerdicts: statusesOf(s.runs.first.mutants, idsOf(s.runs.first.mutants)),
+            checkerOnlySucceeded: true,
+            checkerOnlyTestRunners: 0,
+            checkerOnlyVerdicts: statusesOf(s.runs.first.mutants, s.runs.compileErrorIds),
+            testedSucceeded: true,
+            testedStartedATestRunner: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'a checker that now accepts a remembered CompileError runs the initial test run and scores it as a forced run does',
+      Gherkin.Do.pipe(
+        Given('a configured project whose checker rejected a module and now accepts it')(
+          'runs',
+          () =>
+            withConfiguredWorkspace((workspace) =>
+              Effect.gen(function*() {
+                const first = yield* executeConfiguredRun(workspace)
+                const compileErrorIds = idsOf(compileErrorRows(first.mutants))
+                yield* rewriteFile(workspace.directory, CHAIN_FILE, ACCEPT_ALL_CHAIN_SOURCE)
+                const accepted = yield* executeConfiguredRunWith(workspace, { mutantIds: compileErrorIds })
+                const forced = yield* executeConfiguredRunWith(workspace, { mutantIds: compileErrorIds, force: true })
+                return { compileErrorIds, accepted, forced }
+              })
+            ),
+        ),
+        Then('the run starts a test runner and scores every accepted mutant as the forced run does')((s, expect) =>
+          expect({
+            hadCompileErrors: s.runs.compileErrorIds.length > 0,
+            acceptedSucceeded: Exit.isSuccess(s.runs.accepted.exit),
+            acceptedStartedATestRunner: s.runs.accepted.testRunnerStartups > 0,
+            acceptedCompileErrors: compileErrorRows(s.runs.accepted.mutants).length,
+            acceptedVerdicts: statusesOf(s.runs.accepted.mutants, s.runs.compileErrorIds),
+          }).toEqual({
+            hadCompileErrors: true,
+            acceptedSucceeded: true,
+            acceptedStartedATestRunner: true,
+            acceptedCompileErrors: 0,
+            acceptedVerdicts: statusesOf(s.runs.forced.mutants, s.runs.compileErrorIds),
           })
         ),
       ),

@@ -18,9 +18,11 @@ import {
   planWorkspaceFiles,
   readReportIn,
   removeWorkspace,
+  REPORT_FILE,
   type ReportObservation,
   writeWorkspace,
 } from './__fixtures__/check-cost-workspace.fixture.js'
+import { recordedDryRunMsOf } from './__fixtures__/recorded-dry-run.schema.js'
 
 const Feature = makeFeature({ it })
 
@@ -71,6 +73,7 @@ interface ObservedPlan {
   readonly planExitCode: number
   readonly plan: ShardPlan | null
   readonly report: ReportObservation
+  readonly dryRunMs: number
   readonly output: string
 }
 
@@ -98,11 +101,13 @@ const planAfterFullRun = (
     ])
     const planText = yield* fs.readFileString(path.join(directory, PLAN_FILE)).pipe(Effect.orElseSucceed(() => ''))
     const report = yield* readReportIn(directory)
+    const reportText = yield* fs.readFileString(path.join(directory, REPORT_FILE)).pipe(Effect.orElseSucceed(() => ''))
     return {
       runExitCode: run.exitCode,
       planExitCode: plan.exitCode,
       plan: Option.getOrNull(decodePlan(planText)),
       report,
+      dryRunMs: recordedDryRunMsOf(reportText),
       output: `${run.output}\n${plan.output}`,
     }
   }).pipe(Effect.orDie)
@@ -152,7 +157,7 @@ const planSummaryOf = (observed: ObservedPlan) => {
     aTestRunningMutantIsScheduled: scheduledIds.some(
       (id) => TEST_RUNNING_STATUSES[observed.report.statuses[id] ?? ''] === true,
     ),
-    thePlanPricesTheRecordedCosts: roundMs(plannedSecondsMs) === roundMs(recordedCostsMs),
+    thePlanPricesTheRecordedCosts: roundMs(plannedSecondsMs) === roundMs(recordedCostsMs + observed.dryRunMs),
     thePlanPricesNoWholeSuitePrediction: roundMs(plannedSecondsMs) < roundMs(costsWithoutMeasuredCheckTimeMs),
   }
 }
