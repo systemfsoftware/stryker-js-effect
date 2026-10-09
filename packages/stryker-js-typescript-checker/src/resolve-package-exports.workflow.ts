@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
@@ -62,17 +63,45 @@ const substituteStar = (target: string, star: Option.Option<string>): string =>
     onSome: (capture) => target.replaceAll('*', capture),
   })
 
-const resolveConditional = (
-  conditions: Record<string, JsonValue>,
-  star: Option.Option<string>,
-): Option.Option<string> =>
-  Arr.findFirst(
-    Object.entries(conditions),
-    ([key, entry]) =>
-      Boolean.match(isActiveCondition(key), {
-        onTrue: () => resolveTarget(entry, star),
-        onFalse: () => Option.none<string>(),
-      }),
+const TargetResolved = S.TaggedStruct('TargetResolved', { target: S.String })
+
+const SubpathExcluded = S.TaggedStruct('SubpathExcluded', {})
+
+const TryNextEntry = S.TaggedStruct('TryNextEntry', {})
+
+const TargetStep = S.Union([TargetResolved, SubpathExcluded, TryNextEntry])
+type TargetStep = typeof TargetStep.Type
+
+const targetResolved = (target: string): TargetStep => TargetResolved.make({ target })
+
+const SUBPATH_EXCLUDED: TargetStep = SubpathExcluded.make({})
+
+const TRY_NEXT_ENTRY: TargetStep = TryNextEntry.make({})
+
+const targetOf = (step: TargetStep): Option.Option<string> =>
+  Match.value(step).pipe(
+    Match.tag('TargetResolved', ({ target }) => Option.some(target)),
+    Match.tag('SubpathExcluded', () => Option.none<string>()),
+    Match.tag('TryNextEntry', () => Option.none<string>()),
+    Match.exhaustive,
+  )
+
+const firstDecidedStepOf = <A>(entries: ReadonlyArray<A>, stepOf: (entry: A) => TargetStep): TargetStep =>
+  Option.match(Arr.head(entries), {
+    onNone: () => TRY_NEXT_ENTRY,
+    onSome: (entry) =>
+      Match.value(stepOf(entry)).pipe(
+        Match.tag('TargetResolved', (resolved): TargetStep => resolved),
+        Match.tag('SubpathExcluded', (excluded): TargetStep => excluded),
+        Match.tag('TryNextEntry', () => firstDecidedStepOf(Arr.drop(entries, 1), stepOf)),
+        Match.exhaustive,
+      ),
+  })
+
+const resolveConditional = (conditions: Record<string, JsonValue>, star: Option.Option<string>): TargetStep =>
+  firstDecidedStepOf(
+    Arr.filter(Object.entries(conditions), ([key]) => isActiveCondition(key)),
+    ([, entry]) => resolveTarget(entry, star),
   )
 
 const INVALID_TARGET_SEGMENTS: ReadonlyArray<string> = ['.', '..', 'node_modules']
@@ -83,33 +112,26 @@ const hasInvalidTargetSegment = (target: string): boolean =>
 const isResolvableTarget = (target: string): boolean =>
   Boolean.and(target.startsWith('./'), Boolean.not(hasInvalidTargetSegment(target)))
 
-const resolveArrayTarget = (
-  entries: ReadonlyArray<JsonValue>,
-  star: Option.Option<string>,
-): Option.Option<string> =>
-  Option.match(Arr.head(entries), {
-    onNone: () => Option.none<string>(),
-    onSome: (entry) =>
-      Boolean.match(entry === null, {
-        onTrue: () => Option.none<string>(),
-        onFalse: () =>
-          Option.match(resolveTarget(entry, star), {
-            onSome: (target) => Option.some(target),
-            onNone: () => resolveArrayTarget(Arr.drop(entries, 1), star),
-          }),
-      }),
+const resolveStringTarget = (target: string): TargetStep =>
+  Boolean.match(isResolvableTarget(target), {
+    onTrue: () => targetResolved(target),
+    onFalse: () => TRY_NEXT_ENTRY,
   })
 
-function resolveTarget(value: JsonValue, star: Option.Option<string>): Option.Option<string> {
-  return Option.match(Option.liftPredicate(value, isString), {
-    onSome: (target) => Option.liftPredicate(substituteStar(target, star), isResolvableTarget),
-    onNone: () =>
-      Option.match(Option.liftPredicate(value, isJsonArray), {
-        onSome: (entries) => resolveArrayTarget(entries, star),
+function resolveTarget(value: JsonValue, star: Option.Option<string>): TargetStep {
+  return Boolean.match(value === null, {
+    onTrue: () => SUBPATH_EXCLUDED,
+    onFalse: () =>
+      Option.match(Option.liftPredicate(value, isString), {
+        onSome: (target) => resolveStringTarget(substituteStar(target, star)),
         onNone: () =>
-          Option.match(Option.liftPredicate(value, isJsonObject), {
-            onSome: (conditions) => resolveConditional(conditions, star),
-            onNone: () => Option.none<string>(),
+          Option.match(Option.liftPredicate(value, isJsonArray), {
+            onSome: (entries) => firstDecidedStepOf(entries, (entry) => resolveTarget(entry, star)),
+            onNone: () =>
+              Option.match(Option.liftPredicate(value, isJsonObject), {
+                onSome: (conditions) => resolveConditional(conditions, star),
+                onNone: () => TRY_NEXT_ENTRY,
+              }),
           }),
       }),
   })
@@ -184,24 +206,11 @@ const whenRootSubpath = <A>(subpath: string, atRoot: () => Option.Option<A>): Op
     onFalse: () => Option.none<A>(),
   })
 
-const resolveObject = (map: Record<string, JsonValue>, subpath: string): Option.Option<string> =>
-  Boolean.match(hasSubpathKeys(map), {
-    onTrue: () => Option.flatMap(subpathTargetOf(map, subpath), ([value, star]) => resolveTarget(value, star)),
-    onFalse: () => whenRootSubpath(subpath, () => resolveTarget(map, Option.none())),
-  })
-
 const resolveExports = (exports: JsonValue, subpath: string): Option.Option<string> =>
-  Option.match(Option.liftPredicate(exports, isString), {
-    onSome: (target) => whenRootSubpath(subpath, () => resolveTarget(target, Option.none())),
-    onNone: () =>
-      Option.match(Option.liftPredicate(exports, isJsonArray), {
-        onSome: (entries) => whenRootSubpath(subpath, () => resolveArrayTarget(entries, Option.none())),
-        onNone: () =>
-          Option.match(Option.liftPredicate(exports, isJsonObject), {
-            onSome: (map) => resolveObject(map, subpath),
-            onNone: () => Option.none<string>(),
-          }),
-      }),
+  Option.match(Option.filter(Option.liftPredicate(exports, isJsonObject), hasSubpathKeys), {
+    onSome: (map) =>
+      Option.flatMap(subpathTargetOf(map, subpath), ([value, star]) => targetOf(resolveTarget(value, star))),
+    onNone: () => whenRootSubpath(subpath, () => targetOf(resolveTarget(exports, Option.none()))),
   })
 
 const decide = (command: ResolvePackageExportsCommand): Result.Result<PackageExportsResolution, never> =>
