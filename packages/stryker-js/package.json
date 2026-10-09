@@ -114,6 +114,14 @@
         "types": "./dist/promises.d.mts",
         "default": "./dist/promises.mjs"
       },
+      "./verdict-store": {
+        "types": "./dist/verdict-store.d.mts",
+        "default": "./dist/verdict-store.mjs"
+      },
+      "./verdict-store/laws": {
+        "types": "./dist/verdict-store/laws.d.mts",
+        "default": "./dist/verdict-store/laws.mjs"
+      },
       "./package.json": "./package.json"
     }
   },
@@ -137,6 +145,16 @@
       "@systemfsoftware/source": "./src/promises/mod.ts",
       "types": "./dist/promises.d.mts",
       "default": "./dist/promises.mjs"
+    },
+    "./verdict-store": {
+      "@systemfsoftware/source": "./src/verdict-store/mod.ts",
+      "types": "./dist/verdict-store.d.mts",
+      "default": "./dist/verdict-store.mjs"
+    },
+    "./verdict-store/laws": {
+      "@systemfsoftware/source": "./src/verdict-store/laws-mod.ts",
+      "types": "./dist/verdict-store/laws.d.mts",
+      "default": "./dist/verdict-store/laws.mjs"
     },
     "./package.json": "./package.json"
   },

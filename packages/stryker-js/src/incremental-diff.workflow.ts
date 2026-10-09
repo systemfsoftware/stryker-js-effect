@@ -12,9 +12,9 @@ import {
   type ReuseRefusalReason,
   ReuseRefusalReasonSchema,
   TimeoutEvidenceSchema,
-  TimeoutKindSchema,
 } from './IncrementalDiff.schema.js'
 import type { PreviousReuseRecord, TimeoutEvidence } from './IncrementalDiff.schema.js'
+import { TimeoutKindSchema } from './verdict-store/VerdictEntry.schema.js'
 
 const isReusableStatus = S.is(Mutant.RememberedStatusSchema)
 

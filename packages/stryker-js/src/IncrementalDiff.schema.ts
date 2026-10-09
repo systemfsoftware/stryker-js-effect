@@ -1,5 +1,6 @@
 import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
+import { TimeoutKindSchema } from './verdict-store/VerdictEntry.schema.js'
 
 export const FormatIdentitySchema = S.Struct({
   formatId: S.String,
@@ -26,10 +27,6 @@ export type ReuseRefusalReason = typeof ReuseRefusalReasonSchema.Type
 export const ClosureDigestsSchema = S.Record(Mutant.MutantId, S.String)
 
 export type ClosureDigests = S.Schema.Type<typeof ClosureDigestsSchema>
-
-export const TimeoutKindSchema = S.Literals(['wallClock', 'hitLimit'])
-
-export type TimeoutKind = typeof TimeoutKindSchema.Type
 
 export const TimeoutEvidenceSchema = S.Struct({
   timeoutKind: TimeoutKindSchema,

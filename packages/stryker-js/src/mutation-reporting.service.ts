@@ -41,7 +41,7 @@ import {
 } from './checkpoint-mutants.workflow.js'
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
 import type { DryRunCoverage } from './dry-run-coverage.schema.js'
-import type { FormatIdentity, TimeoutEvidence, TimeoutKind } from './IncrementalDiff.schema.js'
+import type { FormatIdentity, TimeoutEvidence } from './IncrementalDiff.schema.js'
 import { TimeoutEvidenceSchema } from './IncrementalDiff.schema.js'
 import { mutantCostsOf } from './mutant-cost-model.js'
 import { costTotalMsOf } from './mutant-cost.js'
@@ -63,6 +63,7 @@ import { REPRODUCERS_FILE } from './stryker-outputs.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
 import { engineDigestOf, INCREMENTAL_CACHE_VERSION, runInputsDigestOf } from './verdict-semantics.js'
+import type { TimeoutKind } from './verdict-store/VerdictEntry.schema.js'
 
 export const identityOf = dual<
   (

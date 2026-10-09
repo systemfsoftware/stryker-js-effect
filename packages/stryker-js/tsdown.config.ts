@@ -31,6 +31,8 @@ export default defineConfig([
       config: './src/config/mod.ts',
       promises: './src/promises/mod.ts',
       events: './src/events/mod.ts',
+      'verdict-store': './src/verdict-store/mod.ts',
+      'verdict-store/laws': './src/verdict-store/laws-mod.ts',
     },
     dts: true,
     exports: sourceExports({ dtsExt: '.d.mts' }),
