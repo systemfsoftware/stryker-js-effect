@@ -63,7 +63,7 @@ const substituteStar = (target: string, star: Option.Option<string>): string =>
     onSome: (capture) => target.replaceAll('*', capture),
   })
 
-const TargetsResolved = S.TaggedStruct('TargetsResolved', { targets: S.Array(S.String) })
+const TargetsResolved = S.TaggedStruct('TargetsResolved', { targets: S.Array(S.String), terminated: S.Boolean })
 
 const SubpathExcluded = S.TaggedStruct('SubpathExcluded', {})
 
@@ -72,7 +72,8 @@ const TryNextEntry = S.TaggedStruct('TryNextEntry', {})
 const TargetStep = S.Union([TargetsResolved, SubpathExcluded, TryNextEntry])
 type TargetStep = typeof TargetStep.Type
 
-const targetsResolved = (targets: ReadonlyArray<string>): TargetStep => TargetsResolved.make({ targets })
+const targetsResolved = (targets: ReadonlyArray<string>, terminated: boolean): TargetStep =>
+  TargetsResolved.make({ targets, terminated })
 
 const SUBPATH_EXCLUDED: TargetStep = SubpathExcluded.make({})
 
@@ -107,18 +108,19 @@ const appendTargets = (
     onNone: () =>
       Boolean.match(accumulated.length === 0, {
         onTrue: () => TRY_NEXT_ENTRY,
-        onFalse: () => targetsResolved(accumulated),
+        onFalse: () => targetsResolved(accumulated, false),
       }),
     onSome: (entry) =>
       Match.value(resolveTarget(entry, star)).pipe(
-        Match.tag(
-          'TargetsResolved',
-          ({ targets }) => appendTargets(Arr.drop(entries, 1), star, [...accumulated, ...targets]),
-        ),
+        Match.tag('TargetsResolved', ({ targets, terminated }) =>
+          Boolean.match(terminated, {
+            onTrue: () => targetsResolved([...accumulated, ...targets], true),
+            onFalse: () => appendTargets(Arr.drop(entries, 1), star, [...accumulated, ...targets]),
+          })),
         Match.tag('SubpathExcluded', (excluded): TargetStep =>
           Boolean.match(accumulated.length === 0, {
             onTrue: () => excluded,
-            onFalse: () => targetsResolved(accumulated),
+            onFalse: () => targetsResolved(accumulated, true),
           })),
         Match.tag('TryNextEntry', () => appendTargets(Arr.drop(entries, 1), star, accumulated)),
         Match.exhaustive,
@@ -141,7 +143,7 @@ const isResolvableTarget = (target: string): boolean =>
 
 const resolveStringTarget = (target: string): TargetStep =>
   Boolean.match(isResolvableTarget(target), {
-    onTrue: () => targetsResolved([target]),
+    onTrue: () => targetsResolved([target], false),
     onFalse: () => TRY_NEXT_ENTRY,
   })
 

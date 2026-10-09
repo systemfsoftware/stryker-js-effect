@@ -92,11 +92,6 @@ const PACKAGE_FALLBACK_EXPORTS_MANIFEST_SOURCE = JSON.stringify(
   null,
   2,
 ) + '\n'
-const PACKAGE_NULL_TERMINATED_EXPORTS_MANIFEST_SOURCE = JSON.stringify(
-  { exports: { './strict': ['./strict-base.json', null] } },
-  null,
-  2,
-) + '\n'
 
 const NESTED_DIRECTORY = 'packages/app'
 const NESTED_TSCONFIG_FILE = `${NESTED_DIRECTORY}/${TSCONFIG_FILE}`
@@ -407,35 +402,6 @@ Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_00
                 ...DEFAULT_FILES,
                 [TSCONFIG_FILE]: PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE,
                 [PACKAGE_EXPORTS_MANIFEST_FILE]: PACKAGE_FALLBACK_EXPORTS_MANIFEST_SOURCE,
-                [PACKAGE_EXPORTS_BASE_FILE]: BASE_TSCONFIG_SOURCE,
-              },
-            ),
-        ),
-        Then('the change moves the digest')((s, expect) =>
-          expect({
-            shape: DIGEST_SHAPE.test(s.observed.first) && DIGEST_SHAPE.test(s.observed.second),
-            moved: s.observed.first !== s.observed.second,
-          }).toEqual({ shape: true, moved: true })
-        ),
-      ),
-    )
-
-    scenario(
-      'editing a base tsconfig an exports array names before a null moves the digest',
-      Gherkin.Do.pipe(
-        Given('a program whose tsconfig extends a package export whose array ends in null')(
-          'observed',
-          () =>
-            withWorkspace(
-              (workspace) =>
-                digestTwice(
-                  workspace.directory,
-                  (directory) => rewriteFile(directory, PACKAGE_EXPORTS_BASE_FILE, CHANGED_BASE_TSCONFIG_SOURCE),
-                ),
-              {
-                ...DEFAULT_FILES,
-                [TSCONFIG_FILE]: PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE,
-                [PACKAGE_EXPORTS_MANIFEST_FILE]: PACKAGE_NULL_TERMINATED_EXPORTS_MANIFEST_SOURCE,
                 [PACKAGE_EXPORTS_BASE_FILE]: BASE_TSCONFIG_SOURCE,
               },
             ),

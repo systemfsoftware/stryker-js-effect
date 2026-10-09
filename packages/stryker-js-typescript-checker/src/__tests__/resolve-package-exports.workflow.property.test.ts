@@ -313,21 +313,28 @@ describe('resolvePackageExports', (it) => {
   )
 
   it.prop(
-    '∀entries_NullTerminatedArray_≡LeadingTargetsOnly',
+    '∀entries_NullTerminatedListAtAnyDepth_≡LeadingTargetsOnly',
     {
       of: [
         Arbitrary.array(Arbitrary.schema(S.String), { maxLength: 3 }),
         Arbitrary.array(Arbitrary.schema(S.String), { maxLength: 3 }),
+        Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 3 }))),
       ],
       subject: (entries: ReadonlyArray<JsonValue>) => {
         const key = './probe/array'
         return resolvedTargetsOf({ [key]: entries }, key)
       },
     },
-    (subject, [before, after]) => {
+    (subject, [before, after, depth]) => {
       const leading = Arr.map(before, (leaf) => `./${escaped(leaf)}.json`)
       const trailing = Arr.map(after, (leaf) => `./${escaped(leaf)}.json`)
-      const targets = subject([...leading, null, ...trailing])
+      const terminated: ReadonlyArray<JsonValue> = [...leading, null]
+      const nested = Arr.reduce(Arr.makeBy(depth, () => 0), terminated, (inner): ReadonlyArray<JsonValue> => [inner])
+      const entries = Boolean.match(depth === 0, {
+        onTrue: (): ReadonlyArray<JsonValue> => [...terminated, ...trailing],
+        onFalse: (): ReadonlyArray<JsonValue> => [...nested, ...trailing],
+      })
+      const targets = subject(entries)
       return Boolean.match(Arr.isArrayNonEmpty(leading), {
         onTrue: () => sameOrderOf(targets, leading),
         onFalse: () => targets === undefined,
