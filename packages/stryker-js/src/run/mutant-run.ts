@@ -51,6 +51,7 @@ export const reportingInputOf = (input: ReportingInputArgs): MutationReportingIn
   project: input.prev.project,
   testCoverage: input.prev.testCoverage,
   timeOverheadMs: Duration.toMillis(input.prev.timeOverhead),
+  freshDryRunMs: Duration.toMillis(input.prev.freshDryRun),
   runId: input.env.runId,
   resolvedMode: input.env.resolvedMode,
   basePath: input.env.basePath,

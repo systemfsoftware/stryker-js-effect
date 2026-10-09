@@ -97,6 +97,19 @@ const dryRunCoverageFieldOf = (reports: readonly Record<string, Json>[]): Record
     onSome: (coverage) => ({ [DRY_RUN_COVERAGE]: coverage }),
   })
 
+const FIXED_SECONDS = 'fixedSeconds'
+
+const measuredSecondsOf = (report: Record<string, Json>): readonly number[] =>
+  Option.toArray(S.decodeUnknownOption(S.Finite)(fieldOf(report, FIXED_SECONDS)))
+
+const fixedSecondsFieldOf = (reports: readonly Record<string, Json>[]): Record<string, Json> =>
+  Option.match(Arr.match(reports.flatMap(measuredSecondsOf), { onEmpty: Option.none, onNonEmpty: Option.some }), {
+    onNone: (): Record<string, Json> => ({}),
+    onSome: (measured) => ({
+      [FIXED_SECONDS]: Arr.reduce(measured, 0, (total, value) => total + value) / measured.length,
+    }),
+  })
+
 export const unionIncrementalReports = (texts: readonly string[]): string | undefined => {
   const reports = texts.flatMap((text) => Option.toArray(decodedReportOf(text)))
   const first = reports[0]
@@ -106,6 +119,7 @@ export const unionIncrementalReports = (texts: readonly string[]): string | unde
   const union = {
     ...first,
     ...dryRunCoverageFieldOf(reports),
+    ...fixedSecondsFieldOf(reports),
     files: unionFilesOf(reports),
     costs: unionCostsOf(reports),
     testFiles: unionTestFilesOf(reports),

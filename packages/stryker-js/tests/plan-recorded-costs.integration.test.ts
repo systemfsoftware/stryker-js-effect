@@ -74,6 +74,7 @@ interface ObservedPlan {
   readonly plan: ShardPlan | null
   readonly report: ReportObservation
   readonly dryRunMs: number
+  readonly fixedMs: number
   readonly output: string
 }
 
@@ -108,6 +109,13 @@ const planAfterFullRun = (
       plan: Option.getOrNull(decodePlan(planText)),
       report,
       dryRunMs: recordedDryRunMsOf(reportText),
+      fixedMs: Option.getOrElse(
+        Option.flatMap(
+          S.decodeOption(S.fromJsonString(S.Struct({ fixedSeconds: S.optional(S.Finite) })))(reportText),
+          (decoded) => Option.fromUndefinedOr(decoded.fixedSeconds),
+        ),
+        () => 0,
+      ) * 1000,
       output: `${run.output}\n${plan.output}`,
     }
   }).pipe(Effect.orDie)
@@ -132,6 +140,7 @@ const planSummaryOf = (observed: ObservedPlan) => {
     return { planWritten: false, runExitCode: observed.runExitCode, planExitCode: observed.planExitCode }
   }
   const scheduledIds = plan.shards.flatMap((shard) => shard.projects.flatMap((project) => project.mutants))
+  const fixedCostsMs = plan.shards.length * observed.fixedMs
   const plannedSecondsMs = plan.shards.reduce((total, shard) => total + shard.predictedSeconds * 1000, 0)
   const recordedCostsMs = scheduledIds.reduce(
     (total, id) => total + (observed.report.costs[id]?.actualMs ?? 0),
@@ -157,8 +166,11 @@ const planSummaryOf = (observed: ObservedPlan) => {
     aTestRunningMutantIsScheduled: scheduledIds.some(
       (id) => TEST_RUNNING_STATUSES[observed.report.statuses[id] ?? ''] === true,
     ),
-    thePlanPricesTheRecordedCosts: roundMs(plannedSecondsMs) === roundMs(recordedCostsMs + observed.dryRunMs),
-    thePlanPricesNoWholeSuitePrediction: roundMs(plannedSecondsMs) < roundMs(costsWithoutMeasuredCheckTimeMs),
+    aFixedCostIsRecorded: observed.fixedMs > 0,
+    thePlanPricesTheRecordedCosts: roundMs(plannedSecondsMs) ===
+      roundMs(recordedCostsMs + observed.dryRunMs + fixedCostsMs),
+    thePlanPricesNoWholeSuitePrediction: roundMs(plannedSecondsMs - fixedCostsMs) <
+      roundMs(costsWithoutMeasuredCheckTimeMs),
   }
 }
 
@@ -182,7 +194,7 @@ Feature('Shard planning on the measured costs a run records')
           'a workspace whose covered modules are checked by a rejecting checker and whose test runner passes, run in full and then planned in full',
         )('observed', () => observedPlanAfterFullRun),
         Then(
-          'the plan prices its scheduled mutants at their measured costs rather than at a whole-suite prediction',
+          'the plan prices its scheduled mutants at their measured costs plus the recorded fixed cost, rather than at a whole-suite prediction',
         )((s, expect) =>
           expect(planSummaryOf(s.observed)).toEqual({
             planWritten: true,
@@ -191,6 +203,7 @@ Feature('Shard planning on the measured costs a run records')
             everyScheduledMutantCarriesAMeasuredCost: true,
             aCheckDecidedMutantIsScheduled: true,
             aTestRunningMutantIsScheduled: true,
+            aFixedCostIsRecorded: true,
             thePlanPricesTheRecordedCosts: true,
             thePlanPricesNoWholeSuitePrediction: true,
           })

@@ -1,6 +1,7 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import { type PlannedMutant, type PlannedShard, planShards, PlanShardsCommand } from '../plan-shards.workflow.js'
 
@@ -42,6 +43,9 @@ const dryRunBinsNeededOf = (command: PlanShardsCommand, project: string, depende
   return remainingMs > 0 ? Math.max(1, Math.ceil(dependentCostMs / remainingMs)) : Number.POSITIVE_INFINITY
 }
 
+const fixedCostOf = (command: PlanShardsCommand, project: string): number =>
+  Object.hasOwn(command.fixedCosts, project) ? (command.fixedCosts[project] ?? 0) : 0
+
 const expectedShardCountOf = (command: PlanShardsCommand): number => {
   const mutantCostMs = command.mutants.reduce((total, mutant) => total + mutant.costMs, 0)
   const dryRunLoadMs = dependentCostByProjectOf(command).reduce((total, [project, dependentCostMs]) => {
@@ -51,6 +55,30 @@ const expectedShardCountOf = (command: PlanShardsCommand): number => {
   const needed = Math.max(1, Math.ceil((mutantCostMs + dryRunLoadMs) / 1000 / command.targetSeconds))
   const capped = command.maxShards === undefined ? needed : Math.max(1, Math.min(command.maxShards, needed))
   return Math.min(capped, Math.max(command.mutants.length, 1))
+}
+
+const withoutFixedCosts = (command: PlanShardsCommand): PlanShardsCommand =>
+  PlanShardsCommand.make({
+    targetSeconds: command.targetSeconds,
+    maxShards: command.maxShards,
+    mutants: command.mutants,
+    dryRunCosts: command.dryRunCosts,
+    fixedCosts: {},
+  })
+
+const pricesMutantsPlusFixedCosts = (command: PlanShardsCommand, shards: ReadonlyArray<PlannedShard>): boolean => {
+  const costs = new Map(command.mutants.map((mutant) => [`${mutant.project}|${mutant.id}`, mutant.costMs]))
+  return shards.every((shard) => {
+    const expectedMs = shard.projects.reduce(
+      (total, entry) =>
+        entry.mutants.reduce(
+          (projectTotal, id) => projectTotal + (costs.get(`${entry.project}|${id}`) ?? 0),
+          total + fixedCostOf(command, entry.project),
+        ),
+      0,
+    )
+    return Math.abs(shard.predictedSeconds * 1000 - expectedMs) <= 1e-9 * Math.max(1, expectedMs)
+  })
 }
 
 const loadsOf = (command: PlanShardsCommand, shards: ReadonlyArray<PlannedShard>): ReadonlyArray<number> => {
@@ -112,7 +140,7 @@ const dependentMutantsRespectDryRunBudget = (
   command: PlanShardsCommand,
   shards: ReadonlyArray<PlannedShard>,
 ): boolean => {
-  const count = expectedShardCountOf(command)
+  const count = shards.length
   return dependentCostByProjectOf(command).every(([project, dependentCostMs]) => {
     const budget = Math.min(dryRunBinsNeededOf(command, project, dependentCostMs), count)
     return occupiedShardsOfProject(command, project, shards) <= budget
@@ -154,6 +182,7 @@ describe('planShards', () => {
         maxShards: command.maxShards,
         mutants: [...command.mutants].reverse(),
         dryRunCosts: command.dryRunCosts,
+        fixedCosts: command.fixedCosts,
       })
       const shards = shardsOf(subject, command)
       const reordered = shardsOf(subject, reversed)
@@ -164,7 +193,8 @@ describe('planShards', () => {
   it.prop(
     '∀c_Mutants_≡TheShardCountIsMinOfTheCapAndTheTargetQuotient',
     { of: [PlanShardsCommand], subject: planShards },
-    (subject, [command]) => {
+    (subject, [drawn]) => {
+      const command = withoutFixedCosts(drawn)
       const shards = shardsOf(subject, command)
       if (shards === undefined) {
         return false
@@ -192,6 +222,7 @@ describe('planShards', () => {
         maxShards: command.maxShards,
         mutants: command.mutants.map((mutant) => ({ ...mutant, dependsOnDryRun: false })),
         dryRunCosts: {},
+        fixedCosts: {},
       })
       const shards = shardsOf(subject, flat)
       return shards !== undefined && reproducesPureLptShards(flat, shards)
@@ -201,7 +232,8 @@ describe('planShards', () => {
   it.prop(
     '∀c_Mutants_≡LptKeepsTheBusiestShardWithinFourThirdsOfAveragePlusLargestItem',
     { of: [PlanShardsCommand], subject: planShards },
-    (subject, [command]) => {
+    (subject, [drawn]) => {
+      const command = withoutFixedCosts(drawn)
       const shards = shardsOf(subject, command)
       if (shards === undefined) {
         return false
@@ -212,6 +244,22 @@ describe('planShards', () => {
       const largest = command.mutants.reduce((max, mutant) => Math.max(max, mutant.costMs), 0)
       const busiest = loads.reduce((max, load) => Math.max(max, load), 0)
       return busiest <= (4 / 3) * (total / count + largest) + 1e-9
+    },
+  )
+
+  it.prop(
+    '∀cf_FlatMutantsAndAFixedCost_≡EachShardPricesItsMutantsPlusTheFixedCostOfEveryProjectItHolds',
+    { of: [PlanShardsCommand, S.Int.check(S.isBetween({ minimum: 0, maximum: 600_000 }))], subject: planShards },
+    (subject, [command, fixedMs]) => {
+      const flat = PlanShardsCommand.make({
+        targetSeconds: command.targetSeconds,
+        maxShards: command.maxShards,
+        mutants: command.mutants.map((mutant) => ({ ...mutant, dependsOnDryRun: false })),
+        dryRunCosts: {},
+        fixedCosts: Object.fromEntries(command.mutants.map((mutant) => [mutant.project, fixedMs])),
+      })
+      const shards = shardsOf(subject, flat)
+      return shards !== undefined && pricesMutantsPlusFixedCosts(flat, shards)
     },
   )
 })

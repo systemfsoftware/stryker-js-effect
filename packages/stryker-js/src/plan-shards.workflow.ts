@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { ShardProject } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
@@ -27,6 +28,7 @@ export class PlanShardsCommand extends S.TaggedClass<PlanShardsCommand>()('PlanS
   maxShards: S.optional(PositiveInt),
   mutants: S.Array(PlannedMutant),
   dryRunCosts: S.Record(S.String, CostMs),
+  fixedCosts: S.Record(S.String, CostMs),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -62,6 +64,9 @@ const totalCostMsOf = (mutants: readonly PlannedMutant[]): number =>
 
 const dryRunCostOf = (command: PlanShardsCommand, project: string): number =>
   Option.getOrElse(Record.get(command.dryRunCosts, project), () => 0)
+
+const fixedCostOf = (command: PlanShardsCommand, project: string): number =>
+  Option.getOrElse(Record.get(command.fixedCosts, project), () => 0)
 
 interface DependentProject {
   readonly project: string
@@ -119,37 +124,86 @@ const plannedLoadMsOf = (
     })
   }, 0)
 
-const neededShardsOf = (command: PlanShardsCommand, loadMs: number): number =>
-  max(1, ceil(loadMs / 1000 / command.targetSeconds))
+const mutantCountsByProjectOf = (command: PlanShardsCommand): ReadonlyArray<readonly [string, number]> =>
+  Record.toEntries(
+    command.mutants.reduce<Record<string, number>>(
+      (counts, mutant) =>
+        Record.set(counts, mutant.project, Option.getOrElse(Record.get(counts, mutant.project), () => 0) + 1),
+      {},
+    ),
+  )
 
-const cappedShardsOf = (command: PlanShardsCommand, loadMs: number): number =>
+const loadWithFixedMsOf = (
+  command: PlanShardsCommand,
+  mutantCounts: ReadonlyArray<readonly [string, number]>,
+  baseLoadMs: number,
+  count: number,
+): number =>
+  mutantCounts.reduce(
+    (total, [project, mutants]) => total + fixedCostOf(command, project) * min(count, mutants),
+    baseLoadMs,
+  )
+
+const shardCapOf = (command: PlanShardsCommand): number =>
   Option.match(Option.fromUndefinedOr(command.maxShards), {
-    onNone: () => neededShardsOf(command, loadMs),
-    onSome: (maxShards) => max(1, min(maxShards, neededShardsOf(command, loadMs))),
+    onNone: () => max(command.mutants.length, 1),
+    onSome: (maxShards) => max(1, min(maxShards, command.mutants.length)),
   })
 
-const shardCountOf = (command: PlanShardsCommand, loadMs: number): number =>
-  min(cappedShardsOf(command, loadMs), max(command.mutants.length, 1))
+const shardCountOf = (command: PlanShardsCommand, baseLoadMs: number): number => {
+  const mutantCounts = mutantCountsByProjectOf(command)
+  const loadOf = (count: number): number => loadWithFixedMsOf(command, mutantCounts, baseLoadMs, count)
+  const counts = indicesOf(shardCapOf(command)).map((index) => index + 1)
+  return Option.getOrElse(
+    Arr.findFirst(counts, (count) => count >= loadOf(count) / 1000 / command.targetSeconds),
+    () =>
+      counts.reduce(
+        (best, count) =>
+          Boolean.match(loadOf(count) / count < loadOf(best) / best, { onTrue: () => count, onFalse: () => best }),
+        1,
+      ),
+  )
+}
 
 interface Bin {
   readonly mutants: ReadonlyArray<PlannedMutant>
+  readonly projects: ReadonlyArray<string>
   readonly load: number
 }
 
-const EMPTY_BIN: Bin = { mutants: [], load: 0 }
+const EMPTY_BIN: Bin = { mutants: [], projects: [], load: 0 }
 
 const emptyBins = (count: number): ReadonlyArray<Bin> =>
-  Array.from({ length: count }, (): Bin => ({ mutants: [], load: 0 }))
+  Array.from({ length: count }, (): Bin => ({ mutants: [], projects: [], load: 0 }))
 
 const indicesOf = (count: number): ReadonlyArray<number> => Array.from({ length: count }, (_unused, index) => index)
 
-const loadAt = (bins: ReadonlyArray<Bin>, index: number): number =>
-  Option.getOrElse(Option.fromUndefinedOr(bins[index]), () => EMPTY_BIN).load
+const binAt = (bins: ReadonlyArray<Bin>, index: number): Bin =>
+  Option.getOrElse(Option.fromUndefinedOr(bins[index]), () => EMPTY_BIN)
 
-const leastLoadedOf = (bins: ReadonlyArray<Bin>, indices: ReadonlyArray<number>): number =>
+const loadAt = (bins: ReadonlyArray<Bin>, index: number): number => binAt(bins, index).load
+
+const addedCostMsOf = (command: PlanShardsCommand, bin: Bin, mutant: PlannedMutant): number =>
+  Boolean.match(bin.projects.includes(mutant.project), {
+    onTrue: () => mutant.costMs,
+    onFalse: () => mutant.costMs + fixedCostOf(command, mutant.project),
+  })
+
+const placedLoadAt = (command: PlanShardsCommand, bins: ReadonlyArray<Bin>, index: number, mutant: PlannedMutant) =>
+  loadAt(bins, index) + addedCostMsOf(command, binAt(bins, index), mutant)
+
+const cheapestBinOf = (
+  command: PlanShardsCommand,
+  bins: ReadonlyArray<Bin>,
+  indices: ReadonlyArray<number>,
+  mutant: PlannedMutant,
+): number =>
   indices.reduce(
     (best, index) =>
-      Boolean.match(loadAt(bins, index) < loadAt(bins, best), { onTrue: () => index, onFalse: () => best }),
+      Boolean.match(placedLoadAt(command, bins, index, mutant) < placedLoadAt(command, bins, best, mutant), {
+        onTrue: () => index,
+        onFalse: () => best,
+      }),
     Option.getOrElse(Option.fromUndefinedOr(indices[0]), () => 0),
   )
 
@@ -168,21 +222,33 @@ const leastLoadedIndicesOf = (bins: ReadonlyArray<Bin>, count: number): Readonly
     .slice(0, count)
     .map((entry) => entry.index)
 
-const withMutantIn = (bins: ReadonlyArray<Bin>, index: number, mutant: PlannedMutant): ReadonlyArray<Bin> =>
+const withMutantIn = (
+  command: PlanShardsCommand,
+  bins: ReadonlyArray<Bin>,
+  index: number,
+  mutant: PlannedMutant,
+): ReadonlyArray<Bin> =>
   bins.map((bin, at) =>
     Boolean.match(at === index, {
-      onTrue: (): Bin => ({ mutants: [...bin.mutants, mutant], load: bin.load + mutant.costMs }),
+      onTrue: (): Bin => ({
+        mutants: [...bin.mutants, mutant],
+        projects: Boolean.match(bin.projects.includes(mutant.project), {
+          onTrue: () => bin.projects,
+          onFalse: () => [...bin.projects, mutant.project],
+        }),
+        load: bin.load + addedCostMsOf(command, bin, mutant),
+      }),
       onFalse: () => bin,
     })
   )
 
-const placeIn = (bins: ReadonlyArray<Bin>, mutant: PlannedMutant): ReadonlyArray<Bin> =>
-  withMutantIn(bins, leastLoadedOf(bins, indicesOf(bins.length)), mutant)
+const placeIn = (command: PlanShardsCommand, bins: ReadonlyArray<Bin>, mutant: PlannedMutant): ReadonlyArray<Bin> =>
+  withMutantIn(command, bins, cheapestBinOf(command, bins, indicesOf(bins.length), mutant), mutant)
 
 const reservedBin = (bins: ReadonlyArray<Bin>, index: number, costMs: number): ReadonlyArray<Bin> =>
   bins.map((bin, at) =>
     Boolean.match(at === index, {
-      onTrue: (): Bin => ({ mutants: bin.mutants, load: bin.load + costMs }),
+      onTrue: (): Bin => ({ ...bin, load: bin.load + costMs }),
       onFalse: () => bin,
     })
   )
@@ -223,13 +289,16 @@ const shardsOf = (command: PlanShardsCommand): ReadonlyArray<PlannedShard> => {
   const withDependents = dependents.reduce(
     (bins, mutant) =>
       withMutantIn(
+        command,
         bins,
-        leastLoadedOf(
+        cheapestBinOf(
+          command,
           bins,
           Option.getOrElse(
             Record.get(reserved.indicesByProject, mutant.project),
             () => indicesOf(count),
           ),
+          mutant,
         ),
         mutant,
       ),
@@ -238,7 +307,7 @@ const shardsOf = (command: PlanShardsCommand): ReadonlyArray<PlannedShard> => {
   const withRest = command.mutants
     .filter((mutant) => Boolean.not(mutant.dependsOnDryRun))
     .sort(compareCostliestFirst)
-    .reduce((bins, mutant) => placeIn(bins, mutant), withDependents)
+    .reduce((bins, mutant) => placeIn(command, bins, mutant), withDependents)
   return withRest.map((bin, index) =>
     PlannedShard.make({
       index: index + 1,
@@ -259,7 +328,6 @@ export const planShards = Workflow.make({
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const Arr = await import('effect/Array')
 
   const isRepresentableCostMs = (costMs: number): boolean =>
     costMs === Math.min(Math.max(costMs, 0), Number.MAX_SAFE_INTEGER)

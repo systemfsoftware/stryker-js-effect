@@ -54,6 +54,7 @@ import type { StageServices } from './StageServices.service.js'
 export interface TestBasis extends InstrumentDone {
   readonly testCoverage: TestCoverage
   readonly timeOverhead: EffectDuration.Duration
+  readonly freshDryRun: EffectDuration.Duration
 }
 
 export interface DryRunDone extends TestBasis {
@@ -416,6 +417,7 @@ const dryRunDoneOf = (
   dryRunResult,
   testCoverage: testCoverageOf({ result: dryRunResult, dryRunCoverage: coverage }),
   timeOverhead: EffectDuration.millis(coverage.timeOverheadMs),
+  freshDryRun: raw.gross,
 })
 
 const completeFreshDryRun = Effect.fnUntraced(function*(

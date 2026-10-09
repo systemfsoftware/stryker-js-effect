@@ -39,6 +39,7 @@ const untestedBasisOf = (command: InstrumentDone): TestBasis => ({
     dryRunCoverage: undefined,
   },
   timeOverhead: Duration.zero,
+  freshDryRun: Duration.zero,
 })
 
 const settledWithoutTests = (

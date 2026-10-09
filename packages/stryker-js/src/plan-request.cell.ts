@@ -23,7 +23,7 @@ import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.j
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
-import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
+import { CompileErrorProbeSchema, CostsFieldSchema, FixedSecondsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
 import { readProjectCell } from './read-project.cell.js'
@@ -63,6 +63,8 @@ export interface PlanRequestInput {
 
 const DEFAULT_MUTANT_COST_MS = 1_000
 
+const DEFAULT_FIXED_COST_MS = 20_000
+
 const prepareStageCell = Cell.andThen(Cell.andThen(loadConfigCell, readProjectCell), prepareForInstrumentCell)
 
 const namedCostsOf = (
@@ -92,6 +94,21 @@ const reportCostsOf = (texts: readonly string[]): Record<string, number> =>
       }),
     {},
   )
+
+const recordedFixedMsOf = (texts: readonly string[]): number => {
+  const recorded = texts.flatMap((text) =>
+    Option.toArray(
+      Option.flatMap(
+        S.decodeOption(S.fromJsonString(FixedSecondsFieldSchema))(text),
+        (report) => Option.fromUndefinedOr(report.fixedSeconds),
+      ),
+    )
+  )
+  return Boolean.match(recorded.length === 0, {
+    onTrue: () => DEFAULT_FIXED_COST_MS,
+    onFalse: () => (recorded.reduce((total, seconds) => total + seconds, 0) / recorded.length) * 1000,
+  })
+}
 
 const decodeCoverage = (text: string): Option.Option<DryRunCoverage> =>
   Option.flatMap(
@@ -175,6 +192,7 @@ interface ProjectPlan {
     readonly dependsOnDryRun: boolean
   }>
   readonly dryRunCostMs: number
+  readonly fixedCostMs: number
   readonly reuse: ReuseObservation
 }
 
@@ -295,6 +313,7 @@ const planProject = (
       label,
       mutants,
       dryRunCostMs,
+      fixedCostMs: recordedFixedMsOf(texts),
       reuse: {
         reused: reuse.rememberedResults.length,
         ran: reuse.mutants.length,
@@ -310,6 +329,7 @@ const assemblePlan = (
   request: PlanShardsRequest,
   planned: ReadonlyArray<PlannedMutant>,
   dryRunCosts: Record<string, number>,
+  fixedCosts: Record<string, number>,
 ): ShardPlan => {
   const shards = Result.getOrElse(
     planShards(
@@ -318,6 +338,7 @@ const assemblePlan = (
         maxShards: request.maxShards,
         mutants: planned.map((mutant) => ({ ...mutant })),
         dryRunCosts,
+        fixedCosts,
       }),
     ),
     (neverError) => neverError,
@@ -413,7 +434,10 @@ export const planRequest = ({ request, channel }: PlanRequestInput): Effect.Effe
     const dryRunCosts: Record<string, number> = Object.fromEntries(
       planned.map((entry) => [entry.label, entry.dryRunCostMs]),
     )
-    const plan = assemblePlan(request, scheduled, dryRunCosts)
+    const fixedCosts: Record<string, number> = Object.fromEntries(
+      planned.map((entry) => [entry.label, entry.fixedCostMs]),
+    )
+    const plan = assemblePlan(request, scheduled, dryRunCosts, fixedCosts)
     yield* Queue.offer(
       channel.environment.host.events,
       RunEvent.PlanKnown.make({

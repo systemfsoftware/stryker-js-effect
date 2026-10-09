@@ -159,6 +159,21 @@ const scheduledIdsOf = (plan: ShardPlan): ReadonlyArray<string> =>
 const predictedSecondsOf = (plan: ShardPlan): number =>
   Arr.reduce(plan.shards, 0, (total, shard) => total + shard.predictedSeconds)
 
+const decodeFixedSeconds = S.decodeOption(S.fromJsonString(S.Struct({ fixedSeconds: S.optional(S.Finite) })))
+
+const fixedSecondsOf = (record: string): number =>
+  Option.getOrElse(
+    Option.flatMap(decodeFixedSeconds(record), (decoded) => Option.fromUndefinedOr(decoded.fixedSeconds)),
+    () => 0,
+  )
+
+const fixedSecondsPlannedOf = (plan: ShardPlan, fixedByProject: Readonly<Record<string, number>>): number =>
+  Arr.reduce(
+    plan.shards.flatMap((shard) => shard.projects),
+    0,
+    (total, entry) => total + (Object.hasOwn(fixedByProject, entry.project) ? (fixedByProject[entry.project] ?? 0) : 0),
+  )
+
 const projectMutantCountOf = (plan: ShardPlan): Record<string, number> =>
   Object.fromEntries(
     Arr.reduce(
@@ -244,6 +259,7 @@ interface Outcome {
   readonly coldIds: ReadonlyArray<string>
   readonly warm: ShardPlan
   readonly warmReuse: RunEvent.PlanKnown
+  readonly fixedByProject: Readonly<Record<string, number>>
 }
 
 const planRunMergePlan = (
@@ -288,7 +304,7 @@ const planRunMergePlan = (
       '--out',
       'reports/mutation',
     ])
-    yield* Effect.forEach(
+    const mergedFixedSeconds = yield* Effect.forEach(
       PROJECT_NAMES,
       (name) =>
         Effect.gen(function*() {
@@ -296,8 +312,8 @@ const planRunMergePlan = (
           const target = path.join(root, name, INCREMENTAL_FILE)
           yield* fs.makeDirectory(path.dirname(target), { recursive: true })
           yield* fs.copyFile(source, target)
+          return [name, fixedSecondsOf(yield* fs.readFileString(source))] as const
         }),
-      { discard: true },
     )
     const warmPlan = yield* spawnCli(root, [...planArgs, '--out', 'plan-warm.json'])
     const warmPlanText = yield* readText(path.join(root, 'plan-warm.json'))
@@ -310,6 +326,7 @@ const planRunMergePlan = (
       coldIds: scheduledIdsOf(plan),
       warm: planOf(warmPlanText),
       warmReuse: planEventOf(warmPlan.output),
+      fixedByProject: Object.fromEntries(mergedFixedSeconds),
     }
   }).pipe(Effect.orDie)
 
@@ -318,7 +335,7 @@ Feature('Reusing recorded verdicts when planning mutation shards', { timeout: 24
   .live('the built stryker binary plans, shards, merges and plans again over a two-project root')
   .body(({ scenario }) => {
     scenario(
-      'A repo that has not changed since its shards merged plans no work',
+      'A repo that has not changed since its shards merged plans only the fixed cost of each shard',
       Gherkin.Do.pipe(
         Given('a repo whose two projects each hold four mutable source files')(
           'fixture',
@@ -328,7 +345,7 @@ Feature('Reusing recorded verdicts when planning mutation shards', { timeout: 24
           'outcome',
           (s) => planRunMergePlan(s.fixture),
         ),
-        Then('the second plan schedules every mutant at zero seconds because every verdict is reused')(
+        Then("the second plan reuses every verdict and prices each shard at its projects' merged fixed costs alone")(
           (s, expect) => {
             const { outcome } = s
             const warmIds = scheduledIdsOf(outcome.warm)
@@ -345,7 +362,8 @@ Feature('Reusing recorded verdicts when planning mutation shards', { timeout: 24
               coldIdsNonEmpty: outcome.coldIds.length > 0,
               shardCount: outcome.warm.shards.length,
               warmIds,
-              warmPredictedSeconds: predictedSecondsOf(outcome.warm),
+              everyMergedRecordCarriesAFixedCost: Object.values(outcome.fixedByProject).every((seconds) => seconds > 0),
+              warmPredictedMilliseconds: Math.round(predictedSecondsOf(outcome.warm) * 1000),
               reuseSummary: reusedProjects.map((project) =>
                 `${project.project}: reused=${project.reused} ran=${project.ran} refused=${
                   JSON.stringify(project.refused)
@@ -359,7 +377,8 @@ Feature('Reusing recorded verdicts when planning mutation shards', { timeout: 24
               coldIdsNonEmpty: true,
               shardCount: outcome.warm.shards.length,
               warmIds: outcome.coldIds,
-              warmPredictedSeconds: 0,
+              everyMergedRecordCarriesAFixedCost: true,
+              warmPredictedMilliseconds: Math.round(fixedSecondsPlannedOf(outcome.warm, outcome.fixedByProject) * 1000),
               reuseSummary: Object.entries(projectMutants)
                 .sort(([left], [right]) => left.localeCompare(right))
                 .map(([project, mutants]) =>

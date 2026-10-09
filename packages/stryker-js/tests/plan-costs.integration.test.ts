@@ -196,6 +196,7 @@ interface CostsOutcome {
   readonly quiet: PlanObservation
   readonly edited: PlanObservation
   readonly runIds: readonly string[]
+  readonly fixedMs: number
   readonly expectedEditedMs: number
   readonly editedMutantsMs: number
   readonly allMutantsMs: number
@@ -248,7 +249,8 @@ const runPlanEditPlan = (
       quiet: planObservationOf(yield* fs.readFileString(path.join(root, 'plan-quiet.json'))),
       edited: planObservationOf(yield* fs.readFileString(path.join(root, 'plan-edited.json'))),
       runIds,
-      expectedEditedMs: editedMutantsMs + recordedDryRunMsOf(reportText),
+      fixedMs: (reported.fixedSeconds ?? 0) * 1000,
+      expectedEditedMs: editedMutantsMs + recordedDryRunMsOf(reportText) + (reported.fixedSeconds ?? 0) * 1000,
       editedMutantsMs,
       allMutantsMs: costedMillisecondsOf(costMsById, runIds),
     }
@@ -270,7 +272,7 @@ Feature('Planning the shard costs of reused mutants', { timeout: 180_000 })
           (s) => runPlanEditPlan(s.fixture),
         ),
         Then(
-          'the unchanged plan schedules every mutant at zero seconds and the edited plan prices only the changed closure',
+          'the unchanged plan prices only the recorded fixed cost and the edited plan adds the changed closure',
         )(
           (s, expect) => {
             const { outcome } = s
@@ -280,7 +282,8 @@ Feature('Planning the shard costs of reused mutants', { timeout: 180_000 })
               editedPlanExitCode: outcome.editedPlanExitCode,
               quietIds: outcome.quiet.ids,
               quietShardCount: outcome.quiet.shardCount,
-              quietPredictedSeconds: outcome.quiet.predictedSeconds,
+              quietMilliseconds: Math.round(outcome.quiet.predictedSeconds * 1000),
+              fixedCostIsMeasured: outcome.fixedMs > 0,
               editedIds: outcome.edited.ids,
               editedShardCount: outcome.edited.shardCount,
               editedMilliseconds: Math.round(outcome.edited.predictedSeconds * 1000),
@@ -292,7 +295,8 @@ Feature('Planning the shard costs of reused mutants', { timeout: 180_000 })
               editedPlanExitCode: 0,
               quietIds: outcome.runIds,
               quietShardCount: 1,
-              quietPredictedSeconds: 0,
+              quietMilliseconds: Math.round(outcome.fixedMs),
+              fixedCostIsMeasured: true,
               editedIds: outcome.runIds,
               editedShardCount: 1,
               editedMilliseconds: Math.round(outcome.expectedEditedMs),

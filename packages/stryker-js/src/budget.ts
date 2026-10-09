@@ -29,3 +29,17 @@ export const budgetOf = (input: BudgetInput): RunEvent.Budget => ({
   predictedSeconds: input.planPredictedSeconds ?? predictedSecondsOf(input.results, input.concurrency),
   actualSeconds: input.actualSeconds,
 })
+
+export interface FixedSecondsInput {
+  readonly results: readonly Mutant.RunMutantResult[]
+  readonly actualSeconds: number
+  readonly freshDryRunMs: number
+}
+
+export const fixedSecondsOf = (input: FixedSecondsInput): number =>
+  Math.max(
+    0,
+    input.actualSeconds -
+      (input.freshDryRunMs + Arr.reduce(input.results, 0, (total, result) => total + costOrZero(result.cost))) /
+        MILLIS_PER_SECOND,
+  )
