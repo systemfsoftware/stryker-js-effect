@@ -51,7 +51,7 @@ The origin brainstorm established the gap (its Gap Table and Measured Cost): eve
 - R6. The corpus is every source file of each corpus project's program, minus declaration files and `node_modules`. Corpus projects are every workspace `tsconfig.app.json`, every tsconfig a checker-enabled e2e fixture configuration names (an unresolvable one is skipped and listed), and one `isolatedDeclarations` fixture. Mutants are whatever the branch's instrumenter produces for those files with the default mutator set.
 - R7. For every corpus mutant, the branch checker's status equals main's, and its reason text equals main's except the `(line,col)` of diagnostics located in the mutant's own file (see OQ-P1).
 - R8. With the shortcut on, every corpus mutant's status equals main's, and its reason text equals main's except the `(line,col)` of diagnostics in the mutant's own file (R7's rule; main always re-checks importers, KTD9). Own-file positions are covered separately by U2's AE10. The lane reports how many mutants the shortcut decided, overall and for the `isolatedDeclarations` fixture on its own, and fails when either count is zero.
-- R9. R7 and R8 run in CI on every push to main and on every pull request that touches the checker, the instrumenter, the corpus fixtures, the parity driver, or the lane definition. Any difference fails the lane. No local corpus run is needed to land a change.
+- R9. R7 and R8 run in CI on every push to main and on every pull request that touches the checker, the instrumenter, the corpus fixtures, the parity driver, or the lane definition. Any difference fails the lane. No local corpus run is needed to land a change. Every record this unit adds (lane NDJSON lines, compare output, `wrong-not-assignable` lines, span attributes, type-query refusals) carries a version literal, every failure carries a reason code from a closed set plus a concrete next action, listed items are capped with a count and the artifact path, and each lane job writes `$GITHUB_STEP_SUMMARY` and `::error` annotations naming the artifact and the path inside it (root standing rule, `.omp-brief/rulings-plan.md`).
 
 **Speed**
 
@@ -355,7 +355,7 @@ Paths under `src/`, `tests/` and `schema/` are relative to `packages/stryker-js-
 
 ### U9. Parity driver package
 
-- **Goal:** a CI tool that runs one checker side over a corpus shard and compares sides.
+- **Goal:** a CI tool that runs both checker sides over a corpus shard and compares sides; every line kind and the compare output carry `schemaVersion: 1`, every violation a reason `code` and `nextAction`, and printed violations are capped at 50 with the omitted count and the summary path (R9).
 - **Requirements:** R3, R6, R7, R8, R10.
 - **Dependencies:** U3.
 - **Files:** new private package `test/checker-parity/` (`@systemfsoftware/stryker-checker-parity`): `package.json`, tsconfigs, `src/corpus.ts` (R6 discovery: workspace `tsconfig.app.json` files, the tsconfig each checker-enabled `test/e2e/testResources/*/stryker*.config.ts` names, the U8 fixture; program files listed with the TS7 `tsc --listFilesOnly`), `src/shard.ts` (file-hash sharding), `src/run-side.ts` (KTD5), `src/otlp-receiver.ts` (KTD6), `src/Parity.schema.ts` (NDJSON lines: verdict, phase, counts, refusal), `src/compare-sides.workflow.ts` (pure: R7 diff with the own-file position rule, R8 zero-count refusal overall and for the U8 fixture, R10 speed verdict, Done 1 ratios), `src/main.ts` (`run` and `compare` commands); tests under `src/__tests__/`. `pnpm-workspace.yaml` already covers `test/*`.
@@ -367,7 +367,7 @@ Paths under `src/`, `tests/` and `schema/` are relative to `packages/stryker-js-
 
 ### U10. `checker-parity` CI lane
 
-- **Goal:** the parity lane runs on every relevant pull request and every push to main, with the R7 verdict-parity gate on from layer 2; R18's gate comes on with U12 (layer 3), and R8's zero-count refusal and R10's speed gate with U5 and U6 (layer 4).
+- **Goal:** the parity lane runs on every relevant pull request and every push to main, with the R7 verdict-parity gate on from layer 2; R18's gate comes on with U12 (layer 3), and R8's zero-count refusal and R10's speed gate with U5 and U6 (layer 4). Each leg and `checker-parity-report` write a short `$GITHUB_STEP_SUMMARY` and `::error` annotations naming the artifact and the file inside it (R9).
 - **Requirements:** R9 (and R3, R7, R8, R10 through U9).
 - **Dependencies:** U8, U9.
 - **Files:** `.github/workflows/ci.yml` (new jobs `checker-parity-changes`, `checker-parity` with an `include` matrix of shards, `checker-parity-report`).
@@ -400,7 +400,7 @@ Paths under `src/`, `tests/` and `schema/` are relative to `packages/stryker-js-
 
 ### U12. Lane: `wrong-not-assignable` gate
 
-- **Goal:** every wrong `NotAssignable` on the corpus fails CI, with enough detail for Stream I's drop-soundness proof.
+- **Goal:** every wrong `NotAssignable` on the corpus fails CI, with enough detail for Stream I's drop-soundness proof; `wrong-not-assignable` lines carry `schemaVersion: 1`, a reason code and a next action like every other lane record (R9).
 - **Requirements:** R18.
 - **Dependencies:** U10, U11.
 - **Files:** `test/checker-parity/src/run-side.ts` (branch side: before checking a project, call `TypeQueryLive` once per file with every mutant of a context-free replacement as a candidate at its site); `src/Parity.schema.ts` (`TypeAnswer` and `WrongNotAssignable` lines); `src/compare-sides.workflow.ts` (R18 gate and per-reason counts); its property test.
