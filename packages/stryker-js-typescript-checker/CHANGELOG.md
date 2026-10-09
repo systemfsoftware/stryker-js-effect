@@ -1,5 +1,11 @@
 # @systemfsoftware/stryker-js-typescript-checker
 
+## 8.3.1
+
+Only the package manifest changes: the development dependencies on stryker-js, its runner, its checker and the two ignorers now name the released tarballs instead of the npm `latest` tag. Runtime code, dependencies and peer dependencies are unchanged. The TypeScript checker now treats a `null` in a package's `exports` map the way TypeScript does when it resolves a tsconfig `extends`: a `null` reached inside a condition object or a nested array, or under an active condition such as `types`, excludes the subpath instead of falling through to the next entry. Before, the checker could pick a later entry that TypeScript never loads, so the program digest described a config the program did not use. The TypeScript checker now resolves a tsconfig `extends` that names a package subpath through that package's `exports` map, as TypeScript does. Before, the lookup only tried the literal path under `node_modules`; a package that maps the subpath elsewhere made the checker report no program digest, so no CompileError verdict in that project could be reused.
+
+`stryker plan` now asks the checker for the program digest when the previous incremental report holds a CompileError verdict, and reuses those verdicts on the same terms as the run. Before, the plan always passed no digest and scheduled every CompileError mutant. With `inPlace: true` the plan still schedules them, because an in-place run digests the instrumented files. A checker that cannot produce a digest now logs a warning naming the checker, the project and the reason instead of failing silently. `Engine` exports `planRequest`.
+
 ## 8.3.0
 
 A checker plugin must now report the program it loaded. `CheckerService` gains a
