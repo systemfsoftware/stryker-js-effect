@@ -25,19 +25,18 @@ import {
   type MutantRemembered,
   type MutantToRun,
 } from '../incremental-diff.workflow.js'
-import {
-  type PreviousReuseRecord,
-  type ReuseRefusalReason,
-  type ReuseReport,
-  ReuseReportSchema,
-  type TimeoutEvidence,
+import type {
+  PreviousReuseRecord,
+  ReuseRefusalReason,
+  ReuseReport,
+  TimeoutEvidence,
 } from '../IncrementalDiff.schema.js'
 import type { Project } from '../Project.schema.js'
 import { reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow.js'
 import { StageError } from '../Run.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from '../verdict-semantics.js'
-import { incrementalReportTextsOf, optionalField } from './incremental-reuse.js'
+import { incrementalReportTextsOf, optionalField, reportOfText } from './incremental-reuse.js'
 
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
@@ -111,17 +110,16 @@ const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
   )
 }
 
-const reportOfText = (text: string): Option.Option<ReuseReport> =>
-  S.decodeOption(S.fromJsonString(ReuseReportSchema))(text)
-
-const previousRecordsOf = Effect.fnUntraced(function*(input: IncrementalReuseInput) {
-  const texts = yield* incrementalReportTextsOf(input)
-  return texts.flatMap((text) =>
+const recordsOfTexts = (texts: readonly string[]): readonly PreviousReuseRecord[] =>
+  texts.flatMap((text) =>
     Option.match(reportOfText(text), {
       onNone: (): readonly PreviousReuseRecord[] => [],
       onSome: recordsOfReport,
     })
   )
+
+const previousRecordsOf = Effect.fnUntraced(function*(input: IncrementalReuseInput) {
+  return recordsOfTexts(yield* incrementalReportTextsOf(input))
 })
 
 const hasTestFileName = (

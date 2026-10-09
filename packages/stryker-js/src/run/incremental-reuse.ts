@@ -6,6 +6,10 @@ import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as S from 'effect/Schema'
+
+import { type ReuseReport, ReuseReportSchema } from '../IncrementalDiff.schema.js'
+import type { PriorStatus } from '../require-dry-run.workflow.js'
 
 export const optionalField: {
   <A>(field: string, value: A | undefined): Record<string, A>
@@ -65,3 +69,17 @@ export const incrementalReportTextsOf = Effect.fnUntraced(function*(input: Incre
     { concurrency: 1 },
   )
 })
+
+export const reportOfText = (text: string): Option.Option<ReuseReport> =>
+  S.decodeOption(S.fromJsonString(ReuseReportSchema))(text)
+
+export const priorStatusesOf = (texts: readonly string[]): readonly PriorStatus[] =>
+  texts.flatMap((text) =>
+    Option.match(reportOfText(text), {
+      onNone: (): readonly PriorStatus[] => [],
+      onSome: (report) =>
+        Object.values(report.files).flatMap((file) =>
+          file.mutants.map((mutant) => ({ mutantId: mutant.id, status: mutant.status }))
+        ),
+    })
+  )

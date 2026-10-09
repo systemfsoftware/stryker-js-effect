@@ -1,5 +1,3 @@
-import { sha256 } from '@noble/hashes/sha2.js'
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { type Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Options, type Plugin, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -21,15 +19,8 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
 import { detectDryRunFlakes, DetectDryRunFlakesCommand } from '../detect-dry-run-flakes.workflow.js'
-import { type DryRunCoverage, type DryRunPass, ReportedDryRunCoverageSchema } from '../dry-run-coverage.schema.js'
-import {
-  DryRunCoverageReused,
-  dryRunReuse,
-  DryRunReuseCommand,
-  type DryRunReuseDecision,
-} from '../dry-run-reuse.workflow.js'
+import { type DryRunCoverage, type DryRunPass } from '../dry-run-coverage.schema.js'
 import { dryRun, DryRunCommand, DryRunError, DryRunFailed, FailedTestSummary } from '../dry-run.workflow.js'
-import { analyzeImportClosure, type ImportClosureAnalysis } from '../import-closure.cell.js'
 import {
   DryRunObservation,
   type DryRunObservationDecision,
@@ -43,12 +34,11 @@ import { StageError } from '../Run.schema.js'
 import { originalFileFor, sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.blueprint.js'
-import { runInputsDigestOf } from '../verdict-semantics.js'
 import { testRunnerConfigOf } from '../vm-runner.js'
 import { IdGenerator, type IdGeneratorShape } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
+import { dryRunChoiceOf, testClosureDigestOf } from './dry-run-choice.js'
 import { testCoverageOf, testFileModulesFieldOf } from './dry-run-coverage.js'
-import { incrementalReportTextsOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
 import type { PhaseClock } from './phase-clock.service.js'
 import {
@@ -58,13 +48,16 @@ import {
   WorkerSpawnCommand,
   type WorkerSpawnResolved,
 } from './resolve-configured-plugin.workflow.js'
-import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
+import { RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
-export interface DryRunDone extends InstrumentDone {
-  readonly dryRunResult: TestRunner.CompleteDryRunResult
+export interface TestBasis extends InstrumentDone {
   readonly testCoverage: TestCoverage
   readonly timeOverhead: EffectDuration.Duration
+}
+
+export interface DryRunDone extends TestBasis {
+  readonly dryRunResult: TestRunner.CompleteDryRunResult
 }
 
 interface DryRunExtras {
@@ -134,49 +127,6 @@ const resolveDryRunFiles = Effect.fn(SpanTaxonomy.Spans.dryRunResolveFiles.name)
     Effect.mapError((cause) => StageError.make({ stage: 'dryRun', reason: 'Failed to resolve sandbox files', cause })),
   )
 })
-
-const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
-
-const coverageOfReportText = (text: string): Option.Option<DryRunCoverage> =>
-  Option.flatMap(
-    S.decodeOption(S.fromJsonString(ReportedDryRunCoverageSchema))(text),
-    (report) => Option.fromNullishOr(report.dryRunCoverage),
-  )
-
-const priorCoveragesOf = Effect.fnUntraced(function*(command: InstrumentDone, basePath: string) {
-  const texts = yield* incrementalReportTextsOf({ basePath, options: command.options })
-  return Arr.getSomes(texts.map(coverageOfReportText))
-})
-
-const closureAnalysisOf = (
-  command: InstrumentDone,
-  rootDir: string,
-  globalInputs: readonly string[],
-  observedModules: Readonly<Record<string, readonly string[]>> | undefined,
-) =>
-  Effect.option(
-    analyzeImportClosure({
-      rootDir,
-      projectFiles: Arr.dedupe([...MutableHashMap.keys(command.project.files), ...command.project.testFiles]),
-      testFiles: [...command.project.testFiles],
-      globalInputs: [...globalInputs],
-      ...(observedModules === undefined ? {} : { observedModules }),
-    }),
-  )
-
-const closureDigestOf = (analysis: ImportClosureAnalysis): string =>
-  hashOf(
-    [
-      ...analysis.closures.map((closure) => `${closure.testFile}\u0000${closure.digest}`).sort(),
-      analysis.projectDigest,
-    ].join('\n'),
-  )
-
-const closureDigestOptionOf = (analysis: Option.Option<ImportClosureAnalysis>): Option.Option<string> =>
-  Option.map(analysis, closureDigestOf)
-
-const globalInputsOfCoverage = (coverage: Option.Option<DryRunCoverage>): readonly string[] =>
-  Option.getOrElse(Option.map(coverage, (present) => [...present.globalTestInputs]), () => [])
 
 const originalGlobalInputsOf = (command: InstrumentDone, result: TestRunner.DryRunResult): readonly string[] =>
   Option.getOrElse(
@@ -248,62 +198,6 @@ const originalTestFileModulesOf = (
     ),
     Option.getOrUndefined,
   )
-
-const observedModulesOfCoverage = (
-  coverage: Option.Option<DryRunCoverage>,
-): Readonly<Record<string, readonly string[]>> | undefined =>
-  Option.getOrUndefined(Option.flatMap(coverage, (present) => Option.fromUndefinedOr(present.testFileModules)))
-
-const decisionOfCoverage = (
-  prior: Option.Option<DryRunCoverage>,
-  currentTestClosureDigest: Option.Option<string>,
-  runInputsDigest: string,
-  force: boolean,
-): DryRunReuseDecision =>
-  Result.getOrElse(
-    dryRunReuse(
-      DryRunReuseCommand.make({
-        prior: Option.getOrUndefined(
-          Option.map(prior, (coverage) => ({
-            testClosureDigest: coverage.testClosureDigest,
-            runInputsDigest: coverage.runInputsDigest,
-          })),
-        ),
-        currentTestClosureDigest: Option.getOrUndefined(currentTestClosureDigest),
-        currentRunInputsDigest: runInputsDigest,
-        force,
-      }),
-    ),
-    (never: never) => never,
-  )
-
-interface PriorChoice {
-  readonly prior: Option.Option<DryRunCoverage>
-  readonly decision: DryRunReuseDecision
-}
-
-const priorChoiceOf = (
-  candidates: readonly DryRunCoverage[],
-  currentTestClosureDigest: Option.Option<string>,
-  runInputsDigest: string,
-  force: boolean,
-): PriorChoice => {
-  const attempts = candidates.map((coverage): PriorChoice => ({
-    prior: Option.some(coverage),
-    decision: decisionOfCoverage(Option.some(coverage), currentTestClosureDigest, runInputsDigest, force),
-  }))
-  return Option.getOrElse(
-    Arr.findFirst(attempts, (attempt) => S.is(DryRunCoverageReused)(attempt.decision)),
-    () =>
-      Option.getOrElse(
-        Arr.head(attempts),
-        (): PriorChoice => ({
-          prior: Option.none(),
-          decision: decisionOfCoverage(Option.none(), currentTestClosureDigest, runInputsDigest, force),
-        }),
-      ),
-  )
-}
 
 const rawOf = (
   command: InstrumentDone,
@@ -652,7 +546,7 @@ const runFreshDryRun = Effect.fnUntraced(function*(
   const globalTestInputs = originalGlobalInputsOf(command, first)
   const testFileModules = yield* originalTestFileModulesOf(command, first)
   const testClosureDigest = Option.getOrElse(
-    closureDigestOptionOf(yield* closureAnalysisOf(command, env.basePath, globalTestInputs, testFileModules)),
+    yield* testClosureDigestOf(command, env.basePath, globalTestInputs, testFileModules),
     () => Option.getOrElse(currentTestClosureDigest, () => ''),
   )
   return rawOf(command, first, capabilities, gross, {
@@ -681,27 +575,11 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
 > = Effect.fnUntraced(function*(command: InstrumentDone) {
   yield* Scope.Scope
   const idGenerator = yield* IdGenerator
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
   const env = yield* RunEnvironment
 
-  yield* phaseEntered('dry-run')
-
-  const candidates = yield* priorCoveragesOf(command, env.basePath)
-  const runInputsDigest = yield* runInputsDigestOf(fs, path, env.basePath, command.options)
-  const currentTestClosureDigest = closureDigestOptionOf(
-    yield* closureAnalysisOf(
-      command,
-      env.basePath,
-      globalInputsOfCoverage(Arr.head(candidates)),
-      observedModulesOfCoverage(Arr.head(candidates)),
-    ),
-  )
-  const { prior, decision } = priorChoiceOf(
-    candidates,
-    currentTestClosureDigest,
-    runInputsDigest,
-    command.options.force,
+  const { candidates, prior, decision, currentTestClosureDigest, runInputsDigest } = yield* dryRunChoiceOf(
+    command,
+    env.basePath,
   )
 
   yield* Match.value(decision).pipe(
