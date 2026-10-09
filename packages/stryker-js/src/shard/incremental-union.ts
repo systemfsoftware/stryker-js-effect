@@ -89,6 +89,14 @@ const unionCostsOf = (reports: readonly Record<string, Json>[]): Record<string, 
 const decodedReportOf = (text: string): Option.Option<Record<string, Json>> =>
   S.decodeOption(S.fromJsonString(S.Json))(text).pipe(Option.flatMap(objectOptionOf))
 
+const DRY_RUN_COVERAGE = 'dryRunCoverage'
+
+const dryRunCoverageFieldOf = (reports: readonly Record<string, Json>[]): Record<string, Json> =>
+  Option.match(Arr.findFirst(reports, (report) => Option.fromUndefinedOr(fieldOf(report, DRY_RUN_COVERAGE))), {
+    onNone: (): Record<string, Json> => ({}),
+    onSome: (coverage) => ({ [DRY_RUN_COVERAGE]: coverage }),
+  })
+
 export const unionIncrementalReports = (texts: readonly string[]): string | undefined => {
   const reports = texts.flatMap((text) => Option.toArray(decodedReportOf(text)))
   const first = reports[0]
@@ -97,6 +105,7 @@ export const unionIncrementalReports = (texts: readonly string[]): string | unde
   }
   const union = {
     ...first,
+    ...dryRunCoverageFieldOf(reports),
     files: unionFilesOf(reports),
     costs: unionCostsOf(reports),
     testFiles: unionTestFilesOf(reports),
@@ -167,6 +176,33 @@ if (import.meta.vitest !== void 0) {
       Option.match(parsedReportOf(subject(overlap.reports) ?? ''), {
         onNone: () => false,
         onSome: (merged) => Equal.equals(merged.costs['m0'], overlap.expected),
+      }),
+  )
+
+  const coverageCase = Arbitrary.map(
+    Arbitrary.array(Arbitrary.all({ carries: Arbitrary.schema(S.Boolean), tag: Arbitrary.schema(S.String) })),
+    (shards) => ({
+      reports: shards.map(({ carries, tag }, index) =>
+        JSON.stringify({
+          incrementalVersion: `r${index}`,
+          costs: {},
+          ...(carries ? { dryRunCoverage: { tag } } : {}),
+        })
+      ),
+      expected: Option.map(Arr.findFirst(shards, (shard) => shard.carries), ({ tag }) => ({ tag })),
+    }),
+  )
+
+  const mergedCoverageOf = (text: string) =>
+    S.decodeOption(S.fromJsonString(S.Struct({ dryRunCoverage: S.optional(S.Struct({ tag: S.String })) })))(text)
+
+  it.prop(
+    '∀s_ShardsWithAndWithoutDryRunCoverage_≡FirstCarriedCoverageSurvives',
+    { of: [coverageCase], subject: unionIncrementalReports },
+    (subject, [shards]) =>
+      Option.match(mergedCoverageOf(subject(shards.reports) ?? ''), {
+        onNone: () => shards.reports.length === 0,
+        onSome: (merged) => Equal.equals(Option.fromUndefinedOr(merged.dryRunCoverage), shards.expected),
       }),
   )
 }

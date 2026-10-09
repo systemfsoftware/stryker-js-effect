@@ -34,8 +34,8 @@ export type CheckerSlot = { readonly checkerName: string; readonly checker: Chec
 
 export type CheckerPool = Pool.Pool<CheckerSlot, StageError | CheckerCrash>
 
-export interface CheckedPlans {
-  readonly passedPlans: readonly Mutant.MutantRunPlan[]
+export interface CheckedPlans<Passed extends Mutant.MutantRunPlan = Mutant.MutantRunPlan> {
+  readonly passedPlans: readonly Passed[]
   readonly failedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[]
   readonly ignoredChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.IgnoredCheckResult])[]
   readonly checkMsByMutantId: Readonly<Record<string, number>>
@@ -355,32 +355,32 @@ export const checkPlans = Effect.fnUntraced(function*(
   return { passedPlans, failedChecks, ignoredChecks, checkMsByMutantId } satisfies CheckedPlans
 })
 
-export interface CheckedPlansExecution<A, E> {
+export interface CheckedPlansExecution<A, E, Passed extends Mutant.MutantRunPlan = Mutant.MutantRunPlan> {
   readonly settleFailure: (
     plan: Mutant.MutantRunPlan,
     result: Checker.FailedCheckResult,
     checkMs: number,
   ) => Effect.Effect<A, E>
   readonly settleIgnored: (plan: Mutant.MutantRunPlan, result: Checker.IgnoredCheckResult) => Effect.Effect<A, E>
-  readonly runPlan: (plan: Mutant.MutantRunPlan, checkMs: number) => Effect.Effect<A, E>
+  readonly runPlan: (plan: Passed, checkMs: number) => Effect.Effect<A, E>
   readonly concurrency: number
 }
 
 export const runCheckedPlans: {
-  <A, E>(
-    execution: CheckedPlansExecution<A, E>,
+  <A, E, Passed extends Mutant.MutantRunPlan>(
+    execution: CheckedPlansExecution<A, E, Passed>,
   ): (
-    self: Stream.Stream<CheckedPlans, StageError | CheckerCrash>,
+    self: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash>,
   ) => Stream.Stream<A, E | StageError | CheckerCrash>
-  <A, E>(
-    self: Stream.Stream<CheckedPlans, StageError | CheckerCrash>,
-    execution: CheckedPlansExecution<A, E>,
+  <A, E, Passed extends Mutant.MutantRunPlan>(
+    self: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash>,
+    execution: CheckedPlansExecution<A, E, Passed>,
   ): Stream.Stream<A, E | StageError | CheckerCrash>
 } = dual(
   2,
-  <A, E>(
-    self: Stream.Stream<CheckedPlans, StageError | CheckerCrash>,
-    execution: CheckedPlansExecution<A, E>,
+  <A, E, Passed extends Mutant.MutantRunPlan>(
+    self: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash>,
+    execution: CheckedPlansExecution<A, E, Passed>,
   ): Stream.Stream<A, E | StageError | CheckerCrash> =>
     self.pipe(
       Stream.flatMap(({ passedPlans, failedChecks, ignoredChecks, checkMsByMutantId }) =>

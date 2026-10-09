@@ -1,12 +1,11 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
-import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Options, Reporter, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Options, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
-import * as Queue from 'effect/Queue'
 import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 
@@ -21,8 +20,7 @@ import {
   PlannedRunMutant,
 } from '../plan-mutant-tests.workflow.js'
 import type { Project } from '../Project.schema.js'
-import { offerReporterEvent, type ReporterStage } from '../reporter-stream.service.js'
-import { RunEvents } from '../run-events.service.js'
+import type { ReporterStage } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { OrderedRunPlan, SortRunPlans, sortRunPlans } from '../sort-run-plans.workflow.js'
@@ -222,7 +220,7 @@ export interface MutationTestPlan {
   readonly plansForReporter: readonly Mutant.RunPlan[]
 }
 
-export const planMutationTest = Effect.fn(SpanTaxonomy.Spans.mutationTestPlan.name)(function*(
+export const draftMutationTestPlan = Effect.fn(SpanTaxonomy.Spans.mutationTestPlan.name)(function*(
   input: MutationTestPlanInput,
 ) {
   const plans = yield* planMutantTestsCell.run(input)
@@ -231,22 +229,5 @@ export const planMutationTest = Effect.fn(SpanTaxonomy.Spans.mutationTestPlan.na
   const sortedPlans = sortedRunPlans(runPlans)
   const plansForReporter: readonly Mutant.RunPlan[] = [...sortedPlans]
   const plannedTotal = sortedPlans.length + earlyResults.length + input.rememberedCount
-  yield* offerReporterEvent(
-    input.reporterStage,
-    Reporter.MutationTestingPlanReady.make({
-      total: plannedTotal,
-      plans: plansForReporter.map((plan) => ({
-        mutantId: plan.mutant.id,
-        plan: plan.plan,
-        netTime: plan.netTime,
-        reloadEnvironment: plan.runOptions.reloadEnvironment,
-      })),
-    }),
-  ).pipe(Effect.ignoreCause)
-  const progressQueue = yield* RunEvents
-  yield* Queue.offer(
-    progressQueue,
-    RunEvent.PlanKnown.make({ total: plansForReporter.length + earlyResults.length, shardPlan: null }),
-  )
-  return { runPlans: sortedPlans, earlyResults, plannedTotal, plansForReporter }
+  return { runPlans: sortedPlans, earlyResults, plannedTotal, plansForReporter } satisfies MutationTestPlan
 })
