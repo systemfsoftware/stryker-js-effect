@@ -2,9 +2,10 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import {
-  type DryRunCandidate,
+  DryRunCandidate,
   type PriorStatus,
   requireDryRun,
   RequireDryRunCommand,
@@ -45,13 +46,13 @@ const dependentIdsOf = (subject: RequireSubject, command: RequireDryRunCommand):
 describe('requireDryRun', () => {
   it.prop(
     '∀c_CheckerSettledCommands_≡AnyOtherPriorStatusMakesEveryMutantDependent',
-    { of: [RequireDryRunCommand, Mutant.MutantStatusSchema], subject: requireDryRun },
-    (subject, [command, status]) => {
-      const ids = command.mutants.map((mutant) => mutant.id)
+    { of: [S.NonEmptyArray(DryRunCandidate), Mutant.MutantStatusSchema], subject: requireDryRun },
+    (subject, [mutants, status]) => {
+      const ids = mutants.map((mutant) => mutant.id)
       const dependent = dependentIdsOf(
         subject,
         checkerSettled({
-          mutants: command.mutants,
+          mutants,
           priorStatuses: ids.map((mutantId) => ({ mutantId, status })),
           priorFlakyMutantIds: [],
         }),
@@ -62,17 +63,17 @@ describe('requireDryRun', () => {
 
   it.prop(
     '∀c_CheckerSettledCommands_≡APriorFlakeKeepsItsMutantAndEveryStaticMutantDependent',
-    { of: [RequireDryRunCommand], subject: requireDryRun },
-    (subject, [command]) => {
-      const flaky = command.mutants.filter((_, index) => index % 2 === 0).map((mutant) => mutant.id)
+    { of: [S.NonEmptyArray(DryRunCandidate)], subject: requireDryRun },
+    (subject, [mutants]) => {
+      const flaky = mutants.filter((_, index) => index % 2 === 0).map((mutant) => mutant.id)
       const flakyIndex: Readonly<Record<string, boolean>> = Object.fromEntries(flaky.map((id) => [id, true]))
       const anyFlake = flaky.length > 0
-      const expected = command.mutants
+      const expected = mutants
         .filter((mutant) => flakyIndex[mutant.id] === true || (mutant.static && anyFlake))
         .map((mutant) => mutant.id)
       const dependent = dependentIdsOf(
         subject,
-        checkerSettled({ mutants: command.mutants, priorStatuses: [], priorFlakyMutantIds: flaky }),
+        checkerSettled({ mutants, priorStatuses: [], priorFlakyMutantIds: flaky }),
       )
       return dependent === JSON.stringify(expected)
     },

@@ -204,6 +204,7 @@ interface MutantRow {
   readonly status: string
   readonly statusReason?: string | undefined
   readonly programDigest?: string | undefined
+  readonly line?: number | undefined
 }
 
 interface ReuseObservation {
@@ -229,6 +230,7 @@ const rowsOf = (text: string): readonly MutantRow[] => {
     status: S.String,
     statusReason: S.optional(S.String),
     programDigest: S.optional(S.String),
+    location: S.optional(S.Struct({ start: S.Struct({ line: S.Finite }) })),
   })
   const reportSchema = S.Struct({
     files: S.Record(S.String, S.Struct({ mutants: S.Array(rowSchema) })),
@@ -236,7 +238,10 @@ const rowsOf = (text: string): readonly MutantRow[] => {
   return Option.getOrElse(
     Option.map(
       S.decodeOption(S.fromJsonString(reportSchema))(text),
-      (report) => Object.values(report.files).flatMap((file) => file.mutants),
+      (report) =>
+        Object.values(report.files).flatMap((file) =>
+          file.mutants.map(({ location, ...row }) => ({ ...row, line: location?.start.line }))
+        ),
     ),
     (): readonly MutantRow[] => [],
   )
@@ -440,6 +445,13 @@ const OTHER_TEST_SOURCE = [
 
 const ACCEPT_ALL_CHAIN_SOURCE = `${CHAIN_SOURCE}// checker-accepts-all\n`
 
+const DOUBLED_LINE = 3
+
+const DISABLED_DOUBLED_SUBJECT_SOURCE = SUBJECT_SOURCE.replace(
+  'export const doubled',
+  '// Stryker disable next-line all: settled before any check\nexport const doubled',
+)
+
 const twoModuleFilesOf = (directory: string): Readonly<Record<string, string>> => ({
   ...configuredFilesOf(directory),
   [OTHER_FILE]: OTHER_SOURCE,
@@ -468,6 +480,12 @@ const verdictsOf = (rows: readonly MutantRow[], ids: readonly string[]): Readonl
 
 const testedIdsOf = (rows: readonly MutantRow[]): readonly string[] =>
   idsOf(rows.filter((row) => row.status !== 'CompileError'))
+
+const onLineOf = (rows: readonly MutantRow[], line: number): readonly string[] =>
+  idsOf(rows.filter((row) => row.line === line))
+
+const everyStatusOf = (ids: readonly string[], status: string): Readonly<Record<string, string>> =>
+  Object.fromEntries(ids.map((id) => [id, status]))
 
 Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_000 })
   .withLayer(Layer.empty)
@@ -804,14 +822,55 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             acceptedSucceeded: Exit.isSuccess(s.runs.accepted.exit),
             acceptedRanTheDryRun: s.runs.accepted.dryRunTestRunners > 0,
             acceptedCompileErrors: compileErrorRows(s.runs.accepted.mutants).length,
-            acceptedVerdicts: statusesOf(s.runs.accepted.mutants, s.runs.compileErrorIds),
+            acceptedVerdicts: verdictsOf(s.runs.accepted.mutants, s.runs.compileErrorIds),
           }).toEqual({
             hadCompileErrors: true,
             acceptedSucceeded: true,
             acceptedRanTheDryRun: true,
             acceptedCompileErrors: 0,
-            acceptedVerdicts: statusesOf(s.runs.forced.mutants, s.runs.compileErrorIds),
+            acceptedVerdicts: verdictsOf(s.runs.forced.mutants, s.runs.compileErrorIds),
           })
+        ),
+      ),
+    )
+
+    scenario(
+      'a deferred shard that also holds an already-settled mutant runs the initial test run',
+      Gherkin.Do.pipe(
+        Given('a configured project whose checker rejected a module, one line of which is now disabled')(
+          'runs',
+          () =>
+            withConfiguredWorkspace((workspace) =>
+              Effect.gen(function*() {
+                const first = yield* executeConfiguredRun(workspace)
+                const compileErrorIds = idsOf(compileErrorRows(first.mutants))
+                const disabledIds = onLineOf(first.mutants, DOUBLED_LINE)
+                yield* rewriteFile(workspace.directory, SUBJECT_FILE, DISABLED_DOUBLED_SUBJECT_SOURCE)
+                const deferred = yield* executeConfiguredRunWith(workspace, { mutantIds: compileErrorIds })
+                const forced = yield* executeConfiguredRunWith(workspace, { mutantIds: compileErrorIds, force: true })
+                return { first, compileErrorIds, disabledIds, deferred, forced }
+              })
+            ),
+        ),
+        Then(
+          'the shard runs the initial test run, the disabled mutants end Ignored, and every verdict matches a forced run',
+        )(
+          (s, expect) =>
+            expect({
+              everyPriorACompileError: s.runs.compileErrorIds.length === s.runs.first.mutants.length,
+              hasDisabledMutants: s.runs.disabledIds.length > 0,
+              deferredSucceeded: Exit.isSuccess(s.runs.deferred.exit),
+              deferredRanTheDryRun: s.runs.deferred.dryRunTestRunners > 0,
+              disabledStatuses: statusesOf(s.runs.deferred.mutants, s.runs.disabledIds),
+              deferredVerdicts: verdictsOf(s.runs.deferred.mutants, s.runs.compileErrorIds),
+            }).toEqual({
+              everyPriorACompileError: true,
+              hasDisabledMutants: true,
+              deferredSucceeded: true,
+              deferredRanTheDryRun: true,
+              disabledStatuses: everyStatusOf(s.runs.disabledIds, 'Ignored'),
+              deferredVerdicts: verdictsOf(s.runs.forced.mutants, s.runs.compileErrorIds),
+            }),
         ),
       ),
     )
