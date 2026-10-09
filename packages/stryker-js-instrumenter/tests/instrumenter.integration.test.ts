@@ -459,7 +459,7 @@ export const b = 2 + 2
             activeShrink: 1,
             hasArithmeticActive: false,
             counts: baselineCounts,
-            equalityOperator: 3,
+            equalityOperator: 4,
           })
         }),
       ),
@@ -951,7 +951,7 @@ export function price(n) {
     )
 
     scenario(
-      'A relational comparison in a condition emits the sufficient set under default',
+      'A relational comparison in a condition keeps every literal and operator under default',
       Gherkin.Do.pipe(
         Given('a guard comparing two numbers')(
           'source',
@@ -965,7 +965,7 @@ export function price(n) {
           'full',
           ({ source }: { source: string }) => underFull('/tmp/u17-if.ts', source),
         ),
-        Then('default keeps the sufficient set and names every removal')((
+        Then('default drops nothing at the guard and adds the condition-position operator')((
           { defaulted, full }: {
             defaulted: Instrument.InstrumentResult
             full: Instrument.InstrumentResult
@@ -978,11 +978,8 @@ export function price(n) {
             fullActive: activeReplacements(full),
             fullIgnored: ignoredComparisonReasons(full),
           }).toEqual({
-            defaultedActive: ['a != b', 'a <= b', 'false'],
-            defaultedIgnored: [
-              'a >= b <= redundant-relational: a >= b is not in the sufficient set for a < b',
-              'true <= redundant-relational: true is not in the sufficient set for a < b',
-            ],
+            defaultedActive: ['a != b', 'a <= b', 'a >= b', 'false', 'true'],
+            defaultedIgnored: [],
             fullActive: ['a <= b', 'a >= b', 'false', 'true'],
             fullIgnored: [],
           })
@@ -991,7 +988,7 @@ export function price(n) {
     )
 
     scenario(
-      'A loop and a ternary condition each emit their own sufficient set under default',
+      'A loop and a ternary condition keep every mutant main used to drop under default',
       Gherkin.Do.pipe(
         Given('a while loop and a ternary comparing numbers')(
           'source',
@@ -1008,7 +1005,7 @@ export function price(n) {
           'full',
           ({ source }: { source: string }) => underFull('/tmp/u17-loops.ts', source),
         ),
-        Then('each condition position keeps only its sufficient set')((
+        Then('each condition position keeps its literals and both ordering operators')((
           { defaulted, full }: {
             defaulted: Instrument.InstrumentResult
             full: Instrument.InstrumentResult
@@ -1020,13 +1017,19 @@ export function price(n) {
             defaultedIgnored: ignoredComparisonReasons(defaulted),
             fullActive: activeReplacements(full),
           }).toEqual({
-            defaultedActive: ['a != b', 'a < b', 'a == b', 'a >= b', 'false', 'true'],
-            defaultedIgnored: [
-              'a <= b <= redundant-relational: a <= b is not in the sufficient set for a > b',
-              'a > b <= redundant-relational: a > b is not in the sufficient set for a <= b',
-              'false <= redundant-relational: false is not in the sufficient set for a <= b',
-              'true <= redundant-relational: true is not in the sufficient set for a > b',
+            defaultedActive: [
+              'a != b',
+              'a < b',
+              'a <= b',
+              'a == b',
+              'a > b',
+              'a >= b',
+              'false',
+              'false',
+              'true',
+              'true',
             ],
+            defaultedIgnored: [],
             fullActive: ['a < b', 'a <= b', 'a > b', 'a >= b', 'false', 'false', 'true'],
           })
         ),

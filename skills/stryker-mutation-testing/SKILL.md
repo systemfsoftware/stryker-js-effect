@@ -209,7 +209,7 @@ pnpm exec stryker feedback <id> --not-useful --reason "logging only"
   check: the report directory gains a `feedback` line naming the id, the judgment, and the reason
 ```
 
-Assertions about specific mutants belong under `mutator: { mutantSetPolicy: 'full' }`. The default policy suppresses mutants a rule proves redundant — a relational replacement outside the sufficient set, a conditional collapsing to a literal, a replacement equal to the original, or a duplicate already planted at the site — and reports each as `Ignored` with the rule id, so a fixture or configuration that claims those mutants must keep every variant.
+Assertions about specific mutants belong under `mutator: { mutantSetPolicy: 'full' }`. The default policy suppresses mutants a rule proves redundant — a replacement equal to the original, or a duplicate already planted at the site — and reports each as `Ignored` with the rule id, so a fixture or configuration that claims those mutants must keep every variant.
 
 ## Gotchas
 

@@ -98,7 +98,7 @@ const providerCandidate = (mutatorName: string): MutantCandidate => ({
   mutatorName,
   replacementCode: 'n - 1',
   location: { start: { line: 2, column: 1 }, end: { line: 2, column: 2 } },
-  mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
+  mutantSet: { originalCode: 'n', replacementCode: 'n - 1' },
 })
 
 describe('planMutants', () => {
@@ -171,7 +171,7 @@ describe('planMutants', () => {
             start: { ...later.at, line: later.governedLine },
             end: { ...later.at, line: later.governedLine },
           },
-          mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
+          mutantSet: { originalCode: 'n', replacementCode: 'n - 1' },
         }],
         {
           line: later.governedLine,

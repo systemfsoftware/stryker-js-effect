@@ -78,7 +78,6 @@ import {
   type MutatorEntry,
   type MutatorOptions,
   relationalSiteFacts,
-  relationalSufficientReplacement,
 } from './Mutator.service.js'
 import { type ParseFailed } from './Parser.service.js'
 import {
@@ -919,7 +918,6 @@ const mutablesFor = (
     : Option.getOrUndefined(ignorersReasonFor(frame.node, ancestors, context.ignorers))
   const aridReason = aridReasonOf(frame, context.mutantSetPolicy)
   const originalCode = printNode(frame.node)
-  const relationalSite = relationalSiteFacts(frame.node, mutatorContext)
   return replacements.map(({ mutatorName, replacement }): MutableCandidate => {
     const replacementCode = printNode(replacement)
     const tuple: MutantTuple = { fileName: context.fileName, mutatorName, originalCode, replacementCode }
@@ -933,11 +931,7 @@ const mutablesFor = (
         replacementCode,
         location,
         ignorerReason,
-        mutantSet: {
-          originalCode,
-          replacementCode,
-          relationalSufficient: relationalSufficientReplacement(relationalSite, replacement),
-        },
+        mutantSet: { originalCode, replacementCode },
       },
     }
   })

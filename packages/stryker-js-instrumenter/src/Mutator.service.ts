@@ -916,34 +916,6 @@ export const relationalSiteFacts: {
   (context: MutatorContext): (node: Node) => RelationalSiteFacts | undefined
 } = dual((args: IArguments): boolean => args.length >= 2, relationalSiteFactsDataFirst)
 
-const relationalSufficientDataFirst = (facts: RelationalSiteFacts | undefined, replacement: Node): boolean =>
-  facts === undefined ? true : sufficientInCondition(facts, replacement)
-
-function sufficientInCondition(facts: RelationalSiteFacts, replacement: Node): boolean {
-  return facts.inConditionPosition ? sufficientReplacementOf(facts, replacement) : true
-}
-
-function sufficientReplacementOf(facts: RelationalSiteFacts, replacement: Node): boolean {
-  return Match.value(replacement).pipe(
-    Match.when(isBooleanLiteral, (literal) => literal.value === SUFFICIENT_RELATIONAL_SETS[facts.operator].literal),
-    Match.when(isBinaryExpressionNode, (binary) => isSufficientOperator(facts, binary.operator)),
-    Match.orElse(() => true),
-  )
-}
-
-export const relationalSufficientReplacement: {
-  (facts: RelationalSiteFacts | undefined, replacement: Node): boolean
-  (replacement: Node): (facts: RelationalSiteFacts | undefined) => boolean
-} = dual((args: IArguments): boolean => args.length >= 2, relationalSufficientDataFirst)
-
-function isSufficientOperator(facts: RelationalSiteFacts, operator: string): boolean {
-  return SUFFICIENT_RELATIONAL_SETS[facts.operator].replacements.some((sufficient) => sufficient === operator)
-}
-
-function isBinaryExpressionNode(node: Node): node is BinaryExpression {
-  return node.type === 'BinaryExpression'
-}
-
 function isBooleanExpression(node: Node): node is BinaryExpression | LogicalExpression {
   return isOperatorExpression(node) && booleanOperators.includes(node.operator)
 }

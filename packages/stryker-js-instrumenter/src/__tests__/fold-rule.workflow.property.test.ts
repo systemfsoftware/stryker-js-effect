@@ -41,7 +41,7 @@ const silencingReason = (
         mutatorName,
         replacementCode: 'n - 1',
         location: { start: { line, column: 1 }, end: { line, column: 2 } },
-        mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
+        mutantSet: { originalCode: 'n', replacementCode: 'n - 1' },
       }],
       mutantSetPolicy: 'default',
     }),
