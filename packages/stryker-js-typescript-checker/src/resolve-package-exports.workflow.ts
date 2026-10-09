@@ -115,7 +115,11 @@ const appendTargets = (
           'TargetsResolved',
           ({ targets }) => appendTargets(Arr.drop(entries, 1), star, [...accumulated, ...targets]),
         ),
-        Match.tag('SubpathExcluded', (excluded): TargetStep => excluded),
+        Match.tag('SubpathExcluded', (excluded): TargetStep =>
+          Boolean.match(accumulated.length === 0, {
+            onTrue: () => excluded,
+            onFalse: () => targetsResolved(accumulated),
+          })),
         Match.tag('TryNextEntry', () => appendTargets(Arr.drop(entries, 1), star, accumulated)),
         Match.exhaustive,
       ),

@@ -311,4 +311,27 @@ describe('resolvePackageExports', (it) => {
       )
     },
   )
+
+  it.prop(
+    '∀entries_NullTerminatedArray_≡LeadingTargetsOnly',
+    {
+      of: [
+        Arbitrary.array(Arbitrary.schema(S.String), { maxLength: 3 }),
+        Arbitrary.array(Arbitrary.schema(S.String), { maxLength: 3 }),
+      ],
+      subject: (entries: ReadonlyArray<JsonValue>) => {
+        const key = './probe/array'
+        return resolvedTargetsOf({ [key]: entries }, key)
+      },
+    },
+    (subject, [before, after]) => {
+      const leading = Arr.map(before, (leaf) => `./${escaped(leaf)}.json`)
+      const trailing = Arr.map(after, (leaf) => `./${escaped(leaf)}.json`)
+      const targets = subject([...leading, null, ...trailing])
+      return Boolean.match(Arr.isArrayNonEmpty(leading), {
+        onTrue: () => sameOrderOf(targets, leading),
+        onFalse: () => targets === undefined,
+      })
+    },
+  )
 })
