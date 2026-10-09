@@ -7,6 +7,8 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
+  PackageExportsExcluded,
+  type PackageExportsResolution,
   PackageExportsResolved,
   resolvePackageExports,
   ResolvePackageExportsCommand,
@@ -14,15 +16,23 @@ import {
 
 type JsonValue = S.Schema.Type<typeof S.Json>
 
-const resolvedTargetsOf = (exports: JsonValue, subpath: string): ReadonlyArray<string> | undefined => {
-  const decision = Result.match(
+const decisionOf = (exports: JsonValue, subpath: string): PackageExportsResolution =>
+  Result.match(
     resolvePackageExports(ResolvePackageExportsCommand.make({ exports, subpath })),
     {
       onFailure: (refused) => refused,
       onSuccess: (value) => value,
     },
   )
+
+const resolvedTargetsOf = (exports: JsonValue, subpath: string): ReadonlyArray<string> | undefined => {
+  const decision = decisionOf(exports, subpath)
   return S.is(PackageExportsResolved)(decision) ? decision.targets : undefined
+}
+
+const stopsTheSearchOf = (exports: JsonValue, subpath: string): boolean => {
+  const decision = decisionOf(exports, subpath)
+  return S.is(PackageExportsExcluded)(decision) || (S.is(PackageExportsResolved)(decision) && decision.terminal)
 }
 
 const resolvedTargetOf = (exports: JsonValue, subpath: string): string | undefined =>
@@ -339,6 +349,32 @@ describe('resolvePackageExports', (it) => {
         onTrue: () => sameOrderOf(targets, leading),
         onFalse: () => targets === undefined,
       })
+    },
+  )
+
+  it.prop(
+    '∀entries_NullReachedAtAnyDepth_≡StopsTheSearch',
+    {
+      of: [
+        Arbitrary.array(Arbitrary.schema(S.String), { maxLength: 3 }),
+        Arbitrary.array(Arbitrary.schema(S.String), { maxLength: 3 }),
+        Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 3 }))),
+        Arbitrary.schema(S.Boolean),
+      ],
+      subject: (entries: ReadonlyArray<JsonValue>) => {
+        const key = './probe/array'
+        return stopsTheSearchOf({ [key]: entries }, key)
+      },
+    },
+    (subject, [before, after, depth, nullReached]) => {
+      const leading: ReadonlyArray<JsonValue> = Arr.map(before, (leaf) => `./${escaped(leaf)}.json`)
+      const trailing = Arr.map(after, (leaf) => `./${escaped(leaf)}.json`)
+      const inner = Boolean.match(nullReached, {
+        onTrue: (): ReadonlyArray<JsonValue> => [...leading, null],
+        onFalse: () => leading,
+      })
+      const nested = Arr.reduce(Arr.makeBy(depth, () => 0), inner, (list): ReadonlyArray<JsonValue> => [list])
+      return subject([...nested, ...trailing]) === nullReached
     },
   )
 })

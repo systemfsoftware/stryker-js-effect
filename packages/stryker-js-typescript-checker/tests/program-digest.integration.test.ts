@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
-import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import * as Effect from 'effect/Effect'
@@ -97,6 +97,7 @@ const NESTED_DIRECTORY = 'packages/app'
 const NESTED_TSCONFIG_FILE = `${NESTED_DIRECTORY}/${TSCONFIG_FILE}`
 const NESTED_PACKAGE_MANIFEST_FILE = `${NESTED_DIRECTORY}/node_modules/@probe/tsconfig-base/package.json`
 const NESTED_STRAY_BASE_TSCONFIG_FILE = `${NESTED_DIRECTORY}/node_modules/@probe/tsconfig-base/strict/tsconfig.json`
+const NESTED_LEGACY_BASE_TSCONFIG_FILE = `${NESTED_DIRECTORY}/node_modules/@probe/tsconfig-base/strict.json`
 
 const MAIN_SOURCE = [
   "import { shifted } from './chain.js'",
@@ -505,6 +506,46 @@ Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_00
         ),
         Then('both digests are 64-character digests and editing the outer package base moves the digest')(
           (s, expect) => expect(s.observed).toEqual({ shape: true, moved: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'a file named after the subpath beside a nearer package with exports is not the base the program loads',
+      Gherkin.Do.pipe(
+        Given('a nested program whose nearer package exports a missing target and ships strict.json at its root')(
+          'files',
+          () =>
+            Effect.succeed({
+              ...nestedProgramFilesOf(PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE),
+              [NESTED_PACKAGE_MANIFEST_FILE]: PACKAGE_MISSING_EXPORTS_MANIFEST_SOURCE,
+              [NESTED_LEGACY_BASE_TSCONFIG_FILE]: BASE_TSCONFIG_SOURCE,
+              [PACKAGE_EXPORTS_MANIFEST_FILE]: PACKAGE_EXPORTS_MANIFEST_SOURCE,
+              [PACKAGE_EXPORTS_BASE_FILE]: BASE_TSCONFIG_SOURCE,
+            }),
+        ),
+        When('the nearer strict.json and then the outer package base are edited between digests')(
+          'observed',
+          (s) =>
+            withWorkspace(
+              (workspace) =>
+                Effect.gen(function*() {
+                  const before = yield* digestOf(workspace.directory, undefined, NESTED_TSCONFIG_FILE)
+                  yield* appendComment(workspace.directory, NESTED_LEGACY_BASE_TSCONFIG_FILE)
+                  const afterLegacyEdit = yield* digestOf(workspace.directory, undefined, NESTED_TSCONFIG_FILE)
+                  yield* appendComment(workspace.directory, PACKAGE_EXPORTS_BASE_FILE)
+                  const afterOuterEdit = yield* digestOf(workspace.directory, undefined, NESTED_TSCONFIG_FILE)
+                  return {
+                    shape: [before, afterLegacyEdit, afterOuterEdit].every((digest) => DIGEST_SHAPE.test(digest)),
+                    legacyEditMoved: before !== afterLegacyEdit,
+                    outerEditMoved: afterLegacyEdit !== afterOuterEdit,
+                  }
+                }),
+              s.files,
+            ),
+        ),
+        Then('editing strict.json leaves the digest alone and editing the outer package base moves it')(
+          (s, expect) => expect(s.observed).toEqual({ shape: true, legacyEditMoved: false, outerEditMoved: true }),
         ),
       ),
     )

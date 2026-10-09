@@ -26,7 +26,12 @@ export class ResolvePackageExportsCommand extends S.TaggedClass<ResolvePackageEx
 
 export class PackageExportsResolved extends S.TaggedClass<PackageExportsResolved>()('PackageExportsResolved', {
   targets: S.Array(S.String),
+  terminal: S.Boolean,
 }) {
+  readonly [PackageExportsTypeId] = PackageExportsTypeId
+}
+
+export class PackageExportsExcluded extends S.TaggedClass<PackageExportsExcluded>()('PackageExportsExcluded', {}) {
   readonly [PackageExportsTypeId] = PackageExportsTypeId
 }
 
@@ -36,7 +41,11 @@ export class PackageExportsUnresolved
   readonly [PackageExportsTypeId] = PackageExportsTypeId
 }
 
-export const PackageExportsResolution = S.Union([PackageExportsResolved, PackageExportsUnresolved])
+export const PackageExportsResolution = S.Union([
+  PackageExportsResolved,
+  PackageExportsExcluded,
+  PackageExportsUnresolved,
+])
 export type PackageExportsResolution = typeof PackageExportsResolution.Type
 
 const ACTIVE_CONDITIONS: ReadonlyArray<string> = ['require', 'types', 'node', 'default']
@@ -79,11 +88,13 @@ const SUBPATH_EXCLUDED: TargetStep = SubpathExcluded.make({})
 
 const TRY_NEXT_ENTRY: TargetStep = TryNextEntry.make({})
 
-const targetOf = (step: TargetStep): Option.Option<ReadonlyArray<string>> =>
+const resolutionOf = (step: TargetStep): PackageExportsResolution =>
   Match.value(step).pipe(
-    Match.tag('TargetsResolved', ({ targets }) => Option.some(targets)),
-    Match.tag('SubpathExcluded', () => Option.none<ReadonlyArray<string>>()),
-    Match.tag('TryNextEntry', () => Option.none<ReadonlyArray<string>>()),
+    Match.tag('TargetsResolved', ({ targets, terminated }) =>
+      PackageExportsResolved.make({ targets, terminal: terminated })),
+    Match.tag('SubpathExcluded', () =>
+      PackageExportsExcluded.make({})),
+    Match.tag('TryNextEntry', () => PackageExportsUnresolved.make({})),
     Match.exhaustive,
   )
 
@@ -235,19 +246,15 @@ const whenRootSubpath = <A>(subpath: string, atRoot: () => Option.Option<A>): Op
     onFalse: () => Option.none<A>(),
   })
 
-const resolveExports = (exports: JsonValue, subpath: string): Option.Option<ReadonlyArray<string>> =>
+const resolveExports = (exports: JsonValue, subpath: string): Option.Option<TargetStep> =>
   Option.match(Option.filter(Option.liftPredicate(exports, isJsonObject), hasSubpathKeys), {
-    onSome: (map) =>
-      Option.flatMap(subpathTargetOf(map, subpath), ([value, star]) => targetOf(resolveTarget(value, star))),
-    onNone: () => whenRootSubpath(subpath, () => targetOf(resolveTarget(exports, Option.none()))),
+    onSome: (map) => Option.map(subpathTargetOf(map, subpath), ([value, star]) => resolveTarget(value, star)),
+    onNone: () => whenRootSubpath(subpath, () => Option.some(resolveTarget(exports, Option.none()))),
   })
 
 const decide = (command: ResolvePackageExportsCommand): Result.Result<PackageExportsResolution, never> =>
   Result.succeed(
-    Option.match(resolveExports(command.exports, command.subpath), {
-      onNone: () => PackageExportsUnresolved.make({}),
-      onSome: (targets) => PackageExportsResolved.make({ targets }),
-    }),
+    resolveExports(command.exports, command.subpath).pipe(Option.getOrElse(() => TRY_NEXT_ENTRY), resolutionOf),
   )
 
 export const resolvePackageExports = Workflow.make({
