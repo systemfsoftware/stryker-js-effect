@@ -8,7 +8,6 @@ import { StageError } from '../Run.schema.js'
 import { deferrableDryRunCell } from './deferrable-dry-run.cell.js'
 import { instrumentCell } from './instrument.cell.js'
 import { loadConfigCell } from './load-config.cell.js'
-import { mutationTestCell as mutationTestStageCell } from './mutation-test.cell.js'
 import type { MutationTestDone } from './mutation-test.cell.js'
 import { prepareCell } from './prepare.cell.js'
 import type { PrepareExecutorArgs } from './prepare.cell.js'
@@ -33,10 +32,7 @@ const prepareStageCell = Cell.andThen(
     ),
     prepareCell,
   ),
-  Cell.andThen(
-    Cell.andThen(concurrencyCell, instrumentCell),
-    Cell.andThen(deferrableDryRunCell, mutationTestStageCell),
-  ),
+  Cell.andThen(Cell.andThen(concurrencyCell, instrumentCell), deferrableDryRunCell),
 )
 
 export const mutationTestCell: Cell.Cell<PrepareExecutorArgs, MutationTestDone, StageError, StageServices> =

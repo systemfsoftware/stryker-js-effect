@@ -202,6 +202,7 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 interface MutantRow {
   readonly id: string
   readonly status: string
+  readonly statusReason?: string | undefined
   readonly programDigest?: string | undefined
 }
 
@@ -211,15 +212,22 @@ interface ReuseObservation {
   readonly mutants: readonly MutantRow[]
   readonly incrementalText: string
   readonly testRunnerStartups: number
+  readonly dryRunTestRunners: number
 }
 
 const startupsOf = (events: ReadonlyArray<RunEvent.RunEvent>, role: RunEvent.WorkerRole): number =>
   events.filter((event) => S.is(RunEvent.WorkerReported)(event) && event.role === role).length
 
+const beforeMutationTesting = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<RunEvent.RunEvent> => {
+  const entered = events.findIndex((event) => S.is(RunEvent.PhaseEntered)(event) && event.phase === 'mutation-test')
+  return entered === -1 ? events : events.slice(0, entered)
+}
+
 const rowsOf = (text: string): readonly MutantRow[] => {
   const rowSchema = S.Struct({
     id: S.String,
     status: S.String,
+    statusReason: S.optional(S.String),
     programDigest: S.optional(S.String),
   })
   const reportSchema = S.Struct({
@@ -279,6 +287,7 @@ const executeRunWith = (
       mutants: rowsOf(incrementalText),
       incrementalText,
       testRunnerStartups: startupsOf(events, 'testRunner'),
+      dryRunTestRunners: startupsOf(beforeMutationTesting(events), 'testRunner'),
     }
   }).pipe(Effect.provide(filePorts))
 
@@ -451,6 +460,11 @@ const idsOf = (rows: readonly MutantRow[]): readonly string[] => rows.map((row) 
 
 const statusesOf = (rows: readonly MutantRow[], ids: readonly string[]): Readonly<Record<string, string>> =>
   Object.fromEntries(rows.filter((row) => ids.includes(row.id)).map((row) => [row.id, row.status]))
+
+const verdictsOf = (rows: readonly MutantRow[], ids: readonly string[]): Readonly<Record<string, string>> =>
+  Object.fromEntries(
+    rows.filter((row) => ids.includes(row.id)).map((row) => [row.id, `${row.status}: ${row.statusReason ?? ''}`]),
+  )
 
 const testedIdsOf = (rows: readonly MutantRow[]): readonly string[] =>
   idsOf(rows.filter((row) => row.status !== 'CompileError'))
@@ -744,24 +758,24 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
               })),
         ),
         Then(
-          'the checker-only leaf keeps every CompileError without a test runner and the leaf holding a tested mutant starts one',
+          'the checker-only leaf scores every CompileError as the tested first run did without a test runner, and the leaf holding a tested mutant runs the initial test run',
         )((s, expect) =>
           expect({
             firstHasBothKinds: s.runs.compileErrorIds.length > 0 && s.runs.testedIds.length > 0,
             unchangedVerdicts: statusesOf(s.runs.unchanged.mutants, idsOf(s.runs.first.mutants)),
             checkerOnlySucceeded: Exit.isSuccess(s.runs.checkerOnly.exit),
             checkerOnlyTestRunners: s.runs.checkerOnly.testRunnerStartups,
-            checkerOnlyVerdicts: statusesOf(s.runs.checkerOnly.mutants, s.runs.compileErrorIds),
+            checkerOnlyVerdicts: verdictsOf(s.runs.checkerOnly.mutants, s.runs.compileErrorIds),
             testedSucceeded: Exit.isSuccess(s.runs.tested.exit),
-            testedStartedATestRunner: s.runs.tested.testRunnerStartups > 0,
+            testedRanTheDryRun: s.runs.tested.dryRunTestRunners > 0,
           }).toEqual({
             firstHasBothKinds: true,
             unchangedVerdicts: statusesOf(s.runs.first.mutants, idsOf(s.runs.first.mutants)),
             checkerOnlySucceeded: true,
             checkerOnlyTestRunners: 0,
-            checkerOnlyVerdicts: statusesOf(s.runs.first.mutants, s.runs.compileErrorIds),
+            checkerOnlyVerdicts: verdictsOf(s.runs.first.mutants, s.runs.compileErrorIds),
             testedSucceeded: true,
-            testedStartedATestRunner: true,
+            testedRanTheDryRun: true,
           })
         ),
       ),
@@ -784,17 +798,17 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
               })
             ),
         ),
-        Then('the run starts a test runner and scores every accepted mutant as the forced run does')((s, expect) =>
+        Then('the run runs the initial test run and scores every accepted mutant as the forced run does')((s, expect) =>
           expect({
             hadCompileErrors: s.runs.compileErrorIds.length > 0,
             acceptedSucceeded: Exit.isSuccess(s.runs.accepted.exit),
-            acceptedStartedATestRunner: s.runs.accepted.testRunnerStartups > 0,
+            acceptedRanTheDryRun: s.runs.accepted.dryRunTestRunners > 0,
             acceptedCompileErrors: compileErrorRows(s.runs.accepted.mutants).length,
             acceptedVerdicts: statusesOf(s.runs.accepted.mutants, s.runs.compileErrorIds),
           }).toEqual({
             hadCompileErrors: true,
             acceptedSucceeded: true,
-            acceptedStartedATestRunner: true,
+            acceptedRanTheDryRun: true,
             acceptedCompileErrors: 0,
             acceptedVerdicts: statusesOf(s.runs.forced.mutants, s.runs.compileErrorIds),
           })

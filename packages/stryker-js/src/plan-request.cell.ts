@@ -27,12 +27,12 @@ import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
 import { readProjectCell } from './read-project.cell.js'
-import { requireDryRun, RequireDryRunCommand, type RequireDryRunDecision } from './require-dry-run.workflow.js'
-import { dryRunChoiceOf } from './run/dry-run-choice.js'
+import { requireDryRun, type RequireDryRunDecision } from './require-dry-run.workflow.js'
+import { dryRunChoiceOf, requireDryRunCommandOf } from './run/dry-run-choice.js'
 import { reusedTestCoverage } from './run/dry-run-coverage.js'
 import type { HostServices } from './run/host.service.js'
 import { readIncrementalReuse, type RefusalCounts } from './run/incremental-reuse.cell.js'
-import { incrementalReportTextsOf, priorStatusesOf } from './run/incremental-reuse.js'
+import { incrementalReportTextsOf } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
@@ -259,18 +259,12 @@ const planProject = (
       originalFileOf: (file) => path.resolve(file),
       programDigestOf: Effect.succeed(programDigest),
     })
-    const plannedIds = [
-      ...reuse.mutants.map((mutant) => mutant.id),
-      ...reuse.rememberedResults.map((mutant) => mutant.id),
-    ]
     const dryRunDecision = Result.getOrElse(
       requireDryRun(
-        RequireDryRunCommand.make({
-          dryRunOnly: done.options.dryRunOnly,
-          ignoreStatic: done.options.ignoreStatic,
-          hasCheckers: done.options.checkers.length > 0,
-          mutantIds: plannedIds,
-          priorStatuses: priorStatusesOf(texts),
+        requireDryRunCommandOf({
+          options: done.options,
+          mutants: [...reuse.mutants, ...reuse.rememberedResults],
+          texts,
         }),
       ),
       (neverError) => neverError,
@@ -282,7 +276,7 @@ const planProject = (
       onFalse: () =>
         Option.getOrElse(
           Option.map(coverage, (present) => testsTimeOf(present.tests) + present.timeOverheadMs),
-          () => 0,
+          () => DEFAULT_MUTANT_COST_MS,
         ),
     })
     const mutants = [

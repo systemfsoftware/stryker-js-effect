@@ -1,5 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
+import type { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -17,8 +18,9 @@ import {
   type DryRunReuseDecision,
 } from '../dry-run-reuse.workflow.js'
 import { analyzeImportClosure, type ImportClosureAnalysis } from '../import-closure.cell.js'
+import { RequireDryRunCommand } from '../require-dry-run.workflow.js'
 import { runInputsDigestOf } from '../verdict-semantics.js'
-import { incrementalReportTextsOf } from './incremental-reuse.js'
+import { incrementalReportTextsOf, priorStatusesOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
 
 export type DryRunTarget = Pick<InstrumentDone, 'project' | 'options'>
@@ -30,6 +32,25 @@ const coverageOfReportText = (text: string): Option.Option<DryRunCoverage> =>
     S.decodeOption(S.fromJsonString(ReportedDryRunCoverageSchema))(text),
     (report) => Option.fromNullishOr(report.dryRunCoverage),
   )
+
+export const priorCoveragesOf = (texts: readonly string[]): readonly DryRunCoverage[] =>
+  Arr.getSomes(texts.map(coverageOfReportText))
+
+export interface RequireDryRunInput {
+  readonly options: Options.StrykerOptions
+  readonly mutants: readonly Pick<Mutant.Mutant, 'id' | 'static'>[]
+  readonly texts: readonly string[]
+}
+
+export const requireDryRunCommandOf = ({ options, mutants, texts }: RequireDryRunInput): RequireDryRunCommand =>
+  RequireDryRunCommand.make({
+    dryRunOnly: options.dryRunOnly,
+    ignoreStatic: options.ignoreStatic,
+    hasCheckers: options.checkers.length > 0,
+    mutants: mutants.map((mutant) => ({ id: mutant.id, static: mutant.static === true })),
+    priorStatuses: priorStatusesOf(texts),
+    priorFlakyMutantIds: Arr.dedupe(priorCoveragesOf(texts).flatMap((coverage) => coverage.flakyMutantIds)),
+  })
 
 const closureDigestOf = (analysis: ImportClosureAnalysis): string =>
   hashOf(
@@ -129,7 +150,7 @@ export const dryRunChoiceOf = Effect.fnUntraced(function*(target: DryRunTarget, 
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const texts = yield* incrementalReportTextsOf({ basePath, options: target.options })
-  const candidates = Arr.getSomes(texts.map(coverageOfReportText))
+  const candidates = priorCoveragesOf(texts)
   const runInputsDigest = yield* runInputsDigestOf(fs, path, basePath, target.options)
   const currentTestClosureDigest = yield* testClosureDigestOf(
     target,

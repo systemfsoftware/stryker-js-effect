@@ -18,7 +18,7 @@ import { type PooledTestRunner } from '../pooled-test-runner.handle.js'
 import { offerReporterEvent } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
-import type { DryRunDone } from './dry-run.cell.js'
+import type { TestBasis } from './dry-run.cell.js'
 import { isMutantStatus, toReportedMutant, type ValidMutantStatus } from './mutation-test-plan.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
@@ -29,7 +29,7 @@ export interface PreparedStreamableMutant {
 }
 
 export interface RunContext {
-  readonly prev: DryRunDone
+  readonly prev: TestBasis
   readonly env: RunEnvironmentShape
   readonly reporting: MutationReportingService
   readonly progressQueue: Queue.Queue<RunEvent.RunEvent, Cause.Done>
@@ -40,7 +40,7 @@ export interface RunContext {
 }
 
 export interface ReportingInputArgs {
-  readonly prev: DryRunDone
+  readonly prev: TestBasis
   readonly env: RunEnvironmentShape
   readonly results: readonly Mutant.RunMutantResult[]
 }

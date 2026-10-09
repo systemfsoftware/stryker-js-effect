@@ -51,11 +51,13 @@ import {
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
-export interface DryRunDone extends InstrumentDone {
-  readonly dryRunResult: TestRunner.CompleteDryRunResult
+export interface TestBasis extends InstrumentDone {
   readonly testCoverage: TestCoverage
   readonly timeOverhead: EffectDuration.Duration
-  readonly dryRunDeferred: boolean
+}
+
+export interface DryRunDone extends TestBasis {
+  readonly dryRunResult: TestRunner.CompleteDryRunResult
 }
 
 interface DryRunExtras {
@@ -414,7 +416,6 @@ const dryRunDoneOf = (
   dryRunResult,
   testCoverage: testCoverageOf({ result: dryRunResult, dryRunCoverage: coverage }),
   timeOverhead: EffectDuration.millis(coverage.timeOverheadMs),
-  dryRunDeferred: false,
 })
 
 const completeFreshDryRun = Effect.fnUntraced(function*(
