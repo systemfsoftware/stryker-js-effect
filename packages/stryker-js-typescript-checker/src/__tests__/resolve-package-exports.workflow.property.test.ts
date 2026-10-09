@@ -149,6 +149,63 @@ describe('resolvePackageExports', (it) => {
   )
 
   it.prop(
+    '∀subpath_ConditionObjectNullInArray_≡UnresolvedBesideAConditionTarget',
+    {
+      of: [S.String, S.String],
+      subject: (subpath: string, target: string) => {
+        const key = probeKeyOf(subpath)
+        const relative = `./${escaped(target)}`
+        return [
+          resolvedTargetOf({ [key]: [{ default: null }, relative] }, key),
+          resolvedTargetOf({ [key]: [{ default: relative }, './fallback.json'] }, key),
+        ]
+      },
+    },
+    (subject, [subpath, target]) => {
+      const [afterConditionNull, fromCondition] = subject(subpath, target)
+      return afterConditionNull === undefined && fromCondition === `./${escaped(target)}`
+    },
+  )
+
+  it.prop(
+    '∀subpath_NestedArrayNull_≡UnresolvedBesideANestedTarget',
+    {
+      of: [S.String, S.String],
+      subject: (subpath: string, target: string) => {
+        const key = probeKeyOf(subpath)
+        const relative = `./${escaped(target)}`
+        return [
+          resolvedTargetOf({ [key]: [[null], relative] }, key),
+          resolvedTargetOf({ [key]: [[relative], './fallback.json'] }, key),
+        ]
+      },
+    },
+    (subject, [subpath, target]) => {
+      const [afterNestedNull, fromNested] = subject(subpath, target)
+      return afterNestedNull === undefined && fromNested === `./${escaped(target)}`
+    },
+  )
+
+  it.prop(
+    '∀subpath_ActiveConditionNull_≡UnresolvedBesideAnInactiveOne',
+    {
+      of: [S.String, S.String, S.Literals(['require', 'types', 'node'])],
+      subject: (subpath: string, target: string, condition: string) => {
+        const key = probeKeyOf(subpath)
+        const relative = `./${escaped(target)}`
+        return [
+          resolvedTargetOf({ [key]: { [condition]: null, default: relative } }, key),
+          resolvedTargetOf({ [key]: { browser: null, default: relative } }, key),
+        ]
+      },
+    },
+    (subject, [subpath, target, condition]) => {
+      const [activeNull, inactiveNull] = subject(subpath, target, condition)
+      return activeNull === undefined && inactiveNull === `./${escaped(target)}`
+    },
+  )
+
+  it.prop(
     '∀subpath_InvalidTargetSegment_≡UnresolvedBesideTheValidOne',
     {
       of: [S.String, S.String, S.String, S.Literals(['.', '..', 'node_modules'])],
