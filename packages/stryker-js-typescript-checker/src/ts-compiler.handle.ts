@@ -460,37 +460,67 @@ const ABSENT_EXPORTS: ReadonlyArray<JsonValue> = [null, false, '']
 
 const declaresExports = (value: JsonValue): boolean => !ABSENT_EXPORTS.includes(value)
 
+interface PackageManifest {
+  readonly exports?: JsonValue | undefined
+  readonly tsconfig?: JsonValue | undefined
+}
+
+const readPackageManifestOf = (
+  rt: TSCompilerRuntime,
+  packageDirectory: string,
+): Effect.Effect<Option.Option<PackageManifest>, never> =>
+  rt.host.readFileString(normalizeFileName(rt.pathService.join(packageDirectory, 'package.json'))).pipe(
+    Effect.orElseSucceed(() => ''),
+    Effect.map(
+      S.decodeOption(S.fromJsonString(S.Struct({ exports: S.optional(S.Json), tsconfig: S.optional(S.Json) }))),
+    ),
+  )
+
 const readPackageExportsOf = (
   rt: TSCompilerRuntime,
   directory: string,
   packageName: string,
 ): Effect.Effect<Option.Option<JsonValue>, never> =>
-  rt.host.readFileString(
-    normalizeFileName(rt.pathService.join(directory, NODE_MODULES_DIRECTORY, packageName, 'package.json')),
-  ).pipe(
-    Effect.orElseSucceed(() => ''),
-    Effect.map((text) =>
-      Option.flatMap(
-        S.decodeOption(S.fromJsonString(S.Struct({ exports: S.optional(S.Json) })))(text),
-        (manifest) => Option.filter(Option.fromUndefinedOr(manifest.exports), declaresExports),
-      )
-    ),
+  Effect.map(
+    readPackageManifestOf(rt, rt.pathService.join(directory, NODE_MODULES_DIRECTORY, packageName)),
+    Option.flatMap((manifest) => Option.filter(Option.fromUndefinedOr(manifest.exports), declaresExports)),
   )
 
-const defaultAncestorCandidatesOf = (
-  pathService: Path.Path,
+const readTsconfigFieldOf = (rt: TSCompilerRuntime, packageDirectory: string): Effect.Effect<Option.Option<string>> =>
+  Effect.map(
+    readPackageManifestOf(rt, packageDirectory),
+    Option.flatMap((manifest) => Option.filter(Option.liftPredicate(manifest.tsconfig, isString), isNonEmptyString)),
+  )
+
+const fileCandidatesOf = (fileName: string): ReadonlyArray<string> => [
+  ...Arr.filter([fileName], (candidate) => candidate.endsWith(TS_CONFIG_JSON_EXTENSION)),
+  `${fileName}${TS_CONFIG_JSON_EXTENSION}`,
+]
+
+const directoryConfigOf = (pathService: Path.Path, directory: string): string =>
+  normalizeFileName(pathService.join(directory, 'tsconfig.json'))
+
+const legacyAncestorCandidatesOf = (
+  rt: TSCompilerRuntime,
   directory: string,
   specifier: string,
-): ReadonlyArray<string> =>
-  Arr.flatMap(withJsonExtension(specifier), (candidate) => [
-    normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate)),
-    ...Boolean.match(candidate.endsWith(TS_CONFIG_JSON_EXTENSION), {
-      onTrue: (): ReadonlyArray<string> => [],
-      onFalse: () => [
-        normalizeFileName(pathService.join(directory, NODE_MODULES_DIRECTORY, candidate, 'tsconfig.json')),
-      ],
-    }),
-  ])
+): Effect.Effect<AncestorCandidates, never> => {
+  const target = normalizeFileName(rt.pathService.join(directory, NODE_MODULES_DIRECTORY, specifier))
+  return Effect.map(readTsconfigFieldOf(rt, target), (field) => ({
+    candidates: [
+      ...fileCandidatesOf(target),
+      ...Option.match(field, {
+        onNone: (): ReadonlyArray<string> => [],
+        onSome: (named) => {
+          const fieldTarget = normalizeFileName(rt.pathService.join(target, named))
+          return [...fileCandidatesOf(fieldTarget), directoryConfigOf(rt.pathService, fieldTarget)]
+        },
+      }),
+      directoryConfigOf(rt.pathService, target),
+    ],
+    stops: false,
+  }))
+}
 
 interface AncestorCandidates {
   readonly candidates: ReadonlyArray<string>
@@ -525,17 +555,14 @@ const bareAncestorCandidatesOf = (
   maybeSpec: Option.Option<PackageSpecifier>,
 ): Effect.Effect<AncestorCandidates, never> =>
   Option.match(maybeSpec, {
-    onNone: () =>
-      Effect.succeed({ candidates: defaultAncestorCandidatesOf(rt.pathService, directory, specifier), stops: false }),
+    onNone: () => legacyAncestorCandidatesOf(rt, directory, specifier),
     onSome: (spec) =>
       readPackageExportsOf(rt, directory, spec.packageName).pipe(
-        Effect.map((maybeExports) =>
+        Effect.flatMap((maybeExports) =>
           Option.match(maybeExports, {
-            onNone: () => ({
-              candidates: defaultAncestorCandidatesOf(rt.pathService, directory, specifier),
-              stops: false,
-            }),
-            onSome: (exportsValue) => exportsCandidatesOf(rt.pathService, directory, spec, exportsValue),
+            onNone: () => legacyAncestorCandidatesOf(rt, directory, specifier),
+            onSome: (exportsValue) =>
+              Effect.succeed(exportsCandidatesOf(rt.pathService, directory, spec, exportsValue)),
           })
         ),
       ),
