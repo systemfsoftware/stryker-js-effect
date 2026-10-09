@@ -20,8 +20,7 @@ import type { IncrementalReportDiscard } from './admit-incremental-report.workfl
 import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.js'
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
-import { IncrementalReportSchema } from './IncrementalReport.schema.js'
-import { CostsFieldSchema } from './plan-request.schema.js'
+import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
 import { readProjectCell } from './read-project.cell.js'
@@ -167,38 +166,37 @@ const labelOf = (path: Path.Path, basePath: string, project: string): string => 
   return relative.length === 0 ? '.' : relative
 }
 
-const planProgramDigest = (
-  context: Context.Context<RunStageServices>,
-  options: Options.StrykerOptions,
-  loadedPlugins: Pick<LoadedPlugins, 'pluginSources'>,
-  project: string,
-  label: string,
-): Effect.Effect<string | undefined, never, EnginePorts> =>
-  Effect.gen(function*() {
-    const pool = yield* checkerPoolsScoped({ options, loadedPlugins, size: 1, workingDirectory: project })
-    return yield* Option.match(Option.fromNullishOr(pool), {
-      onNone: () => Effect.as(Effect.void, undefined),
-      onSome: (present) => programDigestOf(makeCheckerPoolHandle(present), label),
-    })
-  }).pipe(Effect.provide(context), Effect.scoped)
-
 const reportHoldsCompileErrorRecord = (text: string): boolean =>
   Option.exists(
-    S.decodeOption(S.fromJsonString(IncrementalReportSchema))(text),
+    S.decodeOption(S.fromJsonString(CompileErrorProbeSchema))(text),
     (report) =>
       Object.values(report.files).some((file) => file.mutants.some((mutant) => mutant.status === 'CompileError')),
   )
 
-const programDigestAtPlanTime = (
-  texts: readonly string[],
-  context: Context.Context<RunStageServices>,
-  options: Options.StrykerOptions,
-  loadedPlugins: Pick<LoadedPlugins, 'pluginSources'>,
-  project: string,
-  label: string,
-): Effect.Effect<string | undefined, never, EnginePorts> =>
+interface ProgramDigestAtPlanTime {
+  readonly texts: readonly string[]
+  readonly context: Context.Context<RunStageServices>
+  readonly options: Options.StrykerOptions
+  readonly loadedPlugins: Pick<LoadedPlugins, 'pluginSources'>
+  readonly project: string
+}
+
+const programDigestAtPlanTime = ({
+  texts,
+  context,
+  options,
+  loadedPlugins,
+  project,
+}: ProgramDigestAtPlanTime): Effect.Effect<string | undefined, never, EnginePorts> =>
   Boolean.match(texts.some(reportHoldsCompileErrorRecord), {
-    onTrue: () => planProgramDigest(context, options, loadedPlugins, project, label),
+    onTrue: () =>
+      Effect.gen(function*() {
+        const pool = yield* checkerPoolsScoped({ options, loadedPlugins, size: 1, workingDirectory: project })
+        return yield* Option.match(Option.fromNullishOr(pool), {
+          onNone: () => Effect.as(Effect.void, undefined),
+          onSome: (present) => programDigestOf(makeCheckerPoolHandle(present), project),
+        })
+      }).pipe(Effect.provide(context), Effect.scoped),
     onFalse: () => Effect.as(Effect.void, undefined),
   })
 
@@ -223,14 +221,13 @@ const planProject = (
     const testCoverage = Option.match(coverage, { onNone: emptyTestCoverage, onSome: reusedTestCoverage })
     const reportCosts = reportCostsOf(texts)
     const label = labelOf(path, labelBase, project)
-    const programDigest = yield* programDigestAtPlanTime(
+    const programDigest = yield* programDigestAtPlanTime({
       texts,
       context,
-      done.options,
-      prepared.loadedPlugins,
+      options: done.options,
+      loadedPlugins: prepared.loadedPlugins,
       project,
-      label,
-    )
+    })
     const reuse = yield* readIncrementalReuse({
       project: done.project,
       currentMutants: [...done.mutants],

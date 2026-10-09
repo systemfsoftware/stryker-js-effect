@@ -177,6 +177,9 @@ export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitCh
 const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], StageError | CheckerCrash> =>
   Pool.use(pool, (slot) => Effect.succeed(slot.map(({ checkerName }) => checkerName)))
 
+const noDigest = (message: string): Effect.Effect<Option.Option<string>> =>
+  Effect.logWarning(message).pipe(Effect.as(Option.none<string>()))
+
 const digestLineOf = (
   project: string,
   { checkerName, checker }: CheckerSlot[number],
@@ -185,23 +188,25 @@ const digestLineOf = (
     Effect.map((digest) => Option.some(`${checkerName}\u0000${digest}`)),
     Effect.catchTags({
       CheckerFailed: (error) =>
-        Effect.logWarning(
-          `Checker "${checkerName}" could not digest the program of project "${project}": ${error.cause}`,
-        ).pipe(Effect.as(Option.none<string>())),
+        noDigest(`Checker "${checkerName}" could not digest the program of project "${project}": ${error.cause}`),
       ChildProcessCrashedError: (error) =>
-        Effect.logWarning(
+        noDigest(
           `Checker "${checkerName}" crashed before it could digest the program of project "${project}": ${error.message}`,
-        ).pipe(Effect.as(Option.none<string>())),
+        ),
       OutOfMemoryError: (error) =>
-        Effect.logWarning(
+        noDigest(
           `Checker "${checkerName}" ran out of memory before it could digest the program of project "${project}": ${error.message}`,
-        ).pipe(Effect.as(Option.none<string>())),
+        ),
     }),
   )
 
-export const programDigestOf = Effect.fnUntraced(function*(handle: CheckerPoolHandle, project: string) {
-  return yield* Effect.orElseSucceed(answeredProgramDigestOf(handle, project), () => undefined)
-})
+export const programDigestOf = dual<
+  (project: string) => (handle: CheckerPoolHandle) => Effect.Effect<string | undefined>,
+  (handle: CheckerPoolHandle, project: string) => Effect.Effect<string | undefined>
+>(
+  2,
+  (handle, project) => Effect.orElseSucceed(answeredProgramDigestOf(handle, project), () => undefined),
+)
 
 const answeredProgramDigestOf = Effect.fn(SpanTaxonomy.Spans.checkerPoolProgramDigest.name)(function*(
   handle: CheckerPoolHandle,

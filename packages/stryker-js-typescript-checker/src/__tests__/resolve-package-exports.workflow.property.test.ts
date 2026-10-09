@@ -33,10 +33,11 @@ describe('resolvePackageExports', (it) => {
       of: [S.String, S.String],
       subject: (subpath: string, target: string) => {
         const key = probeKeyOf(subpath)
-        return resolvedTargetOf({ [key]: target }, key)
+        const relative = `./${escaped(target)}`
+        return resolvedTargetOf({ [key]: relative }, key)
       },
     },
-    (subject, [subpath, target]) => subject(subpath, target) === target,
+    (subject, [subpath, target]) => subject(subpath, target) === `./${escaped(target)}`,
   )
 
   it.prop(
@@ -50,6 +51,32 @@ describe('resolvePackageExports', (it) => {
       },
     },
     (subject, [subpath, target]) => subject(subpath, target) === `./dist/${escaped(subpath)}`,
+  )
+
+  it.prop(
+    '∀leaf_OverlappingWildcardKeys_≡LongestPrefixByStarWins',
+    {
+      of: [S.String, S.String],
+      subject: (leaf: string, tag: string) =>
+        resolvedTargetOf(
+          { './x/*': `./generic-${escaped(tag)}.json`, './x/y/*': './specific-*.json' },
+          `./x/y/${escaped(leaf)}`,
+        ),
+    },
+    (subject, [leaf, tag]) => subject(leaf, tag) === `./specific-${escaped(leaf)}.json`,
+  )
+
+  it.prop(
+    '∀leaf_EqualPrefixWildcardKeys_≡LongerKeyWins',
+    {
+      of: [S.String, S.String],
+      subject: (leaf: string, tag: string) =>
+        resolvedTargetOf(
+          { './x/*': `./generic-${escaped(tag)}.json`, './x/*.json': './specific-*.json' },
+          `./x/${escaped(leaf)}.json`,
+        ),
+    },
+    (subject, [leaf, tag]) => subject(leaf, tag) === `./specific-${escaped(leaf)}.json`,
   )
 
   it.prop(
@@ -76,13 +103,14 @@ describe('resolvePackageExports', (it) => {
       of: [S.String, S.String],
       subject: (subpath: string, target: string) => {
         const key = probeKeyOf(subpath)
-        const map = { [key]: target }
+        const relative = `./${escaped(target)}`
+        const map = { [key]: relative }
         return [resolvedTargetOf(map, `${key}-absent`), resolvedTargetOf(map, key)]
       },
     },
     (subject, [subpath, target]) => {
       const [unkeyed, keyed] = subject(subpath, target)
-      return unkeyed === undefined && keyed === target
+      return unkeyed === undefined && keyed === `./${escaped(target)}`
     },
   )
 
@@ -92,9 +120,29 @@ describe('resolvePackageExports', (it) => {
       of: [S.String, S.String],
       subject: (subpath: string, target: string) => {
         const key = probeKeyOf(subpath)
-        return resolvedTargetOf({ [key]: [null, target] }, key)
+        const relative = `./${escaped(target)}`
+        return resolvedTargetOf({ [key]: [null, relative] }, key)
       },
     },
-    (subject, [subpath, target]) => subject(subpath, target) === target,
+    (subject, [subpath, target]) => subject(subpath, target) === `./${escaped(target)}`,
+  )
+
+  it.prop(
+    '∀subpath_NonRelativeTarget_≡UnresolvedBesideTheRelativeOne',
+    {
+      of: [S.String, S.String],
+      subject: (subpath: string, target: string) => {
+        const key = probeKeyOf(subpath)
+        const relative = `./${escaped(target)}`
+        return [
+          resolvedTargetOf({ [key]: relative.slice(1) }, key),
+          resolvedTargetOf({ [key]: relative }, key),
+        ]
+      },
+    },
+    (subject, [subpath, target]) => {
+      const [unresolved, resolved] = subject(subpath, target)
+      return unresolved === undefined && resolved === `./${escaped(target)}`
+    },
   )
 })

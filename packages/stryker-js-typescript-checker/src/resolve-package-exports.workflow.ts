@@ -2,6 +2,7 @@ import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -43,11 +44,7 @@ const isString = (value: JsonValue): value is string => typeof value === 'string
 
 const isJsonArray = (value: JsonValue): value is ReadonlyArray<JsonValue> => Array.isArray(value)
 
-const isJsonObject = (value: JsonValue): value is Record<string, JsonValue> =>
-  Boolean.match(typeof value === 'object', {
-    onTrue: () => Boolean.and(value !== null, !Array.isArray(value)),
-    onFalse: () => false,
-  })
+const isJsonObject = (value: JsonValue): value is Record<string, JsonValue> => Predicate.isObject(value)
 
 const isActiveCondition = (key: string): boolean => ACTIVE_CONDITIONS.includes(key)
 
@@ -62,7 +59,7 @@ const starPartsOf = (key: string): Option.Option<readonly [string, string]> => {
 const substituteStar = (target: string, star: Option.Option<string>): string =>
   Option.match(star, {
     onNone: () => target,
-    onSome: (capture) => target.split('*').join(capture),
+    onSome: (capture) => target.replaceAll('*', capture),
   })
 
 const resolveConditional = (
@@ -80,7 +77,7 @@ const resolveConditional = (
 
 function resolveTarget(value: JsonValue, star: Option.Option<string>): Option.Option<string> {
   return Option.match(Option.liftPredicate(value, isString), {
-    onSome: (target) => Option.some(substituteStar(target, star)),
+    onSome: (target) => Option.liftPredicate(substituteStar(target, star), (resolved) => resolved.startsWith('./')),
     onNone: () =>
       Option.match(Option.liftPredicate(value, isJsonArray), {
         onSome: (entries) => Arr.findFirst(entries, (entry) => resolveTarget(entry, star)),
@@ -107,31 +104,54 @@ const patternCaptureOf = (key: string, subpath: string): Option.Option<string> =
       (candidate) => candidate.slice(prefix.length, candidate.length - suffix.length),
     ))
 
+const patternKeyBaseLengthOf = (key: string): number =>
+  Boolean.match(key.indexOf('*') === -1, {
+    onTrue: () => key.length,
+    onFalse: () => key.indexOf('*') + 1,
+  })
+
+const comparePatternKeysOf = (left: string, right: string): number =>
+  Boolean.match(patternKeyBaseLengthOf(left) === patternKeyBaseLengthOf(right), {
+    onTrue: () => right.length - left.length,
+    onFalse: () => patternKeyBaseLengthOf(right) - patternKeyBaseLengthOf(left),
+  })
+
+const bestPatternMatchOf = (
+  map: Record<string, JsonValue>,
+  subpath: string,
+): Option.Option<readonly [JsonValue, string]> =>
+  Option.map(
+    Arr.reduce(
+      Object.entries(map),
+      Option.none<readonly [string, JsonValue, string]>(),
+      (best, [key, value]) =>
+        Option.match(patternCaptureOf(key, subpath), {
+          onNone: () => best,
+          onSome: (star) =>
+            Option.match(best, {
+              onNone: () => Option.some([key, value, star] as const),
+              onSome: (current) =>
+                Boolean.match(comparePatternKeysOf(key, current[0]) < 0, {
+                  onTrue: () => Option.some([key, value, star] as const),
+                  onFalse: () => best,
+                }),
+            }),
+        }),
+    ),
+    ([, value, star]) => [value, star] as const,
+  )
+
 const subpathTargetOf = (
   map: Record<string, JsonValue>,
   subpath: string,
 ): Option.Option<readonly [JsonValue, Option.Option<string>]> =>
   Option.match(Option.fromUndefinedOr(map[subpath]), {
     onSome: (value) => Option.some([value, Option.none<string>()] as const),
-    onNone: () =>
-      Arr.findFirst(
-        Object.entries(map),
-        ([key, value]) => Option.map(patternCaptureOf(key, subpath), (star) => [value, Option.some(star)] as const),
-      ),
+    onNone: () => Option.map(bestPatternMatchOf(map, subpath), ([value, star]) => [value, Option.some(star)] as const),
   })
 
 const hasSubpathKeys = (map: Record<string, JsonValue>): boolean =>
   Arr.some(Object.keys(map), (key) => key.startsWith('.'))
-
-const resolveObject = (map: Record<string, JsonValue>, subpath: string): Option.Option<string> =>
-  Boolean.match(hasSubpathKeys(map), {
-    onTrue: () => Option.flatMap(subpathTargetOf(map, subpath), ([value, star]) => resolveTarget(value, star)),
-    onFalse: () =>
-      Boolean.match(subpath === '.', {
-        onTrue: () => resolveTarget(map, Option.none()),
-        onFalse: () => Option.none<string>(),
-      }),
-  })
 
 const whenRootSubpath = <A>(subpath: string, atRoot: () => Option.Option<A>): Option.Option<A> =>
   Boolean.match(subpath === '.', {
@@ -139,9 +159,15 @@ const whenRootSubpath = <A>(subpath: string, atRoot: () => Option.Option<A>): Op
     onFalse: () => Option.none<A>(),
   })
 
+const resolveObject = (map: Record<string, JsonValue>, subpath: string): Option.Option<string> =>
+  Boolean.match(hasSubpathKeys(map), {
+    onTrue: () => Option.flatMap(subpathTargetOf(map, subpath), ([value, star]) => resolveTarget(value, star)),
+    onFalse: () => whenRootSubpath(subpath, () => resolveTarget(map, Option.none())),
+  })
+
 const resolveExports = (exports: JsonValue, subpath: string): Option.Option<string> =>
   Option.match(Option.liftPredicate(exports, isString), {
-    onSome: (target) => whenRootSubpath(subpath, () => Option.some(target)),
+    onSome: (target) => whenRootSubpath(subpath, () => resolveTarget(target, Option.none())),
     onNone: () =>
       Option.match(Option.liftPredicate(exports, isJsonArray), {
         onSome: (entries) =>

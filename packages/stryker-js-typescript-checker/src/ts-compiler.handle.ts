@@ -519,7 +519,10 @@ const bareAncestorCandidatesOf = (
         Effect.map((maybeExports) =>
           Option.match(maybeExports, {
             onNone: () => defaultAncestorCandidatesOf(rt.pathService, directory, specifier),
-            onSome: (exportsValue) => exportsCandidatesOf(rt.pathService, directory, spec, exportsValue),
+            onSome: (exportsValue) => [
+              ...exportsCandidatesOf(rt.pathService, directory, spec, exportsValue),
+              ...defaultAncestorCandidatesOf(rt.pathService, directory, specifier),
+            ],
           })
         ),
       ),
@@ -532,13 +535,16 @@ const tsConfigExtendsCandidatesOf = (
 ): Effect.Effect<ReadonlyArray<string>, never> =>
   Boolean.match(rt.pathService.isAbsolute(specifier) || isRelativeSpecifier(specifier), {
     onTrue: () => Effect.succeed(withJsonExtension(normalizeFileName(rt.pathService.resolve(fromDirName, specifier)))),
-    onFalse: () =>
-      Effect.map(
-        Effect.forEach(ancestorDirectoriesOf(rt.pathService, fromDirName), (directory) =>
-          bareAncestorCandidatesOf(rt, directory, specifier, packageSpecifierOf(specifier))),
-        (candidateLists) =>
-          Arr.flatten(candidateLists),
-      ),
+    onFalse: () => {
+      const maybeSpec = packageSpecifierOf(specifier)
+      return Effect.map(
+        Effect.forEach(
+          ancestorDirectoriesOf(rt.pathService, fromDirName),
+          (directory) => bareAncestorCandidatesOf(rt, directory, specifier, maybeSpec),
+        ),
+        (candidateLists) => Arr.flatten(candidateLists),
+      )
+    },
   })
 
 const isFileOf = (rt: TSCompilerRuntime, fileName: string): Effect.Effect<boolean> =>

@@ -34,6 +34,8 @@ const TSCONFIG_SOURCE = JSON.stringify(
   2,
 ) + '\n'
 
+const NULL_EXPORTS_MANIFEST_SOURCE = JSON.stringify({ exports: null }, null, 2) + '\n'
+
 const STRICT_TSCONFIG_SOURCE = JSON.stringify(
   {
     compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: false },
@@ -343,6 +345,35 @@ Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_00
                 [TSCONFIG_FILE]: PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE,
                 [PACKAGE_EXPORTS_MANIFEST_FILE]: PACKAGE_EXPORTS_MANIFEST_SOURCE,
                 [PACKAGE_EXPORTS_BASE_FILE]: BASE_TSCONFIG_SOURCE,
+              },
+            ),
+        ),
+        Then('both digests are 64-character digests and the change moves the digest')((s, expect) =>
+          expect({
+            shape: DIGEST_SHAPE.test(s.observed.first) && DIGEST_SHAPE.test(s.observed.second),
+            moved: s.observed.first !== s.observed.second,
+          }).toEqual({ shape: true, moved: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'editing a base tsconfig the root extends under a package whose exports map no subpath moves the digest',
+      Gherkin.Do.pipe(
+        Given('a program whose tsconfig extends a base config under a package that declares an exports field')(
+          'observed',
+          () =>
+            withWorkspace(
+              (workspace) =>
+                digestTwice(
+                  workspace.directory,
+                  (directory) => rewriteFile(directory, PACKAGE_BASE_TSCONFIG_FILE, CHANGED_BASE_TSCONFIG_SOURCE),
+                ),
+              {
+                ...DEFAULT_FILES,
+                [TSCONFIG_FILE]: PACKAGE_EXTENDS_TSCONFIG_SOURCE,
+                [PACKAGE_EXPORTS_MANIFEST_FILE]: NULL_EXPORTS_MANIFEST_SOURCE,
+                [PACKAGE_BASE_TSCONFIG_FILE]: BASE_TSCONFIG_SOURCE,
               },
             ),
         ),
