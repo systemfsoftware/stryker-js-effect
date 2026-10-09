@@ -114,10 +114,13 @@ export const singletonGroupsOf = (undescribable: readonly UndescribableMutant[])
 export const undescribableIdsOf = (undescribable: readonly UndescribableMutant[]): ReadonlySet<string> =>
   new Set(undescribable.map((mutant) => mutant.id))
 
-export interface CheckerRequest {
-  readonly checker: CheckerResourceService
+export interface CheckerPlans {
   readonly checkerName: string
   readonly plans: readonly Mutant.RunPlan[]
+}
+
+export interface CheckerRequest extends CheckerPlans {
+  readonly checker: CheckerResourceService
 }
 
 export type CheckRaw = typeof CheckerCommand.Encoded & CheckerRequest
@@ -128,7 +131,7 @@ export type GroupedPlansResult = readonly (readonly Mutant.RunPlan[])[]
 
 export type CheckedPlansResult = readonly (readonly [Mutant.RunPlan, Checker.CheckResult])[]
 
-export const describeCommandOf = (request: CheckerRequest): DescribeCheckerMutantsCommand =>
+export const describeCommandOf = (request: CheckerPlans): DescribeCheckerMutantsCommand =>
   DescribeCheckerMutantsCommand.make({
     candidates: request.plans.map((plan) => ({
       id: plan.mutant.id,
@@ -137,12 +140,12 @@ export const describeCommandOf = (request: CheckerRequest): DescribeCheckerMutan
     })),
   })
 
-export const plansByIdOf = (request: CheckerRequest): ReadonlyMap<string, Mutant.RunPlan> =>
+export const plansByIdOf = (request: CheckerPlans): ReadonlyMap<string, Mutant.RunPlan> =>
   new Map<string, Mutant.RunPlan>(request.plans.map((plan) => [plan.mutant.id, plan]))
 
 export interface RefusedCheckerCommand {
   readonly issue: string
-  readonly input: CheckRaw
+  readonly input: CheckerPlans
 }
 
 export const commandFailed = (refused: RefusedCheckerCommand): Checker.CheckerFailed =>
@@ -154,6 +157,13 @@ export const commandFailed = (refused: RefusedCheckerCommand): Checker.CheckerFa
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
+
+  const DrawnRunPlans = S.Array(S.Tuple([Mutant.Mutant, Mutant.MutantRunOptionsSchema, S.Finite]))
+
+  const runPlansOf = (
+    drawn: typeof DrawnRunPlans.Type,
+  ): readonly Mutant.RunPlan[] =>
+    drawn.map(([mutant, runOptions, netTime]): Mutant.RunPlan => ({ plan: 'Run', mutant, runOptions, netTime }))
 
   it.prop(
     '∀d_Partition_≡InterleavesBackToTheDescriptions',
@@ -202,6 +212,69 @@ if (import.meta.vitest !== void 0) {
       const groups = subject(undescribable)
       return groups.length === undescribable.length &&
         Arr.every(Arr.zip(groups, undescribable), ([group, mutant]) => group.length === 1 && group[0] === mutant.id)
+    },
+  )
+
+  it.prop(
+    '∀u_UndescribableIds_≡ExactlyTheRefusedIds',
+    { of: [S.Array(UndescribableMutant)], subject: undescribableIdsOf },
+    (subject, [undescribable]) => {
+      const ids = subject(undescribable)
+      return ids.size === new Set(undescribable.map((mutant) => mutant.id)).size &&
+        Arr.every(undescribable, (mutant) => ids.has(mutant.id))
+    },
+  )
+
+  it.prop(
+    '∀p_DescribeCommand_≡OneCandidatePerPlanInOrder',
+    { of: [S.String, DrawnRunPlans], subject: describeCommandOf },
+    (subject, [checkerName, drawn]) => {
+      const plans = runPlansOf(drawn)
+      const { candidates } = subject({ checkerName, plans })
+      return candidates.length === plans.length &&
+        Arr.every(Arr.zip(candidates, plans), ([candidate, plan]) =>
+          Arr.every(
+            [
+              candidate.id === plan.mutant.id,
+              candidate.fileName === plan.mutant.fileName,
+              candidate.mutant === plan.mutant,
+            ],
+            (agrees) => agrees,
+          ))
+    },
+  )
+
+  it.prop(
+    '∀p_PlansById_≡EachIdKeysItsLastPlan',
+    { of: [S.String, DrawnRunPlans], subject: plansByIdOf },
+    (subject, [checkerName, drawn]) => {
+      const plans = runPlansOf(drawn)
+      const byId = subject({ checkerName, plans })
+      const lastPlanById = Arr.reduce(
+        plans,
+        new Map<string, Mutant.RunPlan>(),
+        (latest, plan) => latest.set(plan.mutant.id, plan),
+      )
+      return byId.size === lastPlanById.size &&
+        Arr.every([...lastPlanById], ([id, plan]) => byId.get(id) === plan)
+    },
+  )
+
+  it.prop(
+    '∀p_CommandFailed_≡CarriesIssueCheckerAndPlanIdsInOrder',
+    { of: [S.String, S.String, DrawnRunPlans], subject: commandFailed },
+    (subject, [issue, checkerName, drawn]) => {
+      const plans = runPlansOf(drawn)
+      const failed = subject({ issue, input: { checkerName, plans } })
+      return Arr.every(
+        [
+          failed.cause === issue,
+          failed.checkerName === checkerName,
+          failed.mutantIds.length === plans.length,
+          Arr.every(Arr.zip(failed.mutantIds, plans), ([id, plan]) => id === plan.mutant.id),
+        ],
+        (agrees) => agrees,
+      )
     },
   )
 }
