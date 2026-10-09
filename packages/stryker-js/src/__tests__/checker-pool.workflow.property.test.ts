@@ -29,6 +29,8 @@ import {
   checkPlansStream,
   inOwnScope,
   makeCheckerPoolHandle,
+  NO_CHECKER_CONFIG_DIGEST,
+  poolDigestOf,
   splitCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
 import type { CheckerCrash, CheckerResourceService } from '../Checker/Checker.handle.js'
@@ -109,7 +111,7 @@ const checkerServiceOf = (handlers: {
 }): CheckerResourceService => ({
   group: handlers.group,
   check: handlers.check,
-  digest: () => Effect.succeed(UNUSED_DIGEST),
+  digest: (_checkerName, _scope) => Effect.succeed(UNUSED_DIGEST),
 })
 
 const checkerSlotOf = (checkerName: string, checker: CheckerResourceService): CheckerSlot => [{
@@ -468,5 +470,47 @@ describe('checker pool', () => {
             })
           ),
       }),
+  )
+})
+
+const permutedBy = (lines: readonly string[], seed: number): readonly string[] => {
+  const working = [...lines]
+  let state = seed + 1
+  for (let index = working.length - 1; index > 0; index -= 1) {
+    state = (state * 48271) % 2147483647
+    const swap = state % (index + 1)
+    const held = working[index] ?? ''
+    working[index] = working[swap] ?? ''
+    working[swap] = held
+  }
+  return working
+}
+
+describe('checker pool digest', () => {
+  it.prop(
+    '∀ls_LinesAndSeed_≡AnyPermutationOfTheSameDigestLinesGivesTheSamePoolDigest',
+    { of: [S.Array(S.String), S.Natural], subject: poolDigestOf },
+    (subject, [lines, seed]) => subject(lines) === subject(permutedBy(lines, seed)),
+  )
+
+  it.prop(
+    '∀ls_LinesAndIndex_≡ChangingOneDigestLineChangesThePoolDigest',
+    { of: [S.NonEmptyArray(S.String), S.Natural], subject: poolDigestOf },
+    (subject, [lines, index]) => {
+      const sorted = [...lines].sort()
+      const changed = `${sorted[sorted.length - 1] ?? ''}\u0000`
+      const targeted = index % lines.length
+      const mutated = lines.map((line, position) => (position === targeted ? changed : line))
+      return subject(lines) !== subject(mutated)
+    },
+  )
+
+  it.prop(
+    '∀ls_Lines_≡OnlyTheEmptySetAnswersTheNoCheckerMarker',
+    { of: [S.Array(S.String)], subject: poolDigestOf },
+    (subject, [lines]) =>
+      lines.length === 0
+        ? subject(lines) === NO_CHECKER_CONFIG_DIGEST
+        : subject(lines) !== NO_CHECKER_CONFIG_DIGEST,
   )
 })

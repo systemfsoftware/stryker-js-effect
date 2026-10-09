@@ -64,7 +64,7 @@ import { overrideTsconfigOptions } from './override-tsconfig-options.workflow.js
 import { parseTsconfigText } from './parse-tsconfig-text.workflow.js'
 import { planDiagnosticBatches } from './plan-diagnostic-batches.workflow.js'
 import { planResolutionCandidates } from './plan-resolution-candidates.workflow.js'
-import { type ProgramFile } from './program-digest.schema.js'
+import { configKeyOf, type ProgramFile } from './program-digest.schema.js'
 import { requestAffectedFiles } from './request-affected-files.workflow.js'
 import { resolvePackageExports, ResolvePackageExportsCommand } from './resolve-package-exports.workflow.js'
 import { emitNormalized } from './tce-emit.js'
@@ -353,6 +353,26 @@ export const programDigest = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompi
   )
   return yield* decidedProgramIdentity(
     IdentifyProgramCommand.make({ typescriptVersion, checkerVersion, checkerOptionsJson, sourceFiles, tsconfigs }),
+  )
+})
+
+export const configDigest = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerProgramDigest.name)(function*(
+  self: TSCompiler,
+): Effect.fn.Return<Checker.ProgramDigest, CompilerError> {
+  const rt = runtimeOf(self)
+  const typescriptVersion = yield* readTypescriptVersion(rt)
+  const checkerVersion = yield* readCheckerVersion(rt)
+  yield* Boolean.match(Boolean.or(typescriptVersion === '', checkerVersion === ''), {
+    onTrue: () =>
+      Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: 'toolchain version' })),
+    onFalse: () => Effect.void,
+  })
+  const checkerOptionsJson = yield* checkerOptionsJsonOf(rt.options)
+  const tsconfigFile = normalizeFileName(rt.pathService.resolve(rt.options.tsconfigFile))
+  const root = rt.pathService.dirname(tsconfigFile)
+  const tsconfigs = yield* readProgramFiles(rt, root, yield* tsConfigChainOf(rt, [tsconfigFile]))
+  return Checker.ProgramDigest.make(
+    sha256HexOf(configKeyOf({ typescriptVersion, checkerVersion, checkerOptionsJson, tsconfigs })),
   )
 })
 

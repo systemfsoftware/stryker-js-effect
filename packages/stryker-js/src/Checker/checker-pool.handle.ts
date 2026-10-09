@@ -177,49 +177,63 @@ export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitCh
 const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], StageError | CheckerCrash> =>
   Pool.use(pool, (slot) => Effect.succeed(slot.map(({ checkerName }) => checkerName)))
 
+export const NO_CHECKER_CONFIG_DIGEST = 'no-checker-config-digest'
+
+export const poolDigestOf = (lines: readonly string[]): string => {
+  if (lines.length === 0) {
+    return NO_CHECKER_CONFIG_DIGEST
+  }
+  return sha256HexOf([...lines].sort().join('\n'))
+}
+
 const noDigest = (message: string): Effect.Effect<Option.Option<string>> =>
   Effect.logWarning(message).pipe(Effect.as(Option.none<string>()))
 
 const digestLineOf = (
-  project: string,
+  subject: string,
+  scope: 'config' | 'program',
   { checkerName, checker }: CheckerSlot[number],
 ): Effect.Effect<Option.Option<string>> =>
-  checker.digest(checkerName).pipe(
+  checker.digest(checkerName, scope).pipe(
     Effect.map((digest) => Option.some(`${checkerName}\u0000${digest}`)),
     Effect.catchTags({
-      CheckerFailed: (error) =>
-        noDigest(`Checker "${checkerName}" could not digest the program of project "${project}": ${error.cause}`),
+      CheckerFailed: (error) => noDigest(`Checker "${checkerName}" could not digest ${subject}: ${error.cause}`),
       ChildProcessCrashedError: (error) =>
-        noDigest(
-          `Checker "${checkerName}" crashed before it could digest the program of project "${project}": ${error.message}`,
-        ),
+        noDigest(`Checker "${checkerName}" crashed before it could digest ${subject}: ${error.message}`),
       OutOfMemoryError: (error) =>
-        noDigest(
-          `Checker "${checkerName}" ran out of memory before it could digest the program of project "${project}": ${error.message}`,
-        ),
+        noDigest(`Checker "${checkerName}" ran out of memory before it could digest ${subject}: ${error.message}`),
     }),
   )
+
+const answeredDigestOf = Effect.fn(SpanTaxonomy.Spans.checkerPoolProgramDigest.name)(function*(
+  handle: CheckerPoolHandle,
+  subject: string,
+  scope: 'config' | 'program',
+) {
+  const lines = yield* Pool.use(
+    CheckerPoolHandle.slot(handle),
+    (slot) => Effect.forEach(slot, (entry) => digestLineOf(subject, scope, entry)),
+  )
+  return Option.getOrUndefined(Option.map(Option.all(lines), (answered) => poolDigestOf([...answered])))
+})
 
 export const programDigestOf = dual<
   (project: string) => (handle: CheckerPoolHandle) => Effect.Effect<string | undefined>,
   (handle: CheckerPoolHandle, project: string) => Effect.Effect<string | undefined>
 >(
   2,
-  (handle, project) => Effect.orElseSucceed(answeredProgramDigestOf(handle, project), () => undefined),
+  (handle, project) =>
+    Effect.orElseSucceed(answeredDigestOf(handle, `the program of project "${project}"`, 'program'), () => undefined),
 )
 
-const answeredProgramDigestOf = Effect.fn(SpanTaxonomy.Spans.checkerPoolProgramDigest.name)(function*(
-  handle: CheckerPoolHandle,
-  project: string,
-) {
-  const lines = yield* Pool.use(
-    CheckerPoolHandle.slot(handle),
-    (slot) => Effect.forEach(slot, (entry) => digestLineOf(project, entry)),
-  )
-  return Option.getOrUndefined(
-    Option.map(Option.all(lines), (answered) => sha256HexOf([...answered].sort().join('\n'))),
-  )
-})
+export const checkerConfigDigestOf = dual<
+  (project: string) => (handle: CheckerPoolHandle) => Effect.Effect<string | undefined>,
+  (handle: CheckerPoolHandle, project: string) => Effect.Effect<string | undefined>
+>(2, (handle, project) =>
+  Effect.orElseSucceed(
+    answeredDigestOf(handle, `the checker configuration of project "${project}"`, 'config'),
+    () => undefined,
+  ))
 
 const failedElement = (
   failedChecks: readonly (readonly [Mutant.MutantRunPlan, Checker.FailedCheckResult])[],

@@ -23,3 +23,7 @@ export const programKeyOf = (input: ProgramIdentityInput): string =>
     ...Arr.sort(Arr.map(input.sourceFiles, (entry) => entryLineOf('source', entry)), Order.String),
     ...Arr.sort(Arr.map(input.tsconfigs, (entry) => entryLineOf('tsconfig', entry)), Order.String),
   ].join('\n')
+
+export type CheckerConfigKeyInput = Omit<ProgramIdentityInput, 'sourceFiles'>
+
+export const configKeyOf = (input: CheckerConfigKeyInput): string => programKeyOf({ ...input, sourceFiles: [] })

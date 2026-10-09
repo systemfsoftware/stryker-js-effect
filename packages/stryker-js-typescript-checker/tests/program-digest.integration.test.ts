@@ -197,6 +197,7 @@ const digestOf = (
   directory: string,
   checkerOptions?: Readonly<Record<string, S.Json | object>>,
   tsconfigFile: string = TSCONFIG_FILE,
+  scope: 'config' | 'program' = 'program',
 ): Effect.Effect<string, never, never> =>
   Effect.gen(function*() {
     const pathService = yield* Path.Path
@@ -207,7 +208,7 @@ const digestOf = (
     return yield* Effect.gen(function*() {
       const runtime = yield* CheckerRuntime
       const checker = yield* Effect.orDie(runtime.checker)
-      return String(yield* Effect.orDie(checker.digest))
+      return String(yield* Effect.orDie(checker.digest(scope)))
     }).pipe(Effect.provide(CheckerRuntime.layer(options)))
   }).pipe(Effect.orDie, Effect.provide(FILE_PORTS))
 
@@ -252,7 +253,7 @@ const withTwoWorkspaces = <A>(
     )
   }).pipe(Effect.orDie, Effect.provide(FILE_PORTS))
 
-Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_000 })
+Feature('Identifying the TypeScript program and configuration a checker resolves', { timeout: 120_000 })
   .withLayer(FILE_PORTS)
   .live('one real TypeScript checker runtime over a real program on disk')
   .body(({ scenario }) => {
@@ -772,6 +773,110 @@ Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_00
             ),
         ),
         Then('the digest request fails')((s, expect) => expect(s.observed).toEqual({ failed: true })),
+      ),
+    )
+
+    scenario(
+      'editing a source file leaves the config digest equal while the program digest changes',
+      Gherkin.Do.pipe(
+        Given('a program whose mutated module reaches a declaration through another module')(
+          'observed',
+          () =>
+            withWorkspace((workspace) =>
+              Effect.gen(function*() {
+                const configBefore = yield* digestOf(workspace.directory, undefined, TSCONFIG_FILE, 'config')
+                const programBefore = yield* digestOf(workspace.directory, undefined, TSCONFIG_FILE, 'program')
+                yield* appendComment(workspace.directory, DECLARATION_FILE)
+                const configAfter = yield* digestOf(workspace.directory, undefined, TSCONFIG_FILE, 'config')
+                const programAfter = yield* digestOf(workspace.directory, undefined, TSCONFIG_FILE, 'program')
+                return { configBefore, programBefore, configAfter, programAfter }
+              })
+            ),
+        ),
+        Then('the config digest holds while the program digest moves')((s, expect) =>
+          expect({
+            configShape: DIGEST_SHAPE.test(s.observed.configBefore) && DIGEST_SHAPE.test(s.observed.configAfter),
+            configStable: s.observed.configBefore === s.observed.configAfter,
+            programMoved: s.observed.programBefore !== s.observed.programAfter,
+          }).toEqual({ configShape: true, configStable: true, programMoved: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'editing a base tsconfig the root extends moves the config digest',
+      Gherkin.Do.pipe(
+        Given('a program whose tsconfig extends a sibling base config')(
+          'observed',
+          () =>
+            withWorkspace(
+              (workspace) =>
+                Effect.gen(function*() {
+                  const before = yield* digestOf(workspace.directory, undefined, TSCONFIG_FILE, 'config')
+                  yield* rewriteFile(workspace.directory, BASE_TSCONFIG_FILE, CHANGED_BASE_TSCONFIG_SOURCE)
+                  const after = yield* digestOf(workspace.directory, undefined, TSCONFIG_FILE, 'config')
+                  return { before, after }
+                }),
+              {
+                ...DEFAULT_FILES,
+                [TSCONFIG_FILE]: EXTENDS_TSCONFIG_SOURCE,
+                [BASE_TSCONFIG_FILE]: BASE_TSCONFIG_SOURCE,
+              },
+            ),
+        ),
+        Then('the config digest moves')((s, expect) =>
+          expect({ shape: DIGEST_SHAPE.test(s.observed.before), moved: s.observed.before !== s.observed.after })
+            .toEqual({ shape: true, moved: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'editing a package base the root extends through a package export moves the config digest',
+      Gherkin.Do.pipe(
+        Given('a program whose tsconfig extends a base config through a package subpath export')(
+          'observed',
+          () =>
+            withWorkspace(
+              (workspace) =>
+                Effect.gen(function*() {
+                  const before = yield* digestOf(workspace.directory, undefined, TSCONFIG_FILE, 'config')
+                  yield* rewriteFile(workspace.directory, PACKAGE_EXPORTS_BASE_FILE, CHANGED_BASE_TSCONFIG_SOURCE)
+                  const after = yield* digestOf(workspace.directory, undefined, TSCONFIG_FILE, 'config')
+                  return { before, after }
+                }),
+              {
+                ...DEFAULT_FILES,
+                [TSCONFIG_FILE]: PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE,
+                [PACKAGE_EXPORTS_MANIFEST_FILE]: PACKAGE_EXPORTS_MANIFEST_SOURCE,
+                [PACKAGE_EXPORTS_BASE_FILE]: BASE_TSCONFIG_SOURCE,
+              },
+            ),
+        ),
+        Then('the config digest moves')((s, expect) =>
+          expect({ shape: DIGEST_SHAPE.test(s.observed.before), moved: s.observed.before !== s.observed.after })
+            .toEqual({ shape: true, moved: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'changing the checker options moves the config digest',
+      Gherkin.Do.pipe(
+        Given('one program digested with two different checker option values')(
+          'observed',
+          () =>
+            withWorkspace((workspace) =>
+              Effect.gen(function*() {
+                const before = yield* digestOf(workspace.directory, { alpha: 1 }, TSCONFIG_FILE, 'config')
+                const after = yield* digestOf(workspace.directory, { alpha: 2 }, TSCONFIG_FILE, 'config')
+                return { before, after }
+              })
+            ),
+        ),
+        Then('the config digest moves')((s, expect) =>
+          expect({ moved: s.observed.before !== s.observed.after }).toEqual({ moved: true })
+        ),
       ),
     )
   })

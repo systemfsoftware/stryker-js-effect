@@ -13,7 +13,7 @@ export interface CheckerService {
   readonly group: (
     mutants: readonly CheckerMutantWire[],
   ) => Effect.Effect<readonly (readonly string[])[], CheckerFailed>
-  readonly digest: Effect.Effect<ProgramDigest, CheckerFailed>
+  readonly digest: (scope: 'config' | 'program') => Effect.Effect<ProgramDigest, CheckerFailed>
 }
 
 export class Checker extends Context.Service<Checker, CheckerService>()(

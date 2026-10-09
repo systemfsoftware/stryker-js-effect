@@ -47,6 +47,14 @@ const programDigestOf = async () => {
   return createHash('sha256').update(lines.join('\n')).digest('hex')
 }
 
+const configDigestOf = async () => {
+  const lines = []
+  for (const file of (await configFileChain()).sort()) {
+    lines.push(`${file}\u0000${await readFile(file, 'utf8')}`)
+  }
+  return createHash('sha256').update(lines.join('\n')).digest('hex')
+}
+
 const rejects = (mutant) => mutant.fileName === MUTATED_FILE || mutant.fileName.endsWith(`/${MUTATED_FILE}`)
 
 const answersOf = async (mutants) => {
@@ -61,7 +69,7 @@ const answersOf = async (mutants) => {
 
 const handlers = Plugin.CheckerRpcs.toLayer({
   group: ({ mutants }) => Effect.succeed([mutants.map((mutant) => mutant.id)]),
-  digest: () => Effect.promise(programDigestOf),
+  digest: ({ scope }) => Effect.promise(scope === 'config' ? configDigestOf : programDigestOf),
   check: ({ mutants }) => Effect.promise(() => answersOf(mutants)),
 })
 
