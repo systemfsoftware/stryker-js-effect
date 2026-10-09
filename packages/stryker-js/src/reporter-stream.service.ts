@@ -529,25 +529,24 @@ export const currentReporterInit = Effect.fn(SpanTaxonomy.Spans.reporterStreamCu
   },
 )
 
-export const withPhaseSpan: {
-  <A, E, R>(
+export const withPhaseSpan:
+  & (<A, E, R>(
     attributes: Record<string, string | number>,
     effect: (span: PhaseSpan) => Effect.Effect<A, E, R>,
-  ): (member: SpanTaxonomy.SpanMember) => Effect.Effect<A, E, R>
-  <A, E, R>(
+  ) => (member: SpanTaxonomy.SpanMember) => Effect.Effect<A, E, R>)
+  & (<A, E, R>(
     member: SpanTaxonomy.SpanMember,
     attributes: Record<string, string | number>,
     effect: (span: PhaseSpan) => Effect.Effect<A, E, R>,
-  ): Effect.Effect<A, E, R>
-} = dual(3, <A, E, R>(
-  member: SpanTaxonomy.SpanMember,
-  attributes: Record<string, string | number>,
-  effect: (span: PhaseSpan) => Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R> =>
-  Effect.useSpan(member.name, { attributes }, (span) =>
-    effect(span).pipe(
-      Effect.provideService(
-        Trace.TraceContextReference,
-        S.decodeOption(RuntimeTrace.TraceContextPartsFromEffectSpan)(span),
-      ),
-    )))
+  ) => Effect.Effect<A, E, R>) = dual(3, <A, E, R>(
+    member: SpanTaxonomy.SpanMember,
+    attributes: Record<string, string | number>,
+    effect: (span: PhaseSpan) => Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R> =>
+    Effect.useSpan(member.name, { attributes }, (span) =>
+      effect(span).pipe(
+        Effect.provideService(
+          Trace.TraceContextReference,
+          S.decodeOption(RuntimeTrace.TraceContextPartsFromEffectSpan)(span),
+        ),
+      )))
