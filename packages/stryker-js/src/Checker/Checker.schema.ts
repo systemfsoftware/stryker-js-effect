@@ -85,16 +85,13 @@ export interface PartitionedMutants {
   readonly undescribable: readonly UndescribableMutant[]
 }
 
+const wireOrRefused = Match.typeTags<MutantDescription>()({
+  MutantDescribed: ({ wire }) => Result.succeed(wire),
+  MutantUndescribable: ({ undescribable }) => Result.fail(undescribable),
+})
+
 export const partitionedMutantsOf = (descriptions: readonly MutantDescription[]): PartitionedMutants => {
-  const [wire, undescribable] = Arr.partition(
-    descriptions,
-    Match.type<MutantDescription>().pipe(
-      Match.tagsExhaustive({
-        MutantDescribed: ({ wire }) => Result.succeed(wire),
-        MutantUndescribable: ({ undescribable }) => Result.fail(undescribable),
-      }),
-    ),
-  )
+  const [wire, undescribable] = Arr.partition(descriptions, wireOrRefused)
   return { wire, undescribable }
 }
 
@@ -165,6 +162,8 @@ if (import.meta.vitest !== void 0) {
   ): readonly Mutant.RunPlan[] =>
     drawn.map(([mutant, runOptions, netTime]): Mutant.RunPlan => ({ plan: 'Run', mutant, runOptions, netTime }))
 
+  const holds = (conditions: readonly boolean[]): boolean => conditions.every((condition) => condition)
+
   it.prop(
     '∀d_Partition_≡InterleavesBackToTheDescriptions',
     { of: [S.Array(MutantDescription)], subject: partitionedMutantsOf },
@@ -233,14 +232,11 @@ if (import.meta.vitest !== void 0) {
       const { candidates } = subject({ checkerName, plans })
       return candidates.length === plans.length &&
         Arr.every(Arr.zip(candidates, plans), ([candidate, plan]) =>
-          Arr.every(
-            [
-              candidate.id === plan.mutant.id,
-              candidate.fileName === plan.mutant.fileName,
-              candidate.mutant === plan.mutant,
-            ],
-            (agrees) => agrees,
-          ))
+          holds([
+            candidate.id === plan.mutant.id,
+            candidate.fileName === plan.mutant.fileName,
+            candidate.mutant === plan.mutant,
+          ]))
     },
   )
 
@@ -266,15 +262,12 @@ if (import.meta.vitest !== void 0) {
     (subject, [issue, checkerName, drawn]) => {
       const plans = runPlansOf(drawn)
       const failed = subject({ issue, input: { checkerName, plans } })
-      return Arr.every(
-        [
-          failed.cause === issue,
-          failed.checkerName === checkerName,
-          failed.mutantIds.length === plans.length,
-          Arr.every(Arr.zip(failed.mutantIds, plans), ([id, plan]) => id === plan.mutant.id),
-        ],
-        (agrees) => agrees,
-      )
+      return holds([
+        failed.cause === issue,
+        failed.checkerName === checkerName,
+        failed.mutantIds.length === plans.length,
+        Arr.every(Arr.zip(failed.mutantIds, plans), ([id, plan]) => id === plan.mutant.id),
+      ])
     },
   )
 }
