@@ -67,7 +67,7 @@ const DISCARD_TEXTS: Readonly<
       discard.actual ?? ''
     }, expected ${discard.expected}; a full mutation testing run will be performed.`,
   semanticsChanged: (command, discard) =>
-    `Incremental result file at ${command.incrementalFile} has verdict semantics version ${
+    `Incremental result file at ${command.incrementalFile} was written by the engine with digest ${
       discard.actual ?? ''
     }, expected ${discard.expected}; a full mutation testing run will be performed.`,
   policyChanged: (command, discard) =>
