@@ -3,7 +3,7 @@ import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcess
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Mutant, Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
-import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import { CheckerRuntime, checkerRuntimeLayer } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as HashMap from 'effect/HashMap'
@@ -148,7 +148,7 @@ const confirmationsOf = (
     }
     const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({ tsconfigFile: fixture.checkerTsconfigFile })
     return yield* Effect.scoped(Effect.gen(function*() {
-      const context = yield* Layer.build(CheckerRuntime.layer(options).pipe(Layer.provide(FILE_PORTS)))
+      const context = yield* Layer.build(checkerRuntimeLayer(options).pipe(Layer.provide(FILE_PORTS)))
       return yield* Effect.gen(function*() {
         const runtime = yield* CheckerRuntime
         const checker = yield* Effect.orDie(runtime.checker)

@@ -4,8 +4,8 @@ import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
-import type { CheckerRuntimeShape } from './CheckerRuntime.service.js'
-import { CheckerRuntime } from './CheckerRuntime.service.js'
+import type { CheckerRuntimeShape } from '../CheckerRuntime.service.js'
+import { CheckerRuntime } from '../CheckerRuntime.service.js'
 
 const refuse = (
   checkerName: string,

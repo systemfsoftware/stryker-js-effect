@@ -5,6 +5,7 @@ import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   CheckerRuntime,
+  checkerRuntimeLayer,
   type CheckerRuntimeShape,
   nodes,
   TypeScriptCompiler,
@@ -114,7 +115,7 @@ const rigLayers = (
   Layer.unwrap(
     optionsFor(layout).pipe(
       Effect.orDie,
-      Effect.map((options) => CheckerRuntime.layer(options).pipe(Layer.provide(spawnerLayer))),
+      Effect.map((options) => checkerRuntimeLayer(options).pipe(Layer.provide(spawnerLayer))),
     ),
   )
 
