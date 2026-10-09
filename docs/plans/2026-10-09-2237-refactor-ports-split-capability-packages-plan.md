@@ -2,7 +2,7 @@
 title: Ports split from layers, then one package per engine capability - Plan
 type: refactor
 date: 2026-10-09
-supersedes: docs/plans/2026-10-09-1955-refactor-ports-split-capability-packages-plan.md
+supersedes: docs/plans/2026-10-09-2025-refactor-ports-split-capability-packages-plan.md
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
@@ -111,6 +111,7 @@ Capability packages (L2)
   - `Instrumenter` (new in `stryker-js-contracts`, U22): `instrument(files: readonly File[], selection)` to `InstrumentResult` and `disableTypeChecks(file: File)` to `File`, failing with `InstrumentError`, plus the activation contract that instrumented code and runners share, `InstrumenterContext.ACTIVE_MUTANT_ENV_VARIABLE` (`command-runner.blueprint.ts:61`). `selection` is data only: `optInMutations`, `excludedMutations`, `mutantSetPolicy`. Today the engine hands the JS instrumenter JS mutator objects, JS ignorer objects, and a format registry (`run/instrument.ts:109-120`), which a native addon cannot take; they become construction inputs of the JS driver's Layer, built at the CLI composition root.
   - Placement: `Checker` and `TestRunner` stay in `stryker-js-plugin-interface`, the contract package every plugin already implements (KTD6, L3's protocol home); moving them into `stryker-js-contracts` breaks every plugin and gains no driver. `Instrumenter` goes to `stryker-js-contracts` because no plugin implements it. No contract package depends on an instrumenter driver: U22 measures every import of `@systemfsoftware/stryker-js-instrumenter` outside the CLI (today including type uses such as `Format.FormatRegistry` at `mutation-reporting.service.ts:24` and `Instrument` in `Project.schema.ts`) and closes each one.
   - Reserved package: stream F's native addon is a driver package beside `stryker-js-instrumenter`, depending on contracts and composed by the CLI. L2 creates nothing in it and leaves its name to stream F.
+  - `TypeQuery` (root ruling): stream H adds a `TypeQuery` port as the `./type-query` entry of `stryker-js-plugin-interface`. Unlike `Checker` and `TestRunner`, it moves with the other ports: U10 moves it into `stryker-js-contracts`, and the `./type-query` entry leaves `stryker-js-plugin-interface` in a major changeset (U19). If stream H has not landed on `main` when U10 runs, the move waits until a merge of `origin/main` brings the port in.
   - Stream I declares no port named here. Wherever its modules land on `main`, merging `origin/main` upward brings them in, and L2's moves rehome them by the same seam rules.
 
 ### Alternatives considered
