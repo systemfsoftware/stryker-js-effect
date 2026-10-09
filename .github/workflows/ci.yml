@@ -42,6 +42,25 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-dist-
             turbo-${{ runner.os }}-
+      - name: Commit graph of main for repo-checks
+        run: |
+          unshallow=$([ "$(git rev-parse --is-shallow-repository)" = true ] && echo --unshallow || true)
+          git fetch --no-tags --filter=tree:0 $unshallow origin +refs/heads/main:refs/remotes/origin/main
+      # A commit object built with plumbing, never checked out: HEAD, the index
+      # and the working tree stay as checked out.
+      - name: repo-checks single-plan fails on a change that adds two plans
+        run: |
+          bin="$(nix build --no-link --print-out-paths .#repo-checks)/bin/repo-checks"
+          export GIT_INDEX_FILE="$RUNNER_TEMP/planted.index"
+          git read-tree HEAD
+          for name in planted-a planted-b; do
+            blob=$(printf '# %s\n' "$name" | git hash-object -w --stdin)
+            git update-index --add --cacheinfo "100644,$blob,docs/plans/$name-plan.md"
+          done
+          planted=$(git -c user.name=plant -c user.email=plant@localhost commit-tree "$(git write-tree)" -p HEAD -m 'plant: two plans')
+          status=0
+          "$bin" single-plan --plans docs/plans --base origin/main --head "$planted" || status=$?
+          test "$status" -eq 1 || { echo "::error::repo-checks single-plan must exit 1 on two planted plans, got $status" >&2; exit 1; }
       # Root package.json `check:ci` is the one definition. Never re-enumerate its steps here.
       - name: Gate
         run: pnpm check:ci

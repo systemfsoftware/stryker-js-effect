@@ -31,10 +31,10 @@ tarball. Nothing is parked under `.changeset/changelogs/`.
 2. **Publish.** The version PR merges; CI publishes, pushes git tags, and
    creates each GitHub Release from that version's `CHANGELOG.md` section.
 
-`scripts/guards/check-changelog-sections.ts` holds every publishable
-package to exactly one section for its current version, refuses any file
-under `.changeset/changelogs/`, and fails when the storage setting is
-missing or misspelt.
+pnpm-release-management's release engine holds this: it reads
+`versioning.changelog.storage` with `pnpm config get` and refuses any value
+but `repository` or `registry`, `pnpm version -r` writes exactly one section
+per release, and only `registry` storage parks a file.
 
 ## Interruption safety
 

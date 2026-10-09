@@ -43,10 +43,9 @@ if ! git cat-file -e "$main_sha^{commit}" 2>/dev/null; then
 fi
 
 # Gate every ref being pushed: its tip must contain the remote main commit.
-deno_bin="deno"
-if ! command -v deno >/dev/null 2>&1; then
-  deno_bin="./bin/deno"
-fi
+repo_checks() {
+  nix run --no-write-lock-file "$(git rev-parse --show-toplevel)#repo-checks" -- "$@"
+}
 
 status=0
 if [ -t 0 ]; then
@@ -57,7 +56,7 @@ if [ -t 0 ]; then
   fi
 
   # Gate: allow at most ONE plan file addition in docs/plans relative to remote main.
-  if ! "$deno_bin" run --config=scripts/deno.json --allow-read --allow-run --allow-write="${TMPDIR:-/tmp}" --allow-env scripts/guards/check-single-plan.ts "$main_sha" HEAD; then
+  if ! repo_checks single-plan --plans docs/plans --base "$main_sha" --head HEAD; then
     status=1
   fi
 else
@@ -77,7 +76,7 @@ else
     fi
 
     # Gate: allow at most ONE plan file addition in docs/plans relative to remote main.
-    if ! "$deno_bin" run --config=scripts/deno.json --allow-read --allow-run --allow-write="${TMPDIR:-/tmp}" --allow-env scripts/guards/check-single-plan.ts "$main_sha" "$local_sha"; then
+    if ! repo_checks single-plan --plans docs/plans --base "$main_sha" --head "$local_sha"; then
       status=1
     fi
   done
