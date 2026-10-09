@@ -661,7 +661,7 @@ Feature('Content-keyed reuse across incremental reports')
     )
 
     scenario(
-      'A dry-run-only preflight publishes its coverage, and a run reading it through incrementalSources skips its own dry run',
+      'A dry-run-only preflight publishes its coverage, and a later run on that incremental file skips its own dry run',
       Gherkin.Do.pipe(
         Given('a workspace whose command runner appends every spawn to a log file')(
           'fixture',
@@ -689,7 +689,7 @@ Feature('Content-keyed reuse across incremental reports')
                   const spawnsAfterPreflight = yield* lineCountOf(spawnLog)
                   const preflighted = yield* runOnce(
                     root,
-                    optionsOf(root, { commandRunner, incrementalSources: ['reports/preflight.json'] }),
+                    optionsOf(root, { commandRunner, incrementalFile: `${root}/reports/preflight.json` }),
                   )
                   const spawnsAfterPreflighted = yield* lineCountOf(spawnLog)
                   return {
@@ -755,49 +755,6 @@ Feature('Content-keyed reuse across incremental reports')
           }).toEqual({
             plannedNonZero: true,
             after: { reused: s.fixture.first.mutants.length, ran: 0, refused: ZERO_REFUSALS },
-          })
-        ),
-      ),
-    )
-
-    scenario(
-      'A verdict written under another report path is reused through the incrementalSources globs',
-      Gherkin.Do.pipe(
-        Given('a workspace whose incremental report has been relocated to a shard path')(
-          'fixture',
-          () =>
-            Effect.gen(function*() {
-              const fs = yield* FileSystem.FileSystem
-              const path = yield* Path.Path
-              const root = yield* writeFixture([['src/math.ts', SOURCE]])
-              return yield* Effect.ensuring(
-                Effect.gen(function*() {
-                  const options = optionsOf(root, { incrementalSources: ['reports/shard-*.json'] })
-                  const first = yield* runOnce(root, options)
-                  yield* fs.rename(
-                    path.join(root, 'reports', 'main.json'),
-                    path.join(root, 'reports', 'shard-1.json'),
-                  )
-                  const second = yield* runOnce(root, options)
-                  return { first, second }
-                }),
-                removeFixture(root),
-              )
-            }).pipe(Effect.orDie, Effect.provide(filePorts)),
-        ),
-        Then('the second run reuses the relocated shard report instead of running the mutants again')((s, expect) =>
-          expect({
-            second: {
-              reused: s.fixture.second.reuse?.reused,
-              ran: s.fixture.second.reuse?.ran,
-              refused: s.fixture.second.reuse?.refused,
-            },
-            relocatedReportReused: (s.fixture.second.reuse?.reused ?? 0) > 0,
-            firstRanEverything: s.fixture.first.reuse?.reused === 0,
-          }).toEqual({
-            second: { reused: s.fixture.second.mutants.length, ran: 0, refused: ZERO_REFUSALS },
-            relocatedReportReused: true,
-            firstRanEverything: true,
           })
         ),
       ),

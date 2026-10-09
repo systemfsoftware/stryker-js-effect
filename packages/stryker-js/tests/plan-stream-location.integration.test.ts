@@ -36,7 +36,6 @@ const CONFIG = `export default {
   coverageAnalysis: 'perTest',
   incremental: true,
   incrementalFile: 'reports/stryker-incremental.json',
-  incrementalSources: ['reports/stryker-incremental-*.json'],
   checkers: [],
   concurrency: 1,
   reporters: [],

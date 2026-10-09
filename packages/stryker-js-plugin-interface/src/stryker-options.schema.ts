@@ -220,6 +220,25 @@ export type CheckerCustomConfig = typeof CheckerCustomConfigSchema.Type
 export const CheckerEntryConfigSchema = CheckerCustomConfigSchema
 export type CheckerEntryConfig = typeof CheckerEntryConfigSchema.Type
 
+export const FsVerdictStoreOptionsSchema = S.Struct({
+  kind: S.Literal('fs'),
+  directory: S.String,
+})
+export type FsVerdictStoreOptions = typeof FsVerdictStoreOptionsSchema.Type
+
+export const S3VerdictStoreOptionsSchema = S.Struct({
+  kind: S.Literal('s3'),
+  bucket: S.String,
+  prefix: defaulted(S.String, ''),
+  region: S.optionalKey(S.String),
+  endpoint: S.optionalKey(S.String),
+  forcePathStyle: S.optionalKey(S.Boolean),
+})
+export type S3VerdictStoreOptions = typeof S3VerdictStoreOptionsSchema.Type
+
+export const VerdictStoreOptionsSchema = S.Union([FsVerdictStoreOptionsSchema, S3VerdictStoreOptionsSchema])
+export type VerdictStoreOptions = typeof VerdictStoreOptionsSchema.Type
+
 // ---------------------------------------------------------------------------
 // The option set
 // ---------------------------------------------------------------------------
@@ -248,8 +267,8 @@ export const StrykerOptionsSchema = S.StructWithRest(
     ignoreStatic: defaulted(S.Boolean, false),
     incremental: defaulted(S.Boolean, true),
     incrementalFile: defaulted(S.String, 'reports/stryker-incremental.json'),
-    incrementalSources: defaulted(S.Array(S.String), []),
     progressStreamFile: defaulted(S.String, 'reports/mutation-stream.jsonl'),
+    verdictStore: defaulted(VerdictStoreOptionsSchema, { kind: 'fs', directory: 'reports/stryker-verdicts' }),
     since: S.optionalKey(S.String),
     force: defaulted(S.Boolean, false),
     fileLogLevel: defaulted(LogLevel, StrykerFileLogLevel.literal),

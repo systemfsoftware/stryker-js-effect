@@ -7,8 +7,6 @@ const isCI = !isAgent && typeof process.env['CI'] === 'string' && process.env['C
 const envConcurrency = process.env['STRYKER_CONCURRENCY'] ??
   (isAgent ? '50%' : isCI ? '100%' : undefined)
 
-const restoredShardReports = ['reports/stryker-incremental-*.json']
-
 export const sharedConfig = {
   packageManager: 'pnpm',
   reporters: isAgent || isCI ? ['json', 'html'] : ['progress', 'html', 'json'],
@@ -17,7 +15,6 @@ export const sharedConfig = {
   coverageAnalysis: 'perTest',
   incremental: true,
   incrementalFile: 'reports/stryker-incremental.json',
-  incrementalSources: [...restoredShardReports],
   ignorePatterns: ['reports', 'coverage'],
   cleanTempDir: 'always',
   thresholds: { high: 100, low: 80, break: 100 },
