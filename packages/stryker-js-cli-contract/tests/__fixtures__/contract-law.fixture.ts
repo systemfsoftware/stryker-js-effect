@@ -149,20 +149,14 @@ const changeFailuresOf = (context: {
     declaredVersion: context.declaredVersion,
   }))
 
-const staleBaselineFailureOf = (context: {
-  readonly pkg: PackageContracts
-  readonly pending: readonly ChangeIntent[]
-}): readonly StaleBaselineFailure[] =>
-  context.pkg.committedVersion === context.pkg.releasedVersion || context.pending.length === 0
-    ? []
-    : [{
-      kind: 'stale-baseline',
-      package: context.pkg.name,
-      reason:
-        `the workspace declares ${context.pkg.committedVersion} while the released documents come from ${context.pkg.releasedVersion} and a changeset for ${context.pkg.name} is pending: move the stryker-published flake input to the latest release tag and reinstall`,
-      releasedVersion: context.pkg.releasedVersion,
-      committedVersion: context.pkg.committedVersion,
-    }]
+const staleBaselineFailureOf = (pkg: PackageContracts): readonly StaleBaselineFailure[] => [{
+  kind: 'stale-baseline',
+  package: pkg.name,
+  reason:
+    `the workspace declares ${pkg.committedVersion} while the released documents come from ${pkg.releasedVersion}, so they cannot bound what the next release of ${pkg.name} may change: move the stryker-published flake input to the latest release tag and reinstall`,
+  releasedVersion: pkg.releasedVersion,
+  committedVersion: pkg.committedVersion,
+}]
 
 const failuresForDocument = (context: {
   readonly pkg: PackageContracts
@@ -209,20 +203,22 @@ const failuresForPackage = (
   const requiredVersion = releasedMajor > 0 ? nextMajorOf(pkg.releasedVersion) : nextMinorOf(pkg.releasedVersion)
   const cleared = compareVersions({ left: declaredVersion, right: requiredVersion }) >= 0
 
-  const changes = documentNamesOf(pkg).flatMap((name) =>
-    failuresForDocument({
-      pkg,
-      documentPath: `${pkg.directory}/contract/${name}`,
-      released: documentNamed(pkg.releasedDocuments, name),
-      committed: documentNamed(pkg.committedDocuments, name),
-      cleared,
-      requiredLevel,
-      requiredVersion,
-      declaredVersion,
-    })
-  )
+  const changesWhen = (forgiven: boolean): readonly ContractVersionFailure[] =>
+    documentNamesOf(pkg).flatMap((name) =>
+      failuresForDocument({
+        pkg,
+        documentPath: `${pkg.directory}/contract/${name}`,
+        released: documentNamed(pkg.releasedDocuments, name),
+        committed: documentNamed(pkg.committedDocuments, name),
+        cleared: forgiven,
+        requiredLevel,
+        requiredVersion,
+        declaredVersion,
+      })
+    )
 
-  return [...staleBaselineFailureOf({ pkg, pending }), ...changes]
+  if (pkg.committedVersion === pkg.releasedVersion) return changesWhen(cleared)
+  return pending.length > 0 || changesWhen(false).length > 0 ? staleBaselineFailureOf(pkg) : []
 }
 
 export const evaluateContractLaw = (input: ContractLawInput): readonly ContractVersionFailure[] =>

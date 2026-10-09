@@ -50,6 +50,21 @@ const PackageManifest = S.Struct({ version: S.String })
 
 const JsonManifest = S.fromJsonString(PackageManifest)
 
+const ShippedManifest = S.fromJsonString(S.Struct({ name: S.String, files: S.String.pipe(S.Array, S.optional) }))
+
+const WorkspaceManifest = S.Struct({ packages: S.Array(S.String) })
+
+export const decodeShippedManifest = (
+  text: string,
+): Result.Result<{ readonly name: string; readonly files: readonly string[] }, S.SchemaError> =>
+  Result.map(S.decodeResult(ShippedManifest)(text), (manifest) => ({
+    name: manifest.name,
+    files: manifest.files ?? [],
+  }))
+
+export const decodeWorkspaceGlobs = (yamlText: string): Result.Result<readonly string[], S.SchemaError> =>
+  Result.map(S.decodeUnknownResult(WorkspaceManifest)(parse(yamlText)), (workspace) => workspace.packages)
+
 const isBump = (value: unknown): value is Bump => typeof value === 'string' && BUMPS.includes(value)
 
 const frontMatterOf = (markdown: string): string | undefined => {
