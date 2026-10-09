@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 env:
-  TARGET_SECONDS: 300
+  TARGET_SECONDS: 200
   MAX_SHARDS: 20
   PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,test/e2e-core
   PUBLISHED_CLI: ${{ github.workspace }}/packages/stryker-js/node_modules/.bin/stryker
