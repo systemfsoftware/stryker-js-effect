@@ -148,7 +148,7 @@ const nodePlatform = makeNodePlatformLayer({ childEnv: compileCacheChildEnv })
 
 const probeGroup = Layer.mergeAll(
   outputModeProbeLayer,
-  portLayer.pipe(Layer.provide(fileDrainLayer)),
+  portLayer,
   fileDrainLayer,
 ).pipe(Layer.provide(nodePlatform))
 
