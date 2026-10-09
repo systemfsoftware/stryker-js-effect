@@ -13,11 +13,9 @@ import {
   CheckerAnsweredUnrequested,
   CheckerSkippedRequested,
 } from '../admit-checker-answer.workflow.js'
-import { checkerMutantsSkipped } from './Checker.handle.js'
+import { checkerMutantsSkipped, type CheckerRequest, type CheckRaw } from './Checker.handle.js'
 import {
   type CheckedPlansResult,
-  type CheckerRequest,
-  type CheckRaw,
   commandFailed,
   compileErrorAnswersOf,
   describeCommandOf,
