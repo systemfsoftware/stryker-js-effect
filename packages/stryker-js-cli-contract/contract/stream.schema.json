@@ -14,7 +14,14 @@
       "$ref": "#/definitions/workerEncoded"
     },
     {
-      "$ref": "#/definitions/mutantTestedEncoded"
+      "anyOf": [
+        {
+          "$ref": "#/definitions/RunMutantIgnoredEncoded"
+        },
+        {
+          "$ref": "#/definitions/RunMutantSettledEncoded"
+        }
+      ]
     },
     {
       "$ref": "#/definitions/tickEncoded"
@@ -66,7 +73,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "runId": {
@@ -368,7 +375,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "role": {
@@ -396,7 +403,7 @@
       ],
       "additionalProperties": true
     },
-    "mutantTestedEncoded": {
+    "RunMutantIgnoredEncoded": {
       "type": "object",
       "properties": {
         "_tag": {
@@ -408,19 +415,6 @@
         "id": {
           "type": "string",
           "pattern": "^[0-9a-f]{16}$"
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "Killed",
-            "Survived",
-            "NoCoverage",
-            "CompileError",
-            "RuntimeError",
-            "Timeout",
-            "Ignored",
-            "Pending"
-          ]
         },
         "file": {
           "type": "string",
@@ -530,12 +524,21 @@
               "type": "null"
             }
           ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Ignored"
+          ]
+        },
+        "statusReason": {
+          "type": "string",
+          "pattern": "^(?:arid-logging|arid-telemetry|arid-time|arid-config-default|arid-memoization|redundant-relational|equivalent-to-original|duplicate-at-site|ignore-static|directive|excluded-mutator|ignorer): [\\s\\S]*$"
         }
       },
       "required": [
         "_tag",
         "id",
-        "status",
         "file",
         "location",
         "mutator",
@@ -543,7 +546,170 @@
         "completed",
         "total",
         "static",
-        "cost"
+        "cost",
+        "status",
+        "statusReason"
+      ],
+      "additionalProperties": true
+    },
+    "RunMutantSettledEncoded": {
+      "type": "object",
+      "properties": {
+        "_tag": {
+          "type": "string",
+          "enum": [
+            "mutant"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^[^\\\\]+$"
+        },
+        "location": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "object",
+              "properties": {
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "column": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "line",
+                "column"
+              ],
+              "additionalProperties": true
+            },
+            "end": {
+              "type": "object",
+              "properties": {
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "column": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "line",
+                "column"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": true
+        },
+        "mutator": {
+          "type": "string",
+          "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+        },
+        "replacement": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "static": {
+          "type": "boolean"
+        },
+        "cost": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "fixedOverheadMs": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "testBodyMs": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "testsExecuted": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "shared": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "fixedOverheadMs",
+                "testBodyMs",
+                "testsExecuted",
+                "shared"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Killed",
+            "Survived",
+            "NoCoverage",
+            "CompileError",
+            "RuntimeError",
+            "Timeout",
+            "Pending"
+          ]
+        },
+        "statusReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "_tag",
+        "id",
+        "file",
+        "location",
+        "mutator",
+        "replacement",
+        "completed",
+        "total",
+        "static",
+        "cost",
+        "status",
+        "statusReason"
       ],
       "additionalProperties": true
     },
@@ -1012,7 +1178,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "runId": {
@@ -1320,7 +1486,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "code": {
@@ -1465,7 +1631,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "code": {
@@ -1502,7 +1668,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "rule": {

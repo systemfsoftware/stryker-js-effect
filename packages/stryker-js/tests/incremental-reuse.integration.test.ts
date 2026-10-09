@@ -25,6 +25,16 @@ const SOURCE = [
   '',
 ].join('\n')
 
+const LOGGING_SOURCE = "export const log = (value: number): void => console.log('value', value)\n"
+
+interface ReasonedMutant {
+  readonly status: string
+  readonly statusReason?: string | null | undefined
+}
+
+const ignoredReasonsOf = (mutants: ReadonlyArray<ReasonedMutant>): readonly string[] =>
+  mutants.filter((mutant) => mutant.status === 'Ignored').map((mutant) => mutant.statusReason ?? '').sort()
+
 const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
@@ -38,6 +48,7 @@ interface RecordedMutant {
   readonly id: string
   readonly status: string
   readonly statusReason?: string | undefined
+  readonly remembered?: boolean | undefined
 }
 
 const mutantsOf = (text: string): readonly RecordedMutant[] =>
@@ -419,7 +430,7 @@ interface CostedMutant {
 
 const costedMutantsOf = (events: ReadonlyArray<RunEvent.RunEvent>): readonly CostedMutant[] =>
   events.flatMap((event) =>
-    S.is(RunEvent.RunMutantTestedEvent)(event)
+    S.is(RunEvent.RunMutantTested)(event)
       ? [{
         id: event.id,
         status: event.status,
@@ -564,6 +575,54 @@ Feature('Content-keyed reuse across incremental reports')
             everyMutantCarriesAClosureDigest: true,
           })
         }),
+      ),
+    )
+
+    scenario(
+      'A reused Ignored mutant keeps its ignore rule, and the record marks it as remembered in a field of its own',
+      Gherkin.Do.pipe(
+        Given('a workspace whose logging call yields an arid-logging mutant, run twice without change')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writeFixture([['src/math.ts', `${SOURCE}${LOGGING_SOURCE}`]])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = optionsOf(root)
+                  const first = yield* runOnce(root, options)
+                  const second = yield* runOnce(root, options)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then(
+          'the second run names the same rule on the stream and in the record, and marks exactly its reused verdicts',
+        )(
+          (s, expect) => {
+            const firstReasons = ignoredReasonsOf(s.fixture.first.mutants)
+            const secondLines = s.fixture.second.events.filter((event): event is RunEvent.RunMutantTested =>
+              S.is(RunEvent.RunMutantTested)(event)
+            )
+            return expect({
+              firstRuleNamed: firstReasons.length > 0 &&
+                firstReasons.every((reason) => reason.startsWith('arid-logging: ')),
+              secondRecord: ignoredReasonsOf(s.fixture.second.mutants),
+              secondStream: ignoredReasonsOf(secondLines),
+              firstRemembered: s.fixture.first.mutants.filter((mutant) => mutant.remembered === true).length,
+              secondRemembered: s.fixture.second.mutants.filter((mutant) => mutant.remembered === true).length,
+              everyLineMarked: s.fixture.second.mutants.every((mutant) => typeof mutant.remembered === 'boolean'),
+            }).toEqual({
+              firstRuleNamed: true,
+              secondRecord: firstReasons,
+              secondStream: firstReasons,
+              firstRemembered: 0,
+              secondRemembered: s.fixture.second.reuse?.reused,
+              everyLineMarked: true,
+            })
+          },
+        ),
       ),
     )
 
@@ -1139,7 +1198,7 @@ Feature('Content-keyed reuse across incremental reports')
             const reusedIdsOf = (observation: RunObservation): ReadonlySet<string> =>
               new Set(
                 observation.mutants
-                  .filter((mutant) => mutant.statusReason === 'Remembered')
+                  .filter((mutant) => mutant.remembered === true)
                   .map((mutant) => mutant.id),
               )
             const firstStatuses = statusMapOf(s.fixture.first.mutants)
@@ -1214,7 +1273,7 @@ Feature('Content-keyed reuse across incremental reports')
             const reusedIdsOf = (observation: RunObservation): ReadonlySet<string> =>
               new Set(
                 observation.mutants
-                  .filter((mutant) => mutant.statusReason === 'Remembered')
+                  .filter((mutant) => mutant.remembered === true)
                   .map((mutant) => mutant.id),
               )
             const firstStatuses = statusMapOf(s.fixture.first.mutants)
@@ -1280,7 +1339,7 @@ Feature('Content-keyed reuse across incremental reports')
       const leftIds = firstReport === undefined ? [] : mutantIdsInOf(firstReport, 'src/left.mjs')
       const reusedIds = new Set(
         variation.second.mutants
-          .filter((mutant) => mutant.statusReason === 'Remembered')
+          .filter((mutant) => mutant.remembered === true)
           .map((mutant) => mutant.id),
       )
       const firstStatuses = statusMapOf(variation.first.mutants)

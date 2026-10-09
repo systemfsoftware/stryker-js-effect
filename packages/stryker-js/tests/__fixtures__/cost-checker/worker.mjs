@@ -9,7 +9,7 @@ import * as Layer from 'effect/Layer'
 const REJECTED_FILE = 'src/lib/rejected.ts'
 const REJECTION_REASON = 'rejected by the fixture checker'
 const IGNORED_FILE = 'src/lib/ignored.ts'
-const IGNORE_REASON = 'ignored by the fixture checker'
+const IGNORE_REASON = 'equivalent-to-original: the fixture checker ignores this module'
 
 const isFile = (mutant, file) => mutant.fileName === file || mutant.fileName.endsWith(`/${file}`)
 

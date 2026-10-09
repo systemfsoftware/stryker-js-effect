@@ -28,21 +28,20 @@ export class ReportFromStreamAbsent extends S.TaggedClass<ReportFromStreamAbsent
   readonly [ReportFromStreamTypeId] = ReportFromStreamTypeId
 }
 
-const mutantFromStream = (line: RunEvent.RunMutantTested) => {
-  const mutant = {
-    id: line.id,
-    mutatorName: line.mutatorName,
-    status: line.status,
-    location: line.location,
-  }
-  return Option.match(
-    Option.liftPredicate(line.replacement, (value) => typeof value === 'string'),
-    {
-      onNone: () => mutant,
-      onSome: (replacement) => ({ ...mutant, replacement }),
-    },
-  )
-}
+const presentText = (field: string, value: string | null): Readonly<Record<string, string>> =>
+  Option.match(Option.fromNullOr(value), {
+    onNone: () => ({}),
+    onSome: (present) => ({ [field]: present }),
+  })
+
+const mutantFromStream = (line: RunEvent.RunMutantTested): Report.MutantResult => ({
+  id: line.id,
+  mutatorName: line.mutatorName,
+  status: line.status,
+  location: line.location,
+  ...presentText('replacement', line.replacement),
+  ...presentText('statusReason', line.statusReason),
+})
 
 const decodeLineText = S.decodeOption(S.fromJsonString(RunEvent.RunMutantTested))
 

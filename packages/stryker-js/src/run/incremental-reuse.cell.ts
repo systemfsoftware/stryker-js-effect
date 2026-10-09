@@ -96,6 +96,7 @@ const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
     file.mutants.map((mutant): PreviousReuseRecord => ({
       mutantId: mutant.id,
       status: mutant.status,
+      ...optionalField('statusReason', mutant.statusReason),
       ...digestField(mutant.closureDigest),
       ...optionalField('programDigest', mutant.programDigest),
       engineDigest: report.engineDigest,
@@ -418,8 +419,6 @@ const mutantToRunPart = Effect.fnUntraced(function*(
   })
 })
 
-const REMEMBERED_REASON = 'Remembered'
-
 const rememberedStatusOf = (entry: typeof MutantRemembered.Encoded) =>
   S.decodeEffect(Mutant.MutantStatusSchema)(entry.status)
 
@@ -443,7 +442,7 @@ const rememberedResultOf = (
   ...mutant,
   location: mutant.location,
   status,
-  statusReason: REMEMBERED_REASON,
+  statusReason: entry.statusReason,
   testsCompleted: entry.testsCompleted,
   ...rememberedCoveredBy(entry),
   ...rememberedKilledBy(entry),

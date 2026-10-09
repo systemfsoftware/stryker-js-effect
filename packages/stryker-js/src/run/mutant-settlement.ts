@@ -271,6 +271,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     ...reportingInputOf({ prev: basis, env, results: allResults }),
     closureDigestsByMutantId: settlement.closureDigestsByMutantId,
     timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
+    rememberedMutantIds: reuse.rememberedResults.map((result) => result.id),
     ...optionalField('programDigest', reuse.programDigest),
   })
   yield* Fiber.await(checkerRelease)

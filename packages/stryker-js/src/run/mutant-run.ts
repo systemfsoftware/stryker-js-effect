@@ -78,6 +78,8 @@ const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, re
 const costLineOf = (result: Mutant.RunMutantResult): RunEvent.MutantCost | null =>
   Option.getOrNull(Option.map(Option.fromUndefinedOr(result.cost), (cost) => RunEvent.MutantCost.make(cost)))
 
+const decodeMutantLine = S.decodeUnknownEffect(S.Union([RunEvent.RunMutantIgnored, RunEvent.RunMutantSettled]))
+
 const offerFinished = Effect.fnUntraced(function*(
   context: RunContext,
   result: Mutant.RunMutantResult,
@@ -88,21 +90,21 @@ const offerFinished = Effect.fnUntraced(function*(
     onSome: (streamable) =>
       Effect.gen(function*() {
         const completed = yield* Ref.updateAndGet(context.completedRef, (n) => n + 1)
-        yield* Queue.offer(
-          context.progressQueue,
-          RunEvent.RunMutantTestedEvent.make({
-            id: result.id,
-            status: streamable.status,
-            fileName: streamable.file,
-            location: streamable.location,
-            mutatorName: result.mutatorName,
-            replacement: result.replacement,
-            completed,
-            total: context.plannedTotal,
-            static: result.static ?? false,
-            cost: costLineOf(result),
-          }),
-        )
+        const line = yield* decodeMutantLine({
+          _tag: 'mutantTested',
+          id: result.id,
+          status: streamable.status,
+          statusReason: result.statusReason ?? null,
+          fileName: streamable.file,
+          location: streamable.location,
+          mutatorName: result.mutatorName,
+          replacement: result.replacement,
+          completed,
+          total: context.plannedTotal,
+          static: result.static ?? false,
+          cost: costLineOf(result),
+        }).pipe(Effect.orDie)
+        yield* Queue.offer(context.progressQueue, line)
         return Option.some(completed)
       }),
   })

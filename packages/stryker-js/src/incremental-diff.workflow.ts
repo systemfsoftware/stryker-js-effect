@@ -43,6 +43,7 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
 export class MutantRemembered extends S.TaggedClass<MutantRemembered>()('MutantRemembered', {
   mutantId: Mutant.MutantId,
   status: Mutant.RememberedStatusSchema,
+  statusReason: S.optional(S.String),
   timeoutKind: S.optional(TimeoutKindSchema),
   reproductions: S.optional(S.Natural),
   testsCompleted: S.optional(S.Finite),
@@ -189,6 +190,10 @@ const rememberedOf = (mutant: Mutant.Mutant, record: RememberedReuseRecord) =>
   MutantRemembered.make({
     mutantId: mutant.id,
     status: record.status,
+    ...Option.match(Option.fromUndefinedOr(record.statusReason), {
+      onNone: () => ({}),
+      onSome: (statusReason) => ({ statusReason }),
+    }),
     ...Option.match(Option.fromUndefinedOr(record.timeoutKind), {
       onNone: () => ({}),
       onSome: (timeoutKind) => ({ timeoutKind }),

@@ -11,12 +11,19 @@ const LOCATION = '"location":{"start":{"line":1,"column":1},"end":{"line":1,"col
 
 const COST = '{"fixedOverheadMs":1,"testBodyMs":2,"testsExecuted":1,"shared":false}'
 
-const WORKER = '{"_tag":"worker","schemaVersion":"6.0","role":"testRunner","index":0,"startupMs":12.5}'
+const WORKER = '{"_tag":"worker","schemaVersion":"7.0","role":"testRunner","index":0,"startupMs":12.5}'
 
-const mutantLine = (status: string, file: string | null, cost: string): string =>
+const NO_REASON = 'null'
+
+const mutantLine = (status: string, file: string | null, cost: string, reason: string = NO_REASON): string =>
   `{"_tag":"mutant","id":"0000000000000001","status":"${status}",${
     file === null ? '' : `"file":"${file}",`
-  }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${cost}}`
+  }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${cost},"statusReason":${reason}}`
+
+const reasonOf = (line: string): string | null => {
+  const decoded = S.decodeResult(RunEvent.RunEventWireLine)(line)
+  return Result.isSuccess(decoded) && decoded.success._tag === 'mutantTested' ? decoded.success.statusReason : null
+}
 
 const refusalOf = (line: string): string => {
   const decoded = S.decodeResult(RunEvent.RunEventWireLine)(line)
@@ -89,7 +96,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
             Effect.sync(() => ({
               present: mutantLine('Killed', 'src/a.ts', COST),
               absent:
-                `{"_tag":"mutant","id":"0000000000000001","status":"Killed","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false}`,
+                `{"_tag":"mutant","id":"0000000000000001","status":"Killed","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"statusReason":null}`,
             })),
         ),
         When('each line is decoded through the wire codec')(
@@ -100,6 +107,65 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           expect(s.outcomes).toEqual({
             present: 'accepted: mutantTested',
             absent: expect.stringMatching(/^refused:[\s\S]*cost/),
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'An Ignored mutant line must name the ignore rule that removed it',
+      Gherkin.Do.pipe(
+        Given('Ignored lines with a rule reason, with none, and with a rule outside the vocabulary')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              named: mutantLine('Ignored', 'src/a.ts', 'null', '"arid-logging: Effect.logInfo"'),
+              unnamed: mutantLine('Ignored', 'src/a.ts', 'null'),
+              outsideVocabulary: mutantLine('Ignored', 'src/a.ts', 'null', '"made-up-rule: x"'),
+              bareRule: mutantLine('Ignored', 'src/a.ts', 'null', '"arid-logging"'),
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'outcomes',
+          (s) => Effect.sync(() => refusalsOf(s.probes)),
+        ),
+        Then('only the line naming a vocabulary rule is accepted')((s, expect) =>
+          expect(s.outcomes).toEqual({
+            named: 'accepted: mutantTested',
+            unnamed: expect.stringMatching(/^refused:/),
+            outsideVocabulary: expect.stringMatching(/^refused:/),
+            bareRule: expect.stringMatching(/^refused:/),
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Any other status carries a free-form reason or none, and the reason survives the codec',
+      Gherkin.Do.pipe(
+        Given('a Killed line with no reason and a Timeout line naming its timeout kind')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              killed: mutantLine('Killed', 'src/a.ts', COST),
+              timeout: mutantLine('Timeout', 'src/a.ts', COST, '"wall-clock-timeout"'),
+              ignored: mutantLine('Ignored', 'src/a.ts', 'null', '"duplicate-at-site: tce"'),
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'reasons',
+          (s) =>
+            Effect.sync(() => ({
+              killed: reasonOf(s.probes.killed),
+              timeout: reasonOf(s.probes.timeout),
+              ignored: reasonOf(s.probes.ignored),
+            })),
+        ),
+        Then('each decoded line keeps the reason it was written with')((s, expect) =>
+          expect(s.reasons).toEqual({
+            killed: null,
+            timeout: 'wall-clock-timeout',
+            ignored: 'duplicate-at-site: tce',
           })
         ),
       ),
@@ -130,7 +196,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           () =>
             Effect.sync(() => ({
               declared: WORKER,
-              undeclared: '{"_tag":"worker","schemaVersion":"6.0","role":"testRunner","index":0}',
+              undeclared: '{"_tag":"worker","schemaVersion":"7.0","role":"testRunner","index":0}',
             })),
         ),
         When('each line is decoded through the wire codec')(

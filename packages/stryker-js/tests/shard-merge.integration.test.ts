@@ -34,6 +34,7 @@ const CONFIG = `export default {
 interface Verdict {
   readonly id: string
   readonly status: string
+  readonly reason: string
 }
 
 interface ExecOutcome {
@@ -73,7 +74,7 @@ const decodeTested = S.decodeUnknownOption(S.fromJsonString(RunEvent.RunMutantTe
 const verdictsOfStream = (text: string): readonly Verdict[] =>
   text.split('\n')
     .flatMap((line) => Option.toArray(decodeTested(line.trim())))
-    .map((tested): Verdict => ({ id: tested.id, status: tested.status }))
+    .map((tested): Verdict => ({ id: tested.id, status: tested.status, reason: tested.statusReason ?? '' }))
 
 const decodeReport = S.decodeUnknownOption(S.fromJsonString(Report.MutationTestResult))
 
@@ -82,7 +83,11 @@ const verdictsOfReport = (text: string): readonly Verdict[] =>
     onNone: () => [],
     onSome: (report) =>
       Object.values(report.files).flatMap((file) =>
-        file.mutants.map((mutant): Verdict => ({ id: mutant.id, status: mutant.status }))
+        file.mutants.map((mutant): Verdict => ({
+          id: mutant.id,
+          status: mutant.status,
+          reason: mutant.statusReason ?? '',
+        }))
       ),
   })
 
@@ -135,6 +140,7 @@ const prepareFixture = (): Effect.Effect<
     yield* fs.makeDirectory(path.join(root, 'src'))
     yield* fs.writeFileString(path.join(root, 'package.json'), CONSUMER_PACKAGE)
     yield* fs.writeFileString(path.join(root, 'src', 'add.js'), 'export const add = (a, b) => a + b\n')
+    yield* fs.writeFileString(path.join(root, 'src', 'log.js'), "export const log = (a) => console.log('adding', a)\n")
     yield* fs.writeFileString(path.join(root, 'stryker.config.mjs'), CONFIG)
     const ran = yield* spawnCli(root, ['run'])
     yield* Effect.when(
@@ -218,7 +224,15 @@ const runAndMerge = (
 
 const statusMapOf = (verdicts: readonly Verdict[]): Readonly<Record<string, string>> =>
   Object.fromEntries(
-    [...verdicts].sort((left, right) => left.id.localeCompare(right.id)).map((verdict) => [verdict.id, verdict.status]),
+    [...verdicts].sort((left, right) => left.id.localeCompare(right.id)).map((verdict) => [
+      verdict.id,
+      `${verdict.status} ${verdict.reason}`,
+    ]),
+  )
+
+const ruleReasonsOf = (verdicts: readonly Verdict[]): readonly string[] =>
+  Arr.dedupe(
+    verdicts.flatMap((verdict) => verdict.status === 'Ignored' ? [verdict.reason.split(':')[0] ?? ''] : []),
   )
 
 const decodeVerdictLine = S.decodeUnknownOption(S.fromJsonString(RunEvent.VerdictReached))
@@ -293,15 +307,16 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
   .live('the built stryker binary runs a two-shard plan and merges it')
   .body(({ scenario }) => {
     scenario(
-      'A two-shard plan merge equals the unsharded statuses and a doctored plan fails naming the duplicated id',
+      'A two-shard plan merge equals the unsharded statuses and reasons, and a doctored plan fails naming the duplicated id',
       Gherkin.Do.pipe(
         Given('a fixture whose unsharded run and two-shard plan are prepared')('fixture', () => prepareFixture()),
         When('the shards run and merge, and a doctored plan is merged')('outcome', (s) => runAndMerge(s.fixture)),
-        Then('the merged statuses and costs cover every mutant and the doctored merge fails naming the id')(
+        Then('the merged statuses, reasons, and costs cover every mutant and the doctored merge fails naming the id')(
           (s, expect) =>
             expect({
               merged: statusMapOf(s.outcome.merged),
               mergedCostIds: s.outcome.mergedCostIds,
+              mergedIgnoredRules: ruleReasonsOf(s.outcome.merged),
               unsharded: statusMapOf(s.fixture.unsharded),
               unshardedIds: s.fixture.ids,
               doctoredFailed: s.outcome.doctored.exitCode !== 0,
@@ -309,6 +324,7 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
             }).toEqual({
               merged: statusMapOf(s.fixture.unsharded),
               mergedCostIds: s.fixture.ids,
+              mergedIgnoredRules: ['arid-logging'],
               unsharded: statusMapOf(s.fixture.unsharded),
               unshardedIds: s.fixture.ids,
               doctoredFailed: true,
