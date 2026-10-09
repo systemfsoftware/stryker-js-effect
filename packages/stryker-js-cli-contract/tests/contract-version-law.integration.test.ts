@@ -12,6 +12,8 @@ import {
   type ChangeIntent,
   type ChangesetFile,
   decodePackageVersion,
+  decodeShippedManifest,
+  decodeWorkspaceGlobs,
   pendingIntentsOf,
 } from './__fixtures__/changeset-intents.fixture.js'
 import { decodeJsonDocument } from './__fixtures__/contract-compat.fixture.js'
@@ -41,6 +43,8 @@ const CHANGESET_README = 'README.md'
 const JSON_EXTENSION = '.json'
 const MARKDOWN_EXTENSION = '.md'
 const MANIFEST_FILE = 'package.json'
+const WORKSPACE_MANIFEST = 'pnpm-workspace.yaml'
+const DIRECTORY_GLOB = '/*'
 const NODE_MODULES = 'node_modules'
 const STREAM_DOCUMENT = 'stream.schema.json'
 const REPORT_DOCUMENT = 'report.schema.json'
@@ -127,6 +131,37 @@ const readWorkspace = () =>
       })
     }
     return { packages, pendingIntents: yield* readPendingIntents(path.join(repositoryRoot, CHANGESET_DIRECTORY)) }
+  })
+
+const readContractShippingPackages = () =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const repositoryRoot = yield* path.fromFileUrl(new URL('../../../', import.meta.url))
+    const globs = decodeWorkspaceGlobs(yield* fs.readFileString(path.join(repositoryRoot, WORKSPACE_MANIFEST)))
+    if (Result.isFailure(globs)) {
+      return yield* Effect.die(new Error(`cannot read the workspace package globs: ${globs.failure.message}`))
+    }
+    const shipping: string[] = []
+    for (const glob of globs.success) {
+      if (!glob.endsWith(DIRECTORY_GLOB)) {
+        return yield* Effect.die(new Error(`the workspace glob ${glob} is not a <directory>/* glob the law can expand`))
+      }
+      const parent = path.join(repositoryRoot, glob.slice(0, -DIRECTORY_GLOB.length))
+      for (const entry of yield* fs.readDirectory(parent)) {
+        const packageDirectory = path.join(parent, entry)
+        const manifestPath = path.join(packageDirectory, MANIFEST_FILE)
+        const isDirectory = (yield* fs.stat(packageDirectory)).type === 'Directory'
+        if (isDirectory && (yield* fs.exists(manifestPath))) {
+          const manifest = decodeShippedManifest(yield* fs.readFileString(manifestPath))
+          if (Result.isFailure(manifest)) {
+            return yield* Effect.die(new Error(`cannot read ${manifestPath}: ${manifest.failure.message}`))
+          }
+          if (manifest.success.files.includes(CONTRACT_DIRECTORY)) shipping.push(manifest.success.name)
+        }
+      }
+    }
+    return shipping.sort()
   })
 
 const streamDocument = (options: { readonly schemaVersion: string; readonly pid: boolean }): Json => ({
@@ -238,6 +273,16 @@ const staleBaseline: LawScenario = {
   pendingIntents: [{ package: PLUGIN_INTERFACE, bump: 'patch' }],
 }
 
+const laggingPinNarrowing: LawScenario = {
+  package: PLUGIN_INTERFACE,
+  directory: PLUGIN_INTERFACE_DIRECTORY,
+  releasedVersion: '15.0.0',
+  committedVersion: '16.0.0',
+  releasedDocuments: [{ name: REPORT_DOCUMENT, document: schemaDocument({ testFiles: true, wideLevel: true }) }],
+  committedDocuments: [{ name: REPORT_DOCUMENT, document: schemaDocument({ testFiles: false, wideLevel: true }) }],
+  pendingIntents: [],
+}
+
 Feature('The released contract documents bound what the workspace may declare next')
   .withLayer(platformLayer)
   .body(({ scenario, scenarioOutline }) => {
@@ -249,12 +294,21 @@ Feature('The released contract documents bound what the workspace may declare ne
           'workspace',
           () => readWorkspace(),
         ),
+        Given('every workspace package whose manifest ships a contract directory')(
+          'shipping',
+          () => readContractShippingPackages(),
+        ),
         When('the version law weighs each committed document against the released one')(
           'failures',
           (s) => Effect.succeed(evaluateContractLaw(s.workspace).map(renderFailure)),
         ),
-        Then('no document is narrower than its release without a declared next version that clears it')(
-          (s, expect) => expect(s.failures).toEqual([]),
+        Then(
+          'every package that ships a contract directory is weighed, and none is narrower than its release without a declared next version that clears it',
+        )((s, expect) =>
+          expect({ weighed: s.workspace.packages.map((pkg) => pkg.name).sort(), failures: s.failures }).toEqual({
+            weighed: s.shipping,
+            failures: [],
+          })
         ),
       ),
     )
@@ -466,6 +520,30 @@ Feature('The released contract documents bound what the workspace may declare ne
               reason: expect.stringContaining('move the stryker-published flake input to the latest release tag'),
               releasedVersion: '15.0.0',
               committedVersion: '15.1.0',
+            }]),
+        ),
+      ),
+    )
+
+    scenario(
+      'A released baseline behind the workspace version refuses a narrowing no changeset declares',
+      Gherkin.Do.pipe(
+        Given('a workspace a major ahead of the released documents, a dropped member, and no pending intent')(
+          'law',
+          () => Effect.succeed(lawInputOf(laggingPinNarrowing)),
+        ),
+        When('the law weighs the committed documents against the stale released ones')(
+          'failures',
+          (s) => Effect.succeed(evaluateContractLaw(s.law)),
+        ),
+        Then('the stale baseline is named instead of the workspace version clearing the narrowing')(
+          (s, expect) =>
+            expect(s.failures).toEqual([{
+              kind: 'stale-baseline',
+              package: PLUGIN_INTERFACE,
+              reason: expect.stringContaining('move the stryker-published flake input to the latest release tag'),
+              releasedVersion: '15.0.0',
+              committedVersion: '16.0.0',
             }]),
         ),
       ),
