@@ -5,11 +5,11 @@ import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 
+import type { RunFilter } from './drivers/vitest-runner.js'
 import { interpretVitestMutantRun } from './interpret-vitest-mutant-run.workflow.js'
 import type { VitestTestRecord } from './vitest-run-command.schema.js'
 import { interpretVitestTestRun } from './vitest-test-run.js'
 import type { VitestRunnerOptions } from './VitestRunner.schema.js'
-import type { RunFilter } from './VitestRunner.service.js'
 import { VitestSession } from './VitestSession.service.js'
 
 /** What one mutant run needs from the runner: raw collection, hit harvesting and the trap options. */
