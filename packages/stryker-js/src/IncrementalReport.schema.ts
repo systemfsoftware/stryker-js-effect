@@ -48,7 +48,7 @@ export const IncrementalReportSchema = S.StructWithRest(
   S.Struct({
     incrementalVersion: S.String,
     schemaVersion: S.String,
-    verdictSemanticsVersion: S.Int,
+    engineDigest: S.String,
     mutantSetPolicy: Options.MutantSetPolicy,
     runInputsDigest: S.String,
     thresholds: ThresholdsLikeSchema,

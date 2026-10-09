@@ -50,11 +50,14 @@
     "@types/node": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",
+    "released-stryker-js-cli-contract": "file:../../.sfs-deps/stryker-js-cli-contract.tgz",
+    "released-stryker-js-plugin-interface": "file:../../.sfs-deps/stryker-js-plugin-interface.tgz",
     "rimraf": "catalog:",
     "tsdown": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "yaml": "catalog:"
   },
   "publishConfig": {
     "access": "public",

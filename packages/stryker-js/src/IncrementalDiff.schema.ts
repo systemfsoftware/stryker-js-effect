@@ -43,7 +43,7 @@ export const PreviousReuseRecordSchema = S.Struct({
   status: Mutant.MutantStatusSchema,
   closureDigest: S.optional(S.String),
   programDigest: S.optional(S.String),
-  verdictSemanticsVersion: S.Int,
+  engineDigest: S.String,
   mutantSetPolicy: Options.MutantSetPolicy,
   runInputsDigest: S.String,
   timeoutKind: S.optional(TimeoutKindSchema),
@@ -87,7 +87,7 @@ export const ReuseTestFilesSchema = S.Record(S.String, ReuseTestFileSchema)
 export type ReuseTestFiles = typeof ReuseTestFilesSchema.Type
 
 export const ReuseReportSchema = S.Struct({
-  verdictSemanticsVersion: S.Int,
+  engineDigest: S.String,
   mutantSetPolicy: Options.MutantSetPolicy,
   runInputsDigest: S.String,
   files: S.Record(S.String, ReuseFileSchema),

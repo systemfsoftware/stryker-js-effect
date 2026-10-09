@@ -62,7 +62,7 @@ import { PhaseClock, type PhaseClockShape } from './run/phase-clock.service.js'
 import { REPRODUCERS_FILE } from './stryker-outputs.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
-import { INCREMENTAL_CACHE_VERSION, runInputsDigestOf, VERDICT_SEMANTICS_VERSION } from './verdict-semantics.js'
+import { engineDigestOf, INCREMENTAL_CACHE_VERSION, runInputsDigestOf } from './verdict-semantics.js'
 
 export const identityOf = dual<
   (
@@ -860,7 +860,7 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
   const runInputsDigest = yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options)
   const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
     incrementalVersion: INCREMENTAL_CACHE_VERSION,
-    verdictSemanticsVersion: VERDICT_SEMANTICS_VERSION,
+    engineDigest: yield* engineDigestOf(deps.fs, deps.path),
     mutantSetPolicy: input.options.mutator.mutantSetPolicy,
     runInputsDigest,
     ...report,
@@ -948,7 +948,7 @@ const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlim
   const runInputsDigest = yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options)
   return {
     incrementalVersion: INCREMENTAL_CACHE_VERSION,
-    verdictSemanticsVersion: VERDICT_SEMANTICS_VERSION,
+    engineDigest: yield* engineDigestOf(deps.fs, deps.path),
     mutantSetPolicy: input.options.mutator.mutantSetPolicy,
     runInputsDigest,
     schemaVersion: Report.WrittenSchemaVersion.literal,

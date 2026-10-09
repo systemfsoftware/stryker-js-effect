@@ -4,13 +4,13 @@ date: 2026-09-28
 category: tooling-decisions
 problem_type: stale and false-miss verdict reuse from incidental cache-key inputs
 input_shape: solution
-subject: A mutation verdict is reusable exactly when the mutant's content, its covering tests' closure, the run inputs that change behavior, the verdict semantics, and the mutant-set policy are identical - so the key names none of the things that vary between shards, branches, paths, and machines
+subject: A mutation verdict is reusable exactly when the mutant's content, its covering tests' closure, the run inputs that change behavior, the engine that produced it, and the mutant-set policy are identical - so the key names none of the things that vary between shards, branches, paths, and machines
 applies_when:
   - changing what enters the verdict-cache key or the run-inputs fingerprint
   - relocating, sharding, or merging incremental reports
   - widening the project-file crawl that feeds the test closure digest
   - changing which inputs open a closure or how workspace and installed imports resolve
-  - deciding whether a release must declare `Verdict-Semantics: changed`
+  - changing which installed files identify the engine that produced a verdict
 ---
 
 # Key the verdict cache by content, not by run
@@ -70,9 +70,9 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
 
 - **A verdict's key is its content and its true inputs.** The key is the
   mutant id, the covering tests' closure digest, the run-inputs digest, the
-  verdict-semantics version, and the mutant-set policy. Nothing in it names a
-  shard, a branch, a report path, or a machine, so reports computed anywhere
-  union by key.
+  engine digest, and the mutant-set policy. Nothing in it names a shard, a
+  branch, a report path, or a machine, so reports computed anywhere union by
+  key.
 - **The fingerprint carries only behavior-affecting inputs.** Exclude
   scope-only options (the `mutate` patterns, `since`, explicit mutant ids) and
   every environment-derived or presentation option (reporters, console colors,
@@ -102,18 +102,20 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   unhashed.
 - **Only reproducible verdicts are cached.** A wall-clock Timeout is reused
   only after it reproduces; a hit-limit Timeout is reused on first sight.
-- **Verdict semantics are declared per branch.** A commit trailer
-  `Verdict-Semantics: changed|unchanged` is read across merge-base..HEAD; every
-  commit on a branch must agree, and `changed` must coincide with a bumped
-  semantics constant. A release that alters what a status means without
-  declaring it is caught by this guard, not by memory.
+- **The engine is identified by its installed files, not by a declaration.**
+  The engine digest hashes the manifest and every file under the paths the
+  `files` field declares, for `@systemfsoftware/stryker-js` and the runner it
+  depends on, as resolved at run time. Any rebuild that changes a shipped byte
+  refuses every verdict the previous build wrote (`semanticsChanged`); a
+  declared path missing on disk refuses the run instead of hashing less. No
+  human has to remember that a release altered what a status means.
 
 ```text
 key(mutant) = (
   contentId(mutant),
   closureDigest(coveringTests(mutant)),        # static import closure, open on unresolved specifiers
   runInputsDigest(options minus scope minus presentation minus environment),
-  verdictSemanticsVersion,
+  engineDigest(installed files of the engine and its runner),
   mutantSetPolicy,
 )
 reuse(mutant) = priorEntry with the same key, else refuse(named reason)

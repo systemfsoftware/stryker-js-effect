@@ -56,7 +56,7 @@ const recordOf = (
   mutantId,
   status,
   ...(closureDigest === undefined ? {} : { closureDigest }),
-  verdictSemanticsVersion: 1,
+  engineDigest: 'engine',
   mutantSetPolicy: 'default',
   runInputsDigest: 'run-inputs',
   ...overrides,
@@ -65,7 +65,7 @@ const recordOf = (
 interface CommandFields {
   readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
   readonly closureAnalysisFailed?: boolean
-  readonly verdictSemanticsVersion?: number
+  readonly engineDigest?: string
   readonly mutantSetPolicy?: Options.MutantSetPolicy
   readonly runInputsDigest?: string
   readonly programDigest?: string
@@ -84,7 +84,7 @@ const commandOf = (
     previousRecords: [...(fields.previousRecords ?? previousRecords)],
     closureDigestsByMutantId: fields.closureDigestsByMutantId ?? {},
     closureAnalysisFailed: fields.closureAnalysisFailed ?? false,
-    verdictSemanticsVersion: fields.verdictSemanticsVersion ?? 1,
+    engineDigest: fields.engineDigest ?? 'engine',
     mutantSetPolicy: fields.mutantSetPolicy ?? 'default',
     runInputsDigest: fields.runInputsDigest ?? 'run-inputs',
     ...(fields.programDigest === undefined ? {} : { programDigest: fields.programDigest }),
@@ -98,7 +98,7 @@ const matchingCommandOf = (
 ) =>
   commandOf([mutantOf(record.mutantId)], [record], {
     closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
-    verdictSemanticsVersion: record.verdictSemanticsVersion,
+    engineDigest: record.engineDigest,
     mutantSetPolicy: record.mutantSetPolicy,
     runInputsDigest: record.runInputsDigest,
     ...(record.programDigest === undefined ? {} : { programDigest: record.programDigest }),
@@ -253,7 +253,7 @@ describe('incrementalDiff', () => {
     (subject, [record]) => {
       const result = subject(commandOf([mutantOf(record.mutantId)], [record], {
         closureDigestsByMutantId: { [record.mutantId]: `${record.closureDigest ?? ''}-drifted` },
-        verdictSemanticsVersion: record.verdictSemanticsVersion + 1,
+        engineDigest: `${record.engineDigest}-drifted`,
         mutantSetPolicy: record.mutantSetPolicy === 'default' ? 'full' : 'default',
         runInputsDigest: `${record.runInputsDigest}-drifted`,
       }))
@@ -267,7 +267,7 @@ describe('incrementalDiff', () => {
     (subject, [record]) => {
       const result = subject(commandOf([mutantOf(record.mutantId)], [record], {
         closureDigestsByMutantId: { [record.mutantId]: `${record.closureDigest ?? ''}-drifted` },
-        verdictSemanticsVersion: record.verdictSemanticsVersion,
+        engineDigest: record.engineDigest,
         mutantSetPolicy: record.mutantSetPolicy === 'default' ? 'full' : 'default',
         runInputsDigest: `${record.runInputsDigest}-drifted`,
       }))
@@ -305,7 +305,7 @@ describe('incrementalDiff', () => {
     (subject, [record]) => {
       const result = subject(commandOf([mutantOf(record.mutantId)], [record], {
         closureDigestsByMutantId: { [record.mutantId]: `${record.closureDigest ?? ''}-drifted` },
-        verdictSemanticsVersion: record.verdictSemanticsVersion,
+        engineDigest: record.engineDigest,
         mutantSetPolicy: record.mutantSetPolicy,
         runInputsDigest: `${record.runInputsDigest}-drifted`,
       }))
@@ -340,7 +340,7 @@ describe('incrementalDiff', () => {
       const mutant = Mutant.Mutant.make({ ...mutantOf(record.mutantId), static: true })
       const result = subject(commandOf([mutant], [record], {
         closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
-        verdictSemanticsVersion: record.verdictSemanticsVersion,
+        engineDigest: record.engineDigest,
         mutantSetPolicy: record.mutantSetPolicy,
         runInputsDigest: record.runInputsDigest,
         flakyMutantIds: [flakyId],
