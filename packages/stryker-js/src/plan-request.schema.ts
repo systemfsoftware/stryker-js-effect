@@ -8,3 +8,7 @@ export const CostsFieldSchema = S.StructWithRest(
 )
 
 export type CostsField = typeof CostsFieldSchema.Type
+
+export const CompileErrorProbeSchema = S.Struct({
+  files: S.Record(S.String, S.Struct({ mutants: S.Array(S.Struct({ status: S.String })) })),
+})

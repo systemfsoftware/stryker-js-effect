@@ -2,7 +2,10 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Boolean from 'effect/Boolean'
 import type * as Cause from 'effect/Cause'
+import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
@@ -85,7 +88,9 @@ interface Workspace {
   readonly directory: string
 }
 
-const incrementalFileOf = (directory: string): string => `${directory}/reports/main.json`
+const REPORT_FILE = 'reports/main.json'
+
+const incrementalFileOf = (directory: string): string => `${directory}/${REPORT_FILE}`
 
 const DEFAULT_FILES: Readonly<Record<string, string>> = {
   'package.json': '{ "type": "commonjs" }\n',
@@ -98,13 +103,50 @@ const DEFAULT_FILES: Readonly<Record<string, string>> = {
   [UNRELATED_TEST_FILE]: UNRELATED_TEST_SOURCE,
 }
 
-const writeWorkspace = (
-  files: Readonly<Record<string, string>> = DEFAULT_FILES,
+const CONFIG_FILE = 'stryker.config.mjs'
+
+const configSourceOf = (directory: string): string =>
+  `export default {
+  testRunner: 'vm',
+  plugins: [],
+  reporters: [],
+  checkers: [{ plugin: ${JSON.stringify(CHECKER_PLUGIN)} }],
+  testFiles: ['test/**/*.mjs'],
+  mutate: ['${SUBJECT_FILE}'],
+  coverageAnalysis: 'perTest',
+  cleanTempDir: 'always',
+  incremental: true,
+  incrementalFile: ${JSON.stringify(incrementalFileOf(directory))},
+}
+`
+
+const configuredFilesOf = (directory: string): Readonly<Record<string, string>> => ({
+  ...DEFAULT_FILES,
+  [CONFIG_FILE]: configSourceOf(directory),
+})
+
+const withInPlace = (source: string): string =>
+  source.replace('  incremental: true,', '  incremental: true,\n  inPlace: true,')
+
+const inPlaceFilesOf = (directory: string, report: string): Readonly<Record<string, string>> => ({
+  ...configuredFilesOf(directory),
+  [CONFIG_FILE]: withInPlace(configSourceOf(directory)),
+  [REPORT_FILE]: report,
+})
+
+const readIncrementalReport = (directory: string): Effect.Effect<string, never, never> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    return yield* fs.readFileString(incrementalFileOf(directory))
+  }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+const materializeWorkspace = (
+  directory: string,
+  files: Readonly<Record<string, string>>,
 ): Effect.Effect<Workspace, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const directory = yield* fs.makeTempDirectory()
     yield* Effect.forEach(
       Object.entries(files),
       ([name, content]) =>
@@ -117,6 +159,15 @@ const writeWorkspace = (
     )
     yield* fs.symlink(path.join(PACKAGE_ROOT, 'node_modules'), path.join(directory, 'node_modules'))
     return { directory }
+  }).pipe(Effect.orDie)
+
+const writeWorkspace = (
+  files: Readonly<Record<string, string>> = DEFAULT_FILES,
+): Effect.Effect<Workspace, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const directory = yield* fs.makeTempDirectory()
+    return yield* materializeWorkspace(directory, files)
   }).pipe(Effect.orDie)
 
 const removeWorkspace = (directory: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
@@ -179,7 +230,27 @@ const rowsOf = (text: string): readonly MutantRow[] => {
   )
 }
 
-const executeRun = (workspace: Workspace): Effect.Effect<ReuseObservation, never, never> =>
+const DEFAULT_RUN_CLI_OPTIONS: Options.PartialStrykerOptions = {
+  testRunner: 'vm',
+  plugins: [],
+  reporters: [],
+  checkers: [{ plugin: CHECKER_PLUGIN }],
+  testFiles: ['test/**/*.mjs'],
+  mutate: [SUBJECT_FILE],
+  coverageAnalysis: 'perTest',
+  cleanTempDir: 'always',
+  incremental: true,
+}
+
+const runCliOptionsOf = (workspace: Workspace): Options.PartialStrykerOptions => ({
+  ...DEFAULT_RUN_CLI_OPTIONS,
+  incrementalFile: incrementalFileOf(workspace.directory),
+})
+
+const executeRunWith = (
+  workspace: Workspace,
+  cliOptions: Options.PartialStrykerOptions,
+): Effect.Effect<ReuseObservation, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
@@ -188,21 +259,7 @@ const executeRun = (workspace: Workspace): Effect.Effect<ReuseObservation, never
       Engine.nodePlatformLayer,
     )
     const exit = yield* Engine.mutationTestCell
-      .run({
-        cliOptions: {
-          testRunner: 'vm',
-          plugins: [],
-          reporters: [],
-          checkers: [{ plugin: CHECKER_PLUGIN }],
-          testFiles: ['test/**/*.mjs'],
-          mutate: [SUBJECT_FILE],
-          coverageAnalysis: 'perTest',
-          cleanTempDir: 'always',
-          incremental: true,
-          incrementalFile: incrementalFileOf(workspace.directory),
-        },
-        targetMutatePatterns: undefined,
-      })
+      .run({ cliOptions, targetMutatePatterns: undefined })
       .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit)
     const events = [
       ...(yield* Queue.takeAll(queue).pipe(
@@ -219,6 +276,87 @@ const executeRun = (workspace: Workspace): Effect.Effect<ReuseObservation, never
       incrementalText,
     }
   }).pipe(Effect.provide(filePorts))
+
+const executeRun = (workspace: Workspace): Effect.Effect<ReuseObservation, never, never> =>
+  executeRunWith(workspace, runCliOptionsOf(workspace))
+
+const withChdir = <A, E, R>(directory: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = globalThis.process.cwd()
+      globalThis.process.chdir(directory)
+      return previous
+    }),
+    () => effect,
+    (previous) => Effect.sync(() => globalThis.process.chdir(previous)),
+  )
+
+const executeConfiguredRun = (workspace: Workspace): Effect.Effect<ReuseObservation, never, never> =>
+  withChdir(workspace.directory, executeRunWith(workspace, {}))
+
+interface PlanObservation {
+  readonly total: number
+  readonly reused: number
+  readonly ran: number
+  readonly programChanged: number
+  readonly checkerStartups: readonly number[]
+}
+
+const PLAN_REQUEST = {
+  targetSeconds: 1,
+  maxShards: 4,
+  projects: ['.'],
+  out: 'plan.json',
+  full: false,
+} satisfies Engine.PlanRequestInput['request']
+
+const executePlan = (workspace: Workspace): Effect.Effect<PlanObservation, never, never> =>
+  withChdir(
+    workspace.directory,
+    Effect.gen(function*() {
+      const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
+      const consoleService = yield* Console.Console
+      yield* Engine.planRequest({
+        request: PLAN_REQUEST,
+        channel: {
+          environment: {
+            basePath: workspace.directory,
+            host: { env: environmentFor(workspace.directory), events: queue },
+            console: consoleService,
+          },
+        },
+      }).pipe(Effect.provide(Engine.nodePlatformLayer))
+      const events = [
+        ...(yield* Queue.takeAll(queue).pipe(
+          Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
+        )),
+      ]
+      const plan = Option.getOrThrowWith(
+        Option.fromUndefinedOr(events.find((event): event is RunEvent.PlanKnown => S.is(RunEvent.PlanKnown)(event))),
+        () => new Error('the plan emitted no PlanKnown event'),
+      )
+      const projects = Option.getOrElse(
+        Option.fromUndefinedOr(plan.projects),
+        (): ReadonlyArray<RunEvent.PlanProjectReuse> => [],
+      )
+      return {
+        total: plan.total,
+        reused: projects.reduce((sum, project) => sum + project.reused, 0),
+        ran: projects.reduce((sum, project) => sum + project.ran, 0),
+        programChanged: projects.reduce((sum, project) => sum + (project.refused.programChanged ?? 0), 0),
+        checkerStartups: events.flatMap((event) =>
+          Option.match(Option.liftPredicate(event, S.is(RunEvent.WorkerReported)), {
+            onNone: (): readonly number[] => [],
+            onSome: (reported) =>
+              Boolean.match(reported.role === 'checker', {
+                onTrue: (): readonly number[] => [reported.startupMs],
+                onFalse: (): readonly number[] => [],
+              }),
+          })
+        ),
+      }
+    }).pipe(Effect.provide(filePorts)),
+  )
 
 interface TwoRuns {
   readonly first: ReuseObservation
@@ -244,6 +382,21 @@ const withWorkspace = <A>(
     const workspace = yield* writeWorkspace(files)
     return yield* use(workspace).pipe(Effect.ensuring(removeWorkspace(workspace.directory)))
   }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+const withConfiguredWorkspaceOf = <A>(
+  filesOf: (directory: string) => Readonly<Record<string, string>>,
+  use: (workspace: Workspace) => Effect.Effect<A, never, never>,
+): Effect.Effect<A, never, never> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const directory = yield* fs.makeTempDirectory()
+    const workspace = yield* materializeWorkspace(directory, filesOf(directory))
+    return yield* use(workspace).pipe(Effect.ensuring(removeWorkspace(workspace.directory)))
+  }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+const withConfiguredWorkspace = <A>(
+  use: (workspace: Workspace) => Effect.Effect<A, never, never>,
+): Effect.Effect<A, never, never> => withConfiguredWorkspaceOf(configuredFilesOf, use)
 
 const compileErrorRows = (rows: readonly MutantRow[]): readonly MutantRow[] =>
   rows.filter((row) => row.status === 'CompileError')
@@ -405,6 +558,123 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             secondSucceeded: true,
             secondRanChecks: true,
             secondRefusedForProgram: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'an unchanged program lets the plan and the run reuse every CompileError without starting a checker',
+      Gherkin.Do.pipe(
+        Given('a configured project whose checker digests its program and rejects one module')(
+          'runs',
+          () =>
+            withConfiguredWorkspace((workspace) =>
+              Effect.gen(function*() {
+                const coldPlan = yield* executePlan(workspace)
+                const first = yield* executeConfiguredRun(workspace)
+                const warmPlan = yield* executePlan(workspace)
+                const second = yield* executeConfiguredRun(workspace)
+                return { coldPlan, first, warmPlan, second }
+              })
+            ),
+        ),
+        Then('the cold plan schedules everything without a checker and the warm plan schedules nothing')((s, expect) =>
+          expect({
+            firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
+            firstDigestsStamped: digestCountOf(s.runs.first.mutants) ===
+              compileErrorRows(s.runs.first.mutants).length,
+            coldScheduled: s.runs.coldPlan.total,
+            coldCheckerStartups: s.runs.coldPlan.checkerStartups.length,
+            warmCheckerStartups: s.runs.warmPlan.checkerStartups.length,
+            warmReused: s.runs.warmPlan.reused,
+            warmRan: s.runs.warmPlan.ran,
+            warmProgramChanged: s.runs.warmPlan.programChanged,
+            secondReusedAll: reusedOf(s.runs.second) === s.runs.first.mutants.length,
+            secondRanNothing: ranOf(s.runs.second),
+          }).toEqual({
+            firstCompileErrors: true,
+            firstDigestsStamped: true,
+            coldScheduled: s.runs.first.mutants.length,
+            coldCheckerStartups: 0,
+            warmCheckerStartups: 1,
+            warmReused: s.runs.first.mutants.length,
+            warmRan: 0,
+            warmProgramChanged: 0,
+            secondReusedAll: true,
+            secondRanNothing: 0,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'editing a program file makes the plan and the run re-score every CompileError',
+      Gherkin.Do.pipe(
+        Given('a configured project whose checker digests a module the mutated module reaches')(
+          'runs',
+          () =>
+            withConfiguredWorkspace((workspace) =>
+              Effect.gen(function*() {
+                const first = yield* executeConfiguredRun(workspace)
+                yield* appendComment(workspace.directory, CHAIN_FILE)
+                const plan = yield* executePlan(workspace)
+                const second = yield* executeConfiguredRun(workspace)
+                return { first, plan, second }
+              })
+            ),
+        ),
+        Then('the plan schedules every CompileError naming the changed program and the run re-scores them')(
+          (s, expect) =>
+            expect({
+              firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
+              planScheduled: s.runs.plan.total,
+              planCheckerStartups: s.runs.plan.checkerStartups.length,
+              planProgramChanged: s.runs.plan.programChanged,
+              planRan: s.runs.plan.ran,
+              secondProgramChanged: programChangedOf(s.runs.second) > 0,
+              secondRanChecks: ranOf(s.runs.second) > 0,
+            }).toEqual({
+              firstCompileErrors: true,
+              planScheduled: s.runs.first.mutants.length,
+              planCheckerStartups: 1,
+              planProgramChanged: s.runs.first.mutants.length,
+              planRan: s.runs.first.mutants.length,
+              secondProgramChanged: true,
+              secondRanChecks: true,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'an in-place plan starts no checker over the originals',
+      Gherkin.Do.pipe(
+        Given('a configured project whose checker digests its program and rejects one module')(
+          'runs',
+          () =>
+            withConfiguredWorkspace((producer) =>
+              Effect.gen(function*() {
+                const first = yield* executeConfiguredRun(producer)
+                const report = yield* readIncrementalReport(producer.directory)
+                return yield* withConfiguredWorkspaceOf(
+                  (directory) => inPlaceFilesOf(directory, report),
+                  (inPlace) =>
+                    Effect.gen(function*() {
+                      const plan = yield* executePlan(inPlace)
+                      return { first, plan }
+                    }),
+                )
+              })
+            ),
+        ),
+        Then('the in-place plan starts no checker')((s, expect) =>
+          expect({
+            firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
+            inPlacePlanCheckerStartups: s.runs.plan.checkerStartups.length,
+          }).toEqual({
+            firstCompileErrors: true,
+            inPlacePlanCheckerStartups: 0,
           })
         ),
       ),

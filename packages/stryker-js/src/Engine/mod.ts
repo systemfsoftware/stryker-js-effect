@@ -1,5 +1,7 @@
 export { nodePlatformLayer } from '../drivers/node.js'
 export { IncrementalReportSchema } from '../IncrementalReport.schema.js'
+export { planRequest } from '../plan-request.cell.js'
+export type { PlanChannel, PlanRequestInput, PlanShardsRequest } from '../plan-request.cell.js'
 export type { Project, ProjectFile } from '../Project.schema.js'
 export { StageError } from '../Run.schema.js'
 export type { DryRunDone } from '../run/dry-run.cell.js'

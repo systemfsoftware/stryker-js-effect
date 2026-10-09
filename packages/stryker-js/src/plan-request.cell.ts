@@ -1,6 +1,9 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Boolean from 'effect/Boolean'
+import * as Console from 'effect/Console'
+import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -14,19 +17,22 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
 import type { IncrementalReportDiscard } from './admit-incremental-report.workflow.js'
+import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.js'
+import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
-import { CostsFieldSchema } from './plan-request.schema.js'
+import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
+import type { LoadedPlugins } from './Plugins.schema.js'
 import { readProjectCell } from './read-project.cell.js'
-import type { CliRead } from './run-request.cell.js'
 import { reusedTestCoverage } from './run/dry-run-coverage.js'
+import type { HostServices } from './run/host.service.js'
 import { readIncrementalReuse, type RefusalCounts } from './run/incremental-reuse.cell.js'
 import { incrementalReportTextsOf } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
-import type { EnginePorts } from './run/StageServices.service.js'
+import type { EnginePorts, RunStageServices } from './run/StageServices.service.js'
 import type { TestCoverage } from './test-coverage.schema.js'
 
 export interface PlanShardsRequest {
@@ -37,17 +43,22 @@ export interface PlanShardsRequest {
   readonly full: boolean
 }
 
+export interface PlanChannel {
+  readonly environment: {
+    readonly basePath: string
+    readonly host: HostServices
+    readonly console: Console.Console
+  }
+}
+
 export interface PlanRequestInput {
   readonly request: PlanShardsRequest
-  readonly channel: CliRead
+  readonly channel: PlanChannel
 }
 
 const DEFAULT_MUTANT_COST_MS = 1_000
 
-const planStageCell = Cell.andThen(
-  Cell.andThen(Cell.andThen(loadConfigCell, readProjectCell), prepareForInstrumentCell),
-  planInstrumentCell,
-)
+const prepareStageCell = Cell.andThen(Cell.andThen(loadConfigCell, readProjectCell), prepareForInstrumentCell)
 
 const namedCostsOf = (
   costs: NonNullable<typeof CostsFieldSchema.Type['costs']>,
@@ -155,9 +166,43 @@ const labelOf = (path: Path.Path, basePath: string, project: string): string => 
   return relative.length === 0 ? '.' : relative
 }
 
+const reportHoldsCompileErrorRecord = (text: string): boolean =>
+  Option.exists(
+    S.decodeOption(S.fromJsonString(CompileErrorProbeSchema))(text),
+    (report) =>
+      Object.values(report.files).some((file) => file.mutants.some((mutant) => mutant.status === 'CompileError')),
+  )
+
+interface ProgramDigestAtPlanTime {
+  readonly texts: readonly string[]
+  readonly context: Context.Context<RunStageServices>
+  readonly options: Options.StrykerOptions
+  readonly loadedPlugins: Pick<LoadedPlugins, 'pluginSources'>
+  readonly project: string
+}
+
+const programDigestAtPlanTime = ({
+  texts,
+  context,
+  options,
+  loadedPlugins,
+  project,
+}: ProgramDigestAtPlanTime): Effect.Effect<string | undefined, never, EnginePorts> =>
+  Boolean.match(Boolean.and(Boolean.not(options.inPlace), texts.some(reportHoldsCompileErrorRecord)), {
+    onTrue: () =>
+      Effect.gen(function*() {
+        const pool = yield* checkerPoolsScoped({ options, loadedPlugins, size: 1, workingDirectory: project })
+        return yield* Option.match(Option.fromNullishOr(pool), {
+          onNone: () => Effect.as(Effect.void, undefined),
+          onSome: (present) => programDigestOf(makeCheckerPoolHandle(present), project),
+        })
+      }).pipe(Effect.provide(context), Effect.scoped),
+    onFalse: () => Effect.as(Effect.void, undefined),
+  })
+
 const planProject = (
   request: PlanShardsRequest,
-  channel: CliRead,
+  channel: PlanChannel,
   labelBase: string,
   directory: string,
 ): Effect.Effect<ProjectPlan, never, EnginePorts | Scope.Scope> =>
@@ -168,14 +213,21 @@ const planProject = (
     const project = yield* fs.realPath(path.resolve(basePath, directory))
     const env = { ...channel.environment.host.env, basePath: project }
     const context = yield* Layer.build(RunEnvironment.stage(env, channel.environment.host.events))
-    const done: PlanInstrumentDone = yield* Cell.provideContext(planStageCell, context).run({
-      cliOptions: { force: request.full },
-      targetMutatePatterns: undefined,
-    })
+    const stageInput = { cliOptions: { force: request.full }, targetMutatePatterns: undefined }
+    const prepared = yield* Cell.provideContext(prepareStageCell, context).run(stageInput)
+    const done: PlanInstrumentDone = yield* Cell.provideContext(planInstrumentCell, context).run(prepared)
     const texts = yield* incrementalReportTextsOf({ basePath: project, options: done.options })
     const coverage = firstCoverageOf(texts)
     const testCoverage = Option.match(coverage, { onNone: emptyTestCoverage, onSome: reusedTestCoverage })
     const reportCosts = reportCostsOf(texts)
+    const label = labelOf(path, labelBase, project)
+    const programDigest = yield* programDigestAtPlanTime({
+      texts,
+      context,
+      options: done.options,
+      loadedPlugins: prepared.loadedPlugins,
+      project,
+    })
     const reuse = yield* readIncrementalReuse({
       project: done.project,
       currentMutants: [...done.mutants],
@@ -188,7 +240,7 @@ const planProject = (
       ),
       observedModules: Option.getOrUndefined(Option.map(coverage, (present) => present.testFileModules)),
       originalFileOf: (file) => path.resolve(file),
-      programDigestOf: Effect.as(Effect.void, undefined),
+      programDigestOf: Effect.succeed(programDigest),
     })
     const mutants = [
       ...reuse.mutants.map((mutant) => ({
@@ -198,7 +250,7 @@ const planProject = (
       ...reuse.rememberedResults.map((mutant) => ({ id: mutant.id, costMs: 0 })),
     ]
     return {
-      label: labelOf(path, labelBase, project),
+      label,
       mutants,
       reuse: {
         reused: reuse.rememberedResults.length,
@@ -242,7 +294,7 @@ const assemblePlan = (request: PlanShardsRequest, planned: ReadonlyArray<Planned
 
 const writePlan = (
   request: PlanShardsRequest,
-  channel: CliRead,
+  channel: PlanChannel,
   plan: ShardPlan,
 ): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {

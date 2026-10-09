@@ -177,23 +177,45 @@ export const splitCheckedPlans = Effect.fn(SpanTaxonomy.Spans.checkerPoolSplitCh
 const checkerNamesOf = (pool: CheckerPool): Effect.Effect<readonly string[], StageError | CheckerCrash> =>
   Pool.use(pool, (slot) => Effect.succeed(slot.map(({ checkerName }) => checkerName)))
 
-const digestLineOf = ({ checkerName, checker }: CheckerSlot[number]): Effect.Effect<Option.Option<string>> =>
+const noDigest = (message: string): Effect.Effect<Option.Option<string>> =>
+  Effect.logWarning(message).pipe(Effect.as(Option.none<string>()))
+
+const digestLineOf = (
+  project: string,
+  { checkerName, checker }: CheckerSlot[number],
+): Effect.Effect<Option.Option<string>> =>
   checker.digest(checkerName).pipe(
     Effect.map((digest) => Option.some(`${checkerName}\u0000${digest}`)),
     Effect.catchTags({
-      CheckerFailed: () => Effect.succeed(Option.none<string>()),
-      ChildProcessCrashedError: () => Effect.succeed(Option.none<string>()),
-      OutOfMemoryError: () => Effect.succeed(Option.none<string>()),
+      CheckerFailed: (error) =>
+        noDigest(`Checker "${checkerName}" could not digest the program of project "${project}": ${error.cause}`),
+      ChildProcessCrashedError: (error) =>
+        noDigest(
+          `Checker "${checkerName}" crashed before it could digest the program of project "${project}": ${error.message}`,
+        ),
+      OutOfMemoryError: (error) =>
+        noDigest(
+          `Checker "${checkerName}" ran out of memory before it could digest the program of project "${project}": ${error.message}`,
+        ),
     }),
   )
 
-export const programDigestOf = (handle: CheckerPoolHandle): Effect.Effect<string | undefined> =>
-  Effect.orElseSucceed(answeredProgramDigestOf(handle), () => undefined)
+export const programDigestOf = dual<
+  (project: string) => (handle: CheckerPoolHandle) => Effect.Effect<string | undefined>,
+  (handle: CheckerPoolHandle, project: string) => Effect.Effect<string | undefined>
+>(
+  2,
+  (handle, project) => Effect.orElseSucceed(answeredProgramDigestOf(handle, project), () => undefined),
+)
 
 const answeredProgramDigestOf = Effect.fn(SpanTaxonomy.Spans.checkerPoolProgramDigest.name)(function*(
   handle: CheckerPoolHandle,
+  project: string,
 ) {
-  const lines = yield* Pool.use(CheckerPoolHandle.slot(handle), (slot) => Effect.forEach(slot, digestLineOf))
+  const lines = yield* Pool.use(
+    CheckerPoolHandle.slot(handle),
+    (slot) => Effect.forEach(slot, (entry) => digestLineOf(project, entry)),
+  )
   return Option.getOrUndefined(
     Option.map(Option.all(lines), (answered) => sha256HexOf([...answered].sort().join('\n'))),
   )
