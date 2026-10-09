@@ -16,7 +16,7 @@ export namespace Configuration {
 
 // @public (undocumented)
 export namespace Engine {
-    export { DryRunDone, EnginePorts, IdGenerator, IdGeneratorShape, IncrementalReportSchema, InstrumentDone, MutationTestDone, PlanChannel, PlanRequestInput, PlanShardsRequest, PrepareDone, PrepareExecutorArgs, Project, ProjectFile, RunEnvironment, RunEnvironmentShape, RunStageServices, SandboxHandle, StageError, StageServices, StrykerError, StrykerRun, TestCoverage, WiredRunLayer, mutationTestCell, nodePlatformLayer, planRequest, strykerCell };
+    export { DryRunDone, EnginePorts, IdGenerator, IdGeneratorShape, IncrementalReportSchema, InstrumentDone, MutationTestDone, PlanChannel, PlanRequestInput, PlanShardsRequest, PrepareDone, PrepareExecutorArgs, Project, ProjectFile, RunEnvironment, RunEnvironmentShape, RunStageServices, SandboxHandle, StageError, StageServices, StrykerError, StrykerRun, TestCoverage, WiredRunLayer, forStream, mutationTestCell, nodePlatformLayer, planRequest, stage, strykerCell };
 }
 
 // @public (undocumented)
@@ -46,7 +46,7 @@ export namespace Plugin {
 
 // @public (undocumented)
 export namespace RunEvent {
-    export { MetricsResultFromReport, ResolvedMode, ResolvedModeInput, RunEventDrain, RunEventDrainLive, RunEventStream, RunEvents, RunIdentity, RunIdentityShape, VerdictEnvelope, buildVerdictEnvelope, makeRunEventStream, metricsResultFromFiles, staticVerdictOf };
+    export { MetricsResultFromReport, ResolvedMode, ResolvedModeInput, RunEventDrain, RunEventStream, RunEvents, RunIdentity, RunIdentityShape, VerdictEnvelope, buildVerdictEnvelope, drainLayer, makeRunEventStream, metricsResultFromFiles, staticVerdictOf };
 }
 
 // @public (undocumented)

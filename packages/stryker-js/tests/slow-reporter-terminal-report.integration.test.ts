@@ -98,7 +98,7 @@ const executeRun = (
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(8192)
     const runLayer = Layer.merge(
       Layer.provide(
-        Engine.RunEnvironment.stage(environmentFor(workspace, slowReporter), queue),
+        Engine.stage(environmentFor(workspace, slowReporter), queue),
         Engine.nodePlatformLayer,
       ),
       Engine.nodePlatformLayer,

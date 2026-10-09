@@ -103,7 +103,7 @@ const runProject = (
         const ports = Layer.mergeAll(Engine.nodePlatformLayer, fakeGit)
         const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
         const runLayer = Layer.merge(
-          Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports),
+          Layer.provide(Engine.stage(environmentFor(root), queue), ports),
           ports,
         )
         const options: Options.PartialStrykerOptions = {

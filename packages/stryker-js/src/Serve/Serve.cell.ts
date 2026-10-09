@@ -40,6 +40,7 @@ import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 
 import { concurrencyCell } from '../concurrency.cell.js'
+import { stage } from '../drivers/run-stage.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
 import { readProjectCell } from '../read-project.cell.js'
 import { generateRunId } from '../reporting/verdict-envelope.js'
@@ -47,7 +48,7 @@ import { instrumentCell } from '../run/instrument.cell.js'
 import { loadConfigCell } from '../run/load-config.cell.js'
 import { prepareCell } from '../run/prepare.cell.js'
 import { mutationTestCell } from '../run/run-stages.cell.js'
-import { RunEnvironment, type RunEnvironmentShape } from '../run/RunEnvironment.service.js'
+import { type RunEnvironmentShape } from '../run/RunEnvironment.service.js'
 import type { EnginePorts, RunStageServices } from '../run/StageServices.service.js'
 import { emptyFraming, frameOf, readFrames } from './msp-framing.schema.js'
 import { type MspDecision, mspProtocol, MspRequestCommand } from './msp-protocol.workflow.js'
@@ -163,7 +164,7 @@ const withEngine = <A, E>(
     const consumer = yield* Stream.fromQueue(events).pipe(Stream.runForEach(consume), Effect.forkChild)
     const run = Effect.scoped(
       Effect.gen(function*() {
-        const context = yield* Layer.build(RunEnvironment.stage(env, events))
+        const context = yield* Layer.build(stage(env, events))
         return yield* use({ env, context })
       }),
     )

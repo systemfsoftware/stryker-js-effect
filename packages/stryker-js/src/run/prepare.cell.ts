@@ -12,6 +12,7 @@ import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
 
 import type { MutatorSelectionDecoded } from '../decode-mutator-selection.workflow.js'
+import { layer as temporaryDirectoryLayer } from '../drivers/temporary-directory.js'
 import type { MergedCatalog } from '../plan-mutator-catalogs.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import type { Project } from '../Project.schema.js'
@@ -59,7 +60,7 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
 ): Effect.fn.Return<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> {
   yield* admitPreparedProject(raw)
   const temporaryDirectoryPath = yield* Effect.map(
-    Layer.build(TemporaryDirectory.layer(raw.options)),
+    Layer.build(temporaryDirectoryLayer(raw.options)),
     (temporaryDirectory) => Context.get(temporaryDirectory, TemporaryDirectory).path,
   ).pipe(
     Effect.mapError((cause) =>

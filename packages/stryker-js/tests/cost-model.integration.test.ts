@@ -102,7 +102,7 @@ const runOnce = (root: string): Effect.Effect<
     const path = yield* Path.Path
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const ports = Engine.nodePlatformLayer
-    const runLayer = Layer.merge(Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports), ports)
+    const runLayer = Layer.merge(Layer.provide(Engine.stage(environmentFor(root), queue), ports), ports)
     yield* Engine.mutationTestCell
       .run({ cliOptions: optionsOf(root), targetMutatePatterns: undefined })
       .pipe(Effect.provide(runLayer), Effect.scoped, Effect.orDie)

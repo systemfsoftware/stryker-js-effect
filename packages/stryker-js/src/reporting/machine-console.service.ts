@@ -5,7 +5,6 @@ import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Formatter from 'effect/Formatter'
-import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
@@ -181,7 +180,7 @@ export interface MachineConsoleShape {
   readonly reset: () => void
 }
 
-const machineConsoleOf = (clock: Clock.Clock): MachineConsoleShape => {
+export const machineConsoleOf = (clock: Clock.Clock): MachineConsoleShape => {
   const buffers = buffersOf()
   return {
     console: makeCapturingConsole(clock, buffers),
@@ -196,20 +195,7 @@ const machineConsoleOf = (clock: Clock.Clock): MachineConsoleShape => {
 
 export class MachineConsole extends Context.Service<MachineConsole, MachineConsoleShape>()(
   '@systemfsoftware/stryker-js/reporting/machine-console.service/MachineConsole',
-) {
-  static readonly layer: Layer.Layer<MachineConsole> = Layer.effect(
-    MachineConsole,
-    Clock.clockWith((clock) => Effect.succeed(MachineConsole.of(machineConsoleOf(clock)))),
-  )
-
-  static readonly captureLayer: Layer.Layer<never, never, MachineConsole> = Layer.effect(
-    Console.Console,
-    Effect.map(MachineConsole, (machine) => {
-      machine.reset()
-      return machine.console
-    }),
-  )
-}
+) {}
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')

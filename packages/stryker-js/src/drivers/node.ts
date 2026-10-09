@@ -15,12 +15,12 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
-import { GitDiff } from '../git-diff.service.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
 import { layerWorkerProtocol } from '../worker-protocol.blueprint.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 import { WorkerLauncher, type WorkerSpawnParams } from '../WorkerLauncher.service.js'
+import { layer as gitDiffLayer } from './git-diff.js'
 
 const WORKER_TERMINATION_GRACE = Duration.seconds(5)
 
@@ -135,7 +135,7 @@ export const makeNodePlatformLayer = (options: {
   Layer.mergeAll(
     nodeWorkerLauncherLayer(options.childEnv).pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
     nodeBase,
-    GitDiff.layer,
+    gitDiffLayer,
   )
 
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = makeNodePlatformLayer({ childEnv: {} })
