@@ -91,7 +91,7 @@ jobs:
         with:
           name: shard-plan
           path: ${{ env.PLAN }}
-          retention-days: 1
+          retention-days: 30
 
   build:
     name: build · once for every shard
@@ -218,33 +218,33 @@ jobs:
           name: mutation-shard-${{ steps.shard.outputs.slug }}
           path: reports/shards
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 30
           overwrite: true
       - name: Wait before retrying the upload
-        if: ${{ always() && steps.upload.outcome == 'failure' }}
+        if: ${{ !cancelled() && steps.upload.outcome == 'failure' }}
         run: sleep 30
       - id: upload-retry
         name: Upload the shard report (retry)
-        if: ${{ always() && steps.upload.outcome == 'failure' }}
+        if: ${{ !cancelled() && steps.upload.outcome == 'failure' }}
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: mutation-shard-${{ steps.shard.outputs.slug }}
           path: reports/shards
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 30
           overwrite: true
       - name: Wait before the last upload attempt
-        if: ${{ always() && steps.upload-retry.outcome == 'failure' }}
+        if: ${{ !cancelled() && steps.upload-retry.outcome == 'failure' }}
         run: sleep 90
       - name: Upload the shard report (last attempt)
-        if: ${{ always() && steps.upload-retry.outcome == 'failure' }}
+        if: ${{ !cancelled() && steps.upload-retry.outcome == 'failure' }}
         uses: actions/upload-artifact@v7
         with:
           name: mutation-shard-${{ steps.shard.outputs.slug }}
           path: reports/shards
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 30
           overwrite: true
 
   report:
@@ -300,6 +300,7 @@ jobs:
           name: mutation-report-${{ github.run_number }}
           path: reports/mutation/*
           retention-days: 14
+          overwrite: true
 
       - name: Seed each project's incremental report from its own merged report
         run: |
@@ -338,6 +339,7 @@ jobs:
           path: ${{ env.BUDGET_BASELINE }}
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
 
       - name: Delete per-shard artifacts once the report merged
         if: success()
