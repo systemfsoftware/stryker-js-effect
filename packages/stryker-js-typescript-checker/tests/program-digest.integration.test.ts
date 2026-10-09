@@ -77,6 +77,22 @@ const PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE = JSON.stringify(
   2,
 ) + '\n'
 
+const PACKAGE_MISSING_EXPORTS_MANIFEST_SOURCE = JSON.stringify(
+  { name: '@probe/tsconfig-base', version: '1.0.0', exports: { './strict': './missing-base.json' } },
+  null,
+  2,
+) + '\n'
+const PACKAGE_NO_EXPORTS_MANIFEST_SOURCE = JSON.stringify(
+  { name: '@probe/tsconfig-base', version: '1.0.0' },
+  null,
+  2,
+) + '\n'
+
+const NESTED_DIRECTORY = 'packages/app'
+const NESTED_TSCONFIG_FILE = `${NESTED_DIRECTORY}/${TSCONFIG_FILE}`
+const NESTED_PACKAGE_MANIFEST_FILE = `${NESTED_DIRECTORY}/node_modules/@probe/tsconfig-base/package.json`
+const NESTED_STRAY_BASE_TSCONFIG_FILE = `${NESTED_DIRECTORY}/node_modules/@probe/tsconfig-base/strict/tsconfig.json`
+
 const MAIN_SOURCE = [
   "import { shifted } from './chain.js'",
   '',
@@ -107,6 +123,13 @@ const DEFAULT_FILES: Readonly<Record<string, string>> = {
   [DECLARATION_FILE]: DECLARATION_SOURCE,
   [OUTSIDE_FILE]: OUTSIDE_SOURCE,
 }
+
+const nestedProgramFilesOf = (tsconfigSource: string): Readonly<Record<string, string>> => ({
+  ...Object.fromEntries(
+    Object.entries(DEFAULT_FILES).map(([name, content]) => [`${NESTED_DIRECTORY}/${name}`, content] as const),
+  ),
+  [NESTED_TSCONFIG_FILE]: tsconfigSource,
+})
 
 const writeWorkspace = (
   files: Readonly<Record<string, string>> = DEFAULT_FILES,
@@ -149,11 +172,12 @@ const appendComment = (directory: string, file: string): Effect.Effect<void, nev
 const digestOf = (
   directory: string,
   checkerOptions?: Readonly<Record<string, S.Json | object>>,
+  tsconfigFile: string = TSCONFIG_FILE,
 ): Effect.Effect<string, never, never> =>
   Effect.gen(function*() {
     const pathService = yield* Path.Path
     const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({
-      tsconfigFile: pathService.join(directory, TSCONFIG_FILE),
+      tsconfigFile: pathService.join(directory, tsconfigFile),
       ...(checkerOptions === undefined ? {} : { typescriptChecker: checkerOptions }),
     })
     return yield* Effect.gen(function*() {
@@ -382,6 +406,102 @@ Feature('Identifying the TypeScript program a checker loaded', { timeout: 120_00
             shape: DIGEST_SHAPE.test(s.observed.first) && DIGEST_SHAPE.test(s.observed.second),
             moved: s.observed.first !== s.observed.second,
           }).toEqual({ shape: true, moved: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'a stray file in a nearer node_modules is the base the nested program loads',
+      Gherkin.Do.pipe(
+        Given('a nested program whose extends resolves a base file a nearer ancestor shadows')(
+          'observed',
+          () =>
+            withWorkspace(
+              (workspace) =>
+                Effect.gen(function*() {
+                  const before = yield* digestOf(workspace.directory, undefined, NESTED_TSCONFIG_FILE)
+                  yield* appendComment(workspace.directory, NESTED_STRAY_BASE_TSCONFIG_FILE)
+                  const afterStrayEdit = yield* digestOf(workspace.directory, undefined, NESTED_TSCONFIG_FILE)
+                  yield* appendComment(workspace.directory, PACKAGE_EXPORTS_BASE_FILE)
+                  const afterPackageEdit = yield* digestOf(workspace.directory, undefined, NESTED_TSCONFIG_FILE)
+                  return {
+                    shape: [before, afterStrayEdit, afterPackageEdit].every((digest) => DIGEST_SHAPE.test(digest)),
+                    strayEditMoved: before !== afterStrayEdit,
+                    packageEditMoved: afterStrayEdit !== afterPackageEdit,
+                  }
+                }),
+              {
+                ...nestedProgramFilesOf(PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE),
+                [PACKAGE_EXPORTS_MANIFEST_FILE]: PACKAGE_EXPORTS_MANIFEST_SOURCE,
+                [PACKAGE_EXPORTS_BASE_FILE]: BASE_TSCONFIG_SOURCE,
+                [NESTED_STRAY_BASE_TSCONFIG_FILE]: BASE_TSCONFIG_SOURCE,
+              },
+            ),
+        ),
+        Then('editing the stray base moves the digest while editing the shadowed package base does not')(
+          (s, expect) => expect(s.observed).toEqual({ shape: true, strayEditMoved: true, packageEditMoved: false }),
+        ),
+      ),
+    )
+
+    scenario(
+      'a nearer package whose export target is missing does not block the outer package',
+      Gherkin.Do.pipe(
+        Given('a nested program whose nearer node_modules installs the package with a missing export target')(
+          'observed',
+          () =>
+            withWorkspace(
+              (workspace) =>
+                Effect.gen(function*() {
+                  const before = yield* digestOf(workspace.directory, undefined, NESTED_TSCONFIG_FILE)
+                  yield* appendComment(workspace.directory, PACKAGE_EXPORTS_BASE_FILE)
+                  const after = yield* digestOf(workspace.directory, undefined, NESTED_TSCONFIG_FILE)
+                  return {
+                    shape: [before, after].every((digest) => DIGEST_SHAPE.test(digest)),
+                    moved: before !== after,
+                  }
+                }),
+              {
+                ...nestedProgramFilesOf(PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE),
+                [NESTED_PACKAGE_MANIFEST_FILE]: PACKAGE_MISSING_EXPORTS_MANIFEST_SOURCE,
+                [PACKAGE_EXPORTS_MANIFEST_FILE]: PACKAGE_EXPORTS_MANIFEST_SOURCE,
+                [PACKAGE_EXPORTS_BASE_FILE]: BASE_TSCONFIG_SOURCE,
+              },
+            ),
+        ),
+        Then('both digests are 64-character digests and editing the outer package base moves the digest')(
+          (s, expect) => expect(s.observed).toEqual({ shape: true, moved: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'a nearer package without an exports field does not block the outer package',
+      Gherkin.Do.pipe(
+        Given('a nested program whose nearer node_modules installs the package without an exports field')(
+          'observed',
+          () =>
+            withWorkspace(
+              (workspace) =>
+                Effect.gen(function*() {
+                  const before = yield* digestOf(workspace.directory, undefined, NESTED_TSCONFIG_FILE)
+                  yield* appendComment(workspace.directory, PACKAGE_EXPORTS_BASE_FILE)
+                  const after = yield* digestOf(workspace.directory, undefined, NESTED_TSCONFIG_FILE)
+                  return {
+                    shape: [before, after].every((digest) => DIGEST_SHAPE.test(digest)),
+                    moved: before !== after,
+                  }
+                }),
+              {
+                ...nestedProgramFilesOf(PACKAGE_EXPORTS_EXTENDS_TSCONFIG_SOURCE),
+                [NESTED_PACKAGE_MANIFEST_FILE]: PACKAGE_NO_EXPORTS_MANIFEST_SOURCE,
+                [PACKAGE_EXPORTS_MANIFEST_FILE]: PACKAGE_EXPORTS_MANIFEST_SOURCE,
+                [PACKAGE_EXPORTS_BASE_FILE]: BASE_TSCONFIG_SOURCE,
+              },
+            ),
+        ),
+        Then('both digests are 64-character digests and editing the outer package base moves the digest')(
+          (s, expect) => expect(s.observed).toEqual({ shape: true, moved: true }),
         ),
       ),
     )

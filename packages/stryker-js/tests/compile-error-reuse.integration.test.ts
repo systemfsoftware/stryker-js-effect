@@ -88,7 +88,9 @@ interface Workspace {
   readonly directory: string
 }
 
-const incrementalFileOf = (directory: string): string => `${directory}/reports/main.json`
+const REPORT_FILE = 'reports/main.json'
+
+const incrementalFileOf = (directory: string): string => `${directory}/${REPORT_FILE}`
 
 const DEFAULT_FILES: Readonly<Record<string, string>> = {
   'package.json': '{ "type": "commonjs" }\n',
@@ -103,9 +105,8 @@ const DEFAULT_FILES: Readonly<Record<string, string>> = {
 
 const CONFIG_FILE = 'stryker.config.mjs'
 
-const configuredFilesOf = (directory: string): Readonly<Record<string, string>> => ({
-  ...DEFAULT_FILES,
-  [CONFIG_FILE]: `export default {
+const configSourceOf = (directory: string): string =>
+  `export default {
   testRunner: 'vm',
   plugins: [],
   reporters: [],
@@ -117,8 +118,27 @@ const configuredFilesOf = (directory: string): Readonly<Record<string, string>> 
   incremental: true,
   incrementalFile: ${JSON.stringify(incrementalFileOf(directory))},
 }
-`,
+`
+
+const configuredFilesOf = (directory: string): Readonly<Record<string, string>> => ({
+  ...DEFAULT_FILES,
+  [CONFIG_FILE]: configSourceOf(directory),
 })
+
+const withInPlace = (source: string): string =>
+  source.replace('  incremental: true,', '  incremental: true,\n  inPlace: true,')
+
+const inPlaceFilesOf = (directory: string, report: string): Readonly<Record<string, string>> => ({
+  ...configuredFilesOf(directory),
+  [CONFIG_FILE]: withInPlace(configSourceOf(directory)),
+  [REPORT_FILE]: report,
+})
+
+const readIncrementalReport = (directory: string): Effect.Effect<string, never, never> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    return yield* fs.readFileString(incrementalFileOf(directory))
+  }).pipe(Effect.orDie, Effect.provide(filePorts))
 
 const materializeWorkspace = (
   directory: string,
@@ -363,15 +383,20 @@ const withWorkspace = <A>(
     return yield* use(workspace).pipe(Effect.ensuring(removeWorkspace(workspace.directory)))
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
-const withConfiguredWorkspace = <A>(
+const withConfiguredWorkspaceOf = <A>(
+  filesOf: (directory: string) => Readonly<Record<string, string>>,
   use: (workspace: Workspace) => Effect.Effect<A, never, never>,
 ): Effect.Effect<A, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const directory = yield* fs.makeTempDirectory()
-    const workspace = yield* materializeWorkspace(directory, configuredFilesOf(directory))
+    const workspace = yield* materializeWorkspace(directory, filesOf(directory))
     return yield* use(workspace).pipe(Effect.ensuring(removeWorkspace(workspace.directory)))
   }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+const withConfiguredWorkspace = <A>(
+  use: (workspace: Workspace) => Effect.Effect<A, never, never>,
+): Effect.Effect<A, never, never> => withConfiguredWorkspaceOf(configuredFilesOf, use)
 
 const compileErrorRows = (rows: readonly MutantRow[]): readonly MutantRow[] =>
   rows.filter((row) => row.status === 'CompileError')
@@ -618,6 +643,39 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
               secondProgramChanged: true,
               secondRanChecks: true,
             }),
+        ),
+      ),
+    )
+
+    scenario(
+      'an in-place plan starts no checker over the originals',
+      Gherkin.Do.pipe(
+        Given('a configured project whose checker digests its program and rejects one module')(
+          'runs',
+          () =>
+            withConfiguredWorkspace((producer) =>
+              Effect.gen(function*() {
+                const first = yield* executeConfiguredRun(producer)
+                const report = yield* readIncrementalReport(producer.directory)
+                return yield* withConfiguredWorkspaceOf(
+                  (directory) => inPlaceFilesOf(directory, report),
+                  (inPlace) =>
+                    Effect.gen(function*() {
+                      const plan = yield* executePlan(inPlace)
+                      return { first, plan }
+                    }),
+                )
+              })
+            ),
+        ),
+        Then('the in-place plan starts no checker')((s, expect) =>
+          expect({
+            firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
+            inPlacePlanCheckerStartups: s.runs.plan.checkerStartups.length,
+          }).toEqual({
+            firstCompileErrors: true,
+            inPlacePlanCheckerStartups: 0,
+          })
         ),
       ),
     )

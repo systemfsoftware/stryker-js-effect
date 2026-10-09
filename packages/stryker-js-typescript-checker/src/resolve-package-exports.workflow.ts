@@ -75,12 +75,37 @@ const resolveConditional = (
       }),
   )
 
+const INVALID_TARGET_SEGMENTS: ReadonlyArray<string> = ['.', '..', 'node_modules']
+
+const hasInvalidTargetSegment = (target: string): boolean =>
+  Arr.some(target.split('/').slice(1), (segment) => INVALID_TARGET_SEGMENTS.includes(segment))
+
+const isResolvableTarget = (target: string): boolean =>
+  Boolean.and(target.startsWith('./'), Boolean.not(hasInvalidTargetSegment(target)))
+
+const resolveArrayTarget = (
+  entries: ReadonlyArray<JsonValue>,
+  star: Option.Option<string>,
+): Option.Option<string> =>
+  Option.match(Arr.head(entries), {
+    onNone: () => Option.none<string>(),
+    onSome: (entry) =>
+      Boolean.match(entry === null, {
+        onTrue: () => Option.none<string>(),
+        onFalse: () =>
+          Option.match(resolveTarget(entry, star), {
+            onSome: (target) => Option.some(target),
+            onNone: () => resolveArrayTarget(Arr.drop(entries, 1), star),
+          }),
+      }),
+  })
+
 function resolveTarget(value: JsonValue, star: Option.Option<string>): Option.Option<string> {
   return Option.match(Option.liftPredicate(value, isString), {
-    onSome: (target) => Option.liftPredicate(substituteStar(target, star), (resolved) => resolved.startsWith('./')),
+    onSome: (target) => Option.liftPredicate(substituteStar(target, star), isResolvableTarget),
     onNone: () =>
       Option.match(Option.liftPredicate(value, isJsonArray), {
-        onSome: (entries) => Arr.findFirst(entries, (entry) => resolveTarget(entry, star)),
+        onSome: (entries) => resolveArrayTarget(entries, star),
         onNone: () =>
           Option.match(Option.liftPredicate(value, isJsonObject), {
             onSome: (conditions) => resolveConditional(conditions, star),
@@ -170,8 +195,7 @@ const resolveExports = (exports: JsonValue, subpath: string): Option.Option<stri
     onSome: (target) => whenRootSubpath(subpath, () => resolveTarget(target, Option.none())),
     onNone: () =>
       Option.match(Option.liftPredicate(exports, isJsonArray), {
-        onSome: (entries) =>
-          whenRootSubpath(subpath, () => Arr.findFirst(entries, (entry) => resolveTarget(entry, Option.none()))),
+        onSome: (entries) => whenRootSubpath(subpath, () => resolveArrayTarget(entries, Option.none())),
         onNone: () =>
           Option.match(Option.liftPredicate(exports, isJsonObject), {
             onSome: (map) => resolveObject(map, subpath),

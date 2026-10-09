@@ -115,16 +115,55 @@ describe('resolvePackageExports', (it) => {
   )
 
   it.prop(
-    '∀subpath_LeadingNull_≡SkipsToTheResolvingEntry',
+    '∀subpath_LeadingNull_≡UnresolvedBesideTheResolvingEntry',
     {
       of: [S.String, S.String],
       subject: (subpath: string, target: string) => {
         const key = probeKeyOf(subpath)
         const relative = `./${escaped(target)}`
-        return resolvedTargetOf({ [key]: [null, relative] }, key)
+        return [
+          resolvedTargetOf({ [key]: [null, relative] }, key),
+          resolvedTargetOf({ [key]: [relative] }, key),
+        ]
       },
     },
-    (subject, [subpath, target]) => subject(subpath, target) === `./${escaped(target)}`,
+    (subject, [subpath, target]) => {
+      const [afterLeadingNull, withoutLeadingNull] = subject(subpath, target)
+      return afterLeadingNull === undefined && withoutLeadingNull === `./${escaped(target)}`
+    },
+  )
+
+  it.prop(
+    '∀target_RootArrayLeadingNull_≡UnresolvedBesideTheResolvingEntry',
+    {
+      of: [S.String],
+      subject: (target: string) => {
+        const relative = `./${escaped(target)}`
+        return [resolvedTargetOf([null, relative], '.'), resolvedTargetOf([relative], '.')]
+      },
+    },
+    (subject, [target]) => {
+      const [afterLeadingNull, withoutLeadingNull] = subject(target)
+      return afterLeadingNull === undefined && withoutLeadingNull === `./${escaped(target)}`
+    },
+  )
+
+  it.prop(
+    '∀subpath_InvalidTargetSegment_≡UnresolvedBesideTheValidOne',
+    {
+      of: [S.String, S.String, S.String, S.Literals(['.', '..', 'node_modules'])],
+      subject: (subpath: string, prefix: string, leaf: string, invalid: string) => {
+        const key = probeKeyOf(subpath)
+        return [
+          resolvedTargetOf({ [key]: `./${escaped(prefix)}/${invalid}/${escaped(leaf)}` }, key),
+          resolvedTargetOf({ [key]: `./${escaped(prefix)}/${escaped(leaf)}` }, key),
+        ]
+      },
+    },
+    (subject, [subpath, prefix, leaf, invalid]) => {
+      const [withInvalidSegment, withoutInvalidSegment] = subject(subpath, prefix, leaf, invalid)
+      return withInvalidSegment === undefined && withoutInvalidSegment === `./${escaped(prefix)}/${escaped(leaf)}`
+    },
   )
 
   it.prop(

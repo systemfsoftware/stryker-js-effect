@@ -188,7 +188,7 @@ const programDigestAtPlanTime = ({
   loadedPlugins,
   project,
 }: ProgramDigestAtPlanTime): Effect.Effect<string | undefined, never, EnginePorts> =>
-  Boolean.match(texts.some(reportHoldsCompileErrorRecord), {
+  Boolean.match(Boolean.and(Boolean.not(options.inPlace), texts.some(reportHoldsCompileErrorRecord)), {
     onTrue: () =>
       Effect.gen(function*() {
         const pool = yield* checkerPoolsScoped({ options, loadedPlugins, size: 1, workingDirectory: project })
