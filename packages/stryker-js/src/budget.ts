@@ -2,8 +2,10 @@ import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as Option from 'effect/Option'
 
 import { costOrZero, decidedWithoutATest } from './mutant-cost.js'
+import type { FirstScored } from './run/phase-clock.service.js'
 
 const MILLIS_PER_SECOND = 1000
 
@@ -31,15 +33,14 @@ export const budgetOf = (input: BudgetInput): RunEvent.Budget => ({
 })
 
 export interface FixedSecondsInput {
-  readonly results: readonly Mutant.RunMutantResult[]
-  readonly actualSeconds: number
+  readonly firstScored: Option.Option<FirstScored>
   readonly freshDryRunMs: number
 }
 
-export const fixedSecondsOf = (input: FixedSecondsInput): number =>
-  Math.max(
-    0,
-    input.actualSeconds -
-      (input.freshDryRunMs + Arr.reduce(input.results, 0, (total, result) => total + costOrZero(result.cost))) /
-        MILLIS_PER_SECOND,
-  )
+export const fixedSecondsFieldOf = (input: FixedSecondsInput): { readonly fixedSeconds?: number } =>
+  Option.match(input.firstScored, {
+    onNone: () => ({}),
+    onSome: (first) => ({
+      fixedSeconds: Math.max(0, first.elapsedMs - input.freshDryRunMs - first.costMs) / MILLIS_PER_SECOND,
+    }),
+  })

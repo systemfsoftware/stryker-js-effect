@@ -45,6 +45,7 @@ import {
 } from './mutant-run.js'
 import { draftMutationTestPlan, type MutationTestPlan } from './mutation-test-plan.cell.js'
 import { inPlannedOrder, toReportedMutant } from './mutation-test-plan.js'
+import { PhaseClock } from './phase-clock.service.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
@@ -203,6 +204,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     plannedTotal: plan.plannedTotal,
     plannedMutants: [...rememberedResults, ...reuse.mutants],
     pathService: yield* Path.Path,
+    phaseClock: yield* PhaseClock,
   }
   const settledResults = [
     ...rememberedResults,
@@ -220,6 +222,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
         const measured = withMeasuredCheckCost(reported, checkMs)
         yield* announceSettledMutant(context, measured)
         yield* checkpoint.record(measured)
+        yield* context.phaseClock.markScored(checkMs)
         return measured
       })
     return yield* withPhaseSpan(

@@ -12,7 +12,7 @@ import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 
 import { MutantRunObservation } from '../interpret-mutant-run.workflow.js'
-import { mutantCostOf, testBodyMsOf } from '../mutant-cost.js'
+import { costOrZero, mutantCostOf, testBodyMsOf } from '../mutant-cost.js'
 import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
 import { type PooledTestRunner } from '../pooled-test-runner.handle.js'
 import { offerReporterEvent } from '../reporter-stream.service.js'
@@ -20,6 +20,7 @@ import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import type { TestBasis } from './dry-run.cell.js'
 import { isMutantStatus, toReportedMutant, type ValidMutantStatus } from './mutation-test-plan.js'
+import type { PhaseClockShape } from './phase-clock.service.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
 export interface PreparedStreamableMutant {
@@ -37,6 +38,7 @@ export interface RunContext {
   readonly plannedTotal: number
   readonly plannedMutants: readonly Mutant.Mutant[]
   readonly pathService: Path.Path
+  readonly phaseClock: PhaseClockShape
 }
 
 export interface ReportingInputArgs {
@@ -237,6 +239,7 @@ export const settleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
   const finished = yield* offerFinished(context, costed, prepared)
   yield* offerStreamTested(context, costed, finished, prepared)
   yield* checkpoint.record(costed)
+  yield* context.phaseClock.markScored(costOrZero(costed.cost))
   return costed
 })
 

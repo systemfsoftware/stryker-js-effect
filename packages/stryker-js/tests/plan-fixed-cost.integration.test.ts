@@ -40,6 +40,24 @@ const FILES: Readonly<Record<string, string>> = {
   'src/math.js': 'export const add = (a, b) => a + b\nexport const sub = (a, b) => a - b\n',
 }
 
+const OVERLAPPING_CONFIG = CONFIG
+  .replace(`command: 'true'`, `command: 'sleep 0.4'`)
+  .replace(`checkers: [],`, `checkers: [],\n  concurrency: 4,`)
+
+const OVERLAPPING_FILES: Readonly<Record<string, string>> = {
+  ...FILES,
+  'stryker.config.mjs': OVERLAPPING_CONFIG,
+  'src/math.js': [
+    'export const add = (a, b) => a + b',
+    'export const sub = (a, b) => a - b',
+    'export const mul = (a, b) => a * b',
+    'export const div = (a, b) => a / b',
+    'export const gt = (a, b) => a > b',
+    'export const lt = (a, b) => a < b',
+    '',
+  ].join('\n'),
+}
+
 interface Observation {
   readonly fixedSeconds: number | undefined
   readonly plan: ShardPlan
@@ -47,22 +65,23 @@ interface Observation {
   readonly total: number
 }
 
-const writeWorkspace = Effect.gen(function*() {
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const directory = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: 'stryker-fixed-cost-' }))
-  yield* Effect.forEach(
-    Object.entries(FILES),
-    ([name, content]) =>
-      Effect.gen(function*() {
-        const target = path.join(directory, name)
-        yield* fs.makeDirectory(path.dirname(target), { recursive: true })
-        yield* fs.writeFileString(target, content)
-      }),
-    { discard: true },
-  )
-  return directory
-}).pipe(Effect.orDie)
+const writeWorkspace = (files: Readonly<Record<string, string>>) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const directory = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: 'stryker-fixed-cost-' }))
+    yield* Effect.forEach(
+      Object.entries(files),
+      ([name, content]) =>
+        Effect.gen(function*() {
+          const target = path.join(directory, name)
+          yield* fs.makeDirectory(path.dirname(target), { recursive: true })
+          yield* fs.writeFileString(target, content)
+        }),
+      { discard: true },
+    )
+    return directory
+  }).pipe(Effect.orDie)
 
 const environmentFor = (directory: string, runStartedAt: number): Engine.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAX',
@@ -124,24 +143,40 @@ const planOnce = (directory: string) =>
 interface RecordedRun {
   readonly directory: string
   readonly fixedSeconds: number | undefined
+  readonly actualSeconds: number
+  readonly summedCostSeconds: number
 }
 
-const recordRun: Effect.Effect<RecordedRun> = Effect.gen(function*() {
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const directory = yield* writeWorkspace
-  yield* runOnce(directory)
-  const record = yield* fs.readFileString(path.join(directory, REPORT_FILE))
-  return {
-    directory,
-    fixedSeconds: Option.getOrUndefined(
-      Option.flatMap(
-        S.decodeOption(S.fromJsonString(S.Struct({ fixedSeconds: S.optional(S.Finite) })))(record),
-        (decoded) => Option.fromUndefinedOr(decoded.fixedSeconds),
+const runIn = (directory: string): Effect.Effect<RecordedRun> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    yield* runOnce(directory)
+    const record = yield* S.decodeEffect(
+      S.fromJsonString(
+        S.Struct({
+          fixedSeconds: S.optional(S.Finite),
+          budget: S.Struct({ actualSeconds: S.Finite }),
+          costs: S.Record(S.String, S.Struct({ actualMs: S.NullOr(S.Finite) })),
+        }),
       ),
-    ),
-  }
-}).pipe(Effect.orDie, Effect.provide(filePorts))
+    )(yield* fs.readFileString(path.join(directory, REPORT_FILE)))
+    return {
+      directory,
+      fixedSeconds: record.fixedSeconds,
+      actualSeconds: record.budget.actualSeconds,
+      summedCostSeconds: Object.values(record.costs).reduce((total, cost) => total + (cost.actualMs ?? 0), 0) / 1000,
+    }
+  }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+const removeWorkspace = (directory: string): Effect.Effect<void> =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true })).pipe(
+    Effect.ignore,
+    Effect.provide(filePorts),
+  )
+
+const recordRun = (files: Readonly<Record<string, string>>): Effect.Effect<RecordedRun> =>
+  Effect.flatMap(writeWorkspace(files).pipe(Effect.provide(filePorts)), runIn)
 
 const planRecorded = (recorded: RecordedRun): Effect.Effect<Observation> =>
   Effect.gen(function*() {
@@ -163,10 +198,7 @@ const planRecorded = (recorded: RecordedRun): Effect.Effect<Observation> =>
       total: known.total,
     }
   }).pipe(
-    Effect.ensuring(
-      Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(recorded.directory, { recursive: true, force: true }))
-        .pipe(Effect.ignore),
-    ),
+    Effect.ensuring(removeWorkspace(recorded.directory)),
     Effect.orDie,
     Effect.provide(filePorts),
   )
@@ -178,7 +210,7 @@ Feature('Pricing the fixed cost of a shard from the incremental record', { timeo
     scenario(
       'A shard holding only remembered mutants is predicted at the fixed cost the last run recorded',
       Gherkin.Do.pipe(
-        Given('a project whose mutation run wrote its incremental record')('recorded', () => recordRun),
+        Given('a project whose mutation run wrote its incremental record')('recorded', () => recordRun(FILES)),
         When('the planner plans the project again with every mutant remembered')(
           'planned',
           (s) => planRecorded(s.recorded),
@@ -192,6 +224,31 @@ Feature('Pricing the fixed cost of a shard from the incremental record', { timeo
             everyMutantRemembered: true,
             recordedFixedCostIsPositive: true,
             shardPredictions: [s.planned.fixedSeconds],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A run whose mutants overlap records the time spent before its first mutant was scored',
+      Gherkin.Do.pipe(
+        Given('a project whose mutants run four at a time and each take 0.4 s of test command')(
+          'directory',
+          () => writeWorkspace(OVERLAPPING_FILES).pipe(Effect.provide(filePorts)),
+        ),
+        When('its mutation run finishes')(
+          'recorded',
+          (s) => runIn(s.directory).pipe(Effect.ensuring(removeWorkspace(s.directory))),
+        ),
+        Then('the mutants overlapped, and the recorded fixed seconds are positive and inside the run')((s, expect) =>
+          expect({
+            mutantsOverlapped: s.recorded.summedCostSeconds > s.recorded.actualSeconds,
+            recordedFixedCostIsPositive: (s.recorded.fixedSeconds ?? 0) > 0,
+            fixedCostInsideTheRun: (s.recorded.fixedSeconds ?? Number.POSITIVE_INFINITY) < s.recorded.actualSeconds,
+          }).toStrictEqual({
+            mutantsOverlapped: true,
+            recordedFixedCostIsPositive: true,
+            fixedCostInsideTheRun: true,
           })
         ),
       ),

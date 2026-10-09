@@ -31,7 +31,7 @@ import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
 import { writeFileAtomic } from './atomic-write.cell.js'
-import { budgetOf, fixedSecondsOf } from './budget.js'
+import { budgetOf, fixedSecondsFieldOf } from './budget.js'
 import { buildReproducers, BuildReproducersCommand } from './build-reproducers.workflow.js'
 import {
   type CheckpointMutantRow,
@@ -853,9 +853,9 @@ const costsOf = (input: MutationReportingInput, results: readonly Mutant.RunMuta
   mutantCostsOf(mutantCostModelOf(input, results))
 
 const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWriteIncrementalReport.name)(function*(
-  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
+  deps: Pick<MutationReportingDeps, 'fs' | 'path' | 'phaseClock'>,
   input: MutationReportingInput,
-  report: Report.MutationTestResult & { readonly budget: RunEvent.Budget },
+  report: Report.MutationTestResult,
   identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>,
 ) {
   const runInputsDigest = yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options)
@@ -870,11 +870,7 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
       identities,
     ),
     costs: costsOf(input, input.results),
-    fixedSeconds: fixedSecondsOf({
-      results: input.results,
-      actualSeconds: report.budget.actualSeconds,
-      freshDryRunMs: input.freshDryRunMs,
-    }),
+    ...fixedSecondsFieldOf({ firstScored: yield* deps.phaseClock.firstScored, freshDryRunMs: input.freshDryRunMs }),
     ...dryRunCoverageFieldOf(input.testCoverage),
   }).pipe(Effect.orDie)
   yield* writeFileAtomic(deps, input.options.incrementalFile, json)
@@ -952,7 +948,6 @@ const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlim
 ) {
   const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
   const runInputsDigest = yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options)
-  const actualSeconds = ((yield* Clock.currentTimeMillis) - input.runStartedAt) / 1000
   return {
     incrementalVersion: INCREMENTAL_CACHE_VERSION,
     engineDigest: yield* engineDigestOf(deps.fs, deps.path),
@@ -966,8 +961,12 @@ const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlim
     ),
     costs: costsOf(input, results),
     testFiles,
-    budget: budgetOf({ results, concurrency: input.concurrency, actualSeconds }),
-    fixedSeconds: fixedSecondsOf({ results, actualSeconds, freshDryRunMs: input.freshDryRunMs }),
+    budget: budgetOf({
+      results,
+      concurrency: input.concurrency,
+      actualSeconds: ((yield* Clock.currentTimeMillis) - input.runStartedAt) / 1000,
+    }),
+    ...fixedSecondsFieldOf({ firstScored: yield* deps.phaseClock.firstScored, freshDryRunMs: input.freshDryRunMs }),
     ...dryRunCoverageFieldOf(input.testCoverage),
   }
 })
