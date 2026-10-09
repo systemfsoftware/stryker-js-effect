@@ -13,8 +13,10 @@ import {
 
 type DescriptionCandidate = DescribeCheckerMutantsCommand['candidates'][number]
 
+const decodeWire = S.decodeUnknownResult(CheckerMutantFromMutant)
+
 const describe = (candidate: DescriptionCandidate): MutantDescription =>
-  Result.match(S.decodeUnknownResult(CheckerMutantFromMutant)(candidate.mutant), {
+  Result.match(decodeWire(candidate.mutant), {
     onSuccess: (wire) => MutantDescribed.make({ wire }),
     onFailure: (error) =>
       MutantUndescribable.make({

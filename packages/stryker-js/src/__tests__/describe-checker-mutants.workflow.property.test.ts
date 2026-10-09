@@ -31,9 +31,7 @@ interface Drawn {
 }
 
 const drawnArb = Arbitrary.array(
-  Arbitrary.all([Arbitrary.schema(Mutant.Mutant), Arbitrary.schema(Corruption)]).pipe(
-    Arbitrary.map(([mutant, corruption]): Drawn => ({ mutant, corruption })),
-  ),
+  Arbitrary.all({ mutant: Arbitrary.schema(Mutant.Mutant), corruption: Arbitrary.schema(Corruption) }),
   { maxLength: 8 },
 )
 
