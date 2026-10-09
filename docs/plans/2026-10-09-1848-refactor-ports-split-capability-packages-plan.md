@@ -16,7 +16,7 @@ execution: code
 - Objective: a consumer of `@systemfsoftware/stryker-js-*` can depend on one engine capability (its contracts, the engine, the worker host, a reporter set, survivors, serve, mcp) without installing or importing the CLI, and can provide their own implementation of any service the engine needs, because every service contract is importable without its implementation.
 - Means: L1 moves every `Layer` out of the `*.service.ts` file that declares its tag, under a new ADR that supersedes ADR-0001's service row (KTD1, KTD2). L2 then cuts `packages/stryker-js` along the seams its import graph shows, into packages that each publish one namespace (KTD5, KTD6).
 - Authority: `CONSTITUTION.md` first, then the cell-architecture, boundary-testing, schema-laws, and package-topology packs, then the ADRs in `docs/adr/`, then this plan. Where `cell-architecture/ports-separate-from-layers.md` and the tier-2 clause of `cell-architecture/service-and-layer-boundaries.md` disagree, ports-separate-from-layers wins (KTD1).
-- Stop conditions: stop and ask when a unit needs to edit a read-only surface (`.github/workflows/`, `CONSTITUTION.md`, `repos/**`) or a grading surface (`gritlint.json`, the `check:ci` script, thresholds), needs a new third-party executable dependency, or would retarget the dogfood overrides in `pnpm-workspace.yaml`. No local mutation runs.
+- Stop conditions: stop and ask when a unit needs to edit a read-only surface (`.github/workflows/`, `CONSTITUTION.md`, `repos/**`), needs a new third-party executable dependency, or would retarget the dogfood overrides in `pnpm-workspace.yaml`. Two grading-surface edits are approved: `attw` joins `check:ci` (U21), and the `*.service.ts` Layer rule joins the gritlint gate (U20). Any other grading-surface edit stops for approval. publint is not added, installed, or run until the root reports operator approval (U17). No local mutation runs.
 - Execution profile: one stacked PR per layer. L1 is branch `stream-a/l1-ports-topology` off `main`. L2 is the next layer, cut from L1. No force-push; when `main` moves, merge `origin/main` upward.
 
 ---
@@ -43,31 +43,32 @@ Port and layer separation (L1)
 
 Capability packages (L2)
 
-- R6. The core package is split into the packages the import graph supports (KTD5), each with one namespace barrel and an exports map that declares only that entry (plus `./package.json`).
+- R6. The core package is split into the packages the import graph supports (KTD5), each with one namespace barrel and an exports map that declares only that entry (plus `./package.json`). The one exception is `@systemfsoftware/stryker-js`, whose `./events` and `./promises` entries stay only while U16's per-subpath condition holds; otherwise they move to the owning package.
 - R7. No workspace package imports a path another package's exports map does not declare.
 - R8. The workspace package graph is acyclic.
 - R9. Every in-repo consumer imports from the package that owns the symbol; no package re-exports another package's symbols as its own surface.
-- R10. publint and arethetypeswrong run in CI on every published package and pass.
+- R10. arethetypeswrong runs in CI on every published package and passes (L1, U21). publint joins it once the operator approves it (U17); until then it is the one pending item.
 - R11. The existing e2e lanes pass against the split packages.
 
 ### Success Criteria
 
-- A throwaway audit over `git ls-files '*.service.ts'` finds zero files that both declare a `Context.Service` tag and export a `Layer`, and the same audit exits non-zero when a `Layer` is planted in one service file.
-- `turbo` builds the workspace graph without a cycle error, and `pnpm check:ci`, `pnpm test`, and the e2e jobs are green on each layer's head.
+- The gritlint gate refuses any `*.service.ts` that exports a `Layer` value, a function returning a `Layer`, or a `*Live` name, whether or not the file declares a tag. The rule's fixtures include violating inputs it refuses, and the repo tree passes it (U20).
+- `pnpm check:ci` (with `attw`), `pnpm test`, and the e2e jobs are green on each layer's head. L2 also shows the workspace package graph acyclic through a real run; that turbo refuses a cycle is unverified and nothing relies on it until a run proves it (U13).
 - A consumer can `import { Engine } from '@systemfsoftware/stryker-js-engine'` without the CLI, MCP, or MSP modules in its module graph.
 
 ### Scope Boundaries
 
 - Not in L1 or L2: the versioned runner/checker protocol (L3), the single `MutantEvent` stream (L4), the plugin registry (L5), and MCP/SARIF end-to-end work (L6).
 - Not in L1: `*.service.ts` files that declare no tag and export no `Layer` (the four instrumenter modules, `PluginRpcs.service.ts`, `framework-claimant.service.ts`, `plugin-load-report.service.ts`, `plugin-loader.service.ts`, `reporter-stream.service.ts`, `reporter-wiring.service.ts`, `run/StageServices.service.ts`, `run/host.service.ts`). They misuse the suffix but are not a port/layer co-location. L2 renames the core ones as it rehomes them; the instrumenter and plugin-interface ones are left for their packages' owners.
-- Not in L1: hosts that call `RunEnvironment.stage` inside a cell (`Mcp/mcp-server.cell.ts`, `Serve/Serve.cell.ts`, `run-request.cell.ts`, `plan-request.cell.ts`, `run/run-stages.ts`). Today they reach the Layers through the port's static. After U7 they import `drivers/run-stage.ts`, which breaks the "inward import direction" bullet of `ports-separate-from-layers` in the open. It is also mid-pipeline binding under `service-and-layer-boundaries` invariant 4.3. L1 moves the function, not the call sites, and ADR-0002 names these five modules as the known remaining violation. The fix is each host binding the stage at its own composition root, which needs the L4 event stream. A reviewer must not read L1 as having closed it.
+- Not in L1: hosts that call `RunEnvironment.stage` inside a cell (`Mcp/mcp-server.cell.ts`, `Serve/Serve.cell.ts`, `run-request.cell.ts`, `plan-request.cell.ts`, `run/run-stages.ts`). Today they reach the Layers through the port's static. After U7 they import `drivers/run-stage.ts`, which breaks the "inward import direction" bullet of `ports-separate-from-layers` in the open. It is also mid-pipeline binding under `service-and-layer-boundaries` invariant 4.3. L1 moves the function, not the call sites, and the L1 ADR names these five modules as the known remaining violation. The fix is each host binding the stage at its own composition root, which needs the L4 event stream. A reviewer must not read L1 as having closed it.
 - Not in L2: changing what the released `stryker` binary does. The CLI keeps bundling its whole closure into `dist/main.mjs` (KTD7).
 
 ### Key Decisions
 
 - The package list comes from the import graph, not the stream contract's list. The graph supports ten packages; it does not support `reporting` as one package or a separate `shard` package (KTD5, Appendix A).
 - Breaking changes are made, not shimmed (`BREAK-1`). `RunEventDrainLive` leaves `RunEvent`, and the core root's eleven namespaces move to their owning packages.
-- Config authoring moves to `@systemfsoftware/stryker-js-config` only if the user confirms (Outstanding Questions). `docs/plans/2026-09-18-1505-refactor-stryker-facade-dismantle-language-plan.md` KTD2 made `@systemfsoftware/stryker-js/config` the authoring path as a user-directed decision ("zero auxiliary package installations") and rejected a `stryker-config` package as an unearned bucket. Keeping that path while `mergeConfig` lives below the engine needs a re-export from the CLI package, which `package-topology/one-access-path` and the stream contract's no-monolith-re-export rule both refuse. U11 is blocked until this is decided.
+- Config authoring path: undecided, routed to the root; U11 stays open with both branches written out. `docs/plans/2026-09-18-1505-refactor-stryker-facade-dismantle-language-plan.md` KTD2 made `@systemfsoftware/stryker-js/config` the authoring path as a user-directed decision ("zero auxiliary package installations") and rejected a `stryker-config` package as an unearned bucket. Keeping that path while `mergeConfig` lives below the engine needs a re-export from the CLI package, which `package-topology/one-access-path` and the stream contract's no-monolith-re-export rule both refuse. L1 does not depend on it.
+- Package-topology checks that attw and publint do not cover are gritlint rules in the existing gate, authored as a bundled pack in `systemfsoftware/systemfsoftware` `packs/` and reached through the flake input, never a repo-local script (KTD10). L1 lands the `*.service.ts` Layer rule.
 
 ### Sources
 
@@ -82,30 +83,33 @@ Capability packages (L2)
 ### Key Technical Decisions
 
 - KTD1. Port files export no `Layer` at all, including pure in-memory ones. `service-and-layer-boundaries` tier 2 allows `static layer(options)` on the class when no driver is involved; `ports-separate-from-layers` says port files "export no `Layer` values". The stream ruling makes the second binding. One rule with no exceptions is also the only form a later lint can check. (session-settled: user-directed - chosen over keeping tier-2 static layers on pure services: the ruling binds the pack rule.)
-- KTD2. Implementations go to `src/drivers/<what-it-binds>.ts`, exporting `layer` (a value, or a function where the old static was already a function). `*.layer.ts`/`*.port.ts` suffixes are banned by `service-and-layer-boundaries` §1, and a sibling unsuffixed module would collide with ADR-0001's "functions over a schema's data" convention. The ADR extends ADR-0001's drivers row from "adapters to foreign APIs" to "every Layer that satisfies a service contract".
-- KTD3. Static `*Live` names in libraries are removed, not renamed in place: `OutputModeProbeLive`, `RunEventDrainLive`, `WorkerReportsLive` (`service-and-layer-boundaries` gate 3).
+- KTD2. Implementations go to `src/drivers/<what-it-binds>.ts`, exporting `layer` (a value, or a function where the old static was already a function); a driver that binds several layers names each by role. `*.layer.ts`/`*.port.ts` suffixes are banned by `service-and-layer-boundaries` §1. The ADR extends ADR-0001's drivers row from "adapters to foreign APIs" to "every Layer that satisfies a service contract". It does not touch ADR-0001's rule on where functions over a schema's data live (line 60), which another stream amends.
+- KTD3. Static `*Live` names in libraries are removed, not renamed in place (`service-and-layer-boundaries` gate 3). Each gets a driver export with no `Live` suffix: `OutputModeProbeLive` -> `drivers/output-mode-probe.ts` `layer`; `RunEventDrainLive` -> `drivers/run-event-stream.ts` `drainLayer` (with `fileDrainLayer` and `portLayer` beside it); `WorkerReportsLive` -> `drivers/run-events.ts` `workerReportsLayer`. Every importer, including the `RunEvent` and `Engine` barrels, switches to the driver export.
 - KTD4. `RunEnvironment.stage` and `RunEnvironment.forStream` move with the Layers they assemble into `src/drivers/run-stage.ts`; the `RunEnvironment` port file keeps the tag, `RunEnvironmentShape`, and `phaseEntered`.
 - KTD5. L2 packages, in dependency order (Appendix A has the evidence):
-  1. `stryker-js-contracts`: every `*.schema.ts` imported across seams, every service port, and the pure helpers those reference (`FileMatcher.ts`, `admit-file-match.workflow.ts`, `classify-run-outcome.workflow.ts`, `stryker-outputs.ts`, `mutant-cost.ts`, `surfacing.ts`, `phase-durations.ts`). About 53 modules.
-  2. `stryker-js-config`: `config/`, `Configuration/`, `drivers/config.ts`, and the config steps now under `run/` (`load-config*`, `extends-step`, `validate-options*`, `discover-config-file`, `resolve-config*`, `describe-config-*`). About 18.
+  1. `stryker-js-contracts`: every `*.schema.ts` imported across seams, every service port, and the pure helpers those reference (`FileMatcher.ts`, `classify-run-outcome.workflow.ts`, `stryker-outputs.ts`, `mutant-cost.ts`, `phase-durations.ts`). A service port is a `*.service.ts` that declares a `Context.Service` tag. That includes `run/RunEnvironment.service.ts` and `mutation-reporting.service.ts` (their implementations go to the engine). `*.service.ts` files that declare no tag are not ports: L2 renames and rehomes them with what they import. `surfacing.ts` and `admit-file-match.workflow.ts` stay out of contracts because they import a renderer, a survivors workflow, and an engine glob workflow (Appendix A). About 51 modules.
+  2. `stryker-js-config` (contingent on the config-path decision; see U11 for the other branch): `config/`, `Configuration/`, `drivers/config.ts`, and the config steps now under `run/` (`load-config*`, `extends-step`, `validate-options*`, `discover-config-file`, `resolve-config*`, `describe-config-*`). About 18.
   3. `stryker-js-sandbox`: `Sandbox.*`, `keep-temp-dir.workflow.ts`, `atomic-write.cell.ts`. About 5.
   4. `stryker-js-worker-host`: the host side of the worker boundary: `Worker*`, `WorkerLauncher`, socket worker, worker client/protocol blueprints, `command-runner`, `pooled-test-runner`, `vm-runner`, plugin loading, `Plugin/`. About 18. Named `worker-host`, not `worker-runtime`, because `stryker-js-plugin-runtime` already is the worker-side runtime.
-  5. `stryker-js-engine`: `run/`, `Checker/`, `Engine/`, `RunEvent/`, planning, instrumentation, incremental reuse, the `MutationReporting` implementation, the reporter host (`reporter-stream`, `reporter-wiring`), and report assembly (`reporting/verdict-envelope*`, `static-verdict`, `metrics-from-report*`, `build-reproducers`, `report-test-ids`). About 88.
+  5. `stryker-js-engine`: `run/` (minus the two port files above), `Checker/`, `Engine/`, `RunEvent/`, planning, instrumentation, incremental reuse, the `MutationReporting` implementation, the reporter host (`reporter-stream`, `reporter-wiring`), report assembly (`reporting/verdict-envelope*`, `static-verdict`, `metrics-from-report*`, `build-reproducers`, `report-test-ids`), `admit-file-match.workflow.ts`, and the platform layer `drivers/node.ts` (`nodePlatformLayer`), which the engine's own integration suites compose. About 88.
   6. `stryker-js-reporting`: the renderers (clear-text, JSON, SARIF, progress, annotations, the rest of `reporting/`). Depends on contracts only. About 22.
   7. `stryker-js-survivors`: `Survivors/`, `Rerun/`, `Feedback/`, budget gate, baseline. About 14.
   8. `stryker-js-serve`: `Serve/`. About 5.
   9. `stryker-js-mcp`: `Mcp/`. About 4.
-  10. `stryker-js` keeps its name and the `stryker` bin: `bin/`, `run-request`, `conclude-run`, CLI routing, `drivers/node.ts`, and `shard/` (only the CLI imports it). About 19.
+  10. `stryker-js` keeps its name and the `stryker` bin: `bin/`, `run-request`, `conclude-run`, CLI routing, and `shard/` (only the CLI imports it). It imports the platform layer from the engine. About 18.
 - KTD6. Existing packages are not merged into the new ones. `stryker-js-plugin-interface` stays the plugin boundary (L3's protocol home), and `stryker-js-cli-contract` stays the machine-stream wire contract. Engine ports are not plugin contracts, so they get `stryker-js-contracts`.
 - KTD7. The CLI keeps `deps.alwaysBundle: [/./]` (`packages/stryker-js/tsdown.config.ts:66`), so the released binary stays one self-contained bundle and the dogfood install shape does not change. Library consumers get each package's own `dist`.
-- KTD8. Package isolation and acyclicity use the tools already present: exports maps resolved through the `@systemfsoftware/source` condition (`packages/stryker-js/tsconfig.app.json:13`) make an undeclared deep import fail typecheck, and turbo refuses a cyclic workspace graph. No new lint is added for R7/R8.
-- KTD9. L1 adds no permanent tests. It moves code without changing behavior. The suites that build each moved Layer prove it (per-unit Test Scenarios), and a test asserting where a Layer lives would be a source-text test (`CHK1`, OP12). The refusal evidence for R3 is the planted-Layer audit run in the PR, not a committed test.
+- KTD8. Package isolation uses what is already present. A bare deep import of an undeclared path fails typecheck because exports maps resolve through the `@systemfsoftware/source` condition (`packages/stryker-js/tsconfig.app.json:13`). A relative import that escapes the package is refused by tsc in every composite project: a throwaway probe in `packages/stryker-js-plugin-runtime/src` importing `../../stryker-js-cli-contract/src/mod.js` failed `tsc -b` with TS6059 ("is not under 'rootDir' ... 'rootDir' is expected to contain all source files") and TS6307 ("is not listed within the file list of project"), exit 2. Every new L2 package therefore keeps `composite: true` in each tsconfig, as the existing packages do. Acyclicity (R8) is not assumed from turbo: L2 shows it with a real run before relying on it (U13).
+- KTD9. L1 adds no tests for the moved code. It moves code without changing behavior, and the suites that build each moved Layer prove it (per-unit Test Scenarios). A test asserting where a Layer lives would be a source-text test (`CHK1`, OP12). R3's permanent gate is the gritlint rule (U20), whose own fixtures include violating inputs it refuses.
+- KTD10. gritlint rules ship as bundled packs. Packs live in `systemfsoftware/systemfsoftware` `packs/<pack>/` (`pack.json`, `rules/*.md`, `fixtures/<rule>/{bad,good}/<case>/`), embedded at build time by `include_dir!` in `apps/gritlint/src/main.rs`, and reach this repo through the `systemfsoftware` flake input (`flake.nix:25,87`) and `bin/gritlint`. The Layer rule is a new `cell-architecture` pack named for the compound pack whose rule it enforces. It lands upstream as its own PR, then L1 bumps the flake input and enables the pack in `gritlint.json`. Later package-topology rules go in a `package-topology` pack the same way.
+- KTD11. `attw` joins `check:ci` in L1 through the existing per-package `attw --pack .` scripts, the `@systemfsoftware/arethetypeswrong-cli` fork, and the existing turbo `attw` task (`turbo.json:119`); no new dependency.
 
 ### Alternatives considered
 
 - The contract's nine packages as listed. Rejected: `reporting` as one package forms a cycle with the engine (engine -> report assembly, 11 edges; reporting -> engine host, 13 edges), and `shard` has no consumer but the CLI.
 - Three packages (contracts, engine, cli). Rejected: it keeps MCP, MSP, survivors, and renderers inside the CLI, which the Objective excludes.
-- Nx module-boundary rules or dependency-cruiser for R7/R8. Rejected: neither is in the lockfile, and exports maps plus turbo already refuse both cases.
+- Nx module-boundary rules or dependency-cruiser for R7/R8. Rejected: neither is in the lockfile, and exports maps plus composite tsconfigs already refuse undeclared and escaping imports.
+- A repo-local script or consumer `rules` entry for the Layer rule. Rejected by ruling: package-topology and port checks ship as bundled gritlint packs.
 
 ### High-Level Technical Design
 
@@ -114,7 +118,7 @@ Package dependency direction after L2 (directional; arrows point at the dependen
 ```mermaid
 flowchart BT
   contracts[stryker-js-contracts]
-  config[stryker-js-config] --> contracts
+  config["stryker-js-config (contingent, U11)"] --> contracts
   sandbox[stryker-js-sandbox] --> contracts
   workerhost[stryker-js-worker-host] --> contracts
   workerhost --> config
@@ -124,27 +128,34 @@ flowchart BT
   engine --> workerhost
   reporting[stryker-js-reporting] --> contracts
   survivors[stryker-js-survivors] --> engine
+  survivors --> config
+  survivors --> contracts
   serve[stryker-js-serve] --> engine
+  serve --> config
   mcp[stryker-js-mcp] --> engine
   mcp --> survivors
   cli[stryker-js CLI] --> engine
+  cli --> contracts
+  cli --> config
   cli --> reporting
   cli --> survivors
   cli --> serve
   cli --> mcp
 ```
 
+If the config package is not created, every `--> config` edge becomes an edge to whichever package U11's other branch puts those modules in (contracts for schemas and merge, engine for loading, the CLI for the authoring entry).
+
 ### Assumptions
 
-- The four residual back-edges in Appendix A outside the contracts package each close by moving or reparameterizing one module (U11, U12, U13, U15); none changes behavior.
-- `turbo` 2.x refuses a cyclic workspace graph with "Invalid package dependency graph: cyclic dependency detected" (https://github.com/vercel/turborepo/discussions/1752).
+- The residual back-edges in Appendix A each close by moving or reparameterizing the module named against them (U10, U11, U12, U13, U15); none changes behavior.
+- Unverified (P9): `turbo` 2.x refuses a cyclic workspace graph with "Invalid package dependency graph: cyclic dependency detected" (https://github.com/vercel/turborepo/discussions/1752). L2 does not rely on it until a real run with a planted cycle shows it.
 
 ### Risks & Dependencies
 
-- `.github/workflows/mutation.yml:29-36` hard-codes `PROJECTS` and `INCREMENTAL_REPORTS` to `packages/stryker-js` and three others. After L2, workflows outside `packages/stryker-js` go unmutated until that list changes, and the file is read-only to agents. L2 cannot finish R10/R11 green and keep mutation coverage without an operator edit.
+- `.github/workflows/mutation.yml:29-36` hard-codes `PROJECTS` and `INCREMENTAL_REPORTS` to `packages/stryker-js` and three others, and mutates source, not the CLI bundle. After L2, workflows outside `packages/stryker-js` go unmutated until that list changes. The file is read-only to agents and the edit is routed to the root: it is a precondition for merging L2, not a follow-up.
 - Moving modules between packages resets their incremental mutation records, so the first `main` mutation run after L2 is a full run.
-- New packages are not in the released flake input, so the dogfood overrides cannot point at them until a release carries them (`AGENTS.md` Dogfood row). The CLI bundle (KTD7) keeps mutation on the released CLI working meanwhile.
-- `attw` is wired as a turbo task and per-package script but `check:ci` (`package.json:25`) does not run it today, so R10 changes a grading surface and needs operator approval (GATE1, CONST-E9).
+- New packages are not in the released flake input, so the dogfood overrides cannot point at them until a release carries them (`AGENTS.md` Dogfood row).
+- The Layer rule needs an upstream `systemfsoftware/systemfsoftware` PR. L1 pins the flake input to that PR's head to run the gate; L1 cannot merge until the upstream PR merges and L1 re-pins to the merge commit.
 
 ---
 
@@ -153,7 +164,7 @@ flowchart BT
 | U-ID | Title                                              | Files touched                                                                                                                                                                                                           | Depends on             |
 | ---- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
 | U1   | Declare package-topology pack                      | `.compound-engineering/config.yaml`                                                                                                                                                                                     | -                      |
-| U2   | ADR-0002 ports separate from layers                | `docs/adr/0002-*.md`                                                                                                                                                                                                    | -                      |
+| U2   | ports ADR (next free number)                       | `docs/adr/<NNNN>-ports-separate-from-layers.md`                                                                                                                                                                         | -                      |
 | U3   | plugin-runtime layers to drivers                   | `packages/stryker-js-plugin-runtime/src/**`                                                                                                                                                                             | U2                     |
 | U4   | typescript-checker layers to drivers               | `packages/stryker-js-typescript-checker/src/**`, tests                                                                                                                                                                  | U3                     |
 | U5   | vitest-runner layers to drivers                    | `packages/stryker-js-vitest-runner/src/**`                                                                                                                                                                              | U3                     |
@@ -161,6 +172,8 @@ flowchart BT
 | U7   | core run-scoped layers and stage wiring to drivers | `packages/stryker-js/src/{Worker,mutation-reporting,reporter,run-events}.service.ts`, `run/{RunEnvironment,phase-clock}.service.ts`, `drivers/run-stage.ts`                                                             | U6                     |
 | U8   | e2e harness layers to drivers                      | `test/e2e/src/Harness/**`                                                                                                                                                                                               | U2                     |
 | U9   | API reports and changesets for L1                  | `packages/*/etc/*.api.md`, `.changeset/*`                                                                                                                                                                               | U3-U7                  |
+| U20  | gritlint rule: no Layer from `*.service.ts`        | upstream `systemfsoftware/systemfsoftware` `packs/cell-architecture/**`; here `flake.lock`, `gritlint.json`                                                                                                             | U3-U8                  |
+| U21  | attw in `check:ci`                                 | `package.json`                                                                                                                                                                                                          | -                      |
 | U10  | contracts package                                  | `packages/stryker-js-contracts/**`                                                                                                                                                                                      | L1                     |
 | U11  | config package                                     | `packages/stryker-js-config/**`, framework READMEs                                                                                                                                                                      | U10                    |
 | U12  | sandbox and worker-host packages                   | `packages/stryker-js-sandbox/**`, `packages/stryker-js-worker-host/**`                                                                                                                                                  | U10, U11               |
@@ -168,7 +181,7 @@ flowchart BT
 | U14  | reporting package                                  | `packages/stryker-js-reporting/**`                                                                                                                                                                                      | U10                    |
 | U15  | survivors, serve, mcp packages                     | `packages/stryker-js-{survivors,serve,mcp}/**`                                                                                                                                                                          | U13, U14               |
 | U16  | CLI residue and core root surface                  | `packages/stryker-js/**`                                                                                                                                                                                                | U15                    |
-| U17  | publint and attw in CI                             | `package.json`, `turbo.json`, `packages/*/tsdown.config.ts`                                                                                                                                                             | U16, operator approval |
+| U17  | publint in CI (pending operator approval)          | `package.json`, `packages/*/tsdown.config.ts`, `pnpm-workspace.yaml`                                                                                                                                                    | U16, operator approval |
 | U18  | flake, e2e closure, mutation projects              | `flake.nix`, `test/e2e*`, `mutation.yml` (operator)                                                                                                                                                                     | U16                    |
 | U19  | API reports and changesets for L2                  | `packages/*/etc/*.api.md`, `.changeset/*`                                                                                                                                                                               | U16                    |
 
@@ -183,12 +196,12 @@ flowchart BT
 - Test Scenarios: Test expectation: none - configuration. Verification is the resolver run below.
 - Verification: the ce-brainstorm `packs-resolve.py` resolver prints four roots with no `errors`.
 
-### U2. ADR-0002: ports separate from layers
+### U2. Ports ADR: ports separate from layers
 
 - Goal: one accepted record that makes KTD1-KTD4 the module rule.
 - Requirements: R2.
-- Files: `docs/adr/0002-ports-separate-from-layers.md` (new). `docs/adr/0001-cell-architecture-module-taxonomy.md` stays byte-identical.
-- Approach: MADR minimal variant with frontmatter `status: "accepted"`, `date`, `decision-makers`, and `supersedes: ["ADR-0001"]`. The problem statement scopes the supersession to ADR-0001's `*.service.ts` row and drivers row and says every other clause stands. Options: tier-2 static layers kept on pure services; a new `*.live.ts` suffix; driver modules for every Layer (chosen). Name the pack conflict (`ports-separate-from-layers` vs `service-and-layer-boundaries` tier 2) and the ruling. Confirmation: review against the replacement rows, plus the planted-Layer audit.
+- Files: `docs/adr/<NNNN>-ports-separate-from-layers.md` (new), where `<NNNN>` is the next number free on `origin/main` and in every open PR's changed files when the L1 PR opens (another stream is adding an ADR that amends ADR-0001 line 60; if it holds 0002, this takes the one after). `docs/adr/0001-cell-architecture-module-taxonomy.md` stays byte-identical.
+- Approach: MADR minimal variant with frontmatter `status: "accepted"`, `date`, `decision-makers`, and `supersedes: ["ADR-0001"]`. The problem statement scopes the supersession to ADR-0001's `*.service.ts` row (line 44) and extends its drivers row (line 46), and says every other clause stands, including line 60 on where functions over a schema's data live. Options: tier-2 static layers kept on pure services; a new `*.live.ts` suffix; driver modules for every Layer (chosen). Name the pack conflict (`ports-separate-from-layers` vs `service-and-layer-boundaries` tier 2) and the ruling. Confirmation: the gritlint rule (U20).
 - ADR content also required: a "Bad, because" consequence naming the five host modules that import `drivers/run-stage.ts` after U7 (Scope Boundaries), so the record does not claim inward direction holds everywhere.
 - Test Scenarios: Test expectation: none - decision record.
 - Verification: the three MADR H2s are present, the `Chosen option: "..."` line is present, and the YAML parses with a quoted status (madr skill V1, V2).
@@ -208,11 +221,11 @@ flowchart BT
 ### U4. typescript-checker: layers to drivers
 
 - Goal: `CheckerRuntime.service.ts` declares only the port.
-- Requirements: R3, R4.
-- Files: `packages/stryker-js-typescript-checker/src/CheckerRuntime.service.ts` (`layer`, line 107; imports `typescript/unstable/async`), new `src/drivers/checker-runtime.ts`, `CheckerWorker.service.ts` (Layer-only handlers: rename to `src/drivers/checker-worker.ts`), `src/main.ts`, `tests/check-mutants.integration.test.ts`, `tests/program-digest.integration.test.ts`, `test/e2e-core/tests/concurrency-checker.integration.test.ts`, `test/e2e-core/tests/placement.integration.test.ts`.
-- Approach: the TypeScript driver import leaves the port file together with the Layer. That is the driver leak `ports-separate-from-layers` names.
+- Requirements: R3, R4, R5.
+- Files: `packages/stryker-js-typescript-checker/src/CheckerRuntime.service.ts` (`layer`, line 107; imports `typescript/unstable/async`), new `src/drivers/checker-runtime.ts`, `CheckerWorker.service.ts` (Layer-only handlers: rename to `src/drivers/checker-worker.ts`), `src/main.ts`, the `./runtime` entry module, `README.md` (it advertises `CheckerRuntime.layer(options)`), `tests/check-mutants.integration.test.ts`, `tests/program-digest.integration.test.ts`, `test/e2e-core/tests/concurrency-checker.integration.test.ts`, `test/e2e-core/tests/placement.integration.test.ts`.
+- Approach: the TypeScript driver import leaves the port file together with the Layer. That is the driver leak `ports-separate-from-layers` names. `./runtime` is a declared export that `api-extractor.json` does not cover, so removing `CheckerRuntime.layer` from it is a published break even though the api report does not change.
 - Test Scenarios: the four suites above pass with the new import path. They drive a real `tsc` program (`boundary-testing/real-system-oracles`), so a wrong wiring fails them.
-- Verification: `pnpm --filter @systemfsoftware/stryker-js-typescript-checker typecheck test`; the api report is unchanged (only `strykerPlugins` is published).
+- Verification: `pnpm --filter @systemfsoftware/stryker-js-typescript-checker typecheck test build`.
 
 ### U5. vitest-runner: layers to drivers
 
@@ -226,19 +239,19 @@ flowchart BT
 
 - Goal: core ports that bind `FileSystem`, `Stdio`, or `ChildProcessSpawner` declare only the tag.
 - Requirements: R3, R4, R5.
-- Files (port: member, line -> driver):
-  - `git-diff.service.ts`: `GitDiff.layer` 177 -> `drivers/git-diff.ts`; consumer `drivers/node.ts`.
-  - `project-files.service.ts`: `ProjectFiles.layer` 50 -> `drivers/project-files.ts`.
-  - `reporter-output.service.ts`: `ReporterOutput.layer` 33 -> `drivers/stdio-reporter-output.ts`.
-  - `output-mode-probe.service.ts`: `OutputModeProbeTag.layer` 116 and `OutputModeProbeLive` -> `drivers/output-mode-probe.ts`; consumer `bin/main.ts`.
-  - `Sandbox.service.ts`: `TemporaryDirectory.layer` 87 -> `drivers/temporary-directory.ts`; consumer `run/prepare.cell.ts`.
-  - `reporting/machine-console.service.ts`: `layer` 200 and `captureLayer` 205 -> `drivers/machine-console.ts`; consumers `bin/main.ts`, `Mcp/mcp-server.cell.ts`.
-  - `run-event-stream.service.ts`: `RunEventDrain.layer` 115, `fileLayer` 128, `RunEventDrainLive`, `RunEventStreamPortTag.layer` 396 -> `drivers/run-event-stream.ts`; consumer `bin/main.ts`; `RunEvent/mod.ts` stops exporting `RunEventDrainLive`.
+- Files (port: member, line -> driver export):
+  - `git-diff.service.ts`: `GitDiff.layer` 177 -> `drivers/git-diff.ts` `layer`; consumer `drivers/node.ts`.
+  - `project-files.service.ts`: `ProjectFiles.layer` 50 -> `drivers/project-files.ts` `layer`.
+  - `reporter-output.service.ts`: `ReporterOutput.layer` 33 -> `drivers/stdio-reporter-output.ts` `layer`.
+  - `output-mode-probe.service.ts`: `OutputModeProbeTag.layer` 116 and its alias `OutputModeProbeLive` 130 -> `drivers/output-mode-probe.ts` `layer`; consumer `bin/main.ts`.
+  - `Sandbox.service.ts`: `TemporaryDirectory.layer` 87 -> `drivers/temporary-directory.ts` `layer`; consumer `run/prepare.cell.ts`.
+  - `reporting/machine-console.service.ts`: `layer` 200 and `captureLayer` 205 -> `drivers/machine-console.ts` `layer`, `captureLayer`; consumers `bin/main.ts`, `Mcp/mcp-server.cell.ts`.
+  - `run-event-stream.service.ts`: `RunEventDrain.layer` 115 and its alias `RunEventDrainLive` 141, `fileLayer` 128, `RunEventStreamPortTag.layer` 396 -> `drivers/run-event-stream.ts` `drainLayer`, `fileDrainLayer`, `portLayer`; consumer `bin/main.ts`.
 - Approach: KTD2, KTD3. `drivers/node.ts` keeps composing the platform layer and imports `drivers/git-diff.ts`.
 - Test Scenarios:
   - The core integration suites that run a real CLI process (`packages/stryker-js/tests/*.integration.test.ts`) pass. They cover the machine console, stream drain, output-mode probe, and git diff wiring end to end.
   - `pnpm test:e2e` lanes pass. They exercise the published CLI with the moved `bin/main.ts` composition.
-- Verification: `pnpm --filter @systemfsoftware/stryker-js typecheck test`.
+- Verification: `pnpm --filter @systemfsoftware/stryker-js typecheck test build`; DEL1 grep for `OutputModeProbeLive` and `RunEventDrainLive` returns nothing.
 
 ### U7. Core run-scoped layers and stage wiring to drivers
 
@@ -249,14 +262,14 @@ flowchart BT
   - `run/phase-clock.service.ts`: `PhaseClock.layer` 19 -> `drivers/phase-clock.ts`.
   - `mutation-reporting.service.ts` (1252 lines): `MutationReporting.layer` 159 and its implementation -> `drivers/mutation-reporting.ts`. The port file keeps the tag and shape.
   - `reporter.service.ts`: `Reporter.layer` 43 -> `drivers/reporter.ts`.
-  - `run-events.service.ts`: `WorkerReportsLive` 31 -> `drivers/run-events.ts` as `workerReportsLayer`.
+  - `run-events.service.ts`: `WorkerReportsLive` 31 -> `drivers/run-events.ts` `workerReportsLayer`.
   - `run/RunEnvironment.service.ts`: `stage` 41, `forStream` 57, `stageLayerOf` -> `drivers/run-stage.ts` (KTD4). Consumers: `Mcp/mcp-server.cell.ts`, `Serve/Serve.cell.ts`, `plan-request.cell.ts`, `run-request.cell.ts`, `run/run-stages.ts`, `tests/__fixtures__/check-cost-workspace.fixture.ts`, and the rest of the 19 `RunEnvironment.stage` users.
 - Approach: the port shape of `MutationReporting` keeps its type-only import of `MutationTestDone`. Moving that type to a schema is L2 work (U10).
 - Execution note: move the code without editing it. Diff each moved implementation against its original body before committing.
 - Test Scenarios:
-  - Core integration suites and `test/e2e-core` pass. They run whole mutation runs through `RunEnvironment.stage`.
+  - The core integration suites (`packages/stryker-js/tests/*.integration.test.ts`) pass. They hold the `RunEnvironment.stage` call sites and run whole mutation runs through it. `test/e2e-core` resolves `@systemfsoftware/stryker-js` to the released tarball, so it observes none of this change and is not evidence for it.
   - The property suites under `packages/stryker-js/src/__tests__/` pass unchanged. None of them import a moved Layer.
-- Verification: `pnpm --filter @systemfsoftware/stryker-js typecheck test`, then `pnpm --filter @systemfsoftware/stryker-js-e2e-core test`.
+- Verification: `pnpm --filter @systemfsoftware/stryker-js typecheck test build`; DEL1 grep for `WorkerReportsLive` returns nothing.
 
 ### U8. e2e harness layers to drivers
 
@@ -271,27 +284,51 @@ flowchart BT
 - Goal: each changed published surface is recorded and versioned.
 - Requirements: R5.
 - Files: `packages/stryker-js/etc/stryker-js.api.md`, `packages/stryker-js-plugin-runtime/etc/stryker-js-plugin-runtime.api.md`, `.changeset/*.md`.
-- Approach: `api:update` per changed package. Changesets: `@systemfsoftware/stryker-js` major (`RunEventDrainLive` removed; static `layer` members removed from published classes such as `IdGenerator` and `RunEnvironment.stage`); `@systemfsoftware/stryker-js-plugin-runtime` major (static `layer` removed from `WorkerOptions` and `WorkerTelemetry`; new `Worker` layer names); typescript-checker and vitest-runner patch (internal only).
+- Approach: `api:update` per changed package. Changesets: `@systemfsoftware/stryker-js` major (`RunEventDrainLive` removed; static `layer` members removed from published classes such as `IdGenerator` and `RunEnvironment.stage`); `@systemfsoftware/stryker-js-plugin-runtime` major (static `layer` removed from `WorkerOptions` and `WorkerTelemetry`; new `Worker` layer names); `@systemfsoftware/stryker-js-typescript-checker` major (`CheckerRuntime.layer` leaves the declared `./runtime` entry, U4); `@systemfsoftware/stryker-js-vitest-runner` patch (it declares only `.` and never published the moved names). Each package still at `0.x` takes `minor` for a break (`BREAK-1`).
 - Test Scenarios: Test expectation: none - generated reports. `api:check` is the gate.
 - Verification: `pnpm build` (runs `api:check`) and CI `Changeset Check`.
+
+### U20. gritlint rule: no Layer from `*.service.ts`
+
+- Goal: the gritlint gate refuses a `*.service.ts` that exports a `Layer`, and the repo passes it.
+- Requirements: R3.
+- Files: upstream `systemfsoftware/systemfsoftware`: `packs/cell-architecture/pack.json`, `packs/cell-architecture/README.md`, `packs/cell-architecture/rules/service-exports-no-layer.md`, `packs/cell-architecture/fixtures/service-exports-no-layer/{bad,good}/<case>/`. Here: `flake.lock` (the `systemfsoftware` input), `gritlint.json` (`"cell-architecture": {}`).
+- Approach: KTD10. A `language js` rule over `.*\.service\.ts` matching a static class member or exported binding whose value is built by `Layer.*`, typed `Layer.Layer<...>`, or named `*Live`. The pack README cites `compound-packs/cell-architecture/ports-separate-from-layers.md`. Upstream PR off its `main`, following its own AGENTS.md; this repo pins the flake input to the upstream PR head until it merges.
+- Test Scenarios (the pack's fixtures, run by upstream `gritlint test packs` in `pnpm gate:rust`):
+  - bad: a tagged `*.service.ts` with `static readonly layer = Layer.effect(...)` is refused.
+  - bad: a tagless `*.service.ts` exporting `export const layer = Layer.succeed(...)` is refused.
+  - bad: a `*.service.ts` exporting `export const FooLive = Foo.layer` is refused.
+  - bad: a `*.service.ts` exporting a function `export const layer = (options) => Layer.effect(...)` is refused.
+  - good: a `*.service.ts` declaring only the tag and its shape passes; a `drivers/foo.ts` exporting `layer` passes.
+- Verification: upstream `pnpm gate:rust` green; here `pnpm lint:conventions` exits 0 on the L1 tree and exits 1 with one `static readonly layer` planted back into a service file.
+
+### U21. attw in `check:ci`
+
+- Goal: every published package's tarball passes arethetypeswrong in CI.
+- Requirements: R10.
+- Files: `package.json` (`check:ci`).
+- Approach: KTD11. Add `pnpm attw || s=1` to `check:ci` in its accumulate-then-exit style; the root `attw` script already runs the turbo task.
+- Test Scenarios: Test expectation: none - gate wiring. One-off evidence: a `types` condition planted after `default` in one package's exports makes `pnpm attw` exit non-zero (CHK1).
+- Verification: `pnpm check:ci` passes on the L1 head.
 
 ### L2 (stacked on L1)
 
 ### U10. Contracts package
 
 - Goal: every cross-seam schema and every service port is importable from `@systemfsoftware/stryker-js-contracts`.
-- Requirements: R6, R7, R9.
-- Files: new `packages/stryker-js-contracts/` (`package.json`, `tsdown.config.ts`, `tsconfig*.json`, `api-extractor.json`, `vitest.config.ts`, `src/mod.ts`), plus the modules KTD5.1 lists, moved with `git mv`. `MutationTestDone` moves from `run/mutation-test.cell.ts` into a contracts schema so the `MutationReporting` port stops importing a cell. That also breaks the 17-module cycle in Appendix A.
-- Approach: one namespace barrel per `cell-architecture/single-namespace-barrel`. If the vocabulary is too large to scan at once, chunk it with namespace exports from the root, not subpaths (`package-topology/declared-entry-points`). Generated schema laws and in-source refusal blocks move with their schemas (`schema-laws/refusals-beside-generated-laws`).
+- Requirements: R6, R7, R8, R9.
+- Files: new `packages/stryker-js-contracts/` (`package.json`, `tsdown.config.ts`, composite `tsconfig*.json`, `api-extractor.json`, `vitest.config.ts`, `src/mod.ts`), plus the modules KTD5.1 lists, moved with `git mv`. `MutationTestDone` moves from `run/mutation-test.cell.ts` into a contracts schema so the `MutationReporting` port stops importing a cell. That also breaks the 17-module cycle in Appendix A.
+- Approach: one namespace barrel per `cell-architecture/single-namespace-barrel`. If the vocabulary is too large to scan at once, chunk it with namespace exports from the root, not subpaths (`package-topology/declared-entry-points`). Generated schema laws and in-source refusal blocks move with their schemas (`schema-laws/refusals-beside-generated-laws`). Each Appendix A contracts back-edge closes by the move named against it there.
 - Test Scenarios:
   - The generated schema laws run in the new package's vitest project and pass. They are the existing laws, moved with their schemas.
   - Moved in-source refusal blocks still state each refined schema's refusal boundary and pass.
-- Verification: `pnpm --filter @systemfsoftware/stryker-js-contracts typecheck test build api:check`.
+- Verification: `pnpm --filter @systemfsoftware/stryker-js-contracts typecheck test build api:check attw`; its manifest lists no other `stryker-js-*` package from this split.
 
-### U11. Config package
+### U11. Config package (open: config path routed to the root)
 
-- Goal: user config files import `defineConfig` from `@systemfsoftware/stryker-js-config`. Blocked on the config-path question in Outstanding Questions. If the user keeps `@systemfsoftware/stryker-js/config`, this unit becomes "config schema and merge to contracts, loading to engine, authoring entry stays in the CLI package", plus a declared exception to `one-access-path` for those names.
-- Requirements: R6, R9.
+- Goal, branch A (config package): user config files import `defineConfig` from `@systemfsoftware/stryker-js-config`.
+- Goal, branch B (keep `@systemfsoftware/stryker-js/config`): config schemas and `mergeConfig` go to contracts, `load-config*` and the other `run/` config steps go to the engine, and the authoring entry stays in the CLI package with a declared exception to `one-access-path` for those names.
+- Requirements: R6, R8, R9.
 - Files: new `packages/stryker-js-config/`; the modules KTD5.2 lists; framework and ignorer READMEs that show `import { defineConfig } from '@systemfsoftware/stryker-js/config'` (`packages/frameworks/angular/README.md`, `packages/frameworks/svelte/README.md`, `packages/ignorers/*/README.md`, `packages/stryker-js/README.md`), the repo's own `stryker.config.ts` files.
 - Approach: the `./config` subpath is a host contract (a config loader imports it without the runtime). The new package's root entry is that contract, so it needs no subpath. `load-config*` stops importing `RunEnvironment` by taking the values it reads as parameters, which removes the config -> engine edge.
 - Test Scenarios:
@@ -302,7 +339,7 @@ flowchart BT
 ### U12. Sandbox and worker-host packages
 
 - Goal: the sandbox and the host side of the worker boundary are separate packages over contracts.
-- Requirements: R6, R7.
+- Requirements: R6, R7, R8.
 - Files: new `packages/stryker-js-sandbox/`, `packages/stryker-js-worker-host/`; modules from KTD5.3 and KTD5.4. `run/explain-file-skip.workflow.ts` and `run/select-package-entry.workflow.ts` move with plugin loading. `Plugin/mod.ts` stops re-exporting `reporter-stream.service.ts`, which stays in the engine.
 - Test Scenarios:
   - The worker-connection-loss, mutant-deadline, and checker-rpc integration suites pass against real spawned workers (`boundary-testing/real-system-oracles`).
@@ -313,11 +350,11 @@ flowchart BT
 
 - Goal: `import { Engine } from '@systemfsoftware/stryker-js-engine'` gives the run engine without CLI, MCP, or MSP modules.
 - Requirements: R6, R7, R8.
-- Files: new `packages/stryker-js-engine/`; modules from KTD5.5. `Engine/mod.ts` stops exporting `nodePlatformLayer` from `drivers/node.ts` (CLI-owned), which removes the engine -> cli edge. The engine publishes a parameterized platform layer only if a non-CLI consumer composes one; otherwise the CLI keeps it.
+- Files: new `packages/stryker-js-engine/`; modules from KTD5.5, including `drivers/node.ts`. `Engine/mod.ts` keeps exporting `nodePlatformLayer`, now engine-owned, which removes the engine -> cli edge; the CLI's `bin/main.ts` imports it from the engine.
 - Test Scenarios:
-  - The core integration suites that drive `strykerCell`/`mutationTestCell` move with the engine and pass.
-  - `test/e2e-core` passes against the engine package.
-- Verification: package `typecheck test build api:check`; `turbo` reports no cycle.
+  - The core integration suites that drive `strykerCell`/`mutationTestCell` and the 19 `RunEnvironment.stage` call sites move with the engine and pass. `test/e2e-core` resolves `@systemfsoftware/stryker-js` to the release tarball pinned by `flake.nix`, so it observes none of the split.
+  - Acyclicity is shown, not assumed: a real `turbo run build` on the L2 tree succeeds, and the same run with one planted reverse dependency (contracts depending on the engine) is shown failing, with its output in the PR body. Until that run exists, nothing in L2 relies on turbo refusing a cycle (P9).
+- Verification: package `typecheck test build api:check attw`.
 
 ### U14. Reporting package
 
@@ -330,7 +367,7 @@ flowchart BT
 ### U15. Survivors, serve, and mcp packages
 
 - Goal: each host capability is its own package over the engine.
-- Requirements: R6, R7, R9.
+- Requirements: R6, R7, R8, R9.
 - Files: new `packages/stryker-js-survivors/`, `packages/stryker-js-serve/`, `packages/stryker-js-mcp/`; modules from KTD5.7-5.9. `budget.ts` moves to survivors and the `MutationReporting` driver takes the budget figures it needs as input (closes engine -> survivors).
 - Test Scenarios: the survivors, rerun, feedback, MSP framing, and MCP tool suites move and pass. The MCP and MSP suites that run a real server over stdio stay integration tests.
 - Verification: package `typecheck test build api:check` for each.
@@ -339,21 +376,21 @@ flowchart BT
 
 - Goal: `@systemfsoftware/stryker-js` is the CLI package and re-exports nothing it does not own.
 - Requirements: R6, R9.
-- Files: `packages/stryker-js/package.json` (dependencies on the new packages; exports `.`, `./events`, `./promises`, `./package.json` re-justified per `declared-entry-points`), `src/mod.ts` (the eleven namespaces leave), `tsdown.config.ts` (keeps `alwaysBundle`, KTD7), `shard/` stays.
+- Files: `packages/stryker-js/package.json` (dependencies on the new packages; exports `.`, `./events`, `./promises`, `./package.json` re-justified per `declared-entry-points`), `src/mod.ts` (the eleven namespaces leave), `tsdown.config.ts` (keeps `alwaysBundle`, KTD7), `shard/` stays. The CLI takes the platform layer from the engine.
 - Approach: each of `./events` and `./promises` is kept only if it hides at least two modules or is a host contract. Otherwise it moves to the owning package with a major changeset.
 - Test Scenarios:
   - `pnpm test:e2e` passes against tarballs packed from the split workspace.
   - The released-CLI dogfood path still runs: `nix build .#stryker-published --out-link .sfs-deps && pnpm install --frozen-lockfile` succeeds (START-6).
 - Verification: `pnpm check:ci`.
 
-### U17. publint and attw in CI
+### U17. publint in CI (pending operator approval)
 
-- Goal: every published package's tarball passes publint and arethetypeswrong in CI.
+- Goal: every published package's tarball passes publint in CI, beside attw (U21).
 - Requirements: R10.
-- Files: `package.json` (`check:ci` or `gate:dist`), `turbo.json` (`attw` task inputs), each package's `tsdown.config.ts` (`publint: true`), `pnpm-workspace.yaml` catalog (`publint`).
-- Approach: attw is already a per-package script and a turbo task through the `@systemfsoftware/arethetypeswrong-cli` fork (`pnpm-workspace.yaml:29`, catalog `^4.2.0`); only CI wiring is missing. publint runs inside tsdown's build through its `publint` option (tsdown 0.23.0 lists `publint ^0.3.8` as an optional peer). Blocked on operator approval of versions and the grading-surface edit (Outstanding Questions).
-- Test Scenarios: in the PR body, show one planted defect per tool exiting non-zero: an exports entry pointing at a missing file for publint, and a `types` condition ordered after `default` for attw. This is one-off evidence, not a committed test (CHK1).
-- Verification: `pnpm check:ci` runs both and passes on the L2 head.
+- Files: `package.json` (`check:ci`), each package's `tsdown.config.ts` (`publint: true`), `pnpm-workspace.yaml` catalog (`publint`, version named in the approval request).
+- Approach: publint runs inside tsdown's build through its `publint` option (tsdown 0.23.0 lists `publint ^0.3.8` as an optional peer). Nothing is added, installed, or run until the root reports operator approval. If approval has not arrived when L2 reaches this unit, this unit ships nothing and the L2 PR body lists publint as the one pending item.
+- Test Scenarios: once approved, show in the PR body an exports entry pointing at a missing file making the build exit non-zero. One-off evidence, not a committed test (CHK1).
+- Verification: once approved, `pnpm check:ci` runs publint and passes on the L2 head.
 
 ### U18. Flake, e2e closure, and mutation projects
 
@@ -377,27 +414,26 @@ flowchart BT
 
 ## Verification Contract
 
-- Per layer: `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm check:ci` (START-1 to START-4), CI `Changeset Check` (START-5), and the CI `e2e` jobs, all on the layer's exact head.
-- L1 refusal evidence (R3): a throwaway audit over `git ls-files '*.service.ts'` that exits 1 when a file both declares a tag and exports a Layer. Show it exiting 0 on the head and 1 with one planted `static readonly layer`, then delete it.
-- L2: `turbo` builds with no cycle error (R8); a deep import of an undeclared path in any package fails typecheck (R7, shown once in the PR body); publint and attw pass in `check:ci` (R10).
-- No local mutation runs. New tests cite the latest `main` mutation report's mutant ids where one applies; L1 adds none (KTD9).
+- Per layer: `pnpm format:check`, `pnpm typecheck`, `pnpm test`, `pnpm check:ci` (START-1 to START-4, now including `attw` and the gritlint gate), CI `Changeset Check` (START-5), and the CI `e2e` jobs, all on the layer's exact head.
+- L1 (R3): the `cell-architecture` gritlint pack's bad fixtures are refused upstream; `pnpm lint:conventions` exits 0 on the L1 head and 1 with one `static readonly layer` planted back into a service file.
+- L2: a real `turbo run build` with and without a planted reverse dependency (R8, U13); a deep import of an undeclared path and a relative import escaping a package both fail typecheck (R7, shown once in the PR body); attw passes in `check:ci`, and publint once approved (R10).
+- No local mutation runs. New tests cite the latest `main` mutation report's mutant ids where one applies; L1 adds no tests for moved code (KTD9).
 
 ---
 
 ## Definition of Done
 
-- L1: U1-U9 merged on one PR whose head is green; ADR-0001 unchanged; the audit shows zero co-located files; no `*Live` statics remain in libraries.
-- L2: U10-U19 merged on one PR stacked on L1, green on its head; `packages/stryker-js/src/mod.ts` exports only CLI-owned names. L2 is not done until `.github/workflows/mutation.yml` `PROJECTS` and `INCREMENTAL_REPORTS` cover every new package, because otherwise the moved workflows silently leave the mutation gate.
-- Cleanup: no throwaway audit scripts, scratch graphs, or empty `*.service.ts` shells remain; DEL1 grep for each removed identifier (`RunEventDrainLive`, `OutputModeProbeLive`, `WorkerReportsLive`) returns nothing.
+- L1: U1-U9, U20, U21 on one PR whose head is green; ADR-0001 unchanged; the gritlint gate (with the `cell-architecture` pack) and `attw` run in `check:ci` and pass; the flake input is pinned to the merged upstream commit, not a PR head; no `*Live` statics remain in libraries.
+- L2: U10-U19 merged on one PR stacked on L1, green on its head; `packages/stryker-js/src/mod.ts` exports only CLI-owned names. L2 is not merged until `.github/workflows/mutation.yml` `PROJECTS` and `INCREMENTAL_REPORTS` cover every new package (operator edit, routed to the root).
+- Cleanup: no throwaway audit scripts, probes, scratch graphs, or empty `*.service.ts` shells remain; DEL1 grep for each removed identifier (`RunEventDrainLive`, `OutputModeProbeLive`, `WorkerReportsLive`) returns nothing.
 
 ---
 
 ## Outstanding Questions
 
-- Approve the publint and attw versions for U17: `publint` 0.3.25 (npm latest, published 2026-10-01) as a new catalog entry, and keep the existing `@systemfsoftware/arethetypeswrong-cli` ^4.2.0 fork instead of upstream `@arethetypeswrong/cli` 0.18.5.
-- Approve the grading-surface edit that puts `attw` and publint into `check:ci`.
-- Who edits `.github/workflows/mutation.yml` `PROJECTS`/`INCREMENTAL_REPORTS` for the new packages (read-only to agents)?
-- Config authoring path (blocks U11): move `defineConfig`/`mergeConfig` to a new `@systemfsoftware/stryker-js-config` package, which reverses the 2026-09-18 user-directed "zero auxiliary installs" decision, or keep `@systemfsoftware/stryker-js/config` with a declared `one-access-path` exception.
+- publint: approval requested from the operator by the root. Until it arrives, U17 ships nothing.
+- `.github/workflows/mutation.yml` `PROJECTS`/`INCREMENTAL_REPORTS` for the new packages: routed to the root; blocks merging L2.
+- Config authoring path (U11 branch A or B): routed to the root; blocks U11 only.
 
 ---
 
@@ -407,19 +443,21 @@ flowchart BT
 
 Measured with a throwaway script that resolves every relative `import`/`export ... from`/`import()` specifier in `packages/stryker-js/src` (not committed, per OP12). 320 `.ts` files: 248 production, 72 tests; 746 production edges.
 
-File-level cycle: one strongly connected component of 17 modules: `mutation-reporting.service.ts`, `run/RunEnvironment.service.ts`, `run/StageServices.service.ts`, and 14 `run/` stage modules. It closes through `mutation-reporting.service.ts:60` (`import type { MutationTestDone } from './run/mutation-test.cell.js'`) and `run/RunEnvironment.service.ts:18`. All 17 land in the engine package, and U10 moves `MutationTestDone` to contracts.
+File-level cycle: one strongly connected component of 17 modules: `mutation-reporting.service.ts`, `run/RunEnvironment.service.ts`, `run/StageServices.service.ts`, and 14 `run/` stage modules. It closes through `mutation-reporting.service.ts:60` (`import type { MutationTestDone } from './run/mutation-test.cell.js'`) and `run/RunEnvironment.service.ts:18`. After L1 the two port files hold only their tags; they go to contracts and the other 15 to the engine, and U10 moves `MutationTestDone` to contracts.
 
 Seam assignment as the contract named it, before any moves: every seam sits in one cycle. The largest back-edges were reporting -> engine (28), engine -> reporting (28), engine -> worker (25), config -> engine (9), survivors -> engine (10).
 
-After the KTD5 moves (cross-seam schemas and ports to contracts; config steps out of `run/`; report assembly to engine; plugins fused with the worker host; `shard/` to CLI), the remaining back-edges are:
+After the KTD5 moves (cross-seam schemas and ports to contracts; config steps out of `run/`; report assembly to engine; plugins fused with the worker host; `shard/` to CLI), the remaining back-edges and the unit that closes each:
 
-- contracts -> others (11): all from port files that still hold their implementation. L1 removes them.
+- contracts -> others, from tagged port files that still hold their implementation: L1 removes them (U6, U7).
+- contracts -> others, from `surfacing.ts` (imports `reporting/render-annotations.workflow.ts` and `cap-survivors.workflow.ts`) and `admit-file-match.workflow.ts` (imports `compile-glob.workflow.ts`): those two modules leave contracts (KTD5.1); `surfacing.ts` goes to survivors with `cap-survivors`, and `reporter-factories.ts` takes it from there (U14, U15).
+- contracts -> others, from tagless `*.service.ts` files that are not ports (`plugin-loader`, `reporter-stream`, `reporter-wiring`, `framework-claimant`, `run/host`, `run/StageServices`): they are not contracts and move with what they import (U12, U13).
 - config -> engine (2): `run/load-config*.ts` read `RunEnvironment`. U11 removes them.
-- engine -> cli (1): `Engine/mod.ts` re-exports `drivers/node.ts`. U13 removes it.
+- engine -> cli (1): `Engine/mod.ts` re-exports `drivers/node.ts`. U13 moves `drivers/node.ts` into the engine.
 - engine -> survivors (1): `mutation-reporting.service.ts -> budget.ts`. U15 removes it.
 - worker-host -> engine (1): `Plugin/mod.ts -> reporter-stream.service.ts`. U12 removes it.
 
-Resulting module counts: engine 88, contracts 53, reporting 22, cli 19, config 18, worker-host 18, survivors 14, sandbox 5, serve 5, mcp 4, plus the two root barrels (`mod.ts`, `promises/mod.ts`) that U16 rewrites: 248.
+Resulting module counts (approximate; U10 recomputes with the move script): engine 89, contracts 51, reporting 22, config 18, worker-host 18, cli 18, survivors 15, sandbox 5, serve 5, mcp 4, plus the two root barrels (`mod.ts`, `promises/mod.ts`) that U16 rewrites.
 
 ### B. Port/layer co-location inventory (L1 scope)
 
@@ -428,9 +466,10 @@ Twenty `*.service.ts` files declare a tag and export a Layer: 13 in `packages/st
 ### C. Existing tools that already cover parts of this
 
 - pnpm workspaces: `packages/*` in `pnpm-workspace.yaml:108` picks up new packages with no edit.
-- turbo: present (`turbo.json`); refuses a cyclic package graph, which covers R8.
-- arethetypeswrong: the `@systemfsoftware/arethetypeswrong-cli` fork is in the catalog, every published package has `"attw": "attw --pack ."` (the private `test/e2e` and `test/e2e-core` do not), and `turbo.json:119` defines the task, but `check:ci` (`package.json:25`) never runs it.
-- publint: not installed; tsdown 0.23.0 can run it inside the build.
+- turbo: present (`turbo.json`). Whether it refuses a cyclic package graph is unverified (P9); U13 proves it with a real run.
+- tsc composite projects: refuse a relative import that escapes the package (TS6059, TS6307; KTD8 probe), which covers the relative-path half of R7.
+- arethetypeswrong: the `@systemfsoftware/arethetypeswrong-cli` fork is in the catalog, every published package has `"attw": "attw --pack ."` (the private `test/e2e` and `test/e2e-core` do not), and `turbo.json:119` defines the task; U21 adds it to `check:ci`.
+- publint: not installed; tsdown 0.23.0 can run it inside the build once approved (U17).
 - api-extractor: `api:check` on every published package already gates `public-signature-types` (`ae-forgotten-export`) and records surface changes.
-- gritlint `packs/source-resolution` (`gritlint.json:3-8`) checks export-map condition keys, which covers part of `condition-branch-agreement`.
+- gritlint: `packs/source-resolution` (`gritlint.json:3-8`) checks export-map condition keys, which covers part of `condition-branch-agreement`; U20 adds the `cell-architecture` pack.
 - Nx, dependency-cruiser, madge: absent; not needed (KTD8).
