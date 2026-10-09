@@ -42,20 +42,20 @@ The three private toolchain packages (`packages/toolchain/{vitest,tsdown,stryker
 
 **Configuration ownership**
 
-- R1. No manifest, config file, import, flake input or lockfile entry in this repo names `oxlint-config-{recommended,cell-architecture,dmmf,rule-authoring}` or `@systemfsoftware/{vitest-config,tsdown-config,stryker-config}`. The only exceptions are CHANGELOG history, `.changeset/ledger.yaml` history and finished plans in `docs/plans/`.
+- R1. No manifest, config file, import, flake input or lockfile entry in this repo names `oxlint-config-{recommended,cell-architecture,dmmf,rule-authoring}` or `@systemfsoftware/{vitest-config,tsdown-config,stryker-config}`. The only exceptions are CHANGELOG history and finished plans in `docs/plans/`. `.changeset/ledger.yaml` has no hit today.
 - R2. Every lint, test, build and mutation config in the repo gets its configuration from files in this repo, plus the `configs.*` presets of plugin packages.
 - R3. No package this repo releases is a configuration package. Concretely, every package under `packages/toolchain/` is `private: true` and absent from the `workspace-tarballs` index.
 - R4. Shared configuration inside the monorepo stays internal. A config base is a plain file under `packages/toolchain/`, imported by relative path. No manifest declares a dependency on it, so no released manifest names it.
 
 **Equivalence**
 
-- R5. For every one of the 18 lint roots, every rule that was effective before is still effective after, at the same or stricter severity, on the same file globs. The linted file count is unchanged. Each difference is listed and justified in the PR body.
+- R5. For every one of the 18 lint roots, every rule that was effective before is still effective after, at the same or stricter severity, on the same file globs. The linted file count is unchanged. Each difference is listed and justified in the PR body. U3 edits 8 of the roots and U5 edits 9. The 18th, `test/e2e`, owns a config that extends nothing; it is snapshotted but not edited.
 - R6. `tsc --showConfig` output, normalised with `jq -S`, is unchanged for every tsconfig in the workspace.
 - R7. For every vitest config, the resolved project names and test-file list are unchanged.
 
 **Plugins**
 
-- R8. The domain plugins in use today (`oxlint-plugin-{cell-architecture,dmmf-workflow,effect-schema,effect-platform,test-discipline}` and the `effecttsgo` rules) are still loaded. They are wired through `configs.recommended` of `@systemfsoftware/oxlint-plugin-recommended` and still resolve from the npm registry.
+- R8. The domain plugins in use today (`oxlint-plugin-{cell-architecture,dmmf-workflow,effect-schema,effect-platform,test-discipline}` and the `effecttsgo` rules) are still loaded. They are wired through `configs.recommended` of `@systemfsoftware/oxlint-plugin-recommended` and still resolve from the npm registry. Any `effecttsgo` rule that this preset no longer enables is re-enabled by name in the repo-owned family base (KTD4).
 
 **Delivery**
 
@@ -102,17 +102,17 @@ The three private toolchain packages (`packages/toolchain/{vitest,tsdown,stryker
   - Implements R3, R4.
 - KTD3. **The nine recommended roots extend `presets.configs.recommended` and use a repo-owned family base.**
   - The `default` import of `@systemfsoftware/oxlint-plugin-recommended` replaces `@systemfsoftware/oxlint-config-recommended` in each root, in the catalog and in every manifest.
+  - No root adds a separate domain-plugin `extends`. Upstream at `edf81999` documents that `configs.recommended` already composes `dmmf`, `cell-architecture`, `oxlint-plugin-test-discipline`, `oxlint-plugin-effect-platform` and the `@effect/tsgo` presets, and adding them again would apply them twice. If the released 2.0.0 does not compose one of them, the roots extend that plugin's own `configs.recommended` directly. That is the session override's "domain plugins' `configs.recommended` where used".
   - `packages/toolchain/oxlint-ignorer-config/lib/family.js` exports `familyIgnorePatterns`: the 25-entry list that `oxlint-config-recommended` 4.0.0 exported, copied verbatim and imported by relative path.
   - The six roots that spread `recommended.ignorePatterns` today spread `familyIgnorePatterns` instead. The three that did not (html-reporter, plugin-runtime, typescript-checker) still do not.
-  - Each root's existing rules, overrides and extra ignore entries are unchanged.
+  - Each root keeps its existing rules and extra ignore entries unchanged. Its existing overrides also stay unchanged and in order. The only exception is the KTD4 restore, when it is needed: its overrides go first.
   - Implements R2, R5, R8.
-- KTD4. **Restore lost `effecttsgo` rules from tsgo's own `effectNative` preset, only when the diff shows them missing.**
-  - Source: `familyEffectNativeOverrides` in `lib/family.js` takes `effectNative.rules` from `@effect/tsgo/oxlint-presets`. That is the repo's own `@effect/tsgo` 0.50.0, already in the lockfile and already a devDependency of the hosting package.
-  - Shape: two overrides, in this order. The first promotes every rule to `error` on `**/src/**`. The second does the same on the entry globs (`**/*.test.ts`, `**/*.spec.ts`, `**/__tests__/**`, `**/tests/**`, `**/test-types/**`, `**/examples/**`) with `effecttsgo/node-builtin-import` off. This mirrors the preset's library/entry split.
-  - Placement: oxlint combines inherited `overrides` with the child's own and applies every matching override in order after the merged top-level rules (oxc#22925). Each root therefore puts the two overrides first in its own `overrides`, directly after the inherited ones.
-  - Strictness: spreading the whole preset may turn on one rule that was not on before. That is stricter, which the contract allows, and any fallout is fixed in code.
-  - If the released 2.0.0 already carries these rules, KTD4 is not built and the plan says so.
-  - Implements R5.
+- KTD4. **Restore by name, in the family base, exactly the `effecttsgo` rules the measured diff shows as lost.**
+  - Trigger: the U6 diff between the Layer 2 baseline and the preset swap. The branch at `edf81999` suggests 14 lost rules, but the released 2.0.0 is the authority, so the list comes from the measurement and not from that branch.
+  - Shape: `familyEffectNativeOverrides` in `lib/family.js` holds the lost rule names. Each keeps the severity (at least `error`) and the file globs the before-snapshot shows. No preset is imported and no rule that was off before is turned on. The `effecttsgo` plugin itself is still loaded by `configs.recommended`.
+  - Placement: oxlint keeps inherited `overrides` and applies every matching override in order after the merged top-level rules (oxc#22925). So the restore has to be expressed as overrides, placed first in each root's own `overrides`, directly after the inherited ones.
+  - When the diff shows nothing lost, KTD4 is not built and the PR body says so.
+  - Implements R5, R8.
 - KTD5. **Evidence comes from the real tools and is never committed.** Before and after snapshots go under `.scratch/config-ownership/{before,after}/`; `.scratch/` is already gitignored. The commands are listed in the Verification Contract. The PR body carries the diffs and their justification. The scratch directory is deleted before the landing commit (OP12). Implements R5, R6, R7, R9.
 - KTD6. **Changeset intents: `none` for config-only changes; `patch` for `@systemfsoftware/stryker-ignorer-interface`.**
   - `none` covers changes to `oxlint.config.ts`, `vitest.config.ts`, `tsdown.config.ts` and `stryker.config.ts`, and the removed toolchain devDependencies. None of these is read by an installer. This follows `docs/plans/2026-09-30-1853-perf-in-source-schema-laws-plan.md` KTD8.
@@ -137,14 +137,14 @@ flowchart TB
     R1a[package oxlint.config.ts] -->|extends configs.recommended| PR[oxlint-plugin-recommended 2.0.0 npm]
     PR --> P2[domain plugins npm]
     PR -->|imports presets| T50[effect tsgo 0.50 via plugin]
-    R1a -->|relative import: familyIgnorePatterns, effectNative overrides first| FAM[toolchain/oxlint-ignorer-config/lib/family.js, private]
-    FAM -->|effectNative preset| T50r[effect tsgo 0.50.0 repo devDependency]
+    R1a -->|relative import: familyIgnorePatterns| FAM[toolchain/oxlint-ignorer-config/lib/family.js, private]
+    R1a -.->|only if U6 diff shows lost rules: familyEffectNativeOverrides first| FAM
   end
 ```
 
 ### Sequencing
 
-Layer 1 can land as soon as the conductor gives the go, because it has no external dependency. Layer 2 starts once 2.0.0 is on npm and is rebased onto Layer 1 by merge, never by force-push. Inside Layer 2, U3 comes before U4 and U5, and U6 runs last.
+Layer 1 can land as soon as the conductor gives the go, because it has no external dependency. Layer 2 starts once 2.0.0 is on npm and is rebased onto Layer 1 by merge, never by force-push. Inside Layer 2 the order is U3, U4, U5, then U6. U6 measures the swap and is the only unit that writes the KTD4 restore.
 
 ---
 
@@ -155,7 +155,9 @@ Layer 1 can land as soon as the conductor gives the go, because it has no extern
 - **Goal:** Record the before-state that R5-R7 are compared against, taken from `origin/main` at the commit the stack is based on.
 - **Requirements:** R5, R6, R7.
 - **Files:** `.scratch/config-ownership/before/**` only (gitignored).
-- **Approach:** Install the repo the usual way: `pnpm install --frozen-lockfile` after the released tarballs are in place, then the root `prepare` patch, so the `effecttsgo` plugin is registered. For each lint root, save `oxlint --print-config | jq -S` and the summary line of a real `oxlint` run. For each `tsconfig*.json` outside `repos/`, `testResources/` and `__fixtures__/`, save `tsc --showConfig -p <file> | jq -S`. For each vitest config, save `vitest list --filesOnly --json` after `pnpm build`. The harness refuses any shell command line that contains the word `stryker`, so drive the loops through `pnpm -r exec` or `git ls-files` output instead of literal package paths.
+- **Approach:** Install the repo the usual way: `pnpm install --frozen-lockfile` after the released tarballs are in place, then the root `prepare` patch, so the `effecttsgo` plugin is registered. For each lint root, save `oxlint --print-config | jq -S` and the summary line of a real `oxlint` run. For each `tsconfig*.json` outside `repos/`, `testResources/` and `__fixtures__/`, save `tsc --showConfig -p <file> | jq -S`. For each vitest config, save `vitest list --filesOnly --json` after `pnpm build`.
+  - Run each capture as one workspace-wide command (`pnpm -r exec …`, `turbo`), the same way `pnpm lint` and `pnpm test` reach every package.
+  - The harness refuses shell lines that name the mutation tool. A refused command is never reshaped to get past the guard. A check that would have to name it runs in CI or through a non-shell tool, as the Verification Contract states.
 - **Execution note:** Do this before any edit. U6 later takes a second Layer 2 baseline on Layer 1's head, so the lint diff isolates the preset swap.
 - **Test expectation:** none. This unit only captures evidence.
 - **Verification:** 18 print-config files, 18 summary lines, one showConfig per tsconfig (about 120), and one list per vitest config (28 config files, minus fixture configs).
@@ -174,11 +176,11 @@ Layer 1 can land as soon as the conductor gives the go, because it has no extern
   - Docs: `docs/adr/0001-cell-architecture-module-taxonomy.md` and `docs/solutions/test-failures/agent-bail-hangs-the-test-run.md`.
   - `packages/toolchain/AGENTS.md`: a new boundary saying toolchain packages are private, are imported only by relative path, and are never released or listed in `workspace-tarballs`.
   - `pnpm-lock.yaml`, regenerated by `pnpm install`.
-  - One `.changeset/*.md` per KTD6.
+  - One `.changeset/*.md` with `none` intents for the packages whose `vitest`, `tsdown` and mutation configs and devDependencies change (KTD6).
 - **Approach:** Rewrite import specifiers with `xd://ast_edit`. Edit manifests, JSON and docs with `edit`. Directory names, tsconfigs and every line that does not carry a name or specifier stay unchanged.
 - **Patterns to follow:** the `lib/*.js` + `lib/*.d.ts` convention of the toolchain packages; the `$TURBO_ROOT$/packages/toolchain/...` input globs already in `turbo.json`.
-- **Test scenarios:** The existing suites must still pass: `packages/toolchain/vitest-config/tests/in-source-schema-laws.integration.test.ts`, which registers schema laws under the renamed plugin; `packages/toolchain/tsdown-config/tests/base.test.ts`; and `packages/toolchain/stryker-config/tests/base.test.ts`. A package missing the `@systemfsoftware/vitest` devDependency still fails at config load, with the renamed prefix in the message.
-- **Verification:** The R1 grep is clean apart from Layer 2 targets and history. `pnpm pack` of one public package shows no toolchain name in `devDependencies`. R6 and R7 diffs are empty. `pnpm check:ci` passes.
+- **Test scenarios:** The existing suites must still pass: `packages/toolchain/vitest-config/tests/in-source-schema-laws.integration.test.ts`, which registers schema laws under the renamed plugin; `packages/toolchain/tsdown-config/tests/base.test.ts`; and the mutation-config package's `tests/base.test.ts`. They run through `pnpm test`, not by path. A package missing the `@systemfsoftware/vitest` devDependency still fails at config load, with the renamed prefix in the message.
+- **Verification:** The R1 grep is clean apart from Layer 2 targets and history. The packed-manifest gate passes. R6 and R7 diffs are empty. `pnpm check:ci` passes.
 
 ### U3. Internalise the ignorer preset (Layer 2)
 
@@ -190,16 +192,17 @@ Layer 1 can land as soon as the conductor gives the go, because it has no extern
   - The `overrides` in `pnpm-workspace.yaml`; `pnpm-lock.yaml`.
   - `packages/ignorers/interface/README.md`.
   - The self-reference in the `no-restricted-imports` message in `lib/base.js`.
+  - One `.changeset/*.md`: `patch` for `@systemfsoftware/stryker-ignorer-interface` (its README) and `none` for the 8 consumers (KTD6).
 - **Approach:** Rename the package, set `private: true` and remove the fields listed in KTD2. Update the api report with `pnpm api:update`. Each consumer imports `../../toolchain/oxlint-ignorer-config/lib/base.js` and drops its devDependency.
 - **Test scenarios:** Test expectation: none, since this is pure configuration. The proof is that all 8 roots have identical print-config and identical summary lines (R5).
 - **Verification:** `nix build .#workspace-tarballs` produces an `index.json` with no toolchain package (R3). The R5 diff for the 8 roots is empty.
 
 ### U4. Add the repo-owned family base (Layer 2)
 
-- **Goal:** The configuration that the recommended roots inherited and the plugin presets do not carry now lives in this repo.
-- **Requirements:** R2, R5. Implements KTD3 and KTD4.
+- **Goal:** The ignore patterns that the recommended roots inherited, which `extends` does not carry, now live in this repo.
+- **Requirements:** R2, R5. Implements KTD3.
 - **Files:** `packages/toolchain/oxlint-ignorer-config/{lib/family.js,lib/family.d.ts}`.
-- **Approach:** `familyIgnorePatterns` is the 25-entry list copied verbatim, in order, from `oxlint-config-recommended` 4.0.0 `dist/index.mjs`. `familyEffectNativeOverrides` is built only if U6's diff shows `effecttsgo` rules missing under 2.0.0 (KTD4). `checkJs` in the package's existing `tsconfig.app.json` type-gates both files.
+- **Approach:** `familyIgnorePatterns` is the 25-entry list copied verbatim, in order, from `oxlint-config-recommended` 4.0.0 `dist/index.mjs`. `checkJs` in the package's existing `tsconfig.app.json` type-gates the file. The KTD4 restore is not written here; U6 writes it.
 - **Test scenarios:** Test expectation: none, since this is configuration data. The proof is U6's diff.
 - **Verification:** The hosting package's `typecheck` and `api:check` pass.
 
@@ -211,10 +214,10 @@ Layer 1 can land as soon as the conductor gives the go, because it has no extern
   - `oxlint.config.ts` and `package.json` of `packages/stryker-js`, `packages/stryker-js-{cli-contract,html-reporter,instrumenter,plugin-interface,plugin-runtime,typescript-checker,vitest-runner}` and `test/e2e-core`.
   - The catalog in `pnpm-workspace.yaml` (`@systemfsoftware/oxlint-config-recommended` is replaced by `@systemfsoftware/oxlint-plugin-recommended: ^2.0.0`).
   - `pnpm-lock.yaml`.
+  - One `.changeset/*.md` with `none` intents for the 9 roots (KTD6).
 - **Approach:** Each root does `import presets from '@systemfsoftware/oxlint-plugin-recommended'` and `extends: [presets.configs.recommended]`. It imports the family base by relative path.
   - Where a root spread the old list, it spreads `familyIgnorePatterns`.
-  - When U4 built `familyEffectNativeOverrides`, they go first in the root's own `overrides` (KTD4).
-  - Each root's own `rules`, other `overrides` and extra ignore entries stay unchanged.
+  - Each root's own `rules`, `overrides` and extra ignore entries stay unchanged. No KTD4 overrides yet.
   - If 2.0.0 brings domain-plugin majors that rename a rule a root names, follow the rename. The affected names are `@systemfsoftware/oxlint-plugin-cell-architecture/ban-classes` in the instrumenter and `@systemfsoftware/oxlint-plugin-test-discipline/vitest-from-systemfsoftware-vitest` in the vitest runner.
 - **Test scenarios:** Test expectation: none, since this is pure configuration. The proof is U6.
 - **Verification:** The lockfile resolves no `oxlint-config-*` package and no `@effect/tsgo@0.45.0`. `pnpm lint` passes.
@@ -223,13 +226,18 @@ Layer 1 can land as soon as the conductor gives the go, because it has no extern
 
 - **Goal:** R5-R7 hold, with every difference justified, and every newly stricter rule is satisfied in code.
 - **Requirements:** R5, R6, R7, R9. Implements KTD4 and KTD5.
-- **Files:** `.scratch/config-ownership/**`; source files flagged by newly effective rules; the PR body.
+- **Files:** `.scratch/config-ownership/**`. When the diff shows lost rules: `packages/toolchain/oxlint-ignorer-config/{lib/family.js,lib/family.d.ts}` and the 9 recommended roots' `oxlint.config.ts`. Also any source file flagged by a rule the swap made stricter, and the PR body.
 - **Approach:**
   1. Take a Layer 2 baseline on Layer 1's head, then the after-snapshot, using the U1 commands. Compare each root's top-level `rules` as a map. Compare its `overrides` as an ordered list of `(files, rules)` entries, because oxlint applies overrides in order (oxc#22925). Also compare the rule count in the summary line, which includes jsPlugin rules that `--print-config` leaves out.
-  2. Classify each difference as removed (forbidden: restore it via KTD4 or stop), weakened (forbidden), added or strengthened (allowed: fix the code), or rename-only (allowed: map old name to new).
-  3. Fix every new finding in code. Never disable a rule, lower a severity or add a suppression comment.
-  4. Write the PR body: the per-root diff table, the summary lines before and after, the tsc and vitest diffs (expected empty), and the classified list of `docs/plans/` predicate hits.
-  5. Delete `.scratch/config-ownership/`.
+  2. Classify each difference as one of four kinds:
+     - removed: forbidden; restore it in step 3, or stop;
+     - weakened: forbidden; restore it in step 3, or stop;
+     - added or strengthened by the preset swap: allowed; fix the code;
+     - rename-only: allowed; map the old name to the new one.
+  3. If any `effecttsgo` rule is removed or weakened, write `familyEffectNativeOverrides` with exactly those rules (KTD4). Put the overrides first in each affected root's own `overrides`, then re-run step 1 until no rule is removed or weakened. Any other lost rule triggers the stop condition.
+  4. Fix every new finding in code. Never disable a rule, lower a severity or add a suppression comment.
+  5. Write the PR body: the per-root diff table, the summary lines before and after, the KTD4 rule list or the fact that none was needed, the tsc and vitest diffs (expected empty), and the classified list of `docs/plans/` predicate hits.
+  6. Delete `.scratch/config-ownership/`.
 - **Test scenarios:** Any source change made to satisfy a newly effective rule keeps its existing tests green. No new tests (OP12).
 - **Verification:** The Verification Contract table passes on the head SHA of both layers.
 
@@ -237,22 +245,22 @@ Layer 1 can land as soon as the conductor gives the go, because it has no extern
 
 ## Verification Contract
 
-| Gate                   | Command                                                                                                                                                                                       | Applies to                    |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| Format                 | `pnpm format:check`                                                                                                                                                                           | both layers                   |
-| Typecheck              | `pnpm typecheck`                                                                                                                                                                              | both layers                   |
-| Lint and tests         | `pnpm lint`, `pnpm test` (via `pnpm check:ci`)                                                                                                                                                | both layers                   |
-| CI-equivalent gate     | `pnpm check:ci`                                                                                                                                                                               | both layers                   |
-| Change intent          | `./scripts/check-changeset.ts $(git merge-base HEAD origin/main)`                                                                                                                             | both layers                   |
-| Dogfood                | `nix build .#stryker-published --out-link .sfs-deps && pnpm install --frozen-lockfile && ! git grep -qE "^  '@systemfsoftware/stryker-[a-z-]+@[0-9]" -- pnpm-lock.yaml`                       | both layers                   |
-| R1 predicate           | `git grep -nE 'oxlint-config-(recommended\|cell-architecture\|dmmf\|rule-authoring)\|@systemfsoftware/(vitest-config\|tsdown-config\|stryker-config)'`, with every hit classified as history  | Layer 2 head                  |
-| R3 not distributed     | `jq -r '.[].name' "$(nix build --no-link --print-out-paths .#workspace-tarballs)/index.json"` lists no `packages/toolchain/*` package                                                         | Layer 2 head                  |
-| DEL1                   | `git grep -nI -e '@systemfsoftware/oxlint-ignorer-config' -- . ':!*.lock' ':!**/CHANGELOG.md' ':!.changeset/ledger.yaml' ':!docs/plans/**'` returns nothing                                   | Layer 2 head                  |
-| No internal name ships | `pnpm --filter ./packages/ignorers/kit pack --pack-destination .scratch/pack` then `tar -xOzf` its `package/package.json` and `jq '.devDependencies'`: no `packages/toolchain/*` package name | both layers                   |
-| R5 lint equivalence    | per root: `oxlint --print-config \| jq -S`, plus the summary line of `oxlint --format=default`                                                                                                | both layers, before and after |
-| R6 tsconfig            | per tsconfig: `tsc --showConfig -p <file> \| jq -S`                                                                                                                                           | both layers                   |
-| R7 vitest              | per vitest config: `vitest list --filesOnly --json`                                                                                                                                           | Layer 1                       |
-| R9 CI                  | `xd://github run_watch` on CI, Nix, Changeset and Commitlint for each head SHA; quote the turbo `lint`/`test` lines and the oxlint summaries from the `check` job log                         | both layers                   |
+| Gate                   | Command                                                                                                                                                                                                                                                                                                     | Applies to                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| Format                 | `pnpm format:check`                                                                                                                                                                                                                                                                                         | both layers                   |
+| Typecheck              | `pnpm typecheck`                                                                                                                                                                                                                                                                                            | both layers                   |
+| Lint and tests         | `pnpm lint`, `pnpm test` (via `pnpm check:ci`)                                                                                                                                                                                                                                                              | both layers                   |
+| CI-equivalent gate     | `pnpm check:ci`                                                                                                                                                                                                                                                                                             | both layers                   |
+| Change intent          | `./scripts/check-changeset.ts $(git merge-base HEAD origin/main)`                                                                                                                                                                                                                                           | both layers                   |
+| Dogfood                | CI's `released-tarballs` action builds the pinned tarballs, and the `check` job runs `pnpm install --frozen-lockfile`. Locally: `pnpm install --frozen-lockfile`, then the `grep` tool over `pnpm-lock.yaml` for registry-resolved family packages                                                          | both layers                   |
+| R1 predicate           | the `grep` tool (not a shell line) with the contract's predicate regex over the repo, every hit classified as history                                                                                                                                                                                       | Layer 2 head                  |
+| R3 not distributed     | `jq -r '.[].name' "$(nix build --no-link --print-out-paths .#workspace-tarballs)/index.json"` lists no `@stryker-js-effect/*` name and no `@systemfsoftware/oxlint-ignorer-config`                                                                                                                          | Layer 2 head                  |
+| DEL1                   | `git grep -nI -e '@systemfsoftware/oxlint-ignorer-config' -- . ':!*.lock' ':!**/CHANGELOG.md' ':!.changeset/ledger.yaml' ':!docs/plans/**'` returns nothing                                                                                                                                                 | Layer 2 head                  |
+| No internal name ships | `pnpm --filter ./packages/ignorers/kit pack --pack-destination .scratch/pack`, then `tar -xOzf` its `package/package.json` and `jq '.devDependencies \| keys'`. The keys include none of `@systemfsoftware/{vitest-config,tsdown-config}`, the old mutation-config name, or any `@stryker-js-effect/*` name | both layers                   |
+| R5 lint equivalence    | per root: `oxlint --print-config \| jq -S`, plus the summary line of `oxlint --format=default`                                                                                                                                                                                                              | both layers, before and after |
+| R6 tsconfig            | per tsconfig: `tsc --showConfig -p <file> \| jq -S`                                                                                                                                                                                                                                                         | both layers                   |
+| R7 vitest              | per vitest config: `vitest list --filesOnly --json`                                                                                                                                                                                                                                                         | Layer 1                       |
+| R9 CI                  | `xd://github run_watch` on CI, Nix, Changeset and Commitlint for each head SHA; quote the turbo `lint`/`test` lines and the oxlint summaries from the `check` job log                                                                                                                                       | both layers                   |
 
 Mutation is not run locally. Main's Mutation workflow covers the renamed `stryker.config.ts` imports after merge.
 
