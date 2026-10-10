@@ -10,10 +10,8 @@ import {
   CheckerAnsweredUnrequested,
   CheckerSkippedRequested,
 } from '../admit-checker-answer.workflow.js'
+import type { CheckerCellError, CheckerRequest, CheckRaw } from './Checker.handle.js'
 import {
-  type CheckerCellError,
-  type CheckerRequest,
-  type CheckRaw,
   commandFailed,
   describeCommandOf,
   type GroupedPlansResult,

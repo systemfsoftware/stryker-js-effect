@@ -8,9 +8,6 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
-import type { CheckerCommand, CheckerContractBroken } from '../admit-checker-answer.workflow.js'
-import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
-
 export class UndescribableMutant extends S.TaggedError<UndescribableMutant>()('UndescribableMutant', {
   id: Mutant.MutantId,
   fileName: Mutant.CanonicalFileName,
@@ -115,14 +112,6 @@ export interface CheckerPlans {
   readonly checkerName: string
   readonly plans: readonly Mutant.RunPlan[]
 }
-
-export interface CheckerRequest extends CheckerPlans {
-  readonly checker: CheckerResourceService
-}
-
-export type CheckRaw = typeof CheckerCommand.Encoded & CheckerRequest
-
-export type CheckerCellError = CheckerCrash | Checker.CheckerFailed | CheckerContractBroken
 
 export type GroupedPlansResult = readonly (readonly Mutant.RunPlan[])[]
 

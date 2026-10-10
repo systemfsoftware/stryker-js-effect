@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
@@ -25,8 +26,10 @@ export class NoMutantSkipped extends S.TaggedClass<NoMutantSkipped>()('NoMutantS
   readonly [SkipWarningTypeId] = SkipWarningTypeId
 }
 
+const SkippedCount = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
+
 export class MutantsSkippedWarned extends S.TaggedClass<MutantsSkippedWarned>()('MutantsSkippedWarned', {
-  skipped: S.Int,
+  skipped: SkippedCount,
   warning: S.String,
 }) {
   readonly [SkipWarningTypeId] = SkipWarningTypeId
@@ -71,3 +74,20 @@ export const warnSkippedMutants = Workflow.make({
   error: S.Never,
   decide,
 })
+
+const accepts = {
+  skipped: S.is(SkippedCount),
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  const seeds = [-1, 0, 1, Number.MAX_SAFE_INTEGER]
+
+  it.prop(
+    '∀n_SkippedCountRefusal_≡AtLeastOne',
+    { of: [S.Int], subject: accepts },
+    (subject, [drawn]) =>
+      Arr.every(Arr.append(seeds, drawn), (n) => subject.skipped(n) === (Number.isSafeInteger(n) && n >= 1)),
+  )
+}

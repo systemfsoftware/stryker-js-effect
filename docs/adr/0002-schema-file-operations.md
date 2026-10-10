@@ -2,13 +2,14 @@
 status: "accepted"
 date: 2026-10-09
 decision-makers: ["ryan"]
+supersedes: ["ADR-0001"]
 ---
 
 # Pure operations over a schema's data live in its schema file
 
 ## Context and Problem Statement
 
-ADR-0001 (line 60) sends functions over a schema's data to an unsuffixed sibling module named after the type, such as `Location.ts`, and never into the schema file. Three facts make that sibling a bad home:
+ADR-0001 (line 60) sends functions over a schema's data to an unsuffixed sibling module named after the type, such as `Location.ts`, and never into the schema file, and its taxonomy row for `*.schema.ts` puts all behavior out of schema files. This record supersedes ADR-0001 on that one question only, where operations over a schema's data live; the rest of ADR-0001 stands. Three facts make that sibling a bad home:
 
 - The mutation run grades only `src/**/*.workflow.ts` and `src/**/*.schema.ts`, so an unsuffixed module is never mutated, and CONST-T4 wants code that can be wrong to be graded.
 - `make-body-purity` refuses a workflow's reference to any local module except a relative `*.schema.js` or `*.schema.ts` specifier, so a workflow cannot call an operation that sits in an unsuffixed sibling.
