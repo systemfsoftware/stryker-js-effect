@@ -723,11 +723,12 @@ export function price(n) {
             .filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
             .map((mutant) => mutant.id)
             .at(0)
+          const refusal = error.cause instanceof Error ? error.cause.message : ''
           return expect({
-            namesMutant: arithmeticId !== undefined && error.message.includes(arithmeticId),
-            namesIgnorer: error.message.includes('"silent-ignorer"'),
             namesFile: error.message.includes('/tmp/blank-ignorer.ts'),
-          }).toEqual({ namesMutant: true, namesIgnorer: true, namesFile: true })
+            namesMutant: arithmeticId !== undefined && refusal.includes(arithmeticId),
+            namesIgnorer: refusal.includes('"silent-ignorer"'),
+          }).toEqual({ namesFile: true, namesMutant: true, namesIgnorer: true })
         }),
       ),
     )

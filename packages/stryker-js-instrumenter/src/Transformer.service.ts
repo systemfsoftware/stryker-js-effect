@@ -1373,11 +1373,7 @@ const refusalError = (refusal: InstrumentationRefusal): InstrumentError =>
         cause: undefined,
       })),
     Match.tag('IgnorerAnsweredWithoutReason', (failed) =>
-      InstrumentError.make({
-        message:
-          `Ignorer "${failed.ignorerName}" ignored mutant ${failed.mutantId} in ${failed.fileName} without a reason`,
-        cause: undefined,
-      })),
+      InstrumentError.make({ message: failed.message, cause: failed })),
     Match.exhaustive,
   )
 
