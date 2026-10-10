@@ -3,11 +3,16 @@ import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import { pipe } from 'effect/Function'
 import * as Option from 'effect/Option'
-import * as Rec from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { type PackedManifest, PackedMember, StagedFixtureManifest } from './install-closure.schema.js'
+import {
+  type ClosureEdge,
+  fixtureEdgesOf,
+  memberEdgesOf,
+  PackedMember,
+  StagedFixtureManifest,
+} from './install-closure.schema.js'
 
 export class InstallClosureCommand extends S.TaggedClass<InstallClosureCommand>()('InstallClosureCommand', {
   members: S.Array(PackedMember),
@@ -22,6 +27,7 @@ type ClosureInstallTypeId = typeof ClosureInstallTypeId
 
 export class ClosureInstall extends S.TaggedClass<ClosureInstall>()('ClosureInstall', {
   specs: S.Array(S.String),
+  dependencies: S.Record(S.String, S.String),
 }) {
   readonly [ClosureInstallTypeId] = ClosureInstallTypeId
 }
@@ -69,60 +75,6 @@ export const InstallClosureFailure = S.Union([
   FixtureNamesWorkspacePackage,
 ])
 export type InstallClosureFailure = typeof InstallClosureFailure.Type
-
-interface ClosureEdge {
-  readonly dependent: string
-  readonly dependency: string
-  readonly target: string
-}
-
-type EdgeSpecs = Readonly<Record<string, string>>
-
-type PeerEdges = Pick<PackedManifest, 'peerDependencies' | 'peerDependenciesMeta'>
-
-const NPM_ALIAS = /^npm:((?:@[^/@]+\/)?[^/@]+)(?:@.*)?$/
-
-const NO_EDGES: EdgeSpecs = {}
-
-const specsOf = (specs: EdgeSpecs | undefined): EdgeSpecs =>
-  Option.getOrElse(Option.fromUndefinedOr(specs), () => NO_EDGES)
-
-const targetOf = (dependency: string, spec: string): string =>
-  Option.getOrElse(
-    Option.flatMap(Option.fromNullishOr(NPM_ALIAS.exec(spec)), (match) => Arr.get(match, 1)),
-    () => dependency,
-  )
-
-const optionalPeer = (manifest: PeerEdges, dependency: string): boolean =>
-  pipe(
-    Option.fromUndefinedOr(manifest.peerDependenciesMeta),
-    Option.flatMap((meta) => Rec.get(meta, dependency)),
-    Option.flatMap((entry) => Option.fromUndefinedOr(entry.optional)),
-    Option.getOrElse(() => false),
-  )
-
-const installedPeers = (manifest: PeerEdges): EdgeSpecs =>
-  Rec.filter(specsOf(manifest.peerDependencies), (_, dependency) => Boolean.not(optionalPeer(manifest, dependency)))
-
-const edgesIn = (dependent: string, fields: ReadonlyArray<EdgeSpecs>): ReadonlyArray<ClosureEdge> =>
-  fields.flatMap((specs) =>
-    Object.entries(specs).map(([dependency, spec]) => ({ dependent, dependency, target: targetOf(dependency, spec) }))
-  )
-
-const memberEdgesOf = (manifest: PackedManifest): ReadonlyArray<ClosureEdge> =>
-  edgesIn(manifest.name, [
-    specsOf(manifest.dependencies),
-    installedPeers(manifest),
-    specsOf(manifest.optionalDependencies),
-  ])
-
-const fixtureEdgesOf = (fixture: StagedFixtureManifest): ReadonlyArray<ClosureEdge> =>
-  edgesIn(fixture.path, [
-    specsOf(fixture.manifest.dependencies),
-    specsOf(fixture.manifest.devDependencies),
-    installedPeers(fixture.manifest),
-    specsOf(fixture.manifest.optionalDependencies),
-  ])
 
 const tarballOf = (command: InstallClosureCommand, name: string): Option.Option<string> =>
   Option.map(
@@ -186,16 +138,34 @@ const conflictRefusal = (
     },
   )
 
-const aliasSpecOf = (command: InstallClosureCommand, edge: ClosureEdge): ReadonlyArray<string> =>
-  Option.toArray(Option.map(tarballOf(command, edge.target), (path) => `${edge.dependency}@file:${path}`))
+const fileSpecOf = (tarballPath: string): string => `file:${tarballPath}`
 
-const installOf = (command: InstallClosureCommand, aliases: ReadonlyArray<ClosureEdge>): ClosureInstall =>
-  ClosureInstall.make({
+const aliasesOf = (
+  command: InstallClosureCommand,
+  aliases: ReadonlyArray<ClosureEdge>,
+): ReadonlyArray<readonly [string, string]> =>
+  Arr.dedupeWith(
+    aliases.flatMap((edge) =>
+      Option.toArray(Option.map(tarballOf(command, edge.target), (path) => [edge.dependency, path] as const))
+    ),
+    ([left], [right]) => left === right,
+  )
+
+const installOf = (command: InstallClosureCommand, aliases: ReadonlyArray<ClosureEdge>): ClosureInstall => {
+  const aliased = aliasesOf(command, aliases)
+  return ClosureInstall.make({
     specs: [
       ...command.members.map((member) => member.tarballPath),
-      ...Arr.dedupe(aliases.flatMap((edge) => aliasSpecOf(command, edge))).sort(),
+      ...aliased.map(([dependency, path]) => `${dependency}@file:${path}`).sort(),
     ],
+    dependencies: Object.fromEntries(
+      [
+        ...command.members.map((member) => [member.manifest.name, fileSpecOf(member.tarballPath)] as const),
+        ...aliased.map(([dependency, path]) => [dependency, fileSpecOf(path)] as const),
+      ].sort(([left], [right]) => left.localeCompare(right)),
+    ),
   })
+}
 
 const decide = (command: InstallClosureCommand): Result.Result<ClosureInstall, InstallClosureFailure> => {
   const edges = command.members.flatMap((member) => memberEdgesOf(member.manifest))

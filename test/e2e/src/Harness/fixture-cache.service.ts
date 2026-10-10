@@ -35,14 +35,16 @@ import {
   type PackedTree,
   type PackInput,
   packsKeyBytes,
-  PinnableFields,
-  pinnedFieldsOf,
+  parseFixtureManifest,
+  parseWorkspaceCatalogs,
   pruneStaleEntries as pruneStaleEntriesWorkflow,
   PruneStaleEntriesCommand,
   REGISTRY_CUTOFF,
   type RegistryPins,
   registryPinsOf,
   type StagedFixtureManifest,
+  stagedManifestOf,
+  type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
 
 import type { BakeOutcome, PackedPackage, PackedPackageLookup, TurboDryClosure } from './bake-key.schema.js'
@@ -54,10 +56,8 @@ import {
   TurboClosure,
   TurboDryRun,
 } from './bake-key.schema.js'
-import type { WorkspaceCatalogs } from './catalog-resolution.js'
-import { parseFixtureManifest, parseWorkspaceCatalogs, resolveCatalogSpecs } from './catalog-resolution.js'
 import { GuestJobs } from './guest-job.service.js'
-import { ExitFailure, FixtureMissingFailure, MalformedFixtureManifest, PackFailure } from './harness-failure.schema.js'
+import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
 import { seamSpan, SpanNames, withSeamSpan } from './harness-telemetry.service.js'
 import * as Warm from './warm-sandbox.handle.js'
@@ -213,15 +213,16 @@ const loadManifestRules = (environment: BakeEnvironment) =>
 const resolveManifestBytes = (label: string, relativePath: string, bytes: Uint8Array, rules: ManifestRules) =>
   Effect.gen(function*() {
     const manifest = `${label}/${relativePath}`
-    const parsed = yield* Effect.fromResult(parseFixtureManifest(manifest, bytes))
-    const resolved = yield* Effect.fromResult(resolveCatalogSpecs(manifest, parsed, rules.catalogs))
-    const fields = yield* Effect.mapError(
-      Schema.decodeUnknownEffect(PinnableFields)(resolved),
-      () => new MalformedFixtureManifest({ manifest, detail: 'overrides is not a map of version ranges' }),
-    )
-    const root = relativePath === MANIFEST_FILE_NAME
-    const pinned = { ...resolved, ...pinnedFieldsOf({ manifest: fields, pins: rules.pins, root }) }
-    return new TextEncoder().encode(`${JSON.stringify(pinned, null, MANIFEST_JSON_INDENT)}\n`)
+    const document = yield* Effect.fromResult(parseFixtureManifest({ manifest, bytes }))
+    const staged = yield* Effect.fromResult(stagedManifestOf({
+      manifestPath: manifest,
+      document,
+      catalogs: rules.catalogs,
+      pins: rules.pins,
+      root: relativePath === MANIFEST_FILE_NAME,
+      closure: {},
+    }))
+    return new TextEncoder().encode(`${JSON.stringify(staged, null, MANIFEST_JSON_INDENT)}\n`)
   })
 
 const resolveTreeManifests = (label: string, files: ReadonlyArray<FileBytes>, rules: ManifestRules) =>
