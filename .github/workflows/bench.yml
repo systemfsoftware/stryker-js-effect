@@ -131,3 +131,12 @@ jobs:
           path: ${{ runner.temp }}/bench-report/bench-report.json
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Bench run streams artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-runs-${{ matrix.target.slug }}
+          path: ${{ runner.temp }}/bench-runs/
+          if-no-files-found: warn
+          retention-days: 7
