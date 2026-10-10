@@ -254,7 +254,8 @@ const sumCounts = (lines: ReadonlyArray<ParityLine>, field: (counts: Counts) => 
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
 
-const ownPositionOf = (fileName: string): RegExp => new RegExp(`^${escapeRegExp(fileName)}\\(\\d+,\\d+\\)`, 'u')
+const ownPositionOf = (fileName: string): RegExp =>
+  new RegExp(`^(?:[^\\n]*/)?${escapeRegExp(fileName)}\\(\\d+,\\d+\\)`, 'u')
 
 const reasonText = (reason: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(reason), () => '')
 

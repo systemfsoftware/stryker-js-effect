@@ -169,21 +169,22 @@ describe('compareSides', () => {
 
   it.prop(
     '∀c_OwnFilePositionOnly_≡ParityHolds',
-    { of: [S.String, S.Int, S.Int, S.Int, S.Int], subject: compareSides },
-    (subject, [drawnFileName, drawnMainLine, drawnMainColumn, drawnBranchLine, drawnBranchColumn]) => {
+    { of: [S.String, S.String, S.Int, S.Int, S.Int, S.Int], subject: compareSides },
+    (subject, [drawnRoot, drawnFileName, drawnMainLine, drawnMainColumn, drawnBranchLine, drawnBranchColumn]) => {
       const fileName = stripNewlines(drawnFileName)
+      const absolute = `/${stripNewlines(drawnRoot)}/${fileName}`
       const lines = [
         verdictOf('main', {
           mutantId: 'm',
           fileName,
           status: 'compileError',
-          reason: `${fileName}(${digitsOf(drawnMainLine)},${digitsOf(drawnMainColumn)}): a diagnostic`,
+          reason: `${absolute}(${digitsOf(drawnMainLine)},${digitsOf(drawnMainColumn)}): a diagnostic`,
         }),
         verdictOf('branch', {
           mutantId: 'm',
           fileName,
           status: 'compileError',
-          reason: `${fileName}(${digitsOf(drawnBranchLine)},${digitsOf(drawnBranchColumn)}): a diagnostic`,
+          reason: `${absolute}(${digitsOf(drawnBranchLine)},${digitsOf(drawnBranchColumn)}): a diagnostic`,
         }),
         countsOf(PROJECT),
       ]
@@ -193,19 +194,22 @@ describe('compareSides', () => {
 
   it.prop(
     '∀c_OtherFilePositionDiffers_≡Refused',
-    { of: [S.String, S.Int, S.Int], subject: compareSides },
-    (subject, [drawnOtherFile, drawnMainLine, drawnMainColumn]) => {
-      const otherFile = `other-${stripNewlines(drawnOtherFile)}`
+    { of: [S.String, S.String, S.Int, S.Int], subject: compareSides },
+    (subject, [drawnRoot, drawnFileName, drawnMainLine, drawnMainColumn]) => {
+      const fileName = stripNewlines(drawnFileName)
+      const otherFile = `/${stripNewlines(drawnRoot)}/other-${fileName}`
       const mainLine = digitsOf(drawnMainLine)
       const mainColumn = digitsOf(drawnMainColumn)
       const lines = [
         verdictOf('main', {
           mutantId: 'm',
+          fileName,
           status: 'compileError',
           reason: `${otherFile}(${mainLine},${mainColumn}): a diagnostic`,
         }),
         verdictOf('branch', {
           mutantId: 'm',
+          fileName,
           status: 'compileError',
           reason: `${otherFile}(${mainLine + 1},${mainColumn + 1}): a diagnostic`,
         }),
