@@ -292,11 +292,12 @@ A piped `stdout` is human output, exactly like a terminal. Machine consumers ask
 
 ```console
 $ pnpm exec stryker run --json
-{"_tag":"stream","schemaVersion":"1.1","runId":"06GDK68202ZB44HJQQ270G8WQ4","mode":"machine","signal":"flag"}
+{"_tag":"stream","schemaVersion":"7.0","runId":"06GDK68202ZB44HJQQ270G8WQ4","mode":"machine","signal":"flag"}
 {"_tag":"phase","phase":"prepare","elapsedMs":115}
-{"_tag":"plan","total":7}
-{"_tag":"mutant","id":"1","status":"Killed","file":"src/calc.ts","location":{"start":{"line":1,"column":61},"end":{"line":1,"column":73}},"mutator":"ArithmeticOperator","replacement":"left - right","completed":1,"total":7}
-{"_tag":"verdict","schemaVersion":"1.1","runId":"06GDK68202ZB44HJQQ270G8WQ4","mode":"machine","signal":"flag","score":85.71428571428571,"thresholds":{"high":100,"low":80,"break":null},"reportFile":"reports/mutation/mutation.json","counts":{"pending":0,"killed":6,"timeout":0,"survived":1,"noCoverage":0,"runtimeErrors":0,"compileErrors":0,"ignored":0},"mutants":[{"id":"5","file":"src/calc.ts","location":{"start":{"line":3,"column":55},"end":{"line":3,"column":64}},"mutator":"EqualityOperator","replacement":"value >= 0","status":"Survived"}]}
+{"_tag":"plan","total":7,"shardPlan":null}
+{"_tag":"mutant","id":"3f9a1c0b7e2d4a65","file":"src/calc.ts","location":{"start":{"line":1,"column":61},"end":{"line":1,"column":73}},"mutator":"ArithmeticOperator","replacement":"left - right","completed":1,"total":7,"static":false,"cost":{"fixedOverheadMs":4,"testBodyMs":11,"testsExecuted":2,"shared":false},"status":"Killed","statusReason":null}
+{"_tag":"mutant","id":"a07c52e91d3b6f48","file":"src/calc.ts","location":{"start":{"line":5,"column":3},"end":{"line":5,"column":31}},"mutator":"StringLiteral","replacement":"\"\"","completed":2,"total":7,"static":false,"cost":null,"status":"Ignored","statusReason":"arid-logging: console.log"}
+{"_tag":"verdict","schemaVersion":"7.0","runId":"06GDK68202ZB44HJQQ270G8WQ4","mode":"machine","signal":"flag","score":83.33333333333333,"thresholds":{"high":100,"low":80,"break":null},"reportFile":"reports/mutation/mutation.json","counts":{"pending":0,"killed":5,"timeout":0,"survived":1,"noCoverage":0,"runtimeErrors":0,"compileErrors":0,"ignored":1},"mutants":[{"id":"5b2e8d17c4a90f36","file":"src/calc.ts","location":{"start":{"line":3,"column":55},"end":{"line":3,"column":64}},"mutator":"EqualityOperator","replacement":"value >= 0","status":"Survived"}],"scope":"full","mutantSetPolicy":"default","phaseDurations":{"prepare":115,"instrument":42,"dry-run":380,"mutation-test":1210},"static":{"count":0,"costMs":0},"budget":{"predictedSeconds":1.4,"actualSeconds":1.21}}
 ```
 
 Under `--json`, `stdout` carries wire records and nothing else — progress status lines and log output stay on `stderr`. In both modes the same records are also written to `reports/mutation-stream.jsonl` (`--progressStreamFile`), the artifact `stryker merge` rebuilds partial reports from.

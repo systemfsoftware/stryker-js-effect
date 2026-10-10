@@ -6,10 +6,18 @@ import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import {
+  admitReuseSource,
+  AdmitReuseSourceCommand,
+  type AdmitReuseSourceDecision,
+  ReuseSourceKept,
+} from '../admit-reuse-source.workflow.js'
 import { type ReuseReport, ReuseReportSchema } from '../IncrementalDiff.schema.js'
 import type { PriorStatus } from '../require-dry-run.workflow.js'
+import { INCREMENTAL_CACHE_VERSION } from '../verdict-semantics.js'
 
 export const optionalField: {
   <A>(field: string, value: A | undefined): Record<string, A>
@@ -46,6 +54,11 @@ const matchedSourcesOf = Effect.fnUntraced(function*(input: IncrementalSourcesIn
   return matched.flat()
 })
 
+export interface IncrementalSourceFile {
+  readonly file: string
+  readonly primary: boolean
+}
+
 export const incrementalSourceFilesOf = Effect.fnUntraced(function*(input: IncrementalSourcesInput) {
   const path = yield* Path.Path
   const incrementalFile = absoluteSourceOf(path, input.basePath, input.options.incrementalFile)
@@ -53,20 +66,55 @@ export const incrementalSourceFilesOf = Effect.fnUntraced(function*(input: Incre
     onTrue: () => matchedSourcesOf(input),
     onFalse: () => Effect.succeed<readonly string[]>([]),
   })
-  return Arr.dedupe([incrementalFile, ...matched])
+  return Arr.dedupe([incrementalFile, ...matched]).map((file): IncrementalSourceFile => ({
+    file,
+    primary: file === incrementalFile,
+  }))
 })
 
-export const incrementalReportTextsOf = Effect.fnUntraced(function*(input: IncrementalSourcesInput) {
+export interface IncrementalSourceRead {
+  readonly file: string
+  readonly primary: boolean
+  readonly text: string
+  readonly decision: AdmitReuseSourceDecision
+}
+
+export const incrementalSourceReadsOf = Effect.fnUntraced(function*(input: IncrementalSourcesInput) {
   const fs = yield* FileSystem.FileSystem
   const sources = yield* incrementalSourceFilesOf(input)
   return yield* Effect.forEach(
     sources,
-    (file) =>
-      fs.readFileString(file).pipe(
-        Effect.option,
-        Effect.map((text) => Option.getOrElse(text, () => '')),
+    (source) =>
+      Effect.map(
+        fs.readFileString(source.file).pipe(
+          Effect.option,
+          Effect.map((text) => Option.getOrElse(text, () => '')),
+        ),
+        (text): IncrementalSourceRead => ({
+          file: source.file,
+          primary: source.primary,
+          text,
+          decision: Result.getOrThrow(
+            admitReuseSource(
+              AdmitReuseSourceCommand.make({ text, expectedIncrementalVersion: INCREMENTAL_CACHE_VERSION }),
+            ),
+          ),
+        }),
       ),
     { concurrency: 1 },
+  )
+})
+
+const keptReportOf = (read: IncrementalSourceRead): Option.Option<ReuseSourceKept> =>
+  Option.liftPredicate(read.decision, S.is(ReuseSourceKept))
+
+export const incrementalReportTextsOf = Effect.fnUntraced(function*(input: IncrementalSourcesInput) {
+  const reads = yield* incrementalSourceReadsOf(input)
+  return reads.flatMap((read) =>
+    Option.match(keptReportOf(read), {
+      onNone: (): readonly string[] => [],
+      onSome: () => [read.text],
+    })
   )
 })
 

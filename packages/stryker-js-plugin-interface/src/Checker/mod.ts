@@ -1,4 +1,6 @@
 export {
+  type CheckAnswer,
+  CheckAnswerSchema,
   CheckerFailed,
   CheckerMutantWire,
   type CheckResult,
