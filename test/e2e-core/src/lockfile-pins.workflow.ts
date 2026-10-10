@@ -12,6 +12,7 @@ import {
   LockfilePins,
   LockfilePinsPartial,
   LockfilePinsResolved,
+  ManifestField,
   PnpmListing,
   type PnpmNode,
   type PnpmProject,
@@ -29,8 +30,6 @@ interface Occurrence {
   readonly version: string
   readonly resolved: string | undefined
 }
-
-const PROJECT_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const
 
 const REGISTRY_URL = 'https://registry.npmjs.org/'
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
@@ -56,7 +55,8 @@ const occurrenceOf = (node: PnpmNode): Occurrence => ({
 const occurrencesIn = (projects: ReadonlyArray<PnpmProject>): ReadonlyArray<Occurrence> =>
   Arr.flatMap(
     projects,
-    (project) => Arr.flatMap(PROJECT_FIELDS, (field) => Arr.map(nodesIn(nodesOf(project[field])), occurrenceOf)),
+    (project) =>
+      Arr.flatMap(ManifestField.literals, (field) => Arr.map(nodesIn(nodesOf(project[field])), occurrenceOf)),
   )
 
 const isPinnable = (occurrence: Occurrence): boolean =>

@@ -76,21 +76,42 @@ interface CliExit {
   readonly arrivalsMs: ReadonlyArray<number>
 }
 
-const completeLineCount = (text: string): number => text.split('\n').length - 1
+const NEWLINE = 0x0a
+
+interface Observed {
+  readonly bytes: number
+  readonly arrivalsMs: ReadonlyArray<number>
+}
+
+interface Appended {
+  readonly bytes: number
+  readonly lines: number
+}
+
+const NOTHING_APPENDED: Appended = { bytes: 0, lines: 0 }
+
+const newlinesIn = (chunk: Uint8Array): number => chunk.reduce((count, byte) => count + Number(byte === NEWLINE), 0)
 
 const observeArrivals = (
   fs: FileSystem.FileSystem,
   file: string,
   startedAt: number,
-  arrivals: Ref.Ref<ReadonlyArray<number>>,
+  observed: Ref.Ref<Observed>,
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
-    const count = completeLineCount(yield* fs.readFileString(file).pipe(Effect.orElseSucceed(() => '')))
-    const sinceStartMs = (yield* Clock.currentTimeMillis) - startedAt
-    yield* Ref.update(
-      arrivals,
-      (seen) => [...seen, ...Arr.makeBy(Math.max(0, count - seen.length), () => sinceStartMs)],
+    const seen = yield* Ref.get(observed)
+    const appended = yield* fs.stream(file, { offset: seen.bytes }).pipe(
+      Stream.runFold(
+        () => NOTHING_APPENDED,
+        (sum, chunk): Appended => ({ bytes: sum.bytes + chunk.length, lines: sum.lines + newlinesIn(chunk) }),
+      ),
+      Effect.orElseSucceed(() => NOTHING_APPENDED),
     )
+    const sinceStartMs = (yield* Clock.currentTimeMillis) - startedAt
+    yield* Ref.set(observed, {
+      bytes: seen.bytes + appended.bytes,
+      arrivalsMs: Arr.pad(Arr.fromIterable(seen.arrivalsMs), seen.arrivalsMs.length + appended.lines, sinceStartMs),
+    })
   })
 
 const runCli = (
@@ -104,7 +125,7 @@ const runCli = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const stderr = yield* Ref.make('')
-    const arrivals = yield* Ref.make<ReadonlyArray<number>>([])
+    const observed = yield* Ref.make<Observed>({ bytes: 0, arrivalsMs: [] })
     const exited = yield* Effect.scoped(Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       const handle = yield* spawner.spawn(
@@ -123,7 +144,7 @@ const runCli = (
           { cwd: params.cwd, forceKillAfter: Duration.seconds(10) },
         ),
       )
-      yield* observeArrivals(fs, params.streamFile, params.startedAt, arrivals).pipe(
+      yield* observeArrivals(fs, params.streamFile, params.startedAt, observed).pipe(
         Effect.repeat(Schedule.spaced(Duration.millis(ARRIVAL_POLL_MS))),
         Effect.forkScoped,
       )
@@ -144,7 +165,7 @@ const runCli = (
       onNone: (): RunExit => ({ _tag: 'timed-out', afterMs: params.timeoutMs }),
       onSome: (code): RunExit => ({ _tag: 'exited', code }),
     })
-    return { exit, stderrTail: yield* Ref.get(stderr), arrivalsMs: yield* Ref.get(arrivals) }
+    return { exit, stderrTail: yield* Ref.get(stderr), arrivalsMs: (yield* Ref.get(observed)).arrivalsMs }
   })
 
 const streamLines = (
@@ -199,10 +220,7 @@ const runOne = (
     const wallMs = (yield* Clock.currentTimeMillis) - startedAt
 
     const lines = yield* streamLines(fs, streamFile)
-    const arrivalsMs = [
-      ...Arr.take(cliExit.arrivalsMs, lines.length),
-      ...Arr.makeBy(Math.max(0, lines.length - cliExit.arrivalsMs.length), () => wallMs),
-    ]
+    const arrivalsMs = Arr.pad(Arr.fromIterable(cliExit.arrivalsMs), lines.length, wallMs)
     yield* S.encodeEffect(LineArrivalsJson)(arrivalsMs).pipe(
       Effect.flatMap((text) => fs.writeFileString(arrivalsFile, text)),
       Effect.ignore,

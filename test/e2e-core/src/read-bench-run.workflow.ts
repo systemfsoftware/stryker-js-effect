@@ -110,7 +110,7 @@ const isMark = (entry: Arrived): boolean => Boolean.or(isPhaseEvent(entry.event)
 
 const phaseTimesOf = (arrived: ReadonlyArray<Arrived>): ReadonlyArray<PhaseTime> => {
   const marks = Arr.filter(arrived, isMark)
-  return Arr.getSomes(Arr.map(Arr.zip(marks, Arr.drop(marks, 1)), ([mark, next]) =>
+  return Arr.getSomes(Arr.map(Arr.window(marks, 2), ([mark, next]) =>
     Option.map(
       Option.liftPredicate(mark.event, isPhaseEvent),
       (entered): PhaseTime => ({ phase: entered.phase, startMs: mark.arrivalMs, endMs: next.arrivalMs }),
@@ -120,7 +120,7 @@ const phaseTimesOf = (arrived: ReadonlyArray<Arrived>): ReadonlyArray<PhaseTime>
 const arrivalsMismatch = (command: ReadBenchRunCommand): boolean =>
   Boolean.or(
     Arr.length(command.lines) !== Arr.length(command.arrivalsMs),
-    Arr.some(Arr.zip(command.arrivalsMs, Arr.drop(command.arrivalsMs, 1)), ([earlier, later]) => later < earlier),
+    Arr.some(Arr.window(command.arrivalsMs, 2), ([earlier, later]) => later < earlier),
   )
 
 const measuredOrInvalid = (

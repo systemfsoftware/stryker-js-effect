@@ -79,10 +79,10 @@ const pinnedEntries = (entries: Readonly<Record<string, string>>, pins: Lockfile
 const pinnedField = (value: Json, pins: LockfilePins): Option.Option<Record<string, string>> =>
   Option.map(S.decodeUnknownOption(DependencyRecord)(value), (entries) => pinnedEntries(entries, pins))
 
-const MANIFEST_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const
+export const ManifestField = S.Literals(['dependencies', 'devDependencies', 'optionalDependencies'])
 
 const withPinnedFields = (manifest: JsonObject, pins: LockfilePins): JsonObject =>
-  MANIFEST_FIELDS.reduce<JsonObject>(
+  ManifestField.literals.reduce<JsonObject>(
     (pinned, field) =>
       Option.match(Option.fromNullishOr(manifest[field]), {
         onNone: () => pinned,

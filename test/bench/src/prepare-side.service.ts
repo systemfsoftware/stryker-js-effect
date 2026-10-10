@@ -584,9 +584,9 @@ const pinManifests = (
   })
 
 const recoveryOf = (retried: ReadonlyArray<Option.Option<string>>): SetupRecovery =>
-  Option.match(Arr.match(Arr.getSomes(retried), { onEmpty: Option.none, onNonEmpty: Option.some }), {
+  Option.match(Arr.head(Arr.getSomes(retried)), {
     onNone: (): SetupRecovery => ({ _tag: 'none' }),
-    onSome: (steps): SetupRecovery => ({ _tag: 'retried', steps }),
+    onSome: (step): SetupRecovery => ({ _tag: 'retried', steps: [step] }),
   })
 
 const NPM_INSTALL: Argv = ['npm', 'install', '--no-audit', '--no-fund', '--loglevel=warn']
