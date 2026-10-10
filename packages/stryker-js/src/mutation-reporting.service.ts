@@ -28,6 +28,7 @@ import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
+import * as SynchronizedRef from 'effect/SynchronizedRef'
 
 import { writeFileAtomic } from './atomic-write.cell.js'
 import { budgetOf } from './budget.js'
@@ -135,7 +136,15 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
       const events = yield* RunEvents
       const projectFiles: ProjectFilesShape = yield* ProjectFiles
       const phaseClock = yield* PhaseClock
-      const deps: MutationReportingDeps = { fs, path: pathService, events, projectFiles, phaseClock }
+      const headerIdentityCache = yield* SynchronizedRef.make(Option.none<Effect.Effect<RunHeaderIdentity>>())
+      const deps: MutationReportingDeps = {
+        fs,
+        path: pathService,
+        events,
+        projectFiles,
+        phaseClock,
+        headerIdentityCache,
+      }
       return MutationReporting.of({
         reportCheckFailure: (mutant, result) => reportCheckFailure(mutant, result),
         reportIgnored: (mutant, result) => reportIgnored(mutant, result),
@@ -149,12 +158,20 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
   )
 }
 
+interface RunHeaderIdentity {
+  readonly incrementalVersion: string
+  readonly engineDigest: string
+  readonly mutantSetPolicy: Options.MutantSetPolicy
+  readonly runInputsDigest: string
+}
+
 interface MutationReportingDeps {
   readonly fs: FileSystem.FileSystem
   readonly path: Path.Path
   readonly events: Queue.Queue<RunEvent.RunEvent, Cause.Done>
   readonly projectFiles: ProjectFilesShape
   readonly phaseClock: PhaseClockShape
+  readonly headerIdentityCache: SynchronizedRef.SynchronizedRef<Option.Option<Effect.Effect<RunHeaderIdentity>>>
 }
 
 interface MutantOutcome {
@@ -660,23 +677,48 @@ const dryRunCoverageFieldOf = (testCoverage: TestCoverage): { readonly dryRunCov
     onSome: (dryRunCoverage) => ({ dryRunCoverage }),
   })
 
-const incrementalHeaderOf = Effect.fnUntraced(function*(
+type HeaderIdentityDeps = Pick<MutationReportingDeps, 'fs' | 'path' | 'headerIdentityCache'>
+
+const runHeaderIdentityOf = Effect.fnUntraced(function*(
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
   input: MutationReportingInput,
-  budget: RunEvent.Budget,
 ) {
   return {
     incrementalVersion: INCREMENTAL_CACHE_VERSION,
     engineDigest: yield* engineDigestOf(deps.fs, deps.path),
     mutantSetPolicy: input.options.mutator.mutantSetPolicy,
     runInputsDigest: yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options),
+  } satisfies RunHeaderIdentity
+})
+
+const cachedRunHeaderIdentityOf = (
+  deps: HeaderIdentityDeps,
+  input: MutationReportingInput,
+): Effect.Effect<RunHeaderIdentity> =>
+  Effect.flatMap(
+    SynchronizedRef.modifyEffect(deps.headerIdentityCache, (current) =>
+      Option.match(current, {
+        onSome: (memo) => Effect.succeed([memo, current] as const),
+        onNone: () =>
+          Effect.map(Effect.cached(runHeaderIdentityOf(deps, input)), (memo) => [memo, Option.some(memo)] as const),
+      })),
+    (memo) => memo,
+  )
+
+const incrementalHeaderOf = Effect.fnUntraced(function*(
+  deps: HeaderIdentityDeps,
+  input: MutationReportingInput,
+  budget: RunEvent.Budget,
+) {
+  return {
+    ...(yield* cachedRunHeaderIdentityOf(deps, input)),
     budget,
     ...dryRunCoverageFieldOf(input.testCoverage),
   }
 })
 
 const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWriteIncrementalReport.name)(function*(
-  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
+  deps: HeaderIdentityDeps,
   input: MutationReportingInput,
   budget: RunEvent.Budget,
 ) {
@@ -752,7 +794,7 @@ const reportAll = Effect.fn(SpanTaxonomy.Spans.mutationReportingReportAll.name)(
 })
 
 const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlimIncrementalReport.name)(function*(
-  deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
+  deps: HeaderIdentityDeps,
   input: MutationReportingInput,
   results: readonly Mutant.RunMutantResult[],
 ) {

@@ -16,3 +16,5 @@ export const IncrementalReportSchema = S.StructWithRest(
 )
 
 export type IncrementalReport = S.Schema.Type<typeof IncrementalReportSchema>
+
+export const IncrementalVersionHeaderSchema = S.Struct({ incrementalVersion: S.optional(S.String) })

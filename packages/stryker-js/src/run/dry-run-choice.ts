@@ -125,7 +125,6 @@ const priorChoiceOf = (
 })
 
 export interface DryRunChoice extends PriorChoice {
-  readonly candidates: readonly DryRunCoverage[]
   readonly currentTestClosureDigest: Option.Option<string>
   readonly runInputsDigest: string
 }
@@ -134,7 +133,6 @@ export const dryRunChoiceOf = Effect.fnUntraced(function*(target: DryRunTarget, 
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const coverage = coverageOfReportText(yield* incrementalReportTextOf({ basePath, options: target.options }))
-  const candidates = Option.toArray(coverage)
   const runInputsDigest = yield* runInputsDigestOf(fs, path, basePath, target.options)
   const currentTestClosureDigest = yield* testClosureDigestOf(
     target,
@@ -143,5 +141,5 @@ export const dryRunChoiceOf = Effect.fnUntraced(function*(target: DryRunTarget, 
     observedModulesOfCoverage(coverage),
   )
   const choice = priorChoiceOf(coverage, currentTestClosureDigest, runInputsDigest, target.options.force)
-  return { ...choice, candidates, currentTestClosureDigest, runInputsDigest } satisfies DryRunChoice
+  return { ...choice, currentTestClosureDigest, runInputsDigest } satisfies DryRunChoice
 })
