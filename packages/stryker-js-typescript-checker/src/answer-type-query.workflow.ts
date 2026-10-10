@@ -13,6 +13,7 @@ import {
   type ContextualTypeFacts,
   type SiteExpression,
   type SiteFacts,
+  type SiteFunctionBody,
 } from './CheckerCommands.schema.js'
 
 const AnswerTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/AnswerDecision')
@@ -84,10 +85,71 @@ const contextualAnswerOf = (
       }),
   })
 
+const reasonIf = (condition: boolean, reason: UnknownReason): Option.Option<UnknownReason> =>
+  Boolean.match(condition, { onTrue: () => Option.some(reason), onFalse: () => Option.none() })
+
+const targetReasonOf = (target: ContextualTypeFacts): Option.Option<UnknownReason> =>
+  Option.firstSomeOf([
+    reasonIf(target.isError, 'error-type'),
+    reasonIf(target.instantiable, 'instantiable-target'),
+  ])
+
+const functionBodyUnknownOf = (site: SiteFunctionBody): Option.Option<UnknownReason> =>
+  Option.firstSomeOf([
+    reasonIf(Option.isNone(site.target), 'no-contextual-type'),
+    reasonIf(site.generator, 'generator-body'),
+    reasonIf(site.functionKind === 'constructor', 'constructor-body'),
+    reasonIf(
+      Boolean.and(Boolean.not(site.returnTypeDeclared), site.functionKind !== 'setter'),
+      'return-type-not-declared',
+    ),
+    reasonIf(Boolean.and(site.async, Boolean.not(site.asyncReturnIsPromise)), 'async-return-not-promise'),
+    Option.flatMap(site.target, targetReasonOf),
+  ])
+
+const targetTextOf = (site: SiteFunctionBody): string =>
+  Option.getOrElse(Option.map(site.target, (target) => target.text), () => '')
+
+const functionBodyTypedOf = (site: SiteFunctionBody): AnswerDecision =>
+  Boolean.match(site.undefinedAssignable, {
+    onFalse: () => notAssignableAnswer('undefined', targetTextOf(site)),
+    onTrue: () =>
+      Boolean.match(site.functionKind === 'getter', {
+        onTrue: () => unknownAnswer('getter-requires-return'),
+        onFalse: () =>
+          Boolean.match(site.targetAllowsImplicitReturn, {
+            onTrue: () => assignableAnswer('undefined'),
+            onFalse: () => unknownAnswer('implicit-return-rejected'),
+          }),
+      }),
+  })
+
+const functionBodyAnswerOf = (site: SiteFunctionBody, text: string): AnswerDecision =>
+  Boolean.match(text === '{}', {
+    onFalse: () => unknownAnswer('candidate-not-empty-body'),
+    onTrue: () =>
+      Option.match(functionBodyUnknownOf(site), {
+        onNone: () => functionBodyTypedOf(site),
+        onSome: unknownAnswer,
+      }),
+  })
+
+const bodySiteAnswerOf = (text: string, site: SiteFacts): AnswerDecision =>
+  Match.value(site).pipe(
+    Match.tag('SiteMissing', () => unknownAnswer('site-not-found')),
+    Match.tag('SiteNotExpression', () => unknownAnswer('site-not-expression')),
+    Match.tag('SiteNotFunctionBody', () => unknownAnswer('site-not-function-body')),
+    Match.tag('SiteFunctionBody', (body) => functionBodyAnswerOf(body, text)),
+    Match.tag('SiteExpression', () => unknownAnswer('site-not-function-body')),
+    Match.exhaustive,
+  )
+
 const siteAnswerOf = (candidate: CandidateTyped, site: SiteFacts): AnswerDecision =>
   Match.value(site).pipe(
     Match.tag('SiteMissing', () => unknownAnswer('site-not-found')),
     Match.tag('SiteNotExpression', () => unknownAnswer('site-not-expression')),
+    Match.tag('SiteNotFunctionBody', () => unknownAnswer('site-not-function-body')),
+    Match.tag('SiteFunctionBody', () => unknownAnswer('candidate-not-empty-body')),
     Match.tag('SiteExpression', (expression: SiteExpression) =>
       Option.match(expression.contextualType, {
         onNone: () => unknownAnswer('no-contextual-type'),
@@ -100,6 +162,7 @@ const answerOf = (command: AnswerTypeQueryCommand): AnswerDecision =>
   Match.value(command.candidate).pipe(
     Match.tag('CandidateNotContextFree', () => unknownAnswer('candidate-not-context-free')),
     Match.tag('CandidateMissing', () => unknownAnswer('candidate-not-found')),
+    Match.tag('CandidateBodyText', (body) => bodySiteAnswerOf(body.text, command.site)),
     Match.tag('CandidateTyped', (candidate: CandidateTyped) => siteAnswerOf(candidate, command.site)),
     Match.exhaustive,
   )

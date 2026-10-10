@@ -73,6 +73,14 @@ import { CheckerRuntime, nodes, TypeScriptCompiler } from '@systemfsoftware/stry
 
 It publishes the runtime Layer (`CheckerRuntime.layer(options)`), its `CheckerRuntimeShape` type, the `TypeScriptCompiler` service tag and the `nodes` program-graph accessor. Everything else stays behind the worker entry.
 
+`CheckerRuntimeShape` carries three members:
+
+- `checker` — the lazy checker service the worker resolves for `check`, `group` and `digest`.
+- `capabilities` — the static `CheckerCapabilities` the checker declares, `{ typeQuery: [1, 2] }`.
+- `typeQuery` — an `Effect<TypeQueryShape>` built on first use: the `TypeQueryLive` layer is built into the runtime layer's scope when the effect first runs and closed with that scope, so `check`, `group` and `digest` never open a query server.
+
+The checker worker serves both over the `Plugin.CheckerRpcs` group: `capabilities` answers the declaration for `"typescript"` without resolving the checker, and `typeQuery` delegates to the lazy `TypeQuery` service.
+
 ## Type query (`./type-query`)
 
 Provisional: this entry changes shape when its consumer confirms it, and that change ships as an ordinary break.

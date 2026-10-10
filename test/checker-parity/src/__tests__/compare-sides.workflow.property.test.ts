@@ -122,6 +122,7 @@ const notAssignableAnswer: TypeAnswer = NotAssignable.make({ candidateType: '""'
 interface TypeAnswerFields {
   readonly project?: string
   readonly candidate?: string
+  readonly siteKind?: 'expression' | 'function-body'
 }
 
 const typeAnswerLineOf = (mutantId: string, answer: TypeAnswer, fields: TypeAnswerFields = {}): TypeAnswerLine =>
@@ -134,6 +135,7 @@ const typeAnswerLineOf = (mutantId: string, answer: TypeAnswer, fields: TypeAnsw
     line: 1,
     column: 1,
     candidate: fields.candidate ?? '""',
+    siteKind: fields.siteKind ?? 'expression',
     answer,
   })
 
@@ -142,6 +144,16 @@ const commandOf = (
   gates: Gates = GATES_OFF,
   isolatedDeclarationsProject = FIXTURE,
 ): CompareSidesCommand => CompareSidesCommand.make({ lines, gates, isolatedDeclarationsProject })
+
+const answersAtSiteKind = (
+  siteKind: 'expression' | 'function-body',
+  answers: ReadonlyArray<TypeAnswer>,
+): ReadonlyArray<ParityLine> =>
+  answers.flatMap((answer, index) => [
+    verdictOf('main', { mutantId: `${siteKind}-${index}`, status: 'compileError' }),
+    verdictOf('branch', { mutantId: `${siteKind}-${index}`, status: 'compileError' }),
+    typeAnswerLineOf(`${siteKind}-${index}`, answer, { siteKind }),
+  ])
 
 const decisionOf = (subject: typeof compareSides, command: CompareSidesCommand): ComparisonDecision =>
   Result.getOrThrow(subject(command))
@@ -544,6 +556,30 @@ describe('compareSides', () => {
   )
 
   it.prop(
+    '∀w,κ_NotAssignableOnNonCompileErrorPerSiteKind_≡WrongNotAssignableNamingTheMutant',
+    {
+      of: [S.NonEmptyString, S.Literals(['passed', 'ignored']), S.String, S.Literals(['expression', 'function-body'])],
+      subject: compareSides,
+    },
+    (subject, [mutantId, status, candidate, siteKind]) => {
+      const lines = [
+        verdictOf('main', { mutantId, status }),
+        verdictOf('branch', { mutantId, status }),
+        typeAnswerLineOf(mutantId, notAssignableAnswer, { candidate, siteKind }),
+        countsOf(PROJECT),
+      ]
+      const decision = decisionOf(subject, commandOf(lines))
+      return S.is(ParityBroken)(decision) &&
+        decision.violations.some((violation) =>
+          S.is(WrongNotAssignable)(violation) &&
+          violation.mutantId === mutantId &&
+          violation.verdict === status &&
+          violation.candidate === candidate
+        )
+    },
+  )
+
+  it.prop(
     '∀a_AssignableAnswer_≡NeverWrongNotAssignable',
     { of: [S.NonEmptyString], subject: compareSides },
     (subject, [mutantId]) => {
@@ -671,6 +707,25 @@ describe('compareSides', () => {
             entry.refusedMutants === refusals.reduce((total, refused) => total + refused.mutantCount, 0)
           )
         )
+    },
+  )
+
+  it.prop(
+    '∀x,y_AnswersBySiteKind_≡EachKindsCountsSumToItsLineCount',
+    { of: [S.NonEmptyArray(TypeAnswer), S.NonEmptyArray(TypeAnswer)], subject: compareSides },
+    (subject, [expressionAnswers, functionBodyAnswers]) => {
+      const lines = [
+        ...answersAtSiteKind('expression', expressionAnswers),
+        ...answersAtSiteKind('function-body', functionBodyAnswers),
+        countsOf(PROJECT),
+      ]
+      const { answers, answersBySiteKind } = decisionOf(subject, commandOf(lines)).summary.typeQuery
+      const sumOf = (
+        counts: { readonly assignable: number; readonly notAssignable: number; readonly unknown: number },
+      ): number => counts.assignable + counts.notAssignable + counts.unknown
+      return sumOf(answersBySiteKind.expression) === expressionAnswers.length &&
+        sumOf(answersBySiteKind['function-body']) === functionBodyAnswers.length &&
+        sumOf(answers) === expressionAnswers.length + functionBodyAnswers.length
     },
   )
 })

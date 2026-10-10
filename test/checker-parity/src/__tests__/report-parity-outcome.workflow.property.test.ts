@@ -121,6 +121,21 @@ describe('reportParityOutcome', () => {
   )
 
   it.prop(
+    '∀h_TypeQuerySiteKinds_≡SummaryCountsEveryKindsAnswers',
+    { of: [ParityHolds, S.Boolean, S.String, S.String, S.Array(ProjectShard)], subject: reportParityOutcome },
+    (subject, [held, githubActions, runId, summaryFile, projectShards]) => {
+      const summary = reportOf(subject, finishedOf(held, summaryFile, projectShards), githubActions, runId).stepSummary
+      const { expression } = held.summary.typeQuery.answersBySiteKind
+      const functionBody = held.summary.typeQuery.answersBySiteKind['function-body']
+      const countsText = (
+        counts: { readonly assignable: number; readonly notAssignable: number; readonly unknown: number },
+      ): string => `${counts.assignable} Assignable, ${counts.notAssignable} NotAssignable, ${counts.unknown} Unknown`
+      return summary.includes(`expression ${countsText(expression)}`) &&
+        summary.includes(`function-body ${countsText(functionBody)}`)
+    },
+  )
+
+  it.prop(
     '∀f_DriverFailure_≡ExitTwoNamingCodeAndNextAction',
     { of: [DriverFailure, S.Boolean, S.String], subject: reportParityOutcome },
     (subject, [failure, githubActions, runId]) => {

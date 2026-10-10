@@ -232,7 +232,13 @@ const panicBesideACheck: Effect.Effect<
 const refusals = Effect.gen(function*() {
   const fixture = yield* fixtureOf('type-query')
   const file = yield* readQueryFile(fixture, 'sites.ts', SITES)
-  const unsupported = yield* Effect.flip(query({ ...requestOf(fixture, [file]), version: 2 }))
+  const bodyFile: TypeQueryFile = {
+    ...file,
+    sites: file.sites.map((site, index) => (index === 0 ? { ...site, kind: 'function-body' } : site)),
+  }
+  const unsupported = yield* Effect.flip(
+    query({ ...requestOf(fixture, [bodyFile]), version: 1 }),
+  )
   const outside = yield* Effect.orDie(
     query(requestOf(fixture, [{ ...file, fileName: fixture.file('../per-mutant-check/dep.ts') }])),
   )
@@ -356,9 +362,12 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
     )
 
     scenario(
-      'A request of another version is refused, and a file outside the project is refused on its own',
+      'A version 1 request carrying a function-body site is refused, and a file outside the project is refused on its own',
       Gherkin.Do.pipe(
-        When('a version 2 request and a request for a file of another project are made')('seen', () => refusals),
+        When('a version 1 request with a function-body site and a request for a file of another project are made')(
+          'seen',
+          () => refusals,
+        ),
         Then('the first is refused unsupported-version and the second file not-in-project')((s, expect) =>
           expect(s.seen).toEqual({ unsupported: 'unsupported-version', outside: ['FileRefused not-in-project'] })
         ),

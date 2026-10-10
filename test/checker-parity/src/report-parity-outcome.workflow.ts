@@ -12,6 +12,7 @@ import {
   type ObservedVerdict,
   type ParityBroken,
   type SideTotals,
+  type TypeQueryAnswerCounts,
   type TypeQueryProjectShare,
   type TypeQuerySummary,
   type Violation,
@@ -234,8 +235,16 @@ const typeQueryProjectLine = (share: TypeQueryProjectShare): string =>
     Boolean.match(share.queried === 0, { onTrue: () => ' - no answers', onFalse: () => '' })
   }`
 
+const answerCountsText = (counts: TypeQueryAnswerCounts): string =>
+  `${counts.assignable} Assignable, ${counts.notAssignable} NotAssignable, ${counts.unknown} Unknown`
+
 const typeQueryLines = (typeQuery: TypeQuerySummary): ReadonlyArray<string> => [
-  `- type query: ${typeQuery.queried} answered (${typeQuery.answers.assignable} Assignable, ${typeQuery.answers.notAssignable} NotAssignable, ${typeQuery.answers.unknown} Unknown), ${typeQuery.refusedFiles} file(s) refused, peak ${typeQuery.peakServers} server(s)`,
+  `- type query: ${typeQuery.queried} answered (${
+    answerCountsText(typeQuery.answers)
+  }), ${typeQuery.refusedFiles} file(s) refused, peak ${typeQuery.peakServers} server(s)`,
+  `- type query by site kind: expression ${answerCountsText(typeQuery.answersBySiteKind.expression)}; function-body ${
+    answerCountsText(typeQuery.answersBySiteKind['function-body'])
+  }`,
   ...typeQuery.projects.map(typeQueryProjectLine),
 ]
 
