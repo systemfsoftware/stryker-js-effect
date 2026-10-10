@@ -12,10 +12,8 @@ import * as Clock from 'effect/Clock'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import { pipe } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
-import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
@@ -229,7 +227,7 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
     now,
     mode: env.resolvedMode.mode,
     reporters: [...options.reporters],
-    fileCount: pipe(command.project.files, MutableHashMap.size),
+    fileCount: command.project.files.size,
     env,
     queue,
     options,
@@ -248,10 +246,10 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
 
 export const admitPreparedProject = (raw: PrepareRaw): Effect.Effect<void, StageError> =>
   Effect.gen(function*() {
-    const mutateCount = pipe(raw.project.filesToMutate, MutableHashMap.size)
+    const mutateCount = raw.project.filesToMutate.size
     yield* announceSummary({
       env: raw.env,
-      summary: `Found ${mutateCount} of ${pipe(raw.project.files, MutableHashMap.size)} file(s) to be mutated.`,
+      summary: `Found ${mutateCount} of ${raw.project.files.size} file(s) to be mutated.`,
     })
     yield* validateReporterNames(
       raw.options.reporters,
@@ -260,7 +258,7 @@ export const admitPreparedProject = (raw: PrepareRaw): Effect.Effect<void, Stage
       Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
     )
     const admission = admitNonEmptyProject(
-      NonEmptyProjectCommand.make({ fileCount: pipe(raw.project.files, MutableHashMap.size) }),
+      NonEmptyProjectCommand.make({ fileCount: raw.project.files.size }),
     )
     const emptyAdmission = Option.filter(Result.getSuccess(admission), S.is(ProjectEmpty))
     const emptyProjectGuard: Result.Result<void, StageError> = Option.getOrElse(

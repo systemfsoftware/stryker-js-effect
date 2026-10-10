@@ -4,7 +4,6 @@ import type { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interfa
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
@@ -72,7 +71,7 @@ export const testClosureDigestOf = Effect.fnUntraced(function*(
   const analysis = yield* Effect.option(
     analyzeImportClosure({
       rootDir,
-      projectFiles: Arr.dedupe([...MutableHashMap.keys(target.project.files), ...target.project.testFiles]),
+      projectFiles: Arr.dedupe([...target.project.files.keys(), ...target.project.testFiles]),
       testFiles: [...target.project.testFiles],
       globalInputs: [...globalInputs],
       ...(observedModules === undefined ? {} : { observedModules }),
