@@ -443,6 +443,35 @@ const planOptions = {
   ),
 }
 
+const auditOptions = {
+  matrix: Flag.String('matrix').pipe(
+    Flag.withDescription(
+      'The directory holding <project>/stryker-incremental.json for each project: a kill-matrix artifact for the drop audit, any finished run for --counts-only.',
+    ),
+  ),
+  out: Flag.String('out').pipe(
+    Flag.withDescription('Write the versioned audit JSON to this file.'),
+    Flag.withDefault('reports/audit.json'),
+  ),
+  countsOnly: Flag.map(optional(Flag.Boolean('counts-only')), absentWhenFalse).pipe(
+    Flag.withDescription('Count planned, CompileError, compiled and executed mutants from the reports alone.'),
+  ),
+  projects: Flag.String('projects').pipe(
+    Flag.withDescription(
+      'A comma separated list of project directories to audit; defaults to the current working directory.',
+    ),
+    Flag.map(splitOnComma),
+    optional,
+  ),
+  files: Flag.String('files').pipe(
+    Flag.withDescription(
+      'A comma separated list of files, relative to the working directory, to scope the drop audit to; defaults to every file in the matrix.',
+    ),
+    Flag.map(splitOnComma),
+    optional,
+  ),
+}
+
 const serveOptions = {
   port: Flag.Int('port').pipe(
     Flag.withDescription('The port the socket channel listens on. Required for the `socket` channel.'),
@@ -640,6 +669,26 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
       ),
     )
 
+  const auditCommand = Command.make('audit', auditOptions, (config) =>
+    runRequestCell.run({
+      route: CliRouteCommand.make({
+        route: {
+          _tag: 'audit',
+          matrix: config.matrix,
+          out: config.out,
+          countsOnly: config.countsOnly === true,
+          projects: Option.getOrUndefined(config.projects),
+          files: Option.getOrUndefined(config.files),
+        },
+      }),
+      options: {},
+      environment,
+    }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer))).pipe(
+      Command.withDescription(
+        'Check every mutant the default policy drops against a kill matrix, so no test loses its only kill, or count a finished run',
+      ),
+    )
+
   const serveCommand = Command.make('serve', { ...serveOptions, ...serveArgs }, (config) =>
     runRequestCell.run({
       route: CliRouteCommand.make({
@@ -737,6 +786,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
       gateCommand,
       annotateCommand,
       planCommand,
+      auditCommand,
       serveCommand,
       feedbackCommand,
       mcpCommand,

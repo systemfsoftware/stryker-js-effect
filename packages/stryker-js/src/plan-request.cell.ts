@@ -36,6 +36,7 @@ import { gitDiff } from './git-diff.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
+import { forEachProjectDirectory } from './project-directory.js'
 import { readProjectCell } from './read-project.cell.js'
 import { requireDryRun, type RequireDryRunDecision } from './require-dry-run.workflow.js'
 import { dryRunChoiceOf, requireDryRunCommandOf } from './run/dry-run-choice.js'
@@ -455,13 +456,6 @@ const writePlan = (
     })
   }).pipe(Effect.orDie)
 
-const projectsOf = (projects: ReadonlyArray<string> | undefined): ReadonlyArray<string> =>
-  Option.getOrElse(
-    Option.filter(Option.map(Option.fromUndefinedOr(projects), (present) => [...present]), (present) =>
-      present.length > 0),
-    () => ['.'],
-  )
-
 const labelBaseOf = (path: Path.Path, basePath: string, out: string | undefined): string =>
   Option.getOrElse(
     Option.map(Option.fromUndefinedOr(out), (present) => path.dirname(path.resolve(basePath, present))),
@@ -522,22 +516,15 @@ export const planRequest = (
 ): Effect.Effect<void, GitDiffError, EnginePorts> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const previous = globalThis.process.cwd()
     const labelBase = labelBaseOf(path, channel.environment.basePath, request.out)
     const rootOptions = yield* rootOptionsOf(request, channel)
     const resolvedSince = Option.getOrUndefined(
       Option.orElse(Option.fromUndefinedOr(request.since), () => Option.fromUndefinedOr(rootOptions.since)),
     )
     const planDiff = yield* planDiffOf(resolvedSince, channel.environment.basePath)
-    const planned = yield* Effect.forEach(
-      projectsOf(request.projects),
-      (directory) =>
-        Effect.acquireUseRelease(
-          Effect.sync(() => globalThis.process.chdir(directory)),
-          () => planProject(request, channel, labelBase, planDiff, directory, resolvedSince),
-          () => Effect.sync(() => globalThis.process.chdir(previous)),
-        ),
-      { concurrency: 1 },
+    const planned = yield* forEachProjectDirectory(
+      request.projects,
+      (directory) => planProject(request, channel, labelBase, planDiff, directory, resolvedSince),
     )
     const scheduled = planned.flatMap((entry) => entry.mutants.map((mutant) => ({ project: entry.label, ...mutant })))
     const dryRunCosts: Record<string, number> = Object.fromEntries(
