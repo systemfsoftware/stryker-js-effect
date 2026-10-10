@@ -9,7 +9,21 @@ permissions:
   pull-requests: read
 
 jobs:
+  lane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      docs-only: ${{ steps.lane.outputs.docs-only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - id: lane
+        uses: ./.github/actions/change-lane
+
   check:
+    needs: lane
+    if: needs.lane.outputs.docs-only != 'true'
     uses: systemfsoftware/pnpm-release-management/.github/workflows/changeset-check.yml@main
     with:
       tools-ref: main

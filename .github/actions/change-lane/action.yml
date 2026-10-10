@@ -1,0 +1,28 @@
+name: Change lane
+description: >-
+  Classifies a pull request's diff with `scripts/change-lane.ts`: `docs-only` when every changed
+  file is a `*.md` under `docs/` or the root README, AGENTS or STRATEGY file, `full` otherwise and
+  on every event other than `pull_request`. Writes the decision to the step summary. The caller
+  checks out with `fetch-depth: 2`, so the pull request's merge commit and both its parents exist.
+
+outputs:
+  docs-only:
+    description: "'true' when the heavy lanes skip"
+    value: ${{ steps.lane.outputs.docs-only }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    - id: lane
+      name: Classify the diff
+      shell: bash
+      env:
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+      run: |
+        if [ "$GITHUB_EVENT_NAME" = pull_request ] && git rev-parse --verify --quiet HEAD^2 >/dev/null; then
+          git diff -z --name-only --no-renames HEAD^1 HEAD
+        fi | node scripts/change-lane.ts
