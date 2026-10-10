@@ -2,14 +2,14 @@
 status: "accepted"
 date: 2026-10-09
 decision-makers: ["ryan"]
-supersedes: ["ADR-0001"]
+supersedes: ["ADR-0001 (line 60)"]
 ---
 
 # Pure operations over a schema's data live in its schema file
 
 ## Context and Problem Statement
 
-This record supersedes ADR-0001 in part only: where pure operations over a schema's data live, and what the `*.schema.ts` row of its taxonomy table admits. The rest of ADR-0001 stays in force.
+This record supersedes ADR-0001 in part only: line 60, where pure operations over a schema's data live, and with it what a `*.schema.ts` file may hold. The rest of ADR-0001 stays in force.
 
 ADR-0001 (line 60) sends functions over a schema's data to an unsuffixed sibling module named after the type, such as `Location.ts`, and never into the schema file, and its taxonomy row for `*.schema.ts` puts all behavior out of schema files. Three facts make that sibling a bad home:
 
@@ -37,7 +37,7 @@ Splitting `Checker/Checker.protocol.ts` forced the question: its shared operatio
 
 Chosen option: "the type's own `*.schema.ts`", because it is the only option that is both mutated and importable from a workflow without copying code.
 
-A `*.schema.ts` holds its declarations (schemas, tagged classes, tagged errors, type aliases, interfaces) and pure operations whose signatures name a type the file declares. It holds no effects or services: no I/O, layers, clocks, randomness or `throw`, and no `Workflow.make`. A decision that spans several types, or one that needs I/O or services, goes to a `*.workflow.ts` that makes the decision and a `*.cell.ts` that performs the I/O around it; the workflow may import the schema file's operations.
+A `*.schema.ts` holds schemas, tagged classes, tagged errors, and the pure, effect-free operations over the types it declares, meaning operations whose signatures name a type the file declares. It never holds effects, services, or decisions over several types (CONST-T4): no I/O, layers, clocks, randomness, `throw`, or `Workflow.make`. A decision that spans several types, or one that needs I/O or services, goes to a `*.workflow.ts` that makes the decision and a `*.cell.ts` that performs the I/O around it, and the workflow may import the schema file's operations. This replaces the `*.schema.ts` row of ADR-0001's taxonomy table.
 
 An operation's laws sit in its schema file's in-source `import.meta.vitest` block, beside the refusal laws ADR-0001 already puts there, because `src/__tests__/` admits only `<stem>.workflow.property.test.ts`. Those blocks already run in both the test and the mutation runs (`includeSource` in `packages/toolchain/vitest-config/lib/base.js`; `packages/stryker-js-plugin-interface/src/Location.schema.ts` is an example). Each law names the operation in the `it.prop` `subject` slot, draws Schema-derived input, and checks it against an oracle that does not re-derive the answer the way the code does. Schema files are mutated against a break threshold of 100, so every operation gets a law, including one that only builds a `Map` or `Set`. A workflow that calls the operation is graded by its own property file as well.
 
