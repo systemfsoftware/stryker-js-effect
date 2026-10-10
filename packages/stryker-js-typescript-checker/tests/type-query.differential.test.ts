@@ -1,8 +1,7 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { Differential } from '@systemfsoftware/differential-spec'
-import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { type TypeAnswer, TypeQuery, type TypeQuerySite } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import { Checker, Options, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Arr from 'effect/Array'
@@ -66,7 +65,7 @@ const ROWS: ReadonlyArray<Row> = CANDIDATES.flatMap(([site, candidates]) =>
   candidates.map((candidate) => ({ site, candidate }))
 ).map((row, index) => ({ ...row, id: index.toString(16).padStart(16, '0') }))
 
-const locationOf = (content: string, site: Site): TypeQuerySite['location'] => {
+const locationOf = (content: string, site: Site): TypeQuery.TypeQuerySite['location'] => {
   const column = (content.split('\n')[site.line - 1] ?? '').lastIndexOf(site.text) + 1
   return { start: { line: site.line, column }, end: { line: site.line, column: column + site.text.length } }
 }
@@ -103,7 +102,7 @@ const answersOf = (rows: ReadonlyArray<Row>): Effect.Effect<Readonly<Record<stri
   Effect.gen(function*() {
     const content = yield* sitesContent
     const bySite = Arr.groupBy(rows, (row) => row.site.siteId)
-    const typeQuery = yield* TypeQuery
+    const typeQuery = yield* TypeQuery.TypeQuery
     const response = yield* typeQuery.query({
       version: 1,
       tsconfigFile: TSCONFIG_FILE,
@@ -364,12 +363,12 @@ const bodySpanOf = (content: string, row: BodyCase): readonly [number, number] =
   return [start, start + row.bodyText.length]
 }
 
-const bodyLocationOf = (content: string, row: BodyCase): TypeQuerySite['location'] => {
+const bodyLocationOf = (content: string, row: BodyCase): TypeQuery.TypeQuerySite['location'] => {
   const [start, end] = bodySpanOf(content, row)
   return { start: lineColumnOf(content, start), end: lineColumnOf(content, end) }
 }
 
-const answerTagOf = (answer: TypeAnswer): string =>
+const answerTagOf = (answer: TypeQuery.TypeAnswer): string =>
   Match.valueTags(answer, {
     Assignable: () => 'Assignable',
     NotAssignable: () => 'NotAssignable',
@@ -405,7 +404,7 @@ const bodyVerdictsOf = (rows: ReadonlyArray<BodyCase>): Effect.Effect<Readonly<R
 const bodyAnswersOf = (rows: ReadonlyArray<BodyCase>): Effect.Effect<Readonly<Record<string, string>>> =>
   Effect.gen(function*() {
     const content = yield* bodiesContent
-    const typeQuery = yield* TypeQuery
+    const typeQuery = yield* TypeQuery.TypeQuery
     const response = yield* typeQuery.query({
       version: 2,
       tsconfigFile: BODIES_TSCONFIG,

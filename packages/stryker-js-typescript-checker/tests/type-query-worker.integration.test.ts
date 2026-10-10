@@ -1,16 +1,6 @@
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine, Worker } from '@systemfsoftware/stryker-js'
-import { Checker, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  type TypeAnswer,
-  TypeQuery,
-  type TypeQueryRefused,
-  type TypeQueryRequest,
-  type TypeQueryResponse,
-  type TypeQueryServing,
-  typeQueryServingOf,
-  type TypeQuerySite,
-} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import { Checker, Options, Plugin, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -70,12 +60,12 @@ const makeClient = Effect.gen(function*() {
   })
 }).pipe(Effect.orDie)
 
-const locationOf = (content: string, line: number, text: string): TypeQuerySite['location'] => {
+const locationOf = (content: string, line: number, text: string): TypeQuery.TypeQuerySite['location'] => {
   const column = (content.split('\n')[line - 1] ?? '').lastIndexOf(text) + 1
   return { start: { line, column }, end: { line, column: column + text.length } }
 }
 
-const requestOf = (project: Fixture): TypeQueryRequest => ({
+const requestOf = (project: Fixture): TypeQuery.TypeQueryRequest => ({
   version: 1,
   tsconfigFile: project.tsconfigFile,
   files: [
@@ -116,16 +106,18 @@ const wiresOf = (project: Fixture) => [
   },
 ]
 
-const inProcessQuery = (request: TypeQueryRequest): Effect.Effect<TypeQueryResponse, TypeQueryRefused, Scope.Scope> =>
+const inProcessQuery = (
+  request: TypeQuery.TypeQueryRequest,
+): Effect.Effect<TypeQuery.TypeQueryResponse, TypeQuery.TypeQueryRefused, Scope.Scope> =>
   Effect.provide(
     Effect.gen(function*() {
-      const typeQuery = yield* TypeQuery
+      const typeQuery = yield* TypeQuery.TypeQuery
       return yield* typeQuery.query(request)
     }),
     TypeQueryLive,
   )
 
-const answerFacts = (answer: TypeAnswer): { readonly tag: string; readonly candidateType: string } =>
+const answerFacts = (answer: TypeQuery.TypeAnswer): { readonly tag: string; readonly candidateType: string } =>
   Match.valueTags(answer, {
     Assignable: (assignable) => ({ tag: 'Assignable', candidateType: assignable.candidateType }),
     NotAssignable: (notAssignable) => ({ tag: 'NotAssignable', candidateType: notAssignable.candidateType }),
@@ -134,7 +126,7 @@ const answerFacts = (answer: TypeAnswer): { readonly tag: string; readonly candi
 
 type AnswerSummary = Readonly<Record<string, { readonly tag: string; readonly candidateType: string }>>
 
-const answersOf = (response: TypeQueryResponse): AnswerSummary =>
+const answersOf = (response: TypeQuery.TypeQueryResponse): AnswerSummary =>
   Object.fromEntries(
     response.files.flatMap((
       outcome,
@@ -154,7 +146,7 @@ const answersOf = (response: TypeQueryResponse): AnswerSummary =>
     ),
   )
 
-const refusalsOf = (response: TypeQueryResponse): ReadonlyArray<{ readonly reason: string }> =>
+const refusalsOf = (response: TypeQuery.TypeQueryResponse): ReadonlyArray<{ readonly reason: string }> =>
   response.files.flatMap((outcome): ReadonlyArray<{ readonly reason: string }> =>
     Match.valueTags(outcome, {
       FileAnswered: () => [],
@@ -163,7 +155,7 @@ const refusalsOf = (response: TypeQueryResponse): ReadonlyArray<{ readonly reaso
   )
 
 const servingFacts = (
-  serving: TypeQueryServing,
+  serving: TypeQuery.TypeQueryServing,
 ): { readonly tag: string; readonly declared: ReadonlyArray<number>; readonly nextAction: string } =>
   Match.valueTags(serving, {
     TypeQueryServed: () => ({ tag: 'TypeQueryServed', declared: [], nextAction: '' }),
@@ -251,10 +243,10 @@ const declaredServing: Effect.Effect<
 > = Effect.gen(function*() {
   const client = yield* makeClient
   const capabilities = yield* client.capabilities({ checkerName: 'typescript' }).pipe(Effect.orDie)
-  const served = servingFacts(typeQueryServingOf(capabilities, 1))
-  const empty = servingFacts(typeQueryServingOf({ typeQuery: [] }, 1))
+  const served = servingFacts(TypeQuery.typeQueryServingOf(capabilities, 1))
+  const empty = servingFacts(TypeQuery.typeQueryServingOf({ typeQuery: [] }, 1))
   const stripped = servingFacts(
-    typeQueryServingOf({ typeQuery: capabilities.typeQuery.filter((version) => version !== 1) }, 1),
+    TypeQuery.typeQueryServingOf({ typeQuery: capabilities.typeQuery.filter((version) => version !== 1) }, 1),
   )
   const unknown = yield* Effect.flip(client.capabilities({ checkerName: 'ruby' }))
   return {
@@ -271,7 +263,7 @@ const declaredServing: Effect.Effect<
 }).pipe(Effect.orDie)
 
 const workerVersusInProcess: Effect.Effect<
-  { readonly worker: TypeQueryResponse; readonly inProcess: TypeQueryResponse },
+  { readonly worker: TypeQuery.TypeQueryResponse; readonly inProcess: TypeQuery.TypeQueryResponse },
   never,
   FileSystem.FileSystem | Path.Path | Worker.WorkerLauncher | Scope.Scope
 > = Effect.gen(function*() {

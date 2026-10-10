@@ -1,10 +1,4 @@
-import { Checker, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  type CheckerCapabilities,
-  type TypeQueryRefused,
-  type TypeQueryRequest,
-  type TypeQueryResponse,
-} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import { Checker, Plugin, type TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
@@ -67,7 +61,7 @@ export const checkerHandlers = Plugin.CheckerRpcs.toLayer(
         resolve(runtime, checkerName, []).pipe(Effect.flatMap((checker) => checker.digest)),
 
       capabilities: ({ checkerName }: { readonly checkerName: string }): Effect.Effect<
-        CheckerCapabilities,
+        TypeQuery.CheckerCapabilities,
         Checker.CheckerFailed
       > =>
         Match.value(checkerName).pipe(
@@ -75,7 +69,9 @@ export const checkerHandlers = Plugin.CheckerRpcs.toLayer(
           Match.orElse(() => Effect.fail(refuse(checkerName, [], 'Checker ' + checkerName + ' does not exist'))),
         ),
 
-      typeQuery: (request: TypeQueryRequest): Effect.Effect<TypeQueryResponse, TypeQueryRefused> =>
+      typeQuery: (
+        request: TypeQuery.TypeQueryRequest,
+      ): Effect.Effect<TypeQuery.TypeQueryResponse, TypeQuery.TypeQueryRefused> =>
         Effect.flatMap(runtime.typeQuery, (typeQuery) => typeQuery.query(request)),
     }
   }),

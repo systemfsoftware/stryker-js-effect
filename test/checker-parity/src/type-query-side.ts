@@ -1,13 +1,4 @@
-import type { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  type FileOutcome,
-  type SiteAnswer,
-  TypeQuery,
-  TypeQueryFile,
-  TypeQueryRequest,
-  TypeQuerySite,
-  type TypeQuerySiteKind,
-} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import { type Checker, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -92,7 +83,7 @@ const siteDraftsOf = (wires: ReadonlyArray<Checker.CheckerMutantWire>): Readonly
 const BLOCK_STATEMENT_MUTATOR = 'BlockStatement'
 const EMPTY_BLOCK = '{}'
 
-const siteKindOf = (site: QuerySiteDraft): TypeQuerySiteKind =>
+const siteKindOf = (site: QuerySiteDraft): TypeQuery.TypeQuerySiteKind =>
   Boolean.match(
     Arr.every(site.candidates, (candidate) =>
       Boolean.every([
@@ -102,7 +93,7 @@ const siteKindOf = (site: QuerySiteDraft): TypeQuerySiteKind =>
     { onTrue: () => 'function-body', onFalse: () => 'expression' },
   )
 
-const siteKindKeyOf = (kind: TypeQuerySiteKind): { readonly kind?: TypeQuerySiteKind } =>
+const siteKindKeyOf = (kind: TypeQuery.TypeQuerySiteKind): { readonly kind?: TypeQuery.TypeQuerySiteKind } =>
   Boolean.match(kind === 'function-body', { onTrue: () => ({ kind }), onFalse: () => ({}) })
 
 const fileDraftsOf = (
@@ -138,7 +129,7 @@ const refusedLineOf = (
   })
 
 const typesOf = (
-  siteAnswer: SiteAnswer,
+  siteAnswer: TypeQuery.SiteAnswer,
 ): { readonly siteType?: string; readonly contextualType?: string } => ({
   ...Option.match(siteAnswer.siteType, { onNone: () => ({}), onSome: (siteType) => ({ siteType }) }),
   ...Option.match(siteAnswer.contextualType, {
@@ -150,7 +141,7 @@ const typesOf = (
 const answerLinesOf = (
   input: TypeQueryInput,
   draft: QueryFileDraft,
-  siteAnswer: SiteAnswer,
+  siteAnswer: TypeQuery.SiteAnswer,
 ): ReadonlyArray<ParityLine> => {
   const site = Option.fromUndefinedOr(draft.sites.find((candidateSite) => candidateSite.siteId === siteAnswer.siteId))
   const candidates = Option.match(site, {
@@ -158,7 +149,7 @@ const answerLinesOf = (
     onSome: (found) => found.candidates,
   })
   const siteKind = Option.match(site, {
-    onNone: (): TypeQuerySiteKind => 'expression',
+    onNone: (): TypeQuery.TypeQuerySiteKind => 'expression',
     onSome: siteKindOf,
   })
   return Arr.getSomes(
@@ -187,7 +178,7 @@ const answerLinesOf = (
 const fileOutcomeLines = (
   input: TypeQueryInput,
   draft: QueryFileDraft,
-  file: FileOutcome,
+  file: TypeQuery.FileOutcome,
 ): ReadonlyArray<ParityLine> =>
   Match.valueTags(file, {
     FileRefused: (refused) => [refusedLineOf(input, draft, refused.reason, refused.nextAction)],
@@ -198,18 +189,18 @@ const queryFileLines = (
   input: TypeQueryInput,
   draft: QueryFileDraft,
   absoluteFile: string,
-): Effect.Effect<ReadonlyArray<ParityLine>, never, TypeQuery> =>
+): Effect.Effect<ReadonlyArray<ParityLine>, never, TypeQuery.TypeQuery> =>
   Effect.gen(function*() {
-    const typeQuery = yield* TypeQuery
-    const request = TypeQueryRequest.make({
+    const typeQuery = yield* TypeQuery.TypeQuery
+    const request = TypeQuery.TypeQueryRequest.make({
       version: 2,
       tsconfigFile: input.tsconfigFile,
       files: [
-        TypeQueryFile.make({
+        TypeQuery.TypeQueryFile.make({
           fileName: absoluteFile,
           content: draft.content,
           sites: draft.sites.map((site) =>
-            TypeQuerySite.make({
+            TypeQuery.TypeQuerySite.make({
               siteId: site.siteId,
               ...siteKindKeyOf(siteKindOf(site)),
               location: site.location,
@@ -231,7 +222,7 @@ const queryFileLines = (
 const queryProjectLines = (
   input: TypeQueryInput,
   drafts: ReadonlyArray<QueryFileDraft>,
-): Effect.Effect<ReadonlyArray<ParityLine>, never, TypeQuery | Path.Path> =>
+): Effect.Effect<ReadonlyArray<ParityLine>, never, TypeQuery.TypeQuery | Path.Path> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const lines = yield* Effect.forEach(

@@ -1,18 +1,7 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  type FileOutcome,
-  type SiteAnswer,
-  type TypeAnswer,
-  TypeQuery,
-  type TypeQueryFile,
-  type TypeQueryRefused,
-  type TypeQueryRequest,
-  type TypeQueryResponse,
-  type TypeQuerySite,
-} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import { Checker, Options, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Effect from 'effect/Effect'
@@ -61,12 +50,12 @@ const fixtureOf = (name: string): Effect.Effect<Fixture, never, Path.Path> =>
     }
   })
 
-const locationOf = (content: string, line: number, text: string): TypeQuerySite['location'] => {
+const locationOf = (content: string, line: number, text: string): TypeQuery.TypeQuerySite['location'] => {
   const column = (content.split('\n')[line - 1] ?? '').lastIndexOf(text) + 1
   return { start: { line, column }, end: { line, column: column + text.length } }
 }
 
-const queryFileOf = (fileName: string, content: string, sites: ReadonlyArray<SiteSpec>): TypeQueryFile => ({
+const queryFileOf = (fileName: string, content: string, sites: ReadonlyArray<SiteSpec>): TypeQuery.TypeQueryFile => ({
   fileName,
   content,
   sites: sites.map((site) => ({
@@ -80,29 +69,29 @@ const readQueryFile = (
   fixture: Fixture,
   name: string,
   sites: ReadonlyArray<SiteSpec>,
-): Effect.Effect<TypeQueryFile, never, FileSystem.FileSystem> =>
+): Effect.Effect<TypeQuery.TypeQueryFile, never, FileSystem.FileSystem> =>
   Effect.map(
     Effect.orDie(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(fixture.file(name)))),
     (content) => queryFileOf(fixture.file(name), content, sites),
   )
 
-const answerText = (answer: TypeAnswer): string =>
+const answerText = (answer: TypeQuery.TypeAnswer): string =>
   Match.valueTags(answer, {
     Assignable: (assignable) => `Assignable ${assignable.candidateType}`,
     NotAssignable: (notAssignable) => `NotAssignable ${notAssignable.candidateType} to ${notAssignable.contextualType}`,
     Unknown: (unknown) => `Unknown ${unknown.reason}`,
   })
 
-const siteAnswersOf = (site: SiteAnswer): ReadonlyArray<readonly [string, string]> =>
+const siteAnswersOf = (site: TypeQuery.SiteAnswer): ReadonlyArray<readonly [string, string]> =>
   site.candidates.map((candidate) => [`${site.siteId} ${candidate.candidateId}`, answerText(candidate.answer)])
 
-const outcomeText = (outcome: FileOutcome): Readonly<Record<string, string>> =>
+const outcomeText = (outcome: TypeQuery.FileOutcome): Readonly<Record<string, string>> =>
   Match.valueTags(outcome, {
     FileRefused: (refused) => ({ [refused.fileName]: `FileRefused ${refused.reason}` }),
     FileAnswered: (answered) => Object.fromEntries(answered.sites.flatMap(siteAnswersOf)),
   })
 
-const contextualTypesOf = (outcome: FileOutcome): Readonly<Record<string, string>> =>
+const contextualTypesOf = (outcome: TypeQuery.FileOutcome): Readonly<Record<string, string>> =>
   Match.valueTags(outcome, {
     FileRefused: () => ({}),
     FileAnswered: (answered) =>
@@ -111,13 +100,15 @@ const contextualTypesOf = (outcome: FileOutcome): Readonly<Record<string, string
       ),
   })
 
-const query = (request: TypeQueryRequest): Effect.Effect<TypeQueryResponse, TypeQueryRefused> =>
+const query = (
+  request: TypeQuery.TypeQueryRequest,
+): Effect.Effect<TypeQuery.TypeQueryResponse, TypeQuery.TypeQueryRefused> =>
   Effect.gen(function*() {
-    const typeQuery = yield* TypeQuery
+    const typeQuery = yield* TypeQuery.TypeQuery
     return yield* typeQuery.query(request)
   }).pipe(Effect.provide(TypeQueryLive), Effect.scoped)
 
-const requestOf = (fixture: Fixture, files: TypeQueryRequest['files']): TypeQueryRequest => ({
+const requestOf = (fixture: Fixture, files: TypeQuery.TypeQueryRequest['files']): TypeQuery.TypeQueryRequest => ({
   version: 1,
   tsconfigFile: fixture.tsconfigFile,
   files,
@@ -232,7 +223,7 @@ const panicBesideACheck: Effect.Effect<
 const refusals = Effect.gen(function*() {
   const fixture = yield* fixtureOf('type-query')
   const file = yield* readQueryFile(fixture, 'sites.ts', SITES)
-  const bodyFile: TypeQueryFile = {
+  const bodyFile: TypeQuery.TypeQueryFile = {
     ...file,
     sites: file.sites.map((site, index) => (index === 0 ? { ...site, kind: 'function-body' } : site)),
   }
@@ -257,7 +248,7 @@ const REASON_SITES: ReadonlyArray<SiteSpec> = [
   { siteId: 'generic', line: 6, text: 'value', candidates: ['""'] },
 ]
 
-const OFF_THE_END: TypeQuerySite = {
+const OFF_THE_END: TypeQuery.TypeQuerySite = {
   siteId: 'off-the-end',
   location: { start: { line: 40, column: 1 }, end: { line: 40, column: 2 } },
   candidates: [{ candidateId: '""', text: '""' }],
@@ -379,7 +370,7 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
           expect(s.seen).toEqual({
             unsupported: 'unsupported-version',
             unknownVersion:
-              'unsupported-version: Send a TypeQueryRequest with version 1 or 2; this server received version 3.',
+              'unsupported-version: Send a TypeQuery.TypeQueryRequest with version 1 or 2; this server received version 3.',
             outside: ['FileRefused not-in-project'],
           })
         ),

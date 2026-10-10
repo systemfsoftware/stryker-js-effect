@@ -179,6 +179,7 @@ export const Spans = {
   rpcServerInit: { name: 'RpcServer.init', attributes: {} },
   rpcServerMutantRun: { name: 'RpcServer.mutantRun', attributes: {} },
   rpcServerOnEventBatch: { name: 'RpcServer.onEventBatch', attributes: {} },
+  rpcTypeQuery: { name: 'rpc.typeQuery', attributes: { 'rpc.method': SpanAttributeText } },
   runConclude: { name: 'stryker.run.conclude', attributes: {} },
   runConclusionRead: { name: 'stryker.run_conclusion.read', attributes: {} },
   runEventStreamCloseAndDrain: { name: 'stryker.runEventStream.closeAndDrain', attributes: {} },
@@ -291,6 +292,7 @@ const rpcServedSpans: ReadonlyMap<string, SpanMember> = new Map<string, SpanMemb
   ['init', Spans.rpcInit],
   ['mutantRun', Spans.rpcMutantRun],
   ['onEventBatch', Spans.rpcOnEventBatch],
+  ['typeQuery', Spans.rpcTypeQuery],
 ])
 
 export const rpcServedSpanOf = (method: string): SpanMember | undefined => rpcServedSpans.get(method)

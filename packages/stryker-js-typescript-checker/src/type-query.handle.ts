@@ -1,23 +1,5 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { lineStartsOf, offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
-import {
-  Assignable,
-  type FileOutcome,
-  NotAssignable,
-  type SiteAnswer,
-  type TypeAnswer,
-  TypeQuery,
-  type TypeQueryCandidate,
-  type TypeQueryFile,
-  TypeQueryRefused,
-  type TypeQueryRequest,
-  type TypeQueryResponse,
-  type TypeQueryShape,
-  type TypeQuerySite,
-  type TypeQuerySiteKind,
-  TypeQueryVersion,
-  Unknown,
-} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
@@ -83,6 +65,7 @@ import {
 } from 'typescript/unstable/async'
 import type { FileSystem as TSFileSystem } from 'typescript/unstable/fs'
 
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { type AnswerDecision, answerTypeQuery } from './answer-type-query.workflow.js'
 import {
   AnswerTypeQueryCommand,
@@ -101,10 +84,10 @@ import type { ServerCrash } from './type-query.schema.js'
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TypeQuery')
 export type TypeId = typeof TypeId
 
-const REFUSAL_VERSION: TypeQueryVersion = 2
+const REFUSAL_VERSION: TypeQuery.TypeQueryVersion = 2
 
-const servedVersionOf = (version: number): Option.Option<TypeQueryVersion> =>
-  Arr.findFirst(TypeQueryVersion.literals, (served) => served === version)
+const servedVersionOf = (version: number): Option.Option<TypeQuery.TypeQueryVersion> =>
+  Arr.findFirst(TypeQuery.TypeQueryVersion.literals, (served) => served === version)
 
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
 
@@ -122,29 +105,30 @@ const isContextFree = (text: string): boolean => {
   )
 }
 
-const unsupportedVersion = (version: number): TypeQueryRefused =>
-  TypeQueryRefused.make({
+const unsupportedVersion = (version: number): TypeQuery.TypeQueryRefused =>
+  TypeQuery.TypeQueryRefused.make({
     version: REFUSAL_VERSION,
     reason: 'unsupported-version',
-    nextAction: `Send a TypeQueryRequest with version ${
-      TypeQueryVersion.literals.join(' or ')
+    nextAction: `Send a TypeQuery.TypeQueryRequest with version ${
+      TypeQuery.TypeQueryVersion.literals.join(' or ')
     }; this server received version ${version}.`,
   })
 
-const functionBodyNeedsVersionTwo = (): TypeQueryRefused =>
-  TypeQueryRefused.make({
+const functionBodyNeedsVersionTwo = (): TypeQuery.TypeQueryRefused =>
+  TypeQuery.TypeQueryRefused.make({
     version: REFUSAL_VERSION,
     reason: 'unsupported-version',
-    nextAction: 'Send a version 2 TypeQueryRequest for function-body sites; version 1 answers expression sites only.',
+    nextAction:
+      'Send a version 2 TypeQuery.TypeQueryRequest for function-body sites; version 1 answers expression sites only.',
   })
 
-const siteKindOf = (site: TypeQuerySite): TypeQuerySiteKind => site.kind ?? 'expression'
+const siteKindOf = (site: TypeQuery.TypeQuerySite): TypeQuery.TypeQuerySiteKind => site.kind ?? 'expression'
 
-const hasFunctionBodySite = (request: TypeQueryRequest): boolean =>
+const hasFunctionBodySite = (request: TypeQuery.TypeQueryRequest): boolean =>
   Arr.some(request.files, (file) => Arr.some(file.sites, (site) => siteKindOf(site) === 'function-body'))
 
-const projectOpenFailed = (tsconfigFile: string, detail: string): TypeQueryRefused =>
-  TypeQueryRefused.make({
+const projectOpenFailed = (tsconfigFile: string, detail: string): TypeQuery.TypeQueryRefused =>
+  TypeQuery.TypeQueryRefused.make({
     version: REFUSAL_VERSION,
     reason: 'project-open-failed',
     nextAction: `Open '${tsconfigFile}' with a valid TypeScript project and retry; opening it failed with: ${detail}`,
@@ -194,7 +178,7 @@ const closeApi = (api: API): Effect.Effect<void> => Effect.tryPromise(() => api.
 
 const closeServer = (server: Server): Effect.Effect<void> => closeApi(server.api)
 
-const openServer = (tsconfigFile: string): Effect.Effect<Server, TypeQueryRefused> =>
+const openServer = (tsconfigFile: string): Effect.Effect<Server, TypeQuery.TypeQueryRefused> =>
   Effect.gen(function*() {
     const overlay = makeOverlay()
     const api = yield* Effect.try({
@@ -223,7 +207,7 @@ export type TypeQueryServers = Handle.Of<typeof TypeQueryServers>
 
 export const isTypeQueryServers = TypeQueryServers.is
 
-const getOrOpen = (servers: Servers, tsconfigFile: string): Effect.Effect<Server, TypeQueryRefused> =>
+const getOrOpen = (servers: Servers, tsconfigFile: string): Effect.Effect<Server, TypeQuery.TypeQueryRefused> =>
   SynchronizedRef.modifyEffect(servers, (map) =>
     Option.match(HashMap.get(map, tsconfigFile), {
       onSome: (server) => Effect.succeed([server, map] as const),
@@ -296,7 +280,7 @@ const appendProbe = (probe: string, text: string): readonly [string, readonly [s
   return [`${probe}${PROBE_OPEN}${text}${PROBE_CLOSE}`, [text, { start, end: start + text.length }]]
 }
 
-const buildProbe = (file: TypeQueryFile): Probe => {
+const buildProbe = (file: TypeQuery.TypeQueryFile): Probe => {
   const texts = Arr.dedupe(
     Arr.flatMap(file.sites, (site) =>
       Boolean.match(siteKindOf(site) === 'function-body', {
@@ -333,14 +317,14 @@ const sourceFileIn = (project: Project, fileName: string): Effect.Effect<Option.
   Effect.map(tryPromise(() => project.program.getSourceFile(fileName)), Option.fromUndefinedOr)
 
 interface SiteReading {
-  readonly site: TypeQuerySite
+  readonly site: TypeQuery.TypeQuerySite
   readonly facts: SiteFacts
   readonly contextType: Option.Option<Type>
   readonly siteType: Option.Option<string>
   readonly contextualText: Option.Option<string>
 }
 
-const missingReading = (site: TypeQuerySite): SiteReading => ({
+const missingReading = (site: TypeQuery.TypeQuerySite): SiteReading => ({
   site,
   facts: { _tag: 'SiteMissing' },
   contextType: Option.none(),
@@ -348,7 +332,7 @@ const missingReading = (site: TypeQuerySite): SiteReading => ({
   contextualText: Option.none(),
 })
 
-const notExpressionReading = (site: TypeQuerySite, siteType: Option.Option<string>): SiteReading => ({
+const notExpressionReading = (site: TypeQuery.TypeQuerySite, siteType: Option.Option<string>): SiteReading => ({
   site,
   facts: { _tag: 'SiteNotExpression' },
   contextType: Option.none(),
@@ -543,7 +527,7 @@ const asExpression = (node: Node): Option.Option<Expression> =>
 
 const expressionReadingOf = (
   project: Project,
-  site: TypeQuerySite,
+  site: TypeQuery.TypeQuerySite,
   node: Expression,
   siteType: Option.Option<string>,
 ): Effect.Effect<SiteReading, ServerCrash> =>
@@ -566,7 +550,11 @@ const expressionReadingOf = (
     }
   })
 
-const readingOf = (project: Project, site: TypeQuerySite, node: Node): Effect.Effect<SiteReading, ServerCrash> =>
+const readingOf = (
+  project: Project,
+  site: TypeQuery.TypeQuerySite,
+  node: Node,
+): Effect.Effect<SiteReading, ServerCrash> =>
   Effect.gen(function*() {
     const siteType = yield* Option.match(yield* typeAt(project.checker, node), {
       onNone: () => Effect.succeed(Option.none<string>()),
@@ -578,7 +566,7 @@ const readingOf = (project: Project, site: TypeQuerySite, node: Node): Effect.Ef
     })
   })
 
-const notFunctionBodyReading = (site: TypeQuerySite): SiteReading => ({
+const notFunctionBodyReading = (site: TypeQuery.TypeQuerySite): SiteReading => ({
   site,
   facts: { _tag: 'SiteNotFunctionBody' },
   contextType: Option.none(),
@@ -706,7 +694,7 @@ const functionBodyFactsOf = (
 
 const functionBodyReading = (
   project: Project,
-  site: TypeQuerySite,
+  site: TypeQuery.TypeQuerySite,
   node: Node,
 ): Effect.Effect<SiteReading, ServerCrash> =>
   Option.match(functionLikeBodyOf(node), {
@@ -725,7 +713,7 @@ const readSite = (
   sourceFile: SourceFile,
   project: Project,
   content: string,
-  site: TypeQuerySite,
+  site: TypeQuery.TypeQuerySite,
 ): Effect.Effect<SiteReading, ServerCrash> => {
   const lineStarts = lineStartsOf(content)
   const range = Option.all([offsetAt(lineStarts, site.location.start), offsetAt(lineStarts, site.location.end)])
@@ -740,7 +728,11 @@ const readSite = (
   })
 }
 
-const candidateNodeOf = (probe: Probe, sourceFile: SourceFile, candidate: TypeQueryCandidate): Option.Option<Node> =>
+const candidateNodeOf = (
+  probe: Probe,
+  sourceFile: SourceFile,
+  candidate: TypeQuery.TypeQueryCandidate,
+): Option.Option<Node> =>
   Option.flatMap(
     Option.fromUndefinedOr(probe.slots.get(candidate.text)),
     (found) => nodeWithSpanOf(sourceFile, found.start, found.end),
@@ -765,7 +757,7 @@ const contextFreeCandidateFactsOf = (
   sourceFile: SourceFile,
   project: Project,
   contextType: Option.Option<Type>,
-  candidate: TypeQueryCandidate,
+  candidate: TypeQuery.TypeQueryCandidate,
 ): Effect.Effect<CandidateFacts, ServerCrash> =>
   Effect.gen(function*() {
     const candidateType = yield* Option.match(candidateNodeOf(probe, sourceFile, candidate), {
@@ -783,18 +775,19 @@ const candidateFactsOf = (
   sourceFile: SourceFile,
   project: Project,
   contextType: Option.Option<Type>,
-  candidate: TypeQueryCandidate,
+  candidate: TypeQuery.TypeQueryCandidate,
 ): Effect.Effect<CandidateFacts, ServerCrash> =>
   Boolean.match(isContextFree(candidate.text), {
     onTrue: () => contextFreeCandidateFactsOf(probe, sourceFile, project, contextType, candidate),
     onFalse: () => Effect.succeed({ _tag: 'CandidateNotContextFree' } as const),
   })
 
-const portAnswerOf = (decision: AnswerDecision): TypeAnswer =>
+const portAnswerOf = (decision: AnswerDecision): TypeQuery.TypeAnswer =>
   Match.valueTags(decision, {
-    AnswerAssignable: ({ candidateType }) => Assignable.make({ candidateType }),
-    AnswerNotAssignable: ({ candidateType, contextualType }) => NotAssignable.make({ candidateType, contextualType }),
-    AnswerUnknown: ({ reason }) => Unknown.make({ reason }),
+    AnswerAssignable: ({ candidateType }) => TypeQuery.Assignable.make({ candidateType }),
+    AnswerNotAssignable: ({ candidateType, contextualType }) =>
+      TypeQuery.NotAssignable.make({ candidateType, contextualType }),
+    AnswerUnknown: ({ reason }) => TypeQuery.Unknown.make({ reason }),
   })
 
 const answerCandidate = (
@@ -802,8 +795,8 @@ const answerCandidate = (
   sourceFile: SourceFile,
   project: Project,
   reading: SiteReading,
-  candidate: TypeQueryCandidate,
-): Effect.Effect<{ readonly candidateId: string; readonly answer: TypeAnswer }, ServerCrash> =>
+  candidate: TypeQuery.TypeQueryCandidate,
+): Effect.Effect<{ readonly candidateId: string; readonly answer: TypeQuery.TypeAnswer }, ServerCrash> =>
   Effect.gen(function*() {
     const facts = yield* Boolean.match(siteKindOf(reading.site) === 'function-body', {
       onTrue: () => Effect.succeed<CandidateFacts>({ _tag: 'CandidateBodyText', text: candidate.text } as const),
@@ -818,7 +811,7 @@ const answerSite = (
   sourceFile: SourceFile,
   project: Project,
   reading: SiteReading,
-): Effect.Effect<SiteAnswer, ServerCrash> =>
+): Effect.Effect<TypeQuery.SiteAnswer, ServerCrash> =>
   Effect.map(
     Effect.forEach(
       reading.site.candidates,
@@ -833,7 +826,7 @@ const answerSite = (
     }),
   )
 
-const notInProject = (fileName: string): FileOutcome => ({
+const notInProject = (fileName: string): TypeQuery.FileOutcome => ({
   _tag: 'FileRefused',
   fileName,
   reason: 'not-in-project',
@@ -842,7 +835,7 @@ const notInProject = (fileName: string): FileOutcome => ({
 
 const projectAndFile = (
   server: Server,
-  file: TypeQueryFile,
+  file: TypeQuery.TypeQueryFile,
 ): Effect.Effect<Option.Option<readonly [Project, SourceFile]>, ServerCrash> =>
   Effect.gen(function*() {
     const project = yield* projectOf(server)
@@ -857,8 +850,8 @@ const answeredFile = (
   probe: Probe,
   project: Project,
   sourceFile: SourceFile,
-  file: TypeQueryFile,
-): Effect.Effect<FileOutcome, ServerCrash> =>
+  file: TypeQuery.TypeQueryFile,
+): Effect.Effect<TypeQuery.FileOutcome, ServerCrash> =>
   Effect.gen(function*() {
     const readings = yield* Effect.forEach(
       file.sites,
@@ -873,7 +866,10 @@ const answeredFile = (
     return { _tag: 'FileAnswered', fileName: file.fileName, sites }
   })
 
-const answerProjectFile = (server: Server, file: TypeQueryFile): Effect.Effect<FileOutcome, ServerCrash> =>
+const answerProjectFile = (
+  server: Server,
+  file: TypeQuery.TypeQueryFile,
+): Effect.Effect<TypeQuery.FileOutcome, ServerCrash> =>
   Effect.gen(function*() {
     const probe = buildProbe(file)
     yield* updateProbe(server, file.fileName, probe.text)
@@ -884,7 +880,10 @@ const answerProjectFile = (server: Server, file: TypeQueryFile): Effect.Effect<F
     })
   })
 
-const processFile = (server: Server, file: TypeQueryFile): Effect.Effect<FileOutcome, ServerCrash> =>
+const processFile = (
+  server: Server,
+  file: TypeQuery.TypeQueryFile,
+): Effect.Effect<TypeQuery.FileOutcome, ServerCrash> =>
   Effect.gen(function*() {
     const before = yield* projectAndFile(server, file)
     return yield* Option.match(before, {
@@ -896,13 +895,13 @@ const processFile = (server: Server, file: TypeQueryFile): Effect.Effect<FileOut
 const serveFile = (
   servers: Servers,
   tsconfigFile: string,
-  file: TypeQueryFile,
-): Effect.Effect<FileOutcome, TypeQueryRefused> =>
+  file: TypeQuery.TypeQueryFile,
+): Effect.Effect<TypeQuery.FileOutcome, TypeQuery.TypeQueryRefused> =>
   Effect.gen(function*() {
     const server = yield* getOrOpen(servers, tsconfigFile)
     return yield* processFile(server, file).pipe(
       Effect.catchTag('ServerCrash', () =>
-        Effect.map(discardServer(servers, tsconfigFile), (): FileOutcome => ({
+        Effect.map(discardServer(servers, tsconfigFile), (): TypeQuery.FileOutcome => ({
           _tag: 'FileRefused',
           fileName: file.fileName,
           reason: 'server-crashed',
@@ -911,8 +910,10 @@ const serveFile = (
     )
   })
 
-const makeShape = (servers: Servers): TypeQueryShape => ({
-  query: (request: TypeQueryRequest): Effect.Effect<TypeQueryResponse, TypeQueryRefused> =>
+const makeShape = (servers: Servers): TypeQuery.TypeQueryShape => ({
+  query: (
+    request: TypeQuery.TypeQueryRequest,
+  ): Effect.Effect<TypeQuery.TypeQueryResponse, TypeQuery.TypeQueryRefused> =>
     Effect.gen(function*() {
       const version = yield* Effect.fromOption(servedVersionOf(request.version), () =>
         unsupportedVersion(request.version))
@@ -927,8 +928,8 @@ const makeShape = (servers: Servers): TypeQueryShape => ({
     }),
 })
 
-export const TypeQueryLive: Layer.Layer<TypeQuery> = Layer.effect(
-  TypeQuery,
+export const TypeQueryLive: Layer.Layer<TypeQuery.TypeQuery> = Layer.effect(
+  TypeQuery.TypeQuery,
   Effect.map(
     Effect.acquireRelease(
       Effect.map(

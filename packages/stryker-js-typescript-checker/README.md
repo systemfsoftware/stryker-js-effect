@@ -85,17 +85,17 @@ The checker worker serves both over the `Plugin.CheckerRpcs` group: `capabilitie
 
 Provisional: this entry changes shape when its consumer confirms it, and that change ships as an ordinary break.
 
-`./type-query` exports `TypeQueryLive`, a `Layer` that implements the `TypeQuery` port from `@systemfsoftware/stryker-js-plugin-interface/type-query`. It answers type queries on its own tsgo server, opened on first use per `tsconfigFile` and closed when the layer's scope closes.
+`./type-query` exports `TypeQueryLive`, a `Layer` that implements the `TypeQuery` port from the `TypeQuery` namespace of `@systemfsoftware/stryker-js-plugin-interface`. It answers type queries on its own tsgo server, opened on first use per `tsconfigFile` and closed when the layer's scope closes.
 
 ```ts
-import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Effect from 'effect/Effect'
 
 const answered = Effect.scoped(
   Effect.provide(
     Effect.gen(function*() {
-      const query = yield* TypeQuery
+      const query = yield* TypeQuery.TypeQuery
       return yield* query.query(request)
     }),
     TypeQueryLive,

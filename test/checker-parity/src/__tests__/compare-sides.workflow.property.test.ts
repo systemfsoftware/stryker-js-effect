@@ -1,14 +1,8 @@
-import {
-  Assignable,
-  NotAssignable,
-  TypeAnswer,
-  Unknown,
-  UnknownReason,
-} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   BootAsymmetry,
   compareSides,
@@ -116,8 +110,11 @@ const bootOf = (side: Side, project: string, reason: string): ProjectBootFailed 
 const skippedOf = (project: string, reason: string): ProjectSkipped =>
   ProjectSkipped.make({ schemaVersion: 1, project, reason })
 
-const assignableAnswer: TypeAnswer = Assignable.make({ candidateType: '1' })
-const notAssignableAnswer: TypeAnswer = NotAssignable.make({ candidateType: '""', contextualType: '"a" | "b"' })
+const assignableAnswer: TypeQuery.TypeAnswer = TypeQuery.Assignable.make({ candidateType: '1' })
+const notAssignableAnswer: TypeQuery.TypeAnswer = TypeQuery.NotAssignable.make({
+  candidateType: '""',
+  contextualType: '"a" | "b"',
+})
 
 interface TypeAnswerFields {
   readonly project?: string
@@ -125,7 +122,11 @@ interface TypeAnswerFields {
   readonly siteKind?: 'expression' | 'function-body'
 }
 
-const typeAnswerLineOf = (mutantId: string, answer: TypeAnswer, fields: TypeAnswerFields = {}): TypeAnswerLine =>
+const typeAnswerLineOf = (
+  mutantId: string,
+  answer: TypeQuery.TypeAnswer,
+  fields: TypeAnswerFields = {},
+): TypeAnswerLine =>
   TypeAnswerLine.make({
     schemaVersion: 1,
     side: 'branch',
@@ -147,7 +148,7 @@ const commandOf = (
 
 const answersAtSiteKind = (
   siteKind: 'expression' | 'function-body',
-  answers: ReadonlyArray<TypeAnswer>,
+  answers: ReadonlyArray<TypeQuery.TypeAnswer>,
 ): ReadonlyArray<ParityLine> =>
   answers.flatMap((answer, index) => [
     verdictOf('main', { mutantId: `${siteKind}-${index}`, status: 'compileError' }),
@@ -597,12 +598,12 @@ describe('compareSides', () => {
 
   it.prop(
     '∀u_UnknownAnswer_≡NeverWrongNotAssignable',
-    { of: [S.NonEmptyString, UnknownReason], subject: compareSides },
+    { of: [S.NonEmptyString, TypeQuery.UnknownReason], subject: compareSides },
     (subject, [mutantId, reason]) => {
       const lines = [
         verdictOf('main', { mutantId, status: 'passed' }),
         verdictOf('branch', { mutantId, status: 'passed' }),
-        typeAnswerLineOf(mutantId, Unknown.make({ reason })),
+        typeAnswerLineOf(mutantId, TypeQuery.Unknown.make({ reason })),
         countsOf(PROJECT),
       ]
       const decision = decisionOf(subject, commandOf(lines))
@@ -613,12 +614,12 @@ describe('compareSides', () => {
 
   it.prop(
     '∀z_ZeroNotAssignableOverRun_≡Refused',
-    { of: [S.NonEmptyString, UnknownReason], subject: compareSides },
+    { of: [S.NonEmptyString, TypeQuery.UnknownReason], subject: compareSides },
     (subject, [mutantId, reason]) => {
       const lines = [
         verdictOf('main', { mutantId, status: 'compileError' }),
         verdictOf('branch', { mutantId, status: 'compileError' }),
-        typeAnswerLineOf(mutantId, Unknown.make({ reason })),
+        typeAnswerLineOf(mutantId, TypeQuery.Unknown.make({ reason })),
         countsOf(PROJECT),
       ]
       const decision = decisionOf(subject, commandOf(lines))
@@ -650,8 +651,8 @@ describe('compareSides', () => {
     '∀p_PerProjectShares_≡CountEachProjectsAnswersReasonsAndRefusals',
     {
       of: [
-        S.Array(TypeAnswer),
-        S.Array(TypeAnswer),
+        S.Array(TypeQuery.TypeAnswer),
+        S.Array(TypeQuery.TypeAnswer),
         S.Array(TypeQueryFileRefused),
         S.Array(TypeQueryFileRefused),
       ],
@@ -661,7 +662,7 @@ describe('compareSides', () => {
       const linesFor = (
         project: string,
         prefix: string,
-        answers: ReadonlyArray<TypeAnswer>,
+        answers: ReadonlyArray<TypeQuery.TypeAnswer>,
         refusals: ReadonlyArray<TypeQueryFileRefused>,
       ): ReadonlyArray<ParityLine> => [
         ...answers.flatMap((answer, index) => [
@@ -691,8 +692,8 @@ describe('compareSides', () => {
         [PROJECT, projectAnswers, projectRefusals],
         [OTHER_PROJECT, otherAnswers, otherRefusals],
       ] as const
-      const unknownCountOf = (answers: ReadonlyArray<TypeAnswer>, reason: string): number =>
-        answers.filter((answer) => S.is(Unknown)(answer) && answer.reason === reason).length
+      const unknownCountOf = (answers: ReadonlyArray<TypeQuery.TypeAnswer>, reason: string): number =>
+        answers.filter((answer) => S.is(TypeQuery.Unknown)(answer) && answer.reason === reason).length
       return typeQuery.queried === projectAnswers.length + otherAnswers.length &&
         typeQuery.refusedFiles === projectRefusals.length + otherRefusals.length &&
         expected.every(([project, answers, refusals]) =>
@@ -712,7 +713,7 @@ describe('compareSides', () => {
 
   it.prop(
     '∀x,y_AnswersBySiteKind_≡EachKindsCountsSumToItsLineCount',
-    { of: [S.NonEmptyArray(TypeAnswer), S.NonEmptyArray(TypeAnswer)], subject: compareSides },
+    { of: [S.NonEmptyArray(TypeQuery.TypeAnswer), S.NonEmptyArray(TypeQuery.TypeAnswer)], subject: compareSides },
     (subject, [expressionAnswers, functionBodyAnswers]) => {
       const lines = [
         ...answersAtSiteKind('expression', expressionAnswers),

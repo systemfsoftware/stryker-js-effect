@@ -1,11 +1,11 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { UnknownReason } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   AnswerTypeQueryCommand,
   type CandidateTyped,
@@ -32,14 +32,16 @@ export class AnswerNotAssignable extends S.TaggedClass<AnswerNotAssignable>()('A
   readonly [AnswerTypeId] = AnswerTypeId
 }
 
-export class AnswerUnknown extends S.TaggedClass<AnswerUnknown>()('AnswerUnknown', { reason: UnknownReason }) {
+export class AnswerUnknown
+  extends S.TaggedClass<AnswerUnknown>()('AnswerUnknown', { reason: TypeQuery.UnknownReason })
+{
   readonly [AnswerTypeId] = AnswerTypeId
 }
 
 export const AnswerDecision = S.Union([AnswerAssignable, AnswerNotAssignable, AnswerUnknown])
 export type AnswerDecision = AnswerAssignable | AnswerNotAssignable | AnswerUnknown
 
-const unknownAnswer = (reason: UnknownReason): AnswerDecision => AnswerUnknown.make({ reason })
+const unknownAnswer = (reason: TypeQuery.UnknownReason): AnswerDecision => AnswerUnknown.make({ reason })
 
 const assignableAnswer = (candidateType: string): AnswerDecision => AnswerAssignable.make({ candidateType })
 
@@ -85,16 +87,16 @@ const contextualAnswerOf = (
       }),
   })
 
-const reasonIf = (condition: boolean, reason: UnknownReason): Option.Option<UnknownReason> =>
+const reasonIf = (condition: boolean, reason: TypeQuery.UnknownReason): Option.Option<TypeQuery.UnknownReason> =>
   Boolean.match(condition, { onTrue: () => Option.some(reason), onFalse: () => Option.none() })
 
-const targetReasonOf = (target: ContextualTypeFacts): Option.Option<UnknownReason> =>
+const targetReasonOf = (target: ContextualTypeFacts): Option.Option<TypeQuery.UnknownReason> =>
   Option.firstSomeOf([
     reasonIf(target.isError, 'error-type'),
     reasonIf(target.instantiable, 'instantiable-target'),
   ])
 
-const functionBodyUnknownOf = (site: SiteFunctionBody): Option.Option<UnknownReason> =>
+const functionBodyUnknownOf = (site: SiteFunctionBody): Option.Option<TypeQuery.UnknownReason> =>
   Option.firstSomeOf([
     reasonIf(Option.isNone(site.target), 'no-contextual-type'),
     reasonIf(site.generator, 'generator-body'),

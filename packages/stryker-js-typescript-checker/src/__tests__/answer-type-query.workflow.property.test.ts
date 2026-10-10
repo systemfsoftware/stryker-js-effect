@@ -1,10 +1,10 @@
-import { UnknownReason } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import { describe } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { AssignableQueryInput } from '../../tests/__fixtures__/answer-type-query-law.fixture.js'
 import {
   AnswerAssignable,
@@ -68,7 +68,7 @@ const decisionOf = (command: AnswerTypeQueryCommand): AnswerDecision =>
     onSuccess: (answer) => answer,
   })
 
-const UNKNOWN_REASON_ORDER: ReadonlyArray<UnknownReason> = [
+const UNKNOWN_REASON_ORDER: ReadonlyArray<TypeQuery.UnknownReason> = [
   'candidate-not-context-free',
   'candidate-not-found',
   'site-not-found',
@@ -97,7 +97,7 @@ const bodyErrorsOn = (site: SiteFacts): boolean =>
 const bodyInstantiatesOn = (site: SiteFacts): boolean =>
   S.is(SiteFunctionBody)(site) && Option.isSome(site.target) && site.target.value.instantiable
 
-const reasonFails = (site: SiteFacts, candidate: CandidateFacts, reason: UnknownReason): boolean => {
+const reasonFails = (site: SiteFacts, candidate: CandidateFacts, reason: TypeQuery.UnknownReason): boolean => {
   switch (reason) {
     case 'candidate-not-context-free':
       return S.is(CandidateNotContextFree)(candidate)
@@ -150,7 +150,7 @@ const reasonFails = (site: SiteFacts, candidate: CandidateFacts, reason: Unknown
   }
 }
 
-const firstFailingReason = (site: SiteFacts, candidate: CandidateFacts): UnknownReason | undefined =>
+const firstFailingReason = (site: SiteFacts, candidate: CandidateFacts): TypeQuery.UnknownReason | undefined =>
   UNKNOWN_REASON_ORDER.find((reason) => reasonFails(site, candidate, reason))
 
 const typedAnswerMatches = (command: AnswerTypeQueryCommand, answer: AnswerDecision): boolean => {
@@ -192,7 +192,7 @@ const satisfiedSite = (contextualText: string): SiteFacts => ({
 })
 
 const commandFailingOnly = (
-  reason: UnknownReason,
+  reason: TypeQuery.UnknownReason,
   candidateType: string,
   contextualText: string,
 ): AnswerTypeQueryCommand => {
@@ -272,7 +272,7 @@ const commandFailingOnly = (
   }
 }
 
-const functionBodyReasonOf = (body: SiteFunctionBody): UnknownReason | undefined => {
+const functionBodyReasonOf = (body: SiteFunctionBody): TypeQuery.UnknownReason | undefined => {
   if (Option.isNone(body.target)) return 'no-contextual-type'
   if (body.generator) return 'generator-body'
   if (body.functionKind === 'constructor') return 'constructor-body'
@@ -336,8 +336,8 @@ describe('answerTypeQuery', (it) => {
   it.prop(
     '∀reason_SingleFailure_≡ThatReason',
     {
-      of: [UnknownReason, S.String, S.String],
-      subject: (reason: UnknownReason, candidateType: string, contextualText: string) =>
+      of: [TypeQuery.UnknownReason, S.String, S.String],
+      subject: (reason: TypeQuery.UnknownReason, candidateType: string, contextualText: string) =>
         answerTypeQuery(commandFailingOnly(reason, candidateType, contextualText)),
     },
     (subject, [reason, candidateType, contextualText]) =>
