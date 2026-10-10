@@ -7,9 +7,9 @@ import type * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 
 import { packageEntrypointOf } from '../plugin-loader.service.js'
-import { VerdictStoreUnavailable } from '../verdict-store/VerdictStore.schema.js'
-import type { VerdictStore } from '../verdict-store/VerdictStore.service.js'
-import { importModule } from './config.js'
+import { importModule } from '../run/read-config-document.js'
+import { VerdictStoreUnavailable } from './VerdictStore.schema.js'
+import type { VerdictStore } from './VerdictStore.service.js'
 
 const S3_PACKAGE = '@systemfsoftware/stryker-js-verdict-store-s3'
 

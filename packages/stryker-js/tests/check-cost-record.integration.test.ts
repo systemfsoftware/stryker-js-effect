@@ -1,9 +1,14 @@
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 
 import {
   checkedOptionsOf,
   checkedWorkspaceFiles,
+  dryRunOnlyOptionsOf,
+  noTestsOptionsOf,
+  noTestsWorkspaceFiles,
   type Observation,
   runReasonlessWorkspace,
   runWorkspace,
@@ -18,8 +23,52 @@ const LANES_OF_ONE_TEST_RUNNER_AND_ONE_CHECKER = 2
 const idsWithStatus = (statuses: Readonly<Record<string, string>>, status: string): readonly string[] =>
   Object.entries(statuses).filter(([, seen]) => seen === status).map(([id]) => id)
 
-const isMeasured = (costMs: number | undefined): boolean =>
+const isMeasured = (costMs: number | null | undefined): boolean =>
   typeof costMs === 'number' && Number.isFinite(costMs) && costMs >= 0
+
+const checkIsMeasuredAboveZero = (check: RunEvent.CheckDuration | null): boolean =>
+  check !== null &&
+  Match.value(check).pipe(
+    Match.tag('measured', (measured) => measured.ms > 0),
+    Match.orElse(() => false),
+  )
+
+const checkIsNotRun = (check: RunEvent.CheckDuration | null): boolean =>
+  check !== null &&
+  Match.value(check).pipe(
+    Match.tag('not-run', () => true),
+    Match.orElse(() => false),
+  )
+
+const reportingIsMeasured = (reporting: RunEvent.ReportingDuration | null): boolean =>
+  reporting !== null &&
+  Match.value(reporting).pipe(
+    Match.tag('measured', (measured) => measured.ms >= 0),
+    Match.orElse(() => false),
+  )
+
+const reportingFollowsMutationTest = (phases: ReadonlyArray<RunEvent.RunPhase>): boolean =>
+  phases.includes('mutation-test') &&
+  phases.includes('reporting') &&
+  phases.indexOf('reporting') > phases.indexOf('mutation-test')
+
+const reportingExitSummaryOf = (observed: Observation) => {
+  const elapsedOf = (phase: RunEvent.RunPhase): number | null => {
+    const marks = observed.marks.filter((mark) => mark.phase === phase)
+    const last = marks[marks.length - 1]
+    return last === undefined ? null : last.elapsedMs
+  }
+  const reportingAt = elapsedOf('reporting')
+  const mutationTestAt = elapsedOf('mutation-test')
+  return {
+    reportingMarkIsMeasured: isMeasured(reportingAt),
+    reportingMarkFollowsMutationTestMark: reportingAt !== null &&
+      mutationTestAt !== null &&
+      reportingAt >= mutationTestAt,
+    noVerdictPublishesThePhaseDurations: observed.verdictReporting === null && observed.verdictCheck === null,
+    noMutantWasRun: Object.keys(observed.statuses).length === 0,
+  }
+}
 
 const budgetPricesOnlyTheVerdictsThatRanATest = (observed: Observation): boolean => {
   const testRunning = [
@@ -70,6 +119,9 @@ const recordSummaryOf = (observed: Observation) => {
         (observed.streamCosts[id] ?? 0) > 0
       ),
     budgetPricesOnlyTheVerdictsThatRanATest: budgetPricesOnlyTheVerdictsThatRanATest(observed),
+    verdictCheckIsMeasured: checkIsMeasuredAboveZero(observed.verdictCheck),
+    verdictReportingIsMeasured: reportingIsMeasured(observed.verdictReporting),
+    reportingFollowsMutationTest: reportingFollowsMutationTest(observed.phases),
   }
 }
 
@@ -101,6 +153,9 @@ Feature('The measured cost recorded for a verdict the engine decided without a t
               testRunningCountAtLeastTwo: true,
               testRunningKeepsItsMeasuredTestTime: true,
               budgetPricesOnlyTheVerdictsThatRanATest: true,
+              verdictCheckIsMeasured: true,
+              verdictReportingIsMeasured: true,
+              reportingFollowsMutationTest: true,
             }),
         ),
       ),
@@ -119,8 +174,55 @@ Feature('The measured cost recorded for a verdict the engine decided without a t
             noCoverageCountAboveZero: noCoverage.length > 0,
             everyUncoveredMutantIsPricedAtZero: noCoverage.length > 0 &&
               noCoverage.every((id) => s.observed.costs[id] === 0),
-          }).toEqual({ noCoverageCountAboveZero: true, everyUncoveredMutantIsPricedAtZero: true })
+            verdictCheckIsNotRun: checkIsNotRun(s.observed.verdictCheck),
+          }).toEqual({
+            noCoverageCountAboveZero: true,
+            everyUncoveredMutantIsPricedAtZero: true,
+            verdictCheckIsNotRun: true,
+          })
         }),
+      ),
+    )
+
+    scenario(
+      'The no-tests exit enters the reporting phase after the mutation-test phase without publishing a verdict',
+      Gherkin.Do.pipe(
+        Given('a workspace whose test files match nothing and whose run allows an empty test set')(
+          'observed',
+          () => runWorkspace(noTestsWorkspaceFiles, noTestsOptionsOf),
+        ),
+        Then(
+          'the run marks the mutation-test and reporting phases with a measured reporting mark, runs no mutant, and publishes no verdict to price the phases',
+        )(
+          (s, expect) =>
+            expect(reportingExitSummaryOf(s.observed)).toEqual({
+              reportingMarkIsMeasured: true,
+              reportingMarkFollowsMutationTestMark: true,
+              noVerdictPublishesThePhaseDurations: true,
+              noMutantWasRun: true,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'The dry-run-only exit enters the reporting phase after the mutation-test phase without publishing a verdict',
+      Gherkin.Do.pipe(
+        Given('a workspace whose run stops after the dry run')(
+          'observed',
+          () => runWorkspace(uncheckedWorkspaceFiles, dryRunOnlyOptionsOf),
+        ),
+        Then(
+          'the run marks the mutation-test and reporting phases with a measured reporting mark, runs no mutant, and publishes no verdict to price the phases',
+        )(
+          (s, expect) =>
+            expect(reportingExitSummaryOf(s.observed)).toEqual({
+              reportingMarkIsMeasured: true,
+              reportingMarkFollowsMutationTestMark: true,
+              noVerdictPublishesThePhaseDurations: true,
+              noMutantWasRun: true,
+            }),
+        ),
       ),
     )
 

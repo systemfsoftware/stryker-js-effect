@@ -6,9 +6,9 @@ import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 
-import { VerdictStoreHarness } from '../verdict-store/laws.js'
-import { makeVerdictStore, type VerdictBlobs } from '../verdict-store/verdict-blobs.js'
-import { VerdictStore } from '../verdict-store/VerdictStore.service.js'
+import { VerdictStoreHarness } from './laws.js'
+import { makeVerdictStore, type VerdictBlobs } from './verdict-blobs.js'
+import { VerdictStore } from './VerdictStore.service.js'
 
 type Objects = HashMap.HashMap<string, string>
 
