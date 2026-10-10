@@ -23,10 +23,10 @@ export class ShellFailure extends S.TaggedError<ShellFailure>()('ShellFailure', 
   }
 }
 
-export class ParityViolated extends S.TaggedError<ParityViolated>()('ParityViolated', {
-  violations: S.Int,
+export class ReportedExit extends S.TaggedError<ReportedExit>()('ReportedExit', {
+  exitCode: S.Int,
 }) {
   override get message(): string {
-    return `checker parity broke with ${this.violations} violation(s)`
+    return `checker-parity reported its outcome and exits ${this.exitCode}`
   }
 }

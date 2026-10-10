@@ -11,7 +11,6 @@ import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
-import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -24,18 +23,18 @@ import * as Str from 'effect/String'
 import type * as Terminal from 'effect/Terminal'
 
 import { appendStepSummary, type CiEnvironment, ciEnvironment } from './ci-environment.js'
-import {
-  compareSides,
-  CompareSidesCommand,
-  ComparisonDecision,
-  ParityBroken,
-  type SideTotals,
-  type Violation,
-} from './compare-sides.workflow.js'
+import { compareSides, CompareSidesCommand, ComparisonDecision } from './compare-sides.workflow.js'
 import { ISOLATED_DECLARATIONS_PROJECT } from './corpus.js'
+import { laneTrigger } from './lane-trigger.js'
 import { type ParityLine, Shard } from './Parity.schema.js'
+import {
+  CompareFinished,
+  ProjectShard,
+  reportParityOutcome,
+  ReportParityOutcomeCommand,
+} from './report-parity-outcome.workflow.js'
 import { decodeLines, runShard, type ShellServices } from './run-side.js'
-import { ParityViolated, ShellFailure } from './Shell.schema.js'
+import { ReportedExit, ShellFailure } from './Shell.schema.js'
 
 const VERSION = '0.0.0'
 const SHARD_FILE = /^shard-([1-9][0-9]*)\.ndjson$/u
@@ -126,93 +125,47 @@ const loadShards = (
     return yield* Effect.forEach(Arr.range(1, count), loadShard(byShard, count))
   })
 
-const describeViolation = (violation: Violation): string =>
-  Match.valueTags(violation, {
-    VerdictMismatch: (mismatch) =>
-      `${mismatch.code} ${mismatch.project} ${mismatch.mutantId} ${mismatch.fileName}:${mismatch.line} main=${
-        JSON.stringify(mismatch.main)
-      } branch=${JSON.stringify(mismatch.branch)}`,
-    BootAsymmetry: (asymmetry) => `${asymmetry.code} ${asymmetry.project} failed on ${asymmetry.failedSide}`,
-    ZeroSnapshotUpdates: (zero) => `${zero.code} ${zero.project}`,
-    TelemetryMissingViolation: (missing) =>
-      `${missing.code} ${missing.side} ${missing.project} expected ${missing.expectedSpans} received ${missing.receivedSpans}`,
-    ZeroShortcuts: (zero) => `${zero.code} ${zero.scope}`,
-    SlowerThanMain: (slower) => `${slower.code} branch ${slower.branchMs} ms, main ${slower.mainMs} ms`,
-  })
-
-const projectOf = (violation: Violation): Option.Option<string> =>
-  Match.valueTags(violation, {
-    VerdictMismatch: (mismatch) => Option.some(mismatch.project),
-    BootAsymmetry: (asymmetry) => Option.some(asymmetry.project),
-    ZeroSnapshotUpdates: (zero) => Option.some(zero.project),
-    TelemetryMissingViolation: (missing) => Option.some(missing.project),
-    ZeroShortcuts: () => Option.none(),
-    SlowerThanMain: () => Option.none(),
-  })
-
-const locationOf = (violation: Violation): string =>
-  Match.valueTags(violation, {
-    VerdictMismatch: (mismatch) => ` file=${mismatch.fileName},line=${mismatch.line}`,
-    BootAsymmetry: () => '',
-    ZeroSnapshotUpdates: () => '',
-    TelemetryMissingViolation: () => '',
-    ZeroShortcuts: () => '',
-    SlowerThanMain: () => '',
-  })
-
-const annotationOf = (
-  environment: CiEnvironment,
-  projectToShard: HashMap.HashMap<string, number>,
-) =>
-(violation: Violation): string => {
-  const shard = Option.getOrElse(
-    Option.map(Option.flatMap(projectOf(violation), (project) => HashMap.get(projectToShard, project)), String),
-    () => '<k>',
-  )
-  return `::error${locationOf(violation)},title=${violation.code}::${
-    describeViolation(violation)
-  } Next action: ${violation.nextAction} (artifact checker-parity-${environment.runId}-${shard}, file shard-${shard}.ndjson)`
-}
-
-const ratiosOf = (side: SideTotals): string =>
-  `${side.mutants} mutants, ${side.checkCalls} check calls, ${side.phaseMs} ms, ${
-    side.snapshotUpdatesPerMutant.toFixed(3)
-  } updates/mutant (${side.countsDerived ? 'derived' : 'observed'}), ${
-    side.emitBuildsPerMutant.toFixed(3)
-  } emit builds/mutant`
-
-const violationsOf = (decision: ComparisonDecision): ReadonlyArray<Violation> =>
-  Match.valueTags(decision, { ParityHolds: () => [], ParityBroken: (broken) => broken.violations })
-
-const codesSuffix = (violations: ReadonlyArray<Violation>): string =>
-  Option.match(
-    Arr.match(Arr.dedupe(violations.map((violation) => violation.code)), {
-      onEmpty: Option.none,
-      onNonEmpty: Option.some,
-    }),
-    {
-      onNone: () => '',
-      onSome: (codes) => ` (${codes.join(', ')})`,
-    },
+const projectShardsOf = (shards: ReadonlyArray<ShardLines>): ReadonlyArray<ProjectShard> =>
+  Arr.dedupeWith(
+    shards.flatMap(({ shard, lines }) => lines.map((line) => ProjectShard.make({ project: line.project, shard }))),
+    (left, right) => left.project === right.project,
   )
 
-const summaryMarkdown = (decision: ComparisonDecision): string => {
-  const violations = violationsOf(decision)
-  const summary = decision.summary
-  return [
-    `### checker-parity: ${S.is(ParityBroken)(decision) ? 'FAIL' : 'pass'}`,
-    '',
-    `- violations: ${violations.length}${codesSuffix(violations)}`,
-    `- projects: ${summary.measuredProjectCount} measured of ${summary.projectCount}, ${summary.excludedCachedProjectCount} cached-excluded, ${summary.skipped.length} skipped`,
-    `- main: ${ratiosOf(summary.main)}`,
-    `- branch: ${ratiosOf(summary.branch)}`,
-    `- shortcuts: ${summary.shortcutCount.overall} overall, ${summary.shortcutCount.isolatedDeclarations} on the isolatedDeclarations fixture`,
-    '',
-  ].join('\n')
+const FALLBACK_ENVIRONMENT: CiEnvironment = {
+  ci: false,
+  githubActions: false,
+  pushEvent: false,
+  stepSummary: Option.none(),
+  runId: '<run-id>',
 }
 
-const projectToShardOf = (shards: ReadonlyArray<ShardLines>): HashMap.HashMap<string, number> =>
-  HashMap.fromIterable(shards.flatMap(({ shard, lines }) => lines.map((line) => [line.project, shard] as const)))
+const emitReport = (
+  outcome: CompareFinished | ShellFailure,
+): Effect.Effect<number, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const environment = yield* Effect.orElseSucceed(ciEnvironment, () => FALLBACK_ENVIRONMENT)
+    const report = yield* Effect.fromResult(
+      reportParityOutcome(
+        ReportParityOutcomeCommand.make({
+          outcome,
+          githubActions: environment.githubActions,
+          runId: environment.runId,
+        }),
+      ),
+    )
+    yield* Effect.forEach([...report.stdout, ...report.annotations], (line) => Console.log(line), { discard: true })
+    yield* Effect.forEach(report.stderr, (line) => Console.error(line), { discard: true })
+    yield* appendStepSummary(environment, report.stepSummary).pipe(
+      Effect.catchTag('ShellFailure', (failure) => Console.error(`${failure.code}: ${failure.reason}`)),
+    )
+    return report.exitCode
+  })
+
+const exitWith = (exitCode: number): Effect.Effect<void, ReportedExit> =>
+  Boolean.match(exitCode === 0, {
+    onTrue: () => Effect.void,
+    onFalse: () => Effect.fail(ReportedExit.make({ exitCode })),
+  })
 
 interface CompareInput {
   readonly shards: number
@@ -222,32 +175,8 @@ interface CompareInput {
   readonly dirs: ReadonlyArray<string>
 }
 
-const reportBroken = (
-  broken: ParityBroken,
-  input: CompareInput,
-  environment: CiEnvironment,
-  projectToShard: HashMap.HashMap<string, number>,
-): Effect.Effect<void, ParityViolated> =>
+const compare = (input: CompareInput): Effect.Effect<void, ShellFailure | ReportedExit, ShellServices> =>
   Effect.gen(function*() {
-    yield* Effect.forEach(broken.displayed, (violation) =>
-      Console.log(`${describeViolation(violation)} Next action: ${violation.nextAction}`), { discard: true })
-    yield* Effect.forEach(
-      environment.githubActions ? broken.displayed : [],
-      (violation) =>
-        Console.log(annotationOf(environment, projectToShard)(violation)),
-      { discard: true },
-    )
-    yield* Boolean.match(broken.omittedCount > 0, {
-      onTrue: () =>
-        Console.log(`${broken.omittedCount} more in ${input.summary}`),
-      onFalse: () => Effect.void,
-    })
-    return yield* ParityViolated.make({ violations: broken.violations.length })
-  })
-
-const compare = (input: CompareInput): Effect.Effect<void, ShellFailure | ParityViolated, ShellServices> =>
-  Effect.gen(function*() {
-    const environment = yield* ciEnvironment
     const shards = yield* loadShards(input.dirs, input.shards)
     const lines = shards.flatMap((shard) => shard.lines)
     const decision = yield* Effect.fromResult(
@@ -272,11 +201,14 @@ const compare = (input: CompareInput): Effect.Effect<void, ShellFailure | Parity
         )
       ),
     )
-    yield* appendStepSummary(environment, summaryMarkdown(decision))
-    yield* Match.valueTags(decision, {
-      ParityHolds: () => Console.log(`parity holds over ${lines.length} lines across ${input.shards} shards`),
-      ParityBroken: (broken) => reportBroken(broken, input, environment, projectToShardOf(shards)),
+    const finished = CompareFinished.make({
+      decision,
+      lineCount: lines.length,
+      shards: input.shards,
+      summaryFile: input.summary,
+      projectShards: [...projectShardsOf(shards)],
     })
+    yield* Effect.flatMap(emitReport(finished), exitWith)
   })
 
 const refusedOutsideCi = ShellFailure.make({
@@ -289,8 +221,6 @@ const refusedOutsideCi = ShellFailure.make({
 const runCommand = Command.make('run', {
   mainWorker: Flag.String('main-worker'),
   branchWorker: Flag.String('branch-worker'),
-  mainSource: Flag.String('main-source'),
-  branchSource: Flag.String('branch-source'),
   shard: Flag.String('shard').pipe(Flag.withSchema(Shard)),
   cache: Flag.String('cache'),
   out: Flag.String('out'),
@@ -313,10 +243,35 @@ const compareCommand = Command.make('compare', {
   dirs: Argument.String('dir').pipe(Argument.variadic({ min: 1 })),
 }, compare)
 
-const cli = Command.make('checker-parity').pipe(Command.withSubcommands([runCommand, compareCommand]))
+const triggerCommand = Command.make('trigger', {
+  base: Flag.String('base'),
+}, (config) =>
+  Effect.gen(function*() {
+    const environment = yield* ciEnvironment
+    const path = yield* Path.Path
+    const trigger = yield* laneTrigger({
+      base: config.base,
+      pushEvent: environment.pushEvent,
+      repoRoot: path.resolve('.'),
+    })
+    const outputs = Match.valueTags(trigger, {
+      RunLane: (run) => ({
+        run: true,
+        detail: `${run.reason}: ${run.matchedCount} file(s)${run.matched.map((file) => `\n- \`${file}\``).join('')}`,
+      }),
+      SkipLane: (skip) => ({
+        run: false,
+        detail: `${skip.reason}: none of ${skip.changedCount} changed file(s) is an input`,
+      }),
+    })
+    yield* Console.log(`run=${outputs.run}\nreason=${trigger.reason}`)
+    yield* appendStepSummary(
+      environment,
+      `### checker-parity trigger: ${outputs.run ? 'run' : 'skip'}\n\n${outputs.detail}\n`,
+    )
+  }))
 
-const printFailure = (failure: ShellFailure): Effect.Effect<void> =>
-  Console.error(`${failure.code}: ${failure.reason}\nnext action: ${failure.nextAction}`)
+const cli = Command.make('checker-parity').pipe(Command.withSubcommands([runCommand, compareCommand, triggerCommand]))
 
 const usageReasonsOf = (cause: CliError.CliError): ReadonlyArray<string> =>
   Match.valueTags(cause, {
@@ -340,7 +295,7 @@ const usageOutcome = (cause: CliError.CliError): Effect.Effect<number, ShellFail
           schemaVersion: 1,
           code: 'usage-error',
           reason: reasons.join('; '),
-          nextAction: 'Pass `run` or `compare` with the flags `--help` lists.',
+          nextAction: 'Pass `run`, `compare` or `trigger` with the flags `--help` lists.',
         }),
       ),
   })
@@ -352,8 +307,8 @@ const checkerParity = (
     Effect.as(0),
     Effect.catchIf(CliError.isCliError, usageOutcome),
     Effect.catchTags({
-      ShellFailure: (failure) => Effect.as(printFailure(failure), 2),
-      ParityViolated: () => Effect.succeed(1),
+      ShellFailure: emitReport,
+      ReportedExit: (exit) => Effect.succeed(exit.exitCode),
     }),
   )
 

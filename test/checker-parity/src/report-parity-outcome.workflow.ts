@@ -1,0 +1,252 @@
+import { Workflow } from '@systemfsoftware/effect-cell-types'
+import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
+
+import {
+  ComparisonDecision,
+  type ObservedVerdict,
+  type ParityBroken,
+  type ParityHolds,
+  type SideTotals,
+  type Violation,
+} from './compare-sides.workflow.js'
+import { ShellFailure } from './Shell.schema.js'
+
+const ReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/ReportParityOutcome')
+type ReportTypeId = typeof ReportTypeId
+
+export class ProjectShard extends S.Class<ProjectShard>('ProjectShard')({ project: S.String, shard: S.Int }) {}
+
+export class CompareFinished extends S.TaggedClass<CompareFinished>()('CompareFinished', {
+  decision: ComparisonDecision,
+  lineCount: S.Int,
+  shards: S.Int,
+  summaryFile: S.String,
+  projectShards: S.Array(ProjectShard),
+}) {}
+
+export class ReportParityOutcomeCommand
+  extends S.TaggedClass<ReportParityOutcomeCommand>()('ReportParityOutcomeCommand', {
+    outcome: S.Union([CompareFinished, ShellFailure]),
+    githubActions: S.Boolean,
+    runId: S.String,
+  })
+{
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+const reportFields = {
+  stdout: S.Array(S.String),
+  stderr: S.Array(S.String),
+  annotations: S.Array(S.String),
+  stepSummary: S.String,
+}
+
+export class ParityHeldReport extends S.TaggedClass<ParityHeldReport>()('ParityHeldReport', {
+  exitCode: S.Literal(0),
+  ...reportFields,
+}) {
+  readonly [ReportTypeId] = ReportTypeId
+}
+
+export class ParityBrokenReport extends S.TaggedClass<ParityBrokenReport>()('ParityBrokenReport', {
+  exitCode: S.Literal(1),
+  ...reportFields,
+}) {
+  readonly [ReportTypeId] = ReportTypeId
+}
+
+export class DriverFailedReport extends S.TaggedClass<DriverFailedReport>()('DriverFailedReport', {
+  exitCode: S.Literal(2),
+  ...reportFields,
+}) {
+  readonly [ReportTypeId] = ReportTypeId
+}
+
+export const ParityOutcomeReport = S.Union([ParityHeldReport, ParityBrokenReport, DriverFailedReport])
+export type ParityOutcomeReport = typeof ParityOutcomeReport.Type
+
+const escapeData = (text: string): string => text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+
+const escapeProperty = (text: string): string => escapeData(text).replaceAll(':', '%3A').replaceAll(',', '%2C')
+
+const observedText = (observed: ObservedVerdict | null): string =>
+  Option.match(Option.fromNullishOr(observed), {
+    onNone: () => 'absent',
+    onSome: (verdict) => [verdict.status, ...Option.toArray(Option.fromUndefinedOr(verdict.reason))].join(' '),
+  })
+
+const describeViolation = (violation: Violation): string =>
+  Match.valueTags(violation, {
+    VerdictMismatch: (mismatch) =>
+      `${mismatch.code} ${mismatch.project} ${mismatch.mutantId} ${mismatch.fileName}:${mismatch.line} main=${
+        observedText(mismatch.main)
+      } branch=${observedText(mismatch.branch)}`,
+    BootAsymmetry: (asymmetry) => `${asymmetry.code} ${asymmetry.project} failed on ${asymmetry.failedSide}`,
+    ZeroSnapshotUpdates: (zero) => `${zero.code} ${zero.project}`,
+    TelemetryMissingViolation: (missing) =>
+      `${missing.code} ${missing.side} ${missing.project} expected ${missing.expectedSpans} received ${missing.receivedSpans}`,
+    ZeroShortcuts: (zero) => `${zero.code} ${zero.scope}`,
+    SlowerThanMain: (slower) => `${slower.code} branch ${slower.branchMs} ms, main ${slower.mainMs} ms`,
+  })
+
+const projectOf = (violation: Violation): Option.Option<string> =>
+  Match.valueTags(violation, {
+    VerdictMismatch: (mismatch) => Option.some(mismatch.project),
+    BootAsymmetry: (asymmetry) => Option.some(asymmetry.project),
+    ZeroSnapshotUpdates: (zero) => Option.some(zero.project),
+    TelemetryMissingViolation: (missing) => Option.some(missing.project),
+    ZeroShortcuts: () => Option.none(),
+    SlowerThanMain: () => Option.none(),
+  })
+
+const locationOf = (violation: Violation): string =>
+  Match.valueTags(violation, {
+    VerdictMismatch: (mismatch) => `file=${escapeProperty(mismatch.fileName)},line=${mismatch.line},`,
+    BootAsymmetry: () => '',
+    ZeroSnapshotUpdates: () => '',
+    TelemetryMissingViolation: () => '',
+    ZeroShortcuts: () => '',
+    SlowerThanMain: () => '',
+  })
+
+const shardOf = (finished: CompareFinished, violation: Violation): string =>
+  Option.getOrElse(
+    Option.flatMap(
+      projectOf(violation),
+      (project) =>
+        Option.map(Arr.findFirst(finished.projectShards, (entry) => entry.project === project), (entry) =>
+          String(entry.shard)),
+    ),
+    () =>
+      '<k>',
+  )
+
+const annotationOf = (
+  command: ReportParityOutcomeCommand,
+  finished: CompareFinished,
+  group: Arr.NonEmptyReadonlyArray<Violation>,
+): string => {
+  const first = Arr.headNonEmpty(group)
+  const shard = shardOf(finished, first)
+  return `::error ${locationOf(first)}title=${escapeProperty(`checker-parity ${first.code}`)}::${
+    escapeData(
+      `${group.length} ${first.code} violation(s); first: ${
+        describeViolation(first)
+      }. Next action: ${first.nextAction} (all of them: artifact checker-parity-summary-${command.runId}, file ${finished.summaryFile}; raw lines: artifact checker-parity-${command.runId}-${shard}, file shard-${shard}.ndjson)`,
+    )
+  }`
+}
+
+const groupsByCode = (violations: ReadonlyArray<Violation>): ReadonlyArray<Arr.NonEmptyReadonlyArray<Violation>> =>
+  Arr.getSomes(
+    Arr.dedupe(violations.map((violation) => violation.code)).map((code) =>
+      Arr.match(violations.filter((violation) => violation.code === code), {
+        onEmpty: () => Option.none(),
+        onNonEmpty: Option.some,
+      })
+    ),
+  )
+
+const ratiosOf = (side: SideTotals): string =>
+  `${side.mutants} mutants, ${side.checkCalls} check calls, ${side.phaseMs} ms, ${
+    side.snapshotUpdatesPerMutant.toFixed(3)
+  } updates/mutant (${Boolean.match(side.countsDerived, { onTrue: () => 'derived', onFalse: () => 'observed' })}), ${
+    side.emitBuildsPerMutant.toFixed(3)
+  } emit builds/mutant`
+
+const codesSuffix = (violations: ReadonlyArray<Violation>): string =>
+  Arr.match(Arr.dedupe(violations.map((violation) => violation.code)), {
+    onEmpty: () => '',
+    onNonEmpty: (codes) => ` (${codes.join(', ')})`,
+  })
+
+const inActions = (
+  command: ReportParityOutcomeCommand,
+  annotations: () => ReadonlyArray<string>,
+): ReadonlyArray<string> => Boolean.match(command.githubActions, { onTrue: annotations, onFalse: () => [] })
+
+const summaryMarkdown = (
+  verdict: 'FAIL' | 'pass',
+  decision: ComparisonDecision,
+  violations: ReadonlyArray<Violation>,
+): string => {
+  const summary = decision.summary
+  return [
+    `### checker-parity: ${verdict}`,
+    '',
+    `- violations: ${violations.length}${codesSuffix(violations)}`,
+    `- projects: ${summary.measuredProjectCount} measured of ${summary.projectCount}, ${summary.excludedCachedProjectCount} cached-excluded, ${summary.skipped.length} skipped`,
+    `- main: ${ratiosOf(summary.main)}`,
+    `- branch: ${ratiosOf(summary.branch)}`,
+    `- shortcuts: ${summary.shortcutCount.overall} overall, ${summary.shortcutCount.isolatedDeclarations} on the isolatedDeclarations fixture`,
+    '',
+  ].join('\n')
+}
+
+const heldReport = (finished: CompareFinished, held: ParityHolds): ParityHeldReport =>
+  ParityHeldReport.make({
+    exitCode: 0,
+    stdout: [`parity holds over ${finished.lineCount} lines across ${finished.shards} shards`],
+    stderr: [],
+    annotations: [],
+    stepSummary: summaryMarkdown('pass', held, []),
+  })
+
+const brokenReport = (
+  command: ReportParityOutcomeCommand,
+  finished: CompareFinished,
+  broken: ParityBroken,
+): ParityBrokenReport =>
+  ParityBrokenReport.make({
+    exitCode: 1,
+    stdout: [
+      ...broken.displayed.map((violation) => `${describeViolation(violation)} Next action: ${violation.nextAction}`),
+      ...Boolean.match(broken.omittedCount > 0, {
+        onTrue: () => [`${broken.omittedCount} more in ${finished.summaryFile}`],
+        onFalse: () => [],
+      }),
+    ],
+    stderr: [],
+    annotations: inActions(
+      command,
+      () => groupsByCode(broken.violations).map((group) => annotationOf(command, finished, group)),
+    ),
+    stepSummary: summaryMarkdown('FAIL', broken, broken.violations),
+  })
+
+const failedReport = (command: ReportParityOutcomeCommand, failure: ShellFailure): DriverFailedReport =>
+  DriverFailedReport.make({
+    exitCode: 2,
+    stdout: [],
+    stderr: [`${failure.code}: ${failure.reason}`, `next action: ${failure.nextAction}`],
+    annotations: inActions(command, () => [
+      `::error title=${escapeProperty(`checker-parity ${failure.code}`)}::${
+        escapeData(`${failure.reason} Next action: ${failure.nextAction}`)
+      }`,
+    ]),
+    stepSummary:
+      `### checker-parity: ERROR (${failure.code})\n\n${failure.reason}\n\nNext action: ${failure.nextAction}\n`,
+  })
+
+const reportOf = (command: ReportParityOutcomeCommand): ParityOutcomeReport =>
+  Match.valueTags(command.outcome, {
+    ShellFailure: (failure) => failedReport(command, failure),
+    CompareFinished: (finished) =>
+      Match.valueTags(finished.decision, {
+        ParityHolds: (held) => heldReport(finished, held),
+        ParityBroken: (broken) => brokenReport(command, finished, broken),
+      }),
+  })
+
+export const reportParityOutcome = Workflow.make({
+  command: ReportParityOutcomeCommand,
+  decision: ParityOutcomeReport,
+  error: S.Never,
+  decide: (command: ReportParityOutcomeCommand): Result.Result<ParityOutcomeReport, never> =>
+    Result.succeed(reportOf(command)),
+})
