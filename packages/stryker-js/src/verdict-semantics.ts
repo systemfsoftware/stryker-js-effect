@@ -18,7 +18,7 @@ const ENGINE_PACKAGE_SPECIFIERS: readonly string[] = [
   '@systemfsoftware/stryker-js-vm-runner',
 ]
 
-export const INCREMENTAL_CACHE_VERSION = '5'
+export const INCREMENTAL_CACHE_VERSION = '6'
 
 type Json = S.Schema.Type<typeof S.Json>
 
@@ -87,7 +87,7 @@ const presentationOptionKeys: readonly string[] = [
   'fileLogLevel',
 ]
 
-const storageOptionKeys: readonly string[] = ['incrementalFile', 'incrementalSources', 'tempDirName', 'cleanTempDir']
+const storageOptionKeys: readonly string[] = ['incrementalFile', 'verdictStore', 'tempDirName', 'cleanTempDir']
 
 const unfingerprintedOptionKeys: readonly string[] = [
   ...scopeOptionKeys,
@@ -285,6 +285,16 @@ if (import.meta.vitest !== void 0) {
       Effect.map(
         Effect.all([subject(options), subject(withKeysTakenFromOf(storageOptionKeys, options, other))]),
         ([baseline, relocated]) => relocated === baseline,
+      ),
+  )
+
+  it.effect.prop(
+    '∀oo_Options_≡AnotherVerdictStoreKeepsTheOptionsFingerprint',
+    { of: [Options.StrykerOptionsSchema, Options.StrykerOptionsSchema], subject: optionsFingerprintOf },
+    (subject, [options, other]) =>
+      Effect.map(
+        Effect.all([subject(options), subject({ ...options, verdictStore: other.verdictStore })]),
+        ([baseline, restored]) => restored === baseline,
       ),
   )
 

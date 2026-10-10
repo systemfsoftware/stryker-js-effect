@@ -1,40 +1,49 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import * as Record from 'effect/Record'
+import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
-  PreviousReuseRecordSchema,
+  type CurrentVerdict,
   type ReuseRefusalReason,
   ReuseRefusalReasonSchema,
+  type TimeoutEvidence,
   TimeoutEvidenceSchema,
-  TimeoutKindSchema,
+  type VerdictLookup,
+  VerdictLookupSchema,
 } from './IncrementalDiff.schema.js'
-import type { PreviousReuseRecord, TimeoutEvidence } from './IncrementalDiff.schema.js'
-
-const isReusableStatus = S.is(Mutant.RememberedStatusSchema)
-
-const NO_PREVIOUS_RECORDS: readonly PreviousReuseRecord[] = []
+import { Settled } from './readmit-subsumed.workflow.js'
+import {
+  type CheckerEntry,
+  CheckerEntrySchema,
+  type IgnoredTestedEntry,
+  type KilledTestedEntry,
+  type SettledTestedEntry,
+  type SharedComponents,
+  type TestedEntry,
+  TestedEntrySchema,
+  type TimeoutKind,
+  TimeoutKindSchema,
+  type TimeoutTestedEntry,
+  type VerdictEntry,
+  type VerdictKey,
+} from './verdict-store/VerdictEntry.schema.js'
+import type { ListedEntry } from './verdict-store/VerdictStore.schema.js'
 
 const IncrementalDiffTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/IncrementalDiff')
 type IncrementalDiffTypeId = typeof IncrementalDiffTypeId
 
 export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand>()('IncrementalDiffCommand', {
-  currentMutants: S.Array(Mutant.Mutant),
-  previousRecords: S.Array(PreviousReuseRecordSchema),
-  closureDigestsByMutantId: S.Record(Mutant.MutantId, S.String),
+  lookups: S.Array(VerdictLookupSchema),
   closureAnalysisFailed: S.Boolean,
-  engineDigest: S.String,
-  mutantSetPolicy: Options.MutantSetPolicy,
-  runInputsDigest: S.String,
   force: S.Boolean,
   flakyMutantIds: S.String.pipe(S.Array, S.optional),
-  programDigest: S.optional(S.String),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     force: 'stryker.incremental_diff.force',
@@ -73,304 +82,375 @@ export class MutantToRun extends S.TaggedClass<MutantToRun>()('MutantToRun', {
   mutant: Mutant.Mutant,
   refusal: ReuseRefusalReasonSchema,
   priorTimeout: S.optional(TimeoutEvidenceSchema),
+  priorKilledBy: S.String.pipe(S.Array, S.optional),
 }) {
   readonly [IncrementalDiffTypeId] = IncrementalDiffTypeId
 }
 
 export type IncrementalDiffDecision = MutantRemembered | MutantToRun
 
-type CacheKeyComponents = {
-  readonly engineDigest: string
-  readonly mutantSetPolicy: Options.MutantSetPolicy
-  readonly runInputsDigest: string
+const isRemembered = S.is(MutantRemembered)
+
+const isToRun = S.is(MutantToRun)
+
+const isSubsumed = S.is(Mutant.Subsumed)
+
+const testedOf = (entry: VerdictEntry): Option.Option<TestedEntry> =>
+  Option.liftPredicate(entry, S.is(TestedEntrySchema))
+
+const checkerOf = (entry: VerdictEntry): Option.Option<CheckerEntry> =>
+  Option.liftPredicate(entry, S.is(CheckerEntrySchema))
+
+interface KeyedEntry {
+  readonly key: VerdictKey
+  readonly entry: VerdictEntry
 }
 
-const isUnreproducedWallClockTimeout = (record: PreviousReuseRecord): boolean =>
-  Boolean.and(
-    record.status === 'Timeout',
-    Boolean.and(
-      Boolean.not(record.timeoutKind === 'hitLimit'),
-      Option.getOrElse(Option.fromUndefinedOr(record.reproductions), () => 0) < 1,
-    ),
+const newestFirst: Order.Order<KeyedEntry> = Order.mapInput(Order.flip(Order.Number), ({ entry }) => entry.settledAt)
+
+const readableOf = (listed: ListedEntry): ReadonlyArray<KeyedEntry> =>
+  Match.valueTags(listed, {
+    Readable: ({ key, entry }): ReadonlyArray<KeyedEntry> => [{ key, entry }],
+    Unreadable: (): ReadonlyArray<KeyedEntry> => [],
+  })
+
+const readableKeyedOf = (lookup: VerdictLookup): ReadonlyArray<KeyedEntry> =>
+  Arr.sort(lookup.entries.flatMap(readableOf), newestFirst)
+
+const readableEntriesOf = (lookup: VerdictLookup): ReadonlyArray<VerdictEntry> =>
+  readableKeyedOf(lookup).map(({ entry }) => entry)
+
+const unreadableKeyOf = (listed: ListedEntry): ReadonlyArray<VerdictKey> =>
+  Match.valueTags(listed, {
+    Readable: (): ReadonlyArray<VerdictKey> => [],
+    Unreadable: ({ key }): ReadonlyArray<VerdictKey> => [key],
+  })
+
+const currentEntryUnreadable = (lookup: VerdictLookup): boolean =>
+  lookup.entries.flatMap(unreadableKeyOf).some((key) => lookup.currentKeys.includes(key))
+
+const isTimeoutEntry = (entry: TestedEntry): entry is TimeoutTestedEntry => entry.status === 'Timeout'
+
+const isKilledEntry = (entry: TestedEntry): entry is KilledTestedEntry => entry.status === 'Killed'
+
+const reproductionsOf = (entry: TimeoutTestedEntry): number =>
+  Option.getOrElse(Option.fromUndefinedOr(entry.reproductions), () => 0)
+
+const isUnreproducedWallClock = (entry: TimeoutTestedEntry): boolean =>
+  Boolean.and(entry.timeoutKind !== 'hitLimit', reproductionsOf(entry) < 1)
+
+const unreproducedTimeout = (entry: VerdictEntry): boolean =>
+  Option.exists(
+    testedOf(entry),
+    (tested) => Option.exists(Option.liftPredicate(tested, isTimeoutEntry), isUnreproducedWallClock),
   )
 
-const carriesSubsumptionReference = (record: PreviousReuseRecord): boolean => record.subsumption !== undefined
-
-const isReusableRecord = (record: PreviousReuseRecord): boolean =>
-  Boolean.and(
-    Boolean.and(isReusableStatus(record.status), Boolean.not(isUnreproducedWallClockTimeout(record))),
-    Boolean.not(carriesSubsumptionReference(record)),
-  )
-
-const timeoutEvidenceOf = (record: PreviousReuseRecord): Option.Option<TimeoutEvidence> =>
+const matchingEntryOf = (lookup: VerdictLookup): Option.Option<VerdictEntry> =>
   Option.map(
-    Option.fromUndefinedOr(record.timeoutKind),
-    (timeoutKind) => ({
-      timeoutKind,
-      reproductions: Option.getOrElse(Option.fromUndefinedOr(record.reproductions), () => 0),
+    Arr.findFirst(
+      readableKeyedOf(lookup),
+      ({ key, entry }) => Boolean.and(lookup.currentKeys.includes(key), Boolean.not(unreproducedTimeout(entry))),
+    ),
+    ({ entry }) => entry,
+  )
+
+interface RememberedTestedFields {
+  readonly timeoutKind: TimeoutKind | undefined
+  readonly reproductions: number | undefined
+  readonly testsCompleted: number | undefined
+  readonly coveredBy: ReadonlyArray<string> | undefined
+  readonly killedBy: ReadonlyArray<string> | undefined
+}
+
+const rememberedBaseOf = (tested: TestedEntry): RememberedTestedFields => ({
+  timeoutKind: undefined,
+  reproductions: undefined,
+  testsCompleted: tested.testsCompleted,
+  coveredBy: tested.coveredBy,
+  killedBy: undefined,
+})
+
+const rememberedTestedFieldsOf = (tested: TestedEntry) =>
+  Match.value(tested).pipe(
+    Match.discriminatorsExhaustive('status')({
+      Ignored: rememberedBaseOf,
+      Survived: rememberedBaseOf,
+      NoCoverage: rememberedBaseOf,
+      Killed: (killed: KilledTestedEntry) => ({ ...rememberedBaseOf(killed), killedBy: killed.killedBy }),
+      Timeout: (timeout: TimeoutTestedEntry) => ({
+        ...rememberedBaseOf(timeout),
+        timeoutKind: timeout.timeoutKind,
+        reproductions: timeout.reproductions,
+      }),
     }),
   )
 
-const digestOf = (digest: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(digest), () => '')
-
-const isCompileErrorRecord = (record: PreviousReuseRecord): boolean => record.status === 'CompileError'
-
-const keyOf = (mutantId: string, digest: string | undefined, components: CacheKeyComponents): string =>
-  [
-    mutantId,
-    digestOf(digest),
-    components.engineDigest,
-    components.mutantSetPolicy,
-    components.runInputsDigest,
-  ].join('\u0000')
-
-const currentKeyOf = (command: IncrementalDiffCommand, mutantId: Mutant.MutantId): string =>
-  keyOf(mutantId, command.closureDigestsByMutantId[mutantId], command)
-
-const matchingProgramKey = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
-  Boolean.and(
-    digestOf(record.programDigest) !== '',
-    keyOf(record.mutantId, record.programDigest, record) === keyOf(record.mutantId, command.programDigest, command),
-  )
-
-const matchingKey = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
-  Boolean.and(
-    Boolean.not(command.closureAnalysisFailed),
-    Boolean.match(isCompileErrorRecord(record), {
-      onTrue: () => matchingProgramKey(command, record),
-      onFalse: () => keyOf(record.mutantId, record.closureDigest, record) === currentKeyOf(command, record.mutantId),
-    }),
-  )
-
-const closureDigestChanged = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
-  Boolean.and(
-    Boolean.not(isCompileErrorRecord(record)),
-    digestOf(record.closureDigest) !== digestOf(command.closureDigestsByMutantId[record.mutantId]),
-  )
-
-const programChanged = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
-  Boolean.and(isCompileErrorRecord(record), Boolean.not(matchingProgramKey(command, record)))
-
-const reasonAfterClosure = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
-  Boolean.match(command.closureAnalysisFailed, {
-    onTrue: (): ReuseRefusalReason => 'closureAnalysisFailed',
-    onFalse: () =>
-      Boolean.match(closureDigestChanged(command, record), {
-        onTrue: (): ReuseRefusalReason => 'closureChanged',
-        onFalse: (): ReuseRefusalReason =>
-          Boolean.match(isUnreproducedWallClockTimeout(record), {
-            onTrue: () => 'timeoutUnreproduced',
-            onFalse: () => 'noPriorRecord',
-          }),
-      }),
-  })
-
-const reasonAfterRunInputs = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
-  Boolean.match(record.runInputsDigest !== command.runInputsDigest, {
-    onTrue: (): ReuseRefusalReason => 'runInputsChanged',
-    onFalse: () =>
-      Boolean.match(programChanged(command, record), {
-        onTrue: (): ReuseRefusalReason => 'programChanged',
-        onFalse: () => reasonAfterClosure(command, record),
-      }),
-  })
-
-const reasonAfterPolicy = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
-  Boolean.match(record.mutantSetPolicy !== command.mutantSetPolicy, {
-    onTrue: (): ReuseRefusalReason => 'policyChanged',
-    onFalse: () => reasonAfterRunInputs(command, record),
-  })
-
-const refusalOf = (command: IncrementalDiffCommand, record: PreviousReuseRecord): ReuseRefusalReason =>
-  Boolean.match(record.engineDigest !== command.engineDigest, {
-    onTrue: (): ReuseRefusalReason => 'semanticsChanged',
-    onFalse: () => reasonAfterPolicy(command, record),
-  })
-
-const newestMatchingOf = (
-  records: readonly PreviousReuseRecord[],
-  command: IncrementalDiffCommand,
-): Option.Option<PreviousReuseRecord> =>
-  Arr.reduce(
-    records,
-    Option.none<PreviousReuseRecord>(),
-    (found, record) =>
-      Option.match(Option.liftPredicate(record, isReusableRecord), {
-        onNone: () => found,
-        onSome: (reusable) =>
-          Boolean.match(matchingKey(command, reusable), {
-            onTrue: () => Option.some(reusable),
-            onFalse: () => found,
-          }),
-      }),
-  )
-
-const rememberedOptionalFieldsOf = (record: PreviousReuseRecord) => ({
-  ...Option.match(Option.fromUndefinedOr(record.timeoutKind), {
+const rememberedFieldsOf = (mutant: Mutant.Mutant, entry: VerdictEntry) => ({
+  mutantId: mutant.id,
+  ...Option.match(testedOf(entry), {
     onNone: () => ({}),
-    onSome: (timeoutKind) => ({ timeoutKind }),
-  }),
-  ...Option.match(Option.fromUndefinedOr(record.reproductions), {
-    onNone: () => ({}),
-    onSome: (reproductions) => ({ reproductions }),
-  }),
-  ...Option.match(Option.fromUndefinedOr(record.testsCompleted), {
-    onNone: () => ({}),
-    onSome: (testsCompleted) => ({ testsCompleted }),
-  }),
-  ...Option.match(Option.fromUndefinedOr(record.coveredBy), {
-    onNone: () => ({}),
-    onSome: (coveredBy) => ({ coveredBy: [...coveredBy] }),
-  }),
-  ...Option.match(Option.fromUndefinedOr(record.killedBy), {
-    onNone: () => ({}),
-    onSome: (killedBy) => ({ killedBy: [...killedBy] }),
+    onSome: rememberedTestedFieldsOf,
   }),
 })
 
-type IgnoredRecord = Extract<PreviousReuseRecord, { readonly status: 'Ignored' }>
-type SettledRecord = Exclude<PreviousReuseRecord, IgnoredRecord>
-
-const rememberedIgnoredOf = (mutant: Mutant.Mutant) => (record: IgnoredRecord): MutantRemembered =>
+const rememberedIgnoredOf = (mutant: Mutant.Mutant) => (entry: IgnoredTestedEntry): MutantRemembered =>
   MutantRememberedIgnored.make({
-    mutantId: mutant.id,
+    ...rememberedFieldsOf(mutant, entry),
     status: 'Ignored',
-    statusReason: record.statusReason,
-    ...rememberedOptionalFieldsOf(record),
+    statusReason: entry.statusReason,
   })
 
-const rememberedSettledOf = (mutant: Mutant.Mutant) => (record: SettledRecord): MutantRemembered =>
+const rememberedSettledOf = (mutant: Mutant.Mutant) => (entry: SettledTestedEntry | CheckerEntry): MutantRemembered =>
   MutantRememberedSettled.make({
-    mutantId: mutant.id,
-    status: record.status,
-    statusReason: record.statusReason,
-    ...rememberedOptionalFieldsOf(record),
+    ...rememberedFieldsOf(mutant, entry),
+    status: entry.status,
+    statusReason: entry.statusReason,
   })
 
-const rememberedOf = (mutant: Mutant.Mutant, record: PreviousReuseRecord): MutantRemembered => {
+const rememberedOf = (mutant: Mutant.Mutant, entry: VerdictEntry): MutantRemembered => {
   const settled = rememberedSettledOf(mutant)
-  return Match.value(record).pipe(
+  return Match.value(entry).pipe(
     Match.discriminatorsExhaustive('status')({
       Ignored: rememberedIgnoredOf(mutant),
-      Killed: settled,
       Survived: settled,
+      Killed: settled,
+      Timeout: settled,
       NoCoverage: settled,
       CompileError: settled,
-      RuntimeError: settled,
-      Timeout: settled,
-      Pending: settled,
     }),
   )
 }
 
-const refusalForMutant = (
-  command: IncrementalDiffCommand,
-  records: readonly PreviousReuseRecord[],
-): ReuseRefusalReason =>
-  Option.match(Arr.last(records), {
-    onNone: (): ReuseRefusalReason => 'noPriorRecord',
-    onSome: (newest) => refusalOf(command, newest),
+interface Naming {
+  readonly entry: VerdictEntry
+  readonly current: CurrentVerdict
+  readonly closureAnalysisFailed: boolean
+}
+
+const locationTextOf = (location: Mutant.Location): string =>
+  `${location.start.line}.${location.start.column}-${location.end.line}.${location.end.column}`
+
+const identityTextOf = (shared: SharedComponents): string =>
+  [
+    shared.fileName,
+    shared.mutatorName,
+    shared.replacementDigest,
+    shared.fileContentDigest,
+    locationTextOf(shared.location),
+  ]
+    .join('\u0000')
+
+const coveringTextOf = (ids: ReadonlyArray<string> | undefined): string | undefined =>
+  Option.getOrUndefined(
+    Option.map(Option.fromUndefinedOr(ids), (present) => Arr.sort(Arr.dedupe(present), Order.String).join('\u0000')),
+  )
+
+const testedClosureChanged = (entry: TestedEntry, current: CurrentVerdict): boolean =>
+  Boolean.or(
+    entry.components.closureDigest !== current.closureDigest,
+    coveringTextOf(entry.components.coveringTestIds) !== coveringTextOf(current.coveringTestIds),
+  )
+
+const closureChanged = ({ entry, current }: Naming): boolean =>
+  Boolean.or(
+    identityTextOf(entry.components) !== identityTextOf(current.shared),
+    Option.exists(testedOf(entry), (tested) => testedClosureChanged(tested, current)),
+  )
+
+const refusalPrecedence: ReadonlyArray<readonly [ReuseRefusalReason, (naming: Naming) => boolean]> = [
+  ['semanticsChanged', ({ entry, current }) => entry.components.engineDigest !== current.shared.engineDigest],
+  ['policyChanged', ({ entry, current }) => entry.components.mutantSetPolicy !== current.shared.mutantSetPolicy],
+  ['runInputsChanged', ({ entry, current }) => entry.components.runInputsDigest !== current.shared.runInputsDigest],
+  [
+    'checkerConfigChanged',
+    ({ entry, current }) =>
+      Option.exists(testedOf(entry), (tested) => tested.components.checkerConfigDigest !== current.checkerConfigDigest),
+  ],
+  [
+    'programChanged',
+    ({ entry, current }) =>
+      Option.exists(checkerOf(entry), (checker) => checker.components.programDigest !== current.programDigest),
+  ],
+  ['closureAnalysisFailed', ({ closureAnalysisFailed }) => closureAnalysisFailed],
+  ['closureChanged', closureChanged],
+  ['timeoutUnreproduced', ({ entry }) => unreproducedTimeout(entry)],
+]
+
+const refusalOf = (naming: Naming): ReuseRefusalReason =>
+  Option.getOrElse(
+    Option.map(Arr.findFirst(refusalPrecedence, ([, applies]) => applies(naming)), ([reason]) => reason),
+    (): ReuseRefusalReason => 'noPriorRecord',
+  )
+
+const refusalWithoutReadableEntry = (lookup: VerdictLookup): ReuseRefusalReason =>
+  Boolean.match(lookup.entries.length > 0, {
+    onTrue: (): ReuseRefusalReason => 'entryUnreadable',
+    onFalse: (): ReuseRefusalReason => 'noPriorRecord',
   })
 
-const priorTimeoutField = (
-  refusal: ReuseRefusalReason,
-  records: readonly PreviousReuseRecord[],
-) =>
-  Boolean.match(refusal === 'timeoutUnreproduced', {
-    onTrue: () =>
-      Option.match(Arr.last(records), {
-        onNone: (): Readonly<Record<string, never>> => ({}),
-        onSome: (newest) =>
-          Option.match(timeoutEvidenceOf(newest), {
-            onNone: (): Readonly<Record<string, never>> => ({}),
-            onSome: (priorTimeout) => ({ priorTimeout }),
-          }),
+const refusalOfLookup = (lookup: VerdictLookup, closureAnalysisFailed: boolean): ReuseRefusalReason =>
+  Boolean.match(currentEntryUnreadable(lookup), {
+    onTrue: (): ReuseRefusalReason => 'entryUnreadable',
+    onFalse: () =>
+      Option.match(Arr.head(readableEntriesOf(lookup)), {
+        onNone: () => refusalWithoutReadableEntry(lookup),
+        onSome: (entry) => refusalOf({ entry, current: lookup.current, closureAnalysisFailed }),
       }),
-    onFalse: (): Readonly<Record<string, never>> => ({}),
   })
 
-const flakyMutantIdsOf = (command: IncrementalDiffCommand): readonly string[] =>
-  Option.getOrElse(Option.fromUndefinedOr(command.flakyMutantIds), (): readonly string[] => [])
+const timeoutEvidenceOf = (entry: TimeoutTestedEntry): Option.Option<TimeoutEvidence> =>
+  Option.map(
+    Option.fromUndefinedOr(entry.timeoutKind),
+    (timeoutKind): TimeoutEvidence => ({ timeoutKind, reproductions: reproductionsOf(entry) }),
+  )
+
+const priorTimeoutOf = (lookup: VerdictLookup, refusal: ReuseRefusalReason): TimeoutEvidence | undefined =>
+  Option.getOrUndefined(
+    Option.flatMap(
+      Option.filter(Arr.head(readableEntriesOf(lookup)), () => refusal === 'timeoutUnreproduced'),
+      (newest) =>
+        Option.flatMap(
+          testedOf(newest),
+          (tested) => Option.flatMap(Option.liftPredicate(tested, isTimeoutEntry), timeoutEvidenceOf),
+        ),
+    ),
+  )
+
+const sameClosure = (entry: TestedEntry, current: CurrentVerdict): boolean =>
+  Boolean.and(current.closureDigest !== undefined, entry.components.closureDigest === current.closureDigest)
+
+const killedByOf = (entry: TestedEntry): ReadonlyArray<string> =>
+  Option.liftPredicate(entry, isKilledEntry).pipe(
+    Option.flatMap((killed) => Option.fromUndefinedOr(killed.killedBy)),
+    Option.getOrElse((): ReadonlyArray<string> => []),
+  )
+
+const priorKilledByOf = (lookup: VerdictLookup): ReadonlyArray<string> =>
+  Arr.dedupe(
+    Arr.getSomes(readableEntriesOf(lookup).map(testedOf))
+      .filter((entry) => sameClosure(entry, lookup.current))
+      .flatMap(killedByOf),
+  )
+
+const toRunOf = (lookup: VerdictLookup, refusal: ReuseRefusalReason): MutantToRun =>
+  MutantToRun.make({
+    mutant: lookup.mutant,
+    refusal,
+    priorTimeout: priorTimeoutOf(lookup, refusal),
+    priorKilledBy: priorKilledByOf(lookup),
+  })
+
+const flakyMutantIdsOf = (command: IncrementalDiffCommand): HashSet.HashSet<string> =>
+  HashSet.fromIterable(Option.getOrElse(Option.fromUndefinedOr(command.flakyMutantIds), (): readonly string[] => []))
 
 /**
  * A mutant is flaky-dependent when a flaky test covers it — or when it is static and any test is
  * flaky, because a static mutant runs every test in the suite and so inherits every flaky test's
  * instability even though it never appears in the per-test coverage.
  */
-const flakyDependent = (command: IncrementalDiffCommand, mutant: Mutant.Mutant): boolean => {
+const flakyDependent = (flaky: HashSet.HashSet<string>, mutant: Mutant.Mutant): boolean =>
+  Boolean.or(HashSet.has(flaky, mutant.id), Boolean.and(mutant.static === true, HashSet.size(flaky) > 0))
+
+const isSubsumptionDecided = (lookup: VerdictLookup): boolean => lookup.mutant.subsumption !== undefined
+
+const perRunRefusalOf = (lookup: VerdictLookup, refusal: ReuseRefusalReason): ReuseRefusalReason =>
+  Boolean.match(Boolean.and(refusal === 'noPriorRecord', isSubsumptionDecided(lookup)), {
+    onTrue: (): ReuseRefusalReason => 'decidedPerRun',
+    onFalse: () => refusal,
+  })
+
+const rememberableEntryOf = (command: IncrementalDiffCommand, lookup: VerdictLookup): Option.Option<VerdictEntry> =>
+  Option.filter(
+    matchingEntryOf(lookup),
+    () => Boolean.nor(command.closureAnalysisFailed, isSubsumptionDecided(lookup)),
+  )
+
+const decideFromStore = (command: IncrementalDiffCommand, lookup: VerdictLookup): IncrementalDiffDecision =>
+  Option.match(rememberableEntryOf(command, lookup), {
+    onNone: () => toRunOf(lookup, perRunRefusalOf(lookup, refusalOfLookup(lookup, command.closureAnalysisFailed))),
+    onSome: (entry) => rememberedOf(lookup.mutant, entry),
+  })
+
+const decideAvailable = (command: IncrementalDiffCommand, lookup: VerdictLookup): IncrementalDiffDecision =>
+  Boolean.match(lookup.unavailable, {
+    onTrue: () => toRunOf(lookup, 'storeUnavailable'),
+    onFalse: () => decideFromStore(command, lookup),
+  })
+
+const decideLookup =
+  (command: IncrementalDiffCommand, flaky: HashSet.HashSet<string>) =>
+  (lookup: VerdictLookup): IncrementalDiffDecision =>
+    Boolean.match(flakyDependent(flaky, lookup.mutant), {
+      onTrue: () => toRunOf(lookup, 'flakyDependency'),
+      onFalse: () => decideAvailable(command, lookup),
+    })
+
+const forcedRun = (lookup: VerdictLookup): IncrementalDiffDecision =>
+  MutantToRun.make({ mutant: lookup.mutant, refusal: 'noPriorRecord' })
+
+const decideEach = (command: IncrementalDiffCommand): readonly IncrementalDiffDecision[] => {
   const flaky = flakyMutantIdsOf(command)
-  return Boolean.or(flaky.includes(mutant.id), Boolean.and(mutant.static === true, flaky.length > 0))
+  return command.lookups.map(
+    Boolean.match(command.force, {
+      onTrue: () => forcedRun,
+      onFalse: () => decideLookup(command, flaky),
+    }),
+  )
 }
 
-const flakyRefusedOf = (
-  mutant: Mutant.Mutant,
-  records: readonly PreviousReuseRecord[],
-): IncrementalDiffDecision =>
-  MutantToRun.make({
-    mutant,
-    refusal: 'flakyDependency',
-    ...priorTimeoutField('flakyDependency', records),
-  })
+const DOMINATOR_SETTLING_STATUSES: ReadonlyArray<Mutant.MutantStatus> = Settled.fields.status.literals
 
-const decidedPerRun = (mutant: Mutant.Mutant, records: readonly PreviousReuseRecord[]): boolean =>
-  Boolean.or(
-    mutant.subsumption !== undefined,
-    Option.exists(Arr.last(records), carriesSubsumptionReference),
+const settlingIdOf = (decision: IncrementalDiffDecision): Option.Option<Mutant.MutantId> =>
+  Option.map(
+    Option.filter(
+      Option.liftPredicate(decision, isRemembered),
+      (remembered) => Arr.contains(DOMINATOR_SETTLING_STATUSES, remembered.status),
+    ),
+    (remembered) => remembered.mutantId,
   )
 
-const toRunOf = (
-  mutant: Mutant.Mutant,
-  command: IncrementalDiffCommand,
-  records: readonly PreviousReuseRecord[],
-): IncrementalDiffDecision => {
-  const reason = refusalForMutant(command, records)
-  const refusal: ReuseRefusalReason = Boolean.match(
-    Boolean.and(reason === 'noPriorRecord', decidedPerRun(mutant, records)),
-    { onTrue: () => 'decidedPerRun', onFalse: () => reason },
-  )
-  return MutantToRun.make({ mutant, refusal, ...priorTimeoutField(refusal, records) })
-}
+const rememberedSettlingIdsOf = (decisions: readonly IncrementalDiffDecision[]): HashSet.HashSet<string> =>
+  HashSet.fromIterable(Arr.getSomes(decisions.map(settlingIdOf)))
 
-const rememberableOf = (
-  mutant: Mutant.Mutant,
-  command: IncrementalDiffCommand,
-  records: readonly PreviousReuseRecord[],
-): Option.Option<PreviousReuseRecord> =>
-  Option.filter(newestMatchingOf(records, command), () => mutant.subsumption === undefined)
-
-const decideForMutant = (
-  mutant: Mutant.Mutant,
-  command: IncrementalDiffCommand,
-  recordsById: Record.ReadonlyRecord<Mutant.MutantId, readonly PreviousReuseRecord[]>,
-): IncrementalDiffDecision => {
-  const records = Option.getOrElse(Record.get(recordsById, mutant.id), () => NO_PREVIOUS_RECORDS)
-  return Boolean.match(flakyDependent(command, mutant), {
-    onTrue: () => flakyRefusedOf(mutant, records),
-    onFalse: () =>
-      Option.match(rememberableOf(mutant, command, records), {
-        onNone: () => toRunOf(mutant, command, records),
-        onSome: (record) => rememberedOf(mutant, record),
-      }),
+const dominatorsOf = (mutant: Mutant.Mutant): readonly Mutant.MutantId[] =>
+  Option.match(Option.liftPredicate(mutant.subsumption, isSubsumed), {
+    onNone: (): readonly Mutant.MutantId[] => [],
+    onSome: (subsumed) => subsumed.dominators,
   })
-}
 
-const recordsByIdOf = (
-  records: readonly PreviousReuseRecord[],
-): Record.ReadonlyRecord<Mutant.MutantId, readonly PreviousReuseRecord[]> =>
-  Arr.groupBy(records, (record) => record.mutantId)
+const isDecidedPerRun = (decision: IncrementalDiffDecision): boolean =>
+  Option.exists(Option.liftPredicate(decision, isToRun), (toRun) => toRun.refusal === 'decidedPerRun')
 
-const forcedRun = (mutant: Mutant.Mutant) => MutantToRun.make({ mutant, refusal: 'noPriorRecord' })
+const heldIgnoredEntryOf = (command: IncrementalDiffCommand, lookup: VerdictLookup): Option.Option<VerdictEntry> =>
+  Option.filter(
+    matchingEntryOf(lookup),
+    (entry) => Boolean.and(!command.closureAnalysisFailed, entry.status === 'Ignored'),
+  )
 
-const decideChanged = (command: IncrementalDiffCommand): readonly IncrementalDiffDecision[] => {
-  const recordsById = recordsByIdOf(command.previousRecords)
-  return command.currentMutants.map((mutant) => decideForMutant(mutant, command, recordsById))
+const rememberSubsumedWhoseDominatorIsRemembered = (
+  command: IncrementalDiffCommand,
+  decisions: readonly IncrementalDiffDecision[],
+): readonly IncrementalDiffDecision[] => {
+  const settling = rememberedSettlingIdsOf(decisions)
+  return Arr.zipWith(command.lookups, decisions, (lookup, decision): IncrementalDiffDecision =>
+    Boolean.match(
+      Boolean.and(
+        isDecidedPerRun(decision),
+        dominatorsOf(lookup.mutant).some((dominator) => HashSet.has(settling, dominator)),
+      ),
+      {
+        onFalse: () => decision,
+        onTrue: () =>
+          Option.match(heldIgnoredEntryOf(command, lookup), {
+            onNone: () => decision,
+            onSome: (entry) => rememberedOf(lookup.mutant, entry),
+          }),
+      },
+    ))
 }
 
 const decide = (command: IncrementalDiffCommand): Result.Result<readonly IncrementalDiffDecision[], never> =>
-  Boolean.match(command.force, {
-    onTrue: () => Result.succeed(command.currentMutants.map(forcedRun)),
-    onFalse: () => Result.succeed(decideChanged(command)),
-  })
+  Result.succeed(rememberSubsumedWhoseDominatorIsRemembered(command, decideEach(command)))
 
 export const incrementalDiff = Workflow.make({
   command: IncrementalDiffCommand,

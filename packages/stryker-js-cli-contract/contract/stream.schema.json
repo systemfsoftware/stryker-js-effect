@@ -277,6 +277,10 @@
                     "type": "integer",
                     "minimum": 0
                   },
+                  "checkerConfigChanged": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
                   "closureChanged": {
                     "type": "integer",
                     "minimum": 0
@@ -297,6 +301,14 @@
                     "type": "integer",
                     "minimum": 0
                   },
+                  "entryUnreadable": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "storeUnavailable": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
                   "noPriorRecord": {
                     "type": "integer",
                     "minimum": 0
@@ -310,9 +322,12 @@
                   "semanticsChanged",
                   "policyChanged",
                   "runInputsChanged",
+                  "checkerConfigChanged",
                   "closureChanged",
                   "timeoutUnreproduced",
                   "flakyDependency",
+                  "entryUnreadable",
+                  "storeUnavailable",
                   "noPriorRecord"
                 ],
                 "additionalProperties": true
@@ -938,6 +953,10 @@
               "type": "integer",
               "minimum": 0
             },
+            "checkerConfigChanged": {
+              "type": "integer",
+              "minimum": 0
+            },
             "closureChanged": {
               "type": "integer",
               "minimum": 0
@@ -958,6 +977,14 @@
               "type": "integer",
               "minimum": 0
             },
+            "entryUnreadable": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "storeUnavailable": {
+              "type": "integer",
+              "minimum": 0
+            },
             "noPriorRecord": {
               "type": "integer",
               "minimum": 0
@@ -971,9 +998,12 @@
             "semanticsChanged",
             "policyChanged",
             "runInputsChanged",
+            "checkerConfigChanged",
             "closureChanged",
             "timeoutUnreproduced",
             "flakyDependency",
+            "entryUnreadable",
+            "storeUnavailable",
             "noPriorRecord"
           ],
           "additionalProperties": true

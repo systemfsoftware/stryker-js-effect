@@ -7,6 +7,22 @@ const ownNameResolvesToSourceNotDogfoodCopy = [
     find: /^@systemfsoftware\/stryker-js\/(config|events|promises)$/,
     replacement: `${new URL('./src/', import.meta.url).pathname}$1/mod.ts`,
   },
+  {
+    find: /^@systemfsoftware\/stryker-js\/verdict-store$/,
+    replacement: new URL('./src/verdict-store/mod.ts', import.meta.url).pathname,
+  },
+  {
+    find: /^@systemfsoftware\/stryker-js\/verdict-store\/laws$/,
+    replacement: new URL('./src/verdict-store/laws.ts', import.meta.url).pathname,
+  },
+  {
+    find: /^@systemfsoftware\/stryker-js\/verdict-store\/fs$/,
+    replacement: new URL('./src/verdict-store/fs-verdict-store.layer.ts', import.meta.url).pathname,
+  },
+  {
+    find: /^@systemfsoftware\/stryker-js\/verdict-store\/memory$/,
+    replacement: new URL('./src/verdict-store/memory-verdict-store.ts', import.meta.url).pathname,
+  },
 ]
 
 export default defineConfig({

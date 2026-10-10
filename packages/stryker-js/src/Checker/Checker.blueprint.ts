@@ -43,7 +43,7 @@ const nodeArgsOf = (options: Options.StrykerOptions) =>
 const serviceOf = (handle: CheckerHandle): CheckerResourceService => ({
   check: (checkerName, mutants) => check(handle, checkerName, mutants),
   group: (checkerName, mutants) => group(handle, checkerName, mutants),
-  digest: (checkerName) => digest(handle, checkerName),
+  digest: (checkerName, scope) => digest(handle, checkerName, scope),
 })
 
 const acquire = Effect.fnUntraced(function*(spec: CheckerSpec) {

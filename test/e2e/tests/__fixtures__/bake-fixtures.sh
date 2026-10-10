@@ -22,5 +22,5 @@ for dir in /baked/*/; do
   id="$(basename "$dir")"
   cd "$dir"
   install 'npm install the registry dependencies'
-  install 'npm install the workspace closure tarballs' "$@"
+  install 'npm install the workspace closure tarballs' --save-prod $(cat "/baked/$id.specs")
 done

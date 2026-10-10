@@ -16,6 +16,8 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
+import { DEFAULT_VERDICT_DIRECTORY, storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
+
 const Feature = makeFeature({ it })
 
 const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.url).pathname)
@@ -105,17 +107,6 @@ const subsumedPairsOf = (text: string): readonly string[] =>
     S.is(Mutant.Subsumed)(tested.subsumption) ? [tested.id, tested.subsumption.dominators[0]] : []
   )
 
-const decodeMergedCosts = S.decodeUnknownOption(
-  S.fromJsonString(S.Struct({ costs: S.optional(S.Record(S.String, S.Unknown)) })),
-)
-
-const mergedCostIdsOf = (text: string): readonly string[] =>
-  Option.match(decodeMergedCosts(text), {
-    onNone: () => [],
-    onSome: (decoded) =>
-      Arr.sort(Object.keys(Option.getOrElse(Option.fromUndefinedOr(decoded.costs), () => ({}))), Order.String),
-  })
-
 const planOf = (first: ReadonlyArray<string>, second: ReadonlyArray<string>): ShardPlan => ({
   version: 1,
   targetSeconds: 1,
@@ -174,7 +165,7 @@ const prepareFixture = (): Effect.Effect<
 
 interface MergeOutcome {
   readonly merged: readonly Verdict[]
-  readonly mergedCostIds: readonly string[]
+  readonly storedIds: readonly string[]
   readonly doctored: { readonly id: string; readonly exitCode: number; readonly output: string }
 }
 
@@ -189,6 +180,7 @@ const runAndMerge = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const { root, ids } = fixture
+    yield* fs.remove(path.join(root, DEFAULT_VERDICT_DIRECTORY), { recursive: true, force: true })
     const first = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '1/2', '--out', 'reports/shard-1'])
     const second = yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '2/2', '--out', 'reports/shard-2'])
     yield* Effect.when(
@@ -215,7 +207,10 @@ const runAndMerge = (
       Effect.die(new Error(`merged per-project incremental missing at ${mergedIncremental}`)),
       Effect.succeed(!hasMergedIncremental),
     )
-    const mergedCostIds = mergedCostIdsOf(yield* fs.readFileString(mergedIncremental))
+    const storedIds = Arr.sort(
+      Object.keys(yield* storedVerdictsIn({ projectRoot: root, mutantIds: ids })),
+      Order.String,
+    )
     const duplicate = ids[0] ?? 'no-id'
     const half = Math.ceil(ids.length / 2)
     const doctoredPlan = planOf(ids.slice(0, half), [duplicate, ...ids.slice(half)])
@@ -233,7 +228,7 @@ const runAndMerge = (
     ])
     return {
       merged: verdictsOfReport(mergedReport),
-      mergedCostIds,
+      storedIds,
       doctored: { id: duplicate, exitCode: doctored.exitCode, output: doctored.output },
     }
   }).pipe(Effect.orDie)
@@ -249,6 +244,12 @@ const statusMapOf = (verdicts: readonly Verdict[]): Readonly<Record<string, stri
 const ruleReasonsOf = (verdicts: readonly Verdict[]): readonly string[] =>
   Arr.sort(
     Arr.dedupe(verdicts.flatMap((verdict) => verdict.status === 'Ignored' ? [verdict.reason.split(':')[0] ?? ''] : [])),
+    Order.String,
+  )
+
+const storableIdsOf = (verdicts: readonly Verdict[]): readonly string[] =>
+  Arr.sort(
+    verdicts.filter((verdict) => !verdict.subsumption.includes('"_tag":"Readmitted"')).map((verdict) => verdict.id),
     Order.String,
   )
 
@@ -370,11 +371,13 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
       Gherkin.Do.pipe(
         Given('a fixture whose unsharded run and two-shard plan are prepared')('fixture', () => prepareFixture()),
         When('the shards run and merge, and a doctored plan is merged')('outcome', (s) => runAndMerge(s.fixture)),
-        Then('the merged statuses, reasons, subsumption references, and costs cover every mutant')(
+        Then(
+          'the merged statuses, reasons and subsumption references cover every mutant, every verdict not readmitted is stored, and the doctored merge fails naming the id',
+        )(
           (s, expect) =>
             expect({
               merged: statusMapOf(s.outcome.merged),
-              mergedCostIds: s.outcome.mergedCostIds,
+              storedIds: s.outcome.storedIds,
               mergedIgnoredRules: ruleReasonsOf(s.outcome.merged),
               subsumedInUnsharded: Object.values(statusMapOf(s.fixture.unsharded)).some((entry) =>
                 entry.includes('"_tag":"Subsumed"')
@@ -385,7 +388,7 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
               doctoredNamesId: s.outcome.doctored.output.includes(s.outcome.doctored.id),
             }).toEqual({
               merged: statusMapOf(s.fixture.unsharded),
-              mergedCostIds: s.fixture.ids,
+              storedIds: storableIdsOf(s.fixture.unsharded),
               mergedIgnoredRules: ['arid-logging', 'redundant-relational'],
               unsharded: statusMapOf(s.fixture.unsharded),
               unshardedIds: s.fixture.ids,

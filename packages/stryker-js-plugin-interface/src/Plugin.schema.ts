@@ -28,7 +28,10 @@ export type CheckerRequest = typeof CheckerRequest.Type
 export const CheckerCheckResult = S.Record(S.String, CheckAnswerSchema)
 export const CheckerGroupResult = S.String.pipe(S.Array, S.Array)
 
-export const CheckerDigestRequest = S.Struct({ checkerName: S.String })
+export const CheckerDigestRequest = S.Struct({
+  checkerName: S.String,
+  scope: S.Literals(['config', 'program']),
+})
 export type CheckerDigestRequest = typeof CheckerDigestRequest.Type
 
 export const ReporterInitOptions = S.Struct({

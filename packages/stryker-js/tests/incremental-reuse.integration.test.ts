@@ -2,19 +2,20 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TestedEntrySchema, type VerdictEntry } from '@systemfsoftware/stryker-js/verdict-store'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
-import * as Logger from 'effect/Logger'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
 import { type ReusableReport, reusableReportOf } from './__fixtures__/reusable-report.schema.js'
+import { reseedVerdicts, storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -27,6 +28,8 @@ const SOURCE = [
 ].join('\n')
 
 const LOGGING_SOURCE = "export const log = (value: number): void => console.log('value', value)\n"
+
+const RELATIONAL_SOURCE = 'export const band = (weight: number): number => (weight > 20 ? 15 : 8)\n'
 
 interface ReasonedMutant {
   readonly status: string
@@ -47,19 +50,22 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 
 interface RecordedMutant {
   readonly id: string
+  readonly fileName: string
   readonly status: string
   readonly statusReason?: string | undefined
+  readonly killedBy?: readonly string[] | undefined
   readonly remembered?: boolean | undefined
+  readonly subsumption?: Mutant.Subsumption | undefined
 }
 
-const mutantsOf = (text: string): readonly RecordedMutant[] =>
-  Option.match(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), {
-    onNone: () => [],
-    onSome: (value) => Object.values(value.files).flatMap((file) => file.mutants),
+const mutantsOf = (exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>): readonly RecordedMutant[] =>
+  Exit.match(exit, {
+    onFailure: (): readonly RecordedMutant[] => [],
+    onSuccess: (done) => done.results,
   })
 
-const mutantIdsInOf = (report: ReusableReport, file: string): readonly string[] =>
-  (report.files[file]?.mutants ?? []).map((mutant) => mutant.id)
+const mutantIdsInOf = (observation: RunObservation, file: string): readonly string[] =>
+  observation.mutants.filter((mutant) => mutant.fileName.endsWith(`/${file}`)).map((mutant) => mutant.id)
 
 const staticIdsOf = (report: ReusableReport): ReadonlySet<string> =>
   new Set(
@@ -83,6 +89,7 @@ interface RunObservation {
   readonly reuse: RunEvent.ReuseReported | undefined
   readonly verdict: RunEvent.VerdictReached | undefined
   readonly mutants: readonly RecordedMutant[]
+  readonly storedCount: number
   readonly incrementalText: string
 }
 
@@ -121,6 +128,13 @@ const removeFixture = (root: string): Effect.Effect<void, never, never> =>
     filePorts,
   )
 
+const projectEntriesOf = (root: string): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem> =>
+  Effect.orDie(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readDirectory(root, { recursive: true })))
+
+const TEMP_ENTRY = /(^|\/)\.[^/]*\.tmp$|\.json\.[A-Za-z0-9]{6}$/
+
+const isTempEntry = (entry: string): boolean => TEMP_ENTRY.test(entry)
+
 const runOnce = (root: string, options: Options.PartialStrykerOptions): Effect.Effect<RunObservation, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -145,7 +159,9 @@ const runOnce = (root: string, options: Options.PartialStrykerOptions): Effect.E
     )
     const reuse = events.find((event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event))
     const verdict = events.find((event): event is RunEvent.VerdictReached => S.is(RunEvent.VerdictReached)(event))
-    return { exit, events, reuse, verdict, mutants: mutantsOf(incrementalText), incrementalText }
+    const mutants = mutantsOf(exit)
+    const stored = yield* storedVerdictsIn({ projectRoot: root, mutantIds: mutants.map((mutant) => mutant.id) })
+    return { exit, events, reuse, verdict, mutants, storedCount: Object.keys(stored).length, incrementalText }
   }).pipe(Effect.provide(filePorts))
 
 const optionsOf = (
@@ -164,15 +180,18 @@ const optionsOf = (
   ...extras,
 })
 
-const ZERO_REFUSALS = {
+const ZERO_REFUSALS: RunEvent.ReuseRefusals = {
   semanticsChanged: 0,
   policyChanged: 0,
   runInputsChanged: 0,
+  checkerConfigChanged: 0,
   closureChanged: 0,
   closureAnalysisFailed: 0,
   programChanged: 0,
   flakyDependency: 0,
   timeoutUnreproduced: 0,
+  entryUnreadable: 0,
+  storeUnavailable: 0,
   noPriorRecord: 0,
   decidedPerRun: 0,
 }
@@ -444,63 +463,15 @@ const costedMutantsOf = (events: ReadonlyArray<RunEvent.RunEvent>): readonly Cos
 
 const ANOTHER_ENGINE = 'a-digest-no-installed-engine-has'
 
-const asWrittenByAnotherEngine = (text: string): string =>
-  Option.getOrElse(
-    Option.flatMap(
-      S.decodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))(text),
-      (report) =>
-        S.encodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))({
-          ...report,
-          engineDigest: ANOTHER_ENGINE,
-        }),
-    ),
-    () => text,
-  )
+const ANOTHER_ENGINE_STORE = 'reports/another-engine-verdicts'
 
-const STALE_CACHE_VERSION = '4'
+const asSettledByAnotherEngine = (entry: VerdictEntry): VerdictEntry =>
+  S.is(TestedEntrySchema)(entry)
+    ? { ...entry, components: { ...entry.components, engineDigest: ANOTHER_ENGINE } }
+    : { ...entry, components: { ...entry.components, engineDigest: ANOTHER_ENGINE } }
 
-const asWrittenUnderOlderLayout = (text: string): string =>
-  Option.getOrElse(
-    Option.flatMap(
-      S.decodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))(text),
-      (report) =>
-        S.encodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))({
-          ...report,
-          incrementalVersion: STALE_CACHE_VERSION,
-        }),
-    ),
-    () => text,
-  )
-
-interface LogEntry {
-  readonly level: string
-  readonly text: string
-}
-
-const capturingLogger = (logs: Array<LogEntry>): Layer.Layer<never> =>
-  Logger.layer([
-    Logger.make((entry) => {
-      logs.push({ level: entry.logLevel, text: [entry.message].flat().map(String).join(' ') })
-    }),
-  ])
-
-const killerNamesOf = (text: string, mutantIds: ReadonlySet<string>): readonly string[] =>
-  Option.getOrElse(
-    Option.map(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), (report) => {
-      const testFiles = report.testFiles ?? {}
-      const runnerIdByPosition = Object.fromEntries(
-        Object.entries(testFiles).flatMap(([file, entry]) =>
-          entry.tests.map((test) => [test.id, `${file}#${test.name}`] as const)
-        ),
-      )
-      return Object.values(report.files)
-        .flatMap((file) => file.mutants)
-        .filter((mutant) => mutantIds.has(mutant.id))
-        .flatMap((mutant) => [...(mutant.killedBy ?? [])])
-        .map((id) => runnerIdByPosition[id] ?? id)
-    }),
-    (): readonly string[] => [],
-  )
+const killerNamesOf = (mutants: readonly RecordedMutant[], mutantIds: ReadonlySet<string>): readonly string[] =>
+  mutants.filter((mutant) => mutantIds.has(mutant.id)).flatMap((mutant) => [...(mutant.killedBy ?? [])])
 
 const statusesOf = (mutants: readonly RecordedMutant[]): readonly string[] =>
   [...mutants].sort((left, right) => left.id.localeCompare(right.id)).map((mutant) => `${mutant.id}:${mutant.status}`)
@@ -530,7 +501,6 @@ interface ReuseVariation {
 }
 
 const NEW_TEST_MEASURED = {
-  newTestDiscovered: true,
   newTestCovered: true,
   dryRunDigestMoved: true,
   flippedToKilled: true,
@@ -544,7 +514,6 @@ const newTestOutcomeOf = (variation: ReuseVariation) => {
   const firstStatuses = statusMapOf(variation.first.mutants)
   const secondStatuses = statusMapOf(variation.second.mutants)
   return {
-    newTestDiscovered: reportKeysOf(report?.testFiles).includes('test/second.test.mjs'),
     newTestCovered: coverageFiles.includes('test/second.test.mjs'),
     dryRunDigestMoved: firstReport?.dryRunCoverage?.testClosureDigest !== undefined &&
       firstReport.dryRunCoverage.testClosureDigest !== report?.dryRunCoverage?.testClosureDigest,
@@ -593,17 +562,66 @@ Feature('Content-keyed reuse across incremental reports')
             },
             statusesStable: statusesOf(s.fixture.first.mutants).join(',') ===
               statusesOf(s.fixture.second.mutants).join(','),
-            everyMutantCarriesAClosureDigest: s.fixture.first.incrementalText.split('"closureDigest"').length - 1 ===
-              planned,
+            everyMutantIsStored: s.fixture.first.storedCount === planned,
           }).toEqual({
             runSucceeded: true,
             plannedNonZero: true,
             first: { reused: 0, ran: planned, refused: { ...ZERO_REFUSALS, noPriorRecord: planned } },
             second: { reused: planned, ran: 0, refused: ZERO_REFUSALS },
             statusesStable: true,
-            everyMutantCarriesAClosureDigest: true,
+            everyMutantIsStored: true,
           })
         }),
+      ),
+    )
+
+    scenario(
+      "An unchanged re-run reuses a subsumed mutant's Ignored verdict and keeps its subsumption reference",
+      Gherkin.Do.pipe(
+        Given('a workspace whose relational site yields a subsumed complement, run twice without change')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writeFixture([['src/band.ts', RELATIONAL_SOURCE]])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = optionsOf(root)
+                  const first = yield* runOnce(root, options)
+                  const second = yield* runOnce(root, options)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the second run reuses every verdict, the subsumed one included, with the same reference')(
+          (s, expect) => {
+            const planned = s.fixture.first.mutants.length
+            const subsumedOf = (mutants: readonly RecordedMutant[]) =>
+              mutants
+                .filter((mutant) => mutant.subsumption !== undefined)
+                .map((mutant) => `${mutant.id}:${mutant.status}:${JSON.stringify(mutant.subsumption)}`)
+                .sort()
+            const subsumed = subsumedOf(s.fixture.first.mutants)
+            return expect({
+              runSucceeded: Exit.isSuccess(s.fixture.second.exit),
+              subsumedNonZero: subsumed.length > 0,
+              everyMutantIsStored: s.fixture.first.storedCount === planned,
+              second: {
+                reused: s.fixture.second.reuse?.reused,
+                ran: s.fixture.second.reuse?.ran,
+                refused: s.fixture.second.reuse?.refused,
+              },
+              secondSubsumed: subsumedOf(s.fixture.second.mutants),
+            }).toEqual({
+              runSucceeded: true,
+              subsumedNonZero: true,
+              everyMutantIsStored: true,
+              second: { reused: planned, ran: 0, refused: ZERO_REFUSALS },
+              secondSubsumed: subsumed,
+            })
+          },
+        ),
       ),
     )
 
@@ -640,15 +658,19 @@ Feature('Content-keyed reuse across incremental reports')
               secondRecord: ignoredReasonsOf(s.fixture.second.mutants),
               secondStream: ignoredReasonsOf(secondLines),
               firstRemembered: s.fixture.first.mutants.filter((mutant) => mutant.remembered === true).length,
-              secondRemembered: s.fixture.second.mutants.filter((mutant) => mutant.remembered === true).length,
-              everyLineMarked: s.fixture.second.mutants.every((mutant) => typeof mutant.remembered === 'boolean'),
+              secondIgnoredRemembered: s.fixture.second.mutants.filter((mutant) =>
+                mutant.status === 'Ignored' && mutant.remembered === true
+              ).length,
+              secondRan: s.fixture.second.reuse?.ran,
+              secondRefused: s.fixture.second.reuse?.refused,
             }).toEqual({
               firstRuleNamed: true,
               secondRecord: firstReasons,
               secondStream: firstReasons,
               firstRemembered: 0,
-              secondRemembered: s.fixture.second.reuse?.reused,
-              everyLineMarked: true,
+              secondIgnoredRemembered: firstReasons.length,
+              secondRan: 0,
+              secondRefused: ZERO_REFUSALS,
             })
           },
         ),
@@ -667,18 +689,20 @@ Feature('Content-keyed reuse across incremental reports')
                 Effect.gen(function*() {
                   const options = optionsOf(root, { ignorePatterns: [] })
                   const first = yield* runOnce(root, options)
+                  const projectAfterFirst = yield* projectEntriesOf(root)
                   const second = yield* runOnce(root, options)
-                  return { first, second }
+                  return { first, projectAfterFirst, second }
                 }),
                 removeFixture(root),
               )
             }).pipe(Effect.provide(filePorts)),
         ),
-        Then('the second run reuses every verdict although the first run wrote reports into the project')(
+        Then('the first run leaves no temp entry behind, and the second run reuses every verdict')(
           (s, expect) => {
             const planned = s.fixture.first.mutants.length
             return expect({
               runSucceeded: Exit.isSuccess(s.fixture.second.exit),
+              leftTempEntries: s.fixture.projectAfterFirst.filter(isTempEntry),
               plannedNonZero: planned > 0,
               second: {
                 reused: s.fixture.second.reuse?.reused,
@@ -687,6 +711,7 @@ Feature('Content-keyed reuse across incremental reports')
               },
             }).toEqual({
               runSucceeded: true,
+              leftTempEntries: [],
               plannedNonZero: true,
               second: { reused: planned, ran: 0, refused: ZERO_REFUSALS },
             })
@@ -749,7 +774,7 @@ Feature('Content-keyed reuse across incremental reports')
     )
 
     scenario(
-      'A dry-run-only preflight publishes its coverage, and a run reading it through incrementalSources skips its own dry run',
+      'A dry-run-only preflight publishes its coverage, and a later run on that incremental file skips its own dry run',
       Gherkin.Do.pipe(
         Given('a workspace whose command runner appends every spawn to a log file')(
           'fixture',
@@ -763,7 +788,11 @@ Feature('Content-keyed reuse across incremental reports')
                 Effect.gen(function*() {
                   const cold = yield* runOnce(
                     root,
-                    optionsOf(root, { commandRunner, incrementalFile: `${root}/reports/cold.json` }),
+                    optionsOf(root, {
+                      commandRunner,
+                      incrementalFile: `${root}/reports/cold.json`,
+                      verdictStore: { kind: 'fs', directory: 'reports/cold-verdicts' },
+                    }),
                   )
                   const spawnsInColdRun = yield* lineCountOf(spawnLog)
                   yield* runOnce(
@@ -777,7 +806,7 @@ Feature('Content-keyed reuse across incremental reports')
                   const spawnsAfterPreflight = yield* lineCountOf(spawnLog)
                   const preflighted = yield* runOnce(
                     root,
-                    optionsOf(root, { commandRunner, incrementalSources: ['reports/preflight.json'] }),
+                    optionsOf(root, { commandRunner, incrementalFile: `${root}/reports/preflight.json` }),
                   )
                   const spawnsAfterPreflighted = yield* lineCountOf(spawnLog)
                   return {
@@ -849,101 +878,6 @@ Feature('Content-keyed reuse across incremental reports')
     )
 
     scenario(
-      'A verdict written under another report path is reused through the incrementalSources globs',
-      Gherkin.Do.pipe(
-        Given('a workspace whose incremental report has been relocated to a shard path')(
-          'fixture',
-          () =>
-            Effect.gen(function*() {
-              const fs = yield* FileSystem.FileSystem
-              const path = yield* Path.Path
-              const root = yield* writeFixture([['src/math.ts', SOURCE]])
-              return yield* Effect.ensuring(
-                Effect.gen(function*() {
-                  const options = optionsOf(root, { incrementalSources: ['reports/shard-*.json'] })
-                  const first = yield* runOnce(root, options)
-                  yield* fs.rename(
-                    path.join(root, 'reports', 'main.json'),
-                    path.join(root, 'reports', 'shard-1.json'),
-                  )
-                  const second = yield* runOnce(root, options)
-                  return { first, second }
-                }),
-                removeFixture(root),
-              )
-            }).pipe(Effect.orDie, Effect.provide(filePorts)),
-        ),
-        Then('the second run reuses the relocated shard report instead of running the mutants again')((s, expect) =>
-          expect({
-            second: {
-              reused: s.fixture.second.reuse?.reused,
-              ran: s.fixture.second.reuse?.ran,
-              refused: s.fixture.second.reuse?.refused,
-            },
-            relocatedReportReused: (s.fixture.second.reuse?.reused ?? 0) > 0,
-            firstRanEverything: s.fixture.first.reuse?.reused === 0,
-          }).toEqual({
-            second: { reused: s.fixture.second.mutants.length, ran: 0, refused: ZERO_REFUSALS },
-            relocatedReportReused: true,
-            firstRanEverything: true,
-          })
-        ),
-      ),
-    )
-
-    scenario(
-      'An incrementalSources record written under an older cache layout is reported as discarded and re-runs its mutants',
-      Gherkin.Do.pipe(
-        Given('a workspace whose relocated shard report predates the current cache layout')(
-          'fixture',
-          () =>
-            Effect.gen(function*() {
-              const fs = yield* FileSystem.FileSystem
-              const path = yield* Path.Path
-              const root = yield* writeFixture([['src/math.ts', SOURCE]])
-              return yield* Effect.ensuring(
-                Effect.gen(function*() {
-                  const options = optionsOf(root, { incrementalSources: ['reports/shard-*.json'] })
-                  const first = yield* runOnce(root, options)
-                  const mainPath = path.join(root, 'reports', 'main.json')
-                  const shardPath = path.join(root, 'reports', 'shard-old.json')
-                  yield* fs.writeFileString(shardPath, asWrittenUnderOlderLayout(yield* fs.readFileString(mainPath)))
-                  yield* fs.remove(mainPath, { force: true })
-                  const logs: Array<LogEntry> = []
-                  const second = yield* runOnce(root, options).pipe(Effect.provide(capturingLogger(logs)))
-                  return { first, second, logs }
-                }),
-                removeFixture(root),
-              )
-            }).pipe(Effect.orDie, Effect.provide(filePorts)),
-        ),
-        Then('the second run reports the stale shard as discarded with its cache layout reason and runs its mutants')(
-          (s, expect) => {
-            const discardLines = s.fixture.logs
-              .map((entry) => entry.text)
-              .filter((text) => text.includes('shard-old.json'))
-            return expect({
-              runSucceeded: Exit.isSuccess(s.fixture.second.exit),
-              firstRanEverything: s.fixture.first.reuse?.reused === 0,
-              second: {
-                reused: s.fixture.second.reuse?.reused,
-                ran: s.fixture.second.reuse?.ran,
-              },
-              discardLineCount: discardLines.length,
-              namesTheReason: discardLines.some((text) => text.includes('has cache layout version 4, expected 5')),
-            }).toEqual({
-              runSucceeded: true,
-              firstRanEverything: true,
-              second: { reused: 0, ran: s.fixture.second.mutants.length },
-              discardLineCount: 1,
-              namesTheReason: true,
-            })
-          },
-        ),
-      ),
-    )
-
-    scenario(
       'A whole-suite mutant is refused when a project file outside its covering set changes',
       Gherkin.Do.pipe(
         Given('a workspace whose mutants run the whole suite and a type-only project file changes in place')(
@@ -1009,13 +943,14 @@ Feature('Content-keyed reuse across incremental reports')
               ])
               return yield* Effect.ensuring(
                 Effect.gen(function*() {
-                  const options = vmOptionsOf(root)
-                  const incrementalFile = path.join(root, 'reports', 'main.json')
-                  const first = yield* runOnce(root, options)
-                  yield* fs.writeFileString(
-                    incrementalFile,
-                    asWrittenByAnotherEngine(yield* fs.readFileString(incrementalFile)),
-                  )
+                  const first = yield* runOnce(root, vmOptionsOf(root))
+                  yield* reseedVerdicts({
+                    mutantIds: first.mutants.map((mutant) => mutant.id),
+                    from: { projectRoot: root },
+                    to: { projectRoot: root, directory: ANOTHER_ENGINE_STORE },
+                    rewrite: asSettledByAnotherEngine,
+                  })
+                  const options = vmOptionsOf(root, { verdictStore: { kind: 'fs', directory: ANOTHER_ENGINE_STORE } })
                   const second = yield* runOnce(root, options)
                   yield* fs.writeFileString(path.join(root, 'test', 'aaa-other.test.mjs'), VM_OTHER_TEST)
                   const third = yield* runOnce(root, options)
@@ -1043,7 +978,7 @@ Feature('Content-keyed reuse across incremental reports')
           )
           const statusesOfKilled = (mutants: readonly RecordedMutant[]) =>
             statusesOf(mutants.filter((mutant) => killedIds.has(mutant.id)))
-          const killerNames = killerNamesOf(s.fixture.third.incrementalText, killedIds)
+          const killerNames = killerNamesOf(s.fixture.third.mutants, killedIds)
           return expect({
             runSucceeded: Exit.isSuccess(s.fixture.second.exit),
             thirdRunSucceeded: Exit.isSuccess(s.fixture.third.exit),
@@ -1112,15 +1047,13 @@ Feature('Content-keyed reuse across incremental reports')
         ),
         Then('only mutants whose covering tests reach the changed helper are refused')((s, expect) => {
           const firstReport = reusableReportOf(s.fixture.first.incrementalText)
-          const secondReport = reusableReportOf(s.fixture.second.incrementalText)
-          const secondMutants = secondReport === undefined
-            ? []
-            : Object.values(secondReport.files).flatMap((file) => file.mutants)
+          const secondMutants = s.fixture.second.mutants
           const firstById = new Map(s.fixture.first.mutants.map((mutant) => [mutant.id, mutant.status]))
           const secondById = new Map(secondMutants.map((mutant) => [mutant.id, mutant.status]))
-          const mutantIds = firstReport === undefined
-            ? []
-            : [...mutantIdsInOf(firstReport, 'src/left.mjs'), ...mutantIdsInOf(firstReport, 'src/right.mjs')]
+          const mutantIds = [
+            ...mutantIdsInOf(s.fixture.first, 'src/left.mjs'),
+            ...mutantIdsInOf(s.fixture.first, 'src/right.mjs'),
+          ]
           const staticIds = firstReport === undefined ? new Set<string>() : staticIdsOf(firstReport)
           const changed = (mutantId: string): boolean =>
             firstReport !== undefined &&
@@ -1273,9 +1206,7 @@ Feature('Content-keyed reuse across incremental reports')
           (s, expect) => {
             const firstReport = reusableReportOf(s.fixture.first.incrementalText)
             const staticIds = firstReport === undefined ? new Set<string>() : staticIdsOf(firstReport)
-            const leftStaticIds = firstReport === undefined
-              ? []
-              : mutantIdsInOf(firstReport, 'src/left.mjs').filter((id) => staticIds.has(id))
+            const leftStaticIds = mutantIdsInOf(s.fixture.first, 'src/left.mjs').filter((id) => staticIds.has(id))
             const reusedIdsOf = (observation: RunObservation): ReadonlySet<string> =>
               new Set(
                 observation.mutants
@@ -1348,9 +1279,7 @@ Feature('Content-keyed reuse across incremental reports')
           (s, expect) => {
             const firstReport = reusableReportOf(s.fixture.first.incrementalText)
             const staticIds = firstReport === undefined ? new Set<string>() : staticIdsOf(firstReport)
-            const leftStaticIds = firstReport === undefined
-              ? []
-              : mutantIdsInOf(firstReport, 'src/left.mjs').filter((id) => staticIds.has(id))
+            const leftStaticIds = mutantIdsInOf(s.fixture.first, 'src/left.mjs').filter((id) => staticIds.has(id))
             const reusedIdsOf = (observation: RunObservation): ReadonlySet<string> =>
               new Set(
                 observation.mutants
@@ -1416,8 +1345,7 @@ Feature('Content-keyed reuse across incremental reports')
       }).pipe(Effect.orDie, Effect.provide(filePorts))
 
     const leftMutantVerdictOf = (variation: ReuseVariation) => {
-      const firstReport = reusableReportOf(variation.first.incrementalText)
-      const leftIds = firstReport === undefined ? [] : mutantIdsInOf(firstReport, 'src/left.mjs')
+      const leftIds = mutantIdsInOf(variation.first, 'src/left.mjs')
       const reusedIds = new Set(
         variation.second.mutants
           .filter((mutant) => mutant.remembered === true)

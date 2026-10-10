@@ -14,9 +14,12 @@ const answerOf = (mutant) =>
     ? { status: 'compileError', reason: REJECTION_REASON }
     : { status: 'passed' }
 
+const PROGRAM_DIGEST = '0123456789abcdef'.repeat(4)
+const CONFIG_DIGEST = 'fedcba9876543210'.repeat(4)
+
 const handlers = Plugin.CheckerRpcs.toLayer({
   group: ({ mutants }) => Effect.succeed([mutants.map((mutant) => mutant.id)]),
-  digest: () => Effect.succeed('0123456789abcdef'.repeat(4)),
+  digest: ({ scope }) => Effect.succeed(scope === 'config' ? CONFIG_DIGEST : PROGRAM_DIGEST),
   check: ({ mutants }) =>
     Effect.succeed(
       Object.fromEntries(mutants.map((mutant) => [mutant.id, answerOf(mutant)])),

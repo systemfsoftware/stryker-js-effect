@@ -127,6 +127,19 @@ const killerOf = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): re
     (): readonly TestRunner.TestId[] => [],
   )
 
+const untestedOf = (mutant: Mutant.Mutant, id: Mutant.MutantId): Mutant.Mutant =>
+  Mutant.Mutant.make({
+    ...mutant,
+    id,
+    status: undefined,
+    statusReason: undefined,
+    subsumption: Option.getOrUndefined(
+      Option.filter(
+        Option.fromUndefinedOr(mutant.subsumption),
+        (subsumption) => Mutant.subsumptionMatchesStatus(subsumption, undefined),
+      ),
+    ),
+  })
 const orderedCommandArb = Arbitrary.all([
   Arbitrary.schema(Mutant.Mutant),
   Arbitrary.array(Arbitrary.schema(TestRunner.TestId), { maxLength: 3 }),
@@ -141,7 +154,7 @@ const orderedCommandArb = Arbitrary.all([
     const killer = hasKiller && tests.length > 0 ? tests[killerPick % tests.length] : undefined
     return MutantTestPlanCommand.make({
       _tag: 'MutantTestPlanCommand',
-      mutants: [Mutant.Mutant.make({ ...baseMutant, id: mutantId, status: undefined, statusReason: undefined })],
+      mutants: [untestedOf(baseMutant, mutantId)],
       timeOverheadMS: 1,
       timeSpentAllTests: 1,
       hitsByMutantId: { [mutantId]: 1 },
@@ -166,7 +179,7 @@ const staticKillerCommandArb = Arbitrary.all([
     const killers = known.filter((_, index) => killerFlags[index] === true)
     return MutantTestPlanCommand.make({
       _tag: 'MutantTestPlanCommand',
-      mutants: [Mutant.Mutant.make({ ...baseMutant, id: mutantId, status: undefined, statusReason: undefined })],
+      mutants: [untestedOf(baseMutant, mutantId)],
       timeOverheadMS: 1,
       timeSpentAllTests: 1,
       hitsByMutantId: { [mutantId]: 1 },

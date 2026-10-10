@@ -203,7 +203,7 @@ STRYKER_MODE=machine pnpm exec stryker run  # the same, named by environment
 
 `reporters` defaults to `['clear-text', 'progress', 'html']`. Add `sarif` to also write `reports/mutation/mutation.sarif` (SARIF 2.1.0, named from `jsonReporter.fileName`): each survivor is a `warning` result, each no-coverage mutant a `note`, the fingerprint is the mutant's content id, and the log is capped at 5,000 results. Every run writes `reports/mutation/reproducers.json`: one entry per mutant in the report, holding its mutated-lines diff and the `stryker run --mutant <id>` command that reproduces it.
 
-Incremental reuse is on by default: an unchanged mutant whose covering tests are unchanged is re-used and the verdict records its `incrementalMode` (`incremental` or `full`). Pass `--full` to re-verify every mutant, ignoring the cache and the persisted dry run. The incremental cache is keyed by content: a mutant's id, the import-closure digest of its covering tests, the run inputs, a digest of the engine's installed files, and the mutant-set policy; a verdict written by another build of the engine is refused as `semanticsChanged`. Nothing in the key names a shard, branch, report path, or machine, so verdicts from different runs union and are reused wherever their inputs match. `incrementalSources` accepts globs of further incremental reports to union beside `incrementalFile`, which is how a sharded CI workspace reuses the reports it restored from other shards. Each run's stream carries a `reuse` line with the reused, ran, and per-reason refused counts, and an unchanged project reuses its persisted initial test run instead of repeating it.
+Incremental reuse is on by default: an unchanged mutant whose covering tests are unchanged is re-used and the verdict records its `incrementalMode` (`incremental` or `full`). Pass `--full` to re-verify every mutant, ignoring the store and the persisted dry run. Each verdict is stored as its own entry in the verdict store (`verdictStore`, default `{ kind: 'fs', directory: 'reports/stryker-verdicts' }`; `{ kind: 's3', … }` with `@systemfsoftware/stryker-js-verdict-store-s3`), named by a digest of a mutant's id, the import-closure digest and ids of its covering tests, the run inputs, the checker configuration, a digest of the engine's installed files, and the mutant-set policy; a verdict written by another build of the engine is refused as `semanticsChanged`. Nothing in the key names a shard, branch, report path, or machine, so parallel shards, later runs and other pull requests that share a store reuse each other's verdicts. A torn entry left by a killed writer is skipped and counted as `entryUnreadable`, and anyone who can write the store can forge verdicts in it. Each run's stream carries a `reuse` line with the reused, ran, and per-reason refused counts, and an unchanged project reuses its persisted initial test run instead of repeating it.
 
 `mutator.mutantSetPolicy` defaults to `'default'`, which suppresses the mutants a rule proves redundant — a replacement equal to the original code, a duplicate already planted at the site, or the complement of a kept ordering mutant (`redundant-relational`: for `a < b`, `a >= b` is dropped beside `a <= b`, because every test that kills `a <= b` also kills it) — and records the rule id in the mutant's report entry. A dropped complement carries a `subsumption` reference naming its dominator; when no dominator runs (the checker ignores it, it fails to compile, or it is remembered without running) the complement runs after all and its reference becomes `Readmitted`, naming each cause. Set `mutator: { mutantSetPolicy: 'full' }` to keep every variant. `surfacing` (`{ perLine: 1, perFile: 7 }`) caps how many survivors reach the review surfaces and SARIF, without changing what the engine computes.
 
@@ -245,11 +245,16 @@ console.log(`Mutation score: ${verdict.score}%`)
 
 ## Published Subpaths
 
-| Subpath      | Description                                                               |
-| ------------ | ------------------------------------------------------------------------- |
-| `.`          | Main entry point: `strykerCell`, runtime layers, and error schemas        |
-| `./config`   | Config authoring surface (`defineConfig`, `mergeConfig`, `StrykerConfig`) |
-| `./promises` | `run()` wrapper returning standard JavaScript promises                    |
+| Subpath                  | Description                                                                             |
+| ------------------------ | --------------------------------------------------------------------------------------- |
+| `.`                      | Main entry point: `strykerCell`, runtime layers, and error schemas                      |
+| `./config`               | Config authoring surface (`defineConfig`, `mergeConfig`, `StrykerConfig`)               |
+| `./events`               | The run's error classes (`PrepareError`, `StageError`)                                  |
+| `./promises`             | `run()` wrapper returning standard JavaScript promises                                  |
+| `./verdict-store`        | The `VerdictStore` port, verdict key derivation (`encodeVerdictKey`), and entry schemas |
+| `./verdict-store/fs`     | Filesystem verdict store layer                                                          |
+| `./verdict-store/memory` | In-memory verdict store layer                                                           |
+| `./verdict-store/laws`   | The law suite every verdict store driver must pass                                      |
 
 ## License
 

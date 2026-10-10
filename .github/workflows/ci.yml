@@ -315,6 +315,8 @@ jobs:
             files: tests/enterprise-monorepo-sabotage.e2e.test.ts
           - shard: svelte-composite
             files: tests/svelte-app.e2e.test.ts tests/enterprise-composite-checker.e2e.test.ts
+          - shard: verdict-store
+            files: tests/verdict-store-reuse.e2e.test.ts tests/verdict-store-concurrency.e2e.test.ts
           - shard: rest-1
             files: --shard=1/2
           - shard: rest-2
@@ -355,7 +357,7 @@ jobs:
       - name: E2E lane
         run: >-
           timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e -- ${{ matrix.files }}
-          ${{ startsWith(matrix.shard, 'rest') && '--exclude=tests/enterprise-mutation-lifecycle.e2e.test.ts --exclude=tests/enterprise-monorepo-sabotage.e2e.test.ts --exclude=tests/svelte-app.e2e.test.ts --exclude=tests/enterprise-composite-checker.e2e.test.ts' || '' }}
+          ${{ startsWith(matrix.shard, 'rest') && '--exclude=tests/enterprise-mutation-lifecycle.e2e.test.ts --exclude=tests/enterprise-monorepo-sabotage.e2e.test.ts --exclude=tests/svelte-app.e2e.test.ts --exclude=tests/enterprise-composite-checker.e2e.test.ts --exclude=tests/verdict-store-reuse.e2e.test.ts --exclude=tests/verdict-store-concurrency.e2e.test.ts' || '' }}
       - name: Export telemetry
         if: always()
         run: ./test/e2e/scripts/export-traces.ts

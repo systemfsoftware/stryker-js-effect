@@ -13,6 +13,7 @@ export class InstallClosureCommand extends S.TaggedClass<InstallClosureCommand>(
   members: S.Array(PackedMember),
   fixtures: S.Array(StagedFixtureManifest),
   workspace: S.Array(S.String),
+  onRequest: S.Array(S.String),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -20,8 +21,10 @@ export class InstallClosureCommand extends S.TaggedClass<InstallClosureCommand>(
 const ClosureInstallTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/ClosureInstall')
 type ClosureInstallTypeId = typeof ClosureInstallTypeId
 
+const FixtureInstall = S.Struct({ fixture: S.String, specs: S.Array(S.String) })
+
 export class ClosureInstall extends S.TaggedClass<ClosureInstall>()('ClosureInstall', {
-  specs: S.Array(S.String),
+  fixtures: S.Array(FixtureInstall),
 }) {
   readonly [ClosureInstallTypeId] = ClosureInstallTypeId
 }
@@ -35,7 +38,7 @@ export class UnpackedWorkspaceDependency extends S.TaggedError<UnpackedWorkspace
   },
 ) {
   override get message(): string {
-    return `${this.dependent} depends on the workspace package ${this.target} as "${this.dependency}", but the packed closure carries no tarball for it, so npm would resolve it from the registry`
+    return `${this.dependent} depends on the workspace package ${this.target} as "${this.dependency}", but the packed closure carries no tarball for it, so npm would resolve it from the registry or leave it out`
   }
 }
 
@@ -59,7 +62,7 @@ export class FixtureNamesWorkspacePackage extends S.TaggedError<FixtureNamesWork
   },
 ) {
   override get message(): string {
-    return `${this.fixture} depends on the workspace package ${this.target} as "${this.dependency}", but the fixture's own npm install resolves it from the registry; the bake installs the packed closure into every fixture, so drop the edge`
+    return `${this.fixture} depends on the workspace package ${this.target} as "${this.dependency}", but the fixture's own npm install resolves it from the registry; drop the edge, or declare an on-request package an optional peer to install it from the closure`
   }
 }
 
@@ -123,6 +126,12 @@ const fixtureEdgesOf = (fixture: StagedFixtureManifest): ReadonlyArray<ClosureEd
     installedPeers(fixture.manifest),
     specsOf(fixture.manifest.optionalDependencies),
   ])
+
+const optionalPeersOf = (manifest: PeerEdges): EdgeSpecs =>
+  Rec.filter(specsOf(manifest.peerDependencies), (_, dependency) => optionalPeer(manifest, dependency))
+
+const requestEdgesOf = (fixture: StagedFixtureManifest): ReadonlyArray<ClosureEdge> =>
+  edgesIn(fixture.path, [optionalPeersOf(fixture.manifest)])
 
 const tarballOf = (command: InstallClosureCommand, name: string): Option.Option<string> =>
   Option.map(
@@ -189,22 +198,68 @@ const conflictRefusal = (
 const aliasSpecOf = (command: InstallClosureCommand, edge: ClosureEdge): ReadonlyArray<string> =>
   Option.toArray(Option.map(tarballOf(command, edge.target), (path) => `${edge.dependency}@file:${path}`))
 
-const installOf = (command: InstallClosureCommand, aliases: ReadonlyArray<ClosureEdge>): ClosureInstall =>
-  ClosureInstall.make({
-    specs: [
-      ...command.members.map((member) => member.tarballPath),
-      ...Arr.dedupe(aliases.flatMap((edge) => aliasSpecOf(command, edge))).sort(),
-    ],
+const onRequest = (command: InstallClosureCommand, name: string): boolean => command.onRequest.includes(name)
+
+const membersNamed = (command: InstallClosureCommand, names: ReadonlyArray<string>): ReadonlyArray<PackedMember> =>
+  command.members.filter((member) => names.includes(member.manifest.name))
+
+const withReachedOnRequest = (command: InstallClosureCommand, names: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const reached = Arr.dedupe([
+    ...names,
+    ...membersNamed(command, names)
+      .flatMap((member) => memberEdgesOf(member.manifest))
+      .map((edge) => edge.target)
+      .filter((target) => onRequest(command, target)),
+  ])
+  return Boolean.match(reached.length === names.length, {
+    onTrue: () => names,
+    onFalse: () => withReachedOnRequest(command, reached),
   })
+}
+
+const sharedNamesOf = (command: InstallClosureCommand): ReadonlyArray<string> =>
+  withReachedOnRequest(
+    command,
+    command.members.map((member) => member.manifest.name).filter((name) => Boolean.not(onRequest(command, name))),
+  )
+
+const requestedNamesOf = (command: InstallClosureCommand, fixture: string): ReadonlyArray<string> =>
+  command.fixtures
+    .filter((manifest) => manifest.fixture === fixture)
+    .flatMap(requestEdgesOf)
+    .map((edge) => edge.target)
+    .filter((target) => onRequest(command, target))
+
+const installOf = (command: InstallClosureCommand, names: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const members = membersNamed(command, names)
+  const aliases = members.flatMap((member) => memberEdgesOf(member.manifest)).filter(isAlias)
+  return [
+    ...members.map((member) => member.tarballPath),
+    ...Arr.dedupe(aliases.flatMap((edge) => aliasSpecOf(command, edge))).sort(),
+  ]
+}
+
+const closureInstallOf = (command: InstallClosureCommand): ClosureInstall => {
+  const shared = sharedNamesOf(command)
+  return ClosureInstall.make({
+    fixtures: Arr.dedupe(command.fixtures.map((manifest) => manifest.fixture)).map((fixture) => ({
+      fixture,
+      specs: installOf(
+        command,
+        withReachedOnRequest(command, Arr.dedupe([...shared, ...requestedNamesOf(command, fixture)])),
+      ),
+    })),
+  })
+}
 
 const decide = (command: InstallClosureCommand): Result.Result<ClosureInstall, InstallClosureFailure> => {
   const edges = command.members.flatMap((member) => memberEdgesOf(member.manifest))
-  const aliases = edges.filter(isAlias)
+  const requests = command.fixtures.flatMap(requestEdgesOf)
   return pipe(
     fixtureRefusal(command),
-    Result.flatMap((): Result.Result<void, InstallClosureFailure> => unpackedRefusal(command, edges)),
-    Result.flatMap((): Result.Result<void, InstallClosureFailure> => conflictRefusal(command, aliases)),
-    Result.map(() => installOf(command, aliases)),
+    Result.flatMap((): Result.Result<void, InstallClosureFailure> => unpackedRefusal(command, [...edges, ...requests])),
+    Result.flatMap((): Result.Result<void, InstallClosureFailure> => conflictRefusal(command, edges.filter(isAlias))),
+    Result.map(() => closureInstallOf(command)),
   )
 }
 

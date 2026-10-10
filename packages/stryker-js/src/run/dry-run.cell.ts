@@ -578,7 +578,7 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
   const idGenerator = yield* IdGenerator
   const env = yield* RunEnvironment
 
-  const { candidates, prior, decision, currentTestClosureDigest, runInputsDigest } = yield* dryRunChoiceOf(
+  const { prior, decision, currentTestClosureDigest, runInputsDigest } = yield* dryRunChoiceOf(
     command,
     env.basePath,
   )
@@ -607,7 +607,6 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
                 () => '(no prior coverage)',
               )
             }`,
-            `  prior coverage records:   ${candidates.length}`,
             `  current run-inputs digest: ${runInputsDigest}`,
           ].join('\n'),
         ),

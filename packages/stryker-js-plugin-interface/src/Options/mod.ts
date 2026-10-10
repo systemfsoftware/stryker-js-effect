@@ -7,6 +7,8 @@ export {
   CommandRunnerOptionsSchema,
   CoverageAnalysisMode,
   type DeepOptional,
+  type FsVerdictStoreOptions,
+  FsVerdictStoreOptionsSchema,
   isCustomTestRunner,
   LogLevel,
   MutantSetPolicy,
@@ -15,6 +17,8 @@ export {
   PackageManager,
   PluginFileUrl,
   ReportType,
+  type S3VerdictStoreOptions,
+  S3VerdictStoreOptionsSchema,
   StrykerCoverageAnalysis,
   StrykerFileLogLevel,
   StrykerLogLevel,
@@ -24,6 +28,8 @@ export {
   TestRunnerConfigSchema,
   type TestRunnerCustomConfig,
   TestRunnerCustomConfigSchema,
+  type VerdictStoreOptions,
+  VerdictStoreOptionsSchema,
 } from '../stryker-options.schema.js'
 export type {
   CoverageAnalysisMode as CoverageAnalysisModeType,

@@ -16,7 +16,6 @@ import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import { dual } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
@@ -29,23 +28,13 @@ import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
+import * as SynchronizedRef from 'effect/SynchronizedRef'
 
 import { writeFileAtomic } from './atomic-write.cell.js'
 import { budgetOf } from './budget.js'
 import { buildReproducers, BuildReproducersCommand } from './build-reproducers.workflow.js'
-import {
-  type CheckpointMutantRow,
-  checkpointMutants,
-  CheckpointMutantsCommand,
-  CheckpointSettledMutant,
-} from './checkpoint-mutants.workflow.js'
 import { classifyExit, ClassifyExitCommand } from './classify-exit.workflow.js'
 import type { DryRunCoverage } from './dry-run-coverage.schema.js'
-import type { FormatIdentity, TimeoutEvidence, TimeoutKind } from './IncrementalDiff.schema.js'
-import { TimeoutEvidenceSchema } from './IncrementalDiff.schema.js'
-import { mutantCostsOf } from './mutant-cost-model.js'
-import { costTotalMsOf } from './mutant-cost.js'
-import type { MutantCost, MutantCostModel } from './MutantCost.schema.js'
 import { IncrementalReportObjectSchema, ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js'
@@ -63,21 +52,6 @@ import { REPRODUCERS_FILE } from './stryker-outputs.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
 import { engineDigestOf, INCREMENTAL_CACHE_VERSION, runInputsDigestOf } from './verdict-semantics.js'
-
-export const identityOf = dual<
-  (
-    fileName: string,
-  ) => (registry: Format.FormatRegistry) => Option.Option<FormatIdentity>,
-  (fileName: string, registry: Format.FormatRegistry) => Option.Option<FormatIdentity>
->(
-  2,
-  (fileName: string, registry: Format.FormatRegistry): Option.Option<FormatIdentity> =>
-    Option.map(registry.entryForExtension(Format.extensionOf(fileName)), (entry) => ({
-      formatId: entry.claim.formatId,
-      ownerModule: entry.owner,
-      ownerVersion: entry.ownerVersion,
-    })),
-)
 
 const STRYKER_FRAMEWORK: Readonly<Pick<Report.FrameworkInformation, 'branding' | 'name' | 'version'>> = Object
   .freeze({
@@ -123,11 +97,7 @@ export interface MutationReportingInput {
   readonly basePath: string
   readonly reporterStage: ReporterStage
   readonly formatRegistry: Format.FormatRegistry
-  readonly timeOverheadMs: number
-  readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
-  readonly timeoutEvidenceByMutantId?: Readonly<Record<string, TimeoutEvidence>>
-  readonly rememberedMutantIds: ReadonlyArray<string>
-  readonly programDigest?: string
+
   readonly concurrency: number
   readonly runStartedAt: number
 }
@@ -147,10 +117,7 @@ export interface MutationReportingService {
     result: TestRunner.MutantRunResult,
   ) => Effect.Effect<Mutant.RunMutantResult>
   readonly reportAll: (input: MutationReportingInput) => Effect.Effect<MutationTestDone, PlatformError>
-  readonly checkpoint: (
-    input: MutationReportingInput,
-    plannedMutants: readonly Mutant.Mutant[],
-  ) => Effect.Effect<void, PlatformError>
+  readonly checkpoint: (input: MutationReportingInput) => Effect.Effect<void, PlatformError>
   readonly publishDryRunCoverage: (input: MutationReportingInput) => Effect.Effect<void, PlatformError>
 }
 
@@ -169,18 +136,33 @@ export class MutationReporting extends Context.Service<MutationReporting, Mutati
       const events = yield* RunEvents
       const projectFiles: ProjectFilesShape = yield* ProjectFiles
       const phaseClock = yield* PhaseClock
-      const deps: MutationReportingDeps = { fs, path: pathService, events, projectFiles, phaseClock }
+      const headerIdentityCache = yield* SynchronizedRef.make(Option.none<Effect.Effect<RunHeaderIdentity>>())
+      const deps: MutationReportingDeps = {
+        fs,
+        path: pathService,
+        events,
+        projectFiles,
+        phaseClock,
+        headerIdentityCache,
+      }
       return MutationReporting.of({
         reportCheckFailure: (mutant, result) => reportCheckFailure(mutant, result),
         reportIgnored: (mutant, result) => reportIgnored(mutant, result),
         reportNoCoverage: (mutant) => reportNoCoverage(mutant),
         reportMutantRunResult: (mutant, result) => mapRunResult(mutant, result),
         reportAll: (input) => reportAll(deps, input),
-        checkpoint: (input, plannedMutants) => checkpoint(deps, input, plannedMutants),
+        checkpoint: (input) => checkpoint(deps, input),
         publishDryRunCoverage: (input) => publishDryRunCoverage(deps, input),
       })
     }),
   )
+}
+
+interface RunHeaderIdentity {
+  readonly incrementalVersion: string
+  readonly engineDigest: string
+  readonly mutantSetPolicy: Options.MutantSetPolicy
+  readonly runInputsDigest: string
 }
 
 interface MutationReportingDeps {
@@ -189,6 +171,7 @@ interface MutationReportingDeps {
   readonly events: Queue.Queue<RunEvent.RunEvent, Cause.Done>
   readonly projectFiles: ProjectFilesShape
   readonly phaseClock: PhaseClockShape
+  readonly headerIdentityCache: SynchronizedRef.SynchronizedRef<Option.Option<Effect.Effect<RunHeaderIdentity>>>
 }
 
 interface MutantOutcome {
@@ -307,75 +290,6 @@ const determineLanguage = (fileName: string, registry: Format.FormatRegistry): s
     onSome: (entry) => entry.claim.language,
   })
 
-type FileResultWithIdentity = Report.FileResult & { readonly formatIdentity?: FormatIdentity }
-
-const withClosureDigest = (mutant: Report.MutantResult, digest: string | undefined): Report.MutantResult =>
-  digest === undefined ? mutant : { ...mutant, closureDigest: digest }
-
-const stampClosureDigests = (
-  files: Report.FileResultDictionary,
-  digests: Readonly<Record<string, string>> | undefined,
-): Record<string, Report.FileResult> =>
-  Object.fromEntries(
-    Object.entries(files).map(([name, file]): readonly [string, Report.FileResult] => [
-      name,
-      {
-        ...file,
-        mutants: file.mutants.map((mutant) => withClosureDigest(mutant, digests?.[mutant.id])),
-      },
-    ]),
-  )
-
-const stampRemembered = (
-  files: Record<string, Report.FileResult>,
-  rememberedIds: ReadonlyArray<string>,
-): Record<string, Report.FileResult> => {
-  const remembered = new Set(rememberedIds)
-  return Object.fromEntries(
-    Object.entries(files).map(([name, file]): readonly [string, Report.FileResult] => [
-      name,
-      { ...file, mutants: file.mutants.map((mutant) => ({ ...mutant, remembered: remembered.has(mutant.id) })) },
-    ]),
-  )
-}
-
-const isCompileError = (mutant: Report.MutantResult): boolean => mutant.status === 'CompileError'
-
-const withProgramDigest = (mutant: Report.MutantResult, digest: string | undefined): Report.MutantResult =>
-  Option.match(Option.fromUndefinedOr(digest), {
-    onNone: () => mutant,
-    onSome: (present) =>
-      Boolean.match(isCompileError(mutant), {
-        onTrue: () => ({ ...mutant, programDigest: present }),
-        onFalse: () => mutant,
-      }),
-  })
-
-const stampProgramDigests = (
-  files: Record<string, Report.FileResult>,
-  digest: string | undefined,
-): Record<string, Report.FileResult> =>
-  Object.fromEntries(
-    Object.entries(files).map(([name, file]): readonly [string, Report.FileResult] => [
-      name,
-      { ...file, mutants: file.mutants.map((mutant) => withProgramDigest(mutant, digest)) },
-    ]),
-  )
-
-const stampFileIdentities = (
-  files: Report.FileResultDictionary,
-  identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>,
-): Record<string, FileResultWithIdentity> =>
-  Object.fromEntries(
-    Object.entries(files).map(([name, file]): readonly [string, FileResultWithIdentity] => [
-      name,
-      Option.match(Option.flatMap(HashMap.get(identities, name), (present) => present), {
-        onNone: () => file,
-        onSome: (identity) => ({ ...file, formatIdentity: identity }),
-      }),
-    ]),
-  )
-
 interface TestIdRemap {
   readonly testId: (id: TestRunner.TestId) => TestRunner.TestId
   readonly testIds: (ids: readonly string[] | undefined) => readonly TestRunner.TestId[] | undefined
@@ -409,7 +323,6 @@ interface FileResultsInput {
   readonly reportNames: HashMap.HashMap<string, string>
   readonly mutants: readonly Mutant.RunMutantResult[]
   readonly remap: TestIdRemap
-  readonly timeoutEvidenceByMutantId: Readonly<Record<string, TimeoutEvidence>>
 }
 
 interface TestFilesInput {
@@ -425,65 +338,9 @@ const presentField = <K extends string, V>(key: K, value: V | undefined): Partia
     onSome: (present) => Record.singleton(key, present),
   })
 
-const timeoutKindIn = (reason: string | undefined): TimeoutKind | undefined =>
-  Match.value(reason).pipe(
-    Match.when(TestRunner.WallClockTimeoutReason.literal, (): TimeoutKind => 'wallClock'),
-    Match.when(
-      (candidate: string | undefined): boolean =>
-        candidate !== undefined && S.is(TestRunner.HitLimitReasonText)(candidate),
-      (): TimeoutKind => 'hitLimit',
-    ),
-    Match.orElse((): TimeoutKind | undefined => undefined),
-  )
-
-const evidenceKindOf = (evidence: TimeoutEvidence | undefined): TimeoutKind | undefined =>
-  Option.getOrUndefined(Option.map(Option.fromUndefinedOr(evidence), (present) => present.timeoutKind))
-
-const timeoutKindOf = (
-  mutant: Mutant.RunMutantResult,
-  evidence: TimeoutEvidence | undefined,
-): TimeoutKind | undefined =>
-  Option.getOrUndefined(
-    Option.firstSomeOf(
-      [Option.fromUndefinedOr(timeoutKindIn(mutant.statusReason)), Option.fromUndefinedOr(evidenceKindOf(evidence))],
-    ),
-  )
-
-const reproducedCountOf = (timeoutKind: TimeoutKind, evidenceKind: TimeoutKind | undefined): number =>
-  Match.value(timeoutKind).pipe(
-    Match.when('wallClock', () =>
-      Match.value(evidenceKind).pipe(
-        Match.when('wallClock', () => 1),
-        Match.orElse(() => 0),
-      )),
-    Match.orElse(() => 0),
-  )
-
-interface PersistedTimeoutFields {
-  readonly timeoutKind?: TimeoutKind
-  readonly reproductions?: number
-}
-
-const timeoutFieldsOf = (
-  mutant: Mutant.RunMutantResult,
-  evidence: TimeoutEvidence | undefined,
-): PersistedTimeoutFields =>
-  Boolean.match(mutant.status === 'Timeout', {
-    onFalse: (): PersistedTimeoutFields => ({}),
-    onTrue: () =>
-      Option.match(Option.fromUndefinedOr(timeoutKindOf(mutant, evidence)), {
-        onNone: (): PersistedTimeoutFields => ({}),
-        onSome: (timeoutKind) => ({
-          timeoutKind,
-          reproductions: reproducedCountOf(timeoutKind, evidenceKindOf(evidence)),
-        }),
-      }),
-  })
-
 const reportMutantOf = (
   mutant: Mutant.RunMutantResult,
   remap: TestIdRemap,
-  evidence: TimeoutEvidence | undefined,
 ): Report.MutantResult => ({
   id: mutant.id,
   mutatorName: mutant.mutatorName,
@@ -497,7 +354,6 @@ const reportMutantOf = (
   ...presentField('killedBy', remap.testIds(mutant.killedBy)),
   ...presentField('coveredBy', remap.testIds(mutant.coveredBy)),
   ...presentField('subsumption', mutant.subsumption),
-  ...timeoutFieldsOf(mutant, evidence),
 })
 
 const reportTestOf = (test: TestRunner.TestResult, remap: TestIdRemap) =>
@@ -514,7 +370,7 @@ const groupMutants = (input: FileResultsInput): Effect.Effect<HashMap.HashMap<st
         Option.match(HashMap.get(input.reportNames, mutant.fileName), {
           onNone: () => accumulator,
           onSome: (reportName) => {
-            const mapped = reportMutantOf(mutant, input.remap, input.timeoutEvidenceByMutantId[mutant.id])
+            const mapped = reportMutantOf(mutant, input.remap)
             return Option.match(HashMap.get(accumulator, reportName), {
               onNone: () =>
                 HashMap.set(accumulator, reportName, { sourceFileName: mutant.fileName, mutants: [mapped] }),
@@ -649,23 +505,14 @@ const assembleReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingAssembleRep
     ),
   ).pipe(Effect.orDie)
   const reportNames = HashMap.fromIterable(Object.entries(relativeNames))
-  const identities = HashMap.fromIterable(
-    mutatedFileNames.flatMap((fileName) =>
-      Option.match(HashMap.get(reportNames, fileName), {
-        onNone: (): ReadonlyArray<readonly [string, Option.Option<FormatIdentity>]> => [],
-        onSome: (reportName) => [[reportName, identityOf(fileName, input.formatRegistry)] as const],
-      })
-    ),
-  )
   const files = yield* assembleFileResults({
     sources,
     reportNames,
     mutants: results,
     remap,
-    timeoutEvidenceByMutantId: input.timeoutEvidenceByMutantId ?? {},
   })
   const testFiles = yield* assembleTestFiles({ testSources, reportNames, tests, remap })
-  return { files, testFiles, identities }
+  return { files, testFiles }
 })
 
 const manifestVersionOf = Effect.fn(SpanTaxonomy.Spans.mutationReportingManifestVersion.name)(function*(
@@ -705,34 +552,37 @@ const discoverDependencies = Effect.fn(SpanTaxonomy.Spans.mutationReportingDisco
   )
 })
 
+const budgetNowOf = Effect.fnUntraced(function*(
+  input: MutationReportingInput,
+  results: readonly Mutant.RunMutantResult[],
+) {
+  return budgetOf({
+    results,
+    concurrency: input.concurrency,
+    actualSeconds: ((yield* Clock.currentTimeMillis) - input.runStartedAt) / 1000,
+  })
+})
+
 const mutationTestReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingMutationTestReport.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
   results: readonly Mutant.RunMutantResult[],
 ) {
-  const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
+  const { files, testFiles } = yield* assembleReport(deps, input, results)
   const dependencies = yield* discoverDependencies(deps)
   const config = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(input.options).pipe(
     Effect.flatMap(S.decodeEffect(S.fromJsonString(S.Record(S.String, S.Json)))),
     Effect.orDie,
   )
-  const budget = budgetOf({
-    results,
-    concurrency: input.concurrency,
-    actualSeconds: ((yield* Clock.currentTimeMillis) - input.runStartedAt) / 1000,
-  })
   return {
-    report: {
-      files,
-      schemaVersion: Report.WrittenSchemaVersion.literal,
-      thresholds: input.options.thresholds,
-      testFiles,
-      projectRoot: input.basePath,
-      config,
-      framework: { ...STRYKER_FRAMEWORK, dependencies },
-      budget,
-    },
-    identities,
+    files,
+    schemaVersion: Report.WrittenSchemaVersion.literal,
+    thresholds: input.options.thresholds,
+    testFiles,
+    projectRoot: input.basePath,
+    config,
+    framework: { ...STRYKER_FRAMEWORK, dependencies },
+    budget: yield* budgetNowOf(input, results),
   }
 })
 
@@ -844,67 +694,54 @@ const dryRunCoverageFieldOf = (testCoverage: TestCoverage): { readonly dryRunCov
     onSome: (dryRunCoverage) => ({ dryRunCoverage }),
   })
 
-const testTimesOf = (tests: Iterable<TestRunner.TestResult>): readonly number[] =>
-  Arr.map([...tests], (test) => test.timeSpentMs)
+type HeaderIdentityDeps = Pick<MutationReportingDeps, 'fs' | 'path' | 'headerIdentityCache'>
 
-const executedEntryOf = (result: Mutant.RunMutantResult): ReadonlyArray<readonly [string, number]> =>
-  Option.match(Option.fromUndefinedOr(result.cost), {
-    onNone: (): ReadonlyArray<readonly [string, number]> => [],
-    onSome: (cost) => [[result.id, costTotalMsOf(cost) ?? 0] as const],
-  })
-
-const priorEntryOf = (entry: readonly [string, MutantCost]): ReadonlyArray<readonly [string, number]> =>
-  entry[1].actualMs === null ? [] : [[entry[0], entry[1].actualMs] as const]
-
-const priorCostsOf = (report: Project['incrementalReport']): Record<string, MutantCost> =>
-  Option.getOrElse(
-    Option.flatMap(Option.fromNullishOr(report), (present) => Option.fromNullishOr(present.costs)),
-    () => ({}),
-  )
-
-const mutantCostModelOf = (
-  input: MutationReportingInput,
-  results: readonly Mutant.RunMutantResult[],
-): MutantCostModel => ({
-  subjects: Arr.map(results, (result) => ({ id: result.id, static: result.static })),
-  staticCoverage: input.testCoverage.staticCoverage,
-  allTestTimesMs: Arr.map([...input.testCoverage.testsById], ([, test]) => test.timeSpentMs),
-  coveringTestTimesMsByMutantId: Object.fromEntries(
-    [...input.testCoverage.testsByMutantId].map(([mutantId, tests]) => [mutantId, testTimesOf(tests)] as const),
-  ),
-  executedActualMsByMutantId: Object.fromEntries(Arr.flatMap(results, executedEntryOf)),
-  priorActualMsByMutantId: Object.fromEntries(
-    Arr.flatMap(Object.entries(priorCostsOf(input.project.incrementalReport)), priorEntryOf),
-  ),
-  fixedOverheadMs: input.timeOverheadMs,
-})
-
-const costsOf = (input: MutationReportingInput, results: readonly Mutant.RunMutantResult[]) =>
-  mutantCostsOf(mutantCostModelOf(input, results))
-
-const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWriteIncrementalReport.name)(function*(
+const runHeaderIdentityOf = Effect.fnUntraced(function*(
   deps: Pick<MutationReportingDeps, 'fs' | 'path'>,
   input: MutationReportingInput,
-  report: Report.MutationTestResult,
-  identities: HashMap.HashMap<string, Option.Option<FormatIdentity>>,
 ) {
-  const runInputsDigest = yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options)
-  const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))({
+  return {
     incrementalVersion: INCREMENTAL_CACHE_VERSION,
     engineDigest: yield* engineDigestOf(deps.fs, deps.path),
     mutantSetPolicy: input.options.mutator.mutantSetPolicy,
-    runInputsDigest,
-    ...report,
-    files: stampFileIdentities(
-      stampRemembered(
-        stampProgramDigests(stampClosureDigests(report.files, input.closureDigestsByMutantId), input.programDigest),
-        input.rememberedMutantIds,
-      ),
-      identities,
-    ),
-    costs: costsOf(input, input.results),
+    runInputsDigest: yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options),
+  } satisfies RunHeaderIdentity
+})
+
+const cachedRunHeaderIdentityOf = (
+  deps: HeaderIdentityDeps,
+  input: MutationReportingInput,
+): Effect.Effect<RunHeaderIdentity> =>
+  Effect.flatMap(
+    SynchronizedRef.modifyEffect(deps.headerIdentityCache, (current) =>
+      Option.match(current, {
+        onSome: (memo) => Effect.succeed([memo, current] as const),
+        onNone: () =>
+          Effect.map(Effect.cached(runHeaderIdentityOf(deps, input)), (memo) => [memo, Option.some(memo)] as const),
+      })),
+    (memo) => memo,
+  )
+
+const incrementalHeaderOf = Effect.fnUntraced(function*(
+  deps: HeaderIdentityDeps,
+  input: MutationReportingInput,
+  budget: RunEvent.Budget,
+) {
+  return {
+    ...(yield* cachedRunHeaderIdentityOf(deps, input)),
+    budget,
     ...dryRunCoverageFieldOf(input.testCoverage),
-  }).pipe(Effect.orDie)
+  }
+})
+
+const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWriteIncrementalReport.name)(function*(
+  deps: HeaderIdentityDeps,
+  input: MutationReportingInput,
+  budget: RunEvent.Budget,
+) {
+  const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown, { space: 2 }))(
+    yield* incrementalHeaderOf(deps, input, budget),
+  ).pipe(Effect.orDie)
   yield* writeFileAtomic(deps, input.options.incrementalFile, json)
 })
 
@@ -933,7 +770,7 @@ const reportAll = Effect.fn(SpanTaxonomy.Spans.mutationReportingReportAll.name)(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
 ) {
-  const { report, identities } = yield* mutationTestReport(deps, input, input.results)
+  const report = yield* mutationTestReport(deps, input, input.results)
   const metrics = metricsResultFromFiles(report.files)
   const staticVerdict = staticVerdictOf(input.results)
   yield* offerTerminalReport(
@@ -967,101 +804,32 @@ const reportAll = Effect.fn(SpanTaxonomy.Spans.mutationReportingReportAll.name)(
   yield* emitVerdict(deps, input, report)
   yield* writeReproducers(deps, input, report)
   yield* Boolean.match(input.options.incremental, {
-    onTrue: () => writeIncrementalReport(deps, input, report, identities),
+    onTrue: () => writeIncrementalReport(deps, input, report.budget),
     onFalse: () => Effect.void,
   })
   return { results: input.results, verdict: finalVerdict } satisfies MutationTestDone
 })
 
 const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlimIncrementalReport.name)(function*(
-  deps: MutationReportingDeps,
+  deps: HeaderIdentityDeps,
   input: MutationReportingInput,
   results: readonly Mutant.RunMutantResult[],
 ) {
-  const { files, testFiles, identities } = yield* assembleReport(deps, input, results)
-  const runInputsDigest = yield* runInputsDigestOf(deps.fs, deps.path, input.basePath, input.options)
-  return {
-    incrementalVersion: INCREMENTAL_CACHE_VERSION,
-    engineDigest: yield* engineDigestOf(deps.fs, deps.path),
-    mutantSetPolicy: input.options.mutator.mutantSetPolicy,
-    runInputsDigest,
-    schemaVersion: Report.WrittenSchemaVersion.literal,
-    thresholds: input.options.thresholds,
-    files: stampFileIdentities(
-      stampRemembered(
-        stampProgramDigests(stampClosureDigests(files, input.closureDigestsByMutantId), input.programDigest),
-        input.rememberedMutantIds,
-      ),
-      identities,
-    ),
-    costs: costsOf(input, results),
-    testFiles,
-    budget: budgetOf({
-      results,
-      concurrency: input.concurrency,
-      actualSeconds: ((yield* Clock.currentTimeMillis) - input.runStartedAt) / 1000,
-    }),
-    ...dryRunCoverageFieldOf(input.testCoverage),
-  }
+  return yield* incrementalHeaderOf(deps, input, yield* budgetNowOf(input, results))
 })
-
-const killedByField = (killedBy: readonly string[] | undefined) =>
-  Option.match(Option.fromUndefinedOr(killedBy), {
-    onNone: (): { readonly killedBy?: readonly string[] } => ({}),
-    onSome: (present) => ({ killedBy: [...present] }),
-  })
-
-const settledCheckpointRowOf = (result: Mutant.RunMutantResult): CheckpointSettledMutant =>
-  CheckpointSettledMutant.make({
-    mutant: result,
-    status: result.status,
-    ...killedByField(result.killedBy),
-  })
-
-const checkpointResultOf = (row: CheckpointMutantRow): Mutant.RunMutantResult =>
-  Match.valueTags(row, {
-    CheckpointSettledMutant: ({ killedBy, mutant, status }) => ({
-      ...mutant,
-      status,
-      ...killedByField(killedBy),
-    }),
-    CheckpointPendingMutant: ({ mutant }) => ({ ...mutant, status: 'Pending' as const }),
-  })
-
-const checkpointResultsOf = (
-  input: MutationReportingInput,
-  plannedMutants: readonly Mutant.Mutant[],
-): readonly Mutant.RunMutantResult[] =>
-  Result.match(
-    checkpointMutants(
-      CheckpointMutantsCommand.make({
-        plannedMutants: [...plannedMutants],
-        settled: input.results.map(settledCheckpointRowOf),
-      }),
-    ),
-    {
-      onFailure: (refused) => refused,
-      onSuccess: (rows) => rows.map(checkpointResultOf),
-    },
-  )
 
 const checkpointIncremental = Effect.fn(SpanTaxonomy.Spans.mutationReportingCheckpoint.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
-  plannedMutants: readonly Mutant.Mutant[],
 ) {
-  const report = yield* slimIncrementalReport(deps, input, checkpointResultsOf(input, plannedMutants))
+  const report = yield* slimIncrementalReport(deps, input, input.results)
   const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(report).pipe(Effect.orDie)
   yield* writeFileAtomic(deps, input.options.incrementalFile, json)
 })
 
-const checkpoint = (
-  deps: MutationReportingDeps,
-  input: MutationReportingInput,
-  plannedMutants: readonly Mutant.Mutant[],
-) =>
+const checkpoint = (deps: MutationReportingDeps, input: MutationReportingInput) =>
   Boolean.match(input.options.incremental, {
-    onTrue: () => checkpointIncremental(deps, input, plannedMutants),
+    onTrue: () => checkpointIncremental(deps, input),
     onFalse: () => Effect.void,
   })
 
@@ -1102,8 +870,8 @@ const publishDryRunCoverage = (deps: MutationReportingDeps, input: MutationRepor
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const {
-    Mutant: { Mutant, MutantStatusSchema },
-    TestRunner: { MutantRunResultSchema, WallClockTimeoutReason },
+    Mutant: { Mutant },
+    TestRunner: { MutantRunResultSchema },
   } = await import('@systemfsoftware/stryker-js-plugin-interface')
 
   const MAX_SOURCE_COORDINATE = 1_000_000
@@ -1186,103 +954,5 @@ if (import.meta.vitest !== void 0) {
         subject(mutant, reason),
         (mapped) => holds([mapped.status === 'Ignored', mapped.statusReason === reason]),
       ),
-  )
-
-  const expectedTimeoutKind = (
-    result: Parameters<typeof timeoutFieldsOf>[0],
-    evidence: { readonly timeoutKind: TimeoutKind; readonly reproductions: number },
-  ): TimeoutKind =>
-    Match.value(result.statusReason).pipe(
-      Match.when('wall-clock-timeout', (): TimeoutKind => 'wallClock'),
-      Match.when(
-        (reason: string | undefined): boolean =>
-          reason !== undefined && /^Hit limit reached \(\d+\/\d+\)$/.test(reason),
-        (): TimeoutKind => 'hitLimit',
-      ),
-      Match.orElse((): TimeoutKind => evidence.timeoutKind),
-    )
-
-  const expectedReproductions = (
-    timeoutKind: TimeoutKind,
-    evidence: { readonly timeoutKind: TimeoutKind },
-  ): number =>
-    Match.value(timeoutKind).pipe(
-      Match.when('wallClock', () =>
-        Match.value(evidence.timeoutKind).pipe(
-          Match.when('wallClock', () => 1),
-          Match.orElse(() => 0),
-        )),
-      Match.orElse(() => 0),
-    )
-
-  const expectedTimeoutFields = (
-    result: Parameters<typeof timeoutFieldsOf>[0],
-    evidence: { readonly timeoutKind: TimeoutKind; readonly reproductions: number },
-  ) =>
-    Match.value(result.status === 'Timeout').pipe(
-      Match.when(true, () => ({
-        timeoutKind: expectedTimeoutKind(result, evidence),
-        reproductions: expectedReproductions(expectedTimeoutKind(result, evidence), evidence),
-      })),
-      Match.orElse(() => ({ timeoutKind: undefined, reproductions: undefined })),
-    )
-
-  interface TimeoutProbe {
-    readonly result: Mutant.RunMutantResult
-    readonly evidence: TimeoutEvidence | undefined
-    readonly expected: PersistedTimeoutFields
-  }
-
-  /**
-   * Inputs whose persisted timeout fields are known without the subject's logic: a wall-clock
-   * timeout is credited only beside wall-clock evidence, a hit-limit timeout is never credited
-   * as reproduced, and a non-timeout carries no timeout fields. The probes disagree with one
-   * another, so they refute a constant impostor even when the draw holds no timeout case for
-   * the model comparison to catch.
-   */
-  const timeoutProbes = (mutant: Mutant.Mutant): readonly TimeoutProbe[] => [
-    {
-      result: { ...mutant, status: 'Timeout', statusReason: WallClockTimeoutReason.literal },
-      evidence: { timeoutKind: 'wallClock', reproductions: 3 },
-      expected: { timeoutKind: 'wallClock', reproductions: 1 },
-    },
-    {
-      result: { ...mutant, status: 'Timeout', statusReason: WallClockTimeoutReason.literal },
-      evidence: { timeoutKind: 'hitLimit', reproductions: 7 },
-      expected: { timeoutKind: 'wallClock', reproductions: 0 },
-    },
-    {
-      result: { ...mutant, status: 'Timeout', statusReason: WallClockTimeoutReason.literal },
-      evidence: undefined,
-      expected: { timeoutKind: 'wallClock', reproductions: 0 },
-    },
-    {
-      result: { ...mutant, status: 'Timeout', statusReason: 'Hit limit reached (3/10)' },
-      evidence: { timeoutKind: 'wallClock', reproductions: 7 },
-      expected: { timeoutKind: 'hitLimit', reproductions: 0 },
-    },
-    {
-      result: { ...mutant, status: 'Survived', statusReason: WallClockTimeoutReason.literal },
-      evidence: { timeoutKind: 'wallClock', reproductions: 7 },
-      expected: {},
-    },
-  ]
-
-  const timeoutProbesHold = (subject: typeof timeoutFieldsOf, mutant: Mutant.Mutant): boolean =>
-    Arr.every(
-      timeoutProbes(mutant),
-      ({ result, evidence, expected }) => JSON.stringify(subject(result, evidence)) === JSON.stringify(expected),
-    )
-
-  it.prop(
-    '∀mse_MutantStatusAndEvidence_≡PersistedTimeoutFieldsFollowTheReproductionRule',
-    { of: [Mutant, MutantStatusSchema, TimeoutEvidenceSchema], subject: timeoutFieldsOf },
-    (subject, [mutant, status, evidence]) => {
-      const result: Parameters<typeof timeoutFieldsOf>[0] = { ...mutant, status }
-      return holds([
-        JSON.stringify(subject(result, evidence)) === JSON.stringify(expectedTimeoutFields(result, evidence)),
-        timeoutProbesHold(subject, mutant),
-      ])
-    },
   )
 }

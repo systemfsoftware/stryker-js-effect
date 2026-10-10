@@ -1,7 +1,7 @@
 import { installedPlugin, sharedConfig } from '@systemfsoftware/stryker-config'
 import { afterAll, describe, it } from '@systemfsoftware/vitest'
 import { Schema as S } from 'effect'
-import { globSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -21,24 +21,6 @@ for (const name of pluginNames) {
 }
 const configUrl = pathToFileURL(join(pluginDir, 'stryker.config.js')).href
 const installedHref = (name: string): string => pathToFileURL(join(pluginDir, 'node_modules', name, 'index.js')).href
-
-describe('sharedConfig.incrementalSources', () => {
-  it('matches the restored shard reports and no report Stryker writes itself', function*({ expect }) {
-    const project = realTempDir('stryker-config-reports-')
-    const reports = join(project, 'reports')
-    mkdirSync(reports, { recursive: true })
-    const restored = ['stryker-incremental-1of3.json', 'stryker-incremental-3of3.json']
-    for (const name of [...restored, 'stryker-incremental.json', 'mutation-report.json']) {
-      writeFileSync(join(reports, name), '')
-    }
-    const matched = sharedConfig.incrementalSources.flatMap((pattern) => globSync(pattern, { cwd: project }))
-    try {
-      yield* expect(matched.sort()).toEqual(restored.map((name) => join('reports', name)))
-    } finally {
-      rmSync(project, { force: true, recursive: true })
-    }
-  })
-})
 
 describe('installedPlugin', () => {
   it('resolves a specifier from the config dir node_modules', function*({ expect }) {

@@ -253,6 +253,7 @@ export type RunMutantResult = Mutant & {
   readonly coveredBy?: readonly string[] | undefined
   readonly static?: boolean | undefined
   readonly cost?: MutantCost | undefined
+  readonly remembered?: boolean | undefined
 }
 
 export interface MutantCost {

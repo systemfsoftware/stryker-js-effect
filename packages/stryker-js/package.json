@@ -114,6 +114,22 @@
         "types": "./dist/promises.d.mts",
         "default": "./dist/promises.mjs"
       },
+      "./verdict-store": {
+        "types": "./dist/verdict-store.d.mts",
+        "default": "./dist/verdict-store.mjs"
+      },
+      "./verdict-store/fs": {
+        "types": "./dist/verdict-store/fs.d.mts",
+        "default": "./dist/verdict-store/fs.mjs"
+      },
+      "./verdict-store/laws": {
+        "types": "./dist/verdict-store/laws.d.mts",
+        "default": "./dist/verdict-store/laws.mjs"
+      },
+      "./verdict-store/memory": {
+        "types": "./dist/verdict-store/memory.d.mts",
+        "default": "./dist/verdict-store/memory.mjs"
+      },
       "./package.json": "./package.json"
     }
   },
@@ -137,6 +153,26 @@
       "@systemfsoftware/source": "./src/promises/mod.ts",
       "types": "./dist/promises.d.mts",
       "default": "./dist/promises.mjs"
+    },
+    "./verdict-store": {
+      "@systemfsoftware/source": "./src/verdict-store/mod.ts",
+      "types": "./dist/verdict-store.d.mts",
+      "default": "./dist/verdict-store.mjs"
+    },
+    "./verdict-store/fs": {
+      "@systemfsoftware/source": "./src/verdict-store/fs-verdict-store.layer.ts",
+      "types": "./dist/verdict-store/fs.d.mts",
+      "default": "./dist/verdict-store/fs.mjs"
+    },
+    "./verdict-store/laws": {
+      "@systemfsoftware/source": "./src/verdict-store/laws.ts",
+      "types": "./dist/verdict-store/laws.d.mts",
+      "default": "./dist/verdict-store/laws.mjs"
+    },
+    "./verdict-store/memory": {
+      "@systemfsoftware/source": "./src/verdict-store/memory-verdict-store.ts",
+      "types": "./dist/verdict-store/memory.d.mts",
+      "default": "./dist/verdict-store/memory.mjs"
     },
     "./package.json": "./package.json"
   },

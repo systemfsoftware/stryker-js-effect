@@ -22,6 +22,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 import {
+  type ClosureInstall,
   type FileBytes,
   type FixtureInput,
   fixtureKeyBytes,
@@ -98,12 +99,17 @@ const TREE_CONCURRENCY = 16
 const UNPACK_CONCURRENCY = 4
 const STAGE_CONCURRENCY = 4
 
+const ON_REQUEST_PACKAGES = ['@systemfsoftware/stryker-js-verdict-store-s3']
+
 const ENTRY_PACKAGES = [
   '@systemfsoftware/stryker-js',
   '@systemfsoftware/stryker-js-svelte',
   '@systemfsoftware/stryker-js-vitest-runner',
   '@systemfsoftware/stryker-js-typescript-checker',
-] as const
+  ...ON_REQUEST_PACKAGES,
+]
+
+const SPECS_SUFFIX = '.specs'
 
 type Argv = readonly [string, ...Array<string>]
 
@@ -585,6 +591,7 @@ const stagedManifestsOf = (input: FixtureInput) =>
     (file) =>
       Schema.decodeEffect(Schema.fromJsonString(FixtureManifest))(new TextDecoder().decode(file.bytes)).pipe(
         Effect.map((manifest): StagedFixtureManifest => ({
+          fixture: input.fixtureId,
           path: `${input.fixtureId}/${file.relativePath}`,
           manifest,
         })),
@@ -607,11 +614,25 @@ const closureInstallOf = (
     const members = yield* Effect.forEach(packsInput.packs, packedMemberOf)
     const fixtures = (yield* Effect.forEach(fixtureInputs, stagedManifestsOf)).flat()
     const install = yield* Effect.fromResult(
-      installClosure(InstallClosureCommand.make({ members, fixtures, workspace })),
+      installClosure(InstallClosureCommand.make({ members, fixtures, workspace, onRequest: ON_REQUEST_PACKAGES })),
     ).pipe(
       Effect.mapError((failure) => new PackFailure({ step: STEP_INSTALL_PLAN, detail: failure.message })),
     )
-    return install.specs
+    return install
+  })
+
+const writeFixtureSpecs = (stagingDir: string, install: ClosureInstall, fixtureId: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const planned = yield* Option.match(Array.findFirst(install.fixtures, (entry) => entry.fixture === fixtureId), {
+      onNone: () =>
+        Effect.fail(
+          new PackFailure({ step: STEP_INSTALL_PLAN, detail: `no closure install was planned for ${fixtureId}` }),
+        ),
+      onSome: (entry) => Effect.succeed(entry),
+    })
+    yield* fs.writeFileString(path.join(stagingDir, `${fixtureId}${SPECS_SUFFIX}`), planned.specs.join('\n'))
   })
 
 const fixtureInputsOf = (
@@ -692,10 +713,13 @@ const bakeMissing = (
       yield* fs.makeDirectory(stagingDir, { recursive: true })
       yield* leaseEntry(stagingDir)
       yield* stageFixtures(environment, stagingDir, missing.map((fixture) => fixture.fixtureId), catalogs)
+      yield* Effect.forEach(missing, (fixture) => writeFixtureSpecs(stagingDir, install, fixture.fixtureId), {
+        discard: true,
+      })
       const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
       yield* jobs.requireCleanExit(
         STEP_BAKE,
-        jobs.job(['sh', '-c', bakeScript, 'bake-fixtures', ...install], [
+        jobs.job(['sh', '-c', bakeScript, 'bake-fixtures'], [
           { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
           { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
         ]),

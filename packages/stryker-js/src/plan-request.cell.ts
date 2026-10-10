@@ -20,10 +20,16 @@ import * as Scope from 'effect/Scope'
 
 import type { IncrementalReportDiscard } from './admit-incremental-report.workflow.js'
 import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.js'
-import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
+import {
+  checkerConfigDigestOf,
+  type CheckerPoolHandle,
+  makeCheckerPoolHandle,
+  NO_CHECKER_CONFIG_DIGEST,
+  programDigestOf,
+} from './Checker/checker-pool.handle.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
-import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
+import type { RefusalCounts } from './IncrementalDiff.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
 import { forEachProjectDirectory } from './project-directory.js'
@@ -32,13 +38,15 @@ import { requireDryRun, type RequireDryRunDecision } from './require-dry-run.wor
 import { dryRunChoiceOf, requireDryRunCommandOf } from './run/dry-run-choice.js'
 import { reusedTestCoverage } from './run/dry-run-coverage.js'
 import type { HostServices } from './run/host.service.js'
-import { readIncrementalReuse, type RefusalCounts } from './run/incremental-reuse.cell.js'
-import { incrementalReportTextsOf, optionalField } from './run/incremental-reuse.js'
+import { readIncrementalReuse } from './run/incremental-reuse.cell.js'
+import { incrementalReportTextOf, optionalField } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
+import { newestCostsOf } from './run/prior-entries.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import type { EnginePorts, RunStageServices } from './run/StageServices.service.js'
+import { verdictStoreOf } from './run/verdict-store-layer.js'
 import type { TestCoverage } from './test-coverage.schema.js'
 
 export interface PlanShardsRequest {
@@ -66,42 +74,11 @@ const DEFAULT_MUTANT_COST_MS = 1_000
 
 const prepareStageCell = Cell.andThen(Cell.andThen(loadConfigCell, readProjectCell), prepareForInstrumentCell)
 
-const namedCostsOf = (
-  costs: NonNullable<typeof CostsFieldSchema.Type['costs']>,
-): Record<string, number> =>
-  Object.fromEntries(
-    Object.entries(costs).flatMap(([mutantId, entry]) =>
-      Option.toArray(
-        Option.map(
-          Option.orElse(Option.fromNullishOr(entry.actualMs), () => Option.fromNullishOr(entry.predictedMs)),
-          (costMs): readonly [string, number] => [mutantId, costMs],
-        ),
-      )
-    ),
-  )
-
-const reportCostsOf = (texts: readonly string[]): Record<string, number> =>
-  texts.reduce<Record<string, number>>(
-    (accumulated, text) =>
-      Option.match(S.decodeOption(S.fromJsonString(CostsFieldSchema))(text), {
-        onNone: () => accumulated,
-        onSome: (decoded) =>
-          Option.match(Option.fromUndefinedOr(decoded.costs), {
-            onNone: () => accumulated,
-            onSome: (costs) => ({ ...namedCostsOf(costs), ...accumulated }),
-          }),
-      }),
-    {},
-  )
-
 const decodeCoverage = (text: string): Option.Option<DryRunCoverage> =>
   Option.flatMap(
     S.decodeOption(S.fromJsonString(ReportedDryRunCoverageSchema))(text),
     (report) => Option.fromNullishOr(report.dryRunCoverage),
   )
-
-const firstCoverageOf = (texts: readonly string[]): Option.Option<DryRunCoverage> =>
-  Option.firstSomeOf(texts.map(decodeCoverage))
 
 const testsTimeOf = (tests: ReadonlyArray<{ readonly timeSpentMs: number }>): number =>
   tests.reduce((total, test) => total + test.timeSpentMs, 0)
@@ -134,13 +111,13 @@ const coveringCostOf = (
 
 const costOf = (
   mutantId: string,
-  reportCosts: Record<string, number>,
+  storedCosts: Readonly<Record<string, number>>,
   coverage: Option.Option<DryRunCoverage>,
   testCoverage: TestCoverage,
 ): number =>
   Option.getOrElse(
     Option.orElse(
-      Record.get(reportCosts, mutantId),
+      Record.get(storedCosts, mutantId),
       () => Option.flatMap(coverage, (present) => coveringCostOf(present, testCoverage, mutantId)),
     ),
     () => DEFAULT_MUTANT_COST_MS,
@@ -185,39 +162,43 @@ const labelOf = (path: Path.Path, basePath: string, project: string): string => 
   return relative.length === 0 ? '.' : relative
 }
 
-const reportHoldsCompileErrorRecord = (text: string): boolean =>
-  Option.exists(
-    S.decodeOption(S.fromJsonString(CompileErrorProbeSchema))(text),
-    (report) =>
-      Object.values(report.files).some((file) => file.mutants.some((mutant) => mutant.status === 'CompileError')),
-  )
-
-interface ProgramDigestAtPlanTime {
-  readonly texts: readonly string[]
+interface CheckerAtPlanTime {
   readonly context: Context.Context<RunStageServices>
   readonly options: Options.StrykerOptions
   readonly loadedPlugins: Pick<LoadedPlugins, 'pluginSources'>
   readonly project: string
 }
 
-const programDigestAtPlanTime = ({
-  texts,
-  context,
-  options,
-  loadedPlugins,
-  project,
-}: ProgramDigestAtPlanTime): Effect.Effect<string | undefined, never, EnginePorts> =>
-  Boolean.match(Boolean.and(Boolean.not(options.inPlace), texts.some(reportHoldsCompileErrorRecord)), {
-    onTrue: () =>
-      Effect.gen(function*() {
-        const pool = yield* checkerPoolsScoped({ options, loadedPlugins, size: 1, workingDirectory: project })
-        return yield* Option.match(Option.fromNullishOr(pool), {
-          onNone: () => Effect.as(Effect.void, undefined),
-          onSome: (present) => programDigestOf(makeCheckerPoolHandle(present), project),
-        })
-      }).pipe(Effect.provide(context), Effect.scoped),
-    onFalse: () => Effect.as(Effect.void, undefined),
-  })
+interface CheckerDigestsAtPlanTime {
+  readonly config: Effect.Effect<string | undefined>
+  readonly program: Effect.Effect<string | undefined>
+}
+
+const checkerPoolAtPlanTime = ({ context, options, loadedPlugins, project }: CheckerAtPlanTime) =>
+  checkerPoolsScoped({ options, loadedPlugins, size: 1, workingDirectory: project }).pipe(
+    Effect.map((pool) => Option.map(Option.fromNullishOr(pool), makeCheckerPoolHandle)),
+    Effect.provide(context),
+  )
+
+const checkerDigestsAtPlanTime = Effect.fnUntraced(function*(checker: CheckerAtPlanTime) {
+  const scope = yield* Scope.Scope
+  const ports = yield* Effect.context<EnginePorts>()
+  const handle = yield* Effect.cached(
+    checkerPoolAtPlanTime(checker).pipe(Scope.provide(scope), Effect.provide(ports)),
+  )
+  const digestOf = (
+    digest: (present: CheckerPoolHandle) => Effect.Effect<string | undefined>,
+    none: string | undefined,
+  ): Effect.Effect<string | undefined> =>
+    Effect.flatMap(handle, Option.match({ onNone: () => Effect.succeed(none), onSome: digest }))
+  return {
+    config: digestOf((present) => checkerConfigDigestOf(present, checker.project), NO_CHECKER_CONFIG_DIGEST),
+    program: Boolean.match(checker.options.inPlace, {
+      onTrue: () => Effect.as(Effect.void, undefined),
+      onFalse: () => digestOf((present) => programDigestOf(present, checker.project), undefined),
+    }),
+  } satisfies CheckerDigestsAtPlanTime
+})
 
 const subsumedOf = (mutant: Mutant.Mutant): Option.Option<Mutant.Subsumed> =>
   Option.filter(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed))
@@ -257,18 +238,17 @@ const planProject = (
     const stageInput = { cliOptions: { force: request.full }, targetMutatePatterns: undefined }
     const prepared = yield* Cell.provideContext(prepareStageCell, context).run(stageInput)
     const done: PlanInstrumentDone = yield* Cell.provideContext(planInstrumentCell, context).run(prepared)
-    const texts = yield* incrementalReportTextsOf({ basePath: project, options: done.options })
-    const coverage = firstCoverageOf(texts)
+    const text = yield* incrementalReportTextOf({ basePath: project, options: done.options })
+    const coverage = decodeCoverage(text)
     const testCoverage = Option.match(coverage, { onNone: emptyTestCoverage, onSome: reusedTestCoverage })
-    const reportCosts = reportCostsOf(texts)
     const label = labelOf(path, labelBase, project)
-    const programDigest = yield* programDigestAtPlanTime({
-      texts,
+    const checkerDigests = yield* checkerDigestsAtPlanTime({
       context,
       options: done.options,
       loadedPlugins: prepared.loadedPlugins,
       project,
     })
+    const store = yield* verdictStoreOf({ options: done.options.verdictStore, basePath: project })
     const reuse = yield* readIncrementalReuse({
       project: done.project,
       currentMutants: [...done.mutants],
@@ -281,14 +261,19 @@ const planProject = (
       ),
       observedModules: Option.getOrUndefined(Option.map(coverage, (present) => present.testFileModules)),
       originalFileOf: (file) => path.resolve(file),
-      programDigestOf: Effect.succeed(programDigest),
+      fileContentDigests: done.fileContentDigests,
+      store,
+      checkerConfigDigestOf: checkerDigests.config,
+      programDigestOf: checkerDigests.program,
     })
+    const storedCosts = newestCostsOf(reuse.priorEntries)
     const dryRunDecision = Result.getOrElse(
       requireDryRun(
         requireDryRunCommandOf({
           options: done.options,
           mutants: [...reuse.mutants, ...reuse.rememberedResults],
-          texts,
+          text,
+          priorEntries: reuse.priorEntries,
         }),
       ),
       (neverError) => neverError,
@@ -307,7 +292,7 @@ const planProject = (
     const mutants = [
       ...reuse.mutants.map((mutant) => ({
         id: mutant.id,
-        costMs: costOf(mutant.id, reportCosts, coverage, testCoverage),
+        costMs: costOf(mutant.id, storedCosts, coverage, testCoverage),
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
         ...optionalField('placementKey', placementKeyOf(dominatorIds, mutant)),
       })),

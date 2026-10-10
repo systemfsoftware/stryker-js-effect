@@ -6,7 +6,7 @@ import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { appendFile, readFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 
 const PROGRAM_FILES = ['src/lib/chain.ts', 'src/lib/subject.ts', 'src/types/transitive.d.ts']
@@ -17,6 +17,7 @@ const MUTATED_FILE = 'src/lib/subject.ts'
 const REJECTION_REASON = 'rejected by the fixture checker'
 const CHAIN_FILE = 'src/lib/chain.ts'
 const ACCEPT_ALL_MARKER = 'checker-accepts-all'
+const DIGEST_SCOPES_FILE = '.checker-digest-scopes'
 
 const relativeToCwd = (file) => relative(process.cwd(), resolve(file)).replaceAll('\\', '/')
 
@@ -47,6 +48,14 @@ const programDigestOf = async () => {
   return createHash('sha256').update(lines.join('\n')).digest('hex')
 }
 
+const configDigestOf = async () => {
+  const lines = []
+  for (const file of (await configFileChain()).sort()) {
+    lines.push(`${file}\u0000${await readFile(file, 'utf8')}`)
+  }
+  return createHash('sha256').update(lines.join('\n')).digest('hex')
+}
+
 const rejects = (mutant) => mutant.fileName === MUTATED_FILE || mutant.fileName.endsWith(`/${MUTATED_FILE}`)
 
 const answersOf = async (mutants) => {
@@ -61,7 +70,11 @@ const answersOf = async (mutants) => {
 
 const handlers = Plugin.CheckerRpcs.toLayer({
   group: ({ mutants }) => Effect.succeed([mutants.map((mutant) => mutant.id)]),
-  digest: () => Effect.promise(programDigestOf),
+  digest: ({ scope }) =>
+    Effect.promise(async () => {
+      await appendFile(DIGEST_SCOPES_FILE, `${scope}\n`)
+      return scope === 'config' ? configDigestOf() : programDigestOf()
+    }),
   check: ({ mutants }) => Effect.promise(() => answersOf(mutants)),
 })
 
