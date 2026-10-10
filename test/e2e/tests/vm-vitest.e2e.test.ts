@@ -35,7 +35,7 @@ const verifyNoCoverageMutantsNameNoKiller = (
 
 const Feature = makeFeature({ it })
 
-Feature('Running a vitest-syntax suite through the in-memory runner', { timeout: 300_000 })
+Feature('Running a vitest-syntax suite through the in-memory runner')
   .withLayer(E2eHarnessLive)
   .live(
     'boots a warm microVM per scenario and runs the packed CLI, exporting host and worker spans to the Grafana LGTM collector',
