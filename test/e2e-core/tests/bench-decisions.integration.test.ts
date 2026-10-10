@@ -28,7 +28,7 @@ const MUTATOR_NAME = Result.getOrThrow(S.decodeResult(Mutant.MutatorName)('Arith
 
 interface CorpusShape {
   readonly repo: ReadonlyArray<{ readonly project: string; readonly mutate: ReadonlyArray<string> }>
-  readonly enterprise: { readonly fixture: string; readonly config: string }
+  readonly enterprise: { readonly fixture: string; readonly config: string; readonly mutate: ReadonlyArray<string> }
 }
 
 interface MeasuredShape {
@@ -152,7 +152,11 @@ const corpusShapeOf = (text: string): CorpusShape | null =>
     onFailure: () => null,
     onSuccess: (corpus): CorpusShape => ({
       repo: corpus.repo.map((entry) => ({ project: entry.project, mutate: entry.mutate })),
-      enterprise: { fixture: corpus.enterprise.fixture, config: corpus.enterprise.config },
+      enterprise: {
+        fixture: corpus.enterprise.fixture,
+        config: corpus.enterprise.config,
+        mutate: corpus.enterprise.mutate,
+      },
     }),
   })
 
@@ -190,11 +194,11 @@ Feature('The bench lane reads runs and covering tests from their own stream and 
             Effect.succeed({
               populated: JSON.stringify({
                 repo: [{ project: 'packages/a', mutate: ['src/a.ts'] }],
-                enterprise: { fixture: 'test/e2e/fixture', config: 'stryker.conf.json' },
+                enterprise: { fixture: 'test/e2e/fixture', config: 'stryker.conf.json', mutate: ['src/b.ts'] },
               }),
               empty: JSON.stringify({
                 repo: [],
-                enterprise: { fixture: 'test/e2e/fixture', config: 'stryker.conf.json' },
+                enterprise: { fixture: 'test/e2e/fixture', config: 'stryker.conf.json', mutate: ['src/b.ts'] },
               }),
             }),
         ),
@@ -207,7 +211,7 @@ Feature('The bench lane reads runs and covering tests from their own stream and 
           expect(s.corpora).toStrictEqual({
             populated: {
               repo: [{ project: 'packages/a', mutate: ['src/a.ts'] }],
-              enterprise: { fixture: 'test/e2e/fixture', config: 'stryker.conf.json' },
+              enterprise: { fixture: 'test/e2e/fixture', config: 'stryker.conf.json', mutate: ['src/b.ts'] },
             },
             empty: null,
           })

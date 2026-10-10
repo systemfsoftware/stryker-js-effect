@@ -191,6 +191,12 @@ ${testFilesLine(input.entry.testFiles)}  thresholds: { ...base.thresholds, break
 export default config
 `
 
+const enterpriseConfigSource = (corpus: BenchEnterpriseCorpus): string =>
+  `import base from './${corpus.config}'
+
+export default { ...base, mutate: ${JSON.stringify(corpus.mutate)} }
+`
+
 const writeRepoEntry = (
   input: PrepareSideInput,
   entry: BenchRepoEntry,
@@ -423,6 +429,11 @@ const prepareEnterprise = (
         yield* fs.remove(path.join(bundleRoot, 'node_modules'), { recursive: true, force: true }).pipe(Effect.orDie)
         const catalogs = yield* readCatalogs(input.root)
         yield* rewriteManifests(bundleRoot, catalogs)
+        yield* fs.writeFileString(path.join(bundleRoot, BENCH_CONFIG_FILE), enterpriseConfigSource(corpus)).pipe(
+          Effect.mapError((cause) =>
+            fail(STEP_ENTERPRISE_MANIFESTS, `${bundleRoot}/${BENCH_CONFIG_FILE} could not be written`, cause)
+          ),
+        )
       }),
     )
 
@@ -457,7 +468,7 @@ const prepareEnterprise = (
       root: input.root,
       cwd: bundleRoot,
       cli: path.join(bundleRoot, ...ENTERPRISE_CLI_RELATIVE),
-      configFile: corpus.config,
+      configFile: BENCH_CONFIG_FILE,
       setupSteps: [manifests.step, closure.step, install.step],
     } satisfies PreparedSide
   })

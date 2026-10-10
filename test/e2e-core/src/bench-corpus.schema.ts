@@ -9,6 +9,7 @@ export class BenchRepoEntry extends S.Class<BenchRepoEntry>('BenchRepoEntry')({
 export class BenchEnterpriseCorpus extends S.Class<BenchEnterpriseCorpus>('BenchEnterpriseCorpus')({
   fixture: S.NonEmptyString,
   config: S.NonEmptyString,
+  mutate: S.NonEmptyArray(S.NonEmptyString),
 }) {}
 
 export class BenchCorpus extends S.Class<BenchCorpus>('BenchCorpus')({

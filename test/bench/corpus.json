@@ -17,6 +17,12 @@
   ],
   "enterprise": {
     "fixture": "test/e2e/testResources/enterprise-monorepo-fixture",
-    "config": "stryker.config.ts"
+    "config": "stryker.config.ts",
+    "mutate": [
+      "packages/core/src/pricing.ts",
+      "packages/services/src/health.ts",
+      "packages/api/src/report.ts",
+      "packages/analytics/src/index.ts"
+    ]
   }
 }

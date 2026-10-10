@@ -31,5 +31,14 @@ and would dominate every repetition. Each entry, and the enterprise fixture, is
 its own project in the report; a repetition of a project is one CLI run.
 
 Each entry is bounded so its eight runs fit the job budget (10 minutes per
-job): a repo entry may pin `mutate` line ranges and `testFiles`, the same on
-both sides. The bound shapes timing only; it never feeds a verdict.
+job): a repo entry may pin `mutate` line ranges and `testFiles`, and the
+enterprise fixture pins `mutate` to four files, the same on both sides. The
+bound shapes timing only; it never feeds a verdict.
+
+Every run starts from its side's tree exactly as setup left it. Before each
+run the bench restores the project directory to the snapshot it took after
+setup, outside `node_modules`: files a run added are removed, changed files
+are put back, and the Vitest results cache under `node_modules/.vite` is
+deleted. Without that, one run's leftovers (reports, sandboxes, compiled
+output, Vitest's file order cache) change which tests the next run selects,
+and the workload digest reads `changed` on a tree nobody edited.

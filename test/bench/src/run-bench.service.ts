@@ -32,6 +32,7 @@ import * as Stream from 'effect/Stream'
 
 import { BenchOrchestrationFailed } from './bench-failure.schema.js'
 import type { PreparedSide } from './prepared-side.js'
+import { type PristineTree, restoreTree, snapshotTree } from './pristine-tree.service.js'
 import { workloadDigest } from './workload-digest.service.js'
 
 export interface RunBenchInput {
@@ -134,9 +135,10 @@ interface RunOutcome {
 const runOne = (
   input: RunBenchInput,
   prepared: PreparedSide,
+  pristine: PristineTree,
   position: number,
   timeoutMs: number,
-): Effect.Effect<RunOutcome, never, BenchPlatform> =>
+): Effect.Effect<RunOutcome, BenchOrchestrationFailed, BenchPlatform> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -144,6 +146,15 @@ const runOne = (
     const streamFile = path.join(input.runsRoot, `${stem}.jsonl`)
     const incrementalFile = path.join(input.runsRoot, `${stem}.json`)
 
+    yield* restoreTree(pristine).pipe(
+      Effect.mapError((cause) =>
+        BenchOrchestrationFailed.make({
+          code: 'side-setup-failed',
+          reason:
+            `side ${prepared.side}: ${pristine.root} could not be restored to its prepared state: ${cause.message}`,
+        })
+      ),
+    )
     const startedAt = yield* Clock.currentTimeMillis
     const cliExit = yield* runCli({
       cli: prepared.cli,
@@ -178,7 +189,25 @@ const runOne = (
     return { run, exit: cliExit.exit, wallMs }
   })
 
-const sideOf = (input: RunBenchInput, side: BenchSide): PreparedSide => (side === 'A' ? input.sideA : input.sideB)
+interface PreparedTarget {
+  readonly prepared: PreparedSide
+  readonly pristine: PristineTree
+}
+
+const prepareTarget = (
+  prepared: PreparedSide,
+): Effect.Effect<PreparedTarget, BenchOrchestrationFailed, BenchPlatform> =>
+  Effect.map(
+    snapshotTree(prepared.cwd).pipe(
+      Effect.mapError((cause) =>
+        BenchOrchestrationFailed.make({
+          code: 'side-setup-failed',
+          reason: `side ${prepared.side}: ${prepared.cwd} could not be read after setup: ${cause.message}`,
+        })
+      ),
+    ),
+    (pristine) => ({ prepared, pristine }),
+  )
 
 const budgetExceeded = (what: string, earlierWallMs: ReadonlyArray<number>): BenchOrchestrationFailed =>
   BenchOrchestrationFailed.make({
@@ -190,6 +219,7 @@ const budgetExceeded = (what: string, earlierWallMs: ReadonlyArray<number>): Ben
 
 const runAt = (
   input: RunBenchInput,
+  targets: { readonly A: PreparedTarget; readonly B: PreparedTarget },
   earlier: Ref.Ref<ReadonlyArray<number>>,
 ) =>
 (side: BenchSide, position: number): Effect.Effect<BenchRun, BenchOrchestrationFailed, BenchPlatform> =>
@@ -205,7 +235,8 @@ const runAt = (
       onFalse: () => Effect.void,
     })
     const timeoutMs = Math.min(input.runTimeoutMs, remainingMs)
-    const outcome = yield* runOne(input, sideOf(input, side), position, timeoutMs)
+    const target = targets[side]
+    const outcome = yield* runOne(input, target.prepared, target.pristine, position, timeoutMs)
     yield* Match.valueTags(outcome.exit, {
       exited: () => Effect.void,
       'timed-out': () =>
@@ -228,7 +259,8 @@ export const runBench = (
 ): Effect.Effect<RunBenchResult, BenchOrchestrationFailed, BenchPlatform> =>
   Effect.gen(function*() {
     const earlier = yield* Ref.make<ReadonlyArray<number>>([])
-    const runs = yield* Effect.forEach(BENCH_ORDER, runAt(input, earlier))
+    const targets = { A: yield* prepareTarget(input.sideA), B: yield* prepareTarget(input.sideB) }
+    const runs = yield* Effect.forEach(BENCH_ORDER, runAt(input, targets, earlier))
 
     const summary = summarizeBench(SummarizeBenchCommand.make({ runs: [...runs] }))
     const outcome = Result.match(summary, {
