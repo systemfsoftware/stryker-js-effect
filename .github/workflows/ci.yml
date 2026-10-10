@@ -148,6 +148,7 @@ jobs:
     timeout-minutes: 20
     outputs:
       run: ${{ steps.changes.outputs.run }}
+      mode: ${{ steps.changes.outputs.mode }}
       base: ${{ steps.changes.outputs.base }}
     env:
       CI: "true"
@@ -200,10 +201,11 @@ jobs:
           - shard: 6
     name: checker-parity (${{ matrix.shard }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ needs.checker-parity-changes.outputs.mode == 'full' && 45 || 8 }}
     env:
       CI: "true"
       SHARDS: 6
+      MODE: ${{ needs.checker-parity-changes.outputs.mode }}
       BASE: ${{ needs.checker-parity-changes.outputs.base }}
     steps:
       - uses: actions/checkout@v7
@@ -236,38 +238,64 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm turbo build --filter @systemfsoftware/stryker-js-typescript-checker
       - name: Restore verdict cache
-        if: github.event_name != 'push'
+        id: restore
         uses: actions/cache/restore@v6
         with:
           path: .checker-parity-cache
-          key: checker-parity-${{ matrix.shard }}-${{ github.run_id }}
+          key: checker-parity-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: checker-parity-${{ matrix.shard }}-
+      - name: Report a cold verdict cache
+        if: steps.restore.outputs.cache-matched-key == ''
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          echo "::warning title=checker-parity cache-miss (${SHARD})::No verdict cache matched prefix checker-parity-${SHARD}-, so every file in this leg is checked cold. Next action: none if this is the first run of the lane; otherwise check that the previous run's 'Save verdict cache' step ran."
+          echo "Verdict cache: miss (code \`cache-miss\`), leg $SHARD starts cold." >> "$GITHUB_STEP_SUMMARY"
       - name: Run both checkers over the shard
-        run: >-
-          timeout --signal=TERM --kill-after=10s 2400
-          node test/checker-parity/dist/main.mjs run
-          --main-worker "$RUNNER_TEMP/main-side/packages/stryker-js-typescript-checker/dist/main.mjs"
-          --branch-worker "$GITHUB_WORKSPACE/packages/stryker-js-typescript-checker/dist/main.mjs"
-          --shard "${{ matrix.shard }}/$SHARDS"
-          --cache .checker-parity-cache
-          --out checker-parity-out
+        id: run
+        timeout-minutes: ${{ env.MODE == 'full' && 40 || 5 }}
+        env:
+          BUDGET: ${{ env.MODE == 'full' && 2340 || 270 }}
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=10s "$BUDGET" \
+            node test/checker-parity/dist/main.mjs run \
+            --scope "$MODE" \
+            --base "$BASE" \
+            --settings test/checker-parity/pr-scope.json \
+            --main-worker "$RUNNER_TEMP/main-side/packages/stryker-js-typescript-checker/dist/main.mjs" \
+            --branch-worker "$GITHUB_WORKSPACE/packages/stryker-js-typescript-checker/dist/main.mjs" \
+            --shard "${{ matrix.shard }}/$SHARDS" \
+            --cache .checker-parity-cache \
+            --out checker-parity-out
+          code=$?
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
       - name: Point a failed shard at its artifact
         if: failure()
         env:
           SHARD: ${{ matrix.shard }}
+          EXIT: ${{ steps.run.outputs.exit }}
           ARTIFACT: checker-parity-${{ github.run_id }}-${{ matrix.shard }}
         run: |
-          echo "::error title=checker-parity shard $SHARD failed::Read artifact $ARTIFACT, file shard-$SHARD.ndjson (lines with _tag ProjectBootFailed or TelemetryMissing name the project; next action: rerun that project's worker with the reason shown)."
+          if [ "$EXIT" = 124 ] || [ "$EXIT" = 137 ] || [ -z "$EXIT" ]; then
+            code=shard-timeout
+            next="Verdicts of every finished file are in the saved cache; rerun the failed legs and they resume from it. scope-$SHARD.json (LegStarted, written when the leg began) lists the leg's projects; those with no line in shard-$SHARD.ndjson did not finish."
+          else
+            code=shard-failed
+            next="Read lines with _tag ProjectBootFailed or TelemetryMissing in shard-$SHARD.ndjson; they name the project and the reason."
+          fi
+          echo "::error title=checker-parity shard $SHARD failed ($code)::Artifact $ARTIFACT, files shard-$SHARD.ndjson and scope-$SHARD.json. Next action: $next"
           {
-            echo "### checker-parity shard $SHARD failed"
-            echo "Artifact \`$ARTIFACT\`, file \`shard-$SHARD.ndjson\`."
+            echo "### checker-parity shard $SHARD failed (\`$code\`)"
+            echo "Artifact \`$ARTIFACT\`, files \`shard-$SHARD.ndjson\` and \`scope-$SHARD.json\`. $next"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Save verdict cache
-        if: success()
+        if: always() && steps.restore.outcome == 'success'
         uses: actions/cache/save@v6
         with:
           path: .checker-parity-cache
-          key: checker-parity-${{ matrix.shard }}-${{ github.run_id }}
+          key: checker-parity-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Upload shard results
         if: always()
         uses: actions/upload-artifact@v7
@@ -293,19 +321,21 @@ jobs:
           echo "::error title=checker-parity change detection ${RESULT}::The checker-parity-changes job ended with ${RESULT}, so no shard ran (code shard-incomplete). Read that job's log, then rerun the workflow."
           echo "### checker-parity: change detection ended with \`$RESULT\`" >> "$GITHUB_STEP_SUMMARY"
           exit 1
-      - name: Nothing to check
-        if: needs.checker-parity-changes.outputs.run != 'true'
-        run: echo "No change reaches the checker-parity corpus."
+      - name: Not applicable
+        if: needs.checker-parity-changes.result == 'success' && needs.checker-parity-changes.outputs.run != 'true'
+        run: |
+          echo "checker-parity: not-applicable (no change reaches the checker, instrumenter, tsgo or driver inputs)."
+          echo "### checker-parity: pass (\`not-applicable\`): no change reaches the checker, instrumenter, tsgo or driver inputs." >> "$GITHUB_STEP_SUMMARY"
       - name: Every shard finished
         if: needs.checker-parity-changes.outputs.run == 'true' && needs.checker-parity.result != 'success'
         env:
           RESULT: ${{ needs.checker-parity.result }}
           PATTERN: checker-parity-${{ github.run_id }}-*
         run: |
-          echo "::error title=checker-parity shards ${RESULT}::A shard did not finish (code shard-incomplete). Read the failed checker-parity (k) leg's annotation, then artifact ${PATTERN}, file shard-<k>.ndjson."
+          echo "::error title=checker-parity shards ${RESULT}::A shard did not finish (code shard-incomplete). Read the failed checker-parity (k) leg's annotation (shard-timeout or shard-failed), then artifact ${PATTERN}, files shard-<k>.ndjson and scope-<k>.json. Rerun failed jobs: finished files resume from the verdict cache."
           {
             echo "### checker-parity: shards ended with \`$RESULT\`"
-            echo "Reason code \`shard-incomplete\`. Artifacts \`$PATTERN\`, file \`shard-<k>.ndjson\` per shard."
+            echo "Reason code \`shard-incomplete\`. Artifacts \`$PATTERN\`, files \`shard-<k>.ndjson\` and \`scope-<k>.json\` per shard."
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
       - uses: actions/checkout@v7

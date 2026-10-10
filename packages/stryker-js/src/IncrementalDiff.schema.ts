@@ -19,6 +19,7 @@ export const ReuseRefusalReasonSchema = S.Literals([
   'flakyDependency',
   'timeoutUnreproduced',
   'noPriorRecord',
+  'decidedPerRun',
 ])
 
 export type ReuseRefusalReason = typeof ReuseRefusalReasonSchema.Type
@@ -50,6 +51,7 @@ const previousReuseRecordFields = {
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
+  subsumption: S.optional(Mutant.Subsumption),
 }
 
 const PreviousReuseRecordIgnoredSchema = S.Struct({
@@ -80,6 +82,7 @@ const reuseMutantFields = {
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
+  subsumption: S.optional(Mutant.Subsumption),
   remembered: S.Boolean,
 }
 

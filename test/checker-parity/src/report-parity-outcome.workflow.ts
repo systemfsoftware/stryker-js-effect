@@ -2,6 +2,7 @@ import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
+import * as Num from 'effect/Number'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -10,11 +11,11 @@ import {
   ComparisonDecision,
   type ObservedVerdict,
   type ParityBroken,
-  type ParityHolds,
   type SideTotals,
   type Violation,
 } from './compare-sides.workflow.js'
 import { DriverFailure } from './DriverFailure.schema.js'
+import { LegScope, type RunScopeName, type ScopeSettings } from './Parity.schema.js'
 
 const ReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/ReportParityOutcome')
 type ReportTypeId = typeof ReportTypeId
@@ -27,6 +28,7 @@ export class CompareFinished extends S.TaggedClass<CompareFinished>()('CompareFi
   shards: S.Int,
   summaryFile: S.String,
   projectShards: S.Array(ProjectShard),
+  legs: S.Array(LegScope),
 }) {}
 
 export class ReportParityOutcomeCommand
@@ -183,16 +185,47 @@ const inActions = (
   annotations: () => ReadonlyArray<string>,
 ): ReadonlyArray<string> => Boolean.match(command.githubActions, { onTrue: annotations, onFalse: () => [] })
 
+const sumLegs = (legs: ReadonlyArray<LegScope>, field: (leg: LegScope) => number): number =>
+  legs.reduce((total, leg) => total + field(leg), 0)
+
+const maxLegs = (legs: ReadonlyArray<LegScope>, field: (leg: LegScope) => number): number =>
+  legs.reduce((highest, leg) => Num.max(highest, field(leg)), 0)
+
+const SCOPE_TITLES: Readonly<Record<RunScopeName, string>> = { pr: 'pull request', full: 'full corpus' }
+
+const settingsText = (settings: ScopeSettings | null): string =>
+  Option.match(Option.fromNullishOr(settings), {
+    onNone: () => '',
+    onSome: (limits) =>
+      ` (seed \`${limits.seed}\`; drift ${limits.perProject} per project over ${limits.driftProjects} project(s); at most ${limits.perChangedFile} per changed file)`,
+  })
+
+const scopeLinesOf = (legs: ReadonlyArray<LegScope>, first: LegScope): ReadonlyArray<string> => [
+  `- scope: ${SCOPE_TITLES[first.scope]}, ${sumLegs(legs, (leg) => leg.checkedMutants)} mutants checked: ${
+    sumLegs(legs, (leg) => leg.changedMutants)
+  } in ${sumLegs(legs, (leg) => leg.changedFiles)} changed file(s), ${
+    sumLegs(legs, (leg) => leg.sampledMutants)
+  } drift sample${settingsText(first.settings)}`,
+  `- verdict cache: ${sumLegs(legs, (leg) => leg.cachedFiles)} file(s) reused, ${
+    sumLegs(legs, (leg) => leg.freshFiles)
+  } checked fresh`,
+  `- slowest leg: ${(maxLegs(legs, (leg) => leg.wallMs) / 1000).toFixed(0)} s driver wall time`,
+]
+
+const scopeLines = (legs: ReadonlyArray<LegScope>): ReadonlyArray<string> =>
+  Option.match(Arr.head(legs), { onNone: () => [], onSome: (first) => scopeLinesOf(legs, first) })
+
 const summaryMarkdown = (
   verdict: 'FAIL' | 'pass',
-  decision: ComparisonDecision,
+  finished: CompareFinished,
   violations: ReadonlyArray<Violation>,
 ): string => {
-  const summary = decision.summary
+  const summary = finished.decision.summary
   return [
     `### checker-parity: ${verdict}`,
     '',
     `- violations: ${violations.length}${codesSuffix(violations)}`,
+    ...scopeLines(finished.legs),
     `- projects: ${summary.measuredProjectCount} measured of ${summary.projectCount}, ${summary.excludedCachedProjectCount} cached-excluded, ${summary.skipped.length} skipped`,
     `- main: ${ratiosOf(summary.main)}`,
     `- branch: ${ratiosOf(summary.branch)}`,
@@ -201,13 +234,13 @@ const summaryMarkdown = (
   ].join('\n')
 }
 
-const heldReport = (finished: CompareFinished, held: ParityHolds): ParityHeldReport =>
+const heldReport = (finished: CompareFinished): ParityHeldReport =>
   ParityHeldReport.make({
     exitCode: 0,
     stdout: [`parity holds over ${finished.lineCount} lines across ${finished.shards} shards`],
     stderr: [],
     annotations: [],
-    stepSummary: summaryMarkdown('pass', held, []),
+    stepSummary: summaryMarkdown('pass', finished, []),
   })
 
 const brokenReport = (
@@ -229,7 +262,7 @@ const brokenReport = (
       command,
       () => groupsByCode(broken.violations).map((group) => annotationOf(command, finished, group)),
     ),
-    stepSummary: summaryMarkdown('FAIL', broken, broken.violations),
+    stepSummary: summaryMarkdown('FAIL', finished, broken.violations),
   })
 
 const failedReport = (command: ReportParityOutcomeCommand, failure: DriverFailure): DriverFailedReport =>
@@ -251,7 +284,7 @@ const reportOf = (command: ReportParityOutcomeCommand): ParityOutcomeReport =>
     DriverFailure: (failure) => failedReport(command, failure),
     CompareFinished: (finished) =>
       Match.valueTags(finished.decision, {
-        ParityHolds: (held) => heldReport(finished, held),
+        ParityHolds: () => heldReport(finished),
         ParityBroken: (broken) => brokenReport(command, finished, broken),
       }),
   })

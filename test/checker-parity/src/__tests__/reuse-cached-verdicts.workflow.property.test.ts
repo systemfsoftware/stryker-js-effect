@@ -18,8 +18,7 @@ const decisionOf = (
   subject: typeof reuseCachedVerdicts,
   current: VerdictCacheIdentity,
   stored: VerdictCacheIdentity | null,
-  readCache = true,
-): VerdictReuse => Result.getOrThrow(subject(ReuseCachedVerdictsCommand.make({ readCache, current, stored })))
+): VerdictReuse => Result.getOrThrow(subject(ReuseCachedVerdictsCommand.make({ current, stored })))
 
 const freshBecause = (decision: VerdictReuse, reason: FreshReason): boolean =>
   S.is(CheckFreshly)(decision) && decision.reason === reason
@@ -98,11 +97,5 @@ describe('reuseCachedVerdicts', () => {
         ),
         'mutants-changed',
       ),
-  )
-
-  it.prop(
-    '∀e_PushEvent_≡RefreshesEvenAnIdenticalEntry',
-    { of: [VerdictCacheIdentity], subject: reuseCachedVerdicts },
-    (subject, [identity]) => freshBecause(decisionOf(subject, identity, identity, false), 'push-refreshes-cache'),
   )
 })

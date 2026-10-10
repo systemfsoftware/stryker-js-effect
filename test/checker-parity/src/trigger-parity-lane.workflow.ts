@@ -22,14 +22,14 @@ const SHARED_FILES: ReadonlyArray<string> = [
 const SHARED_DIRECTORIES: ReadonlyArray<string> = ['.github/actions/', 'test/e2e/testResources/']
 
 export class TriggerParityLaneCommand extends S.TaggedClass<TriggerParityLaneCommand>()('TriggerParityLaneCommand', {
-  pushEvent: S.Boolean,
+  fullCorpus: S.Boolean,
   closureDirectories: S.Array(S.String),
   changedFiles: S.Array(S.String),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export const RunReason = S.Literals(['push', 'closure-changed', 'shared-input-changed'])
+export const RunReason = S.Literals(['full-corpus', 'closure-changed', 'shared-input-changed'])
 export type RunReason = typeof RunReason.Type
 
 export class RunLane extends S.TaggedClass<RunLane>()('RunLane', {
@@ -83,8 +83,8 @@ const changeOf = (command: TriggerParityLaneCommand): LaneTrigger =>
   )
 
 const triggerOf = (command: TriggerParityLaneCommand): LaneTrigger =>
-  Boolean.match(command.pushEvent, {
-    onTrue: (): LaneTrigger => runFor('push', []),
+  Boolean.match(command.fullCorpus, {
+    onTrue: (): LaneTrigger => runFor('full-corpus', []),
     onFalse: () => changeOf(command),
   })
 

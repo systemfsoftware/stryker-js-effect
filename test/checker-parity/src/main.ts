@@ -16,6 +16,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import * as Record from 'effect/Record'
+import * as Result from 'effect/Result'
 import * as Runtime from 'effect/Runtime'
 import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
@@ -27,7 +28,7 @@ import { compareSides, CompareSidesCommand, ComparisonDecision } from './compare
 import { ISOLATED_DECLARATIONS_PROJECT } from './corpus.js'
 import { DriverFailure, ReportedExit } from './DriverFailure.schema.js'
 import { laneTrigger } from './lane-trigger.js'
-import { type ParityLine, Shard } from './Parity.schema.js'
+import { LegFile, type LegScope, type ParityLine, RunScopeName, Shard } from './Parity.schema.js'
 import {
   CompareFinished,
   ProjectShard,
@@ -85,28 +86,51 @@ const shardIncomplete = (reason: string, shard: number): DriverFailure =>
 interface ShardLines {
   readonly shard: number
   readonly lines: ReadonlyArray<ParityLine>
+  readonly scope: LegScope
 }
+
+const decodeLegFile = S.decodeResult(S.fromJsonString(LegFile))
+
+const readShardText = (file: string, shard: number): Effect.Effect<string, DriverFailure, FileSystem.FileSystem> =>
+  FileSystem.FileSystem.use((fs) => fs.readFileString(file)).pipe(
+    Effect.mapError((cause) => shardIncomplete(`Could not read ${file}: ${cause.message}`, shard)),
+  )
 
 const loadShard = (
   byShard: Record<string, ReadonlyArray<ShardFile>>,
   count: number,
 ) =>
-(shard: number): Effect.Effect<ShardLines, DriverFailure, FileSystem.FileSystem> =>
+(shard: number): Effect.Effect<ShardLines, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
+    const path = yield* Path.Path
     const files = Option.getOrElse(Record.get(byShard, String(shard)), Arr.empty)
     const only = yield* Effect.fromOption(Option.filter(Arr.head(files), () => files.length === 1)).pipe(
       Effect.mapError(() =>
         shardIncomplete(`Shard ${shard}/${count} contributed ${files.length} shard files, expected exactly one.`, shard)
       ),
     )
-    const content = yield* FileSystem.FileSystem.use((fs) => fs.readFileString(only.file)).pipe(
-      Effect.mapError((cause) => shardIncomplete(`Could not read ${only.file}: ${cause.message}`, shard)),
-    )
+    const content = yield* readShardText(only.file, shard)
     yield* Boolean.match(Str.isNonEmpty(content.trim()), {
       onTrue: () => Effect.void,
       onFalse: () => Effect.fail(shardIncomplete(`Shard ${shard}/${count} wrote an empty ${only.file}.`, shard)),
     })
-    return { shard, lines: yield* decodeLines(content, only.file) }
+    const scopeFile = path.join(path.dirname(only.file), `scope-${shard}.json`)
+    const leg = yield* Effect.fromResult(
+      Result.mapError(decodeLegFile(yield* readShardText(scopeFile, shard)), (issue) =>
+        shardIncomplete(`${scopeFile} is not a leg scope: ${issue.message}`, shard)),
+    )
+    const scope = yield* Match.valueTags(leg, {
+      LegStarted: (started) =>
+        Effect.fail(
+          shardIncomplete(
+            `${scopeFile} records that shard ${shard}/${count} started ${started.projects.length} project(s) but never finished.`,
+            shard,
+          ),
+        ),
+      LegScope: (finished) =>
+        Effect.succeed(finished),
+    })
+    return { shard, lines: yield* decodeLines(content, only.file), scope }
   })
 
 const loadShards = (
@@ -134,7 +158,7 @@ const projectShardsOf = (shards: ReadonlyArray<ShardLines>): ReadonlyArray<Proje
 const FALLBACK_ENVIRONMENT: CiEnvironment = {
   ci: false,
   githubActions: false,
-  pushEvent: false,
+  fullCorpusEvent: false,
   stepSummary: Option.none(),
   runId: '<run-id>',
 }
@@ -207,6 +231,7 @@ const compare = (input: CompareInput): Effect.Effect<void, DriverFailure | Repor
       shards: input.shards,
       summaryFile: input.summary,
       projectShards: [...projectShardsOf(shards)],
+      legs: shards.map((shard) => shard.scope),
     })
     yield* Effect.flatMap(emitReport(finished), exitWith)
   })
@@ -219,6 +244,9 @@ const refusedOutsideCi = DriverFailure.make({
 })
 
 const runCommand = Command.make('run', {
+  scope: Flag.Literals('scope', RunScopeName.literals),
+  base: Flag.String('base').pipe(Flag.optional),
+  settings: Flag.String('settings').pipe(Flag.optional),
   mainWorker: Flag.String('main-worker'),
   branchWorker: Flag.String('branch-worker'),
   shard: Flag.String('shard').pipe(Flag.withSchema(Shard)),
@@ -251,23 +279,26 @@ const triggerCommand = Command.make('trigger', {
     const path = yield* Path.Path
     const trigger = yield* laneTrigger({
       base: config.base,
-      pushEvent: environment.pushEvent,
+      fullCorpus: environment.fullCorpusEvent,
       repoRoot: path.resolve('.'),
     })
     const outputs = Match.valueTags(trigger, {
       RunLane: (run) => ({
-        run: true,
+        run: 'true',
+        word: 'run',
         detail: `${run.reason}: ${run.matchedCount} file(s)${run.matched.map((file) => `\n- \`${file}\``).join('')}`,
       }),
       SkipLane: (skip) => ({
-        run: false,
+        run: 'false',
+        word: 'skip',
         detail: `${skip.reason}: none of ${skip.changedCount} changed file(s) is an input`,
       }),
     })
-    yield* Console.log(`run=${outputs.run}\nreason=${trigger.reason}`)
+    const mode = Boolean.match(environment.fullCorpusEvent, { onTrue: () => 'full', onFalse: () => 'pr' })
+    yield* Console.log(`run=${outputs.run}\nreason=${trigger.reason}\nmode=${mode}`)
     yield* appendStepSummary(
       environment,
-      `### checker-parity trigger: ${outputs.run ? 'run' : 'skip'}\n\n${outputs.detail}\n`,
+      `### checker-parity trigger: ${outputs.word} (${mode})\n\n${outputs.detail}\n`,
     )
   }))
 

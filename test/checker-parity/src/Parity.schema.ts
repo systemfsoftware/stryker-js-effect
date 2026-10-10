@@ -9,7 +9,12 @@
  * that record a side write it.
  */
 import { TypeAnswer } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import * as Arr from 'effect/Array'
+import { dual } from 'effect/Function'
+import * as Hash from 'effect/Hash'
+import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
+import * as Str from 'effect/String'
 
 export const Side = S.Literals(['main', 'branch'])
 export type Side = typeof Side.Type
@@ -163,6 +168,62 @@ export const ParityLine = S.Union([
 ])
 export type ParityLine = typeof ParityLine.Type
 
+export const RunScopeName = S.Literals(['pr', 'full'])
+export type RunScopeName = typeof RunScopeName.Type
+
+export class ScopeSettings extends S.Class<ScopeSettings>('ScopeSettings')({
+  schemaVersion: SCHEMA_VERSION,
+  seed: S.String,
+  driftProjects: PositiveInt,
+  perProject: PositiveInt,
+  perChangedFile: PositiveInt,
+}) {}
+
+export const seededOrder: {
+  (values: ReadonlyArray<string>): (settings: ScopeSettings) => ReadonlyArray<string>
+  (settings: ScopeSettings, values: ReadonlyArray<string>): ReadonlyArray<string>
+} = dual(
+  2,
+  (settings: ScopeSettings, values: ReadonlyArray<string>): ReadonlyArray<string> =>
+    Arr.sort(
+      Arr.dedupe(values),
+      Order.combine(
+        Order.mapInput(Order.Number, (value: string) => Hash.string(`${settings.seed}\u0000${value}`)),
+        Str.Order,
+      ),
+    ),
+)
+
+export class LegStarted extends S.TaggedClass<LegStarted>()('LegStarted', {
+  schemaVersion: SCHEMA_VERSION,
+  shard: S.String,
+  scope: RunScopeName,
+  settings: S.NullOr(ScopeSettings),
+  projects: S.Array(S.String),
+  corpusDiscoveryMs: NonNegativeFinite,
+}) {}
+
+export class LegScope extends S.TaggedClass<LegScope>()('LegScope', {
+  schemaVersion: SCHEMA_VERSION,
+  shard: S.String,
+  scope: RunScopeName,
+  settings: S.NullOr(ScopeSettings),
+  changedFiles: NonNegativeInt,
+  changedMutants: NonNegativeInt,
+  sampledMutants: NonNegativeInt,
+  checkedMutants: NonNegativeInt,
+  projects: NonNegativeInt,
+  cachedFiles: NonNegativeInt,
+  freshFiles: NonNegativeInt,
+  corpusDiscoveryMs: NonNegativeFinite,
+  listAndInstrumentMs: NonNegativeFinite,
+  workersMs: NonNegativeFinite,
+  wallMs: NonNegativeFinite,
+}) {}
+
+export const LegFile = S.Union([LegStarted, LegScope])
+export type LegFile = typeof LegFile.Type
+
 const SHARD = /^([1-9][0-9]*)\/([1-9][0-9]*)$/u
 
 const shardParts = (value: string): readonly [number, number] | undefined => {
@@ -196,3 +257,22 @@ export const Gates = S.Struct({
   speed: S.Boolean,
 })
 export type Gates = typeof Gates.Type
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  it.prop(
+    '∀o_SeededOrder_≡DistinctPermutationIndependentOfInputOrder',
+    { of: [ScopeSettings, S.Array(S.String)], subject: seededOrder },
+    (subject, [settings, values]) => {
+      const ordered = subject(settings, values)
+      const reversed = subject(settings, Arr.reverse(values))
+      const distinct = new Set(values)
+      return Arr.every([
+        ordered.length === distinct.size,
+        Arr.every(ordered, (value) => distinct.has(value)),
+        Arr.every(ordered, (value, index) => value === reversed[index]),
+      ], (holds) => holds)
+    },
+  )
+}

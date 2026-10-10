@@ -10,10 +10,12 @@ import { DriverFailure } from './DriverFailure.schema.js'
 export interface CiEnvironment {
   readonly ci: boolean
   readonly githubActions: boolean
-  readonly pushEvent: boolean
+  readonly fullCorpusEvent: boolean
   readonly stepSummary: Option.Option<string>
   readonly runId: string
 }
+
+const FULL_CORPUS_EVENTS: ReadonlyArray<string> = ['push', 'workflow_dispatch']
 
 const optionalText = (name: string): Config.Config<Option.Option<string>> =>
   Config.String(name).pipe(Config.option, Config.map(Option.filter(Str.isNonEmpty)))
@@ -28,7 +30,7 @@ export const ciEnvironment: Effect.Effect<CiEnvironment, DriverFailure> = Config
   Effect.map((read) => ({
     ci: Option.isSome(read.ci),
     githubActions: Option.contains(read.githubActions, 'true'),
-    pushEvent: Option.contains(read.eventName, 'push'),
+    fullCorpusEvent: Option.exists(read.eventName, (name) => FULL_CORPUS_EVENTS.includes(name)),
     stepSummary: read.stepSummary,
     runId: Option.getOrElse(read.runId, () => '<run-id>'),
   })),
@@ -41,8 +43,6 @@ export const ciEnvironment: Effect.Effect<CiEnvironment, DriverFailure> = Config
     })
   ),
 )
-
-export const readsCache = (environment: CiEnvironment): boolean => !(environment.ci && environment.pushEvent)
 
 export const appendStepSummary: {
   (markdown: string): (environment: CiEnvironment) => Effect.Effect<void, DriverFailure, FileSystem.FileSystem>
