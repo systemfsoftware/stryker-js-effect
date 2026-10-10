@@ -18,7 +18,22 @@ const STDERR_TAIL_CHARS = 2000
 
 const failureTailOf = (run: ExecResult): string => run.exitCode === 0 ? '' : run.stderr.slice(-STDERR_TAIL_CHARS)
 
-const reuseRatioOf = (reuse: RunEvent.ReuseReported): number => reuse.reused / Math.max(reuse.reused + reuse.ran, 1)
+const totalOf = (reuse: RunEvent.ReuseReported): number => reuse.reused + reuse.ran
+
+const refusalsOf = (reuse: RunEvent.ReuseReported): string =>
+  Object.entries(reuse.refused)
+    .filter((entry): entry is [string, number] => (entry[1] ?? 0) > 0)
+    .map(([reason, count]) => `${reason} ${count}`)
+    .sort()
+    .join(', ')
+
+const reusedLineOf = (reuse: RunEvent.ReuseReported): string =>
+  `${reuse.reused} of ${totalOf(reuse)} reused; refused: ${refusalsOf(reuse)}`
+
+const floorLineOf = (reuse: RunEvent.ReuseReported): string =>
+  reuse.reused >= REUSE_FLOOR * totalOf(reuse) && totalOf(reuse) > 0
+    ? reusedLineOf(reuse)
+    : `at least ${Math.ceil(REUSE_FLOOR * totalOf(reuse))} of ${totalOf(reuse)} reused`
 
 const verifyReuseAcrossMachines = (
   expect: Expect,
@@ -35,7 +50,7 @@ const verifyReuseAcrossMachines = (
     firstRan: runs.firstReuse.ran > 0,
     firstReused: runs.firstReuse.reused,
     firstWithoutPriorEntry: runs.firstReuse.refused.noPriorRecord + (runs.firstReuse.refused.decidedPerRun ?? 0),
-    secondMeetsTheReuseFloor: reuseRatioOf(runs.secondReuse) >= REUSE_FLOOR,
+    secondReused: reusedLineOf(runs.secondReuse),
     secondUnreadable: runs.secondReuse.refused.entryUnreadable,
     secondStoreUnavailable: runs.secondReuse.refused.storeUnavailable,
   }).toStrictEqual({
@@ -44,7 +59,7 @@ const verifyReuseAcrossMachines = (
     firstRan: true,
     firstReused: 0,
     firstWithoutPriorEntry: runs.firstReuse.ran,
-    secondMeetsTheReuseFloor: true,
+    secondReused: floorLineOf(runs.secondReuse),
     secondUnreadable: 0,
     secondStoreUnavailable: 0,
   })
