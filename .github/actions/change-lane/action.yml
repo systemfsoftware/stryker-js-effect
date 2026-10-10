@@ -1,9 +1,11 @@
 name: Change lane
 description: >-
-  Classifies a pull request's diff with `scripts/change-lane.ts`: `docs-only` when every changed
-  file is a `*.md` under `docs/` or the root README, AGENTS or STRATEGY file, `full` otherwise and
-  on every event other than `pull_request`. Writes the decision to the step summary. The caller
-  checks out with `fetch-depth: 2`, so the pull request's merge commit and both its parents exist.
+  Classifies a pull request's diff with the base commit's `scripts/change-lane.ts`, so a pull
+  request that edits the classifier is judged by the copy it replaces: `docs-only` when every
+  changed file is a `*.md` under `docs/` or the root README, AGENTS or STRATEGY file, `full`
+  otherwise, on every event other than `pull_request`, and when the base has no classifier.
+  Writes the decision to the step summary. The caller checks out with `fetch-depth: 2`, so the
+  pull request's merge commit and both its parents exist.
 
 outputs:
   docs-only:
@@ -23,6 +25,14 @@ runs:
       env:
         GITHUB_EVENT_NAME: ${{ github.event_name }}
       run: |
-        if [ "$GITHUB_EVENT_NAME" = pull_request ] && git rev-parse --verify --quiet HEAD^2 >/dev/null; then
-          git diff -z --name-only --no-renames HEAD^1 HEAD
-        fi | node scripts/change-lane.ts
+        base_classifier="$RUNNER_TEMP/change-lane.mts"
+        if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+          node scripts/change-lane.ts < /dev/null
+        elif git rev-parse --verify --quiet HEAD^2 >/dev/null \
+          && git show HEAD^1:scripts/change-lane.ts > "$base_classifier" 2>/dev/null; then
+          git diff -z --name-only --no-renames HEAD^1 HEAD | node "$base_classifier"
+        else
+          echo 'docs-only=false' >> "$GITHUB_OUTPUT"
+          echo 'full: every lane runs; the base commit has no scripts/change-lane.ts, or the checkout is not a merge commit' \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+        fi
