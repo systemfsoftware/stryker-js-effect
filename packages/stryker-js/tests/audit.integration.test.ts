@@ -53,16 +53,18 @@ const decodeDropAudit = S.decodeUnknownEffect(S.fromJsonString(S.Struct({
     verdict: S.optional(S.Struct({ reason: S.String })),
     reason: S.optional(S.String),
   })),
+  orphanedTests: S.Array(S.Struct({ test: S.String })),
 })))
 
 const decodeCounts = S.decodeUnknownEffect(S.fromJsonString(S.Struct({
   total: S.Struct({ planned: S.Int, compiled: S.Int, statuses: S.Struct({ CompileError: S.Int, Killed: S.Int }) }),
 })))
 
-const matrixJson = (root: string, mutants: ReadonlyArray<MatrixRecord>): string =>
+const matrixJson = (root: string, mutants: ReadonlyArray<MatrixRecord>, mutantSetPolicy: string): string =>
   `${
     JSON.stringify({
       projectRoot: root,
+      mutantSetPolicy,
       files: { [SOURCE_FILE]: { source: SOURCE, mutants } },
       testFiles: { 'test/sign.test.js': { tests: [{ id: NAMED_TEST }, { id: OTHER_TEST }] } },
     })
@@ -91,11 +93,15 @@ const prepareProject = (): Effect.Effect<string, never, FileSystem.FileSystem | 
 const writeMatrix = (
   root: string,
   mutants: ReadonlyArray<MatrixRecord>,
+  mutantSetPolicy = 'full',
 ): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    yield* fs.writeFileString(path.join(root, MATRIX_DIR, 'stryker-incremental.json'), matrixJson(root, mutants))
+    yield* fs.writeFileString(
+      path.join(root, MATRIX_DIR, 'stryker-incremental.json'),
+      matrixJson(root, mutants, mutantSetPolicy),
+    )
   }).pipe(Effect.orDie)
 
 const runAudit = (
@@ -139,6 +145,7 @@ interface AuditedPairView {
 
 interface DropAuditView {
   readonly pairs: ReadonlyArray<AuditedPairView>
+  readonly orphanedTests: ReadonlyArray<{ readonly test: string }>
 }
 
 interface AuditedRun {
@@ -171,13 +178,14 @@ const auditWith = (
   root: string,
   pair: DroppedPair,
   killers: { readonly mutant: ReadonlyArray<string>; readonly dominator: ReadonlyArray<string> },
+  scope: ReadonlyArray<string> = [],
 ): Effect.Effect<AuditedRun, never, AuditServices> =>
   Effect.gen(function*() {
     yield* writeMatrix(root, [
       { id: pair.mutant, status: 'Killed', killedBy: killers.mutant },
       { id: pair.dominator, status: 'Killed', killedBy: killers.dominator },
     ])
-    const ran = yield* runAudit(root, ['--matrix', MATRIX_DIR])
+    const ran = yield* runAudit(root, ['--matrix', MATRIX_DIR, ...scope])
     const audit = yield* readDropAudit(root)
     return { ran, audit }
   })
@@ -267,6 +275,81 @@ Feature('Auditing the mutants the default policy drops against a kill matrix', {
             exitCode: 0,
             counts: { total: { planned: 3, compiled: 1, statuses: { CompileError: 1, Killed: 1 } } },
           })
+        ),
+      ),
+    )
+
+    scenario(
+      'A named test that kills only the dropped mutant is orphaned and fails the audit though the pair passes',
+      Gherkin.Do.pipe(
+        Given('a project whose one relational comparison drops its complement')('root', () => prepareProject()),
+        Given('the drop and its dominator as the audit names them')('pair', (s) => discoverDroppedPair(s.root)),
+        When('the matrix records a second named test that kills the dropped mutant alone')(
+          'audited',
+          (s) => auditWith(s.root, s.pair, { mutant: [NAMED_TEST, OTHER_TEST], dominator: [NAMED_TEST] }),
+        ),
+        Then('the process exits 1, the pair passes and the second test is reported as orphaned')((s, expect) =>
+          expect({
+            exitCode: s.audited.ran.exitCode,
+            reasons: reasonsOf(s.audited.audit),
+            orphans: s.audited.audit.orphanedTests.map((orphan) => orphan.test),
+          }).toStrictEqual({ exitCode: 1, reasons: ['killers-contained'], orphans: [OTHER_TEST] })
+        ),
+      ),
+    )
+
+    scenario(
+      'A report written under the default policy is refused as a kill matrix',
+      Gherkin.Do.pipe(
+        Given('a project')('root', () => prepareProject()),
+        Given('a report recorded under the default mutant-set policy')(
+          'matrix',
+          (s) => writeMatrix(s.root, [{ id: '1a1a1a1a1a1a1a1a', status: 'Killed', killedBy: [NAMED_TEST] }], 'default'),
+        ),
+        When('stryker audits against it')('ran', (s) => runAudit(s.root, ['--matrix', MATRIX_DIR])),
+        Then('the process exits 2 and stderr names the policy refusal and the kill-matrix lane')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesTheCode: s.ran.stderr.includes('matrix-not-full'),
+            namesTheFix: s.ran.stderr.includes('STRYKER_KILL_MATRIX=1'),
+          }).toStrictEqual({ exitCode: 2, namesTheCode: true, namesTheFix: true })
+        ),
+      ),
+    )
+
+    scenario(
+      "Scoping the audit to a file the matrix records judges that file's drops",
+      Gherkin.Do.pipe(
+        Given('a project whose one relational comparison drops its complement')('root', () => prepareProject()),
+        Given('the drop and its dominator as the audit names them')('pair', (s) => discoverDroppedPair(s.root)),
+        When('the audit is scoped with --files to the source that holds the drop')(
+          'audited',
+          (s) => auditWith(s.root, s.pair, { mutant: [NAMED_TEST], dominator: [NAMED_TEST] }, ['--files', SOURCE_FILE]),
+        ),
+        Then('the process exits 0 and the scoped pair passes on contained killers')((s, expect) =>
+          expect({
+            exitCode: s.audited.ran.exitCode,
+            reasons: reasonsOf(s.audited.audit),
+          }).toStrictEqual({ exitCode: 0, reasons: ['killers-contained'] })
+        ),
+      ),
+    )
+
+    scenario(
+      'Scoping the audit to a file the matrix does not record is an input failure',
+      Gherkin.Do.pipe(
+        Given('a project')('root', () => prepareProject()),
+        Given('a matrix holding only the project source')('matrix', (s) => writeMatrix(s.root, [])),
+        When('stryker audits with --files naming another file')(
+          'ran',
+          (s) => runAudit(s.root, ['--matrix', MATRIX_DIR, '--files', 'src/other.js']),
+        ),
+        Then('the process exits 2 and stderr names the file outside the matrix')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesTheCode: s.ran.stderr.includes('files-outside-matrix'),
+            namesTheFile: s.ran.stderr.includes('src/other.js'),
+          }).toStrictEqual({ exitCode: 2, namesTheCode: true, namesTheFile: true })
         ),
       ),
     )

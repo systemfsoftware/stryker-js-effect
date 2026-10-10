@@ -1,4 +1,4 @@
-import { Mutant, type Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Options, type Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
 const AuditSchemaVersion = S.Literal('1')
@@ -7,6 +7,7 @@ const Count = S.Int.check(S.isGreaterThanOrEqualTo(0))
 
 export const KillMatrixReport = S.Struct({
   projectRoot: S.String,
+  mutantSetPolicy: Options.MutantSetPolicy,
   files: S.Record(
     S.String,
     S.Struct({
@@ -245,7 +246,13 @@ export class AuditFailed extends S.TaggedError<AuditFailed>()('AuditFailed', {
   }
 }
 
-const AuditInputCode = S.Literals(['matrix-unreadable', 'matrix-undecodable', 'files-with-counts-only'])
+const AuditInputCode = S.Literals([
+  'matrix-unreadable',
+  'matrix-undecodable',
+  'matrix-not-full',
+  'files-outside-matrix',
+  'files-with-counts-only',
+])
 
 export class AuditInputUnusable extends S.TaggedError<AuditInputUnusable>()('AuditInputUnusable', {
   code: AuditInputCode,

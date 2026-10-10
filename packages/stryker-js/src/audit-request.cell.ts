@@ -31,6 +31,7 @@ import {
 } from './audit.schema.js'
 import { countRuns, CountRunsCommand } from './count-runs.workflow.js'
 import { type PlanChannel } from './plan-request.cell.js'
+import { forEachProjectDirectory, projectsOf } from './project-directory.adapter.js'
 import { readProjectCell } from './read-project.cell.js'
 import { instrumentSources } from './run/instrument.js'
 import { loadConfigCell } from './run/load-config.cell.js'
@@ -61,6 +62,10 @@ const UNREADABLE_NEXT =
   'Pass --matrix the directory holding <project>/stryker-incremental.json for every --projects entry, such as a downloaded kill-matrix or mutation-report artifact.'
 const UNDECODABLE_NEXT =
   'Audit drops against a report written by a kill-matrix run (STRYKER_KILL_MATRIX=1), which records every killer and the test catalog.'
+const NOT_FULL_NEXT =
+  'Audit drops against a kill-matrix run (STRYKER_KILL_MATRIX=1), which runs every mutant and records every killer; an ordinary run never runs the mutants the default policy drops.'
+const OUTSIDE_MATRIX_NEXT =
+  'Pass --files only source files the matrix records, as <--projects entry>/<file relative to that project>; a file the matrix does not record has no kill data to audit.'
 const FILES_WITH_COUNTS_NEXT = 'Drop --files: --counts-only counts every record of the reports.'
 
 type AuditFailure = AuditFailed | AuditInputUnusable | NothingCounted
@@ -89,8 +94,18 @@ const readReport = <A>(
       ),
     ))
 
-const projectsOf = (projects: ReadonlyArray<string> | undefined): ReadonlyArray<string> =>
-  Option.getOrElse(Option.filter(Option.fromUndefinedOr(projects), Arr.isReadonlyArrayNonEmpty), () => ['.'])
+const readMatrix = (file: string): Effect.Effect<KillMatrixReport, AuditInputUnusable, FileSystem.FileSystem> =>
+  readReport(KillMatrixReportJson, file).pipe(
+    Effect.filterOrFail(
+      (report) => report.mutantSetPolicy === 'full',
+      (report) =>
+        AuditInputUnusable.make({
+          code: 'matrix-not-full',
+          detail: `${file} was written with mutator.mutantSetPolicy '${report.mutantSetPolicy}', not 'full'`,
+          next: NOT_FULL_NEXT,
+        }),
+    ),
+  )
 
 const scopeOf = (path: Path.Path, basePath: string, files: ReadonlyArray<string> | undefined): AuditScope =>
   Option.match(Option.filter(Option.fromUndefinedOr(files), Arr.isReadonlyArrayNonEmpty), {
@@ -101,12 +116,35 @@ const scopeOf = (path: Path.Path, basePath: string, files: ReadonlyArray<string>
     }),
   })
 
-const inScope = (scope: AuditScope, path: Path.Path, project: string, key: string): boolean =>
+const inScope = (scope: AuditScope, scopedPath: string): boolean =>
   Match.value(scope).pipe(
     Match.tag('Corpus', () => true),
-    Match.tag('Files', ({ files }) => files.includes(path.join(project, key))),
+    Match.tag('Files', ({ files }) => files.includes(scopedPath)),
     Match.exhaustive,
   )
+
+const unmatchedFilesOf = (scope: AuditScope, scopedFiles: ReadonlyArray<string>): ReadonlyArray<string> =>
+  Match.value(scope).pipe(
+    Match.tag('Corpus', () => []),
+    Match.tag('Files', ({ files }) => files.filter((file) => !scopedFiles.includes(file))),
+    Match.exhaustive,
+  )
+
+const refuseUnmatchedFiles = (
+  scope: AuditScope,
+  scopedFiles: ReadonlyArray<string>,
+): Effect.Effect<void, AuditInputUnusable> => {
+  const unmatched = unmatchedFilesOf(scope, scopedFiles)
+  return Boolean.match(Arr.isReadonlyArrayNonEmpty(unmatched), {
+    onTrue: () =>
+      Effect.fail(AuditInputUnusable.make({
+        code: 'files-outside-matrix',
+        detail: `no --projects entry's matrix records ${unmatched.join(', ')}`,
+        next: OUTSIDE_MATRIX_NEXT,
+      })),
+    onFalse: () => Effect.void,
+  })
+}
 
 const withDefaultPolicy = (prepared: PrepareForInstrument): PrepareForInstrument => ({
   ...prepared,
@@ -130,6 +168,7 @@ const matrixProjectOf = (project: string, report: KillMatrixReport): MatrixProje
 interface AuditedProject {
   readonly drops: ReadonlyArray<AuditedDrop>
   readonly matrix: MatrixProject
+  readonly scopedFiles: ReadonlyArray<string>
 }
 
 const auditProject = (
@@ -142,13 +181,19 @@ const auditProject = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const basePath = channel.environment.basePath
-    const report = yield* readReport(
-      KillMatrixReportJson,
-      path.resolve(basePath, request.matrix, directory, REPORT_FILE),
-    )
-    const files = Object.entries(report.files)
-      .filter(([key]) => inScope(scope, path, directory, key))
-      .map(([key, file]) => ({ name: path.resolve(report.projectRoot, key), content: file.source, mutate: true }))
+    const report = yield* readMatrix(path.resolve(basePath, request.matrix, directory, REPORT_FILE))
+    const scoped = Object.entries(report.files)
+      .map(([key, file]) => ({
+        key,
+        file,
+        scopedPath: path.relative(basePath, path.resolve(basePath, directory, key)),
+      }))
+      .filter((entry) => inScope(scope, entry.scopedPath))
+    const files = scoped.map(({ key, file }) => ({
+      name: path.resolve(report.projectRoot, key),
+      content: file.source,
+      mutate: true,
+    }))
     const drops = yield* Effect.scoped(Effect.gen(function*() {
       const project = yield* fs.realPath(path.resolve(basePath, directory))
       const env = { ...channel.environment.host.env, basePath: project }
@@ -160,17 +205,11 @@ const auditProject = (
       const instrumented = yield* instrumentSources(withDefaultPolicy(prepared), files)
       return instrumented.mutants.flatMap((mutant) => dropOf(directory, mutant))
     })).pipe(Effect.orDie)
-    return { drops, matrix: matrixProjectOf(directory, report) }
-  })
-
-const inProjectDirectory = <A, E, R>(directory: string, body: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  Effect.suspend(() => {
-    const previous = globalThis.process.cwd()
-    return Effect.acquireUseRelease(
-      Effect.sync(() => globalThis.process.chdir(directory)),
-      () => body,
-      () => Effect.sync(() => globalThis.process.chdir(previous)),
-    )
+    return {
+      drops,
+      matrix: matrixProjectOf(directory, report),
+      scopedFiles: scoped.map((entry) => entry.scopedPath),
+    }
   })
 
 const writeReport = (
@@ -282,11 +321,11 @@ const auditDropList = (
     const path = yield* Path.Path
     const basePath = channel.environment.basePath
     const scope = scopeOf(path, basePath, request.files)
-    const audited = yield* Effect.forEach(
-      projectsOf(request.projects),
-      (directory) => inProjectDirectory(directory, auditProject(request, channel, scope, directory)),
-      { concurrency: 1 },
+    const audited = yield* forEachProjectDirectory(
+      request.projects,
+      (directory) => auditProject(request, channel, scope, directory),
     )
+    yield* refuseUnmatchedFiles(scope, audited.flatMap((project) => project.scopedFiles))
     const report = yield* Effect.fromResult(auditDrops(AuditDropsCommand.make({
       scope,
       drops: audited.flatMap((project) => project.drops),
