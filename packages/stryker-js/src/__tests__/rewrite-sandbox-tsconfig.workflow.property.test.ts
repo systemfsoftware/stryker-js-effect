@@ -15,13 +15,23 @@ import {
   TsconfigRewritten,
   TsconfigSkipped,
 } from '../rewrite-sandbox-tsconfig.workflow.js'
-import { referencedEntriesOf, type TSConfig, TsConfigSchema } from '../Sandbox.schema.js'
+import { type TSConfig, TsConfigSchema } from '../Sandbox.schema.js'
 
 const rewrittenKeys: ReadonlyArray<string> = ['include', 'exclude', 'files', 'extends', 'references', 'path']
 
+const listOf = (value: string | ReadonlyArray<string> | undefined): ReadonlyArray<string> => [value ?? []].flat()
+
+const drawnEntriesOf = (config: TSConfig): ReadonlyArray<string> => [
+  ...listOf(config.files),
+  ...listOf(config.include),
+  ...listOf(config.exclude),
+  ...listOf(config.extends),
+  ...(config.references ?? []).map((reference) => reference.path),
+]
+
 const escapingOf = (config: TSConfig, bits: ReadonlyArray<boolean>): HashSet.HashSet<string> =>
   HashSet.fromIterable(
-    Arr.filter(referencedEntriesOf(config), (_entry, index) => bits[index % bits.length] === true),
+    Arr.filter(drawnEntriesOf(config), (_entry, index) => bits[index % bits.length] === true),
   )
 
 const commandOf = (config: TSConfig, escaping: HashSet.HashSet<string>): RewriteSandboxTsconfigCommand =>
@@ -30,7 +40,7 @@ const commandOf = (config: TSConfig, escaping: HashSet.HashSet<string>): Rewrite
       config,
       relativeToBasePath: HashMap.fromIterable(
         Arr.map(
-          referencedEntriesOf(config),
+          drawnEntriesOf(config),
           (entry) => [entry, HashSet.has(escaping, entry) ? '../outside' : 'inside'] as const,
         ),
       ),
@@ -39,8 +49,6 @@ const commandOf = (config: TSConfig, escaping: HashSet.HashSet<string>): Rewrite
 
 const expectedEntryOf = (escaping: HashSet.HashSet<string>) => (entry: string): string =>
   HashSet.has(escaping, entry) ? `../../${entry.split('\\').join('/')}` : entry
-
-const listOf = (value: string | ReadonlyArray<string> | undefined): ReadonlyArray<string> => [value ?? []].flat()
 
 const sameJson = <A>(left: A, right: A): boolean => JSON.stringify(left) === JSON.stringify(right)
 
