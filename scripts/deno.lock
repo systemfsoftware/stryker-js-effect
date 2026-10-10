@@ -6,7 +6,7 @@
     "jsr:@std/fs@1": "1.0.24",
     "jsr:@std/internal@^1.0.14": "1.0.14",
     "jsr:@std/path@1": "1.1.6",
-    "npm:fast-check@4": "4.10.2"
+    "npm:fast-check@4.9.0": "4.9.0"
   },
   "jsr": {
     "@std/cli@1.0.32": {
@@ -29,8 +29,8 @@
     }
   },
   "npm": {
-    "fast-check@4.10.2": {
-      "integrity": "sha512-iK2f+YrcmoeGqk6fA0ea2bptcu/itMIm4NfEozq6N25+aG6h7s5HZbB/k1aV7b5w5sFLMCbbtRUsTVR+BgC3xw==",
+    "fast-check@4.9.0": {
+      "integrity": "sha512-7ms6T7SybUev/PQITciI0yLM2pOSFy5zpG8Ty7tQofcVaQUvrMXp6CBwqF6fThLCLOrfBtuHAtwq6Yu4XPCllg==",
       "dependencies": [
         "pure-rand"
       ]
@@ -45,7 +45,7 @@
       "jsr:@std/encoding@1",
       "jsr:@std/fs@1",
       "jsr:@std/path@1",
-      "npm:fast-check@4"
+      "npm:fast-check@4.9.0"
     ]
   }
 }

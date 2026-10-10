@@ -12,6 +12,6 @@
     "@std/encoding/hex": "jsr:@std/encoding@1/hex",
     "@std/fs/ensure-dir": "jsr:@std/fs@1/ensure-dir",
     "@std/path": "jsr:@std/path@1",
-    "fast-check": "npm:fast-check@^4"
+    "fast-check": "npm:fast-check@4.9.0"
   }
 }

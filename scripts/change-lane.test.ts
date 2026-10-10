@@ -9,12 +9,28 @@ const docPath = fc.oneof(
   fc.tuple(directories, segment).map(([directory, name]) => `docs/${directory}${name}.md`),
 )
 
+const laneOwnPath = fc.oneof(
+  fc.constantFrom('scripts/change-lane.ts', 'scripts/change-lane.test.ts', 'scripts/deno.json', 'scripts/deno.lock'),
+  fc.tuple(directories, segment, fc.constantFrom('yml', 'md', 'ts')).map(([directory, name, extension]) =>
+    `.github/actions/change-lane/${directory}${name}.${extension}`
+  ),
+)
+
 const nonDocPath = fc.oneof(
+  laneOwnPath,
   fc.tuple(directories, segment, fc.constantFrom('ts', 'yml', 'json', 'html', 'MD', 'mdx')).map(
     ([directory, name, extension]) => `docs/${directory}${name}.${extension}`,
   ),
   fc.tuple(
-    fc.constantFrom('.changeset/', '.github/workflows/', 'packages/stryker-js/', 'xdocs/', 'test/e2e/docs/'),
+    fc.constantFrom(
+      '.changeset/',
+      '.github/workflows/',
+      '.github/actions/change-lane/',
+      'scripts/',
+      'packages/stryker-js/',
+      'xdocs/',
+      'test/e2e/docs/',
+    ),
     directories,
     segment,
   ).map(([root, directory, name]) => `${root}${directory}${name}.md`),
@@ -34,6 +50,19 @@ const otherEvent = fc.oneof(
   fc.constantFrom('push', 'workflow_dispatch', 'schedule', 'pull_request_target', 'merge_group', ''),
   segment.filter((event) => event !== 'pull_request'),
 )
+
+Deno.test('a pull request that edits the classifier or its action takes the full lane under this copy', () => {
+  fc.assert(
+    fc.property(
+      fc.array(docPath, { maxLength: 20 }),
+      fc.array(laneOwnPath, { minLength: 1, maxLength: 4 }),
+      (docs, own) => {
+        const decision = laneOf('pull_request', [...docs, ...own])
+        return decision.lane === 'full' && summaryOf(decision).startsWith('full: every lane runs')
+      },
+    ),
+  )
+})
 
 Deno.test('a pull request whose diff is only docs takes the docs-only lane and lists every file', () => {
   fc.assert(
