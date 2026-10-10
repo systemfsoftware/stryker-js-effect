@@ -20,8 +20,40 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  check:
+  lane:
     if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      docs-only: ${{ steps.lane.outputs.docs-only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - id: lane
+        uses: ./.github/actions/change-lane
+      # A docs-only change skips `check`, so the two gates that read docs run here, from the
+      # same package.json scripts, without an install.
+      - if: steps.lane.outputs.docs-only == 'true'
+        uses: cachix/install-nix-action@v31
+      - if: steps.lane.outputs.docs-only == 'true'
+        uses: pnpm/action-setup@v6
+      - if: steps.lane.outputs.docs-only == 'true'
+        name: Commit graph of main for repo-checks
+        run: |
+          unshallow=$([ "$(git rev-parse --is-shallow-repository)" = true ] && echo --unshallow || true)
+          git fetch --no-tags --filter=tree:0 $unshallow origin +refs/heads/main:refs/remotes/origin/main
+      - if: steps.lane.outputs.docs-only == 'true'
+        name: Docs gates (format, single plan)
+        run: |
+          s=0
+          pnpm --config.verify-deps-before-run=false format:check || s=1
+          pnpm --config.verify-deps-before-run=false gate:repo || s=1
+          exit $s
+
+  check:
+    needs: lane
+    if: needs.lane.outputs.docs-only != 'true' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -100,6 +132,8 @@ jobs:
           status=0
           pnpm gate:repo --head "$planted" || status=$?
           test "$status" -eq 1 || { echo "::error::pnpm gate:repo must exit 1 on two planted plans, got $status" >&2; exit 1; }
+      - name: Repo scripts tests
+        run: ./bin/deno test --config=scripts/deno.json scripts/
       # Root package.json `check:ci` is the one definition. Never re-enumerate its steps here.
       - id: gate
         name: Gate
@@ -268,7 +302,8 @@ jobs:
           details: ${{ steps.sweep.outputs.details }}
 
   e2e:
-    if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
+    needs: lane
+    if: needs.lane.outputs.docs-only != 'true' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]')
     strategy:
       fail-fast: false
       matrix:
