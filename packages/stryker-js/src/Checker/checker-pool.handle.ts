@@ -17,8 +17,9 @@ import * as Stream from 'effect/Stream'
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { StageError } from '../Run.schema.js'
 import { sha256HexOf } from '../verdict-semantics.js'
+import { checkCell } from './check.cell.js'
 import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
-import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.plans.js'
+import { groupCell } from './group.cell.js'
 import {
   CheckedPlanFailed,
   CheckedPlanIgnored,
@@ -268,13 +269,13 @@ const checkedGroupsFor = (
       }),
     onSome: (checkerName) =>
       Stream.unwrap(
-        onCheckerSlot(pool, checkerIndex, (checker) => groupPlansWithChecker(checker, checkerName, plans)).pipe(
+        onCheckerSlot(pool, checkerIndex, (checker) => groupCell.run({ checker, checkerName, plans })).pipe(
           Effect.map((groups) =>
             Stream.fromIterable(groups).pipe(
               Stream.mapEffect(
                 (group) =>
                   onCheckerSlot(pool, checkerIndex, (checker) =>
-                    Effect.timed(checkPlansWithChecker(checker, checkerName, group)).pipe(
+                    Effect.timed(checkCell.run({ checker, checkerName, plans: group })).pipe(
                       Effect.flatMap(([elapsed, checked]) =>
                         Effect.map(
                           splitCheckedPlans(checked),
