@@ -1,6 +1,7 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect, Layer } from 'effect'
 
 import { stockOptions } from './__fixtures__/instrument.js'
@@ -142,9 +143,25 @@ const activeReplacements = (result: Instrument.InstrumentResult): readonly strin
 
 const ignoredComparisonReasons = (result: Instrument.InstrumentResult): readonly string[] =>
   result.mutants
-    .filter((mutant) => !isActive(mutant) && COMPARISON_MUTATORS.includes(mutant.mutatorName))
+    .filter((mutant) =>
+      !isActive(mutant) && mutant.redundancy === undefined && COMPARISON_MUTATORS.includes(mutant.mutatorName)
+    )
     .map((mutant) => `${mutant.replacement} <= ${mutant.statusReason ?? ''}`)
     .toSorted()
+
+const subsumedPairs = (result: Instrument.InstrumentResult): readonly (readonly unknown[])[] => {
+  const replacementOf = new Map(result.mutants.map((mutant) => [mutant.id, mutant.replacement]))
+  return result.mutants
+    .flatMap((mutant) =>
+      mutant.redundancy === undefined ? [] : [[
+        mutant.replacement,
+        replacementOf.get(mutant.redundancy.dominators[0]),
+        mutant.status,
+        mutant.statusReason === ApiMutant.redundancyStatusReason(mutant.redundancy),
+      ]]
+    )
+    .toSorted((left, right) => String(left).localeCompare(String(right)))
+}
 
 const underFull = (fileName: string, source: string) =>
   Instrument.instrument(
@@ -459,7 +476,7 @@ export const b = 2 + 2
             activeShrink: 1,
             hasArithmeticActive: false,
             counts: baselineCounts,
-            equalityOperator: 4,
+            equalityOperator: 3,
           })
         }),
       ),
@@ -951,7 +968,7 @@ export function price(n) {
     )
 
     scenario(
-      'A relational comparison in a condition keeps every literal and operator under default',
+      'A relational comparison in a condition drops its complement, naming the kept dominator',
       Gherkin.Do.pipe(
         Given('a guard comparing two numbers')(
           'source',
@@ -965,7 +982,7 @@ export function price(n) {
           'full',
           ({ source }: { source: string }) => underFull('/tmp/u17-if.ts', source),
         ),
-        Then('default drops nothing at the guard and adds the condition-position operator')((
+        Then('default drops >= for <=, and full drops nothing')((
           { defaulted, full }: {
             defaulted: Instrument.InstrumentResult
             full: Instrument.InstrumentResult
@@ -975,20 +992,24 @@ export function price(n) {
           expect({
             defaultedActive: activeReplacements(defaulted),
             defaultedIgnored: ignoredComparisonReasons(defaulted),
+            defaultedSubsumed: subsumedPairs(defaulted),
             fullActive: activeReplacements(full),
             fullIgnored: ignoredComparisonReasons(full),
+            fullSubsumed: subsumedPairs(full),
           }).toEqual({
-            defaultedActive: ['a != b', 'a <= b', 'a >= b', 'false', 'true'],
+            defaultedActive: ['a != b', 'a <= b', 'false', 'true'],
             defaultedIgnored: [],
+            defaultedSubsumed: [['a >= b', 'a <= b', 'Ignored', true]],
             fullActive: ['a <= b', 'a >= b', 'false', 'true'],
             fullIgnored: [],
+            fullSubsumed: [],
           })
         ),
       ),
     )
 
     scenario(
-      'A loop and a ternary condition keep every mutant main used to drop under default',
+      'A loop and a ternary condition each drop their complement',
       Gherkin.Do.pipe(
         Given('a while loop and a ternary comparing numbers')(
           'source',
@@ -1005,7 +1026,7 @@ export function price(n) {
           'full',
           ({ source }: { source: string }) => underFull('/tmp/u17-loops.ts', source),
         ),
-        Then('each condition position keeps its literals and both ordering operators')((
+        Then('<= drops > for <, > drops <= for >=, and full drops nothing')((
           { defaulted, full }: {
             defaulted: Instrument.InstrumentResult
             full: Instrument.InstrumentResult
@@ -1015,57 +1036,72 @@ export function price(n) {
           expect({
             defaultedActive: activeReplacements(defaulted),
             defaultedIgnored: ignoredComparisonReasons(defaulted),
+            defaultedSubsumed: subsumedPairs(defaulted),
             fullActive: activeReplacements(full),
+            fullSubsumed: subsumedPairs(full),
           }).toEqual({
-            defaultedActive: [
-              'a != b',
-              'a < b',
-              'a <= b',
-              'a == b',
-              'a > b',
-              'a >= b',
-              'false',
-              'false',
-              'true',
-              'true',
-            ],
+            defaultedActive: ['a != b', 'a < b', 'a == b', 'a >= b', 'false', 'false', 'true', 'true'],
             defaultedIgnored: [],
+            defaultedSubsumed: [['a <= b', 'a >= b', 'Ignored', true], ['a > b', 'a < b', 'Ignored', true]],
             fullActive: ['a < b', 'a <= b', 'a > b', 'a >= b', 'false', 'false', 'true'],
+            fullSubsumed: [],
           })
         ),
       ),
     )
 
     scenario(
-      'A bare comparison keeps today’s variants under both policies',
+      'A comparison outside a condition drops its complement too',
       Gherkin.Do.pipe(
-        Given('a comparison assigned to a local')(
+        Given('a length comparison assigned to a local and the same comparison in a guard')(
           'source',
-          () => Effect.succeed(`export const ok = (a, b) => { const x = a < b; return x }`),
+          () =>
+            Effect.succeed(
+              `export const has = (trapFile) => { const x = trapFile.length > 0; return x }\nexport const guard = (trapFile) => { if (trapFile.length > 0) { return 1 } return 0 }\n`,
+            ),
         ),
         When('it is instrumented under the default policy')(
           'defaulted',
-          ({ source }: { source: string }) => instrumentSource('/tmp/u17-bare.ts', source),
+          ({ source }: { source: string }) => instrumentSource('/tmp/u4-length.ts', source),
         ),
-        When('it is instrumented under the full policy')(
-          'full',
-          ({ source }: { source: string }) => underFull('/tmp/u17-bare.ts', source),
+        Then('both sites drop <= 0, each naming the id of its own >= 0 mutant')((
+          { defaulted }: { defaulted: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(subsumedPairs(defaulted)).toEqual([
+            ['trapFile.length <= 0', 'trapFile.length >= 0', 'Ignored', true],
+            ['trapFile.length <= 0', 'trapFile.length >= 0', 'Ignored', true],
+          ])
         ),
-        Then('both policies keep the same replacements')((
-          { defaulted, full }: {
-            defaulted: Instrument.InstrumentResult
-            full: Instrument.InstrumentResult
-          },
+      ),
+    )
+
+    scenario(
+      'A directive reason outranks subsumption',
+      Gherkin.Do.pipe(
+        Given('a guard whose ordering mutants a directive disables')(
+          'source',
+          () =>
+            Effect.succeed(
+              `export function f(a, b) {\n  // Stryker disable next-line EqualityOperator: covered elsewhere\n  if (a < b) { return 1 }\n  return 0\n}\n`,
+            ),
+        ),
+        When('it is instrumented under the default policy')(
+          'defaulted',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u4-directive.ts', source),
+        ),
+        Then('the >= mutant carries the directive reason and nothing is subsumed')((
+          { defaulted }: { defaulted: Instrument.InstrumentResult },
           expect,
         ) =>
           expect({
-            defaultedActive: activeReplacements(defaulted),
-            defaultedIgnored: ignoredComparisonReasons(defaulted),
-            fullActive: activeReplacements(full),
+            greaterOrEqual: defaulted.mutants
+              .filter((mutant) => mutant.replacement === 'a >= b')
+              .map((mutant) => mutant.statusReason),
+            subsumed: subsumedPairs(defaulted),
           }).toEqual({
-            defaultedActive: ['a <= b', 'a >= b', 'false', 'true'],
-            defaultedIgnored: [],
-            fullActive: ['a <= b', 'a >= b', 'false', 'true'],
+            greaterOrEqual: ['directive: covered elsewhere'],
+            subsumed: [],
           })
         ),
       ),

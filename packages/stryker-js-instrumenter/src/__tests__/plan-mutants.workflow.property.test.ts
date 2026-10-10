@@ -12,7 +12,9 @@ import {
   MutantWithoutLocation,
   planMutants,
   PlanMutantsCommand,
+  type PlannedMutant,
 } from '../plan-mutants.workflow.js'
+import { OtherReplacement, OtherSite } from '../subsume-mutants.workflow.js'
 
 const reasonFromRule = (rule: readonly LocatedDirective[], mutatorName: string, line: number): string | undefined => {
   const lower = mutatorName.toLowerCase()
@@ -54,8 +56,15 @@ const silencingReason = (command: PlanMutantsCommand, candidate: MutantCandidate
   if (provider !== undefined) {
     return `ignorer: ${provider}`
   }
-  return policyReasonOf(command, candidate)
+  const policy = policyReasonOf(command, candidate)
+  if (policy !== undefined) {
+    return policy
+  }
+  return candidate.aridReason
 }
+
+const isRedundancyReason = (mutant: PlannedMutant): boolean =>
+  mutant.redundancy !== undefined && mutant.ignoreReason === Mutant.redundancyStatusReason(mutant.redundancy)
 
 const Namespace = Arbitrary.schema(S.Literals(['acme', 'beta']))
 const PascalName = Arbitrary.schema(S.String.check(S.isPattern(/^[A-Z][A-Za-z0-9]*$/)))
@@ -84,6 +93,7 @@ const commandOf = (
     rule: overrides.rule ?? [],
     directives: overrides.directives ?? [],
     candidates: [...candidates],
+    site: OtherSite.make({}),
     mutantSetPolicy: overrides.mutantSetPolicy ?? 'default',
   })
 
@@ -99,6 +109,7 @@ const providerCandidate = (mutatorName: string): MutantCandidate => ({
   replacementCode: 'n - 1',
   location: { start: { line: 2, column: 1 }, end: { line: 2, column: 2 } },
   mutantSet: { originalCode: 'n', replacementCode: 'n - 1' },
+  subsumption: OtherReplacement.make({}),
 })
 
 describe('planMutants', () => {
@@ -129,7 +140,7 @@ describe('planMutants', () => {
       }
       const plan = planned.success
       const unignored = plan.mutants
-        .filter((mutant) => mutant.ignoreReason === undefined)
+        .filter((mutant) => mutant.ignoreReason === undefined || isRedundancyReason(mutant))
         .map((mutant) => mutant.id)
       return S.is(MutantsPlanned)(plan)
         ? plan.placeableIds.length === unignored.length &&
@@ -153,7 +164,10 @@ describe('planMutants', () => {
       if (Result.isFailure(planned)) {
         return false
       }
-      return planned.success.mutants.at(0)?.ignoreReason === silencingReason(command, candidate)
+      const mutant = planned.success.mutants.at(0)
+      const expected = silencingReason(command, candidate)
+      return mutant !== undefined &&
+        (mutant.ignoreReason === expected || (expected === undefined && isRedundancyReason(mutant)))
     },
   )
 
@@ -172,6 +186,7 @@ describe('planMutants', () => {
             end: { ...later.at, line: later.governedLine },
           },
           mutantSet: { originalCode: 'n', replacementCode: 'n - 1' },
+          subsumption: OtherReplacement.make({}),
         }],
         {
           line: later.governedLine,
@@ -212,6 +227,24 @@ describe('planMutants', () => {
       }
       return planned.success.mutants.every((mutant) =>
         mutant.ignoreReason === undefined || S.is(Mutant.IgnoreStatusReasonText)(mutant.ignoreReason)
+      )
+    },
+  )
+
+  it.prop(
+    '∀c_Command_≡ARedundantMutantNamesOnlyDominatorsPlannedWithoutAReason',
+    { of: [PlanMutantsCommand], subject: planMutants },
+    (subject, [command]) => {
+      const planned = subject(command)
+      if (Result.isFailure(planned)) {
+        return S.is(MutantWithoutLocation)(planned.failure)
+      }
+      const unreasoned = new Set(
+        planned.success.mutants.filter((mutant) => mutant.ignoreReason === undefined).map((mutant) => mutant.id),
+      )
+      return planned.success.mutants.every((mutant) =>
+        mutant.redundancy === undefined ||
+        (isRedundancyReason(mutant) && mutant.redundancy.dominators.every((id) => unreasoned.has(id)))
       )
     },
   )

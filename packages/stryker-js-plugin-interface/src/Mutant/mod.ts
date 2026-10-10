@@ -35,8 +35,11 @@ export {
   MutantRunOptionsSchema,
   MutantStatusSchema,
   MutatorName,
+  Redundancy,
+  redundancyStatusReason,
   RememberedStatusSchema,
   RunOptionsFields,
+  Subsumed,
   SurvivorStatusSchema,
 } from '../Mutant.schema.js'
 export type {

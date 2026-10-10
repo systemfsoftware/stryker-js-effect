@@ -2,6 +2,7 @@
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
+import { ignoreStatusReasonText } from './ignore-rule.schema.js'
 import { Location } from './Location.schema.js'
 
 export const MutantStatusSchema = S.Literals([
@@ -60,6 +61,29 @@ export const CanonicalFileName = S.String.pipe(
 export type CanonicalFileName = typeof CanonicalFileName.Type
 
 /**
+ * Why a mutant was dropped as redundant: under `Subsumed`, every test that
+ * kills the first entry of `dominators` also kills this mutant, so the run
+ * reports it Ignored instead of executing it. `rule` names the subsumption
+ * rule that proved it.
+ */
+export const Subsumed = S.TaggedStruct('Subsumed', {
+  rule: S.Literals(['complement']),
+  dominators: S.NonEmptyArray(MutantId),
+})
+export type Subsumed = typeof Subsumed.Type
+
+export const Redundancy = S.Union([Subsumed])
+export type Redundancy = typeof Redundancy.Type
+
+export const redundancyStatusReason = (redundancy: Redundancy): string =>
+  ignoreStatusReasonText({
+    ruleId: 'redundant-relational',
+    detail: `subsumed by ${redundancy.dominators[0]} (${redundancy.rule}): every test that kills ${
+      redundancy.dominators[0]
+    } kills this mutant, so act on ${redundancy.dominators[0]}, or set mutator.mutantSetPolicy 'full' to run it`,
+  })
+
+/**
  * A mutant's file location in the mutation-testing-report-schema contract:
  * 1-based line and 1-based column, the same base the JSON report and the
  * machine stream emit. Every producer on the instrument path (node spans,
@@ -77,10 +101,15 @@ export const Mutant = S.TaggedStruct('Mutant', {
   static: S.optional(S.Boolean),
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
+  redundancy: S.optional(Redundancy),
 }).check(
   S.makeFilter(
     (mutant) => mutant.statusReason === undefined || mutant.status !== undefined,
     { message: 'a mutant carries a status reason only together with a status' },
+  ),
+  S.makeFilter(
+    (mutant) => mutant.redundancy === undefined || mutant.status === 'Ignored',
+    { message: 'a mutant carries a redundancy reference only when it is Ignored' },
   ),
 )
 export type Mutant = typeof Mutant.Type

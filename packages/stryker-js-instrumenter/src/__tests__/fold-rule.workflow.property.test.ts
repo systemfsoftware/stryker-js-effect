@@ -5,6 +5,7 @@ import * as Result from 'effect/Result'
 import { type LocatedDirective, LocatedDirectiveSchema } from '../directives/directive.schema.js'
 import { foldRule, FoldRuleCommand } from '../directives/fold-rule.workflow.js'
 import { planMutants, PlanMutantsCommand } from '../plan-mutants.workflow.js'
+import { OtherReplacement, OtherSite } from '../subsume-mutants.workflow.js'
 
 const acted = (located: LocatedDirective, action: 'disable' | 'restore'): LocatedDirective => ({
   ...located,
@@ -42,7 +43,9 @@ const silencingReason = (
         replacementCode: 'n - 1',
         location: { start: { line, column: 1 }, end: { line, column: 2 } },
         mutantSet: { originalCode: 'n', replacementCode: 'n - 1' },
+        subsumption: OtherReplacement.make({}),
       }],
+      site: OtherSite.make({}),
       mutantSetPolicy: 'default',
     }),
   )

@@ -106,6 +106,7 @@ export interface Mutant extends Mutable {
   readonly original: Node
   readonly location: ApiMutant.Location
   readonly replacementCode: string
+  readonly redundancy?: ApiMutant.Redundancy
 }
 function orDefault<T>(value: T | undefined, fallback: T): T {
   return value ?? fallback
@@ -126,6 +127,7 @@ function createMutantDataFirst(
     mutatorName: planned.mutatorName,
     ignoreReason: planned.ignoreReason,
     replacementCode: planned.replacementCode,
+    ...(planned.redundancy === undefined ? {} : { redundancy: planned.redundancy }),
   }
 }
 
@@ -145,7 +147,12 @@ export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.S
   return S.decodeResult(ApiMutant.Mutant)(
     mutant.ignoreReason === undefined
       ? baseFields
-      : { ...baseFields, statusReason: mutant.ignoreReason, status: 'Ignored' },
+      : {
+        ...baseFields,
+        statusReason: mutant.ignoreReason,
+        status: 'Ignored',
+        ...(mutant.redundancy === undefined ? {} : { redundancy: mutant.redundancy }),
+      },
   )
 }
 
@@ -895,26 +902,23 @@ function binaryOperatorOf(node: Node): string | undefined {
   return node.type === 'BinaryExpression' ? node.operator : undefined
 }
 
-const isRelationalComparison = (node: Node): boolean =>
-  Option.exists(Option.fromNullishOr(binaryOperatorOf(node)), isRelationalOperator)
+export const relationalOperatorOf = (node: Node): Option.Option<RelationalOperator> =>
+  Option.filter(Option.fromNullishOr(binaryOperatorOf(node)), isRelationalOperator)
 
-export interface RelationalSiteFacts {
+const isRelationalComparison = (node: Node): boolean => Option.isSome(relationalOperatorOf(node))
+
+interface RelationalSiteFacts {
   readonly operator: RelationalOperator
   readonly inConditionPosition: boolean
 }
 
-const relationalSiteFactsDataFirst = (node: Node, context: MutatorContext): RelationalSiteFacts | undefined =>
+const relationalSiteFacts = (node: Node, context: MutatorContext): RelationalSiteFacts | undefined =>
   Option.getOrUndefined(
     Option.map(
-      Option.filter(Option.fromNullishOr(binaryOperatorOf(node)), isRelationalOperator),
+      relationalOperatorOf(node),
       (operator) => ({ operator, inConditionPosition: isConditionPosition(node, context) }),
     ),
   )
-
-export const relationalSiteFacts: {
-  (node: Node, context: MutatorContext): RelationalSiteFacts | undefined
-  (context: MutatorContext): (node: Node) => RelationalSiteFacts | undefined
-} = dual((args: IArguments): boolean => args.length >= 2, relationalSiteFactsDataFirst)
 
 function isBooleanExpression(node: Node): node is BinaryExpression | LogicalExpression {
   return isOperatorExpression(node) && booleanOperators.includes(node.operator)

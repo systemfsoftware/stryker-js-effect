@@ -38,6 +38,8 @@ export const IgnoreStatusReasonText = S.String.check(
 const ReasonPartsSchema = S.Struct({ ruleId: IgnoreRuleId, detail: S.String })
 type ReasonParts = typeof ReasonPartsSchema.Type
 
+export const ignoreStatusReasonText = (parts: ReasonParts): string => `${parts.ruleId}${SEPARATOR}${parts.detail}`
+
 const reasonPartsOf = (text: string): Option.Option<ReasonParts> =>
   Option.map(
     Option.fromNullishOr(RULE_IDS.find((ruleId) => text.startsWith(`${ruleId}${SEPARATOR}`))),
@@ -51,7 +53,7 @@ const partsOf = SchemaGetter.transformEffect((text: string) =>
   Effect.fromOption(reasonPartsOf(text), () => malformedReason(text))
 )
 
-const textOf = SchemaGetter.transform((parts: ReasonParts): string => `${parts.ruleId}${SEPARATOR}${parts.detail}`)
+const textOf = SchemaGetter.transform(ignoreStatusReasonText)
 
 export const IgnoreStatusReason = IgnoreStatusReasonText.pipe(
   S.decodeTo(ReasonPartsSchema, SchemaTransformation.makeTransformation({ decode: partsOf, encode: textOf })),
