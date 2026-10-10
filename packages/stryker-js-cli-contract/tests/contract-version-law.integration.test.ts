@@ -577,6 +577,7 @@ Feature('The released contract documents bound what the workspace may declare ne
                   package: CLI_CONTRACT,
                   directory: CLI_CONTRACT_DIRECTORY,
                   releasedVersion: '0.4.0',
+                  mainVersion: '0.4.0',
                   committedVersion: '0.4.0',
                   releasedDocuments: [{
                     name: STREAM_DOCUMENT,
@@ -622,6 +623,7 @@ Feature('The released contract documents bound what the workspace may declare ne
                 package: CLI_CONTRACT,
                 directory: CLI_CONTRACT_DIRECTORY,
                 releasedVersion: '0.4.0',
+                mainVersion: '0.4.0',
                 committedVersion: '0.4.0',
                 releasedDocuments: [{
                   name: STREAM_DOCUMENT,
