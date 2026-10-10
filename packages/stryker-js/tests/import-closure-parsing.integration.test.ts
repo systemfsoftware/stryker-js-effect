@@ -1,15 +1,12 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { ImportClosure } from '@systemfsoftware/stryker-js'
+import { Engine, ImportClosure, type SourceParser } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 
 const Feature = makeFeature({ it })
-const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 type FixtureFiles = Readonly<Record<string, string>>
 
@@ -94,7 +91,7 @@ const removeDirectory = (root: string): Effect.Effect<void, never, FileSystem.Fi
 const observe = (
   root: string,
   files: FixtureFiles,
-): Effect.Effect<ClosureObservation, PlatformError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<ClosureObservation, PlatformError, FileSystem.FileSystem | Path.Path | SourceParser.SourceParser> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const analysis = yield* ImportClosure.analyzeImportClosure({
@@ -113,7 +110,7 @@ const observe = (
   }).pipe(Effect.ensuring(removeDirectory(root)))
 
 Feature('Reading the import forms of a module from its parsed source')
-  .withLayer(filePorts)
+  .withLayer(Engine.nodePlatformLayer)
   .live('the scenarios parse real files on disk with the closure analysis')
   .body(({ scenario }) => {
     scenario(

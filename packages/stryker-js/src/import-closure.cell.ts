@@ -12,7 +12,6 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { parseSource } from './drivers/oxc-parser.js'
 import { extractModuleSpecifiers } from './extract-module-specifiers.workflow.js'
 import { relativeNormalizedFileName } from './FileMatcher.js'
 import {
@@ -27,6 +26,7 @@ import {
   type TestFileClosure,
 } from './import-closure.schema.js'
 import { importClosure } from './import-closure.workflow.js'
+import { SourceParser } from './source-parser.service.js'
 import { packageManifestInputOf } from './verdict-semantics.js'
 
 export interface ImportClosureInput {
@@ -153,7 +153,8 @@ const UNRESOLVED_RESOLUTION: Resolution = { kind: 'Unresolved', file: '' }
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
 const scanSource = Effect.fnUntraced(function*(content: string, absolute: string, language: ScriptLanguage) {
-  const parsed = yield* parseSource(absolute, content, language)
+  const parser = yield* SourceParser
+  const parsed = yield* parser.parseSource(absolute, content, language)
   const extracted = Result.getOrElse(
     extractModuleSpecifiers(ExtractModuleSpecifiersCommand.make({ program: parsed.program })),
     (unreachable: never) => unreachable,
@@ -587,7 +588,7 @@ const scanPendingOf = Effect.fnUntraced(function*(
   memo: MutableHashMap.MutableHashMap<string, Resolution>,
   scanned: MutableHashMap.MutableHashMap<string, ModuleScan>,
   pending: readonly string[],
-): Effect.fn.Return<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path> {
+): Effect.fn.Return<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path | SourceParser> {
   const batch = Arr.dedupe(pending).filter((file) => !MutableHashMap.has(scanned, file))
   const results = yield* Effect.forEach(
     batch,
@@ -612,7 +613,7 @@ const scanReachable = (
   files: HashSet.HashSet<string>,
   memo: MutableHashMap.MutableHashMap<string, Resolution>,
   seeds: readonly string[],
-): Effect.Effect<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path | SourceParser> =>
   scanPendingOf(roots, files, memo, MutableHashMap.empty<string, ModuleScan>(), seeds)
 
 const leafScanOf = Effect.fnUntraced(function*(roots: Roots, file: string) {
@@ -733,7 +734,7 @@ const closuresOf = (command: ImportClosureCommand): readonly TestFileClosure[] =
 
 export const analyzeImportClosure = Effect.fnUntraced(function*(
   input: ImportClosureInput,
-): Effect.fn.Return<ImportClosureAnalysis, PlatformError, FileSystem.FileSystem | Path.Path> {
+): Effect.fn.Return<ImportClosureAnalysis, PlatformError, FileSystem.FileSystem | Path.Path | SourceParser> {
   const roots = yield* readRoots(input)
   const testKeys = sortedKeys(roots, input.testFiles)
   const seeds = [...HashSet.fromIterable(input.projectFiles.map((file) => keyOf(roots, file)))]

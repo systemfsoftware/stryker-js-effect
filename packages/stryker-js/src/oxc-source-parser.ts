@@ -1,16 +1,13 @@
 import * as Effect from 'effect/Effect'
+import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Predicate from 'effect/Predicate'
 import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import type * as S from 'effect/Schema'
 
-import type { ScriptLanguage } from '../import-closure.schema.js'
-
-export interface ParsedSource {
-  readonly program: S.Json
-  readonly parseFailed: boolean
-}
+import type { ScriptLanguage } from './import-closure.schema.js'
+import { type ParsedSource, SourceParser } from './source-parser.service.js'
 
 type OxcValue = object | string | number | boolean | bigint | symbol | null | undefined
 
@@ -42,11 +39,15 @@ const jsonOf: (value: OxcValue) => Result.Result<S.Json, void> = Match.type<OxcV
   Match.orElse(() => Result.failVoid),
 )
 
-export const parseSource = Effect.fnUntraced(function*(absolute: string, content: string, language: ScriptLanguage) {
+const parseSource = Effect.fnUntraced(function*(absolute: string, content: string, language: ScriptLanguage) {
   const oxc = yield* Effect.flatMap(oxcModule, (load) => load)
   const parsed = oxc.parseSync(absolute, content, { lang: language })
   return { program: itemOf(parsed.program), parseFailed: parsed.errors.length > 0 } satisfies ParsedSource
 })
+
+export const make = Effect.succeed(SourceParser.of({ parseSource }))
+
+export const layer: Layer.Layer<SourceParser> = Layer.effect(SourceParser, make)
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
