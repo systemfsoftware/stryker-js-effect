@@ -13,6 +13,8 @@ The closure installs in one `npm install` with no `@systemfsoftware` workspace p
 
 A member the harness lists as on request (`@systemfsoftware/stryker-js-verdict-store-s3`, whose AWS SDK closure would otherwise land in every fixture) installs only into a fixture that declares it an optional peer (`peerDependencies` plus `peerDependenciesMeta.<name>.optional`), since npm never fetches an absent optional peer from the registry. It installs into every fixture when a member installed everywhere depends on it. The bake writes each fixture's planned specs to `<fixtureId>.specs` beside the staged fixture and installs them with `--save-prod`: without it, npm keeps a name it already lists as an optional peer in `peerDependencies`, records the tarball in the lockfile, and never puts it in `node_modules`.
 
+Both bake installs resolve registry dependencies fresh, so they pass `--min-release-age=1`: a release less than a day old never reaches a fixture. A half-published release, such as `@effect/platform-node@4.0.3` declaring a peer `effect@^4.0.3` that was not yet on the registry, otherwise leaves npm resolving forever. Each install runs under a 300 s `timeout`. When one runs over, the bake exits 124 and its stderr, which global setup reports, names the fixture and the step that ran over.
+
 ## Running locally
 
 Local runs need hardware virtualization and nothing else: no Docker daemon, Podman socket, or container CLI.
