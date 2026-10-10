@@ -1,0 +1,10 @@
+exporters:
+  file/capture:
+    path: /otel-lgtm/capture/traces.jsonl
+service:
+  pipelines:
+    traces:
+      exporters: [otlp_http/traces, file/capture]
+  telemetry:
+    logs:
+      output_paths: [stderr, /otel-lgtm/capture/otelcol.log]
