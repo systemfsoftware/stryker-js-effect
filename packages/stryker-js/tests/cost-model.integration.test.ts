@@ -116,7 +116,7 @@ const runOnce = (root: string): Effect.Effect<
     )
     const streamCosts = Object.fromEntries(
       events.flatMap((event) =>
-        S.is(RunEvent.RunMutantTestedEvent)(event) && event.cost !== null
+        S.is(RunEvent.RunMutantTested)(event) && event.cost !== null
           ? [[event.id, event.cost.fixedOverheadMs + event.cost.testBodyMs] as const]
           : []
       ),

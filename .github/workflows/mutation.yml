@@ -13,6 +13,13 @@ on:
         description: Re-verify every mutant instead of reusing the incremental cache
         type: boolean
         default: false
+      lane:
+        description: Which lane to run. `kill-matrix` runs only the full kill-matrix lane.
+        type: choice
+        options:
+          - all
+          - kill-matrix
+        default: all
   schedule:
     - cron: "17 3 * * *"
 
@@ -39,7 +46,7 @@ env:
 jobs:
   plan:
     name: plan · shards from the incremental cost record
-    if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
+    if: ${{ github.event.inputs.lane != 'kill-matrix' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -95,7 +102,7 @@ jobs:
 
   build:
     name: build · once for every shard
-    if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
+    if: ${{ github.event.inputs.lane != 'kill-matrix' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -150,7 +157,7 @@ jobs:
   mutation:
     name: mutation · shard ${{ matrix.shard }}
     needs: [plan, build]
-    if: ${{ needs.plan.result == 'success' && needs.build.result == 'success' && needs.plan.outputs.count != '0' }}
+    if: ${{ github.event.inputs.lane != 'kill-matrix' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
@@ -250,7 +257,7 @@ jobs:
   report:
     name: Mutation report
     needs: [plan, mutation]
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
+    if: ${{ github.event.inputs.lane != 'kill-matrix' && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -350,3 +357,10 @@ jobs:
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" \
             --jq '.artifacts[] | select(.name | startswith("mutation-shard-")) | .id' \
           | while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"; done
+
+  kill-matrix:
+    name: Kill matrix
+    if: ${{ (github.event_name == 'push' && github.event.head_commit.author.username != 'github-actions[bot]') || github.event.inputs.lane == 'kill-matrix' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/kill-matrix.yml

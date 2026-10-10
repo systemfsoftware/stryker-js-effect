@@ -7,6 +7,8 @@ import * as S from 'effect/Schema'
 import { type LocatedDirective, LocatedDirectiveSchema } from '../directives/directive.schema.js'
 import { MutantKept, mutantSetPolicy, MutantSetPolicyCommand } from '../mutant-set-policy.workflow.js'
 import {
+  type IgnorerAnswer,
+  IgnorerAnsweredWithoutReason,
   type MutantCandidate,
   MutantsPlanned,
   MutantWithoutLocation,
@@ -41,6 +43,17 @@ const policyReasonOf = (command: PlanMutantsCommand, candidate: MutantCandidate)
   return `${first.ruleId}: ${first.detail}`
 }
 
+const reasonOf = (answered: IgnorerAnswer | undefined): string | undefined =>
+  answered !== undefined && typeof answered.answer === 'string' && answered.answer.trim().length > 0
+    ? answered.answer
+    : undefined
+
+const badIgnorerAnswer = (candidate: MutantCandidate): boolean =>
+  candidate.ignorerAnswer !== undefined && reasonOf(candidate.ignorerAnswer) === undefined
+
+const unplannable = (candidate: MutantCandidate): boolean =>
+  badIgnorerAnswer(candidate) || candidate.location === undefined
+
 const silencingReason = (command: PlanMutantsCommand, candidate: MutantCandidate): string | undefined => {
   const mutatorName = candidate.mutatorName
   const directive = reasonFromRule(command.rule, mutatorName, command.line)
@@ -50,9 +63,9 @@ const silencingReason = (command: PlanMutantsCommand, candidate: MutantCandidate
   if (command.excludedMutations.includes(mutatorName)) {
     return `excluded-mutator: Ignored because of excluded mutation "${mutatorName}"`
   }
-  const provider = candidate.ignorerReason
-  if (provider !== undefined) {
-    return `ignorer: ${provider}`
+  const reason = reasonOf(candidate.ignorerAnswer)
+  if (reason !== undefined) {
+    return `ignorer: ${reason}`
   }
   return policyReasonOf(command, candidate)
 }
@@ -101,6 +114,17 @@ const providerCandidate = (mutatorName: string): MutantCandidate => ({
   mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
 })
 
+const IGNORER_NAME = 'probe-ignorer'
+
+const ignorerCandidate = (id: MutantCandidate['id'], answer: IgnorerAnswer['answer']): MutantCandidate => ({
+  id,
+  mutatorName: 'ArithmeticOperator',
+  replacementCode: 'n - 1',
+  location: { start: { line: 2, column: 1 }, end: { line: 2, column: 2 } },
+  ignorerAnswer: { ignorerName: IGNORER_NAME, answer },
+  mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
+})
+
 describe('planMutants', () => {
   it.prop(
     '∀c_Command_≡EveryPlannedMutantCarriesItsCandidatesId',
@@ -108,7 +132,7 @@ describe('planMutants', () => {
     (subject, [command]) => {
       const planned = subject(command)
       if (Result.isFailure(planned)) {
-        return command.candidates.some((candidate) => candidate.location === undefined)
+        return command.candidates.some(unplannable)
       }
       const plannedIds = planned.success.mutants.map((mutant) => mutant.id)
       return plannedIds.length === command.candidates.length &&
@@ -121,8 +145,8 @@ describe('planMutants', () => {
     { of: [PlanMutantsCommand], subject: planMutants },
     (subject, [command]) => {
       const planned = subject(command)
-      if (command.candidates.some((candidate) => candidate.location === undefined)) {
-        return Result.isFailure(planned) && S.is(MutantWithoutLocation)(planned.failure)
+      if (command.candidates.some(unplannable)) {
+        return Result.isFailure(planned)
       }
       if (Result.isFailure(planned)) {
         return false
@@ -147,8 +171,8 @@ describe('planMutants', () => {
       if (candidate === undefined) {
         return Result.isSuccess(planned) && planned.success.mutants.length === 0
       }
-      if (command.candidates.some((entry) => entry.location === undefined)) {
-        return Result.isFailure(planned) && S.is(MutantWithoutLocation)(planned.failure)
+      if (command.candidates.some(unplannable)) {
+        return Result.isFailure(planned)
       }
       if (Result.isFailure(planned)) {
         return false
@@ -208,7 +232,7 @@ describe('planMutants', () => {
     (subject, [command]) => {
       const planned = subject(command)
       if (Result.isFailure(planned)) {
-        return S.is(MutantWithoutLocation)(planned.failure)
+        return S.is(MutantWithoutLocation)(planned.failure) || S.is(IgnorerAnsweredWithoutReason)(planned.failure)
       }
       return planned.success.mutants.every((mutant) =>
         mutant.ignoreReason === undefined || S.is(Mutant.IgnoreStatusReasonText)(mutant.ignoreReason)
@@ -229,6 +253,24 @@ describe('planMutants', () => {
       const planned = subject(command)
       return Result.isSuccess(planned) &&
         planned.success.warnings.join('\n').includes(`'${mutatorName}' not found`)
+    },
+  )
+
+  it.prop(
+    '∀a_IgnorerAnswer_≡CarriesAReasonExactlyWhenItIsANonBlankString',
+    { of: [Mutant.MutantId, S.Unknown], subject: planMutants },
+    (subject, [id, answer]) => {
+      const planned = subject(commandOf([ignorerCandidate(id, answer)]))
+      const reason = reasonOf({ ignorerName: IGNORER_NAME, answer })
+      if (reason !== undefined) {
+        return Result.isSuccess(planned) && planned.success.mutants.at(0)?.ignoreReason === `ignorer: ${reason}`
+      }
+      return Result.isFailure(planned) &&
+        S.is(IgnorerAnsweredWithoutReason)(planned.failure) &&
+        planned.failure.mutantId === id &&
+        planned.failure.ignorerName === IGNORER_NAME &&
+        planned.failure.message.includes(id) &&
+        planned.failure.message.includes(IGNORER_NAME)
     },
   )
 })

@@ -11,6 +11,7 @@ import * as Result from 'effect/Result'
 import {
   admitCheckerAnswer,
   CheckerAnsweredUnrequested,
+  CheckerIgnoredWithoutRule,
   CheckerSkippedRequested,
 } from '../admit-checker-answer.workflow.js'
 import { checkerMutantsSkipped, type CheckerRequest, type CheckRaw } from './Checker.handle.js'
@@ -83,5 +84,6 @@ export const checkCell = Sandwich.named(SpanTaxonomy.Spans.checkerCheckPlans.nam
       Effect.fail(CheckerSkippedRequested.make({ checkerName: raw.checkerName, phase: 'check', missingIds: [] })),
     CheckerAnsweredUnrequested: (breach) => Effect.fail(CheckerAnsweredUnrequested.make(breach)),
     CheckerSkippedRequested: (breach) => Effect.fail(CheckerSkippedRequested.make(breach)),
+    CheckerIgnoredWithoutRule: (breach) => Effect.fail(CheckerIgnoredWithoutRule.make(breach)),
     CommandRejected: ({ issue }, raw) => Effect.fail(commandFailed({ issue, input: raw })),
   })

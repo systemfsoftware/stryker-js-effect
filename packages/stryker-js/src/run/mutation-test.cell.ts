@@ -57,7 +57,9 @@ const writeMutationTestDryRunOnly = Effect.fn(SpanTaxonomy.Spans.mutationTestDry
 ) {
   const reporting = yield* MutationReporting
   const env = yield* RunEnvironment
-  yield* reporting.publishDryRunCoverage(reportingInputOf({ prev: raw.prev, env, results: [] })).pipe(
+  yield* reporting.publishDryRunCoverage(
+    reportingInputOf({ prev: raw.prev, env, results: [], rememberedMutantIds: [] }),
+  ).pipe(
     Effect.tapCause((cause) => Effect.logWarning('Failed to publish the dry-run coverage', cause)),
     Effect.ignoreCause,
   )

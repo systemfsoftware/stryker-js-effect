@@ -15,7 +15,7 @@ const FailedCheckResultSchema = S.Struct({
 
 const IgnoredCheckResultSchema = S.Struct({
   status: S.Literal('ignored'),
-  reason: S.String,
+  reason: Mutant.IgnoreStatusReasonText,
 })
 
 export class CheckedPlanPassed extends S.TaggedClass<CheckedPlanPassed>()('CheckedPlanPassed', {
@@ -37,7 +37,7 @@ export class CheckedPlanFailed extends S.TaggedClass<CheckedPlanFailed>()('Check
 export class CheckedPlanIgnored extends S.TaggedClass<CheckedPlanIgnored>()('CheckedPlanIgnored', {
   mutantId: Mutant.MutantId,
   entryIndex: S.Int,
-  reason: S.String,
+  reason: Mutant.IgnoreStatusReasonText,
   result: IgnoredCheckResultSchema,
 }) {
   readonly [CheckedPlanTypeId] = CheckedPlanTypeId
