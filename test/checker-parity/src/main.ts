@@ -31,7 +31,6 @@ import { DriverFailure, ReportedExit } from './DriverFailure.schema.js'
 import { EMPTY_COSTS, measuredCostsOf, mergeCosts } from './file-costs.js'
 import { laneTrigger } from './lane-trigger.js'
 import { FileCosts, LegFile, type LegScope, type ParityLine, ParityPlan, RunScopeName, Shard } from './Parity.schema.js'
-import { DEFAULT_FILL } from './plan-legs.defaults.js'
 import { planLegs, PlanLegsCommand } from './plan-legs.workflow.js'
 import {
   CompareFinished,
@@ -485,7 +484,7 @@ const planCommand = Command.make('plan', {
     Flag.filter((seconds) => seconds >= 1, (seconds) => `--deadline ${seconds} is not ≥ 1`),
   ),
   fill: Flag.Finite('fill').pipe(
-    Flag.withDefault(DEFAULT_FILL),
+    Flag.withDefault(0.7),
     Flag.filter((fill) => fill > 0 && fill <= 1, (fill) => `--fill ${fill} is not within (0, 1]`),
   ),
   blockMutants: Flag.Int('block-mutants').pipe(

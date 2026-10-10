@@ -17,6 +17,8 @@ const pureCore = [
   'src/shard.ts',
   'src/span-counts.ts',
   'src/corpus.ts',
+  'src/blocks.ts',
+  'src/file-costs.ts',
 ]
 
 export default defineConfig({
