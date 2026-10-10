@@ -56,7 +56,7 @@ const pinnableFieldsOf = (
 
 export const stagedManifestOf = (input: StagedManifestInput): Result.Result<FixtureManifestDocument, ResolveFailure> =>
   Result.flatMap(
-    resolveCatalogSpecs({ manifest: input.manifestPath, document: input.document, catalogs: input.catalogs }),
+    resolveCatalogSpecs(input.manifestPath, input.document, input.catalogs),
     (resolved) =>
       Result.map(pinnableFieldsOf(input.manifestPath, resolved), (fields) => {
         const pinned = { ...fields, ...pinnedFieldsOf({ manifest: fields, pins: input.pins, root: input.root }) }
@@ -96,7 +96,7 @@ export type StageFixtureFailure = ResolveFailure | InstallClosureFailure
 const parsedManifestsOf = (input: FixtureStagingInput) =>
   Result.all(input.manifests.map((file) =>
     Result.map(
-      parseFixtureManifest({ manifest: `${input.fixtureId}/${file.relativePath}`, bytes: file.bytes }),
+      parseFixtureManifest(`${input.fixtureId}/${file.relativePath}`, file.bytes),
       (document): StagedFixtureFile => ({ relativePath: file.relativePath, document }),
     )
   ))

@@ -1,5 +1,5 @@
 import * as Boolean from 'effect/Boolean'
-import { pipe } from 'effect/Function'
+import { dual, pipe } from 'effect/Function'
 import * as Option from 'effect/Option'
 import * as Rec from 'effect/Record'
 import * as Result from 'effect/Result'
@@ -7,7 +7,7 @@ import * as S from 'effect/Schema'
 import { parse } from 'yaml'
 
 import {
-  type DependencySpecs,
+  DependencySpecs,
   type FixtureManifestDocument,
   FixtureManifestJson,
   LockedCatalogsYaml,
@@ -28,6 +28,8 @@ const CATALOG_PROTOCOL = 'catalog:'
 const DEFAULT_CATALOG_NAMES: ReadonlyArray<string> = ['', 'default']
 const DEFAULT_CATALOG = 'default'
 const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const
+type DependencyField = typeof DEPENDENCY_FIELDS[number]
+const MANIFEST_JSON_INDENT = 2
 
 const NO_SPECS: DependencySpecs = {}
 const NO_CATALOGS: WorkspaceCatalogs = { default: NO_SPECS, named: {} }
@@ -115,43 +117,88 @@ const resolveSpecs = (
     (entries) => Object.fromEntries(entries),
   )
 
-const dependenciesOf = (
+const fieldSpecsOf = (
   manifest: string,
   document: FixtureManifestDocument,
-): Result.Result<ManifestDependencies, MalformedFixtureManifest> =>
-  Result.mapError(
-    S.decodeResult(ManifestDependencies)(document),
-    () => MalformedFixtureManifest.make({ manifest, detail: 'a dependency field is not a map of version ranges' }),
-  )
+  field: DependencyField,
+): Result.Result<Option.Option<DependencySpecs>, MalformedFixtureManifest> =>
+  Option.match(Rec.get(document, field), {
+    onNone: () => Result.succeed(Option.none()),
+    onSome: (value) =>
+      Result.map(
+        Result.mapError(
+          S.decodeUnknownResult(DependencySpecs)(value),
+          () => MalformedFixtureManifest.make({ manifest, detail: `"${field}" is not a map of version ranges` }),
+        ),
+        Option.some,
+      ),
+  })
+
+const resolvedFieldOf = (
+  manifest: string,
+  document: FixtureManifestDocument,
+  catalogs: WorkspaceCatalogs,
+  field: DependencyField,
+): Result.Result<ReadonlyArray<readonly [DependencyField, DependencySpecs]>, ResolveFailure> =>
+  Result.flatMap(fieldSpecsOf(manifest, document, field), (specs) =>
+    Option.match(specs, {
+      onNone: () => Result.succeed([]),
+      onSome: (present) => Result.map(resolveSpecs(manifest, catalogs, present), (resolved) => [[field, resolved]]),
+    }))
+
+export const resolveCatalogSpecs: {
+  (
+    document: FixtureManifestDocument,
+    catalogs: WorkspaceCatalogs,
+  ): (manifest: string) => Result.Result<FixtureManifestDocument, ResolveFailure>
+  (
+    manifest: string,
+    document: FixtureManifestDocument,
+    catalogs: WorkspaceCatalogs,
+  ): Result.Result<FixtureManifestDocument, ResolveFailure>
+} = dual(
+  3,
+  (
+    manifest: string,
+    document: FixtureManifestDocument,
+    catalogs: WorkspaceCatalogs,
+  ): Result.Result<FixtureManifestDocument, ResolveFailure> =>
+    Result.map(
+      Result.all(DEPENDENCY_FIELDS.map((field) => resolvedFieldOf(manifest, document, catalogs, field))),
+      (fields) => ({ ...document, ...Object.fromEntries(fields.flat()) }),
+    ),
+)
+
+export const parseFixtureManifest: {
+  (bytes: Uint8Array): (manifest: string) => Result.Result<FixtureManifestDocument, MalformedFixtureManifest>
+  (manifest: string, bytes: Uint8Array): Result.Result<FixtureManifestDocument, MalformedFixtureManifest>
+} = dual(
+  2,
+  (manifest: string, bytes: Uint8Array): Result.Result<FixtureManifestDocument, MalformedFixtureManifest> =>
+    Result.mapError(
+      S.decodeResult(FixtureManifestJson)(new TextDecoder().decode(bytes)),
+      () => MalformedFixtureManifest.make({ manifest, detail: 'the manifest is not a JSON object' }),
+    ),
+)
+
+export const resolvedManifestText: {
+  (bytes: Uint8Array, catalogs: WorkspaceCatalogs): (manifest: string) => Result.Result<string, ResolveFailure>
+  (manifest: string, bytes: Uint8Array, catalogs: WorkspaceCatalogs): Result.Result<string, ResolveFailure>
+} = dual(
+  3,
+  (manifest: string, bytes: Uint8Array, catalogs: WorkspaceCatalogs): Result.Result<string, ResolveFailure> =>
+    Result.map(
+      Result.flatMap(
+        parseFixtureManifest(manifest, bytes),
+        (parsed) => resolveCatalogSpecs(manifest, parsed, catalogs),
+      ),
+      (resolved) => `${JSON.stringify(resolved, null, MANIFEST_JSON_INDENT)}\n`,
+    ),
+)
 
 const presentFieldsOf = (dependencies: ManifestDependencies) =>
   DEPENDENCY_FIELDS.flatMap((field) =>
     Option.toArray(Option.map(Option.fromUndefinedOr(dependencies[field]), (specs) => [field, specs] as const))
-  )
-
-export const resolveCatalogSpecs = (
-  input: {
-    readonly manifest: string
-    readonly document: FixtureManifestDocument
-    readonly catalogs: WorkspaceCatalogs
-  },
-): Result.Result<FixtureManifestDocument, ResolveFailure> =>
-  Result.flatMap(dependenciesOf(input.manifest, input.document), (dependencies) =>
-    Result.map(
-      Result.all(
-        presentFieldsOf(dependencies).map(([field, specs]) =>
-          Result.map(resolveSpecs(input.manifest, input.catalogs, specs), (resolved) => [field, resolved] as const)
-        ),
-      ),
-      (fields) => ({ ...input.document, ...Object.fromEntries(fields) }),
-    ))
-
-export const parseFixtureManifest = (
-  input: { readonly manifest: string; readonly bytes: Uint8Array },
-): Result.Result<FixtureManifestDocument, MalformedFixtureManifest> =>
-  Result.mapError(
-    S.decodeResult(FixtureManifestJson)(new TextDecoder().decode(input.bytes)),
-    () => MalformedFixtureManifest.make({ manifest: input.manifest, detail: 'the manifest is not a JSON object' }),
   )
 
 const lockedPinOf = (locked: WorkspaceCatalogs, [packageName, spec]: readonly [string, string]) =>
