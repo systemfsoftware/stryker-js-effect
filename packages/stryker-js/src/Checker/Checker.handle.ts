@@ -10,7 +10,9 @@ import type * as RpcClient from 'effect/rpc/RpcClient'
 import type { RpcClientError } from 'effect/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/rpc/RpcGroup'
 
+import type { CheckerCommand, CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
+import type { CheckerPlans } from './Checker.schema.js'
 
 export type CheckerCrash = ChildProcessCrashedError | OutOfMemoryError
 
@@ -64,6 +66,14 @@ export interface CheckerResourceService {
     checkerName: string,
   ) => Effect.Effect<Checker.ProgramDigest, CheckerCrash | Checker.CheckerFailed>
 }
+
+export interface CheckerRequest extends CheckerPlans {
+  readonly checker: CheckerResourceService
+}
+
+export type CheckRaw = typeof CheckerCommand.Encoded & CheckerRequest
+
+export type CheckerCellError = CheckerCrash | Checker.CheckerFailed | CheckerContractBroken
 
 export const connectionCrashed = (cause: string): ChildProcessCrashedError =>
   ChildProcessCrashedError.make({ pid: 0, exit: { _tag: 'Code', code: 1 }, cause })
