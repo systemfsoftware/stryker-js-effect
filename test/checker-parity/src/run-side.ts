@@ -14,14 +14,12 @@ import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as ChildProcess from 'effect/process/ChildProcess'
-import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Result from 'effect/Result'
 import type * as RpcClient from 'effect/rpc/RpcClient'
 import type { RpcClientError } from 'effect/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/rpc/RpcGroup'
 import * as S from 'effect/Schema'
-import * as Stream from 'effect/Stream'
 import * as Str from 'effect/String'
 
 import { appendStepSummary, type CiEnvironment, readsCache } from './ci-environment.js'
@@ -31,6 +29,7 @@ import {
   programFilesFromListing,
   tsconfigsNamedByConfig,
 } from './corpus.js'
+import { execText } from './exec-text.js'
 import { type OtlpReceiver, startOtlpReceiver } from './otlp-receiver.js'
 import {
   CacheEntry,
@@ -47,6 +46,11 @@ import {
   TelemetryMissing,
   Verdict,
 } from './Parity.schema.js'
+import {
+  reuseCachedVerdicts,
+  ReuseCachedVerdictsCommand,
+  VerdictCacheIdentity,
+} from './reuse-cached-verdicts.workflow.js'
 import { inShard } from './shard.js'
 import { ShellFailure } from './Shell.schema.js'
 import { COUNTS_SCHEMA_VERSION, countsOfSpans, countsSchemaVersionsOf, projectCheckSpans } from './span-counts.js'
@@ -60,8 +64,6 @@ const decodeTypescriptPackage = S.decodeResult(
 export interface RunCommand {
   readonly mainWorker: string
   readonly branchWorker: string
-  readonly mainSource: string
-  readonly branchSource: string
   readonly shard: Shard
   readonly cache: string
   readonly out: string
@@ -87,40 +89,6 @@ const rpcFailure = (detail: string): ShellFailure =>
     reason: `A checker worker RPC failed: ${detail}`,
     nextAction: 'Rerun the shard; if it repeats, inspect the worker stderr for the failing project.',
   })
-
-const execText = (
-  file: string,
-  args: ReadonlyArray<string>,
-  cwd: string,
-): Effect.Effect<string, ShellFailure, ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.scoped(
-    Effect.gen(function*() {
-      const handle = yield* ChildProcess.make(file, [...args], { cwd, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' })
-      const [stdout, stderr, exitCode] = yield* Effect.all([
-        handle.stdout.pipe(Stream.decodeText, Stream.mkString),
-        handle.stderr.pipe(Stream.decodeText, Stream.mkString),
-        handle.exitCode,
-      ], { concurrency: 'unbounded' })
-      return yield* Boolean.match(Number(exitCode) === 0, {
-        onTrue: () => Effect.succeed(stdout),
-        onFalse: () =>
-          Effect.fail(
-            ioFailure(
-              `${file} ${args.join(' ')} exited ${Number(exitCode)}: ${stderr.trim()}`,
-              `Run \`${file} ${args.join(' ')}\` in ${cwd} and fix what it reports.`,
-            ),
-          ),
-      })
-    }),
-  ).pipe(
-    Effect.catchTag('PlatformError', (cause) =>
-      Effect.fail(
-        ioFailure(
-          `Running ${file} ${args.join(' ')} failed: ${cause.message}`,
-          `Run \`${file} ${args.join(' ')}\` in ${cwd} and fix what it reports.`,
-        ),
-      )),
-  )
 
 const exists = (file: string): Effect.Effect<boolean, never, FileSystem.FileSystem> =>
   FileSystem.FileSystem.use((fs) => Effect.orElseSucceed(fs.exists(file), () => false))
@@ -178,7 +146,10 @@ const sha256Tree = (directory: string): Effect.Effect<string, ShellFailure, File
 const gitTrackedFiles = (
   repoRoot: string,
 ): Effect.Effect<ReadonlyArray<string>, ShellFailure, ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.map(execText('git', ['ls-files', '-z'], repoRoot), (stdout) => stdout.split('\u0000').filter(Str.isNonEmpty))
+  Effect.map(
+    execText({ file: 'git', args: ['ls-files', '-z'], cwd: repoRoot }),
+    (stdout) => stdout.split('\u0000').filter(Str.isNonEmpty),
+  )
 
 const decodeOptions = (tsconfigFile: string): Options.StrykerOptions =>
   Result.getOrThrow(S.decodeResult(Options.StrykerOptionsSchema)({ tsconfigFile, typescriptChecker: {} }))
@@ -244,7 +215,7 @@ interface SideInput {
   readonly tsconfigFile: string
   readonly repoRoot: string
   readonly workerPath: string
-  readonly sourceTreeHash: string
+  readonly bundleHash: string
   readonly cacheDir: string
   readonly readCache: boolean
   readonly wires: ReadonlyArray<Checker.CheckerMutantWire>
@@ -257,9 +228,6 @@ interface SideRun {
   readonly lines: ReadonlyArray<ParityLine>
   readonly expectedCheckSpans: number
 }
-
-const cacheKeyOf = (sourceTreeHash: string, digest: string, mutantIds: ReadonlyArray<string>): string =>
-  bytesToHex(sha256(utf8ToBytes([sourceTreeHash, digest, Arr.sort(mutantIds, Str.Order).join(',')].join('\n'))))
 
 const cachedLine = (line: ParityLine): Option.Option<ParityLine> =>
   S.is(Verdict)(line)
@@ -324,22 +292,58 @@ const branchCountsLine = (input: SideInput): Effect.Effect<Counts, ShellFailure>
     return Counts.make({ schemaVersion: 1, side: 'branch', project: input.project, ...countsOfSpans(checkSpans) })
   })
 
-const cacheFileOf = (input: SideInput, key: string): Effect.Effect<string, never, Path.Path> =>
-  Path.Path.useSync((path) => path.join(input.cacheDir, `${input.side}-${key}.ndjson`))
+interface CacheSlot {
+  readonly key: string
+  readonly verdictsFile: string
+  readonly identityFile: string
+  readonly identity: VerdictCacheIdentity
+}
+
+const encodeIdentity = S.encodeResult(S.fromJsonString(VerdictCacheIdentity))
+const decodeIdentity = S.decodeResult(S.fromJsonString(VerdictCacheIdentity))
+
+const cacheSlotOf = (input: SideInput, identity: VerdictCacheIdentity): Effect.Effect<CacheSlot, never, Path.Path> =>
+  Path.Path.useSync((path) => {
+    const key = bytesToHex(sha256(utf8ToBytes(input.project)))
+    return {
+      key,
+      verdictsFile: path.join(input.cacheDir, `${input.side}-${key}.ndjson`),
+      identityFile: path.join(input.cacheDir, `${input.side}-${key}.identity.json`),
+      identity,
+    }
+  })
+
+const storedIdentityOf = (slot: CacheSlot): Effect.Effect<VerdictCacheIdentity | null, never, FileSystem.FileSystem> =>
+  FileSystem.FileSystem.use((fs) => fs.readFileString(slot.identityFile)).pipe(
+    Effect.map((text) =>
+      Result.match(decodeIdentity(text), { onFailure: () => null, onSuccess: (identity) => identity })
+    ),
+    Effect.orElseSucceed(() => null),
+  )
 
 const cacheEntry = (input: SideInput, key: string, hit: boolean): CacheEntry =>
   CacheEntry.make({ schemaVersion: 1, side: input.side, project: input.project, key, hit })
 
 const freshSideRun = (
   input: SideInput,
-  key: string,
+  slot: CacheSlot,
   lines: ReadonlyArray<ParityLine>,
   groups: number,
 ): Effect.Effect<SideRun, ShellFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
+    const identityText = yield* Effect.fromResult(
+      Result.mapError(encodeIdentity(slot.identity), (issue) =>
+        ioFailure(`Could not encode the verdict cache identity: ${issue.message}`, 'Inspect VerdictCacheIdentity.')),
+    )
     yield* makeDirectory(input.cacheDir)
-    yield* writeText(yield* cacheFileOf(input, key), yield* ndjsonOf(lines))
-    return { bootFailed: false, lines: [cacheEntry(input, key, false), ...lines], expectedCheckSpans: groups }
+    yield* FileSystem.FileSystem.use((fs) =>
+      fs.remove(slot.identityFile, { force: true })
+    ).pipe(
+      Effect.mapError((cause) => ioFailure(cause.message, `Check ${input.cacheDir} is writable.`)),
+    )
+    yield* writeText(slot.verdictsFile, yield* ndjsonOf(lines))
+    yield* writeText(slot.identityFile, identityText)
+    return { bootFailed: false, lines: [cacheEntry(input, slot.key, false), ...lines], expectedCheckSpans: groups }
   })
 
 const checkGroup = (
@@ -376,7 +380,7 @@ const checkGroup = (
 const freshlyChecked = (
   client: CheckerClient,
   input: SideInput,
-  key: string,
+  slot: CacheSlot,
   digestLine: DigestCall,
 ): Effect.Effect<SideRun, ShellFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
@@ -397,7 +401,12 @@ const freshlyChecked = (
       groups: groups.length,
       cached: false,
     })
-    return yield* freshSideRun(input, key, [digestLine, groupLine, ...groupLines.flat(), ...branchLines], groups.length)
+    return yield* freshSideRun(
+      input,
+      slot,
+      [digestLine, groupLine, ...groupLines.flat(), ...branchLines],
+      groups.length,
+    )
   })
 
 const sideBody = (
@@ -406,9 +415,24 @@ const sideBody = (
 ): Effect.Effect<SideRun, ShellFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const [digestDuration, digest] = yield* Effect.timed(client.digest({ checkerName: CHECKER_NAME }))
-    const key = cacheKeyOf(input.sourceTreeHash, digest, input.wires.map((wire) => wire.id))
-    const cacheFile = yield* cacheFileOf(input, key)
-    const cached = yield* Effect.map(exists(cacheFile), (present) => input.readCache && present)
+    const slot = yield* cacheSlotOf(
+      input,
+      VerdictCacheIdentity.make({
+        schemaVersion: 1,
+        bundleHash: input.bundleHash,
+        programDigest: digest,
+        wires: [...input.wires],
+      }),
+    )
+    const reuse = yield* Effect.fromResult(
+      reuseCachedVerdicts(
+        ReuseCachedVerdictsCommand.make({
+          readCache: input.readCache,
+          current: slot.identity,
+          stored: yield* storedIdentityOf(slot),
+        }),
+      ),
+    )
     const digestLine = DigestCall.make({
       schemaVersion: 1,
       side: input.side,
@@ -417,14 +441,14 @@ const sideBody = (
       digest,
       cached: false,
     })
-    return yield* Boolean.match(cached, {
-      onTrue: () =>
-        Effect.map(readCacheFile(cacheFile), (lines) => ({
+    return yield* Match.valueTags(reuse, {
+      VerdictsReused: () =>
+        Effect.map(readCacheFile(slot.verdictsFile), (lines) => ({
           bootFailed: false,
-          lines: [cacheEntry(input, key, true), ...lines],
+          lines: [cacheEntry(input, slot.key, true), ...lines],
           expectedCheckSpans: 0,
         })),
-      onFalse: () => freshlyChecked(client, input, key, digestLine),
+      CheckFreshly: () => freshlyChecked(client, input, slot, digestLine),
     })
   })
 
@@ -480,8 +504,8 @@ interface ProjectInput {
   readonly readCache: boolean
   readonly mainWorker: string
   readonly branchWorker: string
-  readonly mainSourceHash: string
-  readonly branchSourceHash: string
+  readonly mainBundleHash: string
+  readonly branchBundleHash: string
   readonly receiver: OtlpReceiver
 }
 
@@ -519,11 +543,11 @@ const listProgramFiles = (input: ProjectInput): Effect.Effect<ReadonlyArray<stri
   Effect.gen(function*() {
     const path = yield* Path.Path
     const tsc = yield* tscBinPath
-    const listing = yield* execText(
-      globalThis.process.execPath,
-      [tsc, '--listFilesOnly', '-p', input.tsconfigFile],
-      input.repoRoot,
-    )
+    const listing = yield* execText({
+      file: globalThis.process.execPath,
+      args: [tsc, '--listFilesOnly', '-p', input.tsconfigFile],
+      cwd: input.repoRoot,
+    })
     return programFilesFromListing({ listing, repoRoot: input.repoRoot, path })
   })
 
@@ -538,7 +562,7 @@ const sideInputOf =
     tsconfigFile: input.tsconfigFile,
     repoRoot: input.repoRoot,
     workerPath: bySide(side, input.mainWorker, input.branchWorker),
-    sourceTreeHash: bySide(side, input.mainSourceHash, input.branchSourceHash),
+    bundleHash: bySide(side, input.mainBundleHash, input.branchBundleHash),
     cacheDir: input.cacheDir,
     readCache: input.readCache,
     wires,
@@ -707,8 +731,8 @@ export const runShard: {
         { discard: true },
       )
       const receiver = yield* startOtlpReceiver
-      const mainSourceHash = yield* sha256Tree(command.mainSource)
-      const branchSourceHash = yield* sha256Tree(command.branchSource)
+      const mainBundleHash = yield* sha256Tree(path.dirname(command.mainWorker))
+      const branchBundleHash = yield* sha256Tree(path.dirname(command.branchWorker))
       const projects = yield* corpusProjects(repoRoot)
       const cacheDir = path.resolve(repoRoot, command.cache)
       const results = yield* Effect.forEach(projects, (project) => {
@@ -725,8 +749,8 @@ export const runShard: {
                 readCache: readsCache(environment),
                 mainWorker: command.mainWorker,
                 branchWorker: command.branchWorker,
-                mainSourceHash,
-                branchSourceHash,
+                mainBundleHash,
+                branchBundleHash,
                 receiver,
               }),
             onFalse: () => Effect.succeed(skippedProject(project, `tsconfig not found at ${project}`)),
