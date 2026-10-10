@@ -327,6 +327,8 @@ By default `mutator.mutantSetPolicy` drops mutants a rule can prove redundant �
 
 Every verdict is stored as its own entry in the verdict store, named by a digest of everything that can change it: the mutant's id, the import-closure digest of its covering tests, the run inputs, the checker configuration, a digest of the engine's installed files, and the mutant-set policy. Nothing in the key names a shard, branch, report path, or machine, so parallel shards, later runs, and other pull requests that share a store reuse each other's verdicts when their inputs are identical. A filesystem store writes each entry to a temporary file and renames it, so a killed writer leaves no torn entry behind; an S3 store writes one object per entry. A verdict written by another build of the engine is refused as `semanticsChanged`, an entry that cannot be decoded as `entryUnreadable`, and each run reports a `reuse` line with the verdicts it reused, ran, and refused, by reason.
 
+[docs/verdict-store.md](docs/verdict-store.md) covers how entries are named and written, and the store's known limits.
+
 An unchanged project also reuses the persisted initial test run instead of running it again. The fresh dry run runs twice to find flaky tests, and a mutant whose covering test is flaky — or a static mutant — is re-tested rather than trusted. Every `mutant` line carries a `static` flag and a measured `cost` (`fixedOverheadMs`, `testBodyMs`, `testsExecuted`, `shared`), and the final `verdict` adds the static-mutant aggregate as `{ count, costMs }`.
 
 ---
@@ -361,7 +363,7 @@ List each plugin in `plugins` by its package name. The name is resolved from you
 <details>
 <summary>How do I avoid testing files that have not changed?</summary>
 
-Enable incremental mutation caching by setting `incremental: true` in `stryker.config.ts`. Stryker caches test outcomes in `reports/stryker-incremental.json` and skips running tests against mutants in unchanged files.
+Incremental reuse is on by default (`incremental: true`). Each verdict is stored in the verdict store (`reports/stryker-verdicts` unless `verdictStore` says otherwise), and a later run reuses the verdict of every mutant whose inputs are unchanged instead of testing it again.
 
 </details>
 
