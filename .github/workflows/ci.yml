@@ -234,46 +234,70 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: .checker-parity-costs
-          key: checker-parity-costs-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: checker-parity-costs-
-      - name: Bootstrap the cost table on a cache miss
-        if: steps.changes.outputs.mode == 'full' && steps.costs-restore.outputs.cache-matched-key == ''
+          key: checker-parity-costs-v3-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: checker-parity-costs-v3-
+      - name: Fold every recent run's leg measurements into the cost table
+        if: steps.changes.outputs.mode == 'full'
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
-          dirs=.checker-parity-bootstrap
-          mkdir -p "$dirs" .checker-parity-costs
-          found=""
-          source_run=""
-          for branch in "$BRANCH" main; do
-            for run in $(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=$branch&status=completed&per_page=30" \
-              --jq "[.workflow_runs[] | select(.id != $GITHUB_RUN_ID) | .id] | .[]"); do
-              artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
-                --jq "[.artifacts[] | select(.name | test(\"^checker-parity-$run-[0-9]+$\")) | .id] | .[]")
-              if [ -z "$artifacts" ]; then
-                continue
-              fi
-              for artifact in $artifacts; do
-                mkdir -p "$dirs/$artifact"
-                gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > "$dirs/$artifact.zip"
-                unzip -q -o "$dirs/$artifact.zip" -d "$dirs/$artifact"
-              done
-              found=yes
-              source_run=$run
-              break
+          table=.checker-parity-costs/costs.json
+          work=.checker-parity-bootstrap
+          mkdir -p "$work" .checker-parity-costs
+          restored=""
+          if [ -f "$table" ]; then
+            restored=" $(jq -r '.runs | map(tostring) | join(" ")' "$table") "
+          fi
+          runs_api="repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?status=completed"
+          candidates=$(
+            {
+              gh api "$runs_api&event=workflow_dispatch&per_page=20" --jq '.workflow_runs[].id'
+              gh api "$runs_api&event=push&branch=main&per_page=10" --jq '.workflow_runs[].id'
+              gh api "$runs_api&branch=$BRANCH&per_page=20" --jq '.workflow_runs[].id'
+            } | sort -n -u
+          )
+          folded=""
+          skipped=""
+          for run in $candidates; do
+            if [ "$run" = "$GITHUB_RUN_ID" ]; then
+              continue
+            fi
+            case "$restored" in *" $run "*) continue ;; esac
+            artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
+              --jq "[.artifacts[] | select((.name | test(\"^checker-parity-$run-[0-9]+$\")) and (.expired | not)) | .id] | .[]")
+            if [ -z "$artifacts" ]; then
+              continue
+            fi
+            for artifact in $artifacts; do
+              mkdir -p "$work/$run/$artifact"
+              gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > "$work/$run/$artifact.zip"
+              unzip -q -o "$work/$run/$artifact.zip" -d "$work/$run/$artifact"
+              rm "$work/$run/$artifact.zip"
             done
-            if [ -n "$found" ]; then
-              break
+            base=()
+            if [ -f "$table" ]; then
+              base=(--base "$table")
+            fi
+            if node test/checker-parity/dist/main.mjs costs "${base[@]}" --run-id "$run" --out "$table.next" "$work/$run"; then
+              mv "$table.next" "$table"
+              folded="$folded $run"
+            else
+              skipped="$skipped $run"
+              echo "::warning title=checker-parity cost-run-skipped::The leg artifacts of run $run did not decode as checker-parity lines, so the cost table leaves that run out. Next action: none if the run predates the current line schema; otherwise inspect its shard files."
             fi
           done
-          if [ -n "$found" ]; then
-            node test/checker-parity/dist/main.mjs costs --out .checker-parity-costs/costs.json "$dirs"
-            echo "::warning title=checker-parity cost-cache-miss::No cost cache matched checker-parity-costs-, so the plan bootstrapped from the newest earlier ci.yml run with checker-parity leg artifacts (run $source_run). Next action: none; the report job saves the refreshed table for the next run."
-          else
-            echo "::warning title=checker-parity no-cost-measurements::No earlier ci.yml run has checker-parity leg artifacts on $BRANCH or main, so this plan estimates every file without measurements. Next action: none if this is the lane's first run; the report job saves this run's measurements."
-          fi
+          {
+            echo "### checker-parity cost table"
+            echo
+            echo "Restored with runs:${restored:- none}"
+            echo
+            echo "Folded now (every attempt's legs, newest measurement per file wins):${folded:- none}"
+            echo
+            echo "Skipped:${skipped:- none}"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Plan the legs
         id: plan
         env:
@@ -291,8 +315,15 @@ jobs:
           fi
           node test/checker-parity/dist/main.mjs plan \
             --deadline "$PARITY_DEADLINE" \
+            --block-mutants 16 \
             "${costs[@]}" \
             --out checker-parity-plan.json | tee -a "$GITHUB_OUTPUT"
+      - name: Save the folded cost table
+        if: steps.changes.outputs.mode == 'full' && hashFiles('.checker-parity-costs/costs.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: .checker-parity-costs
+          key: checker-parity-costs-v3-${{ github.run_id }}-${{ github.run_attempt }}-plan
       - name: Upload the plan
         if: steps.changes.outputs.mode == 'full'
         uses: actions/upload-artifact@v7
@@ -489,8 +520,10 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: .checker-parity-costs
-          key: checker-parity-costs-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: checker-parity-costs-
+          key: checker-parity-costs-v3-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            checker-parity-costs-v3-${{ github.run_id }}-
+            checker-parity-costs-v3-
       - name: Merge this run's measurements into the cost table
         if: always() && needs.checker-parity-changes.outputs.run == 'true'
         run: |
@@ -507,7 +540,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: .checker-parity-costs
-          key: checker-parity-costs-${{ github.run_id }}-${{ github.run_attempt }}
+          key: checker-parity-costs-v3-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Collect the verdict caches
         if: always() && needs.checker-parity-changes.outputs.run == 'true'
         uses: actions/download-artifact@v7

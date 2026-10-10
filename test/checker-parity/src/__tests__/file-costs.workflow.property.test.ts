@@ -2,7 +2,7 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
 import * as S from 'effect/Schema'
 
-import { measuredCostsOf, mergeCosts } from '../file-costs.js'
+import { EMPTY_COSTS, measuredCostsOf, mergeCosts } from '../file-costs.js'
 import {
   CheckCall,
   Deferred,
@@ -67,6 +67,58 @@ const overheadKey = (overhead: ProjectOverhead): string =>
 
 const canonical = (keys: ReadonlyArray<string>): ReadonlyArray<string> => [...keys].sort()
 
+const RUN_ID = 38049913120
+
+const smallName = Arbitrary.schema(S.Literals(['a', 'b']))
+const smallRun = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 3 })))
+
+const rateArb: Arbitrary.Arbitrary<FileRate> = Arbitrary.all({
+  project: smallName,
+  fileName: smallName,
+  msPerMutant: msArb,
+  mutants: Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 9 }))),
+  runId: smallRun,
+}).pipe(Arbitrary.map((fields) => FileRate.make(fields)))
+
+const overheadArb: Arbitrary.Arbitrary<ProjectOverhead> = Arbitrary.all({
+  project: smallName,
+  ms: msArb,
+  runId: smallRun,
+}).pipe(Arbitrary.map((fields) => ProjectOverhead.make(fields)))
+
+const distinctBy = <A>(
+  entries: ReadonlyArray<A>,
+  keyOf: (entry: A) => string,
+): ReadonlyArray<A> => [...new Map(entries.map((entry) => [keyOf(entry), entry])).values()]
+
+const tableArb: Arbitrary.Arbitrary<FileCosts> = Arbitrary.all({
+  runs: Arbitrary.array(smallRun, { maxLength: 3 }),
+  files: Arbitrary.array(rateArb, { maxLength: 4 }),
+  projects: Arbitrary.array(overheadArb, { maxLength: 2 }),
+}).pipe(
+  Arbitrary.map(({ runs, files, projects }) =>
+    FileCosts.make({
+      schemaVersion: 3,
+      runs: [...new Set(runs)].sort((left, right) => left - right),
+      files: distinctBy(files, fileKey),
+      projects: distinctBy(projects, (overhead) => overhead.project),
+    })
+  ),
+)
+
+const newestOf = <A extends { readonly runId: number }>(
+  base: ReadonlyArray<A>,
+  measured: ReadonlyArray<A>,
+  keyOf: (entry: A) => string,
+): ReadonlyArray<A> => {
+  const kept = new Map<string, A>()
+  for (const entry of [...base, ...measured]) {
+    const earlier = kept.get(keyOf(entry))
+    if (earlier === undefined || entry.runId >= earlier.runId) kept.set(keyOf(entry), entry)
+  }
+  return [...kept.values()]
+}
+
 const twoSidedArb = Arbitrary.all({
   project: nameArb,
   fileName: nameArb,
@@ -74,6 +126,39 @@ const twoSidedArb = Arbitrary.all({
   branchMs: msArb,
   mainIds: idsArb,
   branchIds: idsArb,
+})
+
+const stampedRateKeys = (rates: ReadonlyArray<FileRate>): ReadonlyArray<string> =>
+  canonical(rates.map((rate) => `${rateKey(rate)}:${rate.runId}`))
+
+const stampedOverheadKeys = (overheads: ReadonlyArray<ProjectOverhead>): ReadonlyArray<string> =>
+  canonical(overheads.map((overhead) => `${overheadKey(overhead)}:${overhead.runId}`))
+
+const runsOfMerge = (
+  base: FileCosts,
+  measured: { readonly files: ReadonlyArray<FileRate>; readonly projects: ReadonlyArray<ProjectOverhead> },
+): ReadonlyArray<number> =>
+  [
+    ...new Set([
+      ...base.runs,
+      ...measured.files.map((rate) => rate.runId),
+      ...measured.projects.map((overhead) => overhead.runId),
+    ]),
+  ].sort((left, right) => left - right)
+
+const measuredBy = (table: FileCosts, runId: number) => ({
+  files: table.files.map((rate) =>
+    FileRate.make({
+      project: rate.project,
+      fileName: rate.fileName,
+      msPerMutant: rate.msPerMutant,
+      mutants: rate.mutants,
+      runId,
+    })
+  ),
+  projects: table.projects.map((overhead) =>
+    ProjectOverhead.make({ project: overhead.project, ms: overhead.ms, runId })
+  ),
 })
 
 describe('measuredCostsOf', () => {
@@ -101,7 +186,7 @@ describe('measuredCostsOf', () => {
         ms: draw.branchMs,
         cached: false,
       })
-      const { files } = subject([main, branch])
+      const { files } = subject([main, branch], RUN_ID)
       const mainRate = draw.mainMs / draw.mainIds.length
       const branchRate = draw.branchMs / draw.branchIds.length
       const winner = mainRate > branchRate
@@ -149,8 +234,8 @@ describe('measuredCostsOf', () => {
           ms: draw.ms + 100_000,
         }),
       ]
-      const withoutStale = subject(fresh)
-      const withStale = subject([...fresh, ...stale])
+      const withoutStale = subject(fresh, RUN_ID)
+      const withStale = subject([...fresh, ...stale], RUN_ID)
       return (
         S.toEquivalence(S.Array(FileRate))(withoutStale.files, withStale.files) &&
         S.toEquivalence(S.Array(ProjectOverhead))(withoutStale.projects, withStale.projects)
@@ -164,7 +249,7 @@ describe('measuredCostsOf', () => {
     (subject, [draw]) => {
       const digest = (side: Side, ms: number): DigestCall =>
         DigestCall.make({ schemaVersion: 1, side, project: draw.project, ms, digest: draw.project, cached: false })
-      const { projects } = subject([digest('main', draw.mainMs), digest('branch', draw.branchMs)])
+      const { projects } = subject([digest('main', draw.mainMs), digest('branch', draw.branchMs)], RUN_ID)
       const overhead = projects[0]
       return (
         projects.length === 1 &&
@@ -178,45 +263,48 @@ describe('measuredCostsOf', () => {
 
 describe('mergeCosts', () => {
   it.prop(
-    '∀m_MeasuredKeys_≡ReplaceAndKeepTheRest',
+    '∀n_EveryKey_≡NewestRunWinsAndUnmeasuredKeysStay',
     {
       of: [
         Arbitrary.all({
-          base: Arbitrary.schema(FileCosts),
-          measuredFiles: Arbitrary.array(Arbitrary.schema(FileRate), { maxLength: 3 }),
-          measuredProjects: Arbitrary.array(Arbitrary.schema(ProjectOverhead), { maxLength: 3 }),
-          runId: Arbitrary.schema(S.String),
+          base: tableArb,
+          measured: Arbitrary.all({
+            files: Arbitrary.array(rateArb, { maxLength: 4 }),
+            projects: Arbitrary.array(overheadArb, { maxLength: 2 }),
+          }).pipe(
+            Arbitrary.map(({ files, projects }) => ({
+              files: distinctBy(files, fileKey),
+              projects: distinctBy(projects, (overhead) => overhead.project),
+            })),
+          ),
         }),
       ],
       subject: mergeCosts,
     },
     (subject, [draw]) => {
-      const measured = { files: draw.measuredFiles, projects: draw.measuredProjects }
-      const key = fileKey
-      const measuredFileKeys = new Set(measured.files.map(key))
-      const measuredProjectKeys = new Set(measured.projects.map((overhead) => overhead.project))
-      const measuredAnything = measured.files.length > 0 || measured.projects.length > 0
-      const merged = subject({ base: draw.base, measured, runId: draw.runId })
-      const expectedFiles = [
-        ...draw.base.files.filter((rate) => !measuredFileKeys.has(key(rate))),
-        ...measured.files,
-      ]
-      const expectedProjects = [
-        ...draw.base.projects.filter((overhead) => !measuredProjectKeys.has(overhead.project)),
-        ...measured.projects,
-      ]
-      const expectedRuns = measuredAnything ? [...new Set([...draw.base.runs, draw.runId])] : draw.base.runs
+      const merged = subject({ base: draw.base, measured: draw.measured })
+      const expectedFiles = newestOf(draw.base.files, draw.measured.files, fileKey)
+      const expectedProjects = newestOf(draw.base.projects, draw.measured.projects, (overhead) => overhead.project)
       return (
+        S.toEquivalence(S.Array(S.String))(stampedRateKeys(merged.files), stampedRateKeys(expectedFiles)) &&
         S.toEquivalence(S.Array(S.String))(
-          canonical(merged.files.map(rateKey)),
-          canonical(expectedFiles.map(rateKey)),
+          stampedOverheadKeys(merged.projects),
+          stampedOverheadKeys(expectedProjects),
         ) &&
-        S.toEquivalence(S.Array(S.String))(
-          canonical(merged.projects.map(overheadKey)),
-          canonical(expectedProjects.map(overheadKey)),
-        ) &&
-        S.toEquivalence(S.Array(S.String))(merged.runs, expectedRuns)
+        S.toEquivalence(S.Array(S.Finite))(merged.runs, runsOfMerge(draw.base, draw.measured))
       )
+    },
+  )
+
+  it.prop(
+    '∀c_TwoRunsInEitherOrder_≡SameTable',
+    { of: [tableArb, tableArb], subject: mergeCosts },
+    (subject, [older, newer]) => {
+      const first = measuredBy(older, 1)
+      const second = measuredBy(newer, 2)
+      const forward = subject({ base: subject({ base: EMPTY_COSTS, measured: first }), measured: second })
+      const backward = subject({ base: subject({ base: EMPTY_COSTS, measured: second }), measured: first })
+      return S.toEquivalence(FileCosts)(forward, backward)
     },
   )
 })
