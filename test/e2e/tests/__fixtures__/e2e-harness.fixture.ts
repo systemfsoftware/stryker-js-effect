@@ -165,3 +165,45 @@ export const runStryker = (
   HarnessError | SandboxForkFailure,
   BakedFixtureCache | StrykerCliRunner | BakePlatform | Scope.Scope
 > => StrykerRun(input)
+
+export interface StrykerGuestInput {
+  readonly fixture: URL
+  readonly label: string
+  readonly argv: readonly [string, ...Array<string>]
+}
+
+export interface StrykerGuestOutput {
+  readonly result: ExecResult
+  readonly readFile: StrykerReadFile
+}
+
+export type StrykerGuestStimulus = Stimulus.Stimulus<
+  StrykerGuestInput,
+  StrykerGuestOutput,
+  HarnessError | SandboxForkFailure,
+  BakedFixtureCache | StrykerCliRunner | BakePlatform | Scope.Scope
+>
+
+export const StrykerGuest: StrykerGuestStimulus = Stimulus.make({
+  name: 'stryker guest command',
+  run: ({ input, traceId, traceparent }) =>
+    Effect.gen(function*() {
+      yield* annotateTrace(traceId)
+      const cache = yield* BakedFixtureCache
+      const warm = yield* cache.warm(input.fixture)
+      const runner = yield* StrykerCliRunner
+      const ran = yield* runner.guest(input.argv, warm, input.label, { TRACEPARENT: traceparent })
+      return {
+        result: ran.result,
+        readFile: (relativePath: string) => Warm.readFile(ran.fork, relativePath),
+      } satisfies StrykerGuestOutput
+    }),
+})
+
+export const runStrykerGuest = (
+  input: StrykerGuestInput,
+): Effect.Effect<
+  Stimulus.Run<StrykerGuestInput, StrykerGuestOutput>,
+  HarnessError | SandboxForkFailure,
+  BakedFixtureCache | StrykerCliRunner | BakePlatform | Scope.Scope
+> => StrykerGuest(input)

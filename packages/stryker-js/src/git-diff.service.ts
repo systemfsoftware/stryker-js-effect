@@ -24,9 +24,8 @@ export interface GitDiffInput {
 }
 
 export interface GitDiffShape {
-  readonly changedSince: (
-    input: GitDiffInput,
-  ) => Effect.Effect<GitDiffResult, GitDiffError, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope>
+  readonly changedSince: (input: GitDiffInput) => Effect.Effect<GitDiffResult, GitDiffError>
+  readonly head: (cwd: string) => Effect.Effect<string, GitCommandFailed>
 }
 
 interface GitRun {
@@ -113,6 +112,18 @@ const step = (state: ParserState, line: string): ParserState =>
 const parseHunks = (output: string): ReadonlyArray<DiffHunk> =>
   output.split('\n').reduce(step, { file: undefined, awaitingPath: false, hunks: [] }).hunks
 
+const sharedDepthOf = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): number => {
+  const firstDifference = left.findIndex((part, at) => part !== right[at])
+  return firstDifference === -1 ? left.length : firstDifference
+}
+
+const cwdRelativeOf = (cwdFromRoot: string, fileFromRoot: string): string => {
+  const cwdParts = cwdFromRoot.split('/').filter((part) => part.length > 0)
+  const fileParts = fileFromRoot.split('/')
+  const shared = sharedDepthOf(cwdParts, fileParts)
+  return [...cwdParts.slice(shared).map(() => '..'), ...fileParts.slice(shared)].join('/')
+}
+
 const runGit = (
   cwd: string,
   args: ReadonlyArray<string>,
@@ -143,36 +154,52 @@ const resolveBase = (input: GitDiffInput): Effect.Effect<string, GitDiffError, G
     })
   })
 
-const readHunks = (cwd: string, base: string): Effect.Effect<ReadonlyArray<DiffHunk>, GitDiffError, GitEnv> =>
+const readOutput = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<string, GitCommandFailed, GitEnv> =>
   Effect.gen(function*() {
-    const ran = yield* runGit(cwd, ['diff', '--unified=0', base])
+    const ran = yield* runGit(cwd, args)
     return yield* Boolean.match(ran.exitCode !== 0, {
-      onTrue: () => GitCommandFailed.make({ command: `git diff --unified=0 ${base}`, detail: ran.stderr.trim() }),
-      onFalse: () => Effect.succeed(parseHunks(ran.stdout)),
+      onTrue: () => GitCommandFailed.make({ command: `git ${args.join(' ')}`, detail: ran.stderr.trim() }),
+      onFalse: () => Effect.succeed(ran.stdout),
     })
   })
 
-const readUntracked = (cwd: string): Effect.Effect<ReadonlyArray<string>, GitDiffError, GitEnv> =>
+const readHead = (cwd: string): Effect.Effect<string, GitCommandFailed, GitEnv> =>
+  Effect.map(readOutput(cwd, ['rev-parse', 'HEAD']), (stdout) => stdout.trim())
+
+const readHunks = (cwd: string, base: string): Effect.Effect<ReadonlyArray<DiffHunk>, GitDiffError, GitEnv> =>
   Effect.gen(function*() {
-    const ran = yield* runGit(cwd, ['ls-files', '--others', '--exclude-standard'])
-    return yield* Boolean.match(ran.exitCode !== 0, {
-      onTrue: () =>
-        GitCommandFailed.make({ command: 'git ls-files --others --exclude-standard', detail: ran.stderr.trim() }),
-      onFalse: () =>
-        Effect.succeed(ran.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0)),
-    })
+    const cwdFromRoot = (yield* readOutput(cwd, ['rev-parse', '--show-prefix'])).trim()
+    const hunks = parseHunks(yield* readOutput(cwd, ['diff', '--unified=0', base]))
+    return hunks.map((hunk) => ({ ...hunk, file: cwdRelativeOf(cwdFromRoot, hunk.file) }))
   })
+
+const readUntracked = (cwd: string): Effect.Effect<ReadonlyArray<string>, GitDiffError, GitEnv> =>
+  Effect.map(
+    readOutput(cwd, ['ls-files', '--others', '--exclude-standard']),
+    (stdout) => stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0),
+  )
 
 const changedSince = (input: GitDiffInput): Effect.Effect<GitDiffResult, GitDiffError, GitEnv> =>
   Effect.gen(function*() {
     const base = yield* resolveBase(input)
+    const head = yield* readHead(input.cwd)
     const hunks = yield* readHunks(input.cwd, base)
     const untrackedFiles = yield* readUntracked(input.cwd)
-    return { ref: input.ref, base, hunks, untrackedFiles }
+    return { ref: input.ref, base, head, hunks, untrackedFiles }
   })
 
 export class GitDiff extends Context.Service<GitDiff, GitDiffShape>()(
   '@systemfsoftware/stryker-js/git-diff.service/GitDiff',
 ) {
-  static readonly layer: Layer.Layer<GitDiff> = Layer.succeed(GitDiff, { changedSince })
+  static readonly layer: Layer.Layer<GitDiff, never, ChildProcessSpawner.ChildProcessSpawner> = Layer.effect(
+    GitDiff,
+    Effect.map(ChildProcessSpawner.ChildProcessSpawner, (spawner) => {
+      const spawning = <A, E>(effect: Effect.Effect<A, E, GitEnv>): Effect.Effect<A, E> =>
+        Effect.scoped(Effect.provideService(effect, ChildProcessSpawner.ChildProcessSpawner, spawner))
+      return {
+        changedSince: (input: GitDiffInput) => spawning(changedSince(input)),
+        head: (cwd: string) => spawning(readHead(cwd)),
+      }
+    }),
+  )
 }

@@ -1,0 +1,8 @@
+node_modules/
+package-lock.json
+reports/
+.stryker-tmp/
+stryker.log
+*.tsbuildinfo
+plan-*.json
+repo-shas.txt

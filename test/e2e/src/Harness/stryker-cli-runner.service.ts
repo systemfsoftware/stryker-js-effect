@@ -30,6 +30,11 @@ export interface ForkedStreamedRun {
   readonly fork: Warm.SandboxFork
 }
 
+export interface ForkedGuestRun {
+  readonly result: ExecResult
+  readonly fork: Warm.SandboxFork
+}
+
 const STRYKER_CLI: readonly [string, ...Array<string>] = ['npx', '--no-install', 'stryker']
 
 const cliArgvOf = (args: ReadonlyArray<string>): [string, ...Array<string>] => [...STRYKER_CLI, ...args]
@@ -80,6 +85,20 @@ const streamStrykerCli = (
     return run
   }).pipe(seamSpan(SpanNames.cliRun, { 'e2e.cli.args': args.join(' '), 'e2e.cli.interruptible': true }))
 
+const runGuestCommand = (
+  argv: readonly [string, ...Array<string>],
+  warm: Warm.WarmSandbox,
+  label: string,
+  runEnvironment: Readonly<Record<string, string>> | undefined,
+) =>
+  Effect.gen(function*() {
+    const environment = yield* guestEnvironmentOf(runEnvironment)
+    const fork = yield* Warm.fork(warm, label)
+    const result = yield* Warm.exec(fork, argv, environment)
+    const run: ForkedGuestRun = { result, fork }
+    return run
+  }).pipe(seamSpan(SpanNames.cliRun, { 'e2e.cli.args': label }))
+
 export interface StrykerCliRunnerShape {
   readonly run: (
     args: ReadonlyArray<string>,
@@ -94,6 +113,12 @@ export interface StrykerCliRunnerShape {
     runEnvironment: Readonly<Record<string, string>> | undefined,
     interruptOnLine: (line: string, readGuestFile: Warm.GuestFileReader) => Promise<boolean>,
   ) => Effect.Effect<ForkedStreamedRun, Config.ConfigError | SandboxForkFailure, Crypto.Crypto | Scope.Scope>
+  readonly guest: (
+    argv: readonly [string, ...Array<string>],
+    warm: Warm.WarmSandbox,
+    label: string,
+    runEnvironment?: Readonly<Record<string, string>> | undefined,
+  ) => Effect.Effect<ForkedGuestRun, Config.ConfigError | SandboxForkFailure, Crypto.Crypto | Scope.Scope>
 }
 
 export class StrykerCliRunner extends Context.Service<StrykerCliRunner, StrykerCliRunnerShape>()(
@@ -115,6 +140,12 @@ export class StrykerCliRunner extends Context.Service<StrykerCliRunner, StrykerC
         runEnvironment: Readonly<Record<string, string>> | undefined,
         interruptOnLine: (line: string, readGuestFile: Warm.GuestFileReader) => Promise<boolean>,
       ) => streamStrykerCli(args, warm, label, runEnvironment, interruptOnLine),
+      guest: (
+        argv: readonly [string, ...Array<string>],
+        warm: Warm.WarmSandbox,
+        label: string,
+        runEnvironment?: Readonly<Record<string, string>>,
+      ) => runGuestCommand(argv, warm, label, runEnvironment),
     })),
   )
 }

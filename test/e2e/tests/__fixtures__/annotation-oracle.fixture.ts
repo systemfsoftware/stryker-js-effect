@@ -184,9 +184,13 @@ const fixtureDirectoryOf = (
     (cause) => AnnotationOracleUnreadable.make({ fixture, file: '', reason: cause.message }),
   ).pipe(Effect.map((base) => path.join(base, fixture)))
 
-export const compareAnnotatedRun = (
-  input: AnnotatedRun,
-): Effect.Effect<AnnotatedRunComparison, AnnotationOracleUnreadable, FileSystem.FileSystem | Path.Path> =>
+const fixtureAnnotationsOf = (
+  input: { readonly fixture: string; readonly report: Report.MutationTestResult },
+): Effect.Effect<
+  { readonly annotations: ReadonlyArray<SourcedAnnotation>; readonly parseFailures: ReadonlyArray<string> },
+  AnnotationOracleUnreadable,
+  FileSystem.FileSystem | Path.Path
+> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -210,18 +214,69 @@ export const compareAnnotatedRun = (
         onSuccess: (entries) => entries,
       })
     )
-    const comparison = comparisonOf({
-      slice: input.slice,
-      report: input.report,
-      verdict: input.verdict,
-      annotations,
-      parseFailures,
-    })
-    return comparison
+    return { annotations, parseFailures }
   })
+
+export const compareAnnotatedRun = (
+  input: AnnotatedRun,
+): Effect.Effect<AnnotatedRunComparison, AnnotationOracleUnreadable, FileSystem.FileSystem | Path.Path> =>
+  Effect.map(
+    fixtureAnnotationsOf(input),
+    ({ annotations, parseFailures }) =>
+      comparisonOf({
+        slice: input.slice,
+        report: input.report,
+        verdict: input.verdict,
+        annotations,
+        parseFailures,
+      }),
+  )
 
 export const verifyAnnotatedRun = (
   expect: Expect,
   input: AnnotatedRun,
 ): Effect.Effect<Check, AnnotationOracleUnreadable, FileSystem.FileSystem | Path.Path> =>
   Effect.map(compareAnnotatedRun(input), (comparison) => expect(comparison.actual).toStrictEqual(comparison.expected))
+
+export interface PersistedAnnotationObservation {
+  readonly mutantsReported: number
+  readonly mutantsMatched: number
+  readonly annotationFailures: ReadonlyArray<string>
+}
+
+/**
+ * The E2E-2 oracle for a report with no run verdict of its own — the merged shard report. Every reported mutant
+ * must match exactly one authored annotation and no annotation in a mutated file may dangle; only the per-status
+ * tally agreement with a terminal verdict is unavailable here, because `stryker merge` writes the report alone.
+ */
+export const verifyPersistedAnnotations = (
+  expect: Expect,
+  input: { readonly fixture: string; readonly slice: string; readonly report: Report.MutationTestResult },
+): Effect.Effect<Check, AnnotationOracleUnreadable, FileSystem.FileSystem | Path.Path> =>
+  Effect.map(fixtureAnnotationsOf(input), ({ annotations, parseFailures }) => {
+    const mutants = reportMutantsOf(input.report)
+    const matched = matchAnnotations(
+      MatchAnnotationsCommand.make({ slice: input.slice, annotations: [...annotations], mutants: [...mutants] }),
+    )
+    const confirmed = Result.flatMap(
+      matched,
+      (pairs) => confirmAnnotations(ConfirmAnnotationsCommand.make({ matched: pairs })),
+    )
+    const failures = Result.isFailure(matched)
+      ? [...parseFailures, matched.failure.message]
+      : Result.match(confirmed, {
+        onFailure: (failure) => [...parseFailures, failure.message],
+        onSuccess: () => [...parseFailures],
+      })
+    const mutantsMatched = Result.match(matched, { onFailure: () => 0, onSuccess: (pairs) => pairs.length })
+    const observation: PersistedAnnotationObservation = {
+      mutantsReported: mutants.length,
+      mutantsMatched,
+      annotationFailures: failures,
+    }
+    return expect(observation).toStrictEqual({
+      mutantsReported: mutants.length,
+      mutantsMatched: mutants.length,
+      annotationFailures: [],
+    })
+  })

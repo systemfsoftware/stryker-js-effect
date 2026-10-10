@@ -17,6 +17,7 @@ export type DiffHunk = typeof DiffHunk.Type
 export const GitDiffResult = S.Struct({
   ref: S.String,
   base: S.String,
+  head: S.String,
   hunks: S.Array(DiffHunk),
   untrackedFiles: S.Array(S.String),
 })
@@ -27,6 +28,8 @@ export class GitRefUnresolved extends S.TaggedError<GitRefUnresolved>()('GitRefU
   ref: S.String,
   detail: S.String,
 }) {
+  readonly exitClass = 'ConfigError' as const
+
   override get message(): string {
     return `Cannot resolve git ref "${this.ref}": ${this.detail}`
   }

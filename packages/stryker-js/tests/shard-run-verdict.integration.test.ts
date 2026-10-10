@@ -86,7 +86,8 @@ const mutantsOf = (plan: ShardPlan, project: string): ReadonlyArray<string> =>
   )
 
 const singleShardPlanOf = (plan: ShardPlan): ShardPlan => ({
-  version: 1,
+  version: 2,
+  scope: plan.scope,
   targetSeconds: 1,
   shards: [{
     index: 1,

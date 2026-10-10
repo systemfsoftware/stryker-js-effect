@@ -104,7 +104,8 @@ const mergedCostIdsOf = (text: string): readonly string[] =>
   })
 
 const planOf = (first: ReadonlyArray<string>, second: ReadonlyArray<string>): ShardPlan => ({
-  version: 1,
+  version: 2,
+  scope: { _tag: 'Unscoped' },
   targetSeconds: 1,
   shards: [
     { index: 1, count: 2, predictedSeconds: 1, projects: [{ project: '.', mutants: [...first] }] },
