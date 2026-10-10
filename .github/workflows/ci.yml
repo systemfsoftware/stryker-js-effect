@@ -280,7 +280,7 @@ jobs:
         run: |
           if [ "$EXIT" = 124 ] || [ "$EXIT" = 137 ] || [ -z "$EXIT" ]; then
             code=shard-timeout
-            next="Verdicts of every finished file are in the saved cache; rerun the failed legs and they resume from it. If the leg times out again, read scope-$SHARD.json and the shard NDJSON for the slowest project."
+            next="Verdicts of every finished file are in the saved cache; rerun the failed legs and they resume from it. scope-$SHARD.json (LegStarted, written when the leg began) lists the leg's projects; those with no line in shard-$SHARD.ndjson did not finish."
           else
             code=shard-failed
             next="Read lines with _tag ProjectBootFailed or TelemetryMissing in shard-$SHARD.ndjson; they name the project and the reason."

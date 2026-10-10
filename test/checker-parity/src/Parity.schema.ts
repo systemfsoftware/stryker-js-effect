@@ -152,7 +152,16 @@ export const seededOrder: {
     ),
 )
 
-export class LegScope extends S.Class<LegScope>('LegScope')({
+export class LegStarted extends S.TaggedClass<LegStarted>()('LegStarted', {
+  schemaVersion: SCHEMA_VERSION,
+  shard: S.String,
+  scope: RunScopeName,
+  settings: S.NullOr(ScopeSettings),
+  projects: S.Array(S.String),
+  corpusDiscoveryMs: NonNegativeFinite,
+}) {}
+
+export class LegScope extends S.TaggedClass<LegScope>()('LegScope', {
   schemaVersion: SCHEMA_VERSION,
   shard: S.String,
   scope: RunScopeName,
@@ -169,6 +178,9 @@ export class LegScope extends S.Class<LegScope>('LegScope')({
   workersMs: NonNegativeFinite,
   wallMs: NonNegativeFinite,
 }) {}
+
+export const LegFile = S.Union([LegStarted, LegScope])
+export type LegFile = typeof LegFile.Type
 
 const SHARD = /^([1-9][0-9]*)\/([1-9][0-9]*)$/u
 

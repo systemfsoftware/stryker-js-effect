@@ -42,7 +42,9 @@ import {
   Counts,
   DigestCall,
   GroupCall,
+  LegFile,
   LegScope,
+  LegStarted,
   ParityLine,
   PhaseLine,
   ProjectBootFailed,
@@ -1082,7 +1084,19 @@ const legScopeOf = (
     wallMs: timings.wallMs,
   })
 
-const encodeLegScope = S.encodeResult(S.fromJsonString(LegScope))
+const encodeLegFile = S.encodeResult(S.fromJsonString(LegFile))
+
+const writeLegFile = (file: string, leg: LegFile): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
+  Effect.flatMap(
+    Effect.fromResult(
+      Result.mapError(
+        encodeLegFile(leg),
+        (issue) =>
+          ioFailure(`Could not encode the leg scope: ${issue.message}`, 'Inspect LegFile in Parity.schema.ts.'),
+      ),
+    ),
+    (text) => writeText(file, text),
+  )
 
 type ShardRun = Effect.Effect<void, DriverFailure, Worker.WorkerLauncher | DriverServices>
 
@@ -1115,8 +1129,20 @@ export const runShard: {
       const cacheDir = path.resolve(repoRoot, command.cache)
       const outDir = path.resolve(repoRoot, command.out)
       const shardFile = path.join(outDir, `shard-${shardIndex(command.shard)}.ndjson`)
+      const scopeFile = path.join(outDir, `scope-${shardIndex(command.shard)}.json`)
       yield* makeDirectory(outDir)
       yield* writeText(shardFile, '')
+      yield* writeLegFile(
+        scopeFile,
+        LegStarted.make({
+          schemaVersion: 1,
+          shard: command.shard,
+          scope: command.scope,
+          settings: Option.getOrNull(Option.map(pullRequest, (scope) => scope.settings)),
+          projects,
+          corpusDiscoveryMs: Duration.toMillis(discovery),
+        }),
+      )
       const results = yield* Effect.forEach(projects, (project) => {
         const tsconfigFile = path.resolve(repoRoot, project)
         return Effect.flatMap(exists(tsconfigFile), (present) =>
@@ -1145,11 +1171,7 @@ export const runShard: {
         corpusDiscoveryMs: Duration.toMillis(discovery),
         wallMs: finished - started,
       })
-      const scopeText = yield* Effect.fromResult(
-        Result.mapError(encodeLegScope(scope), (issue) =>
-          ioFailure(`Could not encode the leg scope: ${issue.message}`, 'Inspect LegScope in Parity.schema.ts.')),
-      )
-      yield* writeText(path.join(outDir, `scope-${shardIndex(command.shard)}.json`), scopeText)
+      yield* writeLegFile(scopeFile, scope)
       yield* appendStepSummary(environment, shardSummary(scope, results))
     }),
   ))

@@ -28,7 +28,7 @@ import { compareSides, CompareSidesCommand, ComparisonDecision } from './compare
 import { ISOLATED_DECLARATIONS_PROJECT } from './corpus.js'
 import { DriverFailure, ReportedExit } from './DriverFailure.schema.js'
 import { laneTrigger } from './lane-trigger.js'
-import { LegScope, type ParityLine, RunScopeName, Shard } from './Parity.schema.js'
+import { LegFile, type LegScope, type ParityLine, RunScopeName, Shard } from './Parity.schema.js'
 import {
   CompareFinished,
   ProjectShard,
@@ -89,7 +89,7 @@ interface ShardLines {
   readonly scope: LegScope
 }
 
-const decodeLegScope = S.decodeResult(S.fromJsonString(LegScope))
+const decodeLegFile = S.decodeResult(S.fromJsonString(LegFile))
 
 const readShardText = (file: string, shard: number): Effect.Effect<string, DriverFailure, FileSystem.FileSystem> =>
   FileSystem.FileSystem.use((fs) => fs.readFileString(file)).pipe(
@@ -115,10 +115,21 @@ const loadShard = (
       onFalse: () => Effect.fail(shardIncomplete(`Shard ${shard}/${count} wrote an empty ${only.file}.`, shard)),
     })
     const scopeFile = path.join(path.dirname(only.file), `scope-${shard}.json`)
-    const scope = yield* Effect.fromResult(
-      Result.mapError(decodeLegScope(yield* readShardText(scopeFile, shard)), (issue) =>
+    const leg = yield* Effect.fromResult(
+      Result.mapError(decodeLegFile(yield* readShardText(scopeFile, shard)), (issue) =>
         shardIncomplete(`${scopeFile} is not a leg scope: ${issue.message}`, shard)),
     )
+    const scope = yield* Match.valueTags(leg, {
+      LegStarted: (started) =>
+        Effect.fail(
+          shardIncomplete(
+            `${scopeFile} records that shard ${shard}/${count} started ${started.projects.length} project(s) but never finished.`,
+            shard,
+          ),
+        ),
+      LegScope: (finished) =>
+        Effect.succeed(finished),
+    })
     return { shard, lines: yield* decodeLines(content, only.file), scope }
   })
 
