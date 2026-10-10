@@ -34,12 +34,12 @@ const textOf = (value: S.Json): Option.Option<string> => Option.liftPredicate(va
 
 const fieldOf = (node: S.JsonObject, key: string): Option.Option<S.Json> => Option.fromUndefinedOr(node[key])
 
-const hasTextType = (object: S.JsonObject): boolean => Option.isSome(Option.flatMap(fieldOf(object, 'type'), textOf))
+const typeOf = (node: S.JsonObject): Option.Option<string> => Option.flatMap(fieldOf(node, 'type'), textOf)
+
+const hasTextType = (object: S.JsonObject): boolean => Option.isSome(typeOf(object))
 
 const nodeOf = (value: S.Json | undefined): Option.Option<S.JsonObject> =>
   Option.filter(Option.filter(Option.fromUndefinedOr(value), isJsonObject), hasTextType)
-
-const typeOf = (node: S.JsonObject): string => Option.getOrElse(Option.flatMap(fieldOf(node, 'type'), textOf), () => '')
 
 const valuesOf = (value: S.Json): readonly S.Json[] =>
   Option.match(Option.liftPredicate(value, isJsonArray), { onNone: () => [value], onSome: (values) => values })
@@ -61,8 +61,11 @@ const unquotedOf = (raw: S.Json | undefined): Option.Option<string> =>
 const textOrRawOf = (node: S.JsonObject): Option.Option<string> =>
   Option.orElse(Option.flatMap(fieldOf(node, 'value'), textOf), () => unquotedOf(node['raw']))
 
+const isLiteral = (node: S.JsonObject): boolean =>
+  Option.exists(typeOf(node), (type) => HashSet.has(LITERAL_TYPES, type))
+
 const literalTextOf = (node: S.JsonObject): Option.Option<string> =>
-  Option.flatMap(Option.liftPredicate(node, (candidate) => HashSet.has(LITERAL_TYPES, typeOf(candidate))), textOrRawOf)
+  Option.flatMap(Option.liftPredicate(node, isLiteral), textOrRawOf)
 
 const withSpecifier = (state: ScanState, specifier: string): ScanState => ({
   ...state,
@@ -106,7 +109,10 @@ const STEPS: HashMap.HashMap<string, (state: ScanState, node: S.JsonObject) => S
 )
 
 const nodeStep = (state: ScanState, node: S.JsonObject): ScanState =>
-  Option.match(HashMap.get(STEPS, typeOf(node)), { onNone: () => state, onSome: (step) => step(state, node) })
+  Option.match(Option.flatMap(typeOf(node), (type) => HashMap.get(STEPS, type)), {
+    onNone: () => state,
+    onSome: (step) => step(state, node),
+  })
 
 const stepValue = (state: ScanState, value: S.Json): ScanState =>
   Option.match(nodeOf(value), { onNone: () => state, onSome: (node) => walk(state, node) })
