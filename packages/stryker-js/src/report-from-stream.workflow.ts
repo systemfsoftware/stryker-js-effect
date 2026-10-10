@@ -1,6 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
@@ -43,6 +43,14 @@ const presentText = (field: string, value: string | null): Readonly<Record<strin
     onSome: (present) => ({ [field]: present }),
   })
 
+const presentSubsumption = (
+  subsumption: Mutant.Subsumption | null,
+): { readonly subsumption?: Mutant.Subsumption } =>
+  Option.match(Option.fromNullOr(subsumption), {
+    onNone: () => ({}),
+    onSome: (present) => ({ subsumption: present }),
+  })
+
 const mutantFromStream = (line: RunEvent.RunMutantTested): Report.MutantResult => ({
   id: line.id,
   mutatorName: line.mutatorName,
@@ -50,6 +58,7 @@ const mutantFromStream = (line: RunEvent.RunMutantTested): Report.MutantResult =
   location: line.location,
   ...presentText('replacement', line.replacement),
   ...presentText('statusReason', line.statusReason),
+  ...presentSubsumption(line.subsumption),
 })
 
 const decodeLineText = S.decodeOption(S.fromJsonString(RunEvent.RunMutantTested))
