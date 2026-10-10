@@ -23,20 +23,23 @@ import * as Stdio from 'effect/Stdio'
 import * as Str from 'effect/String'
 import type * as Terminal from 'effect/Terminal'
 
+import { DEFAULT_BLOCK_MUTANTS } from './blocks.js'
 import { appendStepSummary, type CiEnvironment, ciEnvironment } from './ci-environment.js'
 import { compareSides, CompareSidesCommand, ComparisonDecision } from './compare-sides.workflow.js'
 import { ISOLATED_DECLARATIONS_PROJECT } from './corpus.js'
 import { DriverFailure, ReportedExit } from './DriverFailure.schema.js'
-import { measuredCostsOf, mergeCosts } from './file-costs.js'
+import { EMPTY_COSTS, measuredCostsOf, mergeCosts } from './file-costs.js'
 import { laneTrigger } from './lane-trigger.js'
-import { FileCosts, LegFile, type LegScope, type ParityLine, RunScopeName, Shard } from './Parity.schema.js'
+import { FileCosts, LegFile, type LegScope, type ParityLine, ParityPlan, RunScopeName, Shard } from './Parity.schema.js'
+import { DEFAULT_FILL } from './plan-legs.defaults.js'
+import { planLegs, PlanLegsCommand } from './plan-legs.workflow.js'
 import {
   CompareFinished,
   ProjectShard,
   reportParityOutcome,
   ReportParityOutcomeCommand,
 } from './report-parity-outcome.workflow.js'
-import { decodeLines, type DriverServices, runShard } from './run-side.js'
+import { corpusMutantCounts, decodeLines, type DriverServices, runShard } from './run-side.js'
 
 const VERSION = '0.0.0'
 const SHARD_FILE = /^shard-([1-9][0-9]*)\.ndjson$/u
@@ -197,15 +200,13 @@ interface CompareInput {
   readonly summary: string
   readonly shortcutGate: boolean
   readonly speedGate: boolean
-  readonly costsBase: Option.Option<string>
-  readonly costsOut: Option.Option<string>
   readonly dirs: ReadonlyArray<string>
 }
 
 const decodeFileCosts = S.decodeResult(S.fromJsonString(FileCosts))
 const encodeFileCosts = S.encodeResult(S.fromJsonString(FileCosts))
-
-const EMPTY_COSTS = FileCosts.make({ schemaVersion: 1, runs: [], files: [] })
+const encodeParityPlan = S.encodeResult(S.fromJsonString(ParityPlan))
+const encodeLegNumbers = S.encodeResult(S.fromJsonString(S.Array(S.Int)))
 
 const baseCostsOf = (file: Option.Option<string>): Effect.Effect<FileCosts, DriverFailure, FileSystem.FileSystem> =>
   Option.match(file, {
@@ -215,49 +216,71 @@ const baseCostsOf = (file: Option.Option<string>): Effect.Effect<FileCosts, Driv
         Effect.mapError((cause) => ioFailure(`Could not read ${costsFile}: ${cause.message}`, `Check ${costsFile}.`)),
         Effect.flatMap((text) =>
           Effect.fromResult(
-            Result.mapError(
-              decodeFileCosts(text),
-              (issue) => ioFailure(`${costsFile} is not a file-costs table: ${issue.message}`, `Fix ${costsFile}.`),
-            ),
+            Result.mapError(decodeFileCosts(text), (issue) =>
+              DriverFailure.make({
+                schemaVersion: 1,
+                code: 'decode-failed',
+                reason: `${costsFile} is not a file-costs table: ${issue.message}`,
+                nextAction: `Delete ${costsFile} to run without a cost table, or fix it.`,
+              })),
           )
         ),
       ),
   })
 
-const writeCosts = (
-  input: CompareInput,
-  lines: ReadonlyArray<ParityLine>,
-): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
-  Option.match(input.costsOut, {
-    onNone: () => Effect.void,
-    onSome: (costsOut) =>
-      Effect.gen(function*() {
-        const environment = yield* Effect.orElseSucceed(ciEnvironment, () => FALLBACK_ENVIRONMENT)
-        const merged = mergeCosts({
-          base: yield* baseCostsOf(input.costsBase),
-          measured: measuredCostsOf(lines),
-          runId: environment.runId,
-        })
-        const text = yield* Effect.fromResult(
-          Result.mapError(
-            encodeFileCosts(merged),
-            (issue) =>
-              ioFailure(`Could not encode the file costs: ${issue.message}`, 'Inspect FileCosts in Parity.schema.ts.'),
-          ),
-        )
-        yield* FileSystem.FileSystem.use((fs) => fs.writeFileString(costsOut, `${text}\n`)).pipe(
-          Effect.mapError((cause) =>
-            ioFailure(`Could not write ${costsOut}: ${cause.message}`, `Check the directory of ${costsOut}.`)
-          ),
-        )
-      }),
+interface CostsInput {
+  readonly base: Option.Option<string>
+  readonly out: string
+  readonly dirs: ReadonlyArray<string>
+}
+
+const fileExists = (file: string): Effect.Effect<boolean, never, FileSystem.FileSystem> =>
+  FileSystem.FileSystem.use((fs) => Effect.orElseSucceed(fs.exists(file), () => false))
+
+const writeCostsTable = (file: string, costs: FileCosts): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const text = yield* Effect.fromResult(
+      Result.mapError(
+        encodeFileCosts(costs),
+        (issue) =>
+          ioFailure(`Could not encode the file costs: ${issue.message}`, 'Inspect FileCosts in Parity.schema.ts.'),
+      ),
+    )
+    yield* FileSystem.FileSystem.use((fs) => fs.writeFileString(file, `${text}\n`)).pipe(
+      Effect.mapError((cause) =>
+        ioFailure(`Could not write ${file}: ${cause.message}`, `Check the directory of ${file}.`)
+      ),
+    )
+  })
+
+const measuredLinesIn = (
+  dirs: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<ParityLine>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const files = (yield* Effect.forEach(dirs, shardFilesIn)).flat()
+    const decoded = yield* Effect.forEach(
+      files,
+      (file) => Effect.flatMap(readShardText(file.file, file.shard), (text) => decodeLines(text, file.file)),
+    )
+    return decoded.flat()
+  })
+
+const costs = (input: CostsInput): Effect.Effect<void, DriverFailure, DriverServices> =>
+  Effect.gen(function*() {
+    const lines = yield* measuredLinesIn(input.dirs)
+    const measured = measuredCostsOf(lines)
+    const environment = yield* Effect.orElseSucceed(ciEnvironment, () => FALLBACK_ENVIRONMENT)
+    const table = mergeCosts({ base: yield* baseCostsOf(input.base), measured, runId: environment.runId })
+    yield* writeCostsTable(input.out, table)
+    yield* Console.log(
+      `Measured ${measured.files.length} file(s) and ${measured.projects.length} project(s) from ${lines.length} line(s); wrote ${table.files.length} file(s) and ${table.projects.length} project(s) to ${input.out}.`,
+    )
   })
 
 const compare = (input: CompareInput): Effect.Effect<void, DriverFailure | ReportedExit, DriverServices> =>
   Effect.gen(function*() {
     const shards = yield* loadShards(input.dirs, input.shards)
     const lines = shards.flatMap((shard) => shard.lines)
-    yield* writeCosts(input, lines)
     const decision = yield* Effect.fromResult(
       compareSides(
         CompareSidesCommand.make({
@@ -298,6 +321,132 @@ const refusedOutsideCi = DriverFailure.make({
   nextAction: 'Set CI=true or pass --allow-local when you really mean to run a shard locally.',
 })
 
+interface PlanInput {
+  readonly deadline: number
+  readonly fill: number
+  readonly blockMutants: number
+  readonly costs: Option.Option<string>
+  readonly out: string
+}
+
+const noCorpusMutants = DriverFailure.make({
+  schemaVersion: 1,
+  code: 'usage-error',
+  reason: 'The corpus yielded no mutant to plan a leg from, and a plan with zero legs cannot size the matrix.',
+  nextAction:
+    'Run the plan step in a checkout whose corpus tsconfigs exist and whose instrumenter yields mutants; then rerun the workflow.',
+})
+
+const capacityMsOf = (input: PlanInput): number => input.fill * input.deadline * 1000
+
+const plannedCostsOf = (
+  file: Option.Option<string>,
+): Effect.Effect<FileCosts, DriverFailure, FileSystem.FileSystem> =>
+  Option.match(file, {
+    onNone: () => Effect.succeed(EMPTY_COSTS),
+    onSome: (costsFile) =>
+      Effect.flatMap(fileExists(costsFile), (present) =>
+        Boolean.match(present, {
+          onTrue: () => baseCostsOf(Option.some(costsFile)),
+          onFalse: () =>
+            Effect.as(
+              Console.error(
+                `checker-parity: the cost table ${costsFile} is missing, so the plan estimates every file without measurements.`,
+              ),
+              EMPTY_COSTS,
+            ),
+        })),
+  })
+
+const planOfDecision = (
+  input: PlanInput,
+  legs: ReadonlyArray<ParityPlan['legs'][number]>,
+  totalMs: number,
+): ParityPlan =>
+  ParityPlan.make({
+    schemaVersion: 1,
+    deadlineSeconds: input.deadline,
+    fill: input.fill,
+    capacityMs: capacityMsOf(input),
+    blockMutants: input.blockMutants,
+    totalMs,
+    legs: [...legs],
+  })
+
+const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`
+
+const planStepSummaryOf = (plan: ParityPlan, runs: ReadonlyArray<string>): string => {
+  const largest = Arr.reduce(plan.legs, 0, (max, leg) => Math.max(max, leg.ms))
+  const sources = Arr.groupBy(plan.legs.flatMap((leg) => [...leg.units]), (unit) => unit.source)
+  return [
+    '### checker-parity plan',
+    '',
+    `Legs: ${plan.legs.length}. Total estimate: ${seconds(plan.totalMs)}. Capacity per leg: ${
+      seconds(plan.capacityMs)
+    } (deadline ${plan.deadlineSeconds} s x fill ${plan.fill}).`,
+    '',
+    `Largest leg: ${seconds(largest)} of ${seconds(plan.capacityMs)} capacity.`,
+    '',
+    `Units by cost source: ${
+      Object.entries(sources).map(([source, units]) => `${source} ${units.length}`).join(', ')
+    }.`,
+    '',
+    `Cost-table runs: ${runs.length === 0 ? 'none' : runs.join(', ')}.`,
+    '',
+  ].join('\n')
+}
+
+const writePlan = (
+  input: PlanInput,
+  decision: { readonly legs: ReadonlyArray<ParityPlan['legs'][number]>; readonly totalMs: number },
+  runs: ReadonlyArray<string>,
+  environment: CiEnvironment,
+): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const plan = planOfDecision(input, decision.legs, decision.totalMs)
+    const text = yield* Effect.fromResult(
+      Result.mapError(encodeParityPlan(plan), (issue) =>
+        ioFailure(`Could not encode the plan: ${issue.message}`, 'Inspect ParityPlan in Parity.schema.ts.')),
+    )
+    yield* FileSystem.FileSystem.use((fs) =>
+      fs.writeFileString(input.out, `${text}\n`)
+    ).pipe(
+      Effect.mapError((cause) =>
+        ioFailure(`Could not write ${input.out}: ${cause.message}`, `Check the directory of ${input.out} is writable.`)
+      ),
+    )
+    const legsJson = yield* Effect.fromResult(
+      Result.mapError(encodeLegNumbers(plan.legs.map((leg) => leg.leg)), (issue) =>
+        ioFailure(`Could not encode the leg numbers: ${issue.message}`, 'Inspect PlannedLeg in Parity.schema.ts.')),
+    )
+    yield* Console.log(`legs=${legsJson}`)
+    yield* Console.log(`shards=${plan.legs.length}`)
+    yield* appendStepSummary(environment, planStepSummaryOf(plan, runs))
+  })
+
+const plan = (input: PlanInput): Effect.Effect<void, DriverFailure, DriverServices> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const files = yield* corpusMutantCounts(path.resolve('.'))
+    const costs = yield* plannedCostsOf(input.costs)
+    const environment = yield* Effect.orElseSucceed(ciEnvironment, () => FALLBACK_ENVIRONMENT)
+    const decision = yield* Effect.fromResult(
+      planLegs(
+        PlanLegsCommand.make({
+          files: [...files],
+          rates: [...costs.files],
+          overheads: [...costs.projects],
+          capacityMs: capacityMsOf(input),
+          blockMutants: input.blockMutants,
+        }),
+      ),
+    )
+    yield* Match.valueTags(decision, {
+      LegsPlanned: (planned) => writePlan(input, planned, costs.runs, environment),
+      NoCorpusMutants: () => Effect.fail(noCorpusMutants),
+    })
+  })
+
 const runCommand = Command.make('run', {
   scope: Flag.Literals('scope', RunScopeName.literals),
   base: Flag.String('base').pipe(Flag.optional),
@@ -307,7 +456,7 @@ const runCommand = Command.make('run', {
   shard: Flag.String('shard').pipe(Flag.withSchema(Shard)),
   cache: Flag.String('cache'),
   out: Flag.String('out'),
-  costs: Flag.String('costs').pipe(Flag.optional),
+  plan: Flag.String('plan').pipe(Flag.optional),
   deadline: Flag.Int('deadline').pipe(
     Flag.filter((seconds) => seconds >= 1, (seconds) => `--deadline ${seconds} is not ≥ 1`),
     Flag.optional,
@@ -328,10 +477,33 @@ const compareCommand = Command.make('compare', {
   summary: Flag.String('summary'),
   shortcutGate: Flag.Boolean('shortcut-gate').pipe(Flag.withDefault(false)),
   speedGate: Flag.Boolean('speed-gate').pipe(Flag.withDefault(false)),
-  costsBase: Flag.String('costs-base').pipe(Flag.optional),
-  costsOut: Flag.String('costs-out').pipe(Flag.optional),
   dirs: Argument.String('dir').pipe(Argument.variadic({ min: 1 })),
 }, compare)
+
+const planCommand = Command.make('plan', {
+  deadline: Flag.Int('deadline').pipe(
+    Flag.filter((seconds) => seconds >= 1, (seconds) => `--deadline ${seconds} is not ≥ 1`),
+  ),
+  fill: Flag.Finite('fill').pipe(
+    Flag.withDefault(DEFAULT_FILL),
+    Flag.filter((fill) => fill > 0 && fill <= 1, (fill) => `--fill ${fill} is not within (0, 1]`),
+  ),
+  blockMutants: Flag.Int('block-mutants').pipe(
+    Flag.withDefault(DEFAULT_BLOCK_MUTANTS),
+    Flag.filter(
+      (count) => count >= 1 && count <= 4096,
+      (count) => `--block-mutants ${count} is not between 1 and 4096`,
+    ),
+  ),
+  costs: Flag.String('costs').pipe(Flag.optional),
+  out: Flag.String('out'),
+}, plan)
+
+const costsCommand = Command.make('costs', {
+  base: Flag.String('base').pipe(Flag.optional),
+  out: Flag.String('out'),
+  dirs: Argument.String('dir').pipe(Argument.variadic({ min: 1 })),
+}, costs)
 
 const triggerCommand = Command.make('trigger', {
   base: Flag.String('base'),
@@ -364,7 +536,9 @@ const triggerCommand = Command.make('trigger', {
     )
   }))
 
-const cli = Command.make('checker-parity').pipe(Command.withSubcommands([runCommand, compareCommand, triggerCommand]))
+const cli = Command.make('checker-parity').pipe(
+  Command.withSubcommands([runCommand, compareCommand, planCommand, costsCommand, triggerCommand]),
+)
 
 const usageReasonsOf = (cause: CliError.CliError): ReadonlyArray<string> =>
   Match.valueTags(cause, {
@@ -388,7 +562,7 @@ const usageOutcome = (cause: CliError.CliError): Effect.Effect<number, DriverFai
           schemaVersion: 1,
           code: 'usage-error',
           reason: reasons.join('; '),
-          nextAction: 'Pass `run`, `compare` or `trigger` with the flags `--help` lists.',
+          nextAction: 'Pass `run`, `compare`, `plan`, `costs` or `trigger` with the flags `--help` lists.',
         }),
       ),
   })
