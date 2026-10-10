@@ -7,14 +7,18 @@ import {
   abortedOutcomeOf,
   BenchAbortCode,
   BenchRenderedError,
+  BenchRenderedWarning,
   BenchReport,
   BenchReportJson,
   BenchReportOutcome,
   type BenchReportRun,
+  BenchReportSchemaVersion,
+  inconclusiveOutcomeOf,
 } from '../bench-report.schema.js'
 import { BenchRun, BenchRunFailureCode, BenchRunInvalid, BenchRunKey, BenchRunMeasured } from '../bench-run.schema.js'
 import { type BenchSummary, PhaseVerdict } from '../bench-summary.schema.js'
 import { renderBenchReport, RenderBenchReportCommand } from '../render-bench-report.workflow.js'
+import { SetupInconclusiveCode } from '../setup-outcome.schema.js'
 import { summarizeBench, SummarizeBenchCommand } from '../summarize-bench.workflow.js'
 
 const REPORTING_MEASURED: RunEvent.ReportingDuration = { _tag: 'measured', ms: 0 }
@@ -42,6 +46,7 @@ const runFrom = (
       check: options.check ?? { _tag: 'not-recorded' },
       reporting: options.reporting ?? REPORTING_MEASURED,
     },
+    phaseTimes: [],
     mutants: 10,
     testsExecuted: 2,
     workloadDigest: { _tag: 'verified', digest: options.digest ?? 'digest-entry' },
@@ -80,6 +85,7 @@ const reportRunsOf = (runs: ReadonlyArray<BenchRun>): ReadonlyArray<BenchReportR
     exitCode: 0,
     testsExecuted: 2,
     workloadDigest: { _tag: 'verified', digest: 'digest-entry' },
+    phaseTimes: [{ phase: 'mutation-test', startMs: 0, endMs: 1 }],
   }))
 
 const summaryOf = (runs: ReadonlyArray<BenchRun>): BenchSummary =>
@@ -92,7 +98,7 @@ const reportOf = (
   headSha: string,
 ): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: BenchReportSchemaVersion.literal,
     baseSha,
     headSha,
     outcome: { _tag: 'summarized', projects: summary.projects },
@@ -128,7 +134,7 @@ const medianOf = (values: ReadonlyArray<number>): number => {
 
 const failedReportOf = (invalid: ReadonlyArray<BenchRunInvalid>): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: BenchReportSchemaVersion.literal,
     baseSha: 'base',
     headSha: 'head',
     outcome: { _tag: 'failed', invalid },
@@ -154,7 +160,7 @@ const invalidOf = (
 
 const abortedReportOf = (code: BenchAbortCode, reason: string): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: BenchReportSchemaVersion.literal,
     baseSha: 'base',
     headSha: 'head',
     outcome: abortedOutcomeOf(code, reason),
@@ -162,8 +168,20 @@ const abortedReportOf = (code: BenchAbortCode, reason: string): BenchReport =>
     setupSteps: [],
   })
 
+const inconclusiveReportOf = (code: SetupInconclusiveCode, step: string, reason: string): BenchReport =>
+  BenchReport.make({
+    schemaVersion: BenchReportSchemaVersion.literal,
+    baseSha: 'base',
+    headSha: 'head',
+    outcome: inconclusiveOutcomeOf(code, step, reason),
+    runs: [],
+    setupSteps: [],
+  })
+
 const nextActionOf = (outcome: BenchReportOutcome): string =>
-  S.is(BenchReportOutcome.cases.aborted)(outcome) ? outcome.nextAction : ''
+  S.is(BenchReportOutcome.cases.aborted)(outcome) || S.is(BenchReportOutcome.cases.inconclusive)(outcome)
+    ? outcome.nextAction
+    : ''
 
 describe('renderBenchReport', () => {
   it.prop(
@@ -370,6 +388,25 @@ describe('renderBenchReport', () => {
         rendered.annotationLine.includes(`Next: ${next}`) &&
         rendered.annotationLine.includes('\n') === false &&
         rendered.markdown.includes(`### Aborted: ${code}`) &&
+        rendered.markdown.includes(next)
+    },
+  )
+
+  it.prop(
+    '∀csr_InconclusiveOutcome_≡OneWarningLineNamingCodeAndNextAction',
+    { of: [SetupInconclusiveCode, S.NonEmptyString, S.String], subject: renderBenchReport },
+    (subject, [code, step, reason]) => {
+      const report = inconclusiveReportOf(code, step, reason)
+      const rendered = renderedOf(subject, report)
+      const next = nextActionOf(report.outcome)
+      return S.is(BenchRenderedWarning)(rendered) &&
+        rendered.annotationLine.startsWith('::warning title=Bench inconclusive::') &&
+        rendered.annotationLine.includes(`(${code})`) &&
+        rendered.annotationLine.includes(`Next: ${next}`) &&
+        rendered.annotationLine.includes('\n') === false &&
+        rendered.markdown.includes(`### Inconclusive: ${code}`) &&
+        rendered.markdown.includes('No speed signal for this entry') &&
+        rendered.markdown.includes(`setup step "${step}"`) &&
         rendered.markdown.includes(next)
     },
   )

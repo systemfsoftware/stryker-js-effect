@@ -26,12 +26,14 @@ interface CommandOptions {
   readonly exit?: RunExit
   readonly workloadDigest?: WorkloadDigest
   readonly stderrTail?: string
+  readonly arrivalsMs?: ReadonlyArray<number>
 }
 
 const commandOf = (lines: ReadonlyArray<string>, options: CommandOptions = {}): ReadBenchRunCommand =>
   ReadBenchRunCommand.make({
     key: BenchRunKey.make({ corpus: 'repo', entry: 'packages/a', side: 'A', position: 0 }),
     lines,
+    arrivalsMs: options.arrivalsMs ?? lines.map((_line, index) => index),
     exit: options.exit ?? { _tag: 'exited', code: 0 },
     workloadDigest: options.workloadDigest ?? { _tag: 'verified', digest: 'digest' },
     stderrTail: options.stderrTail ?? '',
@@ -112,6 +114,9 @@ const checkIsMeasuredAt = (check: RunEvent.CheckDuration, ms: number): boolean =
 
 const nonNegativeIntArb = Arbitrary.schema(Report.NonNegativeInt)
 
+const runningSums = (gaps: ReadonlyArray<number>): ReadonlyArray<number> =>
+  gaps.reduce<ReadonlyArray<number>>((sums, gap) => [...sums, (sums.at(-1) ?? 0) + gap], [])
+
 describe('readBenchRun', () => {
   it.prop(
     '∀t_MutantTestCost_≡RecordedAsItsTestsExecutedAndTheVerdictsMutantCount',
@@ -164,6 +169,51 @@ describe('readBenchRun', () => {
           run.code === 'stream-undecodable' &&
           run.exitCode === exitCode &&
           run.stderrTail === stderrTail,
+      })
+    },
+  )
+
+  it.prop(
+    '∀pg_TwoPhaseLinesArrivingAtTimes_≡EachPhaseTimedFromItsLineToTheNextMark',
+    {
+      of: [RunEvent.RunPhase, RunEvent.RunPhase, Report.NonNegativeInt, Report.NonNegativeInt, Report.NonNegativeInt],
+      subject: readBenchRun,
+    },
+    (subject, [first, second, firstAt, secondGap, verdictGap]) => {
+      const lines = [
+        lineOf(RunEvent.PhaseEntered.make({ phase: first, elapsedMs: 0 })),
+        lineOf(mutantOf(null)),
+        lineOf(RunEvent.PhaseEntered.make({ phase: second, elapsedMs: 0 })),
+        lineOf(verdictOf(metricsOf(1, 0), phasesOf(0, 0))),
+      ]
+      const secondAt = firstAt + 1 + secondGap
+      const verdictAt = secondAt + verdictGap
+      const arrivalsMs = [firstAt, firstAt + 1, secondAt, verdictAt]
+      return Result.match(subject(commandOf(lines, { arrivalsMs })), {
+        onFailure: () => false,
+        onSuccess: (run) =>
+          S.is(BenchRunMeasured)(run) &&
+          run.phaseTimes.length === 2 &&
+          run.phaseTimes[0]?.phase === first &&
+          run.phaseTimes[0].startMs === firstAt &&
+          run.phaseTimes[0].endMs === secondAt &&
+          run.phaseTimes[1]?.phase === second &&
+          run.phaseTimes[1].startMs === secondAt &&
+          run.phaseTimes[1].endMs === verdictAt,
+      })
+    },
+  )
+
+  it.prop(
+    '∀g_ArrivalCount_≡InvalidStreamExactlyWhenItDiffersFromTheLineCount',
+    { of: [S.Array(Report.NonNegativeInt)], subject: readBenchRun },
+    (subject, [gaps]) => {
+      const lines = [lineOf(mutantOf(null)), lineOf(verdictOf(metricsOf(1, 0), phasesOf(0, 0)))]
+      const arrivalsMs = runningSums(gaps)
+      return Result.match(subject(commandOf(lines, { arrivalsMs })), {
+        onFailure: () => false,
+        onSuccess: (run) =>
+          (arrivalsMs.length !== lines.length) === (S.is(BenchRunInvalid)(run) && run.code === 'stream-invalid'),
       })
     },
   )

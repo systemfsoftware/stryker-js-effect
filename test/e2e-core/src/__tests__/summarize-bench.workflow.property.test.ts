@@ -43,6 +43,7 @@ const runFrom = (
       check: options.check ?? NOT_RECORDED,
       reporting: options.reporting ?? REPORTING_MEASURED,
     },
+    phaseTimes: [],
     mutants: 10,
     testsExecuted: 2,
     workloadDigest: options.unverifiedReason !== undefined

@@ -2,11 +2,13 @@ import {
   BENCH_ORDER,
   type BenchCorpusName,
   BenchReport,
+  BenchReportSchemaVersion,
   type BenchRun,
   BenchRunInvalid,
   BenchRunKey,
   BenchRunMeasured,
   type BenchSide,
+  LineArrivalsJson,
   readBenchRun,
   ReadBenchRunCommand,
   type RunExit,
@@ -27,6 +29,7 @@ import * as Path from 'effect/Path'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
+import * as Schedule from 'effect/Schedule'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
@@ -65,20 +68,43 @@ const STDERR_TAIL_CHARS = 4096
 
 const tailOf = (text: string): string => text.slice(-STDERR_TAIL_CHARS)
 
+const ARRIVAL_POLL_MS = 100
+
 interface CliExit {
   readonly exit: RunExit
   readonly stderrTail: string
+  readonly arrivalsMs: ReadonlyArray<number>
 }
+
+const completeLineCount = (text: string): number => text.split('\n').length - 1
+
+const observeArrivals = (
+  fs: FileSystem.FileSystem,
+  file: string,
+  startedAt: number,
+  arrivals: Ref.Ref<ReadonlyArray<number>>,
+): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const count = completeLineCount(yield* fs.readFileString(file).pipe(Effect.orElseSucceed(() => '')))
+    const sinceStartMs = (yield* Clock.currentTimeMillis) - startedAt
+    yield* Ref.update(
+      arrivals,
+      (seen) => [...seen, ...Arr.makeBy(Math.max(0, count - seen.length), () => sinceStartMs)],
+    )
+  })
 
 const runCli = (
   params: Pick<PreparedSide, 'cli' | 'cwd' | 'configFile'> & {
     readonly streamFile: string
     readonly incrementalFile: string
     readonly timeoutMs: number
+    readonly startedAt: number
   },
-): Effect.Effect<CliExit, never, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<CliExit, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem> =>
   Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
     const stderr = yield* Ref.make('')
+    const arrivals = yield* Ref.make<ReadonlyArray<number>>([])
     const exited = yield* Effect.scoped(Effect.gen(function*() {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
       const handle = yield* spawner.spawn(
@@ -97,6 +123,10 @@ const runCli = (
           { cwd: params.cwd, forceKillAfter: Duration.seconds(10) },
         ),
       )
+      yield* observeArrivals(fs, params.streamFile, params.startedAt, arrivals).pipe(
+        Effect.repeat(Schedule.spaced(Duration.millis(ARRIVAL_POLL_MS))),
+        Effect.forkScoped,
+      )
       const [exitCode] = yield* Effect.all(
         [
           handle.exitCode,
@@ -114,7 +144,7 @@ const runCli = (
       onNone: (): RunExit => ({ _tag: 'timed-out', afterMs: params.timeoutMs }),
       onSome: (code): RunExit => ({ _tag: 'exited', code }),
     })
-    return { exit, stderrTail: yield* Ref.get(stderr) }
+    return { exit, stderrTail: yield* Ref.get(stderr), arrivalsMs: yield* Ref.get(arrivals) }
   })
 
 const streamLines = (
@@ -145,6 +175,7 @@ const runOne = (
     const stem = `${input.corpus}-${prepared.side}-${position}-${slug(input.entry)}`
     const streamFile = path.join(input.runsRoot, `${stem}.jsonl`)
     const incrementalFile = path.join(input.runsRoot, `${stem}.json`)
+    const arrivalsFile = path.join(input.runsRoot, `${stem}.arrivals.json`)
 
     yield* restoreTree(pristine).pipe(
       Effect.mapError((cause) =>
@@ -163,10 +194,19 @@ const runOne = (
       streamFile,
       incrementalFile,
       timeoutMs,
+      startedAt,
     })
     const wallMs = (yield* Clock.currentTimeMillis) - startedAt
 
     const lines = yield* streamLines(fs, streamFile)
+    const arrivalsMs = [
+      ...Arr.take(cliExit.arrivalsMs, lines.length),
+      ...Arr.makeBy(Math.max(0, lines.length - cliExit.arrivalsMs.length), () => wallMs),
+    ]
+    yield* S.encodeEffect(LineArrivalsJson)(arrivalsMs).pipe(
+      Effect.flatMap((text) => fs.writeFileString(arrivalsFile, text)),
+      Effect.ignore,
+    )
     const digest = yield* workloadDigest({
       kind: input.corpus,
       cwd: prepared.cwd,
@@ -179,6 +219,7 @@ const runOne = (
         ReadBenchRunCommand.make({
           key,
           lines,
+          arrivalsMs,
           exit: cliExit.exit,
           workloadDigest: digest,
           stderrTail: cliExit.stderrTail,
@@ -268,7 +309,7 @@ export const runBench = (
       onSuccess: (decision) => ({ _tag: 'summarized' as const, projects: decision.projects }),
     })
     const report = BenchReport.make({
-      schemaVersion: '1.1',
+      schemaVersion: BenchReportSchemaVersion.literal,
       baseSha: input.baseSha,
       headSha: input.headSha,
       outcome,
@@ -280,6 +321,7 @@ export const runBench = (
           exitCode: run.exitCode,
           testsExecuted: run.testsExecuted,
           workloadDigest: run.workloadDigest,
+          phaseTimes: run.phaseTimes,
         }),
       ),
       setupSteps: [...input.setupSteps],

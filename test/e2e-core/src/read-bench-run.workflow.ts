@@ -13,6 +13,7 @@ import {
   BenchRunInvalid,
   BenchRunKey,
   BenchRunMeasured,
+  type PhaseTime,
   RunExit,
   WorkloadDigest,
 } from './bench-run.schema.js'
@@ -22,6 +23,7 @@ const DecodeWireLine = S.decodeResult(RunEvent.RunEventWireLine)
 export class ReadBenchRunCommand extends S.TaggedClass<ReadBenchRunCommand>()('ReadBenchRunCommand', {
   key: BenchRunKey,
   lines: S.Array(S.String),
+  arrivalsMs: S.Array(Report.NonNegativeFinite),
   exit: RunExit,
   workloadDigest: WorkloadDigest,
   stderrTail: S.String,
@@ -35,6 +37,13 @@ const isBlank = (line: string): boolean => line.trim().length === 0
 const isTestedEvent = S.is(RunEvent.RunMutantTestedEvent)
 
 const isVerdictEvent = S.is(RunEvent.VerdictReached)
+
+const isPhaseEvent = S.is(RunEvent.PhaseEntered)
+
+interface Arrived {
+  readonly event: RunEvent.RunEvent
+  readonly arrivalMs: number
+}
 
 const undecodable = (
   command: ReadBenchRunCommand,
@@ -74,16 +83,16 @@ const timedOut = (command: ReadBenchRunCommand, afterMs: number): BenchRunInvali
 const decodeEvents = (
   command: ReadBenchRunCommand,
   exitCode: number,
-): Result.Result<ReadonlyArray<RunEvent.RunEvent>, BenchRunInvalid> =>
-  command.lines.reduce<Result.Result<ReadonlyArray<RunEvent.RunEvent>, BenchRunInvalid>>(
-    (accumulated, line, index) =>
-      Result.flatMap(accumulated, (events) =>
+): Result.Result<ReadonlyArray<Arrived>, BenchRunInvalid> =>
+  Arr.zip(command.lines, command.arrivalsMs).reduce<Result.Result<ReadonlyArray<Arrived>, BenchRunInvalid>>(
+    (accumulated, [line, arrivalMs], index) =>
+      Result.flatMap(accumulated, (arrived) =>
         Boolean.match(isBlank(line), {
-          onTrue: () => Result.succeed(events),
+          onTrue: () => Result.succeed(arrived),
           onFalse: () =>
             Result.match(DecodeWireLine(line), {
               onFailure: (issue) => Result.fail(undecodable(command, exitCode, index + 1, issue.message)),
-              onSuccess: (event) => Result.succeed([...events, event]),
+              onSuccess: (event) => Result.succeed([...arrived, { event, arrivalMs }]),
             }),
         })),
     Result.succeed([]),
@@ -97,11 +106,29 @@ const testsExecutedOf = (events: ReadonlyArray<RunEvent.RunEvent>): number =>
       sum + Option.getOrElse(Option.map(Option.fromNullishOr(tested.cost), (cost) => cost.testsExecuted), () => 0),
   )
 
+const isMark = (entry: Arrived): boolean => Boolean.or(isPhaseEvent(entry.event), isVerdictEvent(entry.event))
+
+const phaseTimesOf = (arrived: ReadonlyArray<Arrived>): ReadonlyArray<PhaseTime> => {
+  const marks = Arr.filter(arrived, isMark)
+  return Arr.getSomes(Arr.map(Arr.zip(marks, Arr.drop(marks, 1)), ([mark, next]) =>
+    Option.map(
+      Option.liftPredicate(mark.event, isPhaseEvent),
+      (entered): PhaseTime => ({ phase: entered.phase, startMs: mark.arrivalMs, endMs: next.arrivalMs }),
+    )))
+}
+
+const arrivalsMismatch = (command: ReadBenchRunCommand): boolean =>
+  Boolean.or(
+    Arr.length(command.lines) !== Arr.length(command.arrivalsMs),
+    Arr.some(Arr.zip(command.arrivalsMs, Arr.drop(command.arrivalsMs, 1)), ([earlier, later]) => later < earlier),
+  )
+
 const measuredOrInvalid = (
   command: ReadBenchRunCommand,
   exitCode: number,
-  events: ReadonlyArray<RunEvent.RunEvent>,
+  arrived: ReadonlyArray<Arrived>,
 ): BenchRun => {
+  const events = Arr.map(arrived, (entry) => entry.event)
   const verdicts = Arr.filter(events, isVerdictEvent)
   return Boolean.match(Arr.length(verdicts) === 1, {
     onFalse: () =>
@@ -113,6 +140,7 @@ const measuredOrInvalid = (
           BenchRunMeasured.make({
             key: command.key,
             phaseDurations,
+            phaseTimes: phaseTimesOf(arrived),
             mutants: Option.getOrElse(
               Option.map(Arr.head(verdicts), (verdict) => verdict.counts.totalMutants),
               () => 0,
@@ -127,9 +155,20 @@ const measuredOrInvalid = (
 }
 
 const exitedRun = (command: ReadBenchRunCommand, exitCode: number): BenchRun =>
-  Result.match(decodeEvents(command, exitCode), {
-    onFailure: (failure): BenchRun => failure,
-    onSuccess: (events) => measuredOrInvalid(command, exitCode, events),
+  Boolean.match(arrivalsMismatch(command), {
+    onTrue: (): BenchRun =>
+      violated(
+        command,
+        exitCode,
+        `the run has ${Arr.length(command.lines)} stream lines but ${
+          Arr.length(command.arrivalsMs)
+        } arrival times, or its arrival times go backwards`,
+      ),
+    onFalse: () =>
+      Result.match(decodeEvents(command, exitCode), {
+        onFailure: (failure): BenchRun => failure,
+        onSuccess: (arrived) => measuredOrInvalid(command, exitCode, arrived),
+      }),
   })
 
 const decide = (command: ReadBenchRunCommand): Result.Result<BenchRun, never> =>

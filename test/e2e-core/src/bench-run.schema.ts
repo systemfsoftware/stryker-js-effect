@@ -37,9 +37,21 @@ export const RunExit = S.TaggedUnion({
 })
 export type RunExit = typeof RunExit.Type
 
+export const PhaseTime = S.Struct({
+  phase: RunEvent.RunPhase,
+  startMs: Report.NonNegativeFinite,
+  endMs: Report.NonNegativeFinite,
+})
+export type PhaseTime = typeof PhaseTime.Type
+
+export const LineArrivals = S.Array(Report.NonNegativeFinite)
+
+export const LineArrivalsJson = S.fromJsonString(LineArrivals)
+
 export class BenchRunMeasured extends S.TaggedClass<BenchRunMeasured>()('measured', {
   key: BenchRunKey,
   phaseDurations: RunEvent.PhaseDurations,
+  phaseTimes: S.Array(PhaseTime),
   mutants: Report.NonNegativeInt,
   testsExecuted: Report.NonNegativeInt,
   workloadDigest: WorkloadDigest,

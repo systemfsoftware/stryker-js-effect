@@ -8,18 +8,23 @@ import {
   type BenchCorpusName,
   BenchReport,
   BenchReportJson,
+  type BenchReportOutcome,
+  BenchReportSchemaVersion,
   type BenchRun,
   type BenchSide,
+  classifySetup,
+  ClassifySetupCommand,
+  inconclusiveOutcomeOf,
   renderBenchReport,
   RenderBenchReportCommand,
+  type SetupFailure,
   type SetupStep,
+  SideSetup,
 } from '@systemfsoftware/stryker-e2e-core'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
-import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
-import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
@@ -28,9 +33,10 @@ import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { BenchOrchestrationFailed } from './bench-failure.schema.js'
+import { BenchOrchestrationFailed, BenchStoppedAtSetup } from './bench-failure.schema.js'
 import { BenchTarget } from './bench-target.schema.js'
 import { prepareSide } from './prepare-side.service.js'
+import type { PreparedSide } from './prepared-side.js'
 import { runBench } from './run-bench.service.js'
 
 const BENCH_WORK_DIR = 'bench-work'
@@ -122,15 +128,31 @@ const benchEnv = Effect.all({
   runTimeoutMs: Config.Number('BENCH_RUN_TIMEOUT_MS').pipe(Config.withDefault(DEFAULT_RUN_TIMEOUT_MS)),
 })
 
-const abortedReport = (env: Pick<BenchEnv, 'baseSha' | 'headSha'>, code: BenchAbortCode, reason: string) =>
+const reportOf = (
+  env: Pick<BenchEnv, 'baseSha' | 'headSha'>,
+  outcome: BenchReportOutcome,
+  setupSteps: ReadonlyArray<SetupStep>,
+) =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: BenchReportSchemaVersion.literal,
     baseSha: env.baseSha,
     headSha: env.headSha,
-    outcome: abortedOutcomeOf(code, reason),
+    outcome,
     runs: [],
-    setupSteps: [],
+    setupSteps: [...setupSteps],
   })
+
+const abortedReport = (env: Pick<BenchEnv, 'baseSha' | 'headSha'>, code: BenchAbortCode, reason: string) =>
+  reportOf(env, abortedOutcomeOf(code, reason), [])
+
+const sideSetupOf = (prepared: Result.Result<PreparedSide, SetupFailure>): SideSetup =>
+  Result.match(prepared, {
+    onSuccess: (side): SideSetup => SideSetup.cases.ready.make({ recovered: side.recovered }),
+    onFailure: (failure): SideSetup => SideSetup.cases.failed.make({ failure }),
+  })
+
+const preparedSteps = (prepared: Result.Result<PreparedSide, SetupFailure>): ReadonlyArray<SetupStep> =>
+  Result.match(prepared, { onSuccess: (side) => side.setupSteps, onFailure: () => [] })
 
 const targetOf = (corpus: BenchCorpus, entry: string): Option.Option<BenchTarget> =>
   Option.orElse(
@@ -177,26 +199,33 @@ const bench = (env: BenchEnv) =>
     const fixtureSource = path.join(env.sideBRoot, corpus.enterprise.fixture)
 
     const prepareNamed = (side: BenchSide, root: string, workDir: string) =>
-      prepareSide({ side, root, fixtureSource, workDir: path.join(workRoot, workDir), target, turboCacheDir }).pipe(
-        Effect.mapError((failure) => orchestrationFailed('side-setup-failed', `side ${side}: ${failure.message}`)),
-      )
-    const setupBudgetMs = Math.max(0, env.deadlineMs - (yield* Clock.currentTimeMillis))
-    const prepared = yield* Effect.all({
-      sideA: prepareNamed('A', env.sideARoot, 'a'),
-      sideB: prepareNamed('B', env.sideBRoot, 'b'),
-    }).pipe(
-      Effect.timeoutOption(Duration.millis(setupBudgetMs)),
-      Effect.flatMap(Option.match({
-        onNone: () =>
-          Effect.fail(orchestrationFailed(
-            'setup-timed-out',
-            `setup of both sides did not finish before the job deadline (${
-              (setupBudgetMs / 1000).toFixed(1)
-            }s were left when it started); no run started`,
-          )),
-        onSome: Effect.succeed,
-      })),
+      Effect.result(prepareSide({
+        side,
+        root,
+        fixtureSource,
+        workDir: path.join(workRoot, workDir),
+        target,
+        turboCacheDir,
+        deadlineMs: env.deadlineMs,
+      }))
+    const sideA = yield* prepareNamed('A', env.sideARoot, 'a')
+    const sideB = yield* prepareNamed('B', env.sideBRoot, 'b')
+    const allSteps = [...preparedSteps(sideA), ...preparedSteps(sideB), ...setupSteps]
+    const verdict = Result.merge(
+      classifySetup(ClassifySetupCommand.make({ A: sideSetupOf(sideA), B: sideSetupOf(sideB) })),
     )
+    const stop = (outcome: BenchReportOutcome) =>
+      Effect.fail(BenchStoppedAtSetup.make({ outcome, setupSteps: allSteps }))
+    const prepared = yield* Match.valueTags(verdict, {
+      proceed: () =>
+        Option.match(Option.all({ sideA: Result.getSuccess(sideA), sideB: Result.getSuccess(sideB) }), {
+          onSome: Effect.succeed,
+          onNone: () => stop(abortedOutcomeOf('defect', 'setup proceeded without two prepared sides')),
+        }),
+      red: (red) => stop(abortedOutcomeOf(red.code, red.reason)),
+      inconclusive: (inconclusive) =>
+        stop(inconclusiveOutcomeOf(inconclusive.code, inconclusive.step, inconclusive.reason)),
+    })
 
     const result = yield* runBench({
       corpus: corpusNameOf(target),
@@ -204,7 +233,7 @@ const bench = (env: BenchEnv) =>
       sideA: prepared.sideA,
       sideB: prepared.sideB,
       runsRoot,
-      setupSteps: [...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps, ...setupSteps],
+      setupSteps: allSteps,
       baseSha: env.baseSha,
       headSha: env.headSha,
       runTimeoutMs: env.runTimeoutMs,
@@ -213,10 +242,10 @@ const bench = (env: BenchEnv) =>
     yield* Effect.forEach(result.runs, (run) => Console.log(runLogLine(run)))
     return result.report
   }).pipe(
-    Effect.catchTag(
-      'BenchOrchestrationFailed',
-      (failure) => Effect.succeed(abortedReport(env, failure.code, failure.reason)),
-    ),
+    Effect.catchTags({
+      BenchOrchestrationFailed: (failure) => Effect.succeed(abortedReport(env, failure.code, failure.reason)),
+      BenchStoppedAtSetup: (stopped) => Effect.succeed(reportOf(env, stopped.outcome, stopped.setupSteps)),
+    }),
     Effect.catchDefect((defect) => Effect.succeed(abortedReport(env, 'defect', Cause.pretty(Cause.die(defect))))),
   )
 
@@ -257,6 +286,7 @@ const publish = (report: BenchReport, stepSummary: Option.Option<string>) =>
       summarized: () => Effect.void,
       failed: () => failExit,
       aborted: () => failExit,
+      inconclusive: () => Effect.void,
     })
   })
 

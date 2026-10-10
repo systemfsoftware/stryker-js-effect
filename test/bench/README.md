@@ -6,8 +6,26 @@ base branch (side A) and the PR head (side B) on the same runner, runs both
 interleaved over that entry's workload, and reads every number from each run's
 own NDJSON. Nothing here compares statuses, stores a baseline, or fails a PR on
 a timing delta. When the job's `BENCH_DEADLINE_MS` stops or precedes a run, the
-report aborts with `budget-exceeded`; when it passes while setup is still
-running, the report aborts with `setup-timed-out` and no run starts.
+report aborts with `budget-exceeded`.
+
+Setup runs side A, then side B, one step at a time. Each step has its own
+deadline (the lower of its cap and the time left before the job deadline), is
+retried once inside that deadline, and on failure records its output tail. The
+outcome is classified by which side failed. Both sides exiting non-zero, or
+both overrunning the step deadline, at the same step, or side A recovering on
+retry at the step where side B exited, is the
+`setup-external` warning; side A failing alone, other than by running out of
+job time, is the `base-setup-failed` warning. Every other failure is red with
+`side-setup-failed` or `setup-timed-out`, naming side B whenever it failed. A
+warning is `inconclusive`: no run starts and the job exits 0.
+
+The enterprise fixture installs with npm, pinned to each side's own pnpm tree:
+every registry package the side's lockfile locks to exactly one version is
+written into the fixture manifests and the root's `overrides`.
+
+Each measured run carries its phase start and end times, taken from when each
+stream line appeared in the progress file; the per-line arrival times sit next
+to the run's stream in the run-streams artifact as `<run>.arrivals.json`.
 
 `pnpm --filter @systemfsoftware/stryker-bench bench` runs `src/main.ts` through
 `tsx` with the workspace source condition, so the orchestrator itself needs no

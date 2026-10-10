@@ -1,4 +1,4 @@
-import type { BenchSide, SetupStep } from '@systemfsoftware/stryker-e2e-core'
+import type { BenchSide, SetupRecovery, SetupStep } from '@systemfsoftware/stryker-e2e-core'
 
 export interface PreparedSide {
   readonly side: BenchSide
@@ -7,4 +7,5 @@ export interface PreparedSide {
   readonly cli: string
   readonly configFile: string
   readonly setupSteps: ReadonlyArray<SetupStep>
+  readonly recovered: SetupRecovery
 }

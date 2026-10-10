@@ -11,6 +11,7 @@ import {
   BenchRendered,
   BenchRenderedError,
   BenchRenderedNotice,
+  BenchRenderedWarning,
   BenchReport,
   type BenchReportOutcome,
   type BenchReportRun,
@@ -56,12 +57,14 @@ const escapeMessage = (text: string): string =>
 const escapeProperty = (text: string): string => escapeMessage(text).replaceAll(':', '%3A').replaceAll(',', '%2C')
 
 interface Annotation {
-  readonly level: 'notice' | 'error'
+  readonly level: 'notice' | 'warning' | 'error'
   readonly title: string
   readonly message: string
 }
 
 const notice = (title: string, message: string): Annotation => ({ level: 'notice', title, message })
+
+const warning = (title: string, message: string): Annotation => ({ level: 'warning', title, message })
 
 const error = (title: string, message: string): Annotation => ({ level: 'error', title, message })
 
@@ -233,10 +236,23 @@ const headingOf = (report: BenchReport): string => `## Bench comparison: ${repor
 const abortedBlock = (code: BenchAbortCode, reason: string, nextAction: string): string =>
   [`### Aborted: ${code}`, reason, `**Next action:** ${nextAction}`].join('\n\n')
 
+const inconclusiveBlock = (code: string, step: string, reason: string, nextAction: string): string =>
+  [
+    `### Inconclusive: ${code}`,
+    `No speed signal for this entry: setup step "${step}" did not complete for a cause this PR did not introduce.`,
+    reason,
+    `**Next action:** ${nextAction}`,
+  ].join('\n\n')
+
 const markdownOf = (report: BenchReport): string =>
   Match.valueTags(report.outcome, {
     aborted: (aborted) =>
       [headingOf(report), abortedBlock(aborted.code, aborted.reason, aborted.nextAction)].join('\n\n'),
+    inconclusive: (inconclusive) =>
+      [
+        headingOf(report),
+        inconclusiveBlock(inconclusive.code, inconclusive.step, inconclusive.reason, inconclusive.nextAction),
+      ].join('\n\n'),
     failed: (failed) => [headingOf(report), '### Failures', ...Arr.map(failed.invalid, failureLine)].join('\n\n'),
     summarized: (summarized) =>
       [headingOf(report), ...Arr.map(summarized.projects, projectBlock), SIGNAL_NOTE, detailsBlock(report)].join(
@@ -248,6 +264,11 @@ const annotationOf = (outcome: BenchReportOutcome): Annotation =>
   Match.valueTags(outcome, {
     aborted: (aborted) =>
       error('Bench aborted', `Bench aborted (${aborted.code}): ${aborted.reason} Next: ${aborted.nextAction}`),
+    inconclusive: (inconclusive) =>
+      warning(
+        'Bench inconclusive',
+        `Bench inconclusive (${inconclusive.code}): no speed signal; setup step "${inconclusive.step}" failed. Next: ${inconclusive.nextAction}`,
+      ),
     failed: (failed) => invalidAnnotation(failed.invalid),
     summarized: (summarized) => summarizedAnnotation(summarized.projects),
   })
@@ -257,6 +278,7 @@ const renderedOf = (report: BenchReport): BenchRendered => {
   const fields = { annotationLine: annotationLineOf(annotation), markdown: markdownOf(report) }
   return Match.value(annotation.level).pipe(
     Match.when('notice', (): BenchRendered => BenchRenderedNotice.make(fields)),
+    Match.when('warning', (): BenchRendered => BenchRenderedWarning.make(fields)),
     Match.when('error', (): BenchRendered => BenchRenderedError.make(fields)),
     Match.exhaustive,
   )
