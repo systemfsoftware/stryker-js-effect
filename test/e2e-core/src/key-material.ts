@@ -19,7 +19,7 @@ const joinChunks = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
 export const packsKeyBytes = (input: PackInput): Uint8Array =>
   joinChunks([
     encodeChunk(`image\0${input.baseImage}\0`),
-    encodeChunk('bake\0'),
+    encodeChunk(`bake\0${input.registryCutoff}\0`),
     input.bakeScript,
     encodeChunk('\0'),
     ...[...input.packs]
@@ -52,6 +52,7 @@ if (import.meta.vitest !== void 0) {
   const packsOf = (baseImage: string, seed: string): PackInput => ({
     baseImage,
     bakeScript: textBytes('install'),
+    registryCutoff: '2026-10-10T05:51:38Z',
     packs: [{ fileName: 'a.tgz', files: [fileOf('package.json', seed)] }],
   })
 

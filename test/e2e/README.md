@@ -35,9 +35,15 @@ OTEL_ENABLED=true pnpm --filter @systemfsoftware/stryker-e2e exec vitest run tes
 
 ### Fixture cache
 
-Global setup keys the prepared fixtures on two inputs: the packed closure (base image, `tests/__fixtures__/bake-fixtures.sh`, and the unpacked contents of every packed tarball) and, separately, each fixture's own source files with its manifests resolved against the catalogs in the repo-root `pnpm-workspace.yaml`. The cache holds `node_modules/.cache/stryker-e2e/baked/<packs-key>/<fixtureId>.<fixture-key>`, so editing one fixture re-bakes that fixture alone; editing a workspace package or a catalog entry lands a new closure key and re-bakes its fixture set, with no manual invalidation.
+Global setup keys the prepared fixtures on two inputs: the packed closure (base image, `tests/__fixtures__/bake-fixtures.sh`, the registry cutoff, and the unpacked contents of every packed tarball) and, separately, each fixture's own source files with its manifests resolved against the catalogs in the repo-root `pnpm-workspace.yaml`. The cache holds `node_modules/.cache/stryker-e2e/baked/<packs-key>/<fixtureId>.<fixture-key>`, so editing one fixture re-bakes that fixture alone; editing a workspace package or a catalog entry lands a new closure key and re-bakes its fixture set, with no manual invalidation.
 
 A run leases its entry for as long as it lives and prunes unleased entries of other keys from its global teardown, so concurrent runs sharing the cache do not delete each other's entries.
+
+### Registry snapshot
+
+The bake never resolves against the live registry. Every `npm install` in the bake runs with `--before=<REGISTRY_CUTOFF>` (`test/e2e-core/src/registry-pins.ts`), and every staged fixture manifest pins the `effect` and `@effect/*` packages to the exact versions the root `pnpm-lock.yaml` resolves, as direct specs and, in the fixture's root manifest, as `overrides` that reach the packed closure's transitive dependencies. A release published after the cutoff therefore cannot change a fixture or stall the bake. The cutoff is the commit time of the root lockfile; move it to the new lockfile commit time when a lockfile change needs a newer registry release in the fixtures.
+
+Each install in the bake has a 300-second deadline. An install that hits it fails the bake with `E2E_BAKE_STALLED`, naming the fixture, the install step and the host command that reproduces the resolution.
 
 ### Warm snapshots and forks
 
