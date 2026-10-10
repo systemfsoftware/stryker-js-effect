@@ -319,6 +319,22 @@ const schemaDocument = (options: { readonly testFiles: boolean; readonly wideLev
   required: ['schemaVersion'],
 })
 
+const nullableStructDocument = (properties: Json, required: readonly string[]): Json => ({
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  properties: {
+    durations: { anyOf: [{ type: 'object', properties, required: [...required] }, { type: 'null' }] },
+  },
+})
+
+const constrainedUnionDocument = (branches: readonly Json[]): Json => ({
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  properties: {
+    level: { anyOf: [...branches] },
+  },
+})
+
 const catalogEntry: Json = {
   id: 'arithmetic-operator',
   name: 'ArithmeticOperator',
@@ -539,6 +555,106 @@ Feature('The released contract documents bound what the workspace may declare ne
               }]),
           ),
         ),
+    )
+
+    scenarioOutline(
+      'A member added inside a nullable struct is weighed inside the struct, not as a removed branch',
+      [
+        { addition: 'optional', required: ['a'], failures: [] },
+        {
+          addition: 'required',
+          required: ['a', 'b'],
+          failures: [{ pointer: '/properties/durations/anyOf/0/required', reason: 'property made required: b' }],
+        },
+      ],
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('a released nullable struct and a committed one that adds a member, with a patch intent')(
+            'law',
+            () =>
+              Effect.succeed(
+                lawInputOf({
+                  package: CLI_CONTRACT,
+                  directory: CLI_CONTRACT_DIRECTORY,
+                  releasedVersion: '0.4.0',
+                  committedVersion: '0.4.0',
+                  releasedDocuments: [{
+                    name: STREAM_DOCUMENT,
+                    document: nullableStructDocument({ a: { type: 'number' } }, ['a']),
+                  }],
+                  committedDocuments: [{
+                    name: STREAM_DOCUMENT,
+                    document: nullableStructDocument({ a: { type: 'number' }, b: { type: 'number' } }, row.required),
+                  }],
+                  pendingIntents: [{ package: CLI_CONTRACT, bump: 'patch' }],
+                }),
+              ),
+          ),
+          When('the law weighs the committed document against the released one')(
+            'failures',
+            (s) => Effect.succeed(evaluateContractLaw(s.law)),
+          ),
+          Then('only a newly required member is refused, at the member inside the struct')((s, expect) =>
+            expect(s.failures).toEqual(row.failures.map((failure) => ({
+              kind: 'contract-change',
+              package: CLI_CONTRACT,
+              document: `${CLI_CONTRACT_DIRECTORY}/${CONTRACT_DIRECTORY}/${STREAM_DOCUMENT}`,
+              pointer: failure.pointer,
+              reason: failure.reason,
+              requiredLevel: 'minor',
+              requiredVersion: '0.5.0',
+              declaredVersion: '0.4.1',
+            })))
+          ),
+        ),
+    )
+
+    scenario(
+      'A constrained branch dropped from an untagged union of one type is a removed branch, not a silent narrowing',
+      Gherkin.Do.pipe(
+        Given(
+          'a released union of two numeric branches bounded differently and a committed one that keeps only the second',
+        )(
+          'law',
+          () =>
+            Effect.succeed(
+              lawInputOf({
+                package: CLI_CONTRACT,
+                directory: CLI_CONTRACT_DIRECTORY,
+                releasedVersion: '0.4.0',
+                committedVersion: '0.4.0',
+                releasedDocuments: [{
+                  name: STREAM_DOCUMENT,
+                  document: constrainedUnionDocument([
+                    { type: 'number', maximum: 10 },
+                    { type: 'number', minimum: 100 },
+                  ]),
+                }],
+                committedDocuments: [{
+                  name: STREAM_DOCUMENT,
+                  document: constrainedUnionDocument([{ type: 'number', minimum: 100 }]),
+                }],
+                pendingIntents: [{ package: CLI_CONTRACT, bump: 'patch' }],
+              }),
+            ),
+        ),
+        When('the law weighs the committed document against the released one')(
+          'failures',
+          (s) => Effect.succeed(evaluateContractLaw(s.law)),
+        ),
+        Then('the dropped branch is named at its pointer as a removed union branch')((s, expect) =>
+          expect(s.failures).toEqual([{
+            kind: 'contract-change',
+            package: CLI_CONTRACT,
+            document: `${CLI_CONTRACT_DIRECTORY}/${CONTRACT_DIRECTORY}/${STREAM_DOCUMENT}`,
+            pointer: '/properties/level/anyOf/0',
+            reason: 'union branch removed at index 0',
+            requiredLevel: 'minor',
+            requiredVersion: '0.5.0',
+            declaredVersion: '0.4.1',
+          }])
+        ),
+      ),
     )
 
     scenario(

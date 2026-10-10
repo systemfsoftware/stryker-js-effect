@@ -3,6 +3,7 @@ import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
+import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -16,6 +17,7 @@ import * as Stream from 'effect/Stream'
 
 import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { StageError } from '../Run.schema.js'
+import { PhaseClock } from '../run/phase-clock.service.js'
 import { sha256HexOf } from '../verdict-semantics.js'
 import { checkCell } from './check.cell.js'
 import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
@@ -92,13 +94,13 @@ const invalidateSlot = <E>(
   error: E,
 ): Effect.Effect<never, E> => Effect.flatMap(Pool.invalidate(pool, slot), () => Effect.fail(error))
 
-const onCheckerSlot = <A>(
+const onCheckerSlot = <A, R>(
   pool: CheckerPool,
   checkerIndex: number,
   run: (
     checker: CheckerResourceService,
-  ) => Effect.Effect<A, CheckerCrash | Checker.CheckerFailed | CheckerContractBroken>,
-): Effect.Effect<A, StageError | CheckerCrash> =>
+  ) => Effect.Effect<A, CheckerCrash | Checker.CheckerFailed | CheckerContractBroken, R>,
+): Effect.Effect<A, StageError | CheckerCrash, R> =>
   Pool.use(pool, (slot) =>
     Option.match(Option.fromUndefinedOr(slot[checkerIndex]), {
       onNone: () => Effect.die(new Error(`checker slot has no entry at index ${checkerIndex}`)),
@@ -263,7 +265,7 @@ const checkedGroupsFor = (
   checkerIndex: number,
   plans: readonly Mutant.MutantRunPlan[],
   carried: Readonly<Record<string, number>>,
-): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
+): Stream.Stream<CheckedPlans, StageError | CheckerCrash, PhaseClock> =>
   Option.match(Array.get(checkerNames, checkerIndex), {
     onNone: () =>
       Stream.succeed<CheckedPlans>({
@@ -280,17 +282,17 @@ const checkedGroupsFor = (
               Stream.mapEffect(
                 (group) =>
                   onCheckerSlot(pool, checkerIndex, (checker) =>
-                    Effect.timed(checkCell.run({ checker, checkerName, plans: group })).pipe(
-                      Effect.flatMap(([elapsed, checked]) =>
-                        Effect.map(
-                          splitCheckedPlans(checked),
-                          (split) => ({
-                            split,
-                            charged: chargedWith(carried, group, Duration.toMillis(elapsed)),
-                          }),
-                        )
-                      ),
-                    )),
+                    Effect.gen(function*() {
+                      const phaseClock = yield* PhaseClock
+                      const startedAt = yield* Clock.currentTimeMillis
+                      const [elapsed, checked] = yield* Effect.timed(
+                        checkCell.run({ checker, checkerName, plans: group }),
+                      )
+                      const endedAt = yield* Clock.currentTimeMillis
+                      yield* phaseClock.recordCheckerBusy({ startMs: startedAt, endMs: endedAt })
+                      const split = yield* splitCheckedPlans(checked)
+                      return { split, charged: chargedWith(carried, group, Duration.toMillis(elapsed)) }
+                    })),
                 { concurrency: 'unbounded', unordered: true },
               ),
               Stream.flatMap(({ split, charged }) =>
@@ -311,17 +313,17 @@ const checkedGroupsFor = (
 export const checkPlansStream: {
   (
     plans: readonly Mutant.MutantRunPlan[],
-  ): (checkerPool: CheckerPoolHandle | undefined) => Stream.Stream<CheckedPlans, StageError | CheckerCrash>
+  ): (checkerPool: CheckerPoolHandle | undefined) => Stream.Stream<CheckedPlans, StageError | CheckerCrash, PhaseClock>
   (
     checkerPool: CheckerPoolHandle | undefined,
     plans: readonly Mutant.MutantRunPlan[],
-  ): Stream.Stream<CheckedPlans, StageError | CheckerCrash>
+  ): Stream.Stream<CheckedPlans, StageError | CheckerCrash, PhaseClock>
 } = dual(
   2,
   (
     checkerPool: CheckerPoolHandle | undefined,
     plans: readonly Mutant.MutantRunPlan[],
-  ): Stream.Stream<CheckedPlans, StageError | CheckerCrash> =>
+  ): Stream.Stream<CheckedPlans, StageError | CheckerCrash, PhaseClock> =>
     Option.fromNullishOr(checkerPool).pipe(
       Option.match({
         onNone: () =>
@@ -376,18 +378,18 @@ export const runCheckedPlans: {
   <A, E, Passed extends Mutant.MutantRunPlan>(
     execution: CheckedPlansExecution<A, E, Passed>,
   ): (
-    self: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash>,
-  ) => Stream.Stream<A, E | StageError | CheckerCrash>
+    self: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash, PhaseClock>,
+  ) => Stream.Stream<A, E | StageError | CheckerCrash, PhaseClock>
   <A, E, Passed extends Mutant.MutantRunPlan>(
-    self: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash>,
+    self: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash, PhaseClock>,
     execution: CheckedPlansExecution<A, E, Passed>,
-  ): Stream.Stream<A, E | StageError | CheckerCrash>
+  ): Stream.Stream<A, E | StageError | CheckerCrash, PhaseClock>
 } = dual(
   2,
   <A, E, Passed extends Mutant.MutantRunPlan>(
-    self: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash>,
+    self: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash, PhaseClock>,
     execution: CheckedPlansExecution<A, E, Passed>,
-  ): Stream.Stream<A, E | StageError | CheckerCrash> =>
+  ): Stream.Stream<A, E | StageError | CheckerCrash, PhaseClock> =>
     self.pipe(
       Stream.flatMap(({ passedPlans, failedChecks, ignoredChecks, checkMsByMutantId }) =>
         Stream.fromIterable<() => Effect.Effect<A, E>>([
