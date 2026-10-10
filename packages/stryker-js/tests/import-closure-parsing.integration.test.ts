@@ -61,6 +61,17 @@ const UNPARSABLE: FixtureFiles = {
   [TEST_FILE]: "import { test } from 'vitest'\nimport { stat } from '../src/static.js'\ntest('broken', () => { stat\n",
 }
 
+const ESCAPED_SPECIFIER: FixtureFiles = {
+  'src/a.ts': 'export const a = 1\n',
+  [TEST_FILE]: "import { test } from 'vitest'\nimport { a } from '../src/\\x61.js'\ntest('escaped', () => { a })\n",
+}
+
+const BIGINT_MOCK: FixtureFiles = {
+  'src/kept.ts': 'export const kept = 1\n',
+  [TEST_FILE]:
+    "import { test, vi } from 'vitest'\nimport { kept } from '../src/kept.js'\nvi.mock(1n)\ntest('bigint mock', () => { kept })\n",
+}
+
 const writeFixture = (files: FixtureFiles): Effect.Effect<string, PlatformError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -145,11 +156,39 @@ Feature('Reading the import forms of a module from its parsed source')
     )
 
     scenario(
-      'A test file the parser rejects opens its closure',
+      'A test file the parser rejects opens its closure and follows none of its imports',
       Gherkin.Do.pipe(
         Given('a test file with a syntax error after a static import')('root', () => writeFixture(UNPARSABLE)),
         When('the closure of that test file is analyzed')('observation', (s) => observe(s.root, UNPARSABLE)),
-        Then('the closure is open')((s, expect) => expect({ open: s.observation.open }).toEqual({ open: true })),
+        Then('the closure is open and lists only the test file, not the module imported above the error')((
+          s,
+          expect,
+        ) => expect(s.observation).toEqual({ files: [TEST_FILE], open: true })),
+      ),
+    )
+
+    scenario(
+      'An import specifier written with an escape names the module its cooked text spells',
+      Gherkin.Do.pipe(
+        Given('a test file importing ../src/a.js with the a written as \\x61')(
+          'root',
+          () => writeFixture(ESCAPED_SPECIFIER),
+        ),
+        When('the closure of that test file is analyzed')('observation', (s) => observe(s.root, ESCAPED_SPECIFIER)),
+        Then('the closure lists src/a.ts and stays closed')((s, expect) =>
+          expect(s.observation).toEqual({ files: ['src/a.ts', TEST_FILE], open: false })
+        ),
+      ),
+    )
+
+    scenario(
+      'A vitest mock of a bigint literal neither names a module nor opens the closure',
+      Gherkin.Do.pipe(
+        Given('a test file calling vi.mock(1n) beside a static import')('root', () => writeFixture(BIGINT_MOCK)),
+        When('the closure of that test file is analyzed')('observation', (s) => observe(s.root, BIGINT_MOCK)),
+        Then('the closure keeps the static import and stays closed')((s, expect) =>
+          expect(s.observation).toEqual({ files: ['src/kept.ts', TEST_FILE], open: false })
+        ),
       ),
     )
   })
