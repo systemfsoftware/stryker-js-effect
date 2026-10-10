@@ -25,7 +25,7 @@ const ENTRIES_PAST_ONE_PAGE = 1001
 const PUT_CONCURRENCY = 16
 
 class S3Emulator extends Context.Service<S3Emulator, { readonly url: string; readonly reset: Effect.Effect<void> }>()(
-  '@systemfsoftware/stryker-js-verdict-store-s3/tests/S3Emulator',
+  '@systemfsoftware/stryker-js-verdict-store-s3/tests/s3-verdict-store.laws.integration.test/S3Emulator',
 ) {}
 
 const emulatorLayer = Layer.effect(

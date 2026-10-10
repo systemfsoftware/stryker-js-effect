@@ -29,6 +29,8 @@ export interface S3VerdictStoreOptions {
   /** An S3-compatible endpoint. Must be https unless its host is loopback or the microsandbox host gateway. */
   readonly endpoint?: string | undefined
   readonly forcePathStyle?: boolean | undefined
+  readonly connectionTimeoutMs?: number | undefined
+  readonly requestTimeoutMs?: number | undefined
 }
 
 const PLAIN_HTTP_HOSTS: ReadonlyArray<string> = ['localhost', '127.0.0.1', '[::1]', 'host.microsandbox.internal']
@@ -111,11 +113,22 @@ const s3BlobsOf = (client: S3Client, bucket: string, prefix: string): VerdictBlo
   },
 })
 
+const DEFAULT_CONNECTION_TIMEOUT_MS = 3_000
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
+
+const millisOr = (fallback: number) => (millis: number | undefined): number =>
+  Option.getOrElse(Option.fromNullishOr(millis), () => fallback)
+
 const clientOf = (options: S3VerdictStoreOptions): S3Client =>
   new S3Client({
     region: options.region,
     endpoint: options.endpoint,
     forcePathStyle: options.forcePathStyle,
+    requestHandler: {
+      connectionTimeout: millisOr(DEFAULT_CONNECTION_TIMEOUT_MS)(options.connectionTimeoutMs),
+      requestTimeout: millisOr(DEFAULT_REQUEST_TIMEOUT_MS)(options.requestTimeoutMs),
+      throwOnRequestTimeout: true,
+    },
   })
 
 const refuseEndpoint = (options: S3VerdictStoreOptions): Effect.Effect<void, VerdictStoreUnavailable> =>

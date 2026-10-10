@@ -233,6 +233,8 @@ export const S3VerdictStoreOptionsSchema = S.Struct({
   region: S.optionalKey(S.String),
   endpoint: S.optionalKey(S.String),
   forcePathStyle: S.optionalKey(S.Boolean),
+  connectionTimeoutMs: S.optionalKey(S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))),
+  requestTimeoutMs: S.optionalKey(S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))),
 })
 export type S3VerdictStoreOptions = typeof S3VerdictStoreOptionsSchema.Type
 

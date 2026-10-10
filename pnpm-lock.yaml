@@ -1355,6 +1355,9 @@ importers:
         specifier: 'catalog:'
         version: 3.1095.0
     devDependencies:
+      '@effect/platform-node':
+        specifier: 'catalog:'
+        version: 4.0.0(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.50.0

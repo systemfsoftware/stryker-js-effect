@@ -15,6 +15,8 @@ export const layer: (options: S3VerdictStoreOptions) => Layer.Layer<VerdictStore
 export interface S3VerdictStoreOptions {
     // (undocumented)
     readonly bucket: string;
+    // (undocumented)
+    readonly connectionTimeoutMs?: number | undefined;
     readonly endpoint?: string | undefined;
     // (undocumented)
     readonly forcePathStyle?: boolean | undefined;
@@ -22,6 +24,8 @@ export interface S3VerdictStoreOptions {
     readonly prefix: string;
     // (undocumented)
     readonly region?: string | undefined;
+    // (undocumented)
+    readonly requestTimeoutMs?: number | undefined;
 }
 
 // (No @packageDocumentation comment for this package)
