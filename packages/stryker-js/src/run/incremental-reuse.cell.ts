@@ -348,10 +348,10 @@ const lookupOf = (input: IncrementalReuseInput, current: CurrentVerdict): Effect
 const namesACheckerEntry = (lookup: StoreLookup): boolean => lookup.entries.some((entry) => entry.kind === 'checker')
 
 const verdictLookupOf = (mutant: Mutant.Mutant, current: CurrentVerdict, lookup: StoreLookup): VerdictLookup => ({
+  ...lookup,
   mutant,
   current,
   currentKeys: currentKeysOf(current),
-  ...lookup,
 })
 
 const withProgramDigest = (programDigest: string | undefined) => (lookup: VerdictLookup): VerdictLookup =>

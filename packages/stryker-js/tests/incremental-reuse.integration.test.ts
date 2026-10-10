@@ -51,7 +51,7 @@ const mutantsOf = (exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>):
   })
 
 const mutantIdsInOf = (observation: RunObservation, file: string): readonly string[] =>
-  observation.mutants.filter((mutant) => mutant.fileName === file).map((mutant) => mutant.id)
+  observation.mutants.filter((mutant) => mutant.fileName.endsWith(`/${file}`)).map((mutant) => mutant.id)
 
 const staticIdsOf = (report: ReusableReport): ReadonlySet<string> =>
   new Set(
