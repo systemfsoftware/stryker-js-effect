@@ -30,6 +30,7 @@ export interface SandboxTarget {
 export interface ProjectFilesShape {
   readonly read: (file: ProjectFile) => Effect.Effect<string, PlatformError>
   readonly readAll: (files: Iterable<ProjectFile>) => Effect.Effect<readonly ContentPair[], PlatformError>
+  readonly readOriginal: (file: ProjectFile) => Effect.Effect<string, PlatformError>
   readonly readAllOriginal: (files: Iterable<ProjectFile>) => Effect.Effect<readonly ContentPair[], PlatformError>
   readonly writeAllInPlace: (
     files: Iterable<readonly [string, ProjectFile]>,
@@ -56,6 +57,11 @@ export class ProjectFiles extends Context.Service<ProjectFiles, ProjectFilesShap
       const currentContent = (file: ProjectFile) =>
         Option.orElse(Option.fromUndefinedOr(file.content), () => Option.fromUndefinedOr(file.originalContent))
       const readFromDisk = (file: ProjectFile) => fs.readFileString(file.name)
+      const readOriginal = (file: ProjectFile) =>
+        Option.match(Option.fromUndefinedOr(file.originalContent), {
+          onSome: (content) => Effect.succeed(content),
+          onNone: () => readFromDisk(file),
+        })
       const read = Effect.fn(SpanTaxonomy.Spans.projectFilesRead.name)(function*(file: ProjectFile) {
         const current = currentContent(file)
         return yield* Option.match(current, {
@@ -92,11 +98,12 @@ export class ProjectFiles extends Context.Service<ProjectFiles, ProjectFilesShap
               ),
             ),
           ),
+        readOriginal,
         readAllOriginal: (files) =>
           collect(
             Stream.fromIterable(files).pipe(
               Stream.mapEffect(
-                (file) => Effect.map(readFromDisk(file), (content): ContentPair => [file, content]),
+                (file) => Effect.map(readOriginal(file), (content): ContentPair => [file, content]),
                 { concurrency: CONCURRENCY },
               ),
             ),

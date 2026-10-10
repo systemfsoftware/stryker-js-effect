@@ -59,6 +59,7 @@ import { buildVerdictEnvelope } from './reporting/verdict-envelope.js'
 import { RunEvents } from './run-events.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { PhaseClock, type PhaseClockShape } from './run/phase-clock.service.js'
+import { statusReasonTextOf, timeoutDetailOf } from './status-reason.js'
 import { REPRODUCERS_FILE } from './stryker-outputs.js'
 import { StrykerPackage } from './stryker-package.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
@@ -244,41 +245,65 @@ const reportMutantStatus = (
 const reportCheckFailure = (
   mutant: Mutant.MutantTestCoverage,
   result: Checker.FailedCheckResult,
-) => reportMutantStatus(mutant, 'CompileError', result.reason)
+) =>
+  reportMutant(mutant, 'CompileError', {
+    statusReason: statusReasonTextOf({
+      status: 'CompileError',
+      statusReason: { code: 'compile-error', detail: result.reason },
+    }),
+  })
 
 const reportIgnored = (
   mutant: Mutant.MutantTestCoverage,
   result: Checker.IgnoredCheckResult,
 ) => reportMutantStatus(mutant, 'Ignored', result.reason)
 
-const reportNoCoverage = (mutant: Mutant.MutantTestCoverage) => reportMutantStatus(mutant, 'NoCoverage')
+const reportNoCoverage = (mutant: Mutant.MutantTestCoverage) =>
+  reportMutant(mutant, 'NoCoverage', {
+    statusReason: statusReasonTextOf({
+      status: 'NoCoverage',
+      statusReason: { code: 'not-covered', detail: 'no test executes it' },
+    }),
+  })
 
-const reasonedOutcomeOf = (reason: string | undefined) =>
-  Option.match(Option.fromNullishOr(reason), {
-    onNone: () => ({}),
-    onSome: (present) => ({ statusReason: present }),
+const survivedReasonOf = (mutant: Mutant.MutantTestCoverage, nrOfTests: number): string =>
+  statusReasonTextOf({
+    status: 'Survived',
+    statusReason: mutant.coveredBy === undefined
+      ? { code: 'coverage-not-measured', detail: `${nrOfTests} tests ran, none failed` }
+      : { code: 'covered-not-killed', detail: `${nrOfTests} covering tests ran, none failed` },
   })
 
 const mapRunResult = (mutant: Mutant.MutantTestCoverage, result: TestRunner.MutantRunResult) =>
   Match.value(result).pipe(
-    Match.discriminator('status')(
-      'error',
-      (errored) => reportMutant(mutant, 'RuntimeError', { statusReason: errored.errorMessage }),
-    ),
+    Match.discriminator('status')('error', (errored) =>
+      reportMutant(mutant, 'RuntimeError', {
+        statusReason: statusReasonTextOf({
+          status: 'RuntimeError',
+          statusReason: { code: 'runtime-error', detail: errored.errorMessage },
+        }),
+      })),
     Match.discriminator('status')('killed', (killed) =>
       reportMutant(mutant, 'Killed', {
         testsCompleted: killed.nrOfTests,
         killedBy: [...killed.killedBy],
-        statusReason: killed.failureMessage,
+        statusReason: statusReasonTextOf({
+          status: 'Killed',
+          statusReason: { code: 'killed', detail: killed.failureMessage },
+        }),
       })),
-    Match.discriminator('status')(
-      'timeout',
-      (timedOut) => reportMutant(mutant, 'Timeout', reasonedOutcomeOf(timedOut.reason)),
-    ),
-    Match.discriminator('status')(
-      'survived',
-      (survived) => reportMutant(mutant, 'Survived', { testsCompleted: survived.nrOfTests }),
-    ),
+    Match.discriminator('status')('timeout', (timedOut) =>
+      reportMutant(mutant, 'Timeout', {
+        statusReason: statusReasonTextOf({
+          status: 'Timeout',
+          statusReason: { code: 'timed-out', detail: timedOut.reason ?? '' },
+        }),
+      })),
+    Match.discriminator('status')('survived', (survived) =>
+      reportMutant(mutant, 'Survived', {
+        testsCompleted: survived.nrOfTests,
+        statusReason: survivedReasonOf(mutant, survived.nrOfTests),
+      })),
     Match.exhaustive,
   )
 
@@ -426,7 +451,7 @@ const presentField = <K extends string, V>(key: K, value: V | undefined): Partia
   })
 
 const timeoutKindIn = (reason: string | undefined): TimeoutKind | undefined =>
-  Match.value(reason).pipe(
+  Match.value(Option.fromUndefinedOr(reason).pipe(Option.map(timeoutDetailOf), Option.getOrUndefined)).pipe(
     Match.when(TestRunner.WallClockTimeoutReason.literal, (): TimeoutKind => 'wallClock'),
     Match.when(
       (candidate: string | undefined): boolean =>
@@ -1136,29 +1161,36 @@ if (import.meta.vitest !== void 0) {
 
   const holds = (conditions: readonly boolean[]) => conditions.every((condition) => condition)
 
+  const survivedPrefixOf = (coveredBy: ReadonlyArray<string> | undefined): string =>
+    Option.match(Option.fromUndefinedOr(coveredBy), {
+      onNone: () => 'coverage-not-measured: ',
+      onSome: () => 'covered-not-killed: ',
+    })
+
   const carriesClassOutcome = (result: TestRunner.MutantRunResult, mapped: Mutant.RunMutantResult) =>
     Match.value(result).pipe(
       Match.discriminator('status')('error', (errored) =>
         holds([
           mapped.status === 'RuntimeError',
-          mapped.statusReason === errored.errorMessage,
+          mapped.statusReason === `runtime-error: ${errored.errorMessage}`,
         ])),
       Match.discriminator('status')('killed', (killed) =>
         holds([
           mapped.status === 'Killed',
           mapped.testsCompleted === killed.nrOfTests,
-          mapped.statusReason === killed.failureMessage,
+          mapped.statusReason === `killed: ${killed.failureMessage}`,
           JSON.stringify(mapped.killedBy) === JSON.stringify(killed.killedBy),
         ])),
       Match.discriminator('status')('timeout', (timedOut) =>
         holds([
           mapped.status === 'Timeout',
-          mapped.statusReason === timedOut.reason,
+          mapped.statusReason === `timed-out: ${timedOut.reason ?? ''}`,
         ])),
       Match.discriminator('status')('survived', (survived) =>
         holds([
           mapped.status === 'Survived',
           mapped.testsCompleted === survived.nrOfTests,
+          (mapped.statusReason ?? '').startsWith(survivedPrefixOf(mapped.coveredBy)),
         ])),
       Match.exhaustive,
     )
@@ -1193,10 +1225,14 @@ if (import.meta.vitest !== void 0) {
     evidence: { readonly timeoutKind: TimeoutKind; readonly reproductions: number },
   ): TimeoutKind =>
     Match.value(result.statusReason).pipe(
-      Match.when('wall-clock-timeout', (): TimeoutKind => 'wallClock'),
       Match.when(
         (reason: string | undefined): boolean =>
-          reason !== undefined && /^Hit limit reached \(\d+\/\d+\)$/.test(reason),
+          reason !== undefined && /^(?:remembered: )?(?:timed-out: )?wall-clock-timeout$/.test(reason),
+        (): TimeoutKind => 'wallClock',
+      ),
+      Match.when(
+        (reason: string | undefined): boolean =>
+          reason !== undefined && /^(?:remembered: )?(?:timed-out: )?Hit limit reached \(\d+\/\d+\)$/.test(reason),
         (): TimeoutKind => 'hitLimit',
       ),
       Match.orElse((): TimeoutKind => evidence.timeoutKind),
@@ -1242,7 +1278,7 @@ if (import.meta.vitest !== void 0) {
    */
   const timeoutProbes = (mutant: Mutant.Mutant): readonly TimeoutProbe[] => [
     {
-      result: { ...mutant, status: 'Timeout', statusReason: WallClockTimeoutReason.literal },
+      result: { ...mutant, status: 'Timeout', statusReason: `timed-out: ${WallClockTimeoutReason.literal}` },
       evidence: { timeoutKind: 'wallClock', reproductions: 3 },
       expected: { timeoutKind: 'wallClock', reproductions: 1 },
     },
@@ -1252,12 +1288,16 @@ if (import.meta.vitest !== void 0) {
       expected: { timeoutKind: 'wallClock', reproductions: 0 },
     },
     {
-      result: { ...mutant, status: 'Timeout', statusReason: WallClockTimeoutReason.literal },
+      result: {
+        ...mutant,
+        status: 'Timeout',
+        statusReason: `remembered: timed-out: ${WallClockTimeoutReason.literal}`,
+      },
       evidence: undefined,
       expected: { timeoutKind: 'wallClock', reproductions: 0 },
     },
     {
-      result: { ...mutant, status: 'Timeout', statusReason: 'Hit limit reached (3/10)' },
+      result: { ...mutant, status: 'Timeout', statusReason: 'timed-out: Hit limit reached (3/10)' },
       evidence: { timeoutKind: 'wallClock', reproductions: 7 },
       expected: { timeoutKind: 'hitLimit', reproductions: 0 },
     },

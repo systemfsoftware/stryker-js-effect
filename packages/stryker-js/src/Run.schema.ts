@@ -1,4 +1,4 @@
-import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Mutant, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Match from 'effect/Match'
 import * as S from 'effect/Schema'
 
@@ -42,5 +42,17 @@ export class PrepareError extends S.TaggedError<PrepareError>()('PrepareError', 
 }) {
   override get message(): string {
     return this.reason
+  }
+}
+
+const MUTANT_FACTS_INVALID = 'mutant-facts-invalid' satisfies Mutant.RunFailureCodeValue
+
+export class MutantFactsInvalid extends S.TaggedError<MutantFactsInvalid>()('MutantFactsInvalid', {
+  code: S.Literal(MUTANT_FACTS_INVALID),
+  mutantId: S.String,
+  detail: S.String,
+}) {
+  override get message(): string {
+    return `${this.code}: mutant ${this.mutantId}: ${this.detail}`
   }
 }

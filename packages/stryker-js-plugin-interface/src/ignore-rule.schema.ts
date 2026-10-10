@@ -91,6 +91,7 @@ const RUN_FAILURE_CODES = [
   'new-survivors',
   'budget-exceeded',
   'mutation-runs-on-main-ci',
+  'mutant-facts-invalid',
 ] as const
 
 const RUN_FAILURE_DOCUMENTATION: SlashFreeCodeDocumentation<(typeof RUN_FAILURE_CODES)[number]> = {
@@ -110,6 +111,8 @@ const RUN_FAILURE_DOCUMENTATION: SlashFreeCodeDocumentation<(typeof RUN_FAILURE_
   'budget-exceeded':
     'The run took longer than the budget baseline allows; the detail gives the actual and allowed seconds. Speed the run up or update the baseline.',
   'mutation-runs-on-main-ci': 'A local mutation run was refused: mutation runs only on main CI. Read its CI report.',
+  'mutant-facts-invalid':
+    'A settled mutant reached the stream with facts its status does not admit, such as no status reason; the detail names the mutant and what is wrong. This is an engine defect: report it with the detail.',
 }
 
 const TOOL_REFUSAL_CODES = [
@@ -190,6 +193,16 @@ export type IgnoreStatusReason = typeof IgnoreStatusReason.Type
 
 export const ignoreStatusReasonText = (parts: IgnoreStatusReason): string => `${parts.code}${SEPARATOR}${parts.detail}`
 
+const REMEMBERED = ['remembered'] as const
+
+export const RememberedReason = S.String.check(reasonPatternOf(REMEMBERED)).pipe(
+  S.decodeTo(S.Struct({ code: S.Literals(REMEMBERED), detail: S.String }), reasonPartsOf(REMEMBERED).transformation),
+).annotate({
+  description:
+    "A reused verdict's reason, `remembered: <detail>`, where `detail` is the reason the run that judged the mutant gave.",
+})
+export type RememberedReason = typeof RememberedReason.Type
+
 type ReusedSettledStatus = Exclude<RememberedStatus, 'Ignored'>
 
 type CodesTiedToReuse<Status extends SettledStatus, L extends Codes> =
@@ -216,10 +229,10 @@ export const StatusReason = S.Union([
   settledVariantOf('Timeout', SETTLED_CODES_BY_STATUS.Timeout),
   settledVariantOf('RuntimeError', SETTLED_CODES_BY_STATUS.RuntimeError),
   settledVariantOf('CompileError', SETTLED_CODES_BY_STATUS.CompileError),
-]).pipe(S.toTaggedUnion('status')).annotate({
+]).annotate({
   description:
     'A mutant status with its reason, `<code>: <detail>` decoded to `{ code, detail }`. Each status admits only its own codes; a Pending mutant has no reason.',
-})
+}).pipe(S.toTaggedUnion('status'))
 export type StatusReason = typeof StatusReason.Type
 
 const acceptsIgnoreStatusReason = (value: string): boolean => S.is(IgnoreStatusReasonText)(value)

@@ -77,13 +77,27 @@ const mutantFieldsOf = (fixture: MutantFixture) => ({
 })
 
 const mutantLineOf = (fixture: MutantFixture): CliContract.RunMutantTested =>
-  CliContract.RunMutantTestedEvent.make({
-    ...mutantFieldsOf(fixture),
-    status: fixture.status,
-    statusReason: fixture.status === 'Ignored'
-      ? 'ignore-static: Static mutant (and "ignoreStatic" was enabled)'
-      : null,
-  })
+  fixture.status === 'Ignored'
+    ? CliContract.RunMutantTestedEvent.cases.Ignored.make({
+      ...mutantFieldsOf(fixture),
+      _tag: 'mutantTested',
+      status: 'Ignored',
+      statusReason: 'ignore-static: Static mutant (and "ignoreStatic" was enabled)',
+    })
+    : CliContract.RunMutantTestedEvent.cases.Survived.make({
+      ...mutantFieldsOf(fixture),
+      _tag: 'mutantTested',
+      status: 'Survived',
+      statusReason: 'covered-not-killed: 1 covering tests ran, none failed',
+      original: '-',
+      coveredBy: ['a.test.ts > adds'],
+      next: CliContract.nextActionOf({
+        id: mutantFieldsOf(fixture).id,
+        file: mutantFieldsOf(fixture).fileName,
+        location: MUTANT_LOCATION,
+        coveredBy: ['a.test.ts > adds'],
+      }, 'Survived'),
+    })
 
 const reportOf = (fixtures: ReadonlyArray<MutantFixture>): Report.MutationTestResult => ({
   schemaVersion: '1.0',

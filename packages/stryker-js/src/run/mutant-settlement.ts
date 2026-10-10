@@ -47,7 +47,7 @@ import {
   type SubsumptionRuling,
 } from '../readmit-subsumed.workflow.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
-import { mutantDetailEventsOf, requestedIdsOf } from '../Rerun/rerun-selection.js'
+import { requestedIdsOf, requestedResultsOf } from '../Rerun/rerun-selection.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { originalFileFor } from '../Sandbox.handle.js'
@@ -59,8 +59,10 @@ import {
   announceSettledMutant,
   type CheckpointWriter,
   makeCheckpointWriter,
+  mutantFactsIn,
   reportingInputOf,
   type RunContext,
+  sourceTextsOf,
 } from './mutant-run.js'
 import { draftMutationTestPlan, type HeldSubsumedPlan, type MutationTestPlan } from './mutation-test-plan.cell.js'
 import { inPlannedOrder, toReportedMutant } from './mutation-test-plan.js'
@@ -314,7 +316,10 @@ export interface Settlement<Passed extends Mutant.MutantRunPlan, E> {
 export interface PlanSettling {
   readonly context: RunContext
   readonly checkpoint: CheckpointWriter
-  readonly settleChecked: (reported: Mutant.RunMutantResult, checkMs: number) => Effect.Effect<Mutant.RunMutantResult>
+  readonly settleChecked: (
+    reported: Mutant.RunMutantResult,
+    checkMs: number,
+  ) => Effect.Effect<Mutant.RunMutantResult, StageError>
 }
 
 export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.MutantRunPlan, E>(
@@ -344,6 +349,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     plannedMutants: [...rememberedResults, ...reuse.mutants],
     rememberedMutantIds: rememberedResults.map((result) => result.id),
     pathService: yield* Path.Path,
+    originalSources: yield* Effect.mapError(sourceTextsOf(basis), asMutationTestError),
   }
   const settledResults = [
     ...rememberedResults,
@@ -363,6 +369,8 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
         yield* checkpoint.record(measured)
         return measured
       })
+    const runPlan = (plan: Passed, checkMs: number): Effect.Effect<Mutant.RunMutantResult, E | StageError> =>
+      settlement.runPlanOf({ context, checkpoint, settleChecked })(plan, checkMs)
     const runChecked = (checkedPlans: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash, PhaseClock>) =>
       runCheckedPlans(checkedPlans, {
         settleFailure: (mutantPlan, result, checkMs) =>
@@ -375,7 +383,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
             reporting.reportIgnored(toReportedMutant(mutantPlan.mutant), result),
             (reported) => settleChecked(reported, 0),
           ),
-        runPlan: settlement.runPlanOf({ context, checkpoint, settleChecked }),
+        runPlan,
         concurrency: capacity,
       }).pipe(
         Stream.runFold(
@@ -411,8 +419,17 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     results: [...settledResults, ...runResults],
   })
   yield* Effect.forEach(
-    mutantDetailEventsOf({ requested: requestedIdsOf(basis.options), results: allResults }),
-    (detail) => Queue.offer(progressQueue, detail),
+    requestedResultsOf({ requested: requestedIdsOf(basis.options), results: allResults }),
+    (result) =>
+      Effect.flatMap(mutantFactsIn(context, result), (facts) =>
+        Option.match(facts, {
+          onNone: () => Effect.void,
+          onSome: (mutant) =>
+            Queue.offer(
+              progressQueue,
+              RunEvent.MutantDetailReported.make({ mutant, reproducer: RunEvent.reproducerOf(mutant.id) }),
+            ),
+        })),
     { discard: true },
   )
   yield* Queue.offer(

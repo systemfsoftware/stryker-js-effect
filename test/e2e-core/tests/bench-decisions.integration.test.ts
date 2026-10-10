@@ -93,11 +93,13 @@ const verdictOf = (counts: Report.Metrics, phaseDurations: RunEvent.PhaseDuratio
     budget: { predictedSeconds: 0, actualSeconds: 1 },
   })
 
-const mutantOf = (testsExecuted: number | null): RunEvent.RunMutantTestedEvent =>
-  RunEvent.RunMutantTestedEvent.make({
+const mutantOf = (testsExecuted: number | null): RunEvent.RunMutantTested =>
+  RunEvent.RunMutantTestedEvent.cases.Killed.make({
+    _tag: 'mutantTested',
     id: MUTANT_ID,
     status: 'Killed',
-    statusReason: null,
+    statusReason: 'killed: expected 1 to be 2',
+    killedBy: [],
     fileName: MUTANT_FILE,
     location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
     mutatorName: MUTATOR_NAME,

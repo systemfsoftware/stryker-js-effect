@@ -2,7 +2,7 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -35,6 +35,22 @@ interface ReasonedMutant {
 
 const ignoredReasonsOf = (mutants: ReadonlyArray<ReasonedMutant>): readonly string[] =>
   mutants.filter((mutant) => mutant.status === 'Ignored').map((mutant) => mutant.statusReason ?? '').sort()
+
+const reasonCodeOf = (event: RunEvent.RunMutantTested): string =>
+  Option.match(
+    S.decodeOption(Mutant.StatusReason)({ status: event.status, statusReason: event.statusReason }),
+    { onNone: () => 'undecodable', onSome: (decoded) => decoded.statusReason.code },
+  )
+
+const reasonCodesOf = (events: ReadonlyArray<RunEvent.RunEvent>): readonly string[] =>
+  [
+    ...new Set(
+      events
+        .filter((event): event is RunEvent.RunMutantTested => RunEvent.RunEvent.guards.mutantTested(event))
+        .filter((event) => event.status !== 'Ignored')
+        .map(reasonCodeOf),
+    ),
+  ].sort()
 
 const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
@@ -595,6 +611,7 @@ Feature('Content-keyed reuse across incremental reports')
               statusesOf(s.fixture.second.mutants).join(','),
             everyMutantCarriesAClosureDigest: s.fixture.first.incrementalText.split('"closureDigest"').length - 1 ===
               planned,
+            secondReasonCodes: reasonCodesOf(s.fixture.second.events),
           }).toEqual({
             runSucceeded: true,
             plannedNonZero: true,
@@ -602,6 +619,7 @@ Feature('Content-keyed reuse across incremental reports')
             second: { reused: planned, ran: 0, refused: ZERO_REFUSALS },
             statusesStable: true,
             everyMutantCarriesAClosureDigest: true,
+            secondReasonCodes: ['remembered'],
           })
         }),
       ),

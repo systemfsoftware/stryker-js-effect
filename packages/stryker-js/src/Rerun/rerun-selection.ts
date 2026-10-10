@@ -1,4 +1,3 @@
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Option from 'effect/Option'
@@ -16,30 +15,14 @@ export const restrictedToRequestedIds = ({ mutants, requested }: {
     onSome: (ids) => mutants.filter((mutant) => ids.includes(mutant.id)),
   })
 
-const killedByOf = (result: Mutant.RunMutantResult): string | null =>
-  Option.fromUndefinedOr(result.killedBy).pipe(
-    Option.getOrElse(() => []),
-    Arr.head,
-    Option.getOrNull,
-  )
-
-const detailEventOf = (result: Mutant.RunMutantResult): RunEvent.MutantDetailReported =>
-  RunEvent.MutantDetailReported.make({
-    id: result.id,
-    status: result.status,
-    coveringTests: [...Option.getOrElse(Option.fromUndefinedOr(result.coveredBy), () => [])],
-    killedBy: killedByOf(result),
-    reproducer: `stryker run --mutant ${result.id}`,
-  })
-
-export const mutantDetailEventsOf = ({ requested, results }: {
+export const requestedResultsOf = ({ requested, results }: {
   readonly requested: Option.Option<ReadonlyArray<string>>
   readonly results: readonly Mutant.RunMutantResult[]
-}): ReadonlyArray<RunEvent.MutantDetailReported> =>
+}): readonly Mutant.RunMutantResult[] =>
   Option.match(requested, {
     onNone: () => [],
-    onSome: (ids) =>
-      Arr.getSomes(
-        Arr.map(ids, (id) => Option.map(Arr.findFirst(results, (candidate) => candidate.id === id), detailEventOf)),
-      ),
+    onSome: (ids) => {
+      const byId = new Map<string, Mutant.RunMutantResult>(Arr.reverse(results).map((result) => [result.id, result]))
+      return Arr.getSomes(Arr.map(ids, (id) => Option.fromUndefinedOr(byId.get(id))))
+    },
   })
