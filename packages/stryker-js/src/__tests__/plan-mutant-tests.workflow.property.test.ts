@@ -95,6 +95,12 @@ const coverageCommandArb = Arbitrary.all([
           id: mutantId,
           status: closed ? 'Ignored' : undefined,
           statusReason: undefined,
+          subsumption: Option.getOrUndefined(
+            Option.filter(
+              Option.fromUndefinedOr(baseMutant.subsumption),
+              (subsumption) => Mutant.subsumptionMatchesStatus(subsumption, closed ? 'Ignored' : undefined),
+            ),
+          ),
         }),
       ],
       timeOverheadMS: 1,
