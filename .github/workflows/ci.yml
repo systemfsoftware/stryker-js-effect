@@ -75,6 +75,16 @@ jobs:
           key: turbo-${{ runner.os }}-dist-${{ github.sha }}
           restore-keys: |
             turbo-${{ runner.os }}-dist-
+      - id: own-entry
+        name: Look up this commit's own Turbo cache entry
+        if: inputs.cache != 'cold'
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ github.sha }}
+          lookup-only: true
+      - name: The Turbo summary reader rejects a summary missing a field
+        run: .github/scripts/turbo-summary.test.sh
       - id: planted
         name: pnpm gate:repo fails on a change that adds two plans
         run: |
@@ -105,18 +115,26 @@ jobs:
           BASE_SHA: ${{ steps.base.outputs.sha }}
           BASE_KEY: ${{ steps.restore-base.outputs.cache-matched-key }}
           NEWEST_KEY: ${{ steps.restore-newest.outputs.cache-matched-key }}
-          OWN_KEY: turbo-${{ runner.os }}-dist-${{ github.sha }}
+          OWN_HIT: ${{ steps.own-entry.outputs.cache-hit }}
         run: |
           shopt -s nullglob
           runs=(.turbo/runs/*.json)
-          missed=0 failed=""
-          if (( ${#runs[@]} )); then
-            missed=$(jq -s '[.[].tasks[] | select(.command != "<NONEXISTENT>" and .cache.status != "HIT")] | length' "${runs[@]}")
-            failed=$(jq -rs '[.[].tasks[] | select((.execution.exitCode // 0) != 0) | .taskId] | unique | join(" ")' "${runs[@]}")
+          missed=0 failed="" missing=""
+          if [ "$GATE" = success ] || [ "$GATE" = failure ]; then
+            summary=$(.github/scripts/turbo-summary.sh "${runs[@]}") || true
+            while IFS='=' read -r field value; do
+              case "$field" in
+                missed) missed=$value ;;
+                failed) failed=$value ;;
+                missing) missing=$value ;;
+              esac
+            done <<< "$summary"
           fi
 
           if [ "$CANCELLED" = true ]; then
             reason=CANCELLED next="The run was cancelled before the Gate finished; re-run the job."
+          elif [ -n "$missing" ]; then
+            reason=GATE_VERDICT_UNPARSEABLE next="Turbo's run summary lacks ${missing}, so this job cannot tell cached, missed or failed tasks apart. Turbo's summary format changed: update .github/scripts/turbo-summary.sh and its test, or pin turbo back. Reproduce with: TURBO_RUN_SUMMARY=true pnpm gate:tasks && .github/scripts/turbo-summary.sh .turbo/runs/*.json"
           elif [ "$GATE" = success ] && [ "$PLANTED" = success ]; then
             reason=GATE_OK next=""
           elif [ -n "$failed" ]; then
@@ -140,16 +158,25 @@ jobs:
           fi
 
           save=false
-          if [ "$reason" = GATE_OK ] && [ "$missed" != 0 ] && [ "$BASE_KEY" != "$OWN_KEY" ] && [ "$NEWEST_KEY" != "$OWN_KEY" ]; then
-            save=true
+          if [ "$reason" != GATE_OK ]; then
+            saving="skipped ($reason)"
+          elif [ "$COLD" = true ]; then
+            saving="skipped (\`cache: cold\` dispatch)"
+          elif [ "$OWN_HIT" = true ]; then
+            saving="skipped (this commit's entry exists)"
+          elif [ "$missed" = 0 ]; then
+            saving="skipped (every task was cached)"
+          else
+            save=true saving="attempted ($missed tasks were not cached)"
           fi
 
           {
             echo "reason=$reason"
             echo "next=$next"
             echo "save=$save"
-            echo "details=- Turbo cache restored: $restored; saved: $save"
+            echo "details=- Turbo cache restored: $restored; save: $saving"
           } >> "$GITHUB_OUTPUT"
+          [ "$reason" != GATE_VERDICT_UNPARSEABLE ]
       - name: Drop restored cache entries this run did not use
         if: success() && steps.verdict.outputs.save == 'true'
         run: |
@@ -199,26 +226,37 @@ jobs:
           gh cache list --repo "$GITHUB_REPOSITORY" --key turbo- --sort created_at --order desc --limit 1000 \
             --json id,ref,sizeInBytes --jq '.[] | [.id, .ref, .sizeInBytes] | @tsv' > "$RUNNER_TEMP/caches.tsv"
           declare -A seen state
-          kept=0 kept_bytes=0 deleted=0 deleted_bytes=0
+          kept=0 kept_bytes=0 deleted=0 deleted_bytes=0 failed=0
           while IFS=$'\t' read -r id ref bytes; do
             case "$ref" in
               refs/heads/main) limit=3 ;;
               refs/pull/*/merge)
                 pr=${ref#refs/pull/} pr=${pr%/merge}
-                [ -n "${state[$pr]:-}" ] || state[$pr]=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq .state)
-                if [ "${state[$pr]}" = open ]; then limit=1; else limit=0; fi ;;
+                if [ -z "${state[$pr]:-}" ]; then
+                  state[$pr]=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq .state) || {
+                    state[$pr]=unknown
+                    echo "::warning title=SWEEP_PR_STATE_UNKNOWN::Could not read the state of PR #$pr; its Turbo entries are kept this run."
+                  }
+                fi
+                case "${state[$pr]}" in
+                  open) limit=1 ;;
+                  unknown) limit=$((1 << 30)) ;;
+                  *) limit=0 ;;
+                esac ;;
               *) limit=1 ;;
             esac
             n=$(( ${seen[$ref]:-0} + 1 ))
             seen[$ref]=$n
-            if (( n > limit )); then
-              gh cache delete --repo "$GITHUB_REPOSITORY" "$id"
+            if (( n <= limit )); then
+              kept=$(( kept + 1 )) kept_bytes=$(( kept_bytes + bytes ))
+            elif gh cache delete --repo "$GITHUB_REPOSITORY" "$id"; then
               deleted=$(( deleted + 1 )) deleted_bytes=$(( deleted_bytes + bytes ))
             else
-              kept=$(( kept + 1 )) kept_bytes=$(( kept_bytes + bytes ))
+              failed=$(( failed + 1 ))
+              echo "::warning title=SWEEP_DELETE_FAILED::Could not delete Turbo cache entry $id ($ref); the next sweep retries it."
             fi
           done < "$RUNNER_TEMP/caches.tsv"
-          echo "details=- Turbo entries kept: $kept ($(( kept_bytes / 1000000 )) MB); deleted: $deleted ($(( deleted_bytes / 1000000 )) MB)" >> "$GITHUB_OUTPUT"
+          echo "details=- Turbo entries kept: $kept ($(( kept_bytes / 1000000 )) MB); deleted: $deleted ($(( deleted_bytes / 1000000 )) MB); failed to delete: $failed" >> "$GITHUB_OUTPUT"
       - name: Job report
         if: always()
         uses: ./.github/actions/job-report
@@ -275,10 +313,9 @@ jobs:
         run: |
           echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
           pnpm lgtm:up
-      # `timeout` converts a hang into a STEP failure. A job-level timeout
-      # cancels the job, and cancelled jobs skip `if: always()` steps — which
-      # would suppress the telemetry artifact on exactly the hang scenario it
-      # exists for.
+      # `timeout` turns a hang into a failure of this step, so the lane reports its own exit status and
+      # the `if: always()` telemetry steps run inside the job's 30-minute budget. A cancelled job also
+      # runs `if: always()` steps, but only within GitHub's 5-minute cancellation window.
       - name: E2E lane
         run: >-
           timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e -- ${{ matrix.files }}
