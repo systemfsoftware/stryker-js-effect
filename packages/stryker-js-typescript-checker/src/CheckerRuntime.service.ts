@@ -4,9 +4,9 @@ import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   type CheckerCapabilities,
-  TYPE_QUERY_VERSIONS,
   TypeQuery,
   type TypeQueryShape,
+  TypeQueryVersion,
 } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -134,7 +134,7 @@ export class CheckerRuntime extends Context.Service<CheckerRuntime, CheckerRunti
         )
         return CheckerRuntime.of({
           checker,
-          capabilities: { typeQuery: TYPE_QUERY_VERSIONS },
+          capabilities: { typeQuery: TypeQueryVersion.literals },
           typeQuery,
         })
       }),

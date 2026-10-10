@@ -239,11 +239,13 @@ const refusals = Effect.gen(function*() {
   const unsupported = yield* Effect.flip(
     query({ ...requestOf(fixture, [bodyFile]), version: 1 }),
   )
+  const unknownVersion = yield* Effect.flip(query({ ...requestOf(fixture, [file]), version: 3 }))
   const outside = yield* Effect.orDie(
     query(requestOf(fixture, [{ ...file, fileName: fixture.file('../per-mutant-check/dep.ts') }])),
   )
   return {
     unsupported: unsupported.reason,
+    unknownVersion: `${unknownVersion.reason}: ${unknownVersion.nextAction}`,
     outside: outside.files.flatMap((outcome) => Object.values(outcomeText(outcome))),
   }
 })
@@ -362,14 +364,24 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
     )
 
     scenario(
-      'A version 1 request carrying a function-body site is refused, and a file outside the project is refused on its own',
+      'A version 1 request carrying a function-body site and a version 3 request are refused, and a file outside the project is refused on its own',
       Gherkin.Do.pipe(
-        When('a version 1 request with a function-body site and a request for a file of another project are made')(
+        When(
+          'a version 1 request with a function-body site, a version 3 request, and a request for another project file are made',
+        )(
           'seen',
           () => refusals,
         ),
-        Then('the first is refused unsupported-version and the second file not-in-project')((s, expect) =>
-          expect(s.seen).toEqual({ unsupported: 'unsupported-version', outside: ['FileRefused not-in-project'] })
+        Then('both are refused unsupported-version naming versions 1 or 2, and the outside file not-in-project')((
+          s,
+          expect,
+        ) =>
+          expect(s.seen).toEqual({
+            unsupported: 'unsupported-version',
+            unknownVersion:
+              'unsupported-version: Send a TypeQueryRequest with version 1 or 2; this server received version 3.',
+            outside: ['FileRefused not-in-project'],
+          })
         ),
       ),
     )
