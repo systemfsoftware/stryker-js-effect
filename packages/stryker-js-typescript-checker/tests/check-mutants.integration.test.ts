@@ -30,6 +30,7 @@ interface Observation {
   readonly statuses: Readonly<Record<string, string>>
   readonly brokenBlamesTheImporter: boolean
   readonly brokenReason: string
+  readonly brokenLine: string
 }
 
 type WireInput = S.Codec.Encoded<typeof Checker.CheckerMutantWire>
@@ -46,25 +47,35 @@ interface Case {
 const statusOf = (results: HashMap.HashMap<string, Checker.CheckResult>, id: string): string =>
   Option.match(HashMap.get(results, id), { onNone: () => 'missing', onSome: (result) => result.status })
 
+const brokenReasonOf = (
+  testCase: Case,
+  results: HashMap.HashMap<string, Checker.CheckResult>,
+): string =>
+  Option.match(HashMap.get(results, testCase.brokenId), {
+    onNone: () => '',
+    onSome: (result) => (result.status === 'compileError' ? result.reason : ''),
+  })
+
+const reportingLineOf = (reason: string): string => {
+  const positioned = /\((\d+),\d+\): /u.exec(reason)
+  return positioned === null ? '' : positioned[1] ?? ''
+}
+
 const observedOf = (
   testCase: Case,
   batches: ReadonlyArray<ReadonlyArray<string>>,
   results: HashMap.HashMap<string, Checker.CheckResult>,
-): Observation => ({
-  batches,
-  statuses: Object.fromEntries(testCase.observedIds.map((id) => [id, statusOf(results, id)])),
-  brokenBlamesTheImporter: Option.match(HashMap.get(results, testCase.brokenId), {
-    onNone: () => false,
-    onSome: (result) =>
-      result.status === 'compileError' &&
-      result.reason.includes(testCase.importerFile) &&
-      !result.reason.includes(testCase.mutatedFile),
-  }),
-  brokenReason: Option.match(HashMap.get(results, testCase.brokenId), {
-    onNone: () => '',
-    onSome: (result) => (result.status === 'compileError' ? result.reason : ''),
-  }),
-})
+): Observation => {
+  const brokenReason = brokenReasonOf(testCase, results)
+  return {
+    batches,
+    statuses: Object.fromEntries(testCase.observedIds.map((id) => [id, statusOf(results, id)])),
+    brokenBlamesTheImporter: brokenReason.includes(testCase.importerFile) &&
+      !brokenReason.includes(testCase.mutatedFile),
+    brokenReason,
+    brokenLine: reportingLineOf(brokenReason),
+  }
+}
 
 const checkFixture = (
   testCase: Case,
@@ -184,6 +195,33 @@ const statementCase: Case = {
       mutatorName: 'BlockStatement',
       replacement: '{}',
       location: { start: { line: 3, column: 33 }, end: { line: 5, column: 2 } },
+    },
+  ],
+}
+
+const POSITION_BROKEN_ID = '0000000000000011'
+const POSITION_SHIFT_ID = '0000000000000012'
+
+const positionCase: Case = {
+  fixture: 'per-mutant-position',
+  brokenId: POSITION_BROKEN_ID,
+  observedIds: [POSITION_BROKEN_ID, POSITION_SHIFT_ID],
+  importerFile: 'dep.ts',
+  mutatedFile: 'dep.ts',
+  wires: (join) => [
+    {
+      id: POSITION_BROKEN_ID,
+      fileName: join('dep.ts'),
+      mutatorName: 'StringLiteral',
+      replacement: '"nope"',
+      location: { start: { line: 20, column: 31 }, end: { line: 20, column: 32 } },
+    },
+    {
+      id: POSITION_SHIFT_ID,
+      fileName: join('dep.ts'),
+      mutatorName: 'BlockStatement',
+      replacement: '{}',
+      location: { start: { line: 1, column: 38 }, end: { line: 6, column: 2 } },
     },
   ],
 }
@@ -329,6 +367,26 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
           expect({ batches: s.seen.batches, statuses: s.seen.statuses }).toEqual({
             batches: [[STATEMENT_ID]],
             statuses: { [STATEMENT_ID]: 'passed' },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'An earlier mutant of one call reports the line its own text put it on',
+      Gherkin.Do.pipe(
+        When(
+          'a mutant erroring on line 20 and a later mutant that empties the multi-line block above it are handed to the checker runtime in that order',
+        )('seen', () => checkFixture(positionCase)),
+        Then('the earlier mutant names line 20 and the later one passes')((s, expect) =>
+          expect({
+            batches: s.seen.batches,
+            statuses: s.seen.statuses,
+            brokenLine: s.seen.brokenLine,
+          }).toEqual({
+            batches: [[POSITION_BROKEN_ID, POSITION_SHIFT_ID]],
+            statuses: { [POSITION_BROKEN_ID]: 'compileError', [POSITION_SHIFT_ID]: 'passed' },
+            brokenLine: '20',
           })
         ),
       ),

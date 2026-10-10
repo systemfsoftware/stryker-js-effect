@@ -918,7 +918,7 @@ const refreshSnapshot = (rt: TSCompilerRuntime, changedFiles: ReadonlyArray<stri
       }),
   )
 
-const annotateDiagnosticSample = (diagnostics: readonly Diagnostic[]): Effect.Effect<void> =>
+const annotateDiagnosticSample = (diagnostics: readonly DiagnosticDecoded[]): Effect.Effect<void> =>
   Boolean.match(diagnostics.length === 0, {
     onTrue: () => Effect.void,
     onFalse: () =>
@@ -926,7 +926,7 @@ const annotateDiagnosticSample = (diagnostics: readonly Diagnostic[]): Effect.Ef
         'typescript.diagnostics.sample': Arr
           .map(
             Arr.take(diagnostics, 10),
-            (diagnostic) => diagnostic.fileName + ':' + diagnostic.code + ': ' + diagnostic.text,
+            (diagnostic) => String(diagnostic.fileName) + ':' + diagnostic.code + ': ' + diagnostic.text,
           )
           .join('; '),
       }),
@@ -1365,7 +1365,7 @@ interface OwnedSourceFile {
 
 export interface MutantCheck {
   readonly mutantId: Checker.CheckerMutantWire['id']
-  readonly diagnostics: ReadonlyArray<Diagnostic>
+  readonly diagnostics: ReadonlyArray<DiagnosticDecoded>
   readonly tce?: TceClassification
 }
 
@@ -1432,44 +1432,31 @@ const affectedFileNamesOf = (
   return HashSet.fromIterable(Arr.map(affected, (affectedFile) => affectedFile.fileName))
 }
 
-const importerErrorsOfMutant = (
-  state: CompilerState,
-  projects: ReadonlyArray<Project>,
-  mutant: Checker.CheckerMutantWire,
-  fileName: string,
-): Effect.Effect<MutantCheck> =>
-  Effect.map(
-    importerErrorsOf(projects, affectedFileNamesOf(state, [fileName])),
-    (diagnostics): MutantCheck => ({ mutantId: mutant.id, diagnostics }),
-  )
-
 const beyondOwnErrorsOf = (
   state: CompilerState,
   projects: ReadonlyArray<Project>,
-  mutant: Checker.CheckerMutantWire,
   owned: OwnedSourceFile,
   fileName: string,
-): Effect.Effect<MutantCheck> =>
+): Effect.Effect<ReadonlyArray<Diagnostic>> =>
   Boolean.match(declaresGlobalScope(owned.sourceFile), {
-    onTrue: () =>
-      Effect.map(wholeProgramErrorsOf(projects), (diagnostics): MutantCheck => ({ mutantId: mutant.id, diagnostics })),
-    onFalse: () => importerErrorsOfMutant(state, projects, mutant, fileName),
+    onTrue: () => wholeProgramErrorsOf(projects),
+    onFalse: () => importerErrorsOf(projects, affectedFileNamesOf(state, [fileName])),
   })
 
 const checkedIn = (
   state: CompilerState,
   projects: ReadonlyArray<Project>,
-  mutant: Checker.CheckerMutantWire,
   owned: OwnedSourceFile,
   fileName: string,
-): Effect.Effect<MutantCheck> =>
+): Effect.Effect<ReadonlyArray<Diagnostic>> =>
   Effect.flatMap(ownErrorsOf(owned, fileName), (own) =>
     Boolean.match(own.length > 0, {
-      onTrue: () => Effect.succeed<MutantCheck>({ mutantId: mutant.id, diagnostics: own }),
-      onFalse: () => beyondOwnErrorsOf(state, projects, mutant, owned, fileName),
+      onTrue: () => Effect.succeed<ReadonlyArray<Diagnostic>>(own),
+      onFalse: () => beyondOwnErrorsOf(state, projects, owned, fileName),
     }))
 
 const checkOne = (
+  self: TSCompiler,
   rt: TSCompilerRuntime,
   state: CompilerState,
   mutant: Checker.CheckerMutantWire,
@@ -1490,10 +1477,12 @@ const checkOne = (
     })
     const projects = yield* projectsOf(rt)
     const owned = yield* projectOfFile(projects, fileName)
-    return yield* Option.match(owned, {
-      onNone: () => Effect.succeed<MutantCheck>({ mutantId: mutant.id, diagnostics: [] }),
-      onSome: (found) => checkedIn(state, projects, mutant, found, fileName),
+    const diagnostics = yield* Option.match(owned, {
+      onNone: (): Effect.Effect<ReadonlyArray<Diagnostic>> => Effect.succeed([]),
+      onSome: (found) => checkedIn(state, projects, found, fileName),
     })
+    const rendered = yield* describeDiagnostics(self, diagnostics)
+    return { mutantId: mutant.id, diagnostics: rendered }
   })
 
 interface CheckAccumulator {
@@ -1659,7 +1648,7 @@ export const check: {
       (): CheckAccumulator => ({ previous: Option.none(), results: [] }),
       (previous, mutant) =>
         Effect.map(
-          checkOne(rt, state, mutant, Option.toArray(previous.previous)),
+          checkOne(self, rt, state, mutant, Option.toArray(previous.previous)),
           (result): CheckAccumulator => ({ previous: Option.some(mutant), results: [...previous.results, result] }),
         ),
     )

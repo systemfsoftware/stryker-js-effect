@@ -1,3 +1,4 @@
+import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
 import * as Equal from 'effect/Equal'
@@ -5,9 +6,10 @@ import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import { checkMutants, type CheckOutcome } from '../check-mutants.workflow.js'
-import { CheckMutantsInput, type DiagnosticDecoded, MutantVerdict } from '../CheckMutants.schema.js'
+import { CheckMutantsInput, type DiagnosticDecoded, DiagnosticLine, MutantVerdict } from '../CheckMutants.schema.js'
 
 type Status = 'passed' | 'compileError' | 'ignored'
 
@@ -59,6 +61,28 @@ const observedOutcomes = (outcomes: ReadonlyArray<CheckOutcome>): ReadonlyArray<
 const decidedIds = (outcomes: ReadonlyArray<CheckOutcome>): ReadonlyArray<string> =>
   Arr.map(outcomes, (outcome) => outcome.id)
 
+const DiagnosticLines = S.NonEmptyArray(DiagnosticLine)
+
+const wireOf = (wire: Checker.CheckerMutantWire, diagnostics: ReadonlyArray<DiagnosticLine>): CheckMutantsInput =>
+  CheckMutantsInput.make({
+    mutants: [wire],
+    verdicts: [MutantVerdict.make({ id: wire.id, diagnostics: [...diagnostics] })],
+  })
+
+const failedReasonOf = (wire: Checker.CheckerMutantWire, diagnostics: ReadonlyArray<DiagnosticLine>): string =>
+  Result.match(checkMutants(wireOf(wire, diagnostics)), {
+    onFailure: () => '',
+    onSuccess: (outcomes) =>
+      Option.getOrElse(
+        Option.map(Arr.head(outcomes), (outcome) =>
+          Match.value(outcome).pipe(
+            Match.tag('MutantFailed', (failed): string => failed.reason),
+            Match.orElse((): string => ''),
+          )),
+        () => '',
+      ),
+  })
+
 describe('checkMutants', (it) => {
   it.prop(
     '∀i_Outcomes_≡OnePerMutantInOrder',
@@ -78,5 +102,12 @@ describe('checkMutants', (it) => {
         onFailure: () => false,
         onSuccess: (outcomes) => Equal.equals(observedOutcomes(outcomes), expectedOutcomes(input)),
       }),
+  )
+
+  it.prop(
+    '∀diagnostics_FailedReason_≡RenderedLinesJoinedByNewline',
+    { of: [Checker.CheckerMutantWire, DiagnosticLines], subject: failedReasonOf },
+    (subject, [wire, diagnostics]) =>
+      subject(wire, diagnostics) === Arr.map(diagnostics, (line) => line.rendered).join('\n'),
   )
 })
