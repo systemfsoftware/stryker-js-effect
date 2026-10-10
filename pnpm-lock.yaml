@@ -1587,6 +1587,9 @@ importers:
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1
+      '@systemfsoftware/tsdown-config':
+        specifier: workspace:^
+        version: link:../../packages/toolchain/tsdown-config
       '@systemfsoftware/vitest':
         specifier: 'catalog:'
         version: 2.0.0(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(vitest@5.0.1)

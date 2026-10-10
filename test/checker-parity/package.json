@@ -32,6 +32,7 @@
     "@systemfsoftware/effect-schema-law": "catalog:",
     "@systemfsoftware/oxlint-config-recommended": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
     "@systemfsoftware/vitest": "catalog:",
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
@@ -44,5 +45,22 @@
   },
   "engines": {
     "node": ">=24.13.1"
+  },
+  "exports": {
+    ".": {
+      "@systemfsoftware/source": "./src/main.ts",
+      "types": "./dist/main.d.mts",
+      "default": "./dist/main.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/main.d.mts",
+        "default": "./dist/main.mjs"
+      },
+      "./package.json": "./package.json"
+    }
   }
 }

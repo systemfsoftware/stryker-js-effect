@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import * as path from 'node:path'
 
 /** The `isolatedDeclarations` fixture, the project the shortcut gate measures on its own. */
-export const ISOLATED_DECLARATIONS_PROJECT = 'test/checker-parity/fixtures/isolated-declarations/tsconfig.json'
+export const ISOLATED_DECLARATIONS_PROJECT = 'test/checker-parity/__fixtures__/isolated-declarations/tsconfig.json'
 
 /** The plugin package whose presence makes an e2e fixture configuration a corpus project. */
 export const CHECKER_PLUGIN = '@systemfsoftware/stryker-js-typescript-checker'

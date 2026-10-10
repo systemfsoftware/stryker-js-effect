@@ -50,5 +50,6 @@ export default defineConfig({
 
   ignorePatterns: [
     ...(recommended.ignorePatterns ?? []),
+    '__fixtures__/**',
   ],
 })

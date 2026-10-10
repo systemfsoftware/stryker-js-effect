@@ -28,7 +28,7 @@ import {
 
 const PROJECT = 'packages/example/tsconfig.app.json'
 const OTHER_PROJECT = 'packages/other/tsconfig.app.json'
-const FIXTURE = 'test/checker-parity/fixtures/isolated-declarations/tsconfig.json'
+const FIXTURE = 'test/checker-parity/__fixtures__/isolated-declarations/tsconfig.json'
 const FILE = 'packages/example/src/a.ts'
 
 const GATES_OFF: Gates = { shortcutCount: false, speed: false }
