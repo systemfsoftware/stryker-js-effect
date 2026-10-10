@@ -6,5 +6,13 @@
     "@systemfsoftware/effect-cell-types": "catalog:",
     "effect": "catalog:",
     "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "@systemfsoftware/stryker-js-verdict-store-s3": "*"
+  },
+  "peerDependenciesMeta": {
+    "@systemfsoftware/stryker-js-verdict-store-s3": {
+      "optional": true
+    }
   }
 }

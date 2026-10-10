@@ -11,6 +11,7 @@ import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
 import {
+  type FixtureManifest,
   installClosure,
   InstallClosureCommand,
   InstallClosureFailure,
@@ -31,8 +32,11 @@ const RUNNER = '@systemfsoftware/stryker-js-vitest-runner'
 const RUNNER_ALIAS = '@systemfsoftware/stryker-js-vm-runner'
 const PLUGIN_INTERFACE = '@systemfsoftware/stryker-js-plugin-interface'
 const CHECKER = '@systemfsoftware/stryker-js-typescript-checker'
+const S3_STORE = '@systemfsoftware/stryker-js-verdict-store-s3'
 
-const WORKSPACE = [CLI, RUNNER, PLUGIN_INTERFACE, CHECKER]
+const WORKSPACE = [CLI, RUNNER, PLUGIN_INTERFACE, CHECKER, S3_STORE]
+
+const ON_REQUEST = [S3_STORE]
 
 const VERSION_ABSENT_FROM_THE_REGISTRY = '9999.0.0'
 
@@ -52,11 +56,31 @@ const CLOSURE: ReadonlyArray<PackedManifest> = [
 
 const memberOf = (manifest: PackedManifest): PackedMember => ({ tarballPath: `/packs/${manifest.name}.tgz`, manifest })
 
+const stagedOf = (fixture: string, manifest: FixtureManifest): StagedFixtureManifest => ({
+  fixture,
+  path: `${fixture}/package.json`,
+  manifest,
+})
+
+const REQUESTS_S3_STORE: FixtureManifest = {
+  peerDependencies: { [S3_STORE]: '*' },
+  peerDependenciesMeta: { [S3_STORE]: { optional: true } },
+}
+
+const commandOf = (members: ReadonlyArray<PackedMember>, fixtures: ReadonlyArray<StagedFixtureManifest>) =>
+  InstallClosureCommand.make({ members, fixtures, workspace: WORKSPACE, onRequest: ON_REQUEST })
+
 const refusalOf = (members: ReadonlyArray<PackedMember>, fixtures: ReadonlyArray<StagedFixtureManifest>) =>
   Effect.gen(function*() {
-    const planned = installClosure(InstallClosureCommand.make({ members, fixtures, workspace: WORKSPACE }))
+    const planned = installClosure(commandOf(members, fixtures))
     return Result.isFailure(planned) ? yield* S.encodeEffect(InstallClosureFailure)(planned.failure) : null
   })
+
+const plannedSpecsOf = (members: ReadonlyArray<PackedMember>, fixtures: ReadonlyArray<StagedFixtureManifest>) =>
+  Effect.map(
+    Effect.fromResult(installClosure(commandOf(members, fixtures))),
+    (install) => Object.fromEntries(install.fixtures.map((planned) => [planned.fixture, planned.specs])),
+  )
 
 interface CommandOutcome {
   readonly exitCode: number
@@ -118,35 +142,39 @@ interface InstallOutcome {
   readonly provenance: ReadonlyArray<LockProvenance>
 }
 
-const installOffline = (manifests: ReadonlyArray<PackedManifest>) =>
+const installOffline = (manifests: ReadonlyArray<PackedManifest>, fixtureManifest: FixtureManifest) =>
   Effect.scoped(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const root = yield* fs.makeTempDirectoryScoped({ prefix: 'install-closure-' })
     const members = yield* Effect.forEach(manifests, (manifest) => packMember(root, manifest))
     const install = yield* Effect.fromResult(
-      installClosure(InstallClosureCommand.make({ members, fixtures: [], workspace: WORKSPACE })),
+      installClosure(commandOf(members, [stagedOf('fixture', fixtureManifest)])),
     )
+    const specs = install.fixtures.flatMap((planned) => planned.specs)
     const fixture = path.join(root, 'fixture')
     yield* fs.makeDirectory(fixture)
-    const fixtureJson = yield* S.encodeEffect(NpmManifestJson)({ name: 'fixture', version: '0.0.0', private: true })
+    const fixtureJson = yield* S.encodeEffect(NpmManifestJson)({
+      name: 'fixture',
+      version: '0.0.0',
+      private: true,
+      ...fixtureManifest,
+    })
     yield* fs.writeFileString(path.join(fixture, 'package.json'), fixtureJson)
-    const outcome = yield* runCommand(
-      [
-        'npm',
-        'install',
-        '--package-lock-only',
-        '--offline',
-        '--ignore-scripts',
-        '--no-audit',
-        '--no-fund',
-        `--cache=${path.join(root, 'npm-cache')}`,
-        `--userconfig=${path.join(root, 'npmrc')}`,
-        '--registry=http://127.0.0.1:9/',
-        ...install.specs,
-      ],
-      fixture,
-    )
+    const offline = [
+      'npm',
+      'install',
+      '--package-lock-only',
+      '--offline',
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+      `--cache=${path.join(root, 'npm-cache')}`,
+      `--userconfig=${path.join(root, 'npmrc')}`,
+      '--registry=http://127.0.0.1:9/',
+    ] as const
+    const registryStep = yield* runCommand(offline, fixture)
+    const outcome = registryStep.exitCode === 0 ? yield* runCommand([...offline, ...specs], fixture) : registryStep
     const lock = yield* fs.readFileString(path.join(fixture, 'package-lock.json')).pipe(
       Effect.flatMap(S.decodeEffect(NpmLockfileJson)),
       Effect.map(provenanceOf),
@@ -177,7 +205,7 @@ Feature('Installing the packed workspace closure')
           'closure',
           () => Effect.succeed(CLOSURE),
         ),
-        When('npm installs the planned closure')('installed', (s) => installOffline(s.closure)),
+        When('npm installs the planned closure')('installed', (s) => installOffline(s.closure, {})),
         Then('every workspace package in the lockfile, the aliased runner included, resolves from a packed tarball')(
           (s, expect) =>
             expect({
@@ -244,10 +272,7 @@ Feature('Installing the packed workspace closure')
           'fixtures',
           () =>
             Effect.succeed<ReadonlyArray<StagedFixtureManifest>>([
-              {
-                path: 'calc-fixture/package.json',
-                manifest: { devDependencies: { [CLI]: `^${VERSION_ABSENT_FROM_THE_REGISTRY}` } },
-              },
+              stagedOf('calc-fixture', { devDependencies: { [CLI]: `^${VERSION_ABSENT_FROM_THE_REGISTRY}` } }),
             ]),
         ),
         When('the closure install is planned')('refused', (s) => refusalOf(CLOSURE.map(memberOf), s.fixtures)),
@@ -279,6 +304,75 @@ Feature('Installing the packed workspace closure')
         When('the closure install is planned')('refused', (s) => refusalOf(s.members, [])),
         Then('the plan is not refused, because npm never fetches an absent optional peer')((s, expect) =>
           expect(s.refused).toBeNull()
+        ),
+      ),
+    )
+
+    scenario(
+      'A fixture that declares an on-request member an optional peer installs it from its packed tarball',
+      Gherkin.Do.pipe(
+        Given('a closure carrying the on-request S3 store and a fixture that declares it an optional peer')(
+          'closure',
+          () => Effect.succeed([...CLOSURE, manifestOf(S3_STORE, {})]),
+        ),
+        When('npm installs the fixture and then its planned closure')(
+          'installed',
+          (s) => installOffline(s.closure, REQUESTS_S3_STORE),
+        ),
+        Then('the registry step skips the optional peer and the closure step installs it from the tarball')(
+          (s, expect) =>
+            expect({
+              exitCode: s.installed.exitCode,
+              stderr: s.installed.exitCode === 0 ? '' : s.installed.stderr,
+              registryResolved: registryResolvedWorkspacePackages(s.installed),
+              installed: workspaceProvenance(s.installed),
+            }).toStrictEqual({
+              exitCode: 0,
+              stderr: '',
+              registryResolved: [],
+              installed: [CLI, PLUGIN_INTERFACE, RUNNER, RUNNER, S3_STORE].sort(),
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'An on-request member installs only into the fixtures that request it, unless a shared member depends on it',
+      Gherkin.Do.pipe(
+        Given('a requesting fixture and a plain fixture')(
+          'fixtures',
+          () => Effect.succeed([stagedOf('requesting', REQUESTS_S3_STORE), stagedOf('plain', {})]),
+        ),
+        When('the closure install is planned with and without a shared member depending on the S3 store')(
+          'planned',
+          (s) =>
+            Effect.all({
+              requestedOnly: plannedSpecsOf([...CLOSURE, manifestOf(S3_STORE, {})].map(memberOf), s.fixtures),
+              sharedDependency: plannedSpecsOf(
+                [
+                  ...CLOSURE.filter((manifest) => manifest.name !== PLUGIN_INTERFACE),
+                  manifestOf(PLUGIN_INTERFACE, { [S3_STORE]: `^${VERSION_ABSENT_FROM_THE_REGISTRY}` }),
+                  manifestOf(S3_STORE, {}),
+                ].map(memberOf),
+                s.fixtures,
+              ),
+            }),
+        ),
+        Then('the S3 tarball reaches the requesting fixture alone, and every fixture once a shared member needs it')(
+          (s, expect) =>
+            expect({
+              requestedOnly: {
+                requesting: s.planned.requestedOnly['requesting']?.includes(`/packs/${S3_STORE}.tgz`),
+                plain: s.planned.requestedOnly['plain']?.includes(`/packs/${S3_STORE}.tgz`),
+              },
+              sharedDependency: {
+                requesting: s.planned.sharedDependency['requesting']?.includes(`/packs/${S3_STORE}.tgz`),
+                plain: s.planned.sharedDependency['plain']?.includes(`/packs/${S3_STORE}.tgz`),
+              },
+            }).toStrictEqual({
+              requestedOnly: { requesting: true, plain: false },
+              sharedDependency: { requesting: true, plain: true },
+            }),
         ),
       ),
     )
