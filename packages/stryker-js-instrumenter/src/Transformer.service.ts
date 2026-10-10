@@ -7,12 +7,15 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import {
   type AridCallee,
   aridCode,
   AridCodeCommand,
   type AridCodeDecision,
+  AridEffectModule,
   type AridFrame,
+  AridGlobalObject,
 } from './arid-code.workflow.js'
 import {
   type ArrowFunctionExpression,
@@ -75,6 +78,7 @@ import { mutantIdOf, type MutantTuple, mutantTupleKey } from './MutantIdentity.j
 import {
   applyMutant,
   createMutant,
+  isStringLiteral,
   type Mutant,
   type MutatorContext,
   type MutatorEntry,
@@ -886,14 +890,6 @@ function isNamedCallee(node: Node): node is NamedCallee {
   return isMemberOfIdentifierParts(node) && readKey<boolean>(node, 'computed') === false
 }
 
-const ARID_EFFECT_MODULES: readonly string[] = ['Effect', 'Logger', 'Metric', 'Schedule', 'Duration', 'Config']
-
-const ARID_GLOBAL_OBJECTS: readonly string[] = ['console', 'Date']
-
-const isStringLiteralNode = (node: Node): boolean => hasStringValue(node) && nodeType(node) === 'Literal'
-
-const hasStringValue = (node: Node): boolean => Predicate.hasProperty(node, 'value') && typeof node.value === 'string'
-
 const importSpecifierNames = (declaration: Node): readonly string[] =>
   (readKey<readonly Node[]>(declaration, 'specifiers') ?? []).flatMap((specifier) =>
     Option.toArray(
@@ -912,18 +908,20 @@ const importedLocalNames = (ancestors: readonly Node[]): readonly string[] =>
     .filter((ancestor) => nodeType(ancestor) === 'Program')
     .flatMap((program) => programImportDeclarations(program).flatMap(importSpecifierNames))
 
-const isUnshadowedGlobalName = (name: string, context: MutatorContext): boolean =>
-  [
-    ARID_GLOBAL_OBJECTS.includes(name),
-    isShadowed(name, context) === false,
-    importedLocalNames(context.ancestors).includes(name) === false,
-  ].every(Boolean)
+const isShadowedOrImportedLocal = (name: string, context: MutatorContext): boolean =>
+  isShadowed(name, context) || importedLocalNames(context.ancestors).includes(name)
+
+const unshadowedGlobalOf = (name: string, context: MutatorContext): Option.Option<AridGlobalObject> =>
+  Option.filter(
+    Option.filter(Option.some(name), S.is(AridGlobalObject)),
+    (global) => isShadowedOrImportedLocal(global, context) === false,
+  )
 
 const aridGlobalCalleeOf = (callee: Expression, context: MutatorContext): Option.Option<AridCallee> =>
   Match.value(callee).pipe(
     Match.when(isNamedCallee, (named) =>
       Option.map(
-        Option.filter(Option.some(named.object.name), (name) => isUnshadowedGlobalName(name, context)),
+        unshadowedGlobalOf(named.object.name, context),
         (name): AridCallee => ({ _tag: 'Global', name, member: named.property.name }),
       )),
     Match.orElse((): Option.Option<AridCallee> => Option.none()),
@@ -937,7 +935,7 @@ const aridCalleeOf = (
   const context = toMutatorContext([call, ...ancestorsOfFrame(callFrame)], policy)
   return Option.orElse(
     Option.map(
-      resolveImportedExport(call.callee, context, ARID_EFFECT_MODULES),
+      resolveImportedExport(call.callee, context, AridEffectModule.literals),
       (resolved): AridCallee => ({ _tag: 'EffectExport', module: resolved.module, exportName: resolved.exportName }),
     ),
     () => aridGlobalCalleeOf(call.callee, context),
@@ -945,7 +943,14 @@ const aridCalleeOf = (
 }
 
 const firstArgumentIsString = (call: CallExpression): boolean =>
-  Option.exists(Option.fromNullishOr(call.arguments[0]), isStringLiteralNode)
+  Option.exists(Option.fromNullishOr(call.arguments[0]), isStringLiteral)
+
+const aridCalleeWhen = (
+  childIsArgument: boolean,
+  ancestor: CallExpression,
+  ancestorFrame: NodeFrame,
+  policy: Options.MutantSetPolicyType,
+): Option.Option<AridCallee> => childIsArgument ? aridCalleeOf(ancestor, ancestorFrame, policy) : Option.none()
 
 const aridFrameFor = (
   current: NodeFrame,
@@ -953,13 +958,13 @@ const aridFrameFor = (
   policy: Options.MutantSetPolicyType,
 ): Option.Option<AridFrame> => {
   const ancestor = ancestorFrame.node
-  return ancestor.type === 'CallExpression'
-    ? Option.some<AridFrame>({
-      callee: aridCalleeOf(ancestor, ancestorFrame, policy),
-      childIsArgument: ancestor.arguments.some((argument) => argument === current.node),
-      firstArgumentIsString: firstArgumentIsString(ancestor),
-    })
-    : Option.none()
+  if (ancestor.type !== 'CallExpression') return Option.none()
+  const childIsArgument = ancestor.arguments.some((argument) => argument === current.node)
+  return Option.some<AridFrame>({
+    callee: aridCalleeWhen(childIsArgument, ancestor, ancestorFrame, policy),
+    childIsArgument,
+    firstArgumentIsString: firstArgumentIsString(ancestor),
+  })
 }
 
 const aridFramesOf = (frame: NodeFrame, policy: Options.MutantSetPolicyType): readonly AridFrame[] =>
@@ -1005,9 +1010,8 @@ const mutablesFor = (
   const replacements = context.mutatorEntries.flatMap(([mutatorName, mutate]) =>
     [...mutate(frame.node, mutatorContext)].map((replacement) => ({ mutatorName, replacement }))
   )
-  const ignorerAnswer = replacements.length === 0
-    ? undefined
-    : Option.getOrUndefined(ignorerAnswerFor(frame.node, ancestors, context.ignorers))
+  if (replacements.length === 0) return []
+  const ignorerAnswer = Option.getOrUndefined(ignorerAnswerFor(frame.node, ancestors, context.ignorers))
   const aridReason = Option.getOrUndefined(aridReasonOf(frame, context.mutantSetPolicy))
   const originalCode = printNode(frame.node)
   return replacements.map(({ mutatorName, replacement }): MutableCandidate => {

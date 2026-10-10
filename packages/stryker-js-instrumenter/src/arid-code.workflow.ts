@@ -16,14 +16,20 @@ const ARID_RULE_IDS = [
 export const AridRuleId = S.Literals(ARID_RULE_IDS)
 export type AridRuleId = typeof AridRuleId.Type
 
+export const AridEffectModule = S.Literals(['Effect', 'Logger', 'Metric', 'Schedule', 'Duration', 'Config'])
+export type AridEffectModule = typeof AridEffectModule.Type
+
+export const AridGlobalObject = S.Literals(['console', 'Date'])
+export type AridGlobalObject = typeof AridGlobalObject.Type
+
 export const AridEffectExportCallee = S.TaggedStruct('EffectExport', {
-  module: S.String,
+  module: AridEffectModule,
   exportName: S.String,
 })
 export type AridEffectExportCallee = typeof AridEffectExportCallee.Type
 
 export const AridGlobalCallee = S.TaggedStruct('Global', {
-  name: S.String,
+  name: AridGlobalObject,
   member: S.String,
 })
 export type AridGlobalCallee = typeof AridGlobalCallee.Type
@@ -51,32 +57,33 @@ const matchCallee = (
   },
 ): boolean =>
   Match.value(callee).pipe(
-    Match.tag('EffectExport', arms.effectExport),
-    Match.tag('Global', arms.global),
-    Match.exhaustive,
+    Match.tagsExhaustive({
+      EffectExport: arms.effectExport,
+      Global: arms.global,
+    }),
   )
 
-const readsModule = (callee: AridCallee, module: string): boolean =>
+const readsModule = (callee: AridCallee, module: AridEffectModule): boolean =>
   matchCallee(callee, { effectExport: (effectExport) => effectExport.module === module, global: () => false })
 
-const readsExport = (callee: AridCallee, module: string, exportName: string): boolean =>
+const readsExport = (callee: AridCallee, module: AridEffectModule, exportName: string): boolean =>
   matchCallee(callee, {
     effectExport: (effectExport) =>
       [effectExport.module === module, effectExport.exportName === exportName].every(Boolean),
     global: () => false,
   })
 
-const readsExportPrefixed = (callee: AridCallee, module: string, prefix: string): boolean =>
+const readsExportPrefixed = (callee: AridCallee, module: AridEffectModule, prefix: string): boolean =>
   matchCallee(callee, {
     effectExport: (effectExport) =>
       [effectExport.module === module, effectExport.exportName.startsWith(prefix)].every(Boolean),
     global: () => false,
   })
 
-const readsGlobal = (callee: AridCallee, name: string): boolean =>
+const readsGlobal = (callee: AridCallee, name: AridGlobalObject): boolean =>
   matchCallee(callee, { effectExport: () => false, global: (global) => global.name === name })
 
-const readsGlobalMember = (callee: AridCallee, name: string, member: string): boolean =>
+const readsGlobalMember = (callee: AridCallee, name: AridGlobalObject, member: string): boolean =>
   matchCallee(callee, {
     effectExport: () => false,
     global: (global) => [global.name === name, global.member === member].every(Boolean),
@@ -93,11 +100,7 @@ const ARID_RULES_IN_PRECEDENCE_ORDER: ReadonlyArray<AridRule> = [
   {
     ruleId: 'arid-telemetry',
     matches: (callee, firstArgumentIsString) =>
-      matchCallee(callee, {
-        effectExport: (effectExport) =>
-          [effectExport.module === 'Effect', effectExport.exportName === 'fn', firstArgumentIsString].every(Boolean),
-        global: () => false,
-      }),
+      [readsExport(callee, 'Effect', 'fn'), firstArgumentIsString].every(Boolean),
   },
   { ruleId: 'arid-time', matches: (callee) => readsExport(callee, 'Effect', 'sleep') },
   { ruleId: 'arid-time', matches: (callee) => readsModule(callee, 'Schedule') },
@@ -118,9 +121,10 @@ const ruleFor = (callee: AridCallee, firstArgumentIsString: boolean): Option.Opt
 
 const calleeDetail = (callee: AridCallee): string =>
   Match.value(callee).pipe(
-    Match.tag('EffectExport', (effectExport) => `${effectExport.module}.${effectExport.exportName}`),
-    Match.tag('Global', (global) => `${global.name}.${global.member}`),
-    Match.exhaustive,
+    Match.tagsExhaustive({
+      EffectExport: (effectExport) => `${effectExport.module}.${effectExport.exportName}`,
+      Global: (global) => `${global.name}.${global.member}`,
+    }),
   )
 
 export class AridCodeCommand extends S.TaggedClass<AridCodeCommand>()('AridCodeCommand', {

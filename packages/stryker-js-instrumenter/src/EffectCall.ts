@@ -141,13 +141,15 @@ interface BareFunctionBinding<M extends string = EffectModuleName> {
 }
 
 interface ImportTable<M extends string = EffectModuleName> {
+  readonly modules: readonly M[]
   readonly moduleBindings: ReadonlyMap<string, M>
   readonly namespaces: ReadonlyMap<string, NamespaceBinding<M>>
   readonly bareFunctions: ReadonlyMap<string, BareFunctionBinding<M>>
   readonly pipeBindings: ReadonlySet<string>
 }
 
-const emptyImportTable = <M extends string>(): ImportTable<M> => ({
+const emptyImportTable = <M extends string>(modules: readonly M[]): ImportTable<M> => ({
+  modules,
   moduleBindings: new Map<string, M>(),
   namespaces: new Map<string, NamespaceBinding<M>>(),
   bareFunctions: new Map<string, BareFunctionBinding<M>>(),
@@ -171,7 +173,7 @@ const buildImportTable = <M extends string>(program: Program, modules: readonly 
       Arr.filter(program.body, isImportDeclaration),
       (declaration: ImportDeclaration) => importContributions(declaration, modules),
     ),
-    emptyImportTable<M>(),
+    emptyImportTable<M>(modules),
     applyContribution,
   )
 
@@ -365,7 +367,7 @@ const resolveImportedExportDataFirst = <M extends string>(
     programOf(context),
     (program) =>
       Option.map(
-        resolveCallee(node, context, buildImportTable(program, modules), modules),
+        resolveCallee(node, context, buildImportTable(program, modules)),
         (callee): ResolvedEffectExport<M> => ({ module: callee.module, exportName: callee.exportName }),
       ),
   )
@@ -400,7 +402,7 @@ const resolveCall = (
   table: ImportTable,
 ): Option.Option<ResolvedEffectCall> =>
   Option.flatMap(
-    resolveCallee(call.callee, context, table, MODULE_NAMES),
+    resolveCallee(call.callee, context, table),
     (callee) =>
       Option.flatMap(spreadFreeArguments(call.arguments), (args) =>
         Option.flatMap(callForm(callee, args, call, context, table), (form) =>
@@ -419,7 +421,7 @@ const resolveReference = (
   table: ImportTable,
 ): Option.Option<ResolvedEffectCall> =>
   Option.flatMap(
-    resolveCallee(reference, context, table, MODULE_NAMES),
+    resolveCallee(reference, context, table),
     (callee) =>
       Option.flatMap(referenceForm(reference, context, table), (form) =>
         Option.some({
@@ -451,11 +453,10 @@ const resolveCallee = <M extends string>(
   callee: Expression,
   context: MutatorContext,
   table: ImportTable<M>,
-  modules: readonly M[],
 ): Option.Option<Callee<M>> =>
   Match.value(callee).pipe(
     Match.when(isIdentifier, (reference) => resolveBareCallee(reference, context, table)),
-    Match.when(isMemberExpression, (member) => resolveMemberCallee(member, context, table, modules)),
+    Match.when(isMemberExpression, (member) => resolveMemberCallee(member, context, table)),
     Match.orElse(() => Option.none()),
   )
 
@@ -478,12 +479,11 @@ const resolveMemberCallee = <M extends string>(
   member: MemberExpression,
   context: MutatorContext,
   table: ImportTable<M>,
-  modules: readonly M[],
 ): Option.Option<Callee<M>> =>
   Option.flatMap(
     staticMemberName(member),
     (exportName) =>
-      Option.map(resolveModuleObject(member.object, context, table, modules), (owner) => ({
+      Option.map(resolveModuleObject(member.object, context, table), (owner) => ({
         module: owner.module,
         exportName,
         owner: Option.some(owner),
@@ -494,11 +494,10 @@ const resolveModuleObject = <M extends string>(
   expression: Expression,
   context: MutatorContext,
   table: ImportTable<M>,
-  modules: readonly M[],
 ): Option.Option<ModuleObject<M>> =>
   Match.value(expression).pipe(
     Match.when(isIdentifier, (reference) => identifierModuleObject(reference, context, table)),
-    Match.when(isMemberExpression, (member) => namespacedModuleObject(member, context, table, modules)),
+    Match.when(isMemberExpression, (member) => namespacedModuleObject(member, context, table)),
     Match.orElse(() => Option.none()),
   )
 
@@ -519,31 +518,30 @@ const namespacedModuleObject = <M extends string>(
   member: MemberExpression,
   context: MutatorContext,
   table: ImportTable<M>,
-  modules: readonly M[],
 ): Option.Option<ModuleObject<M>> =>
   Option.flatMap(
     staticMemberName(member),
     (moduleName) =>
       Option.flatMap(namespaceOf(member.object, context, table), (binding) =>
-        moduleObjectOfNamespace(binding, moduleName, member, modules)),
+        moduleObjectOfNamespace(binding, moduleName, member, table)),
   )
 
 const moduleObjectOfNamespace = <M extends string>(
   binding: NamespaceBinding<M>,
   moduleName: string,
   member: MemberExpression,
-  modules: readonly M[],
+  table: ImportTable<M>,
 ): Option.Option<ModuleObject<M>> =>
   binding.kind === 'root'
-    ? rootModuleObject(moduleName, member, modules)
+    ? rootModuleObject(moduleName, member, table)
     : namedModuleObject(binding, moduleName, member)
 
 const rootModuleObject = <M extends string>(
   moduleName: string,
   member: MemberExpression,
-  modules: readonly M[],
+  table: ImportTable<M>,
 ): Option.Option<ModuleObject<M>> =>
-  Option.map(moduleNameFromName(moduleName, modules), (module) => ({ module, access: member }))
+  Option.map(moduleNameFromName(moduleName, table.modules), (module) => ({ module, access: member }))
 
 const namedModuleObject = <M extends string>(
   binding: NamespaceBinding<M>,
@@ -793,7 +791,7 @@ export const isShadowed: {
   (context: MutatorContext): (name: string) => boolean
 } = dual((args: IArguments): boolean => args.length >= 2, isShadowedDataFirst)
 
-const isVisible = (name: string, context: MutatorContext): boolean => isShadowed(name, context) === false
+const isVisible = (name: string, context: MutatorContext): boolean => isShadowedDataFirst(name, context) === false
 
 const unshadowedName = (name: string, context: MutatorContext): Option.Option<string> =>
   onlyWhen(isVisible(name, context), name)

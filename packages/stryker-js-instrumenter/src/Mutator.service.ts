@@ -599,7 +599,7 @@ function isTemplateLiteral(value: unknown): value is TemplateLiteral {
   return nodeType(value) === 'TemplateLiteral'
 }
 
-function isStringLiteral(value: unknown): value is StringLiteral {
+export function isStringLiteral(value: unknown): value is StringLiteral {
   return nodeType(value) === 'Literal' && hasStringValue(value)
 }
 
