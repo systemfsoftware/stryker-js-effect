@@ -1,5 +1,5 @@
-export { nodePlatformLayer } from '../drivers/node.js'
 export { IncrementalReportSchema } from '../IncrementalReport.schema.js'
+export { nodePlatformLayer } from '../node-platform.js'
 export { planRequest } from '../plan-request.cell.js'
 export type { PlanChannel, PlanRequestInput, PlanShardsRequest } from '../plan-request.cell.js'
 export type { Project, ProjectFile } from '../Project.schema.js'

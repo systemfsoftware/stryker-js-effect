@@ -26,6 +26,7 @@ export type PackageContracts = {
   readonly name: string
   readonly directory: string
   readonly releasedVersion: string
+  readonly mainVersion: string
   readonly committedVersion: string
   readonly releasedDocuments: readonly ContractDocument[]
   readonly committedDocuments: readonly ContractDocument[]
@@ -61,11 +62,23 @@ export type StaleBaselineFailure = {
   readonly kind: 'stale-baseline'
   readonly package: string
   readonly reason: string
+  readonly next: string
   readonly releasedVersion: string
-  readonly committedVersion: string
+  readonly mainVersion: string
 }
 
-export type ContractVersionFailure = ContractChangeFailure | StreamVersionFailure | StaleBaselineFailure
+export type MainBaselineUnavailableFailure = {
+  readonly kind: 'main-baseline-unavailable'
+  readonly ref: string
+  readonly reason: string
+  readonly next: string
+}
+
+export type ContractVersionFailure =
+  | ContractChangeFailure
+  | StreamVersionFailure
+  | StaleBaselineFailure
+  | MainBaselineUnavailableFailure
 
 const ABSENT_STREAM_VERSION = 'absent'
 
@@ -153,10 +166,21 @@ const staleBaselineFailureOf = (pkg: PackageContracts): readonly StaleBaselineFa
   kind: 'stale-baseline',
   package: pkg.name,
   reason:
-    `the workspace declares ${pkg.committedVersion} while the released documents come from ${pkg.releasedVersion}, so they cannot bound what the next release of ${pkg.name} may change: move the stryker-published flake input to the latest release tag and reinstall`,
+    `main declares ${pkg.mainVersion} while the released documents come from ${pkg.releasedVersion}, so they cannot bound what the next release of ${pkg.name} may change`,
+  next: 'move the stryker-published flake input to the latest release tag and reinstall',
   releasedVersion: pkg.releasedVersion,
-  committedVersion: pkg.committedVersion,
+  mainVersion: pkg.mainVersion,
 }]
+
+export const mainBaselineUnavailableOf = (context: {
+  readonly ref: string
+  readonly detail: string
+}): MainBaselineUnavailableFailure => ({
+  kind: 'main-baseline-unavailable',
+  ref: context.ref,
+  reason: `git merge-base ${context.ref} HEAD failed (${context.detail}), so the version main declares cannot be read`,
+  next: 'git fetch origin main',
+})
 
 const failuresForDocument = (context: {
   readonly pkg: PackageContracts
@@ -217,7 +241,7 @@ const failuresForPackage = (
       })
     )
 
-  if (pkg.committedVersion === pkg.releasedVersion) return changesWhen(cleared)
+  if (pkg.mainVersion === pkg.releasedVersion) return changesWhen(cleared)
   return pending.length > 0 || changesWhen(false).length > 0 ? staleBaselineFailureOf(pkg) : []
 }
 
@@ -227,18 +251,30 @@ export const evaluateContractLaw = (input: ContractLawInput): readonly ContractV
 const pointerLineOf = (pointer: string): string => (pointer === '' ? '/' : pointer)
 
 export const renderFailure = (failure: ContractVersionFailure): string => {
+  if (failure.kind === 'main-baseline-unavailable') {
+    return [
+      `error[CONTRACT-VERSION]: the version main declares is unavailable`,
+      `  code: ${failure.kind}`,
+      `  ref: ${failure.ref}`,
+      `  reason: ${failure.reason}`,
+      `  next: ${failure.next}`,
+    ].join('\n')
+  }
   if (failure.kind === 'stale-baseline') {
     return [
       `error[CONTRACT-VERSION]: the released baseline of ${failure.package} is stale`,
+      `  code: ${failure.kind}`,
       `  package: ${failure.package}`,
       `  released: ${failure.releasedVersion}`,
-      `  workspace: ${failure.committedVersion}`,
+      `  main: ${failure.mainVersion}`,
       `  reason: ${failure.reason}`,
+      `  next: ${failure.next}`,
     ].join('\n')
   }
   if (failure.kind === 'stream-version') {
     return [
       `error[CONTRACT-VERSION]: incompatible contract change in ${failure.document}`,
+      `  code: ${failure.kind}`,
       `  package: ${failure.package}`,
       `  document: ${failure.document}`,
       `  pointer: ${pointerLineOf(failure.pointer)}`,
@@ -249,6 +285,7 @@ export const renderFailure = (failure: ContractVersionFailure): string => {
   }
   return [
     `error[CONTRACT-VERSION]: incompatible contract change in ${failure.document}`,
+    `  code: ${failure.kind}`,
     `  package: ${failure.package}`,
     `  document: ${failure.document}`,
     `  pointer: ${pointerLineOf(failure.pointer)}`,

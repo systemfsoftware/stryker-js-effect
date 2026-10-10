@@ -1,6 +1,6 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Plugin, Report } from '@systemfsoftware/stryker-js-plugin-interface'
-import { SchemaGetter } from 'effect'
+import { Effect, SchemaGetter } from 'effect'
 import * as S from 'effect/Schema'
 
 import { AddTest, NoneNeeded, StrengthenTests } from './next-action.schema.js'
@@ -9,7 +9,7 @@ import { PluginLoadFailureReason } from './plugin-load-failure-reason.schema.js'
 import { ShardPlan as ShardPlanDocument } from './shard-plan.schema.js'
 import { StreamSchemaVersion } from './stream-version.schema.js'
 
-export const RunPhase = S.Literals(['prepare', 'instrument', 'dry-run', 'mutation-test'])
+export const RunPhase = S.Literals(['prepare', 'instrument', 'dry-run', 'mutation-test', 'reporting'])
 export type RunPhase = typeof RunPhase.Type
 
 export const RunId = S.String.pipe(
@@ -269,11 +269,26 @@ export type MutantSetPolicy = typeof MutantSetPolicy.Type
 export const IncrementalMode = S.Literals(['incremental', 'full'])
 export type IncrementalMode = typeof IncrementalMode.Type
 
+export const CheckDuration = S.Union([
+  S.TaggedStruct('measured', { ms: Report.NonNegativeFinite }),
+  S.TaggedStruct('not-run', {}),
+  S.TaggedStruct('not-recorded', {}),
+])
+export type CheckDuration = typeof CheckDuration.Type
+
+export const ReportingDuration = S.Union([
+  S.TaggedStruct('measured', { ms: Report.NonNegativeFinite }),
+  S.TaggedStruct('not-recorded', {}),
+])
+export type ReportingDuration = typeof ReportingDuration.Type
+
 export const PhaseDurations = S.Struct({
   prepare: Report.NonNegativeFinite,
   instrument: Report.NonNegativeFinite,
   'dry-run': Report.NonNegativeFinite,
   'mutation-test': Report.NonNegativeFinite,
+  check: CheckDuration.pipe(S.withDecodingDefaultKey(Effect.succeed({ _tag: 'not-recorded' as const }))),
+  reporting: ReportingDuration.pipe(S.withDecodingDefaultKey(Effect.succeed({ _tag: 'not-recorded' as const }))),
 })
 export type PhaseDurations = typeof PhaseDurations.Type
 

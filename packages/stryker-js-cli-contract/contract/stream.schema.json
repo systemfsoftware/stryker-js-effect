@@ -2353,7 +2353,8 @@
             "prepare",
             "instrument",
             "dry-run",
-            "mutation-test"
+            "mutation-test",
+            "reporting"
           ]
         },
         "elapsedMs": {
@@ -5405,6 +5406,99 @@
                 "mutation-test": {
                   "type": "number",
                   "minimum": 0
+                },
+                "check": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "measured"
+                          ]
+                        },
+                        "ms": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "ms"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "not-run"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "_tag"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "not-recorded"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "_tag"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                "reporting": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "measured"
+                          ]
+                        },
+                        "ms": {
+                          "type": "number",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "ms"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "not-recorded"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "_tag"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               },
               "required": [

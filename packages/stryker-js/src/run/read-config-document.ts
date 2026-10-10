@@ -29,19 +29,16 @@ import {
   ConfigFileUnsupportedError,
   ConfigModuleUnloadable,
 } from '../ConfigError.schema.js'
-import {
-  DescribeConfigImportCommand,
-  describeConfigModuleFailure,
-} from '../run/describe-config-module-failure.workflow.js'
+import { StrykerError } from '../stryker-error.schema.js'
+import { DescribeConfigImportCommand, describeConfigModuleFailure } from './describe-config-module-failure.workflow.js'
 import {
   ConfigDiscoveryCommand,
   type ConfigDiscoveryDecision,
   type ConfigFileKindValue,
   ConfigFileRequest,
   discoverConfigFile,
-} from '../run/discover-config-file.workflow.js'
-import { extendsStep, ExtendsStepCommand } from '../run/extends-step.workflow.js'
-import { StrykerError } from '../stryker-error.schema.js'
+} from './discover-config-file.workflow.js'
+import { extendsStep, ExtendsStepCommand } from './extends-step.workflow.js'
 
 export function importModule<A = unknown>(moduleName: string): Effect.Effect<A, StrykerError> {
   return Effect.tryPromise({

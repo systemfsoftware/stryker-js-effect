@@ -1,0 +1,37 @@
+{
+  "name": "@systemfsoftware/stryker-bench",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Report-only A/B bench orchestrator: builds the PR's merge-base and head, runs both interleaved over two corpora, and reads each run's own NDJSON. The repo corpus is the pinned three-file slice in corpus.json.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "test/bench"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/test/bench",
+  "scripts": {
+    "bench": "tsx --conditions=@systemfsoftware/source src/main.ts",
+    "typecheck": "tsc -b",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text}"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/tsgo": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
+    "@systemfsoftware/stryker-e2e-core": "workspace:^",
+    "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:"
+  },
+  "engines": {
+    "node": ">=24.13.1"
+  }
+}
