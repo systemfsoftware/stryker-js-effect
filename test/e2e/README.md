@@ -11,6 +11,8 @@ The suite resolves the workspace closure of the CLI and its plugins, packs each 
 
 The closure installs in one `npm install` with no `@systemfsoftware` workspace package taken from the registry. `pnpm pack` rewrites a workspace alias (`"@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^"`) to `npm:<target>@^<version>`, and npm resolves an `npm:` spec from the registry even when the target's tarball is in the same install. So the install passes every packed tarball plus one `<alias>@file:<target tarball>` spec per alias edge between closure members (`installClosure` in `@systemfsoftware/stryker-e2e-core`). Global setup fails, naming the edge, instead of reaching the registry when a packed member depends on a workspace package the closure did not pack (`UnpackedWorkspaceDependency`), when one alias name would install two different packages (`ConflictingAliasTargets`), or when a fixture manifest names a workspace package itself (`FixtureNamesWorkspacePackage`). The closure is installed into every fixture, so a fixture never names it.
 
+Both bake installs resolve registry dependencies fresh, so they pass `--min-release-age=1`: a release less than a day old never reaches a fixture. A half-published release, such as `@effect/platform-node@4.0.3` declaring a peer `effect@^4.0.3` that was not yet on the registry, otherwise leaves npm resolving forever. Each install runs under a 300 s `timeout`. When one runs over, the bake exits 124 and its stderr, which global setup reports, names the fixture and the step that ran over.
+
 ## Running locally
 
 Local runs need hardware virtualization and nothing else: no Docker daemon, Podman socket, or container CLI.
