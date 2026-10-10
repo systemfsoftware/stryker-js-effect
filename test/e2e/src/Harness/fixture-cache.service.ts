@@ -36,9 +36,12 @@ import {
   type PackedTree,
   type PackInput,
   packsKeyBytes,
+  parseWorkspaceCatalogs,
   pruneStaleEntries as pruneStaleEntriesWorkflow,
   PruneStaleEntriesCommand,
+  resolvedManifestText,
   type StagedFixtureManifest,
+  type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
 
 import type { BakeOutcome, PackedPackage, PackedPackageLookup, TurboDryClosure } from './bake-key.schema.js'
@@ -50,8 +53,6 @@ import {
   TurboClosure,
   TurboDryRun,
 } from './bake-key.schema.js'
-import type { WorkspaceCatalogs } from './catalog-resolution.js'
-import { parseFixtureManifest, parseWorkspaceCatalogs, resolveCatalogSpecs } from './catalog-resolution.js'
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
@@ -192,7 +193,6 @@ const readTreeBytes = (root: string) =>
 
 const WORKSPACE_CATALOGS_FILE = 'pnpm-workspace.yaml'
 const MANIFEST_FILE_NAME = 'package.json'
-const MANIFEST_JSON_INDENT = 2
 
 const isManifestPath = (relativePath: string): boolean => relativePath.split('/').pop() === MANIFEST_FILE_NAME
 
@@ -205,11 +205,10 @@ const loadWorkspaceCatalogs = (environment: BakeEnvironment) =>
   })
 
 const resolveManifestBytes = (manifest: string, bytes: Uint8Array, catalogs: WorkspaceCatalogs) =>
-  Effect.gen(function*() {
-    const parsed = yield* Effect.fromResult(parseFixtureManifest(manifest, bytes))
-    const resolved = yield* Effect.fromResult(resolveCatalogSpecs(manifest, parsed, catalogs))
-    return new TextEncoder().encode(`${JSON.stringify(resolved, null, MANIFEST_JSON_INDENT)}\n`)
-  })
+  Effect.map(
+    Effect.fromResult(resolvedManifestText(manifest, bytes, catalogs)),
+    (text) => new TextEncoder().encode(text),
+  )
 
 const resolveTreeManifests = (label: string, files: ReadonlyArray<FileBytes>, catalogs: WorkspaceCatalogs) =>
   Effect.forEach(

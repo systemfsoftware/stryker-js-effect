@@ -1,9 +1,7 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { ImportClosure } from '@systemfsoftware/stryker-js'
+import { Engine, ImportClosure, type SourceParser } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
@@ -12,8 +10,9 @@ type ImportClosureAnalysis = ImportClosure.ImportClosureAnalysis
 
 const analyzeImportClosure = ImportClosure.analyzeImportClosure
 
+type ClosurePorts = FileSystem.FileSystem | Path.Path | SourceParser.SourceParser
+
 const Feature = makeFeature({ it })
-const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 type FixtureFiles = Readonly<Record<string, string>>
 
@@ -114,7 +113,7 @@ const inputOf = (path: Path.Path, root: string, spec: FixtureSpec): ClosureInput
 const observe = (
   root: string,
   spec: FixtureSpec,
-): Effect.Effect<Observation, PlatformError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<Observation, PlatformError, ClosurePorts> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -138,7 +137,7 @@ interface EvidenceObservation {
 const observeEvidence = (
   root: string,
   spec: FixtureSpec,
-): Effect.Effect<EvidenceObservation, PlatformError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<EvidenceObservation, PlatformError, ClosurePorts> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -309,7 +308,7 @@ const SIBLING_LINK: FixtureSpec = {
 
 const observeSibling = (
   root: string,
-): Effect.Effect<ImportClosureAnalysis, PlatformError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<ImportClosureAnalysis, PlatformError, ClosurePorts> =>
   Path.Path.pipe(
     Effect.flatMap((path) =>
       analyzeImportClosure({
@@ -369,7 +368,7 @@ interface LinkedObservation {
 const observeLinked = (
   root: string,
   spec: FixtureSpec,
-): Effect.Effect<LinkedObservation, PlatformError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<LinkedObservation, PlatformError, ClosurePorts> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -409,7 +408,7 @@ const VERSION_BUMP = manifestReadingSpecWith('{"name":"@fixture/app","version":"
 const MANIFEST_FIELD_CHANGE = manifestReadingSpecWith('{"name":"@fixture/app","version":"1.0.0","type":"commonjs"}')
 
 Feature('Mapping a test file to the import closure it can reach')
-  .withLayer(filePorts)
+  .withLayer(Engine.nodePlatformLayer)
   .live('the scenarios read, parse and hash real project files off the filesystem, which the kernel cannot settle')
   .body(({ scenario }) => {
     scenario(

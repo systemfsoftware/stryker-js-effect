@@ -89,6 +89,16 @@ export class CliPlanRequested extends S.TaggedClass<CliPlanRequested>()('CliPlan
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
 
+export class CliAuditRequested extends S.TaggedClass<CliAuditRequested>()('CliAuditRequested', {
+  matrix: S.String,
+  out: S.String,
+  countsOnly: S.Boolean,
+  projects: S.Array(S.String).pipe(S.optional),
+  files: S.Array(S.String).pipe(S.optional),
+}) {
+  readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
+}
+
 export class CliServeRequested extends S.TaggedClass<CliServeRequested>()('CliServeRequested', {
   channel: ServeChannelSchema,
   port: S.optional(S.Int),
@@ -121,6 +131,7 @@ export type CliRouteDecision =
   | CliGateRequested
   | CliAnnotateRequested
   | CliPlanRequested
+  | CliAuditRequested
   | CliServeRequested
   | CliFeedbackRequested
   | CliMcpRequested
@@ -139,6 +150,7 @@ export const routeCliRequest = Workflow.make({
     CliGateRequested,
     CliAnnotateRequested,
     CliPlanRequested,
+    CliAuditRequested,
     CliServeRequested,
     CliFeedbackRequested,
     CliMcpRequested,
@@ -173,6 +185,16 @@ export const routeCliRequest = Workflow.make({
             projects: plan.projects,
             out: plan.out,
             full: plan.full,
+          }),
+        )),
+      Match.tag('audit', (audit) =>
+        Result.succeed(
+          CliAuditRequested.make({
+            matrix: audit.matrix,
+            out: audit.out,
+            countsOnly: audit.countsOnly,
+            projects: audit.projects,
+            files: audit.files,
           }),
         )),
       Match.tag('serve', (serve) =>

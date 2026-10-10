@@ -17,11 +17,11 @@ const ownNameResolvesToSourceNotDogfoodCopy = [
   },
   {
     find: /^@systemfsoftware\/stryker-js\/verdict-store\/fs$/,
-    replacement: new URL('./src/drivers/fs-verdict-store.layer.ts', import.meta.url).pathname,
+    replacement: new URL('./src/verdict-store/fs-verdict-store.layer.ts', import.meta.url).pathname,
   },
   {
     find: /^@systemfsoftware\/stryker-js\/verdict-store\/memory$/,
-    replacement: new URL('./src/drivers/memory-verdict-store.ts', import.meta.url).pathname,
+    replacement: new URL('./src/verdict-store/memory-verdict-store.ts', import.meta.url).pathname,
   },
 ]
 

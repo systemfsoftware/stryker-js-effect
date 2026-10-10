@@ -12,12 +12,12 @@ import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-c
 import { forkOptionsSchema } from '../Config.schema.js'
 import type { ConfigEnv } from '../config/stryker-config.schema.js'
 import { ConfigError } from '../ConfigError.schema.js'
-import { type ConfigReadError, readConfigDocument } from '../drivers/config.js'
 import { describeConfigError, DescribeConfigErrorCommand } from './describe-config-error.workflow.js'
+import { type ConfigReadError, readConfigDocument } from './read-config-document.js'
 import { LoadConfigCommand, resolveConfig } from './resolve-config.workflow.js'
 import { phaseEntered } from './RunEnvironment.service.js'
 
-export type { ConfigReadError } from '../drivers/config.js'
+export type { ConfigReadError } from './read-config-document.js'
 export type { ValidationSchemaDocument } from './validate-options-admission.workflow.js'
 
 export interface ConfigInvocation {

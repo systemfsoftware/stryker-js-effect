@@ -7,9 +7,9 @@ import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 
 import { replaceFileAtomically } from '../replace-file-atomically.js'
-import { makeVerdictStore, type VerdictBlobs } from '../verdict-store/verdict-blobs.js'
-import { VerdictBlobFailed, VerdictStoreUnavailable } from '../verdict-store/VerdictStore.schema.js'
-import { VerdictStore } from '../verdict-store/VerdictStore.service.js'
+import { makeVerdictStore, type VerdictBlobs } from './verdict-blobs.js'
+import { VerdictBlobFailed, VerdictStoreUnavailable } from './VerdictStore.schema.js'
+import { VerdictStore } from './VerdictStore.service.js'
 
 const failedAt = (name: string) => (error: PlatformError): VerdictBlobFailed =>
   VerdictBlobFailed.make({ name, reason: error.message })
