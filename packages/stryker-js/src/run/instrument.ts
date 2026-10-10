@@ -81,6 +81,35 @@ const withInstrumentedFiles = (
       ),
   )
 
+const instrumentWith = (
+  command: PrepareForInstrument,
+  filesToMutate: ReadonlyArray<Instrument.File>,
+): Effect.Effect<Instrument.InstrumentResult, StageError> =>
+  Instrument.instrument([...filesToMutate], {
+    ignorers: [...command.ignorers],
+    excludedMutations: [...command.mutatorSelection.excludedMutations],
+    mutantSetPolicy: command.options.mutator.mutantSetPolicy,
+    mutators: Mutator.selectMutators(
+      Mutator.registryOf(
+        command.mutatorCatalogs,
+        command.loadedPlugins.mutators.map(({ contribution }) => contribution),
+      ),
+      command.mutatorSelection.optInMutations,
+    ),
+  }, command.formatRegistry).pipe(
+    Effect.mapError((cause) => StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
+  )
+
+export const instrumentSources: {
+  (
+    filesToMutate: ReadonlyArray<Instrument.File>,
+  ): (command: PrepareForInstrument) => Effect.Effect<Instrument.InstrumentResult, StageError>
+  (
+    command: PrepareForInstrument,
+    filesToMutate: ReadonlyArray<Instrument.File>,
+  ): Effect.Effect<Instrument.InstrumentResult, StageError>
+} = dual(2, instrumentWith)
+
 export const instrumentFiles = Effect.fnUntraced(function*(
   command: PrepareForInstrument,
 ): Effect.fn.Return<
@@ -101,22 +130,7 @@ export const instrumentFiles = Effect.fnUntraced(function*(
       StageError.make({ stage: 'instrument', reason: 'Failed to read files to mutate', cause })
     ),
   )
-
-  const { excludedMutations, optInMutations } = command.mutatorSelection
-  const instrumentResult = yield* Instrument.instrument(filesToMutate, {
-    ignorers: [...command.ignorers],
-    excludedMutations: [...excludedMutations],
-    mutantSetPolicy: command.options.mutator.mutantSetPolicy,
-    mutators: Mutator.selectMutators(
-      Mutator.registryOf(
-        command.mutatorCatalogs,
-        command.loadedPlugins.mutators.map(({ contribution }) => contribution),
-      ),
-      optInMutations,
-    ),
-  }, command.formatRegistry).pipe(
-    Effect.mapError((cause) => StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
-  )
+  const instrumentResult = yield* instrumentSources(command, filesToMutate)
 
   return {
     filesToMutate,
