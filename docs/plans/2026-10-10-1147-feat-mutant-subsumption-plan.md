@@ -2,6 +2,7 @@
 title: Mutant Subsumption and Type-Guided Generation - Plan
 type: feat
 date: 2026-10-10
+supersedes: docs/plans/2026-10-10-1045-feat-mutant-subsumption-plan.md
 topic: mutant-subsumption
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
@@ -18,10 +19,10 @@ execution: code
 - **Execution profile:** PR-A shipped as #273 and the kill-matrix lane as #263; both are on `main`. PR-B is #276 (open). PR-W, owned by the root, adds the `drop-audit` job. PR-C is one PR cut from `main` (not stacked on PR-W) once its prerequisites are on `main`. Local verification is targeted: typecheck and the affected package's tests, at most one build at a time, no e2e, no microVM, no mutation runs. Close every long-lived `tsc`, `--lsp`, or watch process as soon as it is done.
 - **Stop conditions:**
   - PR-W, and PR-C's one-job change to `drop-audit`, edit `.github/workflows/`, which is Read-only for this unit. The root owns and reviews both.
-  - PR-C ships U14-U17 together and nothing less: pure workflows or an RPC that nothing calls would be dead code. If #277, #276, or PR-W's `drop-audit` is not on `main`, or Stream H has not answered Q15, when `ce-work` would start, PR-C waits unstarted and the wait is reported.
+  - PR-C ships U14-U17 together and nothing less: pure workflows or a client that nothing calls would be dead code. If #277, #276, PR-W's `drop-audit`, or Stream H's `typeQuery` RPC is not on `main` when `ce-work` would start, PR-C waits unstarted and the wait is reported.
   - U11 (S3) is deferred until PR-W's `drop-audit` exists.
 - **Who finishes:** `ce-work` builds PR-C (PR-A has landed; PR-B, #276, waits on the root); the root reviews and owns PR-W; the supervisor merges every PR.
-- **Open blockers:** for PR-C, #277, #276, and PR-W on `main`, and Q15 (who writes the `typeQuery` RPC, Stream H). Q16, Q17, Q19, Q20, Q23, and Q24 go to the supervisor or the root.
+- **Open blockers:** for PR-C, #277, #276, PR-W, and Stream H's `typeQuery` RPC and capability declaration on `main` (Q15). Q19 and Q24 go to the supervisor.
 - **Applicable packs** (`.compound-engineering/config.yaml`):
   - cell-architecture: pure-decision-workflows, ports-separate-from-layers, sandwich-phase-order, scoped-lifecycle-boundaries
   - schema-laws: tagged-unions-over-state-by-presence, refusals-beside-generated-laws, arbitrary-filter-floors
@@ -111,7 +112,7 @@ Against the `92bffa23d` routing, only row 5 moved: those 73 sites were answered 
 - **CompileError share on #424:** 4387 of 9366 (46.84%) falls to 4038 of 9366 (43.11%).
 - **Checker time over CompileError on #424:** 4156 s falls to about 3862.3 s (−293.7 s, −7.07%).
 
-Rows 6-10 stay with the checker: row 7 is the v1 amendment asked in Q20, row 6 is Q23, row 9 is not worth an amendment (Q22), and rows 8 and 10 are already answered correctly as `Unknown`. 24 of the 1170 are absent from #424. 315 of the 1170 have their diagnostic after the mutated span in original coordinates, a line shift caused by multi-line replacements; the routing uses the site node, not the diagnostic, so it is unaffected. The prediction bounds the 1170 only: a CompileError outside the 1170 can also be answered `NotAssignable`, and the audit counts it.
+Rows 6-10 stay with the checker in PR-C: row 7 waits for Stream H's `function-body` site kind (Q20, accepted), row 6 gets no amendment (Q23), row 9 is not worth one (Q22), and rows 8 and 10 are already answered correctly as `Unknown`. 24 of the 1170 are absent from #424. 315 of the 1170 have their diagnostic after the mutated span in original coordinates, a line shift caused by multi-line replacements; the routing uses the site node, not the diagnostic, so it is unaffected. The prediction bounds the 1170 only: a CompileError outside the 1170 can also be answered `NotAssignable`, and the audit counts it.
 
 **The inferred-context hazard is closed at `c78e199d9` (Q21 met).** At `S.Literals(['run', 'merge', …])` (`packages/stryker-js/src/Cli.schema.ts:25`), the `""` mutants `91c88189eda04502` and `73f7ceb08f61bd67` Survived on #424. `S.Literals` is `<const L extends ReadonlyArray<LiteralValue>>(literals: L)` (`effect` 4.0.0, `Schema.d.ts:4003`), and TypeScript 5.9.3's `getContextualType` returns the literal inferred from the original element there, so an answer from the contextual type alone would cull a surviving mutant. At `92bffa23d`, v1 checked for a generic callee only on a direct argument. Commit `03dbbaf4f` makes v1 walk from the site to its origin first: the array element climbs through its `ArrayLiteralExpression` (`type-query.handle.ts:438`) to the call argument (`:462-465`), whose `CallArgument` facts mark `S.Literals` as `declaredGeneric` (`:490-509`, flag at `:507`). `originAnswerOf` then answers `Unknown` `overloaded-or-generic-call` (`answer-type-query.workflow.ts:54-70`, at `:65`). The emulated walk over both witnesses gives `ArrayLiteralExpression > CallExpression S.Literals`, generic. Re-walked the same way, all 447 #424 shape mutants that compiled at row-5 positions now land on a generic `CallArgument`, so none of them is culled.
 
@@ -181,14 +182,14 @@ Retired with the SMT layer: R13, R19-R30, AE7-AE10, KTD8-KTD12, U3, U7, U8, and 
   `type query: candidate <text> (type <candidateType>) is not assignable to <contextualType> at <siteId> (site type <siteType>); nothing to do: this mutant cannot type-check. If it compiles, report a false NotAssignable to TypeQuery with site <siteId>`
 
   The rule's documented next action (`ignore-rule.schema.ts:39`: remove or change the checker plugin) does not fit an engine cull, so the detail carries its own. Every other answer (`Assignable`, any `Unknown`) keeps the mutant, and so do a `FileRefused` file, a `TypeQueryRefused` request, a missing or duplicated answer, and the `'full'` policy.
-- R36. The query crosses the worker boundary as a `typeQuery` RPC on the checker worker, carrying v1's schemas unchanged. The checker worker provides `TypeQueryLive`. A checker declares explicitly that it serves v1. Today the checker RPC group is fixed at `check`, `group`, and `digest` (`packages/stryker-js-plugin-interface/src/PluginRpcs.service.ts:99`), and only the test runner has a `capabilities` RPC (`:30-35`). A checker that does not declare `typeQuery` v1 is treated as a `FileRefused` for every file, so every mutant is kept. Q15's open remainder asks who writes the RPC and the declaration.
+- R36. The query crosses the worker boundary as a `typeQuery` RPC on the checker worker, carrying v1's schemas unchanged. The checker worker provides `TypeQueryLive`. A checker declares explicitly that it serves v1. Today the checker RPC group is fixed at `check`, `group`, and `digest` (`packages/stryker-js-plugin-interface/src/PluginRpcs.service.ts:99`), and only the test runner has a `capabilities` RPC (`:30-35`). Stream H writes the RPC and the declaration (Q15); this unit's engine side reads them. A checker that does not declare `typeQuery` v1 is treated as a `FileRefused` for every file, so every mutant is kept.
 - R37. The query runs and the cull is decided before mutants are planned for checking, in two places only:
   - the run path, after `acquireCheckers` and before `reuseAndPlan` (`run/mutation-test.cell.ts:93-96`, `run/deferrable-dry-run.cell.ts:64-67`);
   - the audit (R40).
 
   The plan path (`plan-request.cell.ts`) does not cull, and a shard plan prices a mutant that will be culled like any pending mutant. A culled mutant is never grouped, compiled, or run. A failed query keeps every mutant and never fails the run.
 - R38. A culled mutant keeps its id, because the instrumenter still generates it (`mutantIdOf`, `MutantIdentity.ts:20-31`). It is reported as Ignored. The audit takes the cull list from the cull step's typed output, never by parsing reason text (CHK1).
-- R39. What v1 answers `Unknown` stays the checker's job. No syntactic or annotation fallback decides it (Stream C KD3). A gap is a v1 amendment question for the root (Q20, Q22, Q23).
+- R39. What v1 answers `Unknown` stays the checker's job. No syntactic or annotation fallback decides it (Stream C KD3). A gap is a v1 amendment question for the root, and Stream H makes any accepted amendment (Q20).
 
 **Tests (admitted by the test-layer gate)**
 
@@ -283,7 +284,7 @@ flowchart TB
 - AE6. **Covers R17.** `comparePatternKeysOf(key, current[0]) < 0`: dominator `056ca92f55a9284e` (`<=`) Survived and the dropped `f1f3c32d0a1b980f` (`>=`) was Killed. The pair passes as vacuous, unless some test's only kill was `f1f3c32d0a1b980f`.
 - AE11. **Covers R33, R35.** At `onTrue: (): MutatorSelectionRefused['reason'] => 'NotOptInTier'` (`packages/stryker-js/src/decode-mutator-selection.workflow.ts:70`), the `""` mutant `8879a7e25286c657` is culled: the contextual type is the declared literal union, and v1 answers `NotAssignable`. It was CompileError on #424.
 - AE12. **Covers R33, R35.** At `AliasSpecifierCaptured.make({ capture })` (`packages/stryker-js-typescript-checker/src/capture-alias-specifier.workflow.ts:57`), the `{}` mutant `3c2edc30946047e2` is culled: the site is a direct argument of a non-generic `make`, whose parameter requires `capture`. It was CompileError on #424.
-- AE13. **Covers R39.** The `{}` mutant `2e81ec0fd3b2b496` of `tceFieldOf`'s `Option.match` options object (`CheckMutants.schema.ts:11`) gets `Unknown` `overloaded-or-generic-call`, and the emptied getter body `a2f15bd57cd23c25` (`get rendered(): string`, `:28`) gets `Unknown` `site-not-expression`. Both are kept and compiled as today, the second until Q20.
+- AE13. **Covers R39.** The `{}` mutant `2e81ec0fd3b2b496` of `tceFieldOf`'s `Option.match` options object (`CheckMutants.schema.ts:11`) gets `Unknown` `overloaded-or-generic-call`, and the emptied getter body `a2f15bd57cd23c25` (`get rendered(): string`, `:28`) gets `Unknown` `site-not-expression`. Both are kept and compiled as today, the second until Stream H's `function-body` site kind lands (Q20).
 - AE14. **Covers R34, R40.** At `S.Literals(['run', …])` (`packages/stryker-js/src/Cli.schema.ts:25`), the `""` mutants `91c88189eda04502` and `73f7ceb08f61bd67` Survived on #424. v1 at `c78e199d9` reaches `S.Literals`, a generic callee, from the array element and answers `Unknown` `overloaded-or-generic-call`, so both are kept. A v1 that answered `NotAssignable` there would fail the audit, which would name both as lost compiling mutants.
 - AE15. **Covers R35.** The `""` mutant `bcd46e4a7cf9cc09` of the template literal in `get message(): string` (`packages/stryker-js/src/Checker/Checker.schema.ts:17`) gets `Assignable` and is kept. It Survived on #424.
 
@@ -296,7 +297,7 @@ flowchart TB
   - CompileError share from 46.84% to 43.11%;
   - checker time over CompileError from 4156 s to about 3862.3 s (−293.7 s, −7.07%).
 
-  Q20's amendment would add up to 135 more CompileErrors and 133.1 s.
+  Stream H's `function-body` site kind (Q20) would make up to 135 more CompileErrors and 133.1 s answerable after PR-C.
 - The before/after proof is `stryker audit --counts-only` over two main Mutation runs: #424 (or the last main run before PR-C's release) and the first main run after it. CompileError falls by N_CE, and checker time over CompileError falls by those mutants' baseline cost. Both runs are cited by run id and artifact.
 - The R18 counts appear as a CI artifact for each before/after pair, and the dropped and culled ids match the R16 lists.
 
@@ -320,7 +321,8 @@ PR-A shipped as #273 and the kill-matrix lane as #263 (Q14's ruling). Each remai
 
 ### Scope Boundaries
 
-- Deferred: S3 (U11); class-T rules and `.length` in class P (Q5); emptied bodies (row 7, Q20) and generic or overloaded direct arguments (row 6, Q23); CompileErrors whose diagnostics land outside the mutated range.
+- Deferred: S3 (U11); class-T rules and `.length` in class P (Q5); emptied bodies (row 7) until Stream H's `function-body` site kind lands (Q20); CompileErrors whose diagnostics land outside the mutated range.
+- Left to the checker, with no amendment: generic or overloaded direct arguments (row 6, Q23).
 - Not decided by Layer 2, and needing no amendment: equality operands (row 9, ruled not worth one), unannotated declarations (row 8), and non-context-free candidates (row 10). v1 answers `Unknown` there, which is correct.
 - Out: S2 (refuted), COR, the unary-insertion tables, empirically mined subsumption, and SMT equivalence proving (rejected).
 - Out: any decision from annotation text or syntax alone (Stream C KD3).
@@ -354,12 +356,12 @@ PR-A shipped as #273 and the kill-matrix lane as #263 (Q14's ruling). Each remai
 **Rulings (2026-10-09 23:37Z, the root)**
 
 - Q14. `kill-matrix.yml` lands alone, as its own PR, before the drop-audit wiring, on push to main and `workflow_dispatch`, with no `pull_request` trigger. It landed as #263 (`7d15adcfd`).
-- Q15. Stream H owns the type-fact gatherer, shipped as the TypeQuery v1 port with `TypeQueryLive` in the TS checker. PR-C consumes the port and builds no gatherer. Any field it lacks goes to the root as a v1 amendment. Only who writes the `typeQuery` RPC stays open (below).
+- Q15. Stream H owns the type-fact gatherer, shipped as the TypeQuery v1 port with `TypeQueryLive` in the TS checker. PR-C consumes the port and builds no gatherer. Any field it lacks goes to the root as a v1 amendment. Who writes the `typeQuery` RPC is settled below (2026-10-10 11:41Z).
 - Q18. One shared fact union, defined once in a single `*.schema.ts`; whichever of Stream C U9 and this unit lands first defines it. PR-C defines none: it consumes `TypeAnswer` from `TypeQuery.schema.ts` and reads no facts.
 
 **Rulings (2026-10-10, sub-conductor, on the PR-C re-plan)**
 
-- PR-C is one PR cut from `main`, not stacked on PR-W, holding U14-U17 together. It waits unstarted while #277, #276, PR-W, or Q15's remainder is unresolved.
+- PR-C is one PR cut from `main`, not stacked on PR-W, holding U14-U17 together. It waits unstarted while #277, #276, PR-W, or Stream H's `typeQuery` RPC is unresolved.
 - Q21 is met at `c78e199d9` (R34, AE14).
 - Q22. Agreed: no equality-operand amendment.
 - Culls are recomputed on every run and never reused (KTD17). They happen in the run path and the audit only, with no shard-pricing change and no plan-path cull.
@@ -367,15 +369,19 @@ PR-A shipped as #273 and the kill-matrix lane as #263 (Q14's ruling). Each remai
 - A cull reuses Stream C's `checker` rule id with its own detail and next action (R35); no new `Mutant` variant.
 - A checker declares `typeQuery` support explicitly; one that does not keeps every mutant (R36).
 - U18 stays in the plan, conditional on #274 being on `main` when `ce-work` starts.
+- Q16. An Ignored `checker` record counts as never generated. The culled mutant keeps its id, so the audit can join it (R38).
+- Q17. The audit starting the checker on unmutated code is not a mutation run, so it stays within Q12.
+
+**Rulings (2026-10-10 11:41Z, the root)**
+
+- Q15. Stream H writes the checker-worker `typeQuery` RPC and the capability declaration. U15 consumes them and writes neither.
+- Q20. Accepted. Stream H adds the `function-body` site kind to TypeQuery v1 in its own stack, as the single schema owner. Row 7 (139 mutants, 135 CompileError, 133.1 s) becomes answerable when that lands; PR-C does not depend on it.
+- Q23. No amendment. Generic and overloaded direct arguments (row 6) stay with the checker.
+- PR-C `ce-work` starts only once #277 is on `main` and #276 is placed and merged.
 
 ### Open questions for the supervisor
 
-- Q15, remainder (Stream H). **Who writes the `typeQuery` RPC and the capability declaration.** U15 adds a `typeQuery` RPC to the checker group (`PluginRpcs.service.ts:99`, `Checker.service.ts`) and a capability declaration the engine reads before asking: the checker group has no `capabilities` RPC today, while the test runner's (`PluginRpcs.service.ts:30-35`) is the precedent. The worker serves the RPC by providing `TypeQueryLive` (`CheckerWorker.service.ts`, `CheckerRuntime.service.ts`), which are Stream H's files. The query server is a second tsgo process inside the checker worker, opened on the first query and closed with the worker's scope. Option (a): this unit writes U15 under Stream H's review. Option (b): Stream H adds the RPC and the declaration, and this unit consumes them. PR-C waits until this is answered.
-- Q16. **"Never generated."** The instrumenter still produces a culled mutant: it gets an id and a place in the mutant switch, and the report lists it as Ignored. It is never compiled, tested, or counted as CompileError. Keeping the record gives the audit an id to join (R38). Culls happen in the run path after instrumentation (R37), so this plan keeps the record. Is an Ignored `checker` record acceptable as "not generated"? A no would need answers before `instrumentCell` (`run/run-stages.cell.ts:18-35`), and the audit would lose its id. PR-C does not wait on this.
-- Q17. **The audit starts the checker.** For Layer 2 culls, `stryker audit` asks v1 over the unmutated corpus programs. That type-checks the original program and compiles no mutant. Please confirm that this stays within Q12.
 - Q19. **Shard co-location.** KTD13 places each subsumed mutant with its first dominator, and Stream C U7 adds guard-group placement to `plan-shards.workflow.ts`. Whichever lands second merges both constraints into one grouping key. Culls add no placement constraint (R37).
-- Q20 (the root). **v1 amendment A1: emptied bodies** (row 7: 139 mutants, 135 CompileError, 133.1 s). v1 refuses a `Block` site as `site-not-expression`, and a `{}` candidate reads as an object literal. Of the 139, 58 are accessors (TS2355, TS2378), 71 are functions with a declared return type (TS2355), and 10 rely on a contextual signature. Fields needed: `TypeQuerySite.kind: 'expression' | 'function-body'` on the request. For a `function-body` site, `SiteAnswer.contextualType` is the declared return type (the declared type for an accessor; the awaited type for an `async` function), and the `{}` candidate is answered as the assignability of `undefined` to it. New `UnknownReason` values: `'return-type-not-declared'` and `'generator-body'`.
-- Q23 (the root). **Generic and overloaded direct arguments** (row 6: 510 mutants, 499 CompileError on #424, 424.8 s of checker time). Is closing this worth an amendment? No field closes it. Deciding a candidate there needs the call re-resolved with the candidate in place, which is the in-place probe that #277's OQ-P10 lists as its alternative. Without it, the checker keeps compiling them.
 - Q24 (Stream G). **The bench-lane fields.** #274's lane has the `check` row (`PhaseDurations.check`, `CheckDuration` `measured { ms }`) but no CompileError count. If #274 is on `main` when `ce-work` starts, U18 adds `SideCounts.compileErrors` and `SideCounts.compileErrorCheckMs`; otherwise U18 is the named follow-up "bench-lane CompileError fields". Does Stream G accept the two fields? The lane's checker corpus mutates only `classify-tce.workflow.ts`, where v1 can cull 2 of the 1170 (`812c4f64f7559d6f`, `e004b1e2727e1383`), so its expected `check` verdict is `no-signal`. PR-C's before/after proof does not rest on the lane: it is the audit's `--counts-only` over main runs.
 
 ### Sources / Research
@@ -477,7 +483,7 @@ flowchart TB
   end
   subgraph C [PR-C, one PR off main]
     U14[U14 request and cull workflows]
-    U15[U15 TypeQuery RPC and capability, Q15]
+    U15[U15 engine client for Stream H's typeQuery RPC]
     U16[U16 cull step in the run path, never reused]
     U17[U17 audit cull list and R40]
     U18[U18 bench-lane CompileError fields, if #274 is on main]
@@ -514,7 +520,7 @@ flowchart TB
 ### Deferred to Follow-Up Work
 
 - S3 (U11), after PR-W. Class-T rules and `.length` in class P (Q5).
-- Layer 2 sites that v1 answers `Unknown` for and that would need a v1 amendment: emptied bodies (row 7, Q20) and generic or overloaded direct arguments (row 6, Q23). Equality operands (row 9) are ruled out, and rows 8 and 10 need none.
+- Emptied bodies (row 7), once Stream H's `function-body` site kind is on `main` (Q20): the cull then covers them with no PR-C change beyond re-routing the prediction. Generic or overloaded direct arguments (row 6) get no amendment (Q23). Equality operands (row 9) are ruled out, and rows 8 and 10 need none.
 - U18, if #274 is not on `main` when `ce-work` starts: the named follow-up "bench-lane CompileError fields".
 - Publishing R18 counts to a bench lane (Q3). Adding the instrumenter to `PROJECTS` (Q6).
 
@@ -720,9 +726,9 @@ PR-C is cut from `main` and carries U14, U15, U16, and U17 together. U18 joins o
 - #277 is on `main`, at or after `03dbbaf4f`;
 - #276 (`stryker audit`) is on `main`;
 - PR-W's `drop-audit` job is on `main`;
-- Stream H has answered Q15's remainder.
+- Stream H's `typeQuery` RPC and capability declaration on the checker worker are on `main` (Q15).
 
-If any of them is missing when `ce-work` would start, PR-C waits unstarted and the wait is reported with the missing item. It never lands a subset, because pure workflows or an RPC that nothing calls would be dead code. It builds no gatherer and edits no v1 schema: a gap in v1 is a question for the root (Q20, Q23), not a field this PR adds.
+If any of them is missing when `ce-work` would start, PR-C waits unstarted and the wait is reported with the missing item. It never lands a subset, because pure workflows or a client that nothing calls would be dead code. It builds no gatherer, writes no checker-worker RPC, and edits no v1 schema: a gap in v1 is a question for the root, and Stream H makes any accepted amendment (Q20).
 
 #### U14. Request and cull workflows
 
@@ -749,27 +755,18 @@ If any of them is missing when `ce-work` would start, PR-C waits unstarted and t
 - **Verification:** `pnpm --filter @systemfsoftware/stryker-js exec vitest run src/__tests__/type-query-request.workflow.property.test.ts src/__tests__/type-query-cull.workflow.property.test.ts`, then `pnpm --filter @systemfsoftware/stryker-js typecheck`.
 - **Mutant ids:** none on their own; U16 wires them.
 
-#### U15. TypeQuery RPC and capability on the checker worker (Q15's remainder)
+#### U15. Engine client for Stream H's `typeQuery` RPC
 
-- **Goal:** the engine can learn whether a checker serves TypeQuery v1, and can send it a `TypeQueryRequest` that a tsgo query server owned by the worker answers.
+- **Goal:** the engine learns, once per checker worker, whether it declares TypeQuery v1, and sends a declaring worker one `TypeQueryRequest` per tsconfig through Stream H's RPC.
 - **Requirements:** R32, R36.
-- **Dependencies:** #277 on `main`; Stream H's answer on who writes the RPC and the declaration.
+- **Dependencies:** #277 and Stream H's `typeQuery` RPC and capability declaration on `main` (Q15). This unit writes neither the RPC nor the declaration, and touches no file in `packages/stryker-js-typescript-checker/` or `packages/stryker-js-plugin-interface/`.
 - **Files:**
-  - `packages/stryker-js-plugin-interface/src/PluginRpcs.service.ts`: a `typeQuery` RPC in the checker group (`:99`), payload `TypeQueryRequest`, success `TypeQueryResponse`, error `TypeQueryRefused`. The checker's capability declaration comes beside it, shaped after the test runner's `capabilities` RPC (`:30-35`) unless Stream H's answer names another form. `Checker.service.ts` gains the matching members.
-  - `packages/stryker-js-typescript-checker/src/CheckerWorker.service.ts` and `CheckerRuntime.service.ts`: declare v1 and serve the RPC from `TypeQueryLive`, scoped to the worker.
-  - `packages/stryker-js/src/Checker/`: the pool's client side reads the declaration once per worker. A checker that does not declare v1 yields `NotServed`.
-  - New `packages/stryker-js-typescript-checker/tests/type-query-worker.integration.test.ts`. Its project lives in `packages/stryker-js-typescript-checker/tests/worker-answers-type-query/` (a `tsconfig.json` and one source file with the AE11 and AE12 shapes). The directory is named for its job, the project the worker answers type queries over, and is not a `__fixtures__` or technical-kind folder (placement rule).
-  - Api reports; changesets (`minor` for `@systemfsoftware/stryker-js-plugin-interface`, `@systemfsoftware/stryker-js-typescript-checker`, and `@systemfsoftware/stryker-js`).
-- **Approach:** the RPC carries v1's schemas unchanged, so the port stays the single definition (Q18's ruling). The checker worker builds `TypeQueryLive` lazily on the first query and closes it with the worker's scope; `check` and `group` never touch it.
-- **Patterns:** the existing `digest` RPC (`PluginRpcs.service.ts:71-73`) and the test runner's `capabilities` RPC (`:30-35`); the packs ports-separate-from-layers, scoped-lifecycle-boundaries, real-system-oracles, no-mocks-on-internal-glue.
-- **Test layer:** one integration suite through the spawned worker bundle and the real tsgo. The worker boundary is an observable contract and its oracle is the real system, so the gate admits it. No mock of the worker or of tsgo.
-- **Test scenarios:**
-  1. The worker's capability declaration names `typeQuery` v1.
-  2. A declared literal-union return answers `NotAssignable` for `""` (the AE11 shape), and a non-generic `make({ capture })` answers `NotAssignable` for `{}` (AE12).
-  3. The same worker answers `check` identically before and after a query.
-  4. A request naming a file outside the tsconfig yields `FileRefused` `not-in-project` for that file, and the other files are answered.
-  5. Closing the worker's scope ends the query server's process.
-- **Verification:** `pnpm --filter @systemfsoftware/stryker-js-typescript-checker build` alone (PLUG-1: the bundle still imports only `typescript` and node builtins), then that package's `exec vitest run tests/type-query-worker.integration.test.ts`, `typecheck`, and `api:check`; then `api:check` for the plugin interface.
+  - `packages/stryker-js/src/Checker/`: the pool's client side reads the declaration once per worker and calls the RPC. A checker that does not declare v1 yields `NotServed`; an RPC failure yields `TypeQueryRefused` with its reason. Exact file names follow the pool's existing `digest` client once Stream H's RPC is on `main`.
+  - The api report, if the client changes an exported type; a changeset (`minor`, `@systemfsoftware/stryker-js`).
+- **Approach:** the client passes v1's schemas through unchanged, so the port stays the single definition (Q18's ruling). It holds no decision: `NotServed` and refusals go to U14's cull workflow as data.
+- **Patterns:** the pool's existing `digest` client; the packs ports-separate-from-layers, scoped-lifecycle-boundaries, no-mocks-on-internal-glue.
+- **Test layer:** none of its own. The client only forwards a request and a declaration, so a test of it alone would pin wiring. U16's integration scenarios 1 and 5 exercise it through the real checker worker, and Stream H's suites own the worker side.
+- **Verification:** `pnpm --filter @systemfsoftware/stryker-js typecheck` and `api:check`; behavior through U16's verification.
 - **Mutant ids:** none.
 
 #### U16. The cull step in the run path, never remembered
@@ -839,7 +836,7 @@ If any of them is missing when `ce-work` would start, PR-C waits unstarted and t
 
 **PR-C Definition of Done:**
 
-- PR-C's prerequisites hold: #277 (at or after `03dbbaf4f`), #276, and PR-W are on `main`, and Stream H has answered Q15's remainder. The root has approved the `drop-audit` change.
+- PR-C's prerequisites hold: #277 (at or after `03dbbaf4f`), #276, PR-W, and Stream H's `typeQuery` RPC and capability declaration are on `main`. The root has approved the `drop-audit` change.
 - `check`, every `e2e (…)` leg, `Changeset Check`, and `drop-audit` are green on PR-C's head, cited by run id. No job runs over 10 minutes, and the workflow runs at most 10 minutes.
 - U14-U17's scenarios pass (and U18's, if it ships); `api:check` is clean for every touched package.
 - `drop-audit` reports at least one cull joined to main's statuses, 0 failures, Layer 2 not `Unattested`, and lists every unresolved cull.
