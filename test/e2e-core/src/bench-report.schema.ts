@@ -21,6 +21,7 @@ export const BenchAbortCode = S.Literals([
   'setup-timings-malformed',
   'entry-unknown',
   'side-setup-failed',
+  'setup-timed-out',
   'budget-exceeded',
   'report-unwritable',
   'defect',
@@ -36,6 +37,8 @@ const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
     'name a repo project or the enterprise fixture listed in test/bench/corpus.json in BENCH_ENTRY; the plan job derives the matrix from that file, so re-run the whole workflow',
   'side-setup-failed':
     'read the failing step and output tail in the reason; rerun that step command in the named side checkout',
+  'setup-timed-out':
+    'a setup command (closure build, pack or install) was still running at the job deadline, so no run started; re-run the job, and if the same entry stalls again, compare its setup timings with the last green bench-report artifact',
   'budget-exceeded':
     "the eight runs did not fit the job budget: shrink this entry's mutate ranges or testFiles in test/bench/corpus.json until a run takes well under a minute, then push",
   'report-unwritable': 'check free space and permissions under RUNNER_TEMP on the runner, then re-run the job',

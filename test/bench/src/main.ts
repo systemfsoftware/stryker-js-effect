@@ -16,8 +16,10 @@ import {
 } from '@systemfsoftware/stryker-e2e-core'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
+import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
@@ -178,10 +180,23 @@ const bench = (env: BenchEnv) =>
       prepareSide({ side, root, fixtureSource, workDir: path.join(workRoot, workDir), target, turboCacheDir }).pipe(
         Effect.mapError((failure) => orchestrationFailed('side-setup-failed', `side ${side}: ${failure.message}`)),
       )
+    const setupBudgetMs = Math.max(0, env.deadlineMs - (yield* Clock.currentTimeMillis))
     const prepared = yield* Effect.all({
       sideA: prepareNamed('A', env.sideARoot, 'a'),
       sideB: prepareNamed('B', env.sideBRoot, 'b'),
-    })
+    }).pipe(
+      Effect.timeoutOption(Duration.millis(setupBudgetMs)),
+      Effect.flatMap(Option.match({
+        onNone: () =>
+          Effect.fail(orchestrationFailed(
+            'setup-timed-out',
+            `setup of both sides did not finish before the job deadline (${
+              (setupBudgetMs / 1000).toFixed(1)
+            }s were left when it started); no run started`,
+          )),
+        onSome: Effect.succeed,
+      })),
+    )
 
     const result = yield* runBench({
       corpus: corpusNameOf(target),

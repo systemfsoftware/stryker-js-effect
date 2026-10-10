@@ -6,7 +6,8 @@ base branch (side A) and the PR head (side B) on the same runner, runs both
 interleaved over that entry's workload, and reads every number from each run's
 own NDJSON. Nothing here compares statuses, stores a baseline, or fails a PR on
 a timing delta. When the job's `BENCH_DEADLINE_MS` stops or precedes a run, the
-report aborts with `budget-exceeded`.
+report aborts with `budget-exceeded`; when it passes while setup is still
+running, the report aborts with `setup-timed-out` and no run starts.
 
 `pnpm --filter @systemfsoftware/stryker-bench bench` runs `src/main.ts` through
 `tsx` with the workspace source condition, so the orchestrator itself needs no

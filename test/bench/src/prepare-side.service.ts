@@ -99,7 +99,8 @@ const runCommand = (argv: Argv, cwd?: string): Effect.Effect<CommandOutcome, Ben
   Effect.scoped(Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const [command, ...args] = argv
-    const handle = yield* spawner.spawn(ChildProcess.make(command, args, cwd === undefined ? {} : { cwd })).pipe(
+    const options = { forceKillAfter: Duration.seconds(10), ...(cwd === undefined ? {} : { cwd }) }
+    const handle = yield* spawner.spawn(ChildProcess.make(command, args, options)).pipe(
       Effect.mapError((cause) => fail(`spawn ${command}`, 'the command could not be started', cause)),
     )
     const [stdout, stderr, exitCode] = yield* Effect.all(
