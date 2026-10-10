@@ -23,13 +23,13 @@ import {
   stringLiteral,
   unaryExpression,
 } from './Ast.handle.js'
+import { onlyWhen } from './effect-imports.js'
 import {
   freshIdentifier,
   identifiersIn,
   isDroppableArgument,
   isMovableArgument,
   moduleCall,
-  onlyWhen,
   type ResolvedEffectCall,
   resolveEffectCall,
 } from './EffectCall.js'

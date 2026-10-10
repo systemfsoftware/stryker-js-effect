@@ -97,6 +97,45 @@ export const anonymous = Effect.fn(function*() { return a + b })
 export const piped = Effect.fn('n')(function*() { return a + b })
 `
 
+const ARID_IMPORTED_CONSOLE_SOURCE = `import console from 'node:console'
+export const ready = () => console.log('x')
+`
+
+const ARID_IMPORTED_DATE_SOURCE = `import { Date } from './clock'
+export const parsed = () => Date.parse('x')
+`
+
+const ARID_SHADOWED_DATE_SOURCE = `const Date = { parse: (text: string) => text }
+export const parsed = () => Date.parse('x')
+`
+
+const ARID_ROOT_NAMESPACE_SOURCE = `import * as E from 'effect'
+export const ready = () => E.Effect.logInfo('x')
+`
+
+const ARID_FN_TEMPLATE_NAME_SOURCE = `import { Effect } from 'effect'
+export const named = Effect.fn(\`handle\`, { attributes: { kind: 'x' } })
+`
+
+const ARID_FN_MEMBER_NAME_SOURCE = `import { Effect } from 'effect'
+
+const Spans = { handle: 'handle' }
+
+export const named = Effect.fn(Spans.handle, { attributes: { kind: 'x' } })
+`
+
+const ARID_LOGGER_FUNCTION_SOURCE = `import * as Logger from 'effect/Logger'
+export const made = Logger.make((options) => options.message + '!')
+`
+
+const ARID_WITHSPAN_GEN_SOURCE = `import { Effect } from 'effect'
+export const spanned = (a, b) => Effect.withSpan(Effect.gen(function* () { return a + b }), 'span')
+`
+
+const ARID_METRIC_BARE_SOURCE = `import { counter } from 'effect/Metric'
+export const counted = () => counter('requests')
+`
+
 type Mutant = {
   id: string
   mutatorName: string
@@ -1184,6 +1223,221 @@ export function price(n) {
             arithmeticActive: true,
           })
         }),
+      ),
+    )
+
+    scenario(
+      'An imported console binding stays mutated',
+      Gherkin.Do.pipe(
+        Given('a module importing console from node:console')(
+          'source',
+          () => Effect.succeed(ARID_IMPORTED_CONSOLE_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-imported-console.ts', source),
+        ),
+        Then('the console argument stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([[undefined, undefined]])
+        ),
+      ),
+    )
+
+    scenario(
+      'An imported Date binding stays mutated',
+      Gherkin.Do.pipe(
+        Given('a module importing Date from a local clock')('source', () => Effect.succeed(ARID_IMPORTED_DATE_SOURCE)),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-imported-date.ts', source),
+        ),
+        Then('the parse argument stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([[undefined, undefined]])
+        ),
+      ),
+    )
+
+    scenario(
+      'A shadowed Date binding stays mutated',
+      Gherkin.Do.pipe(
+        Given('a module shadowing Date with a local object')('source', () => Effect.succeed(ARID_SHADOWED_DATE_SOURCE)),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-shadowed-date.ts', source),
+        ),
+        Then('the parse argument stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([[undefined, undefined]])
+        ),
+      ),
+    )
+
+    scenario(
+      'A root namespace import resolves an effect export',
+      Gherkin.Do.pipe(
+        Given('a module importing the effect root as a namespace')(
+          'source',
+          () => Effect.succeed(ARID_ROOT_NAMESPACE_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-root-namespace.ts', source),
+        ),
+        Then('the log argument is Ignored as the canonical Effect export')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([['Ignored', 'arid-logging: Effect.logInfo']])
+        ),
+      ),
+    )
+
+    scenario(
+      'Effect.fn with a template-literal name is arid on every argument',
+      Gherkin.Do.pipe(
+        Given('a module naming an Effect.fn with a template literal and an option')(
+          'source',
+          () => Effect.succeed(ARID_FN_TEMPLATE_NAME_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-fn-template-name.ts', source),
+        ),
+        Then('the template name and the option value are both Ignored')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const strings = result.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral')
+          return expect(strings.map((mutant) => [mutant.status, mutant.statusReason])).toEqual([
+            ['Ignored', 'arid-telemetry: Effect.fn'],
+            ['Ignored', 'arid-telemetry: Effect.fn'],
+          ])
+        }),
+      ),
+    )
+
+    scenario(
+      'Effect.fn with a member-expression name is arid only inside its own arguments',
+      Gherkin.Do.pipe(
+        Given('a module passing a member expression and an option to Effect.fn')(
+          'source',
+          () => Effect.succeed(ARID_FN_MEMBER_NAME_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-fn-member-name.ts', source),
+        ),
+        Then('the option value is Ignored while the span registry literal stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const strings = result.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral')
+          return expect({
+            ignored: strings
+              .filter((mutant) => mutant.status === 'Ignored')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+            activeStrings: strings.filter(isActive).length,
+          }).toEqual({
+            ignored: [['Ignored', 'arid-telemetry: Effect.fn']],
+            activeStrings: 1,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A function passed to an arid callee keeps the mutants in its body',
+      Gherkin.Do.pipe(
+        Given('a module passing an arrow function to Logger.make')(
+          'source',
+          () => Effect.succeed(ARID_LOGGER_FUNCTION_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-logger-function.ts', source),
+        ),
+        Then('the string inside the callback stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([[undefined, undefined]])
+        ),
+      ),
+    )
+
+    scenario(
+      'A generator nested in an arid argument keeps its own mutants',
+      Gherkin.Do.pipe(
+        Given('a module spanning an Effect.gen body')('source', () => Effect.succeed(ARID_WITHSPAN_GEN_SOURCE)),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-withspan-gen.ts', source),
+        ),
+        Then('the span name is Ignored while the generator body stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const byMutator = (name: string) => result.mutants.filter((mutant) => mutant.mutatorName === name)
+          return expect({
+            span: byMutator('StringLiteral').map((mutant) => [mutant.status, mutant.statusReason]),
+            arithmetic: byMutator('ArithmeticOperator').map((mutant) => [mutant.status, mutant.statusReason]),
+          }).toEqual({
+            span: [['Ignored', 'arid-telemetry: Effect.withSpan']],
+            arithmetic: [[undefined, undefined]],
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A bare named import from a module-wide arid module is arid',
+      Gherkin.Do.pipe(
+        Given('a module importing counter from effect/Metric')(
+          'source',
+          () => Effect.succeed(ARID_METRIC_BARE_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-metric-bare.ts', source),
+        ),
+        Then('the argument is Ignored as the canonical Metric export')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([['Ignored', 'arid-telemetry: Metric.counter']])
+        ),
       ),
     )
 

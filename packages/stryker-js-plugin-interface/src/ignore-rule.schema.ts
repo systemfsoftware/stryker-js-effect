@@ -22,14 +22,14 @@ const RULE_IDS = [
 const KEEP_ALL = "To keep these mutants, set `mutator.mutantSetPolicy: 'full'`."
 
 const ARID_CALLEE =
-  'The callee must come from an `effect` import under any local name; `console` and `Date` count only when nothing in scope rebinds them. The detail names the canonical callee, such as `Effect.logInfo`.'
+  'The callee must come from an `effect` import under any local name, or be `console` when nothing in scope rebinds or imports it. A mutant inside a function is never covered, even when the function is an argument of the call. The detail names the canonical callee, such as `Effect.logInfo`.'
 
 const RULE_DOCUMENTATION: { readonly [ruleId in (typeof RULE_IDS)[number]]: string } = {
   'arid-logging': `The mutant sits in a logging call (console.*, Logger, Effect.log*). ${ARID_CALLEE} ${KEEP_ALL}`,
   'arid-telemetry':
-    `The mutant sits in a telemetry span, annotation or metric (Effect.withSpan, annotate*, withLogSpan, Metric), or in the span name and options of \`Effect.fn('name', options)\`; the function body is never covered. ${ARID_CALLEE} ${KEEP_ALL}`,
+    `The mutant sits in a telemetry span, annotation or metric (Effect.withSpan, annotate*, withLogSpan, Metric), or in a non-function argument of \`Effect.fn\` such as the span name and options. ${ARID_CALLEE} ${KEEP_ALL}`,
   'arid-time':
-    `The mutant sits in a time or schedule value (Duration, Schedule, Effect.sleep, Date.now). ${ARID_CALLEE} ${KEEP_ALL}`,
+    `The mutant sits in a time or schedule value (Duration, Schedule, Effect.sleep). ${ARID_CALLEE} ${KEEP_ALL}`,
   'arid-config-default': `The mutant sits in a config default (Config.withDefault). ${ARID_CALLEE} ${KEEP_ALL}`,
   'arid-memoization': `The mutant sits in a memoization wrapper (Effect.cached*). ${ARID_CALLEE} ${KEEP_ALL}`,
   'redundant-relational': `Another mutant at the same relational operator already covers this one. ${KEEP_ALL}`,

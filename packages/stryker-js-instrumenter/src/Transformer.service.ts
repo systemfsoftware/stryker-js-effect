@@ -59,7 +59,14 @@ import { type Ast, type ScriptAst, type SpannedComment } from './Ast.schema.js'
 import { decodeDirective, DecodeDirectiveCommand } from './directives/decode-directive.workflow.js'
 import { type Directive, type LocatedDirective } from './directives/directive.schema.js'
 import { foldRule, FoldRuleCommand, type MutantRule } from './directives/fold-rule.workflow.js'
-import { isShadowed, resolveImportedExport } from './EffectCall.js'
+import {
+  buildImportTable,
+  type ImportTable,
+  isFunctionLike,
+  isImportedLocal,
+  isShadowed,
+  resolveImportedExport,
+} from './effect-imports.js'
 import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { FormatRegistry } from './Format.schema.js'
 import {
@@ -78,7 +85,6 @@ import { mutantIdOf, type MutantTuple, mutantTupleKey } from './MutantIdentity.j
 import {
   applyMutant,
   createMutant,
-  isStringLiteral,
   type Mutant,
   type MutatorContext,
   type MutatorEntry,
@@ -766,6 +772,7 @@ interface PlacementContext {
   readonly allMutatorNames: readonly string[]
   readonly excludedMutations: readonly string[]
   readonly mutantSetPolicy: Options.MutantSetPolicyType
+  readonly aridImportTable: ImportTable<AridEffectModule>
   readonly ignorers: readonly Ignorer[]
   readonly ordinalOf: (tuple: MutantTuple) => number
 }
@@ -890,38 +897,25 @@ function isNamedCallee(node: Node): node is NamedCallee {
   return isMemberOfIdentifierParts(node) && readKey<boolean>(node, 'computed') === false
 }
 
-const importSpecifierNames = (declaration: Node): readonly string[] =>
-  (readKey<readonly Node[]>(declaration, 'specifiers') ?? []).flatMap((specifier) =>
-    Option.toArray(
-      Option.map(
-        Option.fromNullishOr(readKey<Node>(specifier, 'local')),
-        (local) => String(readKey<string>(local, 'name')),
-      ),
-    )
-  )
-
-const programImportDeclarations = (program: Node): readonly Node[] =>
-  (readKey<readonly Node[]>(program, 'body') ?? []).filter((statement) => nodeType(statement) === 'ImportDeclaration')
-
-const importedLocalNames = (ancestors: readonly Node[]): readonly string[] =>
-  ancestors
-    .filter((ancestor) => nodeType(ancestor) === 'Program')
-    .flatMap((program) => programImportDeclarations(program).flatMap(importSpecifierNames))
-
-const isShadowedOrImportedLocal = (name: string, context: MutatorContext): boolean =>
-  isShadowed(name, context) || importedLocalNames(context.ancestors).includes(name)
-
-const unshadowedGlobalOf = (name: string, context: MutatorContext): Option.Option<AridGlobalObject> =>
+const unshadowedGlobalOf = (
+  name: string,
+  context: MutatorContext,
+  table: ImportTable<AridEffectModule>,
+): Option.Option<AridGlobalObject> =>
   Option.filter(
     Option.filter(Option.some(name), S.is(AridGlobalObject)),
-    (global) => isShadowedOrImportedLocal(global, context) === false,
+    (global) => isShadowed(global, context) === false && isImportedLocal(global, table) === false,
   )
 
-const aridGlobalCalleeOf = (callee: Expression, context: MutatorContext): Option.Option<AridCallee> =>
+const aridGlobalCalleeOf = (
+  callee: Expression,
+  context: MutatorContext,
+  table: ImportTable<AridEffectModule>,
+): Option.Option<AridCallee> =>
   Match.value(callee).pipe(
     Match.when(isNamedCallee, (named) =>
       Option.map(
-        unshadowedGlobalOf(named.object.name, context),
+        unshadowedGlobalOf(named.object.name, context, table),
         (name): AridCallee => ({ _tag: 'Global', name, member: named.property.name }),
       )),
     Match.orElse((): Option.Option<AridCallee> => Option.none()),
@@ -931,49 +925,57 @@ const aridCalleeOf = (
   call: CallExpression,
   callFrame: NodeFrame,
   policy: Options.MutantSetPolicyType,
+  table: ImportTable<AridEffectModule>,
 ): Option.Option<AridCallee> => {
   const context = toMutatorContext([call, ...ancestorsOfFrame(callFrame)], policy)
   return Option.orElse(
     Option.map(
-      resolveImportedExport(call.callee, context, AridEffectModule.literals),
+      resolveImportedExport(call.callee, context, table),
       (resolved): AridCallee => ({ _tag: 'EffectExport', module: resolved.module, exportName: resolved.exportName }),
     ),
-    () => aridGlobalCalleeOf(call.callee, context),
+    () => aridGlobalCalleeOf(call.callee, context, table),
   )
 }
-
-const firstArgumentIsString = (call: CallExpression): boolean =>
-  Option.exists(Option.fromNullishOr(call.arguments[0]), isStringLiteral)
 
 const aridCalleeWhen = (
   childIsArgument: boolean,
   ancestor: CallExpression,
   ancestorFrame: NodeFrame,
   policy: Options.MutantSetPolicyType,
-): Option.Option<AridCallee> => childIsArgument ? aridCalleeOf(ancestor, ancestorFrame, policy) : Option.none()
+  table: ImportTable<AridEffectModule>,
+): Option.Option<AridCallee> => childIsArgument ? aridCalleeOf(ancestor, ancestorFrame, policy, table) : Option.none()
 
-const aridFrameFor = (
+const aridCallFrameFor = (
   current: NodeFrame,
   ancestorFrame: NodeFrame,
   policy: Options.MutantSetPolicyType,
-): Option.Option<AridFrame> => {
+  table: ImportTable<AridEffectModule>,
+): readonly AridFrame[] => {
   const ancestor = ancestorFrame.node
-  if (ancestor.type !== 'CallExpression') return Option.none()
+  if (ancestor.type !== 'CallExpression') return []
   const childIsArgument = ancestor.arguments.some((argument) => argument === current.node)
-  return Option.some<AridFrame>({
-    callee: aridCalleeWhen(childIsArgument, ancestor, ancestorFrame, policy),
+  return [{
+    _tag: 'CallFrame',
+    callee: aridCalleeWhen(childIsArgument, ancestor, ancestorFrame, policy, table),
     childIsArgument,
-    firstArgumentIsString: firstArgumentIsString(ancestor),
-  })
+  }]
 }
 
-const aridFramesOf = (frame: NodeFrame, policy: Options.MutantSetPolicyType): readonly AridFrame[] =>
-  framesUpward(frame).flatMap((current) =>
-    Option.match(Option.fromNullishOr(current.parent), {
+const functionBoundaryOf = (current: NodeFrame): readonly AridFrame[] =>
+  isFunctionLike(current.node) ? [{ _tag: 'FunctionBoundary' }] : []
+
+const aridFramesOf = (
+  frame: NodeFrame,
+  policy: Options.MutantSetPolicyType,
+  table: ImportTable<AridEffectModule>,
+): readonly AridFrame[] =>
+  framesUpward(frame).flatMap((current) => [
+    ...functionBoundaryOf(current),
+    ...Option.match(Option.fromNullishOr(current.parent), {
       onNone: (): readonly AridFrame[] => [],
-      onSome: (parent) => Option.toArray(aridFrameFor(current, parent, policy)),
-    })
-  )
+      onSome: (parent) => aridCallFrameFor(current, parent, policy, table),
+    }),
+  ])
 
 const aridStatusReason = (decision: AridCodeDecision): Option.Option<string> =>
   Match.value(decision).pipe(
@@ -982,8 +984,12 @@ const aridStatusReason = (decision: AridCodeDecision): Option.Option<string> =>
     Match.exhaustive,
   )
 
-const aridReasonOf = (frame: NodeFrame, policy: Options.MutantSetPolicyType): Option.Option<string> =>
-  Match.value(aridCode(AridCodeCommand.make({ policy, frames: [...aridFramesOf(frame, policy)] }))).pipe(
+const aridReasonOf = (
+  frame: NodeFrame,
+  policy: Options.MutantSetPolicyType,
+  table: ImportTable<AridEffectModule>,
+): Option.Option<string> =>
+  Match.value(aridCode(AridCodeCommand.make({ policy, frames: [...aridFramesOf(frame, policy, table)] }))).pipe(
     Match.when(Result.isSuccess, (decided) => aridStatusReason(decided.success)),
     Match.orElse(() => Option.none<string>()),
   )
@@ -1012,7 +1018,7 @@ const mutablesFor = (
   )
   if (replacements.length === 0) return []
   const ignorerAnswer = Option.getOrUndefined(ignorerAnswerFor(frame.node, ancestors, context.ignorers))
-  const aridReason = Option.getOrUndefined(aridReasonOf(frame, context.mutantSetPolicy))
+  const aridReason = Option.getOrUndefined(aridReasonOf(frame, context.mutantSetPolicy, context.aridImportTable))
   const originalCode = printNode(frame.node)
   return replacements.map(({ mutatorName, replacement }): MutableCandidate => {
     const replacementCode = printNode(replacement)
@@ -1463,6 +1469,7 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
       allMutatorNames: options.mutators.known.map((name) => name.toLowerCase()),
       excludedMutations: options.excludedMutations,
       mutantSetPolicy: options.mutantSetPolicy,
+      aridImportTable: buildImportTable(root, AridEffectModule.literals),
       ignorers: options.ignorers,
       ordinalOf: mutantCollector.ordinalOf,
     }
