@@ -1,5 +1,5 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
-import { RunEvent, ShardPlan, type ShardPlanScope } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, ShardPlan, type ShardPlanScope, ShardPlanVersion } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Console from 'effect/Console'
@@ -359,7 +359,7 @@ const planScopeOf = (diff: Option.Option<GitDiffResult>): ShardPlanScope =>
     onSome: (present) =>
       Match.value(
         Result.getOrElse(
-          gitDiff(DiffScopeCommand.make({ hunks: [...present.hunks], untrackedFiles: [...present.untrackedFiles] })),
+          gitDiff(DiffScopeCommand.make({ hunks: present.hunks, untrackedFiles: present.untrackedFiles })),
           (neverError) => neverError,
         ),
       ).pipe(
@@ -395,7 +395,7 @@ const assemblePlan = (
     (neverError) => neverError,
   )
   return {
-    version: 2,
+    version: ShardPlanVersion.literal,
     scope,
     targetSeconds: request.targetSeconds,
     shards: shards.map((shard) => ({

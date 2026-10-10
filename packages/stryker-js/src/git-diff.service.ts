@@ -1,9 +1,11 @@
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
 import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
@@ -34,7 +36,7 @@ interface GitRun {
   readonly exitCode: number
 }
 
-type GitEnv = ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+type GitEnv = ChildProcessSpawner.ChildProcessSpawner | Path.Path | Scope.Scope
 
 const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/
 const NEW_FILE = /^\+\+\+ (?!\/dev\/null)(.+)$/
@@ -112,18 +114,6 @@ const step = (state: ParserState, line: string): ParserState =>
 const parseHunks = (output: string): ReadonlyArray<DiffHunk> =>
   output.split('\n').reduce(step, { file: undefined, awaitingPath: false, hunks: [] }).hunks
 
-const sharedDepthOf = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): number => {
-  const firstDifference = left.findIndex((part, at) => part !== right[at])
-  return firstDifference === -1 ? left.length : firstDifference
-}
-
-const cwdRelativeOf = (cwdFromRoot: string, fileFromRoot: string): string => {
-  const cwdParts = cwdFromRoot.split('/').filter((part) => part.length > 0)
-  const fileParts = fileFromRoot.split('/')
-  const shared = sharedDepthOf(cwdParts, fileParts)
-  return [...cwdParts.slice(shared).map(() => '..'), ...fileParts.slice(shared)].join('/')
-}
-
 const runGit = (
   cwd: string,
   args: ReadonlyArray<string>,
@@ -166,11 +156,29 @@ const readOutput = (cwd: string, args: ReadonlyArray<string>): Effect.Effect<str
 const readHead = (cwd: string): Effect.Effect<string, GitCommandFailed, GitEnv> =>
   Effect.map(readOutput(cwd, ['rev-parse', 'HEAD']), (stdout) => stdout.trim())
 
-const readHunks = (cwd: string, base: string): Effect.Effect<ReadonlyArray<DiffHunk>, GitDiffError, GitEnv> =>
+interface CheckoutPosition {
+  readonly cwdFromRoot: string
+  readonly head: string
+}
+
+const lineAt = (lines: ReadonlyArray<string>, at: number): string =>
+  Option.getOrElse(Arr.get(lines, at), () => '').trim()
+
+const readPosition = (cwd: string): Effect.Effect<CheckoutPosition, GitCommandFailed, GitEnv> =>
+  Effect.map(readOutput(cwd, ['rev-parse', '--show-prefix', 'HEAD']), (stdout) => {
+    const lines = stdout.split('\n')
+    return { cwdFromRoot: lineAt(lines, 0), head: lineAt(lines, 1) }
+  })
+
+const readHunks = (
+  cwd: string,
+  base: string,
+  cwdFromRoot: string,
+): Effect.Effect<ReadonlyArray<DiffHunk>, GitDiffError, GitEnv> =>
   Effect.gen(function*() {
-    const cwdFromRoot = (yield* readOutput(cwd, ['rev-parse', '--show-prefix'])).trim()
+    const path = yield* Path.Path
     const hunks = parseHunks(yield* readOutput(cwd, ['diff', '--unified=0', base]))
-    return hunks.map((hunk) => ({ ...hunk, file: cwdRelativeOf(cwdFromRoot, hunk.file) }))
+    return hunks.map((hunk) => ({ ...hunk, file: path.relative(cwdFromRoot, hunk.file) }))
   })
 
 const readUntracked = (cwd: string): Effect.Effect<ReadonlyArray<string>, GitDiffError, GitEnv> =>
@@ -182,10 +190,10 @@ const readUntracked = (cwd: string): Effect.Effect<ReadonlyArray<string>, GitDif
 const changedSince = (input: GitDiffInput): Effect.Effect<GitDiffResult, GitDiffError, GitEnv> =>
   Effect.gen(function*() {
     const base = yield* resolveBase(input)
-    const head = yield* readHead(input.cwd)
-    const hunks = yield* readHunks(input.cwd, base)
+    const position = yield* readPosition(input.cwd)
+    const hunks = yield* readHunks(input.cwd, base, position.cwdFromRoot)
     const untrackedFiles = yield* readUntracked(input.cwd)
-    return { ref: input.ref, base, head, hunks, untrackedFiles }
+    return { ref: input.ref, base, head: position.head, hunks, untrackedFiles }
   })
 
 export class GitDiff extends Context.Service<GitDiff, GitDiffShape>()(
@@ -195,7 +203,12 @@ export class GitDiff extends Context.Service<GitDiff, GitDiffShape>()(
     GitDiff,
     Effect.map(ChildProcessSpawner.ChildProcessSpawner, (spawner) => {
       const spawning = <A, E>(effect: Effect.Effect<A, E, GitEnv>): Effect.Effect<A, E> =>
-        Effect.scoped(Effect.provideService(effect, ChildProcessSpawner.ChildProcessSpawner, spawner))
+        Effect.scoped(
+          effect.pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Effect.provide(Path.layer),
+          ),
+        )
       return {
         changedSince: (input: GitDiffInput) => spawning(changedSince(input)),
         head: (cwd: string) => spawning(readHead(cwd)),

@@ -30,11 +30,6 @@ export interface ForkedStreamedRun {
   readonly fork: Warm.SandboxFork
 }
 
-export interface ForkedGuestRun {
-  readonly result: ExecResult
-  readonly fork: Warm.SandboxFork
-}
-
 const STRYKER_CLI: readonly [string, ...Array<string>] = ['npx', '--no-install', 'stryker']
 
 const cliArgvOf = (args: ReadonlyArray<string>): [string, ...Array<string>] => [...STRYKER_CLI, ...args]
@@ -56,8 +51,8 @@ const guestEnvironmentOf = (
     }
   })
 
-const runStrykerCli = (
-  args: ReadonlyArray<string>,
+const execInFork = (
+  argv: readonly [string, ...Array<string>],
   warm: Warm.WarmSandbox,
   label: string,
   runEnvironment: Readonly<Record<string, string>> | undefined,
@@ -65,10 +60,20 @@ const runStrykerCli = (
   Effect.gen(function*() {
     const environment = yield* guestEnvironmentOf(runEnvironment)
     const fork = yield* Warm.fork(warm, label)
-    const result = yield* Warm.exec(fork, cliArgvOf(args), environment)
+    const result = yield* Warm.exec(fork, argv, environment)
     const run: ForkedRun = { result, fork }
     return run
-  }).pipe(seamSpan(SpanNames.cliRun, { 'e2e.cli.args': args.join(' ') }))
+  })
+
+const runStrykerCli = (
+  args: ReadonlyArray<string>,
+  warm: Warm.WarmSandbox,
+  label: string,
+  runEnvironment: Readonly<Record<string, string>> | undefined,
+) =>
+  execInFork(cliArgvOf(args), warm, label, runEnvironment).pipe(
+    seamSpan(SpanNames.cliRun, { 'e2e.cli.args': args.join(' ') }),
+  )
 
 const streamStrykerCli = (
   args: ReadonlyArray<string>,
@@ -90,14 +95,7 @@ const runGuestCommand = (
   warm: Warm.WarmSandbox,
   label: string,
   runEnvironment: Readonly<Record<string, string>> | undefined,
-) =>
-  Effect.gen(function*() {
-    const environment = yield* guestEnvironmentOf(runEnvironment)
-    const fork = yield* Warm.fork(warm, label)
-    const result = yield* Warm.exec(fork, argv, environment)
-    const run: ForkedGuestRun = { result, fork }
-    return run
-  }).pipe(seamSpan(SpanNames.cliRun, { 'e2e.cli.args': label }))
+) => execInFork(argv, warm, label, runEnvironment).pipe(seamSpan(SpanNames.cliRun, { 'e2e.cli.args': label }))
 
 export interface StrykerCliRunnerShape {
   readonly run: (
@@ -118,7 +116,7 @@ export interface StrykerCliRunnerShape {
     warm: Warm.WarmSandbox,
     label: string,
     runEnvironment?: Readonly<Record<string, string>> | undefined,
-  ) => Effect.Effect<ForkedGuestRun, Config.ConfigError | SandboxForkFailure, Crypto.Crypto | Scope.Scope>
+  ) => Effect.Effect<ForkedRun, Config.ConfigError | SandboxForkFailure, Crypto.Crypto | Scope.Scope>
 }
 
 export class StrykerCliRunner extends Context.Service<StrykerCliRunner, StrykerCliRunnerShape>()(

@@ -1,4 +1,3 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine, GitDiff, GitDiffSchema } from '@systemfsoftware/stryker-js'
 import { RunEvent, type ShardPlan, type ShardPlanScope } from '@systemfsoftware/stryker-js-cli-contract'
@@ -12,10 +11,9 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
+import { filePorts, removeWorkspace } from './__fixtures__/check-cost-workspace.fixture.js'
 
 const Feature = makeFeature({ it })
-
-const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 const TARGET_FILE = 'src/target.ts'
 const OTHER_FILE = 'src/other.ts'
@@ -95,11 +93,6 @@ const writeWorkspace = (
     return root
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
-const removeWorkspace = (root: string): Effect.Effect<void, never, never> =>
-  Effect.orDie(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true }))).pipe(
-    Effect.provide(filePorts),
-  )
-
 const withChdir = <A, E, R>(directory: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.acquireUseRelease(
     Effect.sync(() => {
@@ -120,7 +113,6 @@ interface GitCall {
 interface PlanObservation {
   readonly scope: ShardPlanScope | undefined
   readonly mutantIds: readonly string[]
-  readonly shardCount: number
   readonly anyShardSchedulesMutants: boolean
   readonly total: number
   readonly gitCalls: readonly GitCall[]
@@ -129,15 +121,12 @@ interface PlanObservation {
   readonly outExists: boolean
 }
 
-const diffResult = (
-  hunks: ReadonlyArray<GitDiffSchema.DiffHunk>,
-  untrackedFiles: ReadonlyArray<string> = [],
-): GitDiffSchema.GitDiffResult => ({
+const diffResult = (hunks: ReadonlyArray<GitDiffSchema.DiffHunk>): GitDiffSchema.GitDiffResult => ({
   ref: 'HEAD~1',
   base: FAKE_BASE,
   head: FAKE_HEAD,
   hunks: [...hunks],
-  untrackedFiles: [...untrackedFiles],
+  untrackedFiles: [],
 })
 
 const hunkIn = (file: string, startLine: number, lineCount: number): GitDiffSchema.DiffHunk => ({
@@ -216,7 +205,6 @@ const runPlan = (
       mutantIds: plan === undefined
         ? []
         : plan.shards.flatMap((shard) => shard.projects.flatMap((entry) => entry.mutants)),
-      shardCount: plan?.shards.length ?? 0,
       anyShardSchedulesMutants: plan !== undefined &&
         plan.shards.some((shard) => shard.projects.some((entry) => entry.mutants.length > 0)),
       total: known?.total ?? -1,
@@ -230,11 +218,8 @@ const runPlan = (
 const containsAll = (superset: ReadonlyArray<string>, subset: ReadonlyArray<string>): boolean =>
   subset.every((id) => superset.includes(id))
 
-const sameIds = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean => {
-  const unique = new Set(left)
-  const other = new Set(right)
-  return unique.size === other.size && [...unique].every((id) => other.has(id))
-}
+const sameIds = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean =>
+  containsAll(left, right) && containsAll(right, left)
 
 Feature('Planning mutation shards since a git ref')
   .withLayer(Layer.empty)

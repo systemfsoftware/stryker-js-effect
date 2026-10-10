@@ -2,10 +2,10 @@ import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gh
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Check, Expect } from '@systemfsoftware/vitest'
-import { Effect, Result, Schema } from 'effect'
+import { Effect, Equal, Result, Schema } from 'effect'
 
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { verifyPersistedAnnotations } from './__fixtures__/annotation-oracle.fixture.js'
+import { reportMutantsOf, verifyPersistedAnnotations } from './__fixtures__/annotation-oracle.fixture.js'
 import { E2eHarnessLive, runStrykerGuest } from './__fixtures__/e2e-harness.fixture.js'
 import { readPersistedReport } from './__fixtures__/run-artifacts.fixture.js'
 
@@ -97,7 +97,7 @@ const verifyDiffScopedPlans = (expect: Expect, shas: GitShas, plan1: ShardPlan, 
   return expect({
     plan1: diffScopeOf(plan1),
     plan3: diffScopeOf(plan3),
-    idsAreEqual: ids1.join(',') === ids3.join(','),
+    idsAreEqual: Equal.equals(ids1, ids3),
     idsAreNonEmpty: ids3.length > 0,
   }).toStrictEqual({
     plan1: { tag: 'DiffScoped', base: shas.base, head: shas.head },
@@ -108,9 +108,7 @@ const verifyDiffScopedPlans = (expect: Expect, shas: GitShas, plan1: ShardPlan, 
 }
 
 const verifyMergedReport = (expect: Expect, plan3: ShardPlan, report: Report.MutationTestResult): Check => {
-  const mutants = Object.entries(report.files).flatMap(([file, fileResult]) =>
-    fileResult.mutants.map((mutant) => ({ file, mutant }))
-  )
+  const mutants = reportMutantsOf(report)
   const plannedIds = sortedIds(plannedIdsOf(plan3))
   return expect({
     mutantsAreNonEmpty: mutants.length > 0,
