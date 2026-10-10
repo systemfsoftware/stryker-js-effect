@@ -9,6 +9,7 @@ import type { CurrentVerdict, TimeoutEvidence } from '../IncrementalDiff.schema.
 import { costTotalMsOf } from '../mutant-cost.js'
 import {
   type CheckerEntry,
+  type TestedComponents,
   type TestedEntry,
   type TestedStatus,
   TestedStatusSchema,
@@ -89,21 +90,39 @@ const measuredOf = (settled: SettledVerdict) => ({
   settledAt: settled.settledAt,
 })
 
+const testedFieldsOf = (settled: SettledVerdict, components: TestedComponents) => ({
+  components,
+  ...timeoutFieldsOf(settled.result, settled.evidence),
+  ...presentField('testsCompleted', settled.result.testsCompleted),
+  ...presentField('coveredBy', settled.result.coveredBy),
+  ...presentField('killedBy', settled.result.killedBy),
+  ...measuredOf(settled),
+})
+
+const ignoredEntryOf = (settled: SettledVerdict, components: TestedComponents): Option.Option<TestedEntry> =>
+  Option.map(
+    Option.liftPredicate(Option.fromUndefinedOr(settled.result.statusReason), S.is(Mutant.IgnoreStatusReasonText)),
+    (statusReason): TestedEntry => ({ ...testedFieldsOf(settled, components), status: 'Ignored', statusReason }),
+  )
+
 const testedEntryOf = (settled: SettledVerdict, status: TestedStatus): Option.Option<VerdictEntry> =>
-  Option.map(testedComponentsOf(settled.current), (components): TestedEntry => ({
-    components,
-    status,
-    ...timeoutFieldsOf(settled.result, settled.evidence),
-    ...presentField('testsCompleted', settled.result.testsCompleted),
-    ...presentField('coveredBy', settled.result.coveredBy),
-    ...presentField('killedBy', settled.result.killedBy),
-    ...measuredOf(settled),
-  }))
+  Option.flatMap(testedComponentsOf(settled.current), (components) =>
+    Match.value(status).pipe(
+      Match.when('Ignored', () => ignoredEntryOf(settled, components)),
+      Match.orElse((settledStatus) =>
+        Option.some<TestedEntry>({
+          ...testedFieldsOf(settled, components),
+          status: settledStatus,
+          ...presentField('statusReason', settled.result.statusReason),
+        })
+      ),
+    ))
 
 const checkerEntryOf = (settled: SettledVerdict): Option.Option<VerdictEntry> =>
   Option.map(checkerComponentsOf(settled.current), (components): CheckerEntry => ({
     components,
     status: 'CompileError',
+    ...presentField('statusReason', settled.result.statusReason),
     ...measuredOf(settled),
   }))
 

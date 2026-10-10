@@ -7,4 +7,4 @@ Verdicts now live in a verdict store, one entry per verdict keyed by a digest of
 
 A store written under another key scheme is a clean miss. A torn entry is skipped and counted as `entryUnreadable`. New entries: `verdict-store` (the store contract), `verdict-store/fs`, `verdict-store/memory`, and `verdict-store/laws` (the laws every store must pass).
 
-Breaking: `incrementalSources` is removed. The incremental file is now version 5; per-mutant verdicts and costs live in the store.
+Breaking: `incrementalSources` is removed. The incremental file is now version 6; per-mutant verdicts and costs live in the store.

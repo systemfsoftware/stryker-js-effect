@@ -1,6 +1,6 @@
 import * as S from 'effect/Schema'
 
-import { CheckerFailed, CheckerMutantWire, CheckResultSchema } from './Checker.schema.js'
+import { CheckAnswerSchema, CheckerFailed, CheckerMutantWire } from './Checker.schema.js'
 import { MutantRunOptionsSchema } from './Mutant.schema.js'
 import { ReporterEventUnion, ReporterFailed } from './ReporterEvent.schema.js'
 import { Traceparent, Tracestate } from './TraceContext.schema.js'
@@ -25,7 +25,7 @@ export type TestRunnerMutantRunRequest = typeof TestRunnerMutantRunRequest.Type
 export const CheckerRequest = S.Struct({ checkerName: S.String, mutants: S.Array(CheckerMutantWire) })
 export type CheckerRequest = typeof CheckerRequest.Type
 
-export const CheckerCheckResult = S.Record(S.String, CheckResultSchema)
+export const CheckerCheckResult = S.Record(S.String, CheckAnswerSchema)
 export const CheckerGroupResult = S.String.pipe(S.Array, S.Array)
 
 export const CheckerDigestRequest = S.Struct({

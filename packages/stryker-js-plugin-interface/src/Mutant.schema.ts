@@ -35,6 +35,17 @@ export type EphemeralStatus = typeof EphemeralStatusSchema.Type
 export const ActionableStatusSchema = S.Literals(['Survived', 'NoCoverage', 'Timeout', 'RuntimeError'])
 export type ActionableStatus = typeof ActionableStatusSchema.Type
 
+export const SettledStatusSchema = MutantStatusSchema.pick([
+  'Killed',
+  'Survived',
+  'NoCoverage',
+  'CompileError',
+  'RuntimeError',
+  'Timeout',
+  'Pending',
+])
+export type SettledStatus = typeof SettledStatusSchema.Type
+
 export const MutantId = S.String.check(
   S.isPattern(/^[0-9a-f]{16}$/u, {
     expected: 'a 16-character lowercase hexadecimal mutant id',
@@ -190,6 +201,7 @@ export type RunMutantResult = Mutant & {
   readonly coveredBy?: readonly string[] | undefined
   readonly static?: boolean | undefined
   readonly cost?: MutantCost | undefined
+  readonly remembered?: boolean | undefined
 }
 
 export interface MutantCost {

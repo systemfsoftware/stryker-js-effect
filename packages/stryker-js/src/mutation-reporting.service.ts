@@ -96,6 +96,7 @@ export interface MutationReportingInput {
   readonly basePath: string
   readonly reporterStage: ReporterStage
   readonly formatRegistry: Format.FormatRegistry
+
   readonly concurrency: number
   readonly runStartedAt: number
 }

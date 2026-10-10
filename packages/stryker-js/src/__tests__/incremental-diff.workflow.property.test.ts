@@ -53,12 +53,12 @@ const sharedOf = (components: VerdictComponents): SharedComponents => ({
 
 const staleOf = (entry: VerdictEntry): VerdictEntry =>
   Match.valueTags(entry.components, {
-    tested: (components): VerdictEntry => ({
-      ...entry,
-      status: S.is(TestedEntrySchema)(entry) ? entry.status : 'Survived',
-      components: { ...components, engineDigest: drifted(components.engineDigest) },
-      settledAt: entry.settledAt + 1,
-    }),
+    tested: (components): VerdictEntry => {
+      const staleComponents = { ...components, engineDigest: drifted(components.engineDigest) }
+      return S.is(TestedEntrySchema)(entry)
+        ? { ...entry, components: staleComponents, settledAt: entry.settledAt + 1 }
+        : { components: staleComponents, status: 'Survived', costMs: entry.costMs, settledAt: entry.settledAt + 1 }
+    },
     checker: (components): VerdictEntry => ({
       components: { ...components, engineDigest: drifted(components.engineDigest) },
       status: 'CompileError',
@@ -222,6 +222,22 @@ describe('incrementalDiff', () => {
       return expected !== undefined
         ? runsWithRefusal(result, expected)
         : JSON.stringify(result) === JSON.stringify(subject(commandOf([matchingLookupOf(entry)])))
+    },
+  )
+
+  it.prop(
+    '∀e_Entry_≡AMatchingEntryIsRememberedWithItsStatusAndReasonUnlessItIsAnUnreproducedWallClockTimeout',
+    { of: [VerdictEntrySchema], subject: incrementalDiff },
+    (subject, [entry]) => {
+      const result = subject(commandOf([matchingLookupOf(entry)]))
+      const decision = onlyDecision(result)
+      const unreproduced = S.is(TestedEntrySchema)(entry) && entry.status === 'Timeout' &&
+        entry.timeoutKind !== 'hitLimit' && (entry.reproductions ?? 0) < 1
+      return unreproduced
+        ? runsWithRefusal(result, 'timeoutUnreproduced')
+        : decision !== undefined && S.is(MutantRemembered)(decision) &&
+          decision.mutantId === entry.components.mutantId && decision.status === entry.status &&
+          decision.statusReason === entry.statusReason
     },
   )
 

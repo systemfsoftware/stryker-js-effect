@@ -57,7 +57,7 @@ export interface CheckerResourceService {
   readonly check: (
     checkerName: string,
     mutants: readonly Checker.CheckerMutantWire[],
-  ) => Effect.Effect<Record<string, Checker.CheckResult>, CheckerCrash | Checker.CheckerFailed>
+  ) => Effect.Effect<Record<string, Checker.CheckAnswer>, CheckerCrash | Checker.CheckerFailed>
   readonly group: (
     checkerName: string,
     mutants: readonly Checker.CheckerMutantWire[],
@@ -141,12 +141,12 @@ export const check: {
   (
     checkerName: string,
     mutants: readonly Checker.CheckerMutantWire[],
-  ): (self: CheckerHandle) => Effect.Effect<Record<string, Checker.CheckResult>, CheckerCrash | Checker.CheckerFailed>
+  ): (self: CheckerHandle) => Effect.Effect<Record<string, Checker.CheckAnswer>, CheckerCrash | Checker.CheckerFailed>
   (
     self: CheckerHandle,
     checkerName: string,
     mutants: readonly Checker.CheckerMutantWire[],
-  ): Effect.Effect<Record<string, Checker.CheckResult>, CheckerCrash | Checker.CheckerFailed>
+  ): Effect.Effect<Record<string, Checker.CheckAnswer>, CheckerCrash | Checker.CheckerFailed>
 } = dual(
   (args) => isCheckerHandle(args[0]),
   (self: CheckerHandle, checkerName: string, mutants: readonly Checker.CheckerMutantWire[]) =>

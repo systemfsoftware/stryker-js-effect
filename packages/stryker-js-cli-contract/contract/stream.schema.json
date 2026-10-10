@@ -424,19 +424,6 @@
           "type": "string",
           "pattern": "^[0-9a-f]{16}$"
         },
-        "status": {
-          "type": "string",
-          "enum": [
-            "Killed",
-            "Survived",
-            "NoCoverage",
-            "CompileError",
-            "RuntimeError",
-            "Timeout",
-            "Ignored",
-            "Pending"
-          ]
-        },
         "file": {
           "type": "string",
           "pattern": "^[^\\\\]+$"
@@ -545,12 +532,34 @@
               "type": "null"
             }
           ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Killed",
+            "Survived",
+            "NoCoverage",
+            "CompileError",
+            "RuntimeError",
+            "Timeout",
+            "Ignored",
+            "Pending"
+          ]
+        },
+        "statusReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "_tag",
         "id",
-        "status",
         "file",
         "location",
         "mutator",
@@ -558,7 +567,9 @@
         "completed",
         "total",
         "static",
-        "cost"
+        "cost",
+        "status",
+        "statusReason"
       ],
       "additionalProperties": true
     },

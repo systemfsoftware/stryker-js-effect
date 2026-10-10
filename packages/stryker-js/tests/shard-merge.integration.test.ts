@@ -11,6 +11,7 @@ import * as Order from 'effect/Order'
 import * as Path from 'effect/Path'
 import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import * as Record from 'effect/Record'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
@@ -36,6 +37,7 @@ const CONFIG = `export default {
 interface Verdict {
   readonly id: string
   readonly status: string
+  readonly reason: string
 }
 
 interface ExecOutcome {
@@ -75,7 +77,7 @@ const decodeTested = S.decodeUnknownOption(S.fromJsonString(RunEvent.RunMutantTe
 const verdictsOfStream = (text: string): readonly Verdict[] =>
   text.split('\n')
     .flatMap((line) => Option.toArray(decodeTested(line.trim())))
-    .map((tested): Verdict => ({ id: tested.id, status: tested.status }))
+    .map((tested): Verdict => ({ id: tested.id, status: tested.status, reason: tested.statusReason ?? '' }))
 
 const decodeReport = S.decodeUnknownOption(S.fromJsonString(Report.MutationTestResult))
 
@@ -84,7 +86,11 @@ const verdictsOfReport = (text: string): readonly Verdict[] =>
     onNone: () => [],
     onSome: (report) =>
       Object.values(report.files).flatMap((file) =>
-        file.mutants.map((mutant): Verdict => ({ id: mutant.id, status: mutant.status }))
+        file.mutants.map((mutant): Verdict => ({
+          id: mutant.id,
+          status: mutant.status,
+          reason: mutant.statusReason ?? '',
+        }))
       ),
   })
 
@@ -126,6 +132,7 @@ const prepareFixture = (): Effect.Effect<
     yield* fs.makeDirectory(path.join(root, 'src'))
     yield* fs.writeFileString(path.join(root, 'package.json'), CONSUMER_PACKAGE)
     yield* fs.writeFileString(path.join(root, 'src', 'add.js'), 'export const add = (a, b) => a + b\n')
+    yield* fs.writeFileString(path.join(root, 'src', 'log.js'), "export const log = (a) => console.log('adding', a)\n")
     yield* fs.writeFileString(path.join(root, 'stryker.config.mjs'), CONFIG)
     const ran = yield* spawnCli(root, ['run'])
     yield* Effect.when(
@@ -213,8 +220,19 @@ const runAndMerge = (
 
 const statusMapOf = (verdicts: readonly Verdict[]): Readonly<Record<string, string>> =>
   Object.fromEntries(
-    [...verdicts].sort((left, right) => left.id.localeCompare(right.id)).map((verdict) => [verdict.id, verdict.status]),
+    [...verdicts].sort((left, right) => left.id.localeCompare(right.id)).map((verdict) => [
+      verdict.id,
+      `${verdict.status} ${verdict.reason}`,
+    ]),
   )
+
+const ruleReasonsOf = (verdicts: readonly Verdict[]): readonly string[] =>
+  Arr.dedupe(
+    verdicts.flatMap((verdict) => verdict.status === 'Ignored' ? [verdict.reason.split(':')[0] ?? ''] : []),
+  )
+
+const testedIdsOf = (verdicts: readonly Verdict[]): readonly string[] =>
+  Arr.sort(verdicts.filter((verdict) => verdict.status !== 'Ignored').map((verdict) => verdict.id), Order.String)
 
 const decodeVerdictLine = S.decodeUnknownOption(S.fromJsonString(RunEvent.VerdictReached))
 
@@ -283,27 +301,73 @@ const mergeAndBootstrapBudget = (
     }
   }).pipe(Effect.orDie)
 
+const downgradeLine = (raw: string): string =>
+  Option.match(S.decodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))(raw.trim()), {
+    onNone: () => raw,
+    onSome: (line) =>
+      Record.has(line, 'schemaVersion')
+        ? JSON.stringify({ ...line, schemaVersion: '6.0' })
+        : Record.has(line, 'statusReason')
+        ? JSON.stringify(Record.remove(line, 'statusReason'))
+        : raw,
+  })
+
+const downgradeStream = (file: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const text = yield* fs.readFileString(file)
+    yield* fs.writeFileString(file, text.split('\n').map(downgradeLine).join('\n'))
+  }).pipe(Effect.orDie)
+
+const mergeWithDowngradedStream = (
+  fixture: Fixture,
+): Effect.Effect<
+  ExecOutcome,
+  never,
+  FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const { root } = fixture
+    yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '1/2', '--out', 'reports/downgraded-1'])
+    yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '2/2', '--out', 'reports/downgraded-2'])
+    yield* downgradeStream(path.join(root, 'reports', 'downgraded-1', 'mutation-stream.jsonl'))
+    return yield* spawnCli(root, [
+      'merge',
+      '--plan',
+      'plan.json',
+      'reports/downgraded-1',
+      'reports/downgraded-2',
+      '--out',
+      'reports/downgraded-merged',
+    ])
+  }).pipe(Effect.orDie)
+
 Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary runs a two-shard plan and merges it')
   .body(({ scenario }) => {
     scenario(
-      'A two-shard plan merge equals the unsharded statuses and a doctored plan fails naming the duplicated id',
+      'A two-shard plan merge equals the unsharded statuses and reasons, and a doctored plan fails naming the duplicated id',
       Gherkin.Do.pipe(
         Given('a fixture whose unsharded run and two-shard plan are prepared')('fixture', () => prepareFixture()),
         When('the shards run and merge, and a doctored plan is merged')('outcome', (s) => runAndMerge(s.fixture)),
-        Then('the merged statuses and costs cover every mutant and the doctored merge fails naming the id')(
+        Then(
+          'the merged statuses and reasons cover every mutant, every tested verdict is stored, and the doctored merge fails naming the id',
+        )(
           (s, expect) =>
             expect({
               merged: statusMapOf(s.outcome.merged),
               storedIds: s.outcome.storedIds,
+              mergedIgnoredRules: ruleReasonsOf(s.outcome.merged),
               unsharded: statusMapOf(s.fixture.unsharded),
               unshardedIds: s.fixture.ids,
               doctoredFailed: s.outcome.doctored.exitCode !== 0,
               doctoredNamesId: s.outcome.doctored.output.includes(s.outcome.doctored.id),
             }).toEqual({
               merged: statusMapOf(s.fixture.unsharded),
-              storedIds: s.fixture.ids,
+              storedIds: testedIdsOf(s.fixture.unsharded),
+              mergedIgnoredRules: ['arid-logging'],
               unsharded: statusMapOf(s.fixture.unsharded),
               unshardedIds: s.fixture.ids,
               doctoredFailed: true,
@@ -332,6 +396,24 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
               gateExitCode: 0,
               baselineSeconds: Option.some(s.outcome.slowestShardSeconds),
             }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A shard stream written under another schema version is refused by the merge',
+      Gherkin.Do.pipe(
+        Given('a fixture whose unsharded run and two-shard plan are prepared')('fixture', () => prepareFixture()),
+        When('two shards run and one shard stream is rewritten under an older schema version')(
+          'outcome',
+          (s) => mergeWithDowngradedStream(s.fixture),
+        ),
+        Then('the merge fails and names both the written and the expected schema versions')((s, expect) =>
+          expect({
+            exitCode: s.outcome.exitCode === 0 ? 0 : 1,
+            namesWrittenVersion: s.outcome.output.includes('6.0'),
+            namesExpectedVersion: s.outcome.output.includes('7.0'),
+          }).toEqual({ exitCode: 1, namesWrittenVersion: true, namesExpectedVersion: true })
         ),
       ),
     )

@@ -56,25 +56,32 @@ const IGNORED_STATIC_MUTANTS: ReadonlyArray<MutantFixture> = [
 
 const mutantIdTextOf = (index: number): string => String(index).padStart(16, '0')
 
-const mutantLineOf = (fixture: MutantFixture): CliContract.RunMutantTestedEvent =>
+const mutantFieldsOf = (fixture: MutantFixture) => ({
+  id: Mutant.MutantId.make(mutantIdTextOf(fixture.index)),
+  fileName: Mutant.CanonicalFileName.make('src/a.ts'),
+  location: MUTANT_LOCATION,
+  mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
+  replacement: '+',
+  completed: fixture.index,
+  total: 4,
+  static: fixture.static,
+  cost: fixture.bodyMs === null
+    ? null
+    : CliContract.MutantCost.make({
+      fixedOverheadMs: 0,
+      testBodyMs: fixture.bodyMs,
+      testsExecuted: 1,
+      shared: false,
+    }),
+})
+
+const mutantLineOf = (fixture: MutantFixture): CliContract.RunMutantTested =>
   CliContract.RunMutantTestedEvent.make({
-    id: Mutant.MutantId.make(mutantIdTextOf(fixture.index)),
+    ...mutantFieldsOf(fixture),
     status: fixture.status,
-    fileName: Mutant.CanonicalFileName.make('src/a.ts'),
-    location: MUTANT_LOCATION,
-    mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
-    replacement: '+',
-    completed: fixture.index,
-    total: 4,
-    static: fixture.static,
-    cost: fixture.bodyMs === null
-      ? null
-      : CliContract.MutantCost.make({
-        fixedOverheadMs: 0,
-        testBodyMs: fixture.bodyMs,
-        testsExecuted: 1,
-        shared: false,
-      }),
+    statusReason: fixture.status === 'Ignored'
+      ? 'ignore-static: Static mutant (and "ignoreStatic" was enabled)'
+      : null,
   })
 
 const reportOf = (fixtures: ReadonlyArray<MutantFixture>): Report.MutationTestResult => ({

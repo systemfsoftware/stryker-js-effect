@@ -4,6 +4,7 @@ import { Reporter, TestRunner } from '@systemfsoftware/stryker-js-plugin-interfa
 import type * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
 import * as Pool from 'effect/Pool'
@@ -77,6 +78,40 @@ const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, re
 const costLineOf = (result: Mutant.RunMutantResult): RunEvent.MutantCost | null =>
   Option.getOrNull(Option.map(Option.fromUndefinedOr(result.cost), (cost) => RunEvent.MutantCost.make(cost)))
 
+const requiredReasonOf = (result: Mutant.RunMutantResult): string =>
+  Option.getOrThrowWith(
+    Option.fromUndefinedOr(result.statusReason),
+    () => new Error(`Ignored mutant ${result.id} reached the stream without the rule that ignored it`),
+  )
+
+const statusReasonOf = (result: Mutant.RunMutantResult, status: Mutant.MutantStatus): string | null =>
+  Match.value(status).pipe(
+    Match.when('Ignored', () => requiredReasonOf(result)),
+    Match.orElse(() => Option.getOrNull(Option.fromUndefinedOr(result.statusReason))),
+  )
+
+const mutantLineOf = (
+  result: Mutant.RunMutantResult,
+  streamable: PreparedStreamableMutant,
+  progress: { readonly completed: number; readonly total: number },
+): RunEvent.RunMutantTested => {
+  const fields = {
+    id: result.id,
+    fileName: streamable.file,
+    location: streamable.location,
+    mutatorName: result.mutatorName,
+    replacement: result.replacement,
+    ...progress,
+    static: Option.getOrElse(Option.fromUndefinedOr(result.static), () => false),
+    cost: costLineOf(result),
+  }
+  return RunEvent.RunMutantTestedEvent.make({
+    ...fields,
+    status: streamable.status,
+    statusReason: statusReasonOf(result, streamable.status),
+  })
+}
+
 const offerFinished = Effect.fnUntraced(function*(
   context: RunContext,
   result: Mutant.RunMutantResult,
@@ -89,18 +124,7 @@ const offerFinished = Effect.fnUntraced(function*(
         const completed = yield* Ref.updateAndGet(context.completedRef, (n) => n + 1)
         yield* Queue.offer(
           context.progressQueue,
-          RunEvent.RunMutantTestedEvent.make({
-            id: result.id,
-            status: streamable.status,
-            fileName: streamable.file,
-            location: streamable.location,
-            mutatorName: result.mutatorName,
-            replacement: result.replacement,
-            completed,
-            total: context.plannedTotal,
-            static: result.static ?? false,
-            cost: costLineOf(result),
-          }),
+          mutantLineOf(result, streamable, { completed, total: context.plannedTotal }),
         )
         return Option.some(completed)
       }),

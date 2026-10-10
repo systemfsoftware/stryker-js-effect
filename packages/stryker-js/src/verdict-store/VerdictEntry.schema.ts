@@ -56,21 +56,37 @@ const measuredFields = {
   settledAt: S.Int.check(S.isGreaterThanOrEqualTo(0)),
 }
 
-export const TestedEntrySchema = S.Struct({
+const testedFields = {
   components: TestedComponentsSchema,
-  status: TestedStatusSchema,
   timeoutKind: S.optionalKey(TimeoutKindSchema),
   reproductions: S.optionalKey(S.Natural),
   testsCompleted: S.optionalKey(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optionalKey),
   killedBy: S.String.pipe(S.Array, S.optionalKey),
   ...measuredFields,
+}
+
+export const IgnoredTestedEntrySchema = S.Struct({
+  ...testedFields,
+  status: S.Literal('Ignored'),
+  statusReason: Mutant.IgnoreStatusReasonText,
 })
+export type IgnoredTestedEntry = typeof IgnoredTestedEntrySchema.Type
+
+export const SettledTestedEntrySchema = S.Struct({
+  ...testedFields,
+  status: TestedStatusSchema.pick(['Survived', 'Killed', 'Timeout', 'NoCoverage']),
+  statusReason: S.optionalKey(S.String),
+})
+export type SettledTestedEntry = typeof SettledTestedEntrySchema.Type
+
+export const TestedEntrySchema = S.Union([IgnoredTestedEntrySchema, SettledTestedEntrySchema])
 export type TestedEntry = typeof TestedEntrySchema.Type
 
 export const CheckerEntrySchema = S.Struct({
   components: CheckerComponentsSchema,
   status: S.Literal('CompileError'),
+  statusReason: S.optionalKey(S.String),
   ...measuredFields,
 })
 export type CheckerEntry = typeof CheckerEntrySchema.Type

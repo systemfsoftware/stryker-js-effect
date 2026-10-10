@@ -21,6 +21,8 @@ import {
 import {
   type CheckerEntry,
   CheckerEntrySchema,
+  type IgnoredTestedEntry,
+  type SettledTestedEntry,
   type SharedComponents,
   type TestedEntry,
   TestedEntrySchema,
@@ -44,17 +46,33 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
   } as const
 }
 
-export class MutantRemembered extends S.TaggedClass<MutantRemembered>()('MutantRemembered', {
+const rememberedFields = {
   mutantId: Mutant.MutantId,
-  status: Mutant.RememberedStatusSchema,
   timeoutKind: S.optional(TimeoutKindSchema),
   reproductions: S.optional(S.Natural),
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
+}
+
+export class MutantRememberedIgnored extends S.TaggedClass<MutantRememberedIgnored>()('MutantRemembered', {
+  ...rememberedFields,
+  status: S.Literal('Ignored'),
+  statusReason: Mutant.IgnoreStatusReasonText,
 }) {
   readonly [IncrementalDiffTypeId] = IncrementalDiffTypeId
 }
+
+export class MutantRememberedSettled extends S.TaggedClass<MutantRememberedSettled>()('MutantRemembered', {
+  ...rememberedFields,
+  status: Mutant.SettledStatusSchema,
+  statusReason: S.optional(S.String),
+}) {
+  readonly [IncrementalDiffTypeId] = IncrementalDiffTypeId
+}
+
+export const MutantRemembered = S.Union([MutantRememberedIgnored, MutantRememberedSettled])
+export type MutantRemembered = typeof MutantRemembered.Type
 
 export class MutantToRun extends S.TaggedClass<MutantToRun>()('MutantToRun', {
   mutant: Mutant.Mutant,
@@ -118,20 +136,47 @@ const matchingEntryOf = (lookup: VerdictLookup): Option.Option<VerdictEntry> =>
     ({ entry }) => entry,
   )
 
-const rememberedOf = (mutant: Mutant.Mutant, entry: VerdictEntry): MutantRemembered =>
-  Option.match(testedOf(entry), {
-    onNone: () => MutantRemembered.make({ mutantId: mutant.id, status: entry.status }),
-    onSome: (tested) =>
-      MutantRemembered.make({
-        mutantId: mutant.id,
-        status: tested.status,
-        timeoutKind: tested.timeoutKind,
-        reproductions: tested.reproductions,
-        testsCompleted: tested.testsCompleted,
-        coveredBy: tested.coveredBy,
-        killedBy: tested.killedBy,
-      }),
+const rememberedFieldsOf = (mutant: Mutant.Mutant, entry: VerdictEntry) => ({
+  mutantId: mutant.id,
+  ...Option.match(testedOf(entry), {
+    onNone: () => ({}),
+    onSome: (tested) => ({
+      timeoutKind: tested.timeoutKind,
+      reproductions: tested.reproductions,
+      testsCompleted: tested.testsCompleted,
+      coveredBy: tested.coveredBy,
+      killedBy: tested.killedBy,
+    }),
+  }),
+})
+
+const rememberedIgnoredOf = (mutant: Mutant.Mutant) => (entry: IgnoredTestedEntry): MutantRemembered =>
+  MutantRememberedIgnored.make({
+    ...rememberedFieldsOf(mutant, entry),
+    status: 'Ignored',
+    statusReason: entry.statusReason,
   })
+
+const rememberedSettledOf = (mutant: Mutant.Mutant) => (entry: SettledTestedEntry | CheckerEntry): MutantRemembered =>
+  MutantRememberedSettled.make({
+    ...rememberedFieldsOf(mutant, entry),
+    status: entry.status,
+    statusReason: entry.statusReason,
+  })
+
+const rememberedOf = (mutant: Mutant.Mutant, entry: VerdictEntry): MutantRemembered => {
+  const settled = rememberedSettledOf(mutant)
+  return Match.value(entry).pipe(
+    Match.discriminatorsExhaustive('status')({
+      Ignored: rememberedIgnoredOf(mutant),
+      Survived: settled,
+      Killed: settled,
+      Timeout: settled,
+      NoCoverage: settled,
+      CompileError: settled,
+    }),
+  )
+}
 
 interface Naming {
   readonly entry: VerdictEntry
