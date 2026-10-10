@@ -1,0 +1,266 @@
+name: Kill matrix
+
+on:
+  workflow_call:
+    inputs:
+      projects:
+        description: Comma-separated projects to mutate, the dogfood corpus.
+        type: string
+        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,test/e2e-core
+  workflow_dispatch:
+    inputs:
+      projects:
+        description: Comma-separated projects to mutate, the dogfood corpus.
+        type: string
+        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,test/e2e-core
+
+concurrency:
+  group: kill-matrix-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  TARGET_SECONDS: 200
+  MAX_SHARDS: 20
+  PROJECTS: ${{ inputs.projects }}
+  PUBLISHED_CLI: ${{ github.workspace }}/packages/stryker-js/node_modules/.bin/stryker
+  PLAN: plan.json
+  KILL_MATRIX_OUT: kill-matrix-out
+  KILL_MATRIX_ARTIFACT: kill-matrix-${{ github.run_number }}
+
+jobs:
+  plan:
+    name: kill-matrix · plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: ./.github/actions/released-tarballs
+      - run: pnpm install --frozen-lockfile
+
+      - id: plan
+        name: Plan every mutant, from scratch
+        run: |
+          $PUBLISHED_CLI plan \
+            --target-seconds "$TARGET_SECONDS" \
+            --max-shards "$MAX_SHARDS" \
+            --projects "$PROJECTS" \
+            --full \
+            --out "$PLAN"
+          echo "matrix=$(jq -c '.matrix' "$PLAN")" >> "$GITHUB_OUTPUT"
+          echo "count=$(jq '.matrix.include | length' "$PLAN")" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kill-matrix-plan
+          path: ${{ env.PLAN }}
+          retention-days: 7
+
+  build:
+    name: kill-matrix · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: key
+        name: Content key of the build
+        env:
+          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**', 'test/e2e-core/**') }}
+        run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: ./.github/actions/released-tarballs
+      - run: pnpm install --frozen-lockfile
+
+      - name: Restore the build the mutation lane cached
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: ${{ steps.key.outputs.key }}
+          restore-keys: |
+            mutation-build-${{ runner.os }}-
+
+      - name: Build every mutated project
+        run: |
+          mapfile -t filters < <(tr ',' '\n' <<< "$PROJECTS" | sed 's|^|--filter=./|')
+          pnpm exec turbo run build --output-logs=errors-only --log-order=stream "${filters[@]}"
+
+  mutation:
+    name: kill-matrix · shard ${{ matrix.shard }}
+    needs: [plan, build]
+    if: ${{ needs.plan.result == 'success' && needs.build.result == 'success' && needs.plan.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: ./.github/actions/released-tarballs
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: kill-matrix-plan
+
+      - name: Restore the build every shard shares
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: ${{ needs.build.outputs.key }}
+
+      - name: Build the projects this shard mutates
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          mapfile -t filters < <(
+            jq -r --arg shard "$SHARD" \
+              '.shards[] | select("\(.index)/\(.count)" == $shard) | .projects[].project' "$PLAN" \
+              | sort -u | sed 's|^|--filter=./|'
+          )
+          pnpm exec turbo run build --output-logs=errors-only --log-order=stream "${filters[@]}"
+
+      - id: shard
+        name: Name the shard output
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: echo "slug=${SHARD//\//of}" >> "$GITHUB_OUTPUT"
+
+      - name: Mutation, recording every killer
+        env:
+          SHARD: ${{ matrix.shard }}
+          STRYKER_KILL_MATRIX: "1"
+        run: |
+          $PUBLISHED_CLI run \
+            --plan "$PLAN" \
+            --shard "$SHARD" \
+            --out "reports/shards/${{ steps.shard.outputs.slug }}"
+
+      - id: upload
+        name: Upload the shard's incremental parts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kill-matrix-shard-${{ steps.shard.outputs.slug }}
+          path: reports/shards
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+      - name: Annotate a failed shard
+        if: ${{ failure() }}
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          echo "::error title=Kill matrix shard $SHARD failed::The full re-verification of shard $SHARD did not finish, so the kill matrix is incomplete. Read the log at ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} and any partial parts in artifact kill-matrix-shard-${SHARD//\//of}."
+
+  collect:
+    name: kill-matrix · collect
+    needs: [plan, mutation]
+    if: ${{ needs.mutation.result == 'success' && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: ./.github/actions/released-tarballs
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: kill-matrix-plan
+      - name: Download every shard's incremental parts into shards/<k>of<n>
+        uses: actions/download-artifact@v8
+        with:
+          pattern: kill-matrix-shard-*
+          path: shards
+          merge-multiple: true
+
+      - name: Merge into one incremental report per project
+        run: |
+          shards=()
+          while read -r shard; do
+            shards+=("shards/${shard//\//of}")
+          done < <(jq -r '.shards[] | "\(.index)/\(.count)"' "$PLAN")
+          $PUBLISHED_CLI merge \
+            --plan "$PLAN" \
+            "${shards[@]}" \
+            --out reports/mutation
+          for dir in ${PROJECTS//,/ }; do
+            merged="reports/mutation/$dir/stryker-incremental.json"
+            if [ ! -f "$merged" ]; then
+              echo "::error title=No kill matrix for $dir::$merged is missing, so this run did not cover $dir"
+              exit 1
+            fi
+            mkdir -p "$KILL_MATRIX_OUT/$dir"
+            cp "$merged" "$KILL_MATRIX_OUT/$dir/stryker-incremental.json"
+          done
+
+      - name: Summarise the kill matrix
+        run: |
+          node --input-type=module - <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs'
+
+          const rows = []
+          const notFull = []
+          for (const project of process.env.PROJECTS.split(',').map((p) => p.trim()).filter(Boolean)) {
+            const report = JSON.parse(readFileSync(`${process.env.KILL_MATRIX_OUT}/${project}/stryker-incremental.json`, 'utf8'))
+            if (report.mutantSetPolicy !== 'full') notFull.push(`${project} (${report.mutantSetPolicy})`)
+            const mutants = Object.values(report.files ?? {}).flatMap((file) => file.mutants ?? [])
+            const killed = mutants.filter((mutant) => mutant.status === 'Killed')
+            const multi = killed.filter((mutant) => (mutant.killedBy ?? []).length >= 2).length
+            const tests = Object.values(report.testFiles ?? {}).reduce((total, file) => total + (file.tests ?? []).length, 0)
+            rows.push(`| ${project} | ${mutants.length} | ${killed.length} | ${multi} | ${tests} |`)
+          }
+          if (notFull.length > 0) {
+            console.log(`::error title=Kill matrix is not a full matrix::${notFull.join(', ')} did not run with mutator.mutantSetPolicy 'full'; re-run the kill-matrix lane.`)
+            process.exitCode = 1
+          }
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+            '## Kill matrix',
+            '',
+            '| project | mutants | killed | mutants with ≥2 killers | tests completed |',
+            '| --- | ---: | ---: | ---: | ---: |',
+            ...rows,
+            '',
+            `Artifact: \`${process.env.KILL_MATRIX_ARTIFACT}\` · run: ${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+            '',
+          ].join('\n'))
+          NODE
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.KILL_MATRIX_ARTIFACT }}
+          path: ${{ env.KILL_MATRIX_OUT }}/*
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
+
+      - name: Annotate a failed collect
+        if: ${{ failure() }}
+        run: |
+          echo "::error title=Kill matrix was not published::No complete kill-matrix artifact was produced. Read the log at ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} for the missing project or failed merge, then re-run the kill-matrix lane."
