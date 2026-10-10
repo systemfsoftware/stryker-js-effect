@@ -1,3 +1,4 @@
+import * as Arr from 'effect/Array'
 import * as S from 'effect/Schema'
 
 import { Location } from './Location.schema.js'
@@ -115,4 +116,31 @@ export class TypeQueryRefused extends S.TaggedError<TypeQueryRefused>()('TypeQue
   override get message(): string {
     return `${this.reason}: ${this.nextAction}`
   }
+}
+
+const requestDecodes = (version: number, fileCount: number): boolean =>
+  S.is(TypeQueryRequest)({
+    version,
+    tsconfigFile: 'tsconfig.json',
+    files: Array.from({ length: fileCount }, (_, index) => ({ fileName: `src/${index}.ts`, content: '', sites: [] })),
+  })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  const versionSeeds = [-1, 0, 1, 2, 1.5, Number.NaN, Number.POSITIVE_INFINITY]
+  const fileCountSeeds = [0, 1, 2]
+  const namesWholeVersionAndAFile = (version: number, fileCount: number): boolean =>
+    Number.isSafeInteger(version) && fileCount >= 1
+
+  it.prop(
+    '∀v,n_TypeQueryRequestRefusal_≡IntegerVersionAndAtLeastOneFile',
+    { of: [S.Finite, S.Int.check(S.isBetween({ minimum: 0, maximum: 4 }))], subject: requestDecodes },
+    (subject, [version, fileCount]) =>
+      Arr.every(
+        Arr.append(versionSeeds, version),
+        (v) =>
+          Arr.every(Arr.append(fileCountSeeds, fileCount), (n) => subject(v, n) === namesWholeVersionAndAFile(v, n)),
+      ),
+  )
 }
