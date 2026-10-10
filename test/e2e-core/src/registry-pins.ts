@@ -5,8 +5,6 @@ import * as Rec from 'effect/Record'
 
 import type { PinnableFields, RegistryPins } from './registry-pins.schema.js'
 
-export const REGISTRY_CUTOFF = '2026-10-10T05:51:38Z'
-
 export interface PinnedManifestInput {
   readonly manifest: PinnableFields
   readonly pins: RegistryPins

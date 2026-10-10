@@ -9,7 +9,6 @@ export type PackedTree = typeof PackedTree.Type
 export const PackInput = S.Struct({
   baseImage: S.String,
   bakeScript: S.Uint8Array,
-  registryCutoff: S.String,
   packs: S.Array(PackedTree),
 })
 export type PackInput = typeof PackInput.Type

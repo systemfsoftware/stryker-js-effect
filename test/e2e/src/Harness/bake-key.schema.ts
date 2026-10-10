@@ -2,23 +2,11 @@ import { Schema } from 'effect'
 
 export const PackedPackage = Schema.Struct({
   name: Schema.String,
-  version: Schema.String,
   fileName: Schema.String,
   tarballPath: Schema.String,
 })
 
 export type PackedPackage = typeof PackedPackage.Type
-
-export class FoundPackage extends Schema.TaggedClass<FoundPackage>()('Found', { pack: PackedPackage }) {}
-
-export class MissingTarball extends Schema.TaggedClass<MissingTarball>()('MissingTarball', {
-  prefix: Schema.String,
-  directory: Schema.String,
-}) {}
-
-export const PackedPackageLookup = Schema.Union([FoundPackage, MissingTarball])
-
-export type PackedPackageLookup = typeof PackedPackageLookup.Type
 
 export const TurboTask = Schema.Struct({
   command: Schema.optional(Schema.String),
@@ -46,6 +34,8 @@ export const BakeOutcome = Schema.Struct({
   root: Schema.String,
   keys: FixtureKeys,
   lease: Schema.String,
+  baked: Schema.Number,
+  locks: FixtureKeys,
 })
 
 export type BakeOutcome = typeof BakeOutcome.Type

@@ -57,6 +57,15 @@ export class ExitFailure extends Schema.TaggedError<ExitFailure>()('ExitFailure'
   }
 }
 
+export class BakeOverBudgetFailure extends Schema.TaggedError<BakeOverBudgetFailure>()('BakeOverBudgetFailure', {
+  budgetSeconds: Schema.Number,
+  fixtures: Schema.Array(Schema.String),
+}) {
+  override get message(): string {
+    return `the bake of ${this.fixtures.join(', ')} did not finish within its ${this.budgetSeconds}s budget`
+  }
+}
+
 export class FixtureMissingFailure extends Schema.TaggedError<FixtureMissingFailure>()('FixtureMissingFailure', {
   directory: Schema.String,
 }) {
@@ -85,6 +94,7 @@ export class SandboxForkFailure extends Schema.TaggedError<SandboxForkFailure>()
 }
 
 export type HarnessFailure =
+  | BakeOverBudgetFailure
   | ExitFailure
   | FixtureMissingFailure
   | GuestJobFailure

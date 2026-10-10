@@ -87,7 +87,8 @@
         "CI",
         "OTEL_ENABLED",
         "OTEL_EXPORTER_OTLP_ENDPOINT",
-        "OTEL_SERVICE_NAME"
+        "OTEL_SERVICE_NAME",
+        "STRYKER_E2E_BAKE_RECORD"
       ]
     },
     "lint": {

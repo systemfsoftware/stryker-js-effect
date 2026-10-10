@@ -9,26 +9,19 @@ import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
 import {
-  catalogPinsOf,
   closureMembersOf,
   committableLockOf,
   findLockDrift,
   FindLockDriftCommand,
-  FixtureManifest,
-  installClosure,
-  InstallClosureCommand,
+  type FixtureManifestDocument,
   type LockDrift,
   NpmLockfile,
   NpmLockfileJson,
   overlayOf,
   PackedManifest,
   type PackedMember,
-  parseFixtureManifest,
-  parseLockedCatalogs,
-  parseWorkspaceCatalogs,
-  pinnedCatalogsOf,
-  registryPinsOf,
-  stagedManifestOf,
+  packedMemberOf,
+  stagedFixtureOf,
   tarballFileOf,
   WorkspaceListingJson,
   WorkspaceManifest,
@@ -92,15 +85,9 @@ export interface FixtureLockReport {
 
 const MANIFEST_FILE = 'package.json'
 const LOCK_FILE = 'package-lock.json'
-const PACKS_FROM_FIXTURE = '../../packs'
 const UNREACHABLE_REGISTRY = '--registry=http://127.0.0.1:9/'
 
 export const packsDirOf = (stagingRoot: string): string => `${stagingRoot}/packs`
-
-export const memberOf = (manifest: PackedManifest): PackedMember => ({
-  tarballPath: `${PACKS_FROM_FIXTURE}/${tarballFileOf(manifest.name)}`,
-  manifest,
-})
 
 const readPackedManifest = (tarball: string) =>
   Effect.flatMap(
@@ -140,7 +127,7 @@ export const repoLockContextOf = ({ repoRoot, stagingRoot }: RepoLockInput) =>
     const manifests = yield* Effect.forEach(names, (name) => readPackedManifest(path.join(packs, tarballFileOf(name))))
     return {
       stagingRoot,
-      members: manifests.map(memberOf),
+      members: manifests.map(packedMemberOf),
       workspace: workspace.map((manifest) => manifest.name),
       pnpmLockfile: yield* fs.readFileString(path.join(repoRoot, 'pnpm-lock.yaml')),
       workspaceYaml: yield* fs.readFileString(path.join(repoRoot, 'pnpm-workspace.yaml')),
@@ -161,7 +148,7 @@ export const fixturesOf = (resourcesDir: string) =>
 interface StagedManifest {
   readonly relativePath: string
   readonly lockKey: string
-  readonly document: Readonly<Record<string, S.Json>>
+  readonly document: FixtureManifestDocument
 }
 
 interface StagedFixture {
@@ -190,52 +177,34 @@ const stageFixture = (context: LockContext, fixture: FixtureSource) =>
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const relativePaths = yield* manifestPathsOf(fixture.dir)
-    const documents = yield* Effect.forEach(relativePaths, (relativePath) =>
-      Effect.flatMap(
-        fs.readFile(path.join(fixture.dir, relativePath)),
-        (bytes) => Effect.fromResult(parseFixtureManifest({ manifest: `${fixture.fixtureId}/${relativePath}`, bytes })),
-      ))
-    const fixtures = yield* Effect.forEach(
-      Arr.zip(relativePaths, documents),
-      ([relativePath, document]) =>
-        Effect.map(S.decodeEffect(FixtureManifest)(document), (manifest) => ({ path: relativePath, manifest })),
-    )
-    const install = yield* Effect.fromResult(
-      installClosure(InstallClosureCommand.make({ members: context.members, fixtures, workspace: context.workspace })),
-    )
-    const locked = parseLockedCatalogs(context.pnpmLockfile)
-    const catalogs = pinnedCatalogsOf({ workspace: parseWorkspaceCatalogs(context.workspaceYaml), locked })
-    const registryPins = registryPinsOf(context.pnpmLockfile)
-    const manifests = yield* Effect.forEach(Arr.zip(relativePaths, documents), ([relativePath, document]) =>
-      Effect.map(
-        Effect.fromResult(stagedManifestOf({
-          manifestPath: `${fixture.fixtureId}/${relativePath}`,
-          document,
-          catalogs,
-          pins: registryPins,
-          root: relativePath === MANIFEST_FILE,
-          closure: relativePath === MANIFEST_FILE ? install.dependencies : {},
-        })),
-        (staged): StagedManifest => ({ relativePath, lockKey: lockKeyOf(relativePath), document: staged }),
-      ))
+    const manifests = yield* Effect.forEach(relativePaths, (relativePath) =>
+      Effect.map(fs.readFile(path.join(fixture.dir, relativePath)), (bytes) => ({ relativePath, bytes })))
+    const staged = yield* Effect.fromResult(stagedFixtureOf({
+      fixtureId: fixture.fixtureId,
+      manifests,
+      members: context.members,
+      workspace: context.workspace,
+      pnpmLockfile: context.pnpmLockfile,
+      workspaceYaml: context.workspaceYaml,
+    }))
     const dir = path.join(context.stagingRoot, 'baked', fixture.fixtureId)
-    yield* Effect.forEach(manifests, (manifest) =>
+    yield* Effect.forEach(staged.manifests, (manifest) =>
       Effect.andThen(
         fs.makeDirectory(path.dirname(path.join(dir, manifest.relativePath)), { recursive: true }),
         Effect.flatMap(
           manifestFileOf(manifest.document),
-          (text) => fs.writeFileString(path.join(dir, manifest.relativePath), text),
+          (text) =>
+            fs.writeFileString(path.join(dir, manifest.relativePath), text),
         ),
       ))
-    const root = Arr.findFirst(documents, (_, index) => relativePaths[index] === MANIFEST_FILE)
     return {
       dir,
-      manifests,
-      closure: Object.keys(install.dependencies).sort(),
-      pins: {
-        ...registryPins,
-        ...Option.match(root, { onNone: () => ({}), onSome: (document) => catalogPinsOf({ document, locked }) }),
-      },
+      manifests: staged.manifests.map((manifest): StagedManifest => ({
+        ...manifest,
+        lockKey: lockKeyOf(manifest.relativePath),
+      })),
+      closure: staged.closure,
+      pins: staged.pins,
     } satisfies StagedFixture
   })
 

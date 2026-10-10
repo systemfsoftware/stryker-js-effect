@@ -8,14 +8,13 @@ import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 
-import { NpmManifestJson, type PackedManifest, tarballFileOf } from '@systemfsoftware/stryker-e2e-core'
+import { NpmManifestJson, type PackedManifest, packedMemberOf, tarballFileOf } from '@systemfsoftware/stryker-e2e-core'
 import {
   checkFixtureLock,
   driftLinesOf,
   type FixtureSource,
   type LockContext,
   lockFixture,
-  memberOf,
   packsDirOf,
   runCommand,
 } from './__fixtures__/fixture-locks.js'
@@ -85,7 +84,7 @@ const packScratchMember = (root: string, packs: string, manifest: PackedManifest
     const packed = yield* runCommand({ argv: ['npm', 'pack', '--pack-destination', packs], cwd: source })
     const fileName = packed.stdout.trim().split('\n').at(-1) ?? ''
     yield* fs.rename(path.join(packs, fileName), path.join(packs, tarballFileOf(manifest.name)))
-    return memberOf(manifest)
+    return packedMemberOf(manifest)
   })
 
 const contextOf = (root: string, label: string, registry: string, world: World) =>

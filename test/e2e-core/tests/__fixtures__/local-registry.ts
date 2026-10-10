@@ -1,3 +1,4 @@
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as HttpServer from 'effect/http/HttpServer'
 import * as HttpServerRequest from 'effect/http/HttpServerRequest'
@@ -14,19 +15,23 @@ export interface PublishedVersion {
   readonly time: string
   readonly dependencies?: Readonly<Record<string, string>>
   readonly peerDependencies?: Readonly<Record<string, string>>
+  readonly tarball?: Uint8Array
 }
 
 export type Registry = Readonly<Record<string, ReadonlyArray<PublishedVersion>>>
 
-const TARBALL_HOST = 'http://registry.invalid/'
+const PUBLIC_REGISTRY_REWRITTEN_BY_NPM = 'https://registry.npmjs.org/'
+
+const tarballPathOf = (name: string, version: string): string =>
+  `${name}/-/${name.replace(/^@[^/]+\//, '')}-${version}.tgz`
 
 const packumentOf = (name: string, published: ReadonlyArray<PublishedVersion>) => ({
   name,
   'dist-tags': { latest: published.at(-1)?.version ?? '' },
-  versions: Object.fromEntries(published.map(({ time: _time, ...entry }) => [entry.version, {
+  versions: Object.fromEntries(published.map(({ time: _time, tarball: _tarball, ...entry }) => [entry.version, {
     name,
     ...entry,
-    dist: { tarball: `${TARBALL_HOST}${name}/-/${name.replace('/', '-')}-${entry.version}.tgz` },
+    dist: { tarball: `${PUBLIC_REGISTRY_REWRITTEN_BY_NPM}${tarballPathOf(name, entry.version)}` },
   }])),
   time: Object.fromEntries(published.map((entry) => [entry.version, entry.time])),
 })
@@ -41,14 +46,29 @@ const packumentBodiesOf = (registry: Registry) =>
     (bodies) => Object.fromEntries(bodies),
   )
 
-const registryApp = (bodies: Readonly<Record<string, string>>) =>
+const tarballsOf = (registry: Registry): Readonly<Record<string, Uint8Array>> =>
+  Object.fromEntries(
+    Object.entries(registry).flatMap(([name, published]) =>
+      published.flatMap((entry) =>
+        entry.tarball === undefined ? [] : [[tarballPathOf(name, entry.version), entry.tarball] as const]
+      )
+    ),
+  )
+
+const registryApp = (bodies: Readonly<Record<string, string>>, tarballs: Readonly<Record<string, Uint8Array>>) =>
   Effect.map(
     HttpServerRequest.HttpServerRequest,
-    (request) =>
-      Option.match(Rec.get(bodies, decodeURIComponent(request.url.slice(1))), {
-        onNone: () => HttpServerResponse.empty({ status: 404 }),
-        onSome: (body) => HttpServerResponse.text(body, { contentType: 'application/json' }),
-      }),
+    (request) => {
+      const path = decodeURIComponent(request.url.slice(1))
+      return Option.match(Rec.get(tarballs, path), {
+        onSome: (bytes) => HttpServerResponse.uint8Array(bytes, { contentType: 'application/octet-stream' }),
+        onNone: () =>
+          Option.match(Rec.get(bodies, path), {
+            onNone: () => HttpServerResponse.empty({ status: 404 }),
+            onSome: (body) => HttpServerResponse.text(body, { contentType: 'application/json' }),
+          }),
+      })
+    },
   )
 
 const loopbackUrlOf = (address: NetAddress.SocketAddress) =>
@@ -64,4 +84,7 @@ const listen = <E, R>(app: Effect.Effect<HttpServerResponse.HttpServerResponse, 
   })
 
 export const serveRegistry = (published: Registry) =>
-  Effect.flatMap(packumentBodiesOf(published), (bodies) => listen(registryApp(bodies)))
+  Effect.flatMap(packumentBodiesOf(published), (bodies) => listen(registryApp(bodies, tarballsOf(published))))
+
+export const serveLateRegistry = (answerAfter: Duration.Input) =>
+  listen(Effect.as(Effect.sleep(answerAfter), HttpServerResponse.empty({ status: 404 })))
