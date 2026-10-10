@@ -1,7 +1,23 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export const ShardPlanVersion = S.Literal(1)
+export const ShardPlanVersion = S.Literal(2)
+
+export const ShardPlanUnscoped = S.TaggedStruct('Unscoped', {})
+
+export const ShardPlanDiffScoped = S.TaggedStruct('DiffScoped', {
+  base: S.NonEmptyString,
+  head: S.NonEmptyString,
+})
+
+export const ShardPlanFullScope = S.TaggedStruct('FullScope', {
+  base: S.NonEmptyString,
+  head: S.NonEmptyString,
+  reason: S.NonEmptyString,
+})
+
+export const ShardPlanScope = S.Union([ShardPlanUnscoped, ShardPlanDiffScoped, ShardPlanFullScope])
+export type ShardPlanScope = typeof ShardPlanScope.Type
 
 export const ShardProject = S.Struct({
   project: S.String,
@@ -28,6 +44,7 @@ const shardLabelsAreUnique = S.makeFilter(
 
 export const ShardPlan = S.Struct({
   version: ShardPlanVersion,
+  scope: ShardPlanScope,
   targetSeconds: S.Finite,
   shards: S.Array(Shard).check(shardLabelsAreUnique),
   matrix: S.Struct({ include: S.Array(S.Struct({ shard: S.String, predictedSeconds: S.Finite })) }),
@@ -48,13 +65,13 @@ if (import.meta.vitest !== void 0) {
     '∀s_ShardLabelDuplication_≡RefusedNamingTheLabel',
     { of: [Shard], subject: refusalOf },
     (subject, [shard]) => {
-      const repeated: typeof ShardPlan.Encoded = {
-        version: 1,
+      const message = subject({
+        version: 2,
+        scope: { _tag: 'Unscoped' },
         targetSeconds: 1,
         shards: [shard, shard],
         matrix: { include: [] },
-      }
-      const message = subject(repeated)
+      })
       return message !== undefined && message.includes(labelOf(shard))
     },
   )

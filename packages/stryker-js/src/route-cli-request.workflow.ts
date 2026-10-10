@@ -85,6 +85,7 @@ export class CliPlanRequested extends S.TaggedClass<CliPlanRequested>()('CliPlan
   projects: S.Array(S.String).pipe(S.optional),
   out: S.optional(S.String),
   full: S.Boolean,
+  since: S.optional(S.String),
 }) {
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
 }
@@ -185,6 +186,7 @@ export const routeCliRequest = Workflow.make({
             projects: plan.projects,
             out: plan.out,
             full: plan.full,
+            since: plan.since,
           }),
         )),
       Match.tag('audit', (audit) =>

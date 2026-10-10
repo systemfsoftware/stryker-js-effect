@@ -48,6 +48,7 @@ import {
   GateNewSurvivorsCommand,
   GateRejected,
 } from './gate-new-survivors.workflow.js'
+import type { GitDiffError } from './git-diff.schema.js'
 import { mcpServerLayer } from './Mcp/mod.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { planRequest } from './plan-request.cell.js'
@@ -65,10 +66,11 @@ import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import { serveMutationServer, type ServeRequest } from './Serve/Serve.cell.js'
+import type { ShardPlanStale } from './shard/admit-plan-head.workflow.js'
 import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
 import { mergeShards } from './shard/shard-merge.js'
 import type { ShardMergeFailed } from './shard/shard-merge.schema.js'
-import { loadShardPlan } from './shard/shard-plan.js'
+import { admitLoadedPlan, loadShardPlan } from './shard/shard-plan.js'
 import type { ShardPlanInvalid } from './shard/shard-plan.schema.js'
 import { runShard } from './shard/shard-run.js'
 import type { ShardChildFailed } from './shard/shard-run.schema.js'
@@ -122,6 +124,8 @@ export type CliFailure =
   | AuditInputUnusable
   | NothingCounted
   | ShardPlanInvalid
+  | ShardPlanStale
+  | GitDiffError
   | ShardUnknown
   | ShardChildFailed
   | ShardMergeFailed
@@ -622,6 +626,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
       ),
     CliShardRunRequested: (shard, channel) =>
       loadShardPlan(channel.environment.basePath, shard.plan).pipe(
+        Effect.flatMap(admitLoadedPlan),
         Effect.flatMap((loaded) =>
           runShard({
             plan: loaded.plan,

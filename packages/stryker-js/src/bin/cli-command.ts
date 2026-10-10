@@ -435,6 +435,12 @@ const planOptions = {
   full: Flag.map(optional(Flag.Boolean('full')), absentWhenFalse).pipe(
     Flag.withDescription('Plan every discovered mutant, ignoring the incremental report.'),
   ),
+  since: Flag.String('since').pipe(
+    Flag.withDescription(
+      'Plan only the mutants on lines changed since a git ref, with the same diff rules as `run --since`. The plan records the merge base and HEAD, and `run --plan` refuses it at any other HEAD.',
+    ),
+    optional,
+  ),
 }
 
 const auditOptions = {
@@ -652,6 +658,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
           projects: Option.getOrUndefined(config.projects),
           out: Option.getOrUndefined(config.out),
           full: config.full === true,
+          since: Option.getOrUndefined(config.since),
         },
       }),
       options: {},

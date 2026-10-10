@@ -97,37 +97,41 @@ Feature('Reading a repository diff since a git ref')
           'repo',
           () => buildRepo(),
         ),
-        When('the git-diff service reads the diff since HEAD')(
+        When('the git-diff service reads the diff since HEAD from the root and from src/')(
           'observation',
           (s) =>
             Effect.gen(function*() {
-              const fs = yield* FileSystem.FileSystem
               const path = yield* Path.Path
               const real = yield* changedSince(s.repo, 'HEAD')
-              const fake = yield* Effect.provideService(
-                Effect.flatMap(GitDiff.GitDiff, (git) => git.changedSince({ cwd: '/repo', ref: 'HEAD' })),
-                GitDiff.GitDiff,
-                { changedSince: () => Effect.succeed(real) },
-              )
-              const pwned = yield* fs.exists(path.join(s.repo, 'pwned'))
-              return { real, fake, pwned }
+              const fromSrc = yield* changedSince(path.join(s.repo, 'src'), 'HEAD')
+              return { real, fromSrc }
             }).pipe(Effect.ensuring(removeRepo(s.repo))),
         ),
-        Then('the parsed hunks and untracked list are as expected, and the fake reproduces them')((s, expect) =>
-          expect({
-            real: s.observation.real,
-            fakeMatchesReal: s.observation.fake,
-          }).toEqual({
+        Then('hunks and untracked files name paths from the working directory, at the commit HEAD names')((
+          s,
+          expect,
+        ) =>
+          expect({ real: s.observation.real, fromSrc: s.observation.fromSrc }).toEqual({
             real: {
-              ref: s.observation.real.ref,
-              base: s.observation.real.base,
+              ref: 'HEAD',
+              base: s.observation.real.head,
+              head: expect.stringMatching(/^[0-9a-f]{40}$/),
               hunks: [
                 { file: 'src/gone.ts', startLine: 0, lineCount: 0 },
                 { file: 'src/kept.ts', startLine: 4, lineCount: 2 },
               ],
               untrackedFiles: ['src/new.ts'],
             },
-            fakeMatchesReal: s.observation.real,
+            fromSrc: {
+              ref: 'HEAD',
+              base: s.observation.real.base,
+              head: s.observation.real.head,
+              hunks: [
+                { file: 'gone.ts', startLine: 0, lineCount: 0 },
+                { file: 'kept.ts', startLine: 4, lineCount: 2 },
+              ],
+              untrackedFiles: ['new.ts'],
+            },
           })
         ),
       ),

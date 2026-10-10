@@ -152,7 +152,81 @@
                 "version": {
                   "type": "number",
                   "enum": [
-                    1
+                    2
+                  ]
+                },
+                "scope": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Unscoped"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "_tag"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "DiffScoped"
+                          ]
+                        },
+                        "base": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "head": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "base",
+                        "head"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "FullScope"
+                          ]
+                        },
+                        "base": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "head": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "base",
+                        "head",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    }
                   ]
                 },
                 "targetSeconds": {
@@ -235,6 +309,7 @@
               },
               "required": [
                 "version",
+                "scope",
                 "targetSeconds",
                 "shards",
                 "matrix"

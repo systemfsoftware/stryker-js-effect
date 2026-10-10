@@ -29,7 +29,15 @@ export const Shard: S.Struct<{
 
 // @public (undocumented)
 export const ShardPlan: S.Struct<{
-    readonly version: S.Literal<1>;
+    readonly version: S.Literal<2>;
+    readonly scope: S.Union<readonly [S.TaggedStruct<"Unscoped", {}>, S.TaggedStruct<"DiffScoped", {
+        readonly base: S.NonEmptyString;
+        readonly head: S.NonEmptyString;
+    }>, S.TaggedStruct<"FullScope", {
+        readonly base: S.NonEmptyString;
+        readonly head: S.NonEmptyString;
+        readonly reason: S.NonEmptyString;
+    }>]>;
     readonly targetSeconds: S.Finite;
     readonly shards: S.$Array<S.Struct<{
         readonly index: S.Int;
@@ -52,7 +60,36 @@ export const ShardPlan: S.Struct<{
 export type ShardPlan = typeof ShardPlan.Type;
 
 // @public (undocumented)
-export const ShardPlanVersion: S.Literal<1>;
+export const ShardPlanDiffScoped: S.TaggedStruct<"DiffScoped", {
+    readonly base: S.NonEmptyString;
+    readonly head: S.NonEmptyString;
+}>;
+
+// @public (undocumented)
+export const ShardPlanFullScope: S.TaggedStruct<"FullScope", {
+    readonly base: S.NonEmptyString;
+    readonly head: S.NonEmptyString;
+    readonly reason: S.NonEmptyString;
+}>;
+
+// @public (undocumented)
+export const ShardPlanScope: S.Union<readonly [S.TaggedStruct<"Unscoped", {}>, S.TaggedStruct<"DiffScoped", {
+    readonly base: S.NonEmptyString;
+    readonly head: S.NonEmptyString;
+}>, S.TaggedStruct<"FullScope", {
+    readonly base: S.NonEmptyString;
+    readonly head: S.NonEmptyString;
+    readonly reason: S.NonEmptyString;
+}>]>;
+
+// @public (undocumented)
+export type ShardPlanScope = typeof ShardPlanScope.Type;
+
+// @public (undocumented)
+export const ShardPlanUnscoped: S.TaggedStruct<"Unscoped", {}>;
+
+// @public (undocumented)
+export const ShardPlanVersion: S.Literal<2>;
 
 // @public (undocumented)
 export const ShardProject: S.Struct<{

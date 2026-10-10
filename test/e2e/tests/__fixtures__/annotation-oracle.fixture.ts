@@ -108,10 +108,37 @@ const annotationsOf = (
     (annotations) => annotations.map((annotation): SourcedAnnotation => ({ file, annotation })),
   )
 
-const reportMutantsOf = (report: Report.MutationTestResult): ReadonlyArray<ReportMutant> =>
+export const reportMutantsOf = (report: Report.MutationTestResult): ReadonlyArray<ReportMutant> =>
   Object.entries(report.files).flatMap(([file, fileResult]) =>
     fileResult.mutants.map((mutant): ReportMutant => ({ file, mutant }))
   )
+
+const annotationTallyOf = (input: {
+  readonly slice: string
+  readonly annotations: ReadonlyArray<SourcedAnnotation>
+  readonly mutants: ReadonlyArray<ReportMutant>
+  readonly parseFailures: ReadonlyArray<string>
+}) => {
+  const matched = matchAnnotations(
+    MatchAnnotationsCommand.make({
+      slice: input.slice,
+      annotations: [...input.annotations],
+      mutants: [...input.mutants],
+    }),
+  )
+  const confirmed = Result.flatMap(
+    matched,
+    (pairs) => confirmAnnotations(ConfirmAnnotationsCommand.make({ matched: pairs })),
+  )
+  const annotationFailures = Result.isFailure(matched)
+    ? [...input.parseFailures, matched.failure.message]
+    : Result.match(confirmed, {
+      onFailure: (failure) => [...input.parseFailures, failure.message],
+      onSuccess: () => [...input.parseFailures],
+    })
+  const mutantsMatched = Result.match(matched, { onFailure: () => 0, onSuccess: (pairs) => pairs.length })
+  return { matched, annotationFailures, mutantsMatched }
+}
 
 export const statusesOf = (report: Report.MutationTestResult): ReadonlyArray<string> =>
   reportMutantsOf(report).map((entry) => entry.mutant.status)
@@ -136,24 +163,12 @@ const comparisonOf = (input: {
   readonly parseFailures: ReadonlyArray<string>
 }): AnnotatedRunComparison => {
   const mutants = reportMutantsOf(input.report)
-  const matched = matchAnnotations(
-    MatchAnnotationsCommand.make({
-      slice: input.slice,
-      annotations: [...input.annotations],
-      mutants: [...mutants],
-    }),
-  )
-  const confirmed = Result.flatMap(
-    matched,
-    (pairs) => confirmAnnotations(ConfirmAnnotationsCommand.make({ matched: pairs })),
-  )
-  const failures = Result.isFailure(matched)
-    ? [...input.parseFailures, matched.failure.message]
-    : Result.match(confirmed, {
-      onFailure: (failure) => [...input.parseFailures, failure.message],
-      onSuccess: () => [...input.parseFailures],
-    })
-  const mutantsMatched = Result.match(matched, { onFailure: () => 0, onSuccess: (pairs) => pairs.length })
+  const { matched, annotationFailures, mutantsMatched } = annotationTallyOf({
+    slice: input.slice,
+    annotations: input.annotations,
+    mutants,
+    parseFailures: input.parseFailures,
+  })
   const annotationTotals = Result.match(matched, {
     onFailure: () => NO_TOTALS,
     onSuccess: (pairs) => annotationTotalsOf(pairs),
@@ -163,7 +178,7 @@ const comparisonOf = (input: {
     actual: {
       mutantsReported: mutants.length,
       mutantsMatched,
-      annotationFailures: failures,
+      annotationFailures,
       statusTotals: verdictTotals,
     },
     expected: {
@@ -184,9 +199,13 @@ const fixtureDirectoryOf = (
     (cause) => AnnotationOracleUnreadable.make({ fixture, file: '', reason: cause.message }),
   ).pipe(Effect.map((base) => path.join(base, fixture)))
 
-export const compareAnnotatedRun = (
-  input: AnnotatedRun,
-): Effect.Effect<AnnotatedRunComparison, AnnotationOracleUnreadable, FileSystem.FileSystem | Path.Path> =>
+const fixtureAnnotationsOf = (
+  input: { readonly fixture: string; readonly report: Report.MutationTestResult },
+): Effect.Effect<
+  { readonly annotations: ReadonlyArray<SourcedAnnotation>; readonly parseFailures: ReadonlyArray<string> },
+  AnnotationOracleUnreadable,
+  FileSystem.FileSystem | Path.Path
+> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -210,18 +229,52 @@ export const compareAnnotatedRun = (
         onSuccess: (entries) => entries,
       })
     )
-    const comparison = comparisonOf({
-      slice: input.slice,
-      report: input.report,
-      verdict: input.verdict,
-      annotations,
-      parseFailures,
-    })
-    return comparison
+    return { annotations, parseFailures }
   })
+
+export const compareAnnotatedRun = (
+  input: AnnotatedRun,
+): Effect.Effect<AnnotatedRunComparison, AnnotationOracleUnreadable, FileSystem.FileSystem | Path.Path> =>
+  Effect.map(
+    fixtureAnnotationsOf(input),
+    ({ annotations, parseFailures }) =>
+      comparisonOf({
+        slice: input.slice,
+        report: input.report,
+        verdict: input.verdict,
+        annotations,
+        parseFailures,
+      }),
+  )
 
 export const verifyAnnotatedRun = (
   expect: Expect,
   input: AnnotatedRun,
 ): Effect.Effect<Check, AnnotationOracleUnreadable, FileSystem.FileSystem | Path.Path> =>
   Effect.map(compareAnnotatedRun(input), (comparison) => expect(comparison.actual).toStrictEqual(comparison.expected))
+
+export interface PersistedAnnotationObservation {
+  readonly mutantsReported: number
+  readonly mutantsMatched: number
+  readonly annotationFailures: ReadonlyArray<string>
+}
+
+/**
+ * The merged-shard-report oracle for a report with no run verdict of its own — the merged shard report. Every
+ * reported mutant must match exactly one authored annotation and no annotation in a mutated file may dangle;
+ * only the per-status tally agreement with a terminal verdict is unavailable here, because `stryker merge`
+ * writes the report alone. A clean report observes `{ mutantsReported: n, mutantsMatched: n, annotationFailures: [] }`.
+ */
+export const persistedAnnotationsOf = (
+  input: { readonly fixture: string; readonly slice: string; readonly report: Report.MutationTestResult },
+): Effect.Effect<PersistedAnnotationObservation, AnnotationOracleUnreadable, FileSystem.FileSystem | Path.Path> =>
+  Effect.map(fixtureAnnotationsOf(input), ({ annotations, parseFailures }) => {
+    const mutants = reportMutantsOf(input.report)
+    const { annotationFailures, mutantsMatched } = annotationTallyOf({
+      slice: input.slice,
+      annotations,
+      mutants,
+      parseFailures,
+    })
+    return { mutantsReported: mutants.length, mutantsMatched, annotationFailures }
+  })
