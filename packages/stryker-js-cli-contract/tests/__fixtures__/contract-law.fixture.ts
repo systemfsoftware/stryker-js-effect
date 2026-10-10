@@ -26,6 +26,7 @@ export type PackageContracts = {
   readonly name: string
   readonly directory: string
   readonly releasedVersion: string
+  readonly mainVersion: string
   readonly committedVersion: string
   readonly releasedDocuments: readonly ContractDocument[]
   readonly committedDocuments: readonly ContractDocument[]
@@ -62,7 +63,7 @@ export type StaleBaselineFailure = {
   readonly package: string
   readonly reason: string
   readonly releasedVersion: string
-  readonly committedVersion: string
+  readonly mainVersion: string
 }
 
 export type ContractVersionFailure = ContractChangeFailure | StreamVersionFailure | StaleBaselineFailure
@@ -153,9 +154,9 @@ const staleBaselineFailureOf = (pkg: PackageContracts): readonly StaleBaselineFa
   kind: 'stale-baseline',
   package: pkg.name,
   reason:
-    `the workspace declares ${pkg.committedVersion} while the released documents come from ${pkg.releasedVersion}, so they cannot bound what the next release of ${pkg.name} may change: move the stryker-published flake input to the latest release tag and reinstall`,
+    `main declares ${pkg.mainVersion} while the released documents come from ${pkg.releasedVersion}, so they cannot bound what the next release of ${pkg.name} may change: move the stryker-published flake input to the latest release tag and reinstall`,
   releasedVersion: pkg.releasedVersion,
-  committedVersion: pkg.committedVersion,
+  mainVersion: pkg.mainVersion,
 }]
 
 const failuresForDocument = (context: {
@@ -217,7 +218,7 @@ const failuresForPackage = (
       })
     )
 
-  if (pkg.committedVersion === pkg.releasedVersion) return changesWhen(cleared)
+  if (pkg.mainVersion === pkg.releasedVersion) return changesWhen(cleared)
   return pending.length > 0 || changesWhen(false).length > 0 ? staleBaselineFailureOf(pkg) : []
 }
 
@@ -232,7 +233,7 @@ export const renderFailure = (failure: ContractVersionFailure): string => {
       `error[CONTRACT-VERSION]: the released baseline of ${failure.package} is stale`,
       `  package: ${failure.package}`,
       `  released: ${failure.releasedVersion}`,
-      `  workspace: ${failure.committedVersion}`,
+      `  main: ${failure.mainVersion}`,
       `  reason: ${failure.reason}`,
     ].join('\n')
   }
