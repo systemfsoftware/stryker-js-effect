@@ -11,6 +11,7 @@ export const NpmManifestJson = S.fromJsonString(S.Struct({
   version: S.String,
   private: S.optionalKey(S.Boolean),
   dependencies: S.optionalKey(S.Record(S.String, S.String)),
+  devDependencies: S.optionalKey(S.Record(S.String, S.String)),
 }))
 
 const Specs = S.optionalKey(S.Record(S.String, S.String))

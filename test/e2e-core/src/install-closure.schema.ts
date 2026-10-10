@@ -18,6 +18,9 @@ export const WorkspaceManifest = S.Struct({
 })
 export type WorkspaceManifest = typeof WorkspaceManifest.Type
 
+export const WorkspaceListingJson = S.Struct({ name: S.String, path: S.String }).pipe(S.Array, S.fromJsonString)
+export type WorkspaceListing = typeof WorkspaceListingJson.Type
+
 export const PackedManifest = S.Struct({ ...WorkspaceManifest.fields, version: S.String })
 export type PackedManifest = typeof PackedManifest.Type
 
