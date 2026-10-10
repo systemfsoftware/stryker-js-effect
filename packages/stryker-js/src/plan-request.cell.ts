@@ -29,6 +29,7 @@ import {
 } from './Checker/checker-pool.handle.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
+import type { RefusalCounts } from './IncrementalDiff.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
 import { readProjectCell } from './read-project.cell.js'
@@ -36,12 +37,12 @@ import { requireDryRun, type RequireDryRunDecision } from './require-dry-run.wor
 import { dryRunChoiceOf, requireDryRunCommandOf } from './run/dry-run-choice.js'
 import { reusedTestCoverage } from './run/dry-run-coverage.js'
 import type { HostServices } from './run/host.service.js'
-import { readIncrementalReuse, type RefusalCounts } from './run/incremental-reuse.cell.js'
+import { readIncrementalReuse } from './run/incremental-reuse.cell.js'
 import { incrementalReportTextOf } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
-import { newestCostsOf, priorEntriesOf } from './run/prior-entries.js'
+import { newestCostsOf } from './run/prior-entries.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import type { EnginePorts, RunStageServices } from './run/StageServices.service.js'
 import { verdictStoreOf } from './run/verdict-store-layer.js'
@@ -241,15 +242,14 @@ const planProject = (
       checkerConfigDigestOf: checkerDigests.config,
       programDigestOf: checkerDigests.program,
     })
-    const priorEntries = yield* priorEntriesOf(store, done.mutants.map((mutant) => mutant.id))
-    const storedCosts = newestCostsOf(priorEntries)
+    const storedCosts = newestCostsOf(reuse.priorEntries)
     const dryRunDecision = Result.getOrElse(
       requireDryRun(
         requireDryRunCommandOf({
           options: done.options,
           mutants: [...reuse.mutants, ...reuse.rememberedResults],
           text,
-          priorEntries,
+          priorEntries: reuse.priorEntries,
         }),
       ),
       (neverError) => neverError,

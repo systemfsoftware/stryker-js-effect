@@ -56,3 +56,73 @@ export const putSettledVerdict = (put: VerdictPut) => (result: Mutant.RunMutantR
         })
       }),
   })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+  const Logger = await import('effect/Logger')
+  const References = await import('effect/References')
+  const { RefusalCountsSchema } = await import('../IncrementalDiff.schema.js')
+  const { VerdictEntrySchema } = await import('../verdict-store/VerdictEntry.schema.js')
+  const { EntriesListed, EntryAbsent, PutSkipped } = await import('../verdict-store/VerdictStore.schema.js')
+
+  const SKIP_REASON = 'the verdict store refused the write'
+
+  const skippingStore: VerdictStoreShape = {
+    get: () => Effect.succeed(EntryAbsent.make({})),
+    put: () => Effect.succeed(PutSkipped.make({ reason: SKIP_REASON })),
+    list: () => Effect.succeed(EntriesListed.make({ entries: [] })),
+    killingTests: () => Effect.succeed([]),
+  }
+
+  const reuseOf = (refusalCounts: IncrementalReuse['refusalCounts']): IncrementalReuse => ({
+    mutants: [],
+    rememberedResults: [],
+    refusalCounts,
+    timeoutEvidenceByMutantId: {},
+    priorKilledByByMutantId: {},
+    currentByMutantId: {},
+    priorEntries: [],
+    programDigestOf: Effect.succeed('0'.repeat(64)),
+  })
+
+  interface Observation {
+    readonly skipped: number
+    readonly logged: ReadonlyArray<string>
+  }
+
+  const observationOf = (
+    subject: typeof putEntry,
+    entry: VerdictEntry,
+    refusalCounts: IncrementalReuse['refusalCounts'],
+  ): Observation => {
+    const logged: Array<string> = []
+    const capturing = Logger.make((log) => {
+      logged.push([log.message].flat().map(String).join(' '))
+    })
+    const skipped = Effect.runSync(
+      Effect.gen(function*() {
+        const skippedPuts = yield* Ref.make(0)
+        yield* subject({ store: skippingStore, reuse: reuseOf(refusalCounts), skippedPuts }, entry)
+        return yield* Ref.get(skippedPuts)
+      }).pipe(
+        Effect.provideService(References.MinimumLogLevel, 'Debug'),
+        Effect.provide(Logger.layer([capturing])),
+      ),
+    )
+    return { skipped, logged }
+  }
+
+  it.prop(
+    '∀ec_EntryAndRefusalCounts_≡ASkippedVerdictWriteIsCountedAndLogged',
+    { of: [VerdictEntrySchema, RefusalCountsSchema], subject: putEntry },
+    (subject, [entry, refusalCounts]) => {
+      const observed = observationOf(subject, entry, refusalCounts)
+      return observed.skipped === 1 &&
+        Arr.contains(
+          observed.logged,
+          `The verdict of mutant ${entry.components.mutantId} was not stored: ${SKIP_REASON}`,
+        )
+    },
+  )
+}

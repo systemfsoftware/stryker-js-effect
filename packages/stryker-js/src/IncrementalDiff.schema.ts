@@ -1,4 +1,4 @@
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 import { SharedComponentsSchema, TimeoutKindSchema, VerdictKey } from './verdict-store/VerdictEntry.schema.js'
 import { ListedEntrySchema } from './verdict-store/VerdictStore.schema.js'
@@ -19,6 +19,9 @@ export const ReuseRefusalReasonSchema = S.Literals([
 ])
 
 export type ReuseRefusalReason = typeof ReuseRefusalReasonSchema.Type
+
+export const RefusalCountsSchema = S.Record(ReuseRefusalReasonSchema, Report.NonNegativeInt)
+export type RefusalCounts = typeof RefusalCountsSchema.Type
 
 export const TimeoutEvidenceSchema = S.Struct({
   timeoutKind: TimeoutKindSchema,

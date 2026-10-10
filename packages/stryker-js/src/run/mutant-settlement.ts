@@ -27,6 +27,7 @@ import {
   runCheckedPlans,
 } from '../Checker/checker-pool.handle.js'
 import type { CheckerCrash } from '../Checker/Checker.handle.js'
+import type { RefusalCounts } from '../IncrementalDiff.schema.js'
 import { checkOnlyCostOf, decidedWithoutATest } from '../mutant-cost.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
@@ -192,6 +193,9 @@ const warnOfStoreGaps = (unreadMutants: number, skippedPuts: number): Effect.Eff
     Effect.succeed(unreadMutants + skippedPuts > 0),
   ).pipe(Effect.asVoid)
 
+const refusedOf = (counts: RefusalCounts): Effect.Effect<RunEvent.ReuseRefusals> =>
+  S.decodeEffect(RunEvent.ReuseRefusals)(counts).pipe(Effect.orDie)
+
 export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.MutantRunPlan, E>(
   settlement: Settlement<Passed, E>,
 ) {
@@ -205,7 +209,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     RunEvent.ReuseReported.make({
       reused: rememberedResults.length,
       ran: reuse.mutants.length,
-      refused: yield* S.decodeEffect(RunEvent.ReuseRefusals)(reuse.refusalCounts).pipe(Effect.orDie),
+      refused: yield* refusedOf(reuse.refusalCounts),
     }),
   )
   yield* announceMutationTestPlan(basis, plan)
@@ -290,3 +294,28 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
   yield* Effect.logInfo(`Done in ${Duration.format(Duration.millis(doneNow - env.runStartedAt))}.`)
   return outcomeResult
 })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+  const Exit = await import('effect/Exit')
+  const Order = await import('effect/Order')
+  const { RefusalCountsSchema, ReuseRefusalReasonSchema } = await import('../IncrementalDiff.schema.js')
+
+  const linesOf = (counts: Readonly<Record<string, number>>): string =>
+    Arr.sort(Object.entries(counts).map(([reason, count]) => `${reason} ${count}`), Order.String).join('\n')
+
+  const reportedLinesOf = (subject: typeof refusedOf, counts: RefusalCounts): string =>
+    Exit.match(Effect.runSyncExit(subject(counts)), {
+      onSuccess: linesOf,
+      onFailure: () => 'refused to decode',
+    })
+
+  it.prop(
+    '∀c_RefusalCounts_≡TheReuseEventReportsEveryRefusalReasonWithItsCount',
+    { of: [RefusalCountsSchema], subject: refusedOf },
+    (subject, [counts]) =>
+      reportedLinesOf(subject, counts) ===
+        linesOf(Object.fromEntries(ReuseRefusalReasonSchema.literals.map((reason) => [reason, counts[reason]]))),
+  )
+}

@@ -25,7 +25,10 @@ import {
 } from '../incremental-diff.workflow.js'
 import {
   type CurrentVerdict,
+  type RefusalCounts,
+  RefusalCountsSchema,
   type ReuseRefusalReason,
+  ReuseRefusalReasonSchema,
   type TimeoutEvidence,
   type VerdictLookup,
   VerdictLookupSchema,
@@ -34,35 +37,21 @@ import type { Project } from '../Project.schema.js'
 import { StageError } from '../Run.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { engineDigestOf, runInputsDigestOf, sha256HexOf } from '../verdict-semantics.js'
-import type { SharedComponents, TestedComponents } from '../verdict-store/VerdictEntry.schema.js'
-import { verdictKeyOf } from '../verdict-store/VerdictKey.js'
+import { readableEntriesOf } from '../verdict-store/verdict-blobs.js'
+import type { SharedComponents, VerdictEntry } from '../verdict-store/VerdictEntry.schema.js'
 import type { ListedEntry, ListOutcome } from '../verdict-store/VerdictStore.schema.js'
 import type { VerdictStoreShape } from '../verdict-store/VerdictStore.service.js'
-import { currentKeysOf, testedComponentsOf } from './current-verdict.js'
+import { currentKeysOf } from './current-verdict.js'
 
 const LOOKUP_CONCURRENCY = 16
 
-const emptyRefusalCounts = (): Record<ReuseRefusalReason, number> => ({
-  semanticsChanged: 0,
-  policyChanged: 0,
-  runInputsChanged: 0,
-  checkerConfigChanged: 0,
-  closureChanged: 0,
-  closureAnalysisFailed: 0,
-  programChanged: 0,
-  flakyDependency: 0,
-  timeoutUnreproduced: 0,
-  entryUnreadable: 0,
-  storeUnavailable: 0,
-  noPriorRecord: 0,
-})
+const emptyRefusalCounts: Effect.Effect<RefusalCounts> = S.decodeUnknownEffect(RefusalCountsSchema)(
+  Object.fromEntries(ReuseRefusalReasonSchema.literals.map((reason) => [reason, 0] as const)),
+).pipe(Effect.orDie)
 
-const countedRefusal = (
-  counts: Record<ReuseRefusalReason, number>,
-  refusal: ReuseRefusalReason,
-): Record<ReuseRefusalReason, number> => ({
+const countedRefusal = (counts: RefusalCounts, refusal: ReuseRefusalReason): RefusalCounts => ({
   ...counts,
-  [refusal]: Option.getOrElse(Option.fromUndefinedOr(counts[refusal]), () => 0) + 1,
+  [refusal]: counts[refusal] + 1,
 })
 
 const hasTestFileName = (
@@ -285,39 +274,6 @@ const lookupOfListing = (outcome: ListOutcome): StoreLookup =>
     StoreUnavailable: (): StoreLookup => UNAVAILABLE,
   })
 
-const listedLookupOf = (store: VerdictStoreShape, mutantId: Mutant.MutantId): Effect.Effect<StoreLookup> =>
-  Effect.map(store.list(mutantId), lookupOfListing)
-
-const withUnreadable = (components: TestedComponents) => (lookup: StoreLookup): StoreLookup => ({
-  ...lookup,
-  entries: [{ _tag: 'Unreadable', kind: 'tested', key: verdictKeyOf(components) }, ...lookup.entries],
-})
-
-const testedLookupOf = (store: VerdictStoreShape, components: TestedComponents): Effect.Effect<StoreLookup> =>
-  Effect.flatMap(store.get(components), (outcome) =>
-    Match.valueTags(outcome, {
-      EntryFound: ({ entry }) =>
-        Effect.succeed<StoreLookup>({
-          entries: [{ _tag: 'Readable', kind: 'tested', key: verdictKeyOf(components), entry }],
-          unavailable: false,
-        }),
-      EntryAbsent: () => listedLookupOf(store, components.mutantId),
-      EntryUnreadable: () => Effect.map(listedLookupOf(store, components.mutantId), withUnreadable(components)),
-      StoreUnavailable: () => Effect.succeed(UNAVAILABLE),
-    }))
-
-const storeLookupOf = (store: VerdictStoreShape, current: CurrentVerdict): Effect.Effect<StoreLookup> =>
-  Option.match(testedComponentsOf(current), {
-    onNone: () => listedLookupOf(store, current.shared.mutantId),
-    onSome: (components) => testedLookupOf(store, components),
-  })
-
-const lookupOf = (input: IncrementalReuseInput, current: CurrentVerdict): Effect.Effect<StoreLookup> =>
-  Boolean.match(input.force, {
-    onTrue: () => Effect.succeed(NOT_LOOKED_UP),
-    onFalse: () => storeLookupOf(input.store, current),
-  })
-
 const namesACheckerEntry = (lookup: StoreLookup): boolean => lookup.entries.some((entry) => entry.kind === 'checker')
 
 const verdictLookupOf = (mutant: Mutant.Mutant, current: CurrentVerdict, lookup: StoreLookup): VerdictLookup => ({
@@ -358,6 +314,7 @@ const checkerConfigDigestFor = (input: IncrementalReuseInput): Effect.Effect<str
 type IncrementalReuseRaw = typeof IncrementalDiffCommand.Encoded & {
   readonly mutantsById: Record<string, Mutant.Mutant>
   readonly currentByMutantId: Record<string, CurrentVerdict>
+  readonly priorEntries: ReadonlyArray<VerdictEntry>
 }
 
 const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
@@ -376,14 +333,20 @@ const readIncrementalReuseCommand = Effect.fn(SpanTaxonomy.Spans.incrementalReus
     closures: yield* closureDigestsOf(input),
   }
   const currentOf = currentVerdictOf(input, run)
-  const lookups = yield* Effect.forEach(
+  const observed = yield* Effect.forEach(
     input.currentMutants,
-    (mutant) => {
-      const current = currentOf(mutant)
-      return Effect.map(lookupOf(input, current), (lookup) => verdictLookupOf(mutant, current, lookup))
-    },
+    (mutant) =>
+      Effect.map(input.store.list(mutant.id), (listing) => {
+        const current = currentOf(mutant)
+        const lookup = Boolean.match(input.force, {
+          onTrue: (): StoreLookup => NOT_LOOKED_UP,
+          onFalse: () => lookupOfListing(listing),
+        })
+        return { lookup: verdictLookupOf(mutant, current, lookup), listing }
+      }),
     { concurrency: LOOKUP_CONCURRENCY },
   )
+  const lookups = observed.map(({ lookup }) => lookup)
   const decided = yield* withProgramDigests(lookups, input.programDigestOf)
   const command: typeof IncrementalDiffCommand.Encoded = {
     _tag: 'IncrementalDiffCommand',
@@ -401,6 +364,7 @@ const readIncrementalReuseCommand = Effect.fn(SpanTaxonomy.Spans.incrementalReus
     ...command,
     mutantsById: mutantsByIdOf(input.currentMutants),
     currentByMutantId: Object.fromEntries(decided.map((lookup) => [lookup.mutant.id, lookup.current] as const)),
+    priorEntries: observed.flatMap(({ listing }) => readableEntriesOf(listing)),
   }
 })
 
@@ -409,6 +373,7 @@ export interface IncrementalReusePart {
   readonly rememberedResults: readonly Mutant.RunMutantResult[]
   readonly refusal: ReuseRefusalReason | undefined
   readonly currentByMutantId: Record<string, CurrentVerdict>
+  readonly priorEntries: ReadonlyArray<VerdictEntry>
   readonly timeoutEvidenceByMutantId: Record<string, TimeoutEvidence>
   readonly priorKilledByByMutantId: Record<string, readonly string[]>
 }
@@ -444,6 +409,7 @@ const mutantToRunPart = Effect.fnUntraced(function*(
     rememberedResults: [],
     refusal: decision.refusal,
     currentByMutantId: command.currentByMutantId,
+    priorEntries: command.priorEntries,
     timeoutEvidenceByMutantId: priorTimeoutEvidenceOf(decision),
     priorKilledByByMutantId: Option.match(Option.fromNullishOr(decision.priorKilledBy), {
       onNone: () => ({}),
@@ -493,6 +459,7 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
         rememberedResults: [],
         refusal: undefined,
         currentByMutantId: command.currentByMutantId,
+        priorEntries: command.priorEntries,
         timeoutEvidenceByMutantId: {},
         priorKilledByByMutantId: {},
       }),
@@ -504,6 +471,7 @@ const rememberedMutantPart = Effect.fnUntraced(function*(
           rememberedResults: [rememberedResultOf(mutant, decision, status)],
           refusal: undefined,
           currentByMutantId: command.currentByMutantId,
+          priorEntries: command.priorEntries,
           timeoutEvidenceByMutantId: rememberedTimeoutEvidenceOf(decision),
           priorKilledByByMutantId: {},
         }),
@@ -536,8 +504,6 @@ export interface IncrementalReuseInput {
   readonly programDigestOf: Effect.Effect<string | undefined>
 }
 
-export type RefusalCounts = Record<ReuseRefusalReason, number>
-
 export interface IncrementalReuse {
   readonly mutants: readonly Mutant.Mutant[]
   readonly rememberedResults: readonly Mutant.RunMutantResult[]
@@ -545,6 +511,7 @@ export interface IncrementalReuse {
   readonly timeoutEvidenceByMutantId: Record<string, TimeoutEvidence>
   readonly priorKilledByByMutantId: Record<string, readonly string[]>
   readonly currentByMutantId: Record<string, CurrentVerdict>
+  readonly priorEntries: ReadonlyArray<VerdictEntry>
   readonly programDigestOf: Effect.Effect<string | undefined>
 }
 
@@ -563,16 +530,23 @@ const countRefusalOfPart = (counts: RefusalCounts, part: IncrementalReusePart): 
 const priorKilledByOfParts = (parts: readonly IncrementalReusePart[]): Record<string, readonly string[]> =>
   Object.fromEntries(parts.flatMap((part) => Object.entries(part.priorKilledByByMutantId)))
 
+const priorEntriesOfParts = (parts: readonly IncrementalReusePart[]): ReadonlyArray<VerdictEntry> =>
+  Option.getOrElse(
+    Option.map(Arr.head(parts), (part) => part.priorEntries),
+    (): ReadonlyArray<VerdictEntry> => [],
+  )
+
 export const readIncrementalReuse = Effect.fnUntraced(function*(input: IncrementalReuseInput) {
   const programDigestOf = yield* Effect.cached(input.programDigestOf)
   const parts = yield* incrementalReuseCell.run({ ...input, programDigestOf })
   return {
     mutants: parts.flatMap((part) => part.mutants),
     rememberedResults: parts.flatMap((part) => part.rememberedResults),
-    refusalCounts: parts.reduce(countRefusalOfPart, emptyRefusalCounts()),
+    refusalCounts: parts.reduce(countRefusalOfPart, yield* emptyRefusalCounts),
     timeoutEvidenceByMutantId: timeoutEvidenceOfParts(parts),
     priorKilledByByMutantId: priorKilledByOfParts(parts),
     currentByMutantId: currentOfParts(parts),
+    priorEntries: priorEntriesOfParts(parts),
     programDigestOf,
   } satisfies IncrementalReuse
 })
