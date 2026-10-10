@@ -429,7 +429,7 @@ jobs:
           mkdir -p "$capture"
           fail() {
             { echo "reason=$1"; echo "next=$2"; echo "summary=\`$1\`: $2"; } >> "$GITHUB_OUTPUT"
-            echo "::error title=$1::$2"
+            echo "$1: $2" >&2
             exit 1
           }
           started=$(date +%s)
@@ -534,6 +534,9 @@ jobs:
             fi
           else
             uploaded="\`$ARTIFACT\`"
+          fi
+          if [ "$CAPTURE" = failure ] && [ "$reason" != "${CAPTURE_REASON:-TRACE_CAPTURE_MISSING}" ]; then
+            echo "::error title=${CAPTURE_REASON:-TRACE_CAPTURE_MISSING}::${CAPTURE_NEXT:-The traces were not captured; read the step 'Capture traces'.}"
           fi
 
           {
