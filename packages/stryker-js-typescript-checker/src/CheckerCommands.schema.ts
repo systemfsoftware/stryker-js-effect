@@ -3,6 +3,7 @@ import { Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
+import { EditSiteFacts } from './edit-site.schema.js'
 import { TsConfigDocumentSchema } from './Tsconfig.schema.js'
 
 const MutantBound = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
@@ -195,36 +196,12 @@ export class AnswerTypeQueryCommand extends S.TaggedClass<AnswerTypeQueryCommand
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export const EditSpan = S.Struct({
-  start: S.Int.check(S.isGreaterThanOrEqualTo(0)),
-  length: S.Int.check(S.isGreaterThanOrEqualTo(0)),
-})
-export type EditSpan = typeof EditSpan.Type
-
-export const FunctionLikeFacts = S.Struct({
-  kind: S.Int,
-  start: S.Int,
-  bodyStart: S.Int,
-  bodyEnd: S.Int,
-  header: S.String,
-  bodyIndependentSignature: S.Boolean,
-})
-export type FunctionLikeFacts = typeof FunctionLikeFacts.Type
-
-export const EditSiteFacts = S.Struct({
-  span: EditSpan,
-  typescriptModule: S.Boolean,
-  declaresGlobal: S.Boolean,
-  moduleReference: S.Boolean,
-  enclosing: S.Array(FunctionLikeFacts),
-})
-export type EditSiteFacts = typeof EditSiteFacts.Type
-
 export const ShortcutClause = S.Literals([
   'outside-function-body',
   'body-dependent-signature',
   'not-typescript-module',
   'module-reference',
+  'syntax-error',
 ])
 export type ShortcutClause = typeof ShortcutClause.Type
 

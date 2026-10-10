@@ -38,6 +38,7 @@ interface Run {
   readonly blamed: Readonly<Record<string, ReadonlyArray<string>>>
   readonly shortcutCounts: Readonly<Record<string, number>>
   readonly snapshotUpdates: number
+  readonly resplices: number
 }
 
 const AE1 = '00000000000000a1'
@@ -49,6 +50,13 @@ const AE7 = '00000000000000a7'
 const AE8 = '00000000000000a8'
 const AE9 = '00000000000000a9'
 const AE10 = '0000000000000a10'
+const GLOBAL_EDIT_ID = '00000000000000b1'
+const REQUIRE_EDIT_ID = '00000000000000b2'
+const IMPORT_TYPE_EDIT_ID = '00000000000000b3'
+const SCRIPT_EDIT_ID = '00000000000000b4'
+const TERMINATOR_EDIT_ID = '00000000000000b5'
+const SYNTAX_EDIT_ID = '00000000000000b6'
+const UNHELD_EDIT_ID = '00000000000000b7'
 
 interface Fixture {
   readonly directory: string
@@ -64,8 +72,12 @@ const SINGLE_PROJECT: Fixture = {
     'consumer.ts',
     'contextual.ts',
     'defaults.ts',
+    'global.ts',
+    'imported-type.ts',
     'inferred.ts',
     'loader.ts',
+    'required.ts',
+    'script.ts',
   ],
 }
 
@@ -76,18 +88,53 @@ const REFERENCED_PROJECT: Fixture = {
 
 const AE1_EDIT: Edit = { id: AE1, file: 'annotated.ts', target: 'x + 1', replacement: 'x - 1' }
 const AE5_EDIT: Edit = { id: AE5, file: 'closer.ts', target: 'return x', replacement: 'return -x' }
+const AE7_EDIT: Edit = {
+  id: AE7,
+  file: 'closer.ts',
+  target: 'return x',
+  replacement: 'return x\n}\nexport function closed(): string {\n  return ""',
+}
+
+interface GuardRow {
+  readonly edit: Edit
+  readonly fallback: string
+}
+
+const GUARD_ROWS: Readonly<Record<string, GuardRow>> = {
+  declareGlobal: {
+    edit: { id: GLOBAL_EDIT_ID, file: 'global.ts', target: 'x + 2', replacement: 'x - 2' },
+    fallback: 'original.not-typescript-module',
+  },
+  requireCall: {
+    edit: { id: REQUIRE_EDIT_ID, file: 'required.ts', target: "'./annotated.js'", replacement: "''" },
+    fallback: 'original.module-reference',
+  },
+  typeofImport: {
+    edit: { id: IMPORT_TYPE_EDIT_ID, file: 'imported-type.ts', target: "'./box.js'", replacement: "''" },
+    fallback: 'original.module-reference',
+  },
+  nonModuleFile: {
+    edit: { id: SCRIPT_EDIT_ID, file: 'script.ts', target: 'x * 2', replacement: 'x / 2' },
+    fallback: 'original.not-typescript-module',
+  },
+  removedTerminator: {
+    edit: { id: TERMINATOR_EDIT_ID, file: 'closer.ts', target: 'x\n}', replacement: 'x' },
+    fallback: 'original.outside-function-body',
+  },
+  syntaxError: {
+    edit: { id: SYNTAX_EDIT_ID, file: 'annotated.ts', target: 'x + 1', replacement: 'x +' },
+    fallback: 'mutated.syntax-error',
+  },
+}
+
+const UNHELD_EDIT: Edit = { id: UNHELD_EDIT_ID, file: 'annotated.ts', target: '1', replacement: '1 ? 2 : 3' }
 
 const RULE_EDITS: ReadonlyArray<Edit> = [
   AE1_EDIT,
   { id: AE2, file: 'inferred.ts', target: 'return doubled', replacement: 'return String(doubled)' },
   { id: AE3, file: 'defaults.ts', target: '1', replacement: '""' },
   { id: AE4, file: 'loader.ts', target: "'./annotated.js'", replacement: "''" },
-  {
-    id: AE7,
-    file: 'closer.ts',
-    target: 'return x',
-    replacement: 'return x\n}\nexport function closed(): string {\n  return ""',
-  },
+  AE7_EDIT,
   { id: AE8, file: 'contextual.ts', target: 'x + 1', replacement: 'String(x)' },
   { id: AE9, file: 'box.ts', target: 'this.items.length', replacement: '""' },
 ]
@@ -202,6 +249,7 @@ const runOf = (
       ),
       shortcutCounts: shortcutCountsOf(attributes),
       snapshotUpdates: Number(attributes['typescript.snapshot_updates.count'] ?? -1),
+      resplices: Number(attributes['typescript.resplices.count'] ?? -1),
     }
   }).pipe(Effect.orDie)
 
@@ -275,7 +323,7 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
               'fallback.original.body-dependent-signature.count': 3,
               'fallback.original.outside-function-body.count': 1,
               'fallback.original.module-reference.count': 1,
-              'fallback.mutated.body-dependent-signature.count': 1,
+              'fallback.mutated.syntax-error.count': 1,
             },
             alwaysCounts: { count: 0 },
           })
@@ -350,6 +398,90 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
             always: { status: 'passed', shortcuts: 0 },
             locationRule: { status: 'passed', shortcuts: 1 },
             omitted: { status: 'passed', shortcuts: 1 },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Each Soundness Rule guard sends its edit to the full importer check',
+      Gherkin.Do.pipe(
+        When('the edit behind each guard is checked alone once per importerCheck value')(
+          'seen',
+          () =>
+            Effect.forEach(
+              Object.entries(GUARD_ROWS),
+              ([row, guard]) =>
+                Effect.map(bothModes([guard.edit]), (seen) => ({
+                  row,
+                  statuses: [
+                    seen.rule.statuses[guard.edit.id] ?? 'missing',
+                    seen.always.statuses[guard.edit.id] ?? 'missing',
+                  ],
+                  counts: seen.rule.shortcutCounts,
+                })),
+            ),
+        ),
+        Then('the rule run takes no shortcut, names the guard it fell back on, and both runs agree')((s, expect) =>
+          expect(s.seen).toEqual(
+            Object.entries(GUARD_ROWS).map(([row, guard], index) => {
+              const ruleStatus = s.seen[index]?.statuses[0] ?? 'missing'
+              return {
+                row,
+                statuses: [ruleStatus, ruleStatus],
+                counts: { count: 0, [`fallback.${guard.fallback}.count`]: 1 },
+              }
+            }),
+          )
+        ),
+      ),
+    )
+
+    scenario(
+      'A shared round whose member loses the shortcut after the edit is checked again one mutant at a time',
+      Gherkin.Do.pipe(
+        When('an annotated body edit and a body edit that closes its function early are checked together')(
+          'seen',
+          () => bothModes([AE1_EDIT, AE7_EDIT]),
+        ),
+        Then('the verdicts agree, only the first edit takes the shortcut, and the round is redone solo')((s, expect) =>
+          expect({
+            statuses: [s.seen.rule.statuses, s.seen.always.statuses],
+            counts: s.seen.rule.shortcutCounts,
+            updates: [s.seen.rule.snapshotUpdates, s.seen.always.snapshotUpdates],
+          }).toEqual({
+            statuses: [{ [AE1]: 'passed', [AE7]: 'passed' }, { [AE1]: 'passed', [AE7]: 'passed' }],
+            counts: { count: 1, 'fallback.mutated.syntax-error.count': 1 },
+            updates: [6, 4],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A shared round member whose edit does not parse in place is parenthesized before the round is checked',
+      Gherkin.Do.pipe(
+        When('an edit that binds into its surroundings and another annotated body edit are checked together')(
+          'seen',
+          () => bothModes([UNHELD_EDIT, AE5_EDIT]),
+        ),
+        Then('both take the shortcut, the unheld edit is parenthesized once inside the round, and the verdicts agree')((
+          s,
+          expect,
+        ) =>
+          expect({
+            statuses: [s.seen.rule.statuses, s.seen.always.statuses],
+            counts: s.seen.rule.shortcutCounts,
+            resplices: s.seen.rule.resplices,
+            updates: s.seen.rule.snapshotUpdates,
+          }).toEqual({
+            statuses: [{ [UNHELD_EDIT_ID]: 'passed', [AE5]: 'passed' }, {
+              [UNHELD_EDIT_ID]: 'passed',
+              [AE5]: 'passed',
+            }],
+            counts: { count: 2 },
+            resplices: 1,
+            updates: 3,
           })
         ),
       ),

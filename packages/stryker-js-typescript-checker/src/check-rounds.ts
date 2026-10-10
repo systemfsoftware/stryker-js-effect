@@ -12,7 +12,6 @@ import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
-import type { SourceFile } from 'typescript/unstable/ast'
 import type { Diagnostic } from 'typescript/unstable/async'
 
 import {
@@ -21,9 +20,9 @@ import {
   ShortcutTaken,
 } from './admit-importer-shortcut.workflow.js'
 import { type ImporterCheck, TypescriptCheckerOptionsSchema } from './Checker.schema.js'
-import { DecideImporterShortcutCommand, type EditSiteFacts, PlanCheckRoundsCommand } from './CheckerCommands.schema.js'
+import { DecideImporterShortcutCommand, PlanCheckRoundsCommand } from './CheckerCommands.schema.js'
 import { type CompilerError, CompilerFailed } from './Compiler.schema.js'
-import { editSiteFactsOf } from './edit-site.js'
+import { type EditSiteFacts, editSiteFactsOf, type Span } from './edit-site.schema.js'
 import { type CheckRound, planCheckRounds } from './plan-check-rounds.workflow.js'
 import {
   annotateDiagnosticSample,
@@ -32,6 +31,7 @@ import {
   classifyBatchTce,
   type CompilerState,
   describeDiagnostics,
+  type EditTree,
   emptyTally,
   type MutantCheck,
   runtimeOf,
@@ -56,11 +56,6 @@ type Mutant = Checker.CheckerMutantWire
 
 const decided = <A>(result: Result.Result<A, never>): A =>
   Result.match(result, { onFailure: (refused) => refused, onSuccess: (decision) => decision })
-
-interface Span {
-  readonly start: number
-  readonly end: number
-}
 
 interface Outcome {
   readonly check: MutantCheck
@@ -106,13 +101,16 @@ const fileOriginalsOf = (
 ): Effect.Effect<ReadonlyArray<readonly [string, EditSiteFacts]>, CompilerFailed> =>
   Effect.gen(function*() {
     const file = yield* steps.fileOf(fileName)
-    const tree = yield* steps.currentSourceFileOf(fileName)
+    const tree = yield* steps.editTreeOf(fileName)
     return Option.match(Option.all([file, tree]), {
       onNone: (): ReadonlyArray<readonly [string, EditSiteFacts]> => [],
-      onSome: ([script, sourceFile]) =>
+      onSome: ([script, edited]) =>
         Arr.getSomes(
           Arr.map(fileMutants, (mutant) =>
-            Option.map(spanOf(script, mutant), (span) => [mutant.id, editSiteFactsOf(sourceFile, span)] as const)),
+            Option.map(
+              spanOf(script, mutant),
+              (span) => [mutant.id, editSiteFactsOf(edited.sourceFile, span, edited.syntaxErrors)] as const,
+            )),
         ),
     })
   })
@@ -152,9 +150,13 @@ const mutatedFactsOf = (
   applied: string,
 ): Effect.Effect<Option.Option<EditSiteFacts>, CompilerFailed> =>
   Effect.map(
-    steps.currentSourceFileOf(fileName),
-    Option.map((sourceFile: SourceFile) =>
-      editSiteFactsOf(sourceFile, { start: original.span.start, end: original.span.start + applied.length })
+    steps.editTreeOf(fileName),
+    Option.map((edited: EditTree) =>
+      editSiteFactsOf(
+        edited.sourceFile,
+        { start: original.span.start, end: original.span.start + applied.length },
+        edited.syntaxErrors,
+      )
     ),
   )
 
@@ -419,8 +421,8 @@ export const check: {
     )
     yield* SynchronizedRef.update(rt.state, (prev) => ({
       ...prev,
-      lastMutants: [...mutants],
-      lastMutatedFileNames: fileNamesOf(steps, mutants),
+      lastMutants: [...progress.previous],
+      lastMutatedFileNames: fileNamesOf(steps, progress.previous),
     }))
     const failed = Arr.filter(checked, (entry) => entry.diagnostics.length > 0)
     const equivalentToOriginal = Arr.filter(checked, (entry) => entry.tce === 'original').length

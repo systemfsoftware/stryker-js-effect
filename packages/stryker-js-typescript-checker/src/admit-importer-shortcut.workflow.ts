@@ -5,14 +5,8 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import {
-  DecideImporterShortcutCommand,
-  type EditSiteFacts,
-  type EditSpan,
-  type FunctionLikeFacts,
-  ShortcutClause,
-  ShortcutTree,
-} from './CheckerCommands.schema.js'
+import { DecideImporterShortcutCommand, ShortcutClause, ShortcutTree } from './CheckerCommands.schema.js'
+import type { EditSiteFacts, EditSpan, FunctionLikeFacts } from './edit-site.schema.js'
 
 const ImporterShortcutTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js-typescript-checker/ImporterShortcutDecision',
@@ -48,8 +42,11 @@ interface Rule {
   readonly fails: boolean
 }
 
+const editableEndOf = (facts: FunctionLikeFacts): number =>
+  Boolean.match(facts.blockBody, { onTrue: () => facts.bodyEnd - 1, onFalse: () => facts.bodyEnd })
+
 const spanInsideBody = (span: EditSpan, facts: FunctionLikeFacts): boolean =>
-  Boolean.and(facts.bodyStart <= span.start, span.start + span.length <= facts.bodyEnd)
+  Boolean.and(facts.bodyStart <= span.start, span.start + span.length <= editableEndOf(facts))
 
 const bodiesContaining = (site: EditSiteFacts): Array<FunctionLikeFacts> =>
   Arr.filter(site.enclosing, (facts) => spanInsideBody(site.span, facts))
@@ -112,12 +109,20 @@ const rulesOf = (command: DecideImporterShortcutCommand): ReadonlyArray<Rule> =>
       fails: command.original.moduleReference,
     },
     {
+      verdict: { clause: 'syntax-error', tree: 'original' },
+      fails: command.original.syntaxErrors,
+    },
+    {
       verdict: { clause: 'not-typescript-module', tree: 'mutated' },
       fails: notTypescriptModule(command.mutated),
     },
     {
       verdict: { clause: 'module-reference', tree: 'mutated' },
       fails: command.mutated.moduleReference,
+    },
+    {
+      verdict: { clause: 'syntax-error', tree: 'mutated' },
+      fails: command.mutated.syntaxErrors,
     },
     {
       verdict: { clause: 'body-dependent-signature', tree: 'mutated' },

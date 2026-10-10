@@ -59,7 +59,7 @@ import {
   type TceDecision,
 } from './classify-tce.workflow.js'
 import { type CompilerError, CompilerFailed, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
-import { declaresGlobalScope } from './edit-site.js'
+import { editSiteFactsOf } from './edit-site.schema.js'
 import { groupMutants } from './group-mutants.workflow.js'
 import { identifyProgram as identifyProgramWorkflow, IdentifyProgramCommand } from './identify-program.workflow.js'
 import { overrideTsconfigOptions } from './override-tsconfig-options.workflow.js'
@@ -790,7 +790,7 @@ const walkTsConfigs = (
 const snapshotOf = (state: CompilerState) =>
   Effect.fromOption(Option.fromUndefinedOr(state.snapshot), () => CompilerFailed.make({ reason: 'not-initialized' }))
 
-export const projectsOf = (rt: TSCompilerRuntime): Effect.Effect<ReadonlyArray<Project>, CompilerFailed> =>
+const projectsOf = (rt: TSCompilerRuntime): Effect.Effect<ReadonlyArray<Project>, CompilerFailed> =>
   Effect.flatMap(SynchronizedRef.get(rt.state), (state) =>
     Effect.flatMap(snapshotOf(state), (snapshot) => {
       const projects = snapshot.getProjects()
@@ -850,6 +850,29 @@ const currentSourceFileOf = (
     projectsOf(rt),
     (projects) =>
       Effect.map(projectOfFile(projects, fileName), (owned) => Option.map(owned, (found) => found.sourceFile)),
+  )
+
+export interface EditTree {
+  readonly sourceFile: SourceFile
+  readonly syntaxErrors: boolean
+}
+
+const editTreeOf = (rt: TSCompilerRuntime, fileName: string): Effect.Effect<Option.Option<EditTree>, CompilerFailed> =>
+  Effect.flatMap(
+    projectsOf(rt),
+    (projects) =>
+      Effect.flatMap(projectOfFile(projects, fileName), (owned) =>
+        Option.match(owned, {
+          onNone: () => Effect.succeedNone,
+          onSome: (found) =>
+            Effect.asSome(Effect.map(
+              Effect.promise(() => found.project.program.getSyntacticDiagnostics(fileName)),
+              (diagnostics): EditTree => ({
+                sourceFile: found.sourceFile,
+                syntaxErrors: errorDiagnosticsOf(diagnostics).length > 0,
+              }),
+            )),
+        })),
   )
 
 const parseHeldAfterSpliceOf = (
@@ -1452,6 +1475,12 @@ const affectedFileNamesOf = (
   return HashSet.fromIterable(Arr.map(affected, (affectedFile) => affectedFile.fileName))
 }
 
+const declaresGlobalScope = (sourceFile: SourceFile): boolean =>
+  Boolean.or(
+    sourceFile.externalModuleIndicator === undefined,
+    editSiteFactsOf(sourceFile, { start: sourceFile.end, end: sourceFile.end }, false).declaresGlobal,
+  )
+
 const beyondOwnErrorsOf = (
   state: CompilerState,
   projects: ReadonlyArray<Project>,
@@ -1478,7 +1507,7 @@ const checkedIn = (
 export interface CheckSteps {
   readonly resolveFileName: (fileName: string) => string
   readonly fileOf: (fileName: string) => Effect.Effect<Option.Option<ScriptFile>>
-  readonly currentSourceFileOf: (fileName: string) => Effect.Effect<Option.Option<SourceFile>, CompilerFailed>
+  readonly editTreeOf: (fileName: string) => Effect.Effect<Option.Option<EditTree>, CompilerFailed>
   readonly parseHeldAfterSplice: (
     file: Option.Option<ScriptFile>,
     mutant: Checker.CheckerMutantWire,
@@ -1517,7 +1546,7 @@ const errorsOfOwned = (
 export const checkStepsOf = (rt: TSCompilerRuntime): CheckSteps => ({
   resolveFileName: (fileName) => resolveFileName(rt, fileName),
   fileOf: (fileName) => getFile(rt.files, fileName),
-  currentSourceFileOf: (fileName) => currentSourceFileOf(rt, fileName),
+  editTreeOf: (fileName) => editTreeOf(rt, fileName),
   parseHeldAfterSplice: (file, mutant, fileName) => parseHeldAfterSpliceOf(rt, file, mutant, fileName),
   parenthesizedSplice: (mutant, fileName, changedFiles) => parenthesizedSpliceOf(rt, mutant, fileName, changedFiles),
   applyMutant: (mutant, replacement) => applyMutant(rt, mutant, replacement),

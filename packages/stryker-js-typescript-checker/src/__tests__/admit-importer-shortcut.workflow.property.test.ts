@@ -9,13 +9,8 @@ import {
   ImportersRechecked,
   ShortcutTaken,
 } from '../admit-importer-shortcut.workflow.js'
-import {
-  DecideImporterShortcutCommand,
-  type EditSiteFacts,
-  type FunctionLikeFacts,
-  type ShortcutClause,
-  type ShortcutTree,
-} from '../CheckerCommands.schema.js'
+import { DecideImporterShortcutCommand, type ShortcutClause, type ShortcutTree } from '../CheckerCommands.schema.js'
+import type { EditSiteFacts, FunctionLikeFacts } from '../edit-site.schema.js'
 
 interface Knobs {
   readonly offset: number
@@ -28,6 +23,7 @@ interface Overrides {
   readonly typescriptModule?: boolean
   readonly declaresGlobal?: boolean
   readonly moduleReference?: boolean
+  readonly syntaxErrors?: boolean
 }
 
 const OFFSET = Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 0, maximum: 10_000 })))
@@ -47,12 +43,14 @@ const factsAt = (
   bodyEndOffset: number,
   bodyIndependentSignature: boolean,
   header: string,
+  blockBody = true,
 ): FunctionLikeFacts => ({
   kind: knobs.kind,
   start: knobs.offset + startOffset,
   bodyStart: knobs.offset + bodyStartOffset,
   bodyEnd: knobs.offset + bodyEndOffset,
   header,
+  blockBody,
   bodyIndependentSignature,
 })
 
@@ -67,6 +65,7 @@ const originalSite = (
   span: { start: knobs.offset + SPAN_START, length: SPAN_END - SPAN_START },
   typescriptModule: true,
   declaresGlobal: false,
+  syntaxErrors: false,
   moduleReference: false,
   enclosing,
   ...overrides,
@@ -80,6 +79,7 @@ const mutatedSite = (
   span: { start: knobs.offset + SPAN_START, length: SPAN_END - SPAN_START + knobs.delta },
   typescriptModule: true,
   declaresGlobal: false,
+  syntaxErrors: false,
   moduleReference: false,
   enclosing,
   ...overrides,
@@ -127,6 +127,29 @@ const mutatedReferenceCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)], { moduleReference: true }),
   })
 
+const originalSyntaxCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
+  DecideImporterShortcutCommand.make({
+    original: originalSite(knobs, [outerOf(knobs, BODY_END)], { syntaxErrors: true }),
+    mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)]),
+  })
+
+const mutatedSyntaxCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
+  DecideImporterShortcutCommand.make({
+    original: originalSite(knobs, [outerOf(knobs, BODY_END)]),
+    mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)], { syntaxErrors: true }),
+  })
+
+const BODY_ENDS = ['before-last-character', 'on-last-character'] as const
+type BodyEnd = typeof BODY_ENDS[number]
+
+const spanAtBodyEndCommand = (knobs: Knobs, bodyEnd: BodyEnd, blockBody: boolean): DecideImporterShortcutCommand => {
+  const end = bodyEnd === 'on-last-character' ? SPAN_END : SPAN_END + 1
+  return DecideImporterShortcutCommand.make({
+    original: originalSite(knobs, [factsAt(knobs, 0, BODY_START, end, true, knobs.header, blockBody)]),
+    mutated: mutatedSite(knobs, [factsAt(knobs, 0, BODY_START, end + knobs.delta, true, knobs.header, blockBody)]),
+  })
+}
+
 const unmatchedMutatedCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
     original: originalSite(knobs, [outerOf(knobs, BODY_END)]),
@@ -166,8 +189,10 @@ const CLAUSE_CASES: ReadonlyArray<ClauseCase> = [
   { clause: 'body-dependent-signature', tree: 'original', build: dependentSignatureCommand },
   { clause: 'not-typescript-module', tree: 'original', build: originalModuleCommand },
   { clause: 'module-reference', tree: 'original', build: originalReferenceCommand },
+  { clause: 'syntax-error', tree: 'original', build: originalSyntaxCommand },
   { clause: 'not-typescript-module', tree: 'mutated', build: mutatedModuleCommand },
   { clause: 'module-reference', tree: 'mutated', build: mutatedReferenceCommand },
+  { clause: 'syntax-error', tree: 'mutated', build: mutatedSyntaxCommand },
   { clause: 'body-dependent-signature', tree: 'mutated', build: unmatchedMutatedCommand },
   { clause: 'outside-function-body', tree: 'mutated', build: lengthDriftCommand },
 ]
@@ -245,5 +270,19 @@ describe('admitImporterShortcut', (it) => {
         'outside-function-body',
         'mutated',
       ),
+  )
+
+  it.prop(
+    '∀knobs_SpanReachingTheBodysLastCharacter_≡ShortcutOnlyWhenThatCharacterIsNotAClosingBrace',
+    {
+      of: [OFFSET, KIND, HEADER, DELTA, S.Literals(BODY_ENDS), S.Boolean],
+      subject: admitImporterShortcut,
+    },
+    (subject, [offset, kind, header, delta, bodyEnd, blockBody]) => {
+      const decision = subject(spanAtBodyEndCommand(knobsOf([offset, kind, header, delta]), bodyEnd, blockBody))
+      return blockBody && bodyEnd === 'on-last-character'
+        ? holdsRechecked(decision, 'outside-function-body', 'original')
+        : holdsSucceeded(decision)
+    },
   )
 })
