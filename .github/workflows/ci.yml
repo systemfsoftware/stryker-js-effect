@@ -291,6 +291,7 @@ jobs:
         timeout-minutes: ${{ env.MODE == 'full' && 40 || 5 }}
         env:
           BUDGET: ${{ env.MODE == 'full' && 2340 || 270 }}
+          DEADLINE: ${{ env.MODE == 'full' && 2160 || 210 }}
         run: |
           set +e
           timeout --signal=TERM --kill-after=10s "$BUDGET" \
@@ -298,6 +299,8 @@ jobs:
             --scope "$MODE" \
             --base "$BASE" \
             --settings test/checker-parity/pr-scope.json \
+            --costs test/checker-parity/file-costs.json \
+            --deadline "$DEADLINE" \
             --main-worker "$RUNNER_TEMP/main-side/packages/stryker-js-typescript-checker/dist/main.mjs" \
             --branch-worker "$GITHUB_WORKSPACE/packages/stryker-js-typescript-checker/dist/main.mjs" \
             --shard "${{ matrix.shard }}/$SHARDS" \
@@ -313,9 +316,11 @@ jobs:
           EXIT: ${{ steps.run.outputs.exit }}
           ARTIFACT: checker-parity-${{ github.run_id }}-${{ matrix.shard }}
         run: |
-          if [ "$EXIT" = 124 ] || [ "$EXIT" = 137 ] || [ -z "$EXIT" ]; then
+          if [ "$EXIT" = 2 ]; then
+            exit 0
+          elif [ "$EXIT" = 124 ] || [ "$EXIT" = 137 ] || [ -z "$EXIT" ]; then
             code=shard-timeout
-            next="Verdicts of every finished file are in the saved cache; rerun the failed legs and they resume from it. scope-$SHARD.json (LegStarted, written when the leg began) lists the leg's projects; those with no line in shard-$SHARD.ndjson did not finish."
+            next="The driver's own deadline did not stop the leg before the step budget, which is a driver bug. Verdicts of every finished batch are in the saved cache; rerun the failed legs and they resume from it. The last 'checker-parity heartbeat' line in this step's log names the side, project, file and batch that was running; scope-$SHARD.json (LegStarted) lists the leg's projects."
           else
             code=shard-failed
             next="Read lines with _tag ProjectBootFailed or TelemetryMissing in shard-$SHARD.ndjson; they name the project and the reason."
@@ -367,7 +372,7 @@ jobs:
           RESULT: ${{ needs.checker-parity.result }}
           PATTERN: checker-parity-${{ github.run_id }}-*
         run: |
-          echo "::error title=checker-parity shards ${RESULT}::A shard did not finish (code shard-incomplete). Read the failed checker-parity (k) leg's annotation (shard-timeout or shard-failed), then artifact ${PATTERN}, files shard-<k>.ndjson and scope-<k>.json. Rerun failed jobs: finished files resume from the verdict cache."
+          echo "::error title=checker-parity shards ${RESULT}::A shard did not finish (code shard-incomplete). Read the failed checker-parity (k) leg's annotation (leg-deadline, shard-timeout or shard-failed), then artifact ${PATTERN}, files shard-<k>.ndjson and scope-<k>.json. Rerun failed jobs: checked batches resume from the verdict cache."
           {
             echo "### checker-parity: shards ended with \`$RESULT\`"
             echo "Reason code \`shard-incomplete\`. Artifacts \`$PATTERN\`, files \`shard-<k>.ndjson\` and \`scope-<k>.json\` per shard."
@@ -403,12 +408,16 @@ jobs:
           --summary checker-parity-summary.json
           --shortcut-gate
           --speed-gate
+          --costs-base test/checker-parity/file-costs.json
+          --costs-out checker-parity-costs.json
           checker-parity-shards
       - name: Upload summary
         if: always() && needs.checker-parity-changes.outputs.run == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: checker-parity-summary-${{ github.run_id }}
-          path: checker-parity-summary.json
+          path: |
+            checker-parity-summary.json
+            checker-parity-costs.json
           retention-days: 14
           if-no-files-found: warn

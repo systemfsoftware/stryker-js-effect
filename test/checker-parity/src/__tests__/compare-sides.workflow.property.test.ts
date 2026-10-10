@@ -108,7 +108,7 @@ const checkCallOf = (
   mutantIds: ReadonlyArray<string>,
   ms: number,
   cached = false,
-): CheckCall => CheckCall.make({ schemaVersion: 1, side, project, callIndex, mutantIds, ms, cached })
+): CheckCall => CheckCall.make({ schemaVersion: 1, side, project, fileName: FILE, callIndex, mutantIds, ms, cached })
 
 const bootOf = (side: Side, project: string, reason: string): ProjectBootFailed =>
   ProjectBootFailed.make({ schemaVersion: 1, side, project, reason })

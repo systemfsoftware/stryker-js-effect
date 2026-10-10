@@ -27,8 +27,9 @@ import { appendStepSummary, type CiEnvironment, ciEnvironment } from './ci-envir
 import { compareSides, CompareSidesCommand, ComparisonDecision } from './compare-sides.workflow.js'
 import { ISOLATED_DECLARATIONS_PROJECT } from './corpus.js'
 import { DriverFailure, ReportedExit } from './DriverFailure.schema.js'
+import { measuredCostsOf, mergeCosts } from './file-costs.js'
 import { laneTrigger } from './lane-trigger.js'
-import { LegFile, type LegScope, type ParityLine, RunScopeName, Shard } from './Parity.schema.js'
+import { FileCosts, LegFile, type LegScope, type ParityLine, RunScopeName, Shard } from './Parity.schema.js'
 import {
   CompareFinished,
   ProjectShard,
@@ -196,13 +197,67 @@ interface CompareInput {
   readonly summary: string
   readonly shortcutGate: boolean
   readonly speedGate: boolean
+  readonly costsBase: Option.Option<string>
+  readonly costsOut: Option.Option<string>
   readonly dirs: ReadonlyArray<string>
 }
+
+const decodeFileCosts = S.decodeResult(S.fromJsonString(FileCosts))
+const encodeFileCosts = S.encodeResult(S.fromJsonString(FileCosts))
+
+const EMPTY_COSTS = FileCosts.make({ schemaVersion: 1, runs: [], files: [] })
+
+const baseCostsOf = (file: Option.Option<string>): Effect.Effect<FileCosts, DriverFailure, FileSystem.FileSystem> =>
+  Option.match(file, {
+    onNone: () => Effect.succeed(EMPTY_COSTS),
+    onSome: (costsFile) =>
+      FileSystem.FileSystem.use((fs) => fs.readFileString(costsFile)).pipe(
+        Effect.mapError((cause) => ioFailure(`Could not read ${costsFile}: ${cause.message}`, `Check ${costsFile}.`)),
+        Effect.flatMap((text) =>
+          Effect.fromResult(
+            Result.mapError(
+              decodeFileCosts(text),
+              (issue) => ioFailure(`${costsFile} is not a file-costs table: ${issue.message}`, `Fix ${costsFile}.`),
+            ),
+          )
+        ),
+      ),
+  })
+
+const writeCosts = (
+  input: CompareInput,
+  lines: ReadonlyArray<ParityLine>,
+): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
+  Option.match(input.costsOut, {
+    onNone: () => Effect.void,
+    onSome: (costsOut) =>
+      Effect.gen(function*() {
+        const environment = yield* Effect.orElseSucceed(ciEnvironment, () => FALLBACK_ENVIRONMENT)
+        const merged = mergeCosts({
+          base: yield* baseCostsOf(input.costsBase),
+          measured: measuredCostsOf(lines),
+          runId: environment.runId,
+        })
+        const text = yield* Effect.fromResult(
+          Result.mapError(
+            encodeFileCosts(merged),
+            (issue) =>
+              ioFailure(`Could not encode the file costs: ${issue.message}`, 'Inspect FileCosts in Parity.schema.ts.'),
+          ),
+        )
+        yield* FileSystem.FileSystem.use((fs) => fs.writeFileString(costsOut, `${text}\n`)).pipe(
+          Effect.mapError((cause) =>
+            ioFailure(`Could not write ${costsOut}: ${cause.message}`, `Check the directory of ${costsOut}.`)
+          ),
+        )
+      }),
+  })
 
 const compare = (input: CompareInput): Effect.Effect<void, DriverFailure | ReportedExit, DriverServices> =>
   Effect.gen(function*() {
     const shards = yield* loadShards(input.dirs, input.shards)
     const lines = shards.flatMap((shard) => shard.lines)
+    yield* writeCosts(input, lines)
     const decision = yield* Effect.fromResult(
       compareSides(
         CompareSidesCommand.make({
@@ -252,6 +307,11 @@ const runCommand = Command.make('run', {
   shard: Flag.String('shard').pipe(Flag.withSchema(Shard)),
   cache: Flag.String('cache'),
   out: Flag.String('out'),
+  costs: Flag.String('costs').pipe(Flag.optional),
+  deadline: Flag.Int('deadline').pipe(
+    Flag.filter((seconds) => seconds >= 1, (seconds) => `--deadline ${seconds} is not ≥ 1`),
+    Flag.optional,
+  ),
   allowLocal: Flag.Boolean('allow-local').pipe(Flag.withDefault(false)),
 }, (config) =>
   Effect.gen(function*() {
@@ -268,6 +328,8 @@ const compareCommand = Command.make('compare', {
   summary: Flag.String('summary'),
   shortcutGate: Flag.Boolean('shortcut-gate').pipe(Flag.withDefault(false)),
   speedGate: Flag.Boolean('speed-gate').pipe(Flag.withDefault(false)),
+  costsBase: Flag.String('costs-base').pipe(Flag.optional),
+  costsOut: Flag.String('costs-out').pipe(Flag.optional),
   dirs: Argument.String('dir').pipe(Argument.variadic({ min: 1 })),
 }, compare)
 

@@ -29,6 +29,7 @@ import {
   TypeAnswerLine,
   TypeQueryFileRefused,
   TypeQueryServers,
+  UnitOverBudget,
   Verdict,
   VerdictStatus,
 } from './Parity.schema.js'
@@ -126,6 +127,16 @@ export class ZeroNotAssignable extends S.TaggedClass<ZeroNotAssignable>()('ZeroN
   nextAction: S.String,
 }) {}
 
+export class UnitOverBudgetViolation extends S.TaggedClass<UnitOverBudgetViolation>()('UnitOverBudgetViolation', {
+  schemaVersion: SCHEMA_VERSION,
+  code: S.Literal('unit-over-budget'),
+  nextAction: S.String,
+  side: Side,
+  project: S.String,
+  fileName: S.String,
+  mutantIds: S.Array(S.String),
+}) {}
+
 export const Violation = S.Union([
   VerdictMismatch,
   BootAsymmetry,
@@ -136,6 +147,7 @@ export const Violation = S.Union([
   NothingCompared,
   WrongNotAssignable,
   ZeroNotAssignable,
+  UnitOverBudgetViolation,
 ])
 export type Violation = typeof Violation.Type
 
@@ -243,6 +255,7 @@ const isCounts = S.is(Counts)
 const isBootFailure = S.is(ProjectBootFailed)
 const isProjectSkipped = S.is(ProjectSkipped)
 const isTelemetryMissing = S.is(TelemetryMissing)
+const isUnitOverBudget = S.is(UnitOverBudget)
 
 const isPhaseLine = S.is(PhaseLine)
 
@@ -463,6 +476,20 @@ const telemetryViolations = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<Te
       project: line.project,
       expectedSpans: line.expectedSpans,
       receivedSpans: line.receivedSpans,
+    })
+  )
+
+const overBudgetViolations = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<UnitOverBudgetViolation> =>
+  lines.filter((line): line is UnitOverBudget => isUnitOverBudget(line)).map((line) =>
+    UnitOverBudgetViolation.make({
+      schemaVersion: 1,
+      code: 'unit-over-budget',
+      nextAction:
+        `The ${line.side} checker did not finish checking ${line.mutantIds.length} mutant(s) of ${line.fileName} in ${line.project} before the leg deadline on ${line.interrupts} attempts in a row. Read the ${line.side} worker's check span for these mutant ids to find whether it hangs or is slow, then fix the checker.`,
+      side: line.side,
+      project: line.project,
+      fileName: line.fileName,
+      mutantIds: [...line.mutantIds],
     })
   )
 
@@ -854,6 +881,7 @@ const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> =>
     ...projects.flatMap((project) => bootViolationsFor(command.lines, project)),
     ...projects.flatMap((project) => zeroUpdateViolationsFor(command.lines, project)),
     ...telemetryViolations(command.lines),
+    ...overBudgetViolations(command.lines),
     ...shortcutViolationsFor(command),
     ...speedViolationsFor(command),
     ...nothingComparedViolations(command.lines, projects),

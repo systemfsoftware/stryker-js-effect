@@ -17,6 +17,11 @@ export class VerdictCacheIdentity extends S.Class<VerdictCacheIdentity>('Verdict
   wires: S.Array(Checker.CheckerMutantWire),
 }) {}
 
+export class BatchInterrupts extends S.Class<BatchInterrupts>('BatchInterrupts')({
+  identity: VerdictCacheIdentity,
+  interrupts: S.Int.check(S.isGreaterThanOrEqualTo(0)),
+}) {}
+
 export class ReuseCachedVerdictsCommand
   extends S.TaggedClass<ReuseCachedVerdictsCommand>()('ReuseCachedVerdictsCommand', {
     current: VerdictCacheIdentity,

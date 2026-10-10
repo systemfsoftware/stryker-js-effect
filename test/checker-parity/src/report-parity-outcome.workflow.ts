@@ -103,6 +103,8 @@ const describeViolation = (violation: Violation): string =>
         JSON.stringify(wrong.candidate)
       } (${wrong.candidateType}) not assignable to ${wrong.contextualType} but verdict ${wrong.verdict}`,
     ZeroNotAssignable: (zero) => zero.code,
+    UnitOverBudgetViolation: (over) =>
+      `${over.code} ${over.side} ${over.project} ${over.fileName} mutants ${over.mutantIds.join(',')}`,
   })
 
 const projectOf = (violation: Violation): Option.Option<string> =>
@@ -116,6 +118,7 @@ const projectOf = (violation: Violation): Option.Option<string> =>
     NothingCompared: () => Option.none(),
     WrongNotAssignable: (wrong) => Option.some(wrong.project),
     ZeroNotAssignable: () => Option.none(),
+    UnitOverBudgetViolation: (over) => Option.some(over.project),
   })
 
 const locationOf = (violation: Violation): string =>
@@ -129,6 +132,7 @@ const locationOf = (violation: Violation): string =>
     NothingCompared: () => '',
     WrongNotAssignable: (wrong) => `file=${escapeProperty(wrong.fileName)},line=${wrong.line},`,
     ZeroNotAssignable: () => '',
+    UnitOverBudgetViolation: (over) => `file=${escapeProperty(over.fileName)},`,
   })
 
 const shardOf = (finished: CompareFinished, violation: Violation): string =>
