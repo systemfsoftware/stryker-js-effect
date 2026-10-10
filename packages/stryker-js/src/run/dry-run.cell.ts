@@ -8,7 +8,6 @@ import * as EffectDuration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
-import * as MutableHashMap from 'effect/MutableHashMap'
 import * as MutableHashSet from 'effect/MutableHashSet'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -106,7 +105,7 @@ const workerSpawnOf = (
 
 const mutatableFilesOf = (command: InstrumentDone): readonly string[] => {
   const mutated = MutableHashSet.fromIterable(command.mutants.map((mutant) => mutant.fileName))
-  return [...MutableHashMap.keys(command.project.filesToMutate)].filter((name) => MutableHashSet.has(mutated, name))
+  return [...command.project.filesToMutate.keys()].filter((name) => MutableHashSet.has(mutated, name))
 }
 
 const buildDryRunFiles = (command: InstrumentDone) =>
