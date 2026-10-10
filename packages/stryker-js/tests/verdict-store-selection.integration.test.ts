@@ -21,6 +21,18 @@ const SOURCE_FILE = 'src/math.ts'
 
 const TEST_FILE = 'test/math.test.mjs'
 
+const S3_ENTRY = 'index.mjs'
+
+const S3_MANIFEST = `{"name":"${S3_PACKAGE}","version":"0.0.0","exports":{".":"./${S3_ENTRY}"}}\n`
+
+const ENTRY_THROWING_AT_IMPORT = "throw new Error('the store refused to load')\n"
+
+const ENTRY_WHOSE_LAYER_IS_NOT_A_FUNCTION = 'export const layer = 42\n'
+
+const ENTRY_WHOSE_LAYER_THROWS = "export const layer = () => { throw new Error('the bucket is unreachable') }\n"
+
+const ENTRY_WHOSE_LAYER_IS_NOT_A_LAYER = 'export const layer = () => ({})\n'
+
 const writeProject = (): Effect.Effect<string, PlatformError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -36,6 +48,24 @@ const writeProject = (): Effect.Effect<string, PlatformError, FileSystem.FileSys
     yield* fs.writeFileString(path.join(root, TEST_FILE), "import { test } from 'vitest'\ntest('runs', () => {})\n")
     return root
   })
+
+const writeS3Package = (
+  root: string,
+  entrySource: string,
+): Effect.Effect<void, PlatformError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const installed = path.join(root, 'node_modules', S3_PACKAGE)
+    yield* fs.makeDirectory(installed, { recursive: true })
+    yield* fs.writeFileString(path.join(installed, 'package.json'), S3_MANIFEST)
+    yield* fs.writeFileString(path.join(installed, S3_ENTRY), entrySource)
+  })
+
+const projectInstallingS3Package = (
+  entrySource: string,
+): Effect.Effect<string, PlatformError, FileSystem.FileSystem | Path.Path> =>
+  Effect.flatMap(writeProject(), (root) => Effect.as(writeS3Package(root, entrySource), root))
 
 const removeProject = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
   Effect.ignore(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true })))
@@ -140,6 +170,114 @@ Feature('Choosing where mutation verdicts are stored')
             reason: 'the store root is a File, not a directory',
           })
         }),
+      ),
+    )
+
+    scenario(
+      'An S3 store package whose entrypoint throws while loading stops the run while preparing',
+      Gherkin.Do.pipe(
+        Given('a project installing the S3 verdict store package with an entrypoint that throws')(
+          'root',
+          () => projectInstallingS3Package(ENTRY_THROWING_AT_IMPORT),
+        ),
+        When('a run starts with verdicts stored in an S3 bucket')(
+          'outcome',
+          (s) =>
+            runFromProject(s.root, { kind: 's3', bucket: 'verdicts', prefix: 'main' }).pipe(
+              Effect.ensuring(removeProject(s.root)),
+            ),
+        ),
+        Then('the run stops before instrumenting, reporting that the package could not be imported')(
+          (s, expect) => {
+            const { stage, refusal } = refusalOf(s.outcome)
+            return expect({
+              stage,
+              store: refusal?.store,
+              says: refusal?.reason.includes(`${S3_PACKAGE} could not be imported`),
+            }).toEqual({ stage: 'prepare', store: 's3://verdicts/main', says: true })
+          },
+        ),
+      ),
+    )
+
+    scenario(
+      'An S3 store package whose layer export is not a function stops the run while preparing',
+      Gherkin.Do.pipe(
+        Given('a project installing the S3 verdict store package whose layer export is not a function')(
+          'root',
+          () => projectInstallingS3Package(ENTRY_WHOSE_LAYER_IS_NOT_A_FUNCTION),
+        ),
+        When('a run starts with verdicts stored in an S3 bucket')(
+          'outcome',
+          (s) =>
+            runFromProject(s.root, { kind: 's3', bucket: 'verdicts', prefix: 'main' }).pipe(
+              Effect.ensuring(removeProject(s.root)),
+            ),
+        ),
+        Then('the run stops before instrumenting, reporting that the package does not export a layer function')(
+          (s, expect) => {
+            const { stage, refusal } = refusalOf(s.outcome)
+            return expect({
+              stage,
+              store: refusal?.store,
+              says: refusal?.reason.includes(`${S3_PACKAGE} does not export a layer function`),
+            }).toEqual({ stage: 'prepare', store: 's3://verdicts/main', says: true })
+          },
+        ),
+      ),
+    )
+
+    scenario(
+      'An S3 store package whose layer factory throws stops the run while preparing',
+      Gherkin.Do.pipe(
+        Given('a project installing the S3 verdict store package whose layer factory throws')(
+          'root',
+          () => projectInstallingS3Package(ENTRY_WHOSE_LAYER_THROWS),
+        ),
+        When('a run starts with verdicts stored in an S3 bucket')(
+          'outcome',
+          (s) =>
+            runFromProject(s.root, { kind: 's3', bucket: 'verdicts', prefix: 'main' }).pipe(
+              Effect.ensuring(removeProject(s.root)),
+            ),
+        ),
+        Then('the run stops before instrumenting, naming the options the package refused')(
+          (s, expect) => {
+            const { stage, refusal } = refusalOf(s.outcome)
+            return expect({
+              stage,
+              store: refusal?.store,
+              says: refusal?.reason.includes(`${S3_PACKAGE} refused the options: the bucket is unreachable`),
+            }).toEqual({ stage: 'prepare', store: 's3://verdicts/main', says: true })
+          },
+        ),
+      ),
+    )
+
+    scenario(
+      'An S3 store package whose layer export returns nothing layer-shaped stops the run while preparing',
+      Gherkin.Do.pipe(
+        Given('a project installing the S3 verdict store package whose layer export is not a Layer')(
+          'root',
+          () => projectInstallingS3Package(ENTRY_WHOSE_LAYER_IS_NOT_A_LAYER),
+        ),
+        When('a run starts with verdicts stored in an S3 bucket')(
+          'outcome',
+          (s) =>
+            runFromProject(s.root, { kind: 's3', bucket: 'verdicts', prefix: 'main' }).pipe(
+              Effect.ensuring(removeProject(s.root)),
+            ),
+        ),
+        Then('the run stops before instrumenting, reporting that the layer export is not a Layer')(
+          (s, expect) => {
+            const { stage, refusal } = refusalOf(s.outcome)
+            return expect({
+              stage,
+              store: refusal?.store,
+              says: refusal?.reason.includes(`the layer export of ${S3_PACKAGE} did not return a Layer`),
+            }).toEqual({ stage: 'prepare', store: 's3://verdicts/main', says: true })
+          },
+        ),
       ),
     )
   })
