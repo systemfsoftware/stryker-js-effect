@@ -267,16 +267,22 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  # The one context branch protection requires for the lane. It passes when the lane had nothing
-  # to check, and fails when any shard failed, wrote nothing, or `compare` finds a violation.
   checker-parity-report:
     needs: [checker-parity-changes, checker-parity]
-    if: always() && needs.checker-parity-changes.result == 'success'
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       CI: "true"
     steps:
+      - name: Change detection finished
+        if: contains(fromJSON('["failure", "cancelled"]'), needs.checker-parity-changes.result)
+        env:
+          RESULT: ${{ needs.checker-parity-changes.result }}
+        run: |
+          echo "::error title=checker-parity change detection ${RESULT}::The checker-parity-changes job ended with ${RESULT}, so no shard ran (code shard-incomplete). Read that job's log, then rerun the workflow."
+          echo "### checker-parity: change detection ended with \`$RESULT\`" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
       - name: Nothing to check
         if: needs.checker-parity-changes.outputs.run != 'true'
         run: echo "No change reaches the checker-parity corpus."
