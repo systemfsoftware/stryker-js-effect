@@ -21,12 +21,17 @@ const RULE_IDS = [
 
 const KEEP_ALL = "To keep these mutants, set `mutator.mutantSetPolicy: 'full'`."
 
+const ARID_CALLEE =
+  'The callee must come from an `effect` import under any local name; `console` and `Date` count only when nothing in scope rebinds them. The detail names the canonical callee, such as `Effect.logInfo`.'
+
 const RULE_DOCUMENTATION: { readonly [ruleId in (typeof RULE_IDS)[number]]: string } = {
-  'arid-logging': `The mutant sits in a logging call (console.*, Logger, Effect.log*). ${KEEP_ALL}`,
-  'arid-telemetry': `The mutant sits in a telemetry span or annotation (Effect.withSpan, annotate). ${KEEP_ALL}`,
-  'arid-time': `The mutant sits in a time or schedule value (Duration, Schedule, Date.now). ${KEEP_ALL}`,
-  'arid-config-default': `The mutant sits in a config default (Config.withDefault). ${KEEP_ALL}`,
-  'arid-memoization': `The mutant sits in a memoization wrapper (Effect.cached*). ${KEEP_ALL}`,
+  'arid-logging': `The mutant sits in a logging call (console.*, Logger, Effect.log*). ${ARID_CALLEE} ${KEEP_ALL}`,
+  'arid-telemetry':
+    `The mutant sits in a telemetry span, annotation or metric (Effect.withSpan, annotate*, withLogSpan, Metric), or in the span name and options of \`Effect.fn('name', options)\`; the function body is never covered. ${ARID_CALLEE} ${KEEP_ALL}`,
+  'arid-time':
+    `The mutant sits in a time or schedule value (Duration, Schedule, Effect.sleep, Date.now). ${ARID_CALLEE} ${KEEP_ALL}`,
+  'arid-config-default': `The mutant sits in a config default (Config.withDefault). ${ARID_CALLEE} ${KEEP_ALL}`,
+  'arid-memoization': `The mutant sits in a memoization wrapper (Effect.cached*). ${ARID_CALLEE} ${KEEP_ALL}`,
   'redundant-relational': `Another mutant at the same relational operator already covers this one. ${KEEP_ALL}`,
   'equivalent-to-original':
     `The mutant behaves exactly like the original code, so no test can kill it. ${KEEP_ALL} With detail \`tce\`, the TypeScript checker compiled it to the original's output; remove that checker from \`checkers\` to keep it.`,

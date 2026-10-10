@@ -19,6 +19,7 @@ import {
   arrowFunctionExpression,
   attachComments,
   blockStatement,
+  type CallExpression,
   callExpression,
   childNodes,
   type ClassExpression,
@@ -55,6 +56,7 @@ import { type Ast, type ScriptAst, type SpannedComment } from './Ast.schema.js'
 import { decodeDirective, DecodeDirectiveCommand } from './directives/decode-directive.workflow.js'
 import { type Directive, type LocatedDirective } from './directives/directive.schema.js'
 import { foldRule, FoldRuleCommand, type MutantRule } from './directives/fold-rule.workflow.js'
+import { isShadowed, resolveImportedExport } from './EffectCall.js'
 import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { FormatRegistry } from './Format.schema.js'
 import {
@@ -884,28 +886,87 @@ function isNamedCallee(node: Node): node is NamedCallee {
   return isMemberOfIdentifierParts(node) && readKey<boolean>(node, 'computed') === false
 }
 
-const aridCalleeOf = (callee: Expression): Option.Option<AridCallee> =>
-  Match.value(callee).pipe(
-    Match.when(isNamedCallee, (named) =>
-      Option.some<AridCallee>({ object: named.object.name, member: named.property.name })),
-    Match.orElse(() =>
-      Option.none<AridCallee>()
-    ),
+const ARID_EFFECT_MODULES: readonly string[] = ['Effect', 'Logger', 'Metric', 'Schedule', 'Duration', 'Config']
+
+const ARID_GLOBAL_OBJECTS: readonly string[] = ['console', 'Date']
+
+const isStringLiteralNode = (node: Node): boolean => hasStringValue(node) && nodeType(node) === 'Literal'
+
+const hasStringValue = (node: Node): boolean => Predicate.hasProperty(node, 'value') && typeof node.value === 'string'
+
+const importSpecifierNames = (declaration: Node): readonly string[] =>
+  (readKey<readonly Node[]>(declaration, 'specifiers') ?? []).flatMap((specifier) =>
+    Option.toArray(
+      Option.map(
+        Option.fromNullishOr(readKey<Node>(specifier, 'local')),
+        (local) => String(readKey<string>(local, 'name')),
+      ),
+    )
   )
 
-const aridFrameFor = (child: Node, ancestor: Node): Option.Option<AridFrame> =>
-  ancestor.type === 'CallExpression'
-    ? Option.some({
-      callee: aridCalleeOf(ancestor.callee),
-      childIsArgument: ancestor.arguments.some((argument) => argument === child),
+const programImportDeclarations = (program: Node): readonly Node[] =>
+  (readKey<readonly Node[]>(program, 'body') ?? []).filter((statement) => nodeType(statement) === 'ImportDeclaration')
+
+const importedLocalNames = (ancestors: readonly Node[]): readonly string[] =>
+  ancestors
+    .filter((ancestor) => nodeType(ancestor) === 'Program')
+    .flatMap((program) => programImportDeclarations(program).flatMap(importSpecifierNames))
+
+const isUnshadowedGlobalName = (name: string, context: MutatorContext): boolean =>
+  [
+    ARID_GLOBAL_OBJECTS.includes(name),
+    isShadowed(name, context) === false,
+    importedLocalNames(context.ancestors).includes(name) === false,
+  ].every(Boolean)
+
+const aridGlobalCalleeOf = (callee: Expression, context: MutatorContext): Option.Option<AridCallee> =>
+  Match.value(callee).pipe(
+    Match.when(isNamedCallee, (named) =>
+      Option.map(
+        Option.filter(Option.some(named.object.name), (name) => isUnshadowedGlobalName(name, context)),
+        (name): AridCallee => ({ _tag: 'Global', name, member: named.property.name }),
+      )),
+    Match.orElse((): Option.Option<AridCallee> => Option.none()),
+  )
+
+const aridCalleeOf = (
+  call: CallExpression,
+  callFrame: NodeFrame,
+  policy: Options.MutantSetPolicyType,
+): Option.Option<AridCallee> => {
+  const context = toMutatorContext([call, ...ancestorsOfFrame(callFrame)], policy)
+  return Option.orElse(
+    Option.map(
+      resolveImportedExport(call.callee, context, ARID_EFFECT_MODULES),
+      (resolved): AridCallee => ({ _tag: 'EffectExport', module: resolved.module, exportName: resolved.exportName }),
+    ),
+    () => aridGlobalCalleeOf(call.callee, context),
+  )
+}
+
+const firstArgumentIsString = (call: CallExpression): boolean =>
+  Option.exists(Option.fromNullishOr(call.arguments[0]), isStringLiteralNode)
+
+const aridFrameFor = (
+  current: NodeFrame,
+  ancestorFrame: NodeFrame,
+  policy: Options.MutantSetPolicyType,
+): Option.Option<AridFrame> => {
+  const ancestor = ancestorFrame.node
+  return ancestor.type === 'CallExpression'
+    ? Option.some<AridFrame>({
+      callee: aridCalleeOf(ancestor, ancestorFrame, policy),
+      childIsArgument: ancestor.arguments.some((argument) => argument === current.node),
+      firstArgumentIsString: firstArgumentIsString(ancestor),
     })
     : Option.none()
+}
 
-const aridFramesOf = (frame: NodeFrame): readonly AridFrame[] =>
+const aridFramesOf = (frame: NodeFrame, policy: Options.MutantSetPolicyType): readonly AridFrame[] =>
   framesUpward(frame).flatMap((current) =>
     Option.match(Option.fromNullishOr(current.parent), {
       onNone: (): readonly AridFrame[] => [],
-      onSome: (parent) => Option.toArray(aridFrameFor(current.node, parent.node)),
+      onSome: (parent) => Option.toArray(aridFrameFor(current, parent, policy)),
     })
   )
 
@@ -917,7 +978,7 @@ const aridStatusReason = (decision: AridCodeDecision): Option.Option<string> =>
   )
 
 const aridReasonOf = (frame: NodeFrame, policy: Options.MutantSetPolicyType): Option.Option<string> =>
-  Match.value(aridCode(AridCodeCommand.make({ policy, frames: [...aridFramesOf(frame)] }))).pipe(
+  Match.value(aridCode(AridCodeCommand.make({ policy, frames: [...aridFramesOf(frame, policy)] }))).pipe(
     Match.when(Result.isSuccess, (decided) => aridStatusReason(decided.success)),
     Match.orElse(() => Option.none<string>()),
   )

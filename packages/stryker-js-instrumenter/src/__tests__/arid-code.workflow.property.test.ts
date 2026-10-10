@@ -8,13 +8,15 @@ import {
   aridCode,
   AridCodeCommand,
   type AridCodeDecision,
+  AridEffectExportCallee,
   AridFrameSchema,
   AridKept,
   type AridRuleId,
   AridSuppressed,
 } from '../arid-code.workflow.js'
 
-const detailOf = (callee: AridCallee): string => `${callee.object}.${callee.member}`
+const detailOf = (callee: AridCallee): string =>
+  S.is(AridEffectExportCallee)(callee) ? `${callee.module}.${callee.exportName}` : `${callee.name}.${callee.member}`
 
 const isKept = (decided: Result.Result<AridCodeDecision, never>): boolean =>
   Result.isSuccess(decided) && S.is(AridKept)(decided.success)
@@ -27,9 +29,13 @@ const namesSuppression = (
   Result.isSuccess(decided) && S.is(AridSuppressed)(decided.success) && decided.success.ruleId === ruleId &&
   decided.success.detail === detail
 
-const argumentFrame = (callee: AridCallee): AridCodeCommand['frames'][number] => ({
+const argumentFrame = (
+  callee: AridCallee,
+  firstArgumentIsString = true,
+): AridCodeCommand['frames'][number] => ({
   callee: Option.some(callee),
   childIsArgument: true,
+  firstArgumentIsString,
 })
 
 const throughCallee = (frame: AridCodeCommand['frames'][number]): AridCodeCommand['frames'][number] => ({
@@ -42,8 +48,10 @@ const withoutCallee = (frame: AridCodeCommand['frames'][number]): AridCodeComman
   callee: Option.none<AridCallee>(),
 })
 
-const LOG_INFO: AridCallee = { object: 'Effect', member: 'logInfo' }
+const LOG_INFO: AridCallee = { _tag: 'EffectExport', module: 'Effect', exportName: 'logInfo' }
 const LOG_INFO_RULE: AridRuleId = 'arid-logging'
+const EFFECT_FN: AridCallee = { _tag: 'EffectExport', module: 'Effect', exportName: 'fn' }
+const TELEMETRY_RULE: AridRuleId = 'arid-telemetry'
 
 describe('aridCode', () => {
   it.prop(
@@ -67,6 +75,18 @@ describe('aridCode', () => {
     (subject, [command]) =>
       isKept(subject(AridCodeCommand.make({ policy: 'default', frames: command.frames.map(throughCallee) }))) &&
       isKept(subject(AridCodeCommand.make({ policy: 'default', frames: command.frames.map(withoutCallee) }))),
+  )
+
+  it.prop(
+    '∀f_Frame_≡AnEffectFnArgumentFrameSuppressesExactlyWhenItsFirstArgumentIsAString',
+    { of: [AridFrameSchema], subject: aridCode },
+    (subject, [frame]) => {
+      const fnFrame = { ...frame, callee: Option.some(EFFECT_FN), childIsArgument: true }
+      const decided = subject(AridCodeCommand.make({ policy: 'default', frames: [fnFrame] }))
+      return fnFrame.firstArgumentIsString
+        ? namesSuppression(decided, TELEMETRY_RULE, 'Effect.fn')
+        : isKept(decided)
+    },
   )
 
   it.prop(

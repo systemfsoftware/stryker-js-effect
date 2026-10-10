@@ -130,45 +130,48 @@ type NamedImportSpecifier = Extract<ImportSpecifierUnion, { readonly type: 'Impo
 
 type NamespaceImportSpecifier = Extract<ImportSpecifierUnion, { readonly type: 'ImportNamespaceSpecifier' }>
 
-type NamespaceBinding =
+type NamespaceBinding<M extends string = EffectModuleName> =
   | { readonly kind: 'root' }
   | { readonly kind: 'functionModule' }
-  | { readonly kind: 'module'; readonly module: EffectModuleName }
+  | { readonly kind: 'module'; readonly module: M }
 
-interface BareFunctionBinding {
-  readonly module: EffectModuleName
+interface BareFunctionBinding<M extends string = EffectModuleName> {
+  readonly module: M
   readonly exportName: string
 }
 
-interface ImportTable {
-  readonly moduleBindings: ReadonlyMap<string, EffectModuleName>
-  readonly namespaces: ReadonlyMap<string, NamespaceBinding>
-  readonly bareFunctions: ReadonlyMap<string, BareFunctionBinding>
+interface ImportTable<M extends string = EffectModuleName> {
+  readonly moduleBindings: ReadonlyMap<string, M>
+  readonly namespaces: ReadonlyMap<string, NamespaceBinding<M>>
+  readonly bareFunctions: ReadonlyMap<string, BareFunctionBinding<M>>
   readonly pipeBindings: ReadonlySet<string>
 }
 
-const EMPTY_IMPORT_TABLE: ImportTable = Object.freeze({
-  moduleBindings: new Map<string, EffectModuleName>(),
-  namespaces: new Map<string, NamespaceBinding>(),
-  bareFunctions: new Map<string, BareFunctionBinding>(),
+const emptyImportTable = <M extends string>(): ImportTable<M> => ({
+  moduleBindings: new Map<string, M>(),
+  namespaces: new Map<string, NamespaceBinding<M>>(),
+  bareFunctions: new Map<string, BareFunctionBinding<M>>(),
   pipeBindings: new Set<string>(),
 })
 
-type ImportContribution =
-  | { readonly kind: 'module'; readonly local: string; readonly module: EffectModuleName }
-  | { readonly kind: 'namespace'; readonly local: string; readonly binding: NamespaceBinding }
+type ImportContribution<M extends string = EffectModuleName> =
+  | { readonly kind: 'module'; readonly local: string; readonly module: M }
+  | { readonly kind: 'namespace'; readonly local: string; readonly binding: NamespaceBinding<M> }
   | {
     readonly kind: 'bareFunction'
     readonly local: string
-    readonly module: EffectModuleName
+    readonly module: M
     readonly exportName: string
   }
   | { readonly kind: 'pipe'; readonly local: string }
 
-const buildImportTable = (program: Program): ImportTable =>
+const buildImportTable = <M extends string>(program: Program, modules: readonly M[]): ImportTable<M> =>
   Arr.reduce(
-    Arr.flatMap(Arr.filter(program.body, isImportDeclaration), importContributions),
-    EMPTY_IMPORT_TABLE,
+    Arr.flatMap(
+      Arr.filter(program.body, isImportDeclaration),
+      (declaration: ImportDeclaration) => importContributions(declaration, modules),
+    ),
+    emptyImportTable<M>(),
     applyContribution,
   )
 
@@ -177,7 +180,10 @@ const withEntry = <K, V>(entries: ReadonlyMap<K, V>, key: K, value: V): Readonly
 
 const withMember = <V>(members: ReadonlySet<V>, value: V): ReadonlySet<V> => new Set([...members, value])
 
-const applyContribution = (table: ImportTable, contribution: ImportContribution): ImportTable =>
+const applyContribution = <M extends string>(
+  table: ImportTable<M>,
+  contribution: ImportContribution<M>,
+): ImportTable<M> =>
   Match.value(contribution).pipe(
     Match.when(
       (candidate) => candidate.kind === 'module',
@@ -209,102 +215,126 @@ const applyContribution = (table: ImportTable, contribution: ImportContribution)
     })),
   )
 
-const importContributions = (declaration: ImportDeclaration): readonly ImportContribution[] =>
+const importContributions = <M extends string>(
+  declaration: ImportDeclaration,
+  modules: readonly M[],
+): readonly ImportContribution<M>[] =>
   Option.toArray(onlyWhen(declaration.importKind !== 'type', declaration)).flatMap((imported) =>
     Arr.flatMap(
       imported.specifiers,
-      (specifier) => Option.toArray(specifierContribution(imported.source.value, specifier)),
+      (specifier) => Option.toArray(specifierContribution(imported.source.value, specifier, modules)),
     )
   )
 
-const specifierContribution = (
+const specifierContribution = <M extends string>(
   source: string,
   specifier: ImportSpecifierUnion,
-): Option.Option<ImportContribution> =>
+  modules: readonly M[],
+): Option.Option<ImportContribution<M>> =>
   Match.value(specifier).pipe(
-    Match.when(isNamedImportSpecifier, (named) => namedSpecifierContribution(source, named)),
-    Match.when(isNamespaceImportSpecifier, (namespace) => namespaceSpecifierContribution(source, namespace)),
+    Match.when(isNamedImportSpecifier, (named) => namedSpecifierContribution(source, named, modules)),
+    Match.when(isNamespaceImportSpecifier, (namespace) => namespaceSpecifierContribution(source, namespace, modules)),
     Match.orElse(() => Option.none()),
   )
 
-const namedSpecifierContribution = (
+const namedSpecifierContribution = <M extends string>(
   source: string,
   specifier: NamedImportSpecifier,
-): Option.Option<ImportContribution> =>
+  modules: readonly M[],
+): Option.Option<ImportContribution<M>> =>
   onlyWhen(specifier.importKind !== 'type', specifier).pipe(
-    Option.flatMap((imported) => namedContribution(source, moduleExportName(imported.imported), imported.local.name)),
-  )
-
-const namedContribution = (
-  source: string,
-  importedName: string,
-  localName: string,
-): Option.Option<ImportContribution> =>
-  Match.value(source).pipe(
-    Match.when((candidate) => candidate === EFFECT_SOURCE, () => effectRootContribution(importedName, localName)),
-    Match.when((candidate) => candidate === FUNCTION_SOURCE, () => pipeContribution(importedName, localName)),
-    Match.orElse(() =>
-      Option.map(moduleNameFromSource(source), (module) => bareFunctionContribution(localName, module, importedName))
+    Option.flatMap((imported) =>
+      namedContribution(source, moduleExportName(imported.imported), imported.local.name, modules)
     ),
   )
 
-const effectRootContribution = (importedName: string, localName: string): Option.Option<ImportContribution> =>
-  Option.orElse(
-    Option.map(moduleNameFromName(importedName), (module) => moduleContribution(localName, module)),
-    () => pipeContribution(importedName, localName),
+const namedContribution = <M extends string>(
+  source: string,
+  importedName: string,
+  localName: string,
+  modules: readonly M[],
+): Option.Option<ImportContribution<M>> =>
+  Match.value(source).pipe(
+    Match.when((candidate) => candidate === EFFECT_SOURCE, () =>
+      effectRootContribution(importedName, localName, modules)),
+    Match.when((candidate) =>
+      candidate === FUNCTION_SOURCE, () => pipeContribution<M>(importedName, localName)),
+    Match.orElse(() =>
+      Option.map(moduleNameFromSource(source, modules), (module) =>
+        bareFunctionContribution(localName, module, importedName))
+    ),
   )
 
-const pipeContribution = (importedName: string, localName: string): Option.Option<ImportContribution> =>
-  onlyWhen(importedName === 'pipe', pipeContributionOf(localName))
+const effectRootContribution = <M extends string>(
+  importedName: string,
+  localName: string,
+  modules: readonly M[],
+): Option.Option<ImportContribution<M>> =>
+  Option.orElse(
+    Option.map(moduleNameFromName(importedName, modules), (module) => moduleContribution(localName, module)),
+    () => pipeContribution<M>(importedName, localName),
+  )
 
-const namespaceSpecifierContribution = (
+const pipeContribution = <M extends string = EffectModuleName>(
+  importedName: string,
+  localName: string,
+): Option.Option<ImportContribution<M>> => onlyWhen(importedName === 'pipe', pipeContributionOf<M>(localName))
+
+const namespaceSpecifierContribution = <M extends string>(
   source: string,
   specifier: NamespaceImportSpecifier,
-): Option.Option<ImportContribution> =>
-  Option.map(namespaceBindingFor(source), (binding) => ({
+  modules: readonly M[],
+): Option.Option<ImportContribution<M>> =>
+  Option.map(namespaceBindingFor(source, modules), (binding) => ({
     kind: 'namespace',
     local: specifier.local.name,
     binding,
   }))
 
-const moduleContribution = (local: string, module: EffectModuleName): ImportContribution => ({
+const moduleContribution = <M extends string>(local: string, module: M): ImportContribution<M> => ({
   kind: 'module',
   local,
   module,
 })
 
-const bareFunctionContribution = (
+const bareFunctionContribution = <M extends string>(
   local: string,
-  module: EffectModuleName,
+  module: M,
   exportName: string,
-): ImportContribution => ({ kind: 'bareFunction', local, module, exportName })
+): ImportContribution<M> => ({ kind: 'bareFunction', local, module, exportName })
 
-const pipeContributionOf = (local: string): ImportContribution => ({ kind: 'pipe', local })
+const pipeContributionOf = <M extends string = EffectModuleName>(local: string): ImportContribution<M> => ({
+  kind: 'pipe',
+  local,
+})
 
-const namespaceBindingFor = (source: string): Option.Option<NamespaceBinding> =>
+const namespaceBindingFor = <M extends string>(
+  source: string,
+  modules: readonly M[],
+): Option.Option<NamespaceBinding<M>> =>
   Match.value(source).pipe(
-    Match.when((candidate) => candidate === EFFECT_SOURCE, () => Option.some<NamespaceBinding>({ kind: 'root' })),
+    Match.when((candidate) => candidate === EFFECT_SOURCE, () => Option.some<NamespaceBinding<M>>({ kind: 'root' })),
     Match.when((candidate) => candidate === FUNCTION_SOURCE, () =>
-      Option.some<NamespaceBinding>({ kind: 'functionModule' })),
+      Option.some<NamespaceBinding<M>>({ kind: 'functionModule' })),
     Match.orElse(() =>
-      Option.map(moduleNameFromSource(source), (module): NamespaceBinding => ({ kind: 'module', module }))
+      Option.map(moduleNameFromSource(source, modules), (module): NamespaceBinding<M> => ({ kind: 'module', module }))
     ),
   )
 
-const moduleNameFromName = (name: string): Option.Option<EffectModuleName> =>
-  Arr.findFirst(MODULE_NAMES, (module) => module === name)
+const moduleNameFromName = <M extends string>(name: string, modules: readonly M[]): Option.Option<M> =>
+  Arr.findFirst(modules, (module) => module === name)
 
-const moduleNameFromSource = (source: string): Option.Option<EffectModuleName> =>
-  Arr.findFirst(MODULE_NAMES, (module) => source === `${EFFECT_SOURCE}/${module}`)
+const moduleNameFromSource = <M extends string>(source: string, modules: readonly M[]): Option.Option<M> =>
+  Arr.findFirst(modules, (module) => source === `${EFFECT_SOURCE}/${module}`)
 
-interface Callee {
-  readonly module: EffectModuleName
+interface Callee<M extends string = EffectModuleName> {
+  readonly module: M
   readonly exportName: string
-  readonly owner: Option.Option<ModuleObject>
+  readonly owner: Option.Option<ModuleObject<M>>
 }
 
-interface ModuleObject {
-  readonly module: EffectModuleName
+interface ModuleObject<M extends string = EffectModuleName> {
+  readonly module: M
   readonly access: Expression
 }
 
@@ -312,7 +342,7 @@ const resolveEffectCallDataFirst = (
   node: Node,
   context: MutatorContext,
 ): Option.Option<ResolvedEffectCall> =>
-  Option.flatMap(programOf(context), (program) => resolveIn(node, context, buildImportTable(program)))
+  Option.flatMap(programOf(context), (program) => resolveIn(node, context, buildImportTable(program, MODULE_NAMES)))
 
 export const resolveEffectCall: {
   (node: Node, context: MutatorContext): Option.Option<ResolvedEffectCall>
@@ -320,6 +350,37 @@ export const resolveEffectCall: {
 } = dual((args: IArguments): boolean => args.length >= 2, resolveEffectCallDataFirst)
 
 const programOf = (context: MutatorContext): Option.Option<Program> => Arr.findLast(context.ancestors, isProgram)
+
+export interface ResolvedEffectExport<M extends string = EffectModuleName> {
+  readonly module: M
+  readonly exportName: string
+}
+
+const resolveImportedExportDataFirst = <M extends string>(
+  node: Expression,
+  context: MutatorContext,
+  modules: readonly M[],
+): Option.Option<ResolvedEffectExport<M>> =>
+  Option.flatMap(
+    programOf(context),
+    (program) =>
+      Option.map(
+        resolveCallee(node, context, buildImportTable(program, modules), modules),
+        (callee): ResolvedEffectExport<M> => ({ module: callee.module, exportName: callee.exportName }),
+      ),
+  )
+
+export const resolveImportedExport: {
+  <M extends string>(
+    node: Expression,
+    context: MutatorContext,
+    modules: readonly M[],
+  ): Option.Option<ResolvedEffectExport<M>>
+  <M extends string>(
+    context: MutatorContext,
+    modules: readonly M[],
+  ): (node: Expression) => Option.Option<ResolvedEffectExport<M>>
+} = dual((args: IArguments): boolean => args.length >= 3, resolveImportedExportDataFirst)
 
 const resolveIn = (
   node: Node,
@@ -339,7 +400,7 @@ const resolveCall = (
   table: ImportTable,
 ): Option.Option<ResolvedEffectCall> =>
   Option.flatMap(
-    resolveCallee(call.callee, context, table),
+    resolveCallee(call.callee, context, table, MODULE_NAMES),
     (callee) =>
       Option.flatMap(spreadFreeArguments(call.arguments), (args) =>
         Option.flatMap(callForm(callee, args, call, context, table), (form) =>
@@ -358,7 +419,7 @@ const resolveReference = (
   table: ImportTable,
 ): Option.Option<ResolvedEffectCall> =>
   Option.flatMap(
-    resolveCallee(reference, context, table),
+    resolveCallee(reference, context, table, MODULE_NAMES),
     (callee) =>
       Option.flatMap(referenceForm(reference, context, table), (form) =>
         Option.some({
@@ -386,63 +447,66 @@ const spreadFreeArguments = (args: readonly Argument[]): Option.Option<readonly 
     Match.orElse(() => Option.some(args.filter(isSpreadFree))),
   )
 
-const resolveCallee = (
+const resolveCallee = <M extends string>(
   callee: Expression,
   context: MutatorContext,
-  table: ImportTable,
-): Option.Option<Callee> =>
+  table: ImportTable<M>,
+  modules: readonly M[],
+): Option.Option<Callee<M>> =>
   Match.value(callee).pipe(
     Match.when(isIdentifier, (reference) => resolveBareCallee(reference, context, table)),
-    Match.when(isMemberExpression, (member) => resolveMemberCallee(member, context, table)),
+    Match.when(isMemberExpression, (member) => resolveMemberCallee(member, context, table, modules)),
     Match.orElse(() => Option.none()),
   )
 
-const resolveBareCallee = (
+const resolveBareCallee = <M extends string>(
   reference: IdentifierReference,
   context: MutatorContext,
-  table: ImportTable,
-): Option.Option<Callee> =>
+  table: ImportTable<M>,
+): Option.Option<Callee<M>> =>
   Option.flatMap(
     Option.fromNullishOr(table.bareFunctions.get(reference.name)),
     (binding) =>
       Option.map(unshadowedName(reference.name, context), () => ({
         module: binding.module,
         exportName: binding.exportName,
-        owner: Option.none<ModuleObject>(),
+        owner: Option.none<ModuleObject<M>>(),
       })),
   )
 
-const resolveMemberCallee = (
+const resolveMemberCallee = <M extends string>(
   member: MemberExpression,
   context: MutatorContext,
-  table: ImportTable,
-): Option.Option<Callee> =>
+  table: ImportTable<M>,
+  modules: readonly M[],
+): Option.Option<Callee<M>> =>
   Option.flatMap(
     staticMemberName(member),
     (exportName) =>
-      Option.map(resolveModuleObject(member.object, context, table), (owner) => ({
+      Option.map(resolveModuleObject(member.object, context, table, modules), (owner) => ({
         module: owner.module,
         exportName,
         owner: Option.some(owner),
       })),
   )
 
-const resolveModuleObject = (
+const resolveModuleObject = <M extends string>(
   expression: Expression,
   context: MutatorContext,
-  table: ImportTable,
-): Option.Option<ModuleObject> =>
+  table: ImportTable<M>,
+  modules: readonly M[],
+): Option.Option<ModuleObject<M>> =>
   Match.value(expression).pipe(
     Match.when(isIdentifier, (reference) => identifierModuleObject(reference, context, table)),
-    Match.when(isMemberExpression, (member) => namespacedModuleObject(member, context, table)),
+    Match.when(isMemberExpression, (member) => namespacedModuleObject(member, context, table, modules)),
     Match.orElse(() => Option.none()),
   )
 
-const identifierModuleObject = (
+const identifierModuleObject = <M extends string>(
   reference: IdentifierReference,
   context: MutatorContext,
-  table: ImportTable,
-): Option.Option<ModuleObject> =>
+  table: ImportTable<M>,
+): Option.Option<ModuleObject<M>> =>
   Option.orElse(
     Option.flatMap(Option.fromNullishOr(table.moduleBindings.get(reference.name)), (module) =>
       Option.map(unshadowedName(reference.name, context), () => ({ module, access: reference }))),
@@ -451,47 +515,53 @@ const identifierModuleObject = (
         Option.map(moduleOf(binding), (module) => ({ module, access: reference }))),
   )
 
-const namespacedModuleObject = (
+const namespacedModuleObject = <M extends string>(
   member: MemberExpression,
   context: MutatorContext,
-  table: ImportTable,
-): Option.Option<ModuleObject> =>
+  table: ImportTable<M>,
+  modules: readonly M[],
+): Option.Option<ModuleObject<M>> =>
   Option.flatMap(
     staticMemberName(member),
     (moduleName) =>
       Option.flatMap(namespaceOf(member.object, context, table), (binding) =>
-        Match.value(binding).pipe(
-          Match.when(isRootNamespace, () =>
-            Option.map(moduleNameFromName(moduleName), (module) => ({ module, access: member }))),
-          Match.when(isModuleNamespace, (moduleNamespace) =>
-            Option.map(onlyWhen(moduleNamespace.module === moduleName, member), (access) => ({
-              module: moduleNamespace.module,
-              access,
-            }))),
-          Match.orElse(() =>
-            Option.none()
-          ),
-        )),
+        moduleObjectOfNamespace(binding, moduleName, member, modules)),
   )
 
-const isRootNamespace = (binding: NamespaceBinding): binding is Extract<NamespaceBinding, { readonly kind: 'root' }> =>
+const moduleObjectOfNamespace = <M extends string>(
+  binding: NamespaceBinding<M>,
+  moduleName: string,
+  member: MemberExpression,
+  modules: readonly M[],
+): Option.Option<ModuleObject<M>> =>
   binding.kind === 'root'
+    ? rootModuleObject(moduleName, member, modules)
+    : namedModuleObject(binding, moduleName, member)
 
-const moduleOf = (binding: NamespaceBinding): Option.Option<EffectModuleName> =>
-  Match.value(binding).pipe(
-    Match.when(isModuleNamespace, (moduleNamespace) => Option.some(moduleNamespace.module)),
-    Match.orElse(() => Option.none()),
-  )
+const rootModuleObject = <M extends string>(
+  moduleName: string,
+  member: MemberExpression,
+  modules: readonly M[],
+): Option.Option<ModuleObject<M>> =>
+  Option.map(moduleNameFromName(moduleName, modules), (module) => ({ module, access: member }))
 
-const isModuleNamespace = (
-  binding: NamespaceBinding,
-): binding is Extract<NamespaceBinding, { readonly kind: 'module' }> => binding.kind === 'module'
+const namedModuleObject = <M extends string>(
+  binding: NamespaceBinding<M>,
+  moduleName: string,
+  member: MemberExpression,
+): Option.Option<ModuleObject<M>> =>
+  binding.kind === 'module'
+    ? Option.map(onlyWhen(binding.module === moduleName, member), (access) => ({ module: binding.module, access }))
+    : Option.none()
 
-const namespaceOf = (
+const moduleOf = <M extends string>(binding: NamespaceBinding<M>): Option.Option<M> =>
+  binding.kind === 'module' ? Option.some(binding.module) : Option.none()
+
+const namespaceOf = <M extends string>(
   expression: Expression,
   context: MutatorContext,
-  table: ImportTable,
-): Option.Option<NamespaceBinding> =>
+  table: ImportTable<M>,
+): Option.Option<NamespaceBinding<M>> =>
   Match.value(expression).pipe(
     Match.when(isIdentifier, (reference) =>
       Option.flatMap(Option.fromNullishOr(table.namespaces.get(reference.name)), (binding) =>
@@ -715,8 +785,13 @@ const freeIdentifier = (base: string, taken: ReadonlySet<string>, suffix: number
 const suffixedName = (base: string, suffix: number): string =>
   Match.value(suffix).pipe(Match.when(0, () => base), Match.orElse((count) => `${base}${count}`))
 
-const isShadowed = (name: string, context: MutatorContext): boolean =>
+const isShadowedDataFirst = (name: string, context: MutatorContext): boolean =>
   context.ancestors.some((ancestor) => scopeDeclares(ancestor, name))
+
+export const isShadowed: {
+  (name: string, context: MutatorContext): boolean
+  (context: MutatorContext): (name: string) => boolean
+} = dual((args: IArguments): boolean => args.length >= 2, isShadowedDataFirst)
 
 const isVisible = (name: string, context: MutatorContext): boolean => isShadowed(name, context) === false
 
