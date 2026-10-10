@@ -65,10 +65,6 @@
         "types": "./dist/index.d.mts",
         "default": "./dist/index.mjs"
       },
-      "./type-query": {
-        "types": "./dist/type-query.d.mts",
-        "default": "./dist/type-query.mjs"
-      },
       "./package.json": "./package.json",
       "./contract/report.schema.json": {
         "default": "./contract/report.schema.json"
@@ -80,11 +76,6 @@
       "@systemfsoftware/source": "./src/mod.ts",
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
-    },
-    "./type-query": {
-      "@systemfsoftware/source": "./src/TypeQuery/mod.ts",
-      "types": "./dist/type-query.d.mts",
-      "default": "./dist/type-query.mjs"
     },
     "./package.json": "./package.json",
     "./contract/report.schema.json": {

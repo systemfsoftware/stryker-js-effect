@@ -1,11 +1,4 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import {
-  Assignable,
-  NotAssignable,
-  type TypeQuerySiteKind,
-  Unknown,
-  UnknownReason,
-} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as HashMap from 'effect/HashMap'
@@ -16,6 +9,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   CheckCall,
   Counts,
@@ -184,7 +178,7 @@ export const TypeQueryAnswerCountsBySiteKind = S.Struct({
 })
 export type TypeQueryAnswerCountsBySiteKind = typeof TypeQueryAnswerCountsBySiteKind.Type
 
-export const TypeQueryUnknownCounts = S.Record(UnknownReason, NonNegativeInt)
+export const TypeQueryUnknownCounts = S.Record(TypeQuery.UnknownReason, NonNegativeInt)
 export type TypeQueryUnknownCounts = typeof TypeQueryUnknownCounts.Type
 
 export const TypeQueryProjectShare = S.Struct({
@@ -741,9 +735,9 @@ const nothingComparedViolations = (
 const isTypeAnswerLine = S.is(TypeAnswerLine)
 const isTypeQueryFileRefused = S.is(TypeQueryFileRefused)
 const isTypeQueryServers = S.is(TypeQueryServers)
-const isAssignable = S.is(Assignable)
-const isNotAssignable = S.is(NotAssignable)
-const isUnknown = S.is(Unknown)
+const isAssignable = S.is(TypeQuery.Assignable)
+const isNotAssignable = S.is(TypeQuery.NotAssignable)
+const isUnknown = S.is(TypeQuery.Unknown)
 
 const typeAnswerLinesIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<TypeAnswerLine> =>
   lines.filter((line): line is TypeAnswerLine => isTypeAnswerLine(line))
@@ -759,17 +753,17 @@ const answerCountsOf = (
 const answerCountsBySiteKindOf = (
   answers: ReadonlyArray<TypeAnswerLine>,
 ): TypeQueryAnswerCountsBySiteKind => {
-  const ofKind = (kind: TypeQuerySiteKind): TypeQueryAnswerCounts =>
+  const ofKind = (kind: TypeQuery.TypeQuerySiteKind): TypeQueryAnswerCounts =>
     answerCountsOf(answers.filter((line) => line.siteKind === kind))
   return { expression: ofKind('expression'), 'function-body': ofKind('function-body') }
 }
 
-const unknownReasonOf = (line: TypeAnswerLine): Option.Option<UnknownReason> =>
+const unknownReasonOf = (line: TypeAnswerLine): Option.Option<TypeQuery.UnknownReason> =>
   Option.map(Option.liftPredicate(line.answer, isUnknown), (answer) => answer.reason)
 
 const unknownReasonsOf = (answers: ReadonlyArray<TypeAnswerLine>): TypeQueryUnknownCounts => {
   const reasons = Arr.getSomes(answers.map(unknownReasonOf))
-  const count = (reason: UnknownReason): number => reasons.filter((answered) => answered === reason).length
+  const count = (reason: TypeQuery.UnknownReason): number => reasons.filter((answered) => answered === reason).length
   return {
     'candidate-not-context-free': count('candidate-not-context-free'),
     'candidate-not-found': count('candidate-not-found'),
@@ -870,7 +864,7 @@ const wrongNotAssignableViolations = (lines: ReadonlyArray<ParityLine>): Readonl
               schemaVersion: 1,
               code: 'wrong-not-assignable',
               nextAction:
-                `Compare the TypeAnswerLine and Verdict rows for ${line.mutantId} in ${line.fileName} (project ${line.project}) in the shard NDJSON: the branch query answered NotAssignable but the checker verdict is ${verdict.status}. Re-check the site or drop the candidate.`,
+                `Compare the TypeAnswerLine and Verdict rows for ${line.mutantId} in ${line.fileName} (project ${line.project}) in the shard NDJSON: the branch query answered TypeQuery.NotAssignable but the checker verdict is ${verdict.status}. Re-check the site or drop the candidate.`,
               project: line.project,
               mutantId: line.mutantId,
               fileName: line.fileName,
@@ -893,7 +887,7 @@ const zeroNotAssignableViolation = (lines: ReadonlyArray<ParityLine>): ReadonlyA
       schemaVersion: 1,
       code: 'zero-not-assignable',
       nextAction:
-        'The run answered no mutant NotAssignable, so the gate is vacuous: read the TypeAnswerLine rows and the summary typeQuery counts and confirm the corpus has context-free replacements, then rerun the shard.',
+        'The run answered no mutant TypeQuery.NotAssignable, so the gate is vacuous: read the TypeAnswerLine rows and the summary typeQuery counts and confirm the corpus has context-free replacements, then rerun the shard.',
     }),
   )
 

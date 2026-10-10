@@ -77,21 +77,24 @@ its own `NodeSdk.layer`-based exporter, and a host provides its own
 
 ## Type query (provisional)
 
-The `./type-query` entry is the port an instrumenter uses to ask, before it
+The `TypeQuery` namespace is the port an instrumenter uses to ask, before it
 generates a mutant, the type at a site and whether a candidate replacement is
-assignable where it would sit. It holds the schema-version-1 wire shapes
-(`TypeQueryRequest`, `TypeQueryResponse`, `TypeAnswer`, `TypeQueryRefused`)
-and the `TypeQuery` service tag, and no implementation; the TypeScript checker
-ships one as `TypeQueryLive` from its own `./type-query` entry.
+assignable where it would sit. It holds the wire shapes for request versions 1
+and 2 (`TypeQueryRequest`, `TypeQueryResponse`, `TypeAnswer`,
+`TypeQueryRefused`, and `TypeQuerySiteKind` with its `function-body` site), the
+`CheckerCapabilities` a checker declares, `typeQueryServingOf`, and the
+`TypeQuery` service tag, and no implementation. The checker RPC group serves it
+as `capabilities` and `typeQuery`; the TypeScript checker ships an in-process
+implementation as `TypeQueryLive` from its own `./type-query` entry.
 
 ```ts
-import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 ```
 
-This entry is not part of the stable surface above. It changes shape when its
-consumer confirms it, and that change ships as an ordinary breaking release.
-Answers are advisory: only `NotAssignable` may justify dropping a candidate,
-and `Assignable` and `Unknown` say nothing about whether a mutant compiles.
+The namespace changes shape when its consumer confirms it, and that change
+ships as an ordinary breaking release. Answers are advisory: only
+`NotAssignable` may justify dropping a candidate, and `Assignable` and
+`Unknown` say nothing about whether a mutant compiles.
 
 ## Mutator providers
 
