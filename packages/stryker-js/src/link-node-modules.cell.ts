@@ -18,6 +18,7 @@ export interface LinkNodeModulesInput {
   readonly basePath: string
   readonly workingDirectory: string
   readonly tempDirName: string | undefined
+  readonly linking: boolean
 }
 
 type BaseWalk = {
@@ -135,8 +136,11 @@ const linkNodeModules = Effect.fn(SpanTaxonomy.Spans.sandboxLinkNodeModules.name
 
 const readNodeModules = Effect.fnUntraced(function*(input: LinkNodeModulesInput) {
   yield* Effect.logDebug('Start symlink node_modules')
-  const found = yield* findNodeModulesList(input.basePath, input.tempDirName)
-  return { _tag: 'NodeModulesSearchCommand' as const, found, input }
+  const found = yield* Boolean.match(input.linking, {
+    onTrue: () => findNodeModulesList(input.basePath, input.tempDirName),
+    onFalse: () => Effect.succeed<string[]>([]),
+  })
+  return { _tag: 'NodeModulesSearchCommand' as const, linking: input.linking, found, input }
 })
 
 export const linkNodeModulesCell: Cell.Cell<
@@ -147,6 +151,7 @@ export const linkNodeModulesCell: Cell.Cell<
 > = Sandwich.named(SpanTaxonomy.Spans.sandboxSymlinkNodeModules.name)(readNodeModules)
   .decide(planNodeModulesLinks)
   .write({
+    NodeModulesNotLinked: () => Effect.void,
     NodeModulesNotFound: (_decision, raw) =>
       Effect.logDebug(
         `Could not find a node_modules folder to symlink into the sandbox directory. Search "${raw.input.basePath}" and its parent directories`,

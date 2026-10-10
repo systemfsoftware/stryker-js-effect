@@ -2,6 +2,7 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import {
   classifySandboxDirectory,
@@ -33,12 +34,11 @@ describe('classifySandboxDirectory', () => {
   )
 
   it.prop(
-    '∀c_ClassifySandboxDirectory_⊨DirectoryNamedLikeTheTempDirIsSkipped',
-    { of: [SandboxDirectoryCommand], subject: classifySandboxDirectory },
-    (subject, [command]) =>
-      Option.contains(
-        classified(subject, SandboxDirectoryCommand.make({ name: command.name, tempDirName: command.name })),
-        'skipped',
-      ),
+    '∀c_ClassifySandboxDirectory_⊨DirectoryNamedLikeTheTempDirIsSkippedEvenWhenNamedNodeModules',
+    { of: [SandboxDirectoryCommand, S.Boolean], subject: classifySandboxDirectory },
+    (subject, [command, namedNodeModules]) => {
+      const name = namedNodeModules ? 'node_modules' : command.name
+      return Option.contains(classified(subject, SandboxDirectoryCommand.make({ name, tempDirName: name })), 'skipped')
+    },
   )
 })

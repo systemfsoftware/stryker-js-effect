@@ -1,4 +1,4 @@
-import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
+import { type Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -8,24 +8,24 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
-import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import type * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
 import { matchesFile } from './FileMatcher.js'
-import { linkNodeModulesCell, type LinkNodeModulesInput } from './link-node-modules.cell.js'
+import type { LinkNodeModulesInput } from './link-node-modules.cell.js'
 import { FileMatcher } from './matching.schema.js'
 import { planSandboxAcquisition } from './plan-sandbox-acquisition.workflow.js'
 import { ProjectFiles } from './project-files.service.js'
 import { type Project, withPreprocessedFiles } from './Project.schema.js'
-import { sandboxBuildCell, type SandboxBuildInput } from './sandbox-build.cell.js'
+import type { SandboxBuildInput } from './sandbox-build.cell.js'
 import { sandboxTsconfigCell } from './sandbox-tsconfig.cell.js'
 import { make as makeHandle, type SandboxHandle } from './Sandbox.handle.js'
-import type { FilePreprocessor, SandboxSpec } from './Sandbox.schema.js'
+import type { SandboxSpec } from './Sandbox.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
 
-const combinePreprocessors = (preprocessors: readonly FilePreprocessor[]): FilePreprocessor => (project) =>
-  Effect.reduce(preprocessors, () => project, (current, preprocess) => preprocess(current))
+type FilePreprocessor = (
+  project: Project,
+) => Effect.Effect<Project, PlatformError | StrykerError, FileSystem.FileSystem | Path.Path | ProjectFiles>
 
 const makeDisableTypeChecksPreprocessor = (options: Options.StrykerOptions, registry: Format.FormatRegistry) =>
   Effect.fn(SpanTaxonomy.Spans.sandboxPreprocessDisableTypeChecks.name)(function*(project: Project) {
@@ -66,8 +66,8 @@ const makeTSConfigPreprocessor = (options: Options.StrykerOptions, basePath: str
     (pathService) => rewriteTsconfigTree(project, pathService.resolve(options.tsconfigFile), basePath),
   )
 
-const preprocess = (spec: SandboxSpec, builtins: readonly FilePreprocessor[]) =>
-  combinePreprocessors([...builtins, ...spec.preprocessors])(spec.project).pipe(
+const preprocess = (spec: SandboxSpec, preprocessors: readonly FilePreprocessor[]) =>
+  Effect.reduce(preprocessors, () => spec.project, (current, preprocessor) => preprocessor(current)).pipe(
     Effect.mapError((cause) => StrykerError.make({ message: 'Sandbox preprocessor failed', cause })),
   )
 
@@ -135,17 +135,17 @@ const restoreOriginalFiles = (
     restoreFromBackup(spec.backupDirectory, spec.workingDirectory, spec.basePath).pipe(Effect.orDie)
   )
 
-interface PreparedSandbox {
+export interface PreparedSandbox {
   readonly handle: SandboxHandle
   readonly build: Option.Option<SandboxBuildInput>
-  readonly link: Option.Option<LinkNodeModulesInput>
+  readonly link: LinkNodeModulesInput
 }
 
 const preparedOf = (
   spec: SandboxSpec,
   entries: readonly (readonly [string, string])[],
   buildCommand: Option.Option<string>,
-  link: Option.Option<LinkNodeModulesInput>,
+  linking: boolean,
 ): Effect.Effect<PreparedSandbox, never, Path.Path> =>
   Effect.map(Path.Path, (pathService) => ({
     handle: makeHandle({
@@ -155,14 +155,13 @@ const preparedOf = (
       pathService,
     }),
     build: Option.map(buildCommand, (command) => ({ command, workingDirectory: spec.workingDirectory })),
-    link,
+    link: {
+      basePath: spec.basePath,
+      workingDirectory: spec.workingDirectory,
+      tempDirName: spec.options.tempDirName,
+      linking,
+    },
   }))
-
-const linkInputOf = (spec: SandboxSpec): LinkNodeModulesInput => ({
-  basePath: spec.basePath,
-  workingDirectory: spec.workingDirectory,
-  tempDirName: spec.options.tempDirName,
-})
 
 const readAcquisition = (spec: SandboxSpec) =>
   Effect.succeed({
@@ -195,13 +194,13 @@ const inPlaceSandbox = (
       backupDirectory: spec.backupDirectory,
       basePath: spec.basePath,
     })
-    return yield* preparedOf(spec, entries, buildCommand, Option.none())
+    return yield* preparedOf(spec, entries, buildCommand, false)
   })
 
 const copiedSandbox = (
   spec: SandboxSpec,
   buildCommand: Option.Option<string>,
-  link: Option.Option<LinkNodeModulesInput>,
+  linking: boolean,
 ) =>
   Effect.gen(function*() {
     yield* Effect.logDebug(`Creating a sandbox for files in ${spec.workingDirectory}`)
@@ -214,46 +213,22 @@ const copiedSandbox = (
       workingDirectory: spec.workingDirectory,
       basePath: spec.basePath,
     })
-    return yield* preparedOf(spec, entries, buildCommand, link)
+    return yield* preparedOf(spec, entries, buildCommand, linking)
   })
 
-const prepareSandboxCell = Sandwich.named(SpanTaxonomy.Spans.sandboxAcquire.name)(readAcquisition)
+export const prepareSandboxCell: Cell.Cell<
+  SandboxSpec,
+  PreparedSandbox,
+  PlatformError | StrykerError,
+  FileSystem.FileSystem | Path.Path | ProjectFiles | Scope.Scope
+> = Sandwich.named(SpanTaxonomy.Spans.sandboxPrepare.name)(readAcquisition)
   .decide(planSandboxAcquisition)
   .write({
     SandboxInPlaceRestored: ({ buildCommand }, { spec }) =>
       inPlaceSandbox(spec, buildCommand, restoreOriginalFiles(spec)),
     SandboxInPlaceUnrestored: ({ buildCommand }, { spec }) => inPlaceSandbox(spec, buildCommand, Effect.void),
-    SandboxCopiedLinked: ({ buildCommand }, { spec }) =>
-      copiedSandbox(spec, buildCommand, Option.some(linkInputOf(spec))),
-    SandboxCopiedUnlinked: ({ buildCommand }, { spec }) => copiedSandbox(spec, buildCommand, Option.none()),
+    SandboxCopiedLinked: ({ buildCommand }, { spec }) => copiedSandbox(spec, buildCommand, true),
+    SandboxCopiedUnlinked: ({ buildCommand }, { spec }) => copiedSandbox(spec, buildCommand, false),
     CommandRejected: ({ issue }) =>
       Effect.fail(StrykerError.make({ message: `Could not decide how to acquire the sandbox: ${issue}` })),
   })
-
-const keepingPrepared = <B, E, R>(step: Cell.Cell<PreparedSandbox, B, E, R>) =>
-  Cell.id<PreparedSandbox>().pipe(Cell.zipWith(step, (prepared: PreparedSandbox) => prepared))
-
-const buildStep = Cell.id<PreparedSandbox>().pipe(
-  Cell.map((prepared) => prepared.build),
-  Cell.gate(sandboxBuildCell),
-)
-
-const linkStep = Cell.id<PreparedSandbox>().pipe(
-  Cell.map((prepared) => prepared.link),
-  Cell.gate(linkNodeModulesCell),
-)
-
-export const acquireSandboxCell: Cell.Cell<
-  SandboxSpec,
-  SandboxHandle,
-  PlatformError | StrykerError,
-  | FileSystem.FileSystem
-  | Path.Path
-  | ProjectFiles
-  | ChildProcessSpawner.ChildProcessSpawner
-  | Scope.Scope
-> = prepareSandboxCell.pipe(
-  Cell.andThen(keepingPrepared(buildStep)),
-  Cell.andThen(keepingPrepared(linkStep)),
-  Cell.map((prepared) => prepared.handle),
-)

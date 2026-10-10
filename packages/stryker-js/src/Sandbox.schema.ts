@@ -1,34 +1,20 @@
 import type { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
-import type * as Effect from 'effect/Effect'
-import type * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import type * as Path from 'effect/Path'
-import type { PlatformError } from 'effect/PlatformError'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
 
-import type { ProjectFiles } from './project-files.service.js'
 import type { Project } from './Project.schema.js'
-import type { StrykerError } from './stryker-error.schema.js'
 
-export interface MakeSandboxInput {
+export interface SandboxSpec {
   readonly options: Options.StrykerOptions
   readonly project: Project
   readonly workingDirectory: string
   readonly backupDirectory: string
   readonly basePath: string
   readonly formatRegistry: Format.FormatRegistry
-}
-
-export type FilePreprocessor = (
-  project: Project,
-) => Effect.Effect<Project, PlatformError | StrykerError, FileSystem.FileSystem | Path.Path | ProjectFiles>
-
-export interface SandboxSpec extends MakeSandboxInput {
-  readonly preprocessors: readonly FilePreprocessor[]
 }
 
 const JsonRecord = S.Record(S.String, S.Unknown)
