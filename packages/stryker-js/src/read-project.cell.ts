@@ -7,7 +7,6 @@ import * as Effect from 'effect/Effect'
 import * as Equivalence from 'effect/Equivalence'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
-import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
@@ -424,29 +423,26 @@ export interface ReadProjectDone {
   readonly incrementalReportDiscard?: IncrementalReportDiscard | undefined
 }
 
-const addProjectFile = (
-  files: MutableHashMap.MutableHashMap<string, ProjectFile>,
-  filesToMutate: MutableHashMap.MutableHashMap<string, ProjectFile>,
-  name: string,
-  desc: { readonly mutate: Instrument.MutateDescription },
-): void => {
-  const file: ProjectFile = { name, mutate: desc.mutate, content: undefined, originalContent: undefined }
-  MutableHashMap.set(files, name, file)
-  const settable = [filesToMutate].filter(() => desc.mutate !== false)
-  settable.forEach((target) => MutableHashMap.set(target, name, file))
-  const removable = [filesToMutate].filter(() => desc.mutate === false)
-  removable.forEach((target) => MutableHashMap.remove(target, name))
-}
+const projectFileOf = (name: string, desc: { readonly mutate: Instrument.MutateDescription }): ProjectFile => ({
+  name,
+  mutate: desc.mutate,
+  content: undefined,
+  originalContent: undefined,
+})
 
 const makeProject = (
   fileDescriptions: Instrument.FileDescriptions,
   incrementalReport?: IncrementalReport,
   testFiles: readonly string[] = [],
 ): Project => {
-  const files: MutableHashMap.MutableHashMap<string, ProjectFile> = MutableHashMap.empty<string, ProjectFile>()
-  const filesToMutate: MutableHashMap.MutableHashMap<string, ProjectFile> = MutableHashMap.empty<string, ProjectFile>()
-  Object.entries(fileDescriptions).forEach(([name, desc]) => addProjectFile(files, filesToMutate, name, desc))
-  return { fileDescriptions, incrementalReport, testFiles, files, filesToMutate }
+  const files = Object.entries(fileDescriptions).map(([name, desc]) => projectFileOf(name, desc))
+  return {
+    fileDescriptions,
+    incrementalReport,
+    testFiles,
+    files: new Map(files.map((file) => [file.name, file] as const)),
+    filesToMutate: new Map(files.filter((file) => file.mutate !== false).map((file) => [file.name, file] as const)),
+  }
 }
 
 const projectOf = ({

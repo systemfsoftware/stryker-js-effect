@@ -197,6 +197,21 @@ interface MutantOutcome {
   readonly testsCompleted?: number | undefined
 }
 
+const subsumptionOf = (
+  mutant: Mutant.MutantTestCoverage,
+  status: Mutant.RunMutantResult['status'],
+): { readonly subsumption?: Mutant.Subsumption } =>
+  Option.match(
+    Option.filter(
+      Option.fromUndefinedOr(mutant.subsumption),
+      (subsumption) => Mutant.subsumptionMatchesStatus(subsumption, status),
+    ),
+    {
+      onNone: () => ({}),
+      onSome: (subsumption) => ({ subsumption }),
+    },
+  )
+
 const reportMutant = (
   mutant: Mutant.MutantTestCoverage,
   status: Mutant.RunMutantResult['status'],
@@ -215,6 +230,7 @@ const reportMutant = (
       static: mutant.static,
       testsCompleted: mutant.testsCompleted,
       description: mutant.description,
+      ...subsumptionOf(mutant, status),
       ...outcome,
     }) satisfies Mutant.RunMutantResult,
   )
@@ -272,7 +288,7 @@ const uniqueNames = (names: readonly (string | undefined)[]): readonly string[] 
 const partitionByFile = (files: Project['files'], fileNames: readonly string[]) => {
   const [present, missing] = Arr.separate(
     Arr.map(fileNames, (fileName) =>
-      Option.match(MutableHashMap.get(files, fileName), {
+      Option.match(Option.fromUndefinedOr(files.get(fileName)), {
         onNone: () => Result.fail(fileName),
         onSome: (file) => Result.succeed(file),
       })),
@@ -480,6 +496,7 @@ const reportMutantOf = (
   ...presentField('static', mutant.static),
   ...presentField('killedBy', remap.testIds(mutant.killedBy)),
   ...presentField('coveredBy', remap.testIds(mutant.coveredBy)),
+  ...presentField('subsumption', mutant.subsumption),
   ...timeoutFieldsOf(mutant, evidence),
 })
 

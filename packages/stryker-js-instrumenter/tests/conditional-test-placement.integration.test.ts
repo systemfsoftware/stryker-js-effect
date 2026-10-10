@@ -233,7 +233,9 @@ const rowOf = (shape: Shape, mutant: CollectedMutant, content: string) =>
     const name = `${shape.id}-${mutant.id}.ts`
     const mutantUrl = new URL(name, MUTANT_ROOT)
     const referenceUrl = new URL(name, REFERENCE_ROOT)
-    const reference = mutant.status === 'Ignored' ? shape.source : spliceMutant(shape, mutant)
+    const reference = mutant.status === 'Ignored' && mutant.subsumption === undefined
+      ? shape.source
+      : spliceMutant(shape, mutant)
     yield* fs.writeFileString(filePathOf(mutantUrl), content)
     yield* fs.writeFileString(filePathOf(referenceUrl), reference)
     const rewritten = yield* loadModule(referenceUrl)
@@ -276,7 +278,7 @@ const buildReport = (shape: Shape) =>
     const mutants = result.mutants.filter((mutant) => mutant.fileName === `${shape.id}.ts`)
     return {
       subject: shape.subject,
-      ignoredCount: mutants.filter((mutant) => mutant.status === 'Ignored').length,
+      ignoredCount: mutants.filter((mutant) => mutant.status === 'Ignored' && mutant.subsumption === undefined).length,
       arms: armsOf(mutants, instrumented.content),
       rows: yield* Effect.forEach(mutants, (mutant) => rowOf(shape, mutant, instrumented.content), { concurrency: 1 }),
     }

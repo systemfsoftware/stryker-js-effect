@@ -8,6 +8,7 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import { MaterializeMutantPlanCommand, materializeMutantPlans } from '../materialize-mutant-plans.workflow.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
@@ -25,6 +26,7 @@ import { StageError } from '../Run.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { OrderedRunPlan, SortRunPlans, sortRunPlans } from '../sort-run-plans.workflow.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
+import { optionalField } from './incremental-reuse.js'
 import { sandboxFilesOf } from './mutation-test-plan.js'
 
 const calculateTotalTime = (testResults: Iterable<TestRunner.TestResult>) =>
@@ -83,6 +85,27 @@ const planCommandOf = (
 const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
   Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant] as const))
 
+const isSubsumed = (mutant: Mutant.Mutant): boolean =>
+  Option.exists(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed))
+
+const planningMutantOf = (mutant: Mutant.Mutant): Mutant.Mutant =>
+  isSubsumed(mutant)
+    ? Mutant.Mutant.make({
+      id: mutant.id,
+      fileName: mutant.fileName,
+      mutatorName: mutant.mutatorName,
+      replacement: mutant.replacement,
+      location: mutant.location,
+      ...optionalField('static', mutant.static),
+      ...optionalField(
+        'coveredBy',
+        Option.getOrUndefined(Option.map(Option.fromUndefinedOr(mutant.coveredBy), (tests) => [...tests])),
+      ),
+      ...optionalField('testsCompleted', mutant.testsCompleted),
+      ...optionalField('description', mutant.description),
+    })
+    : mutant
+
 type MutantTestPlanRaw = typeof MutantTestPlanCommand.Encoded & {
   readonly mutantsById: Record<string, Mutant.Mutant>
 }
@@ -92,11 +115,12 @@ const readPlanCommand = Effect.fn(SpanTaxonomy.Spans.mutationTestPlanRead.name)(
     const sandboxFileByName: Record<string, string> = Object.fromEntries(
       yield* sandboxFilesOf({
         sandbox: input.sandbox,
-        fileNames: [...MutableHashMap.keys(input.project.filesToMutate)],
+        fileNames: [...input.project.filesToMutate.keys()],
       }),
     )
+    const planningMutants = input.mutants.map(planningMutantOf)
     const command = planCommandOf(
-      input.mutants,
+      planningMutants,
       input.testCoverage,
       input.options,
       input.timeOverheadMS,
@@ -104,7 +128,7 @@ const readPlanCommand = Effect.fn(SpanTaxonomy.Spans.mutationTestPlanRead.name)(
       input.priorKilledByByMutantId,
       sandboxFileByName,
     )
-    return { ...command, mutantsById: mutantsByIdOf(input.mutants) }
+    return { ...command, mutantsById: mutantsByIdOf(planningMutants) }
   },
 )
 
@@ -213,21 +237,51 @@ export interface MutationTestPlanInput {
   readonly reporterStage: ReporterStage
 }
 
+export interface HeldSubsumedPlan {
+  readonly plan: Mutant.RunPlan
+  readonly subsumed: Mutant.Subsumed
+}
+
 export interface MutationTestPlan {
   readonly runPlans: readonly Mutant.RunPlan[]
   readonly earlyResults: readonly Mutant.RunMutantResult[]
+  readonly heldSubsumed: readonly HeldSubsumedPlan[]
   readonly plannedTotal: number
   readonly plansForReporter: readonly Mutant.RunPlan[]
 }
 
+const subsumedByIdOf = (mutants: readonly Mutant.Mutant[]): ReadonlyMap<string, Mutant.Subsumed> =>
+  new Map(
+    mutants.flatMap((mutant) =>
+      Option.match(Option.filter(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed)), {
+        onNone: (): readonly (readonly [string, Mutant.Subsumed])[] => [],
+        onSome: (subsumed) => [[mutant.id, subsumed] as const],
+      })
+    ),
+  )
+
 export const draftMutationTestPlan = Effect.fn(SpanTaxonomy.Spans.mutationTestPlan.name)(function*(
   input: MutationTestPlanInput,
 ) {
+  const subsumedById = subsumedByIdOf(input.mutants)
   const plans = yield* planMutantTestsCell.run(input)
   const { runPlans, earlyPlans } = partitionRunPlans(plans)
+  const heldSubsumed: readonly HeldSubsumedPlan[] = runPlans.flatMap((plan) =>
+    Option.match(Option.fromUndefinedOr(subsumedById.get(plan.mutant.id)), {
+      onNone: (): readonly HeldSubsumedPlan[] => [],
+      onSome: (subsumed) => [{ plan, subsumed }],
+    })
+  )
+  const keptRunPlans = runPlans.filter((plan) => !subsumedById.has(plan.mutant.id))
   const earlyResults = yield* Effect.forEach(earlyPlans, (plan) => earlyResultOf(plan))
-  const sortedPlans = sortedRunPlans(runPlans)
+  const sortedPlans = sortedRunPlans(keptRunPlans)
   const plansForReporter: readonly Mutant.RunPlan[] = [...sortedPlans]
-  const plannedTotal = sortedPlans.length + earlyResults.length + input.rememberedCount
-  return { runPlans: sortedPlans, earlyResults, plannedTotal, plansForReporter } satisfies MutationTestPlan
+  const plannedTotal = sortedPlans.length + earlyResults.length + heldSubsumed.length + input.rememberedCount
+  return {
+    runPlans: sortedPlans,
+    earlyResults,
+    heldSubsumed,
+    plannedTotal,
+    plansForReporter,
+  } satisfies MutationTestPlan
 })
