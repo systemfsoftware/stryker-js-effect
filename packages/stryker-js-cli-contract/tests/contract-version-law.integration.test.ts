@@ -1,3 +1,4 @@
+import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
@@ -5,8 +6,11 @@ import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
+import * as ChildProcess from 'effect/process/ChildProcess'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Result from 'effect/Result'
 import type { Json } from 'effect/Schema'
+import * as Stream from 'effect/Stream'
 
 import {
   type ChangeIntent,
@@ -21,13 +25,15 @@ import {
   type ContractDocument,
   type ContractLawInput,
   evaluateContractLaw,
+  mainBaselineUnavailableOf,
   type PackageContracts,
   renderFailure,
 } from './__fixtures__/contract-law.fixture.js'
 
 const Feature = makeFeature({ it })
 
-const platformLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+const fsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+const platformLayer = Layer.mergeAll(fsPathLayer, NodeChildProcessSpawner.layer.pipe(Layer.provide(fsPathLayer)))
 
 const CLI_CONTRACT = '@systemfsoftware/stryker-js-cli-contract'
 const CLI_CONTRACT_DIRECTORY = 'packages/stryker-js-cli-contract'
@@ -46,6 +52,7 @@ const MANIFEST_FILE = 'package.json'
 const WORKSPACE_MANIFEST = 'pnpm-workspace.yaml'
 const DIRECTORY_GLOB = '/*'
 const NODE_MODULES = 'node_modules'
+const MAIN_REF = 'origin/main'
 const STREAM_DOCUMENT = 'stream.schema.json'
 const REPORT_DOCUMENT = 'report.schema.json'
 const STOCK_CATALOG_DOCUMENT = 'stock-catalog.json'
@@ -91,6 +98,47 @@ const readVersion = (manifestPath: string) =>
     return decoded.success
   })
 
+const runGit = (cwd: string, args: readonly string[]) =>
+  Effect.scoped(Effect.gen(function*() {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    const handle = yield* ChildProcess.make('git', args, {
+      cwd,
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+    }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
+    const [stdout, stderr] = yield* Effect.all([
+      handle.stdout.pipe(Stream.decodeText, Stream.mkString),
+      handle.stderr.pipe(Stream.decodeText, Stream.mkString),
+    ], { concurrency: 2 })
+    return { stdout, stderr: stderr.trim(), exitCode: Number(yield* handle.exitCode) }
+  })).pipe(Effect.orDie)
+
+const gitOutput = (cwd: string, args: readonly string[]) =>
+  Effect.gen(function*() {
+    const ran = yield* runGit(cwd, args)
+    if (ran.exitCode !== 0) {
+      return yield* Effect.die(new Error(`git ${args.join(' ')} exited ${ran.exitCode}: ${ran.stderr}`))
+    }
+    return ran.stdout
+  })
+
+const readMainBase = (repositoryRoot: string) =>
+  Effect.map(runGit(repositoryRoot, ['merge-base', MAIN_REF, 'HEAD']), (ran) =>
+    ran.exitCode === 0
+      ? Result.succeed(ran.stdout.trim())
+      : Result.fail(mainBaselineUnavailableOf({ ref: MAIN_REF, detail: ran.stderr })))
+
+const readMainVersion = (repositoryRoot: string, mainBase: string, directory: string) =>
+  Effect.gen(function*() {
+    const manifest = `${mainBase}:${directory}/${MANIFEST_FILE}`
+    const decoded = decodePackageVersion(yield* gitOutput(repositoryRoot, ['show', manifest]))
+    if (Result.isFailure(decoded)) {
+      return yield* Effect.die(new Error(`cannot read a version from ${manifest}: ${decoded.failure.message}`))
+    }
+    return decoded.success
+  })
+
 const readPendingIntents = (changesetDirectory: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -112,11 +160,15 @@ const readPendingIntents = (changesetDirectory: string) =>
     return intents.success
   })
 
-const readWorkspace = () =>
+const repositoryRootOf = () =>
+  Effect.flatMap(Path.Path, (path) => path.fromFileUrl(new URL('../../../', import.meta.url)))
+
+const readWorkspace = (repositoryRoot: string) =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const repositoryRoot = yield* path.fromFileUrl(new URL('../../../', import.meta.url))
     const releasedRoot = path.join(repositoryRoot, CLI_CONTRACT_DIRECTORY, NODE_MODULES)
+    const mainBase = yield* readMainBase(repositoryRoot)
+    if (Result.isFailure(mainBase)) return Result.fail(mainBase.failure)
     const packages: PackageContracts[] = []
     for (const ref of PACKAGES) {
       const packageDirectory = path.join(repositoryRoot, ref.directory)
@@ -125,19 +177,20 @@ const readWorkspace = () =>
         name: ref.name,
         directory: ref.directory,
         releasedVersion: yield* readVersion(path.join(releasedDirectory, MANIFEST_FILE)),
+        mainVersion: yield* readMainVersion(repositoryRoot, mainBase.success, ref.directory),
         committedVersion: yield* readVersion(path.join(packageDirectory, MANIFEST_FILE)),
         releasedDocuments: yield* readJsonDocuments(path.join(releasedDirectory, CONTRACT_DIRECTORY)),
         committedDocuments: yield* readJsonDocuments(path.join(packageDirectory, CONTRACT_DIRECTORY)),
       })
     }
-    return { packages, pendingIntents: yield* readPendingIntents(path.join(repositoryRoot, CHANGESET_DIRECTORY)) }
+    const pendingIntents = yield* readPendingIntents(path.join(repositoryRoot, CHANGESET_DIRECTORY))
+    return Result.succeed<ContractLawInput>({ packages, pendingIntents })
   })
 
-const readContractShippingPackages = () =>
+const readContractShippingPackages = (repositoryRoot: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const repositoryRoot = yield* path.fromFileUrl(new URL('../../../', import.meta.url))
     const globs = decodeWorkspaceGlobs(yield* fs.readFileString(path.join(repositoryRoot, WORKSPACE_MANIFEST)))
     if (Result.isFailure(globs)) {
       return yield* Effect.die(new Error(`cannot read the workspace package globs: ${globs.failure.message}`))
@@ -164,6 +217,43 @@ const readContractShippingPackages = () =>
     return shipping.sort()
   })
 
+const SCRATCH_PACKAGE = 'packages/scratch'
+const COMMITTER = ['-c', 'user.email=law@test', '-c', 'user.name=law', '-c', 'commit.gpgsign=false'] as const
+
+const commitVersion = (root: string, version: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const directory = path.join(root, SCRATCH_PACKAGE)
+    yield* fs.makeDirectory(directory, { recursive: true })
+    yield* fs.writeFileString(path.join(directory, MANIFEST_FILE), `{ "name": "scratch", "version": "${version}" }\n`)
+    yield* gitOutput(root, ['add', '-A'])
+    yield* gitOutput(root, [...COMMITTER, 'commit', '-q', '--no-verify', '-m', version])
+  }).pipe(Effect.orDie)
+
+const repositoryWithoutMain = () =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory())
+    yield* gitOutput(root, ['init', '-q', '-b', 'work'])
+    yield* commitVersion(root, '1.2.0')
+    return root
+  }).pipe(Effect.orDie)
+
+const forkedRepository = () =>
+  Effect.gen(function*() {
+    const root = yield* repositoryWithoutMain()
+    yield* commitVersion(root, '2.0.0')
+    yield* gitOutput(root, ['checkout', '-q', '-b', 'mainline', 'HEAD~1'])
+    yield* commitVersion(root, '1.3.0')
+    yield* gitOutput(root, ['update-ref', `refs/remotes/${MAIN_REF}`, 'HEAD'])
+    yield* gitOutput(root, ['checkout', '-q', 'work'])
+    return root
+  })
+
+const removeRepository = (root: string) =>
+  Effect.ignore(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true })))
+
 const streamDocument = (options: { readonly schemaVersion: string; readonly pid: boolean }): Json => ({
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   definitions: {
@@ -184,6 +274,7 @@ type LawScenario = {
   readonly package: string
   readonly directory: string
   readonly releasedVersion: string
+  readonly mainVersion: string
   readonly committedVersion: string
   readonly releasedDocuments: readonly ContractDocument[]
   readonly committedDocuments: readonly ContractDocument[]
@@ -195,6 +286,7 @@ const lawInputOf = (request: LawScenario): ContractLawInput => ({
     name: request.package,
     directory: request.directory,
     releasedVersion: request.releasedVersion,
+    mainVersion: request.mainVersion,
     committedVersion: request.committedVersion,
     releasedDocuments: request.releasedDocuments,
     committedDocuments: request.committedDocuments,
@@ -245,6 +337,7 @@ const unchangedStream: LawScenario = {
   package: CLI_CONTRACT,
   directory: CLI_CONTRACT_DIRECTORY,
   releasedVersion: '0.4.0',
+  mainVersion: '0.4.0',
   committedVersion: '0.4.0',
   releasedDocuments: [{ name: STREAM_DOCUMENT, document: streamDocument({ schemaVersion: '6.0', pid: true }) }],
   committedDocuments: streamDocumentPair('6.0', false),
@@ -257,6 +350,7 @@ const unclassifiableDocument: LawScenario = {
   package: PLUGIN_INTERFACE,
   directory: PLUGIN_INTERFACE_DIRECTORY,
   releasedVersion: '15.0.0',
+  mainVersion: '15.0.0',
   committedVersion: '15.0.0',
   releasedDocuments: [{ name: REPORT_DOCUMENT, document: { released: true } }],
   committedDocuments: [{ name: REPORT_DOCUMENT, document: { committed: true } }],
@@ -267,6 +361,7 @@ const staleBaseline: LawScenario = {
   package: PLUGIN_INTERFACE,
   directory: PLUGIN_INTERFACE_DIRECTORY,
   releasedVersion: '15.0.0',
+  mainVersion: '15.1.0',
   committedVersion: '15.1.0',
   releasedDocuments: [reportDocument],
   committedDocuments: [reportDocument],
@@ -277,6 +372,7 @@ const laggingPinNarrowing: LawScenario = {
   package: PLUGIN_INTERFACE,
   directory: PLUGIN_INTERFACE_DIRECTORY,
   releasedVersion: '15.0.0',
+  mainVersion: '16.0.0',
   committedVersion: '16.0.0',
   releasedDocuments: [{ name: REPORT_DOCUMENT, document: schemaDocument({ testFiles: true, wideLevel: true }) }],
   committedDocuments: [{ name: REPORT_DOCUMENT, document: schemaDocument({ testFiles: false, wideLevel: true }) }],
@@ -292,24 +388,26 @@ Feature('The released contract documents bound what the workspace may declare ne
       Gherkin.Do.pipe(
         Given('the released documents the workspace consumes and the committed ones it ships')(
           'workspace',
-          () => readWorkspace(),
+          () => Effect.flatMap(repositoryRootOf(), readWorkspace),
         ),
         Given('every workspace package whose manifest ships a contract directory')(
           'shipping',
-          () => readContractShippingPackages(),
+          () => Effect.flatMap(repositoryRootOf(), readContractShippingPackages),
         ),
         When('the version law weighs each committed document against the released one')(
-          'failures',
-          (s) => Effect.succeed(evaluateContractLaw(s.workspace).map(renderFailure)),
+          'verdict',
+          (s) =>
+            Effect.succeed(Result.match(s.workspace, {
+              onFailure: (failure) => ({ weighed: [], failures: [renderFailure(failure)] }),
+              onSuccess: (law) => ({
+                weighed: law.packages.map((pkg) => pkg.name).sort(),
+                failures: evaluateContractLaw(law).map(renderFailure),
+              }),
+            })),
         ),
         Then(
           'every package that ships a contract directory is weighed, and none is narrower than its release without a declared next version that clears it',
-        )((s, expect) =>
-          expect({ weighed: s.workspace.packages.map((pkg) => pkg.name).sort(), failures: s.failures }).toEqual({
-            weighed: s.shipping,
-            failures: [],
-          })
-        ),
+        )((s, expect) => expect(s.verdict).toEqual({ weighed: s.shipping, failures: [] })),
       ),
     )
 
@@ -345,6 +443,7 @@ Feature('The released contract documents bound what the workspace may declare ne
                   package: row.package,
                   directory: row.directory,
                   releasedVersion: row.releasedVersion,
+                  mainVersion: row.releasedVersion,
                   committedVersion: row.releasedVersion,
                   releasedDocuments: [releasedDocumentOf(row.document)],
                   committedDocuments: [],
@@ -414,6 +513,7 @@ Feature('The released contract documents bound what the workspace may declare ne
                   package: CLI_CONTRACT,
                   directory: CLI_CONTRACT_DIRECTORY,
                   releasedVersion: '0.4.0',
+                  mainVersion: '0.4.0',
                   committedVersion: '0.4.0',
                   releasedDocuments: [{ name: row.document, document: row.released }],
                   committedDocuments: [{ name: row.document, document: row.committed }],
@@ -502,33 +602,35 @@ Feature('The released contract documents bound what the workspace may declare ne
     )
 
     scenario(
-      'A released baseline behind the workspace version refuses to compare while a changeset is pending',
+      'A released baseline behind the version main declares refuses to compare while a changeset is pending',
       Gherkin.Do.pipe(
-        Given('a workspace one patch ahead of the released documents, with a pending patch intent')(
+        Given('main one minor ahead of the released documents, with a pending patch intent')(
           'law',
           () => Effect.succeed(lawInputOf(staleBaseline)),
         ),
-        When('the law weighs the committed documents against the stale released ones')(
-          'failures',
-          (s) => Effect.succeed(evaluateContractLaw(s.law)),
+        When('the law weighs the committed documents against the stale released ones and renders what it refuses')(
+          'rendered',
+          (s) => Effect.succeed(evaluateContractLaw(s.law).map((failure) => renderFailure(failure).split('\n'))),
         ),
-        Then('the stale baseline is named and the author is told to move the flake input')(
+        Then('the stale baseline is named with its code, both versions, and the flake move that fixes it')(
           (s, expect) =>
-            expect(s.failures).toEqual([{
-              kind: 'stale-baseline',
-              package: PLUGIN_INTERFACE,
-              reason: expect.stringContaining('move the stryker-published flake input to the latest release tag'),
-              releasedVersion: '15.0.0',
-              committedVersion: '15.1.0',
-            }]),
+            expect(s.rendered).toEqual([[
+              `error[CONTRACT-VERSION]: the released baseline of ${PLUGIN_INTERFACE} is stale`,
+              '  code: stale-baseline',
+              `  package: ${PLUGIN_INTERFACE}`,
+              '  released: 15.0.0',
+              '  main: 15.1.0',
+              `  reason: main declares 15.1.0 while the released documents come from 15.0.0, so they cannot bound what the next release of ${PLUGIN_INTERFACE} may change`,
+              '  next: move the stryker-published flake input to the latest release tag and reinstall',
+            ]]),
         ),
       ),
     )
 
     scenario(
-      'A released baseline behind the workspace version refuses a narrowing no changeset declares',
+      'A released baseline behind the version main declares refuses a narrowing no changeset declares',
       Gherkin.Do.pipe(
-        Given('a workspace a major ahead of the released documents, a dropped member, and no pending intent')(
+        Given('main a major ahead of the released documents, a dropped member, and no pending intent')(
           'law',
           () => Effect.succeed(lawInputOf(laggingPinNarrowing)),
         ),
@@ -541,12 +643,186 @@ Feature('The released contract documents bound what the workspace may declare ne
             expect(s.failures).toEqual([{
               kind: 'stale-baseline',
               package: PLUGIN_INTERFACE,
-              reason: expect.stringContaining('move the stryker-published flake input to the latest release tag'),
+              reason: expect.stringContaining('main declares 16.0.0 while the released documents come from 15.0.0'),
+              next: 'move the stryker-published flake input to the latest release tag and reinstall',
               releasedVersion: '15.0.0',
-              committedVersion: '16.0.0',
+              mainVersion: '16.0.0',
             }]),
         ),
       ),
+    )
+
+    scenario(
+      'The version main declares is read where HEAD forked from origin/main',
+      { live: 'spawns real git in a temporary repository' },
+      Gherkin.Do.pipe(
+        Given('a repository forked from main at 1.2.0, whose HEAD declares 2.0.0 while main moved on to 1.3.0')(
+          'root',
+          () => forkedRepository(),
+        ),
+        When('the law reads the version main declares for the package')(
+          'mainVersion',
+          (s) =>
+            Effect.gen(function*() {
+              const mainBase = yield* readMainBase(s.root)
+              if (Result.isFailure(mainBase)) return mainBase.failure
+              return yield* readMainVersion(s.root, mainBase.success, SCRATCH_PACKAGE)
+            }).pipe(Effect.ensuring(removeRepository(s.root))),
+        ),
+        Then('it reads the fork point, neither the committed version nor the tip main moved to')(
+          (s, expect) => expect(s.mainVersion).toEqual('1.2.0'),
+        ),
+      ),
+    )
+
+    scenario(
+      'A checkout without origin/main is refused with the fetch that restores it',
+      { live: 'spawns real git in a temporary repository' },
+      Gherkin.Do.pipe(
+        Given('a repository holding one commit and no origin/main')('root', () => repositoryWithoutMain()),
+        When('the law reads the workspace and renders what it refuses')(
+          'rendered',
+          (s) =>
+            Effect.map(readWorkspace(s.root), (workspace) =>
+              Result.match(workspace, {
+                onFailure: (failure) => renderFailure(failure).split('\n'),
+                onSuccess: () => [],
+              })).pipe(Effect.ensuring(removeRepository(s.root))),
+        ),
+        Then('the missing baseline is named with its code and the command that fetches it')((s, expect) =>
+          expect(s.rendered).toEqual([
+            'error[CONTRACT-VERSION]: the version main declares is unavailable',
+            '  code: main-baseline-unavailable',
+            `  ref: ${MAIN_REF}`,
+            expect.stringMatching(
+              /^ {2}reason: git merge-base origin\/main HEAD failed \(.+\), so the version main declares cannot be read$/,
+            ),
+            '  next: git fetch origin main',
+          ])
+        ),
+      ),
+    )
+
+    scenarioOutline(
+      'A version PR is judged by the version it declares over the release main still carries',
+      [
+        {
+          package: CLI_CONTRACT,
+          directory: CLI_CONTRACT_DIRECTORY,
+          releasedVersion: '0.4.0',
+          committedVersion: '0.5.0',
+          released: schemaDocument({ testFiles: false, wideLevel: false }),
+          committed: schemaDocument({ testFiles: true, wideLevel: true }),
+        },
+        {
+          package: CLI_CONTRACT,
+          directory: CLI_CONTRACT_DIRECTORY,
+          releasedVersion: '0.4.0',
+          committedVersion: '0.5.0',
+          released: schemaDocument({ testFiles: true, wideLevel: true }),
+          committed: schemaDocument({ testFiles: false, wideLevel: true }),
+        },
+        {
+          package: PLUGIN_INTERFACE,
+          directory: PLUGIN_INTERFACE_DIRECTORY,
+          releasedVersion: '15.0.0',
+          committedVersion: '16.0.0',
+          released: schemaDocument({ testFiles: true, wideLevel: true }),
+          committed: schemaDocument({ testFiles: true, wideLevel: false }),
+        },
+      ],
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('main at the released version, the consumed changesets bumping the workspace, and no pending intent')(
+            'law',
+            () =>
+              Effect.succeed(
+                lawInputOf({
+                  package: row.package,
+                  directory: row.directory,
+                  releasedVersion: row.releasedVersion,
+                  mainVersion: row.releasedVersion,
+                  committedVersion: row.committedVersion,
+                  releasedDocuments: [{ name: REPORT_DOCUMENT, document: row.released }],
+                  committedDocuments: [{ name: REPORT_DOCUMENT, document: row.committed }],
+                  pendingIntents: [],
+                }),
+              ),
+          ),
+          When('the law weighs the committed document against the released one')(
+            'failures',
+            (s) => Effect.succeed(evaluateContractLaw(s.law)),
+          ),
+          Then('the bump clears the change instead of the baseline being called stale')(
+            (s, expect) => expect(s.failures).toEqual([]),
+          ),
+        ),
+    )
+
+    scenarioOutline(
+      'A version PR whose bump does not clear a narrowing is refused at the version the release requires',
+      [
+        {
+          package: CLI_CONTRACT,
+          directory: CLI_CONTRACT_DIRECTORY,
+          releasedVersion: '0.4.0',
+          committedVersion: '0.4.1',
+          requiredLevel: 'minor',
+          requiredVersion: '0.5.0',
+        },
+        {
+          package: PLUGIN_INTERFACE,
+          directory: PLUGIN_INTERFACE_DIRECTORY,
+          releasedVersion: '15.0.0',
+          committedVersion: '15.1.0',
+          requiredLevel: 'major',
+          requiredVersion: '16.0.0',
+        },
+      ],
+      (row) =>
+        Gherkin.Do.pipe(
+          Given(
+            'main at the released version, a dropped member, and the consumed changesets bumping below the required level',
+          )(
+            'law',
+            () =>
+              Effect.succeed(
+                lawInputOf({
+                  package: row.package,
+                  directory: row.directory,
+                  releasedVersion: row.releasedVersion,
+                  mainVersion: row.releasedVersion,
+                  committedVersion: row.committedVersion,
+                  releasedDocuments: [{
+                    name: REPORT_DOCUMENT,
+                    document: schemaDocument({ testFiles: true, wideLevel: true }),
+                  }],
+                  committedDocuments: [{
+                    name: REPORT_DOCUMENT,
+                    document: schemaDocument({ testFiles: false, wideLevel: true }),
+                  }],
+                  pendingIntents: [],
+                }),
+              ),
+          ),
+          When('the law weighs the committed document against the released one')(
+            'failures',
+            (s) => Effect.succeed(evaluateContractLaw(s.law)),
+          ),
+          Then('the dropped member is named with the version the release requires and the version the PR declares')(
+            (s, expect) =>
+              expect(s.failures).toEqual([{
+                kind: 'contract-change',
+                package: row.package,
+                document: `${row.directory}/${CONTRACT_DIRECTORY}/${REPORT_DOCUMENT}`,
+                pointer: '/properties/testFiles',
+                reason: 'property removed: testFiles',
+                requiredLevel: row.requiredLevel,
+                requiredVersion: row.requiredVersion,
+                declaredVersion: row.committedVersion,
+              }]),
+          ),
+        ),
     )
 
     scenario(
