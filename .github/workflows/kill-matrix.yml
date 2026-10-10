@@ -29,6 +29,7 @@ env:
   PLAN: plan.json
   KILL_MATRIX_OUT: kill-matrix-out
   KILL_MATRIX_ARTIFACT: kill-matrix-${{ github.run_number }}
+  STRYKER_KILL_MATRIX: "1"
 
 jobs:
   plan:
@@ -150,7 +151,6 @@ jobs:
       - name: Mutation, recording every killer
         env:
           SHARD: ${{ matrix.shard }}
-          STRYKER_KILL_MATRIX: "1"
         run: |
           $PUBLISHED_CLI run \
             --plan "$PLAN" \
@@ -225,19 +225,41 @@ jobs:
           node --input-type=module - <<'NODE'
           import { appendFileSync, readFileSync } from 'node:fs'
 
+          const planned = new Map()
+          for (const shard of JSON.parse(readFileSync(process.env.PLAN, 'utf8')).shards) {
+            for (const { project, mutants } of shard.projects) {
+              planned.set(project, [...(planned.get(project) ?? []), ...mutants])
+            }
+          }
           const rows = []
           const notFull = []
+          const unreported = []
+          let corpusKilled = 0
+          let corpusMulti = 0
           for (const project of process.env.PROJECTS.split(',').map((p) => p.trim()).filter(Boolean)) {
             const report = JSON.parse(readFileSync(`${process.env.KILL_MATRIX_OUT}/${project}/stryker-incremental.json`, 'utf8'))
             if (report.mutantSetPolicy !== 'full') notFull.push(`${project} (${report.mutantSetPolicy})`)
             const mutants = Object.values(report.files ?? {}).flatMap((file) => file.mutants ?? [])
+            const reported = new Set(mutants.map((mutant) => mutant.id))
+            const missing = (planned.get(project) ?? []).filter((id) => !reported.has(id))
+            if (missing.length > 0) unreported.push(`${project}: ${missing.length} planned ids missing, e.g. ${missing.slice(0, 5).join(' ')}`)
             const killed = mutants.filter((mutant) => mutant.status === 'Killed')
             const multi = killed.filter((mutant) => (mutant.killedBy ?? []).length >= 2).length
-            const tests = Object.values(report.testFiles ?? {}).reduce((total, file) => total + (file.tests ?? []).length, 0)
-            rows.push(`| ${project} | ${mutants.length} | ${killed.length} | ${multi} | ${tests} |`)
+            const testsCompleted = mutants.reduce((total, mutant) => total + (mutant.testsCompleted ?? 0), 0)
+            corpusKilled += killed.length
+            corpusMulti += multi
+            rows.push(`| ${project} | ${mutants.length} | ${killed.length} | ${multi} | ${testsCompleted} |`)
           }
           if (notFull.length > 0) {
             console.log(`::error title=Kill matrix is not a full matrix::${notFull.join(', ')} did not run with mutator.mutantSetPolicy 'full'; re-run the kill-matrix lane.`)
+            process.exitCode = 1
+          }
+          if (unreported.length > 0) {
+            console.log(`::error title=Kill matrix lost planned mutants::${unreported.join('; ')}. The shard runs emitted a different mutant set than the plan; check that every step loaded the config with STRYKER_KILL_MATRIX=1, then re-run the kill-matrix lane.`)
+            process.exitCode = 1
+          }
+          if (corpusKilled > 0 && corpusMulti === 0) {
+            console.log(`::error title=Kill matrix recorded only first killers::${corpusKilled} mutants were killed and none names a second killer, so the runner bailed on the first failing test. Check that every project's config keeps disableBail from sharedConfig, then re-run the kill-matrix lane.`)
             process.exitCode = 1
           }
           appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
