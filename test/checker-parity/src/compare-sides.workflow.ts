@@ -146,6 +146,14 @@ export const Violation = S.Union([
 ])
 export type Violation = typeof Violation.Type
 
+export class SpeedGateUnmeasured extends S.TaggedClass<SpeedGateUnmeasured>()('SpeedGateUnmeasured', {
+  schemaVersion: SCHEMA_VERSION,
+  code: S.Literal('speed-gate-unmeasured'),
+  nextAction: S.String,
+}) {}
+
+export type Warning = SpeedGateUnmeasured
+
 export const SideTotals = S.Struct({
   side: Side,
   mutants: S.Int,
@@ -226,6 +234,7 @@ type ComparisonTypeId = typeof ComparisonTypeId
 export class ParityHolds extends S.TaggedClass<ParityHolds>()('ParityHolds', {
   schemaVersion: SCHEMA_VERSION,
   summary: ComparisonSummary,
+  warnings: S.Array(SpeedGateUnmeasured),
 }) {
   readonly [ComparisonTypeId] = ComparisonTypeId
 }
@@ -236,6 +245,7 @@ export class ParityBroken extends S.TaggedClass<ParityBroken>()('ParityBroken', 
   displayed: S.Array(Violation),
   omittedCount: S.Int,
   summary: ComparisonSummary,
+  warnings: S.Array(SpeedGateUnmeasured),
 }) {
   readonly [ComparisonTypeId] = ComparisonTypeId
 }
@@ -542,7 +552,7 @@ const speedSum = (
 ): number => projects.reduce((total, project) => total + phaseMsOf(lines, project, side), 0)
 
 const speedViolationsFor = (command: CompareSidesCommand): ReadonlyArray<SlowerThanMain> => {
-  const compared = measuredOnBoth(command.lines, projectsOf(command.lines))
+  const compared = checkedOnBoth(command.lines, projectsOf(command.lines))
   const mainMs = speedSum(command.lines, compared, 'main')
   const branchMs = speedSum(command.lines, compared, 'branch')
   return when(
@@ -551,7 +561,7 @@ const speedViolationsFor = (command: CompareSidesCommand): ReadonlyArray<SlowerT
       schemaVersion: 1,
       code: 'slower-than-main',
       nextAction:
-        `Compare the phase lines for projects measured on both sides in the shard NDJSON: branch ${branchMs} ms is not strictly below main ${mainMs} ms. Profile the branch checker's check phase.`,
+        `Compare the phase lines for projects that ran a fresh check on both sides in the shard NDJSON: branch ${branchMs} ms is not strictly below main ${mainMs} ms. Profile the branch checker's check phase.`,
       branchMs,
       mainMs,
     }),
@@ -561,6 +571,30 @@ const speedViolationsFor = (command: CompareSidesCommand): ReadonlyArray<SlowerT
 const nonCachedCheckCalls = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): number =>
   checkCallsIn(lines).filter((call) => Boolean.every([call.project === project, call.side === side, !call.cached]))
     .length
+
+const checkedOnBoth = (lines: ReadonlyArray<ParityLine>, projects: ReadonlyArray<string>): ReadonlyArray<string> =>
+  projects.filter((project) =>
+    Boolean.every([
+      nonCachedCheckCalls(lines, project, 'main') > 0,
+      nonCachedCheckCalls(lines, project, 'branch') > 0,
+    ])
+  )
+
+const speedGateWarningsFor = (command: CompareSidesCommand): ReadonlyArray<SpeedGateUnmeasured> =>
+  when(
+    Boolean.every([
+      command.gates.speed,
+      checkedOnBoth(command.lines, projectsOf(command.lines)).length === 0,
+    ]),
+    SpeedGateUnmeasured.make({
+      schemaVersion: 1,
+      code: 'speed-gate-unmeasured',
+      nextAction:
+        `No project ran a fresh (non-cached) check on both sides, so the speed gate compared nothing. Rerun with a corpus change or a cold verdict cache so at least one project checks fresh on both sides.`,
+    }),
+  )
+
+const warningsOf = (command: CompareSidesCommand): ReadonlyArray<Warning> => [...speedGateWarningsFor(command)]
 
 const nonCachedVerdicts = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): number =>
   verdictsIn(lines).filter((verdict) =>
@@ -912,11 +946,15 @@ const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> =>
 const comparisonOf = (command: CompareSidesCommand): ComparisonDecision => {
   const summary = summaryOf(command)
   const violations = violationsOf(command)
+  const warnings = warningsOf(command)
   const displayed = violations.slice(0, DISPLAY_LIMIT)
   const omittedCount = violations.length - displayed.length
   return Match.value(violations.length === 0).pipe(
-    Match.when(true, () => ParityHolds.make({ schemaVersion: 1, summary })),
-    Match.when(false, () => ParityBroken.make({ schemaVersion: 1, violations, displayed, omittedCount, summary })),
+    Match.when(true, () => ParityHolds.make({ schemaVersion: 1, summary, warnings })),
+    Match.when(
+      false,
+      () => ParityBroken.make({ schemaVersion: 1, violations, displayed, omittedCount, summary, warnings }),
+    ),
     Match.exhaustive,
   )
 }
