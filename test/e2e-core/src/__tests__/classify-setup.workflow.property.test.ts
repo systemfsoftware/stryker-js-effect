@@ -1,6 +1,7 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -11,6 +12,7 @@ import {
   SetupInconclusive,
   SetupProceed,
   SetupRecovery,
+  setupRecoveryOf,
   SetupRed,
   SetupVerdict,
   SideSetup,
@@ -238,6 +240,19 @@ describe('classifySetup acceptance examples', () => {
     { of: [S.NonEmptyString], subject: classifySetup },
     (subject, [step]) => {
       const a = readySetup(retriedRecovery(step, []))
+      const b = failedSetup(failureMakers.exited({ step, reason: 'B exited', outputTail: '' }))
+      const verdict = Result.getOrThrow(subject(commandOf(a, b)))
+      return isInconclusive(verdict) && verdict.code === 'setup-external' && verdict.step === step
+    },
+  )
+})
+
+describe('classifySetup with several retried steps', () => {
+  it.prop(
+    '∀es_RetriedStepsOfAEndingWhereBExited_≡InconclusiveSetupExternal',
+    { of: [S.NonEmptyString.pipe(S.Option, S.Array), S.NonEmptyString], subject: classifySetup },
+    (subject, [earlier, step]) => {
+      const a = readySetup(setupRecoveryOf([...earlier, Option.some(step)]))
       const b = failedSetup(failureMakers.exited({ step, reason: 'B exited', outputTail: '' }))
       const verdict = Result.getOrThrow(subject(commandOf(a, b)))
       return isInconclusive(verdict) && verdict.code === 'setup-external' && verdict.step === step

@@ -36,7 +36,7 @@ import {
   PnpmListingJson,
   resolvedManifestText,
   type SetupFailure,
-  type SetupRecovery,
+  setupRecoveryOf,
   type SetupStep,
   type StagedFixtureManifest,
   type WorkspaceCatalogs,
@@ -583,12 +583,6 @@ const pinManifests = (
     )
   })
 
-const recoveryOf = (retried: ReadonlyArray<Option.Option<string>>): SetupRecovery =>
-  Option.match(Arr.head(Arr.getSomes(retried)), {
-    onNone: (): SetupRecovery => ({ _tag: 'none' }),
-    onSome: (step): SetupRecovery => ({ _tag: 'retried', steps: [step] }),
-  })
-
 const NPM_INSTALL: Argv = ['npm', 'install', '--no-audit', '--no-fund', '--loglevel=warn']
 
 const prepareEnterprise = (
@@ -657,7 +651,7 @@ const prepareEnterprise = (
       cli: path.join(bundleRoot, ...ENTERPRISE_CLI_RELATIVE),
       configFile: BENCH_CONFIG_FILE,
       setupSteps: [manifests.step, closure.step, install.step],
-      recovered: recoveryOf([manifests.retried, closure.retried, install.retried]),
+      recovered: setupRecoveryOf([manifests.retried, closure.retried, install.retried]),
     } satisfies PreparedSide
   })
 
@@ -697,7 +691,7 @@ const prepareRepo = (
       cli: path.join(input.root, ...CLI_MAIN_RELATIVE),
       configFile: BENCH_CONFIG_FILE,
       setupSteps: [repoBuild.step, config.step],
-      recovered: recoveryOf([repoBuild.retried, config.retried]),
+      recovered: setupRecoveryOf([repoBuild.retried, config.retried]),
     } satisfies PreparedSide
   })
 

@@ -1,3 +1,5 @@
+import * as Arr from 'effect/Array'
+import type * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 import { BenchSide } from './bench-run.schema.js'
@@ -20,6 +22,12 @@ export const SetupRecovery = S.TaggedUnion({
   retried: { steps: S.NonEmptyArray(S.NonEmptyString) },
 })
 export type SetupRecovery = typeof SetupRecovery.Type
+
+export const setupRecoveryOf = (retried: ReadonlyArray<Option.Option<string>>): SetupRecovery =>
+  Arr.match(Arr.getSomes(retried), {
+    onEmpty: (): SetupRecovery => SetupRecovery.cases.none.make({}),
+    onNonEmpty: (steps): SetupRecovery => SetupRecovery.cases.retried.make({ steps }),
+  })
 
 export const SideSetup = S.TaggedUnion({
   ready: { recovered: SetupRecovery },
