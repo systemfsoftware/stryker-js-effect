@@ -1,7 +1,7 @@
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
-import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
+import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -116,46 +116,78 @@ const blamedFilesOf = (fixture: Fixture) => (result: Checker.CheckResult): Reado
 
 const SHORTCUT_PREFIX = 'typescript.importer_shortcut.'
 
-const checkSpanAttributesOf = (exporter: InMemorySpanExporter) => {
+type SpanAttributes = ReadableSpan['attributes']
+
+const checkSpanAttributesOf = (exporter: InMemorySpanExporter): SpanAttributes => {
   const span = exporter.getFinishedSpans().find((found) =>
     found.name === SpanTaxonomy.Spans.typescriptCheckerCompilerCheck.name
   )
   return span === undefined ? {} : span.attributes
 }
 
-const runOf = (
+interface Checked {
+  readonly results: HashMap.HashMap<string, Checker.CheckResult>
+  readonly attributes: SpanAttributes
+}
+
+interface CheckerOptionsInput {
+  readonly typescriptChecker?: { readonly importerCheck: string | number }
+}
+
+const checkedWith = (
   fixture: Fixture,
   edits: ReadonlyArray<Edit>,
-  importerCheck: ImporterCheck,
-): Effect.Effect<Run, never, FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner> =>
+  checkerOptions: CheckerOptionsInput,
+): Effect.Effect<
+  Checked,
+  Checker.CheckerFailed,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const pathService = yield* Path.Path
-    const here = yield* pathService.fromFileUrl(new URL(import.meta.url))
+    const here = yield* pathService.fromFileUrl(new URL(import.meta.url)).pipe(Effect.orDie)
     const directory = pathService.join(pathService.dirname(here), '__fixtures__', fixture.directory)
     const join = (name: string) => pathService.join(directory, name)
     const texts = HashMap.fromIterable(
       yield* Effect.forEach(
         fixture.files,
         (file) => Effect.map(fs.readFileString(join(file)), (text) => [file, text] as const),
-      ),
+      ).pipe(Effect.orDie),
     )
     const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({
       tsconfigFile: join('tsconfig.json'),
-      typescriptChecker: { importerCheck },
-    })
-    const wires = yield* S.decodeEffect(S.Array(Checker.CheckerMutantWire))(edits.map(wireOf(texts, join)))
+      ...checkerOptions,
+    }).pipe(Effect.orDie)
+    const wires = yield* S.decodeEffect(S.Array(Checker.CheckerMutantWire))(edits.map(wireOf(texts, join))).pipe(
+      Effect.orDie,
+    )
     const exporter = new InMemorySpanExporter()
     const telemetry = NodeSdk.layer(() => ({
       resource: { serviceName: 'importer-shortcut-test' },
       spanProcessor: new SimpleSpanProcessor(exporter),
     }))
-    const [results, attributes] = yield* Effect.gen(function*() {
+    return yield* Effect.gen(function*() {
       const runtime = yield* CheckerRuntime
-      const checker = yield* runtime.checker
-      const checked = yield* checker.check([...wires])
-      return [checked, checkSpanAttributesOf(exporter)] as const
+      const checker = yield* runtime.checker.pipe(Effect.orDie)
+      const results = yield* checker.check([...wires])
+      return { results, attributes: checkSpanAttributesOf(exporter) }
     }).pipe(Effect.provide(CheckerRuntime.layer(options).pipe(Layer.provideMerge(telemetry))))
+  })
+
+const shortcutCountsOf = (attributes: SpanAttributes): Readonly<Record<string, number>> =>
+  Object.fromEntries(
+    Object.entries(attributes)
+      .filter(([key]) => key.startsWith(SHORTCUT_PREFIX))
+      .map(([key, value]) => [key.slice(SHORTCUT_PREFIX.length), Number(value)]),
+  )
+
+const runOf = (
+  fixture: Fixture,
+  edits: ReadonlyArray<Edit>,
+  importerCheck: ImporterCheck,
+): Effect.Effect<Run, never, FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner> =>
+  Effect.map(checkedWith(fixture, edits, { typescriptChecker: { importerCheck } }), ({ results, attributes }) => {
     const resultOf = (id: string) => HashMap.get(results, id)
     return {
       statuses: Object.fromEntries(
@@ -168,14 +200,31 @@ const runOf = (
           edit,
         ) => [edit.id, Option.match(resultOf(edit.id), { onNone: () => [], onSome: blamedFilesOf(fixture) })]),
       ),
-      shortcutCounts: Object.fromEntries(
-        Object.entries(attributes)
-          .filter(([key]) => key.startsWith(SHORTCUT_PREFIX))
-          .map(([key, value]) => [key.slice(SHORTCUT_PREFIX.length), Number(value)]),
-      ),
+      shortcutCounts: shortcutCountsOf(attributes),
       snapshotUpdates: Number(attributes['typescript.snapshot_updates.count'] ?? -1),
     }
   }).pipe(Effect.orDie)
+
+type OptionOutcome =
+  | { readonly refused: { readonly mutantIds: ReadonlyArray<string>; readonly invalidOptions: boolean } }
+  | { readonly status: string; readonly shortcuts: number }
+
+const INVALID_OPTIONS_TEXT = 'The typescriptChecker options are invalid'
+
+const optionOutcomeOf = (
+  checkerOptions: CheckerOptionsInput,
+): Effect.Effect<OptionOutcome, never, FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner> =>
+  checkedWith(SINGLE_PROJECT, [AE1_EDIT], checkerOptions).pipe(
+    Effect.match({
+      onFailure: (failed): OptionOutcome => ({
+        refused: { mutantIds: [...failed.mutantIds], invalidOptions: failed.cause.includes(INVALID_OPTIONS_TEXT) },
+      }),
+      onSuccess: ({ results, attributes }): OptionOutcome => ({
+        status: Option.match(HashMap.get(results, AE1), { onNone: () => 'missing', onSome: (r) => r.status }),
+        shortcuts: shortcutCountsOf(attributes)['count'] ?? -1,
+      }),
+    }),
+  )
 
 const bothModes = (edits: ReadonlyArray<Edit>, fixture: Fixture = SINGLE_PROJECT) =>
   Effect.all({ rule: runOf(fixture, edits, 'location-rule'), always: runOf(fixture, edits, 'always') })
@@ -273,6 +322,34 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
             statuses: [{ [AE10]: 'compileError' }, { [AE10]: 'compileError' }],
             blamed: [{ [AE10]: ['lib/src/counter.ts'] }, { [AE10]: ['lib/src/counter.ts'] }],
             counts: [{ count: 1 }, { count: 0 }],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'The importerCheck option refuses a value it does not know and turns the shortcut off only on always',
+      Gherkin.Do.pipe(
+        When('the annotated body edit is checked under each importerCheck value, valid and invalid')(
+          'seen',
+          () =>
+            Effect.all({
+              sometimes: optionOutcomeOf({ typescriptChecker: { importerCheck: 'sometimes' } }),
+              number: optionOutcomeOf({ typescriptChecker: { importerCheck: 1 } }),
+              always: optionOutcomeOf({ typescriptChecker: { importerCheck: 'always' } }),
+              locationRule: optionOutcomeOf({ typescriptChecker: { importerCheck: 'location-rule' } }),
+              omitted: optionOutcomeOf({}),
+            }),
+        ),
+        Then(
+          'an unknown value fails the check as invalid checker options, always re-checks importers, and the rule is the default',
+        )((s, expect) =>
+          expect(s.seen).toEqual({
+            sometimes: { refused: { mutantIds: [AE1], invalidOptions: true } },
+            number: { refused: { mutantIds: [AE1], invalidOptions: true } },
+            always: { status: 'passed', shortcuts: 0 },
+            locationRule: { status: 'passed', shortcuts: 1 },
+            omitted: { status: 'passed', shortcuts: 1 },
           })
         ),
       ),
