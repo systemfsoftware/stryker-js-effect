@@ -1,6 +1,6 @@
 import * as S from 'effect/Schema'
 
-export const ShellFailureCode = S.Literals([
+export const DriverFailureCode = S.Literals([
   'usage-error',
   'refused-outside-ci',
   'shard-incomplete',
@@ -12,9 +12,9 @@ export const ShellFailureCode = S.Literals([
   'io-failed',
 ])
 
-export class ShellFailure extends S.TaggedError<ShellFailure>()('ShellFailure', {
+export class DriverFailure extends S.TaggedError<DriverFailure>()('DriverFailure', {
   schemaVersion: S.Literal(1),
-  code: ShellFailureCode,
+  code: DriverFailureCode,
   reason: S.String,
   nextAction: S.String,
 }) {

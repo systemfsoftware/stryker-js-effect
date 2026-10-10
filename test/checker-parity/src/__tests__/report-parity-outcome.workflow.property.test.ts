@@ -4,6 +4,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { ParityBroken, ParityHolds, Violation } from '../compare-sides.workflow.js'
+import { DriverFailure } from '../DriverFailure.schema.js'
 import {
   CompareFinished,
   DriverFailedReport,
@@ -14,13 +15,12 @@ import {
   reportParityOutcome,
   ReportParityOutcomeCommand,
 } from '../report-parity-outcome.workflow.js'
-import { ShellFailure } from '../Shell.schema.js'
 
 const VIOLATION_KINDS = Violation.members.length
 
 const reportOf = (
   subject: typeof reportParityOutcome,
-  outcome: CompareFinished | ShellFailure,
+  outcome: CompareFinished | DriverFailure,
   githubActions: boolean,
   runId: string,
 ): ParityOutcomeReport => Result.getOrThrow(subject(ReportParityOutcomeCommand.make({ outcome, githubActions, runId })))
@@ -74,7 +74,7 @@ describe('reportParityOutcome', () => {
 
   it.prop(
     '∀f_DriverFailure_≡ExitTwoNamingCodeAndNextAction',
-    { of: [ShellFailure, S.Boolean, S.String], subject: reportParityOutcome },
+    { of: [DriverFailure, S.Boolean, S.String], subject: reportParityOutcome },
     (subject, [failure, githubActions, runId]) => {
       const report = reportOf(subject, failure, githubActions, runId)
       return S.is(DriverFailedReport)(report) &&

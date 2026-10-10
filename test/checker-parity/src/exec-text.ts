@@ -4,7 +4,7 @@ import * as ChildProcess from 'effect/process/ChildProcess'
 import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Stream from 'effect/Stream'
 
-import { ShellFailure } from './Shell.schema.js'
+import { DriverFailure } from './DriverFailure.schema.js'
 
 export interface ExecRequest {
   readonly file: string
@@ -12,8 +12,8 @@ export interface ExecRequest {
   readonly cwd: string
 }
 
-const failed = (request: ExecRequest, detail: string): ShellFailure =>
-  ShellFailure.make({
+const failed = (request: ExecRequest, detail: string): DriverFailure =>
+  DriverFailure.make({
     schemaVersion: 1,
     code: 'io-failed',
     reason: `${request.file} ${request.args.join(' ')} ${detail}`,
@@ -22,7 +22,7 @@ const failed = (request: ExecRequest, detail: string): ShellFailure =>
 
 export const execText = (
   request: ExecRequest,
-): Effect.Effect<string, ShellFailure, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<string, DriverFailure, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.scoped(
     Effect.gen(function*() {
       const handle = yield* ChildProcess.make(request.file, [...request.args], {

@@ -7,6 +7,7 @@ import {
   compareSides,
   CompareSidesCommand,
   type ComparisonDecision,
+  NothingCompared,
   ParityBroken,
   ParityHolds,
   SlowerThanMain,
@@ -20,6 +21,7 @@ import {
   Gates,
   ParityLine,
   ProjectBootFailed,
+  ProjectSkipped,
   type Side,
   TelemetryMissing,
   Verdict,
@@ -99,6 +101,9 @@ const checkCallOf = (
 
 const bootOf = (side: Side, project: string, reason: string): ProjectBootFailed =>
   ProjectBootFailed.make({ schemaVersion: 1, side, project, reason })
+
+const skippedOf = (project: string, reason: string): ProjectSkipped =>
+  ProjectSkipped.make({ schemaVersion: 1, project, reason })
 
 const commandOf = (
   lines: ReadonlyArray<ParityLine>,
@@ -289,10 +294,28 @@ describe('compareSides', () => {
     '∀b_BothSidesBootFailure_≡Skipped',
     { of: [S.NonEmptyString], subject: compareSides },
     (subject, [reason]) => {
-      const lines = [bootOf('main', PROJECT, reason), bootOf('branch', PROJECT, reason)]
+      const lines = [
+        bootOf('main', PROJECT, reason),
+        bootOf('branch', PROJECT, reason),
+        verdictOf('main', { project: OTHER_PROJECT, mutantId: 'm' }),
+        verdictOf('branch', { project: OTHER_PROJECT, mutantId: 'm' }),
+        countsOf(OTHER_PROJECT),
+      ]
       const decision = decisionOf(subject, commandOf(lines))
       return S.is(ParityHolds)(decision) &&
         decision.summary.skipped.some((entry) => entry.project === PROJECT)
+    },
+  )
+
+  it.prop(
+    '∀n_NoMutantOnAnyMeasuredProject_≡NothingCompared',
+    { of: [S.NonEmptyString, S.Boolean], subject: compareSides },
+    (subject, [reason, bootFailed]) => {
+      const lines = bootFailed
+        ? [bootOf('main', PROJECT, reason), bootOf('branch', PROJECT, reason)]
+        : [skippedOf(PROJECT, reason)]
+      const violations = violationsOf(decisionOf(subject, commandOf(lines)))
+      return violations.length === 1 && S.is(NothingCompared)(violations[0])
     },
   )
 
@@ -348,7 +371,7 @@ describe('compareSides', () => {
     { of: [S.Int, S.Int, S.Int], subject: compareSides },
     (subject, [drawnCheckCalls, drawnMutants, drawnResplices]) => {
       const checkCalls = smallCountOf(drawnCheckCalls)
-      const mutants = smallCountOf(drawnMutants)
+      const mutants = smallCountOf(drawnMutants) + 1
       const resplices = smallCountOf(drawnResplices)
       const lines = [
         ...Array.from({ length: checkCalls }, (_, index) => checkCallOf('main', PROJECT, index, [], 1)),
@@ -373,7 +396,7 @@ describe('compareSides', () => {
     '∀m_BoundedDisplay_≡CappedAtFiftyWithOmittedCount',
     { of: [S.Int, S.Int], subject: compareSides },
     (subject, [drawnMutants, drawnMismatches]) => {
-      const mutantCount = countOf(drawnMutants)
+      const mutantCount = countOf(drawnMutants) + 1
       const mismatches = Math.min(countOf(drawnMismatches), mutantCount)
       const lines = [
         ...Array.from(

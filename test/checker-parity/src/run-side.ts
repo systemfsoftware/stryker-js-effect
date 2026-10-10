@@ -30,6 +30,7 @@ import {
   programFilesFromListing,
   tsconfigsNamedByConfig,
 } from './corpus.js'
+import { DriverFailure } from './DriverFailure.schema.js'
 import { execText } from './exec-text.js'
 import { type OtlpReceiver, startOtlpReceiver } from './otlp-receiver.js'
 import {
@@ -39,6 +40,7 @@ import {
   DigestCall,
   GroupCall,
   ParityLine,
+  PhaseLine,
   ProjectBootFailed,
   ProjectSkipped,
   type Shard,
@@ -53,7 +55,6 @@ import {
   VerdictCacheIdentity,
 } from './reuse-cached-verdicts.workflow.js'
 import { inShard } from './shard.js'
-import { ShellFailure } from './Shell.schema.js'
 import { COUNTS_SCHEMA_VERSION, countsOfSpans, countsSchemaVersionsOf, projectCheckSpans } from './span-counts.js'
 
 const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
@@ -70,7 +71,7 @@ export interface RunCommand {
   readonly out: string
 }
 
-export type ShellServices = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+export type DriverServices = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 
 const MAIN_SERVICE = 'checker-parity-main'
 const BRANCH_SERVICE = 'checker-parity-branch'
@@ -80,11 +81,11 @@ const DRAIN = Duration.millis(500)
 type CheckerRpcsUnion = typeof Plugin.CheckerRpcs extends RpcGroup.RpcGroup<infer Rpcs> ? Rpcs : never
 type CheckerClient = RpcClient.RpcClient<CheckerRpcsUnion, RpcClientError>
 
-const ioFailure = (reason: string, nextAction: string): ShellFailure =>
-  ShellFailure.make({ schemaVersion: 1, code: 'io-failed', reason, nextAction })
+const ioFailure = (reason: string, nextAction: string): DriverFailure =>
+  DriverFailure.make({ schemaVersion: 1, code: 'io-failed', reason, nextAction })
 
-const rpcFailure = (detail: string): ShellFailure =>
-  ShellFailure.make({
+const rpcFailure = (detail: string): DriverFailure =>
+  DriverFailure.make({
     schemaVersion: 1,
     code: 'rpc-failed',
     reason: `A checker worker RPC failed: ${detail}`,
@@ -94,21 +95,28 @@ const rpcFailure = (detail: string): ShellFailure =>
 const exists = (file: string): Effect.Effect<boolean, never, FileSystem.FileSystem> =>
   FileSystem.FileSystem.use((fs) => Effect.orElseSucceed(fs.exists(file), () => false))
 
-const readText = (file: string): Effect.Effect<string, ShellFailure, FileSystem.FileSystem> =>
+const readText = (file: string): Effect.Effect<string, DriverFailure, FileSystem.FileSystem> =>
   FileSystem.FileSystem.use((fs) => fs.readFileString(file)).pipe(
     Effect.mapError((cause) =>
       ioFailure(`Could not read ${file}: ${cause.message}`, `Check the path ${file} exists and is readable.`)
     ),
   )
 
-const writeText = (file: string, content: string): Effect.Effect<void, ShellFailure, FileSystem.FileSystem> =>
+const writeText = (file: string, content: string): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
   FileSystem.FileSystem.use((fs) => fs.writeFileString(file, content)).pipe(
     Effect.mapError((cause) =>
       ioFailure(`Could not write ${file}: ${cause.message}`, `Check the directory of ${file} exists and is writable.`)
     ),
   )
 
-const makeDirectory = (directory: string): Effect.Effect<void, ShellFailure, FileSystem.FileSystem> =>
+const appendText = (file: string, content: string): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
+  FileSystem.FileSystem.use((fs) => fs.writeFileString(file, content, { flag: 'a' })).pipe(
+    Effect.mapError((cause) =>
+      ioFailure(`Could not append to ${file}: ${cause.message}`, `Check the directory of ${file} is writable.`)
+    ),
+  )
+
+const makeDirectory = (directory: string): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
   FileSystem.FileSystem.use((fs) => fs.makeDirectory(directory, { recursive: true })).pipe(
     Effect.mapError((cause) =>
       ioFailure(
@@ -123,7 +131,7 @@ const isFile = (file: string): Effect.Effect<boolean, never, FileSystem.FileSyst
     fs.stat(file).pipe(Effect.map((info) => info.type === 'File'), Effect.orElseSucceed(() => false))
   )
 
-const sha256Tree = (directory: string): Effect.Effect<string, ShellFailure, FileSystem.FileSystem | Path.Path> =>
+const sha256Tree = (directory: string): Effect.Effect<string, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -146,7 +154,7 @@ const sha256Tree = (directory: string): Effect.Effect<string, ShellFailure, File
 
 const gitTrackedFiles = (
   repoRoot: string,
-): Effect.Effect<ReadonlyArray<string>, ShellFailure, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<ReadonlyArray<string>, DriverFailure, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.map(
     execText({ file: 'git', args: ['ls-files', '-z'], cwd: repoRoot }),
     (stdout) => stdout.split('\u0000').filter(Str.isNonEmpty),
@@ -170,7 +178,7 @@ const toWire = (mutant: Mutant.Mutant): Checker.CheckerMutantWire => ({
   location: mutant.location,
 })
 
-const encodeLine = (line: ParityLine): Effect.Effect<string, ShellFailure> =>
+const encodeLine = (line: ParityLine): Effect.Effect<string, DriverFailure> =>
   Effect.fromResult(
     Result.mapError(encodeParityLine(line), (issue) =>
       ioFailure(
@@ -179,25 +187,25 @@ const encodeLine = (line: ParityLine): Effect.Effect<string, ShellFailure> =>
       )),
   )
 
-const ndjsonOf = (lines: ReadonlyArray<ParityLine>): Effect.Effect<string, ShellFailure> =>
+const ndjsonOf = (lines: ReadonlyArray<ParityLine>): Effect.Effect<string, DriverFailure> =>
   Effect.map(
     Effect.forEach(lines, encodeLine),
     (encoded) => encoded.map((line) => `${line}\n`).join(''),
   )
 
 export const decodeLines: {
-  (file: string): (content: string) => Effect.Effect<ReadonlyArray<ParityLine>, ShellFailure>
-  (content: string, file: string): Effect.Effect<ReadonlyArray<ParityLine>, ShellFailure>
+  (file: string): (content: string) => Effect.Effect<ReadonlyArray<ParityLine>, DriverFailure>
+  (content: string, file: string): Effect.Effect<ReadonlyArray<ParityLine>, DriverFailure>
 } = dual(
   2,
-  (content: string, file: string): Effect.Effect<ReadonlyArray<ParityLine>, ShellFailure> =>
+  (content: string, file: string): Effect.Effect<ReadonlyArray<ParityLine>, DriverFailure> =>
     Effect.fromResult(
       Result.all(
         content.split('\n').flatMap((raw, index) =>
           Str.isNonEmpty(raw.trim())
             ? [
               Result.mapError(decodeParityLine(raw), () =>
-                ShellFailure.make({
+                DriverFailure.make({
                   schemaVersion: 1,
                   code: 'decode-failed',
                   reason: `${file}:${index + 1} is not a parity line`,
@@ -247,7 +255,7 @@ const cachedLine = (line: ParityLine): Option.Option<ParityLine> =>
     )
     : Option.liftPredicate(line, S.is(Counts))
 
-const readCacheFile = (file: string): Effect.Effect<ReadonlyArray<ParityLine>, ShellFailure, FileSystem.FileSystem> =>
+const readCacheFile = (file: string): Effect.Effect<ReadonlyArray<ParityLine>, DriverFailure, FileSystem.FileSystem> =>
   Effect.flatMap(
     readText(file),
     (content) => Effect.map(decodeLines(content, file), (lines) => Arr.getSomes(lines.map(cachedLine))),
@@ -274,8 +282,8 @@ const verdictOf = (input: SideInput, wire: Checker.CheckerMutantWire, answer: Ch
     cached: false,
   })
 
-const unsupportedVersion = (version: number): ShellFailure =>
-  ShellFailure.make({
+const unsupportedVersion = (version: number): DriverFailure =>
+  DriverFailure.make({
     schemaVersion: 1,
     code: 'telemetry-version-unsupported',
     reason: `Branch check spans declared counts schema version ${version}, not ${COUNTS_SCHEMA_VERSION}.`,
@@ -283,7 +291,7 @@ const unsupportedVersion = (version: number): ShellFailure =>
       'Align the checker count attributes with this driver (packages/stryker-js-typescript-checker/src/ts-compiler.handle.ts).',
   })
 
-const branchCountsLine = (input: SideInput): Effect.Effect<Counts, ShellFailure> =>
+const branchCountsLine = (input: SideInput): Effect.Effect<Counts, DriverFailure> =>
   Effect.gen(function*() {
     yield* Effect.sleep(DRAIN)
     const checkSpans = projectCheckSpans(
@@ -338,7 +346,7 @@ const freshSideRun = (
   slot: CacheSlot,
   lines: ReadonlyArray<ParityLine>,
   groups: number,
-): Effect.Effect<SideRun, ShellFailure, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<SideRun, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const identityText = yield* Effect.fromResult(
       Result.mapError(encodeIdentity(slot.identity), (issue) =>
@@ -391,7 +399,7 @@ const freshlyChecked = (
   input: SideInput,
   slot: CacheSlot,
   digestLine: DigestCall,
-): Effect.Effect<SideRun, ShellFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<SideRun, DriverFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const [groupDuration, groups] = yield* Effect.timed(
       client.group({ checkerName: CHECKER_NAME, mutants: [...input.wires] }),
@@ -421,7 +429,7 @@ const freshlyChecked = (
 const sideBody = (
   client: CheckerClient,
   input: SideInput,
-): Effect.Effect<SideRun, ShellFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<SideRun, DriverFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const [digestDuration, digest] = yield* Effect.timed(client.digest({ checkerName: CHECKER_NAME }))
     const slot = yield* cacheSlotOf(
@@ -472,7 +480,7 @@ const bootFailedRun = (input: SideInput, error: Worker.WorkerBootError): Effect.
 
 const runSide = (
   input: SideInput,
-): Effect.Effect<SideRun, ShellFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<SideRun, DriverFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
   Effect.scoped(
     Effect.gen(function*() {
       const path = yield* Path.Path
@@ -532,7 +540,7 @@ const skippedProject = (project: string, reason: string): ProjectResult => ({
   mutants: 0,
 })
 
-const tscBinPath: Effect.Effect<string, ShellFailure, FileSystem.FileSystem | Path.Path> = Effect.gen(function*() {
+const tscBinPath: Effect.Effect<string, DriverFailure, FileSystem.FileSystem | Path.Path> = Effect.gen(function*() {
   const path = yield* Path.Path
   const packageJsonPath = yield* path.fromFileUrl(new URL(import.meta.resolve('typescript/package.json'))).pipe(
     Effect.mapError((cause) => ioFailure(cause.message, 'Install the workspace so typescript resolves.')),
@@ -548,7 +556,7 @@ const tscBinPath: Effect.Effect<string, ShellFailure, FileSystem.FileSystem | Pa
   return path.resolve(path.dirname(packageJsonPath), tsc)
 })
 
-const listProgramFiles = (input: ProjectInput): Effect.Effect<ReadonlyArray<string>, ShellFailure, ShellServices> =>
+const listProgramFiles = (input: ProjectInput): Effect.Effect<ReadonlyArray<string>, DriverFailure, DriverServices> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const tsc = yield* tscBinPath
@@ -602,7 +610,7 @@ const telemetryLineOf = (
 const instrumentShard = (
   input: ProjectInput,
   shardFiles: ReadonlyArray<string>,
-): Effect.Effect<ReadonlyArray<Checker.CheckerMutantWire>, ShellFailure, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<ReadonlyArray<Checker.CheckerMutantWire>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const files = yield* Effect.forEach(
@@ -624,7 +632,7 @@ const instrumentShard = (
 const checkBothSides = (
   input: ProjectInput,
   wires: ReadonlyArray<Checker.CheckerMutantWire>,
-): Effect.Effect<ProjectResult, ShellFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const sideInputs = Side.literals.map(sideInputOf(input, wires))
     const runs = yield* Effect.forEach(
@@ -645,7 +653,7 @@ const checkBothSides = (
 
 const processProject = (
   input: ProjectInput,
-): Effect.Effect<ProjectResult, ShellFailure, Worker.WorkerLauncher | ShellServices> =>
+): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | DriverServices> =>
   Effect.gen(function*() {
     const shardFiles = (yield* listProgramFiles(input)).filter((file) => inShard(file, input.shard))
     const wires = yield* Boolean.match(Arr.isReadonlyArrayNonEmpty(shardFiles), {
@@ -662,7 +670,7 @@ const processProject = (
     )
   })
 
-const isPhaseLine = S.is(S.Union([CheckCall, GroupCall, DigestCall]))
+const isPhaseLine = S.is(PhaseLine)
 
 const phaseMsOf = (lines: ReadonlyArray<ParityLine>, side: Side): number =>
   lines.filter(isPhaseLine)
@@ -691,13 +699,13 @@ const shardSummary = (shard: Shard, results: ReadonlyArray<ProjectResult>): stri
 
 const requireWorker = (
   [flag, workerPath]: readonly [string, string],
-): Effect.Effect<void, ShellFailure, FileSystem.FileSystem> =>
+): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
   Effect.flatMap(exists(workerPath), (present) =>
     Boolean.match(present, {
       onTrue: () => Effect.void,
       onFalse: () =>
         Effect.fail(
-          ShellFailure.make({
+          DriverFailure.make({
             schemaVersion: 1,
             code: 'worker-boot-failed',
             reason: `${flag} ${workerPath} does not exist`,
@@ -706,7 +714,7 @@ const requireWorker = (
         ),
     }))
 
-const corpusProjects = (repoRoot: string): Effect.Effect<ReadonlyArray<string>, ShellFailure, ShellServices> =>
+const corpusProjects = (repoRoot: string): Effect.Effect<ReadonlyArray<string>, DriverFailure, DriverServices> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const entries = corpusEntries(yield* gitTrackedFiles(repoRoot))
@@ -724,7 +732,7 @@ const corpusProjects = (repoRoot: string): Effect.Effect<ReadonlyArray<string>, 
     )
   })
 
-type ShardRun = Effect.Effect<void, ShellFailure, Worker.WorkerLauncher | ShellServices>
+type ShardRun = Effect.Effect<void, DriverFailure, Worker.WorkerLauncher | DriverServices>
 
 export const runShard: {
   (environment: CiEnvironment): (command: RunCommand) => ShardRun
@@ -744,6 +752,10 @@ export const runShard: {
       const branchBundleHash = yield* sha256Tree(path.dirname(command.branchWorker))
       const projects = yield* corpusProjects(repoRoot)
       const cacheDir = path.resolve(repoRoot, command.cache)
+      const outDir = path.resolve(repoRoot, command.out)
+      const shardFile = path.join(outDir, `shard-${shardIndex(command.shard)}.ndjson`)
+      yield* makeDirectory(outDir)
+      yield* writeText(shardFile, '')
       const results = yield* Effect.forEach(projects, (project) => {
         const tsconfigFile = path.resolve(repoRoot, project)
         return Effect.flatMap(exists(tsconfigFile), (present) =>
@@ -763,14 +775,10 @@ export const runShard: {
                 receiver,
               }),
             onFalse: () => Effect.succeed(skippedProject(project, `tsconfig not found at ${project}`)),
-          }))
+          })).pipe(
+            Effect.tap((result) => Effect.flatMap(ndjsonOf(result.lines), (ndjson) => appendText(shardFile, ndjson))),
+          )
       })
-      const outDir = path.resolve(repoRoot, command.out)
-      yield* makeDirectory(outDir)
-      yield* writeText(
-        path.join(outDir, `shard-${shardIndex(command.shard)}.ndjson`),
-        yield* ndjsonOf(results.flatMap((result) => result.lines)),
-      )
       yield* appendStepSummary(environment, shardSummary(command.shard, results))
     }),
   ))

@@ -12,9 +12,11 @@ const implementationPackages = [
 const implementationImportGroups = implementationPackages.flatMap((name) => [name, `${name}/*`])
 
 const pureCore = [
-  'src/Parity.schema.ts',
+  'src/*.workflow.ts',
+  'src/*.schema.ts',
   'src/shard.ts',
-  'src/compare-sides.workflow.ts',
+  'src/span-counts.ts',
+  'src/corpus.ts',
 ]
 
 export default defineConfig({

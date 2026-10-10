@@ -25,6 +25,7 @@ import type * as Terminal from 'effect/Terminal'
 import { appendStepSummary, type CiEnvironment, ciEnvironment } from './ci-environment.js'
 import { compareSides, CompareSidesCommand, ComparisonDecision } from './compare-sides.workflow.js'
 import { ISOLATED_DECLARATIONS_PROJECT } from './corpus.js'
+import { DriverFailure, ReportedExit } from './DriverFailure.schema.js'
 import { laneTrigger } from './lane-trigger.js'
 import { type ParityLine, Shard } from './Parity.schema.js'
 import {
@@ -33,15 +34,14 @@ import {
   reportParityOutcome,
   ReportParityOutcomeCommand,
 } from './report-parity-outcome.workflow.js'
-import { decodeLines, runShard, type ShellServices } from './run-side.js'
-import { ReportedExit, ShellFailure } from './Shell.schema.js'
+import { decodeLines, type DriverServices, runShard } from './run-side.js'
 
 const VERSION = '0.0.0'
 const SHARD_FILE = /^shard-([1-9][0-9]*)\.ndjson$/u
 const encodeDecision = S.encodeResult(S.fromJsonString(ComparisonDecision))
 
-const ioFailure = (reason: string, nextAction: string): ShellFailure =>
-  ShellFailure.make({ schemaVersion: 1, code: 'io-failed', reason, nextAction })
+const ioFailure = (reason: string, nextAction: string): DriverFailure =>
+  DriverFailure.make({ schemaVersion: 1, code: 'io-failed', reason, nextAction })
 
 interface ShardFile {
   readonly shard: number
@@ -56,13 +56,13 @@ const shardFileOf = (path: Path.Path, dir: string) => (entry: string): Option.Op
 
 const shardFilesIn = (
   dir: string,
-): Effect.Effect<ReadonlyArray<ShardFile>, ShellFailure, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<ReadonlyArray<ShardFile>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const entries = yield* fs.readDirectory(dir, { recursive: true }).pipe(
       Effect.mapError((cause) =>
-        ShellFailure.make({
+        DriverFailure.make({
           schemaVersion: 1,
           code: 'shard-incomplete',
           reason: `Could not list the compare directory ${dir}: ${cause.message}`,
@@ -73,8 +73,8 @@ const shardFilesIn = (
     return Arr.getSomes(entries.map(shardFileOf(path, dir)))
   })
 
-const shardIncomplete = (reason: string, shard: number): ShellFailure =>
-  ShellFailure.make({
+const shardIncomplete = (reason: string, shard: number): DriverFailure =>
+  DriverFailure.make({
     schemaVersion: 1,
     code: 'shard-incomplete',
     reason,
@@ -91,7 +91,7 @@ const loadShard = (
   byShard: Record<string, ReadonlyArray<ShardFile>>,
   count: number,
 ) =>
-(shard: number): Effect.Effect<ShardLines, ShellFailure, FileSystem.FileSystem> =>
+(shard: number): Effect.Effect<ShardLines, DriverFailure, FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const files = Option.getOrElse(Record.get(byShard, String(shard)), Arr.empty)
     const only = yield* Effect.fromOption(Option.filter(Arr.head(files), () => files.length === 1)).pipe(
@@ -112,7 +112,7 @@ const loadShard = (
 const loadShards = (
   dirs: ReadonlyArray<string>,
   count: number,
-): Effect.Effect<ReadonlyArray<ShardLines>, ShellFailure, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<ReadonlyArray<ShardLines>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const files = (yield* Effect.forEach(dirs, shardFilesIn)).flat()
     const byShard = Arr.groupBy(files, (file) => String(file.shard))
@@ -140,7 +140,7 @@ const FALLBACK_ENVIRONMENT: CiEnvironment = {
 }
 
 const emitReport = (
-  outcome: CompareFinished | ShellFailure,
+  outcome: CompareFinished | DriverFailure,
 ): Effect.Effect<number, never, FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const environment = yield* Effect.orElseSucceed(ciEnvironment, () => FALLBACK_ENVIRONMENT)
@@ -156,7 +156,7 @@ const emitReport = (
     yield* Effect.forEach([...report.stdout, ...report.annotations], (line) => Console.log(line), { discard: true })
     yield* Effect.forEach(report.stderr, (line) => Console.error(line), { discard: true })
     yield* appendStepSummary(environment, report.stepSummary).pipe(
-      Effect.catchTag('ShellFailure', (failure) => Console.error(`${failure.code}: ${failure.reason}`)),
+      Effect.catchTag('DriverFailure', (failure) => Console.error(`${failure.code}: ${failure.reason}`)),
     )
     return report.exitCode
   })
@@ -175,7 +175,7 @@ interface CompareInput {
   readonly dirs: ReadonlyArray<string>
 }
 
-const compare = (input: CompareInput): Effect.Effect<void, ShellFailure | ReportedExit, ShellServices> =>
+const compare = (input: CompareInput): Effect.Effect<void, DriverFailure | ReportedExit, DriverServices> =>
   Effect.gen(function*() {
     const shards = yield* loadShards(input.dirs, input.shards)
     const lines = shards.flatMap((shard) => shard.lines)
@@ -211,7 +211,7 @@ const compare = (input: CompareInput): Effect.Effect<void, ShellFailure | Report
     yield* Effect.flatMap(emitReport(finished), exitWith)
   })
 
-const refusedOutsideCi = ShellFailure.make({
+const refusedOutsideCi = DriverFailure.make({
   schemaVersion: 1,
   code: 'refused-outside-ci',
   reason: 'run instruments and type-checks the corpus with real workers, so it refuses to start outside CI.',
@@ -286,12 +286,12 @@ const usageReasonsOf = (cause: CliError.CliError): ReadonlyArray<string> =>
     UserError: (error) => [error.message],
   })
 
-const usageOutcome = (cause: CliError.CliError): Effect.Effect<number, ShellFailure> =>
+const usageOutcome = (cause: CliError.CliError): Effect.Effect<number, DriverFailure> =>
   Arr.match(usageReasonsOf(cause), {
     onEmpty: () => Effect.succeed(0),
     onNonEmpty: (reasons) =>
       Effect.fail(
-        ShellFailure.make({
+        DriverFailure.make({
           schemaVersion: 1,
           code: 'usage-error',
           reason: reasons.join('; '),
@@ -302,12 +302,12 @@ const usageOutcome = (cause: CliError.CliError): Effect.Effect<number, ShellFail
 
 const checkerParity = (
   args: ReadonlyArray<string>,
-): Effect.Effect<number, never, ShellServices | Stdio.Stdio | Terminal.Terminal> =>
+): Effect.Effect<number, never, DriverServices | Stdio.Stdio | Terminal.Terminal> =>
   Command.runWith(cli, { version: VERSION })(args).pipe(
     Effect.as(0),
     Effect.catchIf(CliError.isCliError, usageOutcome),
     Effect.catchTags({
-      ShellFailure: emitReport,
+      DriverFailure: emitReport,
       ReportedExit: (exit) => Effect.succeed(exit.exitCode),
     }),
   )

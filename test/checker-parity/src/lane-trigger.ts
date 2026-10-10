@@ -5,8 +5,8 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Str from 'effect/String'
 
+import { DriverFailure } from './DriverFailure.schema.js'
 import { execText } from './exec-text.js'
-import { ShellFailure } from './Shell.schema.js'
 import { type LaneTrigger, triggerParityLane, TriggerParityLaneCommand } from './trigger-parity-lane.workflow.js'
 
 const LANE_PACKAGES = ['@systemfsoftware/stryker-js-typescript-checker', '@systemfsoftware/stryker-checker-parity']
@@ -21,7 +21,7 @@ export interface LaneTriggerInput {
 
 const closureDirectories = (
   repoRoot: string,
-): Effect.Effect<ReadonlyArray<string>, ShellFailure, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
+): Effect.Effect<ReadonlyArray<string>, DriverFailure, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const listing = yield* execText({
@@ -38,7 +38,7 @@ const closureDirectories = (
     })
     const projects = yield* Effect.fromResult(
       Result.mapError(decodeWorkspaceListing(listing), (issue) =>
-        ShellFailure.make({
+        DriverFailure.make({
           schemaVersion: 1,
           code: 'decode-failed',
           reason: `pnpm ls --json printed no workspace listing: ${issue.message}`,
@@ -50,7 +50,7 @@ const closureDirectories = (
 
 const changedFiles = (
   input: LaneTriggerInput,
-): Effect.Effect<ReadonlyArray<string>, ShellFailure, ChildProcessSpawner.ChildProcessSpawner> =>
+): Effect.Effect<ReadonlyArray<string>, DriverFailure, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.map(
     execText({ file: 'git', args: ['diff', '--name-only', `${input.base}...HEAD`], cwd: input.repoRoot }),
     (stdout) => stdout.split('\n').map((line) => line.trim()).filter(Str.isNonEmpty),
@@ -58,7 +58,7 @@ const changedFiles = (
 
 export const laneTrigger = (
   input: LaneTriggerInput,
-): Effect.Effect<LaneTrigger, ShellFailure, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
+): Effect.Effect<LaneTrigger, DriverFailure, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
   Effect.gen(function*() {
     const command = TriggerParityLaneCommand.make({
       pushEvent: input.pushEvent,

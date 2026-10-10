@@ -14,8 +14,8 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 
+import { DriverFailure } from './DriverFailure.schema.js'
 import { OtlpExportRequest } from './Otlp.schema.js'
-import { ShellFailure } from './Shell.schema.js'
 import { type SpanRecord, spanRecordsOf } from './span-counts.js'
 
 const decodeOtlpExport = S.decodeResult(S.fromJsonString(OtlpExportRequest))
@@ -48,18 +48,18 @@ const portOf = (address: NetAddress.SocketAddress): Option.Option<number> =>
     UnixPathAddress: () => Option.none(),
   })
 
-const unbound = ShellFailure.make({
+const unbound = DriverFailure.make({
   schemaVersion: 1,
   code: 'io-failed',
   reason: 'The OTLP receiver did not bind a TCP port.',
   nextAction: 'Check the runner allows listening on an ephemeral localhost port.',
 })
 
-export const startOtlpReceiver: Effect.Effect<OtlpReceiver, ShellFailure, Scope.Scope> = Effect.gen(function*() {
+export const startOtlpReceiver: Effect.Effect<OtlpReceiver, DriverFailure, Scope.Scope> = Effect.gen(function*() {
   const collected = yield* Ref.make<ReadonlyArray<SpanRecord>>([])
   const services = yield* Layer.build(NodeHttpServer.layerTest).pipe(
     Effect.mapError((cause) =>
-      ShellFailure.make({
+      DriverFailure.make({
         schemaVersion: 1,
         code: 'io-failed',
         reason: `The OTLP receiver could not listen: ${cause.message}`,

@@ -181,6 +181,7 @@ jobs:
         env:
           BASE: ${{ steps.base.outputs.base }}
         run: |
+          set -o pipefail
           node test/checker-parity/dist/main.mjs trigger --base "$BASE" | tee -a "$GITHUB_OUTPUT"
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
 

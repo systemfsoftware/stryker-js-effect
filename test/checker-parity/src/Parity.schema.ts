@@ -105,6 +105,9 @@ export class TelemetryMissing extends S.TaggedClass<TelemetryMissing>()('Telemet
   receivedSpans: NonNegativeInt,
 }) {}
 
+export const PhaseLine = S.Union([CheckCall, GroupCall, DigestCall])
+export type PhaseLine = typeof PhaseLine.Type
+
 export const ParityLine = S.Union([
   Verdict,
   CheckCall,
@@ -140,17 +143,11 @@ export const Shard = S.String.check(
 ).pipe(S.brand('Shard'))
 export type Shard = typeof Shard.Type
 
-const partsOf = (shard: Shard): readonly [number, number] => {
-  const parts = shardParts(shard)
-  if (parts === undefined) {
-    throw new Error(`decoded Shard "${shard}" carries no k/N parts`)
-  }
-  return parts
-}
+const separatorOf = (shard: Shard): number => shard.indexOf('/')
 
-export const shardIndex = (shard: Shard): number => partsOf(shard)[0]
+export const shardIndex = (shard: Shard): number => Number(shard.slice(0, separatorOf(shard)))
 
-export const shardCount = (shard: Shard): number => partsOf(shard)[1]
+export const shardCount = (shard: Shard): number => Number(shard.slice(separatorOf(shard) + 1))
 
 export const Gates = S.Struct({
   shortcutCount: S.Boolean,

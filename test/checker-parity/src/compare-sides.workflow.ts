@@ -10,10 +10,9 @@ import * as S from 'effect/Schema'
 import {
   CheckCall,
   Counts,
-  DigestCall,
   Gates,
-  GroupCall,
   ParityLine,
+  PhaseLine,
   ProjectBootFailed,
   ProjectSkipped,
   Side,
@@ -86,6 +85,14 @@ export class SlowerThanMain extends S.TaggedClass<SlowerThanMain>()('SlowerThanM
   mainMs: S.Finite,
 }) {}
 
+export class NothingCompared extends S.TaggedClass<NothingCompared>()('NothingCompared', {
+  schemaVersion: SCHEMA_VERSION,
+  code: S.Literal('nothing-compared'),
+  nextAction: S.String,
+  projectCount: S.Int,
+  skippedCount: S.Int,
+}) {}
+
 export const Violation = S.Union([
   VerdictMismatch,
   BootAsymmetry,
@@ -93,6 +100,7 @@ export const Violation = S.Union([
   TelemetryMissingViolation,
   ZeroShortcuts,
   SlowerThanMain,
+  NothingCompared,
 ])
 export type Violation = typeof Violation.Type
 
@@ -160,17 +168,12 @@ export class CompareSidesCommand extends S.TaggedClass<CompareSidesCommand>()('C
 
 const isVerdict = S.is(Verdict)
 const isCheckCall = S.is(CheckCall)
-const isGroupCall = S.is(GroupCall)
-const isDigestCall = S.is(DigestCall)
 const isCounts = S.is(Counts)
 const isBootFailure = S.is(ProjectBootFailed)
 const isProjectSkipped = S.is(ProjectSkipped)
 const isTelemetryMissing = S.is(TelemetryMissing)
 
-type PhaseLine = CheckCall | GroupCall | DigestCall
-
-const isPhaseLine = (line: ParityLine): line is PhaseLine =>
-  Boolean.some([isCheckCall(line), isGroupCall(line), isDigestCall(line)])
+const isPhaseLine = S.is(PhaseLine)
 
 const cachedVerdictFlag = (line: ParityLine): boolean =>
   Option.exists(Option.filter(Option.some(line), isVerdict), (verdict) => verdict.cached)
@@ -279,24 +282,16 @@ const bothVerdictsDiffer = (main: Option.Option<Verdict>, branch: Option.Option<
 
 const observedOf = (verdict: Verdict): ObservedVerdict => ({ status: verdict.status, reason: verdict.reason })
 
-const witnessOf = (main: Option.Option<Verdict>, branch: Option.Option<Verdict>): Verdict =>
-  Option.match(Option.orElse(branch, () => main), {
-    onNone: () => {
-      throw new Error('a verdict mismatch needs a verdict on at least one side')
-    },
-    onSome: (verdict) => verdict,
-  })
-
 const verdictMismatchNextAction = (project: string, fileName: string): string =>
   `Reproduce locally: run the checker integration test on ${fileName} with importerCheck 'always' and compare reasons; the full rows are in the shard NDJSON for project ${project}.`
 
 const mismatchFor = (
   project: string,
-  mutantId: string,
+  witness: Verdict,
   main: Option.Option<Verdict>,
   branch: Option.Option<Verdict>,
 ): Option.Option<VerdictMismatch> => {
-  const witness = witnessOf(main, branch)
+  const mutantId = witness.mutantId
   const inScope = Boolean.some([Option.isNone(main), Option.isNone(branch), bothVerdictsDiffer(main, branch)])
   return Option.filter(
     Option.some(
@@ -326,12 +321,9 @@ const verdictViolationsFor = (lines: ReadonlyArray<ParityLine>, project: string)
   const branchVerdicts = verdictsOf(lines, project, 'branch')
   const mainOf = verdictIndexOf(mainVerdicts)
   const branchOf = verdictIndexOf(branchVerdicts)
-  const mutantIds = Arr.dedupe([
-    ...mainVerdicts.map((verdict) => verdict.mutantId),
-    ...branchVerdicts.map((verdict) => verdict.mutantId),
-  ])
+  const witnesses = Arr.dedupeWith([...branchVerdicts, ...mainVerdicts], (a, b) => a.mutantId === b.mutantId)
   return Arr.getSomes(
-    mutantIds.map((mutantId) => mismatchFor(project, mutantId, mainOf(mutantId), branchOf(mutantId))),
+    witnesses.map((witness) => mismatchFor(project, witness, mainOf(witness.mutantId), branchOf(witness.mutantId))),
   )
 }
 
@@ -557,10 +549,9 @@ const bootReasonsOf = (lines: ReadonlyArray<ParityLine>, project: string): Reado
   )
 
 const skippedLineEntries = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<SkippedProject> =>
-  lines.filter((line): line is ProjectSkipped => isProjectSkipped(line)).map((line) => ({
-    project: line.project,
-    reason: line.reason,
-  }))
+  lines.filter((line): line is ProjectSkipped => isProjectSkipped(line))
+    .filter((line) => linesOf(lines, line.project).every(isProjectSkipped))
+    .map((line) => ({ project: line.project, reason: line.reason }))
 
 const dedupeByProject = (entries: ReadonlyArray<SkippedProject>): ReadonlyArray<SkippedProject> => {
   const lastByProject = HashMap.fromIterable(entries.map((entry) => [entry.project, entry] as const))
@@ -614,6 +605,31 @@ const bootFailedEither = (lines: ReadonlyArray<ParityLine>, project: string): bo
     Option.isSome(bootFailureOf(lines, project, 'branch')),
   ])
 
+const comparedMutantCount = (lines: ReadonlyArray<ParityLine>, projects: ReadonlyArray<string>): number =>
+  projects.filter((project) => !bootFailedEither(lines, project)).flatMap((project) =>
+    Arr.dedupe(
+      [...verdictsOf(lines, project, 'main'), ...verdictsOf(lines, project, 'branch')].map((verdict) =>
+        verdict.mutantId
+      ),
+    )
+  ).length
+
+const nothingComparedViolations = (
+  lines: ReadonlyArray<ParityLine>,
+  projects: ReadonlyArray<string>,
+): ReadonlyArray<NothingCompared> =>
+  when(
+    comparedMutantCount(lines, projects) === 0,
+    NothingCompared.make({
+      schemaVersion: 1,
+      code: 'nothing-compared',
+      nextAction:
+        'No mutant reached both checkers: read the skipped projects in the summary artifact (boot failures, empty shards) and fix the corpus or worker boot before trusting the lane.',
+      projectCount: projects.length,
+      skippedCount: skippedProjects(lines, projects).length,
+    }),
+  )
+
 const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> => {
   const projects = projectsOf(command.lines)
   return [
@@ -625,6 +641,7 @@ const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> =>
     ...telemetryViolations(command.lines),
     ...shortcutViolationsFor(command),
     ...speedViolationsFor(command),
+    ...nothingComparedViolations(command.lines, projects),
   ]
 }
 

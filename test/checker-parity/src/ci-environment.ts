@@ -5,7 +5,7 @@ import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
 import * as Str from 'effect/String'
 
-import { ShellFailure } from './Shell.schema.js'
+import { DriverFailure } from './DriverFailure.schema.js'
 
 export interface CiEnvironment {
   readonly ci: boolean
@@ -18,7 +18,7 @@ export interface CiEnvironment {
 const optionalText = (name: string): Config.Config<Option.Option<string>> =>
   Config.String(name).pipe(Config.option, Config.map(Option.filter(Str.isNonEmpty)))
 
-export const ciEnvironment: Effect.Effect<CiEnvironment, ShellFailure> = Config.all({
+export const ciEnvironment: Effect.Effect<CiEnvironment, DriverFailure> = Config.all({
   ci: optionalText('CI'),
   githubActions: optionalText('GITHUB_ACTIONS'),
   eventName: optionalText('GITHUB_EVENT_NAME'),
@@ -33,7 +33,7 @@ export const ciEnvironment: Effect.Effect<CiEnvironment, ShellFailure> = Config.
     runId: Option.getOrElse(read.runId, () => '<run-id>'),
   })),
   Effect.mapError((cause) =>
-    ShellFailure.make({
+    DriverFailure.make({
       schemaVersion: 1,
       code: 'usage-error',
       reason: `The CI environment could not be read: ${cause.message}`,
@@ -45,11 +45,11 @@ export const ciEnvironment: Effect.Effect<CiEnvironment, ShellFailure> = Config.
 export const readsCache = (environment: CiEnvironment): boolean => !(environment.ci && environment.pushEvent)
 
 export const appendStepSummary: {
-  (markdown: string): (environment: CiEnvironment) => Effect.Effect<void, ShellFailure, FileSystem.FileSystem>
-  (environment: CiEnvironment, markdown: string): Effect.Effect<void, ShellFailure, FileSystem.FileSystem>
+  (markdown: string): (environment: CiEnvironment) => Effect.Effect<void, DriverFailure, FileSystem.FileSystem>
+  (environment: CiEnvironment, markdown: string): Effect.Effect<void, DriverFailure, FileSystem.FileSystem>
 } = dual(
   2,
-  (environment: CiEnvironment, markdown: string): Effect.Effect<void, ShellFailure, FileSystem.FileSystem> =>
+  (environment: CiEnvironment, markdown: string): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
     Option.match(Option.filter(environment.stepSummary, () => environment.githubActions), {
       onNone: () => Effect.void,
       onSome: (summaryPath) =>
@@ -58,7 +58,7 @@ export const appendStepSummary: {
           yield* fs.writeFileString(summaryPath, markdown, { flag: 'a' })
         }).pipe(
           Effect.mapError((cause) =>
-            ShellFailure.make({
+            DriverFailure.make({
               schemaVersion: 1,
               code: 'io-failed',
               reason: `Could not append to $GITHUB_STEP_SUMMARY: ${cause.message}`,

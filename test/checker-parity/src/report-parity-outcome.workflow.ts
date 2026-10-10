@@ -14,7 +14,7 @@ import {
   type SideTotals,
   type Violation,
 } from './compare-sides.workflow.js'
-import { ShellFailure } from './Shell.schema.js'
+import { DriverFailure } from './DriverFailure.schema.js'
 
 const ReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/ReportParityOutcome')
 type ReportTypeId = typeof ReportTypeId
@@ -31,7 +31,7 @@ export class CompareFinished extends S.TaggedClass<CompareFinished>()('CompareFi
 
 export class ReportParityOutcomeCommand
   extends S.TaggedClass<ReportParityOutcomeCommand>()('ReportParityOutcomeCommand', {
-    outcome: S.Union([CompareFinished, ShellFailure]),
+    outcome: S.Union([CompareFinished, DriverFailure]),
     githubActions: S.Boolean,
     runId: S.String,
   })
@@ -92,6 +92,8 @@ const describeViolation = (violation: Violation): string =>
       `${missing.code} ${missing.side} ${missing.project} expected ${missing.expectedSpans} received ${missing.receivedSpans}`,
     ZeroShortcuts: (zero) => `${zero.code} ${zero.scope}`,
     SlowerThanMain: (slower) => `${slower.code} branch ${slower.branchMs} ms, main ${slower.mainMs} ms`,
+    NothingCompared: (nothing) =>
+      `${nothing.code} 0 mutants compared across ${nothing.projectCount} project(s), ${nothing.skippedCount} skipped`,
   })
 
 const projectOf = (violation: Violation): Option.Option<string> =>
@@ -102,6 +104,7 @@ const projectOf = (violation: Violation): Option.Option<string> =>
     TelemetryMissingViolation: (missing) => Option.some(missing.project),
     ZeroShortcuts: () => Option.none(),
     SlowerThanMain: () => Option.none(),
+    NothingCompared: () => Option.none(),
   })
 
 const locationOf = (violation: Violation): string =>
@@ -112,6 +115,7 @@ const locationOf = (violation: Violation): string =>
     TelemetryMissingViolation: () => '',
     ZeroShortcuts: () => '',
     SlowerThanMain: () => '',
+    NothingCompared: () => '',
   })
 
 const shardOf = (finished: CompareFinished, violation: Violation): string =>
@@ -219,7 +223,7 @@ const brokenReport = (
     stepSummary: summaryMarkdown('FAIL', broken, broken.violations),
   })
 
-const failedReport = (command: ReportParityOutcomeCommand, failure: ShellFailure): DriverFailedReport =>
+const failedReport = (command: ReportParityOutcomeCommand, failure: DriverFailure): DriverFailedReport =>
   DriverFailedReport.make({
     exitCode: 2,
     stdout: [],
@@ -235,7 +239,7 @@ const failedReport = (command: ReportParityOutcomeCommand, failure: ShellFailure
 
 const reportOf = (command: ReportParityOutcomeCommand): ParityOutcomeReport =>
   Match.valueTags(command.outcome, {
-    ShellFailure: (failure) => failedReport(command, failure),
+    DriverFailure: (failure) => failedReport(command, failure),
     CompareFinished: (finished) =>
       Match.valueTags(finished.decision, {
         ParityHolds: (held) => heldReport(finished, held),
