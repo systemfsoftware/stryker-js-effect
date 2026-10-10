@@ -8,6 +8,7 @@ import {
   Match,
   Option,
   Path,
+  Ref,
   Schema as S,
   Stream,
 } from 'effect'
@@ -115,15 +116,28 @@ const runCommand = (argv: Argv, cwd?: string): Effect.Effect<CommandOutcome, Ben
     const handle = yield* spawner.spawn(ChildProcess.make(command, args, options)).pipe(
       Effect.mapError((cause) => fail(`spawn ${command}`, 'the command could not be started', cause)),
     )
-    const [stdout, stderr, exitCode] = yield* Effect.all(
-      [
-        Stream.runCollect(Stream.decodeText(handle.stdout)),
-        Stream.runCollect(Stream.decodeText(handle.stderr)),
-        handle.exitCode,
-      ] as const,
+    const stdout = yield* Ref.make('')
+    const stderr = yield* Ref.make('')
+    const collect = (stream: typeof handle.stdout, into: Ref.Ref<string>) =>
+      Stream.runForEach(Stream.decodeText(stream), (chunk) => Ref.update(into, (text) => text + chunk))
+    const [exitCode] = yield* Effect.all(
+      [handle.exitCode, collect(handle.stdout, stdout), collect(handle.stderr, stderr)] as const,
       { concurrency: 'unbounded' },
-    ).pipe(Effect.mapError((cause) => fail(`read ${command} output`, 'the command output could not be read', cause)))
-    return { exitCode, stdout: stdout.join(''), stderr: stderr.join('') }
+    ).pipe(
+      Effect.mapError((cause) => fail(`read ${command} output`, 'the command output could not be read', cause)),
+      Effect.onInterrupt(() =>
+        Effect.flatMap(
+          Effect.all([Ref.get(stdout), Ref.get(stderr)]),
+          ([out, err]) =>
+            Console.error(
+              `bench setup interrupted: ${argv.join(' ')}\n--- output tail ---\n${
+                `${out}${err}`.slice(-STDERR_TAIL_CHARS)
+              }`,
+            ),
+        )
+      ),
+    )
+    return { exitCode, stdout: yield* Ref.get(stdout), stderr: yield* Ref.get(stderr) }
   }))
 
 const runChecked = (
@@ -469,12 +483,12 @@ const prepareEnterprise = (
         const specs = yield* enterpriseInstallSpecs(input.root, bundleRoot, closure.value)
         yield* runChecked(
           STEP_ENTERPRISE_INSTALL,
-          ['npm', 'install', '--no-audit', '--no-fund', '--loglevel=error'],
+          ['npm', 'install', '--no-audit', '--no-fund', '--loglevel=http'],
           bundleRoot,
         )
         yield* runChecked(
           STEP_ENTERPRISE_INSTALL,
-          ['npm', 'install', '--no-audit', '--no-fund', '--loglevel=error', ...specs],
+          ['npm', 'install', '--no-audit', '--no-fund', '--loglevel=http', ...specs],
           bundleRoot,
         )
       }),
