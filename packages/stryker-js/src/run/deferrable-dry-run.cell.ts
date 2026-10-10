@@ -46,7 +46,10 @@ const settledWithoutTests = (
   plan: MutationTestPlan,
 ): Effect.Effect<Option.Option<CheckedPlans<never>>, StageError | CheckerCrash> =>
   Option.match(
-    Option.filter(checkerHandle, () => plan.earlyResults.length === 0 && plan.heldSubsumed.length === 0),
+    Option.filter(
+      checkerHandle,
+      () => [plan.earlyResults.length, plan.heldSubsumed.length, plan.heldGuards.length].every((count) => count === 0),
+    ),
     {
       onNone: () => Effect.succeedNone,
       onSome: (handle) =>
@@ -94,7 +97,7 @@ const checkerSettledRun = Effect.fnUntraced(function*(command: InstrumentDone) {
               reuse,
               plan,
               checkedPlans: Stream.succeed(checked),
-              checkReadmitted: () => Stream.empty,
+              checkHeld: () => Stream.empty,
               closureDigestsByMutantId: {},
               runPlanOf: () => (runPlan) => absurd(runPlan),
             })

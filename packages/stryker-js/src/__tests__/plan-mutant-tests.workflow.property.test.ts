@@ -183,6 +183,138 @@ const staticKillerCommandArb = Arbitrary.all([
 const knownKillersOf = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): readonly TestRunner.TestId[] =>
   killerOf(command, mutantId).filter((testId) => Record.has(command.testTimeById, testId))
 
+const GUARD_CONDITION_ID = Mutant.MutantId.make('0000000000000000')
+
+const GUARD_BLOCK_ID = Mutant.MutantId.make('0000000000000001')
+
+const GUARD_INSIDE_ID = Mutant.MutantId.make('0000000000000002')
+
+const GUARD_COVERING_TEST_ID = TestRunner.TestId.make('guard-test')
+
+const guardCommandArb = Arbitrary.all([
+  Arbitrary.schema(Mutant.Mutant),
+  Arbitrary.schema(S.Literals(['off', 'all', 'perTest'])),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
+]).pipe(
+  Arbitrary.map(
+    ([
+      baseMutant,
+      coverageAnalysis,
+      ignoreStatic,
+      carriesGuard,
+      conditionCovered,
+      conditionStatic,
+      conditionClosed,
+      blockCovered,
+      blockStatic,
+      staticPresent,
+      insidePresent,
+    ]) => {
+      const guard = Mutant.Guard.make({
+        block: GUARD_BLOCK_ID,
+        inside: insidePresent ? [GUARD_INSIDE_ID] : [],
+      })
+      return MutantTestPlanCommand.make({
+        _tag: 'MutantTestPlanCommand',
+        mutants: [
+          Mutant.Mutant.make({
+            ...baseMutant,
+            id: GUARD_CONDITION_ID,
+            status: conditionClosed ? 'Ignored' : undefined,
+            statusReason: undefined,
+            subsumption: undefined,
+            guard: carriesGuard ? guard : undefined,
+          }),
+          Mutant.Mutant.make({
+            ...baseMutant,
+            id: GUARD_BLOCK_ID,
+            status: undefined,
+            statusReason: undefined,
+            subsumption: undefined,
+            guard: undefined,
+          }),
+        ],
+        timeOverheadMS: 1,
+        timeSpentAllTests: 1,
+        hitsByMutantId: { [GUARD_CONDITION_ID]: 1, [GUARD_BLOCK_ID]: 1 },
+        testsByMutantId: {
+          [GUARD_CONDITION_ID]: conditionCovered ? [GUARD_COVERING_TEST_ID] : [],
+          [GUARD_BLOCK_ID]: blockCovered ? [GUARD_COVERING_TEST_ID] : [],
+        },
+        testTimeById: { [GUARD_COVERING_TEST_ID]: 1 },
+        ...(staticPresent
+          ? {
+            staticCoverage: {
+              [GUARD_CONDITION_ID]: conditionStatic ? 1 : 0,
+              [GUARD_BLOCK_ID]: blockStatic ? 1 : 0,
+            },
+          }
+          : {}),
+        options: { coverageAnalysis, disableBail: false, timeoutMS: 0, timeoutFactor: 0, ignoreStatic },
+        sandboxFileByName: {},
+      })
+    },
+  ),
+)
+
+const blockIsCovered = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
+  staticCountOf(command, mutantId) > 0 || testsOf(command, mutantId).length > 0
+
+const blockIsStatic = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
+  staticCountOf(command, mutantId) > 0
+
+const expectedHeldByOf = (command: MutantTestPlanCommand, mutant: Mutant.Mutant): boolean =>
+  mutant.status === undefined &&
+  mutant.guard !== undefined &&
+  command.options.coverageAnalysis === 'perTest' &&
+  !isPerTestUncoveredNonStatic(command, mutant) &&
+  !(command.options.ignoreStatic && isUncoveredStatic(command, mutant)) &&
+  !blockIsCovered(command, mutant.guard.block)
+
+const heldByOfDecision = (
+  decision: PlannedEarlyResultMutant | PlannedRunMutant,
+): Option.Option<Mutant.Guard> =>
+  Option.flatMap(Option.liftPredicate(decision, S.is(PlannedRunMutant)), (run) => Option.fromUndefinedOr(run.heldBy))
+
+const heldAsDefined = (subject: typeof planMutantTests, command: MutantTestPlanCommand): boolean =>
+  Result.match(subject(command), {
+    onFailure: () => false,
+    onSuccess: (decisions) =>
+      decisions.length === command.mutants.length &&
+      Arr.every(decisions, (decision, index) =>
+        Option.match(Option.fromUndefinedOr(command.mutants[index]), {
+          onNone: () => false,
+          onSome: (mutant) => Option.isSome(heldByOfDecision(decision)) === expectedHeldByOf(command, mutant),
+        })),
+  })
+
+const refusesHeldBy = (
+  subject: typeof planMutantTests,
+  command: MutantTestPlanCommand,
+  when: (mutant: Mutant.Mutant) => boolean,
+): boolean =>
+  Result.match(subject(command), {
+    onFailure: () => false,
+    onSuccess: (decisions) =>
+      Arr.every(decisions, (decision, index) =>
+        Option.match(Option.fromUndefinedOr(command.mutants[index]), {
+          onNone: () => false,
+          onSome: (mutant) =>
+            Boolean.match(when(mutant), {
+              onFalse: () => true,
+              onTrue: () => Option.isNone(heldByOfDecision(decision)),
+            }),
+        })),
+  })
+
 describe('planMutantTests', () => {
   it.prop(
     '∀m_Command_≡OrdersOutcomesByMutantOrder',
@@ -516,6 +648,72 @@ describe('planMutantTests', () => {
                 run.runOptions.testFilter === undefined || run.runOptions.priorKillerTestIds === undefined,
             })
           ),
+      }),
+  )
+
+  it.prop(
+    '∀h_RunPlan_≡HeldExactlyWhenItsGuardBlockIsPerTestUncoveredNonStatic',
+    { of: [guardCommandArb], subject: planMutantTests },
+    (subject, [command]) => heldAsDefined(subject, command),
+  )
+
+  it.prop(
+    '∀b_CoveredGuardBlock_≡GuardNotHeld',
+    { of: [guardCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      heldAsDefined(subject, command) &&
+      refusesHeldBy(subject, command, (mutant) =>
+        Option.match(Option.fromUndefinedOr(mutant.guard), {
+          onNone: () => false,
+          onSome: (guard) => blockIsCovered(command, guard.block),
+        })),
+  )
+
+  it.prop(
+    '∀s_StaticGuardBlock_≡GuardNotHeld',
+    { of: [guardCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      heldAsDefined(subject, command) &&
+      refusesHeldBy(subject, command, (mutant) =>
+        Option.match(Option.fromUndefinedOr(mutant.guard), {
+          onNone: () => false,
+          onSome: (guard) => blockIsStatic(command, guard.block),
+        })),
+  )
+
+  it.prop(
+    '∀o_NonPerTestCoverage_≡GuardNotHeld',
+    { of: [guardCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      heldAsDefined(subject, command) &&
+      refusesHeldBy(subject, command, () => command.options.coverageAnalysis !== 'perTest'),
+  )
+
+  it.prop(
+    '∀g_GuardlessMutant_≡GuardNotHeld',
+    { of: [guardCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      heldAsDefined(subject, command) &&
+      refusesHeldBy(subject, command, (mutant) => mutant.guard === undefined),
+  )
+
+  it.prop(
+    '∀u_PerTestUncoveredCondition_≡NoCoveragePlanWithoutHeldBy',
+    { of: [guardCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      heldAsDefined(subject, command) &&
+      Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (decisions) =>
+          Arr.every(decisions, (decision, index) =>
+            Option.match(Option.fromUndefinedOr(command.mutants[index]), {
+              onNone: () => false,
+              onSome: (mutant) =>
+                Boolean.match(isPerTestUncoveredNonStatic(command, mutant), {
+                  onFalse: () => true,
+                  onTrue: () => isNoCoverageRunPlan(decision) && Option.isNone(heldByOfDecision(decision)),
+                }),
+            })),
       }),
   )
 })

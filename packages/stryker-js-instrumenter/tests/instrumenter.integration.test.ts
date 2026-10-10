@@ -1269,4 +1269,183 @@ export function price(n) {
         ),
       ),
     )
+
+    scenario(
+      'A condition mutant over a non-empty block carries that block mutant as its guard',
+      Gherkin.Do.pipe(
+        Given('a flag whose block calls doWork')(
+          'source',
+          () =>
+            Effect.succeed(`if (flag) {
+  doWork(1)
+}
+`),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u7-guard.ts', source),
+        ),
+        Then('every condition mutant names the block mutant and carries no other inside mutant')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const conditions = result.mutants.filter((mutant) => mutant.mutatorName === 'ConditionalExpression')
+          const blocks = result.mutants.filter((mutant) => mutant.mutatorName === 'BlockStatement')
+          return expect({
+            conditionCount: conditions.length,
+            blockCount: blocks.length,
+            guards: conditions.map((mutant) => mutant.guard),
+          }).toEqual({
+            conditionCount: 2,
+            blockCount: 1,
+            guards: [
+              { block: blocks[0]?.id, inside: [] },
+              { block: blocks[0]?.id, inside: [] },
+            ],
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'The full policy strips every guard',
+      Gherkin.Do.pipe(
+        Given('a flag whose block calls doWork')(
+          'source',
+          () =>
+            Effect.succeed(`if (flag) {
+  doWork(1)
+}
+`),
+        ),
+        When('it is instrumented under the full policy')(
+          'result',
+          ({ source }: { source: string }) => underFull('/tmp/u7-guard-full.ts', source),
+        ),
+        Then('the file still yields its mutants and none carries a guard')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect({
+            mutantCount: result.mutants.length,
+            guardedCount: result.mutants.filter((mutant) => mutant.guard !== undefined).length,
+          }).toEqual({ mutantCount: 3, guardedCount: 0 })
+        ),
+      ),
+    )
+
+    scenario(
+      'A nested if guards its condition with the inner block and lists the inner mutants in the outer inside',
+      Gherkin.Do.pipe(
+        Given('an if whose block contains another if over a call')(
+          'source',
+          () =>
+            Effect.succeed(`if (a) {
+  if (b) {
+    f(2)
+  }
+}
+`),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u7-nested.ts', source),
+        ),
+        Then('the outer inside holds the inner condition and inner block mutants')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const conditions = result.mutants.filter((mutant) => mutant.mutatorName === 'ConditionalExpression')
+          const blocks = result.mutants.filter((mutant) => mutant.mutatorName === 'BlockStatement')
+          const outerGuard = conditions.map((mutant) => mutant.guard).find((guard) =>
+            guard !== undefined && guard.inside.length === 3
+          )
+          const innerConditionIds = conditions
+            .filter((mutant) => mutant.location.start.line === 2)
+            .map((mutant) => mutant.id)
+          const innerBlockId = blocks.find((mutant) => mutant.location.start.line === 2)?.id
+          return expect({
+            conditionCount: conditions.length,
+            blockCount: blocks.length,
+            outerGuardBlockIsABlock: outerGuard !== undefined &&
+              blocks.some((mutant) => mutant.id === outerGuard.block),
+            outerInside: outerGuard?.inside.toSorted(),
+          }).toEqual({
+            conditionCount: 4,
+            blockCount: 2,
+            outerGuardBlockIsABlock: true,
+            outerInside: innerBlockId === undefined ? [] : [...innerConditionIds, innerBlockId].toSorted(),
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'An else-branch mutant never enters the consequent guards inside',
+      Gherkin.Do.pipe(
+        Given('an if with a consequent block and an else block')(
+          'source',
+          () =>
+            Effect.succeed(`if (a) {
+  f(1)
+} else {
+  g(2)
+}
+`),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u7-else.ts', source),
+        ),
+        Then('every condition guard names the consequent block and lists no else mutant')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const conditions = result.mutants.filter((mutant) => mutant.mutatorName === 'ConditionalExpression')
+          const blocks = result.mutants.filter((mutant) => mutant.mutatorName === 'BlockStatement')
+          const consequentBlock = blocks.find((mutant) => mutant.location.start.line === 1)
+          const elseBlock = blocks.find((mutant) => mutant.location.start.line === 3)
+          return expect({
+            conditionCount: conditions.length,
+            blockLines: blocks.map((mutant) => mutant.location.start.line).toSorted((left, right) => left - right),
+            guardsNameConsequent: conditions.every((mutant) => mutant.guard?.block === consequentBlock?.id),
+            insideEmpty: conditions.every((mutant) => mutant.guard?.inside.length === 0),
+            elseBlockNotNamed: conditions.every((mutant) => mutant.guard?.block !== elseBlock?.id),
+          }).toEqual({
+            conditionCount: 2,
+            blockLines: [1, 3],
+            guardsNameConsequent: true,
+            insideEmpty: true,
+            elseBlockNotNamed: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'An if whose consequent is not a block or is an empty block yields no guard',
+      Gherkin.Do.pipe(
+        Given('a bare consequent if and an empty-block if')(
+          'source',
+          () =>
+            Effect.succeed(`if (a) f(1)
+if (b) {}
+`),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u7-unguardable.ts', source),
+        ),
+        Then('no mutant is guarded and no block mutant exists')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect({
+            conditionCount: result.mutants.filter((mutant) => mutant.mutatorName === 'ConditionalExpression').length,
+            blockCount: result.mutants.filter((mutant) => mutant.mutatorName === 'BlockStatement').length,
+            guardedCount: result.mutants.filter((mutant) => mutant.guard !== undefined).length,
+          }).toEqual({ conditionCount: 4, blockCount: 0, guardedCount: 0 })
+        ),
+      ),
+    )
   })

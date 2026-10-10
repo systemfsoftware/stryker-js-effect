@@ -104,6 +104,7 @@ export interface Mutant extends Mutable {
   readonly location: ApiMutant.Location
   readonly replacementCode: string
   readonly subsumption?: ApiMutant.Subsumed
+  readonly guard?: ApiMutant.Guard
 }
 function orDefault<T>(value: T | undefined, fallback: T): T {
   return value ?? fallback
@@ -152,6 +153,7 @@ export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.S
     location: mutant.location,
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacementCode,
+    ...(mutant.guard === undefined ? {} : { guard: mutant.guard }),
   }
   return S.decodeResult(ApiMutant.Mutant)(
     Option.match(statusReasonOf(mutant), {

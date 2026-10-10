@@ -14,6 +14,98 @@ const scheduledPlacements = (shards: ReadonlyArray<PlannedShard>): ReadonlyArray
 
 const multisetOf = (entries: ReadonlyArray<string>): string => JSON.stringify([...entries].sort())
 
+const anchorKeysOf = (mutant: PlannedMutant): ReadonlyArray<string> => [mutant.id, ...(mutant.anchors ?? [])]
+
+const sharesAnAnchor = (left: PlannedMutant, right: PlannedMutant): boolean =>
+  left.project === right.project && anchorKeysOf(left).some((key) => anchorKeysOf(right).includes(key))
+
+const anchorComponentsOf = (mutants: ReadonlyArray<PlannedMutant>): ReadonlyArray<ReadonlyArray<PlannedMutant>> => {
+  const remaining = [...mutants]
+  const components: PlannedMutant[][] = []
+  while (remaining.length > 0) {
+    const seed = remaining.shift()
+    if (seed === undefined) {
+      break
+    }
+    const component = [seed]
+    for (let index = 0; index < component.length; index += 1) {
+      const current = component[index]
+      for (let at = remaining.length - 1; at >= 0; at -= 1) {
+        const candidate = remaining[at]
+        if (current !== undefined && candidate !== undefined && sharesAnAnchor(current, candidate)) {
+          component.push(candidate)
+          remaining.splice(at, 1)
+        }
+      }
+    }
+    components.push(component)
+  }
+  return components
+}
+
+const placementLabelOf = (project: string, id: string): string => `${project}|${id}`
+
+const shardIndexByPlacementOf = (shards: ReadonlyArray<PlannedShard>): Map<string, number> => {
+  const indexByPlacement = new Map<string, number>()
+  for (let index = 0; index < shards.length; index += 1) {
+    const shard = shards[index]
+    if (shard === undefined) {
+      continue
+    }
+    for (const entry of shard.projects) {
+      for (const id of entry.mutants) {
+        indexByPlacement.set(placementLabelOf(entry.project, id), index)
+      }
+    }
+  }
+  return indexByPlacement
+}
+
+const everyAnchorComponentLandsInOneShard = (
+  command: PlanShardsCommand,
+  shards: ReadonlyArray<PlannedShard>,
+): boolean => {
+  const indexByPlacement = shardIndexByPlacementOf(shards)
+  for (const component of anchorComponentsOf(command.mutants)) {
+    const first = component[0]
+    if (first === undefined) {
+      continue
+    }
+    const expected = indexByPlacement.get(placementLabelOf(first.project, first.id))
+    if (expected === undefined) {
+      return false
+    }
+    for (const mutant of component) {
+      if (indexByPlacement.get(placementLabelOf(mutant.project, mutant.id)) !== expected) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
+const everyAnchoredMutantSharesAShardWithItsAnchor = (
+  command: PlanShardsCommand,
+  shards: ReadonlyArray<PlannedShard>,
+): boolean => {
+  const indexByPlacement = shardIndexByPlacementOf(shards)
+  for (const mutant of command.mutants) {
+    const own = indexByPlacement.get(placementLabelOf(mutant.project, mutant.id))
+    for (const anchor of mutant.anchors ?? []) {
+      const target = command.mutants.find((candidate) =>
+        candidate.project === mutant.project && candidate.id === anchor
+      )
+      if (target === undefined) {
+        continue
+      }
+      if (indexByPlacement.get(placementLabelOf(target.project, target.id)) !== own) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
 const compareText = (left: string, right: string): number => Math.sign(Number(left > right) - Number(left < right))
 
 const compareProjectThenId = (left: PlannedMutant, right: PlannedMutant): number =>
@@ -90,7 +182,7 @@ const referenceLptBinsOf = (
   return bins
 }
 
-const placementKeysOf = (placementsPerShard: ReadonlyArray<ReadonlyArray<string>>): ReadonlyArray<string> =>
+const shardSignaturesOf = (placementsPerShard: ReadonlyArray<ReadonlyArray<string>>): ReadonlyArray<string> =>
   placementsPerShard.map((placements) => [...placements].sort().join(','))
 
 const occupiedShardsOfProject = (
@@ -125,8 +217,8 @@ const reproducesPureLptShards = (command: PlanShardsCommand, shards: ReadonlyArr
   return (
     shards.length === count &&
     Equal.equals(
-      placementKeysOf(shards.map((shard) => scheduledPlacements([shard]))),
-      placementKeysOf(reference.map((bin) => bin.placements)),
+      shardSignaturesOf(shards.map((shard) => scheduledPlacements([shard]))),
+      shardSignaturesOf(reference.map((bin) => bin.placements)),
     ) &&
     shards.every((shard, index) => shard.predictedSeconds === loadOfBinAt(reference, index) / 1000)
   )
@@ -217,6 +309,24 @@ describe('planShards', () => {
       const largest = command.mutants.reduce((max, mutant) => Math.max(max, mutant.costMs), 0)
       const busiest = loads.reduce((max, load) => Math.max(max, load), 0)
       return busiest <= (4 / 3) * (total / count + largest) + 1e-9
+    },
+  )
+
+  it.prop(
+    '∀c_Mutants_≡EveryAnchorComponentLandsInExactlyOneShard',
+    { of: [PlanShardsCommand], subject: planShards },
+    (subject, [command]) => {
+      const shards = shardsOf(subject, command)
+      return shards !== undefined && everyAnchorComponentLandsInOneShard(command, shards)
+    },
+  )
+
+  it.prop(
+    '∀m_AnchoredMutant_≡IsNeverSplitFromTheMutantItAnchorsTo',
+    { of: [PlanShardsCommand], subject: planShards },
+    (subject, [command]) => {
+      const shards = shardsOf(subject, command)
+      return shards !== undefined && everyAnchoredMutantSharesAShardWithItsAnchor(command, shards)
     },
   )
 })
