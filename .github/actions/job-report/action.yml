@@ -10,7 +10,9 @@ inputs:
     description: "`job.status` of the calling job: success, failure, or cancelled."
     required: true
   reason:
-    description: Reason code from the CI wall-clock plan's table (for example GATE_OK or TURBO_TASK_FAILED).
+    description: >-
+      Reason code naming the outcome: a success code such as GATE_OK or SWEEP_OK, a failure code
+      such as TURBO_TASK_FAILED or CHECK_SETUP_FAILED, or CANCELLED.
     required: true
   next-action:
     description: What a reader of a failed job does next. Becomes the annotation message.
@@ -36,7 +38,7 @@ runs:
       shell: bash
       env:
         STATUS: ${{ inputs.status }}
-        REASON: ${{ inputs.reason }}
+        REASON: ${{ inputs.reason || 'NO_REASON_CODE' }}
         NEXT_ACTION: ${{ inputs.next-action }}
         STARTED_AT: ${{ inputs.started-at }}
         TURBO_RUNS: ${{ inputs.turbo-runs }}

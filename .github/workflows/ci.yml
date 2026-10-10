@@ -105,7 +105,7 @@ jobs:
           BASE_SHA: ${{ steps.base.outputs.sha }}
           BASE_KEY: ${{ steps.restore-base.outputs.cache-matched-key }}
           NEWEST_KEY: ${{ steps.restore-newest.outputs.cache-matched-key }}
-          NEWEST_HIT: ${{ steps.restore-newest.outputs.cache-hit }}
+          OWN_KEY: turbo-${{ runner.os }}-dist-${{ github.sha }}
         run: |
           shopt -s nullglob
           runs=(.turbo/runs/*.json)
@@ -139,9 +139,10 @@ jobs:
             restored="nothing (no entry readable)"
           fi
 
-          # Save only a passing run that computed something new, and never over this commit's own entry.
           save=false
-          if [ "$reason" = GATE_OK ] && [ "$missed" != 0 ] && [ "$NEWEST_HIT" != true ]; then save=true; fi
+          if [ "$reason" = GATE_OK ] && [ "$missed" != 0 ] && [ "$BASE_KEY" != "$OWN_KEY" ] && [ "$NEWEST_KEY" != "$OWN_KEY" ]; then
+            save=true
+          fi
 
           {
             echo "reason=$reason"
@@ -189,14 +190,14 @@ jobs:
         run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
         with:
-          sparse-checkout: .github/actions
+          sparse-checkout: .github/actions/job-report
       - id: sweep
         name: Sweep Turbo cache entries
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?key=turbo-&sort=created_at&direction=desc&per_page=100" \
-            --jq '.actions_caches[] | [.id, .ref, .size_in_bytes] | @tsv' > "$RUNNER_TEMP/caches.tsv"
+          gh cache list --repo "$GITHUB_REPOSITORY" --key turbo- --sort created_at --order desc --limit 1000 \
+            --json id,ref,sizeInBytes --jq '.[] | [.id, .ref, .sizeInBytes] | @tsv' > "$RUNNER_TEMP/caches.tsv"
           declare -A seen state
           kept=0 kept_bytes=0 deleted=0 deleted_bytes=0
           while IFS=$'\t' read -r id ref bytes; do
@@ -211,7 +212,7 @@ jobs:
             n=$(( ${seen[$ref]:-0} + 1 ))
             seen[$ref]=$n
             if (( n > limit )); then
-              gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" > /dev/null
+              gh cache delete --repo "$GITHUB_REPOSITORY" "$id"
               deleted=$(( deleted + 1 )) deleted_bytes=$(( deleted_bytes + bytes ))
             else
               kept=$(( kept + 1 )) kept_bytes=$(( kept_bytes + bytes ))
