@@ -343,20 +343,21 @@ jobs:
         run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
       - name: Install process-compose (pinned)
         run: |
           curl -sSfL -o /tmp/pc.tar.gz https://github.com/F1bonacc1/process-compose/releases/download/v1.122.0/process-compose_linux_amd64.tar.gz
           echo '9b6dbc38324c0b0481f1cd1dd828ffdc78117129ec797678f4bf8c4023311281  /tmp/pc.tar.gz' | sha256sum -c -
           sudo tar xzf /tmp/pc.tar.gz -C /usr/local/bin process-compose
       # The trace window opens here, before any span can be sent.
-      - name: Start LGTM
+      - id: lgtm-start
+        name: Start LGTM
         run: |
           echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
           pnpm --config.verify-deps-before-run=false lgtm:start
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
       - uses: cachix/install-nix-action@v31
       - uses: ./.github/actions/released-tarballs
       - run: pnpm install --frozen-lockfile
@@ -403,9 +404,13 @@ jobs:
             complement) args+=(-t "^(?!.*(?:$CHECKER_SPLIT))") ;;
           esac
           args+=(--reporter=default --reporter=github-actions --reporter=json --outputFile.json="$RUNNER_TEMP/vitest.json")
-          status=0
+          started=$(date +%s) status=0
           timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e -- "${args[@]}" || status=$?
-          echo "exit=$status" >> "$GITHUB_OUTPUT"
+          timed_out=false
+          if [ "$status" = 124 ] || { [ "$status" = 137 ] && (( $(date +%s) - started >= 1200 )); }; then
+            timed_out=true
+          fi
+          echo "timed-out=$timed_out" >> "$GITHUB_OUTPUT"
           exit "$status"
       - id: export
         name: Export telemetry
@@ -436,9 +441,9 @@ jobs:
         if: always()
         env:
           CANCELLED: ${{ job.status == 'cancelled' }}
-          LGTM: ${{ steps.lgtm.outcome }}
+          LGTM: ${{ steps.lgtm-start.outcome == 'failure' && 'failure' || steps.lgtm.outcome }}
           LANE: ${{ steps.lane.outcome }}
-          LANE_EXIT: ${{ steps.lane.outputs.exit }}
+          LANE_TIMED_OUT: ${{ steps.lane.outputs.timed-out }}
           EXPORT: ${{ steps.export.outcome }}
           FILES: ${{ matrix.files }}
           SPLIT: ${{ matrix.split }}
@@ -450,8 +455,10 @@ jobs:
           report="$RUNNER_TEMP/vitest.json"
           counts="no Vitest report was written" failed=""
           if [ -f "$report" ]; then
-            counts=$(jq -r '"\(.testResults | length) files, \(.numTotalTests) tests: \(.numPassedTests) passed, \(.numFailedTests) failed, \(.numPendingTests + .numTodoTests) skipped by the name filter"' "$report")
-            failed=$(jq -r '[.testResults[] | select(.status == "failed") | .name | sub(".*/test/e2e/"; "")] | join(" ")' "$report")
+            counts=$(jq -r '"\(.testResults | length) files, \(.numTotalTests) tests: \(.numPassedTests) passed, \(.numFailedTests) failed, \(.numPendingTests + .numTodoTests) skipped by the name filter"' "$report") \
+              || counts="the Vitest report is unreadable"
+            failed=$(jq -r '[.testResults[] | select(.status == "failed") | .name | sub(".*/test/e2e/"; "")] | join(" ")' "$report") \
+              || failed=""
           fi
 
           runs=(.turbo/runs/*.json)
@@ -462,7 +469,7 @@ jobs:
               | [$tasks[] | select(.cache.status != "HIT") | "`\(.taskId)`"] as $missed
               | "\(($tasks | length) - ($missed | length)) cached / \($tasks | length) total"
                 + (if ($missed | length) > 0 then "; missed: \($missed | join(", "))" else "" end)
-            ' "${runs[@]}")
+            ' "${runs[@]}") || build="the Turbo run summary is unreadable"
           fi
 
           case "$SPLIT" in
@@ -481,8 +488,8 @@ jobs:
           if [ "$CANCELLED" = true ]; then
             reason=CANCELLED next="The run was cancelled before the lane finished; re-run the job."
           elif [ "$LGTM" = failure ]; then
-            reason=LGTM_NOT_READY next="Grafana LGTM was not ready within 180 s, so the lane did not run. Read the step 'Wait for LGTM' and the container logs in the artifact $ARTIFACT; reproduce with: pnpm lgtm:up"
-          elif [ "$LANE_EXIT" = 124 ]; then
+            reason=LGTM_NOT_READY next="Grafana LGTM did not start or was not ready within 180 s, so the lane did not run. Read the steps 'Start LGTM' and 'Wait for LGTM' and the container logs in the artifact $ARTIFACT; reproduce with: pnpm lgtm:up"
+          elif [ "$LANE_TIMED_OUT" = true ]; then
             reason=E2E_LANE_TIMEOUT next="The lane ran past its 20-minute timeout and was stopped. Find the stalled span in the traces of the artifact $ARTIFACT (load them with test/e2e/scripts/import-traces.ts)."
           elif [ "$LANE" = failure ]; then
             reason=E2E_LANE_FAILED next="Failing files: ${failed:-none reported (read the step 'E2E lane')}. Inspect the traces in the artifact $ARTIFACT; reproduce with: pnpm lgtm:up && pnpm test:e2e -- <file>"
