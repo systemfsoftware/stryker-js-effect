@@ -32,7 +32,7 @@ import { dryRunChoiceOf, requireDryRunCommandOf } from './run/dry-run-choice.js'
 import { reusedTestCoverage } from './run/dry-run-coverage.js'
 import type { HostServices } from './run/host.service.js'
 import { readIncrementalReuse, type RefusalCounts } from './run/incremental-reuse.cell.js'
-import { incrementalReportTextsOf } from './run/incremental-reuse.js'
+import { incrementalReportTextsOf, optionalField } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
@@ -297,19 +297,13 @@ const planProject = (
         id: mutant.id,
         costMs: costOf(mutant.id, reportCosts, coverage, testCoverage),
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
-        ...Option.match(Option.fromUndefinedOr(placementKeyOf(dominatorIds, mutant)), {
-          onNone: () => ({} as const),
-          onSome: (placementKey) => ({ placementKey } as const),
-        }),
+        ...optionalField('placementKey', placementKeyOf(dominatorIds, mutant)),
       })),
       ...reuse.rememberedResults.map((mutant) => ({
         id: mutant.id,
         costMs: 0,
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
-        ...Option.match(Option.fromUndefinedOr(placementKeyOf(dominatorIds, mutant)), {
-          onNone: () => ({} as const),
-          onSome: (placementKey) => ({ placementKey } as const),
-        }),
+        ...optionalField('placementKey', placementKeyOf(dominatorIds, mutant)),
       })),
     ]
     return {

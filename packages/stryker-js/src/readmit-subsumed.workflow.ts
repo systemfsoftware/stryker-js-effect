@@ -79,13 +79,7 @@ export type SubsumptionRuling = typeof SubsumptionRuling.Type
 export const SubsumptionRulings = S.Array(SubsumptionRuling)
 export type SubsumptionRulings = typeof SubsumptionRulings.Type
 
-const RUNNING_STATUSES: ReadonlyArray<Mutant.MutantStatus> = [
-  'Killed',
-  'Survived',
-  'Timeout',
-  'NoCoverage',
-  'RuntimeError',
-]
+const RUNNING_STATUSES: ReadonlyArray<Mutant.MutantStatus> = Settled.fields.status.literals
 
 const runsWithStatus = (status: Mutant.MutantStatus): boolean => Arr.contains(RUNNING_STATUSES, status)
 

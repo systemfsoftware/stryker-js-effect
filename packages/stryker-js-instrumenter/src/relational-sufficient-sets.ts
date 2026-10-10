@@ -17,7 +17,6 @@
 import { RelationalOperator } from './relational-operator.schema.js'
 
 export const RELATIONAL_OPERATORS = RelationalOperator.literals
-export type { RelationalOperator }
 
 export const COMPARISON_OPERATORS = ['<', '<=', '>', '>=', '==', '!='] as const
 export type ComparisonOperator = typeof COMPARISON_OPERATORS[number]

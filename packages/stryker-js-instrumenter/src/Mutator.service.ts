@@ -44,11 +44,8 @@ import type {
 } from './Ast.handle.js'
 import { MutantNotApplied } from './Instrument.schema.js'
 import type { PlannedMutant } from './plan-mutants.workflow.js'
-import {
-  isRelationalOperator,
-  type RelationalOperator,
-  SUFFICIENT_RELATIONAL_SETS,
-} from './relational-sufficient-sets.js'
+import type { RelationalOperator } from './relational-operator.schema.js'
+import { isRelationalOperator, SUFFICIENT_RELATIONAL_SETS } from './relational-sufficient-sets.js'
 
 import { dual } from 'effect/Function'
 import {

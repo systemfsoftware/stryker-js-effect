@@ -25,6 +25,7 @@ import { StageError } from '../Run.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { OrderedRunPlan, SortRunPlans, sortRunPlans } from '../sort-run-plans.workflow.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
+import { optionalField } from './incremental-reuse.js'
 import { sandboxFilesOf } from './mutation-test-plan.js'
 
 const calculateTotalTime = (testResults: Iterable<TestRunner.TestResult>) =>
@@ -82,12 +83,6 @@ const planCommandOf = (
 
 const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
   Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant] as const))
-
-const optionalField = <Value>(key: string, value: Value | undefined): Readonly<Record<string, Value>> =>
-  Option.match(Option.fromUndefinedOr(value), {
-    onNone: (): Readonly<Record<string, Value>> => ({}),
-    onSome: (present) => ({ [key]: present }),
-  })
 
 const isSubsumed = (mutant: Mutant.Mutant): boolean => Option.isSome(Option.fromUndefinedOr(mutant.redundancy))
 

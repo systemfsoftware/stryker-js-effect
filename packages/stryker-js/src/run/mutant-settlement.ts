@@ -133,9 +133,12 @@ const readmitCauseDetailOf = (outcome: ReadmitCauseOutcome): string =>
     Match.exhaustive,
   )
 
-const readmittedOf = (causes: Arr.NonEmptyReadonlyArray<ReadmitCause>): Mutant.Readmitted =>
+const readmittedOf = (
+  rule: Mutant.Subsumed['rule'],
+  causes: Arr.NonEmptyReadonlyArray<ReadmitCause>,
+): Mutant.Readmitted =>
   Mutant.Readmitted.make({
-    rule: 'complement',
+    rule,
     causes: Arr.map(causes, (cause) => ({
       dominator: cause.dominator,
       code: readmitCauseCodeOf(cause.outcome),
@@ -158,7 +161,7 @@ const stillSubsumedResultOf = (entry: HeldSubsumedPlan, running: Mutant.MutantId
 
 const readmittedPlanOf = (entry: HeldSubsumedPlan, ruling: Readmitted): Mutant.RunPlan => ({
   ...entry.plan,
-  mutant: { ...entry.plan.mutant, readmission: readmittedOf(ruling.causes) },
+  mutant: { ...entry.plan.mutant, readmission: readmittedOf(entry.redundancy.rule, ruling.causes) },
 })
 
 const heldDispositionOf = (
