@@ -5,15 +5,13 @@ import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 import { BenchReport } from './bench-report.schema.js'
-import { BenchRunInvalid, BenchRunKey } from './bench-run.schema.js'
+import { BenchRunInvalid } from './bench-run.schema.js'
 import { type BenchPhaseRow, type BenchProjectSummary, PhaseVerdict } from './bench-summary.schema.js'
 
 const round = Math.round
 const abs = Math.abs
 
 const seconds = (ms: number): string => (ms / 1000).toFixed(1)
-
-const keyLabel = (key: BenchRunKey): string => `${key.corpus}/${key.entry} ${key.side}@${key.position}`
 
 const signedSeconds = (deltaMs: number): string =>
   Boolean.match(deltaMs < 0, {
@@ -92,7 +90,7 @@ const invalidLine = (invalid: ReadonlyArray<BenchRunInvalid>): string =>
     'error',
     'Bench invalid',
     `Bench: ${invalid.length} invalid run(s); first ${
-      Option.getOrElse(Option.map(Arr.head(invalid), (run) => keyLabel(run.key)), () => 'unknown')
+      Option.getOrElse(Option.map(Arr.head(invalid), (run) => run.key.label), () => 'unknown')
     }.`,
   )
 

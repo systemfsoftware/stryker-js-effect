@@ -3,7 +3,7 @@ import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 
 import { BenchReport, type BenchReportRun } from './bench-report.schema.js'
-import { BenchRunInvalid, BenchRunKey } from './bench-run.schema.js'
+import { BenchRunInvalid } from './bench-run.schema.js'
 import {
   type BenchPhase,
   type BenchPhaseRow,
@@ -24,8 +24,6 @@ const SIGNAL_NOTE =
 const seconds = (ms: number): string => (ms / 1000).toFixed(1)
 
 const percent = (share: number): string => `${round(share * 100)}%`
-
-const keyLabel = (key: BenchRunKey): string => `${key.corpus}/${key.entry} ${key.side}@${key.position}`
 
 const sideText = (cell: SideCell, phase: BenchPhase): string =>
   Match.value(cell).pipe(
@@ -88,12 +86,12 @@ const projectBlock = (project: BenchProjectSummary): string =>
   ].join('\n\n')
 
 const failureLine = (run: BenchRunInvalid): string =>
-  `- ${keyLabel(run.key)} — ${run.reason}${
+  `- ${run.key.label} — ${run.reason}${
     Boolean.match(run.lineNumber === null, { onTrue: () => '', onFalse: () => ` (line ${run.lineNumber})` })
   }`
 
 const runText = (run: BenchReportRun): string =>
-  `${keyLabel(run.key)} → ${seconds(run.wallMs)}s${
+  `${run.key.label} → ${seconds(run.wallMs)}s${
     Boolean.match(run.exitCode === 0, { onTrue: () => '', onFalse: () => ` (exit ${run.exitCode})` })
   }`
 

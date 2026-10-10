@@ -13,7 +13,11 @@ export class BenchRunKey extends S.Class<BenchRunKey>('BenchRunKey')({
   entry: S.NonEmptyString,
   side: BenchSide,
   position: S.Int,
-}) {}
+}) {
+  get label(): string {
+    return `${this.corpus}/${this.entry} ${this.side}@${this.position}`
+  }
+}
 
 const BenchRunTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchRun')
 type BenchRunTypeId = typeof BenchRunTypeId

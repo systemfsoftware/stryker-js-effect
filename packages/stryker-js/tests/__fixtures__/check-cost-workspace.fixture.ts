@@ -220,18 +220,13 @@ const streamCostsOf = (events: ReadonlyArray<RunEvent.RunEvent>): Readonly<Recor
 const verdictBudgetOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.Budget | null =>
   Option.getOrNull(Option.map(Arr.findLast(events, S.is(RunEvent.VerdictReached)), (event) => event.budget))
 
-const verdictCheckOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.CheckDuration | null =>
+const verdictDurationOf = <A>(
+  events: ReadonlyArray<RunEvent.RunEvent>,
+  pick: (durations: RunEvent.PhaseDurations) => A,
+): A | null =>
   Option.getOrNull(
     Option.flatMap(Arr.findLast(events, S.is(RunEvent.VerdictReached)), (event) =>
-      Option.map(Option.fromNullishOr(event.phaseDurations), (durations) => durations.check)),
-  )
-
-const verdictReportingOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.ReportingDuration | null =>
-  Option.getOrNull(
-    Option.flatMap(
-      Arr.findLast(events, S.is(RunEvent.VerdictReached)),
-      (event) => Option.map(Option.fromNullishOr(event.phaseDurations), (durations) => durations.reporting),
-    ),
+      Option.map(Option.fromNullishOr(event.phaseDurations), pick)),
   )
 
 const phasesOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<RunEvent.RunPhase> =>
@@ -262,8 +257,8 @@ const runEngineWith = (
       ...readReport(text),
       streamCosts: streamCostsOf(events),
       verdictBudget: verdictBudgetOf(events),
-      verdictCheck: verdictCheckOf(events),
-      verdictReporting: verdictReportingOf(events),
+      verdictCheck: verdictDurationOf(events, (durations) => durations.check),
+      verdictReporting: verdictDurationOf(events, (durations) => durations.reporting),
       phases: phasesOf(events),
     }
   }).pipe(Effect.orDie, Effect.provide(filePorts))

@@ -1,4 +1,5 @@
 import {
+  type BenchCorpusName,
   coveringTestFiles,
   CoveringTestFilesCommand,
   type CoveringTestFilesFound,
@@ -20,10 +21,8 @@ import * as S from 'effect/Schema'
 
 export const UNREADABLE_DIGEST_PREFIX = 'unreadable:'
 
-export type WorkloadKind = 'repo' | 'enterprise'
-
 export interface WorkloadDigestInput {
-  readonly kind: WorkloadKind
+  readonly kind: BenchCorpusName
   readonly cwd: string
   readonly sideRoot: string
   readonly incrementalFile: string
@@ -181,15 +180,17 @@ const dedupe = (entries: ReadonlyArray<DigestFile>): ReadonlyArray<DigestFile> =
     .map(([relativePath, bytes]) => ({ relativePath, bytes }))
     .sort((left, right) => left.relativePath.localeCompare(right.relativePath))
 
+const NUL = Uint8Array.of(0)
+
 const digestInput = (entries: ReadonlyArray<DigestFile>): Uint8Array => {
   const encoder = new TextEncoder()
   const chunks = entries.flatMap((entry) => [
     encoder.encode(entry.relativePath),
-    encoder.encode('\0'),
+    NUL,
     encoder.encode(String(entry.bytes.byteLength)),
-    encoder.encode('\0'),
+    NUL,
     entry.bytes,
-    encoder.encode('\0'),
+    NUL,
   ])
   const buffer = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0))
   chunks.reduce((offset, chunk) => {

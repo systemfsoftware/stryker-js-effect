@@ -8,16 +8,9 @@ import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { BenchCorpusName, BenchRun, BenchRunInvalid, BenchRunMeasured, BenchSide } from './bench-run.schema.js'
 import {
-  BenchCorpusName,
-  BenchRun,
-  BenchRunInvalid,
-  BenchRunKey,
-  BenchRunMeasured,
-  BenchSide,
-} from './bench-run.schema.js'
-import {
-  type BenchPhase,
+  BenchPhase,
   BenchPhaseRow,
   BenchProjectSummary,
   BenchSummary,
@@ -34,16 +27,6 @@ const floor = Math.floor
 
 const SEQUENTIAL_PHASES = ['prepare', 'instrument', 'dry-run', 'mutation-test'] as const
 
-const PHASES: ReadonlyArray<BenchPhase> = [
-  'prepare',
-  'instrument',
-  'check',
-  'dry-run',
-  'mutation-test',
-  'reporting',
-  'total',
-]
-
 export class SummarizeBenchCommand extends S.TaggedClass<SummarizeBenchCommand>()('SummarizeBenchCommand', {
   runs: S.Array(BenchRun),
 }) {
@@ -54,7 +37,7 @@ export class BenchRunsInvalid extends S.TaggedError<BenchRunsInvalid>()('BenchRu
   runs: S.Array(BenchRun),
 }) {
   override get message(): string {
-    const labels = Arr.map(this.runs, (run) => keyLabel(run.key)).join(', ')
+    const labels = Arr.map(this.runs, (run) => run.key.label).join(', ')
     return `cannot summarize ${this.runs.length} invalid bench run(s): ${labels}`
   }
 }
@@ -62,8 +45,6 @@ export class BenchRunsInvalid extends S.TaggedError<BenchRunsInvalid>()('BenchRu
 type CorpusName = BenchCorpusName
 
 const CORPORA: ReadonlyArray<CorpusName> = ['repo', 'enterprise']
-
-const keyLabel = (key: BenchRunKey): string => `${key.corpus}/${key.entry} ${key.side}@${key.position}`
 
 const isMeasuredCell = (cell: SideCell): boolean => S.is(SideCell.cases.measured)(cell)
 
@@ -106,12 +87,10 @@ const sequentialRepetitionOf = (
   runs: ReadonlyArray<BenchRunMeasured>,
   total: number,
   pick: (run: BenchRunMeasured) => number,
-): Option.Option<RepetitionMeasurement> =>
-  Option.some({
-    value: Arr.reduce(runs, 0, (sum, run) => sum + pick(run)),
-    notRun: 0,
-    share: shareOf(Arr.reduce(runs, 0, (sum, run) => sum + pick(run)), total),
-  })
+): Option.Option<RepetitionMeasurement> => {
+  const value = Arr.reduce(runs, 0, (sum, run) => sum + pick(run))
+  return Option.some({ value, notRun: 0, share: shareOf(value, total) })
+}
 
 const checkRepetitionOf = (
   runs: ReadonlyArray<BenchRunMeasured>,
@@ -312,20 +291,23 @@ const projectSummaryOf = (
 ): BenchProjectSummary => {
   const workload = workloadOf(runs)
   const workloadSame = S.is(Workload.cases.same)(workload)
-  const suppress = Boolean.or(
-    S.is(SideCell.cases['not-measured'])(sideCellOf(runs, 'A', 'reporting')),
-    S.is(SideCell.cases['not-measured'])(sideCellOf(runs, 'B', 'reporting')),
+  const cells = Arr.map(BenchPhase.literals, (phase) => ({
+    phase,
+    a: sideCellOf(runs, 'A', phase),
+    b: sideCellOf(runs, 'B', phase),
+  }))
+  const isNotMeasured = S.is(SideCell.cases['not-measured'])
+  const suppress = Arr.some(
+    cells,
+    (cell) => Boolean.and(cell.phase === 'reporting', Boolean.or(isNotMeasured(cell.a), isNotMeasured(cell.b))),
   )
-  const rows = Arr.map(PHASES, (phase) => {
-    const a = sideCellOf(runs, 'A', phase)
-    const b = sideCellOf(runs, 'B', phase)
-    return BenchPhaseRow.make({
+  const rows = Arr.map(cells, ({ phase, a, b }) =>
+    BenchPhaseRow.make({
       phase,
       a,
       b,
       verdict: verdictOf(a, b, workloadSame, Boolean.and(phase === 'mutation-test', suppress), phase),
-    })
-  })
+    }))
   return BenchProjectSummary.make({
     corpus,
     entry,

@@ -277,10 +277,11 @@ const checkedGroupsFor = (
                 (group) =>
                   onCheckerSlot(pool, checkerIndex, (checker) =>
                     Effect.gen(function*() {
+                      const phaseClock = yield* PhaseClock
                       const startedAt = yield* Clock.currentTimeMillis
                       const [elapsed, checked] = yield* Effect.timed(checkPlansWithChecker(checker, checkerName, group))
                       const endedAt = yield* Clock.currentTimeMillis
-                      yield* (yield* PhaseClock).recordCheckerBusy({ startMs: startedAt, endMs: endedAt })
+                      yield* phaseClock.recordCheckerBusy({ startMs: startedAt, endMs: endedAt })
                       const split = yield* splitCheckedPlans(checked)
                       return { split, charged: chargedWith(carried, group, Duration.toMillis(elapsed)) }
                     })),

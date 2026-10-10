@@ -1,4 +1,4 @@
-import type { BenchRepoEntry, BenchSide } from '@systemfsoftware/stryker-e2e-core'
+import type { BenchRepoEntry, BenchSide, SetupStep } from '@systemfsoftware/stryker-e2e-core'
 
 export interface PreparedRepoEntry {
   readonly entry: BenchRepoEntry
@@ -16,5 +16,5 @@ export interface PreparedSide {
     readonly cli: string
     readonly configFile: string
   }
-  readonly setupSteps: ReadonlyArray<{ readonly name: string; readonly ms: number }>
+  readonly setupSteps: ReadonlyArray<SetupStep>
 }

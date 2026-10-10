@@ -13,6 +13,7 @@ import {
   parseFixtureManifest,
   parseWorkspaceCatalogs,
   resolveCatalogSpecs,
+  type SetupStep,
   type StagedFixtureManifest,
   type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
@@ -25,8 +26,6 @@ import {
   WorkspaceListing,
 } from './prepare-side.schema.js'
 import type { PreparedRepoEntry, PreparedSide } from './prepared-side.js'
-
-export { BenchSetupFailed } from './prepare-side.schema.js'
 
 export interface PrepareSideInput {
   readonly side: BenchSide
@@ -54,11 +53,6 @@ interface PackedTarball {
   readonly tarballPath: string
 }
 
-interface SetupStep {
-  readonly name: string
-  readonly ms: number
-}
-
 interface Timed<A> {
   readonly value: A
   readonly step: SetupStep
@@ -74,20 +68,14 @@ const TYPESCRIPT_CHECKER_BUILD_FILTER = '@systemfsoftware/stryker-js-typescript-
 const CLI_MAIN_RELATIVE = ['packages', 'stryker-js', 'dist', 'main.mjs'] as const
 const ENTERPRISE_CLI_RELATIVE = ['node_modules', '@systemfsoftware', 'stryker-js', 'dist', 'main.mjs'] as const
 
-const ENGINE_BUILD_DIRS = [
-  'packages/stryker-js',
-  'packages/stryker-js-vitest-runner',
-  'packages/stryker-js-typescript-checker',
-  'packages/ignorers/effect-schema-declarations',
-  'packages/ignorers/in-source-vitest-block',
-] as const
-
 const VITEST_RUNNER_DIR = 'packages/stryker-js-vitest-runner'
 const TYPESCRIPT_CHECKER_DIR = 'packages/stryker-js-typescript-checker'
 const IGNORER_DIRS = [
   'packages/ignorers/effect-schema-declarations',
   'packages/ignorers/in-source-vitest-block',
 ] as const
+
+const ENGINE_BUILD_DIRS = ['packages/stryker-js', VITEST_RUNNER_DIR, TYPESCRIPT_CHECKER_DIR, ...IGNORER_DIRS] as const
 
 const STEP_REPO_BUILD = 'turbo build the repo corpus projects'
 const STEP_CONFIGS = 'write the per-entry bench configs'

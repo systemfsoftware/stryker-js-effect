@@ -1,6 +1,6 @@
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
-import { BenchCorpusJson, type BenchRun, type BenchRunKey } from '@systemfsoftware/stryker-e2e-core'
+import { BenchCorpusJson, type BenchRun, type SetupStep } from '@systemfsoftware/stryker-e2e-core'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
@@ -15,11 +15,6 @@ import { BenchOrchestrationFailed } from './bench-failure.schema.js'
 import { prepareSide } from './prepare-side.service.js'
 import { runBench } from './run-bench.service.js'
 
-interface SetupStep {
-  readonly name: string
-  readonly ms: number
-}
-
 const BENCH_WORK_DIR = 'bench-work'
 const BENCH_RUNS_DIR = 'bench-runs'
 const BENCH_REPORT_DIR = 'bench-report'
@@ -27,18 +22,16 @@ const BENCH_REPORT_FILE = 'bench-report.json'
 const CORPUS_FILE = ['test', 'bench', 'corpus.json'] as const
 const TURBO_CACHE_DIR = ['.turbo', 'cache'] as const
 
-const keyText = (key: BenchRunKey): string => `${key.corpus}/${key.entry} ${key.side}@${key.position}`
-
 const runLogLine = (run: BenchRun): string =>
   Match.value(run).pipe(
     Match.tag(
       'measured',
       (measured) =>
-        `bench run ${keyText(measured.key)} wall ${
+        `bench run ${measured.key.label} wall ${
           (measured.wallMs / 1000).toFixed(1)
         }s exit ${measured.exitCode} mutants ${measured.mutants} testsExecuted ${measured.testsExecuted}`,
     ),
-    Match.tag('invalid', (invalid) => `bench run ${keyText(invalid.key)} invalid: ${invalid.reason}`),
+    Match.tag('invalid', (invalid) => `bench run ${invalid.key.label} invalid: ${invalid.reason}`),
     Match.exhaustive,
   )
 

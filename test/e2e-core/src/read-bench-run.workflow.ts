@@ -23,12 +23,9 @@ export class ReadBenchRunCommand extends S.TaggedClass<ReadBenchRunCommand>()('R
 
 const isBlank = (line: string): boolean => line.trim().length === 0
 
-const isTested = S.is(RunEvent.RunMutantTestedEvent)
-const isVerdict = S.is(RunEvent.VerdictReached)
+const isTestedEvent = S.is(RunEvent.RunMutantTestedEvent)
 
-const isTestedEvent = (event: RunEvent.RunEvent): event is RunEvent.RunMutantTestedEvent => isTested(event)
-
-const isVerdictEvent = (event: RunEvent.RunEvent): event is RunEvent.VerdictReached => isVerdict(event)
+const isVerdictEvent = S.is(RunEvent.VerdictReached)
 
 const undecodable = (command: ReadBenchRunCommand, lineNumber: number, reason: string): BenchRunInvalid =>
   BenchRunInvalid.make({

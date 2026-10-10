@@ -3,8 +3,16 @@ import * as S from 'effect/Schema'
 
 import { BenchCorpusName } from './bench-run.schema.js'
 
-const PHASES = ['prepare', 'instrument', 'check', 'dry-run', 'mutation-test', 'reporting', 'total'] as const
-export type BenchPhase = (typeof PHASES)[number]
+export const BenchPhase = S.Literals([
+  'prepare',
+  'instrument',
+  'check',
+  'dry-run',
+  'mutation-test',
+  'reporting',
+  'total',
+])
+export type BenchPhase = typeof BenchPhase.Type
 
 export const SideCell = S.TaggedUnion({
   measured: {
@@ -28,7 +36,7 @@ export const PhaseVerdict = S.TaggedUnion({
 export type PhaseVerdict = typeof PhaseVerdict.Type
 
 export class BenchPhaseRow extends S.Class<BenchPhaseRow>('BenchPhaseRow')({
-  phase: S.Literals(PHASES),
+  phase: BenchPhase,
   a: SideCell,
   b: SideCell,
   verdict: PhaseVerdict,

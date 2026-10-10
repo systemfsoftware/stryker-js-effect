@@ -1,6 +1,7 @@
 import {
   BENCH_ORDER,
   type BenchCorpus,
+  type BenchCorpusName,
   BenchReport,
   BenchReportJson,
   type BenchRun,
@@ -12,6 +13,7 @@ import {
   ReadBenchRunCommand,
   renderBenchAnnotation,
   renderBenchSummary,
+  type SetupStep,
   summarizeBench,
   SummarizeBenchCommand,
 } from '@systemfsoftware/stryker-e2e-core'
@@ -27,7 +29,7 @@ import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
 import type { PreparedSide } from './prepared-side.js'
-import { workloadDigest, type WorkloadKind } from './workload-digest.service.js'
+import { workloadDigest } from './workload-digest.service.js'
 
 export interface RunBenchInput {
   readonly corpus: BenchCorpus
@@ -35,7 +37,7 @@ export interface RunBenchInput {
   readonly sideB: PreparedSide
   readonly runsRoot: string
   readonly reportPath: string
-  readonly setupSteps: ReadonlyArray<{ readonly name: string; readonly ms: number }>
+  readonly setupSteps: ReadonlyArray<SetupStep>
   readonly baseSha: string
   readonly headSha: string
 }
@@ -56,7 +58,7 @@ type BenchPlatform =
   | Crypto.Crypto
 
 interface RunParams {
-  readonly corpus: 'repo' | 'enterprise'
+  readonly corpus: BenchCorpusName
   readonly entry: string
   readonly side: BenchSide
   readonly position: number
@@ -131,8 +133,12 @@ const runOne = (input: RunBenchInput, params: RunParams): Effect.Effect<BenchRun
     const wallMs = (yield* Clock.currentTimeMillis) - startedAt
 
     const lines = yield* streamLines(fs, streamFile)
-    const kind: WorkloadKind = params.corpus
-    const digest = yield* workloadDigest({ kind, cwd: params.cwd, sideRoot: params.sideRoot, incrementalFile })
+    const digest = yield* workloadDigest({
+      kind: params.corpus,
+      cwd: params.cwd,
+      sideRoot: params.sideRoot,
+      incrementalFile,
+    })
     const key = BenchRunKey.make({
       corpus: params.corpus,
       entry: params.entry,
@@ -220,7 +226,7 @@ export const runBench = (input: RunBenchInput): Effect.Effect<RunBenchResult, ne
     return {
       markdown,
       annotationLine,
-      outcome: Result.isFailure(summary) ? 'failed' : 'summarized',
+      outcome: outcome._tag,
       runs,
     }
   })

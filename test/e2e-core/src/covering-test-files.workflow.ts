@@ -66,7 +66,9 @@ const coveringFileNamesOf = (
   testFileById: Record.ReadonlyRecord<string, string>,
 ): Result.Result<ReadonlyArray<string>, string> =>
   Result.map(
-    Result.all(Arr.map(coveringIdsOf(files), (id) => Result.fromOption(Record.get(testFileById, id), () => id))),
+    Result.all(
+      Arr.map(Arr.dedupe(coveringIdsOf(files)), (id) => Result.fromOption(Record.get(testFileById, id), () => id)),
+    ),
     (testFiles) => Arr.sort(Arr.dedupe(testFiles), Order.String),
   )
 
