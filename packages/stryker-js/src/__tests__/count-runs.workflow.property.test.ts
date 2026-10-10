@@ -1,6 +1,7 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -43,6 +44,16 @@ const sumOf = (values: ReadonlyArray<number>): number => values.reduce((sum, val
 
 const statusTotal = (counts: RunCounts): number => sumOf(Object.values(counts.statuses))
 
+const encodeIgnoreReason = S.encodeOption(Mutant.IgnoreStatusReason)
+
+const ignoredOnceCommandOf = (statusReason: string): CountRunsCommand =>
+  CountRunsCommand.make({
+    reports: [{
+      project: 'p0',
+      report: { files: { 'src/f0.ts': { mutants: [{ id: 'm0', status: 'Ignored', statusReason }] } } },
+    }],
+  })
+
 describe('countRuns', () => {
   it.prop(
     '∀c_CountRunsCommand_≡ShouldRefuseWhenNoReportRecordsAMutant',
@@ -78,6 +89,23 @@ describe('countRuns', () => {
             sumOf(counts.total.ignoredByRule.map((entry) => entry.count)) + counts.total.ignoredUnrecognized ===
               ignored.length
         },
+      }),
+  )
+
+  it.prop(
+    '∀r_IgnoreStatusReason_≡ShouldCountTheReasonCodeOnceWhenOneIgnoredMutantCarriesIt',
+    { of: [Mutant.IgnoreStatusReason], subject: countRuns },
+    (subject, [reason]) =>
+      Option.match(encodeIgnoreReason(reason), {
+        onNone: () => false,
+        onSome: (statusReason) =>
+          Result.match(subject(ignoredOnceCommandOf(statusReason)), {
+            onFailure: () => false,
+            onSuccess: (counts) =>
+              counts.total.ignoredUnrecognized === 0 &&
+              counts.total.ignoredByRule.length === 1 &&
+              counts.total.ignoredByRule.every((entry) => entry.rule === reason.code && entry.count === 1),
+          }),
       }),
   )
 })
