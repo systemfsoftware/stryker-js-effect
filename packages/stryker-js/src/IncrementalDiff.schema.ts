@@ -16,6 +16,7 @@ export const ReuseRefusalReasonSchema = S.Literals([
   'entryUnreadable',
   'storeUnavailable',
   'noPriorRecord',
+  'decidedPerRun',
 ])
 
 export type ReuseRefusalReason = typeof ReuseRefusalReasonSchema.Type

@@ -38,7 +38,7 @@ import { dryRunChoiceOf, requireDryRunCommandOf } from './run/dry-run-choice.js'
 import { reusedTestCoverage } from './run/dry-run-coverage.js'
 import type { HostServices } from './run/host.service.js'
 import { readIncrementalReuse } from './run/incremental-reuse.cell.js'
-import { incrementalReportTextOf } from './run/incremental-reuse.js'
+import { incrementalReportTextOf, optionalField } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
@@ -150,6 +150,7 @@ interface ProjectPlan {
     readonly id: Mutant.MutantId
     readonly costMs: number
     readonly dependsOnDryRun: boolean
+    readonly placementKey?: Mutant.MutantId | undefined
   }>
   readonly dryRunCostMs: number
   readonly reuse: ReuseObservation
@@ -197,6 +198,28 @@ const checkerDigestsAtPlanTime = Effect.fnUntraced(function*(checker: CheckerAtP
     }),
   } satisfies CheckerDigestsAtPlanTime
 })
+
+const subsumedOf = (mutant: Mutant.Mutant): Option.Option<Mutant.Subsumed> =>
+  Option.filter(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed))
+
+const dominatorIdsOf = (mutants: readonly Mutant.Mutant[]): ReadonlySet<Mutant.MutantId> =>
+  new Set(mutants.flatMap((mutant) =>
+    Option.match(subsumedOf(mutant), {
+      onNone: () => [],
+      onSome: (subsumed) => subsumed.dominators,
+    })
+  ))
+
+const placementKeyOf = (
+  dominatorIds: ReadonlySet<Mutant.MutantId>,
+  mutant: Mutant.Mutant,
+): Mutant.MutantId | undefined =>
+  Option.getOrUndefined(
+    Option.orElse(
+      Option.map(subsumedOf(mutant), (subsumed) => subsumed.dominators[0]),
+      () => Option.liftPredicate(mutant.id, (id) => dominatorIds.has(id)),
+    ),
+  )
 
 const planProject = (
   request: PlanShardsRequest,
@@ -264,16 +287,19 @@ const planProject = (
           () => DEFAULT_MUTANT_COST_MS,
         ),
     })
+    const dominatorIds = dominatorIdsOf(reuse.mutants)
     const mutants = [
       ...reuse.mutants.map((mutant) => ({
         id: mutant.id,
         costMs: costOf(mutant.id, storedCosts, coverage, testCoverage),
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
+        ...optionalField('placementKey', placementKeyOf(dominatorIds, mutant)),
       })),
       ...reuse.rememberedResults.map((mutant) => ({
         id: mutant.id,
         costMs: 0,
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
+        ...optionalField('placementKey', placementKeyOf(dominatorIds, mutant)),
       })),
     ]
     return {

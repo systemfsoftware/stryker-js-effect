@@ -20,13 +20,15 @@ export function withTax(price: number, rate: number): number {
 
 // @stryker-expect next-line Killed: BlockStatement
 export function isFree(price: number): boolean {
-  // @stryker-expect next-line Killed: ConditionalExpression, EqualityOperator
+  // @stryker-expect next-line Killed: ConditionalExpression, EqualityOperator="price < 0"
+  // @stryker-expect next-line Ignored: EqualityOperator="price > 0"
   return price <= 0
 }
 
 // @stryker-expect next-line Killed: BlockStatement
 export function isBulk(quantity: number): boolean {
-  // @stryker-expect next-line Killed: ConditionalExpression, EqualityOperator
+  // @stryker-expect next-line Killed: ConditionalExpression, EqualityOperator="quantity > 10"
+  // @stryker-expect next-line Ignored: EqualityOperator="quantity < 10"
   return quantity >= 10
 }
 

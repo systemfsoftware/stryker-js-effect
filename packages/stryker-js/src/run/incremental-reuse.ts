@@ -1,12 +1,25 @@
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 
 import { IncrementalVersionHeaderSchema } from '../IncrementalReport.schema.js'
 import { INCREMENTAL_CACHE_VERSION } from '../verdict-semantics.js'
+
+export const optionalField: {
+  <A>(field: string, value: A | undefined): Record<string, A>
+  <A>(value: A | undefined): (field: string) => Record<string, A>
+} = dual(
+  2,
+  <A>(field: string, value: A | undefined): Record<string, A> =>
+    Option.match(Option.fromUndefinedOr(value), {
+      onNone: (): Record<string, A> => ({}),
+      onSome: (present) => ({ [field]: present }),
+    }),
+)
 
 export interface IncrementalReportTextInput {
   readonly basePath: string

@@ -252,6 +252,28 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
+    '∀eds_EntryDominatorAndStored_≡ASubsumedMutantIsNeverRememberedAndRunsAsDecidedPerRunWhereTheEntryWouldBe',
+    { of: [VerdictEntrySchema, Mutant.MutantId, S.Boolean], subject: incrementalDiff },
+    (subject, [entry, dominator, stored]) => {
+      const lookup = lookupOf(currentOf(entry), stored ? [readable(entry)] : [])
+      const subsumed = {
+        ...lookup,
+        mutant: Mutant.Mutant.make({
+          ...lookup.mutant,
+          status: 'Ignored',
+          subsumption: Mutant.Subsumed.make({ rule: 'complement', dominators: [dominator] }),
+        }),
+      }
+      const unreproduced = S.is(TestedEntrySchema)(entry) && entry.status === 'Timeout' &&
+        entry.timeoutKind !== 'hitLimit' && (entry.reproductions ?? 0) < 1
+      return runsWithRefusal(
+        subject(commandOf([subsumed])),
+        stored && unreproduced ? 'timeoutUnreproduced' : 'decidedPerRun',
+      )
+    },
+  )
+
+  it.prop(
     '∀tcb_TestedAndCheckerEntries_≡TheNewestCurrentEntryIsRememberedWhateverItsKind',
     { of: [TestedEntrySchema, CheckerEntrySchema, S.Boolean], subject: incrementalDiff },
     (subject, [tested, checker, checkerIsNewer]) => {

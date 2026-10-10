@@ -1,5 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Result from 'effect/Result'
@@ -11,14 +12,35 @@ const LOCATION = '"location":{"start":{"line":1,"column":1},"end":{"line":1,"col
 
 const COST = '{"fixedOverheadMs":1,"testBodyMs":2,"testsExecuted":1,"shared":false}'
 
-const WORKER = '{"_tag":"worker","schemaVersion":"7.0","role":"testRunner","index":0,"startupMs":12.5}'
+const WORKER = '{"_tag":"worker","schemaVersion":"8.0","role":"testRunner","index":0,"startupMs":12.5}'
+
+const READS_NOWHERE = '"subsumption":null'
 
 const NO_REASON = 'null'
 
 const mutantLine = (status: string, file: string | null, cost: string, reason: string = NO_REASON): string =>
   `{"_tag":"mutant","id":"0000000000000001","status":"${status}",${
     file === null ? '' : `"file":"${file}",`
-  }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${cost},"statusReason":${reason}}`
+  }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${cost},"statusReason":${reason},${READS_NOWHERE}}`
+
+const SUBSUMED_REFERENCE = '{"_tag":"Subsumed","rule":"complement","dominators":["0000000000000002"]}'
+
+const READMITTED_REFERENCE =
+  '{"_tag":"Readmitted","rule":"complement","causes":[{"dominator":"0000000000000002","code":"dominator-compile-error","detail":"x"}]}'
+
+const IGNORED_REASON = '"redundant-relational: subsumed by 0000000000000002"'
+
+const lineWith = (status: string, reason: string, subsumption: string): string =>
+  `{"_tag":"mutant","id":"0000000000000001","status":"${status}","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${COST},"statusReason":${reason},"subsumption":${subsumption}}`
+
+const subsumedReferenceOf = (line: string): string =>
+  Result.match(S.decodeResult(RunEvent.RunEventWireLine)(line), {
+    onFailure: (failure) => `refused: ${failure.message}`,
+    onSuccess: (event) =>
+      S.is(RunEvent.RunMutantTestedEvent)(event) && S.is(Mutant.Subsumed)(event.subsumption)
+        ? `subsumedBy: ${event.subsumption.dominators[0]}`
+        : 'noReference',
+  })
 
 const reasonOf = (line: string): string | null => {
   const decoded = S.decodeResult(RunEvent.RunEventWireLine)(line)
@@ -98,7 +120,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
             Effect.sync(() => ({
               present: mutantLine('Killed', 'src/a.ts', COST),
               absent:
-                `{"_tag":"mutant","id":"0000000000000001","status":"Killed","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"statusReason":null}`,
+                `{"_tag":"mutant","id":"0000000000000001","status":"Killed","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"statusReason":null,${READS_NOWHERE}}`,
             })),
         ),
         When('each line is decoded through the wire codec')(
@@ -109,6 +131,63 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           expect(s.outcomes).toEqual({
             present: 'accepted: mutantTested',
             absent: expect.stringMatching(/^refused:[\s\S]*cost/),
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A mutant line carries its subsumption reference while a line omitting the subsumption key is refused',
+      Gherkin.Do.pipe(
+        Given('a mutant line naming a Subsumed reference and one omitting subsumption')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              referenced: lineWith('Ignored', IGNORED_REASON, SUBSUMED_REFERENCE),
+              bare:
+                `{"_tag":"mutant","id":"0000000000000001","status":"Ignored","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${COST},"statusReason":${IGNORED_REASON}}`,
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'outcomes',
+          (s) =>
+            Effect.sync(() => ({
+              referenced: subsumedReferenceOf(s.probes.referenced),
+              bare: refusalOf(s.probes.bare),
+            })),
+        ),
+        Then('the reference is read from the line and the line omitting the key is refused')((s, expect) =>
+          expect(s.outcomes).toEqual({
+            referenced: 'subsumedBy: 0000000000000002',
+            bare: expect.stringMatching(/^refused:[\s\S]*subsumption/),
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A subsumption reference that contradicts the line status is refused',
+      Gherkin.Do.pipe(
+        Given('Subsumed and Readmitted references on Ignored and Killed lines')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              subsumedIgnored: lineWith('Ignored', IGNORED_REASON, SUBSUMED_REFERENCE),
+              subsumedKilled: lineWith('Killed', NO_REASON, SUBSUMED_REFERENCE),
+              readmittedKilled: lineWith('Killed', NO_REASON, READMITTED_REFERENCE),
+              readmittedIgnored: lineWith('Ignored', IGNORED_REASON, READMITTED_REFERENCE),
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'outcomes',
+          (s) => Effect.sync(() => refusalsOf(s.probes)),
+        ),
+        Then('only a Subsumed Ignored line and a Readmitted line that is not Ignored are accepted')((s, expect) =>
+          expect(s.outcomes).toEqual({
+            subsumedIgnored: 'accepted: mutantTested',
+            subsumedKilled: expect.stringMatching(/^refused:[\s\S]*Subsumed reference only on an Ignored/),
+            readmittedKilled: 'accepted: mutantTested',
+            readmittedIgnored: expect.stringMatching(/^refused:[\s\S]*Subsumed reference only on an Ignored/),
           })
         ),
       ),
@@ -198,7 +277,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           () =>
             Effect.sync(() => ({
               declared: WORKER,
-              undeclared: '{"_tag":"worker","schemaVersion":"7.0","role":"testRunner","index":0}',
+              undeclared: '{"_tag":"worker","schemaVersion":"8.0","role":"testRunner","index":0}',
             })),
         ),
         When('each line is decoded through the wire codec')(

@@ -34,7 +34,7 @@ const verifyReuseAcrossMachines = (
     secondFailure: failureTailOf(runs.second),
     firstRan: runs.firstReuse.ran > 0,
     firstReused: runs.firstReuse.reused,
-    firstWithoutPriorEntry: runs.firstReuse.refused.noPriorRecord,
+    firstWithoutPriorEntry: runs.firstReuse.refused.noPriorRecord + (runs.firstReuse.refused.decidedPerRun ?? 0),
     secondMeetsTheReuseFloor: reuseRatioOf(runs.secondReuse) >= REUSE_FLOOR,
     secondUnreadable: runs.secondReuse.refused.entryUnreadable,
     secondStoreUnavailable: runs.secondReuse.refused.storeUnavailable,

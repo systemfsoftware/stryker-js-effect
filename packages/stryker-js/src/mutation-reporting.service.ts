@@ -180,6 +180,21 @@ interface MutantOutcome {
   readonly testsCompleted?: number | undefined
 }
 
+const subsumptionOf = (
+  mutant: Mutant.MutantTestCoverage,
+  status: Mutant.RunMutantResult['status'],
+): { readonly subsumption?: Mutant.Subsumption } =>
+  Option.match(
+    Option.filter(
+      Option.fromUndefinedOr(mutant.subsumption),
+      (subsumption) => Mutant.subsumptionMatchesStatus(subsumption, status),
+    ),
+    {
+      onNone: () => ({}),
+      onSome: (subsumption) => ({ subsumption }),
+    },
+  )
+
 const reportMutant = (
   mutant: Mutant.MutantTestCoverage,
   status: Mutant.RunMutantResult['status'],
@@ -198,6 +213,7 @@ const reportMutant = (
       static: mutant.static,
       testsCompleted: mutant.testsCompleted,
       description: mutant.description,
+      ...subsumptionOf(mutant, status),
       ...outcome,
     }) satisfies Mutant.RunMutantResult,
   )
@@ -337,6 +353,7 @@ const reportMutantOf = (
   ...presentField('static', mutant.static),
   ...presentField('killedBy', remap.testIds(mutant.killedBy)),
   ...presentField('coveredBy', remap.testIds(mutant.coveredBy)),
+  ...presentField('subsumption', mutant.subsumption),
 })
 
 const reportTestOf = (test: TestRunner.TestResult, remap: TestIdRemap) =>

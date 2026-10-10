@@ -1,7 +1,7 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
-import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
@@ -38,6 +38,7 @@ interface Verdict {
   readonly id: string
   readonly status: string
   readonly reason: string
+  readonly subsumption: string
 }
 
 interface ExecOutcome {
@@ -74,10 +75,16 @@ const spawnCli = (
 
 const decodeTested = S.decodeUnknownOption(S.fromJsonString(RunEvent.RunMutantTested))
 
+const testedOfStream = (text: string): readonly RunEvent.RunMutantTested[] =>
+  text.split('\n').flatMap((line) => Option.toArray(decodeTested(line.trim())))
+
 const verdictsOfStream = (text: string): readonly Verdict[] =>
-  text.split('\n')
-    .flatMap((line) => Option.toArray(decodeTested(line.trim())))
-    .map((tested): Verdict => ({ id: tested.id, status: tested.status, reason: tested.statusReason ?? '' }))
+  testedOfStream(text).map((tested): Verdict => ({
+    id: tested.id,
+    status: tested.status,
+    reason: tested.statusReason ?? '',
+    subsumption: tested.subsumption === null ? '' : JSON.stringify(tested.subsumption),
+  }))
 
 const decodeReport = S.decodeUnknownOption(S.fromJsonString(Report.MutationTestResult))
 
@@ -90,9 +97,15 @@ const verdictsOfReport = (text: string): readonly Verdict[] =>
           id: mutant.id,
           status: mutant.status,
           reason: mutant.statusReason ?? '',
+          subsumption: mutant['subsumption'] === undefined ? '' : JSON.stringify(mutant['subsumption']),
         }))
       ),
   })
+
+const subsumedPairsOf = (text: string): readonly string[] =>
+  testedOfStream(text).flatMap((tested) =>
+    S.is(Mutant.Subsumed)(tested.subsumption) ? [tested.id, tested.subsumption.dominators[0]] : []
+  )
 
 const planOf = (first: ReadonlyArray<string>, second: ReadonlyArray<string>): ShardPlan => ({
   version: 1,
@@ -133,6 +146,7 @@ const prepareFixture = (): Effect.Effect<
     yield* fs.writeFileString(path.join(root, 'package.json'), CONSUMER_PACKAGE)
     yield* fs.writeFileString(path.join(root, 'src', 'add.js'), 'export const add = (a, b) => a + b\n')
     yield* fs.writeFileString(path.join(root, 'src', 'log.js'), "export const log = (a) => console.log('adding', a)\n")
+    yield* fs.writeFileString(path.join(root, 'src', 'order.js'), 'export const less = (a, b) => (a < b ? 1 : 0)\n')
     yield* fs.writeFileString(path.join(root, 'stryker.config.mjs'), CONFIG)
     const ran = yield* spawnCli(root, ['run'])
     yield* Effect.when(
@@ -143,7 +157,8 @@ const prepareFixture = (): Effect.Effect<
     const unsharded = verdictsOfStream(stream)
     const ids = Arr.sort(Arr.dedupe(unsharded.map((verdict) => verdict.id)), Order.String)
     const half = Math.ceil(ids.length / 2)
-    const plan = planOf(ids.slice(0, half), ids.slice(half))
+    const first = Arr.dedupe([...subsumedPairsOf(stream), ...ids.slice(0, half)])
+    const plan = planOf(first, ids.filter((id) => !first.includes(id)))
     yield* fs.writeFileString(path.join(root, 'plan.json'), yield* encodePlan(plan))
     return { root, unsharded, ids }
   }).pipe(Effect.orDie)
@@ -222,17 +237,18 @@ const statusMapOf = (verdicts: readonly Verdict[]): Readonly<Record<string, stri
   Object.fromEntries(
     [...verdicts].sort((left, right) => left.id.localeCompare(right.id)).map((verdict) => [
       verdict.id,
-      `${verdict.status} ${verdict.reason}`,
+      `${verdict.status} ${verdict.reason} ${verdict.subsumption}`,
     ]),
   )
 
 const ruleReasonsOf = (verdicts: readonly Verdict[]): readonly string[] =>
-  Arr.dedupe(
-    verdicts.flatMap((verdict) => verdict.status === 'Ignored' ? [verdict.reason.split(':')[0] ?? ''] : []),
+  Arr.sort(
+    Arr.dedupe(verdicts.flatMap((verdict) => verdict.status === 'Ignored' ? [verdict.reason.split(':')[0] ?? ''] : [])),
+    Order.String,
   )
 
-const testedIdsOf = (verdicts: readonly Verdict[]): readonly string[] =>
-  Arr.sort(verdicts.filter((verdict) => verdict.status !== 'Ignored').map((verdict) => verdict.id), Order.String)
+const contentKeyedIdsOf = (verdicts: readonly Verdict[]): readonly string[] =>
+  Arr.sort(verdicts.filter((verdict) => verdict.subsumption === '').map((verdict) => verdict.id), Order.String)
 
 const decodeVerdictLine = S.decodeUnknownOption(S.fromJsonString(RunEvent.VerdictReached))
 
@@ -353,24 +369,28 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
         Given('a fixture whose unsharded run and two-shard plan are prepared')('fixture', () => prepareFixture()),
         When('the shards run and merge, and a doctored plan is merged')('outcome', (s) => runAndMerge(s.fixture)),
         Then(
-          'the merged statuses and reasons cover every mutant, every tested verdict is stored, and the doctored merge fails naming the id',
+          'the merged statuses, reasons and subsumption references cover every mutant, every verdict no subsumption decided is stored, and the doctored merge fails naming the id',
         )(
           (s, expect) =>
             expect({
               merged: statusMapOf(s.outcome.merged),
               storedIds: s.outcome.storedIds,
               mergedIgnoredRules: ruleReasonsOf(s.outcome.merged),
+              subsumedInUnsharded: Object.values(statusMapOf(s.fixture.unsharded)).some((entry) =>
+                entry.includes('"_tag":"Subsumed"')
+              ),
               unsharded: statusMapOf(s.fixture.unsharded),
               unshardedIds: s.fixture.ids,
               doctoredFailed: s.outcome.doctored.exitCode !== 0,
               doctoredNamesId: s.outcome.doctored.output.includes(s.outcome.doctored.id),
             }).toEqual({
               merged: statusMapOf(s.fixture.unsharded),
-              storedIds: testedIdsOf(s.fixture.unsharded),
-              mergedIgnoredRules: ['arid-logging'],
+              storedIds: contentKeyedIdsOf(s.fixture.unsharded),
+              mergedIgnoredRules: ['arid-logging', 'redundant-relational'],
               unsharded: statusMapOf(s.fixture.unsharded),
               unshardedIds: s.fixture.ids,
               doctoredFailed: true,
+              subsumedInUnsharded: true,
               doctoredNamesId: true,
             }),
         ),
@@ -412,7 +432,7 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
           expect({
             exitCode: s.outcome.exitCode === 0 ? 0 : 1,
             namesWrittenVersion: s.outcome.output.includes('6.0'),
-            namesExpectedVersion: s.outcome.output.includes('7.0'),
+            namesExpectedVersion: s.outcome.output.includes('8.0'),
           }).toEqual({ exitCode: 1, namesWrittenVersion: true, namesExpectedVersion: true })
         ),
       ),

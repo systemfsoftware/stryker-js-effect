@@ -344,9 +344,23 @@ const flakyMutantIdsOf = (command: IncrementalDiffCommand): HashSet.HashSet<stri
 const flakyDependent = (flaky: HashSet.HashSet<string>, mutant: Mutant.Mutant): boolean =>
   Boolean.or(HashSet.has(flaky, mutant.id), Boolean.and(mutant.static === true, HashSet.size(flaky) > 0))
 
+const isSubsumptionDecided = (lookup: VerdictLookup): boolean => lookup.mutant.subsumption !== undefined
+
+const perRunRefusalOf = (lookup: VerdictLookup, refusal: ReuseRefusalReason): ReuseRefusalReason =>
+  Boolean.match(Boolean.and(refusal === 'noPriorRecord', isSubsumptionDecided(lookup)), {
+    onTrue: (): ReuseRefusalReason => 'decidedPerRun',
+    onFalse: () => refusal,
+  })
+
+const rememberableEntryOf = (command: IncrementalDiffCommand, lookup: VerdictLookup): Option.Option<VerdictEntry> =>
+  Option.filter(
+    matchingEntryOf(lookup),
+    () => Boolean.nor(command.closureAnalysisFailed, isSubsumptionDecided(lookup)),
+  )
+
 const decideFromStore = (command: IncrementalDiffCommand, lookup: VerdictLookup): IncrementalDiffDecision =>
-  Option.match(Option.filter(matchingEntryOf(lookup), () => Boolean.not(command.closureAnalysisFailed)), {
-    onNone: () => toRunOf(lookup, refusalOfLookup(lookup, command.closureAnalysisFailed)),
+  Option.match(rememberableEntryOf(command, lookup), {
+    onNone: () => toRunOf(lookup, perRunRefusalOf(lookup, refusalOfLookup(lookup, command.closureAnalysisFailed))),
     onSome: (entry) => rememberedOf(lookup.mutant, entry),
   })
 

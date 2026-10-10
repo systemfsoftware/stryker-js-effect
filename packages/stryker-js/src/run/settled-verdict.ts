@@ -139,12 +139,17 @@ const checkerEntryOf = (settled: SettledVerdict): Option.Option<VerdictEntry> =>
     ...measuredOf(settled),
   }))
 
-export const settledEntryOf = (settled: SettledVerdict): Option.Option<VerdictEntry> =>
+const contentKeyedEntryOf = (settled: SettledVerdict): Option.Option<VerdictEntry> =>
   Match.value(settled.result.status).pipe(
     Match.when(S.is(TestedStatusSchema), (status) => testedEntryOf(settled, status)),
     Match.when('CompileError', () => checkerEntryOf(settled)),
     Match.orElse(() => Option.none<VerdictEntry>()),
   )
+
+const carriesNoSubsumption = (settled: SettledVerdict): boolean => settled.result.subsumption === undefined
+
+export const settledEntryOf = (settled: SettledVerdict): Option.Option<VerdictEntry> =>
+  Option.flatMap(Option.liftPredicate(settled, carriesNoSubsumption), contentKeyedEntryOf)
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')

@@ -1,5 +1,6 @@
 <script lang="ts">
-  // @stryker-expect file Killed: ConditionalExpression, EqualityOperator
+  // @stryker-expect file Killed: ConditionalExpression, EqualityOperator="count >= 0"
+  // @stryker-expect file Ignored: EqualityOperator="count <= 0"
   // @stryker-expect file Survived: ArithmeticOperator
   import { incrementBy } from './lib/math'
 

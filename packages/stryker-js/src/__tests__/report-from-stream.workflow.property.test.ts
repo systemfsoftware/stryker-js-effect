@@ -40,6 +40,8 @@ const headerOf = (version: string): string => `{"_tag":"stream","schemaVersion":
 const streamTextWithHeader = (header: string, mutants: ReadonlyArray<RunEvent.RunMutantTested>): string =>
   [header, ...Arr.flatMap(mutants, (mutant) => Option.toArray(lineOf(mutant))), TORN_LINE].join('\n')
 
+const CURRENT_MAJOR = Number(RunEvent.StreamSchemaVersion.literal.split('.')[0])
+
 describe('reportFromStream', () => {
   it.prop(
     '∀ms_StreamedMutants_≡RebuiltIntoTheirFilesIffAnyMutant',
@@ -70,7 +72,7 @@ describe('reportFromStream', () => {
     '∀v_StreamVersionOtherMajor_≡RefusedNamingBothVersions',
     { of: [S.Int, S.Int, S.Array(RunEvent.RunMutantTested)], subject: reportFromStream },
     (subject, [drawnMajor, minor, mutants]) => {
-      const major = drawnMajor === 7 ? drawnMajor + 1 : drawnMajor
+      const major = drawnMajor === CURRENT_MAJOR ? drawnMajor + 1 : drawnMajor
       const version = `${major}.${minor}`
       return Result.match(
         subject(ReportFromStreamCommand.make({ text: streamTextWithHeader(headerOf(version), mutants) })),

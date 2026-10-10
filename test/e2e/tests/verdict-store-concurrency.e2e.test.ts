@@ -81,12 +81,15 @@ const readArtifacts = (output: StrykerRunOutput): Effect.Effect<ScriptArtifacts,
     }
   })
 
-const refusalsLineOf = (refused: RunEvent.ReuseRefusals): string =>
+const refusalsLineOf = (refused: Readonly<Record<string, number>>): string =>
   Object.entries(refused)
     .filter(([, count]) => count > 0)
     .map(([reason, count]) => `${reason} ${count}`)
     .sort()
     .join(', ')
+
+const subsumptionDecidedCountOf = (events: ReadonlyArray<RunEvent.RunEvent>): number =>
+  events.filter((event) => event._tag === 'mutantTested' && event.subsumption !== null).length
 
 const verifyStoreSurvivedTheKill = (
   expect: Expect,
@@ -103,7 +106,8 @@ const verifyStoreSurvivedTheKill = (
   })
   const expectedExits = JSON.stringify({ plan: 0, killed: SIGKILLED_EXIT_CODE, survivor: 0, rerun: 0 })
   const unstored = total - stored
-  const expectedRefusals = unstored > 0 ? `noPriorRecord ${unstored}` : ''
+  const decidedPerRun = subsumptionDecidedCountOf(artifacts.rerunEvents)
+  const expectedRefusals = refusalsLineOf({ decidedPerRun, noPriorRecord: unstored - decidedPerRun })
   return expect({
     exits,
     logs: exits === expectedExits ? '' : artifacts.logs,

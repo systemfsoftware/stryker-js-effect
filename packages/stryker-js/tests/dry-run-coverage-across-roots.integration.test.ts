@@ -169,6 +169,7 @@ const ZERO_REFUSALS: RunEvent.ReuseRefusals = {
   entryUnreadable: 0,
   storeUnavailable: 0,
   noPriorRecord: 0,
+  decidedPerRun: 0,
 }
 
 const copyReport = (
