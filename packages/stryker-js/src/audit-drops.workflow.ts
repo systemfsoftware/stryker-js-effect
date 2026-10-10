@@ -36,12 +36,7 @@ export class AuditDropsCommand extends S.TaggedClass<AuditDropsCommand>()('Audit
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-type Reason =
-  | typeof PassReason.Type
-  | typeof VacuousReason.Type
-  | typeof UnverifiedReason.Type
-  | typeof FailReason.Type
-  | typeof UnjoinableReason.Type
+type Reason = PairVerdict['reason'] | typeof UnjoinableReason.Type
 
 const FIX_THE_RULE = "Fix the subsumption rule so it keeps this mutant, or set `mutator.mutantSetPolicy: 'full'`."
 const RERUN_MATRIX = 'Re-run the kill-matrix lane on the current main, then audit again.'
@@ -82,7 +77,7 @@ const ORPHANED_NEXT =
 
 interface ProjectIndex {
   readonly mutants: Record.ReadonlyRecord<string, MatrixMutant>
-  readonly tests: ReadonlyArray<string>
+  readonly tests: Record.ReadonlyRecord<string, true>
 }
 
 interface PairKey {
@@ -96,12 +91,12 @@ interface JoinedFacts {
   readonly mutant: MatrixMutant
   readonly dominator: MatrixMutant
   readonly missingKillers: ReadonlyArray<string>
-  readonly tests: ReadonlyArray<string>
+  readonly tests: Record.ReadonlyRecord<string, true>
 }
 
 type Judged = Result.Result<PairVerdict, typeof UnjoinableReason.Type>
 
-const EMPTY_INDEX: ProjectIndex = { mutants: {}, tests: [] }
+const EMPTY_INDEX: ProjectIndex = { mutants: {}, tests: {} }
 
 const pass = (reason: typeof PassReason.Type): Judged => Result.succeed({ _tag: 'Pass', reason })
 const vacuous = (reason: typeof VacuousReason.Type): Judged => Result.succeed({ _tag: 'Vacuous', reason })
@@ -110,10 +105,16 @@ const unverified = (reason: typeof UnverifiedReason.Type): Judged =>
 const fail = (reason: typeof FailReason.Type): Judged => Result.succeed({ _tag: 'Fail', reason })
 const unsettled = (): Judged => Result.fail('status-unsettled')
 
+const lookupOf = (keys: ReadonlyArray<string>): Record.ReadonlyRecord<string, true> =>
+  Object.fromEntries(keys.map((key) => [key, true]))
+
 const indexOf = (matrix: ReadonlyArray<MatrixProject>): Record.ReadonlyRecord<string, ProjectIndex> =>
   Object.fromEntries(matrix.map((project) => [
     project.project,
-    { mutants: Object.fromEntries(project.mutants.map((mutant) => [mutant.id, mutant])), tests: project.tests },
+    {
+      mutants: Object.fromEntries(project.mutants.map((mutant) => [mutant.id, mutant])),
+      tests: lookupOf(project.tests),
+    },
   ]))
 
 const containment = (facts: JoinedFacts): Judged =>
@@ -123,7 +124,7 @@ const containment = (facts: JoinedFacts): Judged =>
       Boolean.match(facts.missingKillers.length === 0, {
         onTrue: () => pass('killers-contained'),
         onFalse: () =>
-          Boolean.match(facts.missingKillers.some((killer) => facts.tests.includes(killer)), {
+          Boolean.match(facts.missingKillers.some((killer) => Record.has(facts.tests, killer)), {
             onTrue: () => fail('killers-not-contained'),
             onFalse: () => unverified('killer-is-file-hook'),
           }),
@@ -243,22 +244,22 @@ const tallyOf = (pair: AuditedPair): Tally =>
       }),
   })
 
-const tallyCount = (pairs: ReadonlyArray<AuditedPair>, tally: Tally): number =>
-  pairs.filter((pair) => tallyOf(pair) === tally).length
+type TallyCounts = { readonly [tally in Tally]: number }
+
+const NO_TALLIES: TallyCounts = { pass: 0, vacuous: 0, attributionUnverified: 0, fail: 0, unjoinable: 0 }
+
+const tallyCountsOf = (pairs: ReadonlyArray<AuditedPair>): TallyCounts =>
+  pairs.reduce((counts, pair) => {
+    const tally = tallyOf(pair)
+    return { ...counts, [tally]: counts[tally] + 1 }
+  }, NO_TALLIES)
 
 const ruleSummaryOf = (
-  drops: Arr.NonEmptyReadonlyArray<AuditedDrop>,
+  rule: Mutant.Subsumed['rule'],
+  drops: number,
   pairs: ReadonlyArray<AuditedPair>,
 ): RuleSummary => {
-  const counts = {
-    rule: Arr.headNonEmpty(drops).subsumed.rule,
-    drops: drops.length,
-    pass: tallyCount(pairs, 'pass'),
-    vacuous: tallyCount(pairs, 'vacuous'),
-    attributionUnverified: tallyCount(pairs, 'attributionUnverified'),
-    fail: tallyCount(pairs, 'fail'),
-    unjoinable: tallyCount(pairs, 'unjoinable'),
-  }
+  const counts = { rule, drops, ...tallyCountsOf(pairs) }
   return Boolean.match(pairs.length > counts.unjoinable, {
     onTrue: (): RuleSummary => ({ _tag: 'Attested', ...counts }),
     onFalse: (): RuleSummary => ({ _tag: 'Unattested', ...counts, reason: 'no-drop-joined', next: UNATTESTED_NEXT }),
@@ -268,16 +269,18 @@ const ruleSummaryOf = (
 const isUnattested = (rule: RuleSummary): boolean =>
   Match.valueTags(rule, { Attested: () => false, Unattested: () => true })
 
-const orphansOf = (project: MatrixProject, drops: ReadonlyArray<AuditedDrop>): ReadonlyArray<OrphanedTest> => {
-  const dropped: ReadonlyArray<string> = drops.filter((drop) => drop.project === project.project).map((drop) =>
-    drop.mutant
-  )
+const orphansOf = (
+  project: MatrixProject,
+  index: ProjectIndex,
+  dropped: ReadonlyArray<AuditedDrop>,
+): ReadonlyArray<OrphanedTest> => {
+  const droppedIds = lookupOf(dropped.map((drop) => drop.mutant))
   const kills = project.mutants
     .filter((mutant) => mutant.status === 'Killed')
     .flatMap((mutant) => mutant.killedBy.map((test) => ({ test, mutant: mutant.id })))
-    .filter((kill) => project.tests.includes(kill.test))
+    .filter((kill) => Record.has(index.tests, kill.test))
   return Object.entries(Arr.groupBy(kills, (kill) => kill.test)).flatMap(([test, killedBy]) =>
-    Boolean.match(killedBy.every((kill) => dropped.includes(kill.mutant)), {
+    Boolean.match(killedBy.every((kill) => Record.has(droppedIds, kill.mutant)), {
       onTrue: (): ReadonlyArray<OrphanedTest> => [{
         project: project.project,
         test,
@@ -299,30 +302,36 @@ const decide = (command: AuditDropsCommand): DropAuditReport => {
   const indexes = indexOf(command.matrix)
   const pairs = Arr.sort(command.drops.flatMap(pairKeysOf).map((key) => auditPair(indexes, key)), pairOrder)
   const pairsByRule = Arr.groupBy(pairs, (pair) => pair.rule)
+  const dropsByProject = Arr.groupBy(command.drops, (drop) => drop.project)
+  const dropsOf = (project: MatrixProject): ReadonlyArray<AuditedDrop> =>
+    Option.getOrElse(Record.get(dropsByProject, project.project), () => [])
   const rules = Arr.sort(
-    Object.values(Arr.groupBy(command.drops, (drop) => drop.subsumed.rule)).map((drops) =>
-      ruleSummaryOf(
-        drops,
-        Option.getOrElse(Option.fromUndefinedOr(pairsByRule[Arr.headNonEmpty(drops).subsumed.rule]), () => []),
-      )
-    ),
+    Object.values(Arr.groupBy(command.drops, (drop) => drop.subsumed.rule)).map((drops) => {
+      const rule = Arr.headNonEmpty(drops).subsumed.rule
+      return ruleSummaryOf(rule, drops.length, Option.getOrElse(Option.fromUndefinedOr(pairsByRule[rule]), () => []))
+    }),
     Order.mapInput(Order.String, (rule: RuleSummary) => rule.rule),
   )
-  const orphanedTests = Arr.sort(command.matrix.flatMap((project) => orphansOf(project, command.drops)), orphanOrder)
+  const orphanedTests = Arr.sort(
+    command.matrix.flatMap((project) =>
+      orphansOf(project, Option.getOrElse(Record.get(indexes, project.project), () => EMPTY_INDEX), dropsOf(project))
+    ),
+    orphanOrder,
+  )
   const fields = {
     schemaVersion: '1' as const,
     scope: command.scope,
     projects: command.matrix.map((project) => ({
       project: project.project,
       matrixMutants: project.mutants.length,
-      drops: command.drops.filter((drop) => drop.project === project.project).length,
+      drops: dropsOf(project).length,
     })),
     rules,
     pairs,
     orphanedTests,
   }
   const failures = {
-    pairs: tallyCount(pairs, 'fail'),
+    pairs: tallyCountsOf(pairs).fail,
     unattestedRules: rules.filter(isUnattested).length,
     orphanedTests: orphanedTests.length,
   }

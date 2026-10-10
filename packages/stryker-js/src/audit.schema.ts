@@ -1,7 +1,7 @@
 import { Mutant, type Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
-export const AuditSchemaVersion = S.Literal('1')
+const AuditSchemaVersion = S.Literal('1')
 
 const Count = S.Int.check(S.isGreaterThanOrEqualTo(0))
 
@@ -78,20 +78,18 @@ const PairFields = {
   next: S.String,
 }
 
-export const JoinedPair = S.TaggedStruct('JoinedPair', {
+const JoinedPair = S.TaggedStruct('JoinedPair', {
   ...PairFields,
   mutantStatus: Mutant.MutantStatusSchema,
   dominatorStatus: Mutant.MutantStatusSchema,
   missingKillers: S.Array(S.String),
   verdict: PairVerdict,
 })
-export type JoinedPair = typeof JoinedPair.Type
 
-export const UnjoinablePair = S.TaggedStruct('UnjoinablePair', {
+const UnjoinablePair = S.TaggedStruct('UnjoinablePair', {
   ...PairFields,
   reason: UnjoinableReason,
 })
-export type UnjoinablePair = typeof UnjoinablePair.Type
 
 export const AuditedPair = S.Union([JoinedPair, UnjoinablePair])
 export type AuditedPair = typeof AuditedPair.Type
@@ -121,7 +119,7 @@ export const OrphanedTest = S.Struct({
 })
 export type OrphanedTest = typeof OrphanedTest.Type
 
-export const ProjectDrops = S.Struct({
+const ProjectDrops = S.Struct({
   project: S.String,
   matrixMutants: Count,
   drops: Count,
@@ -136,7 +134,7 @@ const DropAuditFields = {
   orphanedTests: S.Array(OrphanedTest),
 }
 
-export const AuditFailures = S.Struct({ pairs: Count, unattestedRules: Count, orphanedTests: Count })
+const AuditFailures = S.Struct({ pairs: Count, unattestedRules: Count, orphanedTests: Count })
 
 const AuditReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/AuditReport')
 
@@ -247,7 +245,7 @@ export class AuditFailed extends S.TaggedError<AuditFailed>()('AuditFailed', {
   }
 }
 
-export const AuditInputCode = S.Literals(['matrix-unreadable', 'matrix-undecodable', 'files-with-counts-only'])
+const AuditInputCode = S.Literals(['matrix-unreadable', 'matrix-undecodable', 'files-with-counts-only'])
 
 export class AuditInputUnusable extends S.TaggedError<AuditInputUnusable>()('AuditInputUnusable', {
   code: AuditInputCode,

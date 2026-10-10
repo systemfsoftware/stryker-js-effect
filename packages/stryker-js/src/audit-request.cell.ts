@@ -2,7 +2,6 @@ import { Cell } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
-import type * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -31,8 +30,8 @@ import {
   type RunCounts,
 } from './audit.schema.js'
 import { countRuns, CountRunsCommand } from './count-runs.workflow.js'
+import { type PlanChannel } from './plan-request.cell.js'
 import { readProjectCell } from './read-project.cell.js'
-import type { HostServices } from './run/host.service.js'
 import { instrumentSources } from './run/instrument.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
@@ -40,25 +39,18 @@ import type { PrepareForInstrument } from './run/prepare.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import type { EnginePorts } from './run/StageServices.service.js'
 
-export interface AuditRequest {
+interface AuditRequest {
   readonly matrix: string
   readonly out: string
   readonly countsOnly: boolean
   readonly projects?: ReadonlyArray<string> | undefined
   readonly files?: ReadonlyArray<string> | undefined
 }
+type AuditChannel = PlanChannel
 
 export interface AuditRequestInput {
   readonly request: AuditRequest
   readonly channel: AuditChannel
-}
-
-export interface AuditChannel {
-  readonly environment: {
-    readonly basePath: string
-    readonly host: HostServices
-    readonly console: Console.Console
-  }
 }
 
 const REPORT_FILE = 'stryker-incremental.json'
