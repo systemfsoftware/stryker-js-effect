@@ -34,7 +34,7 @@ export function isBulk(quantity: number): boolean {
 
 // @stryker-expect next-line Killed: BlockStatement
 export function shippingFor(weight: number): number {
-  // @stryker-expect next-line Ignored: ConditionalExpression="true"
+  // @stryker-expect next-line Killed: ConditionalExpression="true"
   // @stryker-expect next-line Killed: ConditionalExpression="false"
   // @stryker-expect next-line Ignored: EqualityOperator="weight <= 20"
   // @stryker-expect next-line Survived: EqualityOperator="weight >= 20"
@@ -43,7 +43,7 @@ export function shippingFor(weight: number): number {
   if (weight > 20) {
     return 15
   }
-  // @stryker-expect next-line Ignored: ConditionalExpression="true"
+  // @stryker-expect next-line Killed: ConditionalExpression="true"
   // @stryker-expect next-line Killed: ConditionalExpression="false"
   // @stryker-expect next-line Ignored: EqualityOperator="weight <= 5"
   // @stryker-expect next-line Survived: EqualityOperator="weight >= 5"
@@ -57,7 +57,7 @@ export function shippingFor(weight: number): number {
 
 // @stryker-expect next-line Killed: BlockStatement
 export function label(price: number): string {
-  // @stryker-expect next-line Ignored: ConditionalExpression="true"
+  // @stryker-expect next-line Survived: ConditionalExpression="true"
   // @stryker-expect next-line Survived: ConditionalExpression="false"
   // @stryker-expect next-line Ignored: EqualityOperator="price <= 100"
   // @stryker-expect next-line Survived: EqualityOperator="price >= 100"
