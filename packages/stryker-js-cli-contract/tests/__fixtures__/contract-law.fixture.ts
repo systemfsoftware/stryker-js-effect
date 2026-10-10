@@ -274,6 +274,7 @@ export const renderFailure = (failure: ContractVersionFailure): string => {
   if (failure.kind === 'stream-version') {
     return [
       `error[CONTRACT-VERSION]: incompatible contract change in ${failure.document}`,
+      `  code: ${failure.kind}`,
       `  package: ${failure.package}`,
       `  document: ${failure.document}`,
       `  pointer: ${pointerLineOf(failure.pointer)}`,
@@ -284,6 +285,7 @@ export const renderFailure = (failure: ContractVersionFailure): string => {
   }
   return [
     `error[CONTRACT-VERSION]: incompatible contract change in ${failure.document}`,
+    `  code: ${failure.kind}`,
     `  package: ${failure.package}`,
     `  document: ${failure.document}`,
     `  pointer: ${pointerLineOf(failure.pointer)}`,
