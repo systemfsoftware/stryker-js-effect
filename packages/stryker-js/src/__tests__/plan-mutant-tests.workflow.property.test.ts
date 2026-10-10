@@ -76,6 +76,14 @@ const isNoCoverageFilter = (filter: readonly string[] | undefined): boolean =>
 const isNoCoverageRunPlan = (decision: PlannedEarlyResultMutant | PlannedRunMutant): boolean =>
   S.is(PlannedRunMutant)(decision) && isNoCoverageFilter(decision.runOptions.testFilter)
 
+const lawfulSubsumptionOf = (
+  mutant: Mutant.Mutant,
+  status: Mutant.MutantStatus | undefined,
+): Mutant.Subsumption | undefined =>
+  Option.getOrUndefined(
+    Option.filter(Option.fromUndefinedOr(mutant.subsumption), Mutant.subsumptionMatchesStatus(status)),
+  )
+
 const coverageCommandArb = Arbitrary.all([
   Arbitrary.schema(Mutant.Mutant),
   Arbitrary.schema(S.Literals(['off', 'all', 'perTest'])),
@@ -95,12 +103,7 @@ const coverageCommandArb = Arbitrary.all([
           id: mutantId,
           status: closed ? 'Ignored' : undefined,
           statusReason: undefined,
-          subsumption: Option.getOrUndefined(
-            Option.filter(
-              Option.fromUndefinedOr(baseMutant.subsumption),
-              (subsumption) => Mutant.subsumptionMatchesStatus(subsumption, closed ? 'Ignored' : undefined),
-            ),
-          ),
+          subsumption: lawfulSubsumptionOf(baseMutant, closed ? 'Ignored' : undefined),
         }),
       ],
       timeOverheadMS: 1,
@@ -141,7 +144,15 @@ const orderedCommandArb = Arbitrary.all([
     const killer = hasKiller && tests.length > 0 ? tests[killerPick % tests.length] : undefined
     return MutantTestPlanCommand.make({
       _tag: 'MutantTestPlanCommand',
-      mutants: [Mutant.Mutant.make({ ...baseMutant, id: mutantId, status: undefined, statusReason: undefined })],
+      mutants: [
+        Mutant.Mutant.make({
+          ...baseMutant,
+          id: mutantId,
+          status: undefined,
+          statusReason: undefined,
+          subsumption: lawfulSubsumptionOf(baseMutant, undefined),
+        }),
+      ],
       timeOverheadMS: 1,
       timeSpentAllTests: 1,
       hitsByMutantId: { [mutantId]: 1 },
@@ -166,7 +177,15 @@ const staticKillerCommandArb = Arbitrary.all([
     const killers = known.filter((_, index) => killerFlags[index] === true)
     return MutantTestPlanCommand.make({
       _tag: 'MutantTestPlanCommand',
-      mutants: [Mutant.Mutant.make({ ...baseMutant, id: mutantId, status: undefined, statusReason: undefined })],
+      mutants: [
+        Mutant.Mutant.make({
+          ...baseMutant,
+          id: mutantId,
+          status: undefined,
+          statusReason: undefined,
+          subsumption: lawfulSubsumptionOf(baseMutant, undefined),
+        }),
+      ],
       timeOverheadMS: 1,
       timeSpentAllTests: 1,
       hitsByMutantId: { [mutantId]: 1 },
