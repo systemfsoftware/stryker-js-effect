@@ -5,6 +5,7 @@ import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/ef
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 
@@ -124,6 +125,17 @@ interface CheckOptions {
   readonly ci: boolean
 }
 
+const installedVersionOf = (stagedDir: string) => (name: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const installed = yield* Effect.option(Effect.flatMap(
+      fs.readFileString(path.join(stagedDir, 'node_modules', name, 'package.json')),
+      S.decodeEffect(NpmManifestJson),
+    ))
+    return [name, Option.getOrNull(Option.map(installed, (manifest) => manifest.version))] as const
+  })
+
 const npmCiOf = (stagedDir: string, root: string) =>
   Effect.gen(function*() {
     const path = yield* Path.Path
@@ -140,8 +152,10 @@ const npmCiOf = (stagedDir: string, root: string) =>
       cwd: stagedDir,
     })
     return {
+      exitCode: ci.exitCode,
       refusedAsOutOfSync: ci.stderr.includes('EUSAGE'),
       resolvesLeftPadItself: /request to \S+\/left-pad failed/.test(ci.stderr),
+      installed: Object.fromEntries(yield* Effect.forEach([CLI, RUNNER], installedVersionOf(stagedDir))),
     }
   })
 
@@ -174,18 +188,27 @@ Feature('Detecting a stale fixture lock')
   .live('a generated fixture lock is checked offline against a changed closure, manifest or pin')
   .body(({ scenario }) => {
     scenario(
-      'A release that only bumps closure versions keeps the lock valid',
+      'A release that only bumps closure versions keeps the lock valid, and npm ci installs the released closure from it',
       Gherkin.Do.pipe(
-        Given('a lock generated for closure version 1.0.0')('before', () => Effect.succeed(BASELINE)),
+        Given('a lock generated for closure version 1.0.0, where the CLI depends on the runner ^1.0.0')(
+          'before',
+          () => Effect.succeed(BASELINE),
+        ),
         When('every closure member is released as 1.0.1')(
           'checked',
           (s) =>
             lockThenCheck(s.before, withMembers(s.before, s.before.members.map((m) => ({ ...m, version: '1.0.1' }))), {
               lock: true,
-              ci: false,
+              ci: true,
             }),
         ),
-        Then('the check reports nothing')((s, expect) => expect(s.checked.drift).toBe('')),
+        Then('the check reports nothing, and npm ci installs both members at 1.0.1 offline')((s, expect) =>
+          expect({
+            drift: s.checked.drift,
+            exitCode: s.checked.installed?.exitCode,
+            installed: s.checked.installed?.installed,
+          }).toStrictEqual({ drift: '', exitCode: 0, installed: { [CLI]: '1.0.1', [RUNNER]: '1.0.1' } })
+        ),
       ),
     )
 
@@ -207,7 +230,10 @@ Feature('Detecting a stale fixture lock')
         ) =>
           expect({
             drift: s.checked.drift.includes(`E2E_PINS_DRIFT: ${FIXTURE_ID}: missing: left-pad@^1.0.0`),
-            ci: s.checked.installed,
+            ci: {
+              refusedAsOutOfSync: s.checked.installed?.refusedAsOutOfSync,
+              resolvesLeftPadItself: s.checked.installed?.resolvesLeftPadItself,
+            },
           }).toStrictEqual({ drift: true, ci: { refusedAsOutOfSync: false, resolvesLeftPadItself: true } })
         ),
       ),

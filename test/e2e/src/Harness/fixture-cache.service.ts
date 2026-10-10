@@ -39,7 +39,9 @@ import {
   fixtureKeyBytes,
   missingFixtures as missingFixturesWorkflow,
   MissingFixturesCommand,
+  NpmLockfileJson,
   overBudgetReason,
+  overlayOf,
   PackedManifest,
   type PackedMember,
   packedMemberOf,
@@ -196,8 +198,21 @@ interface StagingContext {
 
 const isManifestPath = (relativePath: string): boolean => relativePath.split('/').pop() === MANIFEST_FILE_NAME
 
+const isLockPath = (relativePath: string): boolean => relativePath === LOCKFILE_NAME
+
+const isStagedPath = (relativePath: string): boolean => isManifestPath(relativePath) || isLockPath(relativePath)
+
 const manifestBytesOf = (document: unknown): Uint8Array =>
   new TextEncoder().encode(`${JSON.stringify(document, null, MANIFEST_JSON_INDENT)}\n`)
+
+const overlaidLockOf = (fixtureId: string, bytes: Uint8Array, members: ReadonlyArray<PackedMember>) =>
+  Schema.decodeEffect(NpmLockfileJson)(new TextDecoder().decode(bytes)).pipe(
+    Effect.flatMap((lock) => Schema.encodeEffect(NpmLockfileJson)(overlayOf({ lock, members }))),
+    Effect.map((text) => new TextEncoder().encode(text)),
+    Effect.mapError((error) =>
+      new PackFailure({ step: STEP_INSTALL_PLAN, detail: `${fixtureId}/${LOCKFILE_NAME}: ${error.message}` })
+    ),
+  )
 
 const stageFixtureFiles = (fixtureId: string, files: ReadonlyArray<FileBytes>, context: StagingContext) =>
   Effect.fromResult(stagedFixtureOf({
@@ -216,14 +231,18 @@ const stageFixtureFiles = (fixtureId: string, files: ReadonlyArray<FileBytes>, c
         Match.orElse((unresolved) => unresolved),
       )
     ),
-    Effect.map((staged) => {
+    Effect.flatMap((staged) => {
       const manifests = new Map(
         staged.manifests.map((manifest) => [manifest.relativePath, manifestBytesOf(manifest.document)] as const),
       )
-      return files.map((file): FileBytes => ({
-        relativePath: file.relativePath,
-        bytes: manifests.get(file.relativePath) ?? file.bytes,
-      }))
+      return Effect.forEach(files, (file) =>
+        Effect.map(
+          Boolean.match(isLockPath(file.relativePath), {
+            onTrue: () => overlaidLockOf(fixtureId, file.bytes, context.members),
+            onFalse: () => Effect.succeed(manifests.get(file.relativePath) ?? file.bytes),
+          }),
+          (bytes): FileBytes => ({ relativePath: file.relativePath, bytes }),
+        ))
     }),
   )
 
@@ -260,7 +279,7 @@ const stageFixtures = (
         yield* fs.copy(path.join(environment.resourcesDir, input.fixtureId), destination)
         yield* fs.remove(path.join(destination, 'node_modules'), { recursive: true, force: true })
         yield* Effect.forEach(
-          Array.filter(input.files, (file) => isManifestPath(file.relativePath)),
+          Array.filter(input.files, (file) => isStagedPath(file.relativePath)),
           (file) => fs.writeFile(path.join(destination, file.relativePath), file.bytes),
           { discard: true },
         )
