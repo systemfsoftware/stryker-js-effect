@@ -25,6 +25,11 @@ const SOURCE = [
   '',
 ].join('\n')
 
+const EXTRA_SOURCE = [
+  'export const double = (value: number): number => value * 2',
+  '',
+].join('\n')
+
 const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
@@ -61,12 +66,16 @@ const removeFixture = (root: string): Effect.Effect<void, never, never> =>
     filePorts,
   )
 
-const optionsOf = (root: string, command: string): Options.PartialStrykerOptions => ({
+const optionsOf = (
+  root: string,
+  command: string,
+  mutate: readonly string[] = ['src/**/*.ts'],
+): Options.PartialStrykerOptions => ({
   testRunner: 'command',
   commandRunner: { command },
   coverageAnalysis: 'off',
   reporters: [],
-  mutate: ['src/**/*.ts'],
+  mutate: [...mutate],
   checkers: [],
   cleanTempDir: 'always',
   incremental: true,
@@ -82,13 +91,17 @@ const runLayerOf = (root: string, ports: Layer.Layer<Engine.EnginePorts> = Engin
     }
   })
 
-const runToCompletion = (root: string, command: string): Effect.Effect<string, never, never> =>
+const runToCompletion = (
+  root: string,
+  command: string,
+  mutate?: readonly string[],
+): Effect.Effect<string, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const { layer } = yield* runLayerOf(root)
     yield* Engine.mutationTestCell
-      .run({ cliOptions: optionsOf(root, command), targetMutatePatterns: undefined })
+      .run({ cliOptions: optionsOf(root, command, mutate), targetMutatePatterns: undefined })
       .pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)
     return yield* fs.readFileString(path.join(root, 'reports', 'main.json'))
   }).pipe(Effect.orDie, Effect.provide(filePorts))
@@ -97,6 +110,7 @@ interface RecordedFsOp {
   readonly op: 'write' | 'rename'
   readonly path: string
   readonly to?: string
+  readonly data?: string
 }
 
 const recordingFileSystemLayer = (ops: RecordedFsOp[]): Layer.Layer<FileSystem.FileSystem> =>
@@ -106,7 +120,7 @@ const recordingFileSystemLayer = (ops: RecordedFsOp[]): Layer.Layer<FileSystem.F
       ...base,
       writeFileString: (path, data, options) =>
         base.writeFileString(path, data, options).pipe(
-          Effect.tap(() => Effect.sync(() => ops.push({ op: 'write', path }))),
+          Effect.tap(() => Effect.sync(() => ops.push({ op: 'write', path, data }))),
         ),
       rename: (from, to) =>
         base.rename(from, to).pipe(
@@ -135,6 +149,42 @@ const runToCompletionRecordingWrites = (
       .pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)
     return { directWrites: writesTo(ops, target).length, renamed: renamesTo(ops, target).length > 0 }
   }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+const runToCompletionRecordingContents = (
+  root: string,
+  command: string,
+  ops: RecordedFsOp[],
+): Effect.Effect<void, never, never> =>
+  Effect.gen(function*() {
+    const { layer } = yield* runLayerOf(root, Layer.merge(Engine.nodePlatformLayer, recordingFileSystemLayer(ops)))
+    yield* Engine.mutationTestCell
+      .run({ cliOptions: optionsOf(root, command), targetMutatePatterns: undefined })
+      .pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)
+  }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+interface RecordedMutant {
+  readonly id: string
+  readonly file: string
+  readonly remembered: boolean
+}
+
+const recordedMutantsOf = (text: string): readonly RecordedMutant[] =>
+  Option.match(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), {
+    onNone: () => [],
+    onSome: (report) =>
+      Object.entries(report.files).flatMap(([file, result]) =>
+        result.mutants.map((mutant) => ({ id: mutant.id, file, remembered: mutant.remembered === true }))
+      ),
+  })
+
+const firstCheckpointOf = (ops: readonly RecordedFsOp[], target: string): string =>
+  ops
+    .filter((op) => op.op === 'write' && op.path.startsWith(`${target}.`))
+    .map((op) => op.data ?? '')
+    .find((data) => {
+      const { decoded, shape } = decodedOf(data)
+      return decoded && !shape.carriesFramework && !shape.carriesConfig
+    }) ?? ''
 
 const interruptAtFirstCheckpoint = (root: string, command: string): Effect.Effect<string, never, never> =>
   Effect.gen(function*() {
@@ -274,6 +324,48 @@ Feature('Reading the incremental report the engine writes')
         ),
         Then('the incremental report path is only ever produced by renaming a completed temporary file')(
           (s, expect) => expect(s.observed).toEqual({ directWrites: 0, renamed: true }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A checkpoint written partway through a run marks exactly the reused mutants as remembered',
+      Gherkin.Do.pipe(
+        Given('a workspace whose first run mutates one file and whose second run widens the scope to a second')(
+          'observed',
+          () =>
+            Effect.gen(function*() {
+              const path = yield* Path.Path
+              const root = yield* writeFixture([['src/math.ts', SOURCE], ['src/extra.ts', EXTRA_SOURCE]])
+              const ops: RecordedFsOp[] = []
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const first = recordedMutantsOf(yield* runToCompletion(root, 'true', ['src/math.ts']))
+                  yield* runToCompletionRecordingContents(root, 'true', ops)
+                  const checkpoint = recordedMutantsOf(firstCheckpointOf(ops, path.join(root, 'reports', 'main.json')))
+                  return { first, checkpoint }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then("the checkpoint marks the first run's mutants remembered and the newly scoped mutants not")(
+          (s, expect) => {
+            const ids = (mutants: readonly RecordedMutant[]) => mutants.map((mutant) => mutant.id).sort()
+            return expect({
+              firstRunMutated: s.observed.first.length > 0,
+              rememberedInCheckpoint: ids(s.observed.checkpoint.filter((mutant) => mutant.remembered)),
+              newlyScopedInCheckpoint: s.observed.checkpoint.some((mutant) => mutant.file === 'src/extra.ts'),
+              newlyScopedRemembered: s.observed.checkpoint.some((mutant) =>
+                mutant.file === 'src/extra.ts' && mutant.remembered
+              ),
+            }).toEqual({
+              firstRunMutated: true,
+              rememberedInCheckpoint: ids(s.observed.first),
+              newlyScopedInCheckpoint: true,
+              newlyScopedRemembered: false,
+            })
+          },
         ),
       ),
     )

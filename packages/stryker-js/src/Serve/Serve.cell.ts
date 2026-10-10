@@ -235,7 +235,7 @@ const mutationTestFilesOf = (
   return Object.fromEntries([...grouped].map(([fileName, groupedMutants]) => [fileName, { mutants: groupedMutants }]))
 }
 
-const progressOf = (tested: RunEvent.RunMutantTestedEvent): ReportMutationTestProgress => ({
+const progressOf = (tested: RunEvent.RunMutantTested): ReportMutationTestProgress => ({
   jsonrpc: '2.0',
   method: MSP_METHODS.reportMutationTestProgress,
   params: {
@@ -322,7 +322,7 @@ const runMutationTest = (
   configOverlay: ConfigOverlay,
   options: ServeOptions,
   targetMutatePatterns: ReadonlyArray<string> | undefined,
-  notify: (tested: RunEvent.RunMutantTestedEvent) => Effect.Effect<void, ServeError>,
+  notify: (tested: RunEvent.RunMutantTested) => Effect.Effect<void, ServeError>,
 ): Effect.Effect<MutationTestResult, ServeError, EnginePorts> =>
   withEngine(
     configOverlay,

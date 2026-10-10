@@ -45,6 +45,7 @@ export interface MutationReportingInput {
   readonly timeOverheadMs: number
   readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
   readonly timeoutEvidenceByMutantId?: Readonly<Record<string, TimeoutEvidence>>
+  readonly rememberedMutantIds: ReadonlyArray<string>
   readonly programDigest?: string
   readonly concurrency: number
   readonly runStartedAt: number

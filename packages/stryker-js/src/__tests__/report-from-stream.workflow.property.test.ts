@@ -10,6 +10,7 @@ import {
   ReportFromStreamAbsent,
   ReportFromStreamCommand,
   ReportFromStreamRebuilt,
+  StreamVersionMismatch,
 } from '../report-from-stream.workflow.js'
 
 const STREAM_HEADER = '{"_tag":"stream"}'
@@ -33,6 +34,11 @@ const reportOf = (subject: typeof reportFromStream, text: string): Option.Option
 
 const streamTextOf = (mutants: ReadonlyArray<RunEvent.RunMutantTested>): string =>
   [STREAM_HEADER, ...Arr.flatMap(mutants, (mutant) => Option.toArray(lineOf(mutant))), TORN_LINE].join('\n')
+
+const headerOf = (version: string): string => `{"_tag":"stream","schemaVersion":${JSON.stringify(version)}}`
+
+const streamTextWithHeader = (header: string, mutants: ReadonlyArray<RunEvent.RunMutantTested>): string =>
+  [header, ...Arr.flatMap(mutants, (mutant) => Option.toArray(lineOf(mutant))), TORN_LINE].join('\n')
 
 describe('reportFromStream', () => {
   it.prop(
@@ -58,5 +64,24 @@ describe('reportFromStream', () => {
     (subject, [mutants]) =>
       Arr.isReadonlyArrayNonEmpty(mutants) ||
       S.is(ReportFromStreamAbsent)(decisionOf(subject, `${STREAM_HEADER}\n${TORN_LINE}`)),
+  )
+
+  it.prop(
+    '∀v_StreamVersionOtherMajor_≡RefusedNamingBothVersions',
+    { of: [S.Int, S.Int, S.Array(RunEvent.RunMutantTested)], subject: reportFromStream },
+    (subject, [drawnMajor, minor, mutants]) => {
+      const major = drawnMajor === 7 ? drawnMajor + 1 : drawnMajor
+      const version = `${major}.${minor}`
+      return Result.match(
+        subject(ReportFromStreamCommand.make({ text: streamTextWithHeader(headerOf(version), mutants) })),
+        {
+          onFailure: (error) =>
+            S.is(StreamVersionMismatch)(error) &&
+            error.found === version &&
+            error.expected === RunEvent.StreamSchemaVersion.literal,
+          onSuccess: () => false,
+        },
+      )
+    },
   )
 })

@@ -257,6 +257,19 @@ const stampClosureDigests = (
     ]),
   )
 
+const stampRemembered = (
+  files: Record<string, Report.FileResult>,
+  rememberedIds: ReadonlyArray<string>,
+): Record<string, Report.FileResult> => {
+  const remembered = new Set(rememberedIds)
+  return Object.fromEntries(
+    Object.entries(files).map(([name, file]): readonly [string, Report.FileResult] => [
+      name,
+      { ...file, mutants: file.mutants.map((mutant) => ({ ...mutant, remembered: remembered.has(mutant.id) })) },
+    ]),
+  )
+}
+
 const isCompileError = (mutant: Report.MutantResult): boolean => mutant.status === 'CompileError'
 
 const withProgramDigest = (mutant: Report.MutantResult, digest: string | undefined): Report.MutantResult =>
@@ -813,7 +826,10 @@ const writeIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingWri
     runInputsDigest,
     ...report,
     files: stampFileIdentities(
-      stampProgramDigests(stampClosureDigests(report.files, input.closureDigestsByMutantId), input.programDigest),
+      stampRemembered(
+        stampProgramDigests(stampClosureDigests(report.files, input.closureDigestsByMutantId), input.programDigest),
+        input.rememberedMutantIds,
+      ),
       identities,
     ),
     costs: costsOf(input, input.results),
@@ -902,7 +918,10 @@ const slimIncrementalReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingSlim
     schemaVersion: Report.WrittenSchemaVersion.literal,
     thresholds: input.options.thresholds,
     files: stampFileIdentities(
-      stampProgramDigests(stampClosureDigests(files, input.closureDigestsByMutantId), input.programDigest),
+      stampRemembered(
+        stampProgramDigests(stampClosureDigests(files, input.closureDigestsByMutantId), input.programDigest),
+        input.rememberedMutantIds,
+      ),
       identities,
     ),
     costs: costsOf(input, results),
