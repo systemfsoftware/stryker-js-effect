@@ -71,8 +71,8 @@ const RULE_EDITS: ReadonlyArray<Edit> = [
   {
     id: AE7,
     file: 'closer.ts',
-    target: 'x',
-    replacement: 'x\n}\nexport function closed(): string {\n  return ""',
+    target: 'return x',
+    replacement: 'return x\n}\nexport function closed(): string {\n  return ""',
   },
   { id: AE8, file: 'contextual.ts', target: 'x + 1', replacement: 'String(x)' },
   { id: AE9, file: 'box.ts', target: 'this.items.length', replacement: '""' },
@@ -83,8 +83,8 @@ const positionOf = (text: string, offset: number): Checker.CheckerMutantWire['lo
   return { line: before.length, column: (before.at(-1) ?? '').length + 1 }
 }
 
-const wireOf = (texts: ReadonlyMap<string, string>, join: (name: string) => string) => (edit: Edit) => {
-  const text = texts.get(edit.file) ?? ''
+const wireOf = (texts: HashMap.HashMap<string, string>, join: (name: string) => string) => (edit: Edit) => {
+  const text = Option.getOrElse(HashMap.get(texts, edit.file), () => '')
   const start = text.indexOf(edit.target)
   return {
     id: edit.id,
@@ -119,7 +119,7 @@ const runOf = (
     const here = yield* pathService.fromFileUrl(new URL(import.meta.url))
     const directory = pathService.join(pathService.dirname(here), '__fixtures__', 'importer-shortcut')
     const join = (name: string) => pathService.join(directory, name)
-    const texts = new Map(
+    const texts = HashMap.fromIterable(
       yield* Effect.forEach(
         FIXTURE_FILES,
         (file) => Effect.map(fs.readFileString(join(file)), (text) => [file, text] as const),
@@ -135,12 +135,12 @@ const runOf = (
       resource: { serviceName: 'importer-shortcut-test' },
       spanProcessor: new SimpleSpanProcessor(exporter),
     }))
-    const results = yield* Effect.gen(function*() {
+    const [results, attributes] = yield* Effect.gen(function*() {
       const runtime = yield* CheckerRuntime
       const checker = yield* runtime.checker
-      return yield* checker.check([...wires])
-    }).pipe(Effect.provide(CheckerRuntime.layer(options)), Effect.provide(telemetry))
-    const attributes = checkSpanAttributesOf(exporter)
+      const checked = yield* checker.check([...wires])
+      return [checked, checkSpanAttributesOf(exporter)] as const
+    }).pipe(Effect.provide(CheckerRuntime.layer(options).pipe(Layer.provideMerge(telemetry))))
     const resultOf = (id: string) => HashMap.get(results, id)
     return {
       statuses: Object.fromEntries(
