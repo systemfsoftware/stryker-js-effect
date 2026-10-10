@@ -39,11 +39,15 @@ import {
   PartitionCheckedPlansCommand,
 } from '../Checker/partition-checked-plans.workflow.js'
 import { StageError } from '../Run.schema.js'
+import { PhaseClock } from '../run/phase-clock.service.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
 
 type CheckedPlans = readonly (readonly [Mutant.MutantRunPlan, Checker.CheckResult])[]
 
 const holds = (conditions: readonly boolean[]) => conditions.every((condition) => condition)
+
+const withPhaseClock = <A, E>(effect: Effect.Effect<A, E, PhaseClock>): Effect.Effect<A, E> =>
+  effect.pipe(Effect.provide(PhaseClock.layer(0)))
 
 const idOf = (seed: string): Mutant.MutantId => Mutant.MutantId.make(bytesToHex(sha256(utf8ToBytes(seed))).slice(0, 16))
 
@@ -250,7 +254,7 @@ describe('checker pool', () => {
             Effect.map((slot) => checkerSlotOf(`slot-${slot}`, checkerServiceFor(slot))),
           ),
         )
-        yield* subject(makeCheckerPoolHandle(pool), plans)
+        yield* withPhaseClock(subject(makeCheckerPoolHandle(pool), plans))
         const peakObserved = yield* Ref.get(peak)
         const acquiresObserved = yield* Ref.get(acquires)
         const highestSlot = (yield* Ref.get(slotNumbers)).reduce((largest, slot) => Math.max(largest, slot), 0)
@@ -283,9 +287,9 @@ describe('checker pool', () => {
           ),
         )
         const handle = makeCheckerPoolHandle(pool)
-        const crashed = yield* subject(handle, plans).pipe(Effect.flip)
+        const crashed = yield* withPhaseClock(subject(handle, plans)).pipe(Effect.flip)
         const acquiresAfterCrash = yield* Ref.get(acquires)
-        const crashedAgain = yield* subject(handle, plans).pipe(Effect.flip)
+        const crashedAgain = yield* withPhaseClock(subject(handle, plans)).pipe(Effect.flip)
         const acquiresGrew = (yield* Ref.get(acquires)) > acquiresAfterCrash
         const highestSlot = (yield* Ref.get(slotNumbers)).reduce((largest, slot) => Math.max(largest, slot), 0)
         return crashVerdictOf({
@@ -329,7 +333,7 @@ describe('checker pool', () => {
             ),
         })
         const pool = yield* checkerSlotPoolOf(1, Effect.succeed(checkerSlotOf('c', checker)))
-        const error = yield* subject(makeCheckerPoolHandle(pool), plans).pipe(Effect.flip)
+        const error = yield* withPhaseClock(subject(makeCheckerPoolHandle(pool), plans)).pipe(Effect.flip)
         return breachVerdictOf(stageErrorShapeOf(error), breachTag)
       }),
   )
@@ -422,7 +426,7 @@ describe('checker pool', () => {
           { checkerName: 'second', checker: refusing },
         ]
         const pool = yield* checkerSlotPoolOf(1, Effect.succeed(slot))
-        const groups = yield* subject(makeCheckerPoolHandle(pool), plans)
+        const groups = yield* withPhaseClock(subject(makeCheckerPoolHandle(pool), plans))
         const passedIds = groups.flatMap((group) => group.passedPlans.map((plan) => plan.mutant.id))
         const failedIds = groups.flatMap((group) => group.failedChecks.map(([plan]) => plan.mutant.id))
         return holds([

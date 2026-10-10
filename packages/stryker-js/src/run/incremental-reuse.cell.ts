@@ -35,6 +35,7 @@ import type {
 import type { Project } from '../Project.schema.js'
 import { reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow.js'
 import { StageError } from '../Run.schema.js'
+import type { SourceParser } from '../source-parser.service.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { engineDigestOf, runInputsDigestOf } from '../verdict-semantics.js'
 import { type IncrementalSourceRead, incrementalSourceReadsOf, optionalField } from './incremental-reuse.js'
@@ -333,7 +334,7 @@ const digestsFromAnalysisOf = (
 
 const closureAnalysisOf = (
   input: IncrementalReuseInput,
-): Effect.Effect<Option.Option<ImportClosureAnalysis>, never, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<Option.Option<ImportClosureAnalysis>, never, FileSystem.FileSystem | Path.Path | SourceParser> =>
   Effect.option(
     analyzeImportClosure({
       rootDir: input.basePath,
@@ -357,7 +358,7 @@ interface ClosureDigestsResult {
 
 const closureDigestsOf = (
   input: IncrementalReuseInput,
-): Effect.Effect<ClosureDigestsResult, never, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<ClosureDigestsResult, never, FileSystem.FileSystem | Path.Path | SourceParser> =>
   Effect.map(closureAnalysisOf(input), (analysis) =>
     Option.match(analysis, {
       onNone: (): ClosureDigestsResult => ({ digests: {}, failed: true }),
