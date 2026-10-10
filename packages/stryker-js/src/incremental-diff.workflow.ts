@@ -17,16 +17,16 @@ import {
 } from './IncrementalDiff.schema.js'
 import type { PreviousReuseRecord, TimeoutEvidence } from './IncrementalDiff.schema.js'
 
-const REMEMBERED_PREFIX = 'remembered: '
+const decodeRemembered = S.decodeOption(Mutant.RememberedReason)
+const encodeRemembered = S.encodeOption(Mutant.RememberedReason)
 
 const priorDetailOf = (prior: string): string =>
-  Boolean.match(prior.startsWith(REMEMBERED_PREFIX), {
-    onTrue: () => prior.slice(REMEMBERED_PREFIX.length),
-    onFalse: () => prior,
-  })
+  Option.getOrElse(Option.map(decodeRemembered(prior), (remembered) => remembered.detail), () => prior)
 
-const rememberedReasonOf = (prior: string | undefined): string =>
-  `${REMEMBERED_PREFIX}${priorDetailOf(Option.getOrElse(Option.fromUndefinedOr(prior), () => ''))}`
+const rememberedReasonOf = (prior: string | undefined): string => {
+  const detail = priorDetailOf(Option.getOrElse(Option.fromUndefinedOr(prior), () => ''))
+  return Option.getOrElse(encodeRemembered({ code: 'remembered', detail }), () => detail)
+}
 
 const isReusableStatus = S.is(Mutant.RememberedStatusSchema)
 

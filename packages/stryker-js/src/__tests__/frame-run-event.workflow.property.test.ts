@@ -4,10 +4,29 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { EventSuppressed, frameRunEvent, FrameRunEventCommand, FramingState } from '../frame-run-event.workflow.js'
+import {
+  EventFramed,
+  EventSuppressed,
+  frameRunEvent,
+  FrameRunEventCommand,
+  FramingState,
+} from '../frame-run-event.workflow.js'
 
 const arbitraryTerminalEvent = Arbitrary.schema(
   S.Union([RunEvent.VerdictReached, RunEvent.RunFailed, RunEvent.HelpRendered, RunEvent.Refused]),
+)
+
+const arbitraryNonTerminalEvent = Arbitrary.schema(
+  S.Union([
+    RunEvent.RunStarted,
+    RunEvent.PhaseEntered,
+    RunEvent.PlanKnown,
+    RunEvent.RunMutantTested,
+    RunEvent.Heartbeat,
+    RunEvent.PluginsReported,
+    RunEvent.FormatRegistryResolved,
+    RunEvent.SkippedReported,
+  ]),
 )
 
 const arbitraryEvent = Arbitrary.schema(RunEvent.RunEvent)
@@ -39,6 +58,21 @@ describe('frameRunEvent', () => {
         }),
       )
       return Result.isSuccess(secondResult) && S.is(EventSuppressed)(secondResult.success)
+    },
+  )
+
+  it.prop(
+    '∀e_NonTerminal_≡FramedWhateverTheMode',
+    { of: [arbitraryState, arbitraryNonTerminalEvent], subject: frameRunEvent },
+    (subject, [state, event]) => {
+      const openState: FramingState = {
+        ...state,
+        terminalSeen: false,
+        headerWritten: true,
+      }
+      const result = subject(FrameRunEventCommand.make({ state: openState, event }))
+      const sameEvent = S.toEquivalence(S.toType(RunEvent.RunEvent))
+      return Result.isSuccess(result) && S.is(EventFramed)(result.success) && sameEvent(result.success.event, event)
     },
   )
 

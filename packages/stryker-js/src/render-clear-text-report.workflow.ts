@@ -1,6 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant, Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { NonEmptyReadonlyArray } from 'effect/Array'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -367,10 +366,28 @@ const killerTail = (mutant: ReportMutant): readonly ReportLine[] =>
     onSome: (killer) => [[plain('Killed by: '), plain(killer)]],
   })
 
+const decodeRemembered = S.decodeOption(Mutant.RememberedReason)
+
+const decodeStatusReason = S.decodeUnknownOption(Mutant.StatusReason)
+
+const unrememberedOf = (statusReason: string): string =>
+  Option.getOrElse(Option.map(decodeRemembered(statusReason), (remembered) => remembered.detail), () => statusReason)
+
+const reasonDetailOf = (status: Mutant.MutantStatus, statusReason: string): string => {
+  const unremembered = unrememberedOf(statusReason)
+  return Option.getOrElse(
+    Option.map(
+      decodeStatusReason({ status, statusReason: unremembered }),
+      (decoded) => decoded.statusReason.detail,
+    ),
+    () => unremembered,
+  )
+}
+
 const statusReasonTail = (mutant: ReportMutant): readonly ReportLine[] =>
   Option.match(Option.fromUndefinedOr(mutant.statusReason), {
     onNone: () => [],
-    onSome: (statusReason) => [[plain('Error message: '), plain(statusReason)]],
+    onSome: (statusReason) => [[plain('Error message: '), plain(reasonDetailOf(mutant.status, statusReason))]],
   })
 
 const statusTail = (mutant: ReportMutant, render: ClearTextRenderOptions): readonly ReportLine[] =>

@@ -45,7 +45,7 @@ export const StrengthenTests = S.TaggedStruct('strengthen-tests', {
   reproduce: S.String,
 }).annotate({
   description:
-    'The covering tests ran and none failed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant.',
+    'The covering tests ran and none failed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant. Selected only when per-test coverage was measured. `tests.total` is 0 only for a static mutant no single test covers: it ran against the whole suite, so strengthen a test that loads its module.',
 })
 export type StrengthenTests = typeof StrengthenTests.Type
 

@@ -133,10 +133,7 @@ Feature('A survivor and an uncovered mutant carry what an agent needs to act', {
                   replacement: survived.replacement,
                   coveringTests: survived.coveredBy.length,
                   namesTheSeededTest: survived.coveredBy.some((test) => test.includes('calls doubled')),
-                  next: survived.next._tag,
-                  shown: survived.next.tests.shown,
-                  total: survived.next.tests.total,
-                  reproduce: survived.next.reproduce,
+                  next: survived.next,
                 }
                 : survived?.status,
               uncovered: uncovered?.status === 'NoCoverage'
@@ -150,10 +147,11 @@ Feature('A survivor and an uncovered mutant carry what an agent needs to act', {
                 replacement: 'n / 2',
                 coveringTests: 1,
                 namesTheSeededTest: true,
-                next: 'strengthen-tests',
-                shown: survived?.status === 'Survived' ? survived.coveredBy : [],
-                total: 1,
-                reproduce: `stryker run --mutant ${survived?.id}`,
+                next: {
+                  _tag: 'strengthen-tests',
+                  tests: { total: 1, shown: survived?.status === 'Survived' ? survived.coveredBy : [] },
+                  reproduce: `stryker run --mutant ${survived?.id}`,
+                },
               },
               uncovered: {
                 reason: 'not-covered',

@@ -1,8 +1,12 @@
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { type LineStarts, lineStartsOf, offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as SchemaIssue from 'effect/SchemaIssue'
+
+import { MutantFactsInvalid } from '../Run.schema.js'
 
 export interface SourceText {
   readonly text: string
@@ -17,24 +21,37 @@ export interface MutantFactsInput {
   readonly source: Option.Option<SourceText>
 }
 
-const originalTextOf = (source: Option.Option<SourceText>, location: Mutant.Location): string =>
-  Option.getOrElse(
+const originalTextOf = (source: Option.Option<SourceText>, location: Mutant.Location): string | null =>
+  Option.getOrNull(
     Option.flatMap(source, ({ text, lineStarts }) =>
       Option.zipWith(
         offsetAt(lineStarts, location.start),
         offsetAt(lineStarts, location.end),
         (start, end) => text.slice(start, end),
       )),
-    () => '',
   )
 
-const requiredReasonOf = (result: Mutant.RunMutantResult): string =>
-  Option.getOrThrowWith(
+const invalidFacts = (result: Mutant.RunMutantResult, detail: string): MutantFactsInvalid =>
+  new MutantFactsInvalid({ code: 'mutant-facts-invalid', mutantId: result.id, detail })
+
+const statusReasonOf = (result: Mutant.RunMutantResult): Effect.Effect<string, MutantFactsInvalid> =>
+  Effect.fromOption(
     Option.fromUndefinedOr(result.statusReason),
-    () => new Error(`${result.status} mutant ${result.id} reached the stream without a status reason`),
+    () => invalidFacts(result, `the ${result.status} mutant carries no status reason`),
   )
 
-const sharedFactsOf = ({ result, file }: MutantFactsInput) => ({
+const formatIssue = SchemaIssue.makeFormatterDefault()
+
+const madeFor = <A>(
+  result: Mutant.RunMutantResult,
+  made: Effect.Effect<A, SchemaIssue.Issue>,
+): Effect.Effect<A, MutantFactsInvalid> =>
+  Effect.mapError(
+    made,
+    (issue) => invalidFacts(result, `the ${result.status} facts are refused: ${formatIssue(issue)}`),
+  )
+
+const sharedFactsOf = ({ result, file }: MutantFactsInput, statusReason: string) => ({
   id: result.id,
   fileName: file,
   location: result.location,
@@ -43,53 +60,70 @@ const sharedFactsOf = ({ result, file }: MutantFactsInput) => ({
   static: Option.getOrElse(Option.fromUndefinedOr(result.static), () => false),
   cost: Option.getOrNull(Option.map(Option.fromUndefinedOr(result.cost), (cost) => RunEvent.MutantCost.make(cost))),
   subsumption: Option.getOrNull(Option.fromUndefinedOr(result.subsumption)),
-  statusReason: requiredReasonOf(result),
+  statusReason,
 })
 
 const actionableFactsOf = <Status extends Mutant.ActionableStatus>(
   { result, file, source }: MutantFactsInput,
   status: Status,
 ) => {
-  const coveredBy = [...Option.getOrElse(Option.fromUndefinedOr(result.coveredBy), () => [])]
+  const measured = Option.fromUndefinedOr(result.coveredBy)
   return {
     original: originalTextOf(source, result.location),
-    coveredBy,
-    next: RunEvent.nextActionOf({ id: result.id, file, location: result.location, coveredBy }, status),
+    coveredBy: [...Option.getOrElse(measured, () => [])],
+    next: RunEvent.nextActionOf(
+      { id: result.id, file, location: result.location, coveredBy: Option.getOrNull(measured) },
+      status,
+    ),
   }
 }
 
-export const mutantFactsOf = (input: MutantFactsInput): RunEvent.MutantFacts => {
+export const mutantFactsOf = Effect.fnUntraced(function*(input: MutantFactsInput) {
   const { result } = input
-  const shared = sharedFactsOf(input)
+  const shared = sharedFactsOf(input, yield* statusReasonOf(result))
   const { cases } = RunEvent.MutantFacts
-  return Match.value(result.status).pipe(
+  return yield* Match.value(result.status).pipe(
     Match.when('Killed', () =>
-      cases.Killed.make({
-        ...shared,
-        status: 'Killed',
-        killedBy: [...Option.getOrElse(Option.fromUndefinedOr(result.killedBy), () => [])],
-      })),
-    Match.when(
-      'Survived',
-      () => cases.Survived.make({ ...shared, status: 'Survived', ...actionableFactsOf(input, 'Survived') }),
-    ),
+      madeFor(
+        result,
+        cases.Killed.makeEffect({
+          ...shared,
+          status: 'Killed',
+          killedBy: [...Option.getOrElse(Option.fromUndefinedOr(result.killedBy), () => [])],
+        }),
+      )),
+    Match.when('Survived', () =>
+      madeFor(
+        result,
+        cases.Survived.makeEffect({ ...shared, status: 'Survived', ...actionableFactsOf(input, 'Survived') }),
+      )),
     Match.when('NoCoverage', () => {
       const { original, next } = actionableFactsOf(input, 'NoCoverage')
-      return cases.NoCoverage.make({ ...shared, status: 'NoCoverage', original, next })
+      return madeFor(result, cases.NoCoverage.makeEffect({ ...shared, status: 'NoCoverage', original, next }))
     }),
+    Match.when('Timeout', () =>
+      madeFor(
+        result,
+        cases.Timeout.makeEffect({ ...shared, status: 'Timeout', ...actionableFactsOf(input, 'Timeout') }),
+      )),
+    Match.when('RuntimeError', () =>
+      madeFor(
+        result,
+        cases.RuntimeError.makeEffect({
+          ...shared,
+          status: 'RuntimeError',
+          ...actionableFactsOf(input, 'RuntimeError'),
+        }),
+      )),
     Match.when(
-      'Timeout',
-      () => cases.Timeout.make({ ...shared, status: 'Timeout', ...actionableFactsOf(input, 'Timeout') }),
+      'CompileError',
+      () => madeFor(result, cases.CompileError.makeEffect({ ...shared, status: 'CompileError' })),
     ),
+    Match.when('Ignored', () => madeFor(result, cases.Ignored.makeEffect({ ...shared, status: 'Ignored' }))),
     Match.when(
-      'RuntimeError',
-      () => cases.RuntimeError.make({ ...shared, status: 'RuntimeError', ...actionableFactsOf(input, 'RuntimeError') }),
+      'Pending',
+      () => Effect.fail(invalidFacts(result, 'a Pending mutant reached the stream before it settled')),
     ),
-    Match.when('CompileError', () => cases.CompileError.make({ ...shared, status: 'CompileError' })),
-    Match.when('Ignored', () => cases.Ignored.make({ ...shared, status: 'Ignored' })),
-    Match.when('Pending', (): never => {
-      throw new Error(`Pending mutant ${result.id} reached the stream before it settled`)
-    }),
     Match.exhaustive,
   )
-}
+})

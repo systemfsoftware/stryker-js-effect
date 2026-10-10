@@ -1,17 +1,18 @@
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { dual } from 'effect/Function'
+import * as Option from 'effect/Option'
 
-import { AddTest, nextActionTestsOf, NoneNeeded, StrengthenTests } from './next-action.schema.js'
+import { AddTest, FixConfig, nextActionTestsOf, NoneNeeded, StrengthenTests } from './next-action.schema.js'
 
 export interface NextActionFacts {
   readonly id: Mutant.MutantIdValue
   readonly file: Mutant.CanonicalFileNameValue
   readonly location: Mutant.Location
-  readonly coveredBy: ReadonlyArray<string>
+  readonly coveredBy: ReadonlyArray<string> | null
 }
 
 export interface NextActionByStatus {
-  readonly Survived: StrengthenTests
+  readonly Survived: StrengthenTests | FixConfig
   readonly NoCoverage: AddTest
   readonly Timeout: NoneNeeded
   readonly RuntimeError: NoneNeeded
@@ -19,13 +20,20 @@ export interface NextActionByStatus {
 
 export const reproducerOf = (id: Mutant.MutantIdValue): string => `stryker run --mutant ${id}`
 
+const MEASURE_COVERAGE =
+  "Set `coverageAnalysis: 'perTest'` in the Stryker configuration so the run records which tests cover each mutant, then run again."
+
 const BY_STATUS: {
   readonly [Status in Mutant.ActionableStatus]: (facts: NextActionFacts) => NextActionByStatus[Status]
 } = {
   Survived: (facts) =>
-    StrengthenTests.make({
-      tests: nextActionTestsOf(facts.coveredBy),
-      reproduce: reproducerOf(facts.id),
+    Option.match(Option.fromNullishOr(facts.coveredBy), {
+      onNone: (): StrengthenTests | FixConfig => FixConfig.make({ remediation: MEASURE_COVERAGE }),
+      onSome: (coveredBy) =>
+        StrengthenTests.make({
+          tests: nextActionTestsOf(coveredBy),
+          reproduce: reproducerOf(facts.id),
+        }),
     }),
   NoCoverage: (facts) =>
     AddTest.make({ file: facts.file, line: facts.location.start.line, column: facts.location.start.column }),

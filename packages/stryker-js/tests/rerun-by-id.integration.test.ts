@@ -152,7 +152,7 @@ Feature('Re-running one mutant by its id', { timeout: 180_000 })
           (s) => runStryker(s.project.root, 'machine', ['run', '--mutant', s.reproducer.id]),
         ),
         Then(
-          'the re-run succeeds and reports that mutant surviving, with its covering tests, no killing test and its reproducer command',
+          'the re-run succeeds and reports that mutant surviving, with no killing test, a request to measure which tests cover it, and its reproducer command',
         )(
           (s, expect) => {
             const detail = detailOf(s.rerun.stdout, s.reproducer.id)
@@ -176,7 +176,7 @@ Feature('Re-running one mutant by its id', { timeout: 180_000 })
                 hasKilledBy: false,
                 reproducer: `stryker run --mutant ${s.reproducer.id}`,
                 coveringTestsIsArray: true,
-                next: 'strengthen-tests',
+                next: 'fix-config',
               },
             })
           },

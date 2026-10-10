@@ -316,7 +316,10 @@ export interface Settlement<Passed extends Mutant.MutantRunPlan, E> {
 export interface PlanSettling {
   readonly context: RunContext
   readonly checkpoint: CheckpointWriter
-  readonly settleChecked: (reported: Mutant.RunMutantResult, checkMs: number) => Effect.Effect<Mutant.RunMutantResult>
+  readonly settleChecked: (
+    reported: Mutant.RunMutantResult,
+    checkMs: number,
+  ) => Effect.Effect<Mutant.RunMutantResult, StageError>
 }
 
 export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.MutantRunPlan, E>(
@@ -366,6 +369,8 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
         yield* checkpoint.record(measured)
         return measured
       })
+    const runPlan = (plan: Passed, checkMs: number): Effect.Effect<Mutant.RunMutantResult, E | StageError> =>
+      settlement.runPlanOf({ context, checkpoint, settleChecked })(plan, checkMs)
     const runChecked = (checkedPlans: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash, PhaseClock>) =>
       runCheckedPlans(checkedPlans, {
         settleFailure: (mutantPlan, result, checkMs) =>
@@ -378,7 +383,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
             reporting.reportIgnored(toReportedMutant(mutantPlan.mutant), result),
             (reported) => settleChecked(reported, 0),
           ),
-        runPlan: settlement.runPlanOf({ context, checkpoint, settleChecked }),
+        runPlan,
         concurrency: capacity,
       }).pipe(
         Stream.runFold(

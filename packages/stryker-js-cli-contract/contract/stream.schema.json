@@ -587,7 +587,15 @@
               "pattern": "^(?:covered-not-killed|coverage-not-measured|remembered): [\\s\\S]*$"
             },
             "original": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The source text the mutant replaces, sliced from the file before instrumentation; null when that file could not be read at settlement."
             },
             "coveredBy": {
               "type": "array",
@@ -596,45 +604,69 @@
               }
             },
             "next": {
-              "type": "object",
-              "properties": {
-                "_tag": {
-                  "type": "string",
-                  "enum": [
-                    "strengthen-tests"
-                  ]
-                },
-                "tests": {
+              "anyOf": [
+                {
                   "type": "object",
                   "properties": {
-                    "total": {
-                      "type": "integer",
-                      "minimum": 0
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "strengthen-tests"
+                      ]
                     },
-                    "shown": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
+                    "tests": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shown": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "shown"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "reproduce": {
+                      "type": "string"
                     }
                   },
                   "required": [
-                    "total",
-                    "shown"
+                    "_tag",
+                    "tests",
+                    "reproduce"
                   ],
-                  "additionalProperties": true
+                  "additionalProperties": true,
+                  "description": "The covering tests ran and none failed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant. Selected only when per-test coverage was measured. `tests.total` is 0 only for a static mutant no single test covers: it ran against the whole suite, so strengthen a test that loads its module."
                 },
-                "reproduce": {
-                  "type": "string"
+                {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "fix-config"
+                      ]
+                    },
+                    "remediation": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "remediation"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The configuration or a plugin is wrong: apply `remediation`, then run again."
                 }
-              },
-              "required": [
-                "_tag",
-                "tests",
-                "reproduce"
-              ],
-              "additionalProperties": true,
-              "description": "The covering tests ran and none failed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant."
+              ]
             }
           },
           "required": [
@@ -931,7 +963,15 @@
               "pattern": "^(?:not-covered|remembered): [\\s\\S]*$"
             },
             "original": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The source text the mutant replaces, sliced from the file before instrumentation; null when that file could not be read at settlement."
             },
             "coveredBy": {
               "anyOf": [
@@ -1268,7 +1308,15 @@
               "pattern": "^(?:timed-out|remembered): [\\s\\S]*$"
             },
             "original": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The source text the mutant replaces, sliced from the file before instrumentation; null when that file could not be read at settlement."
             },
             "coveredBy": {
               "type": "array",
@@ -1606,7 +1654,15 @@
               "pattern": "^(?:runtime-error): [\\s\\S]*$"
             },
             "original": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The source text the mutant replaces, sliced from the file before instrumentation; null when that file could not be read at settlement."
             },
             "coveredBy": {
               "type": "array",
@@ -3498,7 +3554,15 @@
                   "pattern": "^(?:covered-not-killed|coverage-not-measured|remembered): [\\s\\S]*$"
                 },
                 "original": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The source text the mutant replaces, sliced from the file before instrumentation; null when that file could not be read at settlement."
                 },
                 "coveredBy": {
                   "type": "array",
@@ -3507,45 +3571,69 @@
                   }
                 },
                 "next": {
-                  "type": "object",
-                  "properties": {
-                    "_tag": {
-                      "type": "string",
-                      "enum": [
-                        "strengthen-tests"
-                      ]
-                    },
-                    "tests": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "total": {
-                          "type": "integer",
-                          "minimum": 0
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "strengthen-tests"
+                          ]
                         },
-                        "shown": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
+                        "tests": {
+                          "type": "object",
+                          "properties": {
+                            "total": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "shown": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "shown"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "reproduce": {
+                          "type": "string"
                         }
                       },
                       "required": [
-                        "total",
-                        "shown"
+                        "_tag",
+                        "tests",
+                        "reproduce"
                       ],
-                      "additionalProperties": true
+                      "additionalProperties": true,
+                      "description": "The covering tests ran and none failed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant. Selected only when per-test coverage was measured. `tests.total` is 0 only for a static mutant no single test covers: it ran against the whole suite, so strengthen a test that loads its module."
                     },
-                    "reproduce": {
-                      "type": "string"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "fix-config"
+                          ]
+                        },
+                        "remediation": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "remediation"
+                      ],
+                      "additionalProperties": true,
+                      "description": "The configuration or a plugin is wrong: apply `remediation`, then run again."
                     }
-                  },
-                  "required": [
-                    "_tag",
-                    "tests",
-                    "reproduce"
-                  ],
-                  "additionalProperties": true,
-                  "description": "The covering tests ran and none failed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant."
+                  ]
                 }
               },
               "required": [
@@ -3825,7 +3913,15 @@
                   "pattern": "^(?:not-covered|remembered): [\\s\\S]*$"
                 },
                 "original": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The source text the mutant replaces, sliced from the file before instrumentation; null when that file could not be read at settlement."
                 },
                 "coveredBy": {
                   "anyOf": [
@@ -4145,7 +4241,15 @@
                   "pattern": "^(?:timed-out|remembered): [\\s\\S]*$"
                 },
                 "original": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The source text the mutant replaces, sliced from the file before instrumentation; null when that file could not be read at settlement."
                 },
                 "coveredBy": {
                   "type": "array",
@@ -4466,7 +4570,15 @@
                   "pattern": "^(?:runtime-error): [\\s\\S]*$"
                 },
                 "original": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The source text the mutant replaces, sliced from the file before instrumentation; null when that file could not be read at settlement."
                 },
                 "coveredBy": {
                   "type": "array",

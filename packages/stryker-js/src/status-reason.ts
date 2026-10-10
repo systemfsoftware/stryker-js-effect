@@ -1,13 +1,19 @@
-import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Option from 'effect/Option'
+import * as S from 'effect/Schema'
 
 const SEPARATOR = ': '
-const REMEMBERED: Mutant.SettledReasonCodeValue = 'remembered'
 const TIMED_OUT: Mutant.SettledReasonCodeValue = 'timed-out'
+
+const decodeRemembered = S.decodeOption(Mutant.RememberedReason)
 
 export const statusReasonTextOf = ({ statusReason }: Mutant.StatusReasonValue): string =>
   `${statusReason.code}${SEPARATOR}${statusReason.detail}`
 
-const withoutCode = (text: string, code: Mutant.SettledReasonCodeValue): string =>
-  text.startsWith(`${code}${SEPARATOR}`) ? text.slice(code.length + SEPARATOR.length) : text
+const withoutRemembered = (text: string): string =>
+  Option.getOrElse(Option.map(decodeRemembered(text), (remembered) => remembered.detail), () => text)
 
-export const timeoutDetailOf = (reason: string): string => withoutCode(withoutCode(reason, REMEMBERED), TIMED_OUT)
+const withoutTimedOut = (text: string): string =>
+  text.startsWith(`${TIMED_OUT}${SEPARATOR}`) ? text.slice(TIMED_OUT.length + SEPARATOR.length) : text
+
+export const timeoutDetailOf = (reason: string): string => withoutTimedOut(withoutRemembered(reason))

@@ -3,7 +3,7 @@ import { Plugin, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect, SchemaGetter } from 'effect'
 import * as S from 'effect/Schema'
 
-import { AddTest, NoneNeeded, StrengthenTests } from './next-action.schema.js'
+import { AddTest, FixConfig, NoneNeeded, StrengthenTests } from './next-action.schema.js'
 import { ModeSignal, OutputMode } from './output-mode.schema.js'
 import { PluginLoadFailureReason } from './plugin-load-failure-reason.schema.js'
 import { ShardPlan as ShardPlanDocument } from './shard-plan.schema.js'
@@ -135,7 +135,12 @@ const sharedWireFields = {
   subsumption: S.NullOr(Mutant.Subsumption),
 }
 
-const killableFields = { original: S.String, coveredBy: S.Array(S.String) }
+const OriginalText = S.NullOr(S.String).annotate({
+  description:
+    'The source text the mutant replaces, sliced from the file before instrumentation; null when that file could not be read at settlement.',
+})
+
+const killableFields = { original: OriginalText, coveredBy: S.Array(S.String) }
 
 const statusFields = [
   {
@@ -147,12 +152,12 @@ const statusFields = [
     status: S.Literal('Survived'),
     statusReason: reasonTextOf(Mutant.StatusReason.cases.Survived),
     ...killableFields,
-    next: StrengthenTests,
+    next: S.Union([StrengthenTests, FixConfig]),
   },
   {
     status: S.Literal('NoCoverage'),
     statusReason: reasonTextOf(Mutant.StatusReason.cases.NoCoverage),
-    original: S.String,
+    original: OriginalText,
     coveredBy: S.optional(S.Never),
     next: AddTest,
   },
@@ -175,6 +180,14 @@ const statusFields = [
 const [killedOnly, survivedOnly, noCoverageOnly, timeoutOnly, runtimeErrorOnly, compileErrorOnly, ignoredOnly] =
   statusFields
 
+type DeclaredStatus = (typeof statusFields)[number]['status']['Type']
+
+type CoversEveryStatus<Union extends { readonly Type: { readonly status: Mutant.MutantStatus } }> =
+  [Union['Type']['status']] extends [DeclaredStatus] ? [DeclaredStatus] extends [Union['Type']['status']] ? true : false
+    : false
+
+type Asserted<Holds extends true, A> = Holds extends true ? A : never
+
 export const MutantFacts = S.Union([
   S.Struct({ ...sharedFactFields, ...killedOnly }).check(subsumptionCheck),
   S.Struct({ ...sharedFactFields, ...survivedOnly }).check(subsumptionCheck),
@@ -187,7 +200,7 @@ export const MutantFacts = S.Union([
   description:
     "What is known about a settled mutant, by status. `statusReason` is `<code>: <detail>` from the status's own codes; `next` says what to do about a survivor or a failure.",
 }).pipe(S.toTaggedUnion('status'))
-export type MutantFacts = typeof MutantFacts.Type
+export type MutantFacts = Asserted<CoversEveryStatus<typeof MutantFacts>, typeof MutantFacts.Type>
 
 const eventFields = { _tag: S.tag('mutantTested'), ...sharedFactFields, ...progressFields }
 
@@ -200,7 +213,7 @@ export const RunMutantTestedEvent = S.Union([
   S.Struct({ ...eventFields, ...compileErrorOnly }).check(subsumptionCheck),
   S.Struct({ ...eventFields, ...ignoredOnly }).check(subsumptionCheck),
 ]).pipe(S.toTaggedUnion('status'))
-export type RunMutantTested = typeof RunMutantTestedEvent.Type
+export type RunMutantTested = Asserted<CoversEveryStatus<typeof RunMutantTestedEvent>, typeof RunMutantTestedEvent.Type>
 
 const wireFields = { _tag: S.tag('mutant'), ...sharedWireFields }
 
@@ -214,7 +227,12 @@ const MutantTestedWireSchema = S.Union([
   S.Struct({ ...wireFields, ...ignoredOnly }).check(subsumptionCheck),
 ])
 
-export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSchema.Encoded> = MutantTestedWireSchema
+type MutantTestedWire = Asserted<
+  CoversEveryStatus<typeof MutantTestedWireSchema>,
+  typeof MutantTestedWireSchema.Encoded
+>
+
+export const RunMutantTested: S.Codec<RunMutantTested, MutantTestedWire> = MutantTestedWireSchema
   .pipe(
     S.decodeTo(S.toType(RunMutantTestedEvent), {
       decode: SchemaGetter.transform((line) => ({
