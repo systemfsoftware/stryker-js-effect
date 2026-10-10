@@ -27,7 +27,7 @@ Main already ships every agent surface this unit names: an NDJSON stream, typed 
 
 ### Problem Frame
 
-An agent on main today hits four walls, all measured on the repo's own corpus (artifact `mutation-report-416`, main `1e1de6d05`: 8,626 mutants, 1,035 Survived, 451 NoCoverage, 20 Timeout). The branch base is now `d2f018db4` (#259 and #260 merged up); the corpus figures remain those of `1e1de6d05`.
+An agent on main today hits four walls, all measured on the repo's own corpus (artifact `mutation-report-416`, main `1e1de6d05`: 8,626 mutants, 1,035 Survived, 451 NoCoverage, 20 Timeout). This Problem Frame and the Existing Surfaces table describe that baseline; what `main` changed since is recorded once, in the "Changes since the plan's baseline" section of `docs/explainers/agent-surfaces-audit.md`.
 
 Outputs exceed every agent client's limit. The terminal `verdict` line carries every actionable mutant: 1,506 entries, about 366 KB on one line. The MCP `list_survivors` result for the surfaced set (509 survivors under the default caps) is 52,702 bytes of compact JSON. Codex truncates tool output at 10,000 bytes by default and drops `structuredContent` when it truncates; Claude Code warns at 10,000 tokens, caps at 25,000, and spills any text result over 50,000 characters to a file.
 
@@ -39,7 +39,7 @@ Docs drift. The root `README.md` stream example still shows `schemaVersion` `1.1
 
 ### Existing Surfaces on Main
 
-Every requirement below extends one of these; none rebuilds it.
+Every requirement below extends one of these; none rebuilds it. The table is the `1e1de6d05` baseline; see the audit's "Changes since the plan's baseline" section for what `main` has changed since.
 
 | Surface             | Contract and version                                                                                                                                                                    | Reasons and next actions today                                                                                                   | Location                                                                                                                                                                                   |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -67,15 +67,15 @@ Every requirement below extends one of these; none rebuilds it.
 - KD2. **One reason vocabulary, shared by every surface.** The stream, MCP, SARIF, annotations, and CI summaries name a failure by the same code. There is one vocabulary module, `packages/stryker-js-plugin-interface/src/ignore-rule.schema.ts`, with one export surface (`Mutant.*`); U2 extends it with the codes for the other statuses, `remembered`, run failures, and tool refusals, and builds no second module. Governs R5, R6, R7, R33. (session-settled: root ruling 2026-10-10 on OQ2 — chosen over the mutant-quality workstream authoring the non-`Ignored` codes.)
 - KD3. **A reason is a property of a status variant.** Each status carries exactly the reason and next-action fields valid for it, never an optional field whose presence encodes state (pack: schema-laws, tagged-unions-over-state-by-presence.md). Governs R5, R8.
 - KD4. **Size the budget to the tightest agent client.** Codex's default tool-output limit is 10,000 bytes, the tightest documented client limit; Claude Code's 10,000-token warning and 50,000-character spill sit above it. Governs R11.
-- KD5. **Default machine-mode stdout is a bounded summary; the full per-mutant stream is opt-in.** On the corpus 2,719,417 bytes of mutant lines precede the verdict, and Codex keeps only the first 10,000 bytes, so an agent's default output never reaches the verdict. The default leads with the verdict and causes and fits the budget; per-mutant detail stays reachable through paging and through the stream file the summary names, and a documented opt-in restores the full stream on stdout. Breaking change under R30. Governs R11, R12. (session-settled: user-directed — chosen over keeping per-mutant lines on default stdout: the verdict is unreachable within the tightest client's limit.)
+- KD5. **Default machine-mode stdout is a bounded summary; the full per-mutant stream is opt-in.** On the corpus 2,891,940 bytes of mutant lines precede the verdict (the audit's stream row: all 8,626 mutants at the `7.0` line shape), and Codex keeps only the first 10,000 bytes, so an agent's default output never reaches the verdict. The default leads with the verdict and causes and fits the budget; per-mutant detail stays reachable through paging and through the stream file the summary names, and a documented opt-in restores the full stream on stdout. Breaking change under R30. Governs R11, R12. (session-settled: user-directed — chosen over keeping per-mutant lines on default stdout: the verdict is unreachable within the tightest client's limit.)
 - KD6. **Annotation severity follows the job's result.** On a red job its survivors and failures are `::error` with file and line, highest priority first within GitHub's 10-per-step cap; on a green job survivors are `::warning`. Run failures with no source location are `::error title=<what failed>` naming the step or component. `stryker annotate` gains the error level; no gate-rejected survivor set is invented, since none exists in CI today. Governs R18. (session-settled: user-directed — chosen over `::error` only for gate-rejected survivors: CI has no survivor baseline, so that set is empty.)
 - KD7. **An MCP refusal is a structured result.** A domain refusal such as an unknown mutant id belongs on the outcome channel with a reason code, not in error text (pack: cell-architecture, four-channel-contracts.md). Governs R15.
 - KD8. **Journeys read only the published contract and assert hand-written expectations.** They decode with the published schema and add no third-party validator; each seeded case carries a hand-written expected reason code and next action, never derived from running the code or reading the schema (`CONST-T10`). Governs R22, R24. (session-settled: user-directed — chosen over a schema-derived oracle: a generated accept-law cannot reject a wrong but well-formed reason.)
 - KD9. **The agent guide is generated, not written.** It derives from schema annotations and fails CI on drift, as the committed `contract/*.json` documents already do. Governs R26.
 - KD10. **The HTML report stays out of the agent path.** It is audited for size and left unchanged. Governs R1.
 - KD11. **Workflow edits are in scope under an open bypass.** Root `AGENTS.md` marks `.github/workflows/` read-only and `CONST-E9` covers CI checks; each PR touching a workflow declares `CONST-W3` naming `CONST-E9` and the case, keeps workflow changes in their own commits, and loosens no existing gate. Governs R16-R21, R32. (session-settled: user-directed — chosen over a maintainer applying agent-drafted edits: the unit contract authorises the edits and the root reviews each workflow diff.)
-- KD12. **Build on main; whoever lands second adopts the other's names.** PR #258 (`stryker/mutant-quality-l1-reasons` `695bad677`: the `checker` code and closing `Ignored`'s `statusReason`) closed unmerged; this unit does not stack on it. If #258 re-lands first, U2 adopts its names and merges `main` up; if U2 lands first, it carries `checker` under that name and a re-landed #258 adopts U2's. If both bump the stream, they share one unreleased `7.0`, because the version law compares against the released alias. Governs R8, R30. (session-settled: root ruling 2026-10-10.)
-- KD13. **SARIF upload to code scanning is out of scope.** SARIF is audited; rule help, `fullDescription`, and an explicit truncation note ship in U8 only when the U1 audit row records their cost and a reader that consumes them; otherwise they move to Scope Boundaries as considered and not built. Governs R1. (session-settled: user-directed — chosen over uploading: not in Done and needs `security-events: write`.)
+- KD12. **Build on main; whoever lands second adopts the other's names.** #262 (`4bf59526d`) landed first: it added `checker` to `RULE_IDS` and `statusReason` to the stream `mutant` line under stream `7.0`, so U2 and U3 adopt its names. PR #258 (`stryker/mutant-quality-l1-reasons` `695bad677`) closed unmerged; this unit does not stack on it, and if it re-lands, whoever lands second adopts the other's names. The stream version U3 ships under is R30's. Governs R8, R30. (session-settled: root rulings 2026-10-10.)
+- KD13. **SARIF upload to code scanning is out of scope, and SARIF rule metadata is not built.** The U1 audit's SARIF row and its "SARIF decision (KD13)" section record no reader for rule `help`, `fullDescription`, or a truncation note, so they move to Scope Boundaries as considered and not built. Each SARIF result's message still carries the reason code and next action (KD2, U8). Governs R1. (session-settled: user-directed — chosen over uploading: not in Done and needs `security-events: write`; root ruling 2026-10-10 on the U1 review drops only the rule-metadata half.)
 
 ### Requirements
 
@@ -128,7 +128,7 @@ Every requirement below extends one of these; none rebuilds it.
 **Delivery**
 
 - R29. The work ships as a `gh stack` off `main`, one reviewable concern per layer, each layer green and inert until a higher layer wires it in.
-- R30. Breaking contract changes ship under `BREAK-1`: a changeset bumping major (minor while 0.x) with a migration note. The stream major is `7.0`, one unreleased bump shared with any re-landed #258.
+- R30. Breaking contract changes ship under `BREAK-1`: a changeset bumping major (minor while 0.x) with a migration note. #262 landed first and took the stream to `7.0` with `statusReason`; U3 reshapes that field under the same name. Version PR #267 is open, so whether `7.0` has shipped is checked when U3 lands, never assumed: if `7.0` is still unreleased, U3 rides it; if `7.0` has shipped, U3's change is breaking, `StreamSchemaVersion` moves to `8.0`, and its changeset carries the major bump (minor while 0.x) and a migration note.
 - R31. No new third-party dependency and no cloud credentials; any dependency is proposed for approval, never added.
 - R32. Every PR that touches a workflow carries a `CONST-W3` declaration in its body naming `CONST-E9` and the case, keeps workflow changes in their own commits, and removes or weakens no threshold, baseline, budget, or check.
 - R33. Every status variant in the schema carries the reason field, and every code it holds comes from the one vocabulary (KD2).
@@ -169,7 +169,7 @@ Every requirement below extends one of these; none rebuilds it.
 
 ### Success Criteria
 
-- Budgets stated in each PR body beside the budget: U5, U6, and U7 state the bytes measured from the PR's own built CLI on the CI journey fixture (real `7.0` output), not a model. The corpus figures in Budgets on the corpus are labelled as a model, and U12 re-measures summary, page, and MCP-result bytes on the first `main` mutation report that carries `7.0` fields.
+- Budgets stated in each PR body beside the budget: U5, U6, and U7 state the bytes measured from the PR's own built CLI on the CI journey fixture (real output at U3's line shape), not a model. The corpus figures in Budgets on the corpus are labelled as a model, and U12 re-measures summary, page, and MCP-result bytes on the first `main` mutation report that carries U3's fields.
 - `gh run view --log-failed` on the dispatch proof run reports its byte and line counts beside the 157,260-byte (#925) and 59,162-byte (#413) baselines, and its first `##[error]` line names the cause within the first 20 lines of the failing step (R19).
 - Each journey is green in CI with every one of its generated negative cases passing; the PR cites the case names and the CI run URL.
 
@@ -181,7 +181,7 @@ Every requirement below extends one of these; none rebuilds it.
 - Uploading SARIF to GitHub code scanning (needs `security-events: write`).
 - Editing `systemfsoftware/pnpm-release-management`; `release.yml` gets a summary job on this side only.
 - Changing the HTML report, prose-only docs without schema checks (other than the `STRATEGY.md:18` positioning sentence U11 rewords), tests that re-read a schema to find fields just added, assertions on human-pretty output, and LLM-judged evals.
-- SARIF rule `fullDescription`/`help` and the truncation note, unless the U1 audit row justifies them (KD13).
+- SARIF rule `fullDescription`/`help` and the truncation note: considered and not built. The U1 audit's SARIF row and "SARIF decision (KD13)" (`docs/explainers/agent-surfaces-audit.md`) record negligible cost and no reader. Dropped with them: the property that every rule has non-empty `fullDescription.text` and a report over 5,000 results records `truncated: true`, and their target mutants (`sarif-report.workflow.ts` 10 ids, `a55209612382e0a2` L13 ... `3981f38019be38de` L169).
 - Changing when mutation runs, or adding a `pull_request` trigger to `mutation.yml`.
 
 <!-- ce-section: work-relationships -->
@@ -190,7 +190,7 @@ Every requirement below extends one of these; none rebuilds it.
 
 This plan covers agent-facing surfaces. The breakdown below is the current understanding, not a committed roadmap.
 
-- Mutant-quality reasons (#258, closed unmerged): if it re-lands, it **Shares** the stream `mutant` line, its `statusReason`, the vocabulary module, and the unreleased `7.0`; whoever lands second adopts the other's names (KD12).
+- Mutant-quality reasons (#258, closed unmerged): #262 already landed `checker` and the stream `statusReason`. If #258 re-lands, it **Shares** the stream `mutant` line, its `statusReason`, and the vocabulary module; whoever lands second adopts the other's names (KD12).
 - Event spine refactor: this plan builds against main's current code and merges `main` up as the refactor lands; it does not restructure the spine. A field that must land where the refactor moves code is added in the schema and flagged (OQ1, closed).
 - Phase-share bench: **Can proceed independently of** this plan.
 
@@ -199,7 +199,7 @@ This plan covers agent-facing surfaces. The breakdown below is the current under
 Premises this plan rests on, each with its source. Verified means read in code or measured in this session; unverified means inferred.
 
 - Verified: main ships the stream, exit codes, MCP server, JSON, SARIF, HTML, and `annotate` surfaces listed above (code reads; grounding files).
-- Verified: no workflow or script writes `$GITHUB_STEP_SUMMARY`, and no workflow runs `stryker annotate` (grep of `.github/`, scripts).
+- Verified at `1e1de6d05`: no workflow or script writes `$GITHUB_STEP_SUMMARY`, and no workflow runs `stryker annotate` (grep of `.github/`, scripts). Since #263, `kill-matrix.yml` writes one summary (audit CI row).
 - Verified: root `AGENTS.md` marks `.github/workflows/` read-only for agents; R16-R21 need edits there, authorised by the unit contract under a `CONST-W3` declaration (KD11).
 - Verified: `mutation.yml` triggers on push to `main` (with `paths-ignore`), on `workflow_dispatch` with input `full`, and on a daily schedule; the brief's "only on push to main" is narrower than the workflow (`mutation.yml:3-17`). The CLI refuses mutation outside GitHub Actions unless the run is dry-run only or carries an explicit local opt-in (`refuse-local-mutation.workflow.ts:40-48`).
 - Verified: corpus sizes and log sizes in the Problem Frame (artifact `mutation-report-416`, run 37960922409; `--log-failed` on runs 37953877772 and 37942966476).
@@ -220,7 +220,7 @@ Premises this plan rests on, each with its source. Verified means read in code o
 - Q3. Build on main; merge main up; whoever lands second adopts the other's names (KD12).
 - Q6. Annotation severity follows the job's result (KD6, R18).
 - Q7. SARIF upload is out of scope (KD13).
-- Q12. One stream major, `7.0`, shared with any re-landed #258 (R30).
+- Q12. U3 adopts #262's stream `statusReason` under the same name; it rides `7.0` if `7.0` is unreleased when U3 lands, otherwise it moves the stream to `8.0` as a breaking change (R30).
 - Q13. `release.yml`'s summary is written by a job in this repo after the reusable call (R16).
 - Q2 (OQ2). One vocabulary: U2 extends `ignore-rule.schema.ts` (KD2, KTD2).
 - Q14 (OQ3). U12 waits on a release that ships U3-U8 and moves the `stryker-published` pin; changesets cut it when U3-U8 merge, and nothing else waits on it.
@@ -257,7 +257,7 @@ Premises this plan rests on, each with its source. Verified means read in code o
   | 1  | U1   | `main`                                      | audit doc and this plan                                             |
   | 2  | U9   | PR 1                                        | CI wiring that needs no new CLI code                                |
   | 3  | U2   | PR 2                                        | reason vocabulary: extend `ignore-rule.schema.ts`                   |
-  | 4  | U3   | PR 3                                        | stream `7.0`: per-status mutant lines, next actions, drill-down     |
+  | 4  | U3   | PR 3                                        | stream: per-status mutant lines, next actions, drill-down           |
   | 5  | U4   | PR 4                                        | merge keeps facts; merge failures classified                        |
   | 6  | U5   | PR 5                                        | one order, cursor, `stryker list`                                   |
   | 7  | U6   | PR 6                                        | summary-first default output; run-failure reasons                   |
@@ -269,21 +269,20 @@ Premises this plan rests on, each with its source. Verified means read in code o
 
   Every layer is green on its own; U2-U8 add code no workflow calls until U10 and U12 wire it. Only U3+ depend on the vocabulary. Governs R29, R33.
 
-- KTD2. **One vocabulary: U2 extends `packages/stryker-js-plugin-interface/src/ignore-rule.schema.ts`, exported through `Mutant.*` only.** The file already holds `RULE_IDS` (12 codes) and the `<code>: <detail>` grammar (`IgnoreStatusReasonText`, `IgnoreStatusReason`; `ignore-rule.schema.ts:6-59` at `d2f018db4`). U2 adds the remaining closed codes in that same file, not in a second module, and every status gets the same grammar decoded to `{ code, detail }`, so `statusReason` is one field with one grammar. A result inherited from the incremental report carries `remembered: <detail>`, whose detail names the prior run's code when it had one, instead of today's bare `Remembered` placeholder (`run/incremental-reuse.cell.ts:421,446`). `mutation-runs-on-main-ci` moves into the vocabulary; U5 removes the contract's own `RefusalRule` literal (`run-event.schema.ts:331`) and reads the code from `Mutant.*` (the contract already imports `Mutant`, `:1`). Each code's meaning is its schema annotation.
+- KTD2. **One vocabulary: U2 extends `packages/stryker-js-plugin-interface/src/ignore-rule.schema.ts`, exported through `Mutant.*` only.** The file already holds `RULE_IDS` (13 codes, including `checker` from #262) and the `<code>: <detail>` grammar (`IgnoreStatusReasonText`, `IgnoreStatusReason`; `ignore-rule.schema.ts:6-85` at `cfdf3cdc3`). U2 adds the remaining closed codes in that same file, not in a second module, and every status gets the same grammar decoded to `{ code, detail }`, so `statusReason` is one field with one grammar. A result inherited from the incremental report carries `remembered: <detail>`, whose detail names the prior run's code when it had one, instead of today's copy of the prior entry's free-text `statusReason` (`run/incremental-reuse.cell.ts:477-489`). `mutation-runs-on-main-ci` moves into the vocabulary; U5 removes the contract's own `RefusalRule` literal (`run-event.schema.ts:331`) and reads the code from `Mutant.*` (the contract already imports `Mutant`, `:1`). Each code's meaning is its schema annotation.
 
   **How #259's codes relate.** Naming follows main's convention: lowercase kebab-case, a colon-and-space separator, no prefix on first-party codes. Plugin-owned codes, such as #259's `REASON_CODES` in `packages/ignorers/effect-schema-declarations/src/effect-schema-declarations.ts:13-40`, are a second level inside the first-party `ignorer` code: `plan-mutants.workflow.ts:153` writes `ignorer: <plugin reason>`, so such a mutant reads `ignorer: effect-schema-declarations/tagged-tag: <text>`. The vocabulary closes the first level and leaves the second open, because any third-party ignorer may add codes. A `/` never appears in a first-party code, which U2's refusal tests enforce, so the two levels cannot collide. The U11 guide documents that an `ignorer` detail begins with `<plugin>/<code>: <text>`. #259's codes are neither copied nor re-declared.
 
   On main, kept as is (`RULE_IDS`):
 
-  | Status    | Codes                                                                                                                                                                                                                        |
-  | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `Ignored` | `arid-logging`, `arid-telemetry`, `arid-time`, `arid-config-default`, `arid-memoization`, `redundant-relational`, `equivalent-to-original`, `duplicate-at-site`, `ignore-static`, `directive`, `excluded-mutator`, `ignorer` |
+  | Status    | Codes                                                                                                                                                                                                                                                                                            |
+  | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | `Ignored` | `arid-logging`, `arid-telemetry`, `arid-time`, `arid-config-default`, `arid-memoization`, `redundant-relational`, `equivalent-to-original`, `duplicate-at-site`, `ignore-static`, `directive`, `excluded-mutator`, `ignorer`, `checker` (#262: a checker removed the mutant before any test ran) |
 
-  Added by U2 to the same file (`checker` under #258's name; whoever lands second adopts the other's names, KD12):
+  Added by U2 to the same file:
 
   | Scope                                 | Codes                                                                                                                                                                                                                                                                                                             |
   | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `Ignored`                             | `checker` (a checker removed the mutant before any test ran)                                                                                                                                                                                                                                                      |
   | `Survived`                            | `covered-not-killed` (covering tests ran, none failed), `coverage-not-measured` (coverage analysis off)                                                                                                                                                                                                           |
   | `NoCoverage`                          | `not-covered`                                                                                                                                                                                                                                                                                                     |
   | `Timeout`                             | `timed-out` (detail keeps today's wall-clock or hit-limit text, so the timeout-kind matchers still match on it)                                                                                                                                                                                                   |
@@ -327,7 +326,7 @@ Premises this plan rests on, each with its source. Verified means read in code o
 
 - KTD13. **`mutation.yml` runs the released CLI, so it adopts new CLI behaviour only after a release.** `PUBLISHED_CLI` (`mutation.yml:30`) resolves to the tarball of the `stryker-published` pin (`27b10759`, v18.1.0); retargeting it is forbidden (root `AGENTS.md` Dogfood). U9 wires what v18.1.0 already has (`annotate` warning/notice, `--json` error events); U12 adopts the new fields, levels, and summary after a human-approved release containing U3-U8 moves the pin (OQ3). Governs R16-R21.
 
-- KTD14. **One unreleased stream major and changeset-borne migration notes.** `StreamSchemaVersion` goes `6.0` to `7.0` once, shared with any re-landed #258; `stryker-js-cli-contract` bumps minor (0.x), `stryker-js-plugin-interface` minor for added vocabulary, `stryker-js` major (default stdout, `verdict` reshape, MCP output schemas). Each changeset body carries its migration note. (pack: package-topology, surface-changes-are-versioned.md) Governs R8, R30. (session-settled: user-directed — chosen over a second major: version law compares against the released alias, `tests/contract-version-law.integration.test.ts:34,119-127`; inherits KD12.)
+- KTD14. **One stream bump for U3, decided by `7.0`'s release state, and changeset-borne migration notes.** #262 took `StreamSchemaVersion` from `6.0` to `7.0`. U3 rides `7.0` if it is still unreleased when U3 lands; if `7.0` has shipped, U3 moves it to `8.0` (R30). `stryker-js-cli-contract` bumps minor (0.x), `stryker-js-plugin-interface` minor for added vocabulary, `stryker-js` major (default stdout, `verdict` reshape, MCP output schemas). Each changeset body carries its migration note. (pack: package-topology, surface-changes-are-versioned.md) Governs R8, R30. (session-settled: root ruling 2026-10-10 on the U1 review; the version law compares against the released alias, `tests/contract-version-law.integration.test.ts:34,119-127`; inherits KD12.)
 
 - KTD15. **The agent guide is a generated contract document.** `agentGuideSource()` joins `streamDocumentSource()` in `packages/stryker-js-cli-contract/scripts/contract-documents.ts`, `generate-contract.ts` writes `contract/agent-guide.md`, and `tests/contract-documents.integration.test.ts` byte-compares it. It lives outside the paths turbo's `test` inputs exclude (`turbo.json:61-64`; `test` hashes `NODE_ENV`, `CI`, `AGENT` only, `:74-78`). The README stream sample is checked by decoding each line through `RunEventWireLine`, with the root `README.md` added to that test's inputs. Governs R26-R28. (session-settled: user-directed — chosen over a hand-written guide: inherits KD9.)
 
@@ -377,17 +376,17 @@ sequenceDiagram
 Two kinds of figure, kept apart:
 
 - **Model.** Computed in planning by encoding the KTD3-KTD7 shapes over artifact `mutation-report-416` (run 37960922409, main `1e1de6d05`: 8,626 mutants, 1,506 actionable). That report is 3.9.0-shaped: it carries no `statusReason`, `coveredBy`, `killedBy`, or `next`, so the model fills reasons and next actions synthetically and assumes 100-byte test names where it counts them. The modelled page item is `id`, `status`, `statusReason`, `file`, `span`, `mutator`, `replacement`, `coveredBy.total`, `next` (326 B mean, 377 B p95, 554 B max). A model alone does not meet Done.
-- **Measured.** U5, U6, and U7 each state in the PR body, beside the budget, the bytes measured from that PR's own built CLI on the CI journey fixture (real `7.0` output). U12 re-measures summary, page, and MCP-result bytes on the first `main` mutation report carrying `7.0` fields; those figures supersede the model.
+- **Measured.** U5, U6, and U7 each state in the PR body, beside the budget, the bytes measured from that PR's own built CLI on the CI journey fixture (real output at U3's line shape). U12 re-measures summary, page, and MCP-result bytes on the first `main` mutation report carrying U3's fields; those figures supersede the model.
 
-| Surface                             | Today (measured)                                                      | Budget                                            | Model on `mutation-report-416`                                                                                                    | Measured by                           |
-| ----------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| Default machine stdout + stderr     | 2,719,417 B of mutant lines, then a 365,985 B `verdict.mutants` array | 10,000 B (summary <= 8,000 B + stderr <= 2,000 B) | 945 B fixed fields; 21 `top` items without test names, 11 with three 100-byte names                                               | U6 PR (journey fixture); U12 (corpus) |
-| `stryker list` page                 | no paging                                                             | 8,000 B of stdout                                 | 23 items per page on average, 65 pages for 1,506; 108 pages with three 100-byte names, so page items carry only `coveredBy.total` | U5 PR (journey fixture); U12 (corpus) |
-| MCP `list_survivors`, both blocks   | 52,702 B of structured content alone                                  | 10,000 B (4,800 B structured)                     | 13 items per page on average, 112 pages                                                                                           | U7 PR (journey fixture); U12 (corpus) |
-| MCP `show_mutant`, both blocks      | full covering-test list, unbounded                                    | 10,000 B                                          | 753 B mean, 1,321 B max structured with three 100-byte names and the diff omitted; 2,642 B max with the text block                | U7 PR (journey fixture); U12 (corpus) |
-| Step summary                        | none written                                                          | 10,000 B                                          | outcome, cause, counts, at most 10 annotation rows, artifact name                                                                 | U9 and U12 dispatch runs              |
-| Annotations per step                | 3 hand-written                                                        | 10 errors + 10 warnings (GitHub)                  | at most 10 per level; omitted = actionable minus emitted                                                                          | U12 dispatch run                      |
-| Full stream file (opt-in on stdout) | 2.72 MB                                                               | none (file)                                       | +429,782 B for reasons and next actions with no test names; full `coveredBy`/`killedBy` lists unmodelled (the corpus has none)    | U12 (corpus)                          |
+| Surface                             | Today (measured)                                                                         | Budget                                            | Model on `mutation-report-416`                                                                                                    | Measured by                           |
+| ----------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Default machine stdout + stderr     | 2,891,940 B of mutant lines, then a 365,985 B `verdict.mutants` array (audit stream row) | 10,000 B (summary <= 8,000 B + stderr <= 2,000 B) | 945 B fixed fields; 21 `top` items without test names, 11 with three 100-byte names                                               | U6 PR (journey fixture); U12 (corpus) |
+| `stryker list` page                 | no paging                                                                                | 8,000 B of stdout                                 | 23 items per page on average, 65 pages for 1,506; 108 pages with three 100-byte names, so page items carry only `coveredBy.total` | U5 PR (journey fixture); U12 (corpus) |
+| MCP `list_survivors`, both blocks   | 52,702 B of structured content alone                                                     | 10,000 B (4,800 B structured)                     | 13 items per page on average, 112 pages                                                                                           | U7 PR (journey fixture); U12 (corpus) |
+| MCP `show_mutant`, both blocks      | full covering-test list, unbounded                                                       | 10,000 B                                          | 753 B mean, 1,321 B max structured with three 100-byte names and the diff omitted; 2,642 B max with the text block                | U7 PR (journey fixture); U12 (corpus) |
+| Step summary                        | none written                                                                             | 10,000 B                                          | outcome, cause, counts, at most 10 annotation rows, artifact name                                                                 | U9 and U12 dispatch runs              |
+| Annotations per step                | 3 hand-written                                                                           | 10 errors + 10 warnings (GitHub)                  | at most 10 per level; omitted = actionable minus emitted                                                                          | U12 dispatch run                      |
+| Full stream file (opt-in on stdout) | 2.89 MB of `mutant` lines (audit stream row)                                             | none (file)                                       | +429,782 B for reasons and next actions with no test names; full `coveredBy`/`killedBy` lists unmodelled (the corpus has none)    | U12 (corpus)                          |
 
 Original text on actionable lines only adds 64,146 B; on every line it would add 761,525 B.
 
@@ -424,20 +423,20 @@ Closed at the plan gate (2026-10-10):
 
 Target mutant ids are main's at `1e1de6d05` from `mutation-report-416` (run 37960922409). Ids hash the mutated code, so an edited line gets new ids; each PR names the listed ids its tests should kill on lines it leaves intact, and the first main mutation run after merge is the check (mutation never runs locally or on a PR). The contract and plugin-interface packages are not in the mutation projects (`PROJECTS`, `mutation.yml:29`), so their schema changes are covered by the version law, generated laws, and refusal tests, not by mutant ids.
 
-| U-ID | Title                                                              | Files touched (main)                                                                                                                                                                                                                                                                                 | Depends on         |
-| ---- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| U1   | Audit doc and plan                                                 | `docs/explainers/agent-surfaces-audit.md`, this plan (drops `origin:`), `docs/brainstorms/` (deleted)                                                                                                                                                                                                | -                  |
-| U2   | Reason vocabulary (extends `ignore-rule.schema.ts`)                | `stryker-js-plugin-interface/src/ignore-rule.schema.ts`, `Mutant/mod.ts`                                                                                                                                                                                                                             | U1                 |
-| U3   | Stream `7.0` mutant variants and next actions                      | contract `run-event.schema.ts`, `stream-version.schema.ts`, `next-action.schema.ts`; `run/mutant-run.ts`, `run/mutant-settlement.ts`, `run/incremental-reuse.cell.ts`, `Rerun/rerun-selection.ts`, `build-reproducers.workflow.ts`, `mutation-reporting.service.ts`, `plan-mutant-tests.workflow.ts` | U2                 |
-| U4   | Merge keeps facts; merge failures classified                       | `report-from-stream.workflow.ts`, `shard/*`, `classify-run-outcome.workflow.ts`, `conclude-run.ts`                                                                                                                                                                                                   | U3                 |
-| U5   | Actionable order, filters, cursor, `stryker list`                  | `actionable-order.workflow.ts` (new), `cap-survivors.workflow.ts`, `Cli.schema.ts`, `bin/cli-command.ts`, `run-request.cell.ts`; contract `run-event.schema.ts` (`page`, `refused`)                                                                                                                  | U4                 |
-| U6   | Summary-first default output                                       | contract `run-event.schema.ts` (`verdict`, `error`), `frame-run-event.workflow.ts`, `reporting/verdict-envelope.ts`, `reporting/run-failure.ts`, `run-event-stream.service.ts`, `conclude-run.cell.ts`, `resolve-output-mode.workflow.ts`, `bin/cli-command.ts`                                      | U5                 |
-| U7   | MCP paging, filters, bounded drill-down, structured refusals       | `Mcp/mcp-tools.ts`, `Mcp/mcp-tools.schema.ts`, `Mcp/mcp-server.cell.ts`, `Rerun/admit-mutant-rerun.workflow.ts`                                                                                                                                                                                      | U5, U6             |
-| U8   | Annotate levels, limit, failures; SARIF rule text (contingent, U1) | `render-annotations.workflow.ts`, `Cli.schema.ts`, `bin/cli-command.ts`, `sarif-report.workflow.ts`                                                                                                                                                                                                  | U7                 |
-| U9   | CI legibility with released tools                                  | `turbo.json`, `.github/workflows/*.yml`, `scripts/ci-job-summary.ts` (new)                                                                                                                                                                                                                           | U1                 |
-| U10  | Agent journeys                                                     | `test/e2e/tests/agent-journey-*.e2e.test.ts`, `test/e2e/src/agent-consumer/*`, `test/e2e/src/Harness/stryker-cli-runner.service.ts` (stdin pipe)                                                                                                                                                     | U11                |
-| U11  | Generated agent guide                                              | contract `scripts/*`, `contract/agent-guide.md`, `AGENTS.md`, `skills/stryker-mutation-testing/SKILL.md`, `README.md`, `STRATEGY.md`                                                                                                                                                                 | U8                 |
-| U12  | `mutation.yml` adopts the released surfaces                        | `.github/workflows/mutation.yml`, `scripts/ci-job-summary.ts` (extends U9's script)                                                                                                                                                                                                                  | U10, release (OQ3) |
+| U-ID | Title                                                        | Files touched (main)                                                                                                                                                                                                                                                                                 | Depends on         |
+| ---- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| U1   | Audit doc and plan                                           | `docs/explainers/agent-surfaces-audit.md`, this plan (drops `origin:`), `docs/brainstorms/` (deleted)                                                                                                                                                                                                | -                  |
+| U2   | Reason vocabulary (extends `ignore-rule.schema.ts`)          | `stryker-js-plugin-interface/src/ignore-rule.schema.ts`, `Mutant/mod.ts`                                                                                                                                                                                                                             | U1                 |
+| U3   | Stream mutant variants and next actions                      | contract `run-event.schema.ts`, `stream-version.schema.ts`, `next-action.schema.ts`; `run/mutant-run.ts`, `run/mutant-settlement.ts`, `run/incremental-reuse.cell.ts`, `Rerun/rerun-selection.ts`, `build-reproducers.workflow.ts`, `mutation-reporting.service.ts`, `plan-mutant-tests.workflow.ts` | U2                 |
+| U4   | Merge keeps facts; merge failures classified                 | `report-from-stream.workflow.ts`, `shard/*`, `classify-run-outcome.workflow.ts`, `conclude-run.ts`                                                                                                                                                                                                   | U3                 |
+| U5   | Actionable order, filters, cursor, `stryker list`            | `actionable-order.workflow.ts` (new), `cap-survivors.workflow.ts`, `Cli.schema.ts`, `bin/cli-command.ts`, `run-request.cell.ts`; contract `run-event.schema.ts` (`page`, `refused`)                                                                                                                  | U4                 |
+| U6   | Summary-first default output                                 | contract `run-event.schema.ts` (`verdict`, `error`), `frame-run-event.workflow.ts`, `reporting/verdict-envelope.ts`, `reporting/run-failure.ts`, `run-event-stream.service.ts`, `conclude-run.cell.ts`, `resolve-output-mode.workflow.ts`, `bin/cli-command.ts`                                      | U5                 |
+| U7   | MCP paging, filters, bounded drill-down, structured refusals | `Mcp/mcp-tools.ts`, `Mcp/mcp-tools.schema.ts`, `Mcp/mcp-server.cell.ts`, `Rerun/admit-mutant-rerun.workflow.ts`                                                                                                                                                                                      | U5, U6             |
+| U8   | Annotate levels, limit, failures; SARIF result messages      | `render-annotations.workflow.ts`, `Cli.schema.ts`, `bin/cli-command.ts`, `sarif-report.workflow.ts`                                                                                                                                                                                                  | U7                 |
+| U9   | CI legibility with released tools                            | `turbo.json`, `.github/workflows/*.yml`, `scripts/ci-job-summary.ts` (new)                                                                                                                                                                                                                           | U1                 |
+| U10  | Agent journeys                                               | `test/e2e/tests/agent-journey-*.e2e.test.ts`, `test/e2e/src/agent-consumer/*`, `test/e2e/src/Harness/stryker-cli-runner.service.ts` (stdin pipe)                                                                                                                                                     | U11                |
+| U11  | Generated agent guide                                        | contract `scripts/*`, `contract/agent-guide.md`, `AGENTS.md`, `skills/stryker-mutation-testing/SKILL.md`, `README.md`, `STRATEGY.md`                                                                                                                                                                 | U8                 |
+| U12  | `mutation.yml` adopts the released surfaces                  | `.github/workflows/mutation.yml`, `scripts/ci-job-summary.ts` (extends U9's script)                                                                                                                                                                                                                  | U10, release (OQ3) |
 
 - U1. **Audit doc and plan.**
   - **Goal:** record the gap table R1-R3 ask for, from main's code, so every later layer cites a row.
@@ -449,12 +448,12 @@ Target mutant ids are main's at `1e1de6d05` from `mutation-report-416` (run 3796
   - **Verification:** every gap row names a requirement or "out of scope (KDn)"; the plan has no `origin:` pointing at a deleted file; `pnpm gate:repo` passes with one plan file.
 
 - U2. **Reason vocabulary (extends the one module).**
-  - **Goal:** extend `packages/stryker-js-plugin-interface/src/ignore-rule.schema.ts` with the codes main lacks (KTD2 "Added by U2"): `checker`, settled statuses, `remembered`, run failures, and tool refusals.
+  - **Goal:** extend `packages/stryker-js-plugin-interface/src/ignore-rule.schema.ts` with the codes main lacks (KTD2 "Added by U2"): settled statuses, `remembered`, run failures, and tool refusals. `checker` is already there (#262).
   - **Requirements:** R5, R7, R8, R33.
   - **Dependencies:** U1.
   - **Files:** `packages/stryker-js-plugin-interface/src/ignore-rule.schema.ts`, `packages/stryker-js-plugin-interface/src/Mutant/mod.ts`, `packages/stryker-js-plugin-interface/etc/*.api.md`, tests beside them, `.changeset/agent-reason-vocabulary.md`.
-  - **Approach:** in `ignore-rule.schema.ts`, add `checker` to `RULE_IDS`, add the per-status settled codes plus `remembered`, and the run-failure and tool-refusal literal sets, each member with an annotation (the U11 guide reads it); generalise the existing grammar so every status's `statusReason` decodes to `{ code, detail }` through one schema; export through `Mutant` only, with no second module or alias. Stream and report fields stay unchanged in this layer.
-  - **Patterns:** `ignore-rule.schema.ts:6-59` (main `d2f018db4`); refusal tests beside generated laws.
+  - **Approach:** in `ignore-rule.schema.ts`, add the per-status settled codes plus `remembered`, and the run-failure and tool-refusal literal sets, each member with an annotation (the U11 guide reads it); generalise the existing grammar so every status's `statusReason` decodes to `{ code, detail }` through one schema; export through `Mutant` only, with no second module or alias. Stream and report fields stay unchanged in this layer.
+  - **Patterns:** `ignore-rule.schema.ts:6-85` (main `cfdf3cdc3`); refusal tests beside generated laws.
   - **Test scenarios:**
     - Happy path: `covered-not-killed: 2 covering tests ran, none failed` decodes to code `covered-not-killed`; `remembered: covered-not-killed in the previous run` decodes to code `remembered`; encode round-trips.
     - Refusal: `covered-not-killed` with no `:` separator, an unknown code `slow`, today's bare `Remembered`, a `Survived` code under `Ignored`, and a first-party code containing `/` are rejected (pack: schema-laws, refusals-beside-generated-laws.md).
@@ -462,7 +461,7 @@ Target mutant ids are main's at `1e1de6d05` from `mutation-report-416` (run 3796
     - Every member of each literal set has a non-empty description annotation.
   - **Verification:** `api:check` report shows only additions; changeset bumps `stryker-js-plugin-interface` minor. The PR body lists every existing `statusReason` producer with the code it will emit and the detail half it supplies, which U3 implements: `mutation-reporting.service.ts:249` (`runtime-error: <errorMessage>`), `:255` (`killed: <failureMessage>`), the timeout path (`timed-out: <today's wall-clock or hit-limit text>`, so the timeout-kind matchers exercised at `:1207-1231` keep matching on the detail), `:242` check failures (`compile-error: <message>`), `plan-mutant-tests.workflow.ts:213` early results, `run/incremental-reuse.cell.ts:446` (`remembered: <detail>`), and the instrumenter's `Ignored` reason (`stryker-js-instrumenter/src/Mutator.service.ts:148`, already `<rule-id>: <detail>`).
 
-- U3. **Stream `7.0` mutant variants and next actions.**
+- U3. **Stream mutant variants and next actions.**
   - **Goal:** each per-mutant line and `mutant-detail` carries the R4-R6 facts for its status, under the report schema's field names.
   - **Requirements:** R4, R5, R6, R8, R30; AE1, AE2.
   - **Dependencies:** U2.
@@ -475,7 +474,7 @@ Target mutant ids are main's at `1e1de6d05` from `mutation-report-416` (run 3796
     - Covers AE1, AE2 (in-process composition): `Engine.mutationTestCell` over a seeded workspace with one unasserted and one uncovered function; the stream's `Survived` line carries hand-written `{ reason: 'covered-not-killed', next: strengthen-tests }`, `coveredBy` naming the seeded test, and original `n * 2`; the `NoCoverage` line carries `not-covered` and `add-test` at the hand-written file, line, and column. J1 proves AE1 across the packed CLI.
     - Incremental (in-process, extends `tests/incremental-reuse.integration.test.ts`): a second run reusing the first run's results emits a `statusReason` decoding to code `remembered` for every reused mutant.
     - Refusal: a `NoCoverage` line carrying `coveredBy`, a `Killed` line without `killedBy`, and a `Survived` line without `next` fail decode.
-    - Version law: the `6.0` to `7.0` change passes with the changeset and fails with it removed.
+    - Version law: U3's change against the released stream baseline passes with the changeset and fails with it removed, on whichever R30 branch applies (`7.0` unreleased, or `7.0` shipped and U3 at `8.0`).
   - **Target mutants:** `build-reproducers.workflow.ts` survivors `e65ee3e59dbf8148` L13, `4868200158d404eb` L16, `2bc73d914f15f443` L60, and the diff-building run L69-L83 (`ae7b0a375e0d755e` ... `e98bed08a96a639b`, 13 ids).
   - **Verification:** `contract/stream.schema.json` regenerates with the variants; `pnpm --filter @systemfsoftware/stryker-js-cli-contract test` passes.
 
@@ -484,7 +483,7 @@ Target mutant ids are main's at `1e1de6d05` from `mutation-report-416` (run 3796
   - **Requirements:** R7, R9; AE3.
   - **Dependencies:** U3.
   - **Files:** `packages/stryker-js/src/report-from-stream.workflow.ts`, `shard/shard-merge.ts`, `shard/merge-shard-reports.workflow.ts`, `shard/shard-merge.schema.ts`, `classify-run-outcome.workflow.ts`, `conclude-run.ts`; `.changeset/merge-keeps-reasons.md`.
-  - **Approach:** `report-from-stream` copies `statusReason`, `coveredBy`, and `killedBy` straight from the `7.0` lines (the report schema's own names) and reads file sources from the checkout under `basePath` (merge runs in the checkout in `mutation.yml`'s report job). `ShardReportGap` and `ShardReportOverlap` gain `exitClass: 'ConfigError'` and reasons `shard-reports-missing` / `shard-reports-overlap`, so `collectExitClasses` sees them instead of falling to `RunGenericFailureObservation` code 1.
+  - **Approach:** `report-from-stream` copies `statusReason`, `coveredBy`, and `killedBy` straight from U3's lines (the report schema's own names) and reads file sources from the checkout under `basePath` (merge runs in the checkout in `mutation.yml`'s report job). `ShardReportGap` and `ShardReportOverlap` gain `exitClass: 'ConfigError'` and reasons `shard-reports-missing` / `shard-reports-overlap`, so `collectExitClasses` sees them instead of falling to `RunGenericFailureObservation` code 1.
   - **Test scenarios:**
     - Covers AE3 (property, `merge-shard-reports.workflow.ts`): for every generated plan and shard set with at least one planned shard absent, the decision is `ShardReportGap` with `exitClass: 'ConfigError'`, reason `shard-reports-missing`, and detail listing exactly the absent shard's planned ids; with an id in two shards, `ShardReportOverlap` and `shard-reports-overlap`.
     - Property (`classify-run-outcome.workflow.ts`): a `ConfigError` merge failure classifies to exit code 2 and never to `VerdictFail` code 1.
@@ -505,7 +504,7 @@ Target mutant ids are main's at `1e1de6d05` from `mutation-report-416` (run 3796
     - Edge: a cursor from a different report digest returns `cursor-stale` with `next: restart-paging`; a cursor issued under `--status Survived` and replayed without it returns `cursor-stale`.
     - In-process composition: the `list` route over a merged report written by an in-process run; hand-written expected first id and `More` cursor.
   - **Target mutants:** `cap-survivors.workflow.ts` `0017ab92baf1bd1c` L31, `2974ccddd8ceecfe` L45, `a19610b71718d4ed` L82.
-  - **Verification:** the PR body states, beside the 8,000-byte budget, the page count and maximum page bytes measured from this PR's built CLI on the CI journey fixture (real `7.0` output); the corpus figure (65 pages, 23 items on average) is labelled as a model.
+  - **Verification:** the PR body states, beside the 8,000-byte budget, the page count and maximum page bytes measured from this PR's built CLI on the CI journey fixture (real output at U3's line shape); the corpus figure (65 pages, 23 items on average) is labelled as a model.
 
 - U6. **Summary-first default output.**
   - **Goal:** default machine output fits 10,000 bytes and leads with the verdict and causes; human-mode failures end with R10's line.
@@ -535,18 +534,18 @@ Target mutant ids are main's at `1e1de6d05` from `mutation-report-416` (run 3796
   - **Target mutants:** `Mcp/mcp-tools.schema.ts` `b26d6cc15499b8b3` L6, `01f923718a5fa0de` L21; `Rerun/admit-mutant-rerun.workflow.ts` `07f4a8998033f40c` L63. `mcp-tools.ts` and `mcp-server.cell.ts` are not in the corpus (not mutated today).
   - **Verification:** the PR body states, beside the 10,000-byte budget, `list_survivors` page bytes and `show_mutant` bytes measured from this PR's built `dist/main.mjs` on the journey fixture; the corpus figures (13 items, 112 pages; `show_mutant` max 2,642 B) are labelled as a model.
 
-- U8. **Annotate levels, limit, failure annotations; SARIF rule text (contingent on U1).**
-  - **Goal:** `stryker annotate` emits what KD6 rules, capped and counted.
-  - **Requirements:** R18; AE6, AE8; KD13 (SARIF half, only if the U1 audit row justifies it).
+- U8. **Annotate levels, limit, failure annotations; SARIF result messages.**
+  - **Goal:** `stryker annotate` emits what KD6 rules, capped and counted, and each SARIF result names its reason and next action.
+  - **Requirements:** R18; R5, R6 for SARIF results (KD2); AE6, AE8.
   - **Dependencies:** U6 (terminal event and reasons), U5 (order).
-  - **Files:** `packages/stryker-js/src/render-annotations.workflow.ts`, `Cli.schema.ts` (`annotate`: `--level error|warning`, `--limit`, `--summary <path>`, `--from-event <stream>`), `bin/cli-command.ts`, `sarif-report.workflow.ts` (SARIF half only); `.changeset/annotate-levels.md`.
-  - **Approach:** order by U5; emit at most `limit` (default 10) lines at the chosen level, each message `<reason>: <next action>`; append a markdown block (counts, omitted count, report artifact name) to `--summary` when set, where the omitted count is the actionable set minus the lines actually emitted. `--from-event` reads a terminal `error` event and emits `::error title=<reason>::<detail>` (AE8). SARIF half: rules gain `fullDescription` and `help` from the vocabulary annotations, and the run notes truncation past `SARIF_MAX_RESULTS` in `run.properties`; built only when the U1 audit row justifies it, otherwise moved to Scope Boundaries with its test scenario and target mutants.
+  - **Files:** `packages/stryker-js/src/render-annotations.workflow.ts`, `Cli.schema.ts` (`annotate`: `--level error|warning`, `--limit`, `--summary <path>`, `--from-event <stream>`), `bin/cli-command.ts`, `sarif-report.workflow.ts` (result messages only); `.changeset/annotate-levels.md`.
+  - **Approach:** order by U5; emit at most `limit` (default 10) lines at the chosen level, each message `<reason>: <next action>`; append a markdown block (counts, omitted count, report artifact name) to `--summary` when set, where the omitted count is the actionable set minus the lines actually emitted. `--from-event` reads a terminal `error` event and emits `::error title=<reason>::<detail>` (AE8). SARIF: each result's `message.text` becomes the same `<reason>: <next action>` text as its annotation, in place of today's description-or-mutator text (`sarif-report.workflow.ts:161-162`). Rule `fullDescription`/`help` and the truncation note are not built (KD13, Scope Boundaries).
   - **Test scenarios:**
     - Covers AE6 (property, `render-annotations.workflow.ts`): for every generated report with n actionable items and limit k, exactly min(n, k) lines at the requested level in U5 order, each with `file`, `line`, `col`, `endColumn`, and the summary's omitted count is n minus the lines emitted.
     - Covers AE8 (property): for every terminal `error` event, `--from-event` renders one `::error title=<reason>::<detail>` line with no `file`.
     - Property: file names with `,`, `:`, `%`, CR, and LF round-trip through the existing escaping.
-    - SARIF half only (property, `sarif-report.workflow.ts`): every rule has non-empty `fullDescription.text`; a report over 5,000 results records `truncated: true`.
-  - **Target mutants:** `render-annotations.workflow.ts` all 26 actionable ids (L33 NoCoverage `aa034c21319496f2`; escaping L94-L101; line format L107-L115); SARIF half only: `sarif-report.workflow.ts` 10 ids (`a55209612382e0a2` L13 ... `3981f38019be38de` L169).
+    - Property (`sarif-report.workflow.ts`): for every generated report, each SARIF result's `message.text` equals the annotation message for the same mutant.
+  - **Target mutants:** `render-annotations.workflow.ts` all 26 actionable ids (L33 NoCoverage `aa034c21319496f2`; escaping L94-L101; line format L107-L115). `sarif-report.workflow.ts` has no corpus survivor at its message builder (L161-L162).
   - **Verification:** U12's dispatch shows the annotations in the check run.
 
 - U9. **CI legibility with released tools.**
@@ -591,38 +590,38 @@ Target mutant ids are main's at `1e1de6d05` from `mutation-report-416` (run 3796
   - **Verification:** guide size stated in the PR; changing one annotation without regenerating fails `pnpm test`.
 
 - U12. **`mutation.yml` adopts the released surfaces.**
-  - **Goal:** the mutation report job emits KD6 annotations and a summary from the released CLI, and the corpus budgets are measured on real `7.0` output.
+  - **Goal:** the mutation report job emits KD6 annotations and a summary from the released CLI, and the corpus budgets are measured on real output at U3's line shape.
   - **Requirements:** R16-R20 for `mutation.yml`, R32; AE6, AE8.
   - **Dependencies:** U10, and a human-approved release containing U3-U8 whose `stryker-published` pin move lands first (OQ3). Top layer of the stack.
   - **Files:** `.github/workflows/mutation.yml`, `scripts/ci-job-summary.ts` (extends the U9 script for shard and report summaries).
   - **Approach:** report job, in a step with `if: ${{ !cancelled() }}`: `stryker annotate --level ${{ steps.gate.outcome == 'failure' && 'error' || 'warning' }} --limit 10 --summary "$GITHUB_STEP_SUMMARY"`; on merge failure `stryker annotate --from-event` on the merge stream; shard jobs write a summary from their terminal event (`page: Sharded`). Keyed on the report or terminal event, never on stream presence.
   - **Dispatch proof:** `mutation.yml` dispatch on the PR branch head, scoped as in U9, with no code planted: the evidence comes from the real survivors in the report that run produces over the repo's corpus (main's `mutation-report-416` has 1,035 `Survived` and 451 `NoCoverage`). The check run shows at most 10 annotations from those survivors, each with file and line, at the level KD6 assigns to the gate's real outcome (`::error` when the gate rejects, `::warning` when it passes); the summary states counts, the omitted count, and the report artifact name; guarded steps show `skipped`. Record `--log-failed` against #413 (59,162 B, cause at line 467).
-  - **Re-measurement:** on the first `main` mutation report carrying `7.0` fields, measure summary, `stryker list` page, `list_survivors`, and `show_mutant` bytes and machine-mode stderr; these supersede the corpus model in Budgets on the corpus.
+  - **Re-measurement:** on the first `main` mutation report carrying U3's fields, measure summary, `stryker list` page, `list_survivors`, and `show_mutant` bytes and machine-mode stderr; these supersede the corpus model in Budgets on the corpus.
   - **Verification:** dispatch run URL, re-measured figures, and measurements in the PR body.
 
 ### Requirements Traceability
 
-| Requirement          | Units                       |
-| -------------------- | --------------------------- |
-| R1-R3                | U1                          |
-| R4                   | U3, U4                      |
-| R5, R8               | U2, U3                      |
-| R6                   | U3                          |
-| R7                   | U2, U4, U6                  |
-| R9                   | U4                          |
-| R10-R12              | U6                          |
-| R13                  | U5, U7                      |
-| R14, R15             | U7                          |
-| R16-R21              | U9, U12                     |
-| R18                  | U8, U12                     |
-| R22-R25              | U10 (AE3 via U4)            |
-| R26-R28              | U11                         |
-| R29                  | KTD1                        |
-| R30                  | U3, U5, U6, U7 (changesets) |
-| R31                  | all (no dependency added)   |
-| R32                  | U9, U12                     |
-| R33                  | U2, U3                      |
-| KD13 SARIF rule text | U8, contingent on U1's row  |
+| Requirement          | Units                                            |
+| -------------------- | ------------------------------------------------ |
+| R1-R3                | U1                                               |
+| R4                   | U3, U4                                           |
+| R5, R8               | U2, U3                                           |
+| R6                   | U3                                               |
+| R7                   | U2, U4, U6                                       |
+| R9                   | U4                                               |
+| R10-R12              | U6                                               |
+| R13                  | U5, U7                                           |
+| R14, R15             | U7                                               |
+| R16-R21              | U9, U12                                          |
+| R18                  | U8, U12                                          |
+| R22-R25              | U10 (AE3 via U4)                                 |
+| R26-R28              | U11                                              |
+| R29                  | KTD1                                             |
+| R30                  | U3, U5, U6, U7 (changesets)                      |
+| R31                  | all (no dependency added)                        |
+| R32                  | U9, U12                                          |
+| R33                  | U2, U3                                           |
+| KD13 SARIF rule text | not built (Scope Boundaries; U1 audit SARIF row) |
 
 ### Packs applied
 
