@@ -3,6 +3,12 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { extractModuleSpecifiers } from '../extract-module-specifiers.workflow.js'
+import {
+  ExtractModuleSpecifiersCommand,
+  type ModuleSpecifiers,
+  ModuleSpecifiersOpen,
+} from '../import-closure.schema.js'
 import {
   type Container,
   type DecoyForm,
@@ -10,13 +16,7 @@ import {
   type DrawnSource,
   LiteralSource,
   RecognisedForm,
-} from '../../tests/__fixtures__/extract-module-specifiers-law.fixture.js'
-import { extractModuleSpecifiers } from '../extract-module-specifiers.workflow.js'
-import {
-  ExtractModuleSpecifiersCommand,
-  type ModuleSpecifiers,
-  ModuleSpecifiersOpen,
-} from '../import-closure.schema.js'
+} from './module-specifier-cases.schema.js'
 
 const identifier = (name: string): S.Json => ({ type: 'Identifier', name })
 
