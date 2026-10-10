@@ -15,7 +15,6 @@ import {
   Match,
   Option,
   Path,
-  Result,
   Schema,
   Scope,
   Stream,
@@ -34,6 +33,7 @@ import {
   bakeReasonsOf,
   BakeReportJson,
   bakeReportOf,
+  closureMembersOf,
   type FileBytes,
   type FixtureInput,
   fixtureKeyBytes,
@@ -53,10 +53,13 @@ import {
   setupFailedReason,
   stagedFixtureOf,
   tarballFileOf,
+  WorkspaceListingJson,
+  WorkspaceManifest,
+  type WorkspaceManifests,
 } from '@systemfsoftware/stryker-e2e-core'
 
-import type { BakeOutcome, PackedPackage, TurboDryClosure } from './bake-key.schema.js'
-import { FixtureKeys, MalformedClosure, TurboClosure, TurboDryRun } from './bake-key.schema.js'
+import type { BakeOutcome, PackedPackage } from './bake-key.schema.js'
+import { FixtureKeys } from './bake-key.schema.js'
 import { GuestJobs } from './guest-job.service.js'
 import { BakeOverBudgetFailure, ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
@@ -103,17 +106,8 @@ const TREE_CONCURRENCY = 16
 const UNPACK_CONCURRENCY = 4
 const STAGE_CONCURRENCY = 4
 
-const ENTRY_PACKAGES = [
-  '@systemfsoftware/stryker-js',
-  '@systemfsoftware/stryker-js-svelte',
-  '@systemfsoftware/stryker-js-vitest-runner',
-  '@systemfsoftware/stryker-js-typescript-checker',
-] as const
-
 type Argv = readonly [string, ...Array<string>]
 const PACKED_MANIFEST_PATH = 'package/package.json'
-
-const WorkspaceListing = Schema.fromJsonString(Schema.Array(Schema.Struct({ name: Schema.optional(Schema.String) })))
 
 const runCommand = (argv: Argv, cwd?: string) =>
   Effect.scoped(Effect.gen(function*() {
@@ -401,27 +395,6 @@ const hashOf = (crypto: Crypto.Crypto, bytes: Uint8Array) => Effect.map(crypto.d
 const keysRecordOf = (fixtures: ReadonlyArray<BakedFixture>): FixtureKeys =>
   Object.fromEntries(fixtures.map((fixture) => [fixture.fixtureId, fixture.key]))
 
-const packageNameOf = (task: typeof TurboDryRun.Type.tasks[number]): ReadonlyArray<string> =>
-  Option.match(
-    Option.filter(Option.fromNullishOr(task.package), () => task.command === 'build' || task.taskId.endsWith('#build')),
-    {
-      onNone: () => [],
-      onSome: (packageName) => [packageName],
-    },
-  )
-
-const resolveTurboDryClosure = (stdout: string): TurboDryClosure => {
-  const jsonStart = stdout.indexOf('{')
-  return Option.match(Option.filter(Option.some(jsonStart), (start) => start >= 0), {
-    onNone: (): TurboDryClosure => MalformedClosure.make({}),
-    onSome: (start): TurboDryClosure =>
-      Result.match(Schema.decodeResult(Schema.fromJsonString(TurboDryRun))(stdout.slice(start)), {
-        onFailure: (): TurboDryClosure => MalformedClosure.make({}),
-        onSuccess: (dryRun): TurboDryClosure =>
-          TurboClosure.make({ packages: [...Array.dedupe(dryRun.tasks.flatMap(packageNameOf))].sort() }),
-      }),
-  })
-}
 const packedTarballOf = (fileNames: ReadonlyArray<string>, packageName: string, directory: string) => {
   const fileName = tarballFileOf(packageName)
   return Boolean.match(fileNames.includes(fileName), {
@@ -432,69 +405,26 @@ const packedTarballOf = (fileNames: ReadonlyArray<string>, packageName: string, 
   })
 }
 
-const packWorkspaceClosure = (environment: BakeEnvironment, directory: string) =>
+const packWorkspaceClosure = (environment: BakeEnvironment, directory: string, members: ReadonlyArray<string>) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    const dryRun = yield* withSeamSpan(
+    const filters = members.map((packageName) => `--filter=${packageName}`)
+    yield* withSeamSpan(
       SpanNames.packBuild,
-      { 'e2e.pack.phase': 'dry' },
+      { 'e2e.packages': members.length },
+      runChecked(STEP_CLOSURE, ['pnpm', 'exec', 'turbo', 'run', 'build', ...filters], environment.repoRoot),
+    )
+    yield* withSeamSpan(
+      SpanNames.packTarballs,
+      { 'e2e.packages': members.length },
       runChecked(
-        STEP_CLOSURE,
-        ['pnpm', 'exec', 'turbo', 'run', 'build', ...ENTRY_PACKAGES.map((entry) => `--filter=${entry}`), '--dry=json'],
+        `pack ${members.length} closure packages`,
+        ['pnpm', '-r', ...filters, 'pack', '--out', `${directory}/%s.tgz`],
         environment.repoRoot,
       ),
     )
-    const closure = resolveTurboDryClosure(dryRun.stdout)
-    return yield* Match.value(closure).pipe(
-      Match.tag('Malformed', () =>
-        Effect.fail(
-          new PackFailure({
-            step: STEP_CLOSURE,
-            detail: 'the turbo dry run wrote no parseable closure document',
-          }),
-        )),
-      Match.tag('Closure', (closure) =>
-        Effect.gen(function*() {
-          yield* withSeamSpan(
-            SpanNames.packBuild,
-            { 'e2e.pack.phase': 'build' },
-            runChecked(
-              STEP_CLOSURE,
-              [
-                'pnpm',
-                'exec',
-                'turbo',
-                'run',
-                'build',
-                ...closure.packages.map((packageName) => `--filter=${packageName}`),
-              ],
-              environment.repoRoot,
-            ),
-          )
-          yield* withSeamSpan(
-            SpanNames.packTarballs,
-            { 'e2e.packages': closure.packages.length },
-            runChecked(
-              `pack ${closure.packages.length} closure packages`,
-              [
-                'pnpm',
-                '-r',
-                ...closure.packages.map((packageName) => `--filter=${packageName}`),
-                'pack',
-                '--out',
-                `${directory}/%s.tgz`,
-              ],
-              environment.repoRoot,
-            ),
-          )
-          const fileNames = yield* fs.readDirectory(directory)
-          return yield* Effect.forEach(
-            closure.packages,
-            (packageName) => packedTarballOf(fileNames, packageName, directory),
-          )
-        })),
-      Match.exhaustive,
-    )
+    const fileNames = yield* fs.readDirectory(directory)
+    return yield* Effect.forEach(members, (packageName) => packedTarballOf(fileNames, packageName, directory))
   }).pipe(seamSpan(SpanNames.pack, {}))
 
 const packsInputOf = (
@@ -525,19 +455,33 @@ const packsInputOf = (
     return { baseImage: GuestJobs.BASE_IMAGE, bakeScript, packs: packedTrees }
   }).pipe(seamSpan(SpanNames.packsKey, { 'e2e.packs': packs.length }))
 
-const workspacePackagesOf = (environment: BakeEnvironment) =>
+const workspaceOf = (environment: BakeEnvironment) =>
   Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
     const listing = yield* runChecked(
       STEP_INSTALL_PLAN,
       ['pnpm', 'ls', '-r', '--depth', '-1', '--json'],
       environment.repoRoot,
     )
-    const projects = yield* Schema.decodeEffect(WorkspaceListing)(listing.stdout).pipe(
+    const projects = yield* Schema.decodeEffect(WorkspaceListingJson)(listing.stdout).pipe(
       Effect.mapError(() =>
         new PackFailure({ step: STEP_INSTALL_PLAN, detail: 'pnpm ls wrote no parseable workspace listing' })
       ),
     )
-    return projects.flatMap((project) => Option.toArray(Option.fromNullishOr(project.name)))
+    return yield* Effect.forEach(projects, (project) =>
+      Effect.flatMap(
+        fs.readFileString(path.join(project.path, MANIFEST_FILE_NAME)),
+        (text) =>
+          Schema.decodeEffect(Schema.fromJsonString(WorkspaceManifest))(text).pipe(
+            Effect.mapError(() =>
+              new PackFailure({
+                step: STEP_INSTALL_PLAN,
+                detail: `${project.name}: ${project.path}/${MANIFEST_FILE_NAME} is not a readable workspace manifest`,
+              })
+            ),
+          ),
+      ))
   })
 
 const closureMemberOf = (tree: PackedTree) =>
@@ -559,13 +503,13 @@ const closureMemberOf = (tree: PackedTree) =>
     return packedMemberOf(manifest)
   })
 
-const stagingContextOf = (environment: BakeEnvironment, packsInput: PackInput) =>
+const stagingContextOf = (environment: BakeEnvironment, packsInput: PackInput, workspace: WorkspaceManifests) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     return {
       members: yield* Effect.forEach(packsInput.packs, closureMemberOf),
-      workspace: yield* workspacePackagesOf(environment),
+      workspace: workspace.map((manifest) => manifest.name),
       pnpmLockfile: yield* fs.readFileString(path.join(environment.repoRoot, WORKSPACE_LOCKFILE)),
       workspaceYaml: yield* fs.readFileString(path.join(environment.repoRoot, WORKSPACE_CATALOGS_FILE)),
     } satisfies StagingContext
@@ -702,10 +646,11 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
     const packsDir = path.join(scratch, 'packs')
     return yield* Effect.gen(function*() {
       yield* fs.makeDirectory(packsDir)
-      const packs = yield* packWorkspaceClosure(environment, packsDir)
+      const workspace = yield* workspaceOf(environment)
+      const packs = yield* packWorkspaceClosure(environment, packsDir, closureMembersOf(workspace))
       const fixtureIds = yield* listFixtureIds(environment)
       const packsInput = yield* packsInputOf(environment, packs, scratch)
-      const context = yield* stagingContextOf(environment, packsInput)
+      const context = yield* stagingContextOf(environment, packsInput, workspace)
       const fixtureInputs = yield* fixtureInputsOf(environment, fixtureIds, context)
       const { packsKey, fixtures } = yield* deriveBakeKeys(packsInput, fixtureInputs)
       const root = path.join(environment.bakedCacheRoot, packsKey)

@@ -42,15 +42,16 @@ install() {
     code=$?
   fi
   elapsed=$(($(date +%s) - started))
-  tail -n 10 "$log" >&2
+  grep -v '^npm notice' "$log" | tail -n 20 >&2
   tarball="$(sed -n 's/^npm error path \(.*\.tgz\)$/\1/p' "$log" | head -n 1)"
   first="$(sed -n 's/^npm error //p' "$log" | head -n 1 | cut -c1-200)"
+  mismatch="$(grep -E '^npm error (Missing|Invalid): ' "$log" | head -n 3 | sed 's/^npm error //' | tr '\n' ' ' | cut -c1-400)"
   if [ "$code" -eq 124 ] || [ "$elapsed" -ge "$deadline" ]; then
     reason E2E_BAKE_STALLED "$id: npm ci did not finish within ${deadline}s (exit $code after ${elapsed}s)." "if the registry was slow, re-run the job; if it stalls again, run npm ci in test/e2e/testResources/$id on the host to find the request that hangs."
   elif [ -n "$tarball" ]; then
     reason E2E_BAKE_TARBALL_MISSING "$id: npm ci found no closure tarball $(basename "$tarball") at $tarball." "the lock names a closure member the harness did not pack; run $relock and commit test/e2e/testResources/$id/package-lock.json."
   else
-    reason E2E_BAKE_FAILED "$id: npm ci exited $code: ${first:-no npm error line}." "run $relock, commit test/e2e/testResources/$id/package-lock.json, and if it still fails run npm ci in that fixture on the host."
+    reason E2E_BAKE_FAILED "$id: npm ci exited $code: ${first:-no npm error line}${mismatch:+ ($mismatch)}." "run $relock, commit test/e2e/testResources/$id/package-lock.json, and if it still fails run npm ci in that fixture on the host."
   fi
   exit "$code"
 }
