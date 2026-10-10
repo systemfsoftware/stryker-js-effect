@@ -11,12 +11,26 @@ const LOCATION = '"location":{"start":{"line":1,"column":1},"end":{"line":1,"col
 
 const COST = '{"fixedOverheadMs":1,"testBodyMs":2,"testsExecuted":1,"shared":false}'
 
-const WORKER = '{"_tag":"worker","schemaVersion":"6.0","role":"testRunner","index":0,"startupMs":12.5}'
+const WORKER = '{"_tag":"worker","schemaVersion":"7.0","role":"testRunner","index":0,"startupMs":12.5}'
+
+const READS_NOWHERE = '"redundancy":null,"readmission":null'
 
 const mutantLine = (status: string, file: string | null, cost: string): string =>
   `{"_tag":"mutant","id":"0000000000000001","status":"${status}",${
     file === null ? '' : `"file":"${file}",`
-  }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${cost}}`
+  }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${cost},${READS_NOWHERE}}`
+
+const SUBSUMED_LINE =
+  `{"_tag":"mutant","id":"0000000000000001","status":"Ignored","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${COST},"redundancy":{"_tag":"Subsumed","rule":"complement","dominators":["0000000000000002"]},"readmission":null}`
+
+const subsumedReferenceOf = (line: string): string =>
+  Result.match(S.decodeResult(RunEvent.RunEventWireLine)(line), {
+    onFailure: (failure) => `refused: ${failure.message}`,
+    onSuccess: (event) =>
+      S.is(RunEvent.RunMutantTestedEvent)(event) && event.redundancy !== null
+        ? `subsumedBy: ${event.redundancy.dominators[0]}`
+        : 'noReference',
+  })
 
 const refusalOf = (line: string): string => {
   const decoded = S.decodeResult(RunEvent.RunEventWireLine)(line)
@@ -89,7 +103,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
             Effect.sync(() => ({
               present: mutantLine('Killed', 'src/a.ts', COST),
               absent:
-                `{"_tag":"mutant","id":"0000000000000001","status":"Killed","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false}`,
+                `{"_tag":"mutant","id":"0000000000000001","status":"Killed","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,${READS_NOWHERE}}`,
             })),
         ),
         When('each line is decoded through the wire codec')(
@@ -100,6 +114,35 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           expect(s.outcomes).toEqual({
             present: 'accepted: mutantTested',
             absent: expect.stringMatching(/^refused:[\s\S]*cost/),
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A mutant line carries its subsumption reference while a line omitting the reference keys is refused',
+      Gherkin.Do.pipe(
+        Given('a mutant line naming a Subsumed reference and one omitting redundancy and readmission')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              referenced: SUBSUMED_LINE,
+              bare:
+                `{"_tag":"mutant","id":"0000000000000001","status":"Ignored","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${COST}}`,
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'outcomes',
+          (s) =>
+            Effect.sync(() => ({
+              referenced: subsumedReferenceOf(s.probes.referenced),
+              bare: refusalOf(s.probes.bare),
+            })),
+        ),
+        Then('the reference is read from the line and the line omitting the keys is refused')((s, expect) =>
+          expect(s.outcomes).toEqual({
+            referenced: 'subsumedBy: 0000000000000002',
+            bare: expect.stringMatching(/^refused:[\s\S]*redundancy/),
           })
         ),
       ),
@@ -130,7 +173,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           () =>
             Effect.sync(() => ({
               declared: WORKER,
-              undeclared: '{"_tag":"worker","schemaVersion":"6.0","role":"testRunner","index":0}',
+              undeclared: '{"_tag":"worker","schemaVersion":"7.0","role":"testRunner","index":0}',
             })),
         ),
         When('each line is decoded through the wire codec')(

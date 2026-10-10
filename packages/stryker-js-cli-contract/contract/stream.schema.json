@@ -66,7 +66,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "runId": {
@@ -299,6 +299,10 @@
                   "noPriorRecord": {
                     "type": "integer",
                     "minimum": 0
+                  },
+                  "decidedPerRun": {
+                    "type": "integer",
+                    "minimum": 0
                   }
                 },
                 "required": [
@@ -368,7 +372,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "role": {
@@ -530,6 +534,154 @@
               "type": "null"
             }
           ]
+        },
+        "redundancy": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "Subsumed"
+                      ]
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "complement"
+                          ]
+                        }
+                      ]
+                    },
+                    "dominators": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": [
+                        {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{16}$"
+                        }
+                      ],
+                      "additionalItems": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{16}$"
+                      }
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "rule",
+                    "dominators"
+                  ],
+                  "additionalProperties": true
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "readmission": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "Readmitted"
+                  ]
+                },
+                "rule": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "complement"
+                      ]
+                    }
+                  ]
+                },
+                "causes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "dominator": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{16}$"
+                        },
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "dominator-ignored-at-check",
+                            "dominator-compile-error",
+                            "dominator-ignored-at-plan",
+                            "dominator-remembered-without-running",
+                            "dominator-unsettled"
+                          ]
+                        },
+                        "detail": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "dominator",
+                        "code",
+                        "detail"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ],
+                  "additionalItems": {
+                    "type": "object",
+                    "properties": {
+                      "dominator": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{16}$"
+                      },
+                      "code": {
+                        "type": "string",
+                        "enum": [
+                          "dominator-ignored-at-check",
+                          "dominator-compile-error",
+                          "dominator-ignored-at-plan",
+                          "dominator-remembered-without-running",
+                          "dominator-unsettled"
+                        ]
+                      },
+                      "detail": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "dominator",
+                      "code",
+                      "detail"
+                    ],
+                    "additionalProperties": true
+                  }
+                }
+              },
+              "required": [
+                "_tag",
+                "rule",
+                "causes"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -543,7 +695,9 @@
         "completed",
         "total",
         "static",
-        "cost"
+        "cost",
+        "redundancy",
+        "readmission"
       ],
       "additionalProperties": true
     },
@@ -803,6 +957,10 @@
             "noPriorRecord": {
               "type": "integer",
               "minimum": 0
+            },
+            "decidedPerRun": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "required": [
@@ -1012,7 +1170,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "runId": {
@@ -1320,7 +1478,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "code": {
@@ -1465,7 +1623,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "code": {
@@ -1502,7 +1660,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "rule": {

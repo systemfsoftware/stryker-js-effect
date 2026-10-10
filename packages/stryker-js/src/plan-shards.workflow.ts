@@ -19,6 +19,7 @@ export const PlannedMutant = S.Struct({
   id: Mutant.MutantId,
   costMs: CostMs,
   dependsOnDryRun: S.Boolean,
+  placementKey: S.optional(Mutant.MutantId),
 })
 export type PlannedMutant = typeof PlannedMutant.Type
 
@@ -49,12 +50,6 @@ const compareProjectThenId = (left: PlannedMutant, right: PlannedMutant): number
   Boolean.match(compareText(left.project, right.project) === 0, {
     onTrue: () => compareText(left.id, right.id),
     onFalse: () => compareText(left.project, right.project),
-  })
-
-const compareCostliestFirst = (left: PlannedMutant, right: PlannedMutant): number =>
-  Boolean.match(left.costMs === right.costMs, {
-    onTrue: () => compareProjectThenId(left, right),
-    onFalse: () => sign(right.costMs - left.costMs),
   })
 
 const totalCostMsOf = (mutants: readonly PlannedMutant[]): number =>
@@ -168,16 +163,57 @@ const leastLoadedIndicesOf = (bins: ReadonlyArray<Bin>, count: number): Readonly
     .slice(0, count)
     .map((entry) => entry.index)
 
-const withMutantIn = (bins: ReadonlyArray<Bin>, index: number, mutant: PlannedMutant): ReadonlyArray<Bin> =>
+interface PlacementGroup {
+  readonly key: string
+  readonly project: string
+  readonly mutants: ReadonlyArray<PlannedMutant>
+  readonly costMs: number
+  readonly dependsOnDryRun: boolean
+}
+
+const placementKeyOf = (mutant: PlannedMutant): string =>
+  Option.getOrElse(Option.fromUndefinedOr(mutant.placementKey), () => `\u0000${mutant.project}\u0000${mutant.id}`)
+
+const projectOfGroup = (members: ReadonlyArray<PlannedMutant>): string => {
+  const [head] = members
+  return head === undefined ? '' : head.project
+}
+
+const placementGroupsOf = (mutants: ReadonlyArray<PlannedMutant>): ReadonlyArray<PlacementGroup> => {
+  const byKey = new Map<string, ReadonlyArray<PlannedMutant>>()
+  for (const mutant of mutants) {
+    const key = placementKeyOf(mutant)
+    const members = Option.getOrElse(
+      Option.fromUndefinedOr(byKey.get(key)),
+      (): ReadonlyArray<PlannedMutant> => [],
+    )
+    byKey.set(key, [...members, mutant])
+  }
+  return [...byKey.entries()].map(([key, members]) => {
+    const sorted = [...members].sort(compareProjectThenId)
+    return {
+      key,
+      project: projectOfGroup(sorted),
+      mutants: sorted,
+      costMs: totalCostMsOf(sorted),
+      dependsOnDryRun: sorted.some((mutant) => mutant.dependsOnDryRun),
+    }
+  })
+}
+
+const compareGroupsCostliestFirst = (left: PlacementGroup, right: PlacementGroup): number =>
+  Boolean.match(left.costMs === right.costMs, {
+    onTrue: () => compareText(left.key, right.key),
+    onFalse: () => sign(right.costMs - left.costMs),
+  })
+
+const withGroupIn = (bins: ReadonlyArray<Bin>, index: number, group: PlacementGroup): ReadonlyArray<Bin> =>
   bins.map((bin, at) =>
     Boolean.match(at === index, {
-      onTrue: (): Bin => ({ mutants: [...bin.mutants, mutant], load: bin.load + mutant.costMs }),
+      onTrue: (): Bin => ({ mutants: [...bin.mutants, ...group.mutants], load: bin.load + group.costMs }),
       onFalse: () => bin,
     })
   )
-
-const placeIn = (bins: ReadonlyArray<Bin>, mutant: PlannedMutant): ReadonlyArray<Bin> =>
-  withMutantIn(bins, leastLoadedOf(bins, indicesOf(bins.length)), mutant)
 
 const reservedBin = (bins: ReadonlyArray<Bin>, index: number, costMs: number): ReadonlyArray<Bin> =>
   bins.map((bin, at) =>
@@ -219,26 +255,30 @@ const shardsOf = (command: PlanShardsCommand): ReadonlyArray<PlannedShard> => {
     },
     { bins: emptyBins(count), indicesByProject: {} },
   )
-  const dependents = command.mutants.filter((mutant) => mutant.dependsOnDryRun).sort(compareCostliestFirst)
-  const withDependents = dependents.reduce(
-    (bins, mutant) =>
-      withMutantIn(
+  const groups = placementGroupsOf(command.mutants)
+  const dependentGroups = groups.filter((group) => group.dependsOnDryRun).sort(compareGroupsCostliestFirst)
+  const withDependents = dependentGroups.reduce(
+    (bins, group) =>
+      withGroupIn(
         bins,
         leastLoadedOf(
           bins,
           Option.getOrElse(
-            Record.get(reserved.indicesByProject, mutant.project),
+            Record.get(reserved.indicesByProject, group.project),
             () => indicesOf(count),
           ),
         ),
-        mutant,
+        group,
       ),
     reserved.bins,
   )
-  const withRest = command.mutants
-    .filter((mutant) => Boolean.not(mutant.dependsOnDryRun))
-    .sort(compareCostliestFirst)
-    .reduce((bins, mutant) => placeIn(bins, mutant), withDependents)
+  const restGroups = groups
+    .filter((group) => Boolean.not(group.dependsOnDryRun))
+    .sort(compareGroupsCostliestFirst)
+  const withRest = restGroups.reduce(
+    (bins, group) => withGroupIn(bins, leastLoadedOf(bins, indicesOf(bins.length)), group),
+    withDependents,
+  )
   return withRest.map((bin, index) =>
     PlannedShard.make({
       index: index + 1,

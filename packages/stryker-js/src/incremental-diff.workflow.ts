@@ -79,8 +79,14 @@ const isUnreproducedWallClockTimeout = (record: PreviousReuseRecord): boolean =>
     ),
   )
 
+const carriesSubsumptionReference = (record: PreviousReuseRecord): boolean =>
+  Boolean.or(record.redundancy !== undefined, record.readmission !== undefined)
+
 const isReusableRecord = (record: PreviousReuseRecord): record is RememberedReuseRecord =>
-  Boolean.and(isReusableStatus(record.status), Boolean.not(isUnreproducedWallClockTimeout(record)))
+  Boolean.and(
+    Boolean.and(isReusableStatus(record.status), Boolean.not(isUnreproducedWallClockTimeout(record))),
+    Boolean.not(carriesSubsumptionReference(record)),
+  )
 
 const timeoutEvidenceOf = (record: PreviousReuseRecord): Option.Option<TimeoutEvidence> =>
   Option.map(
@@ -260,14 +266,31 @@ const flakyRefusedOf = (
     ...priorTimeoutField('flakyDependency', records),
   })
 
+const decidedPerRun = (mutant: Mutant.Mutant, records: readonly PreviousReuseRecord[]): boolean =>
+  Boolean.or(
+    mutant.redundancy !== undefined,
+    Option.exists(Arr.last(records), carriesSubsumptionReference),
+  )
+
 const toRunOf = (
   mutant: Mutant.Mutant,
   command: IncrementalDiffCommand,
   records: readonly PreviousReuseRecord[],
 ): IncrementalDiffDecision => {
-  const refusal = refusalForMutant(command, records)
+  const reason = refusalForMutant(command, records)
+  const refusal: ReuseRefusalReason = Boolean.match(
+    Boolean.and(reason === 'noPriorRecord', decidedPerRun(mutant, records)),
+    { onTrue: () => 'decidedPerRun', onFalse: () => reason },
+  )
   return MutantToRun.make({ mutant, refusal, ...priorTimeoutField(refusal, records) })
 }
+
+const rememberableOf = (
+  mutant: Mutant.Mutant,
+  command: IncrementalDiffCommand,
+  records: readonly PreviousReuseRecord[],
+): Option.Option<RememberedReuseRecord> =>
+  Option.filter(newestMatchingOf(records, command), () => mutant.redundancy === undefined)
 
 const decideForMutant = (
   mutant: Mutant.Mutant,
@@ -278,7 +301,7 @@ const decideForMutant = (
   return Boolean.match(flakyDependent(command, mutant), {
     onTrue: () => flakyRefusedOf(mutant, records),
     onFalse: () =>
-      Option.match(newestMatchingOf(records, command), {
+      Option.match(rememberableOf(mutant, command, records), {
         onNone: () => toRunOf(mutant, command, records),
         onSome: (record) => rememberedOf(mutant, record),
       }),

@@ -83,6 +83,29 @@ const planCommandOf = (
 const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
   Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant] as const))
 
+const optionalField = <Value>(key: string, value: Value | undefined): Readonly<Record<string, Value>> =>
+  Option.match(Option.fromUndefinedOr(value), {
+    onNone: (): Readonly<Record<string, Value>> => ({}),
+    onSome: (present) => ({ [key]: present }),
+  })
+
+const isSubsumed = (mutant: Mutant.Mutant): boolean => Option.isSome(Option.fromUndefinedOr(mutant.redundancy))
+
+const planningMutantOf = (mutant: Mutant.Mutant): Mutant.Mutant =>
+  isSubsumed(mutant)
+    ? Mutant.Mutant.make({
+      id: mutant.id,
+      fileName: mutant.fileName,
+      mutatorName: mutant.mutatorName,
+      replacement: mutant.replacement,
+      location: mutant.location,
+      ...optionalField('static', mutant.static),
+      ...optionalField('coveredBy', mutant.coveredBy === undefined ? undefined : [...mutant.coveredBy]),
+      ...optionalField('testsCompleted', mutant.testsCompleted),
+      ...optionalField('description', mutant.description),
+    })
+    : mutant
+
 type MutantTestPlanRaw = typeof MutantTestPlanCommand.Encoded & {
   readonly mutantsById: Record<string, Mutant.Mutant>
 }
@@ -95,8 +118,9 @@ const readPlanCommand = Effect.fn(SpanTaxonomy.Spans.mutationTestPlanRead.name)(
         fileNames: [...MutableHashMap.keys(input.project.filesToMutate)],
       }),
     )
+    const planningMutants = input.mutants.map(planningMutantOf)
     const command = planCommandOf(
-      input.mutants,
+      planningMutants,
       input.testCoverage,
       input.options,
       input.timeOverheadMS,
@@ -104,7 +128,7 @@ const readPlanCommand = Effect.fn(SpanTaxonomy.Spans.mutationTestPlanRead.name)(
       input.priorKilledByByMutantId,
       sandboxFileByName,
     )
-    return { ...command, mutantsById: mutantsByIdOf(input.mutants) }
+    return { ...command, mutantsById: mutantsByIdOf(planningMutants) }
   },
 )
 
@@ -213,21 +237,51 @@ export interface MutationTestPlanInput {
   readonly reporterStage: ReporterStage
 }
 
+export interface HeldSubsumedPlan {
+  readonly plan: Mutant.RunPlan
+  readonly redundancy: Mutant.Redundancy
+}
+
 export interface MutationTestPlan {
   readonly runPlans: readonly Mutant.RunPlan[]
   readonly earlyResults: readonly Mutant.RunMutantResult[]
+  readonly heldSubsumed: readonly HeldSubsumedPlan[]
   readonly plannedTotal: number
   readonly plansForReporter: readonly Mutant.RunPlan[]
 }
 
+const redundancyByIdOf = (mutants: readonly Mutant.Mutant[]): ReadonlyMap<string, Mutant.Redundancy> =>
+  new Map(
+    mutants.flatMap((mutant) =>
+      Option.match(Option.fromUndefinedOr(mutant.redundancy), {
+        onNone: (): readonly (readonly [string, Mutant.Redundancy])[] => [],
+        onSome: (redundancy) => [[mutant.id, redundancy] as const],
+      })
+    ),
+  )
+
 export const draftMutationTestPlan = Effect.fn(SpanTaxonomy.Spans.mutationTestPlan.name)(function*(
   input: MutationTestPlanInput,
 ) {
+  const redundancyById = redundancyByIdOf(input.mutants)
   const plans = yield* planMutantTestsCell.run(input)
   const { runPlans, earlyPlans } = partitionRunPlans(plans)
+  const heldSubsumed: readonly HeldSubsumedPlan[] = runPlans.flatMap((plan) =>
+    Option.match(Option.fromUndefinedOr(redundancyById.get(plan.mutant.id)), {
+      onNone: (): readonly HeldSubsumedPlan[] => [],
+      onSome: (redundancy) => [{ plan, redundancy }],
+    })
+  )
+  const keptRunPlans = runPlans.filter((plan) => !redundancyById.has(plan.mutant.id))
   const earlyResults = yield* Effect.forEach(earlyPlans, (plan) => earlyResultOf(plan))
-  const sortedPlans = sortedRunPlans(runPlans)
+  const sortedPlans = sortedRunPlans(keptRunPlans)
   const plansForReporter: readonly Mutant.RunPlan[] = [...sortedPlans]
-  const plannedTotal = sortedPlans.length + earlyResults.length + input.rememberedCount
-  return { runPlans: sortedPlans, earlyResults, plannedTotal, plansForReporter } satisfies MutationTestPlan
+  const plannedTotal = sortedPlans.length + earlyResults.length + heldSubsumed.length + input.rememberedCount
+  return {
+    runPlans: sortedPlans,
+    earlyResults,
+    heldSubsumed,
+    plannedTotal,
+    plansForReporter,
+  } satisfies MutationTestPlan
 })

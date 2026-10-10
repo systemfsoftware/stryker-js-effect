@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
@@ -35,13 +36,17 @@ const mutantFromStream = (line: RunEvent.RunMutantTested) => {
     status: line.status,
     location: line.location,
   }
-  return Option.match(
+  const withReplacement = Option.match(
     Option.liftPredicate(line.replacement, (value) => typeof value === 'string'),
     {
       onNone: () => mutant,
       onSome: (replacement) => ({ ...mutant, replacement }),
     },
   )
+  return Option.match(Option.fromNullishOr(line.redundancy), {
+    onNone: () => withReplacement,
+    onSome: (redundancy) => ({ ...withReplacement, statusReason: Mutant.redundancyStatusReason(redundancy) }),
+  })
 }
 
 const decodeLineText = S.decodeOption(S.fromJsonString(RunEvent.RunMutantTested))

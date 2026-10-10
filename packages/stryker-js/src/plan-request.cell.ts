@@ -173,6 +173,7 @@ interface ProjectPlan {
     readonly id: Mutant.MutantId
     readonly costMs: number
     readonly dependsOnDryRun: boolean
+    readonly placementKey?: Mutant.MutantId | undefined
   }>
   readonly dryRunCostMs: number
   readonly reuse: ReuseObservation
@@ -216,6 +217,17 @@ const programDigestAtPlanTime = ({
       }).pipe(Effect.provide(context), Effect.scoped),
     onFalse: () => Effect.as(Effect.void, undefined),
   })
+
+const dominatorIdsOf = (mutants: readonly Mutant.Mutant[]): ReadonlySet<Mutant.MutantId> =>
+  new Set(mutants.flatMap((mutant) => (mutant.redundancy === undefined ? [] : [...mutant.redundancy.dominators])))
+
+const placementKeyOf = (
+  dominatorIds: ReadonlySet<Mutant.MutantId>,
+  mutant: Mutant.Mutant,
+): Mutant.MutantId | undefined =>
+  mutant.redundancy !== undefined
+    ? mutant.redundancy.dominators[0]
+    : Option.getOrUndefined(Option.liftPredicate(mutant.id, (id) => dominatorIds.has(id)))
 
 const planProject = (
   request: PlanShardsRequest,
@@ -279,16 +291,25 @@ const planProject = (
           () => DEFAULT_MUTANT_COST_MS,
         ),
     })
+    const dominatorIds = dominatorIdsOf(reuse.mutants)
     const mutants = [
       ...reuse.mutants.map((mutant) => ({
         id: mutant.id,
         costMs: costOf(mutant.id, reportCosts, coverage, testCoverage),
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
+        ...Option.match(Option.fromUndefinedOr(placementKeyOf(dominatorIds, mutant)), {
+          onNone: () => ({} as const),
+          onSome: (placementKey) => ({ placementKey } as const),
+        }),
       })),
       ...reuse.rememberedResults.map((mutant) => ({
         id: mutant.id,
         costMs: 0,
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
+        ...Option.match(Option.fromUndefinedOr(placementKeyOf(dominatorIds, mutant)), {
+          onNone: () => ({} as const),
+          onSome: (placementKey) => ({ placementKey } as const),
+        }),
       })),
     ]
     return {

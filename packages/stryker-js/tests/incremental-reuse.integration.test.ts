@@ -162,6 +162,7 @@ const ZERO_REFUSALS = {
   flakyDependency: 0,
   timeoutUnreproduced: 0,
   noPriorRecord: 0,
+  decidedPerRun: 0,
 }
 
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')

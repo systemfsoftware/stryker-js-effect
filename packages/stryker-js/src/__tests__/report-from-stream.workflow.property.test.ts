@@ -5,6 +5,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   reportFromStream,
   ReportFromStreamAbsent,
@@ -34,6 +35,9 @@ const reportOf = (subject: typeof reportFromStream, text: string): Option.Option
 const streamTextOf = (mutants: ReadonlyArray<RunEvent.RunMutantTested>): string =>
   [STREAM_HEADER, ...Arr.flatMap(mutants, (mutant) => Option.toArray(lineOf(mutant))), TORN_LINE].join('\n')
 
+const expectedStatusReasonOf = (line: RunEvent.RunMutantTested): string | undefined =>
+  line.redundancy === null ? undefined : Mutant.redundancyStatusReason(line.redundancy)
+
 describe('reportFromStream', () => {
   it.prop(
     '∀ms_StreamedMutants_≡RebuiltIntoTheirFilesIffAnyMutant',
@@ -58,5 +62,26 @@ describe('reportFromStream', () => {
     (subject, [mutants]) =>
       Arr.isReadonlyArrayNonEmpty(mutants) ||
       S.is(ReportFromStreamAbsent)(decisionOf(subject, `${STREAM_HEADER}\n${TORN_LINE}`)),
+  )
+
+  it.prop(
+    '∀m_SubsumedMutantLine_≡StatusReasonRenderedFromItsReference',
+    { of: [RunEvent.RunMutantTested], subject: reportFromStream },
+    (subject, [line]) =>
+      Option.match(reportOf(subject, streamTextOf([line])), {
+        onNone: () => false,
+        onSome: (report) =>
+          Option.match(
+            Option.fromNullishOr(
+              (report.files[line.fileName]?.mutants ?? []).find((entry) => entry.id === line.id),
+            ),
+            {
+              onNone: () => false,
+              onSome: (entry) =>
+                entry.statusReason === expectedStatusReasonOf(line) &&
+                (line.redundancy === null || (entry.statusReason ?? '').includes(line.redundancy.dominators[0])),
+            },
+          ),
+      }),
   )
 })

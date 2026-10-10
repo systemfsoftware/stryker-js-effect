@@ -95,6 +95,8 @@ const coverageCommandArb = Arbitrary.all([
           id: mutantId,
           status: closed ? 'Ignored' : undefined,
           statusReason: undefined,
+          redundancy: closed ? baseMutant.redundancy : undefined,
+          readmission: closed ? undefined : baseMutant.readmission,
         }),
       ],
       timeOverheadMS: 1,

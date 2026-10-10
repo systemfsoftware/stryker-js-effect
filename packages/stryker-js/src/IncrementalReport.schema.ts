@@ -19,6 +19,8 @@ const MutantResultLikeSchema = S.Struct({
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
   duration: S.optional(S.Finite),
+  redundancy: S.optional(S.toEncoded(Mutant.Redundancy)),
+  readmission: S.optional(S.toEncoded(Mutant.Readmitted)),
 })
 
 const FileResultLikeSchema = S.Struct({

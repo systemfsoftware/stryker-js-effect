@@ -39,6 +39,7 @@ export const ReuseRefusals = S.Struct({
   timeoutUnreproduced: Report.NonNegativeInt,
   flakyDependency: Report.NonNegativeInt,
   noPriorRecord: Report.NonNegativeInt,
+  decidedPerRun: S.optionalKey(Report.NonNegativeInt),
 })
 export type ReuseRefusals = typeof ReuseRefusals.Type
 
@@ -113,6 +114,8 @@ export class RunMutantTestedEvent extends S.TaggedClass<RunMutantTestedEvent>()(
   total: Report.NonNegativeInt,
   static: S.Boolean,
   cost: S.NullOr(MutantCost),
+  redundancy: S.NullOr(Mutant.Redundancy),
+  readmission: S.NullOr(Mutant.Readmitted),
 }) {}
 
 export type RunMutantTested = RunMutantTestedEvent
@@ -128,6 +131,8 @@ const MutantTestedWireSchema = S.TaggedStruct('mutant', {
   total: Report.NonNegativeInt,
   static: S.Boolean,
   cost: S.NullOr(MutantCost),
+  redundancy: S.NullOr(Mutant.Redundancy),
+  readmission: S.NullOr(Mutant.Readmitted),
 })
 
 export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSchema.Encoded> = MutantTestedWireSchema
@@ -145,6 +150,8 @@ export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSc
           total: line.total,
           static: line.static,
           cost: line.cost,
+          redundancy: line.redundancy,
+          readmission: line.readmission,
         })
       ),
       encode: SchemaGetter.transform((tested) => ({
@@ -159,6 +166,8 @@ export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSc
         total: tested.total,
         static: tested.static,
         cost: tested.cost,
+        redundancy: tested.redundancy,
+        readmission: tested.readmission,
       })),
     }),
   )

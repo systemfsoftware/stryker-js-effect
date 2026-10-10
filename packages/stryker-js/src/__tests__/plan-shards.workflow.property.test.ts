@@ -190,7 +190,12 @@ describe('planShards', () => {
       const flat = PlanShardsCommand.make({
         targetSeconds: command.targetSeconds,
         maxShards: command.maxShards,
-        mutants: command.mutants.map((mutant) => ({ ...mutant, dependsOnDryRun: false })),
+        mutants: command.mutants.map(({ project, id, costMs }) => ({
+          project,
+          id,
+          costMs,
+          dependsOnDryRun: false,
+        })),
         dryRunCosts: {},
       })
       const shards = shardsOf(subject, flat)
@@ -212,6 +217,33 @@ describe('planShards', () => {
       const largest = command.mutants.reduce((max, mutant) => Math.max(max, mutant.costMs), 0)
       const busiest = loads.reduce((max, load) => Math.max(max, load), 0)
       return busiest <= (4 / 3) * (total / count + largest) + 1e-9
+    },
+  )
+
+  it.prop(
+    '∀c_Mutants_≡NoPlacementKeyIsSplitAcrossShards',
+    { of: [PlanShardsCommand], subject: planShards },
+    (subject, [command]) => {
+      const shards = shardsOf(subject, command)
+      if (shards === undefined) {
+        return false
+      }
+      const placementKeyOfScheduled = (project: string, id: string): string | undefined =>
+        command.mutants.find((mutant) => mutant.project === project && mutant.id === id)?.placementKey
+      const shardIndicesByKey = new Map<string, ReadonlySet<number>>()
+      shards.forEach((shard) =>
+        shard.projects.forEach((entry) =>
+          entry.mutants.forEach((id) => {
+            const placementKey = placementKeyOfScheduled(entry.project, id)
+            if (placementKey === undefined) {
+              return
+            }
+            const indices = shardIndicesByKey.get(placementKey) ?? new Set<number>()
+            shardIndicesByKey.set(placementKey, new Set([...indices, shard.index]))
+          })
+        )
+      )
+      return [...shardIndicesByKey.values()].every((indices) => indices.size === 1)
     },
   )
 })
