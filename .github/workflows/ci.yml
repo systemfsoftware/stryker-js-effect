@@ -363,8 +363,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: deno from the flake
         run: echo "$(nix build --no-link --print-out-paths .#deno)/bin" >> "$GITHUB_PATH"
-      # The packages the lane packs build under the same Turbo hashes as in `check`, so the legs
-      # restore `check`'s entries the way `check` does and never save one.
       - id: base
         name: Base commit (first parent of the checked-out commit)
         run: echo "sha=$(git cat-file -p HEAD | awk '$1 == "parent" { print $2; exit }')" >> "$GITHUB_OUTPUT"
@@ -383,6 +381,8 @@ jobs:
           key: turbo-${{ runner.os }}-dist-${{ github.sha }}
           restore-keys: |
             turbo-${{ runner.os }}-dist-
+      - name: Build the packed packages under check's Turbo hashes (no pass-through args)
+        run: pnpm exec turbo run build --filter=@systemfsoftware/stryker-e2e^...
       - id: lgtm
         name: Wait for LGTM
         run: pnpm lgtm:ready
@@ -405,7 +405,7 @@ jobs:
           esac
           args+=(--reporter=default --reporter=github-actions --reporter=json --outputFile.json="$RUNNER_TEMP/vitest.json")
           started=$(date +%s) status=0
-          timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e -- "${args[@]}" || status=$?
+          timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e --only -- "${args[@]}" || status=$?
           timed_out=false
           if [ "$status" = 124 ] || { [ "$status" = 137 ] && (( $(date +%s) - started >= 1200 )); }; then
             timed_out=true
