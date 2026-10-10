@@ -1,4 +1,5 @@
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -577,6 +578,44 @@ describe('compareSides', () => {
           violation.verdict === status &&
           violation.candidate === candidate
         )
+    },
+  )
+
+  it.prop(
+    '∀r_RecallCounters_≡BranchCompileErrorsAndThoseItsOwnProjectAnsweredNotAssignable',
+    {
+      of: [
+        S.Array(S.Struct({
+          mainStatus: VerdictStatus,
+          branchStatus: VerdictStatus,
+          answer: S.Option(TypeQuery.TypeAnswer),
+          otherProjectNotAssignable: S.Boolean,
+        })),
+      ],
+      subject: compareSides,
+    },
+    (subject, [mutants]) => {
+      const lines: ReadonlyArray<ParityLine> = [
+        ...mutants.flatMap((mutant, index): ReadonlyArray<ParityLine> => {
+          const mutantId = `m-${index}`
+          return [
+            verdictOf('main', { mutantId, status: mutant.mainStatus }),
+            verdictOf('branch', { mutantId, status: mutant.branchStatus }),
+            ...Option.toArray(Option.map(mutant.answer, (answer) => typeAnswerLineOf(mutantId, answer))),
+            ...(mutant.otherProjectNotAssignable
+              ? [typeAnswerLineOf(mutantId, notAssignableAnswer, { project: OTHER_PROJECT })]
+              : []),
+          ]
+        }),
+        countsOf(PROJECT),
+      ]
+      const branchCompileErrors = mutants.filter((mutant) => mutant.branchStatus === 'compileError')
+      const answeredNotAssignable = branchCompileErrors.filter((mutant) =>
+        Option.exists(mutant.answer, S.is(TypeQuery.NotAssignable))
+      )
+      const { typeQuery } = decisionOf(subject, commandOf(lines)).summary
+      return typeQuery.compileErrorTotal === branchCompileErrors.length &&
+        typeQuery.compileErrorAnsweredNotAssignable === answeredNotAssignable.length
     },
   )
 
