@@ -74,6 +74,11 @@ export const uncheckedWorkspaceFiles: ReadonlyArray<readonly [string, string]> =
   ['test/sample.test.mjs', FAST_TEST_SOURCE],
 ]
 
+export const noTestsWorkspaceFiles: ReadonlyArray<readonly [string, string]> = [
+  ['package.json', '{ "type": "commonjs" }\n'],
+  ['src/lib/kept.ts', KEPT_SOURCE],
+]
+
 const REASONLESS_SOURCE = 'export const reasonless = (value: number): number => value - 1\n'
 
 const reasonlessWorkspaceFiles: ReadonlyArray<readonly [string, string]> = [
@@ -167,6 +172,16 @@ export const uncheckedOptionsOf = (directory: string): Options.PartialStrykerOpt
   checkers: [],
 })
 
+export const noTestsOptionsOf = (directory: string): Options.PartialStrykerOptions => ({
+  ...uncheckedOptionsOf(directory),
+  allowEmpty: true,
+})
+
+export const dryRunOnlyOptionsOf = (directory: string): Options.PartialStrykerOptions => ({
+  ...uncheckedOptionsOf(directory),
+  dryRunOnly: true,
+})
+
 export const writeWorkspace = (
   files: ReadonlyArray<readonly [string, string]>,
 ): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
@@ -200,6 +215,11 @@ export interface MutantCostEntry {
   readonly coveringTests: number
 }
 
+export interface ObservedPhaseMark {
+  readonly phase: RunEvent.RunPhase
+  readonly elapsedMs: number
+}
+
 export interface Observation {
   readonly costs: Readonly<Record<string, MutantCostEntry>>
   readonly statuses: Readonly<Record<string, string>>
@@ -208,6 +228,7 @@ export interface Observation {
   readonly verdictBudget: RunEvent.Budget | null
   readonly verdictCheck: RunEvent.CheckDuration | null
   readonly verdictReporting: RunEvent.ReportingDuration | null
+  readonly marks: ReadonlyArray<ObservedPhaseMark>
   readonly phases: ReadonlyArray<RunEvent.RunPhase>
 }
 
@@ -258,8 +279,10 @@ const verdictDurationOf = <A>(
       Option.map(Option.fromNullishOr(event.phaseDurations), pick)),
   )
 
-const phasesOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<RunEvent.RunPhase> =>
-  events.flatMap((event) => (S.is(RunEvent.PhaseEntered)(event) ? [event.phase] : []))
+const marksOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<ObservedPhaseMark> =>
+  events.flatMap((event) =>
+    S.is(RunEvent.PhaseEntered)(event) ? [{ phase: event.phase, elapsedMs: event.elapsedMs }] : []
+  )
 
 const runEngineWith = (
   directory: string,
@@ -282,13 +305,15 @@ const runEngineWith = (
       Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
     )
     const text = yield* fs.readFileString(path.join(directory, REPORT_FILE)).pipe(Effect.orElseSucceed(() => ''))
+    const marks = marksOf(events)
     return {
       ...readReport(text),
       streamCosts: streamCostsOf(events),
       verdictBudget: verdictBudgetOf(events),
       verdictCheck: verdictDurationOf(events, (durations) => durations.check),
       verdictReporting: verdictDurationOf(events, (durations) => durations.reporting),
-      phases: phasesOf(events),
+      marks,
+      phases: marks.map((mark) => mark.phase),
     }
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 

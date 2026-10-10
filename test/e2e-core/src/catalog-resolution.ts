@@ -230,3 +230,31 @@ export const parseFixtureManifest: {
       () => new MalformedFixtureManifest({ manifest, detail: 'the manifest is not a JSON object' }),
     ),
 )
+
+const MANIFEST_JSON_INDENT = 2
+
+export const resolvedManifestText: {
+  (
+    bytes: Uint8Array,
+    catalogs: WorkspaceCatalogs,
+  ): (manifest: string) => Result.Result<string, MalformedFixtureManifest | ResolveFailure>
+  (
+    manifest: string,
+    bytes: Uint8Array,
+    catalogs: WorkspaceCatalogs,
+  ): Result.Result<string, MalformedFixtureManifest | ResolveFailure>
+} = Function.dual(
+  3,
+  (
+    manifest: string,
+    bytes: Uint8Array,
+    catalogs: WorkspaceCatalogs,
+  ): Result.Result<string, MalformedFixtureManifest | ResolveFailure> =>
+    Result.map(
+      Result.flatMap(
+        parseFixtureManifest(manifest, bytes),
+        (parsed) => resolveCatalogSpecs(manifest, parsed, catalogs),
+      ),
+      (resolved) => `${JSON.stringify(resolved, null, MANIFEST_JSON_INDENT)}\n`,
+    ),
+)

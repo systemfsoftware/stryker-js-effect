@@ -3,7 +3,6 @@ import {
   type BenchCorpus,
   type BenchCorpusName,
   BenchReport,
-  BenchReportJson,
   type BenchRun,
   BenchRunInvalid,
   BenchRunKey,
@@ -11,8 +10,7 @@ import {
   type BenchSide,
   readBenchRun,
   ReadBenchRunCommand,
-  renderBenchAnnotation,
-  renderBenchSummary,
+  type RunExit,
   type SetupStep,
   summarizeBench,
   SummarizeBenchCommand,
@@ -20,10 +18,13 @@ import {
 import * as Arr from 'effect/Array'
 import * as Clock from 'effect/Clock'
 import * as Crypto from 'effect/Crypto'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
+import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
@@ -36,18 +37,14 @@ export interface RunBenchInput {
   readonly sideA: PreparedSide
   readonly sideB: PreparedSide
   readonly runsRoot: string
-  readonly reportPath: string
   readonly setupSteps: ReadonlyArray<SetupStep>
   readonly baseSha: string
   readonly headSha: string
+  readonly runTimeoutMs: number
 }
 
-export type BenchOutcome = 'summarized' | 'failed'
-
 export interface RunBenchResult {
-  readonly markdown: string
-  readonly annotationLine: string
-  readonly outcome: BenchOutcome
+  readonly report: BenchReport
   readonly runs: ReadonlyArray<BenchRun>
 }
 
@@ -70,40 +67,61 @@ interface RunParams {
 
 const slug = (value: string): string => value.replace(/[^A-Za-z0-9._-]+/g, '-')
 
+const STDERR_TAIL_CHARS = 4096
+
+const tailOf = (text: string): string => text.slice(-STDERR_TAIL_CHARS)
+
+interface CliExit {
+  readonly exit: RunExit
+  readonly stderrTail: string
+}
+
 const runCli = (
   params: Pick<RunParams, 'cli' | 'cwd' | 'configFile'> & {
     readonly streamFile: string
     readonly incrementalFile: string
+    readonly timeoutMs: number
   },
-): Effect.Effect<number, never, ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.scoped(Effect.gen(function*() {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const handle = yield* spawner.spawn(
-      ChildProcess.make(
-        globalThis.process.execPath,
+): Effect.Effect<CliExit, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  Effect.gen(function*() {
+    const stderr = yield* Ref.make('')
+    const exited = yield* Effect.scoped(Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      const handle = yield* spawner.spawn(
+        ChildProcess.make(
+          globalThis.process.execPath,
+          [
+            params.cli,
+            'run',
+            params.configFile,
+            '--full',
+            '--progressStreamFile',
+            params.streamFile,
+            '--incrementalFile',
+            params.incrementalFile,
+          ],
+          { cwd: params.cwd, forceKillAfter: Duration.seconds(10) },
+        ),
+      )
+      const [exitCode] = yield* Effect.all(
         [
-          params.cli,
-          'run',
-          params.configFile,
-          '--full',
-          '--progressStreamFile',
-          params.streamFile,
-          '--incrementalFile',
-          params.incrementalFile,
-        ],
-        { cwd: params.cwd },
-      ),
-    )
-    const [exitCode] = yield* Effect.all(
-      [
-        handle.exitCode,
-        Stream.runDrain(handle.stdout.pipe(Stream.decodeText())),
-        Stream.runDrain(handle.stderr.pipe(Stream.decodeText())),
-      ] as const,
-      { concurrency: 'unbounded' },
-    )
-    return exitCode
-  })).pipe(Effect.orDie)
+          handle.exitCode,
+          Stream.runDrain(handle.stdout),
+          Stream.runForEach(
+            handle.stderr.pipe(Stream.decodeText()),
+            (chunk) => Ref.update(stderr, (tail) => tailOf(tail + chunk)),
+          ),
+        ] as const,
+        { concurrency: 'unbounded' },
+      )
+      return exitCode
+    })).pipe(Effect.timeoutOption(Duration.millis(params.timeoutMs)), Effect.orDie)
+    const exit = Option.match(exited, {
+      onNone: (): RunExit => ({ _tag: 'timed-out', afterMs: params.timeoutMs }),
+      onSome: (code): RunExit => ({ _tag: 'exited', code }),
+    })
+    return { exit, stderrTail: yield* Ref.get(stderr) }
+  })
 
 const streamLines = (
   fs: FileSystem.FileSystem,
@@ -123,12 +141,13 @@ const runOne = (input: RunBenchInput, params: RunParams): Effect.Effect<BenchRun
     const incrementalFile = path.join(input.runsRoot, `${stem}.json`)
 
     const startedAt = yield* Clock.currentTimeMillis
-    const exitCode = yield* runCli({
+    const cliExit = yield* runCli({
       cli: params.cli,
       cwd: params.cwd,
       configFile: params.configFile,
       streamFile,
       incrementalFile,
+      timeoutMs: input.runTimeoutMs,
     })
     const wallMs = (yield* Clock.currentTimeMillis) - startedAt
 
@@ -145,9 +164,17 @@ const runOne = (input: RunBenchInput, params: RunParams): Effect.Effect<BenchRun
       side: params.side,
       position: params.position,
     })
-    return Result.getOrElse(
-      readBenchRun(ReadBenchRunCommand.make({ key, lines, exitCode, workloadDigest: digest, wallMs })),
-      (never: never) => never,
+    return Result.merge(
+      readBenchRun(
+        ReadBenchRunCommand.make({
+          key,
+          lines,
+          exit: cliExit.exit,
+          workloadDigest: digest,
+          stderrTail: cliExit.stderrTail,
+          wallMs,
+        }),
+      ),
     )
   })
 
@@ -186,8 +213,6 @@ const runSide = (
 
 export const runBench = (input: RunBenchInput): Effect.Effect<RunBenchResult, never, BenchPlatform> =>
   Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
     const runs = yield* Effect.forEach(
       BENCH_ORDER,
       (side, position) => runSide(input, side, position),
@@ -210,23 +235,5 @@ export const runBench = (input: RunBenchInput): Effect.Effect<RunBenchResult, ne
       setupSteps: [...input.setupSteps],
     })
 
-    yield* fs.makeDirectory(path.dirname(input.reportPath), { recursive: true }).pipe(Effect.orDie)
-    yield* S.encodeEffect(BenchReportJson)(report).pipe(
-      Effect.flatMap((json) => fs.writeFileString(input.reportPath, json)),
-      Effect.orDie,
-    )
-    const decoded = yield* fs.readFileString(input.reportPath).pipe(
-      Effect.flatMap((text) => S.decodeEffect(BenchReportJson)(text)),
-      Effect.orDie,
-    )
-
-    const markdown = renderBenchSummary(decoded)
-    const annotationLine = renderBenchAnnotation(decoded)
-
-    return {
-      markdown,
-      annotationLine,
-      outcome: outcome._tag,
-      runs,
-    }
+    return { report, runs }
   })

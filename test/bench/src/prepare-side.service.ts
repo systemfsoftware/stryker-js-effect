@@ -10,9 +10,8 @@ import {
   InstallClosureCommand,
   PackedManifest,
   type PackedMember,
-  parseFixtureManifest,
   parseWorkspaceCatalogs,
-  resolveCatalogSpecs,
+  resolvedManifestText,
   type SetupStep,
   type StagedFixtureManifest,
   type WorkspaceCatalogs,
@@ -120,7 +119,8 @@ const runChecked = (
   Effect.filterOrFail(
     runCommand(argv, cwd),
     (outcome) => outcome.exitCode === 0,
-    (outcome) => fail(step, `exited ${outcome.exitCode}\n${outcome.stderr.slice(-STDERR_TAIL_CHARS)}`),
+    (outcome) =>
+      fail(step, `exited ${outcome.exitCode}\n${`${outcome.stdout}${outcome.stderr}`.slice(-STDERR_TAIL_CHARS)}`),
   )
 
 const timed = <A, E, R>(
@@ -371,18 +371,10 @@ const rewriteManifests = (
           const bytes = yield* fs.readFile(manifestPath).pipe(
             Effect.mapError((cause) => fail(STEP_ENTERPRISE_MANIFESTS, `${relativePath} could not be read`, cause)),
           )
-          const parsed = yield* Effect.fromResult(parseFixtureManifest(relativePath, bytes)).pipe(
+          const text = yield* Effect.fromResult(resolvedManifestText(relativePath, bytes, catalogs)).pipe(
             Effect.mapError((failure) => fail(STEP_ENTERPRISE_MANIFESTS, failure.message)),
           )
-          const resolved = yield* Effect.fromResult(resolveCatalogSpecs(relativePath, parsed, catalogs)).pipe(
-            Effect.mapError((failure) => fail(STEP_ENTERPRISE_MANIFESTS, failure.message)),
-          )
-          const text = yield* S.encodeEffect(S.fromJsonString(S.Record(S.String, S.Unknown), { space: 2 }))(
-            resolved,
-          ).pipe(
-            Effect.mapError((cause) => fail(STEP_ENTERPRISE_MANIFESTS, `${relativePath} could not be encoded`, cause)),
-          )
-          yield* fs.writeFileString(manifestPath, `${text}\n`).pipe(
+          yield* fs.writeFileString(manifestPath, text).pipe(
             Effect.mapError((cause) => fail(STEP_ENTERPRISE_MANIFESTS, `${relativePath} could not be written`, cause)),
           )
         }),

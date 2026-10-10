@@ -3,10 +3,18 @@ import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
+import * as Result from 'effect/Result'
 
-import { type CheckerBusyInterval, phaseDurationsOf, type PhaseMark } from '../phase-durations.js'
+import {
+  type CheckerBusyInterval,
+  checkerBusyIntervalOf,
+  type CheckerBusyReading,
+  type PhaseMark,
+} from '../phase-durations.schema.js'
+import { phaseDurations, PhaseDurationsCommand, type PhaseDurationsDecision } from '../phase-durations.workflow.js'
 
 interface PhaseClockState {
   readonly marks: readonly PhaseMark[]
@@ -16,10 +24,16 @@ interface PhaseClockState {
 
 export interface PhaseClockShape {
   readonly markAt: (phase: RunEvent.RunPhase, elapsedMs: number) => Effect.Effect<void>
-  readonly recordCheckerBusy: (interval: CheckerBusyInterval) => Effect.Effect<void>
+  readonly recordCheckerBusy: (reading: CheckerBusyReading) => Effect.Effect<void>
   readonly markCheckersConfigured: Effect.Effect<void>
   readonly durations: Effect.Effect<Option.Option<RunEvent.PhaseDurations>>
 }
+
+const durationsOfDecision = (decision: PhaseDurationsDecision): Option.Option<RunEvent.PhaseDurations> =>
+  Match.valueTags(decision, {
+    PhaseDurationsComputed: ({ durations }) => Option.some(durations),
+    PhaseMarksMissing: () => Option.none<RunEvent.PhaseDurations>(),
+  })
 
 export class PhaseClock extends Context.Service<PhaseClock, PhaseClockShape>()(
   '@systemfsoftware/stryker-js/run/phase-clock.service/PhaseClock',
@@ -35,10 +49,10 @@ export class PhaseClock extends Context.Service<PhaseClock, PhaseClockShape>()(
               ...previous,
               marks: [...previous.marks, { phase, elapsedMs }],
             })),
-          recordCheckerBusy: (interval) =>
+          recordCheckerBusy: (reading) =>
             Ref.update(state, (previous): PhaseClockState => ({
               ...previous,
-              checkerBusy: [...previous.checkerBusy, interval],
+              checkerBusy: [...previous.checkerBusy, checkerBusyIntervalOf(reading)],
             })),
           markCheckersConfigured: Ref.update(state, (previous): PhaseClockState => ({
             ...previous,
@@ -47,12 +61,19 @@ export class PhaseClock extends Context.Service<PhaseClock, PhaseClockShape>()(
           durations: Effect.gen(function*() {
             const recorded = yield* Ref.get(state)
             const now = yield* Clock.currentTimeMillis
-            return phaseDurationsOf({
-              marks: recorded.marks,
-              elapsedMs: now - runStartedAt,
-              checkerBusy: recorded.checkerBusy,
-              checkersConfigured: recorded.checkersConfigured,
-            })
+            return durationsOfDecision(
+              Result.getOrElse(
+                phaseDurations(
+                  PhaseDurationsCommand.make({
+                    marks: recorded.marks,
+                    elapsedMs: now - runStartedAt,
+                    checkerBusy: recorded.checkerBusy,
+                    checkersConfigured: recorded.checkersConfigured,
+                  }),
+                ),
+                (never: never) => never,
+              ),
+            )
           }),
         })
       }),

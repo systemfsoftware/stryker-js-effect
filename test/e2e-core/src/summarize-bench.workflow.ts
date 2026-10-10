@@ -8,24 +8,30 @@ import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { BenchCorpusName, BenchRun, BenchRunInvalid, BenchRunMeasured, BenchSide } from './bench-run.schema.js'
+import {
+  BenchCorpusName,
+  BenchRun,
+  BenchRunInvalid,
+  BenchRunMeasured,
+  BenchSide,
+  WorkloadDigest,
+} from './bench-run.schema.js'
 import {
   BenchPhase,
   BenchPhaseRow,
   BenchProjectSummary,
   BenchSummary,
+  type MeasuredSideCell,
   PhaseVerdict,
   SideCell,
   SideCounts,
+  statisticsOf,
   Workload,
 } from './bench-summary.schema.js'
 
 const min = Math.min
 const max = Math.max
 const abs = Math.abs
-const floor = Math.floor
-
-const SEQUENTIAL_PHASES = ['prepare', 'instrument', 'dry-run', 'mutation-test'] as const
 
 export class SummarizeBenchCommand extends S.TaggedClass<SummarizeBenchCommand>()('SummarizeBenchCommand', {
   runs: S.Array(BenchRun),
@@ -46,93 +52,77 @@ type CorpusName = BenchCorpusName
 
 const CORPORA: ReadonlyArray<CorpusName> = ['repo', 'enterprise']
 
-const isMeasuredCell = (cell: SideCell): boolean => S.is(SideCell.cases.measured)(cell)
+type PhaseReading = RunEvent.CheckDuration
 
-const reportingMsOf = (duration: RunEvent.ReportingDuration): number =>
-  Match.valueTags(duration, { measured: (measured) => measured.ms, 'not-recorded': () => 0 })
-
-const isReportingRecorded = (duration: RunEvent.ReportingDuration): boolean =>
-  Match.valueTags(duration, { measured: () => true, 'not-recorded': () => false })
-
-const checkMsOf = (duration: RunEvent.CheckDuration): number =>
-  Match.valueTags(duration, { measured: (measured) => measured.ms, 'not-run': () => 0, 'not-recorded': () => 0 })
-
-const checkNotRunOf = (duration: RunEvent.CheckDuration): number =>
-  Match.valueTags(duration, { measured: () => 0, 'not-run': () => 1, 'not-recorded': () => 0 })
-
-const isCheckRecorded = (duration: RunEvent.CheckDuration): boolean =>
-  Match.valueTags(duration, { measured: () => true, 'not-run': () => true, 'not-recorded': () => false })
-
-const totalOf = (run: BenchRunMeasured): number =>
-  SEQUENTIAL_PHASES.reduce((sum, phase) => sum + run.phaseDurations[phase], 0) +
-  reportingMsOf(run.phaseDurations.reporting)
-
-const SequentialMs: Record<(typeof SEQUENTIAL_PHASES)[number], (run: BenchRunMeasured) => number> = {
-  prepare: (run) => run.phaseDurations.prepare,
-  instrument: (run) => run.phaseDurations.instrument,
-  'dry-run': (run) => run.phaseDurations['dry-run'],
-  'mutation-test': (run) => run.phaseDurations['mutation-test'],
+interface PhaseRule {
+  readonly read: (durations: RunEvent.PhaseDurations) => PhaseReading
+  readonly sequential: boolean
+  readonly includesUnrecordedReporting: boolean
 }
 
-interface RepetitionMeasurement {
-  readonly value: number
-  readonly notRun: number
-  readonly share: number
+const measuredReading = (ms: number): PhaseReading => ({ _tag: 'measured', ms })
+
+const sequentialRule = (pick: (durations: RunEvent.PhaseDurations) => number): PhaseRule => ({
+  read: (durations) => measuredReading(pick(durations)),
+  sequential: true,
+  includesUnrecordedReporting: false,
+})
+
+const COMPONENT_RULES: { readonly [P in Exclude<BenchPhase, 'total'>]: PhaseRule } = {
+  prepare: sequentialRule((durations) => durations.prepare),
+  instrument: sequentialRule((durations) => durations.instrument),
+  check: { read: (durations) => durations.check, sequential: false, includesUnrecordedReporting: false },
+  'dry-run': sequentialRule((durations) => durations['dry-run']),
+  'mutation-test': {
+    ...sequentialRule((durations) => durations['mutation-test']),
+    includesUnrecordedReporting: true,
+  },
+  reporting: { read: (durations) => durations.reporting, sequential: true, includesUnrecordedReporting: false },
+}
+
+const msOrZero = (reading: PhaseReading): number =>
+  Match.valueTags(reading, { measured: (measured) => measured.ms, 'not-run': () => 0, 'not-recorded': () => 0 })
+
+const totalMsOf = (durations: RunEvent.PhaseDurations): number =>
+  Arr.reduce(
+    Arr.filter(Object.values(COMPONENT_RULES), (rule) => rule.sequential),
+    0,
+    (sum, rule) => sum + msOrZero(rule.read(durations)),
+  )
+
+const PHASE_RULES: { readonly [P in BenchPhase]: PhaseRule } = {
+  ...COMPONENT_RULES,
+  total: {
+    read: (durations) => measuredReading(totalMsOf(durations)),
+    sequential: false,
+    includesUnrecordedReporting: false,
+  },
 }
 
 const shareOf = (value: number, total: number): number =>
   Boolean.match(total === 0, { onTrue: () => 0, onFalse: () => value / total })
 
-const sequentialRepetitionOf = (
-  runs: ReadonlyArray<BenchRunMeasured>,
-  total: number,
-  pick: (run: BenchRunMeasured) => number,
-): Option.Option<RepetitionMeasurement> => {
-  const value = Arr.reduce(runs, 0, (sum, run) => sum + pick(run))
-  return Option.some({ value, notRun: 0, share: shareOf(value, total) })
+const isMeasuredReading = S.is(RunEvent.CheckDuration.members[0])
+
+const isNotRunReading = S.is(RunEvent.CheckDuration.members[1])
+
+interface Repetition {
+  readonly reading: PhaseReading
+  readonly totalMs: number
 }
 
-const checkRepetitionOf = (
-  runs: ReadonlyArray<BenchRunMeasured>,
-  total: number,
-): Option.Option<RepetitionMeasurement> => {
-  const durations = runs.map((run) => run.phaseDurations.check)
-  const allRecorded = durations.every(isCheckRecorded)
-  const value = Arr.reduce(durations, 0, (sum, duration) => sum + checkMsOf(duration))
-  const notRun = Arr.reduce(durations, 0, (count, duration) => count + checkNotRunOf(duration))
-  return Boolean.match(allRecorded, {
-    onTrue: () => Option.some({ value, notRun, share: shareOf(value, total) }),
-    onFalse: () => Option.none(),
+const repetitionOf = (runs: ReadonlyArray<BenchRunMeasured>, phase: BenchPhase): Repetition => {
+  const readings = Arr.map(runs, (run) => PHASE_RULES[phase].read(run.phaseDurations))
+  const value = Arr.reduce(readings, 0, (sum, reading) => sum + msOrZero(reading))
+  const reading = Boolean.match(Arr.every(readings, isMeasuredReading), {
+    onTrue: () => measuredReading(value),
+    onFalse: () =>
+      Boolean.match(Arr.every(readings, isNotRunReading), {
+        onTrue: (): PhaseReading => ({ _tag: 'not-run' }),
+        onFalse: (): PhaseReading => ({ _tag: 'not-recorded' }),
+      }),
   })
-}
-
-const reportingRepetitionOf = (
-  runs: ReadonlyArray<BenchRunMeasured>,
-  total: number,
-): Option.Option<RepetitionMeasurement> => {
-  const recorded = runs.every((run) => isReportingRecorded(run.phaseDurations.reporting))
-  const value = Arr.reduce(runs, 0, (sum, run) => sum + reportingMsOf(run.phaseDurations.reporting))
-  return Boolean.match(recorded, {
-    onTrue: () => Option.some({ value, notRun: 0, share: shareOf(value, total) }),
-    onFalse: () => Option.none(),
-  })
-}
-
-const repetitionMeasurementOf = (
-  runs: ReadonlyArray<BenchRunMeasured>,
-  phase: BenchPhase,
-): Option.Option<RepetitionMeasurement> => {
-  const total = runs.reduce((sum, run) => sum + totalOf(run), 0)
-  return Match.value(phase).pipe(
-    Match.when('check', () => checkRepetitionOf(runs, total)),
-    Match.when('reporting', () => reportingRepetitionOf(runs, total)),
-    Match.when('total', (): Option.Option<RepetitionMeasurement> => Option.some({ value: total, notRun: 0, share: 1 })),
-    Match.when('prepare', () => sequentialRepetitionOf(runs, total, SequentialMs.prepare)),
-    Match.when('instrument', () => sequentialRepetitionOf(runs, total, SequentialMs.instrument)),
-    Match.when('dry-run', () => sequentialRepetitionOf(runs, total, SequentialMs['dry-run'])),
-    Match.when('mutation-test', () => sequentialRepetitionOf(runs, total, SequentialMs['mutation-test'])),
-    Match.exhaustive,
-  )
+  return { reading, totalMs: Arr.reduce(runs, 0, (sum, run) => sum + totalMsOf(run.phaseDurations)) }
 }
 
 const positionsOf = (runs: ReadonlyArray<BenchRunMeasured>, side: BenchSide): ReadonlyArray<number> =>
@@ -153,64 +143,59 @@ const repetitionAt = (
 ): ReadonlyArray<BenchRunMeasured> =>
   Arr.filter(runs, (run) => Boolean.and(run.key.side === side, run.key.position === position))
 
-const groupByPosition = (
+const repetitionsOf = (
   runs: ReadonlyArray<BenchRunMeasured>,
   side: BenchSide,
-): ReadonlyArray<ReadonlyArray<BenchRunMeasured>> =>
-  Arr.map(positionsOf(runs, side), (position) => repetitionAt(runs, side, position))
+  phase: BenchPhase,
+): ReadonlyArray<Repetition> =>
+  Arr.map(positionsOf(runs, side), (position) => repetitionOf(repetitionAt(runs, side, position), phase))
 
-const medianOf = (values: ReadonlyArray<number>): number => {
-  const sorted = Arr.sort(values, Order.Number)
-  const half = sorted.length / 2
-  return Boolean.match(sorted.length % 2 === 1, {
-    onTrue: () => sorted[floor(half)],
-    onFalse: () => (sorted[half - 1] + sorted[half]) / 2,
-  })
-}
+const measuredCellOf = (repetitions: Arr.NonEmptyReadonlyArray<Repetition>): SideCell => ({
+  _tag: 'measured',
+  samples: Arr.map(repetitions, (repetition) => ({
+    ms: msOrZero(repetition.reading),
+    shareOfTotal: shareOf(msOrZero(repetition.reading), repetition.totalMs),
+  })),
+})
+
+const unmeasuredCellOf = (repetitions: ReadonlyArray<Repetition>): SideCell =>
+  Boolean.match(
+    Boolean.and(repetitions.length > 0, Arr.every(repetitions, (repetition) => isNotRunReading(repetition.reading))),
+    {
+      onTrue: (): SideCell => ({ _tag: 'not-run' }),
+      onFalse: (): SideCell => ({ _tag: 'not-measured' }),
+    },
+  )
+
+const isFullyMeasured = (
+  repetitions: ReadonlyArray<Repetition>,
+): repetitions is Arr.NonEmptyReadonlyArray<Repetition> =>
+  Boolean.and(repetitions.length > 0, Arr.every(repetitions, (repetition) => isMeasuredReading(repetition.reading)))
 
 const sideCellOf = (runs: ReadonlyArray<BenchRunMeasured>, side: BenchSide, phase: BenchPhase): SideCell => {
-  const measurements = Arr.map(
-    groupByPosition(runs, side),
-    (repetition) => repetitionMeasurementOf(repetition, phase),
-  )
-  const present = Arr.getSomes(measurements)
-  const values = Arr.map(present, (measurement) => measurement.value)
-  const shares = Arr.map(present, (measurement) => measurement.share)
-  const complete = Boolean.and(measurements.length > 0, measurements.every(Option.isSome))
-  const measured: SideCell = {
-    _tag: 'measured',
-    medianMs: medianOf(values),
-    minMs: min(...values),
-    maxMs: max(...values),
-    shareMedian: medianOf(shares),
-    notRunEntries: Arr.reduce(present, 0, (accumulated, measurement) => max(accumulated, measurement.notRun)),
-    samplesMs: values,
-  }
-  return Boolean.match(complete, {
-    onTrue: () => measured,
-    onFalse: (): SideCell => ({ _tag: 'not-measured' }),
+  const repetitions = repetitionsOf(runs, side, phase)
+  return Option.match(Option.liftPredicate(repetitions, isFullyMeasured), {
+    onNone: () => unmeasuredCellOf(repetitions),
+    onSome: measuredCellOf,
   })
 }
 
-const missingReason = (a: SideCell, b: SideCell, phase: BenchPhase): string =>
-  Boolean.match(isMeasuredCell(a), {
-    onFalse: () =>
-      Boolean.match(isMeasuredCell(b), {
-        onFalse: () => `no repetition of ${phase} was recorded on either side`,
-        onTrue: () => `no repetition of ${phase} was recorded on side A`,
-      }),
-    onTrue: () => `no repetition of ${phase} was recorded on side B`,
+const cellGapOf = (cell: SideCell, side: BenchSide, phase: BenchPhase): ReadonlyArray<string> =>
+  Match.valueTags(cell, {
+    measured: (): ReadonlyArray<string> => [],
+    'not-run': () => [`${phase} did not run on side ${side}`],
+    'not-measured': () => [`no repetition of ${phase} was recorded on side ${side}`],
   })
 
 const SUPPRESSED_REASON = "mutation-test includes reporting and a side's reporting was not recorded"
 
-type MeasuredCell = S.Schema.Type<typeof SideCell.cases.measured>
-
-const decisiveVerdict = (a: MeasuredCell, b: MeasuredCell, workloadSame: boolean): PhaseVerdict => {
-  const deltaMs = b.medianMs - a.medianMs
-  const separated = Boolean.or(b.maxMs < a.minMs, b.minMs > a.maxMs)
-  const decisive = Boolean.and(separated, Boolean.and(abs(deltaMs) >= 0.03 * a.medianMs, workloadSame))
-  const deltaShareOfA = shareOf(deltaMs, a.medianMs)
+const decisiveVerdict = (a: MeasuredSideCell, b: MeasuredSideCell, workloadSame: boolean): PhaseVerdict => {
+  const statsA = statisticsOf(a)
+  const statsB = statisticsOf(b)
+  const deltaMs = statsB.medianMs - statsA.medianMs
+  const separated = Boolean.or(statsB.maxMs < statsA.minMs, statsB.minMs > statsA.maxMs)
+  const decisive = Boolean.and(separated, Boolean.and(abs(deltaMs) >= 0.03 * statsA.medianMs, workloadSame))
+  const deltaShareOfA = shareOf(deltaMs, statsA.medianMs)
   return Boolean.match(decisive, {
     onTrue: () =>
       Boolean.match(deltaMs < 0, {
@@ -221,35 +206,75 @@ const decisiveVerdict = (a: MeasuredCell, b: MeasuredCell, workloadSame: boolean
   })
 }
 
-const exclusiveVerdictOf = (a: SideCell, b: SideCell, workloadSame: boolean, phase: BenchPhase): PhaseVerdict =>
-  Match.value(a).pipe(
-    Match.tag('not-measured', (): PhaseVerdict => ({ _tag: 'not-measured', reason: missingReason(a, b, phase) })),
-    Match.tag('measured', (measuredA) =>
-      Match.value(b).pipe(
-        Match.tag('not-measured', (): PhaseVerdict => ({ _tag: 'not-measured', reason: missingReason(a, b, phase) })),
-        Match.tag('measured', (measuredB): PhaseVerdict => decisiveVerdict(measuredA, measuredB, workloadSame)),
-        Match.exhaustive,
-      )),
-    Match.exhaustive,
+const exclusiveVerdictOf = (a: SideCell, b: SideCell, workloadSame: boolean, phase: BenchPhase): PhaseVerdict => {
+  const notMeasured = (): PhaseVerdict => ({
+    _tag: 'not-measured',
+    reason: [...cellGapOf(a, 'A', phase), ...cellGapOf(b, 'B', phase)].join('; '),
+  })
+  return Match.valueTags(a, {
+    measured: (measuredA) =>
+      Match.valueTags(b, {
+        measured: (measuredB) => decisiveVerdict(measuredA, measuredB, workloadSame),
+        'not-run': notMeasured,
+        'not-measured': notMeasured,
+      }),
+    'not-run': notMeasured,
+    'not-measured': notMeasured,
+  })
+}
+
+interface ProjectCell {
+  readonly phase: BenchPhase
+  readonly a: SideCell
+  readonly b: SideCell
+}
+
+const isReportingUnrecorded = (cells: ReadonlyArray<ProjectCell>): boolean =>
+  Arr.some(
+    cells,
+    (cell) =>
+      Boolean.and(
+        cell.phase === 'reporting',
+        Boolean.or(!S.is(SideCell.cases.measured)(cell.a), !S.is(SideCell.cases.measured)(cell.b)),
+      ),
   )
 
-const verdictOf = (
-  a: SideCell,
-  b: SideCell,
-  workloadSame: boolean,
-  suppress: boolean,
-  phase: BenchPhase,
-): PhaseVerdict =>
-  Boolean.match(suppress, {
-    onTrue: (): PhaseVerdict => ({ _tag: 'not-measured', reason: SUPPRESSED_REASON }),
-    onFalse: () => exclusiveVerdictOf(a, b, workloadSame, phase),
+const verdictOf = (cell: ProjectCell, workload: Workload, reportingUnrecorded: boolean): PhaseVerdict =>
+  Match.valueTags(workload, {
+    unverified: (unverified): PhaseVerdict => ({
+      _tag: 'workload-unverified',
+      reason: unverified.reasons.join('; '),
+    }),
+    changed: () => suppressibleVerdictOf(cell, false, reportingUnrecorded),
+    same: () => suppressibleVerdictOf(cell, true, reportingUnrecorded),
   })
 
-const distinctDigestsOf = (runs: ReadonlyArray<BenchRunMeasured>, entry: string): ReadonlyArray<string> =>
+const suppressibleVerdictOf = (cell: ProjectCell, workloadSame: boolean, reportingUnrecorded: boolean): PhaseVerdict =>
+  Boolean.match(Boolean.and(PHASE_RULES[cell.phase].includesUnrecordedReporting, reportingUnrecorded), {
+    onTrue: (): PhaseVerdict => ({ _tag: 'not-measured', reason: SUPPRESSED_REASON }),
+    onFalse: () => exclusiveVerdictOf(cell.a, cell.b, workloadSame, cell.phase),
+  })
+
+const unverifiedReasonsOf = (runs: ReadonlyArray<BenchRunMeasured>): ReadonlyArray<string> =>
   Arr.dedupe(
-    Arr.map(
+    Arr.flatMap(runs, (run) =>
+      Match.valueTags(run.workloadDigest, {
+        verified: (): ReadonlyArray<string> => [],
+        unverified: (unverified) => [`${run.key.label}: ${unverified.reason}`],
+      })),
+  )
+
+const digestOf = (digest: WorkloadDigest): ReadonlyArray<string> =>
+  Match.valueTags(digest, {
+    verified: (verified): ReadonlyArray<string> => [verified.digest],
+    unverified: (): ReadonlyArray<string> => [],
+  })
+
+const verifiedDigestsOf = (runs: ReadonlyArray<BenchRunMeasured>, entry: string): ReadonlyArray<string> =>
+  Arr.dedupe(
+    Arr.flatMap(
       Arr.filter(runs, (run) => run.key.entry === entry),
-      (run) => run.workloadDigest,
+      (run: BenchRunMeasured) => digestOf(run.workloadDigest),
     ),
   )
 
@@ -257,16 +282,21 @@ const changedEntriesOf = (runs: ReadonlyArray<BenchRunMeasured>): ReadonlyArray<
   Arr.sort(
     Arr.filter(
       Arr.dedupe(Arr.map(runs, (run) => run.key.entry)),
-      (entry) => distinctDigestsOf(runs, entry).length > 1,
+      (entry) => verifiedDigestsOf(runs, entry).length > 1,
     ),
     Order.String,
   )
 
 const workloadOf = (runs: ReadonlyArray<BenchRunMeasured>): Workload => {
+  const unverified = unverifiedReasonsOf(runs)
   const changed = changedEntriesOf(runs)
-  return Boolean.match(changed.length > 0, {
-    onTrue: (): Workload => ({ _tag: 'changed', entries: changed }),
-    onFalse: (): Workload => ({ _tag: 'same' }),
+  return Boolean.match(unverified.length > 0, {
+    onTrue: (): Workload => ({ _tag: 'unverified', reasons: unverified }),
+    onFalse: () =>
+      Boolean.match(changed.length > 0, {
+        onTrue: (): Workload => ({ _tag: 'changed', entries: changed }),
+        onFalse: (): Workload => ({ _tag: 'same' }),
+      }),
   })
 }
 
@@ -290,30 +320,24 @@ const projectSummaryOf = (
   runs: ReadonlyArray<BenchRunMeasured>,
 ): BenchProjectSummary => {
   const workload = workloadOf(runs)
-  const workloadSame = S.is(Workload.cases.same)(workload)
-  const cells = Arr.map(BenchPhase.literals, (phase) => ({
+  const cells = Arr.map(BenchPhase.literals, (phase): ProjectCell => ({
     phase,
     a: sideCellOf(runs, 'A', phase),
     b: sideCellOf(runs, 'B', phase),
   }))
-  const isNotMeasured = S.is(SideCell.cases['not-measured'])
-  const suppress = Arr.some(
-    cells,
-    (cell) => Boolean.and(cell.phase === 'reporting', Boolean.or(isNotMeasured(cell.a), isNotMeasured(cell.b))),
-  )
-  const rows = Arr.map(cells, ({ phase, a, b }) =>
-    BenchPhaseRow.make({
-      phase,
-      a,
-      b,
-      verdict: verdictOf(a, b, workloadSame, Boolean.and(phase === 'mutation-test', suppress), phase),
-    }))
+  const reportingUnrecorded = isReportingUnrecorded(cells)
   return BenchProjectSummary.make({
     corpus,
     entry,
     workload,
     counts: { a: sideCountsOf(runs, 'A'), b: sideCountsOf(runs, 'B') },
-    rows,
+    rows: Arr.map(cells, (cell) =>
+      BenchPhaseRow.make({
+        phase: cell.phase,
+        a: cell.a,
+        b: cell.b,
+        verdict: verdictOf(cell, workload, reportingUnrecorded),
+      })),
   })
 }
 

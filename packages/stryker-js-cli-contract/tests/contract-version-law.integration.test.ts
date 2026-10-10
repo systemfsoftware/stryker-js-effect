@@ -235,6 +235,14 @@ const nullableStructDocument = (properties: Json, required: readonly string[]): 
   },
 })
 
+const constrainedUnionDocument = (branches: readonly Json[]): Json => ({
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  type: 'object',
+  properties: {
+    level: { anyOf: [...branches] },
+  },
+})
+
 const catalogEntry: Json = {
   id: 'arithmetic-operator',
   name: 'ArithmeticOperator',
@@ -499,6 +507,54 @@ Feature('The released contract documents bound what the workspace may declare ne
             })))
           ),
         ),
+    )
+
+    scenario(
+      'A constrained branch dropped from an untagged union of one type is a removed branch, not a silent narrowing',
+      Gherkin.Do.pipe(
+        Given(
+          'a released union of two numeric branches bounded differently and a committed one that keeps only the second',
+        )(
+          'law',
+          () =>
+            Effect.succeed(
+              lawInputOf({
+                package: CLI_CONTRACT,
+                directory: CLI_CONTRACT_DIRECTORY,
+                releasedVersion: '0.4.0',
+                committedVersion: '0.4.0',
+                releasedDocuments: [{
+                  name: STREAM_DOCUMENT,
+                  document: constrainedUnionDocument([
+                    { type: 'number', maximum: 10 },
+                    { type: 'number', minimum: 100 },
+                  ]),
+                }],
+                committedDocuments: [{
+                  name: STREAM_DOCUMENT,
+                  document: constrainedUnionDocument([{ type: 'number', minimum: 100 }]),
+                }],
+                pendingIntents: [{ package: CLI_CONTRACT, bump: 'patch' }],
+              }),
+            ),
+        ),
+        When('the law weighs the committed document against the released one')(
+          'failures',
+          (s) => Effect.succeed(evaluateContractLaw(s.law)),
+        ),
+        Then('the dropped branch is named at its pointer as a removed union branch')((s, expect) =>
+          expect(s.failures).toEqual([{
+            kind: 'contract-change',
+            package: CLI_CONTRACT,
+            document: `${CLI_CONTRACT_DIRECTORY}/${CONTRACT_DIRECTORY}/${STREAM_DOCUMENT}`,
+            pointer: '/properties/level/anyOf/0',
+            reason: 'union branch removed at index 0',
+            requiredLevel: 'minor',
+            requiredVersion: '0.5.0',
+            declaredVersion: '0.4.1',
+          }])
+        ),
+      ),
     )
 
     scenario(

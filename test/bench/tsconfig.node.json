@@ -3,9 +3,11 @@
   "compilerOptions": {
     "composite": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "tsBuildInfoFile": "node_modules/.cache/tsconfig.node.tsbuildinfo"
   },
   "include": [
-    "oxlint.config.ts"
+    "oxlint.config.ts",
+    "../e2e-core/oxlint.config.ts"
   ]
 }

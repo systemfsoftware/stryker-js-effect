@@ -1,6 +1,18 @@
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
-import { BenchCorpusJson, type BenchRun, type SetupStep } from '@systemfsoftware/stryker-e2e-core'
+import {
+  abortedOutcomeOf,
+  type BenchAbortCode,
+  BenchCorpusJson,
+  BenchReport,
+  BenchReportJson,
+  type BenchRun,
+  type BenchSide,
+  renderBenchReport,
+  RenderBenchReportCommand,
+  type SetupStep,
+} from '@systemfsoftware/stryker-e2e-core'
+import * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
@@ -21,6 +33,8 @@ const BENCH_REPORT_DIR = 'bench-report'
 const BENCH_REPORT_FILE = 'bench-report.json'
 const CORPUS_FILE = ['test', 'bench', 'corpus.json'] as const
 const TURBO_CACHE_DIR = ['.turbo', 'cache'] as const
+const DEFAULT_RUN_TIMEOUT_MS = 10 * 60_000
+const UNKNOWN_SHA = 'unknown'
 
 const runLogLine = (run: BenchRun): string =>
   Match.value(run).pipe(
@@ -31,12 +45,15 @@ const runLogLine = (run: BenchRun): string =>
           (measured.wallMs / 1000).toFixed(1)
         }s exit ${measured.exitCode} mutants ${measured.mutants} testsExecuted ${measured.testsExecuted}`,
     ),
-    Match.tag('invalid', (invalid) => `bench run ${invalid.key.label} invalid: ${invalid.reason}`),
+    Match.tag('invalid', (invalid) => `bench run ${invalid.key.label} invalid (${invalid.code}): ${invalid.reason}`),
     Match.exhaustive,
   )
 
+const orchestrationFailed = (code: BenchAbortCode, reason: string): BenchOrchestrationFailed =>
+  BenchOrchestrationFailed.make({ code, reason })
+
 const malformedLine = (line: string): BenchOrchestrationFailed =>
-  BenchOrchestrationFailed.make({ reason: `bench setup timings line is malformed: ${line}` })
+  orchestrationFailed('setup-timings-malformed', `bench setup timings line is malformed: ${line}`)
 
 const nonBlankLines = (text: string): ReadonlyArray<string> =>
   text.split('\n').map((line) => line.replace(/\r$/, '')).filter((line) => line.trim().length > 0)
@@ -73,76 +90,144 @@ const readSetupSteps = (
     ),
   )
 
-const program = Effect.gen(function*() {
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
+interface BenchEnv {
+  readonly sideARoot: string
+  readonly sideBRoot: string
+  readonly baseSha: string
+  readonly headSha: string
+  readonly setupTimingsFile: string
+  readonly runnerTemp: string
+  readonly stepSummary: string
+  readonly runTimeoutMs: number
+}
 
-  const env = yield* Effect.all({
-    sideARoot: Config.String('BENCH_SIDE_A'),
-    sideBRoot: Config.String('BENCH_SIDE_B'),
-    baseSha: Config.String('BENCH_BASE_SHA'),
-    headSha: Config.String('BENCH_HEAD_SHA'),
-    setupTimingsFile: Config.String('BENCH_SETUP_TIMINGS'),
-    runnerTemp: Config.String('RUNNER_TEMP'),
-    stepSummary: Config.String('GITHUB_STEP_SUMMARY'),
-  })
+const benchEnv = Effect.all({
+  sideARoot: Config.String('BENCH_SIDE_A'),
+  sideBRoot: Config.String('BENCH_SIDE_B'),
+  baseSha: Config.String('BENCH_BASE_SHA'),
+  headSha: Config.String('BENCH_HEAD_SHA'),
+  setupTimingsFile: Config.String('BENCH_SETUP_TIMINGS'),
+  runnerTemp: Config.String('RUNNER_TEMP'),
+  stepSummary: Config.String('GITHUB_STEP_SUMMARY'),
+  runTimeoutMs: Config.Number('BENCH_RUN_TIMEOUT_MS').pipe(Config.withDefault(DEFAULT_RUN_TIMEOUT_MS)),
+})
 
-  const corpusPath = path.join(env.sideBRoot, ...CORPUS_FILE)
-  const corpusText = yield* fs.readFileString(corpusPath).pipe(
-    Effect.mapError((cause) =>
-      BenchOrchestrationFailed.make({ reason: `cannot read ${corpusPath}: ${cause.message}` })
-    ),
-  )
-  const corpus = yield* S.decodeEffect(BenchCorpusJson)(corpusText).pipe(
-    Effect.mapError((error) =>
-      BenchOrchestrationFailed.make({ reason: `${corpusPath} does not decode: ${error.message}` })
-    ),
-  )
-
-  const setupSteps = yield* readSetupSteps(fs, env.setupTimingsFile)
-  const workRoot = path.join(env.runnerTemp, BENCH_WORK_DIR)
-  const runsRoot = path.join(env.runnerTemp, BENCH_RUNS_DIR)
-  const reportPath = path.join(env.runnerTemp, BENCH_REPORT_DIR, BENCH_REPORT_FILE)
-  const turboCacheDir = path.join(env.sideBRoot, ...TURBO_CACHE_DIR)
-  const fixtureSource = path.join(env.sideBRoot, corpus.enterprise.fixture)
-
-  const sideA = yield* prepareSide({
-    side: 'A',
-    root: env.sideARoot,
-    fixtureSource,
-    workDir: path.join(workRoot, 'a'),
-    corpus,
-    turboCacheDir,
-  })
-  const sideB = yield* prepareSide({
-    side: 'B',
-    root: env.sideBRoot,
-    fixtureSource,
-    workDir: path.join(workRoot, 'b'),
-    corpus,
-    turboCacheDir,
-  })
-
-  const result = yield* runBench({
-    corpus,
-    sideA,
-    sideB,
-    runsRoot,
-    reportPath,
-    setupSteps: [...sideA.setupSteps, ...sideB.setupSteps, ...setupSteps],
+const abortedReport = (env: Pick<BenchEnv, 'baseSha' | 'headSha'>, code: BenchAbortCode, reason: string) =>
+  BenchReport.make({
+    schemaVersion: '1.0',
     baseSha: env.baseSha,
     headSha: env.headSha,
+    outcome: abortedOutcomeOf(code, reason),
+    runs: [],
+    setupSteps: [],
   })
 
-  yield* Effect.forEach(result.runs, (run) => Console.log(runLogLine(run)))
-  yield* fs.writeFileString(env.stepSummary, result.markdown, { flag: 'a' })
-  yield* Console.log(result.annotationLine)
+const bench = (env: BenchEnv) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
 
-  if (result.outcome === 'failed') {
-    yield* Effect.sync(() => {
-      globalThis.process.exitCode = 1
+    const corpusPath = path.join(env.sideBRoot, ...CORPUS_FILE)
+    const corpusText = yield* fs.readFileString(corpusPath).pipe(
+      Effect.mapError((cause) =>
+        orchestrationFailed('corpus-unreadable', `cannot read ${corpusPath}: ${cause.message}`)
+      ),
+    )
+    const corpus = yield* S.decodeEffect(BenchCorpusJson)(corpusText).pipe(
+      Effect.mapError((error) =>
+        orchestrationFailed('corpus-unreadable', `${corpusPath} does not decode: ${error.message}`)
+      ),
+    )
+
+    const setupSteps = yield* readSetupSteps(fs, env.setupTimingsFile)
+    const workRoot = path.join(env.runnerTemp, BENCH_WORK_DIR)
+    const runsRoot = path.join(env.runnerTemp, BENCH_RUNS_DIR)
+    const turboCacheDir = path.join(env.sideBRoot, ...TURBO_CACHE_DIR)
+    const fixtureSource = path.join(env.sideBRoot, corpus.enterprise.fixture)
+
+    const prepareNamed = (side: BenchSide, root: string, workDir: string) =>
+      prepareSide({ side, root, fixtureSource, workDir: path.join(workRoot, workDir), corpus, turboCacheDir }).pipe(
+        Effect.mapError((failure) => orchestrationFailed('side-setup-failed', `side ${side}: ${failure.message}`)),
+      )
+    const prepared = yield* Effect.all({
+      sideA: prepareNamed('A', env.sideARoot, 'a'),
+      sideB: prepareNamed('B', env.sideBRoot, 'b'),
     })
-  }
+
+    const result = yield* runBench({
+      corpus,
+      sideA: prepared.sideA,
+      sideB: prepared.sideB,
+      runsRoot,
+      setupSteps: [...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps, ...setupSteps],
+      baseSha: env.baseSha,
+      headSha: env.headSha,
+      runTimeoutMs: env.runTimeoutMs,
+    })
+    yield* Effect.forEach(result.runs, (run) => Console.log(runLogLine(run)))
+    return result.report
+  }).pipe(
+    Effect.catchTag(
+      'BenchOrchestrationFailed',
+      (failure) => Effect.succeed(abortedReport(env, failure.code, failure.reason)),
+    ),
+    Effect.catchDefect((defect) => Effect.succeed(abortedReport(env, 'defect', Cause.pretty(Cause.die(defect))))),
+  )
+
+const writeReport = (env: BenchEnv, report: BenchReport) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const reportPath = path.join(env.runnerTemp, BENCH_REPORT_DIR, BENCH_REPORT_FILE)
+    yield* fs.makeDirectory(path.dirname(reportPath), { recursive: true })
+    yield* fs.writeFileString(reportPath, yield* S.encodeEffect(BenchReportJson)(report))
+    return yield* S.decodeEffect(BenchReportJson)(yield* fs.readFileString(reportPath))
+  }).pipe(
+    Effect.catch((failure) =>
+      Effect.succeed(
+        abortedReport(
+          env,
+          'report-unwritable',
+          `the bench report could not be written or read back: ${failure.message}`,
+        ),
+      )
+    ),
+  )
+
+const failExit = Effect.sync(() => {
+  globalThis.process.exitCode = 1
+})
+
+const publish = (report: BenchReport, stepSummary: Option.Option<string>) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const rendered = Result.merge(renderBenchReport(RenderBenchReportCommand.make({ report })))
+    yield* Option.match(stepSummary, {
+      onNone: () => Effect.void,
+      onSome: (file) => fs.writeFileString(file, `${rendered.markdown}\n`, { flag: 'a' }).pipe(Effect.ignore),
+    })
+    yield* Console.log(rendered.annotationLine)
+    yield* Match.valueTags(report.outcome, {
+      summarized: () => Effect.void,
+      failed: () => failExit,
+      aborted: () => failExit,
+    })
+  })
+
+const program = Effect.gen(function*() {
+  const env = yield* Effect.result(benchEnv)
+  yield* Result.match(env, {
+    onFailure: (error) =>
+      publish(
+        abortedReport({ baseSha: UNKNOWN_SHA, headSha: UNKNOWN_SHA }, 'environment-incomplete', error.message),
+        Option.none(),
+      ),
+    onSuccess: (present) =>
+      bench(present).pipe(
+        Effect.flatMap((report) => writeReport(present, report)),
+        Effect.flatMap((report) => publish(report, Option.some(present.stepSummary))),
+      ),
+  })
 })
 
 NodeRuntime.runMain({ disableErrorReporting: true })(program.pipe(Effect.provide(nodeServicesLayer)))

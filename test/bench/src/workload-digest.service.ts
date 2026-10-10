@@ -3,9 +3,9 @@ import {
   coveringTestFiles,
   CoveringTestFilesCommand,
   type CoveringTestFilesFound,
-  parseFixtureManifest,
   parseWorkspaceCatalogs,
-  resolveCatalogSpecs,
+  resolvedManifestText,
+  type WorkloadDigest,
   type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
 import * as Arr from 'effect/Array'
@@ -17,9 +17,6 @@ import * as HashMap from 'effect/HashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
-import * as S from 'effect/Schema'
-
-export const UNREADABLE_DIGEST_PREFIX = 'unreadable:'
 
 export interface WorkloadDigestInput {
   readonly kind: BenchCorpusName
@@ -39,8 +36,6 @@ const STRYKER_CONFIG = 'stryker.config.ts'
 const PACKAGE_JSON = 'package.json'
 const PNPM_WORKSPACE = 'pnpm-workspace.yaml'
 const CATALOG_RESOLUTION_CONFIG = ['packages', 'toolchain', 'stryker-config', 'lib', 'base.js'] as const
-
-const unreadable = (reason: string): string => `${UNREADABLE_DIGEST_PREFIX}${reason}`
 
 const isStrykerConfig = (name: string): boolean => name === STRYKER_CONFIG
 const isVitestConfig = (name: string): boolean => VITEST_CONFIG.test(name)
@@ -63,7 +58,7 @@ const readEntry = (
   absolute: string,
 ): Effect.Effect<DigestFile, string> =>
   fs.readFile(absolute).pipe(
-    Effect.mapError(() => unreadable(`workload file unreadable (${absolute})`)),
+    Effect.mapError(() => `workload file unreadable (${absolute})`),
     Effect.map((bytes) => ({ relativePath: path.relative(cwd, absolute), bytes })),
   )
 
@@ -138,22 +133,13 @@ const resolvedManifest = (
   Effect.gen(function*() {
     const relativePath = path.relative(cwd, absolute)
     const bytes = yield* fs.readFile(absolute).pipe(
-      Effect.mapError(() => unreadable(`package manifest unreadable (${absolute})`)),
+      Effect.mapError(() => `package manifest unreadable (${absolute})`),
     )
-    const parsed = yield* Effect.fromResult(
-      Result.mapError(parseFixtureManifest(relativePath, bytes), () =>
-        unreadable(`package manifest ${relativePath} does not decode`)),
+    const text = yield* Effect.fromResult(
+      Result.mapError(resolvedManifestText(relativePath, bytes, catalogs), (failure) =>
+        `package manifest ${relativePath} does not resolve: ${failure.message}`),
     )
-    const resolved = yield* Effect.fromResult(
-      Result.mapError(resolveCatalogSpecs(relativePath, parsed, catalogs), (failure) =>
-        unreadable(`catalog spec unresolved in ${relativePath}: ${failure.message}`)),
-    )
-    const json = yield* S.encodeEffect(S.fromJsonString(S.Unknown))(resolved).pipe(
-      Effect.mapError(() =>
-        unreadable(`package manifest ${relativePath} does not encode`)
-      ),
-    )
-    return { relativePath, bytes: new TextEncoder().encode(json) }
+    return { relativePath, bytes: new TextEncoder().encode(text) }
   })
 
 const readManifests = (
@@ -163,7 +149,7 @@ const readManifests = (
 ): Effect.Effect<ReadonlyArray<DigestFile>, string> =>
   Effect.gen(function*() {
     const catalogsText = yield* fs.readFileString(path.join(input.sideRoot, PNPM_WORKSPACE)).pipe(
-      Effect.mapError(() => unreadable(`${input.sideRoot}/${PNPM_WORKSPACE} unreadable`)),
+      Effect.mapError(() => `${input.sideRoot}/${PNPM_WORKSPACE} unreadable`),
     )
     const catalogs = parseWorkspaceCatalogs(catalogsText)
     const manifests = yield* manifestPaths(fs, path, input)
@@ -205,7 +191,7 @@ const digestOf = (entries: ReadonlyArray<DigestFile>): Effect.Effect<string, str
     const crypto = yield* Crypto.Crypto
     return yield* crypto.digest('SHA-256', digestInput(dedupe(entries))).pipe(
       Effect.map(Hex.encode),
-      Effect.mapError(() => unreadable('sha256 digest failed')),
+      Effect.mapError(() => 'sha256 digest failed'),
     )
   })
 
@@ -237,20 +223,25 @@ const digestFromReport = (
   Effect.gen(function*() {
     const covered = coveringTestFiles(CoveringTestFilesCommand.make({ report: reportText }))
     if (Result.isFailure(covered)) {
-      return yield* Effect.fail(unreadable(covered.failure.reason))
+      return yield* Effect.fail(covered.failure.reason)
     }
     return yield* digestOfFound(fs, path, input, covered.success)
   })
 
 export const workloadDigest = (
   input: WorkloadDigestInput,
-): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | Crypto.Crypto> =>
+): Effect.Effect<WorkloadDigest, never, FileSystem.FileSystem | Path.Path | Crypto.Crypto> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const reportText = yield* fs.readFileString(input.incrementalFile).pipe(Effect.option)
     return yield* Option.match(reportText, {
-      onNone: () => Effect.succeed(unreadable(`incremental report missing (${input.incrementalFile})`)),
+      onNone: () => Effect.fail(`incremental report missing (${input.incrementalFile})`),
       onSome: (text) => digestFromReport(fs, path, input, text),
     })
-  }).pipe(Effect.orElseSucceed((reason) => reason))
+  }).pipe(
+    Effect.match({
+      onFailure: (reason): WorkloadDigest => ({ _tag: 'unverified', reason }),
+      onSuccess: (digest): WorkloadDigest => ({ _tag: 'verified', digest }),
+    }),
+  )

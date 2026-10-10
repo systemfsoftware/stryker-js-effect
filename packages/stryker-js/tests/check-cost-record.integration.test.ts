@@ -6,6 +6,9 @@ import * as Match from 'effect/Match'
 import {
   checkedOptionsOf,
   checkedWorkspaceFiles,
+  dryRunOnlyOptionsOf,
+  noTestsOptionsOf,
+  noTestsWorkspaceFiles,
   type Observation,
   runReasonlessWorkspace,
   runWorkspace,
@@ -48,6 +51,24 @@ const reportingFollowsMutationTest = (phases: ReadonlyArray<RunEvent.RunPhase>):
   phases.includes('mutation-test') &&
   phases.includes('reporting') &&
   phases.indexOf('reporting') > phases.indexOf('mutation-test')
+
+const reportingExitSummaryOf = (observed: Observation) => {
+  const elapsedOf = (phase: RunEvent.RunPhase): number | null => {
+    const marks = observed.marks.filter((mark) => mark.phase === phase)
+    const last = marks[marks.length - 1]
+    return last === undefined ? null : last.elapsedMs
+  }
+  const reportingAt = elapsedOf('reporting')
+  const mutationTestAt = elapsedOf('mutation-test')
+  return {
+    reportingMarkIsMeasured: isMeasured(reportingAt),
+    reportingMarkFollowsMutationTestMark: reportingAt !== null &&
+      mutationTestAt !== null &&
+      reportingAt >= mutationTestAt,
+    noVerdictPublishesThePhaseDurations: observed.verdictReporting === null && observed.verdictCheck === null,
+    noMutantWasRun: Object.keys(observed.statuses).length === 0,
+  }
+}
 
 const budgetPricesOnlyTheVerdictsThatRanATest = (observed: Observation): boolean => {
   const testRunning = [
@@ -166,6 +187,48 @@ Feature('The measured cost recorded for a verdict the engine decided without a t
             verdictCheckIsNotRun: true,
           })
         }),
+      ),
+    )
+
+    scenario(
+      'The no-tests exit enters the reporting phase after the mutation-test phase without publishing a verdict',
+      Gherkin.Do.pipe(
+        Given('a workspace whose test files match nothing and whose run allows an empty test set')(
+          'observed',
+          () => runWorkspace(noTestsWorkspaceFiles, noTestsOptionsOf),
+        ),
+        Then(
+          'the run marks the mutation-test and reporting phases with a measured reporting mark, runs no mutant, and publishes no verdict to price the phases',
+        )(
+          (s, expect) =>
+            expect(reportingExitSummaryOf(s.observed)).toEqual({
+              reportingMarkIsMeasured: true,
+              reportingMarkFollowsMutationTestMark: true,
+              noVerdictPublishesThePhaseDurations: true,
+              noMutantWasRun: true,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'The dry-run-only exit enters the reporting phase after the mutation-test phase without publishing a verdict',
+      Gherkin.Do.pipe(
+        Given('a workspace whose run stops after the dry run')(
+          'observed',
+          () => runWorkspace(uncheckedWorkspaceFiles, dryRunOnlyOptionsOf),
+        ),
+        Then(
+          'the run marks the mutation-test and reporting phases with a measured reporting mark, runs no mutant, and publishes no verdict to price the phases',
+        )(
+          (s, expect) =>
+            expect(reportingExitSummaryOf(s.observed)).toEqual({
+              reportingMarkIsMeasured: true,
+              reportingMarkFollowsMutationTestMark: true,
+              noVerdictPublishesThePhaseDurations: true,
+              noMutantWasRun: true,
+            }),
+        ),
       ),
     )
 

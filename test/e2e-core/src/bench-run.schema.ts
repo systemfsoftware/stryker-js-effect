@@ -22,12 +22,27 @@ export class BenchRunKey extends S.Class<BenchRunKey>('BenchRunKey')({
 const BenchRunTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchRun')
 type BenchRunTypeId = typeof BenchRunTypeId
 
+export const WorkloadDigest = S.TaggedUnion({
+  verified: { digest: S.NonEmptyString },
+  unverified: { reason: S.NonEmptyString },
+})
+export type WorkloadDigest = typeof WorkloadDigest.Type
+
+export const BenchRunFailureCode = S.Literals(['stream-undecodable', 'stream-invalid', 'timeout'])
+export type BenchRunFailureCode = typeof BenchRunFailureCode.Type
+
+export const RunExit = S.TaggedUnion({
+  exited: { code: S.Int },
+  'timed-out': { afterMs: Report.NonNegativeFinite },
+})
+export type RunExit = typeof RunExit.Type
+
 export class BenchRunMeasured extends S.TaggedClass<BenchRunMeasured>()('measured', {
   key: BenchRunKey,
   phaseDurations: RunEvent.PhaseDurations,
   mutants: Report.NonNegativeInt,
   testsExecuted: Report.NonNegativeInt,
-  workloadDigest: S.String,
+  workloadDigest: WorkloadDigest,
   wallMs: Report.NonNegativeFinite,
   exitCode: S.Int,
 }) {
@@ -36,8 +51,11 @@ export class BenchRunMeasured extends S.TaggedClass<BenchRunMeasured>()('measure
 
 export class BenchRunInvalid extends S.TaggedClass<BenchRunInvalid>()('invalid', {
   key: BenchRunKey,
+  code: BenchRunFailureCode,
   reason: S.String,
   lineNumber: S.NullOr(S.Int),
+  exitCode: S.NullOr(S.Int),
+  stderrTail: S.String,
 }) {
   readonly [BenchRunTypeId] = BenchRunTypeId
 }

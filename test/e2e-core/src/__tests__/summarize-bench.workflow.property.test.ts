@@ -5,7 +5,14 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { BenchRun, BenchRunInvalid, BenchRunKey, BenchRunMeasured } from '../bench-run.schema.js'
-import { type BenchSummary, PhaseVerdict, SideCell, Workload } from '../bench-summary.schema.js'
+import {
+  type BenchSummary,
+  type MeasuredSideCell,
+  PhaseVerdict,
+  SideCell,
+  statisticsOf,
+  Workload,
+} from '../bench-summary.schema.js'
 import { BenchRunsInvalid, summarizeBench, SummarizeBenchCommand } from '../summarize-bench.workflow.js'
 
 const NOT_RECORDED: RunEvent.CheckDuration = { _tag: 'not-recorded' }
@@ -17,6 +24,7 @@ interface RunOptions {
   readonly check?: RunEvent.CheckDuration
   readonly reporting?: RunEvent.ReportingDuration
   readonly digest?: string
+  readonly unverifiedReason?: string
 }
 
 const runFrom = (
@@ -37,7 +45,9 @@ const runFrom = (
     },
     mutants: 10,
     testsExecuted: 2,
-    workloadDigest: options.digest ?? 'digest-entry',
+    workloadDigest: options.unverifiedReason !== undefined
+      ? { _tag: 'unverified', reason: options.unverifiedReason }
+      : { _tag: 'verified', digest: options.digest ?? 'digest-entry' },
     wallMs: mutationTest,
     exitCode: 0,
   })
@@ -90,39 +100,25 @@ const withInvalidA = (
   ...fourRuns('B', bSamples),
 ]
 
+const invalidAt = (position: number, reason: string): BenchRunInvalid =>
+  BenchRunInvalid.make({
+    key: BenchRunKey.make({ corpus: 'repo', entry: 'entry', side: 'A', position }),
+    code: 'stream-undecodable',
+    reason,
+    lineNumber: null,
+    exitCode: 0,
+    stderrTail: '',
+  })
+
 const maskA = (
   mask: ReadonlyArray<boolean>,
   aSamples: ReadonlyArray<number>,
   reason: string,
 ): ReadonlyArray<BenchRun> => [
-  mask[0] === true
-    ? BenchRunInvalid.make({
-      key: BenchRunKey.make({ corpus: 'repo', entry: 'entry', side: 'A', position: 0 }),
-      reason,
-      lineNumber: null,
-    })
-    : runFrom('A', 0, aSamples[0]),
-  mask[1] === true
-    ? BenchRunInvalid.make({
-      key: BenchRunKey.make({ corpus: 'repo', entry: 'entry', side: 'A', position: 1 }),
-      reason,
-      lineNumber: null,
-    })
-    : runFrom('A', 1, aSamples[1]),
-  mask[2] === true
-    ? BenchRunInvalid.make({
-      key: BenchRunKey.make({ corpus: 'repo', entry: 'entry', side: 'A', position: 2 }),
-      reason,
-      lineNumber: null,
-    })
-    : runFrom('A', 2, aSamples[2]),
-  mask[3] === true
-    ? BenchRunInvalid.make({
-      key: BenchRunKey.make({ corpus: 'repo', entry: 'entry', side: 'A', position: 3 }),
-      reason,
-      lineNumber: null,
-    })
-    : runFrom('A', 3, aSamples[3]),
+  mask[0] === true ? invalidAt(0, reason) : runFrom('A', 0, aSamples[0]),
+  mask[1] === true ? invalidAt(1, reason) : runFrom('A', 1, aSamples[1]),
+  mask[2] === true ? invalidAt(2, reason) : runFrom('A', 2, aSamples[2]),
+  mask[3] === true ? invalidAt(3, reason) : runFrom('A', 3, aSamples[3]),
 ]
 
 const withDriftedDigest = (runs: ReadonlyArray<BenchRunMeasured>, digest: string): ReadonlyArray<BenchRunMeasured> =>
@@ -148,21 +144,31 @@ const isRegressed = (verdict: PhaseVerdict): boolean => S.is(PhaseVerdict.cases.
 const isNoSignal = (verdict: PhaseVerdict): boolean => S.is(PhaseVerdict.cases['no-signal'])(verdict)
 const isNotMeasuredVerdict = (verdict: PhaseVerdict): boolean => S.is(PhaseVerdict.cases['not-measured'])(verdict)
 const deltaOf = (verdict: PhaseVerdict): number | null =>
-  S.is(PhaseVerdict.cases['not-measured'])(verdict) ? null : verdict.deltaMs
-const isSideMeasured = (cell: SideCell): boolean => S.is(SideCell.cases.measured)(cell)
-const sideMedian = (cell: SideCell): number | null => S.is(SideCell.cases.measured)(cell) ? cell.medianMs : null
-const sideShare = (cell: SideCell): number | null => S.is(SideCell.cases.measured)(cell) ? cell.shareMedian : null
-const sideNotRun = (cell: SideCell): number | null => S.is(SideCell.cases.measured)(cell) ? cell.notRunEntries : null
+  Match.valueTags(verdict, {
+    improved: (value) => value.deltaMs,
+    regressed: (value) => value.deltaMs,
+    'no-signal': (value) => value.deltaMs,
+    'workload-unverified': () => null,
+    'not-measured': () => null,
+  })
+const isMeasuredCell = (cell: SideCell): cell is MeasuredSideCell => S.is(SideCell.cases.measured)(cell)
+const isSideMeasured = (cell: SideCell): boolean => isMeasuredCell(cell)
+const isSideNotRun = (cell: SideCell): boolean => S.is(SideCell.cases['not-run'])(cell)
+const sideMedian = (cell: SideCell): number | null => isMeasuredCell(cell) ? statisticsOf(cell).medianMs : null
+const sideShare = (cell: SideCell): number | null => isMeasuredCell(cell) ? statisticsOf(cell).shareMedian : null
 
 const sideSamples = (cell: SideCell): ReadonlyArray<number> | null =>
-  Match.value(cell).pipe(
-    Match.tag('measured', (measured) => measured.samplesMs),
-    Match.tag('not-measured', () => null),
-    Match.exhaustive,
-  )
+  Match.valueTags(cell, {
+    measured: (measured) => measured.samples.map((sample) => sample.ms),
+    'not-run': () => null,
+    'not-measured': () => null,
+  })
 
 const labelsOf = (runs: ReadonlyArray<BenchRun>): string =>
   runs.map((run) => `${run.key.side}@${run.key.position}`).join(',')
+
+const everyRowIsWorkloadUnverified = (summary: BenchSummary): boolean =>
+  summary.projects[0].rows.every((row) => S.is(PhaseVerdict.cases['workload-unverified'])(row.verdict))
 
 const near = (left: number, right: number): boolean =>
   Math.abs(left - right) <= 1e-9 * Math.max(1, Math.abs(left), Math.abs(right))
@@ -264,6 +270,48 @@ describe('summarizeBench', () => {
   )
 
   it.prop(
+    '∀ar_FarSeparatedSidesWithOneUnverifiedDigest_≡WorkloadUnverifiedAndEveryRowUnverified',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.NonEmptyString], subject: summarizeBench },
+    (subject, [rawA, reason]) => {
+      const a = positives(rawA)
+      const b = a.map((sample) => sample + Math.max(...a) + 1)
+      const runs: ReadonlyArray<BenchRun> = [
+        ...fourRuns('A', a, { unverifiedReason: reason }),
+        ...fourRuns('B', b),
+      ]
+      const summary = summaryOf(subject, runs)
+      return S.is(Workload.cases.unverified)(summary.projects[0].workload) &&
+        everyRowIsWorkloadUnverified(summary)
+    },
+  )
+
+  it.prop(
+    '∀am_UnderThreePercentSeparatedSides_≡NoSignal',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int], subject: summarizeBench },
+    (subject, [rawDeltas, rawMedian]) => {
+      const median = 1000 * (Math.abs(rawMedian) + 1)
+      const deltas = rawDeltas.map((delta) => ((delta % 21) + 21) % 21 - 10)
+      const a = deltas.map((delta) => median + delta)
+      const spread = Math.max(...a) - Math.min(...a)
+      const shift = spread + 1
+      const b = a.map((sample) => sample - shift)
+      const row = rowOf(summaryOf(subject, runsOf(a, b)), 'mutation-test')
+      const aCell = row.a
+      const bCell = row.b
+      if (!isMeasuredCell(aCell) || !isMeasuredCell(bCell)) {
+        return false
+      }
+      const aStats = statisticsOf(aCell)
+      const bStats = statisticsOf(bCell)
+      return bStats.maxMs < aStats.minMs &&
+        100 * shift < 3 * aStats.medianMs &&
+        isNoSignal(row.verdict) &&
+        deltaOf(row.verdict) !== null &&
+        near(deltaOf(row.verdict) ?? 0, -shift)
+    },
+  )
+
+  it.prop(
     '∀abrm_AnyInvalidRun_≡RefusedNamingExactlyThose',
     {
       of: [
@@ -295,11 +343,11 @@ describe('summarizeBench', () => {
   )
 
   it.prop(
-    '∀a_EveryCheckNotRun_≡MeasuredWithNotRunEntries',
+    '∀a_EveryCheckNotRun_≡CheckCellReadsNotRun',
     { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int])], subject: summarizeBench },
     (subject, [rawA]) => {
       const row = rowOf(summaryOf(subject, allNotRunA(positives(rawA))), 'check')
-      return isSideMeasured(row.a) && sideMedian(row.a) === 0 && sideNotRun(row.a) === 1
+      return isSideNotRun(row.a) && isNotMeasuredVerdict(row.verdict)
     },
   )
 
