@@ -1,12 +1,13 @@
 ---
 title: VerdictStore port with content-addressed verdict keys - Plan
 type: feat
-date: 2026-10-09
+date: 2026-10-10
 topic: verdict-store
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
 origin: docs/brainstorms/2026-10-09-1842-feat-verdict-store-requirements.md
+supersedes: docs/plans/2026-10-10-1354-feat-verdict-store-plan.md
 ---
 
 # VerdictStore port with content-addressed verdict keys - Plan
@@ -16,15 +17,15 @@ origin: docs/brainstorms/2026-10-09-1842-feat-verdict-store-requirements.md
 - **Objective:** A mutation verdict is reused in a later run, another shard or another PR exactly when its inputs are byte-identical. An unchanged re-run reuses at least 95% of verdicts, and no concurrent writer or killed process leaves a verdict that reads back wrong.
 - **Means:** Per-key immutable entries behind a `VerdictStore` port with an in-memory fake, a filesystem driver and an S3 driver package (KTD1-KTD3, see origin Key Decisions).
 - **Authority:** Product Contract (R-IDs) wins on behavior, KTDs win on mechanism, units override neither. `CONSTITUTION.md` and `AGENTS.md` (`BREAK-1`, `PLUG-1`, `START-1`..`START-6`) bind every unit.
-- **Stop conditions:** Stop and report instead of working around when emulate 0.12.1 lacks an S3 behaviour the driver needs, when a unit would require editing a read-only surface (`.github/workflows/`, `CONSTITUTION.md`, `repos/**`), or when a new third-party executable dependency beyond `@aws-sdk/client-s3` and `emulate` appears necessary.
-- **Execution profile:** Deep. Branch `stryker/verdict-store` from `origin/main` `1e1de6d05`. Plain pushes only; merge `main` into the branch when it moves. No local mutation runs.
-- **Who ships:** The implementer opens one PR (stacked per OP13b if it overlaps another open PR); the operator rules on Open Questions and merges.
+- **Stop conditions:** Stop and report instead of working around when emulate 0.12.1 lacks an S3 behaviour the driver needs, when a unit would require editing a read-only surface (`CONSTITUTION.md`, `repos/**`, any workflow other than `.github/workflows/mutation.yml`), or when a new third-party executable dependency beyond `@aws-sdk/client-s3` and `emulate` appears necessary. A root ruling lifts the read-only line for `mutation.yml` in U12-U14 only, as it did for #253, #256 and #263.
+- **Execution profile:** Deep. U1-U11 on branch `stryker/verdict-store` (PR #271) from `origin/main` `1e1de6d05`. U12-U14 on the stacked branch `stryker/verdict-store-ci` from `51ac1ac88`, PR base `stryker/verdict-store`. Plain pushes only; merge the parent (and through it `main`) up when it moves. No local mutation runs of any kind.
+- **Who ships:** #271 carries U1-U11; the stacked PR carries U12-U14, this plan file (which supersedes the 2026-10-10-1354 plan, itself the successor by move of the 2026-10-10-1244 and 2026-10-09 plans, so the stack adds one plan file, `REPO-D2`), and merges before or with the release that moves the dogfood pin. The operator rules on Open Questions and merges.
 
 ---
 
 ## Product Contract
 
-Product Contract preservation: restructured, no scope change except `changed: R6, R8, R16` — R6 gains a `settledAt` time so "newest entry" stays defined without file order; R8 names the checker-configuration refusal `checkerConfigChanged` (the origin left the name open); R16 removes the `incrementalSources` option, whose only job (feeding extra verdict records) the store takes over. Success Criteria wording on `0574dc1362451398` is corrected: the survivor's site is deleted, so the new collision property kills its replacement.
+Product Contract preservation: restructured, no scope change except `changed: R6, R8, R16, R17` — R6 gains a `settledAt` time so "newest entry" stays defined without file order; R8 names the checker-configuration refusal `checkerConfigChanged` (the origin left the name open); R16 removes the `incrementalSources` option, whose only job (feeding extra verdict records) the store takes over; R17 moves the cross-machine share from an operator residual into the stacked layer (R22-R26). Success Criteria wording on `0574dc1362451398` is corrected: the survivor's site is deleted, so the new collision property kills its replacement.
 
 ### Summary
 
@@ -39,7 +40,8 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 - **Blind writes, last-write-wins, on every adapter; no conditional put.** (session-settled: user-directed — chosen over If-None-Match write-once, which emulate 0.12.1 cannot serve and which freezes an unreproduced Timeout, and over write-once fs only, which splits the law suite.) Governs R10, R13, R18.
 - **The store takes verdicts and their per-mutant cost; `dryRunCoverage` and `budget` stay in the incremental file.** The execution that produces a verdict also measures its cost, so the cost shares the verdict key and travels with it across shards and PRs, and the planner prices reused mutants with real costs. `dryRunCoverage` and `budget` are keyed by suite inputs and run policy, not per mutant. (session-settled: user-approved — chosen over verdicts only, where cost and verdict could disagree, and over moving the whole file, the largest diff and the heaviest collision with Stream A.) Governs R6, R16, R17.
 - **The S3 driver ships as `@systemfsoftware/stryker-js-verdict-store-s3` in `packages/stryker-js-verdict-store-s3`, importing only the port and key-schema entry of stryker-js, with the law suite imported from a test-support entry.** (session-settled: user-directed — chosen over an optional peer inside stryker-js and over a hard dependency; `@aws-sdk/client-s3` must not reach every CLI install.) (pack: cell-architecture, service-and-layer-boundaries.md "Separate Driver Package") Governs R11, R12.
-- **CI proves the 95% reuse in a PR e2e journey against emulate's AWS service started by the e2e harness on the host; no AWS credentials; mutation.yml on main keeps its fs cache.** (session-settled: user-directed — chosen over a main-only mutation.yml step, which never runs on the PR head, and over a real bucket, which needs IaC.) Governs R20.
+- **CI proves the 95% reuse in a PR e2e journey against emulate's AWS service started by the e2e harness on the host; no AWS credentials.** (session-settled: user-directed — chosen over a main-only mutation.yml step, which never runs on the PR head, and over a real bucket, which needs IaC.) Governs R20.
+- **Main's mutation shards share the fs store through GitHub's own mechanisms only: per-shard artifacts, one merge in the report job, `actions/cache` between runs. No AWS, OIDC, role, bucket env or credential of any kind.** (session-settled: user-directed in the stacked-layer contract, chosen over a real bucket.) Governs R17, R22-R26.
 - **Entries are grouped by mutant id so a miss can still say why it missed.** Governs R7, R8.
 - **No unit of work.** A lost timeout-reproduction increment under a race only delays reuse by one run (pack: cell-architecture, store-serializable-unit-of-work.md). Governs R10.
 - **The port sits where Stream A's `stryker-js-contracts` package expects it: one driver-free folder behind one public entry.** `packages/stryker-js/src/verdict-store/` holds the port (`VerdictStore.service.ts`, no Layer), the key workflow, the entry schema, the byte-store constructor and the laws, importing only `effect` and schema modules, so the folder moves as a unit. Layers (in-memory fake, fs driver) live under `packages/stryker-js/src/drivers/` in non-`*.service.ts` modules with no static `*Live` names. (session-settled: user-directed — Stream A plan `docs/plans/2026-10-09-1848-refactor-ports-split-capability-packages-plan.md` KTD1 on branch `stream-a/l1-ports-topology`.) (pack: cell-architecture, ports-separate-from-layers.md) Governs R11.
@@ -73,8 +75,16 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 
 - R15. A run puts each verdict as soon as it settles, so a run interrupted or killed at any point leaves every verdict that settled before the kill reusable.
 - R16. Every reader of prior verdicts or prior per-mutant cost reads the store: run-time reuse, the planner's pricing, and the deferrable-dry-run decision. The incremental file and the shard union stop carrying verdict records and costs, and the `incrementalSources` option is removed.
-- R17. Shards writing to one store need no merge step for verdicts. mutation.yml is not edited here (read-only surface); the PR body lists, under "Operator residuals before release", adding `<project>/reports/stryker-verdicts/` to `INCREMENTAL_REPORTS` (which the plan job's restore at `mutation.yml:68-74` also reads) and to the shard upload.
+- R17. Shards writing to one store need no merge step for verdicts inside the engine. Across machines, main's Mutation workflow carries the store between jobs and between runs (R22).
 - R21. The store is trusted input: anyone who can write it can forge verdicts. A PR from a fork must not write a store that main reads. The solution doc and the option docs say so.
+
+**Main's shared store (stacked layer)**
+
+- R22. The plan job and every mutation shard start from the newest combined store, `<project>/reports/stryker-verdicts/` for each project in `PROJECTS`, restored from `actions/cache`. Each shard uploads, as one artifact, the entries under the mutant ids its plan entry names. The report job restores the same store, lays every shard's part over it in plan shard order (one entry name in two parts: the later part wins, and either is a valid verdict), and saves the result under a key derived from the merged store's content, so the next run of an unchanged `main` restores everything this run wrote.
+- R23. Under a CLI that predates the store (the released 18.1.0 that the dogfood pin installs today), no store directory exists. Every new step then succeeds as a no-op and leaves the incremental-report cache and the plan as they are; reuse still follows today's run-inputs rule, so a tree whose lockfile or package manifest differs from the cached run re-runs every mutant once (Risks). Store reuse is measured on the second main mutation run after a release moves the pin: the first only writes the store, because v4 verdicts are discarded (KTD8).
+- R24. Each shard's stage step and the report's merge step write a step summary: staged entries per project (shard); parts merged out of shards planned, entries merged, collisions (entry names that more than one part carried), skipped non-entry files, store size and cache key (report). A failure prints a reason code and the next action in its error annotation, never "see logs". A planned shard with no part is a warning that names the shard, not a failure: its mutants re-run next time.
+- R25. No existing mutation job grows by more than its store restore, stage or merge, and save. No job of this layer runs on pull requests, so the 10-minute PR-job budget is untouched. The PR body states the cache size and that it costs nothing beyond GitHub cache storage.
+- R26. `workflow_dispatch` runs of `mutation.yml` on `stryker/verdict-store-ci` are green in every job. The proof run, an unchanged re-run on the same head after a seeding run, reuses at least 95% of each project's mutants, read from its own plan output. The PR body quotes both runs' URLs and per-project counts, and says that the first main mutation run after a release moves the dogfood pin writes the store and the next one reuses it, so this layer merges before or with that release.
 
 **Proof**
 
@@ -96,17 +106,20 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 - AE2. **Covers R9.** Given an entry file truncated mid-JSON, when a run looks up that key, the mutant runs, the run succeeds, and `reuse.refused.entryUnreadable` is 1.
 - AE3. **Covers R10.** Given an unreproduced wall-clock Timeout entry, when the re-run times out again, the entry at the same key is replaced with `reproductions: 1`, and a third run reuses it.
 - AE4. **Covers R15, R19.** Given a run SIGKILLed mid-run, when a new run starts, every entry the killed run put is reused.
+- AE5. **Covers R23.** Given the released 18.1.0 CLI, when the dispatch run finishes, every stage step reports 0 entries, the merge reports 0 entries and no key, both cache steps are skipped, and every job is green.
+- AE6. **Covers R22.** Given two shards whose parts both carry `<scheme>/<id>/tested-<key>.json`, where `<scheme>` is `schemeDirectoryOf(VerdictKeyScheme)` (`packages/stryker-js/src/verdict-store/VerdictKeyScheme.schema.ts`), the merged store holds the second part's bytes and the summary counts one collision.
 
 ### Success Criteria
 
 - The R20 journey is green on the PR head, and its assertion reads the CLI's own NDJSON `reuse` event, not a hand-computed count.
 - The R18 law suite runs, with no skips, in the stryker-js and S3-package test tasks on the PR head.
 - The R4 collision property kills the replacement of survivor `0574dc1362451398` (the `'\u0000'` join at `incremental-diff.workflow.ts:105`, deleted by U6). The entry round-trip and reuse properties target the `rememberedOf` survivors (`7c2e2e9e9da4fc43`, `c5b364135610b3a4`, `174b8e52f6c5c584`, `a4deb93c48d0b4bd`, `ec2b75971f004744`, `5c5af2eb451aef17`, `6ac950f8cd326ba3`, `e0c3736e2c4fa506`), the timeout-evidence survivor `e6d78dc9239886fb`, and the admission survivor `6d5ddbf66bb2928a` (`admit-incremental-report.workflow.ts:19`), all from main report `mutation-report-416` (head `1e1de6d05`). Main mutation runs grade them after merge.
+- The stacked layer's proof run (R26) is green in every job and its plan output shows, per project, at least 95% of mutants reused on an unchanged re-run of the seeding run's head.
 
 ### Scope Boundaries
 
 - Moving `dryRunCoverage` and `budget` into the store, and sharing dry runs across PRs. They are keyed by suite inputs and run policy, not by the verdict key; see Deferred to Follow-Up Work.
-- Retention and pruning of store entries; S3 lifecycle rules or cache eviction own it.
+- Retention and pruning of store entries; S3 lifecycle rules or cache eviction own it. Known limit: every mutation.yml save whose store changed writes a full copy under a new cache key, bounded only by GitHub's cache eviction (`docs/verdict-store.md`, Known limits).
 - Conditional writes, multipart upload, Range reads.
 - Stream A's package split; this work only places the port where that split expects it.
 - Any mock of the S3 client: no `vi.mock`, no `aws-sdk-client-mock`, no hand-rolled S3 server, no patch or wrapper of emulate.
@@ -116,8 +129,8 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 
 ### Deferred to Follow-Up Work
 
-- A real shared S3 bucket for main's mutation shards (IaC, credentials, workflow wiring).
-- `dryRunCoverage` and `budget` as a later store candidate under their own suite-input and run-policy keys. Until then they stay in the incremental file, which mutation.yml keeps caching and re-seeding (KTD8, R17).
+- A real shared S3 bucket for main's mutation shards (IaC, credentials, workflow wiring). The stacked layer's fs store through artifacts and `actions/cache` covers main until then.
+- `dryRunCoverage` and `budget` as a later store candidate under their own suite-input and run-policy keys. Until then they stay in the incremental file, which mutation.yml keeps caching and re-seeding (KTD8).
 
 ### Sources / Research
 
@@ -145,6 +158,10 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 - KTD10. **e2e harness owns emulate as a scoped host service.** It is acquired with `createEmulator({ service: 'aws' })`, released with `close()`, and creates one bucket per journey. The endpoint is rewritten to `host.microsandbox.internal` the way `test/e2e/src/Harness/stryker-cli-runner.service.ts:9-18` rewrites OTLP. AWS env reaches the CLI through a new `env` field on `StrykerRunInput` threaded into `runEnvironment` (`test/e2e/tests/__fixtures__/e2e-harness.fixture.ts:127-160`). The S3 package joins `ENTRY_PACKAGES` (`test/e2e/src/Harness/fixture-cache.service.ts:100-105`) so its tarball is packed by derivation (I2).
 - KTD11. **fs atomicity.** Write to a uniquely named temp file in the store directory (same filesystem), fsync the file, rename it over the key path. Listing accepts only names matching `<kind>-<64 hex>.json`.
 - KTD12. **Store I/O failure degrades; misconfiguration fails fast.** Port operations return outcomes rather than failing: get and list report `unavailable` beside `unreadable`, and a put reports `skipped`. The reuse cell counts an `unavailable` lookup as `storeUnavailable`. The settle path logs a skipped put and keeps the run going. The run emits one warning with the unavailable and skipped counts. Layer acquisition probes the store without writing an entry (fs: create the root directory and confirm it is a directory; S3: `HeadBucket`) and fails the run with a named `VerdictStoreUnavailable` error before instrumentation. A store outage then never aborts a long run, and a store that is wrong from the start is never silently useless.
+- KTD13. **A shard's part is selected by the plan, not by time.** The stage step copies every entry file whose parent directory is a mutant id that `plan.json` assigns to this shard and project. The plan assigns every mutant, reused or not, to exactly one shard (main run `38048403407`'s `plan.json`: 20 shards, 9366 mutant ids, equal to its `plan 9366 mutants` line), so the parts partition the store's live mutants: each part carries the entries its shard put this run plus the restored entries of its mutants, and the upload per run is about one store's size. No file-time or snapshot logic. Only names matching `<tested|checker>-<64 hex>.json` are staged, so a killed put's leftover temp file never travels (mirrors `ENTRY_FILE_NAME` in `packages/stryker-js/src/verdict-store/verdict-blobs.ts`; a mismatch shows as staged 0 against a non-empty store). Collisions are then 0 unless two shards were assigned one mutant.
+- KTD14. **The cache key is the merged store's content digest.** `mutation-verdicts-<sha256 over sorted (relative path, sha256 of bytes)>`, computed by the merge script and saved only when a lookup-only restore misses. Restores use that prefix and get the newest cache. An unchanged re-run saves nothing new, so cache churn tracks real change. The store only grows (no pruning), so the newest cache always contains every older one's entries, except a timeout-upgrade overwrite, which is the newer verdict anyway.
+- KTD15. **One Node-runnable TypeScript script, `scripts/verdict-store-parts.ts`, with `stage` and `merge` subcommands.** Its decisions are pure exported functions (which files a shard stages, which part wins per name, collisions, skips, the content key, the summary text, reason codes); `main` does the I/O. Node 24 runs it as `node scripts/verdict-store-parts.ts` in mutation jobs with no Deno or Nix install; `ci.yml`'s `Repo scripts tests` step runs its Deno property tests (`./bin/deno test --config=scripts/deno.json scripts/`). Same shape as `scripts/change-lane.ts`.
+- KTD16. **Trust (R21).** `mutation.yml` runs on `push` to `main`, `schedule` and `workflow_dispatch`, all trusted cache writers; it never runs on `pull_request`. A dispatch on a branch saves to that branch's scope only, so the proof runs cannot write the store `main` restores.
 
 ### High-Level Technical Design
 
@@ -223,6 +240,8 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 - **Effect version skew.** KTD7's probe covers equal versions only. A project whose installed `effect` differs from the CLI bundle's could break the in-process Layer; the S3 package's `effect` peer range and the CLI's own `effect` peer keep them on one catalog line.
 - **emulate and SDK checksums.** `@aws-sdk/client-s3` 3.729.0 and later computes a CRC32 checksum for every upload by default ([SDK guide](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/s3-checksums.html)). The laws run with SDK defaults first. If get-after-put fails because of the checksum framing, the client sets `requestChecksumCalculation: 'WHEN_REQUIRED'` and `responseChecksumValidation: 'WHEN_REQUIRED'` (valid against real S3; operator ruling), and the PR body records which was needed. Any other emulate gap is a stop.
 - **First full run after upgrade.** v4 verdicts are discarded (KTD8), so main's first run after the release re-runs every mutant once.
+- **The proof run cannot reuse against main's cache.** The released 18.1.0 `runInputsDigest` hashes the nearest lockfile (`inputs.lockfile` in its `dist/run-stages-*.mjs`; source `packages/stryker-js/src/verdict-semantics.ts:123,171` on `main`), and the stack changes `pnpm-lock.yaml`, so a first dispatch run on the branch refuses every mutant `runInputsChanged`. Hence two runs: a seeding run whose branch-scoped caches the proof run, on the same head, restores (U14). `settled-decision-invalidated`: the contract named one dispatch run.
+- **Cache eviction.** GitHub evicts least-recently-used caches past the repository limit. The store cache competes with the pnpm store (about 269 MB) and the build cache; the PR body states the store size from the merge summary.
 
 ---
 
@@ -241,6 +260,9 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 | U9   | S3 driver package                                        | `packages/stryker-js-verdict-store-s3/**`, `pnpm-workspace.yaml`                                                                                                                               | U2         |
 | U10  | e2e journeys                                             | `test/e2e/src/Harness/*`, `test/e2e/tests/verdict-store-*.e2e.test.ts`, `test/e2e/tests/enterprise-runner-resilience.e2e.test.ts`                                                              | U5-U9      |
 | U11  | Docs and changesets                                      | `docs/solutions/tooling-decisions/verdict-cache-content-keyed-reuse.md`, `.changeset/*`                                                                                                        | U1-U10     |
+| U12  | Stage and merge script for store parts                   | `scripts/verdict-store-parts.ts`, `scripts/verdict-store-parts.test.ts`                                                                                                                        | U7         |
+| U13  | mutation.yml carries the store between jobs and runs     | `.github/workflows/mutation.yml`                                                                                                                                                               | U12        |
+| U14  | Dispatch proof and PR body                               | stacked PR body                                                                                                                                                                                | U13        |
 
 ### U1. Verdict key workflow and entry schema
 
@@ -574,6 +596,75 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 
 **Verification:** `git grep -n incrementalSources -- . ':!*.lock' ':!CHANGELOG.md' ':!.changeset/changelogs'` returns nothing (DEL1); `Changeset Check` green.
 
+### U12. Stage and merge script for store parts
+
+**Goal:** A pure, tested decision for which entries a shard ships and how parts combine, with the I/O in one thin `main`.
+
+**Requirements:** R22, R23, R24; AE5, AE6; KTD13-KTD15.
+
+**Dependencies:** U7 (entry layout on disk).
+
+**Files:**
+
+- Create `scripts/verdict-store-parts.ts` (shebang `#!/usr/bin/env -S deno run` with only the `--allow-read`, `--allow-write` and `--allow-env=GITHUB_OUTPUT,GITHUB_STEP_SUMMARY` it needs, OP15; `node:` imports only, so Node 24 runs it unchanged).
+- Create `scripts/verdict-store-parts.test.ts` (Deno, `fast-check` from `scripts/deno.json`).
+
+**Approach:**
+
+- `stage --plan plan.json --shard k/n --projects <csv> --out verdict-part`: for each project of this shard, copy `<project>/reports/stryker-verdicts/<scheme>/<id>/<entry>` for every planned id into `verdict-part/<project>/reports/stryker-verdicts/...`. A missing store directory stages 0, and the summary counts the store directories found against the planned projects, so an absent store reads differently from a store holding none of this shard's entries. Codes: `PLAN_SHARD_ABSENT` (next action "re-run the plan job; this shard name is not in plan.json"), `SHARD_STORE_UNREADABLE` and `VERDICT_PART_UNWRITABLE` (next action "re-run failed jobs").
+- `merge --plan plan.json --parts verdict-parts --projects <csv>`: order parts by plan shard index, copy each part's entries over the restored store, then write `key`, `entries` and `bytes` to `GITHUB_OUTPUT` and the summary. Codes: `VERDICT_PART_OUTSIDE_STORE` (a part path that is not `<planned project>/reports/stryker-verdicts/<scheme>/<id>/<entry>`; next action "inspect that shard's stage summary"), `VERDICT_PART_UNREADABLE` and `VERDICT_STORE_UNWRITABLE` (next action "re-run failed jobs"). Missing parts: warning `VERDICT_PARTS_MISSING` naming the shards.
+- Pure exports: `plannedShardOf(plan, shard)`, `stagedOf(mutants, listing)`, `mergeOf(plan, projects, parts)` returning winners, collisions, merged and missing parts or a refusal, `storeKeyOf(digests)`, `stageSummaryOf`, `mergeSummaryOf`, and `annotationOf`, which escapes the message so a refusal is always one workflow command. Refusal codes are the closed union `RefusalCode`.
+
+**Test scenarios (admitted by test-layer-selection: pure decisions, property tests only; pack: cell-architecture, pure-decision-workflows.md for the decide/IO split):**
+
+- Stage selects exactly the entry files under this shard's planned ids for each project; a temp name (`.<base>.<hex>.tmp`), a non-entry name or another shard's id is never staged.
+- Merge: every entry name carried by any part appears once, with the bytes of the last part (plan order) that carried it (AE6); collisions equal the names carried by two or more parts; zero parts gives zero entries, no key and the no-op summary (AE5).
+- A part path outside a planned project's store is refused with `VERDICT_PART_OUTSIDE_STORE`, never merged.
+- `storeKeyOf` is independent of listing order, and changes when any path or any byte digest changes.
+
+**Verification:** `./bin/deno test --config=scripts/deno.json scripts/` passes; `node scripts/verdict-store-parts.ts stage` against a planted throwaway directory (deleted after) stages the expected files under Node 24.
+
+### U13. mutation.yml carries the store between jobs and runs
+
+**Goal:** Main's shards share one fs store with no AWS of any kind, and today's runs are unchanged under 18.1.0.
+
+**Requirements:** R17, R21-R25; KTD14, KTD16.
+
+**Dependencies:** U12.
+
+**Files:** Modify `.github/workflows/mutation.yml` (root ruling; no other workflow).
+
+**Approach:**
+
+- `env.VERDICT_STORES`: the four `<project>/reports/stryker-verdicts` paths.
+- plan and mutation jobs: `actions/cache/restore@v6`, `path: ${{ env.VERDICT_STORES }}`, `key: mutation-verdicts-latest` (never saved, so it always misses), `restore-keys: mutation-verdicts-`, after the incremental restore.
+- mutation job, after `Mutation`: `if: ${{ !cancelled() }}` stage step, then `actions/upload-artifact@v7` `name: verdict-part-<slug>`, `if-no-files-found: error`, `retention-days: 1`, `overwrite: true` (so `rerun --failed` replaces it), `continue-on-error: true`, so a lost part surfaces as `VERDICT_PARTS_MISSING` in the report job instead of failing a shard whose mutation results are complete. A cancelled shard stages nothing; the report job is itself `!cancelled()`, so such a part would never merge.
+- report job, after `gate` and the budget-baseline upload: restore the store, download `pattern: verdict-part-*` into `verdict-parts/` (each artifact in its own directory), run `merge`, which emits an empty `key` when it finds no entries. Both cache steps are guarded by `key != ''`, so a no-op run skips them: `actions/cache/restore@v6` `lookup-only: true` on the merge's key, then `actions/cache/save@v6` when that lookup missed. Every store step is `if: ${{ !cancelled() }}` and `continue-on-error: true`: a store failure cannot cost the merged report, the incremental seed or the gate, a failing gate still saves the store, and a refusal still prints its `::error` annotation. The existing cleanup step also deletes `verdict-part-*` artifacts.
+- Run `actionlint` on the file before every push.
+
+**Test expectation:** none in-repo: a test that re-reads the workflow file is banned (CHK1, OP12). The U14 dispatch runs are the smoke proof.
+
+**Verification:** `actionlint .github/workflows/mutation.yml` clean; `pnpm format:check`.
+
+### U14. Dispatch proof and PR body
+
+**Goal:** R26 evidence from the run's own output.
+
+**Requirements:** R25, R26; AE5.
+
+**Dependencies:** U13.
+
+**Approach:**
+
+- Dispatch `mutation.yml` on `stryker/verdict-store-ci` with defaults (`full: false`, `lane: all`): the seeding run. When it is green, dispatch again on the same head: the proof run. One `run_watch` per run.
+- Quote from the proof run's plan log each project's `reused / to run` line next to main run `38048403407`'s, every job's conclusion, the stage and merge summaries (0 entries under 18.1.0, AE5), and the added wall time per job against main.
+- PR body: proof scope (the first main mutation run after the release that moves the pin writes the store and the next one reuses it; merge before or with that release), cache size (0 today; projected from the per-entry size times main's mutant count, labelled as a projection), zero cost beyond GitHub cache storage, the trust argument (KTD16), and the `settled-decision-invalidated` note on two runs.
+- The store-write path (stage of real entries, merge, save) cannot be exercised here: the released 18.1.0 CLI writes no store, so both runs stage 0 entries. It is proven by #271's `e2e (verdict-store)` journey, where real CLI processes write, kill and reuse a store, and by the first post-pin main runs.
+
+**Test expectation:** none -- CI evidence only.
+
+**Verification:** both runs green; the proof run's counts meet R26.
+
 ---
 
 ## Verification Contract
@@ -586,6 +677,7 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 - Test admission (test-layer-selection gate): workflow and fold properties, in-source schema laws, one law suite on three adapters, in-process integration through the run layer, and three e2e journeys. No test asserts packaging, file presence or default values.
 - CI on the exact head: `check` and all five `e2e` legs green, with the new journey names in the `rest-*` logs; `Changeset Check` green.
 - No local mutation runs of any kind.
+- Stacked layer: `./bin/deno test --config=scripts/deno.json scripts/`, `actionlint .github/workflows/mutation.yml`, `pnpm format:check`; then the two U14 dispatch runs.
 
 ## Definition of Done
 
@@ -595,12 +687,14 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 - DEL1 checks return nothing for `checkpointMutants`, `incrementalSources` and `keyOf` in `incremental-diff.workflow.ts`.
 - No dead-end or experimental code from abandoned approaches remains in the diff, including spike journeys from U10's execution note.
 - The PR body states that the port, key schema and entry schema live in `packages/stryker-js/src/verdict-store/` behind `./verdict-store` for Stream A's contracts/ports package, and lists the targeted main-report mutant ids.
+- R21 holds: KTD16's trigger set (`mutation.yml` runs on `push` to `main`, `schedule` and `workflow_dispatch`, never on `pull_request`) and U11's trust-model docs.
+- R22-R26 hold: U12's properties pass in `check`, and the U14 proof run is green with at least 95% per-project reuse on an unchanged re-run, quoted from its own plan output.
 
 ## Open Questions
 
 **Blocking release (not ce-work)**
 
-- Q1. Resolved: no workflow edit (read-only surface). The PR body lists under "Operator residuals before release" adding `<project>/reports/stryker-verdicts/` to `INCREMENTAL_REPORTS` (also read by the plan job's restore) and to the shard upload.
+- Q1. Resolved by root ruling: the stacked layer edits `mutation.yml` (U13).
 - Q2. Resolved: remove `incrementalSources` (BREAK-1, major bump).
 - Q3. Resolved: see the port-location Key Decision.
 
@@ -609,3 +703,4 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 - Whether the checker worker serves `digest` before `init` (U3).
 - The emulate bind address a fork can reach, two live execs per fork, and signal 9 delivery (U10 spike).
 - Whether emulate 0.12.1 accepts the SDK's default checksum framing (U9, stop condition if not).
+- Whether `actions/download-artifact@v8` with a pattern that matches nothing fails the step (U13; the step is `continue-on-error` either way, and the merge reports missing parts).
