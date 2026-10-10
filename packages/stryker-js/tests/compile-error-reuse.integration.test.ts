@@ -15,7 +15,7 @@ import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
-import { reseedVerdicts, type StoredVerdict, storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
+import { type StoredVerdict, storedVerdictsIn } from './__fixtures__/stored-verdicts.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -130,17 +130,22 @@ const configuredFilesOf = (directory: string): Readonly<Record<string, string>> 
 const withInPlace = (source: string): string =>
   source.replace('  incremental: true,', '  incremental: true,\n  inPlace: true,')
 
-const inPlaceFilesOf = (directory: string, report: string): Readonly<Record<string, string>> => ({
-  ...configuredFilesOf(directory),
-  [CONFIG_FILE]: withInPlace(configSourceOf(directory)),
-  [REPORT_FILE]: report,
-})
+const IN_PLACE_CONFIG_FILE = 'stryker.conf.mjs'
 
-const readIncrementalReport = (directory: string): Effect.Effect<string, never, never> =>
+const DIGEST_SCOPES_FILE = '.checker-digest-scopes'
+
+const forgetDigestScopes = (directory: string): Effect.Effect<void, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    return yield* fs.readFileString(incrementalFileOf(directory))
+    yield* fs.remove(`${directory}/${DIGEST_SCOPES_FILE}`, { force: true })
   }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+const digestScopesOf = (directory: string): Effect.Effect<readonly string[], never, never> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const text = yield* fs.readFileString(`${directory}/${DIGEST_SCOPES_FILE}`).pipe(Effect.orElseSucceed(() => ''))
+    return text.split('\n').filter((line) => line.length > 0)
+  }).pipe(Effect.provide(filePorts))
 
 const materializeWorkspace = (
   directory: string,
@@ -721,38 +726,35 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
     )
 
     scenario(
-      'an in-place plan starts no checker over the originals',
+      'an in-place plan never asks the checker to digest the program on disk',
       Gherkin.Do.pipe(
-        Given('a configured project whose checker digests its program and rejects one module')(
+        Given('a configured project whose checker digests its program and rejects one module, switched to in place')(
           'runs',
           () =>
-            withConfiguredWorkspace((producer) =>
+            withConfiguredWorkspace((workspace) =>
               Effect.gen(function*() {
-                const first = yield* executeConfiguredRun(producer)
-                const report = yield* readIncrementalReport(producer.directory)
-                return yield* withConfiguredWorkspaceOf(
-                  (directory) => inPlaceFilesOf(directory, report),
-                  (inPlace) =>
-                    Effect.gen(function*() {
-                      yield* reseedVerdicts({
-                        mutantIds: first.mutants.map((mutant) => mutant.id),
-                        from: { projectRoot: producer.directory },
-                        to: { projectRoot: inPlace.directory },
-                      }).pipe(Effect.provide(filePorts))
-                      const plan = yield* executePlan(inPlace)
-                      return { first, plan }
-                    }),
+                const first = yield* executeConfiguredRun(workspace)
+                yield* rewriteFile(
+                  workspace.directory,
+                  IN_PLACE_CONFIG_FILE,
+                  withInPlace(configSourceOf(workspace.directory)),
                 )
+                yield* forgetDigestScopes(workspace.directory)
+                const plan = yield* executePlan(workspace)
+                const scopes = yield* digestScopesOf(workspace.directory)
+                return { first, plan, scopes }
               })
             ),
         ),
-        Then('the in-place plan starts no checker')((s, expect) =>
+        Then('the in-place plan asks only for the checker configuration digest')((s, expect) =>
           expect({
             firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
-            inPlacePlanCheckerStartups: s.runs.plan.checkerStartups.length,
+            askedForConfig: s.runs.scopes.includes('config'),
+            askedForProgram: s.runs.scopes.includes('program'),
           }).toEqual({
             firstCompileErrors: true,
-            inPlacePlanCheckerStartups: 0,
+            askedForConfig: true,
+            askedForProgram: false,
           })
         ),
       ),

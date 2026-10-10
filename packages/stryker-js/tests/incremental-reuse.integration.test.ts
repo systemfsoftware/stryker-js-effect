@@ -661,7 +661,11 @@ Feature('Content-keyed reuse across incremental reports')
                 Effect.gen(function*() {
                   const cold = yield* runOnce(
                     root,
-                    optionsOf(root, { commandRunner, incrementalFile: `${root}/reports/cold.json` }),
+                    optionsOf(root, {
+                      commandRunner,
+                      incrementalFile: `${root}/reports/cold.json`,
+                      verdictStore: { kind: 'fs', directory: 'reports/cold-verdicts' },
+                    }),
                   )
                   const spawnsInColdRun = yield* lineCountOf(spawnLog)
                   yield* runOnce(
