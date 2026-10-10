@@ -38,12 +38,25 @@ export const loadShardPlan: {
     const fs = yield* FileSystem.FileSystem
     const resolved = path.resolve(basePath, file)
     const text = yield* fs.readFileString(resolved).pipe(
-      Effect.mapError(() => ShardPlanInvalid.make({ file, reason: 'cannot read the plan file' })),
+      Effect.mapError(() =>
+        ShardPlanInvalid.make({
+          file,
+          detail: 'cannot read the plan file',
+          code: 'plan-unreadable',
+          next: 'check the --plan path',
+        })
+      ),
     )
     const plan = yield* Effect.fromResult(
       Result.mapError(
         decodeShardPlan(text),
-        (error) => ShardPlanInvalid.make({ file, reason: error.message }),
+        (error) =>
+          ShardPlanInvalid.make({
+            file,
+            detail: error.message,
+            code: 'plan-undecodable',
+            next: 'stryker plan --since <base>',
+          }),
       ),
     )
     return { plan, file: resolved, directory: path.dirname(resolved) }

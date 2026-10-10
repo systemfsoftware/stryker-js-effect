@@ -27,6 +27,44 @@ const CONSUMER_PACKAGE = '{ "name": "shard-head-consumer", "type": "module", "pr
 
 const OTHER_HEAD = '0'.repeat(40)
 
+const OTHER_BASE = 'a'.repeat(40)
+
+const STALE_DIFF_FILE = 'plan-stale.json'
+
+const FULL_STALE_FILE = 'plan-full-stale.json'
+
+const CURRENT_FILE = 'plan-current.json'
+
+const VERSION_ONE_FILE = 'plan-v1.json'
+
+const NO_SCOPE_FILE = 'plan-v2-no-scope.json'
+
+const NO_HEAD_FILE = 'plan-v2-no-head.json'
+
+const VERSION_ONE_PLAN = JSON.stringify(
+  { version: 1, targetSeconds: 1, shards: [], matrix: { include: [] } },
+  null,
+  2,
+)
+
+const NO_SCOPE_PLAN = JSON.stringify(
+  { version: 2, targetSeconds: 1, shards: [], matrix: { include: [] } },
+  null,
+  2,
+)
+
+const NO_HEAD_PLAN = JSON.stringify(
+  {
+    version: 2,
+    scope: { _tag: 'DiffScoped', base: OTHER_BASE },
+    targetSeconds: 1,
+    shards: [],
+    matrix: { include: [] },
+  },
+  null,
+  2,
+)
+
 const writeFile = (
   root: string,
   file: string,
@@ -104,13 +142,23 @@ const prepareFixture = (): Effect.Effect<
     )
     const single = singleShardPlanOf(plan)
     yield* fs.writeFileString(
-      path.join(root, 'plan-stale.json'),
+      path.join(root, STALE_DIFF_FILE),
       yield* encodePlan({ ...single, scope: { _tag: 'DiffScoped', base: realHead, head: OTHER_HEAD } }),
     )
     yield* fs.writeFileString(
-      path.join(root, 'plan-current.json'),
+      path.join(root, FULL_STALE_FILE),
+      yield* encodePlan({
+        ...single,
+        scope: { _tag: 'FullScope', base: realHead, head: OTHER_HEAD, reason: '--since main' },
+      }),
+    )
+    yield* fs.writeFileString(
+      path.join(root, CURRENT_FILE),
       yield* encodePlan({ ...single, scope: { _tag: 'DiffScoped', base: realHead, head: realHead } }),
     )
+    yield* writeFile(root, VERSION_ONE_FILE, VERSION_ONE_PLAN)
+    yield* writeFile(root, NO_SCOPE_FILE, NO_SCOPE_PLAN)
+    yield* writeFile(root, NO_HEAD_FILE, NO_HEAD_PLAN)
     return { root, realHead }
   }).pipe(Effect.orDie)
 
@@ -156,37 +204,66 @@ const observeShard = (fixture: Fixture, planFile: string, mode: 'human' | 'machi
     }
   })
 
-Feature('Guarding a shard run against a stale plan commit', { timeout: 180_000 })
+interface PlanRefusalObservation {
+  readonly exitCode: number
+  readonly namesTheCode: boolean
+  readonly namesTheNext: boolean
+  readonly refusedBeforeTheHeadCheck: boolean
+  readonly shardDir: boolean
+}
+
+const observePlanRefusal = (fixture: Fixture, planFile: string): Effect.Effect<
+  PlanRefusalObservation,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function*() {
+    const ran = yield* runShard(fixture.root, planFile, 'human')
+    return {
+      exitCode: ran.exitCode,
+      namesTheCode: ran.stderr.includes('plan-undecodable'),
+      namesTheNext: ran.stderr.includes('next: stryker plan --since <base>'),
+      refusedBeforeTheHeadCheck: !ran.stderr.includes('the shard plan was made at commit'),
+      shardDir: yield* shardDirExists(fixture.root),
+    }
+  })
+
+Feature('Guarding a shard run against a plan this engine cannot use', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary reads the real HEAD of a temporary git repository before spawning a shard')
-  .body(({ scenario }) => {
-    scenario(
-      'A diff-scoped plan whose head is not the repository HEAD refuses the shard before spawning a child',
-      Gherkin.Do.pipe(
-        Given('a repository planned at HEAD into one shard, then rewritten to a different head')(
-          'fixture',
-          () => prepareFixture(),
+  .body(({ scenario, scenarioOutline }) => {
+    scenarioOutline(
+      'A <kind> plan whose head is not the repository HEAD refuses the shard before spawning a child',
+      [
+        { kind: 'diff-scoped', file: STALE_DIFF_FILE },
+        { kind: 'full-scope', file: FULL_STALE_FILE },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('a repository planned at HEAD into one shard, then rewritten to a different head')(
+            'fixture',
+            () => prepareFixture(),
+          ),
+          When('the shard runs for a person')('ran', (s) => observeShard(s.fixture, row.file, 'human')),
+          Then('the run fails with the configuration class, names both commits and creates no shard output')((
+            s,
+            expect,
+          ) =>
+            expect({
+              exitCode: s.ran.exitCode,
+              namedPlanHead: s.ran.namedPlanHead,
+              namedHead: s.ran.namedHead,
+              staleReason: s.ran.stderr.includes('the shard plan was made at commit'),
+              shardDir: s.ran.shardDir,
+            }).toEqual({
+              exitCode: 2,
+              namedPlanHead: true,
+              namedHead: true,
+              staleReason: true,
+              shardDir: false,
+            })
+          ),
         ),
-        When('the shard runs for a person')('ran', (s) => observeShard(s.fixture, 'plan-stale.json', 'human')),
-        Then('the run fails with the configuration class, names both commits and creates no shard output')((
-          s,
-          expect,
-        ) =>
-          expect({
-            exitCode: s.ran.exitCode,
-            namedPlanHead: s.ran.namedPlanHead,
-            namedHead: s.ran.namedHead,
-            staleReason: s.ran.stderr.includes('the shard plan was made at commit'),
-            shardDir: s.ran.shardDir,
-          }).toEqual({
-            exitCode: 2,
-            namedPlanHead: true,
-            namedHead: true,
-            staleReason: true,
-            shardDir: false,
-          })
-        ),
-      ),
     )
 
     scenario(
@@ -196,7 +273,7 @@ Feature('Guarding a shard run against a stale plan commit', { timeout: 180_000 }
           'fixture',
           () => prepareFixture(),
         ),
-        When('the shard runs for a person')('ran', (s) => observeShard(s.fixture, 'plan-current.json', 'human')),
+        When('the shard runs for a person')('ran', (s) => observeShard(s.fixture, CURRENT_FILE, 'human')),
         Then('the run is admitted, reaches a verdict and leaves the shard output directory')((s, expect) =>
           expect({
             reachedAVerdict: s.ran.exitCode === 0 || s.ran.exitCode === 1,
@@ -205,5 +282,40 @@ Feature('Guarding a shard run against a stale plan commit', { timeout: 180_000 }
           }).toEqual({ reachedAVerdict: true, namedStalePlan: false, shardDir: true })
         ),
       ),
+    )
+
+    scenarioOutline(
+      'A <kind> is refused as undecodable before any shard child runs',
+      [
+        { kind: 'version-1 plan', file: VERSION_ONE_FILE },
+        { kind: 'version-2 plan with no scope', file: NO_SCOPE_FILE },
+        { kind: 'version-2 plan whose scope names no head', file: NO_HEAD_FILE },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('a repository planned at the latest commit alongside a plan this engine cannot decode')(
+            'fixture',
+            () => prepareFixture(),
+          ),
+          When('the shard runs for a person')('ran', (s) => observePlanRefusal(s.fixture, row.file)),
+          Then('the run is refused with exit two, tells the operator to re-plan and writes no shard output')((
+            s,
+            expect,
+          ) =>
+            expect({
+              exitCode: s.ran.exitCode,
+              namesTheCode: s.ran.namesTheCode,
+              namesTheNext: s.ran.namesTheNext,
+              refusedBeforeTheHeadCheck: s.ran.refusedBeforeTheHeadCheck,
+              shardDir: s.ran.shardDir,
+            }).toEqual({
+              exitCode: 2,
+              namesTheCode: true,
+              namesTheNext: true,
+              refusedBeforeTheHeadCheck: true,
+              shardDir: false,
+            })
+          ),
+        ),
     )
   })
