@@ -75,6 +75,7 @@ interface Timed<A> {
 const BENCH_CONFIG_FILE = 'stryker.bench.config.ts'
 const MANIFEST_FILE_NAME = 'package.json'
 const WORKSPACE_CATALOGS_FILE = 'pnpm-workspace.yaml'
+const LOCKFILE = 'pnpm-lock.yaml'
 const STDERR_TAIL_CHARS = 4000
 const PACKED_MANIFEST_PATH = 'package/package.json'
 const CLI_BUILD_FILTER = '@systemfsoftware/stryker-js'
@@ -160,6 +161,15 @@ const timed = <A, E, R>(
     Effect.andThen(Effect.timed(effect)),
     Effect.tap(([elapsed]) => Console.log(`bench setup finished: ${name} in ${Duration.format(elapsed)}`)),
     Effect.map(([elapsed, value]) => ({ step: { name, ms: Duration.toMillis(elapsed) }, value })),
+  )
+
+const lastLockfileCommitTimeOf = (root: string): Effect.Effect<string, BenchSetupFailed, BenchPlatform> =>
+  runChecked(STEP_ENTERPRISE_INSTALL, ['git', '-C', root, 'log', '-1', '--format=%cI', '--', LOCKFILE]).pipe(
+    Effect.map((outcome) => outcome.stdout.trim()),
+    Effect.filterOrFail(
+      (cutoff) => cutoff.length > 0,
+      () => fail(STEP_ENTERPRISE_INSTALL, `no commit in ${root} touches ${LOCKFILE}, so the install has no cutoff`),
+    ),
   )
 
 const readCatalogs = (root: string): Effect.Effect<WorkspaceCatalogs, BenchSetupFailed, BenchPlatform> =>
@@ -481,16 +491,17 @@ const prepareEnterprise = (
       `${label} ${STEP_ENTERPRISE_INSTALL}`,
       Effect.gen(function*() {
         const specs = yield* enterpriseInstallSpecs(input.root, bundleRoot, closure.value)
-        yield* runChecked(
-          STEP_ENTERPRISE_INSTALL,
-          ['npm', 'install', '--no-audit', '--no-fund', '--loglevel=http'],
-          bundleRoot,
-        )
-        yield* runChecked(
-          STEP_ENTERPRISE_INSTALL,
-          ['npm', 'install', '--no-audit', '--no-fund', '--loglevel=http', ...specs],
-          bundleRoot,
-        )
+        const lockfileCommitTime = yield* lastLockfileCommitTimeOf(input.root)
+        const npmInstall: Argv = [
+          'npm',
+          'install',
+          '--no-audit',
+          '--no-fund',
+          '--loglevel=warn',
+          `--before=${lockfileCommitTime}`,
+        ]
+        yield* runChecked(STEP_ENTERPRISE_INSTALL, npmInstall, bundleRoot)
+        yield* runChecked(STEP_ENTERPRISE_INSTALL, [...npmInstall, ...specs], bundleRoot)
       }),
     )
 
