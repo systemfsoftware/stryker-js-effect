@@ -257,7 +257,7 @@ const reasonText = (reason: string | undefined): string => Option.getOrElse(Opti
 
 const normaliseReason = (reason: string | undefined, fileName: string): string =>
   Arr.join(
-    reasonText(reason).split('\n').map((line) => line.replace(ownPositionOf(fileName), `${fileName}(*)`)),
+    reasonText(reason).split('\n').map((line) => line.replace(ownPositionOf(fileName), () => `${fileName}(*)`)),
     '\n',
   )
 

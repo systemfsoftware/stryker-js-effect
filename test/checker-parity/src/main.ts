@@ -1,284 +1,368 @@
+import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
+import * as NodeServices from '@effect/platform-node/NodeServices'
 import { Engine } from '@systemfsoftware/stryker-js'
+import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import * as Argument from 'effect/cli/Argument'
+import * as CliError from 'effect/cli/CliError'
+import * as Command from 'effect/cli/Command'
+import * as Flag from 'effect/cli/Flag'
+import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
-import * as Result from 'effect/Result'
+import * as Exit from 'effect/Exit'
+import * as FileSystem from 'effect/FileSystem'
+import * as HashMap from 'effect/HashMap'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
+import * as Predicate from 'effect/Predicate'
+import * as Record from 'effect/Record'
+import * as Runtime from 'effect/Runtime'
 import * as S from 'effect/Schema'
-import * as fs from 'node:fs/promises'
-import * as path from 'node:path'
+import * as Stdio from 'effect/Stdio'
+import * as Str from 'effect/String'
+import type * as Terminal from 'effect/Terminal'
+
+import { appendStepSummary, type CiEnvironment, ciEnvironment } from './ci-environment.js'
 import {
-  BootAsymmetry,
   compareSides,
   CompareSidesCommand,
   ComparisonDecision,
   ParityBroken,
-  TelemetryMissingViolation,
-  VerdictMismatch,
+  type SideTotals,
   type Violation,
-  ZeroSnapshotUpdates,
 } from './compare-sides.workflow.js'
 import { ISOLATED_DECLARATIONS_PROJECT } from './corpus.js'
-import { ParityLine } from './Parity.schema.js'
-import { parseArgs, type ParsedCompare, refusalOutsideCi, runShard, ShellFailure, shellFailure } from './run-side.js'
+import { type ParityLine, Shard } from './Parity.schema.js'
+import { decodeLines, runShard, type ShellServices } from './run-side.js'
+import { ParityViolated, ShellFailure } from './Shell.schema.js'
 
-const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
-
-const GITHUB_ACTIONS_ENV = 'GITHUB_ACTIONS'
-const GITHUB_STEP_SUMMARY_ENV = 'GITHUB_STEP_SUMMARY'
+const VERSION = '0.0.0'
 const SHARD_FILE = /^shard-([1-9][0-9]*)\.ndjson$/u
+const encodeDecision = S.encodeResult(S.fromJsonString(ComparisonDecision))
 
-const write = (text: string): void => {
-  process.stdout.write(text)
+const ioFailure = (reason: string, nextAction: string): ShellFailure =>
+  ShellFailure.make({ schemaVersion: 1, code: 'io-failed', reason, nextAction })
+
+interface ShardFile {
+  readonly shard: number
+  readonly file: string
 }
 
-const printFailure = (failure: ShellFailure): void => {
-  process.stderr.write(`${failure.code}: ${failure.reason}\nnext action: ${failure.nextAction}\n`)
-}
+const shardFileOf = (path: Path.Path, dir: string) => (entry: string): Option.Option<ShardFile> =>
+  Option.map(
+    Option.fromNullishOr(SHARD_FILE.exec(path.basename(entry))),
+    (match) => ({ shard: Number(match[1]), file: path.join(dir, entry) }),
+  )
 
-const appendSummary = (markdown: string): Effect.Effect<void, ShellFailure> => {
-  const summaryPath = process.env[GITHUB_STEP_SUMMARY_ENV]
-  return process.env[GITHUB_ACTIONS_ENV] === 'true' && summaryPath !== undefined && summaryPath !== ''
-    ? Effect.tryPromise({
-      try: () => fs.appendFile(summaryPath, markdown, 'utf8'),
-      catch: (cause) =>
-        shellFailure(
-          'io-failed',
-          `Could not append to $GITHUB_STEP_SUMMARY: ${String(cause)}`,
-          'Check the runner exposes GITHUB_STEP_SUMMARY.',
-        ),
-    })
-    : Effect.void
-}
-
-const collectShardFiles = (
-  dirs: readonly string[],
-): Effect.Effect<ReadonlyMap<number, readonly string[]>, ShellFailure> =>
-  Effect.tryPromise({
-    try: async () => {
-      const byShard = new Map<number, string[]>()
-      for (const dir of dirs) {
-        const entries = await fs.readdir(dir, { withFileTypes: true, recursive: true })
-        for (const entry of entries) {
-          if (!entry.isFile() || !entry.name.endsWith('.ndjson')) continue
-          const match = SHARD_FILE.exec(entry.name)
-          if (match === null) continue
-          const shard = Number(match[1])
-          byShard.set(shard, [...(byShard.get(shard) ?? []), path.join(entry.parentPath, entry.name)])
-        }
-      }
-      return byShard
-    },
-    catch: (cause) =>
-      shellFailure(
-        'shard-incomplete',
-        `Could not list the compare directories: ${String(cause)}`,
-        'Check every compare directory exists and is readable.',
+const shardFilesIn = (
+  dir: string,
+): Effect.Effect<ReadonlyArray<ShardFile>, ShellFailure, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const entries = yield* fs.readDirectory(dir, { recursive: true }).pipe(
+      Effect.mapError((cause) =>
+        ShellFailure.make({
+          schemaVersion: 1,
+          code: 'shard-incomplete',
+          reason: `Could not list the compare directory ${dir}: ${cause.message}`,
+          nextAction: 'Check every compare directory exists and is readable.',
+        })
       ),
+    )
+    return Arr.getSomes(entries.map(shardFileOf(path, dir)))
   })
 
-const readParityLines = (content: string, file: string): Result.Result<readonly ParityLine[], ShellFailure> => {
-  const decoded: ParityLine[] = []
-  for (const raw of content.split('\n')) {
-    if (raw.trim().length === 0) continue
-    const line = decodeParityLine(raw)
-    if (Result.isFailure(line)) {
-      return Result.fail(
-        shellFailure(
-          'decode-failed',
-          `${file} holds a line that is not a parity line`,
-          `Fix or delete the malformed line in ${file}.`,
-        ),
-      )
-    }
-    decoded.push(line.success)
-  }
-  return Result.succeed(decoded)
+const shardIncomplete = (reason: string, shard: number): ShellFailure =>
+  ShellFailure.make({
+    schemaVersion: 1,
+    code: 'shard-incomplete',
+    reason,
+    nextAction:
+      `Rerun the checker-parity (${shard}) leg, or download artifact checker-parity-$GITHUB_RUN_ID-${shard} (file shard-${shard}.ndjson) and pass its directory.`,
+  })
+
+interface ShardLines {
+  readonly shard: number
+  readonly lines: ReadonlyArray<ParityLine>
 }
 
-interface LoadedShards {
-  readonly lines: readonly ParityLine[]
-  readonly projectToShard: ReadonlyMap<string, number>
-}
-
-const loadShards = (dirs: readonly string[], count: number): Effect.Effect<LoadedShards, ShellFailure> =>
+const loadShard = (
+  byShard: Record<string, ReadonlyArray<ShardFile>>,
+  count: number,
+) =>
+(shard: number): Effect.Effect<ShardLines, ShellFailure, FileSystem.FileSystem> =>
   Effect.gen(function*() {
-    const byShard = yield* collectShardFiles(dirs)
-    for (let shard = 1; shard <= count; shard += 1) {
-      const files = byShard.get(shard) ?? []
-      if (files.length !== 1) {
-        return yield* Effect.fail(
-          shellFailure(
-            'shard-incomplete',
-            `Shard ${shard}/${count} contributed ${files.length} shard files, expected exactly one.`,
-            `Download artifact checker-parity-$GITHUB_RUN_ID-${shard} (file shard-${shard}.ndjson) and pass its directory.`,
-          ),
-        )
-      }
-      const file = files[0] ?? ''
-      const content = yield* Effect.tryPromise({
-        try: () => fs.readFile(file, 'utf8'),
-        catch: (cause) =>
-          shellFailure('shard-incomplete', `Could not read ${file}: ${String(cause)}`, `Check ${file} is readable.`),
-      })
-      if (content.trim().length === 0) {
-        return yield* Effect.fail(
-          shellFailure(
-            'shard-incomplete',
-            `Shard ${shard}/${count} wrote an empty ${path.basename(file)}.`,
-            `Rerun the checker-parity (${shard}) leg; read artifact checker-parity-$GITHUB_RUN_ID-${shard}.`,
-          ),
-        )
-      }
-    }
-    const files = [...byShard.entries()].flatMap(([shard, paths]) => paths.map((file) => ({ shard, file })))
-    const contents = yield* Effect.forEach(
-      files,
-      ({ shard, file }) =>
-        Effect.map(
-          Effect.tryPromise({
-            try: () => fs.readFile(file, 'utf8'),
-            catch: (cause) =>
-              shellFailure('decode-failed', `Could not read ${file}: ${String(cause)}`, `Check ${file} is readable.`),
-          }),
-          (content) => ({ shard, file, content }),
-        ),
-      { concurrency: 1 },
-    )
-    const decoded = yield* Effect.fromResult(
-      Result.all(
-        contents.map(({ shard, file, content }) =>
-          Result.map(readParityLines(content, file), (lines) => lines.map((line) => ({ line, shard })))
-        ),
+    const files = Option.getOrElse(Record.get(byShard, String(shard)), Arr.empty)
+    const only = yield* Effect.fromOption(Option.filter(Arr.head(files), () => files.length === 1)).pipe(
+      Effect.mapError(() =>
+        shardIncomplete(`Shard ${shard}/${count} contributed ${files.length} shard files, expected exactly one.`, shard)
       ),
     )
-    const entries = decoded.flat()
-    return {
-      lines: entries.map((entry) => entry.line),
-      projectToShard: new Map(
-        entries.flatMap((entry) => ('project' in entry.line ? [[entry.line.project, entry.shard] as const] : [])),
-      ),
-    }
+    const content = yield* FileSystem.FileSystem.use((fs) => fs.readFileString(only.file)).pipe(
+      Effect.mapError((cause) => shardIncomplete(`Could not read ${only.file}: ${cause.message}`, shard)),
+    )
+    yield* Boolean.match(Str.isNonEmpty(content.trim()), {
+      onTrue: () => Effect.void,
+      onFalse: () => Effect.fail(shardIncomplete(`Shard ${shard}/${count} wrote an empty ${only.file}.`, shard)),
+    })
+    return { shard, lines: yield* decodeLines(content, only.file) }
+  })
+
+const loadShards = (
+  dirs: ReadonlyArray<string>,
+  count: number,
+): Effect.Effect<ReadonlyArray<ShardLines>, ShellFailure, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const files = (yield* Effect.forEach(dirs, shardFilesIn)).flat()
+    const byShard = Arr.groupBy(files, (file) => String(file.shard))
+    const extra = Arr.findFirst(Record.keys(byShard), (key) => Number(key) > count)
+    yield* Option.match(extra, {
+      onNone: () => Effect.void,
+      onSome: (key) =>
+        Effect.fail(shardIncomplete(`A shard file names shard ${key}, beyond --shards ${count}.`, Number(key))),
+    })
+    return yield* Effect.forEach(Arr.range(1, count), loadShard(byShard, count))
   })
 
 const describeViolation = (violation: Violation): string =>
-  S.is(VerdictMismatch)(violation)
-    ? `${violation.code} ${violation.project} ${violation.mutantId} ${violation.fileName}:${violation.line} main=${
-      JSON.stringify(violation.main)
-    } branch=${JSON.stringify(violation.branch)}`
-    : S.is(BootAsymmetry)(violation)
-    ? `${violation.code} ${violation.project} failed on ${violation.failedSide}`
-    : S.is(ZeroSnapshotUpdates)(violation)
-    ? `${violation.code} ${violation.project}`
-    : S.is(TelemetryMissingViolation)(violation)
-    ? `${violation.code} ${violation.side} ${violation.project} expected ${violation.expectedSpans} received ${violation.receivedSpans}`
-    : `${violation.code}`
+  Match.valueTags(violation, {
+    VerdictMismatch: (mismatch) =>
+      `${mismatch.code} ${mismatch.project} ${mismatch.mutantId} ${mismatch.fileName}:${mismatch.line} main=${
+        JSON.stringify(mismatch.main)
+      } branch=${JSON.stringify(mismatch.branch)}`,
+    BootAsymmetry: (asymmetry) => `${asymmetry.code} ${asymmetry.project} failed on ${asymmetry.failedSide}`,
+    ZeroSnapshotUpdates: (zero) => `${zero.code} ${zero.project}`,
+    TelemetryMissingViolation: (missing) =>
+      `${missing.code} ${missing.side} ${missing.project} expected ${missing.expectedSpans} received ${missing.receivedSpans}`,
+    ZeroShortcuts: (zero) => `${zero.code} ${zero.scope}`,
+    SlowerThanMain: (slower) => `${slower.code} branch ${slower.branchMs} ms, main ${slower.mainMs} ms`,
+  })
 
-const projectOf = (violation: Violation): string | undefined =>
-  S.is(VerdictMismatch)(violation) || S.is(BootAsymmetry)(violation) || S.is(ZeroSnapshotUpdates)(violation) ||
-    S.is(TelemetryMissingViolation)(violation)
-    ? violation.project
-    : undefined
+const projectOf = (violation: Violation): Option.Option<string> =>
+  Match.valueTags(violation, {
+    VerdictMismatch: (mismatch) => Option.some(mismatch.project),
+    BootAsymmetry: (asymmetry) => Option.some(asymmetry.project),
+    ZeroSnapshotUpdates: (zero) => Option.some(zero.project),
+    TelemetryMissingViolation: (missing) => Option.some(missing.project),
+    ZeroShortcuts: () => Option.none(),
+    SlowerThanMain: () => Option.none(),
+  })
 
-const annotationOf = (violation: Violation, shard: number | undefined): string => {
-  const runId = process.env['GITHUB_RUN_ID'] ?? '<run-id>'
-  const k = shard ?? '<k>'
-  const location = S.is(VerdictMismatch)(violation) ? ` file=${violation.fileName},line=${violation.line}` : ''
-  const message = `${
+const locationOf = (violation: Violation): string =>
+  Match.valueTags(violation, {
+    VerdictMismatch: (mismatch) => ` file=${mismatch.fileName},line=${mismatch.line}`,
+    BootAsymmetry: () => '',
+    ZeroSnapshotUpdates: () => '',
+    TelemetryMissingViolation: () => '',
+    ZeroShortcuts: () => '',
+    SlowerThanMain: () => '',
+  })
+
+const annotationOf = (
+  environment: CiEnvironment,
+  projectToShard: HashMap.HashMap<string, number>,
+) =>
+(violation: Violation): string => {
+  const shard = Option.getOrElse(
+    Option.map(Option.flatMap(projectOf(violation), (project) => HashMap.get(projectToShard, project)), String),
+    () => '<k>',
+  )
+  return `::error${locationOf(violation)},title=${violation.code}::${
     describeViolation(violation)
-  } Next action: ${violation.nextAction} (artifact checker-parity-${runId}-${k}, file shard-${k}.ndjson)`
-  return `::error${location},title=${violation.code}::${message}`
+  } Next action: ${violation.nextAction} (artifact checker-parity-${environment.runId}-${shard}, file shard-${shard}.ndjson)`
 }
 
-const summaryMarkdown = (decision: typeof ComparisonDecision.Type): string => {
+const ratiosOf = (side: SideTotals): string =>
+  `${side.mutants} mutants, ${side.checkCalls} check calls, ${side.phaseMs} ms, ${
+    side.snapshotUpdatesPerMutant.toFixed(3)
+  } updates/mutant (${side.countsDerived ? 'derived' : 'observed'}), ${
+    side.emitBuildsPerMutant.toFixed(3)
+  } emit builds/mutant`
+
+const violationsOf = (decision: ComparisonDecision): ReadonlyArray<Violation> =>
+  Match.valueTags(decision, { ParityHolds: () => [], ParityBroken: (broken) => broken.violations })
+
+const codesSuffix = (violations: ReadonlyArray<Violation>): string =>
+  Option.match(
+    Arr.match(Arr.dedupe(violations.map((violation) => violation.code)), {
+      onEmpty: Option.none,
+      onNonEmpty: Option.some,
+    }),
+    {
+      onNone: () => '',
+      onSome: (codes) => ` (${codes.join(', ')})`,
+    },
+  )
+
+const summaryMarkdown = (decision: ComparisonDecision): string => {
+  const violations = violationsOf(decision)
   const summary = decision.summary
-  const verdict = S.is(ParityBroken)(decision) ? 'FAIL' : 'pass'
-  const codes = S.is(ParityBroken)(decision) ? [...new Set(decision.violations.map((violation) => violation.code))] : []
-  const ratios = (side: typeof summary.main): string =>
-    `${side.mutants} mutants, ${side.checkCalls} check calls, ${side.phaseMs} ms, ${
-      side.snapshotUpdatesPerMutant.toFixed(3)
-    } updates/mutant (${side.countsDerived ? 'derived' : 'observed'}), ${
-      side.emitBuildsPerMutant.toFixed(3)
-    } emit builds/mutant`
   return [
-    `### checker-parity: ${verdict}`,
+    `### checker-parity: ${S.is(ParityBroken)(decision) ? 'FAIL' : 'pass'}`,
     '',
-    `- violations: ${S.is(ParityBroken)(decision) ? decision.violations.length : 0}${
-      codes.length === 0 ? '' : ` (${codes.join(', ')})`
-    }`,
+    `- violations: ${violations.length}${codesSuffix(violations)}`,
     `- projects: ${summary.measuredProjectCount} measured of ${summary.projectCount}, ${summary.excludedCachedProjectCount} cached-excluded, ${summary.skipped.length} skipped`,
-    `- main: ${ratios(summary.main)}`,
-    `- branch: ${ratios(summary.branch)}`,
+    `- main: ${ratiosOf(summary.main)}`,
+    `- branch: ${ratiosOf(summary.branch)}`,
     `- shortcuts: ${summary.shortcutCount.overall} overall, ${summary.shortcutCount.isolatedDeclarations} on the isolatedDeclarations fixture`,
     '',
   ].join('\n')
 }
 
-const compare = (parsed: ParsedCompare): Effect.Effect<number, ShellFailure> =>
-  Effect.gen(function*() {
-    const loaded = yield* loadShards(parsed.dirs, parsed.shards)
-    const command = CompareSidesCommand.make({
-      lines: [...loaded.lines],
-      gates: parsed.gates,
-      isolatedDeclarationsProject: ISOLATED_DECLARATIONS_PROJECT,
-    })
-    const decision = Result.getOrThrow(compareSides(command))
-    const encoded = yield* Effect.fromResult(
-      Result.mapError(S.encodeResult(S.fromJsonString(ComparisonDecision))(decision), (issue) =>
-        shellFailure(
-          'io-failed',
-          `Could not encode the compare summary: ${issue.message}`,
-          'Inspect the compare decision schema.',
-        )),
-    )
-    yield* Effect.tryPromise({
-      try: () => fs.writeFile(parsed.summary, encoded, 'utf8'),
-      catch: (cause) =>
-        shellFailure(
-          'io-failed',
-          `Could not write ${parsed.summary}: ${String(cause)}`,
-          `Check the directory of ${parsed.summary} is writable.`,
-        ),
-    })
+const projectToShardOf = (shards: ReadonlyArray<ShardLines>): HashMap.HashMap<string, number> =>
+  HashMap.fromIterable(shards.flatMap(({ shard, lines }) => lines.map((line) => [line.project, shard] as const)))
 
-    if (S.is(ParityBroken)(decision)) {
-      for (const violation of decision.displayed) {
-        write(`${describeViolation(violation)} Next action: ${violation.nextAction}\n`)
-        if (process.env[GITHUB_ACTIONS_ENV] === 'true') {
-          const project = projectOf(violation)
-          write(`${annotationOf(violation, project === undefined ? undefined : loaded.projectToShard.get(project))}\n`)
-        }
-      }
-      if (decision.omittedCount > 0) {
-        write(`${decision.omittedCount} more in ${parsed.summary}\n`)
-      }
-    } else {
-      write(`parity holds over ${loaded.lines.length} lines across ${parsed.shards} shards\n`)
-    }
-    yield* appendSummary(summaryMarkdown(decision))
-    return S.is(ParityBroken)(decision) ? 1 : 0
+interface CompareInput {
+  readonly shards: number
+  readonly summary: string
+  readonly shortcutGate: boolean
+  readonly speedGate: boolean
+  readonly dirs: ReadonlyArray<string>
+}
+
+const reportBroken = (
+  broken: ParityBroken,
+  input: CompareInput,
+  environment: CiEnvironment,
+  projectToShard: HashMap.HashMap<string, number>,
+): Effect.Effect<void, ParityViolated> =>
+  Effect.gen(function*() {
+    yield* Effect.forEach(broken.displayed, (violation) =>
+      Console.log(`${describeViolation(violation)} Next action: ${violation.nextAction}`), { discard: true })
+    yield* Effect.forEach(
+      environment.githubActions ? broken.displayed : [],
+      (violation) =>
+        Console.log(annotationOf(environment, projectToShard)(violation)),
+      { discard: true },
+    )
+    yield* Boolean.match(broken.omittedCount > 0, {
+      onTrue: () =>
+        Console.log(`${broken.omittedCount} more in ${input.summary}`),
+      onFalse: () => Effect.void,
+    })
+    return yield* ParityViolated.make({ violations: broken.violations.length })
   })
 
-const program = Effect.gen(function*() {
-  const parsed = parseArgs(process.argv.slice(2))
-  if (Result.isFailure(parsed)) {
-    printFailure(parsed.failure)
-    return 2
-  }
-  const refusal = refusalOutsideCi(parsed.success, process.env)
-  if (refusal !== undefined) {
-    printFailure(refusal)
-    return 2
-  }
-  return parsed.success._tag === 'run'
-    ? yield* runShard(parsed.success.command).pipe(Effect.as(0))
-    : yield* compare(parsed.success)
+const compare = (input: CompareInput): Effect.Effect<void, ShellFailure | ParityViolated, ShellServices> =>
+  Effect.gen(function*() {
+    const environment = yield* ciEnvironment
+    const shards = yield* loadShards(input.dirs, input.shards)
+    const lines = shards.flatMap((shard) => shard.lines)
+    const decision = yield* Effect.fromResult(
+      compareSides(
+        CompareSidesCommand.make({
+          lines: [...lines],
+          gates: { shortcutCount: input.shortcutGate, speed: input.speedGate },
+          isolatedDeclarationsProject: ISOLATED_DECLARATIONS_PROJECT,
+        }),
+      ),
+    )
+    const encoded = yield* Effect.fromResult(encodeDecision(decision)).pipe(
+      Effect.mapError((issue) =>
+        ioFailure(`Could not encode the compare summary: ${issue.message}`, 'Inspect the compare decision schema.')
+      ),
+    )
+    yield* FileSystem.FileSystem.use((fs) => fs.writeFileString(input.summary, encoded)).pipe(
+      Effect.mapError((cause) =>
+        ioFailure(
+          `Could not write ${input.summary}: ${cause.message}`,
+          `Check the directory of ${input.summary} is writable.`,
+        )
+      ),
+    )
+    yield* appendStepSummary(environment, summaryMarkdown(decision))
+    yield* Match.valueTags(decision, {
+      ParityHolds: () => Console.log(`parity holds over ${lines.length} lines across ${input.shards} shards`),
+      ParityBroken: (broken) => reportBroken(broken, input, environment, projectToShardOf(shards)),
+    })
+  })
+
+const refusedOutsideCi = ShellFailure.make({
+  schemaVersion: 1,
+  code: 'refused-outside-ci',
+  reason: 'run instruments and type-checks the corpus with real workers, so it refuses to start outside CI.',
+  nextAction: 'Set CI=true or pass --allow-local when you really mean to run a shard locally.',
 })
 
-const result = await Effect.runPromise(
-  Effect.result(program.pipe(Effect.provide(Engine.nodePlatformLayer))),
-)
-process.exitCode = Result.match(result, {
-  onFailure: (failure) => {
-    printFailure(failure)
-    return 2
-  },
-  onSuccess: (code) => code,
-})
+const runCommand = Command.make('run', {
+  mainWorker: Flag.String('main-worker'),
+  branchWorker: Flag.String('branch-worker'),
+  mainSource: Flag.String('main-source'),
+  branchSource: Flag.String('branch-source'),
+  shard: Flag.String('shard').pipe(Flag.withSchema(Shard)),
+  cache: Flag.String('cache'),
+  out: Flag.String('out'),
+  allowLocal: Flag.Boolean('allow-local').pipe(Flag.withDefault(false)),
+}, (config) =>
+  Effect.gen(function*() {
+    const environment = yield* ciEnvironment
+    yield* Boolean.match(environment.ci || config.allowLocal, {
+      onTrue: () => Effect.void,
+      onFalse: () => Effect.fail(refusedOutsideCi),
+    })
+    yield* runShard(config, environment).pipe(Effect.provide(Engine.nodePlatformLayer))
+  }))
+
+const compareCommand = Command.make('compare', {
+  shards: Flag.Int('shards').pipe(Flag.filter((count) => count >= 1, (count) => `--shards ${count} is not ≥ 1`)),
+  summary: Flag.String('summary'),
+  shortcutGate: Flag.Boolean('shortcut-gate').pipe(Flag.withDefault(false)),
+  speedGate: Flag.Boolean('speed-gate').pipe(Flag.withDefault(false)),
+  dirs: Argument.String('dir').pipe(Argument.variadic({ min: 1 })),
+}, compare)
+
+const cli = Command.make('checker-parity').pipe(Command.withSubcommands([runCommand, compareCommand]))
+
+const printFailure = (failure: ShellFailure): Effect.Effect<void> =>
+  Console.error(`${failure.code}: ${failure.reason}\nnext action: ${failure.nextAction}`)
+
+const usageReasonsOf = (cause: CliError.CliError): ReadonlyArray<string> =>
+  Match.valueTags(cause, {
+    ShowHelp: (help) => help.errors.map((error) => error.message),
+    DuplicateOption: (error) => [error.message],
+    InvalidValue: (error) => [error.message],
+    MissingArgument: (error) => [error.message],
+    MissingOption: (error) => [error.message],
+    UnexpectedArgument: (error) => [error.message],
+    UnknownSubcommand: (error) => [error.message],
+    UnrecognizedOption: (error) => [error.message],
+    UserError: (error) => [error.message],
+  })
+
+const usageOutcome = (cause: CliError.CliError): Effect.Effect<number, ShellFailure> =>
+  Arr.match(usageReasonsOf(cause), {
+    onEmpty: () => Effect.succeed(0),
+    onNonEmpty: (reasons) =>
+      Effect.fail(
+        ShellFailure.make({
+          schemaVersion: 1,
+          code: 'usage-error',
+          reason: reasons.join('; '),
+          nextAction: 'Pass `run` or `compare` with the flags `--help` lists.',
+        }),
+      ),
+  })
+
+const checkerParity = (
+  args: ReadonlyArray<string>,
+): Effect.Effect<number, never, ShellServices | Stdio.Stdio | Terminal.Terminal> =>
+  Command.runWith(cli, { version: VERSION })(args).pipe(
+    Effect.as(0),
+    Effect.catchIf(CliError.isCliError, usageOutcome),
+    Effect.catchTags({
+      ShellFailure: (failure) => Effect.as(printFailure(failure), 2),
+      ParityViolated: () => Effect.succeed(1),
+    }),
+  )
+
+const teardown: Runtime.Teardown = (exit, onExit) =>
+  Exit.match(exit, {
+    onSuccess: (code) => onExit(Predicate.isNumber(code) ? code : 0),
+    onFailure: () => Runtime.defaultTeardown(exit, onExit),
+  })
+
+const program = Effect.flatMap(Stdio.Stdio.use((stdio) => stdio.args), checkerParity)
+
+NodeRuntime.runMain({ disableErrorReporting: true, teardown })(program.pipe(Effect.provide(NodeServices.layer)))

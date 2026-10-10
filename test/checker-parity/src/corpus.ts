@@ -1,90 +1,79 @@
-// R6 corpus discovery: which tsconfigs are projects, and which of a program's files are mutable.
-import { createRequire } from 'node:module'
-import * as path from 'node:path'
+import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import * as HashSet from 'effect/HashSet'
+import * as Option from 'effect/Option'
+import type * as Path from 'effect/Path'
+import * as Str from 'effect/String'
 
-/** The `isolatedDeclarations` fixture, the project the shortcut gate measures on its own. */
 export const ISOLATED_DECLARATIONS_PROJECT = 'test/checker-parity/__fixtures__/isolated-declarations/tsconfig.json'
 
-/** The plugin package whose presence makes an e2e fixture configuration a corpus project. */
 export const CHECKER_PLUGIN = '@systemfsoftware/stryker-js-typescript-checker'
 
 const E2E_CHECKER_CONFIG = /^test\/e2e\/testResources\/[^/]+\/stryker[^/]*\.config\.ts$/u
+const WORKSPACE_TSCONFIG_APP = /(?:^|\/)tsconfig\.app\.json$/u
 const TSCONFIG_FILE = /tsconfigFile\s*:\s*['"`]([^'"`]+)['"`]/gu
 const DECLARATION_FILE = /\.d\.(?:ts|mts|cts)$/u
 
-/** Whether a tracked path is one of the checker-enabled e2e fixture configurations. */
-export const isE2eCheckerConfigPath = (trackedPath: string): boolean => E2E_CHECKER_CONFIG.test(trackedPath)
-
-/** Whether a tracked path is a workspace `tsconfig.app.json`. */
-export const isWorkspaceTsconfigApp = (trackedPath: string): boolean =>
-  trackedPath === 'tsconfig.app.json' || trackedPath.endsWith('/tsconfig.app.json')
-
-/**
- * The corpus sources a `git ls-files` listing names: workspace tsconfigs and the e2e
- * configurations whose text must still be read to find their `tsconfigFile`.
- */
 export interface CorpusEntries {
-  readonly workspaceTsconfigs: readonly string[]
-  readonly e2eConfigs: readonly string[]
+  readonly workspaceTsconfigs: ReadonlyArray<string>
+  readonly e2eConfigs: ReadonlyArray<string>
 }
 
-export const corpusEntries = (tracked: readonly string[]): CorpusEntries => ({
-  workspaceTsconfigs: distinctSorted(tracked.filter(isWorkspaceTsconfigApp)),
-  e2eConfigs: distinctSorted(tracked.filter(isE2eCheckerConfigPath)),
+const distinctSorted = (values: ReadonlyArray<string>): ReadonlyArray<string> => Arr.sort(Arr.dedupe(values), Str.Order)
+
+export const corpusEntries = (tracked: ReadonlyArray<string>): CorpusEntries => ({
+  workspaceTsconfigs: distinctSorted(tracked.filter((file) => WORKSPACE_TSCONFIG_APP.test(file))),
+  e2eConfigs: distinctSorted(tracked.filter((file) => E2E_CHECKER_CONFIG.test(file))),
 })
 
-const distinctSorted = (values: readonly string[]): readonly string[] => [...new Set(values)].sort()
+export interface NamedByConfig {
+  readonly configText: string
+  readonly configDirectory: string
+  readonly path: Path.Path
+}
 
-const joinRepoRelative = (directory: string, value: string): string =>
-  path.isAbsolute(value) ? value : directory.length === 0 ? value : `${directory}/${value}`
+const joinRepoRelative = (input: NamedByConfig, value: string): string =>
+  Boolean.match(input.path.isAbsolute(value), {
+    onTrue: () => value,
+    onFalse: () => [input.configDirectory, value].filter(Str.isNonEmpty).join('/'),
+  })
 
 /**
  * The tsconfigs a fixture configuration names, repo-relative to the configuration's directory.
- *
- * A configuration that does not reference {@link CHECKER_PLUGIN} names nothing: it is not a
- * checker-parity project. A named path is resolved relative to the configuration's directory, so
- * `tsconfig.json` in `test/e2e/testResources/x/stryker.config.ts` reads
- * `test/e2e/testResources/x/tsconfig.json`.
+ * A configuration that does not reference {@link CHECKER_PLUGIN} names nothing.
  */
-export const tsconfigsNamedByConfig = (
-  configText: string,
-  configDirectory: string,
-): readonly string[] =>
-  configText.includes(CHECKER_PLUGIN)
-    ? distinctSorted(
-      [...configText.matchAll(TSCONFIG_FILE)].map((match) => joinRepoRelative(configDirectory, match[1] ?? '')),
-    )
-    : []
+export const tsconfigsNamedByConfig = (input: NamedByConfig): ReadonlyArray<string> =>
+  Boolean.match(input.configText.includes(CHECKER_PLUGIN), {
+    onTrue: () =>
+      distinctSorted(
+        Arr.getSomes(
+          Array.from(input.configText.matchAll(TSCONFIG_FILE), (match) => Option.fromUndefinedOr(match[1])),
+        ).map((named) => joinRepoRelative(input, named)),
+      ),
+    onFalse: Arr.empty,
+  })
 
-/**
- * The program's repo-relative, mutable source files from the TS7 `tsc --listFilesOnly` listing:
- * declaration files, anything under `node_modules`, and anything outside the repository are
- * dropped.
- */
-export const programFilesFromListing = (
-  listing: string,
-  repoRoot: string,
-): readonly string[] => {
-  const absoluteRepo = path.resolve(repoRoot)
-  return listing
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && path.isAbsolute(line))
-    .filter((file) => !DECLARATION_FILE.test(file))
-    .filter((file) => !file.split(/[/\\]/u).includes('node_modules'))
-    .map((file) => path.relative(absoluteRepo, file))
-    .filter((relative) => relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative))
-    .map((relative) => relative.split(path.sep).join('/'))
-    .sort()
+export interface ProgramListing {
+  readonly listing: string
+  readonly repoRoot: string
+  readonly path: Path.Path
 }
 
-/** The `tsc` entry point resolved from the installed `typescript` package.json. */
-export const tscBinPath = (
-  packageJson: { readonly bin?: { readonly tsc?: string | undefined } | undefined },
-  packageJsonPath: string,
-): string => path.resolve(path.dirname(packageJsonPath), packageJson.bin?.tsc ?? 'bin/tsc')
+const insideRepo = (path: Path.Path, relative: string): boolean =>
+  Boolean.every([Str.isNonEmpty(relative), !relative.startsWith('..'), !path.isAbsolute(relative)])
 
-const requireFromHere = createRequire(import.meta.url)
+const underNodeModules = (file: string): boolean =>
+  HashSet.has(HashSet.fromIterable(file.split(/[/\\]/u)), 'node_modules')
 
-/** Absolute path of the installed `typescript` package.json. */
-export const typescriptPackageJsonPath = (): string => requireFromHere.resolve('typescript/package.json')
+export const programFilesFromListing = (input: ProgramListing): ReadonlyArray<string> =>
+  Arr.sort(
+    input.listing
+      .split('\n')
+      .map(Str.trim)
+      .filter((line) => Str.isNonEmpty(line) && input.path.isAbsolute(line))
+      .filter((file) => !DECLARATION_FILE.test(file) && !underNodeModules(file))
+      .map((file) => input.path.relative(input.path.resolve(input.repoRoot), file))
+      .filter((relative) => insideRepo(input.path, relative))
+      .map((relative) => relative.split(input.path.sep).join('/')),
+    Str.Order,
+  )
