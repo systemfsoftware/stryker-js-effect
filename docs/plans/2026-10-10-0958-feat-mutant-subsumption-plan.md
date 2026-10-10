@@ -1,7 +1,7 @@
 ---
 title: Mutant Subsumption and Type-Guided Generation - Plan
 type: feat
-date: 2026-10-09
+date: 2026-10-10
 topic: mutant-subsumption
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
@@ -18,10 +18,10 @@ execution: code
 - **Execution profile:** one `gh stack` on `main` with four PRs: PR-A, PR-B, PR-W, and PR-C, in that order. Each PR is shippable and tested end to end. Local verification is targeted: typecheck and the affected package's tests, at most one build at a time, no e2e, no microVM, no mutation runs. Close every long-lived `tsc`, `--lsp`, or watch process as soon as it is done.
 - **Stop conditions:**
   - PR-W, and PR-C's one-job change to `drop-audit`, edit `.github/workflows/`, which is Read-only for this unit. The root owns and reviews both.
-  - PR-C's checker-side unit (U15) needs a Stream H ruling (Q15). If that ruling is pending when U14 is done, push U14 and stop with U15 unstarted.
+  - PR-C's worker transport (U15) edits Stream H's checker files (Q15), and PR-C's culls are sound only once the root rules on the v1 amendment in Q21. If Q15 is pending when U14 is done, push U14 and stop. If Q21 is pending when U15 is done, push U14 and U15 and stop with U16-U17 unstarted.
   - U11 (S3) is deferred until PR-W's `drop-audit` exists.
 - **Who finishes:** `ce-work` builds PR-A, PR-B, and PR-C; the root reviews and owns PR-W; the supervisor merges every layer.
-- **Open blockers:** Q14 (PR-W bootstrap, the root) and Q15 (checker-side gatherer, Stream H). Q16-Q19 go to the supervisor.
+- **Open blockers:** Q14 (PR-W bootstrap, the root). For PR-C: #277 on `main`, Q15 (worker transport, Stream H), and Q21 (v1 inferred-context amendment, the root). Q16-Q24 go to the supervisor.
 - **Applicable packs** (`.compound-engineering/config.yaml`):
   - cell-architecture: pure-decision-workflows, ports-separate-from-layers, sandwich-phase-order, scoped-lifecycle-boundaries
   - schema-laws: tagged-unions-over-state-by-presence, refusals-beside-generated-laws, arbitrary-filter-floors
@@ -51,7 +51,7 @@ Every "has" cell below was read at `1e1de6d05`. The kill-matrix and Layer 1 figu
 
 ### Summary
 
-Layer 1 replaces main's condition-only relational table with subsumption rules that name a dominator. Each rule states its JavaScript operand precondition and fires only where that precondition holds. A drop stands only while its dominator runs, at plan time and at check time. Layer 2 asks the TS 7 checker, over the unmutated program, whether a constant replacement fits the type its site is checked against. A mutant whose replacement does not fit is Ignored as `type-invalid` before it reaches the checker's compile step or a runner. `stryker audit` checks both layers on the corpus. A Layer 1 drop is checked against main's full kill matrix, and a Layer 2 drop against main's latest mutant statuses.
+Layer 1 replaces main's condition-only relational table with subsumption rules that name a dominator. Each rule states its JavaScript operand precondition and fires only where that precondition holds. A drop stands only while its dominator runs, at plan time and at check time. Layer 2 asks Stream H's TypeQuery v1, over the unmutated program, whether a context-free replacement is assignable to the type its site is checked against. A mutant that v1 answers `NotAssignable` is Ignored with Stream C's `checker` rule before it reaches the checker's compile step or a runner. `stryker audit` checks both layers on the corpus. A Layer 1 drop is checked against main's full kill matrix, and a Layer 2 cull against main's latest mutant statuses.
 
 ### Problem Frame
 
@@ -88,9 +88,27 @@ By first diagnostic code: TS2322 1666, TS2739 597, TS2345 555, TS2375 181, TS233
 - 57 of the BlockStatement cases are accessors and 80 are function bodies.
 - StringLiteral and ArrowFunction cases are spread across call arguments, properties, and initializers.
 
-[INFERENCE] Generic calls exclude many of the ArrowFunction and StringLiteral cases (R34), so ObjectLiteral and BlockStatement carry most of the realistic yield. PR-C's audit reports the measured count.
+**What TypeQuery v1 can decide of the 1170.** Each mutant was routed by its site node's position (TypeScript 5.9 parser over the #406 sources) to the answer v1 gives at that position, as read from v1's code at `92bffa23d` (`type-query.handle.ts:315-470`, `classify-candidate.workflow.ts:25-54`). v1 itself was not run, so the routing is a prediction. Each id was then joined to main's latest Mutation run, #424 ([38034894588](https://github.com/systemfsoftware/stryker-js-effect/actions/runs/38034894588), head `add6faa73`, artifact `mutation-report-424`: 9366 mutants, 4387 CompileError (46.8%), 4156 s of checker time over CompileError):
 
-**A syntactic skip is already refuted.** Stream C's KD3 (`docs/plans/2026-10-09-1850-feat-mutant-quality-plan.md:114` at `575ca03e`) measured, on #416, 778 ArrowFunction mutants on arrows whose explicit return type excludes `void`/`undefined`/`any`/`unknown`/`never`. 648 were CompileError and 120 compiled (99 Killed, 21 Survived). The annotation sat on the arrow that the mutant replaces, so the mutant removed it. Every Layer 2 fact here is read from a type the mutation leaves in place, and the TS checker resolves it.
+| v1 outcome at the site                                                      | ObjectLiteral | ArrowFunction | BlockStatement | StringLiteral | ArrayDeclaration | BooleanLiteral | Total | CompileError on #424 | Checker s on #424 |
+| --------------------------------------------------------------------------- | ------------- | ------------- | -------------- | ------------- | ---------------- | -------------- | ----- | -------------------- | ----------------- |
+| 1. Answered at a declared anchor: argument of a non-generic call            | 169           | 8             | 0              | 15            | 0                | 0              | 192   | 188                  | 166.1             |
+| 2. Answered at a declared anchor: returned expression, declared return type | 48            | 0             | 0              | 26            | 0                | 1              | 75    | 73                   | 56.7              |
+| 3. Answered at a declared anchor: initializer of an annotated declaration   | 30            | 11            | 0              | 26            | 0                | 8              | 75    | 75                   | 58.5              |
+| 4. Answered at a declared anchor: nested in a non-generic call's argument   | 2             | 0             | 0              | 11            | 0                | 0              | 13    | 13                   | 12.4              |
+| 5. Answered from an inferred context (nested in a generic call's argument)  | 5             | 66            | 0              | 2             | 0                | 0              | 73    | 72                   | 57.3              |
+| 6. `Unknown` `overloaded-or-generic-call` (direct argument)                 | 333           | 135           | 0              | 33            | 0                | 9              | 510   | 499                  | 424.8             |
+| 7. `Unknown` `site-not-expression` (emptied function or accessor body)      | 0             | 0             | 139            | 0             | 0                | 0              | 139   | 135                  | 133.1             |
+| 8. `Unknown` `no-contextual-type` (unannotated declaration)                 | 2             | 37            | 0              | 0             | 0                | 0              | 39    | 38                   | 44.5              |
+| 9. `Unknown` `no-contextual-type` (equality operand)                        | 0             | 0             | 0              | 23            | 0                | 4              | 27    | 26                   | 18.2              |
+| 10. `Unknown` `candidate-not-context-free` (`[]`, `["Stryker was here"]`)   | 0             | 0             | 0              | 0             | 27               | 0              | 27    | 27                   | 23.6              |
+| Total                                                                       | 589           | 257           | 139            | 136           | 27               | 22             | 1170  | 1146                 | 995.2             |
+
+Rows 1-4 are what v1 can cull soundly: 349 CompileErrors on #424 and 293.7 s of checker time. Row 5 is what v1 answers today but must not (R34, Q21). Rows 6-10 are what v1 cannot decide. Q20, Q22, and Q23 name the amendment each would need; rows 8 and 10 need none, because `Unknown` is the right answer there. 24 of the 1170 are absent from #424 because their files changed. 315 of the 1170 have their diagnostic after the mutated span in original coordinates, a line shift caused by multi-line replacements; the routing uses the site node, not the diagnostic, so it is unaffected. Rows 1-4 bound the 1170 only: a CompileError outside the 1170 can also be answered `NotAssignable`, and the audit counts it.
+
+**Inferred contexts are a signal-loss hazard, not a missed saving.** On #424, 447 shape mutants that compiled sit at row-5 positions. For two of them the loss is concrete. At `S.Literals(['run', 'merge', …])` (`packages/stryker-js/src/Cli.schema.ts:25`), the `""` mutants `91c88189eda04502` and `73f7ceb08f61bd67` Survived on #424. `S.Literals` is `<const L extends ReadonlyArray<LiteralValue>>(literals: L)` (`effect` 4.0.0, `Schema.d.ts:4003`). A compiler probe of that shape through TypeScript 5.9.3's public `getContextualType` returns `"run"`, the literal inferred from the original element: after checking, the API reads the argument's type from the resolved, instantiated signature ([TypeScript wiki, Reference-Checker-Inference](https://github.com/microsoft/TypeScript/wiki/Reference-Checker-Inference)). v1 checks for a generic callee only when the site is the call's direct argument (`type-query.handle.ts:325-365`). Here the site is an array element, so v1 would answer `NotAssignable` and a surviving mutant would be culled.
+
+**A syntactic skip is already refuted.** Stream C's KD3 (`docs/plans/2026-10-09-1850-feat-mutant-quality-plan.md:114` at `575ca03e`) measured, on #416, 778 ArrowFunction mutants on arrows whose explicit return type excludes `void`/`undefined`/`any`/`unknown`/`never`. 648 were CompileError and 120 compiled (99 Killed, 21 Survived). The annotation sat on the arrow that the mutant replaces, so the mutant removed it. Layer 2 asks v1 for the contextual type at the site on the unmutated program, which the TS checker resolves, and culls nothing from annotation text.
 
 Two findings bound what the Layer 1 rules can do in JavaScript:
 
@@ -107,8 +125,9 @@ Two findings bound what the Layer 1 rules can do in JavaScript:
 - **Empirical subsumption mined from the matrix is not a drop rule**, because a heuristic without a proof is excluded ("Does not count").
 - **Logical-connector (COR) subsumption is out.** The corpus has 15 `LogicalOperator` mutants on 9 sites, and `&&`, `||`, and `??` return non-booleans.
 - **SMT equivalence proving is rejected (root, 2026-10-09).** No `z3-solver` and no `async-mutex`. On the corpus it would prove about 1 mutant (`87ac4fce39ccfec2` in `flooredTimeoutOf`) out of about 70 eligible mutants in 16 functions with only `number`/`boolean` parameters. It would add a 35.8 MB WASM package (35,820,846 bytes unpacked) and one individually maintained transitive dependency (`async-mutex`, maintainer `dirtyhairy`).
-- **Layer 2 is type-guided generation, decided from real checker type facts.** A mutant is dropped only when the TS 7 checker, over the unmutated program, shows that its constant replacement is not assignable to a type the mutation leaves in place. Annotation text, syntax, and mutator name never decide a drop. Governs R32-R39.
-- **Layer 2 reads facts before any mutant is compiled, so dropped mutants cost no compile.** Done is measured by the drop in mutants the checker compiles and in CompileError, with no compiling mutant lost. Governs R37, R40.
+- **Layer 2 is type-guided generation that consumes Stream H's TypeQuery v1 (root ruling, 2026-10-10).** This unit builds no type gatherer. A mutant is culled only when v1, over the unmutated program, answers `NotAssignable` for its replacement at its site. `Assignable`, every `Unknown`, and every refusal keep it. Annotation text, syntax, and mutator name never decide a cull. Governs R32-R39.
+- **v1 as on #277 is unsound inside inferred contexts, so PR-C's culls wait for the root's ruling on Q21.** The corpus witness is `S.Literals` at `Cli.schema.ts:25` (Problem Frame). The fix is a v1 amendment in Stream H's port, not an engine workaround. Governs R34.
+- **Layer 2 asks before any mutant is compiled, so culled mutants cost no compile.** Done is measured by the drop in mutants the checker compiles and in CompileError, with no compiling mutant lost. Governs R37, R40.
 
 Retired with the SMT layer: R13, R19-R30, AE7-AE10, KTD8-KTD12, U3, U7, U8, and U10. U3's compile-parity spec is no longer needed, because R31 re-admits on a dominator CompileError.
 
@@ -133,8 +152,8 @@ Retired with the SMT layer: R13, R19-R30, AE7-AE10, KTD8-KTD12, U3, U7, U8, and 
 
 **Reporting**
 
-- R8. Every Layer 1 drop is Ignored with `redundant-relational`. The redundancy reference's `rule` (`complement`, or `boundary-literal` after U11) tells the rules apart. Layer 2 drops are Ignored with the new id `type-invalid`.
-- R9. The plugin `Mutant`, the NDJSON mutant line, and the incremental record carry a dropped mutant's reference as a typed field: the dominator ids for Layer 1, or the type fact for Layer 2. The merged `mutation.json` follows the external report schema, so it carries the reference in `statusReason`, rendered from the line's typed field. Subsumed and type-invalid records are decided fresh on every run and never served from remembered results, so `Remembered` never replaces them.
+- R8. Every Layer 1 drop is Ignored with `redundant-relational`. The redundancy reference's `rule` (`complement`, or `boundary-literal` after U11) tells the rules apart. Layer 2 culls are Ignored with Stream C's existing `checker` rule id (KTD16).
+- R9. The plugin `Mutant`, the NDJSON mutant line, and the incremental record carry a Layer 1 drop's dominator ids as a typed field. The merged `mutation.json` follows the external report schema, so it carries the reference in `statusReason`, rendered from the line's typed field. Layer 2 culls carry no typed reference: their record is an Ignored `checker` status whose detail names both types, and the audit reads culls as typed data from the cull step (R38). Subsumed records and Layer 2 culls are decided fresh on every run and never served from remembered results, so `Remembered` never replaces them.
 
 **Layer 1 purity and seam**
 
@@ -143,43 +162,25 @@ Retired with the SMT layer: R13, R19-R30, AE7-AE10, KTD8-KTD12, U3, U7, U8, and 
 
 **Layer 2: type-guided generation**
 
-- R32. Type facts come from the TS 7 checker's `Checker` over the unmutated program, through `typescript/unstable/async`. They are read before any mutant is applied: after `init`, or at the start of a batch after `resetMutatedFiles` (`ts-compiler.handle.ts:1654`) and `refreshSnapshot` (`:1656`) have installed the unmutated snapshot, and before the first `applyMutant`. No decision reads annotation text, syntax alone, or the mutator name. Without a checker plugin, no Layer 2 drop happens.
-- R33. The eligible shapes, from the #406 buckets:
-  - `{}` replacing an object literal (ObjectLiteral);
-  - `""` replacing a string literal (StringLiteral);
-  - `() => undefined` replacing an arrow or function expression (ArrowFunction);
-  - `{}` replacing a function, method, or accessor body (BlockStatement).
-
-  `[]`, `["Stryker was here"]`, boolean literals, and method replacements are deferred, because their literal types depend on the contextual type (`[]` becomes an empty tuple against a tuple target).
-- R34. A fact is read only at an anchor: a type that the mutation leaves unchanged and that is not inferred from the mutated expression. The anchors:
-  - (a) the initializer of a variable, property, or parameter-default declaration that has a type annotation;
-  - (b) the returned expression, or the expression body, of a function whose return type is declared, when that function is not the mutated node;
-  - (c) an argument of a call where every call signature of the callee that accepts the call's argument count yields a parameter type at that position;
-  - (d) a property value or parenthesized expression nested inside (a)-(c).
-
-  An anchor type that mentions a type parameter of an enclosing or called signature, directly or through an indexed-access, conditional, or mapped type, is `NoAnchor` for `""`, `() => undefined`, and the emptied body. Under (c), the `{}` shape alone may use such a parameter type, and only when the checker shows that the uninstantiated parameter type has a required property that is declared in it rather than produced by a mapped, conditional, or indexed-access type. Anything else is `NoAnchor`, and the mutant is kept.
-- R35. The facts and what drops:
-  - `{}`: every member of the anchor type (the type itself when it is not a union) is either `undefined`/`null` or an object type that has a required property (`getPropertiesOfType`, optional flag clear) and no index signature (`getIndexInfosOfType`). Any other member, such as `object`, `{}`, a primitive, `any`, or `unknown`, makes the fact `Fits`.
-  - `""`: every member of the anchor type is a string literal type other than `""`, a `number`, `bigint`, `boolean`, or `symbol` type (literal types included), `undefined`, or `null`. Any other member, such as `string`, a template-literal or string-mapping type, any object type (a primitive string can satisfy `{}` or an interface of optional members), `any`, or `unknown`, makes the fact `Fits`.
-  - `() => undefined`: every member of the anchor type is either `undefined`/`null` or a type whose call signatures are non-empty and each return a type to which `getUndefinedType()` is not assignable (`isTypeAssignableTo`). A `void` return accepts `undefined`, so it makes the fact `Fits`, as does any other member.
-  - Emptied body: the function or accessor is not `async` and not a generator, its return type is declared, and `getUndefinedType()` is not assignable to the checker's resolved return type of its signature (`getSignatureFromDeclaration`, `getReturnTypeOfSignature`). A body's own declared return type is an anchor, because the mutation replaces only the body.
-
-  Each fact names the probe, the anchor kind, and the target type text (`typeToString`). Facts are a tagged union: `NotAssignable`, `MissingReturn`, `Fits`, `NoAnchor { reason }`, and `Unavailable { reason }`. Only the first two drop.
-- R36. The decision is one pure Workflow with cyclomatic complexity 1. `NotAssignable` and `MissingReturn` yield Ignored `type-invalid: <probe> does not fit <target> at <anchor>`. Every other fact, a missing fact, and the `'full'` policy keep the mutant.
-- R37. The facts are requested and decided before the mutants are planned for checking, in every path that plans mutants:
+- R32. Type answers come only from Stream H's TypeQuery port, version 1 (`@systemfsoftware/stryker-js-plugin-interface/type-query`: `TypeQueryRequest`, `TypeQueryResponse`, `TypeAnswer`, `TypeQueryRefused`; implementation `TypeQueryLive` in the TS checker; PR #277 at `92bffa23d`). This unit builds no gatherer, reads no checker internals, and decides nothing from annotation text, syntax alone, or the mutator name. Without a checker plugin that serves the query, nothing is culled.
+- R33. Every pending mutant in the requested set is asked, and nothing is pre-filtered: v1's context-free classifier (`classify-candidate.workflow.ts:25-54` at `92bffa23d`) is the single definition of what can be answered. Each original `location` is one `TypeQuerySite`; each mutant is one `TypeQueryCandidate` (`candidateId` is the mutant id, `text` its replacement); `content` is the unmutated file text. One request per project tsconfig carries every file that holds a pending mutant.
+- R34. A cull is sound only where v1's contextual type is not inferred from the site. A `NotAssignable` answer at a site whose contextual type a generic call inferred from that site can cull a mutant that compiles (Problem Frame, `Cli.schema.ts:25`). PR-C ships no cull before the root rules on the v1 amendment in Q21.
+- R35. The cull decision is one pure Workflow with cyclomatic complexity 1. Under the `'default'` policy, a `NotAssignable` answer yields Ignored `checker: type query: <candidateType> is not assignable to <contextualType>`. Every other answer (`Assignable`, any `Unknown`), a `FileRefused` file, a `TypeQueryRefused` request, a missing or duplicated answer, and the `'full'` policy keep the mutant. The next action is the one `checker` documents (`ignore-rule.schema.ts:39`): remove the checker plugin, or change its rule, to keep the mutant; `'full'` keeps it too.
+- R36. The query crosses the worker boundary as an optional `typeQuery` RPC on the checker worker, carrying v1's schemas unchanged; the checker worker provides `TypeQueryLive`. A checker that does not serve it keeps every mutant.
+- R37. The query runs and the cull is decided before the mutants are planned for checking, in every path that plans mutants:
   - the run path, after `acquireCheckers` and before `reuseAndPlan` (`run/mutation-test.cell.ts:91`, `run/deferrable-dry-run.cell.ts:64-65`);
-  - the plan path (`plan-request.cell.ts:201-214`), which already starts a checker pool. It now starts one whenever an eligible candidate exists, so that a shard plan prices a `type-invalid` mutant at 0 like any other Ignored mutant;
+  - the plan path (`plan-request.cell.ts:201-214`), which already starts a checker pool. It now starts one whenever a checker is configured and a pending mutant exists, so that a shard plan prices a culled mutant at 0 like any other Ignored mutant;
   - the audit (R40).
 
-  A dropped mutant is never grouped, compiled, or run.
-- R38. Facts cross the worker boundary as data. A new optional checker capability, `facts(candidates)`, takes each candidate's id, file name, location, and shape, and returns one fact per id. A checker that lacks the capability keeps every mutant. The capability serves R33's shapes only; any alignment with other check-time facts is decided under Q18.
-- R39. A `type-invalid` mutant keeps its id, because the instrumenter still generates it (`mutantIdOf`, `MutantIdentity.ts:20-31`). It is reported, so the audit can join it.
+  A culled mutant is never grouped, compiled, or run. A failed query keeps every mutant and never fails the run.
+- R38. A culled mutant keeps its id, because the instrumenter still generates it (`mutantIdOf`, `MutantIdentity.ts:20-31`). It is reported as Ignored. The audit takes the cull list from the cull step's typed output, never by parsing reason text (CHK1).
+- R39. What v1 answers `Unknown` stays the checker's job. No syntactic or annotation fallback decides it (Stream C KD3). A gap is a v1 amendment question for the root (Q20, Q22, Q23).
 
 **Tests (admitted by the test-layer gate)**
 
 - R12. The Layer 1 rule workflow gets colocated property tests, with the JS engine as the oracle. Over generated operands in each precondition's domain (NaN, `-0`, mixed bigint and number, numeric and non-numeric strings, `null`, `undefined`, and objects with `valueOf` or `Symbol.toPrimitive`), the test evaluates the original, `d`, and `m` and asserts containment. Beside it, a refusal property asserts that a site outside the domain is kept.
 - R41. The re-admission workflow gets property tests through its real decision function, over generated dominator outcome sets.
-- R42. A differential spec pits the gatherer against the real TS 7 checker. For generated fixtures covering each shape × anchor × target-type family, each fixture compiles without errors before mutation. Whenever the gatherer returns `NotAssignable` or `MissingReturn`, compiling the mutated fixture through the real checker yields an error diagnostic of the assignability family listed under Problem Frame (TS2355 included, for an emptied body) that lies inside the mutated range or at its anchor. That makes the drop rule's soundness an executable property of the pinned TypeScript version.
+- R42. The request and cull workflows get colocated property tests through their real decision functions. Over generated responses that hold every answer variant, only `NotAssignable` culls, and only under `'default'`. Every pending mutant is asked exactly once, under the site whose location equals its own.
 
 **No-signal-loss check**
 
@@ -229,8 +230,8 @@ Retired with the SMT layer: R13, R19-R30, AE7-AE10, KTD8-KTD12, U3, U7, U8, and 
   - mutants the checker compiled;
   - executed mutants (Killed + Survived + Timeout + RuntimeError);
   - test executions (Σ `testsCompleted`), read from the incremental records because the merged `mutation.json` lacks it;
-  - Σ checker milliseconds over CompileError mutants (`costs.<id>.actualMs`; a `type-invalid` mutant is never compiled and has no cost entry);
-  - from the audit (not `--counts-only`, which reads only reports): Layer 2 facts per variant (`NotAssignable`, `MissingReturn`, `Fits`, `NoAnchor` by reason, `Unavailable` by reason), so a low N can be traced to the anchors or probes that did not fire, and the time spent gathering facts;
+  - Σ checker milliseconds over CompileError mutants (`costs.<id>.actualMs`; a culled mutant is never compiled and has no cost entry);
+  - from the audit (not `--counts-only`, which reads only reports): Layer 2 answers per variant (`Assignable`, `NotAssignable`, `Unknown` by reason, `FileRefused` by reason), so a low N can be traced to the reasons v1 could not decide, and the time the query took;
   - the list of dropped ids.
 
   The counts ship as a CI artifact that a bench lane can ingest. Publishing them to the lane is a follow-up (Q3).
@@ -238,9 +239,9 @@ Retired with the SMT layer: R13, R19-R30, AE7-AE10, KTD8-KTD12, U3, U7, U8, and 
 ```mermaid
 flowchart TB
   subgraph run [engine run, default policy]
-    I[instrument: Layer 1 drops at plan time] --> F[checker facts R38]
-    F --> T{type-invalid? R36}
-    T -->|yes| X[Ignored type-invalid]
+    I[instrument: Layer 1 drops at plan time] --> F[TypeQuery v1 R33]
+    F --> T{NotAssignable? R35}
+    T -->|yes| X[Ignored checker: type query]
     T -->|no| C[checker compile]
     C -. dominator outcomes .-> RA{re-admission R31}
     RA -->|a dominator runs| S[Ignored redundant-relational]
@@ -264,28 +265,29 @@ flowchart TB
 - AE4. **Covers R4.** `if (x < limit)` keeps `true` and `false`, which main's condition-position table drops today.
 - AE5. **Covers R17.** A drop whose dominator was Killed by test 973 while `m` Survived (the S2 shape at `1e60ed65ae6cd32a`) fails the check, and the failure names both ids.
 - AE6. **Covers R17.** `comparePatternKeysOf(key, current[0]) < 0`: dominator `056ca92f55a9284e` (`<=`) Survived and the dropped `f1f3c32d0a1b980f` (`>=`) was Killed. The pair passes as vacuous, unless some test's only kill was `f1f3c32d0a1b980f`.
-- AE11. **Covers R34, R35, R36.** In `tceFieldOf` (`packages/stryker-js-typescript-checker/src/CheckMutants.schema.ts:10-14`), the `{}` mutant `2e81ec0fd3b2b496` of the `Option.match` options object is Ignored as `type-invalid`. The parameter type declares `onNone` and `onSome` as required. The `{}` mutant `e8aacef871e72071` of `({ tce: present })` (`:13`) is kept, because `{ readonly tce?: TceOutcome }` has no required property. It was Killed in #416.
-- AE12. **Covers R35.** The emptied getter body `a2f15bd57cd23c25` (`get rendered(): string`, `CheckMutants.schema.ts:28`) is Ignored as `type-invalid`, because `undefined` is not assignable to `string`.
-- AE13. **Covers R34.** The arrow `98783bb973358922` at `classify-exit.workflow.ts:53` is an argument whose type comes from inference, so it gets `NoAnchor` and is kept. It stays the checker's job.
-- AE14. **Covers R40.** If the PR's drop list contains `761798af7f12ab38` (`S.Struct({})`'s `{}` at `Checker.schema.ts:10`, Survived on main), the audit fails and names it as a lost compiling mutant.
+- AE11. **Covers R33, R35.** At `onTrue: (): MutatorSelectionRefused['reason'] => 'NotOptInTier'` (`packages/stryker-js/src/decode-mutator-selection.workflow.ts:70`), the `""` mutant `8879a7e25286c657` is culled: the contextual type is the declared literal union, and v1 answers `NotAssignable`. It was CompileError on #424.
+- AE12. **Covers R33, R35.** At `AliasSpecifierCaptured.make({ capture })` (`packages/stryker-js-typescript-checker/src/capture-alias-specifier.workflow.ts:57`), the `{}` mutant `3c2edc30946047e2` is culled: the site is a direct argument of a non-generic `make`, whose parameter requires `capture`. It was CompileError on #424.
+- AE13. **Covers R39.** The `{}` mutant `2e81ec0fd3b2b496` of `tceFieldOf`'s `Option.match` options object (`CheckMutants.schema.ts:11`) gets `Unknown` `overloaded-or-generic-call`, and the emptied getter body `a2f15bd57cd23c25` (`get rendered(): string`, `:28`) gets `Unknown` `site-not-expression`. Both are kept and compiled as today, the second until Q20.
+- AE14. **Covers R34, R40.** At `S.Literals(['run', …])` (`packages/stryker-js/src/Cli.schema.ts:25`), the `""` mutants `91c88189eda04502` and `73f7ceb08f61bd67` Survived on #424. Under v1 as on #277, the audit fails and names both as lost compiling mutants. Once Q21's amendment lands, v1 answers `Unknown` and both are kept.
+- AE15. **Covers R35.** The `""` mutant `bcd46e4a7cf9cc09` of the template literal in `get message(): string` (`packages/stryker-js/src/Checker/Checker.schema.ts:17`) gets `Assignable` and is kept. It Survived on #424.
 
 ### Success Criteria
 
 - On the corpus, S1 drops 76 mutants, and the R16 check on the first kill matrix (available once PR-W lands) reports 0 failures.
-- On the corpus, PR-C's audit reports N > 0 `type-invalid` drops with 0 compiling mutants lost. N is at most the 1170-mutant ceiling measured on #406. The baseline is the R18 count of the last main Mutation run before PR-C's release, which already includes PR-A's R4 repair and S1; #416 (4136 CompileError, 47.9%; 3921 s) is the reference before PR-A. The first main Mutation run after PR-C's release shows CompileError falling by N from that baseline, and checker milliseconds over CompileError falling by the baseline cost of those N mutants.
+- On the corpus, PR-C's audit reports N > 0 culls with 0 compiling mutants lost. Rows 1-4 of the v1 table predict N = 349 within the 1170, out of #424's 4387 CompileError: the CompileError share falls from 46.8% to 43.1%, and checker time over CompileError from 4156 s to about 3862 s (−293.7 s, 7.1%). Q20's amendment would add up to 135 more and 133.1 s. The baseline is the R18 count of the last main Mutation run before PR-C's release; #424 is the reference today. The first main Mutation run after PR-C's release shows CompileError falling by N from that baseline, and checker milliseconds over CompileError falling by the baseline cost of those N mutants.
 - The R18 counts appear as a CI artifact for each before/after pair, and the dropped ids match the R16 drop list.
 
 ### Delivery order
 
 Four stacked PRs. Each is shippable alone and tested end to end. The ruling's PR shape (2026-10-09):
 
-| PR                          | Base       | Units                        | What ships                                                                                        |
-| --------------------------- | ---------- | ---------------------------- | ------------------------------------------------------------------------------------------------- |
-| PR-A Layer 1                | `main`     | U12 (first), U2, U4, U5, U13 | the R4 repair; S1 on by default; the dominator reference on every record; check-time re-admission |
-| PR-B Evidence tooling       | PR-A       | U1, U6                       | the kill-matrix switch; `stryker audit` with the R17 and R40 predicates and the R18 counts        |
-| PR-W Workflow wiring        | PR-B       | U9                           | the kill-matrix workflow, the `drop-audit` job, and the counts step. The root owns and reviews it |
-| PR-C Type-guided generation | PR-W       | U14, U15                     | type facts, `type-invalid`, and the audit's Layer 2 drop list                                     |
-| Follow-up                   | after PR-W | U11                          | S3 under class P, gated by its own `drop-audit` run                                               |
+| PR                          | Base                      | Units                        | What ships                                                                                        |
+| --------------------------- | ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------- |
+| PR-A Layer 1                | `main`                    | U12 (first), U2, U4, U5, U13 | the R4 repair; S1 on by default; the dominator reference on every record; check-time re-admission |
+| PR-B Evidence tooling       | PR-A                      | U1, U6                       | the kill-matrix switch; `stryker audit` with the R17 and R40 predicates and the R18 counts        |
+| PR-W Workflow wiring        | PR-B                      | U9                           | the kill-matrix workflow, the `drop-audit` job, and the counts step. The root owns and reviews it |
+| PR-C Type-guided generation | PR-W, with #277 on `main` | U14, U15, U16, U17, U18      | TypeQuery v1 culls with `checker` reasons; the audit's Layer 2 cull list and R40 check            |
+| Follow-up                   | after PR-W                | U11                          | S3 under class P, gated by its own `drop-audit` run                                               |
 
 ### Verification
 
@@ -295,18 +297,19 @@ Four stacked PRs. Each is shippable alone and tested end to end. The ruling's PR
 
 ### Scope Boundaries
 
-- Deferred: S3 (U11); class-T rules and `.length` in class P (Q5); Layer 2 shapes `[]`, `["Stryker was here"]`, booleans, and method replacements; CompileErrors whose diagnostics land outside the mutated range.
+- Deferred: S3 (U11); class-T rules and `.length` in class P (Q5); Layer 2 sites that v1 answers `Unknown` for (rows 6-10 of the v1 table; Q20, Q22, Q23); CompileErrors whose diagnostics land outside the mutated range.
 - Out: S2 (refuted), COR, the unary-insertion tables, empirically mined subsumption, and SMT equivalence proving (rejected).
 - Out: any decision from annotation text or syntax alone (Stream C KD3).
 - Out: building the bench lane (another stream). Changing `PROJECTS`, `mutate` globs, thresholds, or any other judgment surface (CONST-E9; Q6).
-- Out: building inside Stream H's checker files without a ruling (Q15).
+- Out: a type gatherer of this unit's own (the old U15, dropped by the root on 2026-10-10); engine workarounds for a v1 gap; building inside Stream H's checker files without a ruling (Q15).
 
 ### Dependencies / Assumptions
 
 - Mutant ids join across the `full` and `default` policies and across this unit's PRs, because neither the policy nor the new rules feed `mutantIdOf` (`MutantIdentity.ts:20-31`; per-tuple ordinal at `Transformer.service.ts:137-141`; ids are assigned before the policy runs, `Transformer.service.ts:931`).
 - A kill-matrix run costs about one nightly run: #416's Killed mutants completed 8205 tests out of 9028 covering tests.
 - Corpus behavior changes only after a release, because the Mutation lane runs the released CLI (Dogfood). The audit is the exception: it runs the PR's workspace build on every PR.
-- [INFERENCE] A fact query is a few JSON-RPC round-trips on an already-built snapshot, which is cheaper than the snapshot refresh plus diagnostics pass the checker spends on each mutant. U14 reports the fact-gathering time in the R18 counts so the claim is measured.
+- [INFERENCE] One v1 query over the corpus costs about 10-15 s. #277's KTD11 measured 193-261 ms per project open, 5.7-9.5 ms per file probe update, and about 30 ms per 60-line file; #424's corpus is 4 projects, 162 files, 16,967 lines, and 8454 sites. R18 reports the measured time.
+- [INFERENCE] `Mutant.location` uses the line and column convention that v1's `Location` reads (`offsetAt(lineStarts, …)`, `type-query.handle.ts:413-415`). If it does not, U16's first scenario fails with `site-not-found` answers.
 
 ### Outstanding Questions
 
@@ -316,7 +319,7 @@ Four stacked PRs. Each is shippable alone and tested end to end. The ruling's PR
 - Q2. Moot: SMT is rejected, so neither `z3-solver` nor `async-mutex` is added.
 - Q3. No bench lane exists on main. R18 counts ship as a CI artifact that a bench lane can ingest. Publishing them to the lane is a follow-up through the supervisor.
 - Q4. The R4 repair is in scope and breaking. It lands first in PR-A, and the PR body flags it for Stream C.
-- Q5. Class T waits for a checker fact seam. U15's gatherer is that seam; class T stays deferred.
+- Q5. Class T waits for a checker fact seam. v1 answers assignability only, and a receiver-kind fact would be a v1 amendment (Q18). Class T stays deferred.
 - Q6. `PROJECTS` stays unchanged. Adding the instrumenter to the corpus is a follow-up for the root.
 - Q7. Both: a typed reference on repo-owned records plus the `statusReason` detail (KTD5), added without waiting for Stream C R6/R7.
 - Q10, Q11. Overruled and resolved. This unit builds generic check-time re-admission in PR-A (R31, U13). It does not wait for Stream C.
@@ -326,11 +329,16 @@ Four stacked PRs. Each is shippable alone and tested end to end. The ruling's PR
 ### Open questions for the supervisor
 
 - Q14 (the root). **PR-W bootstrap.** The `drop-audit` job needs one kill-matrix artifact, and a new workflow file cannot be dispatched until it exists on `main`. So on PR-W's own head the job can only fail with `NoMatrix`. Option (a): the root lands `kill-matrix.yml` on `main` alone first, dispatches it once, and PR-W then carries only the `drop-audit` job and the counts step, green on its head. Option (b): PR-W merges with `drop-audit` red as `NoMatrix`, not yet required, and the first green run is cited on PR-C. Recommended: (a), because every PR in the stack then meets "green on its head". A drop audit that passes without a matrix would be vacuous, so it does not pass.
-- Q15 (Stream H). **The checker-side gatherer.** U15 adds a `type-facts` module beside `ts-compiler.handle.ts`, reads `CompilerState.api`/`snapshot` (`:120-130`), and serves the `facts` capability (`CheckerRuntime.service.ts`, `CheckerWorker.service.ts`). All of these are Stream H's files. Option (a): this unit writes U15 under Stream H's review. Option (b): Stream H builds the gatherer to R34, R35, and R38's fact contract, and this unit supplies U14 and the R42 spec. U14 needs neither.
-- Q16. **"Never generated."** The instrumenter still produces a `type-invalid` mutant: it gets an id and a place in the mutant switch, and the report lists it as Ignored. It is never compiled, tested, or counted as CompileError. Keeping the record gives the audit an id to join (R39). Dropping it before placement would need type facts before instrumentation, so the checker would have to start before `instrumentCell` (`run/run-stages.cell.ts:18-35`), and the audit would lose its id. Is an Ignored `type-invalid` record acceptable as "not generated"?
-- Q17. **The audit starts the checker.** For Layer 2 drops, `stryker audit` asks the checker for facts over the unmutated corpus programs. That type-checks the original program and compiles no mutant. Please confirm that this stays within Q12.
-- Q18. **Alignment with Stream C U9.** Stream C U9 reads a receiver kind in `ts-compiler.handle.ts` during `check`. This plan proposes one gatherer module and one `TypeFact` union that both use: U9 calls the gatherer at check time, and Layer 2 calls it through `facts`. Whichever of U9 and U15 lands second adapts to the first. Neither depends on the other.
+- Q15 (Stream H). **The TypeQuery worker transport.** U15 adds a `typeQuery` RPC to the checker group (`PluginRpcs.service.ts`, `Checker.service.ts`) and serves it from the TS checker worker by providing `TypeQueryLive` (`CheckerWorker.service.ts`, `CheckerRuntime.service.ts`). The worker files are Stream H's. The query server is a second tsgo process inside the checker worker, opened on the first query and closed with the worker's scope. Option (a): this unit writes U15 under Stream H's review. Option (b): Stream H adds the RPC, and this unit consumes it. U14 needs neither.
+- Q16. **"Never generated."** The instrumenter still produces a culled mutant: it gets an id and a place in the mutant switch, and the report lists it as Ignored. It is never compiled, tested, or counted as CompileError. Keeping the record gives the audit an id to join (R38). Dropping it before placement would need answers before instrumentation, so the checker would have to start before `instrumentCell` (`run/run-stages.cell.ts:18-35`), and the audit would lose its id. Is an Ignored `checker` record acceptable as "not generated"?
+- Q17. **The audit starts the checker.** For Layer 2 culls, `stryker audit` asks v1 over the unmutated corpus programs. That type-checks the original program and compiles no mutant. Please confirm that this stays within Q12.
+- Q18 (the root). **The shared fact union.** None exists. `origin/main` (`add6faa73`) and every open PR define no shared type or receiver fact union in `stryker-js-plugin-interface`. #277's `SiteFacts`, `CallFacts`, and `CandidateFacts` are internal to the checker (`CheckerCommands.schema.ts:93-139` on #277), and Stream C's U9 has neither a branch nor a PR. PR-C defines no fact union: it consumes `TypeAnswer` from `TypeQuery.schema.ts`. Proposal: Stream C U9's receiver kind lands as a v1 amendment in that same `TypeQuery.schema.ts`, so that one schema stays the only definition.
 - Q19. **Shard co-location.** U13 places each subsumed mutant in the same shard as its dominators (`plan-shards.workflow.ts`). Stream C U7 adds guard-group placement to the same workflow. Whichever lands second merges both constraints into one grouping key.
+- Q20 (the root). **v1 amendment A1: emptied bodies** (row 7: 139 mutants, 135 CompileError, 133.1 s). v1 refuses a `Block` site as `site-not-expression`, and a `{}` candidate reads as an object literal. Of the 139, 58 are accessors (TS2355, TS2378), 71 are functions with a declared return type (TS2355), and 10 rely on a contextual signature. Fields needed: `TypeQuerySite.kind: 'expression' | 'function-body'` on the request. For a `function-body` site, `SiteAnswer.contextualType` is the declared return type (the declared type for an accessor; the awaited type for an `async` function), and the `{}` candidate is answered as the assignability of `undefined` to it. New `UnknownReason` values: `'return-type-not-declared'` and `'generator-body'`.
+- Q21 (the root; blocks PR-C's culls). **v1 amendment A3: inferred contexts** (row 5: 73 mutants, 72 CompileError, 57.3 s, plus 447 mutants on #424 that compiled at the same positions). Field needed: a new `UnknownReason` value, `'inferred-context'`. v1 answers it when the walk from the site reaches an argument of a call whose callee has any signature with type parameters. The walk follows the nodes the contextual type flows through: array elements, property values, parentheses, conditional branches, and the return expression of an arrow without a declared return type. It stops at a declared anchor: an annotation, a declared return type, or a non-generic call's parameter. `CallFacts` already computes `declaredGeneric` for the direct parent (`type-query.handle.ts:340-365`); the amendment applies it along that walk. Witness: AE14. This also answers #277's OQ-P9 for Stream I: line-and-column `Location` and one tsconfig per request are confirmed, and per-candidate types in `Unknown` answers are not needed.
+- Q22 (the root). **v1 amendment A2: equality operands** (row 9: 27 mutants, 26 CompileError, 18.2 s; TS2367). Fields needed: for an operand of `===`, `!==`, `==`, or `!=`, the other operand's type as `contextualType`, and a comparability answer in place of assignability. [INFERENCE] `typescript/unstable/async` 7.0.2 was not checked for a comparability method. Recommended: no amendment, given the yield.
+- Q23 (the root). **Generic and overloaded direct arguments** (row 6: 510 mutants, 499 CompileError, 424.8 s). No field closes this. Deciding a candidate there needs the call re-resolved with the candidate in place, which is the in-place probe that #277's OQ-P10 lists as its alternative. Recommended: no amendment; the checker keeps compiling them.
+- Q24 (Stream G). **The bench-lane field.** #274's lane has the `check` row (`PhaseDurations.check`, `CheckDuration` `measured { ms }`) but no CompileError count. U18 adds `SideCounts.compileErrors` if #274 is on `main` when PR-C starts; otherwise U18 moves to a follow-up. The lane's checker corpus mutates only `classify-tce.workflow.ts`, where v1 can cull 2 of the 1170 (`812c4f64f7559d6f`, `e004b1e2727e1383`), so the expected `check` verdict there is `no-signal`. The corpus-wide claim rests on the audit's counts.
 
 ### Sources / Research
 
@@ -367,12 +375,12 @@ Four stacked PRs. Each is shippable alone and tested end to end. The ruling's PR
 
 - KTD3. **Plan-time re-admission runs inside `plan-mutants.workflow.ts`.** Directive, excluded-mutator, ignorer, and the remaining policy reasons are decided first (`:156-197`). The subsumption workflow then sees each candidate's static status and names only dominators that are statically kept. Arid reasons apply to the whole frame (`Transformer.service.ts:920`), so they ignore `d` and `m` together. Governs R5.
 - KTD4. **Class P is syntactic and conservative.** An operand passes when it is one of: a literal; `void 0`; a parameter of the enclosing function; a `const` declared in the same function body, with no function boundary between it and the site, by a statement that ends before the site; or `typeof` applied to such an identifier. Anything else, including `.length`, needs type facts. Requiring an earlier declaration with no function boundary in between rules out TDZ reads, which the R12 oracle cannot generate. Governs R2 (U11).
-- KTD5. **The drop reference is a tagged union:** `Subsumed { rule, dominators }`, where `dominators` is a non-empty list of mutant ids whose first entry runs, or `TypeInvalid { probe, anchor, target }`. Each record type carries it in its own style:
+- KTD5. **The drop reference is a tagged union:** `Subsumed { rule, dominators }`, where `dominators` is a non-empty list of mutant ids whose first entry runs. (PR-A shipped it on `main` as `Mutant.subsumption`, with `Readmitted` as its second variant.) Layer 2 adds no variant (R9, KTD16). Each record type carries it in its own style:
   - **Plugin `Mutant`:** optional, refused unless the status is Ignored. This follows the `statusReason` check at `Mutant.schema.ts:80-85`.
   - **NDJSON mutant line:** `NullOr`, matching `cost` (`run-event.schema.ts:115,130`).
   - **Incremental record:** optional.
 
-  The `statusReason` detail names the first dominator id, or the probe and target. Governs R9.
+  The `statusReason` detail names the first dominator id. Governs R9.
 - KTD6. **One `stryker audit` subcommand produces the drop list and evaluates the predicates.** The only path that instruments without running tests is the engine's `planInstrumentCell` (`plan-request.cell.ts:233-235`), and a Deno script would need a second instrument path that resolves the oxc WASM and the npm graph. So the "script" becomes a sibling of `gate` (`bin/cli-command.ts:687-698`). The predicates are pure workflows. Governs R16, R17, R18, R40.
 - KTD7. **The kill matrix comes from an environment switch in `sharedConfig` plus the merged incremental reports.** `mutantSetPolicy` has no CLI flag (`stryker-options.schema.ts:154`), and shard children receive a fixed argument list (`shard/shard-run.ts:34-44`), so only config reaches every child. No corpus config sets `mutator` or `disableBail`, and all four spread `sharedConfig`. The merged `mutation.json` strips `killedBy`, `coveredBy`, and `testsCompleted` (`report-from-stream.workflow.ts:39-58`). The merged incremental reports keep them (`IncrementalReport.schema.ts:8-22`), and those reports are the matrix. Governs R14, R15.
 - KTD13. **Re-admission is an engine step that holds subsumed mutants until their dominators settle.** Today an Ignored mutant from the instrumenter becomes an early result (`run/mutation-test-plan.cell.ts:142-148,227-228`), and early results are announced before any check (`run/mutant-settlement.ts:207-214`). A check-time ignore arrives later, through `settleIgnored` (`:235-239`). So:
@@ -382,9 +390,9 @@ Four stacked PRs. Each is shippable alone and tested end to end. The ruling's PR
   4. Without a checker plugin, every dominator's outcome is known at plan time, so the step decides at once.
 
   A shard run sees its dominators' verdicts only if they run in the same process, so the shard plan places each subsumed mutant with its first dominator (Q19). S1 and S3 each name exactly one dominator, so co-locating the first one makes every outcome the step needs local. A placement group is placed as one item and never raises the shard count above `maxShards`. Subsumed records are never served from remembered results (R9), so a remembered drop cannot outlive a dominator that has stopped running. Governs R5, R31.
-- KTD14. **Layer 2 facts are gathered in the checker; the decision runs in the engine.** Only the checker holds a type checker (`ts-compiler.handle.ts:120-130`), and the engine is where every plan path converges (R37). The checker exposes facts as data through a new optional `facts` capability on `CheckerService` and a `facts` RPC (`packages/stryker-js-plugin-interface/src/Checker.service.ts:8-17`, `PluginRpcs.service.ts:59-74`). The decision workflow lives in the engine. This keeps the fact contract serializable for Stream F. It also keeps checker-specific code inside the checker. Rejected: deciding inside `check`, the Stream C U9 pattern. The audit would then have to run `check`, which compiles mutants, to learn the drop list, and the plan path would price `type-invalid` mutants as compiled. Governs R32, R37, R38.
-- KTD15. **Each fact is read on the unmutated program, at an anchor the mutation leaves in place.** That is what separates this from Stream C's refuted KD3. A mutant replaces only its own range, so any type outside that range is identical in the mutated program, unless TS infers it from the replaced range. R34's anchor list excludes exactly those inferred types. Each probe is the narrowest type TypeScript gives that replacement: the fresh `""` literal, the empty object literal, and an arrow whose return type is `undefined`. So when the probe is not assignable at the anchor, TypeScript reports an assignability error there in the mutated program. R42 makes that argument executable against the pinned compiler. Governs R34, R35.
-- KTD16. **The new rule id is `type-invalid`.** It joins `RULE_IDS` (`ignore-rule.schema.ts:6-19`) in U14, the layer that first emits it. The SOTA plan's `type-invalid-return` and `type-invalid-object` were never added. One id with the probe in its detail covers all four shapes. Governs R8, R36.
+- KTD14. **Layer 2 asks Stream H's TypeQuery v1 through the checker worker, and the decision runs in the engine.** v1 is a plain `Context.Service` implemented by `TypeQueryLive` in the checker package, and no engine path calls it today (#277 at `92bffa23d`). An optional `typeQuery` RPC on the checker worker carries v1's schemas unchanged. The engine is where every plan path converges (R37), so the decision workflow lives there. Rejected: providing `TypeQueryLive` in the engine process, which would make the engine depend on a checker package and spawn tsgo outside the plugin worker that PLUG-1 isolates. Rejected: deciding inside `check`, because the audit would then have to run `check`, which compiles mutants, to learn the cull list. Governs R32, R36, R37.
+- KTD15. **Only `NotAssignable` culls, and only where the contextual type is not inferred from the site.** v1 types the context-free candidate (the fresh `""` literal, `{}`, `() => undefined`) and checks it against the site's contextual type on the unmutated program. A mutant replaces only its own range, so a contextual type that comes from a declared anchor is identical in the mutated program, and the same assignability error appears there. A contextual type inferred from the replaced range is not identical (AE14), so Q21 gates it. The audit's R40 check against main is the corpus-level proof. Governs R34, R35.
+- KTD16. **Layer 2 reuses Stream C's `checker` rule id and mints none.** Stream C's KD3 dropped `type-invalid-return` and `type-invalid-object` (`docs/plans/2026-10-09-1850-feat-mutant-quality-plan.md:42,114`), and `checker` already reads "A checker plugin from `checkers` ignored it" (`ignore-rule.schema.ts:39`). The detail `type query: <candidateType> is not assignable to <contextualType>` names both types. No consumer parses it: the audit takes the cull list as typed data (R38). Governs R8, R35.
 
 ### High-Level Technical Design
 
@@ -396,8 +404,8 @@ flowchart TB
   S --> L1{subsumption workflow}
   L1 -->|complement, dominator statically kept| H[held: Subsumed]
   L1 -->|otherwise| K[pending]
-  K --> F{facts: NotAssignable or MissingReturn?}
-  F -->|yes| TI[Ignored type-invalid]
+  K --> F{TypeQuery v1: NotAssignable?}
+  F -->|yes| TI[Ignored checker: type query]
   F -->|no| CK[checker compile and verdict]
   CK --> RN[dry run, runner]
   CK -. dominator outcomes .-> RA{re-admission workflow}
@@ -424,38 +432,44 @@ flowchart TB
     U9[U9 CI wiring]
   end
   subgraph C [PR-C]
-    U14[U14 fact contract, decision, engine wiring]
-    U15[U15 checker gatherer, Q15]
+    U14[U14 request and cull workflows]
+    U15[U15 TypeQuery over the checker worker, Q15]
+    U16[U16 cull step in every plan path, Q21]
+    U17[U17 audit cull list and R40]
+    U18[U18 bench-lane CompileError count, Q24]
   end
   U5 --> U6
   U1 --> U9
   U6 --> U9
-  U9 --> U14
-  U14 --> U15
+  U14 --> U16
+  U15 --> U16
+  U16 --> U17
+  U6 --> U17
+  U9 --> U17
   U9 --> U11[U11 S3, deferred]
 ```
 
 ### Assumptions
 
 - [INFERENCE] The merged incremental reports of a kill-matrix run carry every killer for each mutant. The vitest runner reports all killers under `disableBail` (`interpret-vitest-mutant-run.workflow.ts:94-110`), and `shard/incremental-union.ts` keeps arbitrary fields. U9's first artifact confirms this when it shows `killedBy` lengths above 1.
-- [INFERENCE] The TS 7 `TypeObject` and symbol responses expose what R35 needs: literal values, the optional flag on property symbols, and whether a property is declared or produced by a mapped type. If any of these is missing from `typescript` 7.0.2, R34 and R35 narrow to the facts that are available, the mutants they cannot decide are kept, and the gap goes to Stream H (Q15).
+- [INFERENCE] TypeScript 7.0.2's `getContextualType`, which v1 calls (`type-query.handle.ts:378`), returns the inferred literal inside a `const` generic call's argument, as TypeScript 5.9.3 does in the probe behind AE14. U16's third scenario runs that shape through the real checker.
 
 ### Risks
 
-| Risk                                                                                                                                                                                                                                                       | Mitigation                                                                                                                                                                                                |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Stream C edits the same files: `ignore-rule.schema.ts`, `mutant-set-policy.workflow.ts`, `Transformer.service.ts`, `Mutator.service.ts`, `run-event.schema.ts`, `incremental-reuse.cell.ts`, `IncrementalReport.schema.ts`, and `plan-shards.workflow.ts`. | Additive fields only; merge `main` upward; the supervisor sequences overlapping layers (Q13, Q19). PR-A's body names every file it shares with Stream C.                                                  |
-| No CI mutation run covers the new instrumenter code (`PROJECTS` excludes it, Q6; CONST-T3).                                                                                                                                                                | Property tests with a JS-engine oracle (U2) and integration tests (U4, U12); corpus inclusion is a follow-up for the root.                                                                                |
-| A gatherer bug drops a mutant that compiles.                                                                                                                                                                                                               | R42's differential spec runs on every PR against the real checker; R40 checks every corpus drop against main; a fact the gatherer cannot classify is `NoAnchor` or `Unavailable`, and the mutant is kept. |
-| A `typescript` minor update changes assignability or a fact's shape.                                                                                                                                                                                       | `typescript` is a catalog pin. R42 runs against the installed version, so an update that breaks a fact fails `pnpm test` (pin-dependency-semantics).                                                      |
-| Fact gathering costs more than the compiles it saves.                                                                                                                                                                                                      | R18 reports fact time beside checker time. If gathering costs more on the corpus, PR-C does not meet its Done, and the measurement goes to the supervisor.                                                |
-| Holding subsumed mutants until the check stream drains delays their settlement.                                                                                                                                                                            | They cost nothing to settle. Progress totals already count them as planned (`mutant-settlement.ts:158`).                                                                                                  |
-| Matrix ids fail to join PR drop ids when the PR edits corpus sources.                                                                                                                                                                                      | The audit lists unjoinable ids. A rule with drops but no joined pair fails as `Unattested` (R16), so a vacuous audit cannot pass.                                                                         |
+| Risk                                                                                                                                                                                                                                                       | Mitigation                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stream C edits the same files: `ignore-rule.schema.ts`, `mutant-set-policy.workflow.ts`, `Transformer.service.ts`, `Mutator.service.ts`, `run-event.schema.ts`, `incremental-reuse.cell.ts`, `IncrementalReport.schema.ts`, and `plan-shards.workflow.ts`. | Additive fields only; merge `main` upward; the supervisor sequences overlapping layers (Q13, Q19). PR-A's body names every file it shares with Stream C.                                             |
+| No CI mutation run covers the new instrumenter code (`PROJECTS` excludes it, Q6; CONST-T3).                                                                                                                                                                | Property tests with a JS-engine oracle (U2) and integration tests (U4, U12); corpus inclusion is a follow-up for the root.                                                                           |
+| v1 answers `NotAssignable` for a mutant that compiles.                                                                                                                                                                                                     | R40 checks every corpus cull against main on every PR. The inferred-context case has a corpus witness (AE14) and blocks PR-C's culls until Q21 is ruled.                                             |
+| A `typescript` update changes assignability.                                                                                                                                                                                                               | `typescript` is a catalog pin. #277's `type-query-pins.integration.test.ts` pins v1's answers on the installed version, and R40 re-checks the corpus on every PR (pin-dependency-semantics).         |
+| The query costs more than the compiles it saves.                                                                                                                                                                                                           | R18 reports the query time beside checker time: an estimated 10-15 s against 293.7 s saved. If it costs more on the corpus, PR-C does not meet its Done, and the measurement goes to the supervisor. |
+| Holding subsumed mutants until the check stream drains delays their settlement.                                                                                                                                                                            | They cost nothing to settle. Progress totals already count them as planned (`mutant-settlement.ts:158`).                                                                                             |
+| Matrix ids fail to join PR drop ids when the PR edits corpus sources.                                                                                                                                                                                      | The audit lists unjoinable ids. A rule with drops but no joined pair fails as `Unattested` (R16), so a vacuous audit cannot pass.                                                                    |
 
 ### Deferred to Follow-Up Work
 
 - S3 (U11), after PR-W. Class-T rules and `.length` in class P (Q5).
-- Layer 2 shapes `[]`, `["Stryker was here"]`, booleans, and method replacements, once the contextual-literal probes are designed.
+- Layer 2 sites that v1 answers `Unknown` for: emptied bodies (Q20), equality operands (Q22), generic and overloaded call arguments (Q23), and non-context-free candidates (`[]`, `["Stryker was here"]`). Each waits for a root ruling on a v1 amendment.
 - Publishing R18 counts to a bench lane (Q3). Adding the instrumenter to `PROJECTS` (Q6).
 
 ---
@@ -533,7 +547,7 @@ Units are grouped by PR. Within a PR, the order shown is the commit order. Mutan
 - **Requirements:** R9; KTD5.
 - **Dependencies:** U4.
 - **Files:**
-  - `packages/stryker-js-plugin-interface/src/Mutant.schema.ts`: the union (`Subsumed` only; U14 adds `TypeInvalid`) and the field.
+  - `packages/stryker-js-plugin-interface/src/Mutant.schema.ts`: the union (`Subsumed` only; Layer 2 adds no variant, R9) and the field.
   - `packages/stryker-js-cli-contract/src/run-event.schema.ts` (`:105-164`), `stream-version.schema.ts`, and the regenerated stream contract JSON.
   - `packages/stryker-js/src/run/mutant-run.ts` (`:93-104`), `IncrementalReport.schema.ts` (`:8-22`), and `run/incremental-reuse.cell.ts` (`:414-422`): a record carrying a drop reference is never remembered.
   - `packages/stryker-js-instrumenter/src/plan-mutants.workflow.ts`, which sets the field.
@@ -601,10 +615,10 @@ Units are grouped by PR. Within a PR, the order shown is the commit order. Mutan
   - New `packages/stryker-js/src/audit-request.cell.ts`.
   - `packages/stryker-js/src/Cli.schema.ts`, `route-cli-request.workflow.ts` (and its exhaustive tag maps), and `bin/cli-command.ts`.
   - New `packages/stryker-js/tests/audit.integration.test.ts`, the api report, and a changeset (`minor`, `@systemfsoftware/stryker-js`).
-- **Approach:** `stryker audit --matrix <dir> --out <file> [--counts-only]`. U14 adds `--statuses <dir>`.
-  - **Drop list:** for each project, the cell runs `prepareStageCell` and `planInstrumentCell` as `plan-request.cell.ts:233-235` does, under the project's default-policy config. It collects every mutant that carries a drop reference. U14 adds the fact step to this path.
+- **Approach:** `stryker audit --matrix <dir> --out <file> [--counts-only]`. U17 adds `--statuses <dir>`.
+  - **Drop list:** for each project, the cell runs `prepareStageCell` and `planInstrumentCell` as `plan-request.cell.ts:233-235` does, under the project's default-policy config. It collects every mutant that carries a drop reference. U17 adds U16's cull step to this path.
   - **Inputs:** `--matrix` reads `<dir>/<project>/stryker-incremental.json` from a kill-matrix artifact.
-  - **Predicates:** one pure workflow returns a tagged verdict per drop (`Pass`, `Vacuous`, `AttributionUnverified`, `Fail { reason }`), a per-rule `Unattested` verdict, counts per rule and verdict, orphaned tests (R17's global clause), and unjoinable ids. U14 adds the R40 branch, keyed on the `TypeInvalid` reference, with its `NotCompiledOnMain` verdict.
+  - **Predicates:** one pure workflow returns a tagged verdict per drop (`Pass`, `Vacuous`, `AttributionUnverified`, `Fail { reason }`), a per-rule `Unattested` verdict, counts per rule and verdict, orphaned tests (R17's global clause), and unjoinable ids. U17 adds the R40 branch, keyed on the cull step's typed output (R38), with its `NotCompiledOnMain` verdict.
   - **Counts:** a second pure workflow reduces a set of incremental reports to the R18 counts. `--counts-only` runs only that reducer and needs no instrumentation.
   - **Exit code:** non-zero if any drop fails, any rule is `Unattested`, or any test is orphaned. An unjoinable id alone never fails the audit.
 - **Patterns:** the `gate` subcommand route (`Cli.schema.ts:83`, `cli-command.ts`); `docs/solutions/workflow-issues/mutation-lane-green-while-every-job-failed.md` (the verdict comes from a finished JSON, with no `continue-on-error`); the packs pure-decision-workflows, arbitrary-filter-floors.
@@ -653,72 +667,120 @@ Units are grouped by PR. Within a PR, the order shown is the commit order. Mutan
 - `drop-audit` on PR-W's head reports the 76 S1 pairs joined, 0 failures, 0 orphaned tests, and no `Unattested` rule, cited by run id (under Q14 option (a)).
 - The counts step's artifact is cited from the first Mutation run that carries it.
 
-### PR-C: Type-guided generation (base PR-W)
+### PR-C: Type-guided generation (base PR-W, with #277 on `main`)
 
-#### U14. Fact contract, `type-invalid` decision, and engine wiring
+PR-C starts only when #277 is on `main`. It builds no gatherer and edits no v1 schema: a gap in v1 is a question for the root (Q20-Q23), not a field this PR adds.
 
-- **Goal:** with a checker that serves facts, every plan path Ignores the mutants whose facts are `NotAssignable` or `MissingReturn` as `type-invalid` before they are planned for checking, and the audit lists them. A checker without the capability changes nothing.
-- **Requirements:** R7, R8, R33-R40; AE11-AE14 (AE11-AE13 through U15's real checker).
-- **Dependencies:** U5, U6, U9.
+#### U14. Request and cull workflows
+
+- **Goal:** two pure workflows turn pending mutants into v1 requests and v1 responses into cull decisions. No I/O, no checker.
+- **Requirements:** R7, R33, R35, R38, R42.
+- **Dependencies:** none inside PR-C. It compiles against `@systemfsoftware/stryker-js-plugin-interface/type-query` on `main`.
 - **Files:**
-  - New `packages/stryker-js-plugin-interface/src/TypeFact.schema.ts`: the candidate shape and the fact union (R35, R38).
-  - `packages/stryker-js-plugin-interface/src/Checker.service.ts` (optional `facts`), `PluginRpcs.service.ts` (the `facts` RPC), and `ignore-rule.schema.ts` (`type-invalid`, KTD16).
-  - New `packages/stryker-js/src/decide-type-invalid.workflow.ts` and `src/__tests__/decide-type-invalid.workflow.property.test.ts`.
-  - `packages/stryker-js/src/audit-drops.workflow.ts` and its property test: the R40 branch and `NotCompiledOnMain`. `audit-request.cell.ts`, `Cli.schema.ts`, and `bin/cli-command.ts`: `--statuses <dir>`, which reads `<dir>/<project>/stryker-incremental.json` from main's latest Mutation artifact.
-  - `.github/workflows/ci.yml` (root-owned, as in U9): `drop-audit` also downloads main's latest successful Mutation artifact and passes `--statuses`.
-  - `packages/stryker-js-plugin-interface/src/Mutant.schema.ts`, `packages/stryker-js-cli-contract/src/run-event.schema.ts`, `stream-version.schema.ts`, and `packages/stryker-js/src/IncrementalReport.schema.ts`: the `TypeInvalid` variant of the drop reference (KTD5). A new wire variant takes the next `StreamSchemaVersion` major and a `major` changeset for `@systemfsoftware/stryker-js-cli-contract` (Q13).
-  - New `packages/stryker-js/src/run/type-facts.cell.ts`, called from `run/mutation-test.cell.ts:91`, `run/deferrable-dry-run.cell.ts:64-65`, `plan-request.cell.ts:201-214`, and `audit-request.cell.ts`.
-  - `packages/stryker-js-instrumenter/src/Transformer.service.ts`: each candidate of an R33 shape records its shape on the mutant.
-  - `packages/stryker-js/README.md` and `skills/stryker-mutation-testing/SKILL.md:212`, which list the rule ids.
-  - New `packages/stryker-js/tests/type-invalid.integration.test.ts`; api reports; changesets (`minor` for `@systemfsoftware/stryker-js-plugin-interface`, `@systemfsoftware/stryker-js`, and `@systemfsoftware/stryker-js-instrumenter`).
+  - New `packages/stryker-js/src/type-query-request.workflow.ts`: pending mutants, each project's tsconfig path, and the unmutated file texts in; one `TypeQueryRequest` per tsconfig out. Sites are keyed by the original `location`, candidates by mutant id.
+  - New `packages/stryker-js/src/type-query-cull.workflow.ts`: the request, the `TypeQueryResponse` or `TypeQueryRefused`, and the policy in; one decision per asked mutant out (`Culled { id, detail }` or `Kept { id, cause }`), as a tagged union.
+  - Their property tests in `packages/stryker-js/src/__tests__/`.
+  - A changeset (`minor`, `@systemfsoftware/stryker-js`).
+- **Approach:** both workflows have cyclomatic complexity 1. Dispatch is `Match.valueTags` over `TypeAnswer` and `FileOutcome`. A candidate id missing from the response, or answered twice, is `Kept { cause: 'unanswered' }`. The cull workflow does not inspect candidate text; whether a candidate is context-free is v1's decision (R33).
+- **Patterns:** `classify-tce.workflow.ts`; `mutant-set-policy.workflow.ts`; the packs pure-decision-workflows, tagged-unions-over-state-by-presence, refusals-beside-generated-laws, arbitrary-filter-floors.
+- **Test scenarios** (property tests through the real `decide`; arbitraries draw every `TypeAnswer` variant, every `UnknownReason`, both `FileRefused` reasons, and `TypeQueryRefused`):
+  1. `∀r_Response_=ShouldCullOnlyWhenTheAnswerIsNotAssignableAndThePolicyIsDefault`.
+  2. `∀r_Response_=ShouldKeepEveryMutantWhenThePolicyIsFull` (R7).
+  3. `∀r_Refusal_=ShouldKeepEveryAskedMutantWhenTheRequestOrItsFileIsRefused`.
+  4. `∀r_Response_=ShouldKeepAMutantWhoseIdIsMissingOrAnsweredTwice`.
+  5. `∀m_Mutants_=ShouldAskEveryPendingMutantExactlyOnceUnderTheSiteAtItsOwnLocation`, and mutants of two tsconfigs never share a request.
+  6. `∀r_Response_=ShouldNameBothTypesInTheCullDetail`: the detail holds `candidateType` and `contextualType` verbatim.
+- **Verification:** `pnpm --filter @systemfsoftware/stryker-js exec vitest run src/__tests__/type-query-request.workflow.property.test.ts src/__tests__/type-query-cull.workflow.property.test.ts`, then `pnpm --filter @systemfsoftware/stryker-js typecheck`.
+- **Mutant ids:** none; no corpus behavior changes.
+
+#### U15. TypeQuery over the checker worker (needs Q15)
+
+- **Goal:** the engine can send a `TypeQueryRequest` to a checker worker and get v1's response, from a tsgo query server that the worker owns.
+- **Requirements:** R32, R36.
+- **Dependencies:** #277 on `main`; Stream H's ruling on Q15.
+- **Files:**
+  - `packages/stryker-js-plugin-interface/src/PluginRpcs.service.ts`: a `typeQuery` RPC in the checker group, payload `TypeQueryRequest`, success `TypeQueryResponse`, error `TypeQueryRefused`. `Checker.service.ts`: an optional `typeQuery` member.
+  - `packages/stryker-js-typescript-checker/src/CheckerWorker.service.ts` and `CheckerRuntime.service.ts`: serve the RPC from `TypeQueryLive`, scoped to the worker.
+  - `packages/stryker-js/src/Checker/`: the pool's client side, which marks a checker without the member as not serving the query.
+  - New `packages/stryker-js-typescript-checker/tests/type-query-worker.integration.test.ts`. Its fixture project's directory name is undecided; it follows #277's type-query test layout once that is on `main`.
+  - Api reports; changesets (`minor` for `@systemfsoftware/stryker-js-plugin-interface`, `@systemfsoftware/stryker-js-typescript-checker`, and `@systemfsoftware/stryker-js`).
+- **Approach:** the RPC carries v1's schemas unchanged, so the port stays the single definition (Q18). The checker worker builds `TypeQueryLive` lazily on the first query and closes it with the worker's scope; `check` and `group` never touch it.
+- **Patterns:** the existing `digest` RPC (`PluginRpcs.service.ts:71-73`); the packs ports-separate-from-layers, scoped-lifecycle-boundaries, real-system-oracles, no-mocks-on-internal-glue.
+- **Test scenarios:**
+  1. Integration, through the spawned worker bundle and the real tsgo: a fixture with a declared literal-union return answers `NotAssignable` for `""` (the AE11 shape), and a non-generic `make({ capture })` answers `NotAssignable` for `{}` (AE12).
+  2. The same worker answers `check` identically before and after a query.
+  3. A request naming a file outside the tsconfig yields `FileRefused` `not-in-project` for that file, and the other files are answered.
+  4. Closing the worker's scope ends the query server's process.
+- **Verification:** `pnpm --filter @systemfsoftware/stryker-js-typescript-checker build` alone (PLUG-1: the bundle still imports only `typescript` and node builtins), then that package's `exec vitest run tests/type-query-worker.integration.test.ts`, `typecheck`, and `api:check`; then `api:check` for the plugin interface.
+- **Mutant ids:** none.
+
+#### U16. The cull step in every plan path (culls need Q21)
+
+- **Goal:** with a checker that serves the query, every path that plans mutants culls the `NotAssignable` mutants as Ignored `checker` before they are grouped or compiled. Without one, nothing changes.
+- **Requirements:** R7, R8, R9, R34, R35, R37, R38; AE11-AE15.
+- **Dependencies:** U14, U15; the root's ruling on Q21, and the amended v1 on `main`. U16 does not start before both: a cull step that ships disabled would be dead code.
+- **Files:**
+  - New `packages/stryker-js/src/run/type-query-cull.cell.ts`: the sandwich.
+  - `run/mutation-test.cell.ts:91` and `run/deferrable-dry-run.cell.ts:64-65`: call it after `acquireCheckers` and before `reuseAndPlan`.
+  - `plan-request.cell.ts:189-214`: start the checker pool when a checker is configured and a pending mutant exists, not only when the report holds a CompileError, and call the cell.
+  - `run/incremental-reuse.cell.ts` (`:414-422`): a culled record is never remembered (R9).
+  - New `packages/stryker-js/tests/type-query-cull.integration.test.ts`.
+  - `packages/stryker-js/README.md` and `skills/stryker-mutation-testing/SKILL.md:212`: the `checker` rule now also covers type-query culls.
 - **Approach:** a sandwich:
-  - Read: pending mutants with an R33 shape, within the run's requested ids, and their facts from the checker pool.
-  - Decide: the workflow (R36).
-  - Write: Ignored statuses with a `TypeInvalid` reference.
+  - Read: pending mutants within the run's requested ids, the unmutated texts of their files, and the response from the checker pool.
+  - Decide: U14's two workflows.
+  - Write: Ignored `checker` statuses for `Culled`, and the cull list as a typed value for the audit (R38).
 
-  The plan path starts its checker pool when an eligible candidate exists, not only when the incremental report holds a CompileError (`plan-request.cell.ts:189-191`).
-- **Patterns:** `classify-tce.workflow.ts`; `programDigestAtPlanTime` (`plan-request.cell.ts:201-214`); the packs pure-decision-workflows, ports-separate-from-layers, sandwich-phase-order, tagged-unions-over-state-by-presence, refusals-beside-generated-laws.
-- **Test scenarios:**
-  1. Over generated facts, only `NotAssignable` and `MissingReturn` yield `type-invalid`, and the detail names probe, anchor, and target.
-  2. Under `'full'`, no fact yields a drop (R7).
-  3. `TypeFact` passes its generated codec laws and refuses an unknown tag.
-  4. Integration, in-process, with a test checker plugin that serves `NotAssignable` for one id: that mutant is Ignored `type-invalid`, the checker's `check` request never contains its id, and the run's result is otherwise unchanged. With a test checker that lacks `facts`, every mutant is planned as before.
-  5. The audit's drop list for the same fixture contains the `type-invalid` id with its `TypeInvalid` reference.
-  6. Every R40 row, over generated statuses: CompileError passes, Ignored is `NotCompiledOnMain`, and every compiled status fails and names the id (AE14).
-- **Verification:** `pnpm --filter @systemfsoftware/stryker-js test -- type-invalid audit`, then the same for `@systemfsoftware/stryker-js-plugin-interface`; `... typecheck`, `... api:check`, one package at a time.
-- **Mutant ids:** none on the corpus until U15 serves facts.
+  A failed or refused query keeps every mutant and logs the refusal; it never fails the run. A culled mutant leaves the plan before `checkPlans`, so the checker never compiles it.
+- **Patterns:** `programDigestAtPlanTime` (`plan-request.cell.ts:201-214`); the packs sandwich-phase-order, pure-decision-workflows, scoped-lifecycle-boundaries.
+- **Test scenarios** (integration, in-process engine, the real TS checker plugin over a fixture project):
+  1. Should cull the declared-literal `""` and the non-generic `make({})` mutants when the default policy runs, and the checker's `check` requests never contain their ids (AE11, AE12).
+  2. Should keep the generic-call `{}` and the emptied getter, and they reach `check` (AE13).
+  3. Should keep the `""` mutant inside `S.Literals([...])`'s array when v1 answers `Unknown` `inferred-context` (AE14). Under v1 without Q21's amendment this scenario fails, which is the evidence that blocks the culls.
+  4. Should keep every mutant when the policy is `'full'`, and when no checker is configured.
+  5. Should price a culled mutant at 0 in a shard plan.
+  6. Should decide culls afresh on a second run that reuses the incremental report.
+- **Verification:** `pnpm --filter @systemfsoftware/stryker-js exec vitest run tests/type-query-cull.integration.test.ts`, then the six `tests/plan*.integration.test.ts` suites one at a time, then `typecheck` and `api:check`. One build at a time.
+- **Mutant ids** (corpus, after the release, predicted from #424): culled `8879a7e25286c657` and `3c2edc30946047e2`; kept `2e81ec0fd3b2b496`, `a2f15bd57cd23c25`, `bcd46e4a7cf9cc09`, `91c88189eda04502`, and `73f7ceb08f61bd67`.
 
-#### U15. Checker type-fact gatherer (needs Q15)
+#### U17. The audit's cull list and R40
 
-- **Goal:** the TS checker serves R35's facts for R34's anchors from the unmutated program, and the R42 spec proves that every drop it implies is a compile error under the pinned TypeScript.
-- **Requirements:** R32, R34, R35, R38, R42; AE11, AE12, AE13.
-- **Dependencies:** U14, and Stream H's ruling (Q15).
+- **Goal:** `stryker audit` lists the Layer 2 culls under the default policy and proves each was CompileError on main.
+- **Requirements:** R16, R18, R38, R40; AE14.
+- **Dependencies:** U6, U9, U16.
 - **Files:**
-  - New `packages/stryker-js-typescript-checker/src/type-facts.ts` (the gatherer: node lookup by location, anchor walk, probes) and `classify-type-fit.workflow.ts` (pure, maps gathered type data to the fact union).
-  - `packages/stryker-js-typescript-checker/src/ts-compiler.handle.ts`: a `facts` entry that runs on the snapshot after `init`, or in a batch after `resetMutatedFiles` (`:1654`) and `refreshSnapshot` (`:1656`) and before the first `applyMutant`.
-  - `CheckerRuntime.service.ts` and `CheckerWorker.service.ts`: serve `facts`.
-  - New `packages/stryker-js-typescript-checker/tests/type-facts.differential.test.ts` and `tests/type-facts.integration.test.ts`; a changeset (`minor`, `@systemfsoftware/stryker-js-typescript-checker`).
-- **Approach:** R34's anchor walk and R35's facts, through the TS 7 `Checker` methods listed in the gap table. Each call batches nodes where the API takes arrays (`getTypeAtLocation(nodes)`). Property optionality and declared-versus-mapped origin come from each property symbol's `flags` and `declarations`, because `CheckFlags` is not exported from `typescript/unstable/async`. Any API failure or unexpected type kind yields `Unavailable`. The R42 spec compiles each mutated fixture through the checker's own `init` and `check` on a fixture project and reads the diagnostics `check` returns, so the oracle is the compile path the run uses.
-- **Execution note:** write the R42 spec first. If a generated case shows a drop that compiles, narrow R34 or R35 for that case instead of weakening the spec.
-- **Patterns:** `classify-tce.workflow.ts` and its call at `ts-compiler.handle.ts:1592-1597`; `packages/stryker-js/tests/vm-parity.differential.test.ts`; the packs real-system-oracles, pin-dependency-semantics, no-mocks-on-internal-glue.
+  - `packages/stryker-js/src/audit-request.cell.ts`: run U16's cell after `planInstrumentCell`; `--statuses <dir>`, which reads `<dir>/<project>/stryker-incremental.json` from main's latest Mutation artifact.
+  - `packages/stryker-js/src/audit-drops.workflow.ts` and its property test: the R40 branch and `NotCompiledOnMain`.
+  - `packages/stryker-js/src/audit.schema.ts`, `Cli.schema.ts`, `bin/cli-command.ts`, and `README.md`.
+  - `.github/workflows/ci.yml` (root-owned, as in U9): `drop-audit` also downloads main's latest successful Mutation artifact and passes `--statuses`.
+  - `packages/stryker-js/tests/audit.integration.test.ts`; the api report; a changeset (`minor`, `@systemfsoftware/stryker-js`).
+- **Approach:** R40 joins each culled id to main's status. CompileError passes; Ignored is `NotCompiledOnMain` and passes; any compiled status (Killed, Survived, NoCoverage, Timeout, RuntimeError) fails and names the id; an absent id is unjoinable. The audit report adds the answer counts per variant and the query's wall time (R18).
+- **Patterns:** U6's audit cell and workflow; the packs pure-decision-workflows, refusals-beside-generated-laws.
 - **Test scenarios:**
-  1. R42: a constructive arbitrary builds fixtures from shape × anchor × target family. Each fixture compiles without errors before mutation. Target families: object types with required, optional, and index-signature members; unions of them, including with `undefined`, `null`, `object`, `{}`, and primitive members; string literal unions with and without `""`; `string`; indexed-access and conditional types over a type parameter (`T[K]`, `T extends 'a' ? 'a' : 'b'`); function types returning `void`, `undefined`, `T | undefined`, and `number`, alone and in unions; generic option-object parameters (the `Option.match` shape); `Partial<T>`; and overloaded callees. Whenever the gatherer drops, the real checker reports an assignability-family error inside the mutated range or at its anchor.
-  2. AE11: in a fixture copy of `tceFieldOf`, the options-object `{}` yields `NotAssignable`, and `({ tce: present })`'s `{}` yields `Fits`.
-  3. AE12: `get rendered(): string { … }` emptied yields `MissingReturn`; with return type `string | undefined` it yields `Fits`; an `async` function yields `NoAnchor`.
-  4. AE13: an arrow passed to a generic call whose type parameter is inferred from it yields `NoAnchor`.
-  5. `""` against `'a' | 'b'` yields `NotAssignable`; against `string` it yields `Fits`; inside `Match.when`'s inferred pattern it yields `NoAnchor`.
-  6. Facts are identical whether requested right after `init` or after a batch that applied and reset mutants.
-- **Verification:** `pnpm --filter @systemfsoftware/stryker-js-typescript-checker test -- type-facts`, `... typecheck`, `... api:check`; `pnpm --filter @systemfsoftware/stryker-js-typescript-checker build` alone (PLUG-1: the worker bundle still imports only `typescript`).
-- **Mutant ids:**
-  - Dropped: `2e81ec0fd3b2b496` and `3c2edc30946047e2` (ObjectLiteral); `a2f15bd57cd23c25` and `2f563991e24414e4` (BlockStatement); `ec2cc9215e6a44aa` (ArrowFunction, TS2375). All are CompileError in #416.
-  - Kept: `e8aacef871e72071` (Killed), `761798af7f12ab38` (Survived), and `98783bb973358922` (inferred arrow).
+  1. `∀s_Statuses_=ShouldPassACullOnlyWhenMainCompiledItToAnError`, over every status: CompileError passes, Ignored is `NotCompiledOnMain`, every compiled status fails and names the id.
+  2. Integration through the built binary: a fixture whose main statuses mark a culled id Survived exits 1 and names the id (the AE14 shape).
+  3. The answer counts sum to the asked mutants.
+- **Verification:** `pnpm --filter @systemfsoftware/stryker-js build`, then `exec vitest run src/__tests__/audit-drops.workflow.property.test.ts tests/audit.integration.test.ts`, then `typecheck` and `api:check`.
+- **Wall-clock:** `drop-audit` stays under 10 minutes. Instrumenting the four corpus projects took 3.1 s in PR-B's audit; the query adds an estimated 10-15 s plus one checker worker start per project.
+- **Mutant ids:** on the corpus, every culled id from U16, joined to #424 or the latest main run.
+
+#### U18. CompileError count on the bench lane (needs #274 on `main`, Q24)
+
+- **Goal:** the shared bench lane publishes the CompileError count beside the `check` duration it already measures.
+- **Requirements:** R18.
+- **Dependencies:** #274 on `main`; Stream G's agreement (Q24).
+- **Files:** `test/e2e-core/src/bench-summary.schema.ts` (`SideCounts.compileErrors: CountRange`) and the lane's reducer; its property test.
+- **Test scenarios:** `∀r_Runs_=ShouldReportTheCompileErrorRangeAcrossRuns`, min and max over generated per-run counts.
+- **Verification:** that package's `exec vitest run` on the changed test, then `typecheck`.
+- **Mutant ids:** none. If #274 is not on `main` when PR-C starts, U18 moves to a follow-up and the before/after evidence is the audit's counts alone.
 
 **PR-C Definition of Done:**
 
-- The root has approved the `drop-audit` change. `check`, every `e2e (…)` leg, `Changeset Check`, and `drop-audit` are green on PR-C's head, cited by run id. `drop-audit` reports N > 0 `type-invalid` drops joined to main's statuses, 0 compiling mutants lost, and no `Unattested` rule.
-- The PR body states, from the audit's counts, the baseline (the R18 count of the last main Mutation run before PR-C, which includes PR-A; #416's 4136 CompileError, 47.9%, and 3921 s are the pre-PR-A reference) and the predicted after figure (baseline CompileError − N, with the baseline checker time of those N removed). It also states the fact-gathering time.
-- After the release that carries PR-C, the first main Mutation run's counts artifact shows CompileError and checker time falling by the predicted amounts, cited by run id.
-- If Q15 is pending when U14 is done, PR-C is pushed with U14 only and stops there. Its Definition of Done then covers U14's scenarios, and the corpus figures wait for U15.
+- The root has ruled on Q21, and Stream H on Q15. The root has approved the `drop-audit` change. `check`, every `e2e (…)` leg, `Changeset Check`, and `drop-audit` are green on PR-C's head, cited by run id, and no job runs over 10 minutes.
+- `drop-audit` reports N > 0 culls joined to main's statuses, 0 compiling mutants lost, and no `Unattested` rule.
+- The PR body states, from `stryker audit --counts-only` over the last main Mutation run before PR-C (#424's 4387 CompileError, 46.8%, and 4156 s are today's reference), the predicted after figure: baseline CompileError − N, with those N mutants' baseline checker time removed. It also states the query's wall time.
+- After the release that carries PR-C, the first main Mutation run's counts show CompileError and checker time falling by the predicted amounts, cited by run id; with U18, the bench lane's `check` row and `compileErrors` range show the same direction on its corpus.
+- If Q15 is pending when U14 is done, PR-C lands U14 alone. If Q21 is pending when U15 is done, PR-C lands U14 and U15, which add no cull and change no corpus behavior. Its Definition of Done then covers their scenarios only, and the corpus figures wait for U16.
 
 ### Deferred: U11. S3 boundary-literal drops under class P (after PR-W)
 
