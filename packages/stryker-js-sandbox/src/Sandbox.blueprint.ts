@@ -4,8 +4,8 @@ import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Run } from '@systemfsoftware/stryker-js-contracts'
 import { Configuration } from '@systemfsoftware/stryker-js-contracts'
-import { ErrorText, Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import { Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
+import { ErrorText, Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Predicate, Schema as S } from 'effect'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
@@ -30,7 +30,7 @@ export interface MakeSandboxInput {
   readonly workingDirectory: string
   readonly backupDirectory: string
   readonly basePath: string
-  readonly formatRegistry: Format.FormatRegistry
+  readonly instrumenter: Instrumenter.InstrumenterShape
 }
 
 export type FilePreprocessor = (
@@ -66,8 +66,7 @@ const mergeUpdatedInto =
 
 const makeDisableTypeChecksPreprocessor = (
   options: Options.StrykerOptions,
-  registry: Format.FormatRegistry,
-  impl: typeof Instrument.disableTypeChecks,
+  disableTypeChecks: Instrumenter.InstrumenterShape['disableTypeChecks'],
 ) =>
   Effect.fn(SpanTaxonomy.Spans.sandboxPreprocessDisableTypeChecks.name)(function*(project: Run.Project) {
     const pathService = yield* Path.Path
@@ -79,7 +78,7 @@ const makeDisableTypeChecksPreprocessor = (
       instrumented,
       ([file, content]) =>
         Effect.map(
-          impl({ content, mutate: file.mutate, name: file.name }, registry).pipe(
+          disableTypeChecks({ content, mutate: file.mutate, name: file.name }).pipe(
             Effect.map((instrumentedFile) => instrumentedFile.content),
             Effect.mapError((cause) => Run.StrykerError.make({ message: 'disableTypeChecks failed', cause })),
           ),
@@ -307,10 +306,10 @@ const tryRewriteReference = (
 const createPreprocessor = (
   options: Options.StrykerOptions,
   basePath: string,
-  registry: Format.FormatRegistry,
+  instrumenter: Instrumenter.InstrumenterShape,
 ): FilePreprocessor =>
   combinePreprocessors([
-    makeDisableTypeChecksPreprocessor(options, registry, Instrument.disableTypeChecks),
+    makeDisableTypeChecksPreprocessor(options, instrumenter.disableTypeChecks),
     makeTSConfigPreprocessor(options, basePath),
   ])
 
@@ -660,7 +659,7 @@ const acquireSandbox = Effect.fn(SpanTaxonomy.Spans.sandboxAcquire.name)(functio
     Effect.succeed(hasBackupToRestore(options, backupDirectory)),
   )
   const preprocessor = combinePreprocessors([
-    createPreprocessor(options, basePath, spec.formatRegistry),
+    createPreprocessor(options, basePath, spec.instrumenter),
     ...spec.preprocessors,
   ])
   yield* preprocessor(project).pipe(

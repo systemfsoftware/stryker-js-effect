@@ -1,6 +1,5 @@
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { Run } from '@systemfsoftware/stryker-js-contracts'
-import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrumenter, Run } from '@systemfsoftware/stryker-js-contracts'
 import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import { Boolean } from 'effect'
 import * as Array from 'effect/Array'
@@ -15,7 +14,7 @@ import type { PrepareForInstrument } from './prepare.js'
 
 const reportSkippedFiles = Effect.fn(SpanTaxonomy.Spans.instrumentReportSkips.name)(
   function*(input: {
-    readonly skipped: readonly Instrument.InstrumentFileSkip[]
+    readonly skipped: readonly Instrumenter.InstrumentFileSkip[]
     readonly claimants: readonly WorkerHost.FrameworkClaimant[]
   }) {
     const files = input.skipped.map((skip) =>
@@ -40,7 +39,7 @@ const reportSkippedFiles = Effect.fn(SpanTaxonomy.Spans.instrumentReportSkips.na
 
 export const offerSkipsIfAny = Effect.fn(SpanTaxonomy.Spans.instrumentOfferSkips.name)(
   function*(input: {
-    readonly skipped: readonly Instrument.InstrumentFileSkip[]
+    readonly skipped: readonly Instrumenter.InstrumentFileSkip[]
     readonly claimants: readonly WorkerHost.FrameworkClaimant[]
   }) {
     yield* Boolean.match(input.skipped.length === 0, {
@@ -84,8 +83,8 @@ export const instrumentFiles = Effect.fnUntraced(function*(
   command: PrepareForInstrument,
 ): Effect.fn.Return<
   {
-    readonly filesToMutate: readonly Instrument.File[]
-    readonly instrumentResult: Instrument.InstrumentResult
+    readonly filesToMutate: readonly Instrumenter.File[]
+    readonly instrumentResult: Instrumenter.InstrumentResult
     readonly instrumentedProject: Run.Project
   },
   Run.StageError,
@@ -102,18 +101,11 @@ export const instrumentFiles = Effect.fnUntraced(function*(
   )
 
   const { excludedMutations, optInMutations } = command.mutatorSelection
-  const instrumentResult = yield* Instrument.instrument(filesToMutate, {
-    ignorers: [...command.ignorers],
-    excludedMutations: [...excludedMutations],
+  const instrumentResult = yield* command.instrumenter.instrument(filesToMutate, {
+    optInMutations,
+    excludedMutations,
     mutantSetPolicy: command.options.mutator.mutantSetPolicy,
-    mutators: Mutator.selectMutators(
-      Mutator.registryOf(
-        command.mutatorCatalogs,
-        command.loadedPlugins.mutators.map(({ contribution }) => contribution),
-      ),
-      optInMutations,
-    ),
-  }, command.formatRegistry).pipe(
+  }).pipe(
     Effect.mapError((cause) => Run.StageError.make({ stage: 'instrument', reason: 'Instrumenter failed', cause })),
   )
 

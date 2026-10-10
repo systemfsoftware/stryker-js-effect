@@ -1,7 +1,6 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
-import { Workers } from '@systemfsoftware/stryker-js-contracts'
+import { Instrumenter, Workers } from '@systemfsoftware/stryker-js-contracts'
 import { Run } from '@systemfsoftware/stryker-js-contracts'
-import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import * as Clock from 'effect/Clock'
@@ -25,7 +24,7 @@ export type TypeId = typeof TypeId
 
 export interface TestRunnerPoolSpec {
   readonly options: Options.StrykerOptions
-  readonly fileDescriptions: Instrument.FileDescriptions
+  readonly fileDescriptions: Instrumenter.FileDescriptions
   readonly sandboxWorkingDirectory: string
   readonly idGenerator: Workers.IdGeneratorShape
   readonly testFiles: readonly string[]

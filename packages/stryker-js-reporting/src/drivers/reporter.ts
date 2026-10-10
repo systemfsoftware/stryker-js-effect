@@ -1,5 +1,4 @@
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, Reporter as InterfaceReporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'

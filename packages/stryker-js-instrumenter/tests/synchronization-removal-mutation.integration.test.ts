@@ -1,6 +1,6 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect } from 'effect'
 
@@ -127,10 +127,10 @@ const instrumentSource = (source: string) =>
     }),
   )
 
-const removalCount = (result: Instrument.InstrumentResult): number =>
+const removalCount = (result: Instrumenter.InstrumentResult): number =>
   result.mutants.filter((mutant) => mutant.mutatorName === SYNCHRONIZATION_REMOVAL).length
 
-const removalMutantsOf = (result: Instrument.InstrumentResult): readonly Mutant.Mutant[] =>
+const removalMutantsOf = (result: Instrumenter.InstrumentResult): readonly Mutant.Mutant[] =>
   result.mutants.filter((mutant) => mutant.mutatorName === SYNCHRONIZATION_REMOVAL)
 
 const Feature = makeFeature({ it })
@@ -183,7 +183,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
         Then(
           'every promised guard sits inside its own exported block, every file totals its promises, and no replacement hides behind a cast or a suppression',
         )((
-          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrument.InstrumentResult },
+          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrumenter.InstrumentResult },
           expect,
         ) => {
           const contentByFile = new Map(
@@ -343,7 +343,7 @@ Feature('Exposing unguarded concurrency by removing synchronization from effects
           ({ source }: { source: string }) => instrumentSource(source),
         ),
         Then('the single mutant is reported as skipped, carrying the comment reason')(
-          ({ report }: { report: Instrument.InstrumentResult }, expect) => {
+          ({ report }: { report: Instrumenter.InstrumentResult }, expect) => {
             const mutants = removalMutantsOf(report)
             return expect({
               count: mutants.length,

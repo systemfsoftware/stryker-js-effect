@@ -1,5 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 
@@ -143,13 +144,13 @@ const isActive = (mutant: Mutant): boolean => mutant.status !== 'Ignored'
 
 const COMPARISON_MUTATORS: readonly string[] = ['BooleanLiteral', 'ConditionalExpression', 'EqualityOperator']
 
-const activeReplacements = (result: Instrument.InstrumentResult): readonly string[] =>
+const activeReplacements = (result: Instrumenter.InstrumentResult): readonly string[] =>
   result.mutants
     .filter((mutant) => isActive(mutant) && COMPARISON_MUTATORS.includes(mutant.mutatorName))
     .map((mutant) => mutant.replacement)
     .toSorted()
 
-const ignoredComparisonReasons = (result: Instrument.InstrumentResult): readonly string[] =>
+const ignoredComparisonReasons = (result: Instrumenter.InstrumentResult): readonly string[] =>
   result.mutants
     .filter((mutant) => !isActive(mutant) && COMPARISON_MUTATORS.includes(mutant.mutatorName))
     .map((mutant) => `${mutant.replacement} <= ${mutant.statusReason ?? ''}`)
@@ -182,7 +183,7 @@ Feature('Instrumenter characterization')
           ({ source }: { source: string }) => underFull('/tmp/probe.ts', source),
         ),
         Then('the total and per-mutator counts match the baseline')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) => {
           const active = result.mutants.filter(isActive)
@@ -223,7 +224,7 @@ Feature('Instrumenter characterization')
             ),
         ),
         Then('the guard yields its mutants across all four families')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) =>
           expect(countByMutator(result.mutants.filter(isActive))).toEqual({
@@ -258,7 +259,7 @@ Feature('Instrumenter characterization')
             ),
         ),
         Then('the guard yields its mutants across all five families')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) =>
           expect(countByMutator(result.mutants.filter(isActive))).toEqual({
@@ -293,7 +294,7 @@ Feature('Instrumenter characterization')
             ),
         ),
         Then('the table yields mutants on itself and on every literal')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) =>
           expect(countByMutator(result.mutants.filter(isActive))).toEqual({
@@ -332,7 +333,7 @@ Feature('Instrumenter characterization')
             ),
         ),
         Then('the file is instrumented with a mutant that removes the empty "js" case')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) =>
           expect({
@@ -368,7 +369,7 @@ export const b = 2 + 2
             ),
         ),
         Then('the plus under the directive is ignored with the reason, and the sibling stays live')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) => {
           const arithmetic = result.mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
@@ -396,7 +397,7 @@ export const b = 2 + 2
           ({ source }: { source: string }) => underFull('/tmp/probe.ts', source),
         ),
         Then('every active mutant id is tested in the emitted content')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) => {
           const content = result.files[0]?.content ?? ''
@@ -441,8 +442,8 @@ export const b = 2 + 2
           'the excluded mutator yields Ignored mutants carrying the reason, and no other mutator moves',
         )((
           { baseline, excluded }: {
-            baseline: Instrument.InstrumentResult
-            excluded: Instrument.InstrumentResult
+            baseline: Instrumenter.InstrumentResult
+            excluded: Instrumenter.InstrumentResult
           },
           expect,
         ) => {
@@ -502,8 +503,8 @@ export const b = 2 + 2
         ),
         Then('the keep-argument plus is live and the sibling plus is ignored only when selected')((
           { selected, unselected }: {
-            selected: Instrument.InstrumentResult
-            unselected: Instrument.InstrumentResult
+            selected: Instrumenter.InstrumentResult
+            unselected: Instrumenter.InstrumentResult
           },
           expect,
         ) => {
@@ -590,7 +591,7 @@ export function price(n) {
             ),
         ),
         Then('the plus inside the flag block is ignored and the sibling plus is live')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) => {
           const arith = (replacement: string) =>
@@ -624,7 +625,7 @@ export function price(n) {
             ),
         ),
         Then('every mutant is ignored with the ignorer reason')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) =>
           expect({
@@ -653,7 +654,7 @@ export function price(n) {
             ),
         ),
         Then('the first ignorer reason wins even where both match')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) =>
           expect({
@@ -682,7 +683,7 @@ export function price(n) {
             ).pipe(Effect.flip),
         ),
         Then('the run stops naming the file and carrying the rule failure')((
-          { error }: { error: Instrument.InstrumentError },
+          { error }: { error: Instrumenter.InstrumentError },
           expect,
         ) =>
           expect({
@@ -716,7 +717,7 @@ export function price(n) {
             ).pipe(Effect.flip),
         ),
         Then('the run fails with the typed failure naming the mutant and the ignorer')((
-          { baseline, error }: { baseline: Instrument.InstrumentResult; error: Instrument.InstrumentError },
+          { baseline, error }: { baseline: Instrumenter.InstrumentResult; error: Instrumenter.InstrumentError },
           expect,
         ) => {
           const arithmeticId = baseline.mutants
@@ -743,7 +744,7 @@ export function price(n) {
             underFull('/tmp/probe.ts', source),
           ])),
         Then('both runs mint sixteen lowercase hex digits per mutant, in the same order')((
-          { results }: { results: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult] },
+          { results }: { results: readonly [Instrumenter.InstrumentResult, Instrumenter.InstrumentResult] },
           expect,
         ) => {
           const ids = results[0].mutants.map((mutant) => mutant.id)
@@ -769,10 +770,10 @@ export function price(n) {
             ]),
         ),
         Then('both runs carry the same ids')((
-          { results }: { results: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult] },
+          { results }: { results: readonly [Instrumenter.InstrumentResult, Instrumenter.InstrumentResult] },
           expect,
         ) => {
-          const idsOf = (result: Instrument.InstrumentResult) => result.mutants.map((mutant) => mutant.id).toSorted()
+          const idsOf = (result: Instrumenter.InstrumentResult) => result.mutants.map((mutant) => mutant.id).toSorted()
           return expect(idsOf(results[1])).toEqual(idsOf(results[0]))
         }),
       ),
@@ -790,7 +791,7 @@ export function price(n) {
           ({ source }: { source: string }) => instrumentSource('/tmp/twin-additions.ts', source),
         ),
         Then('both arithmetic mutants carry one replacement, two ids, and one switch arm each')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) => {
           const content = result.files[0]?.content ?? ''
@@ -825,10 +826,10 @@ export function price(n) {
             instrumentSource('/tmp/two-additions.ts', `// Stryker disable next-line ArithmeticOperator\n${source}`),
         ),
         Then('the ignored addition is Ignored and both ids stay put')((
-          { plain, directed }: { plain: Instrument.InstrumentResult; directed: Instrument.InstrumentResult },
+          { plain, directed }: { plain: Instrumenter.InstrumentResult; directed: Instrumenter.InstrumentResult },
           expect,
         ) => {
-          const arithmeticOf = (result: Instrument.InstrumentResult) =>
+          const arithmeticOf = (result: Instrumenter.InstrumentResult) =>
             result.mutants.filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
           const directedArithmetic = arithmeticOf(directed)
           return expect({
@@ -859,7 +860,7 @@ export function price(n) {
             ]),
         ),
         Then('each id is scoped to its own file')((
-          { results }: { results: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult] },
+          { results }: { results: readonly [Instrumenter.InstrumentResult, Instrumenter.InstrumentResult] },
           expect,
         ) => {
           const [one, two] = results
@@ -890,12 +891,12 @@ export function price(n) {
         ),
         Then('the logged string is Ignored with the arid rule, and live under the full policy')((
           { defaulted, full }: {
-            defaulted: Instrument.InstrumentResult
-            full: Instrument.InstrumentResult
+            defaulted: Instrumenter.InstrumentResult
+            full: Instrumenter.InstrumentResult
           },
           expect,
         ) => {
-          const strings = (result: Instrument.InstrumentResult) =>
+          const strings = (result: Instrumenter.InstrumentResult) =>
             result.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral')
           return expect({
             defaulted: strings(defaulted).map((mutant) => [mutant.status, mutant.statusReason]),
@@ -922,12 +923,12 @@ export function price(n) {
         ),
         Then('the guard keeps its mutants while the logged string is ignored')((
           { gated, nearMiss }: {
-            gated: Instrument.InstrumentResult
-            nearMiss: Instrument.InstrumentResult
+            gated: Instrumenter.InstrumentResult
+            nearMiss: Instrumenter.InstrumentResult
           },
           expect,
         ) => {
-          const conditionMutants = (result: Instrument.InstrumentResult) =>
+          const conditionMutants = (result: Instrumenter.InstrumentResult) =>
             result.mutants.filter((mutant) => isActive(mutant) && mutant.mutatorName !== 'StringLiteral')
           return expect({
             gatedIgnored: gated.mutants
@@ -965,7 +966,7 @@ export function price(n) {
           ({ source }: { source: string }) => instrumentSource('/tmp/arid-rules.ts', source),
         ),
         Then('each arid argument names its rule and the look-alikes stay mutable')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) => {
           const strings = result.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral')
@@ -1014,8 +1015,8 @@ export function price(n) {
         ),
         Then('default keeps the sufficient set and names every removal')((
           { defaulted, full }: {
-            defaulted: Instrument.InstrumentResult
-            full: Instrument.InstrumentResult
+            defaulted: Instrumenter.InstrumentResult
+            full: Instrumenter.InstrumentResult
           },
           expect,
         ) =>
@@ -1057,8 +1058,8 @@ export function price(n) {
         ),
         Then('each condition position keeps only its sufficient set')((
           { defaulted, full }: {
-            defaulted: Instrument.InstrumentResult
-            full: Instrument.InstrumentResult
+            defaulted: Instrumenter.InstrumentResult
+            full: Instrumenter.InstrumentResult
           },
           expect,
         ) =>
@@ -1097,8 +1098,8 @@ export function price(n) {
         ),
         Then('both policies keep the same replacements')((
           { defaulted, full }: {
-            defaulted: Instrument.InstrumentResult
-            full: Instrument.InstrumentResult
+            defaulted: Instrumenter.InstrumentResult
+            full: Instrumenter.InstrumentResult
           },
           expect,
         ) =>
@@ -1135,8 +1136,8 @@ export function price(n) {
         ),
         Then('both policies keep every replacement')((
           { defaulted, full }: {
-            defaulted: Instrument.InstrumentResult
-            full: Instrument.InstrumentResult
+            defaulted: Instrumenter.InstrumentResult
+            full: Instrumenter.InstrumentResult
           },
           expect,
         ) =>
@@ -1170,8 +1171,8 @@ export function price(n) {
         ),
         Then('the no-op is named equivalent and the second false is a duplicate')((
           { defaulted, full }: {
-            defaulted: Instrument.InstrumentResult
-            full: Instrument.InstrumentResult
+            defaulted: Instrumenter.InstrumentResult
+            full: Instrumenter.InstrumentResult
           },
           expect,
         ) =>

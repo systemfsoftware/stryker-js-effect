@@ -1,5 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { StockCatalog } from '@systemfsoftware/stryker-js-cli-contract'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 
@@ -40,7 +41,7 @@ const onlyThese = (names: readonly string[]): Mutator.MutatorSelection => ({
 
 const fileNameOf = (entry: CatalogEntry, index: number): string => `catalog/${entry.id}-${index}.ts`
 
-type CollectedMutants = Instrument.InstrumentResult['mutants']
+type CollectedMutants = Instrumenter.InstrumentResult['mutants']
 
 interface EntryRun {
   readonly entry: CatalogEntry
@@ -50,7 +51,7 @@ interface EntryRun {
 const runEntries = (
   entries: readonly CatalogEntry[],
   namesOf: (entry: CatalogEntry) => readonly string[],
-): Effect.Effect<readonly EntryRun[], Instrument.InstrumentError> =>
+): Effect.Effect<readonly EntryRun[], Instrumenter.InstrumentError> =>
   Effect.forEach(entries, (entry) =>
     Effect.map(
       Instrument.instrument(
@@ -61,7 +62,7 @@ const runEntries = (
         })),
         { ignorers: [], excludedMutations: [], mutantSetPolicy: 'full', mutators: onlyThese(namesOf(entry)) },
       ),
-      (result: Instrument.InstrumentResult): EntryRun => ({ entry, mutants: result.mutants }),
+      (result: Instrumenter.InstrumentResult): EntryRun => ({ entry, mutants: result.mutants }),
     ))
 
 const replacementsIn = (run: EntryRun, index: number): readonly string[] =>

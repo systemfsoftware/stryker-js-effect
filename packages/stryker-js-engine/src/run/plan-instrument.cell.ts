@@ -1,10 +1,9 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 
-import { Run } from '@systemfsoftware/stryker-js-contracts'
+import { Instrumenter, Run } from '@systemfsoftware/stryker-js-contracts'
 import type { IncrementalReportDiscard } from '../admit-incremental-report.workflow.js'
 import { InstrumentCommand, planInstrumentation } from '../plan-instrumentation.workflow.js'
 import { enteringInstrumentPhase, instrumentFiles, offerSkipsIfAny } from './instrument.js'
@@ -20,7 +19,7 @@ export interface PlanInstrumentDone {
 type PlanInstrumentRaw = typeof InstrumentCommand.Encoded & {
   readonly prev: PrepareForInstrument
   readonly instrumentedProject: Run.Project
-  readonly instrumentResult: Instrument.InstrumentResult
+  readonly instrumentResult: Instrumenter.InstrumentResult
   readonly mutants: readonly Mutant.Mutant[]
 }
 

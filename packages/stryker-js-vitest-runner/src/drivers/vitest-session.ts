@@ -1,5 +1,4 @@
-import { ErrorText, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import { Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, Instrumentation, Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Crypto from 'effect/Crypto'
 import * as Effect from 'effect/Effect'
@@ -115,5 +114,5 @@ const bailOf = (input: VitestSessionInput): number =>
 const namespaceOf = (input: VitestSessionInput): StrykerNamespace =>
   Option.getOrElse(
     Option.liftPredicate(input.globalNamespace, S.is(S.Literals(['__stryker__', '__stryker2__']))),
-    () => Instrument.InstrumenterContext.NAMESPACE,
+    () => Instrumentation.InstrumenterContext.NAMESPACE,
   )

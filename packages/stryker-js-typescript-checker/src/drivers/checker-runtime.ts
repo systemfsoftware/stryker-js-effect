@@ -1,7 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { Checker, Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, ErrorText, Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'

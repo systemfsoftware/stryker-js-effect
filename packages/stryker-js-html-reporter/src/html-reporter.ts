@@ -1,7 +1,6 @@
 import * as NodeFileSystem from '@effect/platform-node-shared/NodeFileSystem'
 import * as NodePath from '@effect/platform-node-shared/NodePath'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { type Options, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, type Options, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'

@@ -57,7 +57,7 @@ export const reportingInputOf = (input: ReportingInputArgs): Reports.MutationRep
   resolvedMode: input.env.resolvedMode,
   basePath: input.env.basePath,
   reporterStage: input.prev.reporterStage,
-  formatRegistry: input.prev.formatRegistry,
+  formats: input.prev.formats,
   concurrency: input.prev.concurrency.testRunners + input.prev.concurrency.checkers,
   runStartedAt: input.env.runStartedAt,
   rememberedMutantIds: input.rememberedMutantIds,

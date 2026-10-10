@@ -1,4 +1,3 @@
-import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   type Checker,
   Mutant,
@@ -11,6 +10,7 @@ import type * as Effect from 'effect/Effect'
 import type { PlatformError } from 'effect/PlatformError'
 
 import type { TimeoutEvidence } from './IncrementalDiff.schema.js'
+import type { ClaimedFormat } from './Instrumenter.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import type { Project } from './Project.schema.js'
 import type { TestCoverage } from './test-coverage.schema.js'
@@ -41,7 +41,7 @@ export interface MutationReportingInput {
   readonly resolvedMode: ResolvedMode
   readonly basePath: string
   readonly reporterStage: ReporterStage
-  readonly formatRegistry: Format.FormatRegistry
+  readonly formats: readonly ClaimedFormat[]
   readonly timeOverheadMs: number
   readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
   readonly timeoutEvidenceByMutantId?: Readonly<Record<string, TimeoutEvidence>>

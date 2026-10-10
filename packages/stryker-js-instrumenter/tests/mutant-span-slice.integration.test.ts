@@ -5,7 +5,8 @@ import type {
   FrameworkContext,
   FrameworkParseResult,
 } from '@systemfsoftware/stryker-framework-interface'
-import { Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
+import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect, Layer } from 'effect'
 
@@ -43,7 +44,7 @@ interface LocatedMutant {
   readonly location: Mutant.Location
 }
 
-const locatedOf = (result: Instrument.InstrumentResult): readonly LocatedMutant[] =>
+const locatedOf = (result: Instrumenter.InstrumentResult): readonly LocatedMutant[] =>
   result.mutants.map((mutant) => ({
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacement,

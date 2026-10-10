@@ -1,6 +1,5 @@
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import type { Workers } from '@systemfsoftware/stryker-js-contracts'
-import { Format } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Instrumenter, Workers } from '@systemfsoftware/stryker-js-contracts'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import type * as Cause from 'effect/Cause'
@@ -69,25 +68,25 @@ interface FormatReportRows {
   readonly shadowings: readonly RunEvent.FormatClaimShadowingRow[]
 }
 
-const formatReportOf = (registry: Format.FormatRegistry): FormatReportRows => {
-  const winners = MutableHashMap.empty<string, Format.FormatEntry>()
+const formatReportOf = (formats: readonly Instrumenter.ClaimedFormat[]): FormatReportRows => {
+  const winners = MutableHashMap.empty<string, Instrumenter.ClaimedFormat>()
   const rows: RunEvent.FormatRegistryRow[] = []
   const shadowings: RunEvent.FormatClaimShadowingRow[] = []
-  registry.entries
-    .flatMap((entry) => entry.claim.extensions.map((extension) => ({ entry, extension })))
+  formats
+    .flatMap((entry) => entry.extensions.map((extension) => ({ entry, extension })))
     .forEach(({ entry, extension }) => {
       Option.match(MutableHashMap.get(winners, extension), {
         onNone: () => {
           MutableHashMap.set(winners, extension, entry)
           rows.push({
             extension,
-            formatId: entry.claim.formatId,
-            ownerModule: entry.owner,
-            language: entry.claim.language,
+            formatId: entry.formatId,
+            ownerModule: entry.ownerModule,
+            language: entry.language,
           })
         },
         onSome: (winner) => {
-          shadowings.push({ extension, winner: winner.owner, loser: entry.owner })
+          shadowings.push({ extension, winner: winner.ownerModule, loser: entry.ownerModule })
         },
       })
     })
@@ -97,12 +96,12 @@ const formatReportOf = (registry: Format.FormatRegistry): FormatReportRows => {
 export const reportPluginLoad: {
   (
     loaded: Workers.LoadedPlugins,
-    registry: Format.FormatRegistry,
+    formats: readonly Instrumenter.ClaimedFormat[],
   ): (queue: Queue.Queue<RunEvent.RunEvent, Cause.Done>) => Effect.Effect<void>
   (
     queue: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
     loaded: Workers.LoadedPlugins,
-    registry: Format.FormatRegistry,
+    formats: readonly Instrumenter.ClaimedFormat[],
   ): Effect.Effect<void>
 } = dual(
   3,
@@ -110,9 +109,9 @@ export const reportPluginLoad: {
     function*(
       queue: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
       loaded: Workers.LoadedPlugins,
-      registry: Format.FormatRegistry,
+      formats: readonly Instrumenter.ClaimedFormat[],
     ): Effect.fn.Return<void> {
-      const report = formatReportOf(registry)
+      const report = formatReportOf(formats)
       yield* Queue.offer(
         queue,
         RunEvent.PluginsReported.make({

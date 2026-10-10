@@ -1,5 +1,7 @@
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
+import { ErrorText } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Mutant as ApiMutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
@@ -55,17 +57,14 @@ import { type Ast, type ScriptAst, type SpannedComment } from './Ast.schema.js'
 import { decodeDirective, DecodeDirectiveCommand } from './directives/decode-directive.workflow.js'
 import { type Directive, type LocatedDirective } from './directives/directive.schema.js'
 import { foldRule, FoldRuleCommand, type MutantRule } from './directives/fold-rule.workflow.js'
-import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { FormatRegistry } from './Format.schema.js'
 import {
   MutantsUnapplied,
   MutantsUnplaced,
-  type MutateDescription,
   NodeWithoutSpan,
   PlacementRefused,
   type PlacerName,
 } from './Instrument.schema.js'
-import { InstrumentError } from './Instrument.schema.js'
 import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.js'
 import { lineStartsOf, locationOf, positionAt } from './Location.js'
 import type { LineStarts, ScriptOrigin } from './Location.schema.js'
@@ -113,10 +112,10 @@ const locationOverlaps = (a: ApiMutant.Location, b: ApiMutant.Location): boolean
   comparePositions(a.start, b.end) <= 0 && comparePositions(a.end, b.start) >= 0
 
 const errorTextOf = <A = unknown>(cause: A): string =>
-  Option.getOrElse(Option.map(renderedErrorText(cause), (rendered) => rendered.text), () => '')
+  Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => '')
 
-const traversalFailure = <A = unknown>(cause: A): InstrumentError =>
-  InstrumentError.make({
+const traversalFailure = <A = unknown>(cause: A): Instrumenter.InstrumentError =>
+  Instrumenter.InstrumentError.make({
     message: cause instanceof Error ? cause.message : errorTextOf(cause),
     cause,
   })
@@ -656,7 +655,7 @@ const transformDataFirst = (
   ast: Ast,
   mutantCollector: MutantCollector,
   transformerContext: Omit<TransformerContext, 'transform'>,
-): Effect.Effect<readonly string[], ParseFailed | InstrumentError> => {
+): Effect.Effect<readonly string[], ParseFailed | Instrumenter.InstrumentError> => {
   const context: TransformerContext = {
     ...transformerContext,
     transform,
@@ -666,7 +665,7 @@ const transformDataFirst = (
     Match.when(Option.isSome, (entry) => entry.value.transform(ast, mutantCollector, context)),
     Match.orElse(() =>
       Effect.fail(
-        InstrumentError.make({
+        Instrumenter.InstrumentError.make({
           message: `No registered format transforms the "${formatKey}" AST`,
           cause: new Error(`Missing format entry for "${formatKey}"`),
         }),
@@ -680,23 +679,23 @@ export const transform: {
     ast: Ast,
     mutantCollector: MutantCollector,
     transformerContext: Omit<TransformerContext, 'transform'>,
-  ): Effect.Effect<readonly string[], ParseFailed | InstrumentError>
+  ): Effect.Effect<readonly string[], ParseFailed | Instrumenter.InstrumentError>
   (
     mutantCollector: MutantCollector,
     transformerContext: Omit<TransformerContext, 'transform'>,
-  ): (ast: Ast) => Effect.Effect<readonly string[], ParseFailed | InstrumentError>
+  ): (ast: Ast) => Effect.Effect<readonly string[], ParseFailed | Instrumenter.InstrumentError>
 } = dual((args: IArguments): boolean => args.length >= 3, transformDataFirst)
 
 export type AstTransformer<T extends Ast = Ast> = (
   ast: T,
   mutantCollector: MutantCollector,
   context: TransformerContext,
-) => Effect.Effect<readonly string[], ParseFailed | InstrumentError>
+) => Effect.Effect<readonly string[], ParseFailed | Instrumenter.InstrumentError>
 
 export interface TransformerContext {
   transform: AstTransformer
   options: TransformerOptions
-  mutateDescription: MutateDescription
+  mutateDescription: Instrumenter.MutateDescription
   registry: FormatRegistry
   readonly basePath?: string | undefined
 }
@@ -707,7 +706,7 @@ interface MutableCandidate {
   readonly aridReason: Option.Option<string>
 }
 
-function isMutateRangeList(value: MutateDescription): value is readonly ApiMutant.Location[] {
+function isMutateRangeList(value: Instrumenter.MutateDescription): value is readonly ApiMutant.Location[] {
   return Array.isArray(value)
 }
 
@@ -747,7 +746,7 @@ interface InstrumentationPlan {
 interface PlacementContext {
   readonly fileName: string
   readonly lineStarts: LineStarts
-  readonly mutateDescription: MutateDescription
+  readonly mutateDescription: Instrumenter.MutateDescription
   readonly offset: ScriptOrigin
   readonly basePath?: string | undefined
   readonly mutatorEntries: readonly MutatorEntry[]
@@ -955,28 +954,35 @@ const mutablesFor = (
   })
 }
 
-const mutateRangesOf = (mutateDescription: MutateDescription): Option.Option<readonly ApiMutant.Location[]> =>
-  Option.filter(Option.some(mutateDescription), isMutateRangeList)
+const mutateRangesOf = (
+  mutateDescription: Instrumenter.MutateDescription,
+): Option.Option<readonly ApiMutant.Location[]> => Option.filter(Option.some(mutateDescription), isMutateRangeList)
 
-const isOutsideMutateRanges = (location: ApiMutant.Location, mutateDescription: MutateDescription): boolean =>
+const isOutsideMutateRanges = (
+  location: ApiMutant.Location,
+  mutateDescription: Instrumenter.MutateDescription,
+): boolean =>
   Option.exists(
     mutateRangesOf(mutateDescription),
     (ranges) => ranges.every((range) => !locationOverlaps(range, location)),
   )
 
-const isInsideMutateRanges = (location: ApiMutant.Location, mutateDescription: MutateDescription): boolean =>
+const isInsideMutateRanges = (
+  location: ApiMutant.Location,
+  mutateDescription: Instrumenter.MutateDescription,
+): boolean =>
   Option.exists(
     mutateRangesOf(mutateDescription),
     (ranges) => ranges.some((range) => locationIncluded(range, location)),
   )
 
-const shouldMutateAt = (location: ApiMutant.Location, mutateDescription: MutateDescription): boolean =>
+const shouldMutateAt = (location: ApiMutant.Location, mutateDescription: Instrumenter.MutateDescription): boolean =>
   mutateDescription === true || isInsideMutateRanges(location, mutateDescription)
 
 const shouldSkipNode = (
   frame: NodeFrame,
   location: ApiMutant.Location,
-  mutateDescription: MutateDescription,
+  mutateDescription: Instrumenter.MutateDescription,
 ): boolean =>
   [
     isTypeNode(frame.node),
@@ -1349,31 +1355,32 @@ const applyPlan = (
   root: Program,
   plan: InstrumentationPlan,
   context: PlacementContext,
-): Effect.Effect<void, InstrumentError> => {
+): Effect.Effect<void, Instrumenter.InstrumentError> => {
   const places = new Map(plan.placements.map((placement) => [placement.node, placement] as const))
   return Option.match(Option.fromNullishOr(applyPlacementsToAst(root, places, context)), {
     onNone: () => Effect.void,
-    onSome: (error) => Effect.fail(InstrumentError.make({ message: error.message, cause: error })),
+    onSome: (error) => Effect.fail(Instrumenter.InstrumentError.make({ message: error.message, cause: error })),
   })
 }
 
-const refusalError = (refusal: InstrumentationRefusal): InstrumentError =>
+const refusalError = (refusal: InstrumentationRefusal): Instrumenter.InstrumentError =>
   Match.value(refusal).pipe(
-    Match.tag('NodeWithoutSpan', () => InstrumentError.make({ message: 'Node without a span', cause: undefined })),
+    Match.tag('NodeWithoutSpan', () =>
+      Instrumenter.InstrumentError.make({ message: 'Node without a span', cause: undefined })),
     Match.tag('MutantsUnplaced', (unplaced) =>
-      InstrumentError.make({
+      Instrumenter.InstrumentError.make({
         message: `Mutants cannot be placed. This shouldn't happen! Unplaced mutants: ${unplaced.detail}`,
         cause: undefined,
       })),
     Match.tag('PlacementRefused', (refused) =>
-      InstrumentError.make({ message: refused.message, cause: new Error(refused.message) })),
+      Instrumenter.InstrumentError.make({ message: refused.message, cause: new Error(refused.message) })),
     Match.tag('MutantWithoutLocation', (failed) =>
-      InstrumentError.make({
+      Instrumenter.InstrumentError.make({
         message: `Mutant without a source location: ${failed.mutatorName} in ${failed.fileName}`,
         cause: undefined,
       })),
     Match.tag('IgnorerAnsweredWithoutReason', (failed) =>
-      InstrumentError.make({ message: failed.message, cause: failed })),
+      Instrumenter.InstrumentError.make({ message: failed.message, cause: failed })),
     Match.exhaustive,
   )
 
@@ -1427,11 +1434,11 @@ export const transformScript: {
     ast: ScriptAst,
     mutantCollector: MutantCollector,
     context: TransformerContext,
-  ): Effect.Effect<readonly string[], ParseFailed | InstrumentError>
+  ): Effect.Effect<readonly string[], ParseFailed | Instrumenter.InstrumentError>
   (
     mutantCollector: MutantCollector,
     context: TransformerContext,
-  ): (ast: ScriptAst) => Effect.Effect<readonly string[], ParseFailed | InstrumentError>
+  ): (ast: ScriptAst) => Effect.Effect<readonly string[], ParseFailed | Instrumenter.InstrumentError>
 } = dual((args: IArguments): boolean => args.length >= 3, transformScriptDataFirst)
 
 function toMutatorContext(ancestors: readonly Node[], mutantSetPolicy: Options.MutantSetPolicyType): MutatorContext {

@@ -1,5 +1,4 @@
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Option from 'effect/Option'
 
 const failAsReporter = (reporterName: string) => <E = unknown>(cause: E): Reporter.ReporterFailed =>

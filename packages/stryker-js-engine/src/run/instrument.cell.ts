@@ -1,6 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -9,7 +8,7 @@ import * as Path from 'effect/Path'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Scope from 'effect/Scope'
 
-import { Run } from '@systemfsoftware/stryker-js-contracts'
+import { Instrumenter, Run } from '@systemfsoftware/stryker-js-contracts'
 import { Sandbox } from '@systemfsoftware/stryker-js-sandbox'
 import { InstrumentCommand, planInstrumentation } from '../plan-instrumentation.workflow.js'
 import { enteringInstrumentPhase, instrumentFiles, offerSkipsIfAny } from './instrument.js'
@@ -38,8 +37,8 @@ const sandboxDirectoriesOf = (input: { readonly command: PrepareDone; readonly b
 
 type InstrumentRaw = typeof InstrumentCommand.Encoded & {
   readonly prev: PrepareDone
-  readonly filesToMutate: readonly Instrument.File[]
-  readonly instrumentResult: Instrument.InstrumentResult
+  readonly filesToMutate: readonly Instrumenter.File[]
+  readonly instrumentResult: Instrumenter.InstrumentResult
   readonly instrumentedProject: Run.Project
   readonly sandbox: Sandbox.SandboxHandle
   readonly concurrency: { readonly testRunners: number; readonly checkers: number }
@@ -79,7 +78,7 @@ const readInstrument = Effect.fn(SpanTaxonomy.Spans.instrumentGather.name)(funct
     workingDirectory: directories.workingDirectory,
     backupDirectory: directories.backupDirectory,
     basePath: env.basePath,
-    formatRegistry: command.formatRegistry,
+    instrumenter: command.instrumenter,
   }).pipe(
     Effect.mapError((cause) =>
       Run.StageError.make({ stage: 'instrument', reason: 'Sandbox initialization failed', cause })

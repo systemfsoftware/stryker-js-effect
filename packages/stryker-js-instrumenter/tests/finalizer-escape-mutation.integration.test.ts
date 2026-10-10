@@ -1,6 +1,6 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect } from 'effect'
 
@@ -199,10 +199,10 @@ const instrumentSource = (source: string) =>
     }),
   )
 
-const finalizerCount = (result: Instrument.InstrumentResult): number =>
+const finalizerCount = (result: Instrumenter.InstrumentResult): number =>
   result.mutants.filter((mutant) => mutant.mutatorName === FINALIZER_ESCAPE).length
 
-const finalizerMutantsOf = (result: Instrument.InstrumentResult): readonly Mutant.Mutant[] =>
+const finalizerMutantsOf = (result: Instrumenter.InstrumentResult): readonly Mutant.Mutant[] =>
   result.mutants.filter((mutant) => mutant.mutatorName === FINALIZER_ESCAPE)
 
 const Feature = makeFeature({ it })
@@ -233,7 +233,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
         Then(
           'every table entry counts its mutants inside its own export, every file totals its table, and no replacement hides behind a cast or a suppression',
         )((
-          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrument.InstrumentResult },
+          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrumenter.InstrumentResult },
           expect,
         ) => {
           const contentByFile = new Map(

@@ -35,7 +35,6 @@
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/stryker-js-contracts": "workspace:^",
-    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",
     "@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^"

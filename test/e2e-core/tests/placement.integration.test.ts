@@ -1,6 +1,7 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Mutant, Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime, checkerRuntimeLayer } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
@@ -63,7 +64,7 @@ const annotationsOf = (file: SliceSource): Result.Result<ReadonlyArray<SourcedAn
     (annotations) => annotations.map((annotation): SourcedAnnotation => ({ file: file.name, annotation })),
   )
 
-const fileOf = (file: SliceSource): Instrument.File => ({ name: file.name, content: file.content, mutate: true })
+const fileOf = (file: SliceSource): Instrumenter.File => ({ name: file.name, content: file.content, mutate: true })
 
 const instrumentOptionsOf = (mutators: SliceMutators, slice: PlacementSlice): Instrument.InstrumenterOptions => ({
   ignorers: [],
@@ -75,7 +76,7 @@ const instrumentOptionsOf = (mutators: SliceMutators, slice: PlacementSlice): In
 const instrumentedOf = (
   files: ReadonlyArray<SliceSource>,
   fixture: SliceFixture,
-): Effect.Effect<ReadonlyArray<Mutant.Mutant>, Instrument.InstrumentError> =>
+): Effect.Effect<ReadonlyArray<Mutant.Mutant>, Instrumenter.InstrumentError> =>
   Effect.map(
     Instrument.instrument(files.map(fileOf), instrumentOptionsOf(fixture.mutators, fixture.slice)),
     (result) => result.mutants,
@@ -197,7 +198,7 @@ const placementOf = (
   fixture: SliceFixture,
 ): Effect.Effect<
   Placement,
-  Instrument.InstrumentError | S.SchemaError | AnnotationParseFailure | Checker.CheckerFailed
+  Instrumenter.InstrumentError | S.SchemaError | AnnotationParseFailure | Checker.CheckerFailed
 > =>
   Effect.gen(function*() {
     const instrumented = yield* instrumentedOf(fixture.files, fixture)

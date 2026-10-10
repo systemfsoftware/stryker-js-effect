@@ -1,4 +1,4 @@
-export * as ErrorText from './ErrorText/mod.js'
+export * as JsInstrumenter from './drivers/instrumenter.js'
 export * as Format from './Format/mod.js'
 export * as Instrument from './Instrument/mod.js'
 export { lineStartsOf, locationOf, offsetAt, originAt, positionAt } from './Location.js'

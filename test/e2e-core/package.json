@@ -37,6 +37,7 @@
     "@systemfsoftware/stryker-ignorer-effect-schema-declarations": "file:../../.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz",
     "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "file:../../.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz",
     "@systemfsoftware/stryker-js": "file:../../.sfs-deps/stryker-js.tgz",
+    "@systemfsoftware/stryker-js-contracts": "workspace:^",
     "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "workspace:^",
     "@systemfsoftware/stryker-js-vitest-runner": "file:../../.sfs-deps/stryker-js-vitest-runner.tgz",

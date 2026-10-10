@@ -1,7 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { ErrorText, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import { Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, Instrumentation, Mutant, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
 import * as Crypto from 'effect/Crypto'
@@ -208,11 +207,11 @@ const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*
 
   const instrumenterContextOf = (
     file: RunnerTestFile,
-  ): Effect.Effect<Option.Option<Instrument.InstrumenterContext>, CoverageDecodeFailed> =>
+  ): Effect.Effect<Option.Option<Instrumentation.InstrumenterContext>, CoverageDecodeFailed> =>
     Option.match(Option.fromNullishOr(metaOf(file)), {
       onNone: () => Effect.succeedNone,
       onSome: (meta) =>
-        S.decodeEffect(Instrument.InstrumenterContext)(meta).pipe(
+        S.decodeEffect(Instrumentation.InstrumenterContext)(meta).pipe(
           Effect.asSome,
           Effect.mapError((cause) => new CoverageDecodeFailed({ cause })),
         ),

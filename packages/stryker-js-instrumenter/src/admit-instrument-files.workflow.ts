@@ -1,9 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { InstrumentFilesCommand, InstrumentFileSkip } from './Instrument.schema.js'
+import { InstrumentFilesCommand } from './Instrument.schema.js'
 
 const InstrumentFilesDecisionTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js-instrumenter/InstrumentFilesDecision',
@@ -12,7 +13,7 @@ type InstrumentFilesDecisionTypeId = typeof InstrumentFilesDecisionTypeId
 
 export class InstrumentFilesAdmitted extends S.TaggedClass<InstrumentFilesAdmitted>()('InstrumentFilesAdmitted', {
   fileCount: S.Finite,
-  skipped: S.Array(InstrumentFileSkip),
+  skipped: S.Array(Instrumenter.InstrumentFileSkip),
 }) {
   readonly [InstrumentFilesDecisionTypeId] = InstrumentFilesDecisionTypeId
 }
@@ -20,7 +21,7 @@ export class InstrumentFilesAdmitted extends S.TaggedClass<InstrumentFilesAdmitt
 export class InstrumentFilesSkippedOnly extends S.TaggedClass<InstrumentFilesSkippedOnly>()(
   'InstrumentFilesSkippedOnly',
   {
-    skipped: S.Array(InstrumentFileSkip),
+    skipped: S.Array(Instrumenter.InstrumentFileSkip),
   },
 ) {
   readonly [InstrumentFilesDecisionTypeId] = InstrumentFilesDecisionTypeId

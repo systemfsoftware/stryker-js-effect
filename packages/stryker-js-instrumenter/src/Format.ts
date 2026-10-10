@@ -1,4 +1,5 @@
 import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
@@ -16,7 +17,7 @@ import {
   type FormatRegistry,
   type ScriptFormatEntry,
 } from './Format.schema.js'
-import { FileSchema, type InstrumenterOptions, InstrumentError, InstrumentFileSkip } from './Instrument.schema.js'
+import { FileSchema, type InstrumenterOptions } from './Instrument.schema.js'
 import { toApiMutant } from './Mutator.service.js'
 import type { ParseFailed } from './Parser.schema.js'
 import { createParser, parseJS, parseTS, parseTsx } from './Parser.service.js'
@@ -33,8 +34,8 @@ import { disableTypeCheckingInScript, prefixWithNoCheck, tsDirectiveLikeRegEx } 
 
 export type { EmbeddedFormatEntry, EntryForFormat, FormatClaim, FormatEntry, FormatRegistry, ScriptFormatEntry }
 
-const scriptAstError = (ast: Ast): InstrumentError =>
-  InstrumentError.make({
+const scriptAstError = (ast: Ast): Instrumenter.InstrumentError =>
+  Instrumenter.InstrumentError.make({
     message: `Expected a script AST, received the "${ast.format}" format`,
     cause: undefined,
   })
@@ -44,12 +45,6 @@ const scriptAstOf = (ast: Ast): Option.Option<ScriptAst> =>
     Match.when({ format: 'embedded' }, () => Option.none<ScriptAst>()),
     Match.orElse((script) => Option.some(script)),
   )
-
-export const extensionOf = (fileName: string): string => {
-  const dot = fileName.lastIndexOf('.')
-  const slash = Math.max(fileName.lastIndexOf('/'), fileName.lastIndexOf('\\'))
-  return dot > slash ? fileName.slice(dot).toLowerCase() : ''
-}
 
 const CORE_OWNER = '@systemfsoftware/stryker-js-instrumenter'
 const CORE_OWNER_VERSION = 'builtin'
@@ -77,16 +72,20 @@ export const registerEntries: {
 const parseWithEntryDataFirst = (
   entry: FormatEntry,
   file: { readonly name: string; readonly content: string },
-): Effect.Effect<Ast, InstrumentError> =>
+): Effect.Effect<Ast, Instrumenter.InstrumentError> =>
   entry.parse(file.content, file.name, createParser()).pipe(
-    Effect.catchTag('ParseFailed', (cause) => Effect.fail(InstrumentError.make({ message: cause.message, cause }))),
+    Effect.catchTag('ParseFailed', (cause) =>
+      Effect.fail(Instrumenter.InstrumentError.make({ message: cause.message, cause }))),
   )
 
 export const parseWithEntry: {
-  (entry: FormatEntry, file: { readonly name: string; readonly content: string }): Effect.Effect<Ast, InstrumentError>
+  (
+    entry: FormatEntry,
+    file: { readonly name: string; readonly content: string },
+  ): Effect.Effect<Ast, Instrumenter.InstrumentError>
   (
     file: { readonly name: string; readonly content: string },
-  ): (entry: FormatEntry) => Effect.Effect<Ast, InstrumentError>
+  ): (entry: FormatEntry) => Effect.Effect<Ast, Instrumenter.InstrumentError>
 } = dual((args: IArguments): boolean => args.length >= 2, parseWithEntryDataFirst)
 
 const resolutionCommandOfDataFirst = (
@@ -96,7 +95,7 @@ const resolutionCommandOfDataFirst = (
 ): FormatResolutionCommand =>
   FormatResolutionCommand.make({
     fileName,
-    extension: extensionOf(fileName),
+    extension: Instrumenter.extensionOf(fileName),
     formatId: formatIdOverride,
     claims: registry.entries.map((entry) => entry.claim),
   })
@@ -127,7 +126,7 @@ const parseScriptFormat = (
   scriptFormat: ScriptFormat,
   text: string,
   fileName: string,
-): Effect.Effect<Ast, ParseFailed | InstrumentError> =>
+): Effect.Effect<Ast, ParseFailed | Instrumenter.InstrumentError> =>
   Match.value(scriptFormat).pipe(
     Match.when('js', () => parseJS(text, fileName)),
     Match.when('ts', () => parseTS(text, fileName)),
@@ -181,7 +180,7 @@ export const resolveFile: {
 
 export type FileOutcome =
   | { readonly kind: 'parsed'; readonly parsed: ParsedFile }
-  | { readonly kind: 'skipped'; readonly record: InstrumentFileSkip }
+  | { readonly kind: 'skipped'; readonly record: Instrumenter.InstrumentFileSkip }
 
 type InstrumentedFile = typeof FileSchema.Type
 
@@ -201,8 +200,8 @@ export const toTransformerOptions = (options: InstrumenterOptions): TransformerO
   ...(options.noHeader !== undefined ? { noHeader: options.noHeader } : {}),
 })
 
-const missingEntryError = (formatId: string, file: InstrumentedFile): InstrumentError =>
-  InstrumentError.make({
+const missingEntryError = (formatId: string, file: InstrumentedFile): Instrumenter.InstrumentError =>
+  Instrumenter.InstrumentError.make({
     message: `No registered format entry renders "${formatId}", claimed for ${file.name}`,
     cause: new Error(`Missing format entry for "${formatId}"`),
   })
@@ -211,7 +210,7 @@ const parsedOutcomeFor = (
   registry: FormatRegistry,
   file: InstrumentedFile,
   assigned: FormatAssigned,
-): Effect.Effect<FileOutcome, InstrumentError> =>
+): Effect.Effect<FileOutcome, Instrumenter.InstrumentError> =>
   Option.match(registry.entryForFormat(assigned.formatId), {
     onNone: () => Effect.fail(missingEntryError(assigned.formatId, file)),
     onSome: (entry) =>
@@ -220,11 +219,15 @@ const parsedOutcomeFor = (
 
 const skippedOutcomeFor = (file: InstrumentedFile, skipped: FormatSkipped): FileOutcome => ({
   kind: 'skipped',
-  record: InstrumentFileSkip.make({ file: file.name, extension: skipped.extension, reason: skipped.reason }),
+  record: Instrumenter.InstrumentFileSkip.make({
+    file: file.name,
+    extension: skipped.extension,
+    reason: skipped.reason,
+  }),
 })
 
-const unclaimedOverrideError = (file: InstrumentedFile): InstrumentError =>
-  InstrumentError.make({
+const unclaimedOverrideError = (file: InstrumentedFile): Instrumenter.InstrumentError =>
+  Instrumenter.InstrumentError.make({
     message: `No installed format owns ${file.name}`,
     cause: new Error(`Unresolvable format pin for ${file.name}`),
   })
@@ -233,7 +236,7 @@ const outcomeFor = (
   registry: FormatRegistry,
   file: InstrumentedFile,
   decision: FormatResolutionDecision,
-): Effect.Effect<FileOutcome, InstrumentError> =>
+): Effect.Effect<FileOutcome, Instrumenter.InstrumentError> =>
   Match.value(decision).pipe(
     Match.when(S.is(FormatAssigned), (assigned) => parsedOutcomeFor(registry, file, assigned)),
     Match.when(S.is(FormatSkipped), (skipped) => Effect.succeed(skippedOutcomeFor(file, skipped))),
@@ -243,7 +246,7 @@ const outcomeFor = (
 export const fileOutcome = (request: {
   readonly registry: FormatRegistry
   readonly file: InstrumentedFile
-}): Effect.Effect<FileOutcome, InstrumentError> =>
+}): Effect.Effect<FileOutcome, Instrumenter.InstrumentError> =>
   Match.value(resolveFile(request.registry, request.file.name)).pipe(
     Match.when(Result.isSuccess, (resolved) => outcomeFor(request.registry, request.file, resolved.success)),
     Match.orElse(() => Effect.fail(unclaimedOverrideError(request.file))),
@@ -252,7 +255,7 @@ export const fileOutcome = (request: {
 export const isParsedOutcome = (outcome: FileOutcome): outcome is Extract<FileOutcome, { kind: 'parsed' }> =>
   outcome.kind === 'parsed'
 
-export const skipsOf = (outcome: FileOutcome): readonly InstrumentFileSkip[] =>
+export const skipsOf = (outcome: FileOutcome): readonly Instrumenter.InstrumentFileSkip[] =>
   outcome.kind === 'skipped' ? [outcome.record] : []
 
 export const transformInto = (request: {
@@ -261,22 +264,26 @@ export const transformInto = (request: {
   readonly file: InstrumentedFile
   readonly ast: Ast
   readonly options: InstrumenterOptions
-}): Effect.Effect<void, InstrumentError> =>
+}): Effect.Effect<void, Instrumenter.InstrumentError> =>
   transform(request.ast, request.collector, {
     options: toTransformerOptions(request.options),
     mutateDescription: request.file.mutate,
     registry: request.registry,
   }).pipe(
-    Effect.mapError((cause) => InstrumentError.make({ message: `Failed to transform ${request.file.name}`, cause })),
+    Effect.mapError((cause) =>
+      Instrumenter.InstrumentError.make({ message: `Failed to transform ${request.file.name}`, cause })
+    ),
   )
 
-export const collectMutants = (collector: MutantCollector): Effect.Effect<readonly Mutant.Mutant[], InstrumentError> =>
+export const collectMutants = (
+  collector: MutantCollector,
+): Effect.Effect<readonly Mutant.Mutant[], Instrumenter.InstrumentError> =>
   Effect.flatMap(
     Effect.sync(() => Result.all(collector.map(toApiMutant))),
     (collected) =>
       Result.isSuccess(collected)
         ? Effect.succeed(collected.success)
-        : Effect.fail(InstrumentError.make({ message: 'Failed to instrument', cause: collected.failure })),
+        : Effect.fail(Instrumenter.InstrumentError.make({ message: 'Failed to instrument', cause: collected.failure })),
   )
 
 const isScriptEntry = (entry: FormatEntry): entry is ScriptFormatEntry => entry.claim.kind === 'script'
@@ -296,19 +303,19 @@ const disabledFile = (
   file: InstrumentedFile,
   entry: FormatEntry,
   ast: Ast,
-): Effect.Effect<InstrumentedFile, InstrumentError> =>
+): Effect.Effect<InstrumentedFile, Instrumenter.InstrumentError> =>
   Effect.map(entry.disableTypeChecks(ast), (content): InstrumentedFile => ({ ...file, content }))
 
 const parsedEntryFor = (
   file: InstrumentedFile,
   entry: FormatEntry,
-): Effect.Effect<InstrumentedFile, InstrumentError> =>
+): Effect.Effect<InstrumentedFile, Instrumenter.InstrumentError> =>
   Effect.flatMap(parseWithEntry(entry, file), (ast) => disabledFile(file, entry, ast))
 
 const spliceFileFor = (
   file: InstrumentedFile,
   entry: FormatEntry,
-): Effect.Effect<InstrumentedFile, InstrumentError> =>
+): Effect.Effect<InstrumentedFile, Instrumenter.InstrumentError> =>
   Predicate.isTruthy(prefixesWithoutParsing(file, entry))
     ? Effect.succeed<InstrumentedFile>({ ...file, content: prefixWithNoCheck(file.content) })
     : parsedEntryFor(file, entry)
@@ -317,7 +324,7 @@ export const spliceForAssigned = (request: {
   readonly file: InstrumentedFile
   readonly registry: FormatRegistry
   readonly formatId: string
-}): Effect.Effect<InstrumentedFile, InstrumentError> =>
+}): Effect.Effect<InstrumentedFile, Instrumenter.InstrumentError> =>
   Option.match(request.registry.entryForFormat(request.formatId), {
     onNone: () => Effect.succeed(request.file),
     onSome: (entry) => spliceFileFor(request.file, entry),

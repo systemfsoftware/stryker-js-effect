@@ -1,7 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { type Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, type Options, type Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'

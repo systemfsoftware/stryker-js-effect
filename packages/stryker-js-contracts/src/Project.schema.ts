@@ -1,7 +1,7 @@
-import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import type * as MutableHashMap from 'effect/MutableHashMap'
 
 import type { IncrementalReport } from './IncrementalReport.schema.js'
+import type * as Instrument from './Instrumenter.schema.js'
 
 export interface ProjectFile extends Instrument.FileDescription {
   readonly name: string

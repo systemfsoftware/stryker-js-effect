@@ -1,6 +1,5 @@
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'

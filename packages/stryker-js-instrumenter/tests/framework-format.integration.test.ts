@@ -1,4 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 
@@ -30,7 +31,7 @@ Feature('Instrumenting files in formats a framework plugin teaches')
             ),
         ),
         Then('the addition inside the region is mutated at its place in the document')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) => {
           const oneBased = (index: number): number => index + 1
@@ -70,7 +71,7 @@ Feature('Instrumenting files in formats a framework plugin teaches')
             ),
         ),
         Then('the mini document is reported as skipped and the script file still gets mutants')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) =>
           expect({
@@ -96,7 +97,7 @@ Feature('Instrumenting files in formats a framework plugin teaches')
             ).pipe(Effect.flip),
         ),
         Then('instrumentation fails naming the file and the plugin reason')(({ error }: {
-          error: Instrument.InstrumentError
+          error: Instrumenter.InstrumentError
         }, expect) =>
           expect({
             namesFile: error.message.includes('/tmp/page.mini'),
@@ -128,7 +129,7 @@ Feature('Instrumenting files in formats a framework plugin teaches')
             ]),
         ),
         Then('the mini document carries the marker before its region and the unknown file is unchanged')((
-          { files }: { files: readonly Instrument.File[] },
+          { files }: { files: readonly Instrumenter.File[] },
           expect,
         ) =>
           expect(files.map((file) => file.content)).toEqual([

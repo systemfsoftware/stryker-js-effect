@@ -1,7 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
-import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -11,7 +9,7 @@ import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
 
-import { Run } from '@systemfsoftware/stryker-js-contracts'
+import { type Instrumenter, Run } from '@systemfsoftware/stryker-js-contracts'
 import type { Workers } from '@systemfsoftware/stryker-js-contracts'
 import type { Reports } from '@systemfsoftware/stryker-js-contracts'
 import type { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
@@ -32,10 +30,10 @@ import { admitPreparedProject, type PrepareRaw, readPrepare } from './prepare.js
 export interface PrepareDone {
   readonly project: Run.Project
   readonly loadedPlugins: Workers.LoadedPlugins
-  readonly ignorers: readonly Ignorer[]
   readonly mutatorCatalogs: readonly MergedCatalog[]
   readonly mutatorSelection: MutatorSelectionDecoded
-  readonly formatRegistry: Format.FormatRegistry
+  readonly instrumenter: Instrumenter.InstrumenterShape
+  readonly formats: readonly Instrumenter.ClaimedFormat[]
   readonly options: Options.StrykerOptions
   readonly temporaryDirectoryPath: string
   readonly reporterStage: Reports.ReporterStage
@@ -79,10 +77,10 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
   return {
     project: raw.project,
     loadedPlugins: raw.loaded,
-    ignorers: raw.ignorers,
     mutatorCatalogs: raw.mutatorCatalogs,
     mutatorSelection: raw.mutatorSelection,
-    formatRegistry: raw.formatRegistry,
+    instrumenter: raw.instrumenter,
+    formats: raw.formats,
     options: raw.options,
     temporaryDirectoryPath,
     reporterStage,

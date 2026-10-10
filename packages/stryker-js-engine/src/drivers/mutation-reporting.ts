@@ -1,9 +1,9 @@
 /// <reference types="vitest/importMeta" />
 import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Incremental } from '@systemfsoftware/stryker-js-contracts'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Reports } from '@systemfsoftware/stryker-js-contracts'
 import { Run } from '@systemfsoftware/stryker-js-contracts'
-import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { type Checker, type Plugin, Report, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Sandbox } from '@systemfsoftware/stryker-js-sandbox'
@@ -46,15 +46,15 @@ import { engineDigestOf, INCREMENTAL_CACHE_VERSION, runInputsDigestOf } from '..
 export const identityOf = dual<
   (
     fileName: string,
-  ) => (registry: Format.FormatRegistry) => Option.Option<Incremental.FormatIdentity>,
-  (fileName: string, registry: Format.FormatRegistry) => Option.Option<Incremental.FormatIdentity>
+  ) => (formats: readonly Instrumenter.ClaimedFormat[]) => Option.Option<Incremental.FormatIdentity>,
+  (fileName: string, formats: readonly Instrumenter.ClaimedFormat[]) => Option.Option<Incremental.FormatIdentity>
 >(
   2,
-  (fileName: string, registry: Format.FormatRegistry): Option.Option<Incremental.FormatIdentity> =>
-    Option.map(registry.entryForExtension(Format.extensionOf(fileName)), (entry) => ({
-      formatId: entry.claim.formatId,
-      ownerModule: entry.owner,
-      ownerVersion: entry.ownerVersion,
+  (fileName: string, formats: readonly Instrumenter.ClaimedFormat[]): Option.Option<Incremental.FormatIdentity> =>
+    Option.map(Instrumenter.claimForFile(formats, fileName), (claim) => ({
+      formatId: claim.formatId,
+      ownerModule: claim.ownerModule,
+      ownerVersion: claim.ownerVersion,
     })),
 )
 
@@ -224,10 +224,10 @@ const originalSourcesOf = (originals: readonly (readonly [Run.ProjectFile, strin
 
 const UNCLAIMED_LANGUAGE = 'javascript'
 
-const determineLanguage = (fileName: string, registry: Format.FormatRegistry): string =>
-  Option.match(registry.entryForExtension(Format.extensionOf(fileName)), {
+const determineLanguage = (fileName: string, formats: readonly Instrumenter.ClaimedFormat[]): string =>
+  Option.match(Instrumenter.claimForFile(formats, fileName), {
     onNone: () => UNCLAIMED_LANGUAGE,
-    onSome: (entry) => entry.claim.language,
+    onSome: (claim) => claim.language,
   })
 
 type FileResultWithIdentity = Report.FileResult & { readonly formatIdentity?: Incremental.FormatIdentity }
@@ -522,7 +522,7 @@ const readMutatedSources = Effect.fn(SpanTaxonomy.Spans.mutationReportingReadMut
   const sources = originalSourcesOf(originals)
   return HashMap.fromIterable(Arr.map(fileNames, (fileName) => {
     const fileResult: Report.FileResult = {
-      language: determineLanguage(fileName, input.formatRegistry),
+      language: determineLanguage(fileName, input.formats),
       mutants: [],
       source: Option.getOrElse(HashMap.get(sources, fileName), () => ''),
     }
@@ -578,7 +578,7 @@ const assembleReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingAssembleRep
     mutatedFileNames.flatMap((fileName) =>
       Option.match(HashMap.get(reportNames, fileName), {
         onNone: (): ReadonlyArray<readonly [string, Option.Option<Incremental.FormatIdentity>]> => [],
-        onSome: (reportName) => [[reportName, identityOf(fileName, input.formatRegistry)] as const],
+        onSome: (reportName) => [[reportName, identityOf(fileName, input.formats)] as const],
       })
     ),
   )

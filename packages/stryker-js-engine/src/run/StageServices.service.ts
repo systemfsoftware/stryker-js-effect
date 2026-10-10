@@ -1,4 +1,5 @@
 import type { Incremental } from '@systemfsoftware/stryker-js-contracts'
+import type { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import type { Workers } from '@systemfsoftware/stryker-js-contracts'
 import type { Reports } from '@systemfsoftware/stryker-js-contracts'
 import type { Run } from '@systemfsoftware/stryker-js-contracts'
@@ -13,6 +14,7 @@ export type StageServices =
   | ChildProcessSpawner.ChildProcessSpawner
   | FileSystem.FileSystem
   | Incremental.GitDiff
+  | Instrumenter.InstrumenterDriver
   | Workers.IdGenerator
   | Reports.MutationReporting
   | Path.Path
@@ -34,7 +36,7 @@ export type PlatformPorts =
   | Path.Path
   | Stdio.Stdio
   | Workers.WorkerLauncher
-export type EnginePorts = PlatformPorts | Reports.Reporter | Run.EngineIdentity
+export type EnginePorts = PlatformPorts | Instrumenter.InstrumenterDriver | Reports.Reporter | Run.EngineIdentity
 export type RunStageServices =
   | Run.ProjectFiles
   | Run.RunEnvironment

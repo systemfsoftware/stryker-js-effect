@@ -1,8 +1,8 @@
 import type { FormatId } from '@systemfsoftware/stryker-framework-interface'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import type * as Effect from 'effect/Effect'
 import type * as Option from 'effect/Option'
 import type { Ast, ScriptFormat } from './Ast.schema.js'
-import type { InstrumentError } from './Instrument.schema.js'
 import type { ParseFailed } from './Parser.schema.js'
 import type { ParserContext } from './Parser.service.js'
 import type { PrinterContext } from './Printer.js'
@@ -22,10 +22,10 @@ export interface ScriptHooks {
     text: string,
     fileName: string,
     context: ParserContext,
-  ) => Effect.Effect<Ast, ParseFailed | InstrumentError>
+  ) => Effect.Effect<Ast, ParseFailed | Instrumenter.InstrumentError>
   readonly transform: AstTransformer
   readonly print: (ast: Ast, context: PrinterContext) => string
-  readonly disableTypeChecks: (ast: Ast) => Effect.Effect<string, InstrumentError>
+  readonly disableTypeChecks: (ast: Ast) => Effect.Effect<string, Instrumenter.InstrumentError>
 }
 
 export interface FormatHooks extends ScriptHooks {

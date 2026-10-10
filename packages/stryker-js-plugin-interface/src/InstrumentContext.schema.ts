@@ -1,6 +1,6 @@
 import * as S from 'effect/Schema'
 
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Mutant from './Mutant.schema.js'
 
 export class InstrumenterContext extends S.Class<InstrumenterContext>('InstrumenterContext')({
   activeMutant: S.optional(S.String),

@@ -1,5 +1,6 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Result from 'effect/Result'
@@ -10,7 +11,6 @@ import type { FormatRegistry } from './Format.schema.js'
 import {
   type FileSchema,
   type InstrumenterOptions,
-  InstrumentError,
   InstrumentFilesCommand,
   InstrumentResult,
 } from './Instrument.schema.js'
@@ -44,16 +44,18 @@ const printedFile = (
     content,
   }))
 
-const printedFiles = (raw: InstrumentFilesRaw): Effect.Effect<readonly FileDescription[], InstrumentError> =>
+const printedFiles = (
+  raw: InstrumentFilesRaw,
+): Effect.Effect<readonly FileDescription[], Instrumenter.InstrumentError> =>
   Effect.forEach(
     raw.parsed,
     (parsed) => Effect.fromResult(printedFile(raw, parsed)),
     { concurrency: 1 },
   ).pipe(
-    Effect.mapError((failure) => InstrumentError.make({ message: failure.message, cause: failure })),
+    Effect.mapError((failure) => Instrumenter.InstrumentError.make({ message: failure.message, cause: failure })),
   )
 
-const instrumentedResult = (raw: InstrumentFilesRaw): Effect.Effect<InstrumentResult, InstrumentError> =>
+const instrumentedResult = (raw: InstrumentFilesRaw): Effect.Effect<InstrumentResult, Instrumenter.InstrumentError> =>
   Effect.map(
     printedFiles(raw),
     (files) =>
@@ -69,7 +71,7 @@ const skippedOnlyResult = (raw: InstrumentFilesRaw): InstrumentResult =>
 
 const readInstrumentFiles = Effect.fn(SpanTaxonomy.Spans.instrumentReadFiles.name)(function*(
   input: InstrumentFilesInput,
-): Effect.fn.Return<InstrumentFilesRaw, InstrumentError> {
+): Effect.fn.Return<InstrumentFilesRaw, Instrumenter.InstrumentError> {
   const outcomes = yield* Effect.forEach(
     input.files,
     (file) => fileOutcome({ registry: input.registry, file }),
@@ -97,7 +99,12 @@ const readInstrumentFiles = Effect.fn(SpanTaxonomy.Spans.instrumentReadFiles.nam
   }
 })
 
-export const instrumentFilesCell: Cell.Cell<InstrumentFilesInput, InstrumentResult, InstrumentError, never> = Sandwich
+export const instrumentFilesCell: Cell.Cell<
+  InstrumentFilesInput,
+  InstrumentResult,
+  Instrumenter.InstrumentError,
+  never
+> = Sandwich
   .named('stryker.instrument.files')(
     (input: InstrumentFilesInput) => readInstrumentFiles(input),
   )
@@ -105,5 +112,6 @@ export const instrumentFilesCell: Cell.Cell<InstrumentFilesInput, InstrumentResu
   .write({
     InstrumentFilesAdmitted: (_admitted, raw) => instrumentedResult(raw),
     InstrumentFilesSkippedOnly: (_skipped, raw) => Effect.succeed(skippedOnlyResult(raw)),
-    CommandRejected: ({ issue }) => Effect.fail(InstrumentError.make({ message: issue, cause: new Error(issue) })),
+    CommandRejected: ({ issue }) =>
+      Effect.fail(Instrumenter.InstrumentError.make({ message: issue, cause: new Error(issue) })),
   })

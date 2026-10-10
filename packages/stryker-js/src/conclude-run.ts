@@ -1,8 +1,7 @@
 /// <reference types="vitest/importMeta" />
 import { Run } from '@systemfsoftware/stryker-js-contracts'
 import { Engine } from '@systemfsoftware/stryker-js-engine'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { ErrorText, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Survivors } from '@systemfsoftware/stryker-js-survivors'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'

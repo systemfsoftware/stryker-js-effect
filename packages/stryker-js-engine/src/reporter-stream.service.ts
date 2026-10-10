@@ -3,8 +3,14 @@ import { Reports } from '@systemfsoftware/stryker-js-contracts'
 import { Run } from '@systemfsoftware/stryker-js-contracts'
 import { Configuration } from '@systemfsoftware/stryker-js-contracts'
 import type { Workers } from '@systemfsoftware/stryker-js-contracts'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { type Options, Plugin, type Report, Reporter, Trace } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  ErrorText,
+  type Options,
+  Plugin,
+  type Report,
+  Reporter,
+  Trace,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace as RuntimeTrace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import * as Boolean from 'effect/Boolean'

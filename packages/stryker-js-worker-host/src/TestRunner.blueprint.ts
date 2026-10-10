@@ -1,5 +1,4 @@
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
-import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Mutant, Options, Plugin, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import type * as FileSystem from 'effect/FileSystem'
@@ -11,7 +10,7 @@ import type { RpcClientError } from 'effect/rpc/RpcClientError'
 import type * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
-import type { Workers } from '@systemfsoftware/stryker-js-contracts'
+import type { Instrumenter, Workers } from '@systemfsoftware/stryker-js-contracts'
 import { commandRunner, isCommandRunner } from './command-runner.blueprint.js'
 import {
   deadlineArmedMutantRun,
@@ -31,7 +30,7 @@ export type TypeId = typeof TypeId
 
 export interface ChildProcessTestRunnerParams {
   readonly options: Options.StrykerOptions
-  readonly fileDescriptions: Instrument.FileDescriptions
+  readonly fileDescriptions: Instrumenter.FileDescriptions
   readonly sandboxWorkingDirectory: string
   readonly workerEntrypoint: string
   readonly idGenerator: Workers.IdGeneratorShape
@@ -39,7 +38,7 @@ export interface ChildProcessTestRunnerParams {
 
 export interface TestRunnerBuildContext {
   readonly options: Options.StrykerOptions
-  readonly fileDescriptions: Instrument.FileDescriptions
+  readonly fileDescriptions: Instrumenter.FileDescriptions
   readonly sandboxWorkingDirectory: string
   readonly idGenerator: Workers.IdGeneratorShape
   readonly retire: Effect.Effect<void>

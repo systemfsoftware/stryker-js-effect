@@ -1,3 +1,4 @@
+import { Instrumentation } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
@@ -5,7 +6,6 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import { cloneNode, type Program, type Statement } from './Ast.handle.js'
 import type { SpannedComment } from './Ast.schema.js'
-import { InstrumenterContext } from './InstrumentContext.schema.js'
 import { type ParseFailed, parseWithOxc } from './Parser.service.js'
 
 interface LocatedComment extends SpannedComment {
@@ -28,7 +28,7 @@ export const STRYKER_NAMESPACE_HELPER = 'stryNS_9fa48'
 export const COVER_MUTANT_HELPER = 'stryCov_9fa48'
 export const IS_MUTANT_ACTIVE_HELPER = 'stryMutAct_9fa48'
 
-const ID = InstrumenterContext
+const ID = Instrumentation.InstrumenterContext
 
 const INSTRUMENTATION_HEADER_SOURCE = `// @ts-nocheck
 var ${STRYKER_NAMESPACE_HELPER} = function(){

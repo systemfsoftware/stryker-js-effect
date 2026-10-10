@@ -980,9 +980,6 @@ importers:
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
-      '@systemfsoftware/stryker-js-instrumenter':
-        specifier: workspace:^
-        version: link:../stryker-js-instrumenter
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
@@ -1065,9 +1062,6 @@ importers:
       '@systemfsoftware/stryker-js-contracts':
         specifier: workspace:^
         version: link:../stryker-js-contracts
-      '@systemfsoftware/stryker-js-instrumenter':
-        specifier: workspace:^
-        version: link:../stryker-js-instrumenter
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
@@ -1150,9 +1144,6 @@ importers:
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
-      '@systemfsoftware/stryker-js-instrumenter':
-        specifier: workspace:^
-        version: link:../stryker-js-instrumenter
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
@@ -1232,6 +1223,9 @@ importers:
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
+      '@systemfsoftware/stryker-js-contracts':
+        specifier: workspace:^
+        version: link:../stryker-js-contracts
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
@@ -1518,9 +1512,6 @@ importers:
       '@systemfsoftware/stryker-js-contracts':
         specifier: workspace:^
         version: link:../stryker-js-contracts
-      '@systemfsoftware/stryker-js-instrumenter':
-        specifier: workspace:^
-        version: link:../stryker-js-instrumenter
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
@@ -1597,9 +1588,6 @@ importers:
       '@systemfsoftware/stryker-js-contracts':
         specifier: workspace:^
         version: link:../stryker-js-contracts
-      '@systemfsoftware/stryker-js-instrumenter':
-        specifier: workspace:^
-        version: link:../stryker-js-instrumenter
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
@@ -1977,9 +1965,6 @@ importers:
       '@systemfsoftware/stryker-js-cli-contract':
         specifier: workspace:^
         version: link:../stryker-js-cli-contract
-      '@systemfsoftware/stryker-js-instrumenter':
-        specifier: workspace:^
-        version: link:../stryker-js-instrumenter
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
@@ -2049,9 +2034,6 @@ importers:
       '@systemfsoftware/stryker-js-contracts':
         specifier: workspace:^
         version: link:../stryker-js-contracts
-      '@systemfsoftware/stryker-js-instrumenter':
-        specifier: workspace:^
-        version: link:../stryker-js-instrumenter
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../stryker-js-plugin-interface
@@ -2339,6 +2321,9 @@ importers:
       '@systemfsoftware/stryker-js':
         specifier: file:../../.sfs-deps/stryker-js.tgz
         version: file:.sfs-deps/stryker-js.tgz(@opentelemetry/api-logs@0.222.0)(@opentelemetry/resources@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-logs@0.222.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-node@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/semantic-conventions@1.43.0)(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(supports-color@10.2.2)(vitest@5.0.1)
+      '@systemfsoftware/stryker-js-contracts':
+        specifier: workspace:^
+        version: link:../../packages/stryker-js-contracts
       '@systemfsoftware/stryker-js-instrumenter':
         specifier: workspace:^
         version: link:../../packages/stryker-js-instrumenter

@@ -1,7 +1,7 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
+import { Instrumentation, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { afterAll, beforeAll } from '@systemfsoftware/vitest'
 import {
   Cause,
@@ -98,16 +98,16 @@ const isNamespaceRecord = (u: unknown): u is Record<string, string | undefined> 
 
 const hostNamespace = (): object =>
   Option.getOrElse(
-    Option.liftPredicate(isNamespaceRecord)(Reflect.get(globalThis, Instrument.InstrumenterContext.NAMESPACE)),
+    Option.liftPredicate(isNamespaceRecord)(Reflect.get(globalThis, Instrumentation.InstrumenterContext.NAMESPACE)),
     () => {
       const created: Record<string, string | undefined> = {}
-      Reflect.set(globalThis, Instrument.InstrumenterContext.NAMESPACE, created)
+      Reflect.set(globalThis, Instrumentation.InstrumenterContext.NAMESPACE, created)
       return created
     },
   )
 
 const setActiveMutant = (id: string | undefined): Effect.Effect<void> =>
-  Effect.sync(() => Reflect.set(hostNamespace(), Instrument.InstrumenterContext.ACTIVE_MUTANT, id))
+  Effect.sync(() => Reflect.set(hostNamespace(), Instrumentation.InstrumenterContext.ACTIVE_MUTANT, id))
 
 const withActiveMutant = <A, E>(id: string | undefined, effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
   Effect.flatMap(setActiveMutant(id), () => Effect.ensuring(effect, setActiveMutant(undefined)))
@@ -1466,7 +1466,7 @@ const buildHarness = Effect.gen(function*() {
         content,
       })),
   )
-  const result: Instrument.InstrumentResult = yield* instrument(
+  const result: Instrumenter.InstrumentResult = yield* instrument(
     [
       ...sources.map((source) => ({ ...source, mutate: true })),
       ...supportSources.map((source) => ({ ...source, mutate: false })),

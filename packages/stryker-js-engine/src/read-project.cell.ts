@@ -1,6 +1,5 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Boolean, Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
@@ -15,7 +14,7 @@ import { badArgument } from 'effect/PlatformError'
 import * as Result from 'effect/Result'
 import * as Stream from 'effect/Stream'
 
-import { Reports } from '@systemfsoftware/stryker-js-contracts'
+import { Instrumenter, Reports } from '@systemfsoftware/stryker-js-contracts'
 import { Incremental } from '@systemfsoftware/stryker-js-contracts'
 import { Run } from '@systemfsoftware/stryker-js-contracts'
 import { admitDiscoveredEntry, DiscoveredEntryCommand, EntryIncluded } from './admit-discovered-entry.workflow.js'
@@ -351,7 +350,7 @@ type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
   readonly incrementalFile: string
   readonly contents: string | undefined
   readonly decodeError: string | undefined
-  readonly fileDescriptions: Record<string, { readonly mutate: Instrument.MutateDescription }>
+  readonly fileDescriptions: Record<string, { readonly mutate: Instrumenter.MutateDescription }>
   readonly testFiles: readonly string[]
 }
 
@@ -432,7 +431,7 @@ const addProjectFile = (
   files: MutableHashMap.MutableHashMap<string, Run.ProjectFile>,
   filesToMutate: MutableHashMap.MutableHashMap<string, Run.ProjectFile>,
   name: string,
-  desc: { readonly mutate: Instrument.MutateDescription },
+  desc: { readonly mutate: Instrumenter.MutateDescription },
 ): void => {
   const file: Run.ProjectFile = { name, mutate: desc.mutate, content: undefined, originalContent: undefined }
   MutableHashMap.set(files, name, file)
@@ -443,7 +442,7 @@ const addProjectFile = (
 }
 
 const makeProject = (
-  fileDescriptions: Instrument.FileDescriptions,
+  fileDescriptions: Instrumenter.FileDescriptions,
   incrementalReport?: Incremental.IncrementalReport,
   testFiles: readonly string[] = [],
 ): Run.Project => {

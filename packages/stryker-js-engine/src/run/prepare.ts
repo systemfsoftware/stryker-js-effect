@@ -1,6 +1,4 @@
-import type { Ignorer } from '@systemfsoftware/stryker-ignorer-interface'
 import { RunEvent, SpanTaxonomy, StockCatalog } from '@systemfsoftware/stryker-js-cli-contract'
-import { Format } from '@systemfsoftware/stryker-js-instrumenter'
 import {
   MutatorCatalog,
   Options,
@@ -22,7 +20,7 @@ import * as Queue from 'effect/Queue'
 import * as Result from 'effect/Result'
 import * as Scope from 'effect/Scope'
 
-import { Run } from '@systemfsoftware/stryker-js-contracts'
+import { Instrumenter, Run } from '@systemfsoftware/stryker-js-contracts'
 import { Reports } from '@systemfsoftware/stryker-js-contracts'
 import type { Workers } from '@systemfsoftware/stryker-js-contracts'
 import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
@@ -66,10 +64,10 @@ const announceSummary = Effect.fn(SpanTaxonomy.Spans.prepareAnnounceSummary.name
 export interface PrepareForInstrument {
   readonly project: Run.Project
   readonly loadedPlugins: Workers.LoadedPlugins
-  readonly ignorers: readonly Ignorer[]
   readonly mutatorCatalogs: readonly MergedCatalog[]
   readonly mutatorSelection: MutatorSelectionDecoded
-  readonly formatRegistry: Format.FormatRegistry
+  readonly instrumenter: Instrumenter.InstrumenterShape
+  readonly formats: readonly Instrumenter.ClaimedFormat[]
   readonly options: Options.StrykerOptions
   readonly frameworkClaimants: readonly WorkerHost.FrameworkClaimant[]
   readonly incrementalReportDiscard?: IncrementalReportDiscard | undefined
@@ -82,10 +80,10 @@ export type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly options: Options.StrykerOptions
   readonly loaded: Workers.LoadedPlugins
   readonly project: Run.Project
-  readonly ignorers: readonly Ignorer[]
   readonly mutatorCatalogs: readonly MergedCatalog[]
   readonly mutatorSelection: MutatorSelectionDecoded
-  readonly formatRegistry: Format.FormatRegistry
+  readonly instrumenter: Instrumenter.InstrumenterShape
+  readonly formats: readonly Instrumenter.ClaimedFormat[]
   readonly builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory>
   readonly reporterChoicesByName: HashMap.HashMap<string, ReporterChoice>
   readonly frameworkClaimants: readonly WorkerHost.FrameworkClaimant[]
@@ -121,6 +119,7 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
   | FileSystem.FileSystem
   | Path.Path
   | Reports.Reporter
+  | Instrumenter.InstrumenterDriver
 > {
   yield* Scope.Scope
   const env = yield* Run.RunEnvironment
@@ -184,11 +183,8 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
       (refused) => Run.StageError.make({ stage: 'prepare', reason: refused.message, cause: refused }),
     ),
   )
-  const registry = Format.registerEntries(
-    Format.coreFormatRegistry,
-    loaded.frameworks.map(({ moduleName, framework }) => Format.frameworkEntryOf(moduleName, framework)),
-  )
-  yield* WorkerHost.reportPluginLoad(queue, loaded, registry)
+  const bound = (yield* Instrumenter.InstrumenterDriver).bind({ plugins: loaded, catalogs: mutatorCatalogs })
+  yield* WorkerHost.reportPluginLoad(queue, loaded, bound.formats)
   const mergedSchema = buildMergedSchema(coreSchema, loaded.schemaContributions)
   const record = { ...options }
   yield* validateOptions(record, mergedSchema).pipe(
@@ -201,8 +197,6 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
         }),
     ),
   )
-  const ignorers: readonly Ignorer[] = loaded.ignorers
-
   const builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory> = {
     ...(yield* Reports.Reporter).builtin,
     ...env.builtinReporters,
@@ -235,10 +229,10 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
     options,
     loaded,
     project: command.project,
-    ignorers,
     mutatorCatalogs,
     mutatorSelection,
-    formatRegistry: registry,
+    instrumenter: bound.instrumenter,
+    formats: bound.formats,
     builtinReporterFactories,
     reporterChoicesByName,
     frameworkClaimants,

@@ -27,10 +27,10 @@ const writePrepareForInstrument = (
       return {
         project: raw.project,
         loadedPlugins: raw.loaded,
-        ignorers: raw.ignorers,
         mutatorCatalogs: raw.mutatorCatalogs,
         mutatorSelection: raw.mutatorSelection,
-        formatRegistry: raw.formatRegistry,
+        instrumenter: raw.instrumenter,
+        formats: raw.formats,
         options: raw.options,
         frameworkClaimants: raw.frameworkClaimants,
         incrementalReportDiscard: raw.incrementalReportDiscard,

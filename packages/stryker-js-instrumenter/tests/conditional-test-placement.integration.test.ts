@@ -1,6 +1,8 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Instrument, lineStartsOf, offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrumentation } from '@systemfsoftware/stryker-js-plugin-interface'
 import { afterAll } from '@systemfsoftware/vitest'
 import { Effect, FileSystem, Layer, Option } from 'effect'
 import type { PlatformError } from 'effect'
@@ -112,7 +114,7 @@ const SHAPES: readonly Shape[] = [
 
 const ALL_SHAPES: readonly Shape[] = [...SHAPES, ...DISABLED_SHAPES]
 
-type CollectedMutant = Instrument.InstrumentResult['mutants'][number]
+type CollectedMutant = Instrumenter.InstrumentResult['mutants'][number]
 type Outcome = string | number | boolean | undefined
 
 interface ShapeModule {
@@ -186,16 +188,16 @@ const isNamespaceRecord = (value: unknown): value is Record<string, string | und
 
 const hostNamespace = (): object =>
   Option.getOrElse(
-    Option.liftPredicate(isNamespaceRecord)(Reflect.get(globalThis, Instrument.InstrumenterContext.NAMESPACE)),
+    Option.liftPredicate(isNamespaceRecord)(Reflect.get(globalThis, Instrumentation.InstrumenterContext.NAMESPACE)),
     () => {
       const created: Record<string, string | undefined> = {}
-      Reflect.set(globalThis, Instrument.InstrumenterContext.NAMESPACE, created)
+      Reflect.set(globalThis, Instrumentation.InstrumenterContext.NAMESPACE, created)
       return created
     },
   )
 
 const activate = (id: string | undefined): Effect.Effect<void> =>
-  Effect.sync(() => Reflect.set(hostNamespace(), Instrument.InstrumenterContext.ACTIVE_MUTANT, id))
+  Effect.sync(() => Reflect.set(hostNamespace(), Instrumentation.InstrumenterContext.ACTIVE_MUTANT, id))
 
 const observeWithMutant = (url: URL, id: string): Effect.Effect<readonly Observation[], PlacementHarnessError> =>
   Effect.ensuring(

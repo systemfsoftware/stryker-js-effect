@@ -6,6 +6,8 @@ import type {
   ScriptFormat,
 } from '@systemfsoftware/stryker-framework-interface'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
+import { ErrorText } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
@@ -13,9 +15,7 @@ import * as Option from 'effect/Option'
 import { type Program, type Statement } from './Ast.handle.js'
 import { type Ast, type EmbeddedAst, type EmbeddedScript, type ScriptAst } from './Ast.schema.js'
 import { makeScriptParser } from './drivers/oxc-program.js'
-import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { EmbeddedFormatEntry, FormatClaim } from './Format.schema.js'
-import { InstrumentError } from './Instrument.schema.js'
 import { instrumentationHeader } from './InstrumentHeader.js'
 import { lineStartsOf, originAt } from './Location.js'
 import type { LineStarts } from './Location.schema.js'
@@ -61,8 +61,8 @@ const embeddedScriptsOf = (
     return [{ region: index, ast }]
   })
 
-const embeddedAstError = (ast: Ast): InstrumentError =>
-  InstrumentError.make({
+const embeddedAstError = (ast: Ast): Instrumenter.InstrumentError =>
+  Instrumenter.InstrumentError.make({
     message: `Expected an embedded document AST, received the "${ast.format}" format`,
     cause: undefined,
   })
@@ -75,34 +75,39 @@ const embeddedOf = (ast: Ast): Option.Option<EmbeddedAst> =>
 
 const printNothingForNonEmbeddedAst = (): string => ''
 
-const frameworkFailure = (moduleName: string, fileName: string, detail: string): InstrumentError =>
-  InstrumentError.make({
+const frameworkFailure = (moduleName: string, fileName: string, detail: string): Instrumenter.InstrumentError =>
+  Instrumenter.InstrumentError.make({
     message: `The framework "${moduleName}" could not parse ${fileName}: ${detail}`,
     cause: new Error(detail),
   })
 
-const hookFailure = <A = unknown>(moduleName: string, hook: string, fileName: string, cause: A): InstrumentError =>
-  InstrumentError.make({
+const hookFailure = <A = unknown>(
+  moduleName: string,
+  hook: string,
+  fileName: string,
+  cause: A,
+): Instrumenter.InstrumentError =>
+  Instrumenter.InstrumentError.make({
     message: `The framework "${moduleName}" threw while running ${hook} for ${fileName}: ${errorTextOf(cause)}`,
     cause,
   })
 
 const errorTextOf = <A = unknown>(cause: A): string =>
-  Option.getOrElse(Option.map(renderedErrorText(cause), (rendered) => rendered.text), () => '')
+  Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => '')
 
 const runHook = <A>(
   moduleName: string,
   hook: string,
   fileName: string,
   run: () => A,
-): Effect.Effect<A, InstrumentError> =>
+): Effect.Effect<A, Instrumenter.InstrumentError> =>
   Effect.try({ try: run, catch: (cause) => hookFailure(moduleName, hook, fileName, cause) })
 
 const settled = <A>(
   moduleName: string,
   fileName: string,
   result: FrameworkParseResult<A>,
-): Effect.Effect<A, InstrumentError> =>
+): Effect.Effect<A, Instrumenter.InstrumentError> =>
   result.kind === 'Parsed'
     ? Effect.succeed(result.value)
     : Effect.fail(frameworkFailure(moduleName, fileName, result.message))

@@ -1,4 +1,4 @@
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
+import { ErrorText } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Option from 'effect/Option'
 
 export const renderedFailureOf = <A = unknown>(cause: A): string =>

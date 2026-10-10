@@ -34,7 +34,6 @@
     "@systemfsoftware/stryker-framework-interface": "workspace:^",
     "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
-    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^"
   },
   "peerDependencies": {

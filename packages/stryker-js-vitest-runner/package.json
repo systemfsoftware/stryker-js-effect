@@ -66,7 +66,6 @@
     "@systemfsoftware/stryker-ignorer-in-source-vitest-block": "file:../../.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz",
     "@systemfsoftware/stryker-js": "file:../../.sfs-deps/stryker-js.tgz",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
-    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",
     "@systemfsoftware/stryker-js-typescript-checker": "file:../../.sfs-deps/stryker-js-typescript-checker.tgz",

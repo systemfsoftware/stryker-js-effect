@@ -1,7 +1,6 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
-import { Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, ErrorText, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 

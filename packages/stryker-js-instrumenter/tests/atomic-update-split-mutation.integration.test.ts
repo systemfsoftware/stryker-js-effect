@@ -1,6 +1,6 @@
 import { NodeFileSystem } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Effect } from 'effect'
 
@@ -198,10 +198,10 @@ const instrumentSource = (source: string) =>
     }),
   )
 
-const atomicCount = (result: Instrument.InstrumentResult): number =>
+const atomicCount = (result: Instrumenter.InstrumentResult): number =>
   result.mutants.filter((mutant) => mutant.mutatorName === ATOMIC_UPDATE_SPLIT).length
 
-const atomicMutantsOf = (result: Instrument.InstrumentResult): readonly Mutant.Mutant[] =>
+const atomicMutantsOf = (result: Instrumenter.InstrumentResult): readonly Mutant.Mutant[] =>
   result.mutants.filter((mutant) => mutant.mutatorName === ATOMIC_UPDATE_SPLIT)
 
 const Feature = makeFeature({ it })
@@ -254,7 +254,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
         Then(
           'every table entry counts its mutants inside its own export, every file totals its table, and no replacement hides behind a cast or a suppression',
         )((
-          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrument.InstrumentResult },
+          { fixtures, report }: { fixtures: readonly FixtureFile[]; report: Instrumenter.InstrumentResult },
           expect,
         ) => {
           const contentByFile = new Map(
@@ -422,7 +422,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           ({ source }: { source: string }) => instrumentSource(source),
         ),
         Then('the single mutant is reported as ignored, carrying the comment reason')(
-          ({ report }: { report: Instrument.InstrumentResult }, expect) => {
+          ({ report }: { report: Instrumenter.InstrumentResult }, expect) => {
             const mutants = atomicMutantsOf(report)
             return expect({
               count: mutants.length,
@@ -451,7 +451,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
             ),
         ),
         Then('the single mutant is reported as ignored for the exclusion')(
-          ({ report }: { report: Instrument.InstrumentResult }, expect) => {
+          ({ report }: { report: Instrumenter.InstrumentResult }, expect) => {
             const mutants = atomicMutantsOf(report)
             return expect({
               count: mutants.length,

@@ -1,4 +1,5 @@
 import { Engine } from '@systemfsoftware/stryker-js-engine'
+import { JsInstrumenter } from '@systemfsoftware/stryker-js-instrumenter'
 import { Reporting } from '@systemfsoftware/stryker-js-reporting'
 import * as Layer from 'effect/Layer'
 import { layer as engineIdentityLayer } from './engine-identity.js'
@@ -9,6 +10,7 @@ export const makePlatformLayer = (options: {
   Layer.mergeAll(
     Layer.provideMerge(Reporting.layer, Engine.makeNodePlatformLayer(options)),
     engineIdentityLayer,
+    JsInstrumenter.layer,
   )
 
 export const platformLayer: Layer.Layer<Engine.EnginePorts> = makePlatformLayer({ childEnv: {} })

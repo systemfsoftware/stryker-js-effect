@@ -1,4 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import { Instrumenter } from '@systemfsoftware/stryker-js-contracts'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { Effect, Layer } from 'effect'
 
@@ -49,7 +50,7 @@ Feature('Parenthesized type predicates in make bodies')
             ),
         ),
         Then('instrumentation succeeds with a non-empty mutant population')((
-          { result }: { result: Instrument.InstrumentResult },
+          { result }: { result: Instrumenter.InstrumentResult },
           expect,
         ) => expect(result.mutants.length).toBeGreaterThan(0)),
       ),
