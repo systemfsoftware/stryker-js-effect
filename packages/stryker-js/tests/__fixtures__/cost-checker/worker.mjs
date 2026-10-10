@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodeSocketServer } from '@effect/platform-node'
 import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
-import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Plugin, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Worker } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
@@ -32,6 +32,16 @@ const CHECK_DELAY = '25 millis'
 const handlers = Plugin.CheckerRpcs.toLayer({
   group: ({ mutants }) => Effect.succeed([mutants.map((mutant) => mutant.id)]),
   digest: () => Effect.succeed('0123456789abcdef'.repeat(4)),
+  capabilities: () => Effect.succeed({ typeQuery: [] }),
+  typeQuery: () =>
+    Effect.fail(
+      TypeQuery.TypeQueryRefused.make({
+        version: 2,
+        reason: 'unsupported-version',
+        nextAction:
+          'This checker declares no type-query versions; send type queries to one whose capabilities list the version.',
+      }),
+    ),
   check: ({ mutants }) =>
     Effect.as(
       Effect.sleep(CHECK_DELAY),

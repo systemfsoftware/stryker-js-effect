@@ -775,6 +775,15 @@
     "attributes": {}
   },
   {
+    "id": "rpc.typeQuery",
+    "name": "rpc.typeQuery",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
     "id": "stryker.run.conclude",
     "name": "stryker.run.conclude",
     "attributes": {}

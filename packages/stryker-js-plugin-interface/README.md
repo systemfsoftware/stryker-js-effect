@@ -75,6 +75,27 @@ its own `NodeSdk.layer`-based exporter, and a host provides its own
 `NodeSdk.layer`-based layer at its composition root. Both are no-ops unless
 `OTEL_ENABLED` is `true`.
 
+## Type query (provisional)
+
+The `TypeQuery` namespace is the port an instrumenter uses to ask, before it
+generates a mutant, the type at a site and whether a candidate replacement is
+assignable where it would sit. It holds the wire shapes for request versions 1
+and 2 (`TypeQueryRequest`, `TypeQueryResponse`, `TypeAnswer`,
+`TypeQueryRefused`, and `TypeQuerySiteKind` with its `function-body` site), the
+`CheckerCapabilities` a checker declares, `typeQueryServingOf`, and the
+`TypeQuery` service tag, and no implementation. The checker RPC group serves it
+as `capabilities` and `typeQuery`; the TypeScript checker ships an in-process
+implementation as `TypeQueryLive` from its own `./type-query` entry.
+
+```ts
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
+```
+
+The namespace changes shape when its consumer confirms it, and that change
+ships as an ordinary breaking release. Answers are advisory: only
+`NotAssignable` may justify dropping a candidate, and `Assignable` and
+`Unknown` say nothing about whether a mutant compiles.
+
 ## Mutator providers
 
 A plugin can contribute mutators. The library module the host executes to read

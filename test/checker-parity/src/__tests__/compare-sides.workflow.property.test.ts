@@ -2,6 +2,7 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   BootAsymmetry,
   compareSides,
@@ -12,6 +13,8 @@ import {
   ParityHolds,
   SlowerThanMain,
   VerdictMismatch,
+  WrongNotAssignable,
+  ZeroNotAssignable,
   ZeroShortcuts,
   ZeroSnapshotUpdates,
 } from '../compare-sides.workflow.js'
@@ -24,6 +27,8 @@ import {
   ProjectSkipped,
   type Side,
   TelemetryMissing,
+  TypeAnswerLine,
+  TypeQueryFileRefused,
   Verdict,
   VerdictStatus,
 } from '../Parity.schema.js'
@@ -105,11 +110,68 @@ const bootOf = (side: Side, project: string, reason: string): ProjectBootFailed 
 const skippedOf = (project: string, reason: string): ProjectSkipped =>
   ProjectSkipped.make({ schemaVersion: 1, project, reason })
 
+const assignableAnswer: TypeQuery.TypeAnswer = TypeQuery.Assignable.make({ candidateType: '1' })
+const notAssignableAnswer: TypeQuery.TypeAnswer = TypeQuery.NotAssignable.make({
+  candidateType: '""',
+  contextualType: '"a" | "b"',
+})
+
+interface TypeAnswerFields {
+  readonly project?: string
+  readonly candidate?: string
+  readonly siteKind?: 'expression' | 'function-body'
+}
+
+const typeAnswerLineOf = (
+  mutantId: string,
+  answer: TypeQuery.TypeAnswer,
+  fields: TypeAnswerFields = {},
+): TypeAnswerLine =>
+  TypeAnswerLine.make({
+    schemaVersion: 1,
+    side: 'branch',
+    project: fields.project ?? PROJECT,
+    mutantId,
+    fileName: FILE,
+    line: 1,
+    column: 1,
+    candidate: fields.candidate ?? '""',
+    siteKind: fields.siteKind ?? 'expression',
+    answer,
+  })
+
 const commandOf = (
   lines: ReadonlyArray<ParityLine>,
   gates: Gates = GATES_OFF,
   isolatedDeclarationsProject = FIXTURE,
 ): CompareSidesCommand => CompareSidesCommand.make({ lines, gates, isolatedDeclarationsProject })
+
+const answersAtSiteKind = (
+  siteKind: 'expression' | 'function-body',
+  answers: ReadonlyArray<TypeQuery.TypeAnswer>,
+): ReadonlyArray<ParityLine> =>
+  answers.flatMap((answer, index) => [
+    verdictOf('main', { mutantId: `${siteKind}-${index}`, status: 'compileError' }),
+    verdictOf('branch', { mutantId: `${siteKind}-${index}`, status: 'compileError' }),
+    typeAnswerLineOf(`${siteKind}-${index}`, answer, { siteKind }),
+  ])
+
+interface RecallMutant {
+  readonly mainStatus: VerdictStatus
+  readonly branchStatus: VerdictStatus
+  readonly answer?: TypeQuery.TypeAnswer
+  readonly otherProjectNotAssignable: boolean
+}
+
+const recallLinesOf = (prefix: string, mutants: ReadonlyArray<RecallMutant>): ReadonlyArray<ParityLine> =>
+  mutants.flatMap((mutant, index): ReadonlyArray<ParityLine> => [
+    verdictOf('main', { mutantId: `${prefix}${index}`, status: mutant.mainStatus }),
+    verdictOf('branch', { mutantId: `${prefix}${index}`, status: mutant.branchStatus }),
+    ...(mutant.answer === undefined ? [] : [typeAnswerLineOf(`${prefix}${index}`, mutant.answer)]),
+    ...(mutant.otherProjectNotAssignable
+      ? [typeAnswerLineOf(`${prefix}${index}`, notAssignableAnswer, { project: OTHER_PROJECT })]
+      : []),
+  ])
 
 const decisionOf = (subject: typeof compareSides, command: CompareSidesCommand): ComparisonDecision =>
   Result.getOrThrow(subject(command))
@@ -122,9 +184,13 @@ describe('compareSides', () => {
     '∀v_IdenticalSides_≡ParityHolds',
     { of: [S.NonEmptyString, S.NonEmptyString, VerdictStatus], subject: compareSides },
     (subject, [mutantId, reason, status]) => {
+      const gateId = `${mutantId}-gate`
       const lines = [
         verdictOf('main', { mutantId, status, reason }),
         verdictOf('branch', { mutantId, status, reason }),
+        verdictOf('main', { mutantId: gateId, status: 'compileError', reason }),
+        verdictOf('branch', { mutantId: gateId, status: 'compileError', reason }),
+        typeAnswerLineOf(gateId, notAssignableAnswer),
         countsOf(PROJECT),
       ]
       return S.is(ParityHolds)(decisionOf(subject, commandOf(lines)))
@@ -186,6 +252,7 @@ describe('compareSides', () => {
           status: 'compileError',
           reason: `${absolute}(${digitsOf(drawnBranchLine)},${digitsOf(drawnBranchColumn)}): a diagnostic`,
         }),
+        typeAnswerLineOf('m', notAssignableAnswer),
         countsOf(PROJECT),
       ]
       return S.is(ParityHolds)(decisionOf(subject, commandOf(lines)))
@@ -276,7 +343,11 @@ describe('compareSides', () => {
     '∀m_CachedBranchOnly_≡NoZeroUpdatesRefusal',
     { of: [S.NonEmptyString], subject: compareSides },
     (subject, [mutantId]) => {
-      const lines = [verdictOf('main', { mutantId }), verdictOf('branch', { mutantId, cached: true })]
+      const lines = [
+        verdictOf('main', { mutantId, status: 'compileError' }),
+        verdictOf('branch', { mutantId, status: 'compileError', cached: true }),
+        typeAnswerLineOf(mutantId, notAssignableAnswer),
+      ]
       return S.is(ParityHolds)(decisionOf(subject, commandOf(lines)))
     },
   )
@@ -301,8 +372,9 @@ describe('compareSides', () => {
       const lines = [
         bootOf('main', PROJECT, reason),
         bootOf('branch', PROJECT, reason),
-        verdictOf('main', { project: OTHER_PROJECT, mutantId: 'm' }),
-        verdictOf('branch', { project: OTHER_PROJECT, mutantId: 'm' }),
+        verdictOf('main', { project: OTHER_PROJECT, mutantId: 'm', status: 'compileError' }),
+        verdictOf('branch', { project: OTHER_PROJECT, mutantId: 'm', status: 'compileError' }),
+        typeAnswerLineOf('m', notAssignableAnswer, { project: OTHER_PROJECT }),
         countsOf(OTHER_PROJECT),
       ]
       const decision = decisionOf(subject, commandOf(lines))
@@ -316,8 +388,12 @@ describe('compareSides', () => {
     { of: [S.NonEmptyString, S.Boolean], subject: compareSides },
     (subject, [reason, bootFailed]) => {
       const lines = bootFailed
-        ? [bootOf('main', PROJECT, reason), bootOf('branch', PROJECT, reason)]
-        : [skippedOf(PROJECT, reason)]
+        ? [
+          bootOf('main', PROJECT, reason),
+          bootOf('branch', PROJECT, reason),
+          typeAnswerLineOf('m', notAssignableAnswer),
+        ]
+        : [skippedOf(PROJECT, reason), typeAnswerLineOf('m', notAssignableAnswer)]
       const violations = violationsOf(decisionOf(subject, commandOf(lines)))
       return violations.length === 1 && S.is(NothingCompared)(violations[0])
     },
@@ -353,8 +429,9 @@ describe('compareSides', () => {
       const mainMs = branchMs + digitsOf(drawnExtra) + 1
       const cachedMs = digitsOf(drawnCachedMs)
       const lines = [
-        verdictOf('main', { mutantId: 'm' }),
-        verdictOf('branch', { mutantId: 'm' }),
+        verdictOf('main', { mutantId: 'm', status: 'compileError' }),
+        verdictOf('branch', { mutantId: 'm', status: 'compileError' }),
+        typeAnswerLineOf('m', notAssignableAnswer),
         countsOf(PROJECT),
         checkCallOf('main', PROJECT, 0, ['m'], mainMs),
         checkCallOf('branch', PROJECT, 0, ['m'], branchMs),
@@ -382,10 +459,11 @@ describe('compareSides', () => {
         ...Array.from(
           { length: mutants },
           (_, index) => [
-            verdictOf('main', { mutantId: `m${index}` }),
-            verdictOf('branch', { mutantId: `m${index}` }),
+            verdictOf('main', { mutantId: `m${index}`, status: index === 0 ? 'compileError' : 'passed' }),
+            verdictOf('branch', { mutantId: `m${index}`, status: index === 0 ? 'compileError' : 'passed' }),
           ],
         ).flat(),
+        typeAnswerLineOf('m0', notAssignableAnswer),
         countsOf(PROJECT, { resplices }),
       ]
       const decision = decisionOf(subject, commandOf(lines))
@@ -410,6 +488,9 @@ describe('compareSides', () => {
             verdictOf('branch', { mutantId: `m${index}`, status: index < mismatches ? 'compileError' : 'passed' }),
           ],
         ).flat(),
+        verdictOf('main', { mutantId: 'gate-not-assignable', status: 'compileError' }),
+        verdictOf('branch', { mutantId: 'gate-not-assignable', status: 'compileError' }),
+        typeAnswerLineOf('gate-not-assignable', notAssignableAnswer),
         countsOf(PROJECT),
       ]
       const decision = decisionOf(subject, commandOf(lines))
@@ -451,8 +532,247 @@ describe('compareSides', () => {
         'telemetry-missing',
         'zero-shortcuts',
         'slower-than-main',
+        'zero-not-assignable',
       ].every((code) => codes.has(code)) &&
         violations.every((violation) => violation.nextAction.length > 0)
+    },
+  )
+
+  it.prop(
+    '∀w_NotAssignableOnCompileError_≡ParityHolds',
+    { of: [S.NonEmptyString, S.String], subject: compareSides },
+    (subject, [mutantId, candidate]) => {
+      const lines = [
+        verdictOf('main', { mutantId, status: 'compileError' }),
+        verdictOf('branch', { mutantId, status: 'compileError' }),
+        typeAnswerLineOf(mutantId, notAssignableAnswer, { candidate }),
+        countsOf(PROJECT),
+      ]
+      return S.is(ParityHolds)(decisionOf(subject, commandOf(lines)))
+    },
+  )
+
+  it.prop(
+    '∀w_NotAssignableOnNonCompileError_≡WrongNotAssignableNamingTheMutant',
+    { of: [S.NonEmptyString, S.Literals(['passed', 'ignored']), S.String], subject: compareSides },
+    (subject, [mutantId, status, candidate]) => {
+      const lines = [
+        verdictOf('main', { mutantId, status }),
+        verdictOf('branch', { mutantId, status }),
+        typeAnswerLineOf(mutantId, notAssignableAnswer, { candidate }),
+        countsOf(PROJECT),
+      ]
+      const decision = decisionOf(subject, commandOf(lines))
+      return S.is(ParityBroken)(decision) &&
+        decision.violations.some((violation) =>
+          S.is(WrongNotAssignable)(violation) &&
+          violation.mutantId === mutantId &&
+          violation.verdict === status &&
+          violation.candidate === candidate
+        )
+    },
+  )
+
+  it.prop(
+    '∀w,κ_NotAssignableOnNonCompileErrorPerSiteKind_≡WrongNotAssignableNamingTheMutant',
+    {
+      of: [S.NonEmptyString, S.Literals(['passed', 'ignored']), S.String, S.Literals(['expression', 'function-body'])],
+      subject: compareSides,
+    },
+    (subject, [mutantId, status, candidate, siteKind]) => {
+      const lines = [
+        verdictOf('main', { mutantId, status }),
+        verdictOf('branch', { mutantId, status }),
+        typeAnswerLineOf(mutantId, notAssignableAnswer, { candidate, siteKind }),
+        countsOf(PROJECT),
+      ]
+      const decision = decisionOf(subject, commandOf(lines))
+      return S.is(ParityBroken)(decision) &&
+        decision.violations.some((violation) =>
+          S.is(WrongNotAssignable)(violation) &&
+          violation.mutantId === mutantId &&
+          violation.verdict === status &&
+          violation.candidate === candidate
+        )
+    },
+  )
+
+  it.prop(
+    '∀r_RecallCounters_≡BranchCompileErrorsAndThoseItsOwnProjectAnsweredNotAssignable',
+    {
+      of: [
+        S.Array(S.Struct({
+          mainStatus: VerdictStatus,
+          branchStatus: VerdictStatus,
+          answer: TypeQuery.NotAssignable,
+          otherProjectNotAssignable: S.Boolean,
+        })),
+        S.Array(S.Struct({
+          mainStatus: VerdictStatus,
+          branchStatus: VerdictStatus,
+          answer: S.optionalKey(S.Union([TypeQuery.Assignable, TypeQuery.Unknown])),
+          otherProjectNotAssignable: S.Boolean,
+        })),
+      ],
+      subject: compareSides,
+    },
+    (subject, [answeredNotAssignable, others]) => {
+      const lines = [...recallLinesOf('n', answeredNotAssignable), ...recallLinesOf('o', others), countsOf(PROJECT)]
+      const { typeQuery } = decisionOf(subject, commandOf(lines)).summary
+      const answeredCompileErrors = answeredNotAssignable.filter((mutant) => mutant.branchStatus === 'compileError')
+      const otherCompileErrors = others.filter((mutant) => mutant.branchStatus === 'compileError')
+      return typeQuery.compileErrorTotal === answeredCompileErrors.length + otherCompileErrors.length &&
+        typeQuery.compileErrorAnsweredNotAssignable === answeredCompileErrors.length
+    },
+  )
+
+  it.prop(
+    '∀a_AssignableAnswer_≡NeverWrongNotAssignable',
+    { of: [S.NonEmptyString], subject: compareSides },
+    (subject, [mutantId]) => {
+      const lines = [
+        verdictOf('main', { mutantId, status: 'passed' }),
+        verdictOf('branch', { mutantId, status: 'passed' }),
+        typeAnswerLineOf(mutantId, assignableAnswer),
+        countsOf(PROJECT),
+      ]
+      const decision = decisionOf(subject, commandOf(lines))
+      return !(S.is(ParityBroken)(decision) &&
+        decision.violations.some((violation) => S.is(WrongNotAssignable)(violation)))
+    },
+  )
+
+  it.prop(
+    '∀u_UnknownAnswer_≡NeverWrongNotAssignable',
+    { of: [S.NonEmptyString, TypeQuery.UnknownReason], subject: compareSides },
+    (subject, [mutantId, reason]) => {
+      const lines = [
+        verdictOf('main', { mutantId, status: 'passed' }),
+        verdictOf('branch', { mutantId, status: 'passed' }),
+        typeAnswerLineOf(mutantId, TypeQuery.Unknown.make({ reason })),
+        countsOf(PROJECT),
+      ]
+      const decision = decisionOf(subject, commandOf(lines))
+      return !(S.is(ParityBroken)(decision) &&
+        decision.violations.some((violation) => S.is(WrongNotAssignable)(violation)))
+    },
+  )
+
+  it.prop(
+    '∀z_ZeroNotAssignableOverRun_≡Refused',
+    { of: [S.NonEmptyString, TypeQuery.UnknownReason], subject: compareSides },
+    (subject, [mutantId, reason]) => {
+      const lines = [
+        verdictOf('main', { mutantId, status: 'compileError' }),
+        verdictOf('branch', { mutantId, status: 'compileError' }),
+        typeAnswerLineOf(mutantId, TypeQuery.Unknown.make({ reason })),
+        countsOf(PROJECT),
+      ]
+      const decision = decisionOf(subject, commandOf(lines))
+      return S.is(ParityBroken)(decision) &&
+        decision.violations.some((violation) => S.is(ZeroNotAssignable)(violation))
+    },
+  )
+
+  it.prop(
+    '∀z_ProjectWithZeroAnswers_≡ReportedNotGated',
+    { of: [S.NonEmptyString], subject: compareSides },
+    (subject, [mutantId]) => {
+      const lines = [
+        verdictOf('main', { project: PROJECT, mutantId, status: 'compileError' }),
+        verdictOf('branch', { project: PROJECT, mutantId, status: 'compileError' }),
+        typeAnswerLineOf(mutantId, notAssignableAnswer),
+        countsOf(PROJECT),
+        verdictOf('main', { project: OTHER_PROJECT, mutantId: 'n' }),
+        verdictOf('branch', { project: OTHER_PROJECT, mutantId: 'n' }),
+        countsOf(OTHER_PROJECT),
+      ]
+      const decision = decisionOf(subject, commandOf(lines))
+      return S.is(ParityHolds)(decision) &&
+        decision.summary.typeQuery.projects.some((entry) => entry.project === OTHER_PROJECT && entry.queried === 0)
+    },
+  )
+
+  it.prop(
+    '∀p_PerProjectShares_≡CountEachProjectsAnswersReasonsAndRefusals',
+    {
+      of: [
+        S.Array(TypeQuery.TypeAnswer),
+        S.Array(TypeQuery.TypeAnswer),
+        S.Array(TypeQueryFileRefused),
+        S.Array(TypeQueryFileRefused),
+      ],
+      subject: compareSides,
+    },
+    (subject, [projectAnswers, otherAnswers, projectRefusals, otherRefusals]) => {
+      const linesFor = (
+        project: string,
+        prefix: string,
+        answers: ReadonlyArray<TypeQuery.TypeAnswer>,
+        refusals: ReadonlyArray<TypeQueryFileRefused>,
+      ): ReadonlyArray<ParityLine> => [
+        ...answers.flatMap((answer, index) => [
+          verdictOf('main', { project, mutantId: `${prefix}${index}`, status: 'compileError' }),
+          verdictOf('branch', { project, mutantId: `${prefix}${index}`, status: 'compileError' }),
+          typeAnswerLineOf(`${prefix}${index}`, answer, { project }),
+        ]),
+        ...refusals.map((refused) =>
+          TypeQueryFileRefused.make({
+            schemaVersion: refused.schemaVersion,
+            project,
+            fileName: refused.fileName,
+            reason: refused.reason,
+            nextAction: refused.nextAction,
+            mutantCount: refused.mutantCount,
+          })
+        ),
+      ]
+      const lines = [
+        ...linesFor(PROJECT, 'a', projectAnswers, projectRefusals),
+        ...linesFor(OTHER_PROJECT, 'b', otherAnswers, otherRefusals),
+        countsOf(PROJECT),
+        countsOf(OTHER_PROJECT),
+      ]
+      const { typeQuery } = decisionOf(subject, commandOf(lines)).summary
+      const expected = [
+        [PROJECT, projectAnswers, projectRefusals],
+        [OTHER_PROJECT, otherAnswers, otherRefusals],
+      ] as const
+      const unknownCountOf = (answers: ReadonlyArray<TypeQuery.TypeAnswer>, reason: string): number =>
+        answers.filter((answer) => S.is(TypeQuery.Unknown)(answer) && answer.reason === reason).length
+      return typeQuery.queried === projectAnswers.length + otherAnswers.length &&
+        typeQuery.refusedFiles === projectRefusals.length + otherRefusals.length &&
+        expected.every(([project, answers, refusals]) =>
+          typeQuery.projects.some((entry) =>
+            entry.project === project &&
+            entry.queried === answers.length &&
+            entry.assignable + entry.notAssignable + entry.unknown === entry.queried &&
+            Object.entries(entry.unknownReasons).every(([reason, count]) =>
+              count === unknownCountOf(answers, reason)
+            ) &&
+            entry.refusedFiles === refusals.length &&
+            entry.refusedMutants === refusals.reduce((total, refused) => total + refused.mutantCount, 0)
+          )
+        )
+    },
+  )
+
+  it.prop(
+    '∀x,y_AnswersBySiteKind_≡EachKindsCountsSumToItsLineCount',
+    { of: [S.NonEmptyArray(TypeQuery.TypeAnswer), S.NonEmptyArray(TypeQuery.TypeAnswer)], subject: compareSides },
+    (subject, [expressionAnswers, functionBodyAnswers]) => {
+      const lines = [
+        ...answersAtSiteKind('expression', expressionAnswers),
+        ...answersAtSiteKind('function-body', functionBodyAnswers),
+        countsOf(PROJECT),
+      ]
+      const { answers, answersBySiteKind } = decisionOf(subject, commandOf(lines)).summary.typeQuery
+      const sumOf = (
+        counts: { readonly assignable: number; readonly notAssignable: number; readonly unknown: number },
+      ): number => counts.assignable + counts.notAssignable + counts.unknown
+      return sumOf(answersBySiteKind.expression) === expressionAnswers.length &&
+        sumOf(answersBySiteKind['function-body']) === functionBodyAnswers.length &&
+        sumOf(answers) === expressionAnswers.length + functionBodyAnswers.length
     },
   )
 })

@@ -5,9 +5,10 @@
  *
  * The driver writes these lines; `compare` decodes every `*.ndjson` under its input directories
  * through `S.fromJsonString(ParityLine)` and hands the lines to the pure `compare-sides` workflow. Every
- * line carries the repo-relative `project` (a tsconfig path, stable across sides and shards) and,
- * except {@link ProjectSkipped}, the `side` that wrote it.
+ * line carries the repo-relative `project` (a tsconfig path, stable across sides and shards); the kinds
+ * that record a side write it.
  */
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import { dual } from 'effect/Function'
 import * as Hash from 'effect/Hash'
@@ -21,7 +22,7 @@ export type Side = typeof Side.Type
 export const VerdictStatus = S.Literals(['passed', 'compileError', 'ignored'])
 export type VerdictStatus = typeof VerdictStatus.Type
 
-const NonNegativeInt = S.Int.check(S.isGreaterThanOrEqualTo(0))
+export const NonNegativeInt = S.Int.check(S.isGreaterThanOrEqualTo(0))
 const PositiveInt = S.Int.check(S.isGreaterThanOrEqualTo(1))
 const NonNegativeFinite = S.Finite.check(S.isGreaterThanOrEqualTo(0))
 
@@ -112,6 +113,40 @@ export class TelemetryMissing extends S.TaggedClass<TelemetryMissing>()('Telemet
   receivedSpans: NonNegativeInt,
 }) {}
 
+export class TypeAnswerLine extends S.TaggedClass<TypeAnswerLine>()('TypeAnswerLine', {
+  schemaVersion: SCHEMA_VERSION,
+  side: S.Literal('branch'),
+  project: S.String,
+  mutantId: S.String,
+  fileName: S.String,
+  line: PositiveInt,
+  column: PositiveInt,
+  candidate: S.String,
+  siteKind: TypeQuery.TypeQuerySiteKind,
+  siteType: S.optional(S.String),
+  contextualType: S.optional(S.String),
+  answer: TypeQuery.TypeAnswer,
+}) {}
+
+export const TypeQueryRefusalReason = S.Union([TypeQuery.FileRefusedReason, TypeQuery.TypeQueryRefusedReason])
+export type TypeQueryRefusalReason = typeof TypeQueryRefusalReason.Type
+
+export class TypeQueryFileRefused extends S.TaggedClass<TypeQueryFileRefused>()('TypeQueryFileRefused', {
+  schemaVersion: SCHEMA_VERSION,
+  project: S.String,
+  fileName: S.String,
+  reason: TypeQueryRefusalReason,
+  nextAction: S.String,
+  mutantCount: NonNegativeInt,
+}) {}
+
+export class TypeQueryServers extends S.TaggedClass<TypeQueryServers>()('TypeQueryServers', {
+  schemaVersion: SCHEMA_VERSION,
+  side: S.Literal('branch'),
+  project: S.String,
+  peakLiveServers: NonNegativeInt,
+}) {}
+
 export class Deferred extends S.TaggedClass<Deferred>()('Deferred', {
   schemaVersion: SCHEMA_VERSION,
   side: S.NullOr(Side),
@@ -144,6 +179,9 @@ export const ParityLine = S.Union([
   ProjectSkipped,
   CacheEntry,
   TelemetryMissing,
+  TypeAnswerLine,
+  TypeQueryFileRefused,
+  TypeQueryServers,
   Deferred,
   UnitOverBudget,
 ])

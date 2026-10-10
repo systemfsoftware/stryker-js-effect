@@ -89,3 +89,103 @@ export class ParseTsconfigTextCommand extends S.TaggedClass<ParseTsconfigTextCom
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
+
+export const ContextualTypeFacts = S.Struct({
+  text: S.String,
+  isError: S.Boolean,
+  instantiable: S.Boolean,
+})
+export type ContextualTypeFacts = typeof ContextualTypeFacts.Type
+
+export const DeclaredContext = S.TaggedStruct('DeclaredContext', {})
+export type DeclaredContext = typeof DeclaredContext.Type
+
+export const CallArgument = S.TaggedStruct('CallArgument', {
+  signatureCount: S.Int,
+  declaredGeneric: S.Boolean,
+})
+export type CallArgument = typeof CallArgument.Type
+
+export const UnenforcedContext = S.TaggedStruct('UnenforcedContext', {})
+export type UnenforcedContext = typeof UnenforcedContext.Type
+
+export const ContextOrigin = S.Union([DeclaredContext, CallArgument, UnenforcedContext])
+export type ContextOrigin = typeof ContextOrigin.Type
+
+export const SiteMissing = S.TaggedStruct('SiteMissing', {})
+export type SiteMissing = typeof SiteMissing.Type
+
+export const SiteNotExpression = S.TaggedStruct('SiteNotExpression', {})
+export type SiteNotExpression = typeof SiteNotExpression.Type
+
+export const SiteExpression = S.TaggedStruct('SiteExpression', {
+  contextualType: S.OptionFromNullOr(ContextualTypeFacts),
+  origin: ContextOrigin,
+})
+export type SiteExpression = typeof SiteExpression.Type
+
+export const FunctionBodyKind = S.Literals(['getter', 'setter', 'constructor', 'other'])
+export type FunctionBodyKind = typeof FunctionBodyKind.Type
+
+export const SiteNotFunctionBody = S.TaggedStruct('SiteNotFunctionBody', {})
+export type SiteNotFunctionBody = typeof SiteNotFunctionBody.Type
+
+export const SiteFunctionBody = S.TaggedStruct('SiteFunctionBody', {
+  functionKind: FunctionBodyKind,
+  generator: S.Boolean,
+  async: S.Boolean,
+  returnTypeDeclared: S.Boolean,
+  asyncReturnIsPromise: S.Boolean,
+  target: S.OptionFromNullOr(ContextualTypeFacts),
+  undefinedAssignable: S.Boolean,
+  targetAllowsImplicitReturn: S.Boolean,
+})
+export type SiteFunctionBody = typeof SiteFunctionBody.Type
+
+export const SiteFacts = S.Union([
+  SiteMissing,
+  SiteNotExpression,
+  SiteExpression,
+  SiteNotFunctionBody,
+  SiteFunctionBody,
+])
+export type SiteFacts = typeof SiteFacts.Type
+
+export const CandidateNotContextFree = S.TaggedStruct('CandidateNotContextFree', {})
+export type CandidateNotContextFree = typeof CandidateNotContextFree.Type
+
+export const CandidateMissing = S.TaggedStruct('CandidateMissing', {})
+export type CandidateMissing = typeof CandidateMissing.Type
+
+export const CandidateTyped = S.TaggedStruct('CandidateTyped', {
+  candidateType: S.String,
+  assignable: S.Boolean,
+})
+export type CandidateTyped = typeof CandidateTyped.Type
+
+export const CandidateBodyText = S.TaggedStruct('CandidateBodyText', {
+  text: S.String,
+})
+export type CandidateBodyText = typeof CandidateBodyText.Type
+
+export const CandidateFacts = S.Union([CandidateNotContextFree, CandidateMissing, CandidateTyped, CandidateBodyText])
+export type CandidateFacts = typeof CandidateFacts.Type
+
+export class ClassifyCandidateCommand extends S.TaggedClass<ClassifyCandidateCommand>()(
+  'ClassifyCandidateCommand',
+  {
+    text: S.String,
+  },
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export class AnswerTypeQueryCommand extends S.TaggedClass<AnswerTypeQueryCommand>()(
+  'AnswerTypeQueryCommand',
+  {
+    site: SiteFacts,
+    candidate: CandidateFacts,
+  },
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}

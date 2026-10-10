@@ -59,6 +59,11 @@ export namespace Trace {
     export { PropagatedTrace, TraceContextMiddleware, TraceContextParts, TraceContextPartsSchema, TraceContextReference, TracedRpc, Traceparent, TraceparentHeader, TraceparentParts, Tracestate, TracestateHeader };
 }
 
+// @public (undocumented)
+export namespace TypeQuery {
+    export { Assignable, CandidateAnswer, CheckerCapabilities, FileAnswered, FileOutcome, FileRefused, FileRefusedReason, NotAssignable, SiteAnswer, TypeAnswer, TypeAnswerTypeId, TypeQuery, TypeQueryCandidate, TypeQueryFile, TypeQueryNotServed, TypeQueryRefused, TypeQueryRefusedReason, TypeQueryRequest, TypeQueryResponse, TypeQueryServed, TypeQueryServing, TypeQueryShape, TypeQuerySite, TypeQuerySiteKind, TypeQueryVersion, Unknown, UnknownReason, typeQueryServingOf };
+}
+
 // (No @packageDocumentation comment for this package)
 
 ```

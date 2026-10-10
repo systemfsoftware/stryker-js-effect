@@ -46,6 +46,36 @@ import { CheckerRuntime, nodes, TypeScriptCompiler } from '@systemfsoftware/stry
 
 It publishes the runtime Layer (`CheckerRuntime.layer(options)`), its `CheckerRuntimeShape` type, the `TypeScriptCompiler` service tag and the `nodes` program-graph accessor. Everything else stays behind the worker entry.
 
+`CheckerRuntimeShape` carries three members:
+
+- `checker` — the lazy checker service the worker resolves for `check`, `group` and `digest`.
+- `capabilities` — the static `CheckerCapabilities` the checker declares, `{ typeQuery: [1, 2] }`.
+- `typeQuery` — an `Effect<TypeQueryShape>` built on first use: the `TypeQueryLive` layer is built into the runtime layer's scope when the effect first runs and closed with that scope, so `check`, `group` and `digest` never open a query server.
+
+The checker worker serves both over the `Plugin.CheckerRpcs` group: `capabilities` answers the declaration for `"typescript"` without resolving the checker, and `typeQuery` delegates to the lazy `TypeQuery` service.
+
+## Type query (`./type-query`)
+
+Provisional: this entry changes shape when its consumer confirms it, and that change ships as an ordinary break.
+
+`./type-query` exports `TypeQueryLive`, a `Layer` that implements the `TypeQuery` port from the `TypeQuery` namespace of `@systemfsoftware/stryker-js-plugin-interface`. It answers type queries on its own tsgo server, opened on first use per `tsconfigFile` and closed when the layer's scope closes.
+
+```ts
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
+import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
+import * as Effect from 'effect/Effect'
+
+const answered = Effect.scoped(
+  Effect.provide(
+    Effect.gen(function*() {
+      const query = yield* TypeQuery.TypeQuery
+      return yield* query.query(request)
+    }),
+    TypeQueryLive,
+  ),
+)
+```
+
 ## License
 
 [Apache-2.0](../../LICENSE)
