@@ -247,8 +247,11 @@ const ruleReasonsOf = (verdicts: readonly Verdict[]): readonly string[] =>
     Order.String,
   )
 
-const contentKeyedIdsOf = (verdicts: readonly Verdict[]): readonly string[] =>
-  Arr.sort(verdicts.filter((verdict) => verdict.subsumption === '').map((verdict) => verdict.id), Order.String)
+const storableIdsOf = (verdicts: readonly Verdict[]): readonly string[] =>
+  Arr.sort(
+    verdicts.filter((verdict) => !verdict.subsumption.includes('"_tag":"Readmitted"')).map((verdict) => verdict.id),
+    Order.String,
+  )
 
 const decodeVerdictLine = S.decodeUnknownOption(S.fromJsonString(RunEvent.VerdictReached))
 
@@ -369,7 +372,7 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
         Given('a fixture whose unsharded run and two-shard plan are prepared')('fixture', () => prepareFixture()),
         When('the shards run and merge, and a doctored plan is merged')('outcome', (s) => runAndMerge(s.fixture)),
         Then(
-          'the merged statuses, reasons and subsumption references cover every mutant, every verdict no subsumption decided is stored, and the doctored merge fails naming the id',
+          'the merged statuses, reasons and subsumption references cover every mutant, every verdict not readmitted is stored, and the doctored merge fails naming the id',
         )(
           (s, expect) =>
             expect({
@@ -385,7 +388,7 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
               doctoredNamesId: s.outcome.doctored.output.includes(s.outcome.doctored.id),
             }).toEqual({
               merged: statusMapOf(s.fixture.unsharded),
-              storedIds: contentKeyedIdsOf(s.fixture.unsharded),
+              storedIds: storableIdsOf(s.fixture.unsharded),
               mergedIgnoredRules: ['arid-logging', 'redundant-relational'],
               unsharded: statusMapOf(s.fixture.unsharded),
               unshardedIds: s.fixture.ids,

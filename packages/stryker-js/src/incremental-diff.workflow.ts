@@ -18,6 +18,7 @@ import {
   type VerdictLookup,
   VerdictLookupSchema,
 } from './IncrementalDiff.schema.js'
+import { Settled } from './readmit-subsumed.workflow.js'
 import {
   type CheckerEntry,
   CheckerEntrySchema,
@@ -87,6 +88,12 @@ export class MutantToRun extends S.TaggedClass<MutantToRun>()('MutantToRun', {
 }
 
 export type IncrementalDiffDecision = MutantRemembered | MutantToRun
+
+const isRemembered = S.is(MutantRemembered)
+
+const isToRun = S.is(MutantToRun)
+
+const isSubsumed = S.is(Mutant.Subsumed)
 
 const testedOf = (entry: VerdictEntry): Option.Option<TestedEntry> =>
   Option.liftPredicate(entry, S.is(TestedEntrySchema))
@@ -381,17 +388,69 @@ const decideLookup =
 const forcedRun = (lookup: VerdictLookup): IncrementalDiffDecision =>
   MutantToRun.make({ mutant: lookup.mutant, refusal: 'noPriorRecord' })
 
-const decide = (command: IncrementalDiffCommand): Result.Result<readonly IncrementalDiffDecision[], never> => {
+const decideEach = (command: IncrementalDiffCommand): readonly IncrementalDiffDecision[] => {
   const flaky = flakyMutantIdsOf(command)
-  return Result.succeed(
-    command.lookups.map(
-      Boolean.match(command.force, {
-        onTrue: () => forcedRun,
-        onFalse: () => decideLookup(command, flaky),
-      }),
-    ),
+  return command.lookups.map(
+    Boolean.match(command.force, {
+      onTrue: () => forcedRun,
+      onFalse: () => decideLookup(command, flaky),
+    }),
   )
 }
+
+const DOMINATOR_SETTLING_STATUSES: ReadonlyArray<Mutant.MutantStatus> = Settled.fields.status.literals
+
+const settlingIdOf = (decision: IncrementalDiffDecision): Option.Option<Mutant.MutantId> =>
+  Option.map(
+    Option.filter(
+      Option.liftPredicate(decision, isRemembered),
+      (remembered) => Arr.contains(DOMINATOR_SETTLING_STATUSES, remembered.status),
+    ),
+    (remembered) => remembered.mutantId,
+  )
+
+const rememberedSettlingIdsOf = (decisions: readonly IncrementalDiffDecision[]): HashSet.HashSet<string> =>
+  HashSet.fromIterable(Arr.getSomes(decisions.map(settlingIdOf)))
+
+const dominatorsOf = (mutant: Mutant.Mutant): readonly Mutant.MutantId[] =>
+  Option.match(Option.liftPredicate(mutant.subsumption, isSubsumed), {
+    onNone: (): readonly Mutant.MutantId[] => [],
+    onSome: (subsumed) => subsumed.dominators,
+  })
+
+const isDecidedPerRun = (decision: IncrementalDiffDecision): boolean =>
+  Option.exists(Option.liftPredicate(decision, isToRun), (toRun) => toRun.refusal === 'decidedPerRun')
+
+const heldIgnoredEntryOf = (command: IncrementalDiffCommand, lookup: VerdictLookup): Option.Option<VerdictEntry> =>
+  Option.filter(
+    matchingEntryOf(lookup),
+    (entry) => Boolean.and(!command.closureAnalysisFailed, entry.status === 'Ignored'),
+  )
+
+const rememberSubsumedWhoseDominatorIsRemembered = (
+  command: IncrementalDiffCommand,
+  decisions: readonly IncrementalDiffDecision[],
+): readonly IncrementalDiffDecision[] => {
+  const settling = rememberedSettlingIdsOf(decisions)
+  return Arr.zipWith(command.lookups, decisions, (lookup, decision): IncrementalDiffDecision =>
+    Boolean.match(
+      Boolean.and(
+        isDecidedPerRun(decision),
+        dominatorsOf(lookup.mutant).some((dominator) => HashSet.has(settling, dominator)),
+      ),
+      {
+        onFalse: () => decision,
+        onTrue: () =>
+          Option.match(heldIgnoredEntryOf(command, lookup), {
+            onNone: () => decision,
+            onSome: (entry) => rememberedOf(lookup.mutant, entry),
+          }),
+      },
+    ))
+}
+
+const decide = (command: IncrementalDiffCommand): Result.Result<readonly IncrementalDiffDecision[], never> =>
+  Result.succeed(rememberSubsumedWhoseDominatorIsRemembered(command, decideEach(command)))
 
 export const incrementalDiff = Workflow.make({
   command: IncrementalDiffCommand,

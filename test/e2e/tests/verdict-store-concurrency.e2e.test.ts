@@ -88,8 +88,12 @@ const refusalsLineOf = (refused: Readonly<Record<string, number>>): string =>
     .sort()
     .join(', ')
 
-const subsumptionDecidedCountOf = (events: ReadonlyArray<RunEvent.RunEvent>): number =>
-  events.filter((event) => event._tag === 'mutantTested' && event.subsumption !== null).length
+const unstoredSubsumedCountOf = (
+  events: ReadonlyArray<RunEvent.RunEvent>,
+  stored: ReadonlyArray<string>,
+): number =>
+  events.filter((event) => event._tag === 'mutantTested' && event.subsumption !== null && !stored.includes(event.id))
+    .length
 
 const verifyStoreSurvivedTheKill = (
   expect: Expect,
@@ -106,7 +110,7 @@ const verifyStoreSurvivedTheKill = (
   })
   const expectedExits = JSON.stringify({ plan: 0, killed: SIGKILLED_EXIT_CODE, survivor: 0, rerun: 0 })
   const unstored = total - stored
-  const decidedPerRun = subsumptionDecidedCountOf(artifacts.rerunEvents)
+  const decidedPerRun = unstoredSubsumedCountOf(artifacts.rerunEvents, artifacts.storedBeforeRerun)
   const expectedRefusals = refusalsLineOf({ decidedPerRun, noPriorRecord: unstored - decidedPerRun })
   return expect({
     exits,

@@ -146,10 +146,10 @@ const contentKeyedEntryOf = (settled: SettledVerdict): Option.Option<VerdictEntr
     Match.orElse(() => Option.none<VerdictEntry>()),
   )
 
-const carriesNoSubsumption = (settled: SettledVerdict): boolean => settled.result.subsumption === undefined
+const notReadmitted = (settled: SettledVerdict): boolean => !S.is(Mutant.Readmitted)(settled.result.subsumption)
 
 export const settledEntryOf = (settled: SettledVerdict): Option.Option<VerdictEntry> =>
-  Option.flatMap(Option.liftPredicate(settled, carriesNoSubsumption), contentKeyedEntryOf)
+  Option.flatMap(Option.liftPredicate(settled, notReadmitted), contentKeyedEntryOf)
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')

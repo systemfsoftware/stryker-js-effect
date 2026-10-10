@@ -2,7 +2,7 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { type Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TestedEntrySchema, type VerdictEntry } from '@systemfsoftware/stryker-js/verdict-store'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
@@ -29,6 +29,8 @@ const SOURCE = [
 
 const LOGGING_SOURCE = "export const log = (value: number): void => console.log('value', value)\n"
 
+const RELATIONAL_SOURCE = 'export const band = (weight: number): number => (weight > 20 ? 15 : 8)\n'
+
 interface ReasonedMutant {
   readonly status: string
   readonly statusReason?: string | null | undefined
@@ -53,6 +55,7 @@ interface RecordedMutant {
   readonly statusReason?: string | undefined
   readonly killedBy?: readonly string[] | undefined
   readonly remembered?: boolean | undefined
+  readonly subsumption?: Mutant.Subsumption | undefined
 }
 
 const mutantsOf = (exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>): readonly RecordedMutant[] =>
@@ -569,6 +572,56 @@ Feature('Content-keyed reuse across incremental reports')
             everyMutantIsStored: true,
           })
         }),
+      ),
+    )
+
+    scenario(
+      "An unchanged re-run reuses a subsumed mutant's Ignored verdict and keeps its subsumption reference",
+      Gherkin.Do.pipe(
+        Given('a workspace whose relational site yields a subsumed complement, run twice without change')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writeFixture([['src/band.ts', RELATIONAL_SOURCE]])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = optionsOf(root)
+                  const first = yield* runOnce(root, options)
+                  const second = yield* runOnce(root, options)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.provide(filePorts)),
+        ),
+        Then('the second run reuses every verdict, the subsumed one included, with the same reference')(
+          (s, expect) => {
+            const planned = s.fixture.first.mutants.length
+            const subsumedOf = (mutants: readonly RecordedMutant[]) =>
+              mutants
+                .filter((mutant) => mutant.subsumption !== undefined)
+                .map((mutant) => `${mutant.id}:${mutant.status}:${JSON.stringify(mutant.subsumption)}`)
+                .sort()
+            const subsumed = subsumedOf(s.fixture.first.mutants)
+            return expect({
+              runSucceeded: Exit.isSuccess(s.fixture.second.exit),
+              subsumedNonZero: subsumed.length > 0,
+              everyMutantIsStored: s.fixture.first.storedCount === planned,
+              second: {
+                reused: s.fixture.second.reuse?.reused,
+                ran: s.fixture.second.reuse?.ran,
+                refused: s.fixture.second.reuse?.refused,
+              },
+              secondSubsumed: subsumedOf(s.fixture.second.mutants),
+            }).toEqual({
+              runSucceeded: true,
+              subsumedNonZero: true,
+              everyMutantIsStored: true,
+              second: { reused: planned, ran: 0, refused: ZERO_REFUSALS },
+              secondSubsumed: subsumed,
+            })
+          },
+        ),
       ),
     )
 

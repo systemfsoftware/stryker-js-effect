@@ -13,9 +13,11 @@ import {
   MutantToRun,
 } from '../incremental-diff.workflow.js'
 import type { CurrentVerdict, VerdictLookup } from '../IncrementalDiff.schema.js'
+import { Settled } from '../readmit-subsumed.workflow.js'
 import { currentKeysOf } from '../run/current-verdict.js'
 import {
   CheckerEntrySchema,
+  IgnoredTestedEntrySchema,
   type SharedComponents,
   type SurvivedTestedEntry,
   type TestedEntry,
@@ -252,7 +254,7 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
-    '∀eds_EntryDominatorAndStored_≡ASubsumedMutantIsNeverRememberedAndRunsAsDecidedPerRunWhereTheEntryWouldBe',
+    '∀eds_EntryDominatorAndStored_≡ASubsumedMutantWhoseDominatorIsNotInTheRunIsNeverRememberedAndRunsAsDecidedPerRun',
     { of: [VerdictEntrySchema, Mutant.MutantId, S.Boolean], subject: incrementalDiff },
     (subject, [entry, dominator, stored]) => {
       const lookup = lookupOf(currentOf(entry), stored ? [readable(entry)] : [])
@@ -270,6 +272,32 @@ describe('incrementalDiff', () => {
         subject(commandOf([subsumed])),
         stored && unreproduced ? 'timeoutUnreproduced' : 'decidedPerRun',
       )
+    },
+  )
+
+  it.prop(
+    '∀dis_DominatorEntryIgnoredEntryAndStored_≡AStoredSubsumedVerdictIsRememberedExactlyWhenItsDominatorIsRememberedWithASettlingStatus',
+    { of: [TestedEntrySchema, IgnoredTestedEntrySchema, S.Boolean], subject: incrementalDiff },
+    (subject, [dominatorEntry, ignoredEntry, dominatorStored]) => {
+      const dominator = lookupOf(currentOf(dominatorEntry), dominatorStored ? [readable(dominatorEntry)] : [])
+      const stored = matchingLookupOf(ignoredEntry)
+      const subsumed = {
+        ...stored,
+        mutant: Mutant.Mutant.make({
+          ...stored.mutant,
+          status: 'Ignored',
+          subsumption: Mutant.Subsumed.make({ rule: 'complement', dominators: [dominator.mutant.id] }),
+        }),
+      }
+      const result = subject(commandOf([dominator, subsumed]))
+      const [dominatorDecision, subsumedDecision] = Result.isSuccess(result) ? result.success : []
+      const dominatorSettles = dominatorDecision !== undefined && S.is(MutantRemembered)(dominatorDecision) &&
+        Arr.contains(Settled.fields.status.literals, dominatorDecision.status)
+      return dominatorSettles
+        ? subsumedDecision !== undefined && S.is(MutantRemembered)(subsumedDecision) &&
+          subsumedDecision.status === 'Ignored'
+        : subsumedDecision !== undefined && S.is(MutantToRun)(subsumedDecision) &&
+          subsumedDecision.refusal === 'decidedPerRun'
     },
   )
 

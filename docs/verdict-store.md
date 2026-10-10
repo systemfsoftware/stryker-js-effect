@@ -22,6 +22,7 @@ Nothing in the name refers to a shard, branch, report path or machine. Two runs 
 - An entry that cannot be decoded (torn, foreign, or stored under another verdict's name) is reported as unreadable and counted as `entryUnreadable`. The mutant is tested again; the run never fails on it.
 - When several writers store the same name at once, the last write wins. Every writer computed that name from identical inputs, so any surviving entry is a valid verdict for it.
 - When a mutant has entries under several current names, the newest one (by `settledAt`) is used, whatever its kind.
+- A subsumed mutant's Ignored verdict is stored like any other and reused when one of its dominators is reused as Killed, Survived, Timeout, NoCoverage or RuntimeError, the same condition under which a run keeps it Ignored. When no dominator is reused that way it counts as `decidedPerRun` and the run decides it again. A re-admitted mutant's verdict is not stored.
 - A store that cannot be reached when the run starts stops the run at prepare. A read that fails later is counted as `storeUnavailable` and the mutant is tested again. A write that fails is skipped and counted, and the run ends with a warning naming how many verdicts were not stored.
 
 ## Known limits
