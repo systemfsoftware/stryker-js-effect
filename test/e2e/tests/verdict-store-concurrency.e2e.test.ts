@@ -26,7 +26,7 @@ set -u
 mkdir -p reports
 ${STRYKER} plan --target-seconds 0.001 --max-shards 2 --out plan.json > reports/plan.log 2>&1
 echo $? > reports/plan.exit
-${STRYKER} run --plan plan.json --shard 1/2 --out reports/shard-1 > reports/killed.log 2>&1 &
+setsid ${STRYKER} run --plan plan.json --shard 1/2 --out reports/shard-1 > reports/killed.log 2>&1 &
 killed=$!
 ${STRYKER} run --plan plan.json --shard 2/2 --out reports/shard-2 > reports/survivor.log 2>&1 &
 survivor=$!
@@ -36,7 +36,7 @@ while kill -0 "$killed" 2>/dev/null && [ "$(stored)" -lt ${STORED_ENTRIES_BEFORE
   sleep 0.05
   polls=$((polls + 1))
 done
-kill -9 "$killed" 2>/dev/null
+kill -9 -- "-$killed" 2>/dev/null
 wait "$killed"
 echo $? > reports/killed.exit
 wait "$survivor"
