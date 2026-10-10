@@ -27,14 +27,38 @@ export const REASON_CODES = {
   'link-transformation': 'S.link() transformation feeds arbitrary generation only, not production codecs',
   'type-id': 'a TypeId constant is a declaration identity, not behaviour',
   'recursion-budget-holder':
-    'annotate object holding a recursionBudget must stay a literal object for the recursion-budget transform to read it',
-  'recursion-budget': 'recursionBudget value bounds arbitrary generation only, not behaviour',
+    'annotate object holding a recursionBudget beside documentation only must stay a literal object for the recursion-budget transform to read it',
+  'recursion-budget':
+    'recursionBudget is test/generation-only metadata: only the recursion-budget transform, its runtime and the schema recursion laws read it',
 } as const
 
 export type ReasonCode = keyof typeof REASON_CODES
 
 export const KEEP_IGNORED_MUTANT =
   "To keep these mutants, remove '@systemfsoftware/stryker-ignorer-effect-schema-declarations' from `ignorers`." as const
+
+export const KEEP_RECURSION_BUDGET_MUTANT =
+  'These mutants cannot be kept while the recursion-budget transform runs: it reads the annotate object as written, so removing this ignorer fails the dry run with `Budget_RequiresTransform`. To have them tested, remove the `recursionBudget` annotation.' as const
+
+export const KEEP_ADVICE: Record<ReasonCode, string> = {
+  'symbol-description': KEEP_IGNORED_MUTANT,
+  'tagged-tag': KEEP_IGNORED_MUTANT,
+  'tagged-struct-tag': KEEP_IGNORED_MUTANT,
+  'tagged-fields': KEEP_IGNORED_MUTANT,
+  'class-id': KEEP_IGNORED_MUTANT,
+  'brand-name': KEEP_IGNORED_MUTANT,
+  'optional-default': KEEP_IGNORED_MUTANT,
+  'decoding-default': KEEP_IGNORED_MUTANT,
+  'annotation-object': KEEP_IGNORED_MUTANT,
+  'annotation-text': KEEP_IGNORED_MUTANT,
+  'check-annotation-object': KEEP_IGNORED_MUTANT,
+  'check-annotation-text': KEEP_IGNORED_MUTANT,
+  'generation-annotation': KEEP_IGNORED_MUTANT,
+  'link-transformation': KEEP_IGNORED_MUTANT,
+  'type-id': KEEP_IGNORED_MUTANT,
+  'recursion-budget-holder': KEEP_RECURSION_BUDGET_MUTANT,
+  'recursion-budget': KEEP_RECURSION_BUDGET_MUTANT,
+}
 
 const reasonFor = <C extends ReasonCode>(code: C) =>
   `effect-schema-declarations/${code}: ${REASON_CODES[code]}` as const

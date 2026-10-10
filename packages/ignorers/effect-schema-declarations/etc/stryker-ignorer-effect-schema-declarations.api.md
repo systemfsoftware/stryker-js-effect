@@ -31,7 +31,13 @@ export const DECODING_DEFAULT_IGNORED: "effect-schema-declarations/decoding-defa
 export const GENERATION_ANNOTATION_IGNORED: "effect-schema-declarations/generation-annotation: arbitrary-generation annotation never runs in production, not behaviour";
 
 // @public (undocumented)
+export const KEEP_ADVICE: Record<ReasonCode, string>;
+
+// @public (undocumented)
 export const KEEP_IGNORED_MUTANT: "To keep these mutants, remove '@systemfsoftware/stryker-ignorer-effect-schema-declarations' from `ignorers`.";
+
+// @public (undocumented)
+export const KEEP_RECURSION_BUDGET_MUTANT: 'These mutants cannot be kept while the recursion-budget transform runs: it reads the annotate object as written, so removing this ignorer fails the dry run with `Budget_RequiresTransform`. To have them tested, remove the `recursionBudget` annotation.';
 
 // @public (undocumented)
 export const LINK_TRANSFORMATION_IGNORED: "effect-schema-declarations/link-transformation: S.link() transformation feeds arbitrary generation only, not production codecs";
@@ -56,18 +62,18 @@ export const REASON_CODES: {
     readonly 'generation-annotation': 'arbitrary-generation annotation never runs in production, not behaviour';
     readonly 'link-transformation': 'S.link() transformation feeds arbitrary generation only, not production codecs';
     readonly 'type-id': 'a TypeId constant is a declaration identity, not behaviour';
-    readonly 'recursion-budget-holder': 'annotate object holding a recursionBudget must stay a literal object for the recursion-budget transform to read it';
-    readonly 'recursion-budget': 'recursionBudget value bounds arbitrary generation only, not behaviour';
+    readonly 'recursion-budget-holder': 'annotate object holding a recursionBudget beside documentation only must stay a literal object for the recursion-budget transform to read it';
+    readonly 'recursion-budget': 'recursionBudget is test/generation-only metadata: only the recursion-budget transform, its runtime and the schema recursion laws read it';
 };
 
 // @public (undocumented)
 export type ReasonCode = keyof typeof REASON_CODES;
 
 // @public (undocumented)
-export const RECURSION_BUDGET_HOLDER_IGNORED: "effect-schema-declarations/recursion-budget-holder: annotate object holding a recursionBudget must stay a literal object for the recursion-budget transform to read it";
+export const RECURSION_BUDGET_HOLDER_IGNORED: "effect-schema-declarations/recursion-budget-holder: annotate object holding a recursionBudget beside documentation only must stay a literal object for the recursion-budget transform to read it";
 
 // @public (undocumented)
-export const RECURSION_BUDGET_IGNORED: "effect-schema-declarations/recursion-budget: recursionBudget value bounds arbitrary generation only, not behaviour";
+export const RECURSION_BUDGET_IGNORED: "effect-schema-declarations/recursion-budget: recursionBudget is test/generation-only metadata: only the recursion-budget transform, its runtime and the schema recursion laws read it";
 
 // @public (undocumented)
 export const strykerIgnorers: readonly Ignorer[];

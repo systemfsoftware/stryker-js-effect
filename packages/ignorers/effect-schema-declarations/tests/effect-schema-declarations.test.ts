@@ -1,26 +1,41 @@
 import { describe, it } from '@systemfsoftware/vitest'
 
-import {
-  ANNOTATION_OBJECT_IGNORED,
-  ANNOTATION_TEXT_IGNORED,
-  BRAND_NAME_IGNORED,
-  CHECK_ANNOTATION_OBJECT_IGNORED,
-  CHECK_ANNOTATION_TEXT_IGNORED,
-  CLASS_ID_IGNORED,
-  DECODING_DEFAULT_IGNORED,
-  GENERATION_ANNOTATION_IGNORED,
-  LINK_TRANSFORMATION_IGNORED,
-  OPTIONAL_DEFAULT_IGNORED,
-  RECURSION_BUDGET_HOLDER_IGNORED,
-  RECURSION_BUDGET_IGNORED,
-  strykerIgnorers,
-  SYMBOL_DESCRIPTION_IGNORED,
-  TAGGED_FIELDS_IGNORED,
-  TAGGED_STRUCT_TAG_IGNORED,
-  TAGGED_TAG_IGNORED,
-  TYPE_ID_IGNORED,
-} from '@systemfsoftware/stryker-ignorer-effect-schema-declarations'
+import { strykerIgnorers } from '@systemfsoftware/stryker-ignorer-effect-schema-declarations'
 import { testIgnorer } from '@systemfsoftware/stryker-ignorer-kit/tester'
+
+const SYMBOL_DESCRIPTION_IGNORED =
+  'effect-schema-declarations/symbol-description: Symbol.for() brand description is identity-only data, not behaviour'
+const TAGGED_TAG_IGNORED =
+  'effect-schema-declarations/tagged-tag: TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour'
+const TAGGED_STRUCT_TAG_IGNORED =
+  'effect-schema-declarations/tagged-struct-tag: TaggedStruct _tag is a declaration discriminant, not behaviour'
+const TAGGED_FIELDS_IGNORED =
+  'effect-schema-declarations/tagged-fields: TaggedClass/TaggedError field schema is a declaration, not behaviour'
+const CLASS_ID_IGNORED =
+  'effect-schema-declarations/class-id: Schema.Class identifier is a declaration name, not behaviour'
+const BRAND_NAME_IGNORED =
+  'effect-schema-declarations/brand-name: Schema.brand name is identity-only data, not behaviour'
+const OPTIONAL_DEFAULT_IGNORED =
+  'effect-schema-declarations/optional-default: optionalWith default value is config, not behaviour'
+const DECODING_DEFAULT_IGNORED =
+  'effect-schema-declarations/decoding-default: withDecodingDefault/withConstructorDefault default is config, not behaviour'
+const ANNOTATION_OBJECT_IGNORED =
+  'effect-schema-declarations/annotation-object: annotations object holding only documentation is a declaration, not behaviour'
+const ANNOTATION_TEXT_IGNORED =
+  'effect-schema-declarations/annotation-text: annotation documentation value is declaration data, not behaviour'
+const CHECK_ANNOTATION_OBJECT_IGNORED =
+  'effect-schema-declarations/check-annotation-object: filter/check annotation object holds documentation and generation hints, not behaviour'
+const CHECK_ANNOTATION_TEXT_IGNORED =
+  'effect-schema-declarations/check-annotation-text: filter/check annotation value is documentation data, not behaviour'
+const GENERATION_ANNOTATION_IGNORED =
+  'effect-schema-declarations/generation-annotation: arbitrary-generation annotation never runs in production, not behaviour'
+const LINK_TRANSFORMATION_IGNORED =
+  'effect-schema-declarations/link-transformation: S.link() transformation feeds arbitrary generation only, not production codecs'
+const TYPE_ID_IGNORED = 'effect-schema-declarations/type-id: a TypeId constant is a declaration identity, not behaviour'
+const RECURSION_BUDGET_HOLDER_IGNORED =
+  'effect-schema-declarations/recursion-budget-holder: annotate object holding a recursionBudget beside documentation only must stay a literal object for the recursion-budget transform to read it'
+const RECURSION_BUDGET_IGNORED =
+  'effect-schema-declarations/recursion-budget: recursionBudget is test/generation-only metadata: only the recursion-budget transform, its runtime and the schema recursion laws read it'
 
 const descriptor = strykerIgnorers[0]
 if (descriptor === undefined) {
@@ -269,6 +284,30 @@ await testIgnorer(descriptor, {
         { text: "'PatternAst'", reason: ANNOTATION_TEXT_IGNORED },
       ],
     },
+    {
+      name: 'a `recursionBudget` beside a behaviour hook is ignored while the object and the hook stay live',
+      code: 'S.suspend(() => Expr).annotate({ recursionBudget: { maxDepth: 6 }, toEquivalence: () => eq })',
+      ignores: [{ text: '{ maxDepth: 6 }', reason: RECURSION_BUDGET_IGNORED }],
+      keeps: ['{ recursionBudget: { maxDepth: 6 }, toEquivalence: () => eq }', '() => eq'],
+    },
+    {
+      name: 'an annotate object holding only a `recursionBudget` is ignored with its budget',
+      code: "S.suspend(() => Expr).annotate({ recursionBudget: { maxDepth: 6, depthSize: 'small' } })",
+      ignores: [
+        { text: "{ recursionBudget: { maxDepth: 6, depthSize: 'small' } }", reason: RECURSION_BUDGET_HOLDER_IGNORED },
+        { text: patternAstBudget, reason: RECURSION_BUDGET_IGNORED },
+        { text: "'small'", reason: RECURSION_BUDGET_IGNORED },
+      ],
+    },
+    {
+      name: 'the first argument of `S.annotations` holding a title and a `recursionBudget` is ignored',
+      code: 'S.annotations({ title: "Expr", recursionBudget: { maxDepth: 6 } })',
+      ignores: [
+        { text: '{ title: "Expr", recursionBudget: { maxDepth: 6 } }', reason: RECURSION_BUDGET_HOLDER_IGNORED },
+        { text: '{ maxDepth: 6 }', reason: RECURSION_BUDGET_IGNORED },
+        { text: '"Expr"', reason: ANNOTATION_TEXT_IGNORED },
+      ],
+    },
   ],
   kept: [
     {
@@ -442,11 +481,6 @@ await testIgnorer(descriptor, {
       name: 'a `recursionBudget` key outside an annotate call stays live, object and value',
       code: "const config = { recursionBudget: { maxDepth: 6, depthSize: 'small' } }",
       keeps: [patternAstBudget, "'small'"],
-    },
-    {
-      name: 'an annotate object holding a budget beside a behaviour hook stays live as an object',
-      code: 'S.suspend(() => Expr).annotate({ recursionBudget: { maxDepth: 6 }, toEquivalence: () => eq })',
-      keeps: ['{ recursionBudget: { maxDepth: 6 }, toEquivalence: () => eq }', '() => eq'],
     },
     {
       name: 'a `recursionBudget` at the second argument of `S.annotations` stays live',
