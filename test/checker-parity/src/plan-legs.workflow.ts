@@ -70,23 +70,25 @@ interface RateSample {
   readonly mutants: number
 }
 
-interface Draft {
-  readonly fromBlock: number
-  readonly toBlock: number
+interface Block {
+  readonly project: string
+  readonly fileName: string
+  readonly fileMutants: number
+  readonly index: number
   readonly mutants: number
   readonly ms: number
-}
-
-interface Cut {
-  readonly closed: ReadonlyArray<Draft>
-  readonly open: Option.Option<Draft>
+  readonly source: CostSource
 }
 
 interface LegDraft {
-  readonly leg: number
   readonly ms: number
   readonly projects: HashSet.HashSet<string>
-  readonly units: Arr.NonEmptyArray<PlannedUnit>
+  readonly blocks: Arr.NonEmptyArray<Block>
+}
+
+interface Segmented {
+  readonly closed: ReadonlyArray<LegDraft>
+  readonly open: Option.Option<LegDraft>
 }
 
 const keyOf = (file: Keyed): string => `${file.project.length}:${file.project}${file.fileName}`
@@ -138,135 +140,100 @@ const mergeOverhead = (
     Num.max(overhead.ms, Option.getOrElse(HashMap.get(kept, overhead.project), () => 0)),
   )
 
-const weightedMean = (samples: ReadonlyArray<RateSample>): number =>
-  samples.reduce((total, sample) => total + sample.msPerMutant * sample.mutants, 0) /
-  samples.reduce((total, sample) => total + sample.mutants, 0)
-
-const draftOf = (index: number, mutants: number, blockMutants: number, msPerMutant: number): Draft => {
-  const size = Num.min(blockMutants, mutants - index * blockMutants)
-  return { fromBlock: index, toBlock: index + 1, mutants: size, ms: size * msPerMutant }
-}
-
-const step = (cut: Cut, block: Draft, overhead: number, capacityMs: number): Cut =>
-  Option.match(cut.open, {
-    onNone: () => ({ closed: cut.closed, open: Option.some(block) }),
-    onSome: (open) =>
-      Boolean.match(open.ms + block.ms + overhead <= capacityMs, {
-        onTrue: () => ({
-          closed: cut.closed,
-          open: Option.some({
-            fromBlock: open.fromBlock,
-            toBlock: block.toBlock,
-            mutants: open.mutants + block.mutants,
-            ms: open.ms + block.ms,
-          }),
-        }),
-        onFalse: () => ({ closed: [...cut.closed, open], open: Option.some(block) }),
-      }),
+const p90Of = (rates: ReadonlyArray<number>): Option.Option<number> =>
+  Arr.match(rates, {
+    onEmpty: () => Option.none<number>(),
+    onNonEmpty: (owned) => {
+      const scaled = 9 * owned.length + 9
+      const rank = (scaled - (scaled % 10)) / 10
+      return Arr.get(Arr.sort(owned, Order.Number), rank - 1)
+    },
   })
 
-const unitsOf = (
-  command: PlanLegsCommand,
-  file: CorpusFile,
-  estimate: Estimate,
-  overhead: number,
-): ReadonlyArray<PlannedUnit> => {
+const blocksOf = (command: PlanLegsCommand, file: CorpusFile, estimate: Estimate): ReadonlyArray<Block> => {
   const remainder = file.mutants % command.blockMutants
   const blockCount = (file.mutants - remainder) / command.blockMutants + Number(remainder > 0)
-  const before: Cut = { closed: Arr.empty<Draft>(), open: Option.none<Draft>() }
-  const cut = Arr.reduce(
-    Arr.range(0, blockCount - 1),
-    before,
-    (state, index) =>
-      step(
-        state,
-        draftOf(index, file.mutants, command.blockMutants, estimate.msPerMutant),
-        overhead,
-        command.capacityMs,
-      ),
-  )
-  return [...cut.closed, ...Option.toArray(cut.open)].map((draft) =>
-    PlannedUnit.make({
+  return Arr.range(0, blockCount - 1).map((index) => {
+    const mutants = Num.min(command.blockMutants, file.mutants - index * command.blockMutants)
+    return {
       project: file.project,
       fileName: file.fileName,
-      fromBlock: draft.fromBlock,
-      toBlock: draft.toBlock,
-      mutants: draft.mutants,
       fileMutants: file.mutants,
-      ms: draft.ms,
+      index,
+      mutants,
+      ms: mutants * estimate.msPerMutant,
       source: estimate.source,
-    })
-  )
+    }
+  })
 }
 
-const unitOrder: Order.Order<PlannedUnit> = Order.combine(
-  Order.combine(
-    Order.mapInput(Order.flip(Order.Number), (unit: PlannedUnit) => unit.ms),
-    Order.mapInput(Str.Order, (unit: PlannedUnit) => unit.project),
-  ),
-  Order.combine(
-    Order.mapInput(Str.Order, (unit: PlannedUnit) => unit.fileName),
-    Order.mapInput(Order.Number, (unit: PlannedUnit) => unit.fromBlock),
-  ),
-)
-
-const unitInLegOrder: Order.Order<PlannedUnit> = Order.combine(
-  Order.combine(
-    Order.mapInput(Str.Order, (unit: PlannedUnit) => unit.project),
-    Order.mapInput(Str.Order, (unit: PlannedUnit) => unit.fileName),
-  ),
-  Order.mapInput(Order.Number, (unit: PlannedUnit) => unit.fromBlock),
+const fileOrder: Order.Order<CorpusFile> = Order.combine(
+  Order.mapInput(Str.Order, (file: CorpusFile) => file.project),
+  Order.mapInput(Str.Order, (file: CorpusFile) => file.fileName),
 )
 
 const extraMs = (leg: LegDraft, project: string, overheadOf: (project: string) => number): number =>
   Number(!HashSet.has(leg.projects, project)) * overheadOf(project)
 
-const singleUnit = (unit: PlannedUnit): Arr.NonEmptyArray<PlannedUnit> => [unit]
+const openedWith = (block: Block, overheadOf: (project: string) => number): LegDraft => ({
+  ms: overheadOf(block.project) + block.ms,
+  projects: HashSet.make(block.project),
+  blocks: [block],
+})
 
-const pack = (
-  legs: ReadonlyArray<LegDraft>,
-  unit: PlannedUnit,
+const segment = (
+  state: Segmented,
+  block: Block,
   overheadOf: (project: string) => number,
   capacityMs: number,
-): ReadonlyArray<LegDraft> =>
-  Option.match(
-    Arr.findFirstIndex(legs, (leg) => leg.ms + unit.ms + extraMs(leg, unit.project, overheadOf) <= capacityMs),
-    {
-      onSome: (index) =>
-        Arr.map(legs, (leg, position) =>
-          Boolean.match(position === index, {
-            onTrue: () => ({
-              leg: leg.leg,
-              ms: leg.ms + unit.ms + extraMs(leg, unit.project, overheadOf),
-              projects: HashSet.add(leg.projects, unit.project),
-              units: [...leg.units, unit],
-            }),
-            onFalse: () => leg,
-          })),
-      onNone: () => [
-        ...legs,
-        {
-          leg: legs.length + 1,
-          ms: overheadOf(unit.project) + unit.ms,
-          projects: HashSet.fromIterable([unit.project]),
-          units: singleUnit(unit),
-        },
-      ],
+): Segmented =>
+  Option.match(state.open, {
+    onNone: () => ({ closed: state.closed, open: Option.some(openedWith(block, overheadOf)) }),
+    onSome: (leg) => {
+      const ms = leg.ms + block.ms + extraMs(leg, block.project, overheadOf)
+      return Boolean.match(ms <= capacityMs, {
+        onTrue: () => ({
+          closed: state.closed,
+          open: Option.some({
+            ms,
+            projects: HashSet.add(leg.projects, block.project),
+            blocks: Arr.append(leg.blocks, block),
+          }),
+        }),
+        onFalse: () => ({ closed: [...state.closed, leg], open: Option.some(openedWith(block, overheadOf)) }),
+      })
     },
+  })
+
+const unitOf = (blocks: Arr.NonEmptyReadonlyArray<Block>): PlannedUnit => {
+  const first = Arr.headNonEmpty(blocks)
+  return PlannedUnit.make({
+    project: first.project,
+    fileName: first.fileName,
+    fromBlock: first.index,
+    toBlock: Arr.lastNonEmpty(blocks).index + 1,
+    mutants: blocks.reduce((total, block) => total + block.mutants, 0),
+    fileMutants: first.fileMutants,
+    ms: blocks.reduce((total, block) => total + block.ms, 0),
+    source: first.source,
+  })
+}
+
+const unitsOf = (leg: LegDraft): Arr.NonEmptyArray<PlannedUnit> =>
+  Arr.map(
+    Arr.groupWith(leg.blocks, (left, right) => keyOf(left) === keyOf(right)),
+    unitOf,
   )
 
 const planOf = (command: PlanLegsCommand, files: ReadonlyArray<CorpusFile>): ReadonlyArray<LegDraft> => {
   const samples = HashMap.toValues(command.rates.reduce(mergeSample, HashMap.empty<string, RateSample>()))
   const measuredRates = HashMap.fromIterable(samples.map((sample) => [keyOf(sample), sample.msPerMutant] as const))
-  const projectMeans = HashMap.fromIterable(
-    Object.entries(Arr.groupBy(samples, (sample) => sample.project)).map(
-      ([project, owned]) => [project, weightedMean(owned)] as const,
+  const projectP90s = HashMap.fromIterable(
+    Object.entries(Arr.groupBy(samples, (sample) => sample.project)).flatMap(([project, owned]) =>
+      Option.toArray(Option.map(p90Of(owned.map((sample) => sample.msPerMutant)), (p90) => [project, p90] as const))
     ),
   )
-  const corpusMean = Arr.match(samples, {
-    onEmpty: () => Option.none<number>(),
-    onNonEmpty: (owned) => Option.some(weightedMean(owned)),
-  })
+  const corpusP90 = p90Of(samples.map((sample) => sample.msPerMutant))
   const overheadsByProject = command.overheads.reduce(mergeOverhead, HashMap.empty<string, number>())
   const maxMeasuredOverhead = Arr.match(command.overheads, {
     onEmpty: () => Option.none<number>(),
@@ -278,21 +245,24 @@ const planOf = (command: PlanLegsCommand, files: ReadonlyArray<CorpusFile>): Rea
     Option.match(HashMap.get(measuredRates, keyOf(file)), {
       onSome: (msPerMutant) => ({ msPerMutant, source: 'measured' as const }),
       onNone: () =>
-        Option.match(HashMap.get(projectMeans, file.project), {
-          onSome: (msPerMutant) => ({ msPerMutant, source: 'project-mean' as const }),
+        Option.match(HashMap.get(projectP90s, file.project), {
+          onSome: (msPerMutant) => ({ msPerMutant, source: 'project-p90' as const }),
           onNone: () =>
-            Option.match(corpusMean, {
-              onSome: (msPerMutant) => ({ msPerMutant, source: 'corpus-mean' as const }),
+            Option.match(corpusP90, {
+              onSome: (msPerMutant) => ({ msPerMutant, source: 'corpus-p90' as const }),
               onNone: () => ({ msPerMutant: UNMEASURED_MS_PER_MUTANT, source: 'no-measurements' as const }),
             }),
         }),
     })
-  const units = Arr.sort(
-    Arr.flatMap(files, (file) => unitsOf(command, file, estimateOf(file), overheadOf(file.project))),
-    unitOrder,
+  const ordered: ReadonlyArray<CorpusFile> = Arr.sort(files, fileOrder)
+  const blocks = Arr.flatMap(ordered, (file) => blocksOf(command, file, estimateOf(file)))
+  const start: Segmented = { closed: Arr.empty(), open: Option.none() }
+  const segmented = Arr.reduce(
+    blocks,
+    start,
+    (state, block) => segment(state, block, overheadOf, command.capacityMs),
   )
-  const empty: ReadonlyArray<LegDraft> = Arr.empty()
-  return Arr.reduce(units, empty, (legs, unit) => pack(legs, unit, overheadOf, command.capacityMs))
+  return [...segmented.closed, ...Option.toArray(segmented.open)]
 }
 
 const decide = (command: PlanLegsCommand): Result.Result<PlanLegsDecision, never> =>
@@ -301,11 +271,10 @@ const decide = (command: PlanLegsCommand): Result.Result<PlanLegsDecision, never
       onEmpty: () => NoCorpusMutants.make({}),
       onNonEmpty: (drafts) =>
         LegsPlanned.make({
-          legs: Arr.map(
-            drafts,
-            (draft) => PlannedLeg.make({ leg: draft.leg, ms: draft.ms, units: Arr.sort(draft.units, unitInLegOrder) }),
-          ),
-          totalMs: drafts.reduce((total, draft) => total + draft.ms, 0),
+          legs: Arr.map(drafts, (draft, index) =>
+            PlannedLeg.make({ leg: index + 1, ms: draft.ms, units: unitsOf(draft) })),
+          totalMs: drafts.reduce((total, draft) =>
+            total + draft.ms, 0),
         }),
     }),
   )

@@ -153,27 +153,31 @@ const ONE_HOUR_MS = 3_600_000
 const MAX_MUTANTS = 1_000_000
 const BoundedMs = S.Finite.check(S.isBetween({ minimum: 0, maximum: ONE_HOUR_MS }))
 const MutantCount = S.Int.check(S.isBetween({ minimum: 1, maximum: MAX_MUTANTS }))
+export const RunId = S.Int.check(S.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }))
+export type RunId = typeof RunId.Type
 
 export class FileRate extends S.Class<FileRate>('FileRate')({
   project: S.String,
   fileName: S.String,
   msPerMutant: BoundedMs,
   mutants: MutantCount,
+  runId: RunId,
 }) {}
 
 export class ProjectOverhead extends S.Class<ProjectOverhead>('ProjectOverhead')({
   project: S.String,
   ms: BoundedMs,
+  runId: RunId,
 }) {}
 
 export class FileCosts extends S.Class<FileCosts>('FileCosts')({
-  schemaVersion: S.Literal(2),
-  runs: S.Array(S.String),
+  schemaVersion: S.Literal(3),
+  runs: S.Array(RunId),
   files: S.Array(FileRate),
   projects: S.Array(ProjectOverhead),
 }) {}
 
-export const CostSource = S.Literals(['measured', 'project-mean', 'corpus-mean', 'no-measurements'])
+export const CostSource = S.Literals(['measured', 'project-p90', 'corpus-p90', 'no-measurements'])
 export type CostSource = typeof CostSource.Type
 
 export class PlannedUnit extends S.Class<PlannedUnit>('PlannedUnit')({

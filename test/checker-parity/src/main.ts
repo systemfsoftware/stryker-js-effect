@@ -229,9 +229,32 @@ const baseCostsOf = (file: Option.Option<string>): Effect.Effect<FileCosts, Driv
 
 interface CostsInput {
   readonly base: Option.Option<string>
+  readonly runId: Option.Option<number>
   readonly out: string
   readonly dirs: ReadonlyArray<string>
 }
+
+const RUN_ID = /^[0-9]+$/u
+
+const runIdOf = (input: CostsInput, environment: CiEnvironment): Effect.Effect<number, DriverFailure> =>
+  Option.match(input.runId, {
+    onSome: Effect.succeed,
+    onNone: () =>
+      Boolean.match(RUN_ID.test(environment.runId), {
+        onTrue: () => Effect.succeed(Number(environment.runId)),
+        onFalse: () =>
+          Effect.fail(
+            DriverFailure.make({
+              schemaVersion: 1,
+              code: 'usage-error',
+              reason: `costs needs the id of the run that measured the leg files, and GITHUB_RUN_ID is ${
+                JSON.stringify(environment.runId)
+              }.`,
+              nextAction: 'Pass --run-id with the GitHub Actions run id the leg artifacts came from.',
+            }),
+          ),
+      }),
+  })
 
 const fileExists = (file: string): Effect.Effect<boolean, never, FileSystem.FileSystem> =>
   FileSystem.FileSystem.use((fs) => Effect.orElseSucceed(fs.exists(file), () => false))
@@ -266,13 +289,14 @@ const measuredLinesIn = (
 
 const costs = (input: CostsInput): Effect.Effect<void, DriverFailure, DriverServices> =>
   Effect.gen(function*() {
-    const lines = yield* measuredLinesIn(input.dirs)
-    const measured = measuredCostsOf(lines)
     const environment = yield* Effect.orElseSucceed(ciEnvironment, () => FALLBACK_ENVIRONMENT)
-    const table = mergeCosts({ base: yield* baseCostsOf(input.base), measured, runId: environment.runId })
+    const runId = yield* runIdOf(input, environment)
+    const lines = yield* measuredLinesIn(input.dirs)
+    const measured = measuredCostsOf(lines, runId)
+    const table = mergeCosts({ base: yield* baseCostsOf(input.base), measured })
     yield* writeCostsTable(input.out, table)
     yield* Console.log(
-      `Measured ${measured.files.length} file(s) and ${measured.projects.length} project(s) from ${lines.length} line(s); wrote ${table.files.length} file(s) and ${table.projects.length} project(s) to ${input.out}.`,
+      `Measured ${measured.files.length} file(s) and ${measured.projects.length} project(s) from ${lines.length} line(s) of run ${runId}; wrote ${table.files.length} file(s) and ${table.projects.length} project(s) to ${input.out}.`,
     )
   })
 
@@ -374,21 +398,30 @@ const planOfDecision = (
 
 const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`
 
-const planStepSummaryOf = (plan: ParityPlan, runs: ReadonlyArray<string>): string => {
-  const largest = Arr.reduce(plan.legs, 0, (max, leg) => Math.max(max, leg.ms))
-  const sources = Arr.groupBy(plan.legs.flatMap((leg) => [...leg.units]), (unit) => unit.source)
+const planStepSummaryOf = (plan: ParityPlan, runs: ReadonlyArray<number>): string => {
+  const units = plan.legs.flatMap((leg) => [...leg.units])
+  const files = Arr.dedupeWith(
+    units,
+    (left, right) => left.project === right.project && left.fileName === right.fileName,
+  )
+  const measuredFiles = files.filter((unit) => unit.source === 'measured').length
+  const sources = Arr.groupBy(files, (unit) => unit.source)
   return [
     '### checker-parity plan',
     '',
-    `Legs: ${plan.legs.length}. Total estimate: ${seconds(plan.totalMs)}. Capacity per leg: ${
+    `Planned width: ${plan.legs.length} leg(s). Total estimate: ${seconds(plan.totalMs)}. Budget per leg: ${
       seconds(plan.capacityMs)
     } (deadline ${plan.deadlineSeconds} s x fill ${plan.fill}).`,
     '',
-    `Largest leg: ${seconds(largest)} of ${seconds(plan.capacityMs)} capacity.`,
+    `Files: ${files.length}, measured ${measuredFiles}, estimated ${files.length - measuredFiles} (${
+      Object.entries(sources).map(([source, owned]) => `${source} ${owned.length}`).join(', ')
+    }).`,
     '',
-    `Units by cost source: ${
-      Object.entries(sources).map(([source, units]) => `${source} ${units.length}`).join(', ')
-    }.`,
+    '| leg | estimate | of budget | files |',
+    '| ---: | ---: | ---: | ---: |',
+    ...plan.legs.map((leg) =>
+      `| ${leg.leg} | ${seconds(leg.ms)} | ${((100 * leg.ms) / plan.capacityMs).toFixed(0)}% | ${leg.units.length} |`
+    ),
     '',
     `Cost-table runs: ${runs.length === 0 ? 'none' : runs.join(', ')}.`,
     '',
@@ -398,7 +431,7 @@ const planStepSummaryOf = (plan: ParityPlan, runs: ReadonlyArray<string>): strin
 const writePlan = (
   input: PlanInput,
   decision: { readonly legs: ReadonlyArray<ParityPlan['legs'][number]>; readonly totalMs: number },
-  runs: ReadonlyArray<string>,
+  runs: ReadonlyArray<number>,
   environment: CiEnvironment,
 ): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
   Effect.gen(function*() {
@@ -500,6 +533,10 @@ const planCommand = Command.make('plan', {
 
 const costsCommand = Command.make('costs', {
   base: Flag.String('base').pipe(Flag.optional),
+  runId: Flag.Int('run-id').pipe(
+    Flag.filter((id) => id >= 0, (id) => `--run-id ${id} is not ≥ 0`),
+    Flag.optional,
+  ),
   out: Flag.String('out'),
   dirs: Argument.String('dir').pipe(Argument.variadic({ min: 1 })),
 }, costs)

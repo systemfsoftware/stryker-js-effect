@@ -18,6 +18,8 @@ import {
 const keyOf = (value: { readonly project: string; readonly fileName: string }): string =>
   `${value.project.length}:${value.project}${value.fileName}`
 
+const ADDED_FILE = 'added.ts'
+
 interface DistinctFile {
   readonly project: string
   readonly fileName: string
@@ -64,18 +66,16 @@ const samplesOf = (rates: ReadonlyArray<FileRate>): ReadonlyArray<Sample> => {
 const measuredRatesOf = (rates: ReadonlyArray<FileRate>): ReadonlyMap<string, number> =>
   new Map(samplesOf(rates).map((sample) => [keyOf(sample), sample.msPerMutant]))
 
-const weightedMean = (samples: ReadonlyArray<Sample>): number =>
-  samples.reduce((total, sample) => total + sample.msPerMutant * sample.mutants, 0) /
-  samples.reduce((total, sample) => total + sample.mutants, 0)
-
-const projectMeansOf = (samples: ReadonlyArray<Sample>): ReadonlyMap<string, number> => {
-  const byProject = new Map<string, ReadonlyArray<Sample>>()
-  for (const sample of samples) byProject.set(sample.project, [...(byProject.get(sample.project) ?? []), sample])
-  return new Map([...byProject].map(([project, owned]) => [project, weightedMean(owned)]))
+const p90Of = (samples: ReadonlyArray<Sample>): number | undefined => {
+  const sorted = samples.map((sample) => sample.msPerMutant).sort((left, right) => left - right)
+  return sorted[Math.ceil(0.9 * sorted.length) - 1]
 }
 
-const corpusMeanOf = (samples: ReadonlyArray<Sample>): number | undefined =>
-  samples.length === 0 ? undefined : weightedMean(samples)
+const projectP90sOf = (samples: ReadonlyArray<Sample>): ReadonlyMap<string, number> => {
+  const byProject = new Map<string, ReadonlyArray<Sample>>()
+  for (const sample of samples) byProject.set(sample.project, [...(byProject.get(sample.project) ?? []), sample])
+  return new Map([...byProject].map(([project, owned]) => [project, p90Of(owned) ?? 0]))
+}
 
 const overheadsOf = (overheads: ReadonlyArray<ProjectOverhead>): {
   readonly byProject: ReadonlyMap<string, number>
@@ -172,13 +172,14 @@ const commandOf = (entries: ReadonlyArray<Entry>, capacityMs: number, blockMutan
             fileName: entry.fileName,
             msPerMutant: entry.rate,
             mutants: Math.max(1, entry.mutants),
+            runId: 1,
           }),
         ]
     ),
     overheads: entries.flatMap((entry) =>
       entry.overhead === null
         ? []
-        : [ProjectOverhead.make({ project: entry.project, ms: entry.overhead })]
+        : [ProjectOverhead.make({ project: entry.project, ms: entry.overhead, runId: 1 })]
     ),
     capacityMs,
     blockMutants,
@@ -234,10 +235,42 @@ describe('planLegs', () => {
   )
 
   it.prop(
-    '∀d_Legs_≡AtMostOneBelowHalfCapacity',
+    '∀d_AdjacentLegs_≡TogetherExceedCapacity',
     { of: [commandArb], subject: planLegs },
-    (subject, [command]) =>
-      legsOf(decisionOf(subject, command)).filter((leg) => leg.ms * 2 <= command.capacityMs).length <= 1,
+    (subject, [command]) => {
+      const legs = legsOf(decisionOf(subject, command))
+      return legs.every((leg, index) => {
+        const next = legs[index + 1]
+        return next === undefined || leg.ms + next.ms > command.capacityMs
+      })
+    },
+  )
+
+  it.prop(
+    '∀w_AnAddedUnmeasuredFile_≡NeverFewerLegs',
+    {
+      of: [
+        commandArb,
+        Arbitrary.all({
+          project: Arbitrary.schema(S.String.check(S.isMaxLength(3))),
+          mutants: Arbitrary.schema(S.Int.check(S.isBetween({ minimum: 1, maximum: 60 }))),
+        }),
+      ],
+      subject: planLegs,
+    },
+    (subject, [command, added]) => {
+      const widened = PlanLegsCommand.make({
+        files: [
+          ...command.files,
+          CorpusFile.make({ project: added.project, fileName: ADDED_FILE, mutants: added.mutants }),
+        ],
+        rates: command.rates,
+        overheads: command.overheads,
+        capacityMs: command.capacityMs,
+        blockMutants: command.blockMutants,
+      })
+      return legsOf(decisionOf(subject, widened)).length >= legsOf(decisionOf(subject, command)).length
+    },
   )
 
   it.prop(
@@ -284,7 +317,7 @@ describe('planLegs', () => {
   )
 
   it.prop(
-    '∀f_UnmeasuredFile_≡RateFromTheFallbackLadder',
+    '∀f_UnmeasuredFile_≡P90RateFromTheFallbackLadder',
     { of: [commandArb], subject: planLegs },
     (subject, [command]) => {
       const legs = legsOf(decisionOf(subject, command))
@@ -292,13 +325,13 @@ describe('planLegs', () => {
       const samples = samplesOf(command.rates)
       const fileKey = keyOf
       const unitsFor = unitsOfFile
-      const projectMeans = projectMeansOf(samples)
-      const corpusMean = corpusMeanOf(samples)
+      const projectP90s = projectP90sOf(samples)
+      const corpusP90 = p90Of(samples)
       const fallbackOf = (file: DistinctFile): Estimate => {
-        if (projectMeans.has(file.project)) {
-          return { msPerMutant: projectMeans.get(file.project) ?? 0, source: 'project-mean' }
+        if (projectP90s.has(file.project)) {
+          return { msPerMutant: projectP90s.get(file.project) ?? 0, source: 'project-p90' }
         }
-        if (corpusMean !== undefined) return { msPerMutant: corpusMean, source: 'corpus-mean' }
+        if (corpusP90 !== undefined) return { msPerMutant: corpusP90, source: 'corpus-p90' }
         return { msPerMutant: 10_000, source: 'no-measurements' }
       }
       return distinctFiles(command.files).every((file) => {
