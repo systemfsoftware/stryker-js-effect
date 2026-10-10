@@ -57,8 +57,14 @@ const CatalogShape = S.Struct({ provider: Provider, entries: S.NonEmptyArray(Ent
 
 export type CatalogText = string
 
+const repeatsAnEarlierValue = (seen: Set<CatalogText>) => (value: CatalogText): boolean => {
+  const repeated = seen.has(value)
+  seen.add(value)
+  return repeated
+}
+
 export const duplicatedValue = (values: readonly CatalogText[]): string | undefined =>
-  values.find((value, index) => values.indexOf(value) !== index)
+  values.find(repeatsAnEarlierValue(new Set()))
 
 const namespaceOf = (name: string): string | undefined => {
   const slash = name.indexOf('/')

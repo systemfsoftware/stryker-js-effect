@@ -74,7 +74,7 @@ import {
 } from './Instrument.schema.js'
 import { InstrumentError } from './Instrument.schema.js'
 import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.js'
-import { lineStartsOf, locationOf, positionAt } from './Location.js'
+import { lineStartsOf, locationOf, positionAt, shiftedLocation } from './Location.js'
 import type { LineStarts, ScriptOrigin, Span } from './Location.schema.js'
 import { mutantIdOf, type MutantTuple, mutantTupleKey } from './MutantIdentity.js'
 import {
@@ -1027,18 +1027,6 @@ const spanOfOption = (node: Node): Option.Option<Span> => Option.fromNullishOr(s
 const blockConsequentOf = (statement: IfStatement): Option.Option<Statement> =>
   Option.filter(Option.some(statement.consequent), (consequent) => nodeType(consequent) === 'BlockStatement')
 
-const shiftedPosition = (source: ApiMutant.Position, offset: ScriptOrigin): ApiMutant.Position =>
-  Match.value(source.line === 1).pipe(
-    Match.when(true, () => ({ column: source.column + offset.columnShift, line: source.line + offset.line - 1 })),
-    Match.when(false, () => ({ column: source.column, line: source.line + offset.line - 1 })),
-    Match.exhaustive,
-  )
-
-const shiftedLocation = (location: ApiMutant.Location, offset: ScriptOrigin): ApiMutant.Location => ({
-  start: shiftedPosition(location.start, offset),
-  end: shiftedPosition(location.end, offset),
-})
-
 const guardSiteOf = (frame: NodeFrame, context: PlacementContext): Option.Option<GuardSite> =>
   Option.flatMap(
     Option.filter(Option.some(frame.node), (node): node is IfStatement => node.type === 'IfStatement'),
@@ -1323,7 +1311,10 @@ const foldPlacements = (
     const ruled: FoldState = { ...state, directiveRule: directives.reduce(foldInto, state.directiveRule) }
     const withGuardSites: FoldState = {
       ...ruled,
-      guardSites: [...ruled.guardSites, ...Option.toArray(guardSiteOf(frame, context))],
+      guardSites: Option.match(guardSiteOf(frame, context), {
+        onNone: () => ruled.guardSites,
+        onSome: (site) => [...ruled.guardSites, site],
+      }),
     }
     return Match.value(shouldSkipNode(frame, location, context.mutateDescription)).pipe(
       Match.when(true, () => Result.succeed(withGuardSites)),
@@ -1347,17 +1338,26 @@ const planInstrumentation = (
     }),
   )
 
-const guardOf = (
+const guardIndexOf = (
   decisions: readonly GuardRelationDecision[],
+): ReadonlyMap<ApiMutant.MutantId, ApiMutant.Guard> =>
+  new Map(
+    decisions.flatMap((decision) =>
+      Match.value(decision).pipe(
+        Match.tag(
+          'GuardedByBlock',
+          (guarded): readonly (readonly [ApiMutant.MutantId, ApiMutant.Guard])[] => [[guarded.id, guarded.guard]],
+        ),
+        Match.tag('Guardless', () => []),
+        Match.exhaustive,
+      )
+    ),
+  )
+
+const guardOf = (
+  index: ReadonlyMap<ApiMutant.MutantId, ApiMutant.Guard>,
   id: ApiMutant.MutantId,
-): ApiMutant.Guard | undefined =>
-  decisions.flatMap((decision) =>
-    Match.value(decision).pipe(
-      Match.tag('GuardedByBlock', (guarded) => guarded.id === id ? [guarded.guard] : []),
-      Match.tag('Guardless', () => []),
-      Match.exhaustive,
-    )
-  )[0]
+): ApiMutant.Guard | undefined => index.get(id)
 
 const withGuard = (mutant: Mutant, guard: ApiMutant.Guard | undefined): Mutant =>
   Option.match(Option.fromUndefinedOr(guard), {
@@ -1484,7 +1484,7 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
     const guards = guardRelation(
       GuardRelationCommand.make({
         policy: context.mutantSetPolicy,
-        sites: [...plan.guardSites],
+        sites: plan.guardSites,
         mutants: plan.mutants.map((mutant) => ({
           id: mutant.id,
           mutatorName: mutant.mutatorName,
@@ -1495,7 +1495,10 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
     mutantCollector.append(
       Result.match(guards, {
         onFailure: () => plan.mutants,
-        onSuccess: (decisions) => plan.mutants.map((mutant) => withGuard(mutant, guardOf(decisions, mutant.id))),
+        onSuccess: (decisions) => {
+          const guardsById = guardIndexOf(decisions)
+          return plan.mutants.map((mutant) => withGuard(mutant, guardOf(guardsById, mutant.id)))
+        },
       }),
     )
     yield* applyPlan(root, plan, context)

@@ -1,7 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
+import * as HashSet from 'effect/HashSet'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -51,23 +51,26 @@ const NO_COVERAGE_STATUS: Mutant.MutantStatus = 'NoCoverage'
 
 const membersOf = (guard: Mutant.Guard): ReadonlyArray<Mutant.MutantId> => [guard.block, ...guard.inside]
 
-const isNoCoverageSettlementOf = (mutantId: Mutant.MutantId) => (settlement: BlockSettlement): boolean =>
-  Boolean.and(settlement.id === mutantId, settlement.status === NO_COVERAGE_STATUS)
+const noCoverageIdsOf = (settlements: ReadonlyArray<BlockSettlement>): HashSet.HashSet<Mutant.MutantId> =>
+  HashSet.fromIterable(
+    settlements.filter((settlement) => settlement.status === NO_COVERAGE_STATUS).map((settlement) => settlement.id),
+  )
 
 const noCoverageWitnessOf = (
-  command: UncoveredBlockCommand,
+  noCoverageIds: HashSet.HashSet<Mutant.MutantId>,
   guard: Mutant.Guard,
-): Option.Option<Mutant.MutantId> =>
-  Arr.findFirst(membersOf(guard), (member) => Arr.some(command.settlements, isNoCoverageSettlementOf(member)))
+): Option.Option<Mutant.MutantId> => Arr.findFirst(membersOf(guard), (member) => HashSet.has(noCoverageIds, member))
 
-const rulingOf = (command: UncoveredBlockCommand, held: HeldGuard): UncoveredBlockRuling =>
-  Option.match(noCoverageWitnessOf(command, held.guard), {
+const rulingOf = (noCoverageIds: HashSet.HashSet<Mutant.MutantId>, held: HeldGuard): UncoveredBlockRuling =>
+  Option.match(noCoverageWitnessOf(noCoverageIds, held.guard), {
     onNone: () => GuardKept.make({ id: held.id }),
     onSome: (noCoverage) => BlockUncovered.make({ id: held.id, noCoverage }),
   })
 
-const rulingsOf = (command: UncoveredBlockCommand): ReadonlyArray<UncoveredBlockRuling> =>
-  Arr.map(command.held, (held) => rulingOf(command, held))
+const rulingsOf = (command: UncoveredBlockCommand): ReadonlyArray<UncoveredBlockRuling> => {
+  const noCoverageIds = noCoverageIdsOf(command.settlements)
+  return Arr.map(command.held, (held) => rulingOf(noCoverageIds, held))
+}
 
 export const uncoveredBlock = Workflow.make({
   command: UncoveredBlockCommand,

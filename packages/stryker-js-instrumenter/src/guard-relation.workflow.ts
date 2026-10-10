@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
+import * as Bool from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
@@ -64,14 +65,6 @@ const atOrBefore = Order.isLessThanOrEqualTo(positionOrder)
 const contains = (outer: Mutant.Location, inner: Mutant.Location): boolean =>
   [atOrBefore(outer.start, inner.start), atOrBefore(inner.end, outer.end)].every(Boolean)
 
-const sameLocation = (left: Mutant.Location, right: Mutant.Location): boolean =>
-  [
-    atOrBefore(left.start, right.start),
-    atOrBefore(right.start, left.start),
-    atOrBefore(left.end, right.end),
-    atOrBefore(right.end, left.end),
-  ].every(Boolean)
-
 const spanSizeOrder: Order.Order<Mutant.Location> = Order.combine(
   Order.mapInput(Order.Number, (location: Mutant.Location) => location.end.line - location.start.line),
   Order.mapInput(Order.Number, (location: Mutant.Location) => location.end.column - location.start.column),
@@ -86,51 +79,84 @@ interface ResolvedSite {
   readonly test: Mutant.Location
   readonly block: Mutant.Location
   readonly blockMutantId: Mutant.MutantId
+  readonly inside: readonly Mutant.MutantId[]
 }
 
-const blockMutantOf = (site: GuardSite, mutants: readonly GuardMutant[]): Option.Option<GuardMutant> =>
-  Arr.findFirst(
-    mutants,
-    (mutant) => [mutant.mutatorName === BLOCK_MUTATOR, sameLocation(mutant.location, site.block)].every(Boolean),
+const locationKeyOf = (location: Mutant.Location): string =>
+  `${location.start.line}:${location.start.column}:${location.end.line}:${location.end.column}`
+
+const emptyBlockMutantIndex: Readonly<Record<string, Mutant.MutantId | undefined>> = {}
+
+const blockMutantIndex = (mutants: readonly GuardMutant[]): Readonly<Record<string, Mutant.MutantId | undefined>> =>
+  Arr.reduce(
+    Arr.filter(mutants, (mutant) => mutant.mutatorName === BLOCK_MUTATOR),
+    emptyBlockMutantIndex,
+    (index, mutant) =>
+      Option.match(Option.fromNullishOr(index[locationKeyOf(mutant.location)]), {
+        onNone: () => ({ ...index, [locationKeyOf(mutant.location)]: mutant.id }),
+        onSome: () => index,
+      }),
   )
 
-const resolvedSites = (command: GuardRelationCommand): readonly ResolvedSite[] =>
-  command.sites.flatMap((site) =>
-    Option.toArray(
-      Option.map(blockMutantOf(site, command.mutants), (mutant): ResolvedSite => ({
-        test: site.test,
-        block: site.block,
-        blockMutantId: mutant.id,
-      })),
-    )
-  )
-
-const ownerOf = (sites: readonly ResolvedSite[], location: Mutant.Location): Option.Option<ResolvedSite> =>
-  Arr.head(Arr.sortWith(Arr.filter(sites, (site) => contains(site.test, location)), (site) => site.test, testOrder))
-
-const insideOf = (site: ResolvedSite, mutants: readonly GuardMutant[]): readonly Mutant.MutantId[] =>
+const insideOf = (
+  block: Mutant.Location,
+  blockMutantId: Mutant.MutantId,
+  mutants: readonly GuardMutant[],
+): readonly Mutant.MutantId[] =>
   Arr.filter(
     mutants,
-    (mutant) => [contains(site.block, mutant.location), mutant.id !== site.blockMutantId].every(Boolean),
+    (mutant) => [contains(block, mutant.location), mutant.id !== blockMutantId].every(Boolean),
   ).map((mutant) => mutant.id)
 
-const decisionFor = (
-  sites: readonly ResolvedSite[],
-  mutants: readonly GuardMutant[],
-  mutant: GuardMutant,
-): GuardRelationDecision =>
+const resolvedSites = (command: GuardRelationCommand): readonly ResolvedSite[] => {
+  const blockMutants = blockMutantIndex(command.mutants)
+  return command.sites.flatMap((site) =>
+    Option.toArray(
+      Option.map(
+        Option.fromNullishOr(blockMutants[locationKeyOf(site.block)]),
+        (blockMutantId): ResolvedSite => ({
+          test: site.test,
+          block: site.block,
+          blockMutantId,
+          inside: insideOf(site.block, blockMutantId, command.mutants),
+        }),
+      ),
+    )
+  )
+}
+
+const ownerOf = (sites: readonly ResolvedSite[], location: Mutant.Location): Option.Option<ResolvedSite> =>
+  Arr.reduce(
+    sites,
+    Option.none<ResolvedSite>(),
+    (best, site) =>
+      Bool.match(contains(site.test, location), {
+        onTrue: () =>
+          Option.match(best, {
+            onNone: () => Option.some(site),
+            onSome: (current) =>
+              Bool.match(Order.isLessThan(testOrder)(site.test, current.test), {
+                onTrue: () => Option.some(site),
+                onFalse: () => best,
+              }),
+          }),
+        onFalse: () => best,
+      }),
+  )
+
+const decisionFor = (sites: readonly ResolvedSite[], mutant: GuardMutant): GuardRelationDecision =>
   Option.match(ownerOf(sites, mutant.location), {
     onNone: () => Guardless.make({ id: mutant.id }),
     onSome: (site) =>
       GuardedByBlock.make({
         id: mutant.id,
-        guard: { block: site.blockMutantId, inside: [...insideOf(site, mutants)] },
+        guard: { block: site.blockMutantId, inside: [...site.inside] },
       }),
   })
 
 const decisionsUnderDefault = (command: GuardRelationCommand): readonly GuardRelationDecision[] => {
   const sites = resolvedSites(command)
-  return command.mutants.map((mutant) => decisionFor(sites, command.mutants, mutant))
+  return command.mutants.map((mutant) => decisionFor(sites, mutant))
 }
 
 const decisionsOf = (command: GuardRelationCommand): readonly GuardRelationDecision[] =>
@@ -145,5 +171,5 @@ export const guardRelation = Workflow.make({
   decision: GuardRelationDecisions,
   error: S.Never,
   decide: (command: GuardRelationCommand): Result.Result<readonly GuardRelationDecision[], never> =>
-    Result.succeed([...decisionsOf(command)]),
+    Result.succeed(decisionsOf(command)),
 })

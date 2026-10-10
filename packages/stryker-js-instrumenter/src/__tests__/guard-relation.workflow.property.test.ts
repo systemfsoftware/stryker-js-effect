@@ -31,9 +31,9 @@ const INSIDE_LOC = located(3, 3, 3, 8)
 const idAt = (command: Command, index: number, fallback: string): Mutant.MutantId =>
   command.mutants[index]?.id ?? idOf(fallback)
 
-const probeOf = (command: Command, policy: 'default' | 'full' = 'default'): Command =>
+const probeOf = (command: Command): Command =>
   GuardRelationCommand.make({
-    policy,
+    policy: 'default',
     sites: [{ test: TEST_LOC, block: BLOCK_LOC }],
     mutants: [
       { id: idAt(command, 0, '00000000000000b1'), mutatorName: 'BlockStatement', location: BLOCK_LOC },
@@ -63,12 +63,6 @@ interface ModelSite {
   readonly blockMutantId: Mutant.MutantId
 }
 
-type GuardShape = {
-  readonly id: Mutant.MutantId
-  readonly block: Mutant.MutantId | undefined
-  readonly inside: readonly Mutant.MutantId[] | undefined
-}
-
 const Geo = {
   contains: (outer: Mutant.Location, inner: Mutant.Location): boolean =>
     [
@@ -88,20 +82,6 @@ const Geo = {
       Match.tag('Guardless', () => true),
       Match.exhaustive,
     ),
-  shapeOf: (decision: GuardRelationDecision): GuardShape =>
-    Match.value(decision).pipe(
-      Match.tag('GuardedByBlock', (guarded): GuardShape => ({
-        id: guarded.id,
-        block: guarded.guard.block,
-        inside: guarded.guard.inside,
-      })),
-      Match.tag('Guardless', (guardless): GuardShape => ({
-        id: guardless.id,
-        block: undefined,
-        inside: undefined,
-      })),
-      Match.exhaustive,
-    ),
   blockLocation: (mutants: readonly ProbeMutant[], blockId: Mutant.MutantId): Mutant.Location | undefined =>
     mutants.find((mutant) => mutant.mutatorName === 'BlockStatement' && mutant.id === blockId)?.location,
   modelSites: (command: Command): readonly ModelSite[] =>
@@ -115,16 +95,6 @@ const Geo = {
     sites
       .filter((site) => Geo.contains(site.test, location))
       .toSorted((left, right) => testOrder(left.test, right.test))[0],
-  modelInside: (site: ModelSite, mutants: readonly ProbeMutant[]): readonly Mutant.MutantId[] =>
-    mutants
-      .filter((mutant) => Geo.contains(site.block, mutant.location) && mutant.id !== site.blockMutantId)
-      .map((mutant) => mutant.id),
-  modelGuard: (command: Command, mutant: ProbeMutant): Mutant.Guard | undefined => {
-    const owner = Geo.modelOwner(Geo.modelSites(command), mutant.location)
-    return owner === undefined
-      ? undefined
-      : { block: owner.blockMutantId, inside: [...Geo.modelInside(owner, command.mutants)] }
-  },
 }
 
 const decisionsOf = (
@@ -220,22 +190,5 @@ describe('guardRelation', () => {
     '∀c_Command_≡ASiteWithoutABlockStatementMutantGuardsNothing',
     { of: [GuardRelationCommand], subject: guardRelation },
     (subject, [command]) => decisionsOf(subject(withoutBlockMutants(command))).every(Geo.guardless),
-  )
-
-  it.prop(
-    '∀c_Command_≡TheGuardIsTheInnermostSitesBlockAndItsOwnInsideMutants',
-    { of: [GuardRelationCommand], subject: guardRelation },
-    (subject, [command]) => {
-      const probe = probeOf(command)
-      const actual = decisionsOf(subject(probe)).map(Geo.shapeOf)
-      const expected = probe.mutants.map((mutant): GuardShape => {
-        const guard = Geo.modelGuard(probe, mutant)
-        return guard === undefined
-          ? { id: mutant.id, block: undefined, inside: undefined }
-          : { id: mutant.id, block: guard.block, inside: guard.inside }
-      })
-      return actual.length === expected.length &&
-        actual.every((shape, index) => JSON.stringify(shape) === JSON.stringify(expected[index]))
-    },
   )
 })

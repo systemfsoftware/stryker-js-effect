@@ -234,27 +234,23 @@ const guardBlockOf = (mutant: Mutant.Mutant): ReadonlyArray<Mutant.MutantId> =>
     onSome: (guard) => [guard.block],
   })
 
-const insideAnchorsOf = (mutants: readonly Mutant.Mutant[]): Record<string, ReadonlyArray<Mutant.MutantId>> =>
-  mutants.reduce<Record<string, ReadonlyArray<Mutant.MutantId>>>(
-    (accumulated, mutant) =>
+const insideAnchorsOf = (
+  sources: ReadonlyArray<ReadonlyArray<Mutant.Mutant>>,
+): Record<string, ReadonlyArray<Mutant.MutantId>> => {
+  const byInsideId: Record<string, Mutant.MutantId[]> = {}
+  Arr.forEach(sources, (source) =>
+    Arr.forEach(source, (mutant) =>
       Option.match(Option.fromUndefinedOr(mutant.guard), {
-        onNone: () => accumulated,
+        onNone: () => undefined,
         onSome: (guard) =>
-          guard.inside.reduce(
-            (inner, insideId) =>
-              Record.set(
-                inner,
-                insideId,
-                [
-                  ...Option.getOrElse(Record.get(inner, insideId), (): ReadonlyArray<Mutant.MutantId> => []),
-                  guard.block,
-                ],
-              ),
-            accumulated,
-          ),
-      }),
-    {},
-  )
+          Arr.forEach(guard.inside, (insideId) => {
+            const anchors = Option.getOrElse(Record.get(byInsideId, insideId), (): Mutant.MutantId[] => [])
+            anchors.push(guard.block)
+            byInsideId[insideId] = anchors
+          }),
+      })))
+  return byInsideId
+}
 
 const anchorsOf = (
   insideAnchors: Record<string, ReadonlyArray<Mutant.MutantId>>,
@@ -270,9 +266,7 @@ const optionalAnchorsOf = (
   insideAnchors: Record<string, ReadonlyArray<Mutant.MutantId>>,
   mutant: Mutant.Mutant,
 ): Arr.NonEmptyReadonlyArray<Mutant.MutantId> | undefined =>
-  Option.getOrUndefined(
-    Option.filter(Option.some(anchorsOf(insideAnchors, mutant)), Arr.isReadonlyArrayNonEmpty),
-  )
+  Option.getOrUndefined(Option.liftPredicate(anchorsOf(insideAnchors, mutant), Arr.isReadonlyArrayNonEmpty))
 
 const planProject = (
   request: PlanShardsRequest,
@@ -336,7 +330,7 @@ const planProject = (
           () => DEFAULT_MUTANT_COST_MS,
         ),
     })
-    const insideAnchors = insideAnchorsOf([...reuse.mutants, ...reuse.rememberedResults])
+    const insideAnchors = insideAnchorsOf([reuse.mutants, reuse.rememberedResults])
     const mutants = [
       ...reuse.mutants.map((mutant) => ({
         id: mutant.id,

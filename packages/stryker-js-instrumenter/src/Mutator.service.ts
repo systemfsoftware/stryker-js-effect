@@ -139,6 +139,12 @@ const subsumptionFieldOf = (mutant: Mutant): { readonly subsumption?: ApiMutant.
     onSome: (subsumption) => ({ subsumption }),
   })
 
+const guardFieldOf = (mutant: Mutant): { readonly guard?: ApiMutant.Guard } =>
+  Option.match(Option.fromUndefinedOr(mutant.guard), {
+    onNone: () => ({}),
+    onSome: (guard) => ({ guard }),
+  })
+
 const statusReasonOf = (mutant: Mutant): Option.Option<string> =>
   Option.orElse(
     Option.fromUndefinedOr(mutant.ignoreReason),
@@ -153,7 +159,7 @@ export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.S
     location: mutant.location,
     mutatorName: mutant.mutatorName,
     replacement: mutant.replacementCode,
-    ...(mutant.guard === undefined ? {} : { guard: mutant.guard }),
+    ...guardFieldOf(mutant),
   }
   return S.decodeResult(ApiMutant.Mutant)(
     Option.match(statusReasonOf(mutant), {

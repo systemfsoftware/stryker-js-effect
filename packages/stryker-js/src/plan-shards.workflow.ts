@@ -240,17 +240,22 @@ const anchorComponentsToFixpoint = (components: ReadonlyArray<AnchorComponent>):
   })
 }
 
-const projectOfGroup = (members: ReadonlyArray<PlannedMutant>): string =>
-  Option.match(Arr.head(members), { onNone: () => '', onSome: (head) => head.project })
+const hasAnchors = (mutant: PlannedMutant): boolean => Option.isSome(Option.fromUndefinedOr(mutant.anchors))
 
-const groupOfComponent = (component: AnchorComponent): PlacementGroup => {
+const componentsOfProject = (projectMutants: ReadonlyArray<PlannedMutant>): ReadonlyArray<AnchorComponent> =>
+  Boolean.match(projectMutants.some(hasAnchors), {
+    onTrue: () => anchorComponentsToFixpoint(projectMutants.map(anchorComponentOf)),
+    onFalse: () => projectMutants.map(anchorComponentOf),
+  })
+
+const groupOfComponent = (project: string, component: AnchorComponent): PlacementGroup => {
   const sorted = [...component.mutants].sort(compareProjectThenId)
   return {
     key: Option.match(Arr.head(sorted), {
       onNone: () => '',
       onSome: (head) => `\u0000${head.project}\u0000${head.id}`,
     }),
-    project: projectOfGroup(sorted),
+    project,
     mutants: sorted,
     costMs: totalCostMsOf(sorted),
     dependsOnDryRun: sorted.some((mutant) => mutant.dependsOnDryRun),
@@ -258,8 +263,8 @@ const groupOfComponent = (component: AnchorComponent): PlacementGroup => {
 }
 
 const placementGroupsOf = (mutants: ReadonlyArray<PlannedMutant>): ReadonlyArray<PlacementGroup> =>
-  Record.toEntries(Arr.groupBy(mutants, (mutant) => mutant.project)).flatMap(([, projectMutants]) =>
-    anchorComponentsToFixpoint(projectMutants.map(anchorComponentOf)).map(groupOfComponent)
+  Record.toEntries(Arr.groupBy(mutants, (mutant) => mutant.project)).flatMap(([project, projectMutants]) =>
+    componentsOfProject(projectMutants).map((component) => groupOfComponent(project, component))
   )
 
 const compareGroupsCostliestFirst = (left: PlacementGroup, right: PlacementGroup): number =>
