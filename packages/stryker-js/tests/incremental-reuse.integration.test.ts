@@ -597,13 +597,19 @@ Feature('Content-keyed reuse across incremental reports')
               secondRecord: ignoredReasonsOf(s.fixture.second.mutants),
               secondStream: ignoredReasonsOf(secondLines),
               firstRemembered: s.fixture.first.mutants.filter((mutant) => mutant.remembered === true).length,
-              secondRemembered: s.fixture.second.mutants.filter((mutant) => mutant.remembered === true).length,
+              secondIgnoredRemembered: s.fixture.second.mutants.filter((mutant) =>
+                mutant.status === 'Ignored' && mutant.remembered === true
+              ).length,
+              secondRan: s.fixture.second.reuse?.ran,
+              secondRefused: s.fixture.second.reuse?.refused,
             }).toEqual({
               firstRuleNamed: true,
               secondRecord: firstReasons,
               secondStream: firstReasons,
               firstRemembered: 0,
-              secondRemembered: s.fixture.second.reuse?.reused,
+              secondIgnoredRemembered: firstReasons.length,
+              secondRan: 0,
+              secondRefused: ZERO_REFUSALS,
             })
           },
         ),

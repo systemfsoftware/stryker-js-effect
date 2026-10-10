@@ -120,7 +120,7 @@ const settledTestedEntryOf = (
 
 const ignoredEntryOf = (settled: SettledVerdict, components: TestedComponents): Option.Option<TestedEntry> =>
   Option.map(
-    Option.liftPredicate(Option.fromUndefinedOr(settled.result.statusReason), S.is(Mutant.IgnoreStatusReasonText)),
+    Option.filter(Option.fromUndefinedOr(settled.result.statusReason), S.is(Mutant.IgnoreStatusReasonText)),
     (statusReason): TestedEntry => ({ ...testedCommonOf(settled, components), status: 'Ignored', statusReason }),
   )
 
