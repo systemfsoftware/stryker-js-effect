@@ -26,17 +26,18 @@ set -u
 mkdir -p reports
 ${STRYKER} plan --target-seconds 0.001 --max-shards 2 --out plan.json > reports/plan.log 2>&1
 echo $? > reports/plan.exit
-setsid ${STRYKER} run --plan plan.json --shard 1/2 --out reports/shard-1 > reports/killed.log 2>&1 &
+${STRYKER} run --plan plan.json --shard 1/2 --out reports/shard-1 > reports/killed.log 2>&1 &
 killed=$!
 ${STRYKER} run --plan plan.json --shard 2/2 --out reports/shard-2 > reports/survivor.log 2>&1 &
 survivor=$!
 stored() { find ${DEFAULT_VERDICT_DIRECTORY} -type f -name '*.json' ! -name '.*' 2>/dev/null | wc -l; }
+tree() { echo "$1"; for child in $(pgrep -P "$1"); do tree "$child"; done; }
 polls=0
 while kill -0 "$killed" 2>/dev/null && [ "$(stored)" -lt ${STORED_ENTRIES_BEFORE_THE_KILL} ] && [ "$polls" -lt ${KILL_POLLS} ]; do
   sleep 0.05
   polls=$((polls + 1))
 done
-kill -9 -- "-$killed" 2>/dev/null
+kill -9 $(tree "$killed") 2>/dev/null
 wait "$killed"
 echo $? > reports/killed.exit
 wait "$survivor"
