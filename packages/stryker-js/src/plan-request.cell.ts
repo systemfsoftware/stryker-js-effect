@@ -26,6 +26,7 @@ import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
+import { forEachProjectDirectory } from './project-directory.adapter.js'
 import { readProjectCell } from './read-project.cell.js'
 import { requireDryRun, type RequireDryRunDecision } from './require-dry-run.workflow.js'
 import { dryRunChoiceOf, requireDryRunCommandOf } from './run/dry-run-choice.js'
@@ -386,13 +387,6 @@ const writePlan = (
     })
   }).pipe(Effect.orDie)
 
-const projectsOf = (projects: ReadonlyArray<string> | undefined): ReadonlyArray<string> =>
-  Option.getOrElse(
-    Option.filter(Option.map(Option.fromUndefinedOr(projects), (present) => [...present]), (present) =>
-      present.length > 0),
-    () => ['.'],
-  )
-
 const labelBaseOf = (path: Path.Path, basePath: string, out: string | undefined): string =>
   Option.getOrElse(
     Option.map(Option.fromUndefinedOr(out), (present) => path.dirname(path.resolve(basePath, present))),
@@ -423,17 +417,10 @@ const planReuseRowOf = (entry: ProjectPlan): RunEvent.PlanProjectReuse =>
 export const planRequest = ({ request, channel }: PlanRequestInput): Effect.Effect<void, never, EnginePorts> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const previous = globalThis.process.cwd()
     const labelBase = labelBaseOf(path, channel.environment.basePath, request.out)
-    const planned = yield* Effect.forEach(
-      projectsOf(request.projects),
-      (directory) =>
-        Effect.acquireUseRelease(
-          Effect.sync(() => globalThis.process.chdir(directory)),
-          () => planProject(request, channel, labelBase, directory),
-          () => Effect.sync(() => globalThis.process.chdir(previous)),
-        ),
-      { concurrency: 1 },
+    const planned = yield* forEachProjectDirectory(
+      request.projects,
+      (directory) => planProject(request, channel, labelBase, directory),
     )
     const scheduled = planned.flatMap((entry) => entry.mutants.map((mutant) => ({ project: entry.label, ...mutant })))
     const dryRunCosts: Record<string, number> = Object.fromEntries(
