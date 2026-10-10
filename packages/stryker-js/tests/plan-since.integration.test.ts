@@ -95,15 +95,6 @@ const writeWorkspace = (
     return root
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
-const writeConfig = (
-  root: string,
-  mutate: ReadonlyArray<string>,
-): Effect.Effect<void, never, never> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    yield* fs.writeFileString(`${root}/${CONFIG_FILE}`, configSourceOf(mutate))
-  }).pipe(Effect.orDie, Effect.provide(filePorts))
-
 const removeWorkspace = (root: string): Effect.Effect<void, never, never> =>
   Effect.orDie(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true }))).pipe(
     Effect.provide(filePorts),
