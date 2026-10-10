@@ -3,10 +3,12 @@ import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-g
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import type { Check, Expect } from '@systemfsoftware/vitest'
 import * as Boolean from 'effect/Boolean'
-import type * as Cause from 'effect/Cause'
+import * as Cause from 'effect/Cause'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
+import * as Equal from 'effect/Equal'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -488,6 +490,28 @@ const onLineOf = (rows: readonly MutantRow[], line: number): readonly string[] =
 const everyStatusOf = (ids: readonly string[], status: string): Readonly<Record<string, string>> =>
   Object.fromEntries(ids.map((id) => [id, status]))
 
+const outcomeOf = (observation: ReuseObservation): string =>
+  Exit.match(observation.exit, {
+    onSuccess: () => 'succeeded',
+    onFailure: (cause) => `failed: ${Cause.pretty(cause)}`,
+  })
+
+type ObservedField = string | number | boolean | Readonly<Record<string, string>>
+
+type Observed = Readonly<Record<string, ObservedField>>
+
+const shownOf = (value: ObservedField | undefined): string =>
+  value === undefined ? 'nothing' : typeof value === 'string' ? value : JSON.stringify(value)
+
+const mismatchesOf = (actual: Observed, expected: Observed): string =>
+  Object.keys(expected)
+    .filter((field) => !Equal.equals(actual[field], expected[field]))
+    .map((field) => `${field}: expected ${shownOf(expected[field])}, got ${shownOf(actual[field])}`)
+    .join('\n')
+
+const expectObserved = <A extends Observed>(expect: Expect, actual: A, expected: NoInfer<A>): Check =>
+  expect<Observed>(actual, mismatchesOf(actual, expected)).toEqual(expected)
+
 Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_000 })
   .withLayer(Layer.empty)
   .live('the run keys every CompileError verdict by the program the checker loaded')
@@ -502,18 +526,18 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
         Then(
           'the first run stamped every CompileError verdict with a program digest and the second run reused them all without a check',
         )((s, expect) =>
-          expect({
+          expectObserved(expect, {
             firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
             firstDigestsStamped: digestCountOf(s.runs.first.mutants) ===
               compileErrorRows(s.runs.first.mutants).length,
-            secondSucceeded: Exit.isSuccess(s.runs.second.exit),
+            secondOutcome: outcomeOf(s.runs.second),
             secondReusedAll: reusedOf(s.runs.second) === s.runs.first.mutants.length,
             secondRanNothing: ranOf(s.runs.second),
             secondRefusals: programChangedOf(s.runs.second),
-          }).toEqual({
+          }, {
             firstCompileErrors: true,
             firstDigestsStamped: true,
-            secondSucceeded: true,
+            secondOutcome: 'succeeded',
             secondReusedAll: true,
             secondRanNothing: 0,
             secondRefusals: 0,
@@ -533,15 +557,15 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             ),
         ),
         Then('the second run refuses the remembered verdicts naming the changed program')((s, expect) =>
-          expect({
+          expectObserved(expect, {
             firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
-            secondSucceeded: Exit.isSuccess(s.runs.second.exit),
+            secondOutcome: outcomeOf(s.runs.second),
             secondRanChecks: ranOf(s.runs.second) > 0,
             secondRefusedForProgram: programChangedOf(s.runs.second) > 0,
             secondRecheckedStatuses: compileErrorRows(s.runs.second.mutants).length,
-          }).toEqual({
+          }, {
             firstCompileErrors: true,
-            secondSucceeded: true,
+            secondOutcome: 'succeeded',
             secondRanChecks: true,
             secondRefusedForProgram: true,
             secondRecheckedStatuses: compileErrorRows(s.runs.first.mutants).length,
@@ -561,14 +585,14 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             ),
         ),
         Then('the second run refuses the remembered verdicts naming the changed program')((s, expect) =>
-          expect({
+          expectObserved(expect, {
             firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
-            secondSucceeded: Exit.isSuccess(s.runs.second.exit),
+            secondOutcome: outcomeOf(s.runs.second),
             secondRanChecks: ranOf(s.runs.second) > 0,
             secondRefusedForProgram: programChangedOf(s.runs.second) > 0,
-          }).toEqual({
+          }, {
             firstCompileErrors: true,
-            secondSucceeded: true,
+            secondOutcome: 'succeeded',
             secondRanChecks: true,
             secondRefusedForProgram: true,
           })
@@ -591,15 +615,15 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             ),
         ),
         Then('the second run still reuses every CompileError verdict')((s, expect) =>
-          expect({
+          expectObserved(expect, {
             firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
-            secondSucceeded: Exit.isSuccess(s.runs.second.exit),
+            secondOutcome: outcomeOf(s.runs.second),
             secondRanNothing: ranOf(s.runs.second),
             secondReusedAll: reusedOf(s.runs.second) === s.runs.first.mutants.length,
             secondProgramRefusals: programChangedOf(s.runs.second),
-          }).toEqual({
+          }, {
             firstCompileErrors: true,
-            secondSucceeded: true,
+            secondOutcome: 'succeeded',
             secondRanNothing: 0,
             secondReusedAll: true,
             secondProgramRefusals: 0,
@@ -626,14 +650,14 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             ),
         ),
         Then('the second run refuses the remembered verdicts naming the changed program')((s, expect) =>
-          expect({
+          expectObserved(expect, {
             firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
-            secondSucceeded: Exit.isSuccess(s.runs.second.exit),
+            secondOutcome: outcomeOf(s.runs.second),
             secondRanChecks: ranOf(s.runs.second) > 0,
             secondRefusedForProgram: programChangedOf(s.runs.second) > 0,
-          }).toEqual({
+          }, {
             firstCompileErrors: true,
-            secondSucceeded: true,
+            secondOutcome: 'succeeded',
             secondRanChecks: true,
             secondRefusedForProgram: true,
           })
@@ -658,7 +682,7 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             ),
         ),
         Then('the cold plan schedules everything without a checker and the warm plan schedules nothing')((s, expect) =>
-          expect({
+          expectObserved(expect, {
             firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
             firstDigestsStamped: digestCountOf(s.runs.first.mutants) ===
               compileErrorRows(s.runs.first.mutants).length,
@@ -670,7 +694,7 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             warmProgramChanged: s.runs.warmPlan.programChanged,
             secondReusedAll: reusedOf(s.runs.second) === s.runs.first.mutants.length,
             secondRanNothing: ranOf(s.runs.second),
-          }).toEqual({
+          }, {
             firstCompileErrors: true,
             firstDigestsStamped: true,
             coldScheduled: s.runs.first.mutants.length,
@@ -704,7 +728,7 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
         ),
         Then('the plan schedules every CompileError naming the changed program and the run re-scores them')(
           (s, expect) =>
-            expect({
+            expectObserved(expect, {
               firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
               planScheduled: s.runs.plan.total,
               planCheckerStartups: s.runs.plan.checkerStartups.length,
@@ -712,7 +736,7 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
               planRan: s.runs.plan.ran,
               secondProgramChanged: programChangedOf(s.runs.second) > 0,
               secondRanChecks: ranOf(s.runs.second) > 0,
-            }).toEqual({
+            }, {
               firstCompileErrors: true,
               planScheduled: s.runs.first.mutants.length,
               planCheckerStartups: 1,
@@ -747,11 +771,11 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             ),
         ),
         Then('the in-place plan asks only for the checker configuration digest')((s, expect) =>
-          expect({
+          expectObserved(expect, {
             firstCompileErrors: compileErrorRows(s.runs.first.mutants).length > 0,
             askedForConfig: s.runs.scopes.includes('config'),
             askedForProgram: s.runs.scopes.includes('program'),
-          }).toEqual({
+          }, {
             firstCompileErrors: true,
             askedForConfig: true,
             askedForProgram: false,
@@ -781,21 +805,21 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
         Then(
           'the checker-only leaf scores every CompileError as the tested first run did without a test runner, and the leaf holding a tested mutant runs the initial test run',
         )((s, expect) =>
-          expect({
+          expectObserved(expect, {
             firstHasBothKinds: s.runs.compileErrorIds.length > 0 && s.runs.testedIds.length > 0,
             unchangedVerdicts: statusesOf(s.runs.unchanged.mutants, idsOf(s.runs.first.mutants)),
-            checkerOnlySucceeded: Exit.isSuccess(s.runs.checkerOnly.exit),
+            checkerOnlyOutcome: outcomeOf(s.runs.checkerOnly),
             checkerOnlyTestRunners: s.runs.checkerOnly.testRunnerStartups,
             checkerOnlyVerdicts: verdictsOf(s.runs.checkerOnly.mutants, s.runs.compileErrorIds),
-            testedSucceeded: Exit.isSuccess(s.runs.tested.exit),
+            testedOutcome: outcomeOf(s.runs.tested),
             testedRanTheDryRun: s.runs.tested.dryRunTestRunners > 0,
-          }).toEqual({
+          }, {
             firstHasBothKinds: true,
             unchangedVerdicts: statusesOf(s.runs.first.mutants, idsOf(s.runs.first.mutants)),
-            checkerOnlySucceeded: true,
+            checkerOnlyOutcome: 'succeeded',
             checkerOnlyTestRunners: 0,
             checkerOnlyVerdicts: verdictsOf(s.runs.first.mutants, s.runs.compileErrorIds),
-            testedSucceeded: true,
+            testedOutcome: 'succeeded',
             testedRanTheDryRun: true,
           })
         ),
@@ -820,15 +844,15 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
             ),
         ),
         Then('the run runs the initial test run and scores every accepted mutant as the forced run does')((s, expect) =>
-          expect({
+          expectObserved(expect, {
             hadCompileErrors: s.runs.compileErrorIds.length > 0,
-            acceptedSucceeded: Exit.isSuccess(s.runs.accepted.exit),
+            acceptedOutcome: outcomeOf(s.runs.accepted),
             acceptedRanTheDryRun: s.runs.accepted.dryRunTestRunners > 0,
             acceptedCompileErrors: compileErrorRows(s.runs.accepted.mutants).length,
             acceptedVerdicts: verdictsOf(s.runs.accepted.mutants, s.runs.compileErrorIds),
-          }).toEqual({
+          }, {
             hadCompileErrors: true,
-            acceptedSucceeded: true,
+            acceptedOutcome: 'succeeded',
             acceptedRanTheDryRun: true,
             acceptedCompileErrors: 0,
             acceptedVerdicts: verdictsOf(s.runs.forced.mutants, s.runs.compileErrorIds),
@@ -859,17 +883,17 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
           'the shard runs the initial test run, the disabled mutants end Ignored, and every verdict matches a forced run',
         )(
           (s, expect) =>
-            expect({
+            expectObserved(expect, {
               everyPriorACompileError: s.runs.compileErrorIds.length === s.runs.first.mutants.length,
               hasDisabledMutants: s.runs.disabledIds.length > 0,
-              deferredSucceeded: Exit.isSuccess(s.runs.deferred.exit),
+              deferredOutcome: outcomeOf(s.runs.deferred),
               deferredRanTheDryRun: s.runs.deferred.dryRunTestRunners > 0,
               disabledStatuses: statusesOf(s.runs.deferred.mutants, s.runs.disabledIds),
               deferredVerdicts: verdictsOf(s.runs.deferred.mutants, s.runs.compileErrorIds),
-            }).toEqual({
+            }, {
               everyPriorACompileError: true,
               hasDisabledMutants: true,
-              deferredSucceeded: true,
+              deferredOutcome: 'succeeded',
               deferredRanTheDryRun: true,
               disabledStatuses: everyStatusOf(s.runs.disabledIds, 'Ignored'),
               deferredVerdicts: verdictsOf(s.runs.forced.mutants, s.runs.compileErrorIds),
