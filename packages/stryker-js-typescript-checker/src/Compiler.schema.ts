@@ -57,6 +57,7 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
     'file-not-in-project',
     'mutant-outside-file',
     'program-digest-unavailable',
+    'invalid-checker-options',
   ]),
   subject: S.optional(S.String),
 }) {
@@ -79,6 +80,10 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
       Match.when(
         'program-digest-unavailable',
         () => `The loaded TypeScript program could not be identified: ${this.subject ?? 'unknown input'}`,
+      ),
+      Match.when(
+        'invalid-checker-options',
+        () => `The typescriptChecker options are invalid: ${this.subject ?? 'unknown value'}`,
       ),
       Match.exhaustive,
     )
