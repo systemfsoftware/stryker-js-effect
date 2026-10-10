@@ -2,7 +2,7 @@
 title: Execution Engine Bench Lane - Plan
 type: perf
 date: 2026-10-10
-supersedes: docs/plans/2026-10-10-0035-perf-execution-engine-bench-lane-plan.md
+supersedes: docs/plans/2026-10-10-0536-perf-execution-engine-bench-lane-plan.md
 topic: execution-engine-bench-lane
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
