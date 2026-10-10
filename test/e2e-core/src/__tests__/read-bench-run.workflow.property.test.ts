@@ -89,6 +89,7 @@ const mutantOf = (cost: RunEvent.MutantCost | null): RunEvent.RunMutantTestedEve
     completed: 1,
     total: 1,
     static: false,
+    subsumption: null,
     cost,
   })
 

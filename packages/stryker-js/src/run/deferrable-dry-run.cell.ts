@@ -46,15 +46,18 @@ const settledWithoutTests = (
   checkerHandle: Option.Option<CheckerPoolHandle>,
   plan: MutationTestPlan,
 ): Effect.Effect<Option.Option<CheckedPlans<never>>, StageError | CheckerCrash, PhaseClock> =>
-  Option.match(Option.filter(checkerHandle, () => plan.earlyResults.length === 0), {
-    onNone: () => Effect.succeedNone,
-    onSome: (handle) =>
-      Effect.map(checkPlans(handle, plan.runPlans), (checked) =>
-        Option.as(
-          Option.liftPredicate(checked, (candidate: CheckedPlans) => candidate.passedPlans.length === 0),
-          { ...checked, passedPlans: [] },
-        )),
-  })
+  Option.match(
+    Option.filter(checkerHandle, () => plan.earlyResults.length === 0 && plan.heldSubsumed.length === 0),
+    {
+      onNone: () => Effect.succeedNone,
+      onSome: (handle) =>
+        Effect.map(checkPlans(handle, plan.runPlans), (checked) =>
+          Option.as(
+            Option.liftPredicate(checked, (candidate: CheckedPlans) => candidate.passedPlans.length === 0),
+            { ...checked, passedPlans: [] },
+          )),
+    },
+  )
 
 const testedRun = (command: InstrumentDone): Effect.Effect<MutationTestDone, StageError, StageServices> =>
   Effect.flatMap(dryRunCell.run(command), (done) => mutationTestCell.run(done))
@@ -92,6 +95,7 @@ const checkerSettledRun = Effect.fnUntraced(function*(command: InstrumentDone) {
               reuse,
               plan,
               checkedPlans: Stream.succeed(checked),
+              checkReadmitted: () => Stream.empty,
               closureDigestsByMutantId: {},
               runPlanOf: () => (runPlan) => absurd(runPlan),
             })

@@ -105,6 +105,7 @@ const mutantOf = (testsExecuted: number | null): RunEvent.RunMutantTestedEvent =
     completed: 1,
     total: 1,
     static: false,
+    subsumption: null,
     cost: testsExecuted === null ? null : { fixedOverheadMs: 1, testBodyMs: 2, testsExecuted, shared: false },
   })
 

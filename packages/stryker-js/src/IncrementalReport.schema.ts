@@ -20,6 +20,7 @@ const MutantResultLikeSchema = S.Struct({
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
   duration: S.optional(S.Finite),
+  subsumption: Mutant.Subsumption.pipe(S.toEncoded, S.optional),
 })
 
 const FileResultLikeSchema = S.Struct({
