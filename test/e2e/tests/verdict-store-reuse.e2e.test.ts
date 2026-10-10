@@ -7,6 +7,7 @@ import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { S3Emulator } from '../src/Harness/s3-emulator.service.js'
 import { verifyAnnotatedRun } from './__fixtures__/annotation-oracle.fixture.js'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
+import { publishToJobSummary } from './__fixtures__/job-summary.fixture.js'
 import { decodeStream, reuseEventOf, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
 import { readReportOf } from './__fixtures__/run-artifacts.fixture.js'
 
@@ -119,6 +120,17 @@ Feature('Reusing verdicts across machines through a shared S3 verdict store', { 
             firstReuse: s.reuse.first,
             secondReuse: s.reuse.second,
           })
+        ),
+        When('the second run reuse count is published to the job log and step summary')(
+          'published',
+          (s) =>
+            publishToJobSummary('Verdict reuse across machines (S3 store on emulate)', [
+              `- first run: ${s.reuse.first.ran} ran, ${s.reuse.first.reused} reused`,
+              `- second run: ${s.reuse.second.reused}/${totalOf(s.reuse.second)} reused (${
+                (100 * s.reuse.second.reused / totalOf(s.reuse.second)).toFixed(1)
+              }%), floor ${100 * REUSE_FLOOR}%`,
+              `- second run refused: ${refusalsOf(s.reuse.second) || 'none'}`,
+            ]),
         ),
         When('the terminal verdict of the second run event stream is read')(
           'verdict',
