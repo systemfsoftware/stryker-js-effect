@@ -34,6 +34,7 @@ import {
   type Side,
   TelemetryMissing,
   TypeAnswerLine,
+  TypeQueryFileRefused,
   Verdict,
   VerdictStatus,
 } from '../Parity.schema.js'
@@ -610,36 +611,64 @@ describe('compareSides', () => {
   )
 
   it.prop(
-    '∀p_PerProjectShares_≡SumToEachProjectQueried',
-    { of: [S.Array(TypeAnswer), S.Array(TypeAnswer)], subject: compareSides },
-    (subject, [projectAnswers, otherAnswers]) => {
+    '∀p_PerProjectShares_≡CountEachProjectsAnswersReasonsAndRefusals',
+    {
+      of: [
+        S.Array(TypeAnswer),
+        S.Array(TypeAnswer),
+        S.Array(TypeQueryFileRefused),
+        S.Array(TypeQueryFileRefused),
+      ],
+      subject: compareSides,
+    },
+    (subject, [projectAnswers, otherAnswers, projectRefusals, otherRefusals]) => {
       const linesFor = (
         project: string,
         prefix: string,
         answers: ReadonlyArray<TypeAnswer>,
-      ): ReadonlyArray<ParityLine> =>
-        answers.flatMap((answer, index) => [
+        refusals: ReadonlyArray<TypeQueryFileRefused>,
+      ): ReadonlyArray<ParityLine> => [
+        ...answers.flatMap((answer, index) => [
           verdictOf('main', { project, mutantId: `${prefix}${index}`, status: 'compileError' }),
           verdictOf('branch', { project, mutantId: `${prefix}${index}`, status: 'compileError' }),
           typeAnswerLineOf(`${prefix}${index}`, answer, { project }),
-        ])
+        ]),
+        ...refusals.map((refused) =>
+          TypeQueryFileRefused.make({
+            schemaVersion: refused.schemaVersion,
+            project,
+            fileName: refused.fileName,
+            reason: refused.reason,
+            nextAction: refused.nextAction,
+            mutantCount: refused.mutantCount,
+          })
+        ),
+      ]
       const lines = [
-        ...linesFor(PROJECT, 'a', projectAnswers),
-        ...linesFor(OTHER_PROJECT, 'b', otherAnswers),
+        ...linesFor(PROJECT, 'a', projectAnswers, projectRefusals),
+        ...linesFor(OTHER_PROJECT, 'b', otherAnswers, otherRefusals),
         countsOf(PROJECT),
         countsOf(OTHER_PROJECT),
       ]
       const { typeQuery } = decisionOf(subject, commandOf(lines)).summary
       const expected = [
-        [PROJECT, projectAnswers.length],
-        [OTHER_PROJECT, otherAnswers.length],
+        [PROJECT, projectAnswers, projectRefusals],
+        [OTHER_PROJECT, otherAnswers, otherRefusals],
       ] as const
+      const unknownCountOf = (answers: ReadonlyArray<TypeAnswer>, reason: string): number =>
+        answers.filter((answer) => S.is(Unknown)(answer) && answer.reason === reason).length
       return typeQuery.queried === projectAnswers.length + otherAnswers.length &&
-        expected.every(([project, queried]) =>
+        typeQuery.refusedFiles === projectRefusals.length + otherRefusals.length &&
+        expected.every(([project, answers, refusals]) =>
           typeQuery.projects.some((entry) =>
             entry.project === project &&
-            entry.queried === queried &&
-            entry.assignable + entry.notAssignable + entry.unknown === entry.queried
+            entry.queried === answers.length &&
+            entry.assignable + entry.notAssignable + entry.unknown === entry.queried &&
+            Object.entries(entry.unknownReasons).every(([reason, count]) =>
+              count === unknownCountOf(answers, reason)
+            ) &&
+            entry.refusedFiles === refusals.length &&
+            entry.refusedMutants === refusals.reduce((total, refused) => total + refused.mutantCount, 0)
           )
         )
     },

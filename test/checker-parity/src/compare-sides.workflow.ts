@@ -19,6 +19,7 @@ import {
   CheckCall,
   Counts,
   Gates,
+  NonNegativeInt,
   ParityLine,
   PhaseLine,
   ProjectBootFailed,
@@ -158,34 +159,37 @@ export const ShortcutCounts = S.Struct({ overall: S.Int, isolatedDeclarations: S
 export type ShortcutCounts = typeof ShortcutCounts.Type
 
 export const TypeQueryAnswerCounts = S.Struct({
-  assignable: S.Int,
-  notAssignable: S.Int,
-  unknown: S.Int,
+  assignable: NonNegativeInt,
+  notAssignable: NonNegativeInt,
+  unknown: NonNegativeInt,
 })
 export type TypeQueryAnswerCounts = typeof TypeQueryAnswerCounts.Type
 
-export const TypeQueryUnknownCounts = S.Record(UnknownReason, S.Int)
+export const TypeQueryUnknownCounts = S.Record(UnknownReason, NonNegativeInt)
 export type TypeQueryUnknownCounts = typeof TypeQueryUnknownCounts.Type
 
 export const TypeQueryProjectShare = S.Struct({
   project: S.String,
-  queried: S.Int,
-  assignable: S.Int,
-  notAssignable: S.Int,
-  unknown: S.Int,
+  queried: NonNegativeInt,
+  assignable: NonNegativeInt,
+  notAssignable: NonNegativeInt,
+  unknown: NonNegativeInt,
+  unknownReasons: TypeQueryUnknownCounts,
+  refusedFiles: NonNegativeInt,
+  refusedMutants: NonNegativeInt,
 })
 export type TypeQueryProjectShare = typeof TypeQueryProjectShare.Type
 
 export const TypeQuerySummary = S.Struct({
-  queried: S.Int,
+  queried: NonNegativeInt,
   answers: TypeQueryAnswerCounts,
   unknownReasons: TypeQueryUnknownCounts,
-  notAssignable: S.Int,
-  compileErrorAnsweredNotAssignable: S.Int,
-  compileErrorTotal: S.Int,
+  notAssignable: NonNegativeInt,
+  compileErrorAnsweredNotAssignable: NonNegativeInt,
+  compileErrorTotal: NonNegativeInt,
   projects: S.Array(TypeQueryProjectShare),
-  refusedFiles: S.Int,
-  peakServers: S.Int,
+  refusedFiles: NonNegativeInt,
+  peakServers: NonNegativeInt,
 })
 export type TypeQuerySummary = typeof TypeQuerySummary.Type
 
@@ -736,13 +740,25 @@ const unknownReasonsOf = (answers: ReadonlyArray<TypeAnswerLine>): TypeQueryUnkn
   }
 }
 
+const refusedLinesIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<TypeQueryFileRefused> =>
+  lines.filter((line): line is TypeQueryFileRefused => isTypeQueryFileRefused(line))
+
 const projectSharesOf = (
   lines: ReadonlyArray<ParityLine>,
   projects: ReadonlyArray<string>,
 ): ReadonlyArray<TypeQueryProjectShare> =>
   projects.map((project) => {
-    const answers = typeAnswerLinesIn(linesOf(lines, project))
-    return { project, queried: answers.length, ...answerCountsOf(answers) }
+    const projectLines = linesOf(lines, project)
+    const answers = typeAnswerLinesIn(projectLines)
+    const refused = refusedLinesIn(projectLines)
+    return {
+      project,
+      queried: answers.length,
+      ...answerCountsOf(answers),
+      unknownReasons: unknownReasonsOf(answers),
+      refusedFiles: refused.length,
+      refusedMutants: refused.reduce((total, line) => total + line.mutantCount, 0),
+    }
   })
 
 const notAssignableKeysOf = (lines: ReadonlyArray<ParityLine>): HashSet.HashSet<string> =>
@@ -772,7 +788,7 @@ const typeQuerySummaryOf = (
         .length,
     compileErrorTotal: compileErrors.length,
     projects: projectSharesOf(lines, projects),
-    refusedFiles: lines.filter((line): line is TypeQueryFileRefused => isTypeQueryFileRefused(line)).length,
+    refusedFiles: refusedLinesIn(lines).length,
     peakServers: lines
       .filter((line): line is TypeQueryServers => isTypeQueryServers(line))
       .map((line) => line.peakLiveServers)

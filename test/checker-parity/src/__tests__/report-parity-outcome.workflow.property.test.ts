@@ -104,6 +104,23 @@ describe('reportParityOutcome', () => {
   )
 
   it.prop(
+    '∀h_TypeQueryProjects_≡SummaryCountsEveryProjectsAnswersAndRefusals',
+    { of: [ParityHolds, S.Boolean, S.String, S.String, S.Array(ProjectShard)], subject: reportParityOutcome },
+    (subject, [held, githubActions, runId, summaryFile, projectShards]) => {
+      const summary = reportOf(subject, finishedOf(held, summaryFile, projectShards), githubActions, runId).stepSummary
+      return held.summary.typeQuery.projects.every((share) =>
+        summary.includes(
+          `  - ${share.project}: ${share.queried} answered, ${share.notAssignable} NotAssignable, ${share.unknown} Unknown`,
+        ) &&
+        summary.includes(`${share.refusedFiles} file(s) refused (${share.refusedMutants} mutants)`) &&
+        Object.entries(share.unknownReasons).every(([reason, count]) =>
+          count === 0 || summary.includes(`${reason} ${count}`)
+        )
+      )
+    },
+  )
+
+  it.prop(
     '∀f_DriverFailure_≡ExitTwoNamingCodeAndNextAction',
     { of: [DriverFailure, S.Boolean, S.String], subject: reportParityOutcome },
     (subject, [failure, githubActions, runId]) => {

@@ -26,7 +26,7 @@ export type Side = typeof Side.Type
 export const VerdictStatus = S.Literals(['passed', 'compileError', 'ignored'])
 export type VerdictStatus = typeof VerdictStatus.Type
 
-const NonNegativeInt = S.Int.check(S.isGreaterThanOrEqualTo(0))
+export const NonNegativeInt = S.Int.check(S.isGreaterThanOrEqualTo(0))
 const PositiveInt = S.Int.check(S.isGreaterThanOrEqualTo(1))
 const NonNegativeFinite = S.Finite.check(S.isGreaterThanOrEqualTo(0))
 

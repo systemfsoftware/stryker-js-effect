@@ -12,6 +12,8 @@ import {
   type ObservedVerdict,
   type ParityBroken,
   type SideTotals,
+  type TypeQueryProjectShare,
+  type TypeQuerySummary,
   type Violation,
 } from './compare-sides.workflow.js'
 import { DriverFailure } from './DriverFailure.schema.js'
@@ -215,6 +217,24 @@ const scopeLinesOf = (legs: ReadonlyArray<LegScope>, first: LegScope): ReadonlyA
 const scopeLines = (legs: ReadonlyArray<LegScope>): ReadonlyArray<string> =>
   Option.match(Arr.head(legs), { onNone: () => [], onSome: (first) => scopeLinesOf(legs, first) })
 
+const unknownReasonsText = (share: TypeQueryProjectShare): string =>
+  Arr.match(Object.entries(share.unknownReasons).filter(([, count]) => count > 0), {
+    onEmpty: () => '',
+    onNonEmpty: (reasons) => ` (${reasons.map(([reason, count]) => `${reason} ${count}`).join(', ')})`,
+  })
+
+const typeQueryProjectLine = (share: TypeQueryProjectShare): string =>
+  `  - ${share.project}: ${share.queried} answered, ${share.notAssignable} NotAssignable, ${share.unknown} Unknown${
+    unknownReasonsText(share)
+  }, ${share.refusedFiles} file(s) refused (${share.refusedMutants} mutants)${
+    Boolean.match(share.queried === 0, { onTrue: () => ' - no answers', onFalse: () => '' })
+  }`
+
+const typeQueryLines = (typeQuery: TypeQuerySummary): ReadonlyArray<string> => [
+  `- type query: ${typeQuery.queried} answered (${typeQuery.answers.assignable} Assignable, ${typeQuery.answers.notAssignable} NotAssignable, ${typeQuery.answers.unknown} Unknown), ${typeQuery.refusedFiles} file(s) refused, peak ${typeQuery.peakServers} server(s)`,
+  ...typeQuery.projects.map(typeQueryProjectLine),
+]
+
 const summaryMarkdown = (
   verdict: 'FAIL' | 'pass',
   finished: CompareFinished,
@@ -230,6 +250,7 @@ const summaryMarkdown = (
     `- main: ${ratiosOf(summary.main)}`,
     `- branch: ${ratiosOf(summary.branch)}`,
     `- shortcuts: ${summary.shortcutCount.overall} overall, ${summary.shortcutCount.isolatedDeclarations} on the isolatedDeclarations fixture`,
+    ...typeQueryLines(summary.typeQuery),
     '',
   ].join('\n')
 }
