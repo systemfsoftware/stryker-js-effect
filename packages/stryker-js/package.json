@@ -165,7 +165,7 @@
       "default": "./dist/verdict-store/fs.mjs"
     },
     "./verdict-store/laws": {
-      "@systemfsoftware/source": "./src/verdict-store/laws-mod.ts",
+      "@systemfsoftware/source": "./src/verdict-store/laws.ts",
       "types": "./dist/verdict-store/laws.d.mts",
       "default": "./dist/verdict-store/laws.mjs"
     },

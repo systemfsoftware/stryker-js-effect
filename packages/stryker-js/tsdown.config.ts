@@ -32,7 +32,7 @@ export default defineConfig([
       promises: './src/promises/mod.ts',
       events: './src/events/mod.ts',
       'verdict-store': './src/verdict-store/mod.ts',
-      'verdict-store/laws': './src/verdict-store/laws-mod.ts',
+      'verdict-store/laws': './src/verdict-store/laws.ts',
       'verdict-store/fs': './src/drivers/fs-verdict-store.layer.ts',
       'verdict-store/memory': './src/drivers/memory-verdict-store.ts',
     },

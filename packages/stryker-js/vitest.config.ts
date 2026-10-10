@@ -13,7 +13,7 @@ const ownNameResolvesToSourceNotDogfoodCopy = [
   },
   {
     find: /^@systemfsoftware\/stryker-js\/verdict-store\/laws$/,
-    replacement: new URL('./src/verdict-store/laws-mod.ts', import.meta.url).pathname,
+    replacement: new URL('./src/verdict-store/laws.ts', import.meta.url).pathname,
   },
   {
     find: /^@systemfsoftware\/stryker-js\/verdict-store\/fs$/,
