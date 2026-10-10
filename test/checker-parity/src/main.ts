@@ -13,12 +13,13 @@ import {
   TelemetryMissingViolation,
   VerdictMismatch,
   type Violation,
-  ZeroShortcuts,
   ZeroSnapshotUpdates,
 } from './compare-sides.workflow.js'
 import { ISOLATED_DECLARATIONS_PROJECT } from './corpus.js'
-import { decodeParityLine, ParityLine } from './Parity.schema.js'
+import { ParityLine } from './Parity.schema.js'
 import { parseArgs, type ParsedCompare, refusalOutsideCi, runShard, ShellFailure, shellFailure } from './run-side.js'
+
+const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
 
 const GITHUB_ACTIONS_ENV = 'GITHUB_ACTIONS'
 const GITHUB_STEP_SUMMARY_ENV = 'GITHUB_STEP_SUMMARY'

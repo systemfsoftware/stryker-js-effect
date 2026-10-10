@@ -35,22 +35,23 @@ import {
   CacheEntry,
   CheckCall,
   Counts,
-  decodeParityLine,
-  decodeShard,
   DigestCall,
-  encodeParityLine,
   type Gates,
   GroupCall,
   ParityLine,
   ProjectBootFailed,
   ProjectSkipped,
-  type Shard,
+  Shard,
   shardIndex,
   Side,
   TelemetryMissing,
   Verdict,
 } from './Parity.schema.js'
 import { inShard } from './shard.js'
+
+const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
+const encodeParityLine = S.encodeResult(S.fromJsonString(ParityLine))
+const decodeShard = S.decodeResult(Shard)
 
 export const ShellFailureCode = S.Literals([
   'usage-error',

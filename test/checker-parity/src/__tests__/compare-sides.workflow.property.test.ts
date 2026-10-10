@@ -23,7 +23,7 @@ import {
   type Side,
   TelemetryMissing,
   Verdict,
-  type VerdictStatus,
+  VerdictStatus,
 } from '../Parity.schema.js'
 
 const PROJECT = 'packages/example/tsconfig.app.json'
@@ -35,7 +35,6 @@ const GATES_OFF: Gates = { shortcutCount: false, speed: false }
 const GATES_ON: Gates = { shortcutCount: true, speed: true }
 
 const STATUSES = ['passed', 'compileError', 'ignored'] as const
-const statusArbitrary = S.Literals(STATUSES)
 
 const nextStatus = (status: VerdictStatus): VerdictStatus =>
   STATUSES[(STATUSES.indexOf(status) + 1) % STATUSES.length] ?? 'passed'
@@ -44,8 +43,6 @@ const digitsOf = (draw: number): number => Math.abs(draw)
 const countOf = (draw: number): number => Math.abs(draw) % 141
 const smallCountOf = (draw: number): number => Math.abs(draw) % 9
 const stripNewlines = (value: string): string => value.replace(/[\r\n]/gu, '')
-
-const range = (count: number): ReadonlyArray<number> => Array.from({ length: count }, (_, index) => index)
 
 interface VerdictFields {
   readonly project?: string
@@ -118,7 +115,7 @@ const violationsOf = (decision: ComparisonDecision): ReadonlyArray<{ code: strin
 describe('compareSides', () => {
   it.prop(
     '∀v_IdenticalSides_≡ParityHolds',
-    { of: [S.NonEmptyString, S.NonEmptyString, statusArbitrary], subject: compareSides },
+    { of: [S.NonEmptyString, S.NonEmptyString, VerdictStatus], subject: compareSides },
     (subject, [mutantId, reason, status]) => {
       const lines = [
         verdictOf('main', { mutantId, status, reason }),
@@ -131,7 +128,7 @@ describe('compareSides', () => {
 
   it.prop(
     '∀s_DivergentStatus_≡RefusedNamingTheMutant',
-    { of: [S.NonEmptyString, statusArbitrary], subject: compareSides },
+    { of: [S.NonEmptyString, VerdictStatus], subject: compareSides },
     (subject, [mutantId, mainStatus]) => {
       const branchStatus = nextStatus(mainStatus)
       const lines = [
@@ -152,7 +149,7 @@ describe('compareSides', () => {
 
   it.prop(
     '∀v_OneSidedMutant_≡Refused',
-    { of: [S.NonEmptyString, statusArbitrary], subject: compareSides },
+    { of: [S.NonEmptyString, VerdictStatus], subject: compareSides },
     (subject, [mutantId, status]) => {
       const decision = decisionOf(subject, commandOf([verdictOf('main', { mutantId, status })]))
       return S.is(ParityBroken)(decision) &&
@@ -354,11 +351,14 @@ describe('compareSides', () => {
       const mutants = smallCountOf(drawnMutants)
       const resplices = smallCountOf(drawnResplices)
       const lines = [
-        ...range(checkCalls).map((index) => checkCallOf('main', PROJECT, index, [], 1)),
-        ...range(mutants).flatMap((index) => [
-          verdictOf('main', { mutantId: `m${index}` }),
-          verdictOf('branch', { mutantId: `m${index}` }),
-        ]),
+        ...Array.from({ length: checkCalls }, (_, index) => checkCallOf('main', PROJECT, index, [], 1)),
+        ...Array.from(
+          { length: mutants },
+          (_, index) => [
+            verdictOf('main', { mutantId: `m${index}` }),
+            verdictOf('branch', { mutantId: `m${index}` }),
+          ],
+        ).flat(),
         countsOf(PROJECT, { resplices }),
       ]
       const decision = decisionOf(subject, commandOf(lines))
@@ -376,10 +376,13 @@ describe('compareSides', () => {
       const mutantCount = countOf(drawnMutants)
       const mismatches = Math.min(countOf(drawnMismatches), mutantCount)
       const lines = [
-        ...range(mutantCount).flatMap((index) => [
-          verdictOf('main', { mutantId: `m${index}` }),
-          verdictOf('branch', { mutantId: `m${index}`, status: index < mismatches ? 'compileError' : 'passed' }),
-        ]),
+        ...Array.from(
+          { length: mutantCount },
+          (_, index) => [
+            verdictOf('main', { mutantId: `m${index}` }),
+            verdictOf('branch', { mutantId: `m${index}`, status: index < mismatches ? 'compileError' : 'passed' }),
+          ],
+        ).flat(),
         countsOf(PROJECT),
       ]
       const decision = decisionOf(subject, commandOf(lines))

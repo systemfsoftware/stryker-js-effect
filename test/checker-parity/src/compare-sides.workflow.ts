@@ -1,5 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -168,10 +170,15 @@ const isTelemetryMissing = S.is(TelemetryMissing)
 type PhaseLine = CheckCall | GroupCall | DigestCall
 
 const isPhaseLine = (line: ParityLine): line is PhaseLine =>
-  isCheckCall(line) || isGroupCall(line) || isDigestCall(line)
+  Boolean.some([isCheckCall(line), isGroupCall(line), isDigestCall(line)])
 
-const isCachedLine = (line: ParityLine): boolean =>
-  (isVerdict(line) && line.cached) || (isPhaseLine(line) && line.cached)
+const cachedVerdictFlag = (line: ParityLine): boolean =>
+  Option.exists(Option.filter(Option.some(line), isVerdict), (verdict) => verdict.cached)
+
+const cachedPhaseFlag = (line: ParityLine): boolean =>
+  Option.exists(Option.filter(Option.some(line), isPhaseLine), (phase) => phase.cached)
+
+const isCachedLine = (line: ParityLine): boolean => Boolean.some([cachedVerdictFlag(line), cachedPhaseFlag(line)])
 
 const when = <A>(condition: boolean, value: A): ReadonlyArray<A> =>
   Match.value(condition).pipe(
@@ -180,48 +187,61 @@ const when = <A>(condition: boolean, value: A): ReadonlyArray<A> =>
     Match.exhaustive,
   )
 
-const projectsOf = (
-  lines: ReadonlyArray<ParityLine>,
-): ReadonlyArray<string> => [...new Set(lines.map((line) => line.project))]
+const projectsOf = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<string> =>
+  Arr.dedupe(lines.map((line) => line.project))
 
 const linesOf = (lines: ReadonlyArray<ParityLine>, project: string): ReadonlyArray<ParityLine> =>
   lines.filter((line) => line.project === project)
 
+const verdictsIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<Verdict> =>
+  lines.filter((line): line is Verdict => isVerdict(line))
+
+const checkCallsIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<CheckCall> =>
+  lines.filter((line): line is CheckCall => isCheckCall(line))
+
+const countsIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<Counts> =>
+  lines.filter((line): line is Counts => isCounts(line))
+
 const verdictsOf = (
   lines: ReadonlyArray<ParityLine>,
   project: string,
-  side: typeof Side.Type,
+  side: Side,
 ): ReadonlyArray<Verdict> =>
-  lines.filter((line): line is Verdict => isVerdict(line) && line.project === project && line.side === side)
+  verdictsIn(lines).filter((verdict) => Boolean.every([verdict.project === project, verdict.side === side]))
+
+const phaseLinesIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<PhaseLine> =>
+  lines.filter((line): line is PhaseLine => isPhaseLine(line))
 
 const phaseLinesOf = (
   lines: ReadonlyArray<ParityLine>,
   project: string,
-  side: typeof Side.Type,
+  side: Side,
 ): ReadonlyArray<PhaseLine> =>
-  lines.filter((line): line is PhaseLine =>
-    isPhaseLine(line) && line.project === project && line.side === side && !line.cached
-  )
+  phaseLinesIn(lines).filter((line) => Boolean.every([line.project === project, line.side === side, !line.cached]))
 
-const phaseMsOf = (lines: ReadonlyArray<ParityLine>, project: string, side: typeof Side.Type): number =>
+const phaseMsOf = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): number =>
   phaseLinesOf(lines, project, side).reduce((total, line) => total + line.ms, 0)
 
-const measured = (lines: ReadonlyArray<ParityLine>, project: string, side: typeof Side.Type): boolean =>
+const measured = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): boolean =>
   phaseLinesOf(lines, project, side).length > 0
+
+const bootFailuresOf = (
+  lines: ReadonlyArray<ParityLine>,
+  project: string,
+  side: Side,
+): ReadonlyArray<ProjectBootFailed> =>
+  lines
+    .filter((line): line is ProjectBootFailed => isBootFailure(line))
+    .filter((failure) => Boolean.every([failure.project === project, failure.side === side]))
 
 const bootFailureOf = (
   lines: ReadonlyArray<ParityLine>,
   project: string,
-  side: typeof Side.Type,
-): Option.Option<ProjectBootFailed> =>
-  Option.fromUndefinedOr(
-    lines.find((line): line is ProjectBootFailed =>
-      isBootFailure(line) && line.project === project && line.side === side
-    ),
-  )
+  side: Side,
+): Option.Option<ProjectBootFailed> => Arr.head(bootFailuresOf(lines, project, side))
 
 const branchCounts = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<Counts> =>
-  lines.filter((line): line is Counts => isCounts(line) && line.side === 'branch')
+  countsIn(lines).filter((counts) => counts.side === 'branch')
 
 const countsOf = (lines: ReadonlyArray<ParityLine>, project: string): ReadonlyArray<Counts> =>
   branchCounts(lines).filter((counts) => counts.project === project)
@@ -233,18 +253,29 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 
 const ownPositionOf = (fileName: string): RegExp => new RegExp(`^${escapeRegExp(fileName)}\\(\\d+,\\d+\\)`, 'u')
 
+const reasonText = (reason: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(reason), () => '')
+
 const normaliseReason = (reason: string | undefined, fileName: string): string =>
-  (reason ?? '')
-    .split('\n')
-    .map((line) => line.replace(ownPositionOf(fileName), `${fileName}(*)`))
-    .join('\n')
+  Arr.join(
+    reasonText(reason).split('\n').map((line) => line.replace(ownPositionOf(fileName), `${fileName}(*)`)),
+    '\n',
+  )
 
 const sameVerdict = (main: Verdict, branch: Verdict): boolean =>
-  main.status === branch.status &&
-  normaliseReason(main.reason, main.fileName) === normaliseReason(branch.reason, branch.fileName)
+  Boolean.every([
+    main.status === branch.status,
+    normaliseReason(main.reason, main.fileName) === normaliseReason(branch.reason, branch.fileName),
+  ])
 
 const bothVerdictsDiffer = (main: Option.Option<Verdict>, branch: Option.Option<Verdict>): boolean =>
-  Option.isSome(main) && Option.isSome(branch) && !sameVerdict(main.value, branch.value)
+  Option.match(main, {
+    onNone: () => false,
+    onSome: (mainVerdict) =>
+      Option.match(branch, {
+        onNone: () => false,
+        onSome: (branchVerdict) => !sameVerdict(mainVerdict, branchVerdict),
+      }),
+  })
 
 const observedOf = (verdict: Verdict): ObservedVerdict => ({ status: verdict.status, reason: verdict.reason })
 
@@ -266,7 +297,7 @@ const mismatchFor = (
   branch: Option.Option<Verdict>,
 ): Option.Option<VerdictMismatch> => {
   const witness = witnessOf(main, branch)
-  const oneSided = Option.isNone(main) || Option.isNone(branch)
+  const inScope = Boolean.some([Option.isNone(main), Option.isNone(branch), bothVerdictsDiffer(main, branch)])
   return Option.filter(
     Option.some(
       VerdictMismatch.make({
@@ -281,29 +312,30 @@ const mismatchFor = (
         branch: Option.match(branch, { onNone: () => null, onSome: observedOf }),
       }),
     ),
-    () => oneSided || bothVerdictsDiffer(main, branch),
+    () => inScope,
   )
+}
+
+const verdictIndexOf = (verdicts: ReadonlyArray<Verdict>): (mutantId: string) => Option.Option<Verdict> => {
+  const byId = HashMap.fromIterable(verdicts.map((verdict) => [verdict.mutantId, verdict] as const))
+  return (mutantId) => HashMap.get(byId, mutantId)
 }
 
 const verdictViolationsFor = (lines: ReadonlyArray<ParityLine>, project: string): ReadonlyArray<VerdictMismatch> => {
-  const main = new Map(verdictsOf(lines, project, 'main').map((verdict) => [verdict.mutantId, verdict] as const))
-  const branch = new Map(
-    verdictsOf(lines, project, 'branch').map((verdict) => [verdict.mutantId, verdict] as const),
-  )
-  const mutantIds = [...new Set([...main.keys(), ...branch.keys()])]
+  const mainVerdicts = verdictsOf(lines, project, 'main')
+  const branchVerdicts = verdictsOf(lines, project, 'branch')
+  const mainOf = verdictIndexOf(mainVerdicts)
+  const branchOf = verdictIndexOf(branchVerdicts)
+  const mutantIds = Arr.dedupe([
+    ...mainVerdicts.map((verdict) => verdict.mutantId),
+    ...branchVerdicts.map((verdict) => verdict.mutantId),
+  ])
   return Arr.getSomes(
-    mutantIds.map((mutantId) =>
-      mismatchFor(
-        project,
-        mutantId,
-        Option.fromUndefinedOr(main.get(mutantId)),
-        Option.fromUndefinedOr(branch.get(mutantId)),
-      )
-    ),
+    mutantIds.map((mutantId) => mismatchFor(project, mutantId, mainOf(mutantId), branchOf(mutantId))),
   )
 }
 
-const bootNextAction = (failedSide: typeof Side.Type, project: string): string =>
+const bootNextAction = (failedSide: Side, project: string): string =>
   `Inspect the ${failedSide} worker boot for ${project}: the checker's init runs at boot, so a dry-run failure lands here. Compare the other side's boot log in the shard NDJSON.`
 
 const bootViolationsFor = (lines: ReadonlyArray<ParityLine>, project: string): ReadonlyArray<BootAsymmetry> => {
@@ -311,7 +343,7 @@ const bootViolationsFor = (lines: ReadonlyArray<ParityLine>, project: string): R
   const branchFailed = Option.isSome(bootFailureOf(lines, project, 'branch'))
   return [
     ...when(
-      mainFailed && !branchFailed,
+      Boolean.every([mainFailed, !branchFailed]),
       BootAsymmetry.make({
         schemaVersion: 1,
         code: 'boot-asymmetry',
@@ -321,7 +353,7 @@ const bootViolationsFor = (lines: ReadonlyArray<ParityLine>, project: string): R
       }),
     ),
     ...when(
-      branchFailed && !mainFailed,
+      Boolean.every([branchFailed, !mainFailed]),
       BootAsymmetry.make({
         schemaVersion: 1,
         code: 'boot-asymmetry',
@@ -334,9 +366,7 @@ const bootViolationsFor = (lines: ReadonlyArray<ParityLine>, project: string): R
 }
 
 const branchCheckedMutants = (lines: ReadonlyArray<ParityLine>, project: string): number =>
-  lines.filter((line): line is Verdict =>
-    isVerdict(line) && line.project === project && line.side === 'branch' && !line.cached
-  ).length
+  verdictsOf(lines, project, 'branch').filter((verdict) => !verdict.cached).length
 
 const zeroUpdateViolationsFor = (
   lines: ReadonlyArray<ParityLine>,
@@ -345,9 +375,9 @@ const zeroUpdateViolationsFor = (
   const checked = branchCheckedMutants(lines, project) >= 1
   const counts = countsOf(lines, project)
   const updates = counts.reduce((total, line) => total + line.snapshotUpdates, 0)
-  const zero = counts.length === 0 || updates === 0
+  const zero = Boolean.some([counts.length === 0, updates === 0])
   return when(
-    checked && zero,
+    Boolean.every([checked, zero]),
     ZeroSnapshotUpdates.make({
       schemaVersion: 1,
       code: 'zero-snapshot-updates',
@@ -389,7 +419,7 @@ const shortcutViolationsFor = (command: CompareSidesCommand): ReadonlyArray<Zero
   )
   return [
     ...when(
-      command.gates.shortcutCount && overall === 0,
+      Boolean.every([command.gates.shortcutCount, overall === 0]),
       ZeroShortcuts.make({
         schemaVersion: 1,
         code: 'zero-shortcuts',
@@ -398,7 +428,7 @@ const shortcutViolationsFor = (command: CompareSidesCommand): ReadonlyArray<Zero
       }),
     ),
     ...when(
-      command.gates.shortcutCount && isolatedDeclarations === 0,
+      Boolean.every([command.gates.shortcutCount, isolatedDeclarations === 0]),
       ZeroShortcuts.make({
         schemaVersion: 1,
         code: 'zero-shortcuts',
@@ -410,12 +440,12 @@ const shortcutViolationsFor = (command: CompareSidesCommand): ReadonlyArray<Zero
 }
 
 const measuredOnBoth = (lines: ReadonlyArray<ParityLine>, projects: ReadonlyArray<string>): ReadonlyArray<string> =>
-  projects.filter((project) => measured(lines, project, 'main') && measured(lines, project, 'branch'))
+  projects.filter((project) => Boolean.every([measured(lines, project, 'main'), measured(lines, project, 'branch')]))
 
 const speedSum = (
   lines: ReadonlyArray<ParityLine>,
   projects: ReadonlyArray<string>,
-  side: typeof Side.Type,
+  side: Side,
 ): number => projects.reduce((total, project) => total + phaseMsOf(lines, project, side), 0)
 
 const speedViolationsFor = (command: CompareSidesCommand): ReadonlyArray<SlowerThanMain> => {
@@ -423,7 +453,7 @@ const speedViolationsFor = (command: CompareSidesCommand): ReadonlyArray<SlowerT
   const mainMs = speedSum(command.lines, compared, 'main')
   const branchMs = speedSum(command.lines, compared, 'branch')
   return when(
-    command.gates.speed && compared.length > 0 && branchMs >= mainMs,
+    Boolean.every([command.gates.speed, compared.length > 0, branchMs >= mainMs]),
     SlowerThanMain.make({
       schemaVersion: 1,
       code: 'slower-than-main',
@@ -435,15 +465,15 @@ const speedViolationsFor = (command: CompareSidesCommand): ReadonlyArray<SlowerT
   )
 }
 
-const nonCachedCheckCalls = (lines: ReadonlyArray<ParityLine>, project: string, side: typeof Side.Type): number =>
-  lines.filter((line): line is CheckCall =>
-    isCheckCall(line) && line.project === project && line.side === side && !line.cached
-  ).length
+const nonCachedCheckCalls = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): number =>
+  checkCallsIn(lines).filter((call) => Boolean.every([call.project === project, call.side === side, !call.cached]))
+    .length
 
-const nonCachedVerdicts = (lines: ReadonlyArray<ParityLine>, project: string, side: typeof Side.Type): number =>
-  lines.filter((line): line is Verdict =>
-    isVerdict(line) && line.project === project && line.side === side && !line.cached
-  ).length
+const nonCachedVerdicts = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): number =>
+  verdictsIn(lines).filter((verdict) =>
+    Boolean.every([verdict.project === project, verdict.side === side, !verdict.cached])
+  )
+    .length
 
 const derivedMainUpdates = (lines: ReadonlyArray<ParityLine>, projects: ReadonlyArray<string>): number =>
   projects.reduce(
@@ -453,36 +483,35 @@ const derivedMainUpdates = (lines: ReadonlyArray<ParityLine>, projects: Readonly
     0,
   )
 
-const callFileKeys = (call: CheckCall, passing: ReadonlyMap<string, Verdict>): ReadonlyArray<string> =>
+const callFileKeys = (
+  call: CheckCall,
+  passingOf: (mutantId: string) => Option.Option<Verdict>,
+): ReadonlyArray<string> =>
   Arr.getSomes(
     call.mutantIds.map((mutantId) =>
-      Option.map(
-        Option.fromUndefinedOr(passing.get(mutantId)),
-        (verdict) => `${call.callIndex}\u0000${verdict.fileName}`,
-      )
+      Option.map(passingOf(mutantId), (verdict) => `${call.callIndex}\u0000${verdict.fileName}`)
     ),
   )
 
+const passingVerdictsOf = (lines: ReadonlyArray<ParityLine>, project: string): ReadonlyArray<Verdict> =>
+  verdictsOf(lines, project, 'main').filter((verdict) => verdict.status === 'passed')
+
+const checkCallsOf = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): ReadonlyArray<CheckCall> =>
+  checkCallsIn(lines).filter((call) => Boolean.every([call.project === project, call.side === side]))
+
+const emitBuildKeysOf = (lines: ReadonlyArray<ParityLine>, project: string): ReadonlyArray<string> => {
+  const passingOf = verdictIndexOf(passingVerdictsOf(lines, project))
+  return checkCallsOf(lines, project, 'main').flatMap((call) => callFileKeys(call, passingOf))
+}
+
 const derivedMainEmitBuilds = (lines: ReadonlyArray<ParityLine>, projects: ReadonlyArray<string>): number =>
-  projects.reduce((total, project) => {
-    const passing = new Map(
-      lines
-        .filter((line): line is Verdict =>
-          isVerdict(line) && line.project === project && line.side === 'main' && line.status === 'passed'
-        )
-        .map((verdict) => [verdict.mutantId, verdict] as const),
-    )
-    const keys = lines
-      .filter((line): line is CheckCall => isCheckCall(line) && line.project === project && line.side === 'main')
-      .flatMap((call) => callFileKeys(call, passing))
-    return total + new Set(keys).size
-  }, 0)
+  projects.reduce((total, project) => total + Arr.dedupe(emitBuildKeysOf(lines, project)).length, 0)
 
-const mutatedCount = (lines: ReadonlyArray<ParityLine>, side: typeof Side.Type): number =>
-  lines.filter((line): line is Verdict => isVerdict(line) && line.side === side).length
+const mutatedCount = (lines: ReadonlyArray<ParityLine>, side: Side): number =>
+  verdictsIn(lines).filter((verdict) => verdict.side === side).length
 
-const checkCallCount = (lines: ReadonlyArray<ParityLine>, side: typeof Side.Type): number =>
-  lines.filter((line): line is CheckCall => isCheckCall(line) && line.side === side).length
+const checkCallCount = (lines: ReadonlyArray<ParityLine>, side: Side): number =>
+  checkCallsIn(lines).filter((call) => call.side === side).length
 
 const perMutant = (value: number, mutants: number): number =>
   Option.match(Option.filter(Option.some(mutants), (count) => count > 0), {
@@ -494,7 +523,7 @@ const sideTotals = (
   lines: ReadonlyArray<ParityLine>,
   projects: ReadonlyArray<string>,
   measuredProjects: ReadonlyArray<string>,
-  side: typeof Side.Type,
+  side: Side,
 ): SideTotals => {
   const mutants = mutatedCount(lines, side)
   const snapshotUpdates = Match.value(side).pipe(
@@ -533,25 +562,24 @@ const skippedLineEntries = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<Ski
     reason: line.reason,
   }))
 
-const dedupeByProject = (entries: ReadonlyArray<SkippedProject>): ReadonlyArray<SkippedProject> => [
-  ...entries.reduce(
-    (byProject, entry) => byProject.set(entry.project, entry),
-    new Map<string, SkippedProject>(),
-  ).values(),
-]
+const dedupeByProject = (entries: ReadonlyArray<SkippedProject>): ReadonlyArray<SkippedProject> => {
+  const lastByProject = HashMap.fromIterable(entries.map((entry) => [entry.project, entry] as const))
+  return Arr.getSomes(
+    Arr.dedupe(entries.map((entry) => entry.project)).map((project) => HashMap.get(lastByProject, project)),
+  )
+}
 
 const skippedProjects = (
   lines: ReadonlyArray<ParityLine>,
   projects: ReadonlyArray<string>,
 ): ReadonlyArray<SkippedProject> => {
   const bootBoth = Arr.getSomes(
-    projects.map((project) => {
-      const reasons = bootReasonsOf(lines, project)
-      return Option.map(
-        Option.filter(Option.some(reasons), (found) => found.length === 2),
-        (found) => ({ project, reason: found.join('; ') }),
+    projects.map((project) =>
+      Option.map(
+        Option.filter(Option.some(bootReasonsOf(lines, project)), (reasons) => reasons.length === 2),
+        (reasons) => ({ project, reason: reasons.join('; ') }),
       )
-    }),
+    ),
   )
   return dedupeByProject([...bootBoth, ...skippedLineEntries(lines)])
 }
@@ -580,14 +608,17 @@ const summaryOf = (command: CompareSidesCommand): ComparisonSummary => {
   }
 }
 
+const bootFailedEither = (lines: ReadonlyArray<ParityLine>, project: string): boolean =>
+  Boolean.some([
+    Option.isSome(bootFailureOf(lines, project, 'main')),
+    Option.isSome(bootFailureOf(lines, project, 'branch')),
+  ])
+
 const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> => {
   const projects = projectsOf(command.lines)
-  const bootFailedEither = (project: string): boolean =>
-    Option.isSome(bootFailureOf(command.lines, project, 'main')) ||
-    Option.isSome(bootFailureOf(command.lines, project, 'branch'))
   return [
     ...projects.flatMap((project) =>
-      when(!bootFailedEither(project), verdictViolationsFor(command.lines, project)).flat()
+      when(!bootFailedEither(command.lines, project), verdictViolationsFor(command.lines, project)).flat()
     ),
     ...projects.flatMap((project) => bootViolationsFor(command.lines, project)),
     ...projects.flatMap((project) => zeroUpdateViolationsFor(command.lines, project)),

@@ -4,7 +4,7 @@
  * a corpus run was sliced into.
  *
  * The driver writes these lines; `compare` decodes every `*.ndjson` under its input directories
- * through {@link decodeParityLine} and hands the lines to the pure `compare-sides` workflow. Every
+ * through `S.fromJsonString(ParityLine)` and hands the lines to the pure `compare-sides` workflow. Every
  * line carries the repo-relative `project` (a tsconfig path, stable across sides and shards) and,
  * except {@link ProjectSkipped}, the `side` that wrote it.
  */
@@ -118,12 +118,6 @@ export const ParityLine = S.Union([
 ])
 export type ParityLine = typeof ParityLine.Type
 
-/** Decodes one NDJSON line into a {@link ParityLine}, or a `Result` failure naming the broken line. */
-export const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
-
-/** Encodes one {@link ParityLine} as the single JSON line the driver writes. */
-export const encodeParityLine = S.encodeResult(S.fromJsonString(ParityLine))
-
 const SHARD = /^([1-9][0-9]*)\/([1-9][0-9]*)$/u
 
 const shardParts = (value: string): readonly [number, number] | undefined => {
@@ -145,8 +139,6 @@ export const Shard = S.String.check(
   }),
 ).pipe(S.brand('Shard'))
 export type Shard = typeof Shard.Type
-
-export const decodeShard = S.decodeResult(Shard)
 
 const partsOf = (shard: Shard): readonly [number, number] => {
   const parts = shardParts(shard)
