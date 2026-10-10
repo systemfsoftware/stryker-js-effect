@@ -11,7 +11,7 @@ export class ShardMergeFailed extends S.TaggedError<ShardMergeFailed>()('ShardMe
 
 export const MergedProject = S.Struct({
   project: S.String,
-  thresholds: RunEvent.VerdictThresholds,
+  thresholds: S.NullOr(RunEvent.VerdictThresholds),
   files: S.Array(S.String),
 })
 export type MergedProject = typeof MergedProject.Type

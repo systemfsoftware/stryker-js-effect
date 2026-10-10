@@ -4,17 +4,31 @@ import * as Result from 'effect/Result'
 
 import { gateScoreBreak, GateScoreBreakCommand, ProjectScore } from '../gate-score-break.workflow.js'
 
+const breakOf = (entry: ProjectScore): number | null => entry.thresholds === null ? null : entry.thresholds.break
+
 const breaksOwnThreshold = (entry: ProjectScore): boolean =>
   Report.MutationScore.match(entry.score, {
-    Scored: ({ percentage }) => entry.breakingThreshold !== null && percentage < entry.breakingThreshold,
+    Scored: ({ percentage }) => {
+      const threshold = breakOf(entry)
+      return threshold !== null && percentage < threshold
+    },
     Unscored: () => false,
   })
 
-const unscoredWithBreak = (entry: ProjectScore): boolean =>
-  Report.MutationScore.match(entry.score, {
-    Scored: () => false,
-    Unscored: () => entry.breakingThreshold !== null,
-  })
+const expectedNotesOf = (entry: ProjectScore): ReadonlyArray<string> => [
+  ...Report.MutationScore.match(entry.score, {
+    Scored: () => [],
+    Unscored: () =>
+      breakOf(entry) === null ? [] : [
+        `stryker gate: ${entry.project} tested no valid mutant, so there is no mutation score to hold against thresholds.break`,
+      ],
+  }),
+  ...(entry.thresholds === null
+    ? [
+      `stryker gate: ${entry.project}: no thresholds recorded for this project; re-run its shards with the project's config`,
+    ]
+    : []),
+]
 
 const breachedProjectsOf = (subject: typeof gateScoreBreak, projects: ReadonlyArray<ProjectScore>) =>
   Result.match(subject(GateScoreBreakCommand.make({ projects: [...projects] })), {
@@ -24,7 +38,7 @@ const breachedProjectsOf = (subject: typeof gateScoreBreak, projects: ReadonlyAr
 
 describe('gateScoreBreak', () => {
   it.prop(
-    '∀p_Project_≡FailsIffScoredBelowItsOwnBreak',
+    '∀p_Project_≡FailsIffScoredBelowItsOwnBreakAndOtherwiseNotesWhyNoVerdict',
     { of: [ProjectScore], subject: gateScoreBreak },
     (subject, [entry]) => {
       const result = subject(GateScoreBreakCommand.make({ projects: [entry] }))
@@ -34,11 +48,10 @@ describe('gateScoreBreak', () => {
           JSON.stringify(refused.breaches) === JSON.stringify([{
               project: entry.project,
               percentage: Report.MutationScore.match(entry.score, { Scored: (s) => s.percentage, Unscored: () => -1 }),
-              threshold: entry.breakingThreshold,
+              threshold: breakOf(entry),
             }]),
         onSuccess: (cleared) =>
-          !breaksOwnThreshold(entry) &&
-          JSON.stringify(cleared.unscored) === JSON.stringify(unscoredWithBreak(entry) ? [entry.project] : []),
+          !breaksOwnThreshold(entry) && JSON.stringify(cleared.lines) === JSON.stringify(expectedNotesOf(entry)),
       })
     },
   )

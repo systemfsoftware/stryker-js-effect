@@ -13,10 +13,13 @@ const SCORE_BREAK_EXIT_CLASS = 'VerdictFail' satisfies Plugin.ExitClass
 const SCORE_BREAK_REMEDIATION =
   'kill the survivors the report lists, or lower `thresholds.break` (null turns this verdict off)'
 
+export const ProjectThresholds = S.Struct({ break: S.NullOr(Report.Percentage) })
+export type ProjectThresholds = typeof ProjectThresholds.Type
+
 export const ProjectScore = S.Struct({
   project: S.String,
   score: Report.MutationScore,
-  breakingThreshold: S.NullOr(Report.Percentage),
+  thresholds: S.NullOr(ProjectThresholds),
 })
 export type ProjectScore = typeof ProjectScore.Type
 
@@ -36,10 +39,24 @@ export class GateScoreBreakCommand extends S.TaggedClass<GateScoreBreakCommand>(
 const GateScoreBreakTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/GateScoreBreakDecision')
 type GateScoreBreakTypeId = typeof GateScoreBreakTypeId
 
+const notesOf = (unscored: ReadonlyArray<string>, unrecorded: ReadonlyArray<string>): ReadonlyArray<string> => [
+  ...unscored.map((project) =>
+    `stryker gate: ${project} tested no valid mutant, so there is no mutation score to hold against thresholds.break`
+  ),
+  ...unrecorded.map((project) =>
+    `stryker gate: ${project}: no thresholds recorded for this project; re-run its shards with the project's config`
+  ),
+]
+
 export class ScoreAtOrAboveBreak extends S.TaggedClass<ScoreAtOrAboveBreak>()('ScoreAtOrAboveBreak', {
   unscored: S.Array(S.String),
+  unrecorded: S.Array(S.String),
 }) {
   readonly [GateScoreBreakTypeId] = GateScoreBreakTypeId
+
+  get lines(): ReadonlyArray<string> {
+    return notesOf(this.unscored, this.unrecorded)
+  }
 }
 
 export const GateScoreBreakDecision = S.Union([ScoreAtOrAboveBreak])
@@ -48,6 +65,8 @@ export type GateScoreBreakDecision = typeof GateScoreBreakDecision.Type
 export class ScoreBelowBreak extends S.TaggedError<ScoreBelowBreak>()('ScoreBelowBreak', {
   breaches: S.NonEmptyArray(BreakBreach),
   projects: S.Int,
+  unscored: S.Array(S.String),
+  unrecorded: S.Array(S.String),
 }) {
   readonly code = SCORE_BREAK_CODE
   readonly exitClass = SCORE_BREAK_EXIT_CLASS
@@ -60,6 +79,7 @@ export class ScoreBelowBreak extends S.TaggedError<ScoreBelowBreak>()('ScoreBelo
           String(breach.threshold)
         }`
       ),
+      ...notesOf(this.unscored, this.unrecorded),
       SCORE_BREAK_REMEDIATION,
     ].join('\n')
   }
@@ -69,9 +89,12 @@ const exitOf = classifyExit
 const exitCommand = ClassifyExitCommand
 const isVerdictFailed = S.is(ExitVerdictFailed)
 
+const breakOf = (entry: ProjectScore): number | null =>
+  Option.getOrNull(Option.flatMapNullishOr(Option.fromNullishOr(entry.thresholds), (thresholds) => thresholds.break))
+
 const failsBreak = (entry: ProjectScore): boolean =>
   Result.match(
-    exitOf(exitCommand.make({ pending: [], score: entry.score, breakingThreshold: entry.breakingThreshold })),
+    exitOf(exitCommand.make({ pending: [], score: entry.score, breakingThreshold: breakOf(entry) })),
     { onFailure: (neverError) => neverError, onSuccess: isVerdictFailed },
   )
 
@@ -80,7 +103,7 @@ const breachOf = (entry: ProjectScore): Option.Option<BreakBreach> =>
     Unscored: () => Option.none(),
     Scored: ({ percentage }) =>
       Option.map(
-        Option.fromNullishOr(entry.breakingThreshold),
+        Option.fromNullishOr(breakOf(entry)),
         (threshold): BreakBreach => ({ project: entry.project, percentage, threshold }),
       ),
   })
@@ -89,18 +112,22 @@ const breachesOf = (projects: ReadonlyArray<ProjectScore>): ReadonlyArray<BreakB
   Arr.flatMap(projects, (entry) => Option.toArray(Option.filter(breachOf(entry), () => failsBreak(entry))))
 
 const isUnscoredWithBreak = (entry: ProjectScore): boolean =>
-  Match.valueTags(entry.score, { Unscored: () => entry.breakingThreshold !== null, Scored: () => false })
+  Match.valueTags(entry.score, { Unscored: () => breakOf(entry) !== null, Scored: () => false })
 
-const decide = (command: GateScoreBreakCommand): Result.Result<GateScoreBreakDecision, ScoreBelowBreak> =>
-  Option.match(Arr.match(breachesOf(command.projects), { onEmpty: Option.none, onNonEmpty: Option.some }), {
-    onNone: () =>
-      Result.succeed(
-        ScoreAtOrAboveBreak.make({
-          unscored: Arr.map(Arr.filter(command.projects, isUnscoredWithBreak), (entry) => entry.project),
-        }),
-      ),
-    onSome: (breaches) => Result.fail(ScoreBelowBreak.make({ breaches, projects: command.projects.length })),
+const projectsWhere = (
+  projects: ReadonlyArray<ProjectScore>,
+  predicate: (entry: ProjectScore) => boolean,
+): ReadonlyArray<string> => Arr.map(Arr.filter(projects, predicate), (entry) => entry.project)
+
+const decide = (command: GateScoreBreakCommand): Result.Result<GateScoreBreakDecision, ScoreBelowBreak> => {
+  const unscored = projectsWhere(command.projects, isUnscoredWithBreak)
+  const unrecorded = projectsWhere(command.projects, (entry) => entry.thresholds === null)
+  return Option.match(Arr.match(breachesOf(command.projects), { onEmpty: Option.none, onNonEmpty: Option.some }), {
+    onNone: () => Result.succeed(ScoreAtOrAboveBreak.make({ unscored, unrecorded })),
+    onSome: (breaches) =>
+      Result.fail(ScoreBelowBreak.make({ breaches, projects: command.projects.length, unscored, unrecorded })),
   })
+}
 
 export const gateScoreBreak = Workflow.make({
   command: GateScoreBreakCommand,

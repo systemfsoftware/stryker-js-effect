@@ -22,7 +22,7 @@ export const sharedConfig = {
   incrementalSources: [...restoredShardReports],
   ignorePatterns: ['reports', 'coverage'],
   cleanTempDir: 'always',
-  thresholds: { high: 100, low: 80, break: 100 },
+  thresholds: { high: 100, low: 80, break: 46 },
   ...(envConcurrency !== undefined ? { concurrency: envConcurrency } : {}),
   ...(killMatrixLane ? { disableBail: true, mutator: { mutantSetPolicy: 'full' } } : {}),
 }

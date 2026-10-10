@@ -464,12 +464,12 @@ const projectScoresOf = (report: GateReportDocument): ReadonlyArray<ProjectScore
     ...report.projects.map((merged) => ({
       project: merged.project,
       score: scoreOfFiles(report, merged.files),
-      breakingThreshold: merged.thresholds.break,
+      thresholds: merged.thresholds,
     })),
     ...[ungrouped].filter((files) => files.length > 0).map((files) => ({
       project: UNSHARDED_PROJECT,
       score: scoreOfFiles(report, files),
-      breakingThreshold: report.thresholds.break,
+      thresholds: report.thresholds,
     })),
   ]
 }
@@ -477,15 +477,7 @@ const projectScoresOf = (report: GateReportDocument): ReadonlyArray<ProjectScore
 const runScoreBreakGate = (report: GateReportDocument): Effect.Effect<void, ScoreBelowBreak> =>
   Effect.flatMap(
     Effect.fromResult(gateScoreBreak(GateScoreBreakCommand.make({ projects: [...projectScoresOf(report)] }))),
-    (cleared) =>
-      Effect.forEach(
-        cleared.unscored,
-        (project) =>
-          Effect.logInfo(
-            `stryker gate: ${project} tested no valid mutant, so there is no mutation score to hold against thresholds.break`,
-          ),
-        { discard: true },
-      ),
+    (cleared) => Effect.forEach(cleared.lines, (line) => Effect.logInfo(line), { discard: true }),
   )
 
 const ownsItsRemediation = S.is(S.Union([BudgetExceeded, BudgetInputUnusable, ScoreBelowBreak]))

@@ -161,8 +161,8 @@ const schemaVersionOf = (reports: readonly ProjectReport[]): string =>
 const thresholdsOf = (reports: readonly ProjectReport[]): Report.Thresholds =>
   Option.getOrElse(Option.map(headReportOf(reports), (first) => first.report.thresholds), () => DEFAULT_THRESHOLDS)
 
-const thresholdsOfProject = (reports: readonly ProjectReport[]): RunEvent.VerdictThresholds =>
-  Option.getOrElse(Arr.findFirst(reports, (entry) => entry.thresholds), () => DEFAULT_THRESHOLDS)
+const thresholdsOfProject = (reports: readonly ProjectReport[]): RunEvent.VerdictThresholds | null =>
+  Option.getOrNull(Arr.findFirst(reports, (entry) => entry.thresholds))
 
 const mergedProjectsOf = (reports: readonly ProjectReport[]): readonly MergedProject[] =>
   Arr.dedupe(reports.map((entry) => entry.project)).map((project) => {
