@@ -21,6 +21,7 @@ const config = {
     '!src/**/__tests__/**',
   ],
   dryRunTimeoutMinutes: 10,
+  thresholds: { ...sharedConfig.thresholds, break: 54 },
 } satisfies PartialStrykerOptions
 
 export default config
