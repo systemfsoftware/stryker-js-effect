@@ -9,9 +9,14 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as ChildProcess from 'effect/process/ChildProcess'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
+import type * as Scope from 'effect/Scope'
+import * as Stream from 'effect/Stream'
 import { filePorts, removeWorkspace } from './__fixtures__/check-cost-workspace.fixture.js'
+import { requireBinary, spawnCli } from './__fixtures__/shard-cli.fixture.js'
 
 const Feature = makeFeature({ it })
 
@@ -44,21 +49,26 @@ const LINE_MUTATE = ['src/target.ts:3-3'] as const
 const FAKE_BASE = 'fake-base-sha'
 const FAKE_HEAD = 'fake-head-sha'
 
-const configSourceOf = (mutate: ReadonlyArray<string>): string =>
+const CONFIG_SINCE = 'HEAD~2'
+
+const configSourceOf = (mutate: ReadonlyArray<string>, since?: string): string =>
   `export default {
   testRunner: 'command',
   commandRunner: { command: 'true' },
   mutate: ${JSON.stringify(mutate)},
-  coverageAnalysis: 'off',
+${since === undefined ? '' : `  since: ${JSON.stringify(since)},\n`}  coverageAnalysis: 'off',
   checkers: [],
   reporters: [],
   cleanTempDir: 'always',
 }
 `
 
-const filesOf = (mutate: ReadonlyArray<string>): Readonly<Record<string, string>> => ({
+const filesOf = (
+  mutate: ReadonlyArray<string>,
+  since?: string,
+): Readonly<Record<string, string>> => ({
   'package.json': '{ "name": "plan-since-consumer", "type": "module", "private": true }\n',
-  [CONFIG_FILE]: configSourceOf(mutate),
+  [CONFIG_FILE]: configSourceOf(mutate, since),
   [TARGET_FILE]: TARGET_SOURCE,
   [OTHER_FILE]: OTHER_SOURCE,
   [README_FILE]: README_SOURCE,
@@ -73,15 +83,15 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   allowConsoleColors: false,
 })
 
-const writeWorkspace = (
-  mutate: ReadonlyArray<string> = FULL_MUTATE,
+const writeFiles = (
+  entries: ReadonlyArray<readonly [string, string]>,
 ): Effect.Effect<string, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const root = yield* fs.realPath(yield* fs.makeTempDirectory())
     yield* Effect.forEach(
-      Object.entries(filesOf(mutate)),
+      entries,
       ([file, content]) =>
         Effect.gen(function*() {
           const target = path.join(root, file)
@@ -92,6 +102,39 @@ const writeWorkspace = (
     )
     return root
   }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+const writeWorkspace = (
+  mutate: ReadonlyArray<string> = FULL_MUTATE,
+  since?: string,
+): Effect.Effect<string, never, never> => writeFiles(Object.entries(filesOf(mutate, since)))
+
+const PROJECT_A = 'proj-a'
+const PROJECT_B = 'proj-b'
+
+const JS_SOURCE = [
+  'export const alpha = (value) => {',
+  '  const result = value + 1',
+  '  return result + value',
+  '}',
+  '',
+].join('\n')
+
+const projectEntriesOf = (
+  projects: ReadonlyArray<string>,
+  mutate: ReadonlyArray<string>,
+  configSince?: string,
+): ReadonlyArray<readonly [string, string]> =>
+  projects.flatMap((project): ReadonlyArray<readonly [string, string]> => [
+    [`${project}/package.json`, '{ "name": "plan-project", "type": "module", "private": true }\n'],
+    [`${project}/${CONFIG_FILE}`, configSourceOf(mutate, configSince)],
+    [`${project}/src/${project}.js`, JS_SOURCE],
+  ])
+
+const writeProjectWorkspace = (
+  projects: ReadonlyArray<string>,
+  mutate: ReadonlyArray<string>,
+  configSince?: string,
+): Effect.Effect<string, never, never> => writeFiles(projectEntriesOf(projects, mutate, configSince))
 
 const withChdir = <A, E, R>(directory: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.acquireUseRelease(
@@ -113,6 +156,7 @@ interface GitCall {
 interface PlanObservation {
   readonly scope: ShardPlanScope | undefined
   readonly mutantIds: readonly string[]
+  readonly projectMutants: Readonly<Record<string, readonly string[]>>
   readonly anyShardSchedulesMutants: boolean
   readonly total: number
   readonly gitCalls: readonly GitCall[]
@@ -120,6 +164,21 @@ interface PlanObservation {
   readonly unresolvedRef: boolean
   readonly outExists: boolean
 }
+
+const mutantsByProjectOf = (plan: ShardPlan | undefined): Readonly<Record<string, readonly string[]>> =>
+  Option.match(Option.fromUndefinedOr(plan), {
+    onNone: (): Readonly<Record<string, readonly string[]>> => ({}),
+    onSome: (present) =>
+      present.shards
+        .flatMap((shard) => shard.projects)
+        .reduce<Record<string, readonly string[]>>(
+          (accumulated, entry) => ({
+            ...accumulated,
+            [entry.project]: [...(accumulated[entry.project] ?? []), ...entry.mutants],
+          }),
+          {},
+        ),
+  })
 
 const diffResult = (hunks: ReadonlyArray<GitDiffSchema.DiffHunk>): GitDiffSchema.GitDiffResult => ({
   ref: 'HEAD~1',
@@ -138,6 +197,7 @@ const hunkIn = (file: string, startLine: number, lineCount: number): GitDiffSche
 interface PlanRunOptions {
   readonly out: string
   readonly since?: string | undefined
+  readonly projects?: ReadonlyArray<string> | undefined
   readonly gitOutcome: (
     ref: string,
   ) => Effect.Effect<GitDiffSchema.GitDiffResult, GitDiffSchema.GitDiffError>
@@ -172,7 +232,7 @@ const runPlan = (
         request: {
           targetSeconds: 1,
           maxShards: 4,
-          projects: ['.'],
+          projects: options.projects === undefined ? ['.'] : [...options.projects],
           out: options.out,
           full: false,
           ...(options.since === undefined ? {} : { since: options.since }),
@@ -205,6 +265,7 @@ const runPlan = (
       mutantIds: plan === undefined
         ? []
         : plan.shards.flatMap((shard) => shard.projects.flatMap((entry) => entry.mutants)),
+      projectMutants: mutantsByProjectOf(plan),
       anyShardSchedulesMutants: plan !== undefined &&
         plan.shards.some((shard) => shard.projects.some((entry) => entry.mutants.length > 0)),
       total: known?.total ?? -1,
@@ -221,9 +282,49 @@ const containsAll = (superset: ReadonlyArray<string>, subset: ReadonlyArray<stri
 const sameIds = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean =>
   containsAll(left, right) && containsAll(right, left)
 
+const strictSubsetOf = (superset: ReadonlyArray<string>, subset: ReadonlyArray<string>): boolean =>
+  containsAll(superset, subset) && !sameIds(superset, subset)
+
+const COMMITTER = ['-c', 'user.email=plan@test', '-c', 'user.name=plan'] as const
+
+const gitOutput = (
+  cwd: string,
+  args: ReadonlyArray<string>,
+): Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
+  Effect.gen(function*() {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    const handle = yield* spawner.spawn(
+      ChildProcess.make('git', args, { cwd, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' }),
+    )
+    const stdout = yield* handle.stdout.pipe(Stream.decodeText, Stream.mkString)
+    const stderr = yield* handle.stderr.pipe(Stream.decodeText, Stream.mkString)
+    const exitCode = Number(yield* handle.exitCode)
+    yield* Effect.when(
+      Effect.die(new Error(`git ${args.join(' ')} failed (${exitCode}): ${stderr}`)),
+      Effect.succeed(exitCode !== 0),
+    )
+    return stdout.trim()
+  }).pipe(Effect.orDie)
+
+const execGit = (
+  cwd: string,
+  args: ReadonlyArray<string>,
+): Effect.Effect<void, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
+  Effect.asVoid(gitOutput(cwd, args))
+
+const prepareCliRepo = (): Effect.Effect<string, never, never> =>
+  Effect.gen(function*() {
+    const root = yield* writeWorkspace(FULL_MUTATE)
+    yield* requireBinary
+    yield* execGit(root, ['init', '-q'])
+    yield* execGit(root, [...COMMITTER, 'add', '-A'])
+    yield* execGit(root, [...COMMITTER, 'commit', '-q', '-m', 'init'])
+    return root
+  }).pipe(Effect.orDie, Effect.scoped, Effect.provide(Engine.nodePlatformLayer))
+
 Feature('Planning mutation shards since a git ref')
   .withLayer(Layer.empty)
-  .live('the plan drives the real engine with a fake git service, so no git process is spawned')
+  .live('the plan drives the real engine with a fake git service, and the built binary refuses an unknown ref')
   .body(({ scenario }) => {
     scenario(
       'A hunk on one target line scopes the plan to diff and schedules only that line',
@@ -402,6 +503,234 @@ Feature('Planning mutation shards since a git ref')
             unresolvedRef: s.runs.unresolvedRef,
             outExists: s.runs.outExists,
           }).toEqual({ failed: true, unresolvedRef: true, outExists: false })
+        ),
+      ),
+    )
+
+    scenario(
+      'A since ref declared only in the config file scopes the plan to the diff it computes',
+      Gherkin.Do.pipe(
+        Given('a workspace whose stryker config declares a since ref and a line-restricted plan is also known')(
+          'runs',
+          () =>
+            Effect.gen(function*() {
+              const scopedRoot = yield* writeWorkspace(FULL_MUTATE, CONFIG_SINCE)
+              const fullRoot = yield* writeWorkspace(FULL_MUTATE)
+              const oracleRoot = yield* writeWorkspace(LINE_MUTATE)
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const scoped = yield* runPlan(scopedRoot, {
+                    out: 'plan-config-since.json',
+                    gitOutcome: () => Effect.succeed(diffResult([hunkIn(TARGET_FILE, 3, 1)])),
+                  })
+                  const full = yield* runPlan(fullRoot, {
+                    out: 'plan-config-full.json',
+                    gitOutcome: () => Effect.succeed(diffResult([])),
+                  })
+                  const oracle = yield* runPlan(oracleRoot, {
+                    out: 'plan-config-oracle.json',
+                    gitOutcome: () => Effect.succeed(diffResult([])),
+                  })
+                  return { scoped, full, oracle }
+                }),
+                Effect.andThen(
+                  removeWorkspace(scopedRoot),
+                  Effect.andThen(removeWorkspace(fullRoot), removeWorkspace(oracleRoot)),
+                ),
+              )
+            }),
+        ),
+        Then(
+          'the plan is diff scoped at the fake base and head and schedules only the changed line',
+        )((s, expect) =>
+          expect({
+            scope: s.runs.scoped.scope,
+            changedSinceCalls: s.runs.scoped.gitCalls.filter((call) => call.kind === 'changedSince').length,
+            refs: s.runs.scoped.gitCalls.filter((call) => call.kind === 'changedSince').map((call) => call.ref),
+            scheduled: new Set(s.runs.scoped.mutantIds).size,
+            narrowerThanFull: new Set(s.runs.scoped.mutantIds).size < new Set(s.runs.full.mutantIds).size,
+          }).toEqual({
+            scope: { _tag: 'DiffScoped', base: FAKE_BASE, head: FAKE_HEAD },
+            changedSinceCalls: 1,
+            refs: [CONFIG_SINCE],
+            scheduled: new Set(s.runs.oracle.mutantIds).size,
+            narrowerThanFull: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A plan made from a config-file since ref is refused by the built CLI at another head',
+      Gherkin.Do.pipe(
+        Given('a git repository whose stryker config declares a since ref, planned to a fake head')(
+          'planned',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writeWorkspace(FULL_MUTATE, CONFIG_SINCE)
+              yield* requireBinary
+              yield* execGit(root, ['init', '-q'])
+              yield* execGit(root, [...COMMITTER, 'add', '-A'])
+              yield* execGit(root, [...COMMITTER, 'commit', '-q', '-m', 'init'])
+              const planned = yield* runPlan(root, {
+                out: 'plan-config-since.json',
+                gitOutcome: () => Effect.succeed(diffResult([hunkIn(TARGET_FILE, 3, 1)])),
+              })
+              return { root, plan: planned.scope }
+            }).pipe(Effect.scoped, Effect.provide(Engine.nodePlatformLayer)),
+        ),
+        When('the shard runs at the repository head')(
+          'ran',
+          (s) =>
+            Effect.ensuring(
+              spawnCli(
+                s.planned.root,
+                ['run', '--plan', 'plan-config-since.json', '--shard', '1/1', '--out', 'reports/shard-1'],
+                'human',
+              ),
+              removeWorkspace(s.planned.root),
+            ).pipe(Effect.scoped, Effect.provide(Engine.nodePlatformLayer)),
+        ),
+        Then('the run exits with the configuration class and names the plan head')((s, expect) =>
+          expect({
+            scope: s.planned.plan,
+            exitCode: s.ran.exitCode,
+            namesPlanHead: s.ran.stderr.includes(FAKE_HEAD),
+          }).toEqual({
+            scope: { _tag: 'DiffScoped', base: FAKE_BASE, head: FAKE_HEAD },
+            exitCode: 2,
+            namesPlanHead: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A flag ref over two projects reuses one root diff and scopes only the changed project',
+      Gherkin.Do.pipe(
+        Given('a workspace with two projects where only one project line changed')(
+          'runs',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writeProjectWorkspace([PROJECT_A, PROJECT_B], ['src/**/*.js'])
+              const oracleRoot = yield* writeProjectWorkspace([PROJECT_A], [`src/${PROJECT_A}.js:2-2`])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const unscoped = yield* runPlan(root, {
+                    out: 'plan-two-unscoped.json',
+                    projects: [PROJECT_A, PROJECT_B],
+                    gitOutcome: () => Effect.succeed(diffResult([])),
+                  })
+                  const diff = yield* runPlan(root, {
+                    out: 'plan-two-diff.json',
+                    projects: [PROJECT_A, PROJECT_B],
+                    since: 'HEAD~1',
+                    gitOutcome: () => Effect.succeed(diffResult([hunkIn(`${PROJECT_A}/src/${PROJECT_A}.js`, 2, 1)])),
+                  })
+                  const oracle = yield* runPlan(oracleRoot, {
+                    out: 'plan-two-oracle.json',
+                    projects: [PROJECT_A],
+                    gitOutcome: () => Effect.succeed(diffResult([])),
+                  })
+                  return { unscoped, diff, oracle }
+                }),
+                Effect.andThen(removeWorkspace(root), removeWorkspace(oracleRoot)),
+              )
+            }),
+        ),
+        Then(
+          'the plan asks git once, scopes the changed project to the changed line and leaves the other project empty',
+        )((s, expect) =>
+          expect({
+            scope: s.runs.diff.scope,
+            changedSinceCalls: s.runs.diff.gitCalls.filter((call) => call.kind === 'changedSince').length,
+            refs: s.runs.diff.gitCalls.filter((call) => call.kind === 'changedSince').map((call) => call.ref),
+            changedScheduled: (s.runs.diff.projectMutants[PROJECT_A] ?? []).length,
+            strictSubsetOfUnscoped: strictSubsetOf(
+              s.runs.unscoped.projectMutants[PROJECT_A] ?? [],
+              s.runs.diff.projectMutants[PROJECT_A] ?? [],
+            ),
+            unchangedProject: s.runs.diff.projectMutants[PROJECT_B] ?? [],
+            unscopedUnchangedNonEmpty: (s.runs.unscoped.projectMutants[PROJECT_B] ?? []).length > 0,
+          }).toEqual({
+            scope: { _tag: 'DiffScoped', base: FAKE_BASE, head: FAKE_HEAD },
+            changedSinceCalls: 1,
+            refs: ['HEAD~1'],
+            changedScheduled: s.runs.oracle.mutantIds.length,
+            strictSubsetOfUnscoped: true,
+            unchangedProject: [],
+            unscopedUnchangedNonEmpty: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A project config since is ignored when the plan root resolved no since ref',
+      Gherkin.Do.pipe(
+        Given('a workspace whose project config declares a since ref while the root declares none')(
+          'runs',
+          () =>
+            Effect.gen(function*() {
+              const scopedRoot = yield* writeProjectWorkspace([PROJECT_A], ['src/**/*.js'], CONFIG_SINCE)
+              const plainRoot = yield* writeProjectWorkspace([PROJECT_A], ['src/**/*.js'])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const scoped = yield* runPlan(scopedRoot, {
+                    out: 'plan-project-since.json',
+                    projects: [PROJECT_A],
+                    gitOutcome: () => Effect.succeed(diffResult([hunkIn(`${PROJECT_A}/src/${PROJECT_A}.js`, 2, 1)])),
+                  })
+                  const plain = yield* runPlan(plainRoot, {
+                    out: 'plan-project-plain.json',
+                    projects: [PROJECT_A],
+                    gitOutcome: () => Effect.succeed(diffResult([])),
+                  })
+                  return { scoped, plain }
+                }),
+                Effect.andThen(removeWorkspace(scopedRoot), removeWorkspace(plainRoot)),
+              )
+            }),
+        ),
+        Then('the plan stays unscoped, never asks git and keeps every project mutant')((s, expect) =>
+          expect({
+            scope: s.runs.scoped.scope,
+            gitCallCount: s.runs.scoped.gitCalls.length,
+            scopedScheduled: (s.runs.scoped.projectMutants[PROJECT_A] ?? []).length,
+            plainScheduled: (s.runs.plain.projectMutants[PROJECT_A] ?? []).length,
+            nonEmpty: (s.runs.scoped.projectMutants[PROJECT_A] ?? []).length > 0,
+          }).toEqual({
+            scope: { _tag: 'Unscoped' },
+            gitCallCount: 0,
+            scopedScheduled: (s.runs.plain.projectMutants[PROJECT_A] ?? []).length,
+            plainScheduled: (s.runs.plain.projectMutants[PROJECT_A] ?? []).length,
+            nonEmpty: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'An unknown since ref fails the built CLI plan with the configuration class',
+      Gherkin.Do.pipe(
+        Given('a git repository holding a committed stryker config')('root', () => prepareCliRepo()),
+        When('the plan runs since a ref that does not exist')(
+          'ran',
+          (s) =>
+            Effect.ensuring(
+              spawnCli(
+                s.root,
+                ['plan', '--target-seconds', '1', '--out', 'plan.json', '--since', 'no-such-ref'],
+                'human',
+              ),
+              removeWorkspace(s.root),
+            ).pipe(Effect.scoped, Effect.provide(Engine.nodePlatformLayer)),
+        ),
+        Then('the process exits with the configuration class and stderr names the ref')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesRef: s.ran.stderr.includes('no-such-ref'),
+          }).toEqual({ exitCode: 2, namesRef: true })
         ),
       ),
     )

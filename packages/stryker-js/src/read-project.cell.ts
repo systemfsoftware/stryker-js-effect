@@ -21,7 +21,14 @@ import {
   IncrementalReportDiscard,
 } from './admit-incremental-report.workflow.js'
 import { defaultOptions } from './config/default-options.js'
-import { DiffScopeCommand, type DiffScopeDecision, FullScope } from './git-diff.schema.js'
+import {
+  DiffScopeCommand,
+  type DiffScopeDecision,
+  FullScope,
+  type GitDiffError,
+  type GitDiffResult,
+  type PlannedDiff,
+} from './git-diff.schema.js'
 import { GitDiff } from './git-diff.service.js'
 import { gitDiff } from './git-diff.workflow.js'
 import { type IncrementalReport, IncrementalReportSchema } from './IncrementalReport.schema.js'
@@ -99,6 +106,7 @@ type ReadProjectInput = {
   readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
+  readonly plannedDiff?: PlannedDiff | undefined
 }
 
 const insideProjectOnlyRuleOf = (relative: string, absoluteFallback: string): string =>
@@ -309,14 +317,12 @@ interface DiffScope {
 
 const FULL_SCOPE: DiffScope = { scope: 'full', diffRanges: undefined }
 
-const diffScopeOf = Effect.fnUntraced(function*(ref: string, basePath: string) {
-  const git = yield* GitDiff
-  const result = yield* git.changedSince({ cwd: basePath, ref })
+const diffScopeDecisionOf = (result: Pick<GitDiffResult, 'hunks' | 'untrackedFiles'>): Effect.Effect<DiffScope> => {
   const decision: DiffScopeDecision = Result.match(
     gitDiff(DiffScopeCommand.make({ hunks: [...result.hunks], untrackedFiles: [...result.untrackedFiles] })),
     { onFailure: () => FullScope.make({ reason: 'the diff could not be computed' }), onSuccess: (value) => value },
   )
-  return yield* Match.value(decision).pipe(
+  return Match.value(decision).pipe(
     Match.tag(
       'DiffScoped',
       (scoped): Effect.Effect<DiffScope> => Effect.succeed({ scope: 'diff', diffRanges: [...scoped.ranges] }),
@@ -328,7 +334,27 @@ const diffScopeOf = Effect.fnUntraced(function*(ref: string, basePath: string) {
     ),
     Match.exhaustive,
   )
+}
+
+const diffScopeOf = Effect.fnUntraced(function*(ref: string, basePath: string) {
+  const git = yield* GitDiff
+  return yield* diffScopeDecisionOf(yield* git.changedSince({ cwd: basePath, ref }))
 })
+
+const plannedDiffScopeOf = (input: ReadProjectInput): Effect.Effect<DiffScope, GitDiffError, GitDiff> =>
+  Option.match(Option.fromUndefinedOr(input.plannedDiff), {
+    onNone: () =>
+      Option.match(Option.fromUndefinedOr(input.options.since), {
+        onNone: () => Effect.succeed(FULL_SCOPE),
+        onSome: (ref) => diffScopeOf(ref, input.basePath),
+      }),
+    onSome: (planned) =>
+      Match.value(planned).pipe(
+        Match.tag('WholeProject', () => Effect.succeed(FULL_SCOPE)),
+        Match.tag('ChangedSince', (changed) => diffScopeDecisionOf(changed.diff)),
+        Match.exhaustive,
+      ),
+  })
 
 const effectiveOptions = (scope: DiffScope, options: Options.StrykerOptions): Options.StrykerOptions => {
   const { since, ...withoutSince } = options
@@ -353,10 +379,7 @@ type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
 const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(function*(input: ReadProjectInput) {
   const fs = yield* FileSystem.FileSystem
   const pathService = yield* Path.Path
-  const diffScope = yield* Option.match(Option.fromUndefinedOr(input.options.since), {
-    onNone: () => Effect.succeed(FULL_SCOPE),
-    onSome: (ref) => diffScopeOf(ref, input.basePath),
-  })
+  const diffScope = yield* plannedDiffScopeOf(input)
   const options = effectiveOptions(diffScope, input.options)
   const mutatePatterns: readonly string[] = options.mutate
   const { testFileIgnores, testFilePatterns } = testFileSelectionOf(options)

@@ -26,7 +26,7 @@ export namespace GitDiff {
 
 // @public (undocumented)
 export namespace GitDiffSchema {
-    export { DiffHunk, DiffScopeCommand, DiffScopeDecision, DiffScoped, FullScope, GitCommandFailed, GitDiffError, GitDiffResult, GitRefUnresolved };
+    export { ChangedSince, DiffHunk, DiffScopeCommand, DiffScopeDecision, DiffScoped, FullScope, GitCommandFailed, GitDiffError, GitDiffResult, GitRefUnresolved, PlannedDiff, WholeProject };
 }
 
 // @public (undocumented)

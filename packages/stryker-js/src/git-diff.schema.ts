@@ -67,3 +67,10 @@ export class FullScope extends S.TaggedClass<FullScope>()('FullScope', {
 
 export const DiffScopeDecision = S.Union([DiffScoped, FullScope])
 export type DiffScopeDecision = typeof DiffScopeDecision.Type
+
+export const WholeProject = S.TaggedStruct('WholeProject', {})
+
+export const ChangedSince = S.TaggedStruct('ChangedSince', { diff: GitDiffResult })
+
+export const PlannedDiff = S.Union([WholeProject, ChangedSince])
+export type PlannedDiff = typeof PlannedDiff.Type

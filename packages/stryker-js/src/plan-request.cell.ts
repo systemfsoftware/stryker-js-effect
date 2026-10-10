@@ -23,8 +23,15 @@ import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.j
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
-import { DiffScopeCommand, type GitDiffError, type GitDiffResult } from './git-diff.schema.js'
-import { GitDiff, type GitDiffShape } from './git-diff.service.js'
+import {
+  ChangedSince,
+  DiffScopeCommand,
+  type GitDiffError,
+  type GitDiffResult,
+  type PlannedDiff,
+  WholeProject,
+} from './git-diff.schema.js'
+import { GitDiff } from './git-diff.service.js'
 import { gitDiff } from './git-diff.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
@@ -231,33 +238,23 @@ const projectDiffOf = (path: Path.Path, planRoot: string, project: string, diff:
   }
 }
 
-const resolvedGitOf = (diff: GitDiffResult): GitDiffShape => ({
-  changedSince: () => Effect.succeed(diff),
-  head: () => Effect.succeed(diff.head),
-})
-
 interface PlanDiff {
   readonly root: string
   readonly diff: Option.Option<GitDiffResult>
 }
 
-const stageCliOptionsOf = (request: PlanShardsRequest): Options.PartialStrykerOptions =>
-  Option.match(Option.fromUndefinedOr(request.since), {
-    onNone: () => ({ force: request.full }),
-    onSome: (since) => ({ force: request.full, since }),
+const stageCliOptionsOf = (since: string | undefined, full: boolean): Options.PartialStrykerOptions =>
+  Option.match(Option.fromUndefinedOr(since), {
+    onNone: () => ({ force: full }),
+    onSome: (present) => ({ force: full, since: present }),
   })
 
-const withProjectDiff = <A, E, R>(
-  staged: Effect.Effect<A, E, R>,
-  path: Path.Path,
-  planDiff: PlanDiff,
-  project: string,
-): Effect.Effect<A, E, R> =>
+const plannedDiffOf = (path: Path.Path, planDiff: PlanDiff, project: string): PlannedDiff =>
   Option.match(planDiff.diff, {
-    onNone: () => staged,
-    onSome: (diff) =>
-      Effect.provideService(staged, GitDiff, resolvedGitOf(projectDiffOf(path, planDiff.root, project, diff))),
+    onNone: (): PlannedDiff => WholeProject.make({}),
+    onSome: (diff): PlannedDiff => ChangedSince.make({ diff: projectDiffOf(path, planDiff.root, project, diff) }),
   })
+
 const subsumedOf = (mutant: Mutant.Mutant): Option.Option<Mutant.Subsumed> =>
   Option.filter(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed))
 
@@ -286,6 +283,7 @@ const planProject = (
   labelBase: string,
   planDiff: PlanDiff,
   directory: string,
+  resolvedSince: string | undefined,
 ): Effect.Effect<ProjectPlan, never, EnginePorts | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -294,13 +292,12 @@ const planProject = (
     const project = yield* fs.realPath(path.resolve(basePath, directory))
     const env = { ...channel.environment.host.env, basePath: project }
     const context = yield* Layer.build(RunEnvironment.stage(env, channel.environment.host.events))
-    const stageInput = { cliOptions: stageCliOptionsOf(request), targetMutatePatterns: undefined }
-    const prepared = yield* withProjectDiff(
-      Cell.provideContext(prepareStageCell, context).run(stageInput),
-      path,
-      planDiff,
-      project,
-    )
+    const stageInput = {
+      cliOptions: stageCliOptionsOf(resolvedSince, request.full),
+      targetMutatePatterns: undefined,
+      plannedDiff: plannedDiffOf(path, planDiff, project),
+    }
+    const prepared = yield* Cell.provideContext(prepareStageCell, context).run(stageInput)
     const done: PlanInstrumentDone = yield* Cell.provideContext(planInstrumentCell, context).run(prepared)
     const texts = yield* incrementalReportTextsOf({ basePath: project, options: done.options })
     const coverage = firstCoverageOf(texts)
@@ -493,18 +490,32 @@ const planReuseRowOf = (entry: ProjectPlan): RunEvent.PlanProjectReuse =>
   })
 
 const planDiffOf = (
-  request: PlanShardsRequest,
+  since: string | undefined,
   basePath: string,
-): Effect.Effect<PlanDiff, GitDiffError, EnginePorts | Scope.Scope> =>
+): Effect.Effect<PlanDiff, GitDiffError, EnginePorts> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const root = yield* Effect.orDie(fs.realPath(basePath))
-    const diff = yield* Option.match(Option.fromUndefinedOr(request.since), {
+    const diff = yield* Option.match(Option.fromUndefinedOr(since), {
       onNone: () => Effect.succeedNone,
       onSome: (ref) => Effect.asSome(Effect.flatMap(GitDiff, (git) => git.changedSince({ cwd: root, ref }))),
     })
     return { root, diff }
   })
+
+const rootOptionsOf = (
+  request: PlanShardsRequest,
+  channel: PlanChannel,
+): Effect.Effect<Options.StrykerOptions, never, EnginePorts | Scope.Scope> =>
+  Effect.gen(function*() {
+    const env = { ...channel.environment.host.env, basePath: channel.environment.basePath }
+    const context = yield* Layer.build(RunEnvironment.stage(env, channel.environment.host.events))
+    const loaded = yield* Cell.provideContext(loadConfigCell, context).run({
+      cliOptions: stageCliOptionsOf(request.since, request.full),
+      targetMutatePatterns: undefined,
+    })
+    return loaded.options
+  }).pipe(Effect.orDie)
 
 export const planRequest = (
   { request, channel }: PlanRequestInput,
@@ -513,13 +524,17 @@ export const planRequest = (
     const path = yield* Path.Path
     const previous = globalThis.process.cwd()
     const labelBase = labelBaseOf(path, channel.environment.basePath, request.out)
-    const planDiff = yield* planDiffOf(request, channel.environment.basePath)
+    const rootOptions = yield* rootOptionsOf(request, channel)
+    const resolvedSince = Option.getOrUndefined(
+      Option.orElse(Option.fromUndefinedOr(request.since), () => Option.fromUndefinedOr(rootOptions.since)),
+    )
+    const planDiff = yield* planDiffOf(resolvedSince, channel.environment.basePath)
     const planned = yield* Effect.forEach(
       projectsOf(request.projects),
       (directory) =>
         Effect.acquireUseRelease(
           Effect.sync(() => globalThis.process.chdir(directory)),
-          () => planProject(request, channel, labelBase, planDiff, directory),
+          () => planProject(request, channel, labelBase, planDiff, directory, resolvedSince),
           () => Effect.sync(() => globalThis.process.chdir(previous)),
         ),
       { concurrency: 1 },
