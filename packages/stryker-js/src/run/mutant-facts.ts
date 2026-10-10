@@ -32,7 +32,7 @@ const originalTextOf = (source: Option.Option<SourceText>, location: Mutant.Loca
   )
 
 const invalidFacts = (result: Mutant.RunMutantResult, detail: string): MutantFactsInvalid =>
-  new MutantFactsInvalid({ code: 'mutant-facts-invalid', mutantId: result.id, detail })
+  MutantFactsInvalid.make({ code: 'mutant-facts-invalid', mutantId: result.id, detail })
 
 const statusReasonOf = (result: Mutant.RunMutantResult): Effect.Effect<string, MutantFactsInvalid> =>
   Effect.fromOption(
