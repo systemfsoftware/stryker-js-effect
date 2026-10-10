@@ -1,7 +1,7 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env=GITHUB_OUTPUT,GITHUB_STEP_SUMMARY
 import { createHash } from 'node:crypto'
 import type { Dirent } from 'node:fs'
-import { appendFile, copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, copyFile, mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import process from 'node:process'
 import { parseArgs } from 'node:util'
@@ -27,8 +27,20 @@ export interface Plan {
   readonly shards: ReadonlyArray<PlannedShard>
 }
 
+export type RefusalCode =
+  | 'PLAN_UNREADABLE'
+  | 'PLAN_SHARD_ABSENT'
+  | 'SHARD_STORE_UNREADABLE'
+  | 'VERDICT_PART_UNWRITABLE'
+  | 'VERDICT_PART_UNREADABLE'
+  | 'VERDICT_PART_UNPLANNED'
+  | 'VERDICT_PART_OUTSIDE_STORE'
+  | 'VERDICT_STORE_UNWRITABLE'
+  | 'MERGED_STORE_UNREADABLE'
+  | 'USAGE'
+
 export interface Refusal {
-  readonly code: string
+  readonly code: RefusalCode
   readonly message: string
   readonly next: string
 }
@@ -153,23 +165,34 @@ export const storeKeyOf = (digests: ReadonlyArray<StoreFileDigest>): string =>
     )
   }`
 
-export const stageSummaryOf = (
-  shard: string,
-  staged: ReadonlyArray<readonly [string, Staged]>,
-): string =>
-  [
+export interface StagedProject {
+  readonly project: string
+  readonly storeFound: boolean
+  readonly part: Staged
+}
+
+export const stageSummaryOf = (shard: string, staged: ReadonlyArray<StagedProject>): string => {
+  const absent = staged.filter(({ storeFound }) => !storeFound).map(({ project }) => project)
+  const note = staged.every(({ part }) => part.entries.length === 0)
+    ? absent.length === staged.length
+      ? `No project has a \`${STORE_DIRECTORY}\` directory: a CLI that predates the store writes none, and a store written anywhere else is not staged.`
+      : "No store entry belongs to this shard's mutants."
+    : undefined
+  return [
     `### Verdict store part of shard ${shard}`,
     '',
-    ...staged.map(([project, part]) =>
+    `- store directories found: ${staged.length - absent.length} of ${staged.length} planned projects${
+      absent.length > 0 ? ` (absent: ${absent.join(', ')})` : ''
+    }`,
+    ...staged.map(({ project, part }) =>
       `- \`${project}\`: ${part.entries.length} entr${part.entries.length === 1 ? 'y' : 'ies'} staged${
         part.skipped.length > 0 ? `, ${part.skipped.length} non-entry file(s) left behind` : ''
       }`
     ),
-    ...(staged.every(([, part]) => part.entries.length === 0)
-      ? ['', 'No store entries: the CLI wrote no verdict store (one that predates the store writes none).']
-      : []),
+    ...(note === undefined ? [] : ['', note]),
     '',
   ].join('\n')
+}
 
 export const mergeSummaryOf = (
   merge: Merge,
@@ -189,8 +212,11 @@ export const mergeSummaryOf = (
     '',
   ].join('\n')
 
+const escapeCommandData = (text: string): string =>
+  text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+
 export const annotationOf = (refusal: Refusal): string =>
-  `::error title=${refusal.code}::${refusal.message}. Next: ${refusal.next}`
+  `::error title=${refusal.code}::${escapeCommandData(`${refusal.message}. Next: ${refusal.next}`)}`
 
 const isMissing = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
@@ -211,6 +237,12 @@ const walk = async (root: string, prefix = ''): Promise<ReadonlyArray<string>> =
   )
   return nested.flat()
 }
+
+const isDirectory = (path: string): Promise<boolean> =>
+  stat(path).then((found) => found.isDirectory(), (error: unknown) => {
+    if (isMissing(error)) return false
+    throw error
+  })
 
 const copyInto = async (from: string, to: string): Promise<void> => {
   await mkdir(dirname(to), { recursive: true })
@@ -234,7 +266,7 @@ const failWith = (refusal: Refusal): never => {
 
 const unwrap = <A>(outcome: Outcome<A>): A => outcome.ok ? outcome.value : failWith(outcome.refusal)
 
-const guarded = <A>(code: string, next: string, run: () => Promise<A>): Promise<A> =>
+const guarded = <A>(code: RefusalCode, next: string, run: () => Promise<A>): Promise<A> =>
   run().catch((error: unknown) =>
     failWith({ code, message: error instanceof Error ? error.message : String(error), next })
   )
@@ -273,16 +305,21 @@ const stage = async (args: Readonly<Record<string, string | undefined>>): Promis
   const out = args['out'] ?? 'verdict-part'
   const planned = unwrap(plannedShardOf(await readPlan(args['plan'] ?? 'plan.json'), shard))
   const projects = projectsOf(args['projects'] ?? '')
-  const staged = await guarded('VERDICT_STORE_UNREADABLE', 're-run failed jobs', () =>
+  const staged = await guarded('SHARD_STORE_UNREADABLE', 're-run failed jobs', () =>
     Promise.all(
       planned.projects
         .filter((entry) => projects.includes(entry.project))
-        .map(async (entry) =>
-          [entry.project, stagedOf(entry.mutants, await walk(join(entry.project, STORE_DIRECTORY)))] as const
-        ),
+        .map(async (entry): Promise<StagedProject> => {
+          const root = join(entry.project, STORE_DIRECTORY)
+          return {
+            project: entry.project,
+            storeFound: await isDirectory(root),
+            part: stagedOf(entry.mutants, await walk(root)),
+          }
+        }),
     ))
   await guarded('VERDICT_PART_UNWRITABLE', 're-run failed jobs; the runner could not write the part', async () => {
-    for (const [project, part] of staged) {
+    for (const { project, part } of staged) {
       for (const file of part.entries) {
         const relative = `${project}/${STORE_DIRECTORY}/${file}`
         await copyInto(relative, join(out, relative))
@@ -291,7 +328,7 @@ const stage = async (args: Readonly<Record<string, string | undefined>>): Promis
     await mkdir(out, { recursive: true })
     await writeFile(join(out, STAGED_MARKER), JSON.stringify({ shard }))
   })
-  const entries = staged.reduce((sum, [, part]) => sum + part.entries.length, 0)
+  const entries = staged.reduce((sum, { part }) => sum + part.entries.length, 0)
   await report(stageSummaryOf(shard, staged), { entries: String(entries) })
 }
 
@@ -316,7 +353,7 @@ const merge = async (args: Readonly<Record<string, string | undefined>>): Promis
     for (const [file, slug] of decided.winners) await copyInto(join(partsRoot, `${PART_PREFIX}${slug}`, file), file)
   })
   const digests = await guarded(
-    'VERDICT_STORE_UNREADABLE',
+    'MERGED_STORE_UNREADABLE',
     're-run failed jobs',
     async () =>
       (await Promise.all(projects.map(async (project) => {

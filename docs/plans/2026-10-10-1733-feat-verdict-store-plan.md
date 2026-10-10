@@ -7,7 +7,7 @@ artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
 origin: docs/brainstorms/2026-10-09-1842-feat-verdict-store-requirements.md
-supersedes: docs/plans/2026-10-10-1244-feat-verdict-store-plan.md
+supersedes: docs/plans/2026-10-10-1354-feat-verdict-store-plan.md
 ---
 
 # VerdictStore port with content-addressed verdict keys - Plan
@@ -19,7 +19,7 @@ supersedes: docs/plans/2026-10-10-1244-feat-verdict-store-plan.md
 - **Authority:** Product Contract (R-IDs) wins on behavior, KTDs win on mechanism, units override neither. `CONSTITUTION.md` and `AGENTS.md` (`BREAK-1`, `PLUG-1`, `START-1`..`START-6`) bind every unit.
 - **Stop conditions:** Stop and report instead of working around when emulate 0.12.1 lacks an S3 behaviour the driver needs, when a unit would require editing a read-only surface (`CONSTITUTION.md`, `repos/**`, any workflow other than `.github/workflows/mutation.yml`), or when a new third-party executable dependency beyond `@aws-sdk/client-s3` and `emulate` appears necessary. A root ruling lifts the read-only line for `mutation.yml` in U12-U14 only, as it did for #253, #256 and #263.
 - **Execution profile:** Deep. U1-U11 on branch `stryker/verdict-store` (PR #271) from `origin/main` `1e1de6d05`. U12-U14 on the stacked branch `stryker/verdict-store-ci` from `51ac1ac88`, PR base `stryker/verdict-store`. Plain pushes only; merge the parent (and through it `main`) up when it moves. No local mutation runs of any kind.
-- **Who ships:** #271 carries U1-U11; the stacked PR carries U12-U14, this plan file (which supersedes the 2026-10-10-1244 plan, itself a move of the 2026-10-09 plan, so the stack adds one plan file, `REPO-D2`), and merges before or with the release that moves the dogfood pin. The operator rules on Open Questions and merges.
+- **Who ships:** #271 carries U1-U11; the stacked PR carries U12-U14, this plan file (which supersedes the 2026-10-10-1354 plan, itself the successor by move of the 2026-10-10-1244 and 2026-10-09 plans, so the stack adds one plan file, `REPO-D2`), and merges before or with the release that moves the dogfood pin. The operator rules on Open Questions and merges.
 
 ---
 
@@ -119,7 +119,7 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 ### Scope Boundaries
 
 - Moving `dryRunCoverage` and `budget` into the store, and sharing dry runs across PRs. They are keyed by suite inputs and run policy, not by the verdict key; see Deferred to Follow-Up Work.
-- Retention and pruning of store entries; S3 lifecycle rules or cache eviction own it.
+- Retention and pruning of store entries; S3 lifecycle rules or cache eviction own it. Known limit: every mutation.yml save whose store changed writes a full copy under a new cache key, bounded only by GitHub's cache eviction (`docs/verdict-store.md`, Known limits).
 - Conditional writes, multipart upload, Range reads.
 - Stream A's package split; this work only places the port where that split expects it.
 - Any mock of the S3 client: no `vi.mock`, no `aws-sdk-client-mock`, no hand-rolled S3 server, no patch or wrapper of emulate.
@@ -611,9 +611,9 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 
 **Approach:**
 
-- `stage --plan plan.json --shard k/n --projects <csv> --out verdict-part`: for each project of this shard, copy `<project>/reports/stryker-verdicts/<scheme>/<id>/<entry>` for every planned id into `verdict-part/<project>/reports/stryker-verdicts/...`. A missing store directory stages 0. Unknown shard: `PLAN_SHARD_ABSENT`, next action "re-run the plan job; this shard name is not in plan.json".
+- `stage --plan plan.json --shard k/n --projects <csv> --out verdict-part`: for each project of this shard, copy `<project>/reports/stryker-verdicts/<scheme>/<id>/<entry>` for every planned id into `verdict-part/<project>/reports/stryker-verdicts/...`. A missing store directory stages 0, and the summary counts the store directories found against the planned projects, so an absent store reads differently from a store holding none of this shard's entries. Codes: `PLAN_SHARD_ABSENT` (next action "re-run the plan job; this shard name is not in plan.json"), `SHARD_STORE_UNREADABLE` and `VERDICT_PART_UNWRITABLE` (next action "re-run failed jobs").
 - `merge --plan plan.json --parts verdict-parts --projects <csv>`: order parts by plan shard index, copy each part's entries over the restored store, then write `key`, `entries` and `bytes` to `GITHUB_OUTPUT` and the summary. Codes: `VERDICT_PART_OUTSIDE_STORE` (a part path that is not `<planned project>/reports/stryker-verdicts/<scheme>/<id>/<entry>`; next action "inspect that shard's stage summary"), `VERDICT_PART_UNREADABLE` and `VERDICT_STORE_UNWRITABLE` (next action "re-run failed jobs"). Missing parts: warning `VERDICT_PARTS_MISSING` naming the shards.
-- Pure exports: `stagedOf(plan, shard, listing)`, `mergeOf(orderedParts)` returning winners, collisions, skips and refusals, `storeKeyOf(digests)`, `summaryOf(...)`.
+- Pure exports: `plannedShardOf(plan, shard)`, `stagedOf(mutants, listing)`, `mergeOf(plan, projects, parts)` returning winners, collisions, merged and missing parts or a refusal, `storeKeyOf(digests)`, `stageSummaryOf`, `mergeSummaryOf`, and `annotationOf`, which escapes the message so a refusal is always one workflow command. Refusal codes are the closed union `RefusalCode`.
 
 **Test scenarios (admitted by test-layer-selection: pure decisions, property tests only; pack: cell-architecture, pure-decision-workflows.md for the decide/IO split):**
 
@@ -637,9 +637,9 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 **Approach:**
 
 - `env.VERDICT_STORES`: the four `<project>/reports/stryker-verdicts` paths.
-- plan and mutation jobs: `actions/cache/restore@v6`, `path: ${{ env.VERDICT_STORES }}`, `key: mutation-verdicts-none`, `restore-keys: mutation-verdicts-`, after the incremental restore.
-- mutation job, after `Mutation`: `if: always()` stage step, then `actions/upload-artifact@v7` `name: verdict-part-<slug>`, `if-no-files-found: ignore`, `retention-days: 1`, `overwrite: true` (so `rerun --failed` replaces it).
-- report job: restore the store, download `pattern: verdict-part-*` into `verdict-parts/` with `continue-on-error: true` (each artifact in its own directory), run `merge`, which emits an empty `key` when it finds no entries. Both cache steps are guarded by `key != ''`, so a no-op run skips them: `actions/cache/restore@v6` `lookup-only: true` on the merge's key, then `actions/cache/save@v6` when that lookup missed. The existing cleanup step also deletes `verdict-part-*` artifacts.
+- plan and mutation jobs: `actions/cache/restore@v6`, `path: ${{ env.VERDICT_STORES }}`, `key: mutation-verdicts-latest` (never saved, so it always misses), `restore-keys: mutation-verdicts-`, after the incremental restore.
+- mutation job, after `Mutation`: `if: ${{ !cancelled() }}` stage step, then `actions/upload-artifact@v7` `name: verdict-part-<slug>`, `if-no-files-found: error`, `retention-days: 1`, `overwrite: true` (so `rerun --failed` replaces it), `continue-on-error: true`, so a lost part surfaces as `VERDICT_PARTS_MISSING` in the report job instead of failing a shard whose mutation results are complete. A cancelled shard stages nothing; the report job is itself `!cancelled()`, so such a part would never merge.
+- report job, after `gate` and the budget-baseline upload: restore the store, download `pattern: verdict-part-*` into `verdict-parts/` (each artifact in its own directory), run `merge`, which emits an empty `key` when it finds no entries. Both cache steps are guarded by `key != ''`, so a no-op run skips them: `actions/cache/restore@v6` `lookup-only: true` on the merge's key, then `actions/cache/save@v6` when that lookup missed. Every store step is `if: ${{ !cancelled() }}` and `continue-on-error: true`: a store failure cannot cost the merged report, the incremental seed or the gate, a failing gate still saves the store, and a refusal still prints its `::error` annotation. The existing cleanup step also deletes `verdict-part-*` artifacts.
 - Run `actionlint` on the file before every push.
 
 **Test expectation:** none in-repo: a test that re-reads the workflow file is banned (CHK1, OP12). The U14 dispatch runs are the smoke proof.

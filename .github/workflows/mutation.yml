@@ -249,6 +249,7 @@ jobs:
         run: node scripts/verdict-store-parts.ts stage --plan "$PLAN" --shard "$SHARD" --projects "$PROJECTS" --out verdict-part
       - name: Upload the verdict store part
         if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: verdict-part-${{ steps.shard.outputs.slug }}
@@ -332,37 +333,6 @@ jobs:
           restore-keys: |
             mutation-incremental-
 
-      - name: Restore the verdict store of the last run
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ env.VERDICT_STORES }}
-          key: mutation-verdicts-latest
-          restore-keys: |
-            mutation-verdicts-
-      - name: Download every shard's verdict store part into verdict-parts/<name>
-        uses: actions/download-artifact@v8
-        continue-on-error: true
-        with:
-          pattern: verdict-part-*
-          path: verdict-parts
-      - id: verdicts
-        name: Lay the shards' verdict store parts over the store
-        run: node scripts/verdict-store-parts.ts merge --plan "$PLAN" --parts verdict-parts --projects "$PROJECTS"
-      - id: verdicts-cached
-        name: Is this store already cached
-        if: steps.verdicts.outputs.key != ''
-        uses: actions/cache/restore@v6
-        with:
-          path: ${{ env.VERDICT_STORES }}
-          key: ${{ steps.verdicts.outputs.key }}
-          lookup-only: true
-      - name: Save the verdict store
-        if: steps.verdicts.outputs.key != '' && steps.verdicts-cached.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ env.VERDICT_STORES }}
-          key: ${{ steps.verdicts.outputs.key }}
-
       - name: Merge the shards
         run: |
           shards=()
@@ -419,6 +389,44 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           overwrite: true
+
+      - name: Restore the verdict store of the last run
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.VERDICT_STORES }}
+          key: mutation-verdicts-latest
+          restore-keys: |
+            mutation-verdicts-
+      - name: Download every shard's verdict store part into verdict-parts/<name>
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: verdict-part-*
+          path: verdict-parts
+      - id: verdicts
+        name: Lay the shards' verdict store parts over the store
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: node scripts/verdict-store-parts.ts merge --plan "$PLAN" --parts verdict-parts --projects "$PROJECTS"
+      - id: verdicts-cached
+        name: Is this store already cached
+        if: ${{ !cancelled() && steps.verdicts.outputs.key != '' }}
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.VERDICT_STORES }}
+          key: ${{ steps.verdicts.outputs.key }}
+          lookup-only: true
+      - name: Save the verdict store
+        if: ${{ !cancelled() && steps.verdicts.outputs.key != '' && steps.verdicts-cached.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.VERDICT_STORES }}
+          key: ${{ steps.verdicts.outputs.key }}
 
       - name: Delete per-shard artifacts once the report merged
         if: success()

@@ -1,12 +1,16 @@
 import fc from 'fast-check'
 import {
+  annotationOf,
   isEntryPath,
   mergeOf,
+  mergeSummaryOf,
   type PartListing,
   type Plan,
   plannedShardOf,
+  type RefusalCode,
   slugOf,
   stagedOf,
+  stageSummaryOf,
   STORE_DIRECTORY,
   storeKeyOf,
 } from './verdict-store-parts.ts'
@@ -55,16 +59,12 @@ Deno.test('a shard stages every entry under its planned mutants and nothing else
     (ids, cut, names, strays) => {
       const split = 1 + (cut % (ids.length - 1))
       const own = ids.slice(0, split)
-      const listing = ids.flatMap((id) => [...names, ...strays].map((name) => entryOf(id, name)))
+      const listing = ids.flatMap((id) => [...new Set([...names, ...strays])].map((name) => entryOf(id, name)))
       const staged = stagedOf(own, listing)
       const expected = own.flatMap((id) => [...new Set(names)].map((name) => entryOf(id, name)))
-      assert(sameSet([...new Set(staged.entries)], expected), `staged ${staged.entries} expected ${expected}`)
-      assert(staged.entries.every(isEntryPath), 'a staged file is not an entry')
-      assert(
-        staged.entries.every((file) => own.some((id) => file.startsWith(`${SCHEME}/${id}/`))),
-        "another shard's mutant was staged",
-      )
-      assert(staged.skipped.every((file) => !isEntryPath(file)), 'an entry was counted as skipped')
+      const expectedSkipped = own.flatMap((id) => [...new Set(strays)].map((name) => entryOf(id, name)))
+      assert(sameSet(staged.entries, expected), `staged ${staged.entries} expected ${expected}`)
+      assert(sameSet(staged.skipped, expectedSkipped), `skipped ${staged.skipped} expected ${expectedSkipped}`)
     },
   ))
 })
@@ -185,4 +185,85 @@ Deno.test('a shard name the plan does not hold is refused with a reason code', (
   assert(found.ok && found.value.index === 2, 'a planned shard was not found')
   const absent = plannedShardOf(plan, '3/2')
   assert(!absent.ok && absent.refusal.code === 'PLAN_SHARD_ABSENT', 'an unplanned shard was accepted')
+})
+
+const lineOf = (summary: string, prefix: string): string =>
+  summary.split('\n').find((line) => line.startsWith(prefix)) ?? ''
+
+Deno.test('a stage summary tells an absent store directory apart from a store holding no entry of the shard', () => {
+  const stagedProject = fc.record({
+    storeFound: fc.boolean(),
+    entries: fc.nat({ max: 3 }),
+    skipped: fc.nat({ max: 2 }),
+  })
+  fc.assert(fc.property(fc.array(stagedProject, { minLength: 1, maxLength: 4 }), (generated) => {
+    const staged = generated.map(({ storeFound, entries, skipped }, index) => ({
+      project: `packages/p${index}`,
+      storeFound,
+      part: {
+        entries: Array.from({ length: storeFound ? entries : 0 }, (_, at) => `e${at}`),
+        skipped: Array.from({ length: storeFound ? skipped : 0 }, (_, at) => `s${at}`),
+      },
+    }))
+    const summary = stageSummaryOf('2/3', staged)
+    const absent = staged.filter(({ storeFound }) => !storeFound).map(({ project }) => project)
+    const found = lineOf(summary, '- store directories found:')
+    assert(
+      found.startsWith(`- store directories found: ${staged.length - absent.length} of ${staged.length} `),
+      found,
+    )
+    assert(absent.every((project) => found.includes(project)), `${found} does not name every absent store`)
+    for (const { project, part } of staged) {
+      assert(lineOf(summary, `- \`${project}\`: ${part.entries.length} entr`) !== '', `${project} count missing`)
+    }
+    const none = staged.every(({ part }) => part.entries.length === 0)
+    const predates = summary.includes('a CLI that predates the store writes none')
+    const emptyStore = summary.includes("No store entry belongs to this shard's mutants.")
+    assert(predates === (none && absent.length === staged.length), 'the absent-store note is misplaced')
+    assert(emptyStore === (none && absent.length < staged.length), 'the empty-store note is misplaced')
+  }))
+})
+
+Deno.test('a merge summary counts the parts, names each missing shard and shows the key it saves under', () => {
+  fc.assert(fc.property(
+    fc.integer({ min: 1, max: 5 }),
+    fc.nat(),
+    fc.array(fc.tuple(mutantId, entryName), { maxLength: 4 }),
+    (shardCount, seed, carried) => {
+      const plan = planOf(Array.from({ length: shardCount }, () => []))
+      const present = plan.shards.map((_, index) => index).filter((index) => (seed >> index) % 2 === 1)
+      const files = carried.map(([id, name]) => repoPathOf(entryOf(id, name)))
+      const parts = new Map<string, PartListing>(
+        present.map((index) => [slugAt(plan, index), { files, markedShard: undefined }]),
+      )
+      const merged = mergeOf(plan, PROJECTS, parts)
+      if (!merged.ok) throw new Error(`refused: ${merged.refusal.code}`)
+      const key = files.length === 0 ? '' : storeKeyOf([{ path: files[0] ?? '', sha256: '0'.repeat(64) }])
+      const summary = mergeSummaryOf(merged.value, shardCount, { entries: 0, bytes: 0, key })
+      const partsLine = lineOf(summary, '- parts merged:')
+      assert(partsLine.startsWith(`- parts merged: ${present.length} of ${shardCount} shards planned`), partsLine)
+      assert(merged.value.missing.every((slug) => partsLine.includes(slug)), `${partsLine} hides a missing shard`)
+      const collisions = lineOf(summary, '- collisions')
+      assert(collisions.endsWith(`: ${merged.value.collisions.length}`), collisions)
+      const keyLine = lineOf(summary, '- cache key:')
+      assert(key === '' ? keyLine.includes('none') : keyLine.includes(`\`${key}\``), keyLine)
+    },
+  ))
+})
+
+const COMMAND = /^::error title=([A-Z_]+)::(.*)$/u
+
+const unescapeCommandData = (data: string): string =>
+  data.replace(/%(25|0D|0A)/gu, (_, code: string) => ({ '25': '%', '0D': '\r', '0A': '\n' })[code] ?? '')
+
+Deno.test('a refusal annotation is one workflow command naming its code, whatever its message holds', () => {
+  const code = fc.constantFrom<RefusalCode>('PLAN_UNREADABLE', 'SHARD_STORE_UNREADABLE', 'MERGED_STORE_UNREADABLE')
+  const text = fc.string({ unit: fc.constantFrom('a', ' ', '%', '0', 'A', '\n', '\r', ':', ',') })
+  fc.assert(fc.property(code, text, text, (refusalCode, message, next) => {
+    const annotation = annotationOf({ code: refusalCode, message, next })
+    const parsed = COMMAND.exec(annotation)
+    assert(parsed !== null, `${JSON.stringify(annotation)} is not one workflow command line`)
+    assert(parsed?.[1] === refusalCode, `titled ${parsed?.[1]}, not ${refusalCode}`)
+    assert(unescapeCommandData(parsed?.[2] ?? '') === `${message}. Next: ${next}`, 'the message did not round-trip')
+  }))
 })
