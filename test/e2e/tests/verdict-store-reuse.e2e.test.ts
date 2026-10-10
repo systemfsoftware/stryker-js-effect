@@ -5,8 +5,10 @@ import { Effect, Layer } from 'effect'
 
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
 import { S3Emulator } from '../src/Harness/s3-emulator.service.js'
+import { verifyAnnotatedRun } from './__fixtures__/annotation-oracle.fixture.js'
 import { E2eHarnessLive, runStryker } from './__fixtures__/e2e-harness.fixture.js'
-import { decodeStream, reuseEventOf } from './__fixtures__/machine-stream.fixture.js'
+import { decodeStream, reuseEventOf, verdictEvent } from './__fixtures__/machine-stream.fixture.js'
+import { readReportOf } from './__fixtures__/run-artifacts.fixture.js'
 
 const FIXTURE_URL = new URL('../testResources/verdict-store-fixture', import.meta.url)
 const S3_CONFIG = 'stryker.s3.config.ts'
@@ -36,7 +38,6 @@ const verifyReuseAcrossMachines = (
     secondMeetsTheReuseFloor: reuseRatioOf(runs.secondReuse) >= REUSE_FLOOR,
     secondUnreadable: runs.secondReuse.refused.entryUnreadable,
     secondStoreUnavailable: runs.secondReuse.refused.storeUnavailable,
-    secondCounts: { reused: runs.secondReuse.reused, ran: runs.secondReuse.ran },
   }).toStrictEqual({
     firstFailure: '',
     secondFailure: '',
@@ -46,7 +47,6 @@ const verifyReuseAcrossMachines = (
     secondMeetsTheReuseFloor: true,
     secondUnreadable: 0,
     secondStoreUnavailable: 0,
-    secondCounts: { reused: runs.secondReuse.reused, ran: runs.secondReuse.ran },
   })
 
 const Feature = makeFeature({ it })
@@ -103,6 +103,22 @@ Feature('Reusing verdicts across machines through a shared S3 verdict store', { 
             second: s.second.output.result,
             firstReuse: s.reuse.first,
             secondReuse: s.reuse.second,
+          })
+        ),
+        When('the terminal verdict of the second run event stream is read')(
+          'verdict',
+          (s) => Effect.flatMap(decodeStream(s.second.output.result.stdout), verdictEvent),
+        ),
+        When('the report the verdict names is read and decoded')(
+          'report',
+          (s) => readReportOf(s.verdict, s.second.output.readFile),
+        ),
+        Then('every reported mutant matches its authored annotation and the verdict tallies agree')((s, expect) =>
+          verifyAnnotatedRun(expect, {
+            fixture: 'verdict-store-fixture',
+            slice: 'stryker.s3.config.ts',
+            report: s.report,
+            verdict: s.verdict,
           })
         ),
       ),

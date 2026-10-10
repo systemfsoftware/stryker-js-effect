@@ -47,6 +47,7 @@ test('shippingFor charges by weight band', async () => {
 test('label is called but its threshold is never pinned', async () => {
   await holdTheRunOpen()
   expect(typeof label(50)).toBe('string')
+  expect(typeof label(200)).toBe('string')
 })
 
 test('clamp keeps a value inside its bounds', async () => {

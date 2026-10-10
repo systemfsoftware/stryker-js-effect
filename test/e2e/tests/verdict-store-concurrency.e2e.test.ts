@@ -3,9 +3,15 @@ import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Check, Expect } from '@systemfsoftware/vitest'
 import { Effect } from 'effect'
 
+import { verifyAnnotatedRun } from './__fixtures__/annotation-oracle.fixture.js'
 import { E2eHarnessLive, runGuestScript, type StrykerRunOutput } from './__fixtures__/e2e-harness.fixture.js'
-import { decodeStream, type MachineStreamError, reuseEventOf } from './__fixtures__/machine-stream.fixture.js'
-import { DEFAULT_VERDICT_DIRECTORY } from './__fixtures__/run-artifacts.fixture.js'
+import {
+  decodeStream,
+  type MachineStreamError,
+  reuseEventOf,
+  verdictEvent,
+} from './__fixtures__/machine-stream.fixture.js'
+import { DEFAULT_VERDICT_DIRECTORY, readReportOf } from './__fixtures__/run-artifacts.fixture.js'
 
 const FIXTURE_URL = new URL('../testResources/verdict-store-fixture', import.meta.url)
 const STORED_ENTRIES_BEFORE_THE_KILL = 2
@@ -130,6 +136,22 @@ Feature('Keeping one verdict store readable under parallel shards and a killed w
         When('the re-run reports its reuse counts')('reuse', (s) => reuseEventOf(s.artifacts.rerunEvents)),
         Then('no stored entry is unreadable and the re-run reuses exactly the mutants the store held')((s, expect) =>
           verifyStoreSurvivedTheKill(expect, s.artifacts, s.reuse)
+        ),
+        When('the terminal verdict of the re-run event stream is read')(
+          'verdict',
+          (s) => verdictEvent(s.artifacts.rerunEvents),
+        ),
+        When('the report the verdict names is read and decoded')(
+          'report',
+          (s) => readReportOf(s.verdict, s.script.output.readFile),
+        ),
+        Then('every reported mutant matches its authored annotation and the verdict tallies agree')((s, expect) =>
+          verifyAnnotatedRun(expect, {
+            fixture: 'verdict-store-fixture',
+            slice: 'stryker.config.ts',
+            report: s.report,
+            verdict: s.verdict,
+          })
         ),
       ),
     )
