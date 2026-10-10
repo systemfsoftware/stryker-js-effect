@@ -96,6 +96,8 @@ const describeViolation = (violation: Violation): string =>
     SlowerThanMain: (slower) => `${slower.code} branch ${slower.branchMs} ms, main ${slower.mainMs} ms`,
     NothingCompared: (nothing) =>
       `${nothing.code} 0 mutants compared across ${nothing.projectCount} project(s), ${nothing.skippedCount} skipped`,
+    UnitOverBudgetViolation: (over) =>
+      `${over.code} ${over.side} ${over.project} ${over.fileName} mutants ${over.mutantIds.join(',')}`,
   })
 
 const projectOf = (violation: Violation): Option.Option<string> =>
@@ -107,6 +109,7 @@ const projectOf = (violation: Violation): Option.Option<string> =>
     ZeroShortcuts: () => Option.none(),
     SlowerThanMain: () => Option.none(),
     NothingCompared: () => Option.none(),
+    UnitOverBudgetViolation: (over) => Option.some(over.project),
   })
 
 const locationOf = (violation: Violation): string =>
@@ -118,6 +121,7 @@ const locationOf = (violation: Violation): string =>
     ZeroShortcuts: () => '',
     SlowerThanMain: () => '',
     NothingCompared: () => '',
+    UnitOverBudgetViolation: (over) => `file=${escapeProperty(over.fileName)},`,
   })
 
 const shardOf = (finished: CompareFinished, violation: Violation): string =>

@@ -4,6 +4,7 @@ export const DriverFailureCode = S.Literals([
   'usage-error',
   'refused-outside-ci',
   'shard-incomplete',
+  'leg-deadline',
   'decode-failed',
   'worker-boot-failed',
   'telemetry-missing',

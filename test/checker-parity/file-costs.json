@@ -1,0 +1,833 @@
+{
+  "schemaVersion": 1,
+  "runs": [
+    "38039482257"
+  ],
+  "files": [
+    {
+      "project": "packages/frameworks/angular/tsconfig.app.json",
+      "fileName": "packages/frameworks/angular/src/html-format.ts",
+      "ms": 2101
+    },
+    {
+      "project": "packages/frameworks/svelte/tsconfig.app.json",
+      "fileName": "packages/frameworks/svelte/src/compiler.ts",
+      "ms": 782
+    },
+    {
+      "project": "packages/frameworks/svelte/tsconfig.app.json",
+      "fileName": "packages/frameworks/svelte/src/discovery.ts",
+      "ms": 3503
+    },
+    {
+      "project": "packages/frameworks/svelte/tsconfig.app.json",
+      "fileName": "packages/frameworks/svelte/src/framework.ts",
+      "ms": 11419
+    },
+    {
+      "project": "packages/ignorers/angular/tsconfig.app.json",
+      "fileName": "packages/ignorers/angular/src/angular-signals.ts",
+      "ms": 11918
+    },
+    {
+      "project": "packages/ignorers/in-source-vitest-block/tsconfig.app.json",
+      "fileName": "packages/ignorers/in-source-vitest-block/src/in-source-vitest-block.ts",
+      "ms": 5602
+    },
+    {
+      "project": "packages/ignorers/kit/tsconfig.app.json",
+      "fileName": "packages/ignorers/kit/src/tester/test-ignorer.ts",
+      "ms": 4301
+    },
+    {
+      "project": "packages/stryker-js-cli-contract/tsconfig.app.json",
+      "fileName": "packages/stryker-js-cli-contract/src/output-mode.schema.ts",
+      "ms": 615
+    },
+    {
+      "project": "packages/stryker-js-cli-contract/tsconfig.app.json",
+      "fileName": "packages/stryker-js-cli-contract/src/shard-plan.schema.ts",
+      "ms": 1925
+    },
+    {
+      "project": "packages/stryker-js-cli-contract/tsconfig.app.json",
+      "fileName": "packages/stryker-js-cli-contract/src/stream-version.schema.ts",
+      "ms": 147
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/ErrorText.schema.ts",
+      "ms": 26662
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/FinalizerEscape.ts",
+      "ms": 627396
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/Format.ts",
+      "ms": 28747
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/Instrument.schema.ts",
+      "ms": 247741
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/Instrument.service.ts",
+      "ms": 546
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/Location.schema.ts",
+      "ms": 303382
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/Parser.schema.ts",
+      "ms": 17008
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/Parser.service.ts",
+      "ms": 213616
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/Printer.ts",
+      "ms": 135678
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/Syntax.schema.ts",
+      "ms": 51344
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/TypeCheckDisablers.ts",
+      "ms": 2967
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/directives/decode-directive.workflow.ts",
+      "ms": 259480
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/directives/directive.schema.ts",
+      "ms": 358242
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/directives/fold-rule.workflow.ts",
+      "ms": 49294
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/disable-type-checks.cell.ts",
+      "ms": 675
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/instrument-files.cell.ts",
+      "ms": 2734
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/mutant-set-policy.workflow.ts",
+      "ms": 467517
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/place-mutants.workflow.ts",
+      "ms": 109450
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/resolve-format.workflow.ts",
+      "ms": 2530
+    },
+    {
+      "project": "packages/stryker-js-instrumenter/tsconfig.app.json",
+      "fileName": "packages/stryker-js-instrumenter/src/subsume-mutants.workflow.ts",
+      "ms": 183218
+    },
+    {
+      "project": "packages/stryker-js-plugin-interface/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-interface/src/Checker.schema.ts",
+      "ms": 2376
+    },
+    {
+      "project": "packages/stryker-js-plugin-interface/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-interface/src/Checker.service.ts",
+      "ms": 129
+    },
+    {
+      "project": "packages/stryker-js-plugin-interface/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-interface/src/Evaluator.schema.ts",
+      "ms": 109
+    },
+    {
+      "project": "packages/stryker-js-plugin-interface/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-interface/src/Location.schema.ts",
+      "ms": 7936
+    },
+    {
+      "project": "packages/stryker-js-plugin-interface/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-interface/src/Metrics.schema.ts",
+      "ms": 7986
+    },
+    {
+      "project": "packages/stryker-js-plugin-interface/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-interface/src/Metrics.ts",
+      "ms": 298
+    },
+    {
+      "project": "packages/stryker-js-plugin-interface/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-interface/src/MutatorCatalog.schema.ts",
+      "ms": 11148
+    },
+    {
+      "project": "packages/stryker-js-plugin-interface/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-interface/src/ReporterEvent.schema.ts",
+      "ms": 3074
+    },
+    {
+      "project": "packages/stryker-js-plugin-interface/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-interface/src/TestRunner.service.ts",
+      "ms": 235
+    },
+    {
+      "project": "packages/stryker-js-plugin-interface/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-interface/src/generated/report.schema.ts",
+      "ms": 52317
+    },
+    {
+      "project": "packages/stryker-js-plugin-runtime/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-runtime/src/trace-context-rpc.service.ts",
+      "ms": 2253
+    },
+    {
+      "project": "packages/stryker-js-plugin-runtime/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-runtime/src/trace-parts.schema.ts",
+      "ms": 1186
+    },
+    {
+      "project": "packages/stryker-js-plugin-runtime/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-runtime/src/worker-options.schema.ts",
+      "ms": 1410
+    },
+    {
+      "project": "packages/stryker-js-plugin-runtime/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-runtime/src/worker-server.blueprint.ts",
+      "ms": 974
+    },
+    {
+      "project": "packages/stryker-js-plugin-runtime/tsconfig.app.json",
+      "fileName": "packages/stryker-js-plugin-runtime/src/worker-telemetry.schema.ts",
+      "ms": 580
+    },
+    {
+      "project": "packages/stryker-js-typescript-checker/tsconfig.app.json",
+      "fileName": "packages/stryker-js-typescript-checker/src/CheckMutants.schema.ts",
+      "ms": 13385
+    },
+    {
+      "project": "packages/stryker-js-typescript-checker/tsconfig.app.json",
+      "fileName": "packages/stryker-js-typescript-checker/src/CheckerRuntime.service.ts",
+      "ms": 4815
+    },
+    {
+      "project": "packages/stryker-js-typescript-checker/tsconfig.app.json",
+      "fileName": "packages/stryker-js-typescript-checker/src/check-mutants.workflow.ts",
+      "ms": 2993
+    },
+    {
+      "project": "packages/stryker-js-typescript-checker/tsconfig.app.json",
+      "fileName": "packages/stryker-js-typescript-checker/src/main.ts",
+      "ms": 2329
+    },
+    {
+      "project": "packages/stryker-js-typescript-checker/tsconfig.app.json",
+      "fileName": "packages/stryker-js-typescript-checker/src/parse-tsconfig-text.workflow.ts",
+      "ms": 6418
+    },
+    {
+      "project": "packages/stryker-js-typescript-checker/tsconfig.app.json",
+      "fileName": "packages/stryker-js-typescript-checker/src/program-digest.schema.ts",
+      "ms": 3451
+    },
+    {
+      "project": "packages/stryker-js-typescript-checker/tsconfig.app.json",
+      "fileName": "packages/stryker-js-typescript-checker/src/resolve-package-exports.workflow.ts",
+      "ms": 17860
+    },
+    {
+      "project": "packages/stryker-js-vitest-runner/tsconfig.app.json",
+      "fileName": "packages/stryker-js-vitest-runner/src/StandbyThreadsPool.handle.ts",
+      "ms": 12133
+    },
+    {
+      "project": "packages/stryker-js-vitest-runner/tsconfig.app.json",
+      "fileName": "packages/stryker-js-vitest-runner/src/VitestRunner.schema.ts",
+      "ms": 7630
+    },
+    {
+      "project": "packages/stryker-js-vitest-runner/tsconfig.app.json",
+      "fileName": "packages/stryker-js-vitest-runner/src/VitestSession.service.ts",
+      "ms": 3655
+    },
+    {
+      "project": "packages/stryker-js-vitest-runner/tsconfig.app.json",
+      "fileName": "packages/stryker-js-vitest-runner/src/interpret-vitest-dry-run.workflow.ts",
+      "ms": 2183
+    },
+    {
+      "project": "packages/stryker-js-vitest-runner/tsconfig.app.json",
+      "fileName": "packages/stryker-js-vitest-runner/src/mod.ts",
+      "ms": 611
+    },
+    {
+      "project": "packages/stryker-js-vitest-runner/tsconfig.app.json",
+      "fileName": "packages/stryker-js-vitest-runner/src/sort-test-files.workflow.ts",
+      "ms": 3148
+    },
+    {
+      "project": "packages/stryker-js-vitest-runner/tsconfig.app.json",
+      "fileName": "packages/stryker-js-vitest-runner/src/vitest-run-command.schema.ts",
+      "ms": 2624
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/BudgetBaseline.schema.ts",
+      "ms": 264
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/Checker/Checker.handle.ts",
+      "ms": 28161
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/Checker/check.cell.ts",
+      "ms": 7298
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/Checker/warn-skipped-mutants.workflow.ts",
+      "ms": 13725
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/ConfigError.schema.ts",
+      "ms": 28202
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/IncrementalReport.schema.ts",
+      "ms": 7178
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/Mcp/mcp-tools.ts",
+      "ms": 4273
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/MutantTestPlanCommand.schema.ts",
+      "ms": 5751
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/Rerun/admit-mutant-rerun.workflow.ts",
+      "ms": 4355
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/Run.schema.ts",
+      "ms": 10764
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/Sandbox.schema.ts",
+      "ms": 34047
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/Serve/msp-framing.schema.ts",
+      "ms": 13174
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/Survivors/Survivors.cell.ts",
+      "ms": 9436
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/Worker.service.ts",
+      "ms": 1992
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/cap-survivors.workflow.ts",
+      "ms": 10604
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/checkpoint-mutants.workflow.ts",
+      "ms": 4240
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/classify-exit.workflow.ts",
+      "ms": 14427
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/clear-text-report.cell.ts",
+      "ms": 25533
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/compare-verdicts.workflow.ts",
+      "ms": 7268
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/config/define-config.ts",
+      "ms": 647
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/config/stryker-config.schema.ts",
+      "ms": 1292
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/config/warning-enabled.workflow.ts",
+      "ms": 1218
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/drivers/config.ts",
+      "ms": 70720
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/dry-run-coverage.schema.ts",
+      "ms": 7815
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/dry-run.workflow.ts",
+      "ms": 17928
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/git-diff.workflow.ts",
+      "ms": 34756
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/import-closure.cell.ts",
+      "ms": 311014
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/interpret-dry-run-result.workflow.ts",
+      "ms": 16407
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/json-report.cell.ts",
+      "ms": 12070
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/materialize-mutant-plans.workflow.ts",
+      "ms": 28254
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/mutant-run-span.ts",
+      "ms": 15276
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/mutation-reporting.service.ts",
+      "ms": 347327
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/output-mode.schema.ts",
+      "ms": 1184
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/phase-durations.ts",
+      "ms": 9941
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/plan-mutant-tests.workflow.ts",
+      "ms": 107253
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/plan-mutator-catalogs.workflow.ts",
+      "ms": 20372
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/plan-request.cell.ts",
+      "ms": 68797
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/plan-shards.workflow.ts",
+      "ms": 49240
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/pooled-test-runner.handle.ts",
+      "ms": 132839
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/progress-report.cell.ts",
+      "ms": 2166
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/read-project.cell.ts",
+      "ms": 91955
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/readmit-subsumed.workflow.ts",
+      "ms": 11159
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/refuse-local-mutation.cell.ts",
+      "ms": 1992
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/render-progress-report.workflow.ts",
+      "ms": 76584
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/report-from-stream.workflow.ts",
+      "ms": 7733
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/reporter-failures.ts",
+      "ms": 4423
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/reporter-output.service.ts",
+      "ms": 10014
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/reporter-stream.service.ts",
+      "ms": 80264
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/reporter-wiring.service.ts",
+      "ms": 12204
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/reporting/metrics-from-report.schema.ts",
+      "ms": 1903
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/reporting/run-failure.schema.ts",
+      "ms": 4376
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/reporting/verdict-envelope.schema.ts",
+      "ms": 3058
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run-request.cell.ts",
+      "ms": 42465
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/admit-non-empty-project.workflow.ts",
+      "ms": 9628
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/describe-config-error.workflow.ts",
+      "ms": 52878
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/extends-step.workflow.ts",
+      "ms": 22976
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/incremental-reuse.cell.ts",
+      "ms": 146253
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/load-config.cell.ts",
+      "ms": 5937
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/mutant-run.cell.ts",
+      "ms": 35528
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/mutant-settlement.ts",
+      "ms": 55522
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/mutation-test.cell.ts",
+      "ms": 24514
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/package-manifest.schema.ts",
+      "ms": 5695
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/phase-clock.service.ts",
+      "ms": 3253
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/plan-instrument.cell.ts",
+      "ms": 1783
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/plan-prepare.cell.ts",
+      "ms": 2112
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/plan-prepare.workflow.ts",
+      "ms": 4310
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/prepare.cell.ts",
+      "ms": 3775
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/prepare.ts",
+      "ms": 31287
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/resolve-config.workflow.ts",
+      "ms": 5536
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/select-package-entry.workflow.ts",
+      "ms": 44014
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/test-runner-pool.blueprint.ts",
+      "ms": 6306
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/run/validate-options.cell.ts",
+      "ms": 11854
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/sarif-report.workflow.ts",
+      "ms": 24591
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/scheduled-mutants.ts",
+      "ms": 1082
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/select-project-files.workflow.ts",
+      "ms": 174166
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/shard/select-shard.workflow.ts",
+      "ms": 3911
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/shard/shard-merge.ts",
+      "ms": 32185
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/shard/shard-plan.schema.ts",
+      "ms": 1227
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/shard/shard-run.ts",
+      "ms": 14130
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/sort-run-plans.workflow.ts",
+      "ms": 16371
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/spawned-socket-worker.handle.ts",
+      "ms": 3011
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/stryker-outputs.ts",
+      "ms": 10206
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/stryker-package.schema.ts",
+      "ms": 2053
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/verdict-semantics.ts",
+      "ms": 187273
+    },
+    {
+      "project": "packages/stryker-js/tsconfig.app.json",
+      "fileName": "packages/stryker-js/src/worker-client.blueprint.ts",
+      "ms": 2447
+    },
+    {
+      "project": "packages/toolchain/oxlint-ignorer-config/tsconfig.app.json",
+      "fileName": "packages/toolchain/oxlint-ignorer-config/lib/base.js",
+      "ms": 2463
+    },
+    {
+      "project": "packages/toolchain/vitest-config/tsconfig.app.json",
+      "fileName": "packages/toolchain/vitest-config/lib/property-runs.js",
+      "ms": 203
+    },
+    {
+      "project": "packages/toolchain/vitest-config/tsconfig.app.json",
+      "fileName": "packages/toolchain/vitest-config/lib/schema-laws.js",
+      "ms": 1178
+    },
+    {
+      "project": "test/checker-parity/__fixtures__/isolated-declarations/tsconfig.json",
+      "fileName": "test/checker-parity/__fixtures__/isolated-declarations/src/cart.ts",
+      "ms": 226
+    },
+    {
+      "project": "test/checker-parity/__fixtures__/isolated-declarations/tsconfig.json",
+      "fileName": "test/checker-parity/__fixtures__/isolated-declarations/src/receipt.ts",
+      "ms": 174
+    },
+    {
+      "project": "test/checker-parity/__fixtures__/isolated-declarations/tsconfig.json",
+      "fileName": "test/checker-parity/__fixtures__/isolated-declarations/src/report.ts",
+      "ms": 156
+    },
+    {
+      "project": "test/checker-parity/tsconfig.app.json",
+      "fileName": "test/checker-parity/src/DriverFailure.schema.ts",
+      "ms": 3016
+    },
+    {
+      "project": "test/checker-parity/tsconfig.app.json",
+      "fileName": "test/checker-parity/src/assign-drift-legs.workflow.ts",
+      "ms": 3578
+    },
+    {
+      "project": "test/checker-parity/tsconfig.app.json",
+      "fileName": "test/checker-parity/src/lane-trigger.ts",
+      "ms": 5038
+    },
+    {
+      "project": "test/checker-parity/tsconfig.app.json",
+      "fileName": "test/checker-parity/src/report-parity-outcome.workflow.ts",
+      "ms": 13583
+    },
+    {
+      "project": "test/checker-parity/tsconfig.app.json",
+      "fileName": "test/checker-parity/src/select-scope.workflow.ts",
+      "ms": 5183
+    },
+    {
+      "project": "test/checker-parity/tsconfig.app.json",
+      "fileName": "test/checker-parity/src/span-counts.ts",
+      "ms": 10369
+    },
+    {
+      "project": "test/checker-parity/tsconfig.app.json",
+      "fileName": "test/checker-parity/src/trigger-parity-lane.workflow.ts",
+      "ms": 5290
+    },
+    {
+      "project": "test/e2e-core/tsconfig.app.json",
+      "fileName": "test/e2e-core/src/annotation.schema.ts",
+      "ms": 10698
+    },
+    {
+      "project": "test/e2e-core/tsconfig.app.json",
+      "fileName": "test/e2e-core/src/closure.schema.ts",
+      "ms": 217
+    },
+    {
+      "project": "test/e2e-core/tsconfig.app.json",
+      "fileName": "test/e2e-core/src/confirm-annotations.workflow.ts",
+      "ms": 4095
+    },
+    {
+      "project": "test/e2e-core/tsconfig.app.json",
+      "fileName": "test/e2e-core/src/install-closure.schema.ts",
+      "ms": 316
+    },
+    {
+      "project": "test/e2e-core/tsconfig.app.json",
+      "fileName": "test/e2e-core/src/key-material.ts",
+      "ms": 2033
+    },
+    {
+      "project": "test/e2e-core/tsconfig.app.json",
+      "fileName": "test/e2e-core/src/match.schema.ts",
+      "ms": 214
+    },
+    {
+      "project": "test/e2e-core/tsconfig.app.json",
+      "fileName": "test/e2e-core/src/status-closure.workflow.ts",
+      "ms": 2469
+    },
+    {
+      "project": "test/e2e/testResources/typescript-checker-fixture/tsconfig.preservation.json",
+      "fileName": "test/e2e/testResources/typescript-checker-fixture/src/order.ts",
+      "ms": 201
+    }
+  ]
+}
