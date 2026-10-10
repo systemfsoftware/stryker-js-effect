@@ -9,7 +9,9 @@ supersedes: ["ADR-0001"]
 
 ## Context and Problem Statement
 
-ADR-0001 (line 60) sends functions over a schema's data to an unsuffixed sibling module named after the type, such as `Location.ts`, and never into the schema file, and its taxonomy row for `*.schema.ts` puts all behavior out of schema files. This record supersedes ADR-0001 on that one question only, where operations over a schema's data live; the rest of ADR-0001 stands. Three facts make that sibling a bad home:
+This record supersedes ADR-0001 in part only: where pure operations over a schema's data live, and what the `*.schema.ts` row of its taxonomy table admits. The rest of ADR-0001 stays in force.
+
+ADR-0001 (line 60) sends functions over a schema's data to an unsuffixed sibling module named after the type, such as `Location.ts`, and never into the schema file, and its taxonomy row for `*.schema.ts` puts all behavior out of schema files. Three facts make that sibling a bad home:
 
 - The mutation run grades only `src/**/*.workflow.ts` and `src/**/*.schema.ts`, so an unsuffixed module is never mutated, and CONST-T4 wants code that can be wrong to be graded.
 - `make-body-purity` refuses a workflow's reference to any local module except a relative `*.schema.js` or `*.schema.ts` specifier, so a workflow cannot call an operation that sits in an unsuffixed sibling.
@@ -35,7 +37,7 @@ Splitting `Checker/Checker.protocol.ts` forced the question: its shared operatio
 
 Chosen option: "the type's own `*.schema.ts`", because it is the only option that is both mutated and importable from a workflow without copying code.
 
-A `*.schema.ts` holds its declarations (schemas, tagged classes, tagged errors, type aliases, interfaces) and pure operations whose signatures name a type the file declares. It holds no I/O, services, layers, clocks, randomness or `throw`, and no `Workflow.make`. A decision that chooses an outcome stays in its own `*.workflow.ts`, which may import the operations.
+A `*.schema.ts` holds its declarations (schemas, tagged classes, tagged errors, type aliases, interfaces) and pure operations whose signatures name a type the file declares. It holds no effects or services: no I/O, layers, clocks, randomness or `throw`, and no `Workflow.make`. A decision that spans several types, or one that needs I/O or services, goes to a `*.workflow.ts` that makes the decision and a `*.cell.ts` that performs the I/O around it; the workflow may import the schema file's operations.
 
 An operation's laws sit in its schema file's in-source `import.meta.vitest` block, beside the refusal laws ADR-0001 already puts there, because `src/__tests__/` admits only `<stem>.workflow.property.test.ts`. Those blocks already run in both the test and the mutation runs (`includeSource` in `packages/toolchain/vitest-config/lib/base.js`; `packages/stryker-js-plugin-interface/src/Location.schema.ts` is an example). Each law names the operation in the `it.prop` `subject` slot, draws Schema-derived input, and checks it against an oracle that does not re-derive the answer the way the code does. Schema files are mutated against a break threshold of 100, so every operation gets a law, including one that only builds a `Map` or `Set`. A workflow that calls the operation is graded by its own property file as well.
 
