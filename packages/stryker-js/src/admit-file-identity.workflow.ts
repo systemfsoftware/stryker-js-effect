@@ -1,17 +1,16 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Incremental } from '@systemfsoftware/stryker-js-contracts'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { type FormatIdentity, FormatIdentitySchema } from './IncrementalDiff.schema.js'
-
 export class AdmitFileIdentityCommand extends S.TaggedClass<AdmitFileIdentityCommand>()(
   'AdmitFileIdentityCommand',
   {
     file: S.String,
-    recorded: S.optional(FormatIdentitySchema),
-    claimed: S.optional(FormatIdentitySchema),
+    recorded: S.optional(Incremental.FormatIdentitySchema),
+    claimed: S.optional(Incremental.FormatIdentitySchema),
   },
 ) {
   static readonly [Workflow.InstrumentationBrand] = {
@@ -37,7 +36,7 @@ export class FileIdentityRecompute extends S.TaggedClass<FileIdentityRecompute>(
 export const FileIdentityDecisionSchema = S.Union([FileIdentityReuse, FileIdentityRecompute])
 export type FileIdentityDecision = typeof FileIdentityDecisionSchema.Type
 
-const sameIdentity = (left: FormatIdentity, right: FormatIdentity): boolean =>
+const sameIdentity = (left: Incremental.FormatIdentity, right: Incremental.FormatIdentity): boolean =>
   [
     [left.formatId, right.formatId],
     [left.ownerModule, right.ownerModule],

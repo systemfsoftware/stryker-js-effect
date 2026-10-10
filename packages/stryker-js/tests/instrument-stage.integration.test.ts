@@ -1,5 +1,8 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
+import type { Reports } from '@systemfsoftware/stryker-js-contracts'
+import { Run } from '@systemfsoftware/stryker-js-contracts'
+import type { Engine } from '@systemfsoftware/stryker-js-engine'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -40,7 +43,7 @@ const runFromProject = (
   root: string,
   options: Options.PartialStrykerOptions,
 ): Effect.Effect<
-  Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
+  Result.Result<Reports.MutationTestDone, Run.StageError | PlatformError>,
   never,
   Engine.EnginePorts
 > =>
@@ -58,12 +61,12 @@ const runFromProject = (
   )
 
 const failureOf = (
-  outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
-): Engine.StageError => {
+  outcome: Result.Result<Reports.MutationTestDone, Run.StageError | PlatformError>,
+): Run.StageError => {
   if (Result.isSuccess(outcome)) {
     throw new Error('the run was expected to be refused, but it completed')
   }
-  if (!S.is(Engine.StageError)(outcome.failure)) {
+  if (!S.is(Run.StageError)(outcome.failure)) {
     throw new Error(`the run was expected to be refused as a stage, not a platform failure: ${String(outcome.failure)}`)
   }
   return outcome.failure
@@ -72,7 +75,7 @@ const failureOf = (
 const carriesMessage = (value: unknown): value is { readonly message: string } =>
   typeof value === 'object' && value !== null && 'message' in value && typeof value.message === 'string'
 
-const textOf = (cause: Engine.StageError['cause']): string =>
+const textOf = (cause: Run.StageError['cause']): string =>
   carriesMessage(cause) ? cause.message : 'the refused cause carried no message'
 
 const runLayer = Layer.mergeAll(Cli.platformLayer, Stdio.layerTest({}))

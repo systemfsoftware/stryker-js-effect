@@ -1,7 +1,9 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
+import type { Reports } from '@systemfsoftware/stryker-js-contracts'
+import { Run } from '@systemfsoftware/stryker-js-contracts'
+import type { Engine } from '@systemfsoftware/stryker-js-engine'
 import { type Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
-import { PrepareError } from '@systemfsoftware/stryker-js/events'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -50,7 +52,7 @@ const runFromProject = (
   root: string,
   options: Options.PartialStrykerOptions,
 ): Effect.Effect<
-  Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
+  Result.Result<Reports.MutationTestDone, Run.StageError | PlatformError>,
   never,
   Engine.EnginePorts
 > =>
@@ -78,20 +80,20 @@ const reportedFilesOf = (
     return report.files
   }).pipe(Effect.orDie)
 
-const verdictOf = (outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>) =>
+const verdictOf = (outcome: Result.Result<Reports.MutationTestDone, Run.StageError | PlatformError>) =>
   Result.match(outcome, {
     onFailure: (failure) => `refused: ${failure.message}`,
     onSuccess: (done) => done.verdict,
   })
 
-const refusalOf = (outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>) =>
+const refusalOf = (outcome: Result.Result<Reports.MutationTestDone, Run.StageError | PlatformError>) =>
   Result.match(outcome, {
     onFailure: (failure) =>
       Match.value(failure).pipe(
         Match.tag('StageError', (refused) => ({
           stage: refused.stage,
           causeMessage: Option.getOrNull(
-            Option.map(S.decodeUnknownOption(PrepareError)(refused.cause), (cause) => cause.message),
+            Option.map(S.decodeUnknownOption(Run.PrepareError)(refused.cause), (cause) => cause.message),
           ),
         })),
         Match.tag('PlatformError', (platform) => ({ stage: null, causeMessage: platform.message })),

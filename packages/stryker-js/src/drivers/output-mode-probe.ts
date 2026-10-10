@@ -1,14 +1,12 @@
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
+import { Run } from '@systemfsoftware/stryker-js-contracts'
 import * as CliError from 'effect/cli/CliError'
 import * as Config from 'effect/Config'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Stdio from 'effect/Stdio'
-
-import { OutputModeProbe } from '../output-mode-probe.service.js'
-import type { ResolvedMode } from '../output-mode.schema.js'
 import { ModeConflictError, ResolveModeCommand, resolveOutputMode } from '../resolve-output-mode.workflow.js'
 
 const TOOL_VARIABLES = ['CLAUDECODE', 'CODEX_SANDBOX'] as const
@@ -40,7 +38,7 @@ const resolvedMode = (
   mode: OutputMode.OutputMode,
   signal: OutputMode.ModeSignal,
   stdoutIsTTY: boolean,
-): ResolvedMode => ({
+): Run.ResolvedMode => ({
   mode,
   signal,
   stdoutIsTTY,
@@ -93,7 +91,7 @@ const outputModeProbeCell = Sandwich.named(SpanTaxonomy.Spans.outputModeProbe.na
 
 const detectModeWithProbe = (
   flags: FormatFlags = {},
-): Effect.Effect<ResolvedMode, CliError.CliError, Stdio.Stdio> =>
+): Effect.Effect<Run.ResolvedMode, CliError.CliError, Stdio.Stdio> =>
   outputModeProbeCell.run(flags).pipe(
     Effect.mapError((error) =>
       CliError.InvalidValue.make({
@@ -106,9 +104,9 @@ const detectModeWithProbe = (
   )
 
 export const layer = Layer.effect(
-  OutputModeProbe,
+  Run.OutputModeProbe,
   Effect.map(Stdio.Stdio, (stdio) =>
-    OutputModeProbe.of({
+    Run.OutputModeProbe.of({
       detectMode: Effect.flatMap(stdio.args, (argv) =>
         detectModeWithProbe(formatFlagsOf(argv)).pipe(Effect.provideService(Stdio.Stdio, stdio))),
     })),

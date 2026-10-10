@@ -1,7 +1,5 @@
 import { NodeSocket } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine, Serve } from '@systemfsoftware/stryker-js'
-import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
@@ -21,6 +19,10 @@ import * as Socket from 'effect/socket/Socket'
 import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 
+import { Cli } from '@systemfsoftware/stryker-js'
+import type { Engine } from '@systemfsoftware/stryker-js-engine'
+import { Serve } from '@systemfsoftware/stryker-js-serve'
+import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import {
   ConfigureResult,
   DiscoveredFiles,

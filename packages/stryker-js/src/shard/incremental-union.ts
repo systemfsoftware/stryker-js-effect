@@ -118,7 +118,8 @@ if (import.meta.vitest !== void 0) {
   const Arbitrary = await import('effect/Arbitrary')
   const Equal = await import('effect/Equal')
   const Match = await import('effect/Match')
-  const { MutantCost } = await import('../MutantCost.schema.js')
+  const { Incremental } = await import('@systemfsoftware/stryker-js-contracts')
+  const { MutantCost } = Incremental
 
   type CostEntry = typeof MutantCost.Type
 

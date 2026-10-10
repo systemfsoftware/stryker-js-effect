@@ -1,11 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Run } from '@systemfsoftware/stryker-js-contracts'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-
-import { CliRouteCommand, FeedbackJudgmentSchema, ServeChannelSchema } from './Cli.schema.js'
 
 const CliRouteDecisionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/CliRouteDecision')
 type CliRouteDecisionTypeId = typeof CliRouteDecisionTypeId
@@ -90,7 +89,7 @@ export class CliPlanRequested extends S.TaggedClass<CliPlanRequested>()('CliPlan
 }
 
 export class CliServeRequested extends S.TaggedClass<CliServeRequested>()('CliServeRequested', {
-  channel: ServeChannelSchema,
+  channel: Run.ServeChannelSchema,
   port: S.optional(S.Int),
   address: S.optional(S.String),
 }) {
@@ -99,7 +98,7 @@ export class CliServeRequested extends S.TaggedClass<CliServeRequested>()('CliSe
 
 export class CliFeedbackRequested extends S.TaggedClass<CliFeedbackRequested>()('CliFeedbackRequested', {
   id: S.String,
-  judgment: FeedbackJudgmentSchema,
+  judgment: Run.FeedbackJudgmentSchema,
   reason: S.optional(S.String),
 }) {
   readonly [CliRouteDecisionTypeId] = CliRouteDecisionTypeId
@@ -126,7 +125,7 @@ export type CliRouteDecision =
   | CliMcpRequested
 
 export const routeCliRequest = Workflow.make({
-  command: CliRouteCommand,
+  command: Run.CliRouteCommand,
   decision: S.Union([
     CliHelpRequested,
     CliMergeRequested,

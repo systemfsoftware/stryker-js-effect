@@ -8,49 +8,44 @@ import * as Option from 'effect/Option'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Predicate from 'effect/Predicate'
 
+import type { Run } from '@systemfsoftware/stryker-js-contracts'
+import type { Reports } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import { mergeConfig } from '../config/merge-config.js'
-import { drainLayer } from '../drivers/run-event-stream.js'
-import { makeRunEventStream } from '../drivers/run-event-stream.js'
-import { forStream, stage } from '../drivers/run-stage.js'
-import type { MutationTestDone } from '../mutation-reporting.service.js'
-import type { ResolvedMode } from '../output-mode.schema.js'
-import { StageError } from '../Run.schema.js'
-import { mutationTestCell } from './run-stages.cell.js'
-import type { EnginePorts } from './StageServices.service.js'
 
-const HEADLESS_MODE: ResolvedMode = { mode: 'machine', signal: 'flag', stdoutIsTTY: false }
+const HEADLESS_MODE: Run.ResolvedMode = { mode: 'machine', signal: 'flag', stdoutIsTTY: false }
 
-const strykerRunLayer = makeRunEventStream(HEADLESS_MODE).pipe(
+const strykerRunLayer = Engine.makeRunEventStream(HEADLESS_MODE).pipe(
   Effect.flatMap((stream) =>
     Effect.map(
-      forStream(HEADLESS_MODE, stream, {
+      Engine.forStream(HEADLESS_MODE, stream, {
         builtinReporters: { html: HtmlReporter.makeHtmlReporter },
         configOverlay: mergeConfig,
       }),
-      (env) => stage(env, stream.queue),
+      (env) => Engine.stage(env, stream.queue),
     )
   ),
   Layer.unwrap,
-  Layer.provide(drainLayer),
+  Layer.provide(Engine.drainLayer),
 )
 
 export const strykerCell: {
   (
     options: Options.PartialStrykerOptions,
     targetMutatePatterns?: readonly string[],
-  ): Effect.Effect<MutationTestDone, StageError | PlatformError, EnginePorts>
+  ): Effect.Effect<Reports.MutationTestDone, Run.StageError | PlatformError, Engine.EnginePorts>
   (
     targetMutatePatterns?: readonly string[],
   ): (
     options: Options.PartialStrykerOptions,
-  ) => Effect.Effect<MutationTestDone, StageError | PlatformError, EnginePorts>
+  ) => Effect.Effect<Reports.MutationTestDone, Run.StageError | PlatformError, Engine.EnginePorts>
 } = dual(
   (args) => Predicate.isObject(args[0]),
   (options: Options.PartialStrykerOptions, targetMutatePatterns?: readonly string[]) =>
     strykerRunLayer.pipe(
       Layer.build,
       Effect.flatMap((context) =>
-        Cell.provideContext(mutationTestCell, context).run({
+        Cell.provideContext(Engine.mutationTestCell, context).run({
           cliOptions: options,
           targetMutatePatterns: Option.match(Option.fromUndefinedOr(targetMutatePatterns), {
             onNone: () => undefined,

@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Plugin as Stryker, Worker } from '@systemfsoftware/stryker-js'
 import { Mutant, Options, Plugin, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Duration from 'effect/Duration'
@@ -15,6 +14,8 @@ import * as SocketServer from 'effect/socket/SocketServer'
 import * as Stream from 'effect/Stream'
 import * as TestClock from 'effect/testing/TestClock'
 
+import { Workers } from '@systemfsoftware/stryker-js-contracts'
+import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import { memorySocketPair, singleConnection, WORKER_PID } from './__fixtures__/substituted-worker.fixture.js'
 
 const Feature = makeFeature({ it })
@@ -62,7 +63,7 @@ const survivedResult: TestRunner.MutantRunResult = {
 }
 
 type RunEvents = Stream.Stream<TestRunner.MutantRunEvent, TestRunner.TestRunnerFailed>
-type RunOutcome = Result.Result<TestRunner.MutantRunResult, Stryker.PooledTestRunnerError>
+type RunOutcome = Result.Result<TestRunner.MutantRunResult, Workers.PooledTestRunnerError>
 type PendingRun = Fiber.Fiber<RunOutcome>
 
 const emittedAfter = (delayMs: number, event: TestRunner.MutantRunEvent): RunEvents =>
@@ -110,17 +111,17 @@ const deadlineOutcome = (events: RunEvents, timeoutMs: number): Effect.Effect<Ru
     const options = yield* defaultOptions
     const [clientSocket, serverSocket] = yield* memorySocketPair
     yield* Effect.forkScoped(runnerServer(serverSocket, events).pipe(Layer.launch))
-    const launcher = Layer.succeed(Worker.WorkerLauncher, {
+    const launcher = Layer.succeed(Workers.WorkerLauncher, {
       spawn: () =>
         Effect.succeed(
-          Worker.makeSpawnedSocketWorker({
+          Workers.make({
             pid: WORKER_PID,
-            clientLayer: Worker.layerWorkerProtocol(Layer.succeed(Socket.Socket, clientSocket)),
+            clientLayer: WorkerHost.layerWorkerProtocol(Layer.succeed(Socket.Socket, clientSocket)),
             exited: Effect.never,
           }),
         ),
     })
-    const runner = yield* Stryker.makeChildProcessTestRunner({
+    const runner = yield* WorkerHost.makeChildProcessTestRunner({
       options,
       fileDescriptions: {},
       sandboxWorkingDirectory: SANDBOX_WORKING_DIRECTORY,

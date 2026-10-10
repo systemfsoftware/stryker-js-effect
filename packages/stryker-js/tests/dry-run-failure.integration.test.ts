@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -13,6 +12,10 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Stdio from 'effect/Stdio'
 
+import { Cli } from '@systemfsoftware/stryker-js'
+import type { Reports } from '@systemfsoftware/stryker-js-contracts'
+import { Run } from '@systemfsoftware/stryker-js-contracts'
+import type { Engine } from '@systemfsoftware/stryker-js-engine'
 import { DryRunFailedCause, type DryRunFailedView } from './__fixtures__/dry-run-failure.schema.js'
 
 const Feature = makeFeature({ it })
@@ -84,7 +87,7 @@ const runFromProject = (
   root: string,
   options: Options.PartialStrykerOptions,
 ): Effect.Effect<
-  Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
+  Result.Result<Reports.MutationTestDone, Run.StageError | PlatformError>,
   never,
   Engine.EnginePorts
 > =>
@@ -102,18 +105,18 @@ const runFromProject = (
   )
 
 const failureOf = (
-  outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>,
-): Engine.StageError => {
+  outcome: Result.Result<Reports.MutationTestDone, Run.StageError | PlatformError>,
+): Run.StageError => {
   if (Result.isSuccess(outcome)) {
     throw new Error('the run was expected to fail its dry run, but it completed')
   }
-  if (!S.is(Engine.StageError)(outcome.failure)) {
+  if (!S.is(Run.StageError)(outcome.failure)) {
     throw new Error(`the run was expected to fail as a stage, not a platform failure: ${String(outcome.failure)}`)
   }
   return outcome.failure
 }
 
-const dryRunFailedCauseOf = (cause: Engine.StageError['cause']): Option.Option<DryRunFailedView> =>
+const dryRunFailedCauseOf = (cause: Run.StageError['cause']): Option.Option<DryRunFailedView> =>
   S.decodeUnknownOption(DryRunFailedCause)(cause)
 
 const OPTIONS: Options.PartialStrykerOptions = {
@@ -128,7 +131,7 @@ const FROZEN_RUNNER_PLUGIN = new URL('./__fixtures__/frozen-runner/index.mjs', i
 const DEAF_RUNNER_PLUGIN = new URL('./__fixtures__/deaf-runner/index.mjs', import.meta.url).href
 
 interface WorkerRunnerOutcome {
-  readonly outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>
+  readonly outcome: Result.Result<Reports.MutationTestDone, Run.StageError | PlatformError>
   readonly workerPid: number
 }
 

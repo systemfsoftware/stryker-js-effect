@@ -1,7 +1,10 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Run } from '@systemfsoftware/stryker-js-contracts'
+import { Incremental } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import type * as Cause from 'effect/Cause'
@@ -30,7 +33,7 @@ const EXTRA_SOURCE = [
   '',
 ].join('\n')
 
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
+const environmentFor = (directory: string): Run.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
@@ -169,7 +172,7 @@ interface RecordedMutant {
 }
 
 const recordedMutantsOf = (text: string): readonly RecordedMutant[] =>
-  Option.match(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), {
+  Option.match(S.decodeOption(S.fromJsonString(Incremental.IncrementalReportSchema))(text), {
     onNone: () => [],
     onSome: (report) =>
       Object.entries(report.files).flatMap(([file, result]) =>
@@ -224,7 +227,7 @@ interface Decoded {
 }
 
 const decodedOf = (text: string): Decoded => {
-  const result = S.decodeResult(S.fromJsonString(Engine.IncrementalReportSchema))(text)
+  const result = S.decodeResult(S.fromJsonString(Incremental.IncrementalReportSchema))(text)
   const document = S.decodeOption(
     S.fromJsonString(
       S.Struct({

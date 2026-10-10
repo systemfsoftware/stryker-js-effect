@@ -1,5 +1,6 @@
-import { Worker } from '@systemfsoftware/stryker-js'
+import { Workers } from '@systemfsoftware/stryker-js-contracts'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
@@ -94,14 +95,14 @@ const clientProtocol = (
   behaviour: ChildBehaviour,
   socket: Socket.Socket,
 ): Layer.Layer<RpcClient.Protocol, Socket.SocketError> =>
-  Worker.layerWorkerProtocol(
+  WorkerHost.layerWorkerProtocol(
     Layer.succeed(Socket.Socket, behaviour === 'acceptsConnection' ? socket : refusingSocket),
   )
 
-const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, Worker.WorkerExit> => {
+const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, Workers.WorkerExit> => {
   if (behaviour === 'crashes') {
     return Effect.fail(
-      Worker.ChildProcessCrashedError.make({
+      Workers.ChildProcessCrashedError.make({
         pid: WORKER_PID,
         exit: { _tag: 'Code', code: 9 },
         cause: 'the substituted worker died during boot',
@@ -109,46 +110,46 @@ const exitOf = (behaviour: ChildBehaviour): Effect.Effect<never, Worker.WorkerEx
     )
   }
   if (behaviour === 'runsOutOfMemory') {
-    return Effect.fail(Worker.OutOfMemoryError.make({ pid: WORKER_PID, exitCode: 137 }))
+    return Effect.fail(Workers.OutOfMemoryError.make({ pid: WORKER_PID, exitCode: 137 }))
   }
   return Effect.never
 }
 
 export interface SubstitutedLauncher {
-  readonly spawns: Ref.Ref<readonly Worker.WorkerSpawnParams[]>
-  readonly layer: Layer.Layer<Worker.WorkerLauncher>
+  readonly spawns: Ref.Ref<readonly Workers.WorkerSpawnParams[]>
+  readonly layer: Layer.Layer<Workers.WorkerLauncher>
 }
 
 export interface ServingLauncherParams {
   readonly pid: number
   readonly server: ((serverSocket: Socket.Socket) => Layer.Layer<never>) | undefined
   readonly clientLayer: (clientSocket: Socket.Socket) => Layer.Layer<RpcClient.Protocol, Socket.SocketError>
-  readonly exited: Effect.Effect<never, Worker.WorkerExit>
+  readonly exited: Effect.Effect<never, Workers.WorkerExit>
 }
 
 export const servingLauncher = (
   params: ServingLauncherParams,
 ): Effect.Effect<SubstitutedLauncher, never, Scope.Scope> =>
   Effect.gen(function*() {
-    const spawns = yield* Ref.make<readonly Worker.WorkerSpawnParams[]>([])
+    const spawns = yield* Ref.make<readonly Workers.WorkerSpawnParams[]>([])
     const [clientSocket, serverSocket] = yield* memorySocketPair
 
     const spawn = (
-      workerParams: Worker.WorkerSpawnParams,
-    ): Effect.Effect<Worker.SpawnedSocketWorker, never, Scope.Scope> =>
+      workerParams: Workers.WorkerSpawnParams,
+    ): Effect.Effect<Workers.SpawnedSocketWorker, never, Scope.Scope> =>
       Effect.gen(function*() {
         yield* Ref.update(spawns, (recorded) => [...recorded, workerParams])
         if (params.server !== undefined) {
           yield* Effect.forkScoped(params.server(serverSocket).pipe(Layer.launch))
         }
-        return Worker.makeSpawnedSocketWorker({
+        return Workers.make({
           pid: params.pid,
           clientLayer: params.clientLayer(clientSocket),
           exited: params.exited,
         })
       })
 
-    return { spawns, layer: Layer.succeed(Worker.WorkerLauncher, { spawn }) }
+    return { spawns, layer: Layer.succeed(Workers.WorkerLauncher, { spawn }) }
   })
 
 export const substitutedLauncher = (
@@ -171,7 +172,7 @@ export const TEMP_DIR_PREFIX = 'stryker-plugin-'
 
 export interface BootOutcome<E = unknown> {
   readonly answer: Result.Result<string, E>
-  readonly spawns: readonly Worker.WorkerSpawnParams[]
+  readonly spawns: readonly Workers.WorkerSpawnParams[]
   readonly options: Options.StrykerOptions
 }
 
@@ -181,7 +182,7 @@ export const bootPingWorker = (
   Effect.gen(function*() {
     const options = yield* Schema.decodeEffect(Options.StrykerOptionsSchema)(PLUGIN_OPTIONS).pipe(Effect.orDie)
     const launcher = yield* substitutedLauncher(behaviour)
-    const answer = yield* Worker.makeWorkerClient({
+    const answer = yield* WorkerHost.makeWorkerClient({
       rpcs: PingRpcs,
       options,
       entrypoint: WORKER_ENTRYPOINT,
@@ -205,9 +206,9 @@ export const bootFailure = <E = unknown>(boot: BootOutcome<E>): E =>
     },
   })
 
-export const timeoutOf = (boot: BootOutcome): Worker.WorkerBootTimeoutError => {
+export const timeoutOf = (boot: BootOutcome): Workers.WorkerBootTimeoutError => {
   const failure = bootFailure(boot)
-  if (Schema.is(Worker.WorkerBootTimeoutError)(failure)) {
+  if (Schema.is(Workers.WorkerBootTimeoutError)(failure)) {
     return failure
   }
   throw new Error('the boot was expected to fail as a boot timeout', { cause: failure })

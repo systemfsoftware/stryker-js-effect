@@ -1,7 +1,10 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Run } from '@systemfsoftware/stryker-js-contracts'
+import type { Reports } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Boolean from 'effect/Boolean'
@@ -191,7 +194,7 @@ const appendComment = (directory: string, file: string): Effect.Effect<void, nev
     yield* fs.writeFileString(target, `${text}\n// edited between runs\n`)
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
+const environmentFor = (directory: string): Run.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAX',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
@@ -210,7 +213,7 @@ interface MutantRow {
 }
 
 interface ReuseObservation {
-  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
+  readonly exit: Exit.Exit<Reports.MutationTestDone, Run.StageError>
   readonly reuse: RunEvent.ReuseReported | undefined
   readonly mutants: readonly MutantRow[]
   readonly incrementalText: string

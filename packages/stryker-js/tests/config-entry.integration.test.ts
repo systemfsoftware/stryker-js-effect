@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
@@ -10,6 +9,7 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
+import { Cli } from '@systemfsoftware/stryker-js'
 import { LoadedConfigSchema } from './__fixtures__/loaded-config.schema.js'
 
 const Feature = makeFeature({ it })
@@ -22,13 +22,12 @@ interface ConsumerFile {
   readonly content: string
 }
 
-const TYPED_CONFIG =
-  `import { defineConfig, mergeConfig, type ConfigEnv, type StrykerConfig } from '@systemfsoftware/stryker-js/config'
+const TYPED_CONFIG = `import { defineConfig, mergeConfig, type StrykerConfig } from '@systemfsoftware/stryker-js/config'
 
 const base: StrykerConfig = { concurrency: 2, thresholds: { low: 50 } }
 const config: StrykerConfig = defineConfig({ testRunner: 'vm', mutate: ['src/**/*.ts'] })
 
-const fromFactory = defineConfig((env: ConfigEnv): StrykerConfig => ({ concurrency: env.isCi ? 8 : 2 }))
+const fromFactory = defineConfig((env): StrykerConfig => ({ concurrency: env.isCi ? 8 : 2 }))
 const fromPromise = defineConfig(Promise.resolve<StrykerConfig>({ concurrency: 6 }))
 const merged: StrykerConfig = mergeConfig(base, { concurrency: 4, thresholds: { high: 70 } })
 

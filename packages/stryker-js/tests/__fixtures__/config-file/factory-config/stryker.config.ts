@@ -1,4 +1,4 @@
-import { defineConfig } from '../../../../src/config/mod.js'
+import { defineConfig } from '@systemfsoftware/stryker-js/config'
 
 const THRESHOLD_HIGH: Record<string, number> = { machine: 97 }
 const THRESHOLD_LOW: Record<string, number> = { run: 10 }

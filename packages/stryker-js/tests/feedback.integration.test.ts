@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
@@ -13,6 +12,7 @@ import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
+import { Cli } from '@systemfsoftware/stryker-js'
 import { CallToolResult, JsonRpcResponse, SurvivorList } from './__fixtures__/feedback.schema.js'
 
 const Feature = makeFeature({ it })

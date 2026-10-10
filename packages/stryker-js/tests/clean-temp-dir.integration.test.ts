@@ -1,5 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
+import type { Engine } from '@systemfsoftware/stryker-js-engine'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'

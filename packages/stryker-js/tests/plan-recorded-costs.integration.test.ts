@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli } from '@systemfsoftware/stryker-js'
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
@@ -12,6 +11,7 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
+import { Cli } from '@systemfsoftware/stryker-js'
 import {
   cliConfigTextOf,
   PLAN_FILE,

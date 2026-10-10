@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Checker as CheckerCapability, Worker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
@@ -19,6 +18,9 @@ import * as S from 'effect/Schema'
 import * as Socket from 'effect/socket/Socket'
 import * as SocketServer from 'effect/socket/SocketServer'
 
+import { Workers } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
+import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import { memorySocketPair, singleConnection } from './__fixtures__/substituted-worker.fixture.js'
 
 const Feature = makeFeature({ it })
@@ -65,19 +67,19 @@ const makeHarness = () =>
 
     yield* Effect.forkScoped(makeCheckerServer(serverSocket, receivedRef).pipe(Layer.launch))
 
-    const launcherLayer = Layer.succeed(Worker.WorkerLauncher, {
+    const launcherLayer = Layer.succeed(Workers.WorkerLauncher, {
       spawn: () =>
         Effect.succeed(
-          Worker.makeSpawnedSocketWorker({
+          Workers.make({
             pid: 4242,
-            clientLayer: Worker.layerWorkerProtocol(Layer.succeed(Socket.Socket, clientSocket)),
+            clientLayer: WorkerHost.layerWorkerProtocol(Layer.succeed(Socket.Socket, clientSocket)),
             exited: Effect.never,
           }),
         ),
     })
 
     const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({}).pipe(Effect.orDie)
-    const client = yield* Worker.makeWorkerClient({
+    const client = yield* WorkerHost.makeWorkerClient({
       entrypoint: '/project/checker.mjs',
       execArgv: [],
       options,
@@ -155,7 +157,7 @@ const DESCRIBABLE_PLANS = [describablePlanOf('0000000000000001'), describablePla
 
 const instrumentedChecker = (
   groupsOf: (ids: readonly string[]) => readonly (readonly string[])[],
-): CheckerCapability.CheckerResourceService => ({
+): Engine.CheckerResourceService => ({
   group: (_checkerName, mutants) => Effect.succeed(groupsOf(mutants.map((mutant) => mutant.id))),
   check: (_checkerName, mutants) =>
     Effect.succeed(
@@ -170,10 +172,10 @@ const oneGroup = (ids: readonly string[]): readonly (readonly string[])[] => [id
 
 const dropLastId = (ids: readonly string[]): readonly (readonly string[])[] => [ids.slice(0, -1)]
 
-const checkGrouped = (checker: CheckerCapability.CheckerResourceService, plans: readonly Mutant.RunPlan[]) =>
+const checkGrouped = (checker: Engine.CheckerResourceService, plans: readonly Mutant.RunPlan[]) =>
   Effect.gen(function*() {
     const warnings: Array<string> = []
-    const outcome = yield* CheckerCapability.checkGroupedCell.run({ checker, checkerName: CHECKER_NAME, plans }).pipe(
+    const outcome = yield* Engine.checkGroupedCell.run({ checker, checkerName: CHECKER_NAME, plans }).pipe(
       Effect.result,
       Effect.provide(Logger.layer([
         Logger.make((entry) => {

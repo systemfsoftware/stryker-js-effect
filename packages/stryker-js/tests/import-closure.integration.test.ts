@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { ImportClosure } from '@systemfsoftware/stryker-js'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -8,9 +8,9 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 
-type ImportClosureAnalysis = ImportClosure.ImportClosureAnalysis
+type ImportClosureAnalysis = Engine.ImportClosureAnalysis
 
-const analyzeImportClosure = ImportClosure.analyzeImportClosure
+const analyzeImportClosure = Engine.analyzeImportClosure
 
 const Feature = makeFeature({ it })
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)

@@ -1,6 +1,9 @@
 /// <reference types="vitest/importMeta" />
+import { Run } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import { ErrorText } from '@systemfsoftware/stryker-js-instrumenter'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Survivors } from '@systemfsoftware/stryker-js-survivors'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Cause from 'effect/Cause'
@@ -11,23 +14,6 @@ import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
-
-import { LocalMutationRefused } from './refuse-local-mutation.workflow.js'
-import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
-import {
-  RunClassedObservation,
-  RunCliErrorObservation,
-  RunGenericFailureObservation,
-  RunHelpObservation,
-  RunInterruptedObservation,
-  type RunOutcomeObservation,
-  RunRefusedObservation,
-  RunSchemaErrorObservation,
-  RunSucceededClean,
-  RunSucceededVerdict,
-  RunSurvivorsRejectedObservation,
-} from './RunOutcomeCommand.schema.js'
-import { SurvivorsRejection } from './Survivors/mod.js'
 
 const UNKNOWN_FAILURE = 'Unknown failure'
 const MAX_TRAVERSAL_DEPTH = 10
@@ -143,12 +129,12 @@ const collectExitClasses = <A, E>(exit: Exit.Exit<A, E>): Array<Plugin.ExitClass
   return out
 }
 
-const refusalsOf = <A, E>(exit: Exit.Exit<A, E>): ReadonlyArray<LocalMutationRefused> => {
-  const out: Array<LocalMutationRefused> = []
+const refusalsOf = <A, E>(exit: Exit.Exit<A, E>): ReadonlyArray<Engine.LocalMutationRefused> => {
+  const out: Array<Engine.LocalMutationRefused> = []
   const seen = new WeakSet<object>()
   failurePayloads(exit).forEach((payload) =>
     visitReachableValue(payload, 0, seen, (node) => {
-      if (S.is(LocalMutationRefused)(node)) {
+      if (S.is(Engine.LocalMutationRefused)(node)) {
         out.push(node)
       }
     })
@@ -203,7 +189,7 @@ const isPrimitiveText = Predicate.some(PRIMITIVE_REFINEMENTS)
 const declaresReasonText = <A>(value: A): boolean => hasReason(value) && Option.isSome(nonEmptyText(value.reason))
 
 const remediationTextOf = <A>(value: A): Option.Option<string> =>
-  S.is(SurvivorsRejection)(value) ? Option.some(value.remediation) : Option.none()
+  S.is(Survivors.SurvivorsRejection)(value) ? Option.some(value.remediation) : Option.none()
 
 const reasonTextOf = <A>(value: A): Option.Option<string> =>
   declaresReasonText(value) ? Option.fromNullishOr(reasonOf(value)) : Option.none()
@@ -277,14 +263,15 @@ const unrecognizedHintOf = <A, E>(exit: Exit.Exit<A, E>, argv: readonly string[]
     Option.getOrUndefined,
   )
 
-const survivorsRejectionOf = <A>(value: A): SurvivorsRejection | undefined =>
-  S.is(SurvivorsRejection)(value) ? value : undefined
+const survivorsRejectionOf = <A>(value: A): Survivors.SurvivorsRejection | undefined =>
+  S.is(Survivors.SurvivorsRejection)(value) ? value : undefined
 
 const survivorsReasonOf = (
-  survivors: SurvivorsRejection | undefined,
+  survivors: Survivors.SurvivorsRejection | undefined,
 ): 'no-report' | 'mismatch' | undefined => survivors?.reason
 
-const survivorsDiagnosticOf = (survivors: SurvivorsRejection | undefined): string | undefined => survivors?.remediation
+const survivorsDiagnosticOf = (survivors: Survivors.SurvivorsRejection | undefined): string | undefined =>
+  survivors?.remediation
 
 const omitUnknownFailure = (diagnostic: string): string | undefined =>
   diagnostic === UNKNOWN_FAILURE ? undefined : diagnostic
@@ -317,10 +304,10 @@ const observationOf = <A, E>(
   { exit, value, survivors, argv }: {
     readonly exit: Exit.Exit<A, E>
     readonly value: E | object | undefined
-    readonly survivors: SurvivorsRejection | undefined
+    readonly survivors: Survivors.SurvivorsRejection | undefined
     readonly argv: readonly string[]
   },
-): RunOutcomeObservation => {
+): Run.RunOutcomeObservation => {
   const unrecognized = Option.getOrNull(Option.fromUndefinedOr(unrecognizedHintOf(exit, argv)))
   const configDetail = exit.pipe(firstConfigErrorDetail, Option.fromUndefinedOr, Option.getOrNull)
   const diagnostic = exit.pipe(describeFailureOf, omitUnknownFailure, Option.fromUndefinedOr, Option.getOrNull)
@@ -331,33 +318,33 @@ const observationOf = <A, E>(
         successExitClassOf,
         Option.fromUndefinedOr,
         Option.match({
-          onNone: () => RunSucceededClean.make({}),
-          onSome: (exitClass) => RunSucceededVerdict.make({ exitClass, diagnostic }),
+          onNone: () => Run.RunSucceededClean.make({}),
+          onSome: (exitClass) => Run.RunSucceededVerdict.make({ exitClass, diagnostic }),
         }),
       ),
     onFalse: () =>
       Boolean.match(hasOnlyInterruptsOf(exit), {
-        onTrue: () => RunInterruptedObservation.make({}),
+        onTrue: () => Run.RunInterruptedObservation.make({}),
         onFalse: () =>
           Option.match(Option.fromUndefinedOr(helpErrorCountOf(value)), {
-            onSome: (errorCount) => RunHelpObservation.make({ errorCount, unrecognized }),
+            onSome: (errorCount) => Run.RunHelpObservation.make({ errorCount, unrecognized }),
             onNone: () =>
               Boolean.match(carriesCliError(value), {
-                onTrue: () => RunCliErrorObservation.make({ unrecognized }),
+                onTrue: () => Run.RunCliErrorObservation.make({ unrecognized }),
                 onFalse: () =>
                   Option.match(Option.fromUndefinedOr(survivorsReasonOf(survivors)), {
                     onSome: (reason) =>
-                      RunSurvivorsRejectedObservation.make({
+                      Run.RunSurvivorsRejectedObservation.make({
                         reason,
                         diagnostic: Option.getOrNull(Option.fromUndefinedOr(survivorsDiagnosticOf(survivors))),
                       }),
                     onNone: () =>
                       Boolean.match(carriesSchemaError(value), {
-                        onTrue: () => RunSchemaErrorObservation.make({ configDetail }),
+                        onTrue: () => Run.RunSchemaErrorObservation.make({ configDetail }),
                         onFalse: () =>
                           Option.match(Option.fromNullishOr(refusalsOf(exit)[0]), {
                             onSome: (refused) =>
-                              RunRefusedObservation.make({ rule: refused.rule, message: refused.message }),
+                              Run.RunRefusedObservation.make({ rule: refused.rule, message: refused.message }),
                             onNone: () =>
                               exit.pipe(
                                 collectExitClasses,
@@ -365,8 +352,8 @@ const observationOf = <A, E>(
                                 Option.fromUndefinedOr,
                                 Option.match({
                                   onSome: (exitClass) =>
-                                    RunClassedObservation.make({ exitClass, configDetail, diagnostic }),
-                                  onNone: () => RunGenericFailureObservation.make({ diagnostic }),
+                                    Run.RunClassedObservation.make({ exitClass, configDetail, diagnostic }),
+                                  onNone: () => Run.RunGenericFailureObservation.make({ diagnostic }),
                                 }),
                               ),
                           }),
@@ -380,9 +367,9 @@ const observationOf = <A, E>(
 
 export const runOutcomeCommandOf = <A, E>(
   { argv, exit }: { readonly exit: Exit.Exit<A, E>; readonly argv: readonly string[] },
-): RunOutcomeCommand => {
+): Run.RunOutcomeCommand => {
   const value = failureValueOf(exit)
-  return RunOutcomeCommand.make({
+  return Run.RunOutcomeCommand.make({
     observation: observationOf({ exit, value, survivors: survivorsRejectionOf(value), argv }),
   })
 }
@@ -392,13 +379,13 @@ if (import.meta.vitest !== void 0) {
 
   const severityOf = (exitClass: Plugin.ExitClass): number => Plugin.ExitClass.literals.indexOf(exitClass)
 
-  const classedKeyOf = (command: RunOutcomeCommand): string =>
-    S.is(RunClassedObservation)(command.observation)
+  const classedKeyOf = (command: Run.RunOutcomeCommand): string =>
+    S.is(Run.RunClassedObservation)(command.observation)
       ? `${command.observation.exitClass}|${command.observation.configDetail}`
       : 'not-classed'
 
-  const genericDiagnosticOf = (command: RunOutcomeCommand): string | null =>
-    S.is(RunGenericFailureObservation)(command.observation) ? command.observation.diagnostic : null
+  const genericDiagnosticOf = (command: Run.RunOutcomeCommand): string | null =>
+    S.is(Run.RunGenericFailureObservation)(command.observation) ? command.observation.diagnostic : null
 
   it.prop(
     '∀text_RunOutcomeCommand_≡PrimitiveFailureDiagnostic',
@@ -425,7 +412,7 @@ if (import.meta.vitest !== void 0) {
       const exit = Exit.fail({ exitClass: left, cause: { exitClass: middle, cause: { exitClass: right } } })
       const command = subject({ exit, argv: [] })
       return (
-        S.is(RunClassedObservation)(command.observation) &&
+        S.is(Run.RunClassedObservation)(command.observation) &&
         severityOf(command.observation.exitClass) ===
           Math.max(severityOf(left), severityOf(middle), severityOf(right))
       )

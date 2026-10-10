@@ -1,8 +1,11 @@
 import { Differential } from '@systemfsoftware/differential-spec'
-import { Cli, Configuration, Plugin, Worker } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
+import type { Workers } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { strykerPlugins as vmRunnerPlugins } from '@systemfsoftware/stryker-js-vm-runner'
+import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import * as TestTelemetry from '@systemfsoftware/vitest-config/telemetry'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
@@ -237,7 +240,7 @@ const runRealVitest = (
 const realTestOutcomes = (root: string): Effect.Effect<Outcomes, never, FileSystem.FileSystem | Path.Path> =>
   runRealVitest(root).pipe(Effect.map((captured) => recordOf(captured)))
 
-const contextFor = (defaults: Options.StrykerOptions, directory: string): Plugin.TestRunnerBuildContext => ({
+const contextFor = (defaults: Options.StrykerOptions, directory: string): WorkerHost.TestRunnerBuildContext => ({
   options: { ...defaults, testRunner: 'vm', disableBail: true },
   fileDescriptions: {},
   sandboxWorkingDirectory: directory,
@@ -247,11 +250,11 @@ const contextFor = (defaults: Options.StrykerOptions, directory: string): Plugin
 })
 
 const vmChildRunner = (
-  context: Plugin.TestRunnerBuildContext,
-): Effect.Effect<Plugin.PooledTestRunner, Plugin.PooledTestRunnerError, Scope.Scope | Worker.WorkerLauncher> =>
+  context: WorkerHost.TestRunnerBuildContext,
+): Effect.Effect<WorkerHost.PooledTestRunner, Workers.PooledTestRunnerError, Scope.Scope | Workers.WorkerLauncher> =>
   Arr.head(vmRunnerPlugins).pipe(
     Option.map((runner) =>
-      Plugin.makeChildProcessTestRunner({
+      WorkerHost.makeChildProcessTestRunner({
         options: context.options,
         fileDescriptions: context.fileDescriptions,
         sandboxWorkingDirectory: context.sandboxWorkingDirectory,
@@ -264,12 +267,12 @@ const vmChildRunner = (
 
 const withVmRunner = <A, R>(
   directory: string,
-  use: (runner: Plugin.PooledTestRunner) => Effect.Effect<A, never, R>,
+  use: (runner: WorkerHost.PooledTestRunner) => Effect.Effect<A, never, R>,
 ): Effect.Effect<A, never, R> =>
   Effect.gen(function*() {
-    const defaults = yield* Configuration.createDefaultOptions
+    const defaults = yield* Engine.createDefaultOptions
     const context = contextFor(defaults, directory)
-    return yield* Effect.flatMap(Plugin.buildTestRunner(context, vmChildRunner(context)), use)
+    return yield* Effect.flatMap(WorkerHost.buildTestRunner(context, vmChildRunner(context)), use)
   }).pipe(
     Effect.provide(Cli.platformLayer),
     Effect.scoped,

@@ -1,5 +1,6 @@
 import { Differential } from '@systemfsoftware/differential-spec'
-import { Cli, Plugin } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
+import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
@@ -81,7 +82,7 @@ const runEngine = (root: string, fsModuleCache: boolean): Effect.Effect<ModuleCa
         const path = yield* Path.Path
         const done = yield* Cli.strykerCell({
           testRunner: {
-            plugin: Plugin.vmRunnerPluginUrl(),
+            plugin: WorkerHost.vmRunnerPluginUrl(),
             options: { pool: 'threads', fsModuleCache },
           },
           mutate: ['src/**/*.ts', '!src/**/*.test.ts'],

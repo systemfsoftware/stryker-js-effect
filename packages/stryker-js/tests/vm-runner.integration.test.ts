@@ -1,7 +1,9 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Configuration, Engine, Plugin } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { strykerPlugins as vmRunnerPlugins } from '@systemfsoftware/stryker-js-vm-runner'
+import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
@@ -34,7 +36,7 @@ const withBrowserProject = <A, E, R>(
       ),
   )
 
-const contextFor = (options: Options.StrykerOptions, root: string): Plugin.TestRunnerBuildContext => ({
+const contextFor = (options: Options.StrykerOptions, root: string): WorkerHost.TestRunnerBuildContext => ({
   options: { ...options, testRunner: 'vm' },
   fileDescriptions: {},
   sandboxWorkingDirectory: root,
@@ -45,10 +47,10 @@ const contextFor = (options: Options.StrykerOptions, root: string): Plugin.TestR
 
 const vmDryRunOutcome = (root: string): Effect.Effect<string, never, Engine.EnginePorts> =>
   Effect.gen(function*() {
-    const context = contextFor(yield* Configuration.createDefaultOptions, root)
+    const context = contextFor(yield* Engine.createDefaultOptions, root)
     const childRunner = Arr.head(vmRunnerPlugins).pipe(
       Option.map((runner) =>
-        Plugin.makeChildProcessTestRunner({
+        WorkerHost.makeChildProcessTestRunner({
           options: context.options,
           fileDescriptions: context.fileDescriptions,
           sandboxWorkingDirectory: context.sandboxWorkingDirectory,
@@ -58,7 +60,7 @@ const vmDryRunOutcome = (root: string): Effect.Effect<string, never, Engine.Engi
       ),
       Option.getOrElse(() => Effect.die(new Error('the vm runner plugin descriptor is missing'))),
     )
-    const exit = yield* Plugin.buildTestRunner(context, childRunner).pipe(
+    const exit = yield* WorkerHost.buildTestRunner(context, childRunner).pipe(
       Effect.flatMap((runner) => runner.dryRun({ timeout: 60_000, coverageAnalysis: 'off', disableBail: true })),
       Effect.scoped,
       Effect.exit,
@@ -88,7 +90,7 @@ Feature('Running mutation tests with the vm test runner')
     scenario(
       'A config that names no test runner runs the vm runner',
       Gherkin.Do.pipe(
-        Given('Stryker configured without a test runner')('options', () => Configuration.createDefaultOptions),
+        Given('Stryker configured without a test runner')('options', () => Engine.createDefaultOptions),
         Then('the run selects the vm runner')((s, expect) => expect(s.options.testRunner).toBe('vm')),
       ),
     )
@@ -102,7 +104,7 @@ Feature('Running mutation tests with the vm test runner')
             Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
               const path = yield* Path.Path
-              const url = Plugin.vmRunnerPluginUrl()
+              const url = WorkerHost.vmRunnerPluginUrl()
               const filePath = yield* path.fromFileUrl(new URL(url))
               return { url, exists: yield* fs.exists(filePath) }
             }),
@@ -125,7 +127,7 @@ Feature('Running mutation tests with the vm test runner')
           () => Effect.succeed({ plugin: 'file:///project/runner.mjs', options: { dir: 'test' } } as const),
         ),
         Then('the engine leaves the configured runner untouched')((s, expect) =>
-          expect(Plugin.testRunnerConfigOf(s.configured)).toEqual(s.configured)
+          expect(WorkerHost.testRunnerConfigOf(s.configured)).toEqual(s.configured)
         ),
       ),
     )

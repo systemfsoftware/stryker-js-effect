@@ -1,7 +1,10 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Run } from '@systemfsoftware/stryker-js-contracts'
+import type { Reports } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
@@ -82,7 +85,7 @@ const removeWorkspace = (directory: string): Effect.Effect<void, never, FileSyst
     Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true })),
   )
 
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
+const environmentFor = (directory: string): Run.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAW',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
@@ -105,7 +108,7 @@ interface MutantRows {
 }
 
 interface ObservedRun extends MutantRows {
-  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
+  readonly exit: Exit.Exit<Reports.MutationTestDone, Run.StageError>
   readonly events: ReadonlyArray<RunEvent.RunEvent>
 }
 

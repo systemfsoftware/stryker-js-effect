@@ -1,6 +1,7 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { RunEvent } from '@systemfsoftware/stryker-js'
 import { RunEvent as CliContract } from '@systemfsoftware/stryker-js-cli-contract'
+import { Run } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -123,7 +124,7 @@ const costTotalOf = (cost: CliContract.MutantCost | null): number =>
   cost === null ? 0 : cost.fixedOverheadMs + cost.testBodyMs
 
 interface CapturedStream {
-  readonly stream: RunEvent.RunEventStream
+  readonly stream: Run.RunEventStream
   readonly stdout: Ref.Ref<ReadonlyArray<string>>
   readonly stderr: Ref.Ref<ReadonlyArray<string>>
 }
@@ -134,7 +135,7 @@ interface RecordedSinks {
 }
 
 interface RecordedStream {
-  readonly stream: RunEvent.RunEventStream
+  readonly stream: Run.RunEventStream
   readonly recorded: Ref.Ref<RecordedSinks>
 }
 
@@ -159,16 +160,16 @@ const capturingFixture = (mode: 'machine' | 'human'): Effect.Effect<CapturedStre
     const stdout = yield* Ref.make<ReadonlyArray<string>>([])
     const stderr = yield* Ref.make<ReadonlyArray<string>>([])
     const stdio = capturingStdio(stdout, stderr)
-    const stream = yield* RunEvent.makeRunEventStream({ mode, signal: 'tty' }).pipe(
-      Effect.provide(Layer.mergeAll(stdio, RunEvent.drainLayer.pipe(Layer.provide(stdio)))),
+    const stream = yield* Engine.makeRunEventStream({ mode, signal: 'tty' }).pipe(
+      Effect.provide(Layer.mergeAll(stdio, Engine.drainLayer.pipe(Layer.provide(stdio)))),
     )
     return { stream, stdout, stderr }
   })
 
-const collectorDrain = (recorded: Ref.Ref<RecordedSinks>): Layer.Layer<RunEvent.RunEventDrain> =>
+const collectorDrain = (recorded: Ref.Ref<RecordedSinks>): Layer.Layer<Run.RunEventDrain> =>
   Layer.succeed(
-    RunEvent.RunEventDrain,
-    RunEvent.RunEventDrain.of({
+    Run.RunEventDrain,
+    Run.RunEventDrain.of({
       drainFramed: (framed, toStdout) =>
         Stream.runCollect(framed).pipe(
           Effect.map((collected) => Array.from(collected)),
@@ -186,14 +187,14 @@ const collectorDrain = (recorded: Ref.Ref<RecordedSinks>): Layer.Layer<RunEvent.
 const recordingFixture = (mode: 'machine' | 'human'): Effect.Effect<RecordedStream, never, never> =>
   Effect.gen(function*() {
     const recorded = yield* Ref.make<RecordedSinks>(EMPTY_SINKS)
-    const stream = yield* RunEvent.makeRunEventStream({ mode, signal: 'tty' }).pipe(
+    const stream = yield* Engine.makeRunEventStream({ mode, signal: 'tty' }).pipe(
       Effect.provide(Layer.merge(Stdio.layerTest({}), collectorDrain(recorded))),
     )
     return { stream, recorded }
   })
 
 const offerAll = (
-  stream: RunEvent.RunEventStream,
+  stream: Run.RunEventStream,
   events: ReadonlyArray<CliContract.RunEvent>,
 ): Effect.Effect<void, never, never> =>
   Effect.forEach(events, (event) => Queue.offer(stream.queue, event)).pipe(Effect.asVoid)
@@ -408,9 +409,9 @@ Feature('Streaming a run to machine readers')
             const failingStdio = Stdio.layerTest({
               stdout: () => Sink.die(new Error('the report sink broke')),
             })
-            const stream = yield* RunEvent.makeRunEventStream({ mode: 'machine', signal: 'tty' }).pipe(
+            const stream = yield* Engine.makeRunEventStream({ mode: 'machine', signal: 'tty' }).pipe(
               Effect.provide(
-                Layer.mergeAll(failingStdio, RunEvent.drainLayer.pipe(Layer.provide(failingStdio))),
+                Layer.mergeAll(failingStdio, Engine.drainLayer.pipe(Layer.provide(failingStdio))),
               ),
             )
             return { stream, stdout, messages, logging: Logger.layer([capturing]) }
@@ -445,7 +446,7 @@ Feature('Streaming a run to machine readers')
           'result',
           (s) =>
             Effect.gen(function*() {
-              const envelope = RunEvent.buildVerdictEnvelope(
+              const envelope = Engine.buildVerdictEnvelope(
                 reportOf(MIXED_MUTANTS),
                 'machine',
                 'flag',
@@ -453,7 +454,7 @@ Feature('Streaming a run to machine readers')
                 '/base',
                 pathService,
                 Option.none(),
-                RunEvent.staticVerdictOf(MIXED_MUTANTS.map(runResultOf)),
+                Engine.staticVerdictOf(MIXED_MUTANTS.map(runResultOf)),
               )
               yield* s.fixture.stream.open
               yield* offerAll(s.fixture.stream, [
@@ -509,7 +510,7 @@ Feature('Streaming a run to machine readers')
           'result',
           (s) =>
             Effect.gen(function*() {
-              const envelope = RunEvent.buildVerdictEnvelope(
+              const envelope = Engine.buildVerdictEnvelope(
                 reportOf(IGNORED_STATIC_MUTANTS),
                 'machine',
                 'flag',
@@ -517,7 +518,7 @@ Feature('Streaming a run to machine readers')
                 '/base',
                 pathService,
                 Option.none(),
-                RunEvent.staticVerdictOf(IGNORED_STATIC_MUTANTS.map(runResultOf)),
+                Engine.staticVerdictOf(IGNORED_STATIC_MUTANTS.map(runResultOf)),
               )
               yield* s.fixture.stream.open
               yield* offerAll(s.fixture.stream, [

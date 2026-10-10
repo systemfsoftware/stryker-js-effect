@@ -1,12 +1,13 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
+import type { Configuration } from '@systemfsoftware/stryker-js-contracts'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { type ConfigEnv, defineConfig, mergeConfig } from '@systemfsoftware/stryker-js/config'
+import { defineConfig, mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 
 const Feature = makeFeature({ it })
 
-const RUN_ENV: ConfigEnv = { command: 'run', isDryRun: false, mode: 'human', isCi: false }
+const RUN_ENV: Configuration.ConfigEnv = { command: 'run', isDryRun: false, mode: 'human', isCi: false }
 
 Feature('Authoring a Stryker configuration with the published helper')
   .withLayer(Layer.empty)
@@ -37,7 +38,7 @@ Feature('Authoring a Stryker configuration with the published helper')
             Effect.sync(() => {
               const calls: string[] = []
               const highByMode: Record<string, number> = { machine: 91 }
-              const factory = (env: ConfigEnv): Options.PartialStrykerOptions => {
+              const factory = (env: Configuration.ConfigEnv): Options.PartialStrykerOptions => {
                 calls.push(env.mode)
                 return { thresholds: { high: highByMode[env.mode] ?? 92 } }
               }

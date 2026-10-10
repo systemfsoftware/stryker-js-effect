@@ -1,11 +1,10 @@
+import { Run } from '@systemfsoftware/stryker-js-contracts'
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
-
-import { CliRouteCommand } from '../Cli.schema.js'
 import { routeCliRequest } from '../route-cli-request.workflow.js'
 
-const matchesRoute = (command: CliRouteCommand, tag: string): boolean =>
+const matchesRoute = (command: Run.CliRouteCommand, tag: string): boolean =>
   Match.value(command.route).pipe(
     Match.tag('help', () => tag === 'CliHelpRequested'),
     Match.tag('merge', () => tag === 'CliMergeRequested'),
@@ -25,7 +24,7 @@ const matchesRoute = (command: CliRouteCommand, tag: string): boolean =>
     Match.exhaustive,
   )
 
-const decides = (subject: typeof routeCliRequest, command: CliRouteCommand): string | undefined =>
+const decides = (subject: typeof routeCliRequest, command: Run.CliRouteCommand): string | undefined =>
   Result.match(subject(command), {
     onFailure: () => undefined,
     onSuccess: (decision) =>
@@ -51,7 +50,7 @@ const decides = (subject: typeof routeCliRequest, command: CliRouteCommand): str
 describe('routeCliRequest', () => {
   it.prop(
     '∀r_Request_≡RouteFollowsSubcommand',
-    { of: [CliRouteCommand], subject: routeCliRequest },
+    { of: [Run.CliRouteCommand], subject: routeCliRequest },
     (subject, [command]) => {
       const decided = decides(subject, command)
       return decided !== undefined && matchesRoute(command, decided)

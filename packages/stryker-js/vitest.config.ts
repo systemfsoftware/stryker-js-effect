@@ -4,7 +4,7 @@ import { inSourceSchemaLaws } from '@systemfsoftware/vitest-config/schema-laws'
 const ownNameResolvesToSourceNotDogfoodCopy = [
   { find: /^@systemfsoftware\/stryker-js$/, replacement: new URL('./src/mod.ts', import.meta.url).pathname },
   {
-    find: /^@systemfsoftware\/stryker-js\/(config|events|promises)$/,
+    find: /^@systemfsoftware\/stryker-js\/(config|promises)$/,
     replacement: `${new URL('./src/', import.meta.url).pathname}$1/mod.ts`,
   },
 ]

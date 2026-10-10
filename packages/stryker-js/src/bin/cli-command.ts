@@ -1,3 +1,4 @@
+import { Run } from '@systemfsoftware/stryker-js-contracts'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Bool from 'effect/Boolean'
 import * as Argument from 'effect/cli/Argument'
@@ -9,8 +10,6 @@ import * as Effect from 'effect/Effect'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
-
-import { CliRouteCommand } from '../Cli.schema.js'
 import { type CliAnswer, type CliEnvironment, runRequestCell } from '../run-request.cell.js'
 
 const createSplitter = (separator: string) => (value: string) => value.split(separator).filter(Boolean)
@@ -511,7 +510,7 @@ const readStrykerOptions = (config: RunParsedConfig): Options.PartialStrykerOpti
   }
 }
 
-export const makeStrykerCommand = ({ environment, recordAnswer }: {
+const makeStrykerCommand = ({ environment, recordAnswer }: {
   readonly environment: CliEnvironment
   readonly recordAnswer: (answer: CliAnswer) => Effect.Effect<void>
 }) => {
@@ -524,7 +523,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
         ),
       onNone: () =>
         runRequestCell.run({
-          route: CliRouteCommand.make({
+          route: Run.CliRouteCommand.make({
             route: {
               _tag: 'run',
               survivors: config.survivors === true,
@@ -546,7 +545,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
     { ...mergeOptions, ...mergeArgs, ...formatOptions },
     (config) =>
       runRequestCell.run({
-        route: CliRouteCommand.make({
+        route: Run.CliRouteCommand.make({
           route: {
             _tag: 'merge',
             plan: config.plan,
@@ -561,7 +560,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
 
   const compareCommand = Command.make('compare', compareOptions, (config) =>
     runRequestCell.run({
-      route: CliRouteCommand.make({
+      route: Run.CliRouteCommand.make({
         route: {
           _tag: 'compare',
           baseline: config.baseline,
@@ -579,7 +578,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
 
   const gateCommand = Command.make('gate', gateOptions, (config) =>
     runRequestCell.run({
-      route: CliRouteCommand.make({
+      route: Run.CliRouteCommand.make({
         route: {
           _tag: 'gate',
           baseline: Option.getOrUndefined(config.baseline),
@@ -599,7 +598,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
 
   const annotateCommand = Command.make('annotate', annotateOptions, (config) =>
     runRequestCell.run({
-      route: CliRouteCommand.make({
+      route: Run.CliRouteCommand.make({
         route: {
           _tag: 'annotate',
           baseline: Option.getOrUndefined(config.baseline),
@@ -615,7 +614,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
 
   const planCommand = Command.make('plan', planOptions, (config) =>
     runRequestCell.run({
-      route: CliRouteCommand.make({
+      route: Run.CliRouteCommand.make({
         route: {
           _tag: 'plan',
           targetSeconds: config.targetSeconds,
@@ -635,7 +634,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
 
   const serveCommand = Command.make('serve', { ...serveOptions, ...serveArgs }, (config) =>
     runRequestCell.run({
-      route: CliRouteCommand.make({
+      route: Run.CliRouteCommand.make({
         route: {
           _tag: 'serve',
           channel: config.channel,
@@ -698,7 +697,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
           ),
         onSome: (judgment) =>
           runRequestCell.run({
-            route: CliRouteCommand.make({
+            route: Run.CliRouteCommand.make({
               route: { _tag: 'feedback', id: config.id, judgment, reason: Option.getOrUndefined(config.reason) },
             }),
             options: {},
@@ -713,7 +712,7 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
 
   const mcpCommand = Command.make('mcp', {}, (_config) =>
     runRequestCell.run({
-      route: CliRouteCommand.make({ route: { _tag: 'mcp' } }),
+      route: Run.CliRouteCommand.make({ route: { _tag: 'mcp' } }),
       options: {},
       environment,
     }).pipe(Effect.provideService(Console.Console, environment.console), Effect.flatMap(recordAnswer))).pipe(
@@ -736,3 +735,16 @@ export const makeStrykerCommand = ({ environment, recordAnswer }: {
     ]),
   )
 }
+
+type RunRequest = ReturnType<typeof runRequestCell.run>
+
+export const runStrykerCommand = (input: {
+  readonly environment: CliEnvironment
+  readonly recordAnswer: (answer: CliAnswer) => Effect.Effect<void>
+  readonly version: string
+  readonly args: ReadonlyArray<string>
+}): Effect.Effect<
+  void,
+  Effect.Error<RunRequest> | CliError.CliError,
+  Exclude<Effect.Services<RunRequest>, Console.Console> | Command.Environment
+> => Command.runWith(makeStrykerCommand(input), { version: input.version })(input.args)

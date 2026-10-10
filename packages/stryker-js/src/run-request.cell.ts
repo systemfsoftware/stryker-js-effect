@@ -1,8 +1,16 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { Run } from '@systemfsoftware/stryker-js-contracts'
+import { Reports } from '@systemfsoftware/stryker-js-contracts'
+import type { Configuration } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
+import { Mcp } from '@systemfsoftware/stryker-js-mcp'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Reporting } from '@systemfsoftware/stryker-js-reporting'
+import { Serve } from '@systemfsoftware/stryker-js-serve'
+import { Survivors } from '@systemfsoftware/stryker-js-survivors'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as CliError from 'effect/cli/CliError'
@@ -16,13 +24,7 @@ import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type { SchemaError } from 'effect/Schema'
-
-import { type Admitted } from './admit-survivors-run.workflow.js'
-import { Baseline } from './Baseline.schema.js'
-import { BudgetExceeded, budgetGate, BudgetGateCommand, BudgetInputUnusable } from './budget-gate.workflow.js'
-import { BudgetBaseline } from './BudgetBaseline.schema.js'
 import { addressFields, portFields } from './cli-route-fields.js'
-import { CliRouteCommand, type FeedbackJudgment, type ServeChannel } from './Cli.schema.js'
 import {
   CompareFailed,
   compareVerdicts,
@@ -32,38 +34,7 @@ import {
   VerdictsDiffer,
 } from './compare-verdicts.workflow.js'
 import { mergeConfig } from './config/merge-config.js'
-import {
-  type ConfigFileInvalidError,
-  type ConfigFileNotFoundError,
-  type ConfigFileUnreadableError,
-  type ConfigFileUnsupportedError,
-} from './ConfigError.schema.js'
-import { stage } from './drivers/run-stage.js'
-import { recordFeedbackCell } from './Feedback/Feedback.cell.js'
-import { FeedbackUnusable } from './Feedback/Feedback.schema.js'
-import {
-  type GateEntry,
-  GateInputUnusable,
-  gateNewSurvivors,
-  GateNewSurvivorsCommand,
-  GateRejected,
-} from './gate-new-survivors.workflow.js'
-import { mcpServerLayer } from './Mcp/mod.js'
-import type { MutationTestDone } from './mutation-reporting.service.js'
-import type { ResolvedMode } from './output-mode.schema.js'
-import { planRequest } from './plan-request.cell.js'
-import { AnnotationsUnusable, renderAnnotations, RenderAnnotationsCommand } from './render-annotations.workflow.js'
-import {
-  mutantRerunAdmissionCell,
-  type MutantRerunInput,
-  type MutantRerunSettlement,
-  RerunRefused,
-} from './Rerun/mod.js'
 import { routeCliRequest } from './route-cli-request.workflow.js'
-import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
-import type { HostServices } from './run/host.service.js'
-import { mutationTestCell } from './run/run-stages.cell.js'
-import { serveMutationServer, type ServeRequest } from './Serve/Serve.cell.js'
 import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
 import { mergeShards } from './shard/shard-merge.js'
 import type { ShardMergeFailed } from './shard/shard-merge.schema.js'
@@ -71,62 +42,55 @@ import { loadShardPlan } from './shard/shard-plan.js'
 import type { ShardPlanInvalid } from './shard/shard-plan.schema.js'
 import { runShard } from './shard/shard-run.js'
 import type { ShardChildFailed } from './shard/shard-run.schema.js'
-import { StrykerError } from './stryker-error.schema.js'
-import { annotationLinesOf, surfacedSurvivorsOf } from './surfacing.js'
-import { type SurfacingCaps, SurfacingFields } from './surfacing.schema.js'
-import type { SurvivorsAdmissionInput, SurvivorsSettlement } from './Survivors/mod.js'
-import { SurvivorsRejection } from './Survivors/mod.js'
-import { survivorsAdmissionCell } from './Survivors/Survivors.cell.js'
-import { PriorReportDocument } from './Survivors/Survivors.schema.js'
 
 export interface CliEnvironment {
-  readonly mode: ResolvedMode
-  readonly stream: RunEventStream
-  readonly host: HostServices
+  readonly mode: Run.ResolvedMode
+  readonly stream: Run.RunEventStream
+  readonly host: Engine.HostServices
   readonly basePath: string
   readonly pathService: Path.Path
-  readonly runEvents: RunEventStreamPort
+  readonly runEvents: Run.RunEventStreamPort
   readonly console: Console.Console
 }
 
 export interface CliInvocation {
-  readonly route: CliRouteCommand
+  readonly route: Run.CliRouteCommand
   readonly options: Options.PartialStrykerOptions
   readonly environment: CliEnvironment
 }
 
-export type CliRead = (typeof CliRouteCommand)['Encoded'] & {
+export type CliRead = (typeof Run.CliRouteCommand)['Encoded'] & {
   readonly environment: CliEnvironment
   readonly options: Options.PartialStrykerOptions
 }
 
-export type CliAnswer = void | MutationTestDone
+export type CliAnswer = void | Reports.MutationTestDone
 
 export type CliFailure =
   | SchemaError
-  | SurvivorsRejection
-  | RerunRefused
-  | ConfigFileNotFoundError
-  | ConfigFileUnreadableError
-  | ConfigFileInvalidError
-  | ConfigFileUnsupportedError
+  | Survivors.SurvivorsRejection
+  | Survivors.RerunRefused
+  | Configuration.ConfigFileNotFoundError
+  | Configuration.ConfigFileUnreadableError
+  | Configuration.ConfigFileInvalidError
+  | Configuration.ConfigFileUnsupportedError
   | CompareFailed
   | VerdictsDiffer
-  | GateRejected
-  | GateInputUnusable
-  | BudgetExceeded
-  | BudgetInputUnusable
-  | AnnotationsUnusable
+  | Survivors.GateRejected
+  | Survivors.GateInputUnusable
+  | Survivors.BudgetExceeded
+  | Survivors.BudgetInputUnusable
+  | Reporting.AnnotationsUnusable
   | ShardPlanInvalid
   | ShardUnknown
   | ShardChildFailed
   | ShardMergeFailed
-  | FeedbackUnusable
+  | Reports.FeedbackUnusable
 
 const progressStreamFileName = (options: Options.PartialStrykerOptions): string =>
   Option.getOrElse(
     S.decodeUnknownOption(S.NonEmptyString)(options['progressStreamFile']),
-    () => RunEventDrain.DefaultProgressStreamFile,
+    () => Run.RunEventDrain.DefaultProgressStreamFile,
   )
 
 const progressStreamFileOf = (invocation: CliInvocation): string =>
@@ -137,8 +101,8 @@ const progressStreamFileOf = (invocation: CliInvocation): string =>
 
 const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(function*(
   invocation: CliInvocation,
-): Effect.fn.Return<CliRead, CliError.CliError, Command.Environment | RunEventDrain> {
-  const drain = yield* RunEventDrain
+): Effect.fn.Return<CliRead, CliError.CliError, Command.Environment | Run.RunEventDrain> {
+  const drain = yield* Run.RunEventDrain
   yield* drain.setProgressStreamFile(progressStreamFileOf(invocation))
   yield* invocation.environment.stream.open
   return {
@@ -150,9 +114,9 @@ const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(funct
 })
 
 const runStage = (channel: CliRead) =>
-  Layer.build(stage(channel.environment.host.env, channel.environment.host.events)).pipe(
+  Layer.build(Engine.stage(channel.environment.host.env, channel.environment.host.events)).pipe(
     Effect.flatMap((context) =>
-      Cell.provideContext(mutationTestCell, context).run({
+      Cell.provideContext(Engine.mutationTestCell, context).run({
         cliOptions: channel.options,
         targetMutatePatterns: undefined,
       })
@@ -161,7 +125,7 @@ const runStage = (channel: CliRead) =>
     Effect.scoped,
   )
 
-const settlementOf = (channel: CliRead): SurvivorsSettlement => ({
+const settlementOf = (channel: CliRead): Survivors.SurvivorsSettlement => ({
   runAdmitted: ({ admitted, resolvedOptions, priorReportPath }) =>
     runStage({ ...channel, options: restrictedOptionsOf({ resolvedOptions, priorReportPath, admitted }) }),
   reportNoSurvivors: (resolvedOptions) =>
@@ -175,7 +139,7 @@ const settlementOf = (channel: CliRead): SurvivorsSettlement => ({
     }),
 })
 
-const survivorsInputOf = (channel: CliRead): SurvivorsAdmissionInput => ({
+const survivorsInputOf = (channel: CliRead): Survivors.SurvivorsAdmissionInput => ({
   cliOptions: channel.options,
   mode: channel.environment.mode.mode,
   configOverlay: mergeConfig,
@@ -203,12 +167,12 @@ const rerunRestrictedOptionsOf = ({
   incremental: true,
 })
 
-const rerunSettlementOf = (channel: CliRead): MutantRerunSettlement => ({
+const rerunSettlementOf = (channel: CliRead): Survivors.MutantRerunSettlement => ({
   runAdmitted: ({ ids, mutateSpans, resolvedOptions }) =>
     runStage({ ...channel, options: rerunRestrictedOptionsOf({ ids, mutateSpans, resolvedOptions }) }),
 })
 
-const rerunInputOf = (channel: CliRead, ids: ReadonlyArray<string>): MutantRerunInput => ({
+const rerunInputOf = (channel: CliRead, ids: ReadonlyArray<string>): Survivors.MutantRerunInput => ({
   ids,
   cliOptions: channel.options,
   mode: channel.environment.mode.mode,
@@ -224,7 +188,7 @@ const restrictedOptionsOf = ({
 }: {
   readonly resolvedOptions: Options.StrykerOptions
   readonly priorReportPath: string
-  readonly admitted: Admitted
+  readonly admitted: Survivors.Admitted
 }): Options.PartialStrykerOptions & {
   readonly survivors?: ReadonlyArray<Mutant.Mutant>
   readonly survivorsPriorReport?: string
@@ -297,10 +261,10 @@ const compareReports = (
 
 const GATE_REPORT_FILE = 'reports/mutation/mutation.json'
 
-const decodeGateReport = S.decodeUnknownResult(S.fromJsonString(PriorReportDocument))
-const decodeGateBaseline = S.decodeUnknownResult(S.fromJsonString(Baseline))
+const decodeGateReport = S.decodeUnknownResult(S.fromJsonString(Reports.PriorReportDocument))
+const decodeGateBaseline = S.decodeUnknownResult(S.fromJsonString(Survivors.Baseline))
 
-const gateEntriesOf = (report: PriorReportDocument): ReadonlyArray<GateEntry> =>
+const gateEntriesOf = (report: Reports.PriorReportDocument): ReadonlyArray<Survivors.GateEntry> =>
   Object.entries(report.files).flatMap(([fileName, file]) =>
     file.mutants.map((mutant) => ({
       id: mutant.id,
@@ -312,11 +276,11 @@ const gateEntriesOf = (report: PriorReportDocument): ReadonlyArray<GateEntry> =>
 
 const readGateReport = (
   file: string,
-): Effect.Effect<PriorReportDocument, GateInputUnusable, FileSystem.FileSystem> =>
+): Effect.Effect<Reports.PriorReportDocument, Survivors.GateInputUnusable, FileSystem.FileSystem> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) =>
     fs.readFileString(file).pipe(
       Effect.mapError(() =>
-        GateInputUnusable.make({
+        Survivors.GateInputUnusable.make({
           reason: `cannot read the finished mutation report at ${file}; run \`stryker run\` first`,
         })
       ),
@@ -325,7 +289,7 @@ const readGateReport = (
           Result.mapError(
             decodeGateReport(text),
             (error) =>
-              GateInputUnusable.make({
+              Survivors.GateInputUnusable.make({
                 reason: `cannot decode the finished mutation report at ${file}: ${error.message}`,
               }),
           ),
@@ -333,7 +297,9 @@ const readGateReport = (
       ),
     ))
 
-const readCommittedBaseline = (file: string): Effect.Effect<Option.Option<Baseline>, never, FileSystem.FileSystem> =>
+const readCommittedBaseline = (
+  file: string,
+): Effect.Effect<Option.Option<Survivors.Baseline>, never, FileSystem.FileSystem> =>
   Effect.option(
     Effect.flatMap(
       FileSystem.FileSystem,
@@ -343,33 +309,35 @@ const readCommittedBaseline = (file: string): Effect.Effect<Option.Option<Baseli
 
 const writeGateBaseline = (
   file: string,
-  baseline: Baseline,
-): Effect.Effect<void, GateInputUnusable, FileSystem.FileSystem | Path.Path> =>
+  baseline: Survivors.Baseline,
+): Effect.Effect<void, Survivors.GateInputUnusable, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const text = yield* Effect.orDie(S.encodeEffect(S.fromJsonString(Baseline, { space: 2 }))(baseline))
+    const text = yield* Effect.orDie(S.encodeEffect(S.fromJsonString(Survivors.Baseline, { space: 2 }))(baseline))
     yield* fs.makeDirectory(path.dirname(file), { recursive: true }).pipe(
       Effect.andThen(fs.writeFileString(file, text)),
-      Effect.mapError(() => GateInputUnusable.make({ reason: `cannot write the committed baseline at ${file}` })),
+      Effect.mapError(() =>
+        Survivors.GateInputUnusable.make({ reason: `cannot write the committed baseline at ${file}` })
+      ),
     )
   })
 
 const writeDecidedBaseline = (
   file: string,
-  decided: Baseline | null,
-): Effect.Effect<void, GateInputUnusable, FileSystem.FileSystem | Path.Path> =>
+  decided: Survivors.Baseline | null,
+): Effect.Effect<void, Survivors.GateInputUnusable, FileSystem.FileSystem | Path.Path> =>
   Effect.forEach(
     Option.toArray(Option.fromNullishOr(decided)),
     (baseline) => writeGateBaseline(file, baseline),
     { discard: true },
   )
 
-const decodeBudgetBaseline = S.decodeUnknownResult(S.fromJsonString(BudgetBaseline))
+const decodeBudgetBaseline = S.decodeUnknownResult(S.fromJsonString(Survivors.BudgetBaseline))
 
 const readBudgetBaseline = (
   file: string,
-): Effect.Effect<Option.Option<BudgetBaseline>, never, FileSystem.FileSystem> =>
+): Effect.Effect<Option.Option<Survivors.BudgetBaseline>, never, FileSystem.FileSystem> =>
   Effect.option(
     Effect.flatMap(
       FileSystem.FileSystem,
@@ -379,15 +347,17 @@ const readBudgetBaseline = (
 
 const writeBudgetBaseline = (
   file: string,
-  baseline: BudgetBaseline,
-): Effect.Effect<void, BudgetInputUnusable, FileSystem.FileSystem | Path.Path> =>
+  baseline: Survivors.BudgetBaseline,
+): Effect.Effect<void, Survivors.BudgetInputUnusable, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const text = yield* Effect.orDie(S.encodeEffect(S.fromJsonString(BudgetBaseline, { space: 2 }))(baseline))
+    const text = yield* Effect.orDie(S.encodeEffect(S.fromJsonString(Survivors.BudgetBaseline, { space: 2 }))(baseline))
     yield* fs.makeDirectory(path.dirname(file), { recursive: true }).pipe(
       Effect.andThen(fs.writeFileString(file, text)),
-      Effect.mapError(() => BudgetInputUnusable.make({ reason: `cannot write the budget baseline at ${file}` })),
+      Effect.mapError(() =>
+        Survivors.BudgetInputUnusable.make({ reason: `cannot write the budget baseline at ${file}` })
+      ),
     )
   })
 
@@ -397,9 +367,9 @@ const runBudgetGate = (
     readonly budgetTolerance: number
     readonly updateBudgetBaseline: boolean
   },
-  report: PriorReportDocument,
+  report: Reports.PriorReportDocument,
   basePath: string,
-): Effect.Effect<void, BudgetExceeded | BudgetInputUnusable, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<void, Survivors.BudgetExceeded | Survivors.BudgetInputUnusable, FileSystem.FileSystem | Path.Path> =>
   Effect.forEach(
     Option.toArray(Option.fromUndefinedOr(gate.budgetBaseline)),
     (budgetBaselineFlag) =>
@@ -408,15 +378,15 @@ const runBudgetGate = (
         const actual = yield* Effect.fromOption(
           Option.map(Option.fromUndefinedOr(report.budget), (recorded) => recorded.actualSeconds),
           () =>
-            BudgetInputUnusable.make({
+            Survivors.BudgetInputUnusable.make({
               reason: 'the finished mutation report records no budget; run `stryker run` with a build that records it',
             }),
         )
         const file = path.resolve(basePath, budgetBaselineFlag)
         const baseline = yield* readBudgetBaseline(file)
         const decision = yield* Effect.fromResult(
-          budgetGate(
-            BudgetGateCommand.make({
+          Survivors.budgetGate(
+            Survivors.BudgetGateCommand.make({
               actualSeconds: actual,
               baseline: Option.getOrNull(baseline),
               tolerance: gate.budgetTolerance,
@@ -441,9 +411,13 @@ const GATE_REMEDIATION_LINE =
   'accept the new survivors with `stryker gate --update-baseline`, or kill them before the next run'
 
 const remediateGateRefusal = (
-  failure: GateRejected | GateInputUnusable | BudgetExceeded | BudgetInputUnusable,
+  failure:
+    | Survivors.GateRejected
+    | Survivors.GateInputUnusable
+    | Survivors.BudgetExceeded
+    | Survivors.BudgetInputUnusable,
 ): Effect.Effect<void> =>
-  Boolean.match(S.is(BudgetExceeded)(failure) || S.is(BudgetInputUnusable)(failure), {
+  Boolean.match(S.is(Survivors.BudgetExceeded)(failure) || S.is(Survivors.BudgetInputUnusable)(failure), {
     onTrue: () => Effect.void,
     onFalse: () => Effect.logInfo(GATE_REMEDIATION_LINE),
   })
@@ -459,7 +433,7 @@ const gateReport = (
   channel: CliRead,
 ): Effect.Effect<
   void,
-  GateRejected | GateInputUnusable | BudgetExceeded | BudgetInputUnusable,
+  Survivors.GateRejected | Survivors.GateInputUnusable | Survivors.BudgetExceeded | Survivors.BudgetInputUnusable,
   FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function*() {
@@ -473,8 +447,8 @@ const gateReport = (
           const baselineFile = path.resolve(basePath, baselineFlag)
           const committed = yield* readCommittedBaseline(baselineFile)
           const decision = yield* Effect.fromResult(
-            gateNewSurvivors(
-              GateNewSurvivorsCommand.make({
+            Survivors.gateNewSurvivors(
+              Survivors.GateNewSurvivorsCommand.make({
                 entries: gateEntriesOf(report),
                 committed: Option.getOrNull(Option.map(committed, (baseline) => baseline.survivors)),
                 baselineFile: baselineFlag,
@@ -490,31 +464,31 @@ const gateReport = (
     yield* runBudgetGate(gate, report, basePath)
   })
 
-const SURFACING_DEFAULTS: SurfacingCaps = { perLine: 1, perFile: 7 }
+const SURFACING_DEFAULTS: Reports.SurfacingCaps = { perLine: 1, perFile: 7 }
 
-const surfacingFieldsOf = (report: Report.MutationTestResult): Option.Option<SurfacingFields> =>
+const surfacingFieldsOf = (report: Report.MutationTestResult): Option.Option<Reports.SurfacingFields> =>
   Option.flatMap(
     Option.fromUndefinedOr(report.config?.['surfacing']),
-    (surfacing) => S.decodeUnknownOption(SurfacingFields)(surfacing),
+    (surfacing) => S.decodeUnknownOption(Reports.SurfacingFields)(surfacing),
   )
 
-const capsOf = (fields: SurfacingFields): SurfacingCaps => ({
+const capsOf = (fields: Reports.SurfacingFields): Reports.SurfacingCaps => ({
   perLine: Option.getOrElse(Option.fromNullishOr(fields.perLine), () => SURFACING_DEFAULTS.perLine),
   perFile: Option.getOrElse(Option.fromNullishOr(fields.perFile), () => SURFACING_DEFAULTS.perFile),
 })
 
-const surfacingCapsOf = (report: Report.MutationTestResult): SurfacingCaps =>
+const surfacingCapsOf = (report: Report.MutationTestResult): Reports.SurfacingCaps =>
   Option.getOrElse(Option.map(surfacingFieldsOf(report), capsOf), () => SURFACING_DEFAULTS)
 
 const decodeAnnotateReport = S.decodeUnknownResult(S.fromJsonString(Report.MutationTestResult))
 
 const readAnnotateReport = (
   file: string,
-): Effect.Effect<Report.MutationTestResult, AnnotationsUnusable, FileSystem.FileSystem> =>
+): Effect.Effect<Report.MutationTestResult, Reporting.AnnotationsUnusable, FileSystem.FileSystem> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) =>
     fs.readFileString(file).pipe(
       Effect.mapError(() =>
-        AnnotationsUnusable.make({
+        Reporting.AnnotationsUnusable.make({
           reason: `cannot read the finished mutation report at ${file}; run \`stryker run\` first`,
         })
       ),
@@ -523,7 +497,7 @@ const readAnnotateReport = (
           Result.mapError(
             decodeAnnotateReport(text),
             (error) =>
-              AnnotationsUnusable.make({
+              Reporting.AnnotationsUnusable.make({
                 reason: `cannot decode the finished mutation report at ${file}: ${error.message}`,
               }),
           ),
@@ -533,16 +507,20 @@ const readAnnotateReport = (
 
 const readAnnotateBaseline = (
   file: string,
-): Effect.Effect<ReadonlyArray<Mutant.MutantId>, AnnotationsUnusable, FileSystem.FileSystem> =>
+): Effect.Effect<ReadonlyArray<Mutant.MutantId>, Reporting.AnnotationsUnusable, FileSystem.FileSystem> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) =>
     fs.readFileString(file).pipe(
-      Effect.mapError(() => AnnotationsUnusable.make({ reason: `cannot read the committed baseline at ${file}` })),
+      Effect.mapError(() =>
+        Reporting.AnnotationsUnusable.make({ reason: `cannot read the committed baseline at ${file}` })
+      ),
       Effect.flatMap((text) =>
         Effect.fromResult(
           Result.mapError(
             decodeGateBaseline(text),
             (error) =>
-              AnnotationsUnusable.make({ reason: `cannot decode the committed baseline at ${file}: ${error.message}` }),
+              Reporting.AnnotationsUnusable.make({
+                reason: `cannot decode the committed baseline at ${file}: ${error.message}`,
+              }),
           ),
         )
       ),
@@ -552,7 +530,7 @@ const readAnnotateBaseline = (
 const annotateReport = (
   annotate: { readonly baseline?: string | undefined },
   channel: CliRead,
-): Effect.Effect<void, AnnotationsUnusable, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<void, Reporting.AnnotationsUnusable, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const basePath = channel.environment.basePath
@@ -562,25 +540,29 @@ const annotateReport = (
       (file) => readAnnotateBaseline(path.resolve(basePath, file)),
     )
     const decision = Result.getOrThrow(
-      renderAnnotations(
-        RenderAnnotationsCommand.make({
+      Reporting.renderAnnotations(
+        Reporting.RenderAnnotationsCommand.make({
           report,
-          survivors: surfacedSurvivorsOf(report, surfacingCapsOf(report)),
+          survivors: Reporting.surfacedSurvivorsOf(report, surfacingCapsOf(report)),
           baseline: baseline.flat(),
         }),
       ),
     )
     yield* Effect.forEach(
-      annotationLinesOf(decision),
+      Reporting.annotationLinesOf(decision),
       (line) => Effect.sync(() => channel.environment.console.log(line)),
       { discard: true },
     )
   })
 
 const serveRequestOf = (
-  serve: { readonly channel: ServeChannel; readonly port?: number | undefined; readonly address?: string | undefined },
+  serve: {
+    readonly channel: Run.ServeChannel
+    readonly port?: number | undefined
+    readonly address?: string | undefined
+  },
   cliOptions: Options.PartialStrykerOptions,
-): ServeRequest => ({
+): Serve.ServeRequest => ({
   channel: serve.channel,
   cliOptions,
   configOverlay: mergeConfig,
@@ -589,11 +571,11 @@ const serveRequestOf = (
 })
 
 const feedbackRoute = (
-  feedback: { readonly id: string; readonly judgment: FeedbackJudgment; readonly reason?: string | undefined },
+  feedback: { readonly id: string; readonly judgment: Run.FeedbackJudgment; readonly reason?: string | undefined },
   channel: CliRead,
-): Effect.Effect<void, FeedbackUnusable, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<void, Reports.FeedbackUnusable, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
-    const recorded = yield* recordFeedbackCell({
+    const recorded = yield* Survivors.recordFeedbackCell({
       basePath: channel.environment.basePath,
       id: feedback.id,
       judgment: feedback.judgment,
@@ -654,18 +636,20 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
     CliCompareRequested: (compare) => compareReports(compare),
     CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(remediateGateRefusal)),
     CliAnnotateRequested: (annotate, channel) => annotateReport(annotate, channel),
-    CliPlanRequested: (plan, channel) => planRequest({ request: plan, channel }),
+    CliPlanRequested: (plan, channel) => Engine.planRequest({ request: plan, channel }),
     CliFeedbackRequested: (feedback, channel) => feedbackRoute(feedback, channel),
     CliMcpRequested: (_, channel) =>
-      Layer.launch(mcpServerLayer({ basePath: channel.environment.basePath, configOverlay: mergeConfig })).pipe(
+      Layer.launch(Mcp.mcpServerLayer({ basePath: channel.environment.basePath, configOverlay: mergeConfig })).pipe(
         Effect.scoped,
         Effect.orDie,
       ),
     CliServeRequested: (serve, channel) =>
-      serveMutationServer(serveRequestOf(serve, channel.options)).pipe(Effect.scoped),
+      Serve.serveMutationServer(serveRequestOf(serve, channel.options)).pipe(Effect.scoped),
     CliRunRequested: (_, channel) => runStage(channel),
-    CliSurvivorsRequested: (_, channel) => survivorsAdmissionCell.run(survivorsInputOf(channel)),
-    CliRerunRequested: (rerun, channel) => mutantRerunAdmissionCell.run(rerunInputOf(channel, rerun.ids)),
+    CliSurvivorsRequested: (_, channel) => Survivors.survivorsAdmissionCell.run(survivorsInputOf(channel)),
+    CliRerunRequested: (rerun, channel) => Survivors.mutantRerunAdmissionCell.run(rerunInputOf(channel, rerun.ids)),
     CommandRejected: ({ issue }) =>
-      Effect.fail(StrykerError.make({ message: `the CLI read resolved a command the route schema rejects: ${issue}` })),
+      Effect.fail(
+        Run.StrykerError.make({ message: `the CLI read resolved a command the route schema rejects: ${issue}` }),
+      ),
   })

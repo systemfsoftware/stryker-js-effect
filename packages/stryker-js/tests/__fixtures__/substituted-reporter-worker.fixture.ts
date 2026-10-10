@@ -1,4 +1,3 @@
-import { Worker } from '@systemfsoftware/stryker-js'
 import { Plugin, type Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
@@ -10,6 +9,8 @@ import type * as Scope from 'effect/Scope'
 import * as Socket from 'effect/socket/Socket'
 import * as SocketServer from 'effect/socket/SocketServer'
 
+import type { Workers } from '@systemfsoftware/stryker-js-contracts'
+import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import { servingLauncher, singleConnection } from './substituted-worker.fixture.js'
 
 export const REPORTER_WORKER_ENTRYPOINT = '/project/node_modules/@acme/stryker-reporter/dist/worker.mjs'
@@ -65,8 +66,8 @@ const reporterServer = (socket: Socket.Socket, trace: ReporterWorkerTrace): Laye
   )
 
 export interface ReporterServingLauncher {
-  readonly spawns: Ref.Ref<readonly Worker.WorkerSpawnParams[]>
-  readonly layer: Layer.Layer<Worker.WorkerLauncher>
+  readonly spawns: Ref.Ref<readonly Workers.WorkerSpawnParams[]>
+  readonly layer: Layer.Layer<Workers.WorkerLauncher>
 }
 
 export const reporterServingLauncher = (
@@ -75,6 +76,6 @@ export const reporterServingLauncher = (
   servingLauncher({
     pid: REPORTER_WORKER_PID,
     server: (socket) => reporterServer(socket, trace),
-    clientLayer: (socket) => Worker.layerWorkerProtocol(Layer.succeed(Socket.Socket, socket)),
+    clientLayer: (socket) => WorkerHost.layerWorkerProtocol(Layer.succeed(Socket.Socket, socket)),
     exited: Effect.never,
   })

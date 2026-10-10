@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Mcp } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
@@ -15,6 +14,8 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
+import { Cli } from '@systemfsoftware/stryker-js'
+import { Mcp } from '@systemfsoftware/stryker-js-mcp'
 import { CallToolResult, JsonRpcResponse, SurvivorList, ToolsListed } from './__fixtures__/mcp-server.schema.js'
 
 const Feature = makeFeature({ it })

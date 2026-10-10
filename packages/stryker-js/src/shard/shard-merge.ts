@@ -1,5 +1,6 @@
 import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Sandbox } from '@systemfsoftware/stryker-js-sandbox'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -8,8 +9,6 @@ import * as Path from 'effect/Path'
 import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-
-import { writeFileAtomic } from '../atomic-write.cell.js'
 import {
   reportFromStream,
   ReportFromStreamCommand,
@@ -308,7 +307,9 @@ const writeProjectIncrementals = (
         onNone: () => Effect.void,
         onSome: (incremental) =>
           fs.makeDirectory(path.join(outDir, project), { recursive: true }).pipe(
-            Effect.andThen(writeFileAtomic({ fs, path }, path.join(outDir, project, INCREMENTAL_FILE), incremental)),
+            Effect.andThen(
+              Sandbox.writeFileAtomic({ fs, path }, path.join(outDir, project, INCREMENTAL_FILE), incremental),
+            ),
           ),
       }),
     { concurrency: 1, discard: true },
@@ -340,7 +341,7 @@ export const mergeShards = (
         mergedReportOf(collected.projectReports, mergedBudgetOf(input.plan, collected.shardBudgets)),
       ),
     )
-    yield* writeFileAtomic({ fs, path }, path.join(outDir, REPORT_FILE), json)
+    yield* Sandbox.writeFileAtomic({ fs, path }, path.join(outDir, REPORT_FILE), json)
     yield* writeProjectIncrementals(path, fs, outDir, collected.incrementals)
     yield* Effect.logInfo(
       `stryker merge: merged ${

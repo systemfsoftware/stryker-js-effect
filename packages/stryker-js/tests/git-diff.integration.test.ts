@@ -1,5 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, GitDiff, GitDiffSchema } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
+import { Incremental } from '@systemfsoftware/stryker-js-contracts'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -78,10 +79,10 @@ const changedSince = (
   root: string,
   ref: string,
 ): Effect.Effect<
-  GitDiffSchema.GitDiffResult,
-  GitDiffSchema.GitDiffError,
-  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | GitDiff.GitDiff
-> => Effect.flatMap(GitDiff.GitDiff, (git) => git.changedSince({ cwd: root, ref }))
+  Incremental.GitDiffResult,
+  Incremental.GitDiffError,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | Incremental.GitDiff
+> => Effect.flatMap(Incremental.GitDiff, (git) => git.changedSince({ cwd: root, ref }))
 
 const removeRepo = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
   Effect.ignore(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true })))
@@ -105,8 +106,8 @@ Feature('Reading a repository diff since a git ref')
               const path = yield* Path.Path
               const real = yield* changedSince(s.repo, 'HEAD')
               const fake = yield* Effect.provideService(
-                Effect.flatMap(GitDiff.GitDiff, (git) => git.changedSince({ cwd: '/repo', ref: 'HEAD' })),
-                GitDiff.GitDiff,
+                Effect.flatMap(Incremental.GitDiff, (git) => git.changedSince({ cwd: '/repo', ref: 'HEAD' })),
+                Incremental.GitDiff,
                 { changedSince: () => Effect.succeed(real) },
               )
               const pwned = yield* fs.exists(path.join(s.repo, 'pwned'))
@@ -147,8 +148,8 @@ Feature('Reading a repository diff since a git ref')
               const literal = yield* failureOf(changedSince(s.repo, '"; touch pwned #'))
               const pwned = yield* fs.exists(path.join(s.repo, 'pwned'))
               return {
-                unresolvedIsNamed: Option.exists(unresolved, S.is(GitDiffSchema.GitRefUnresolved)),
-                literalIsUnresolved: Option.exists(literal, S.is(GitDiffSchema.GitRefUnresolved)),
+                unresolvedIsNamed: Option.exists(unresolved, S.is(Incremental.GitRefUnresolved)),
+                literalIsUnresolved: Option.exists(literal, S.is(Incremental.GitRefUnresolved)),
                 pwned,
               }
             }).pipe(Effect.ensuring(removeRepo(s.repo))),

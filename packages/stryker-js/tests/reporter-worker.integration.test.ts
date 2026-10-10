@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine, RunEvent, type Worker as StrykerWorker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   Options,
@@ -17,6 +16,8 @@ import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as S from 'effect/Schema'
 
+import type { Workers } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import {
   makeReporterWorkerTrace,
   REPORTER_WORKER_ENTRYPOINT,
@@ -57,7 +58,7 @@ const markerReport = (): Report.MutationTestResult => ({
   thresholds: { high: 80, low: 60, break: null },
 })
 
-const metricsFixture = (report: Report.MutationTestResult) => RunEvent.metricsResultFromFiles(report.files)
+const metricsFixture = (report: Report.MutationTestResult) => Engine.metricsResultFromFiles(report.files)
 
 const killedMutant = (index: number, total: number): Reporter.MutantTested =>
   Reporter.MutantTested.make({
@@ -128,7 +129,7 @@ const ofEvents = (events: readonly Reporter.ReporterEvent[]): AsyncIterable<Repo
   },
 })
 
-const spawnOf = (spawns: readonly StrykerWorker.WorkerSpawnParams[]): StrykerWorker.WorkerSpawnParams => {
+const spawnOf = (spawns: readonly Workers.WorkerSpawnParams[]): Workers.WorkerSpawnParams => {
   const first = spawns[0]
   if (first === undefined) {
     throw new Error('the reporter worker was never started')
@@ -152,7 +153,7 @@ interface ObservedRun {
   readonly deliverySizes: readonly number[]
   readonly inits: readonly Plugin.ReporterInitOptions[]
   readonly flushes: number
-  readonly spawns: readonly StrykerWorker.WorkerSpawnParams[]
+  readonly spawns: readonly Workers.WorkerSpawnParams[]
   readonly maxLag: number
   readonly yielded: number
 }

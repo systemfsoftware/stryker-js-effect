@@ -1,9 +1,7 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -15,6 +13,12 @@ import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
+import { Cli } from '@systemfsoftware/stryker-js'
+import type { Run } from '@systemfsoftware/stryker-js-contracts'
+import { Incremental } from '@systemfsoftware/stryker-js-contracts'
+import type { Reports } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
+import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import { type ReusableReport, reusableReportOf } from './__fixtures__/reusable-report.schema.js'
 
 const Feature = makeFeature({ it })
@@ -37,7 +41,7 @@ interface ReasonedMutant {
 const ignoredReasonsOf = (mutants: ReadonlyArray<ReasonedMutant>): readonly string[] =>
   mutants.filter((mutant) => mutant.status === 'Ignored').map((mutant) => mutant.statusReason ?? '').sort()
 
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
+const environmentFor = (directory: string): Run.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
@@ -55,7 +59,7 @@ interface RecordedMutant {
 }
 
 const mutantsOf = (text: string): readonly RecordedMutant[] =>
-  Option.match(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), {
+  Option.match(S.decodeOption(S.fromJsonString(Incremental.IncrementalReportSchema))(text), {
     onNone: () => [],
     onSome: (value) => Object.values(value.files).flatMap((file) => file.mutants),
   })
@@ -80,7 +84,7 @@ const coveringFilesOf = (report: ReusableReport, mutantId: string): ReadonlySet<
   )
 
 interface RunObservation {
-  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
+  readonly exit: Exit.Exit<Reports.MutationTestDone, Run.StageError>
   readonly events: ReadonlyArray<RunEvent.RunEvent>
   readonly reuse: RunEvent.ReuseReported | undefined
   readonly verdict: RunEvent.VerdictReached | undefined
@@ -487,7 +491,7 @@ const capturingLogger = (logs: Array<LogEntry>): Layer.Layer<never> =>
 
 const killerNamesOf = (text: string, mutantIds: ReadonlySet<string>): readonly string[] =>
   Option.getOrElse(
-    Option.map(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), (report) => {
+    Option.map(S.decodeOption(S.fromJsonString(Incremental.IncrementalReportSchema))(text), (report) => {
       const testFiles = report.testFiles ?? {}
       const runnerIdByPosition = Object.fromEntries(
         Object.entries(testFiles).flatMap(([file, entry]) =>

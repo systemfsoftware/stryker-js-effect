@@ -1,0 +1,89 @@
+{
+  "name": "@systemfsoftware/stryker-js-engine",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/systemfsoftware/stryker-js-effect.git",
+    "directory": "packages/stryker-js-engine"
+  },
+  "homepage": "https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-engine#readme",
+  "bugs": "https://github.com/systemfsoftware/stryker-js-effect/issues",
+  "description": "The StrykerJS mutation-testing engine - run stages, planning, instrumentation, checking, incremental reuse and report assembly over the contracts' ports.",
+  "type": "module",
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "tsdown",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "attw": "attw --pack .",
+    "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
+    "api:check": "api-extractor run",
+    "api:update": "api-extractor run --local",
+    "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text} && effect-tsgo diagnostics --project tsconfig.test.json --format ${TSGO_FORMAT:-text}"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.13.1"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/platform-node-shared": "catalog:",
+    "@noble/hashes": "catalog:",
+    "@systemfsoftware/effect-cell-types": "catalog:",
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
+    "@systemfsoftware/stryker-js-contracts": "workspace:^",
+    "@systemfsoftware/stryker-js-instrumenter": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
+    "@systemfsoftware/stryker-js-plugin-runtime": "workspace:^",
+    "@systemfsoftware/stryker-js-sandbox": "workspace:^",
+    "@systemfsoftware/stryker-js-worker-host": "workspace:^",
+    "oxc-parser": "catalog:"
+  },
+  "peerDependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "catalog:",
+    "@microsoft/api-extractor": "catalog:",
+    "@systemfsoftware/arethetypeswrong-cli": "catalog:",
+    "@systemfsoftware/effect-schema-law": "catalog:",
+    "@systemfsoftware/oxlint-config-recommended": "catalog:",
+    "@systemfsoftware/tsconfig": "catalog:",
+    "@systemfsoftware/tsdown-config": "workspace:^",
+    "@systemfsoftware/vitest": "catalog:",
+    "@systemfsoftware/vitest-config": "workspace:^",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "fast-check": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "rimraf": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "./package.json": "./package.json"
+    }
+  },
+  "exports": {
+    ".": {
+      "@systemfsoftware/source": "./src/mod.ts",
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  }
+}

@@ -1,7 +1,10 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { Run } from '@systemfsoftware/stryker-js-contracts'
+import type { Reports } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import type * as Cause from 'effect/Cause'
@@ -58,7 +61,7 @@ const removeWorkspace = (directory: string): Effect.Effect<void, never, FileSyst
     Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true })),
   )
 
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
+const environmentFor = (directory: string): Run.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAY',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
@@ -69,7 +72,7 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 })
 
 interface ObservedRun {
-  readonly outcome: Result.Result<Engine.MutationTestDone, Engine.StageError | PlatformError>
+  readonly outcome: Result.Result<Reports.MutationTestDone, Run.StageError | PlatformError>
   readonly events: ReadonlyArray<RunEvent.RunEvent>
   readonly report: Option.Option<Report.MutationTestResult>
 }
@@ -155,12 +158,12 @@ const reportOf = (run: ObservedRun): Report.MutationTestResult =>
   Option.getOrThrowWith(run.report, () => new Error('the run wrote no JSON report'))
 
 const failureTextOf = (run: ObservedRun): string =>
-  Result.isFailure(run.outcome) && S.is(Engine.StageError)(run.outcome.failure)
+  Result.isFailure(run.outcome) && S.is(Run.StageError)(run.outcome.failure)
     ? run.outcome.failure.message
     : 'no prepare refusal'
 
 const stageOf = (run: ObservedRun): string | null =>
-  Result.isFailure(run.outcome) && S.is(Engine.StageError)(run.outcome.failure) ? run.outcome.failure.stage : null
+  Result.isFailure(run.outcome) && S.is(Run.StageError)(run.outcome.failure) ? run.outcome.failure.stage : null
 
 Feature('A plugin contributing a namespaced mutator catalog')
   .withLayer(Layer.empty)

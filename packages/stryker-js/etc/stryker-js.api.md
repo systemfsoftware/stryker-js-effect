@@ -5,58 +5,8 @@
 ```ts
 
 // @public (undocumented)
-export namespace Checker {
-    export { CheckerAnsweredUnrequested, CheckerContractBroken, CheckerCrash, CheckerIgnoredWithoutRule, CheckerResourceService, CheckerSkippedRequested, checkGroupedCell };
-}
-
-// @public (undocumented)
-export namespace Configuration {
-    export { ConfigDocumentSchema, ConfigError, ConfigFileInvalidError, ConfigFileNotFoundError, ConfigFileUnreadableError, ConfigFileUnsupportedError, ConfigInvocation, ExtendsRefusalReason, ExtendsStepDecision, ExtendsStepDocument, ExtendsStepDocumentSchema, ExtendsStepDone, ExtendsStepRead, ExtendsStepRefused, ExtendsStepResolve, ExtendsStepState, ExtendsStepStateSchema, FileMatcher, Immutable, ImmutablePrimitive, ImportedModuleSchema, MergeCommand, MergeResult, Primitive, ReadConfigCommand, ValidationSchemaDocument, createDefaultOptions, decideExtendsStep, defaultOptions, describeErrors, extendsPropertySchema, forkCoreSchema, forkOptionsSchema, importModule, initialExtendsStepState, loadConfigCell, mergeConfigs, readConfig, survivorsPriorReport, validateOptions };
-}
-
-// @public (undocumented)
-export namespace Engine {
-    export { DryRunDone, EnginePorts, IdGenerator, IdGeneratorShape, IncrementalReportSchema, InstrumentDone, MutationTestDone, PlanChannel, PlanRequestInput, PlanShardsRequest, PrepareDone, PrepareExecutorArgs, Project, ProjectFile, RunEnvironment, RunEnvironmentShape, RunStageServices, SandboxHandle, StageError, StageServices, StrykerError, StrykerRun, TestCoverage, WiredRunLayer, forStream, mutationTestCell, nodePlatformLayer, planRequest, stage, strykerCell };
-}
-
-// @public (undocumented)
-export namespace GitDiff {
-    export { GitDiff, GitDiffInput, GitDiffShape };
-}
-
-// @public (undocumented)
-export namespace GitDiffSchema {
-    export { DiffHunk, DiffScopeCommand, DiffScopeDecision, DiffScoped, FullScope, GitCommandFailed, GitDiffError, GitDiffResult, GitRefUnresolved };
-}
-
-// @public (undocumented)
-export namespace ImportClosure {
-    export { ImportClosureAnalysis, ImportClosureInput, TestFileClosureDigest, analyzeImportClosure };
-}
-
-// @public (undocumented)
-export namespace Mcp {
-    export { McpServerOptions, MutantDetail, MutantUnusable, RerunMutantFailure, ShowMutantFailure, mcpServerLayer, mcpToolkit };
-}
-
-// @public (undocumented)
-export namespace Plugin {
-    export { AnyPluginDescriptor, AnyWorkerPluginDescriptor, AnyWorkerPluginSource, EvaluatorPluginDescriptor, EvaluatorPluginSource, Framework, Ignorer, LoadedPlugins, Node, PluginDescriptor, PluginDescriptorOf, PluginKind, PluginSource, PooledTestRunner, PooledTestRunnerError, REPORTER_EVENT_BATCH_BOUND, ReporterStage, ReporterWorkerClient, SpawnReporterWorkerParams, TestRunnerBuildContext, WorkerPluginDescriptor, WorkerPluginSource, buildTestRunner, isCommandRunner, isVmRunner, makeChildProcessTestRunner, reporterWorkerFactory, spawnReporterWorker, testRunnerConfigOf, vmRunnerPluginUrl, vmTestRunnerConfig };
-}
-
-// @public (undocumented)
-export namespace RunEvent {
-    export { MetricsResultFromReport, ResolvedMode, ResolvedModeInput, RunEventDrain, RunEventStream, RunEvents, RunIdentity, RunIdentityShape, VerdictEnvelope, buildVerdictEnvelope, drainLayer, makeRunEventStream, metricsResultFromFiles, staticVerdictOf };
-}
-
-// @public (undocumented)
-export namespace Serve {
-    export { msp_framing_schema_d_exports as Framing, msp_schema_d_exports as Protocol, ServeError, ServeRequest, serveMutationServer };
-}
-
-// @public (undocumented)
-export namespace Worker {
-    export { ChildProcessCrashedError, ClassifyWorkerExitCommand, ClassifyWorkerExitDecision, OutOfMemoryError, SpawnedSocketWorker, WorkerBootError, WorkerBootTimeoutError, WorkerClientParams, WorkerExit, WorkerLauncher, WorkerLauncherShape, WorkerSpawnParams, classifyWorkerExit, layerWorkerProtocol, make as makeSpawnedSocketWorker, makeWorkerClient };
+export namespace Cli {
+    export { makePlatformLayer, platformLayer, strykerCell };
 }
 
 // (No @packageDocumentation comment for this package)

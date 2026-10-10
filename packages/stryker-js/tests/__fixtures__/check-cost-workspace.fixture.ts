@@ -1,6 +1,9 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Run } from '@systemfsoftware/stryker-js-contracts'
+import { Incremental } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Arr from 'effect/Array'
@@ -137,7 +140,7 @@ export const cliConfigTextOf = (directory: string): string =>
     )
   }\n`
 
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
+const environmentFor = (directory: string): Run.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAX',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
@@ -213,7 +216,7 @@ export interface Observation {
 export type ReportObservation = Pick<Observation, 'costs' | 'statuses' | 'idsByFile'>
 
 const readReport = (text: string): ReportObservation =>
-  Option.match(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), {
+  Option.match(S.decodeOption(S.fromJsonString(Incremental.IncrementalReportSchema))(text), {
     onNone: () => ({ costs: {}, statuses: {}, idsByFile: {} }),
     onSome: (report) => {
       const files = Object.entries(report.files)

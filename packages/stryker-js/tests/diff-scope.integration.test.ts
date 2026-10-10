@@ -1,7 +1,10 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine, GitDiff, GitDiffSchema } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import type { Run } from '@systemfsoftware/stryker-js-contracts'
+import { Incremental } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import { type Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Cause from 'effect/Cause'
@@ -34,7 +37,7 @@ const OTHER_SOURCE = [
   '',
 ].join('\n')
 
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
+const environmentFor = (directory: string): Run.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
   resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
   runStartedAt: 0,
@@ -86,7 +89,7 @@ const mutantLinesOf = (report: Report.MutationTestResult): readonly number[] =>
 const runProject = (
   files: ReadonlyArray<readonly [string, string]>,
   since: string,
-  gitOutcome: (ref: string) => Effect.Effect<GitDiffSchema.GitDiffResult, GitDiffSchema.GitDiffError>,
+  gitOutcome: (ref: string) => Effect.Effect<Incremental.GitDiffResult, Incremental.GitDiffError>,
 ): Effect.Effect<Observation, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -95,8 +98,8 @@ const runProject = (
     return yield* Effect.ensuring(
       Effect.gen(function*() {
         const refsSeen: string[] = []
-        const fakeGit = Layer.succeed(GitDiff.GitDiff, {
-          changedSince: (input: GitDiff.GitDiffInput) =>
+        const fakeGit = Layer.succeed(Incremental.GitDiff, {
+          changedSince: (input: Incremental.GitDiffInput) =>
             Effect.gen(function*() {
               refsSeen.push(input.ref)
               return yield* gitOutcome(input.ref)
@@ -142,7 +145,7 @@ const runProject = (
               onSome: (stageError) => ({
                 stage: stageError.stage,
                 exitClass: stageError.exitClass,
-                namesRef: S.is(GitDiffSchema.GitRefUnresolved)(stageError.cause),
+                namesRef: S.is(Incremental.GitRefUnresolved)(stageError.cause),
               }),
             }),
           onSuccess: () => undefined,
@@ -159,7 +162,7 @@ const runProject = (
     )
   }).pipe(Effect.provide(filePorts))
 
-const diffHunk = (file: string): GitDiffSchema.GitDiffResult => ({
+const diffHunk = (file: string): Incremental.GitDiffResult => ({
   ref: 'HEAD~1',
   base: 'base-sha',
   hunks: [{ file, startLine: 3, lineCount: 1 }],
@@ -225,7 +228,7 @@ Feature('Scoping a mutation run to the changed lines since a git ref')
             runProject(
               [['src/target.ts', TARGET_SOURCE]],
               'not-a-ref',
-              (ref) => Effect.fail(GitDiffSchema.GitRefUnresolved.make({ ref, detail: 'unknown revision' })),
+              (ref) => Effect.fail(Incremental.GitRefUnresolved.make({ ref, detail: 'unknown revision' })),
             ),
         ),
         Then('the run fails while preparing, naming the ref, with the configuration exit class')((s, expect) =>

@@ -3,17 +3,17 @@ import * as Arbitrary from 'effect/Arbitrary'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { Incremental } from '@systemfsoftware/stryker-js-contracts'
 import {
   admitFileIdentity,
   AdmitFileIdentityCommand,
   FileIdentityRecompute,
   FileIdentityReuse,
 } from '../admit-file-identity.workflow.js'
-import { FormatIdentitySchema } from '../IncrementalDiff.schema.js'
 
 const FILE = 'src/a.ts'
 
-type FormatIdentity = typeof FormatIdentitySchema.Type
+type FormatIdentity = typeof Incremental.FormatIdentitySchema.Type
 
 const IDENTITY_FIELDS = ['formatId', 'ownerModule', 'ownerVersion'] as const
 
@@ -28,7 +28,7 @@ describe('admitFileIdentity', () => {
   it.prop(
     '∀i_Command_≡ReuseIffIdentitiesAgree',
     {
-      of: [FormatIdentitySchema, identityFieldArb, Arbitrary.schema(S.Boolean)],
+      of: [Incremental.FormatIdentitySchema, identityFieldArb, Arbitrary.schema(S.Boolean)],
       subject: admitFileIdentity,
     },
     (subject, [identity, field, agrees]) => {
@@ -43,7 +43,7 @@ describe('admitFileIdentity', () => {
 
   it.prop(
     '∀i_MissingRecorded_≡Recompute',
-    { of: [FormatIdentitySchema], subject: admitFileIdentity },
+    { of: [Incremental.FormatIdentitySchema], subject: admitFileIdentity },
     (subject, [identity]) => {
       const result = subject(
         AdmitFileIdentityCommand.make({ file: FILE, recorded: undefined, claimed: identity }),
@@ -54,7 +54,7 @@ describe('admitFileIdentity', () => {
 
   it.prop(
     '∀i_MissingClaim_≡Recompute',
-    { of: [FormatIdentitySchema], subject: admitFileIdentity },
+    { of: [Incremental.FormatIdentitySchema], subject: admitFileIdentity },
     (subject, [identity]) => {
       const result = subject(AdmitFileIdentityCommand.make({ file: FILE, recorded: identity, claimed: undefined }))
       return Result.isSuccess(result) && S.is(FileIdentityRecompute)(result.success) && result.success.file === FILE

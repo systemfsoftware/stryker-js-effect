@@ -4,7 +4,7 @@ import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Record from 'effect/Record'
 
-import type { StrykerConfig } from './stryker-config.schema.js'
+import type { StrykerConfig } from './define-config.js'
 
 interface MergedConfigRecord<A = unknown> extends Record<string, A | MergedConfigRecord<A>> {}
 

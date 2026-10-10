@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -14,6 +13,8 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
+import { Cli } from '@systemfsoftware/stryker-js'
+import { Incremental } from '@systemfsoftware/stryker-js-contracts'
 import { recordedDryRunMsOf } from './__fixtures__/recorded-dry-run.schema.js'
 
 const Feature = makeFeature({ it })
@@ -137,9 +138,9 @@ const planObservationOf = (text: string): PlanObservation =>
     }),
   })
 
-const decodeReportedIncremental = S.decodeUnknownOption(S.fromJsonString(Engine.IncrementalReportSchema))
+const decodeReportedIncremental = S.decodeUnknownOption(S.fromJsonString(Incremental.IncrementalReportSchema))
 
-type ReportedIncremental = S.Schema.Type<typeof Engine.IncrementalReportSchema>
+type ReportedIncremental = S.Schema.Type<typeof Incremental.IncrementalReportSchema>
 type ReportedMutant = ReportedIncremental['files'][string]['mutants'][number]
 
 const costMsByIdOf = (reported: ReportedIncremental): Record<string, number> =>

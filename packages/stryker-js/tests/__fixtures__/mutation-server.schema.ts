@@ -1,4 +1,4 @@
-import type { Serve } from '@systemfsoftware/stryker-js'
+import type { Serve } from '@systemfsoftware/stryker-js-serve'
 import * as Exit from 'effect/Exit'
 import * as S from 'effect/Schema'
 

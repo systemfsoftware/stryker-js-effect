@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Run } from '@systemfsoftware/stryker-js-contracts'
 import { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -6,26 +7,16 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import {
-  RunConfigFailed,
-  RunFailed,
-  RunInterrupted,
-  RunParseFailed,
-  RunRefused,
-  RunSurvivorsRejected,
-} from './classify-run-outcome.workflow.js'
-import { RunOutcomeCommand } from './RunOutcomeCommand.schema.js'
-
 const PlanRunConclusionTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/PlanRunConclusion')
 type PlanRunConclusionTypeId = typeof PlanRunConclusionTypeId
 
 export const FailedRunOutcomeSchema = S.Union([
-  RunParseFailed,
-  RunSurvivorsRejected,
-  RunConfigFailed,
-  RunRefused,
-  RunFailed,
-  RunInterrupted,
+  Run.RunParseFailed,
+  Run.RunSurvivorsRejected,
+  Run.RunConfigFailed,
+  Run.RunRefused,
+  Run.RunFailed,
+  Run.RunInterrupted,
 ])
 
 export const RunOutcomeTag = S.Literals([
@@ -40,7 +31,7 @@ export const RunOutcomeTag = S.Literals([
 export type RunOutcomeTag = typeof RunOutcomeTag.Type
 
 export class PlanRunConclusionCommand extends S.TaggedClass<PlanRunConclusionCommand>()('PlanRunConclusionCommand', {
-  command: RunOutcomeCommand,
+  command: Run.RunOutcomeCommand,
   machine: S.Boolean,
   exitCode: Plugin.ExitCode,
   outcome: RunOutcomeTag,
@@ -55,7 +46,7 @@ export class PlanRunConclusionCommand extends S.TaggedClass<PlanRunConclusionCom
 }
 
 export class RunConclusionEmittedOk extends S.TaggedClass<RunConclusionEmittedOk>()('RunConclusionEmittedOk', {
-  command: RunOutcomeCommand,
+  command: Run.RunOutcomeCommand,
 }) {
   readonly [PlanRunConclusionTypeId] = PlanRunConclusionTypeId
 }
@@ -63,7 +54,7 @@ export class RunConclusionEmittedOk extends S.TaggedClass<RunConclusionEmittedOk
 export class RunConclusionEmittedFailed extends S.TaggedClass<RunConclusionEmittedFailed>()(
   'RunConclusionEmittedFailed',
   {
-    command: RunOutcomeCommand,
+    command: Run.RunOutcomeCommand,
     exitCode: Plugin.ExitCode,
   },
 ) {

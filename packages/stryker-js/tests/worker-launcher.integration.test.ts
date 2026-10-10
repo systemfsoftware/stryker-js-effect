@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Worker } from '@systemfsoftware/stryker-js'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
@@ -8,6 +7,8 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { Workers } from '@systemfsoftware/stryker-js-contracts'
+import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import {
   bootFailure,
   type BootOutcome,
@@ -29,23 +30,23 @@ const bootAnswer = (boot: BootOutcome): string =>
     onSuccess: (answer) => answer,
   })
 
-const crashOf = (boot: BootOutcome): Worker.ChildProcessCrashedError => {
+const crashOf = (boot: BootOutcome): Workers.ChildProcessCrashedError => {
   const failure = bootFailure(boot)
-  if (S.is(Worker.ChildProcessCrashedError)(failure)) {
+  if (S.is(Workers.ChildProcessCrashedError)(failure)) {
     return failure
   }
   throw new Error('the boot was expected to fail as a crash', { cause: failure })
 }
 
-const memoryOf = (boot: BootOutcome): Worker.OutOfMemoryError => {
+const memoryOf = (boot: BootOutcome): Workers.OutOfMemoryError => {
   const failure = bootFailure(boot)
-  if (S.is(Worker.OutOfMemoryError)(failure)) {
+  if (S.is(Workers.OutOfMemoryError)(failure)) {
     return failure
   }
   throw new Error('the boot was expected to fail as an out-of-memory death', { cause: failure })
 }
 
-const readingOf = (decision: Worker.ClassifyWorkerExitDecision): string =>
+const readingOf = (decision: WorkerHost.ClassifyWorkerExitDecision): string =>
   Match.value(decision).pipe(
     Match.tag('WorkerOutOfMemory', (outOfMemory) => `memory exhaustion at exit ${outOfMemory.exitCode}`),
     Match.tag('WorkerCrashed', () => 'a crash'),
@@ -148,7 +149,9 @@ Feature('Running each plugin worker as its own process')
             Effect.sync(() =>
               s.codes.map((code) =>
                 Result.match(
-                  Worker.classifyWorkerExit(Worker.ClassifyWorkerExitCommand.make({ pid: WORKER_PID, exitCode: code })),
+                  WorkerHost.classifyWorkerExit(
+                    WorkerHost.ClassifyWorkerExitCommand.make({ pid: WORKER_PID, exitCode: code }),
+                  ),
                   {
                     onFailure: (refused) => refused,
                     onSuccess: (classified) => classified,

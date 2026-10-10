@@ -1,5 +1,4 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Worker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Checker, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
@@ -19,6 +18,8 @@ import * as Socket from 'effect/socket/Socket'
 import * as SocketServer from 'effect/socket/SocketServer'
 import * as TestClock from 'effect/testing/TestClock'
 
+import { Workers } from '@systemfsoftware/stryker-js-contracts'
+import { WorkerHost } from '@systemfsoftware/stryker-js-worker-host'
 import { memorySocketPair, singleConnection } from './__fixtures__/substituted-worker.fixture.js'
 
 const Feature = makeFeature({ it })
@@ -91,12 +92,12 @@ const makeHarness = (bootRefusals = 0) =>
 
     yield* Effect.forkScoped(makeSilentCheckerServer(busySocket(gate, serverSocket), received).pipe(Layer.launch))
 
-    const launcherLayer = Layer.succeed(Worker.WorkerLauncher, {
+    const launcherLayer = Layer.succeed(Workers.WorkerLauncher, {
       spawn: () =>
         Effect.succeed(
-          Worker.makeSpawnedSocketWorker({
+          Workers.make({
             pid: 4242,
-            clientLayer: Worker.layerWorkerProtocol(
+            clientLayer: WorkerHost.layerWorkerProtocol(
               Layer.succeed(Socket.Socket, refusingFirstOpens(bootRefusals, clientSocket)),
             ),
             exited: Effect.never,
@@ -105,7 +106,7 @@ const makeHarness = (bootRefusals = 0) =>
     })
 
     const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({}).pipe(Effect.orDie)
-    const client = yield* Worker.makeWorkerClient({
+    const client = yield* WorkerHost.makeWorkerClient({
       entrypoint: '/project/checker.mjs',
       execArgv: [],
       options,

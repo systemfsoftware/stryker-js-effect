@@ -1,5 +1,6 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Configuration } from '@systemfsoftware/stryker-js'
+import type { Configuration } from '@systemfsoftware/stryker-js-contracts'
+import { Engine } from '@systemfsoftware/stryker-js-engine'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Array from 'effect/Array'
@@ -84,15 +85,15 @@ interface ReadOutcome<E = ConfigFileReadError> {
 
 type ReadEffect<A> = Effect.Effect<A, never, ReadRecorder | FileSystem.FileSystem | Path.Path>
 
-const DEFAULT_INVOCATION: Configuration.ConfigInvocation = { command: 'run', mode: 'human', overlay: mergeConfig }
+const DEFAULT_INVOCATION: Engine.ConfigInvocation = { command: 'run', mode: 'human', overlay: mergeConfig }
 
 const outcomeOf = (
   cliOptions: Options.PartialStrykerOptions,
-  invocation: Configuration.ConfigInvocation,
+  invocation: Engine.ConfigInvocation,
 ): ReadEffect<ReadOutcome> =>
   Effect.gen(function*() {
     const recorder = yield* ReadRecorder
-    const result = yield* Effect.result(Configuration.readConfig(cliOptions, invocation))
+    const result = yield* Effect.result(Engine.readConfig(cliOptions, invocation))
     return { result, recorder }
   })
 
