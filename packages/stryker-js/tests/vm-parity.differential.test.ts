@@ -505,7 +505,7 @@ const generatedRealMutantVerdicts = (project: GeneratedProject): Effect.Effect<O
   )
 
 const RUNAWAY_VERDICT = 'Killed/runaway'
-const RUNAWAY_REASON_PREFIX = TestRunner.HitLimitReasonPrefix.literal
+const RUNAWAY_REASON_PREFIX = `killed: ${TestRunner.HitLimitReasonPrefix.literal}`
 
 const candidateVerdictOf = (mutant: MutantRecord): string =>
   mutant.status === 'Killed' && (mutant.statusReason?.startsWith(RUNAWAY_REASON_PREFIX) ?? false)

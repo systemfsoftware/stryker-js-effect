@@ -199,7 +199,7 @@ Feature('Reporting a mutant that never settles without aborting the run')
         )((s, expect) => {
           const verdict = verdictOf(s.observation.events)
           const timeouts = s.observation.daemonMutants.filter((mutant) => mutant.status === 'Timeout')
-          const wallClockTimeouts = timeouts.filter((mutant) => mutant.statusReason === 'wall-clock-timeout')
+          const wallClockTimeouts = timeouts.filter((mutant) => mutant.statusReason === 'timed-out: wall-clock-timeout')
           const killed = s.observation.daemonMutants.filter((mutant) => mutant.status === 'Killed')
           const verdictClass = Exit.isSuccess(s.observation.exit) ? s.observation.exit.value.verdict : undefined
           return expect({

@@ -135,7 +135,7 @@ const reuseEventsOf = (stdout: string): ReadonlyArray<RunEvent.ReuseReported> =>
   eventLinesOf(stdout).flatMap((line) => Option.toArray(S.decodeOption(S.fromJsonString(RunEvent.ReuseReported))(line)))
 
 const detailOf = (stdout: string, id: string): RunEvent.MutantDetailReported | undefined =>
-  mutantDetailsOf(stdout).find((event) => event.id === id)
+  mutantDetailsOf(stdout).find((event) => event.mutant.id === id)
 
 Feature('Re-running one mutant by its id', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
@@ -160,11 +160,12 @@ Feature('Re-running one mutant by its id', { timeout: 180_000 })
               exitCode: s.rerun.exitCode,
               reproducerCommand: s.reproducer.command,
               detail: detail === undefined ? null : {
-                id: detail.id,
-                status: detail.status,
-                killedBy: detail.killedBy,
+                id: detail.mutant.id,
+                status: detail.mutant.status,
+                hasKilledBy: 'killedBy' in detail.mutant,
                 reproducer: detail.reproducer,
-                coveringTestsIsArray: Array.isArray(detail.coveringTests),
+                coveringTestsIsArray: detail.mutant.status === 'Survived' && Array.isArray(detail.mutant.coveredBy),
+                next: detail.mutant.status === 'Survived' ? detail.mutant.next._tag : null,
               },
             }).toStrictEqual({
               exitCode: 0,
@@ -172,9 +173,10 @@ Feature('Re-running one mutant by its id', { timeout: 180_000 })
               detail: {
                 id: s.reproducer.id,
                 status: 'Survived',
-                killedBy: null,
+                hasKilledBy: false,
                 reproducer: `stryker run --mutant ${s.reproducer.id}`,
                 coveringTestsIsArray: true,
+                next: 'strengthen-tests',
               },
             })
           },
@@ -244,7 +246,7 @@ Feature('Re-running one mutant by its id', { timeout: 180_000 })
             exitCode: s.second.exitCode,
             reused: Option.map(reuse, (event) => event.reused),
             ran: Option.map(reuse, (event) => event.ran),
-            detailStatus: Option.map(Option.fromUndefinedOr(detail), (found) => found.status),
+            detailStatus: Option.map(Option.fromUndefinedOr(detail), (found) => found.mutant.status),
             detailReproducer: Option.map(Option.fromUndefinedOr(detail), (found) => found.reproducer),
           }).toStrictEqual({
             exitCode: 0,

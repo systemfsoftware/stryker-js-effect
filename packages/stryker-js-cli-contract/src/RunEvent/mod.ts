@@ -1,3 +1,19 @@
+export { nextActionOf } from '../next-action.js'
+export type { ActionableStatus, NextActionByStatus, NextActionFacts } from '../next-action.js'
+export {
+  AddTest,
+  FixConfig,
+  FixFailingTest,
+  ListSurvivors,
+  NextAction,
+  NextActionTests,
+  NoneNeeded,
+  NoneNeededWhy,
+  RerunShards,
+  RestartPaging,
+  RunMutation,
+  StrengthenTests,
+} from '../next-action.schema.js'
 export { PluginLoadFailureReason } from '../plugin-load-failure-reason.schema.js'
 export { RunEventWireLine } from '../run-event-wire.schema.js'
 export {
@@ -14,6 +30,7 @@ export {
   IncrementalMode,
   MutantCost,
   MutantDetailReported,
+  MutantFacts,
   MutantSetPolicy,
   PhaseDurations,
   PhaseEntered,

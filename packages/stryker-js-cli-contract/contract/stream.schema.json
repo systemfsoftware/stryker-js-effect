@@ -14,7 +14,2245 @@
       "$ref": "#/definitions/workerEncoded"
     },
     {
-      "$ref": "#/definitions/mutantTestedEncoded"
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "_tag": {
+              "type": "string",
+              "enum": [
+                "mutant"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            },
+            "file": {
+              "type": "string",
+              "pattern": "^[^\\\\]+$"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                },
+                "end": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "additionalProperties": true
+            },
+            "mutator": {
+              "type": "string",
+              "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+            },
+            "replacement": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "static": {
+              "type": "boolean"
+            },
+            "cost": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "fixedOverheadMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testBodyMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testsExecuted": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "shared": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "fixedOverheadMs",
+                    "testBodyMs",
+                    "testsExecuted",
+                    "shared"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subsumption": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Subsumed"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "dominators": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{16}$"
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "dominators"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Readmitted"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "causes": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "dominator": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                },
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "dominator-ignored-at-check",
+                                    "dominator-compile-error",
+                                    "dominator-ignored-at-plan",
+                                    "dominator-remembered-without-running",
+                                    "dominator-unsettled"
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "dominator",
+                                "code",
+                                "detail"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "object",
+                            "properties": {
+                              "dominator": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              },
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "dominator-ignored-at-check",
+                                  "dominator-compile-error",
+                                  "dominator-ignored-at-plan",
+                                  "dominator-remembered-without-running",
+                                  "dominator-unsettled"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "dominator",
+                              "code",
+                              "detail"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "causes"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "Killed"
+              ]
+            },
+            "statusReason": {
+              "type": "string",
+              "pattern": "^(?:killed|remembered): [\\s\\S]*$"
+            },
+            "killedBy": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "_tag",
+            "id",
+            "file",
+            "location",
+            "mutator",
+            "replacement",
+            "completed",
+            "total",
+            "static",
+            "cost",
+            "subsumption",
+            "status",
+            "statusReason",
+            "killedBy"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "_tag": {
+              "type": "string",
+              "enum": [
+                "mutant"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            },
+            "file": {
+              "type": "string",
+              "pattern": "^[^\\\\]+$"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                },
+                "end": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "additionalProperties": true
+            },
+            "mutator": {
+              "type": "string",
+              "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+            },
+            "replacement": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "static": {
+              "type": "boolean"
+            },
+            "cost": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "fixedOverheadMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testBodyMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testsExecuted": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "shared": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "fixedOverheadMs",
+                    "testBodyMs",
+                    "testsExecuted",
+                    "shared"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subsumption": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Subsumed"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "dominators": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{16}$"
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "dominators"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Readmitted"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "causes": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "dominator": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                },
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "dominator-ignored-at-check",
+                                    "dominator-compile-error",
+                                    "dominator-ignored-at-plan",
+                                    "dominator-remembered-without-running",
+                                    "dominator-unsettled"
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "dominator",
+                                "code",
+                                "detail"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "object",
+                            "properties": {
+                              "dominator": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              },
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "dominator-ignored-at-check",
+                                  "dominator-compile-error",
+                                  "dominator-ignored-at-plan",
+                                  "dominator-remembered-without-running",
+                                  "dominator-unsettled"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "dominator",
+                              "code",
+                              "detail"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "causes"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "Survived"
+              ]
+            },
+            "statusReason": {
+              "type": "string",
+              "pattern": "^(?:covered-not-killed|coverage-not-measured|remembered): [\\s\\S]*$"
+            },
+            "original": {
+              "type": "string"
+            },
+            "coveredBy": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "next": {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "strengthen-tests"
+                  ]
+                },
+                "tests": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "shown": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "total",
+                    "shown"
+                  ],
+                  "additionalProperties": true
+                },
+                "reproduce": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "_tag",
+                "tests",
+                "reproduce"
+              ],
+              "additionalProperties": true,
+              "description": "The covering tests ran and none failed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant."
+            }
+          },
+          "required": [
+            "_tag",
+            "id",
+            "file",
+            "location",
+            "mutator",
+            "replacement",
+            "completed",
+            "total",
+            "static",
+            "cost",
+            "subsumption",
+            "status",
+            "statusReason",
+            "original",
+            "coveredBy",
+            "next"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "_tag": {
+              "type": "string",
+              "enum": [
+                "mutant"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            },
+            "file": {
+              "type": "string",
+              "pattern": "^[^\\\\]+$"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                },
+                "end": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "additionalProperties": true
+            },
+            "mutator": {
+              "type": "string",
+              "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+            },
+            "replacement": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "static": {
+              "type": "boolean"
+            },
+            "cost": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "fixedOverheadMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testBodyMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testsExecuted": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "shared": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "fixedOverheadMs",
+                    "testBodyMs",
+                    "testsExecuted",
+                    "shared"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subsumption": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Subsumed"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "dominators": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{16}$"
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "dominators"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Readmitted"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "causes": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "dominator": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                },
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "dominator-ignored-at-check",
+                                    "dominator-compile-error",
+                                    "dominator-ignored-at-plan",
+                                    "dominator-remembered-without-running",
+                                    "dominator-unsettled"
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "dominator",
+                                "code",
+                                "detail"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "object",
+                            "properties": {
+                              "dominator": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              },
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "dominator-ignored-at-check",
+                                  "dominator-compile-error",
+                                  "dominator-ignored-at-plan",
+                                  "dominator-remembered-without-running",
+                                  "dominator-unsettled"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "dominator",
+                              "code",
+                              "detail"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "causes"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "NoCoverage"
+              ]
+            },
+            "statusReason": {
+              "type": "string",
+              "pattern": "^(?:not-covered|remembered): [\\s\\S]*$"
+            },
+            "original": {
+              "type": "string"
+            },
+            "coveredBy": {
+              "anyOf": [
+                {
+                  "not": {}
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "next": {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "add-test"
+                  ]
+                },
+                "file": {
+                  "type": "string",
+                  "pattern": "^[^\\\\]+$"
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "column": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "_tag",
+                "file",
+                "line",
+                "column"
+              ],
+              "additionalProperties": true,
+              "description": "No test executes the mutant: add a test that reaches `file` at `line` and `column`."
+            }
+          },
+          "required": [
+            "_tag",
+            "id",
+            "file",
+            "location",
+            "mutator",
+            "replacement",
+            "completed",
+            "total",
+            "static",
+            "cost",
+            "subsumption",
+            "status",
+            "statusReason",
+            "original",
+            "next"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "_tag": {
+              "type": "string",
+              "enum": [
+                "mutant"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            },
+            "file": {
+              "type": "string",
+              "pattern": "^[^\\\\]+$"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                },
+                "end": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "additionalProperties": true
+            },
+            "mutator": {
+              "type": "string",
+              "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+            },
+            "replacement": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "static": {
+              "type": "boolean"
+            },
+            "cost": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "fixedOverheadMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testBodyMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testsExecuted": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "shared": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "fixedOverheadMs",
+                    "testBodyMs",
+                    "testsExecuted",
+                    "shared"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subsumption": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Subsumed"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "dominators": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{16}$"
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "dominators"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Readmitted"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "causes": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "dominator": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                },
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "dominator-ignored-at-check",
+                                    "dominator-compile-error",
+                                    "dominator-ignored-at-plan",
+                                    "dominator-remembered-without-running",
+                                    "dominator-unsettled"
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "dominator",
+                                "code",
+                                "detail"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "object",
+                            "properties": {
+                              "dominator": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              },
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "dominator-ignored-at-check",
+                                  "dominator-compile-error",
+                                  "dominator-ignored-at-plan",
+                                  "dominator-remembered-without-running",
+                                  "dominator-unsettled"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "dominator",
+                              "code",
+                              "detail"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "causes"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "Timeout"
+              ]
+            },
+            "statusReason": {
+              "type": "string",
+              "pattern": "^(?:timed-out|remembered): [\\s\\S]*$"
+            },
+            "original": {
+              "type": "string"
+            },
+            "coveredBy": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "next": {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "none-needed"
+                  ]
+                },
+                "why": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "timeout-counts-as-detected"
+                      ],
+                      "description": "A Timeout counts as detected, so the mutant needs no new test."
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "runtime-error-excluded-from-score"
+                      ],
+                      "description": "A RuntimeError is left out of the score, so the mutant needs no new test."
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "_tag",
+                "why"
+              ],
+              "additionalProperties": true,
+              "description": "The mutant needs no action; `why` says which rule exempts it."
+            }
+          },
+          "required": [
+            "_tag",
+            "id",
+            "file",
+            "location",
+            "mutator",
+            "replacement",
+            "completed",
+            "total",
+            "static",
+            "cost",
+            "subsumption",
+            "status",
+            "statusReason",
+            "original",
+            "coveredBy",
+            "next"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "_tag": {
+              "type": "string",
+              "enum": [
+                "mutant"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            },
+            "file": {
+              "type": "string",
+              "pattern": "^[^\\\\]+$"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                },
+                "end": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "additionalProperties": true
+            },
+            "mutator": {
+              "type": "string",
+              "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+            },
+            "replacement": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "static": {
+              "type": "boolean"
+            },
+            "cost": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "fixedOverheadMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testBodyMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testsExecuted": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "shared": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "fixedOverheadMs",
+                    "testBodyMs",
+                    "testsExecuted",
+                    "shared"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subsumption": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Subsumed"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "dominators": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{16}$"
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "dominators"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Readmitted"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "causes": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "dominator": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                },
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "dominator-ignored-at-check",
+                                    "dominator-compile-error",
+                                    "dominator-ignored-at-plan",
+                                    "dominator-remembered-without-running",
+                                    "dominator-unsettled"
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "dominator",
+                                "code",
+                                "detail"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "object",
+                            "properties": {
+                              "dominator": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              },
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "dominator-ignored-at-check",
+                                  "dominator-compile-error",
+                                  "dominator-ignored-at-plan",
+                                  "dominator-remembered-without-running",
+                                  "dominator-unsettled"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "dominator",
+                              "code",
+                              "detail"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "causes"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "RuntimeError"
+              ]
+            },
+            "statusReason": {
+              "type": "string",
+              "pattern": "^(?:runtime-error): [\\s\\S]*$"
+            },
+            "original": {
+              "type": "string"
+            },
+            "coveredBy": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "next": {
+              "type": "object",
+              "properties": {
+                "_tag": {
+                  "type": "string",
+                  "enum": [
+                    "none-needed"
+                  ]
+                },
+                "why": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "timeout-counts-as-detected"
+                      ],
+                      "description": "A Timeout counts as detected, so the mutant needs no new test."
+                    },
+                    {
+                      "type": "string",
+                      "enum": [
+                        "runtime-error-excluded-from-score"
+                      ],
+                      "description": "A RuntimeError is left out of the score, so the mutant needs no new test."
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "_tag",
+                "why"
+              ],
+              "additionalProperties": true,
+              "description": "The mutant needs no action; `why` says which rule exempts it."
+            }
+          },
+          "required": [
+            "_tag",
+            "id",
+            "file",
+            "location",
+            "mutator",
+            "replacement",
+            "completed",
+            "total",
+            "static",
+            "cost",
+            "subsumption",
+            "status",
+            "statusReason",
+            "original",
+            "coveredBy",
+            "next"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "_tag": {
+              "type": "string",
+              "enum": [
+                "mutant"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            },
+            "file": {
+              "type": "string",
+              "pattern": "^[^\\\\]+$"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                },
+                "end": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "additionalProperties": true
+            },
+            "mutator": {
+              "type": "string",
+              "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+            },
+            "replacement": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "static": {
+              "type": "boolean"
+            },
+            "cost": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "fixedOverheadMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testBodyMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testsExecuted": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "shared": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "fixedOverheadMs",
+                    "testBodyMs",
+                    "testsExecuted",
+                    "shared"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subsumption": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Subsumed"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "dominators": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{16}$"
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "dominators"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Readmitted"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "causes": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "dominator": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                },
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "dominator-ignored-at-check",
+                                    "dominator-compile-error",
+                                    "dominator-ignored-at-plan",
+                                    "dominator-remembered-without-running",
+                                    "dominator-unsettled"
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "dominator",
+                                "code",
+                                "detail"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "object",
+                            "properties": {
+                              "dominator": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              },
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "dominator-ignored-at-check",
+                                  "dominator-compile-error",
+                                  "dominator-ignored-at-plan",
+                                  "dominator-remembered-without-running",
+                                  "dominator-unsettled"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "dominator",
+                              "code",
+                              "detail"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "causes"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "CompileError"
+              ]
+            },
+            "statusReason": {
+              "type": "string",
+              "pattern": "^(?:compile-error|remembered): [\\s\\S]*$"
+            }
+          },
+          "required": [
+            "_tag",
+            "id",
+            "file",
+            "location",
+            "mutator",
+            "replacement",
+            "completed",
+            "total",
+            "static",
+            "cost",
+            "subsumption",
+            "status",
+            "statusReason"
+          ],
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "properties": {
+            "_tag": {
+              "type": "string",
+              "enum": [
+                "mutant"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{16}$"
+            },
+            "file": {
+              "type": "string",
+              "pattern": "^[^\\\\]+$"
+            },
+            "location": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                },
+                "end": {
+                  "type": "object",
+                  "properties": {
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "start",
+                "end"
+              ],
+              "additionalProperties": true
+            },
+            "mutator": {
+              "type": "string",
+              "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+            },
+            "replacement": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "static": {
+              "type": "boolean"
+            },
+            "cost": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "fixedOverheadMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testBodyMs": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "testsExecuted": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "shared": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "fixedOverheadMs",
+                    "testBodyMs",
+                    "testsExecuted",
+                    "shared"
+                  ],
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subsumption": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Subsumed"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "dominators": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{16}$"
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "dominators"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "_tag": {
+                          "type": "string",
+                          "enum": [
+                            "Readmitted"
+                          ]
+                        },
+                        "rule": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "complement"
+                              ]
+                            }
+                          ]
+                        },
+                        "causes": {
+                          "type": "array",
+                          "minItems": 1,
+                          "items": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "dominator": {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                },
+                                "code": {
+                                  "type": "string",
+                                  "enum": [
+                                    "dominator-ignored-at-check",
+                                    "dominator-compile-error",
+                                    "dominator-ignored-at-plan",
+                                    "dominator-remembered-without-running",
+                                    "dominator-unsettled"
+                                  ]
+                                },
+                                "detail": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "dominator",
+                                "code",
+                                "detail"
+                              ],
+                              "additionalProperties": true
+                            }
+                          ],
+                          "additionalItems": {
+                            "type": "object",
+                            "properties": {
+                              "dominator": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              },
+                              "code": {
+                                "type": "string",
+                                "enum": [
+                                  "dominator-ignored-at-check",
+                                  "dominator-compile-error",
+                                  "dominator-ignored-at-plan",
+                                  "dominator-remembered-without-running",
+                                  "dominator-unsettled"
+                                ]
+                              },
+                              "detail": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "dominator",
+                              "code",
+                              "detail"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "_tag",
+                        "rule",
+                        "causes"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "Ignored"
+              ]
+            },
+            "statusReason": {
+              "type": "string",
+              "pattern": "^(?:arid-logging|arid-telemetry|arid-time|arid-config-default|arid-memoization|redundant-relational|equivalent-to-original|duplicate-at-site|ignore-static|directive|excluded-mutator|ignorer|checker): [\\s\\S]*$"
+            }
+          },
+          "required": [
+            "_tag",
+            "id",
+            "file",
+            "location",
+            "mutator",
+            "replacement",
+            "completed",
+            "total",
+            "static",
+            "cost",
+            "subsumption",
+            "status",
+            "statusReason"
+          ],
+          "additionalProperties": true
+        }
+      ]
     },
     {
       "$ref": "#/definitions/tickEncoded"
@@ -400,310 +2638,6 @@
       ],
       "additionalProperties": true
     },
-    "mutantTestedEncoded": {
-      "type": "object",
-      "properties": {
-        "_tag": {
-          "type": "string",
-          "enum": [
-            "mutant"
-          ]
-        },
-        "id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{16}$"
-        },
-        "file": {
-          "type": "string",
-          "pattern": "^[^\\\\]+$"
-        },
-        "location": {
-          "type": "object",
-          "properties": {
-            "start": {
-              "type": "object",
-              "properties": {
-                "line": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "column": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              },
-              "required": [
-                "line",
-                "column"
-              ],
-              "additionalProperties": true
-            },
-            "end": {
-              "type": "object",
-              "properties": {
-                "line": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "column": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              },
-              "required": [
-                "line",
-                "column"
-              ],
-              "additionalProperties": true
-            }
-          },
-          "required": [
-            "start",
-            "end"
-          ],
-          "additionalProperties": true
-        },
-        "mutator": {
-          "type": "string",
-          "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
-        },
-        "replacement": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "completed": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "total": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "static": {
-          "type": "boolean"
-        },
-        "cost": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "fixedOverheadMs": {
-                  "type": "number",
-                  "minimum": 0
-                },
-                "testBodyMs": {
-                  "type": "number",
-                  "minimum": 0
-                },
-                "testsExecuted": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "shared": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "fixedOverheadMs",
-                "testBodyMs",
-                "testsExecuted",
-                "shared"
-              ],
-              "additionalProperties": true
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "subsumption": {
-          "anyOf": [
-            {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "_tag": {
-                      "type": "string",
-                      "enum": [
-                        "Subsumed"
-                      ]
-                    },
-                    "rule": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "complement"
-                          ]
-                        }
-                      ]
-                    },
-                    "dominators": {
-                      "type": "array",
-                      "minItems": 1,
-                      "items": [
-                        {
-                          "type": "string",
-                          "pattern": "^[0-9a-f]{16}$"
-                        }
-                      ],
-                      "additionalItems": {
-                        "type": "string",
-                        "pattern": "^[0-9a-f]{16}$"
-                      }
-                    }
-                  },
-                  "required": [
-                    "_tag",
-                    "rule",
-                    "dominators"
-                  ],
-                  "additionalProperties": true
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "_tag": {
-                      "type": "string",
-                      "enum": [
-                        "Readmitted"
-                      ]
-                    },
-                    "rule": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "enum": [
-                            "complement"
-                          ]
-                        }
-                      ]
-                    },
-                    "causes": {
-                      "type": "array",
-                      "minItems": 1,
-                      "items": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "dominator": {
-                              "type": "string",
-                              "pattern": "^[0-9a-f]{16}$"
-                            },
-                            "code": {
-                              "type": "string",
-                              "enum": [
-                                "dominator-ignored-at-check",
-                                "dominator-compile-error",
-                                "dominator-ignored-at-plan",
-                                "dominator-remembered-without-running",
-                                "dominator-unsettled"
-                              ]
-                            },
-                            "detail": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "dominator",
-                            "code",
-                            "detail"
-                          ],
-                          "additionalProperties": true
-                        }
-                      ],
-                      "additionalItems": {
-                        "type": "object",
-                        "properties": {
-                          "dominator": {
-                            "type": "string",
-                            "pattern": "^[0-9a-f]{16}$"
-                          },
-                          "code": {
-                            "type": "string",
-                            "enum": [
-                              "dominator-ignored-at-check",
-                              "dominator-compile-error",
-                              "dominator-ignored-at-plan",
-                              "dominator-remembered-without-running",
-                              "dominator-unsettled"
-                            ]
-                          },
-                          "detail": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "dominator",
-                          "code",
-                          "detail"
-                        ],
-                        "additionalProperties": true
-                      }
-                    }
-                  },
-                  "required": [
-                    "_tag",
-                    "rule",
-                    "causes"
-                  ],
-                  "additionalProperties": true
-                }
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "Killed",
-            "Survived",
-            "NoCoverage",
-            "CompileError",
-            "RuntimeError",
-            "Timeout",
-            "Ignored",
-            "Pending"
-          ]
-        },
-        "statusReason": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "_tag",
-        "id",
-        "file",
-        "location",
-        "mutator",
-        "replacement",
-        "completed",
-        "total",
-        "static",
-        "cost",
-        "subsumption",
-        "status",
-        "statusReason"
-      ],
-      "additionalProperties": true
-    },
     "tickEncoded": {
       "type": "object",
       "properties": {
@@ -1020,56 +2954,2136 @@
             "mutant-detail"
           ]
         },
-        "id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{16}$"
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "Killed",
-            "Survived",
-            "NoCoverage",
-            "CompileError",
-            "RuntimeError",
-            "Timeout",
-            "Ignored",
-            "Pending"
-          ]
-        },
-        "coveringTests": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "killedBy": {
+        "mutant": {
           "anyOf": [
             {
-              "type": "string"
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                "fileName": {
+                  "type": "string",
+                  "pattern": "^[^\\\\]+$"
+                },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "end": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "additionalProperties": true
+                },
+                "mutatorName": {
+                  "type": "string",
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+                },
+                "replacement": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "static": {
+                  "type": "boolean"
+                },
+                "cost": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "fixedOverheadMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testBodyMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testsExecuted": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shared": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "fixedOverheadMs",
+                        "testBodyMs",
+                        "testsExecuted",
+                        "shared"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subsumption": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Subsumed"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "dominators": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "dominators"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Readmitted"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "causes": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "dominator": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{16}$"
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dominator-ignored-at-check",
+                                        "dominator-compile-error",
+                                        "dominator-ignored-at-plan",
+                                        "dominator-remembered-without-running",
+                                        "dominator-unsettled"
+                                      ]
+                                    },
+                                    "detail": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "dominator",
+                                    "code",
+                                    "detail"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "object",
+                                "properties": {
+                                  "dominator": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{16}$"
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "dominator-ignored-at-check",
+                                      "dominator-compile-error",
+                                      "dominator-ignored-at-plan",
+                                      "dominator-remembered-without-running",
+                                      "dominator-unsettled"
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "dominator",
+                                  "code",
+                                  "detail"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "causes"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "Killed"
+                  ]
+                },
+                "statusReason": {
+                  "type": "string",
+                  "pattern": "^(?:killed|remembered): [\\s\\S]*$"
+                },
+                "killedBy": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "fileName",
+                "location",
+                "mutatorName",
+                "replacement",
+                "static",
+                "cost",
+                "subsumption",
+                "status",
+                "statusReason",
+                "killedBy"
+              ],
+              "additionalProperties": true
             },
             {
-              "type": "null"
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                "fileName": {
+                  "type": "string",
+                  "pattern": "^[^\\\\]+$"
+                },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "end": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "additionalProperties": true
+                },
+                "mutatorName": {
+                  "type": "string",
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+                },
+                "replacement": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "static": {
+                  "type": "boolean"
+                },
+                "cost": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "fixedOverheadMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testBodyMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testsExecuted": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shared": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "fixedOverheadMs",
+                        "testBodyMs",
+                        "testsExecuted",
+                        "shared"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subsumption": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Subsumed"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "dominators": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "dominators"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Readmitted"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "causes": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "dominator": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{16}$"
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dominator-ignored-at-check",
+                                        "dominator-compile-error",
+                                        "dominator-ignored-at-plan",
+                                        "dominator-remembered-without-running",
+                                        "dominator-unsettled"
+                                      ]
+                                    },
+                                    "detail": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "dominator",
+                                    "code",
+                                    "detail"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "object",
+                                "properties": {
+                                  "dominator": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{16}$"
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "dominator-ignored-at-check",
+                                      "dominator-compile-error",
+                                      "dominator-ignored-at-plan",
+                                      "dominator-remembered-without-running",
+                                      "dominator-unsettled"
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "dominator",
+                                  "code",
+                                  "detail"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "causes"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "Survived"
+                  ]
+                },
+                "statusReason": {
+                  "type": "string",
+                  "pattern": "^(?:covered-not-killed|coverage-not-measured|remembered): [\\s\\S]*$"
+                },
+                "original": {
+                  "type": "string"
+                },
+                "coveredBy": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "next": {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "strengthen-tests"
+                      ]
+                    },
+                    "tests": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shown": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "shown"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "reproduce": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "tests",
+                    "reproduce"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The covering tests ran and none failed: strengthen an assertion in one of `tests`, then run `reproduce` to check that it kills the mutant."
+                }
+              },
+              "required": [
+                "id",
+                "fileName",
+                "location",
+                "mutatorName",
+                "replacement",
+                "static",
+                "cost",
+                "subsumption",
+                "status",
+                "statusReason",
+                "original",
+                "coveredBy",
+                "next"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                "fileName": {
+                  "type": "string",
+                  "pattern": "^[^\\\\]+$"
+                },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "end": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "additionalProperties": true
+                },
+                "mutatorName": {
+                  "type": "string",
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+                },
+                "replacement": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "static": {
+                  "type": "boolean"
+                },
+                "cost": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "fixedOverheadMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testBodyMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testsExecuted": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shared": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "fixedOverheadMs",
+                        "testBodyMs",
+                        "testsExecuted",
+                        "shared"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subsumption": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Subsumed"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "dominators": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "dominators"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Readmitted"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "causes": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "dominator": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{16}$"
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dominator-ignored-at-check",
+                                        "dominator-compile-error",
+                                        "dominator-ignored-at-plan",
+                                        "dominator-remembered-without-running",
+                                        "dominator-unsettled"
+                                      ]
+                                    },
+                                    "detail": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "dominator",
+                                    "code",
+                                    "detail"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "object",
+                                "properties": {
+                                  "dominator": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{16}$"
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "dominator-ignored-at-check",
+                                      "dominator-compile-error",
+                                      "dominator-ignored-at-plan",
+                                      "dominator-remembered-without-running",
+                                      "dominator-unsettled"
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "dominator",
+                                  "code",
+                                  "detail"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "causes"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "NoCoverage"
+                  ]
+                },
+                "statusReason": {
+                  "type": "string",
+                  "pattern": "^(?:not-covered|remembered): [\\s\\S]*$"
+                },
+                "original": {
+                  "type": "string"
+                },
+                "coveredBy": {
+                  "anyOf": [
+                    {
+                      "not": {}
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "next": {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "add-test"
+                      ]
+                    },
+                    "file": {
+                      "type": "string",
+                      "pattern": "^[^\\\\]+$"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "column": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "file",
+                    "line",
+                    "column"
+                  ],
+                  "additionalProperties": true,
+                  "description": "No test executes the mutant: add a test that reaches `file` at `line` and `column`."
+                }
+              },
+              "required": [
+                "id",
+                "fileName",
+                "location",
+                "mutatorName",
+                "replacement",
+                "static",
+                "cost",
+                "subsumption",
+                "status",
+                "statusReason",
+                "original",
+                "next"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                "fileName": {
+                  "type": "string",
+                  "pattern": "^[^\\\\]+$"
+                },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "end": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "additionalProperties": true
+                },
+                "mutatorName": {
+                  "type": "string",
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+                },
+                "replacement": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "static": {
+                  "type": "boolean"
+                },
+                "cost": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "fixedOverheadMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testBodyMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testsExecuted": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shared": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "fixedOverheadMs",
+                        "testBodyMs",
+                        "testsExecuted",
+                        "shared"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subsumption": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Subsumed"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "dominators": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "dominators"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Readmitted"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "causes": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "dominator": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{16}$"
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dominator-ignored-at-check",
+                                        "dominator-compile-error",
+                                        "dominator-ignored-at-plan",
+                                        "dominator-remembered-without-running",
+                                        "dominator-unsettled"
+                                      ]
+                                    },
+                                    "detail": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "dominator",
+                                    "code",
+                                    "detail"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "object",
+                                "properties": {
+                                  "dominator": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{16}$"
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "dominator-ignored-at-check",
+                                      "dominator-compile-error",
+                                      "dominator-ignored-at-plan",
+                                      "dominator-remembered-without-running",
+                                      "dominator-unsettled"
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "dominator",
+                                  "code",
+                                  "detail"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "causes"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "Timeout"
+                  ]
+                },
+                "statusReason": {
+                  "type": "string",
+                  "pattern": "^(?:timed-out|remembered): [\\s\\S]*$"
+                },
+                "original": {
+                  "type": "string"
+                },
+                "coveredBy": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "next": {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "none-needed"
+                      ]
+                    },
+                    "why": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "timeout-counts-as-detected"
+                          ],
+                          "description": "A Timeout counts as detected, so the mutant needs no new test."
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "runtime-error-excluded-from-score"
+                          ],
+                          "description": "A RuntimeError is left out of the score, so the mutant needs no new test."
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "why"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The mutant needs no action; `why` says which rule exempts it."
+                }
+              },
+              "required": [
+                "id",
+                "fileName",
+                "location",
+                "mutatorName",
+                "replacement",
+                "static",
+                "cost",
+                "subsumption",
+                "status",
+                "statusReason",
+                "original",
+                "coveredBy",
+                "next"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                "fileName": {
+                  "type": "string",
+                  "pattern": "^[^\\\\]+$"
+                },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "end": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "additionalProperties": true
+                },
+                "mutatorName": {
+                  "type": "string",
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+                },
+                "replacement": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "static": {
+                  "type": "boolean"
+                },
+                "cost": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "fixedOverheadMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testBodyMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testsExecuted": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shared": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "fixedOverheadMs",
+                        "testBodyMs",
+                        "testsExecuted",
+                        "shared"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subsumption": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Subsumed"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "dominators": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "dominators"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Readmitted"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "causes": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "dominator": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{16}$"
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dominator-ignored-at-check",
+                                        "dominator-compile-error",
+                                        "dominator-ignored-at-plan",
+                                        "dominator-remembered-without-running",
+                                        "dominator-unsettled"
+                                      ]
+                                    },
+                                    "detail": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "dominator",
+                                    "code",
+                                    "detail"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "object",
+                                "properties": {
+                                  "dominator": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{16}$"
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "dominator-ignored-at-check",
+                                      "dominator-compile-error",
+                                      "dominator-ignored-at-plan",
+                                      "dominator-remembered-without-running",
+                                      "dominator-unsettled"
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "dominator",
+                                  "code",
+                                  "detail"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "causes"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "RuntimeError"
+                  ]
+                },
+                "statusReason": {
+                  "type": "string",
+                  "pattern": "^(?:runtime-error): [\\s\\S]*$"
+                },
+                "original": {
+                  "type": "string"
+                },
+                "coveredBy": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "next": {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
+                      "type": "string",
+                      "enum": [
+                        "none-needed"
+                      ]
+                    },
+                    "why": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "timeout-counts-as-detected"
+                          ],
+                          "description": "A Timeout counts as detected, so the mutant needs no new test."
+                        },
+                        {
+                          "type": "string",
+                          "enum": [
+                            "runtime-error-excluded-from-score"
+                          ],
+                          "description": "A RuntimeError is left out of the score, so the mutant needs no new test."
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "why"
+                  ],
+                  "additionalProperties": true,
+                  "description": "The mutant needs no action; `why` says which rule exempts it."
+                }
+              },
+              "required": [
+                "id",
+                "fileName",
+                "location",
+                "mutatorName",
+                "replacement",
+                "static",
+                "cost",
+                "subsumption",
+                "status",
+                "statusReason",
+                "original",
+                "coveredBy",
+                "next"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                "fileName": {
+                  "type": "string",
+                  "pattern": "^[^\\\\]+$"
+                },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "end": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "additionalProperties": true
+                },
+                "mutatorName": {
+                  "type": "string",
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+                },
+                "replacement": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "static": {
+                  "type": "boolean"
+                },
+                "cost": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "fixedOverheadMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testBodyMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testsExecuted": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shared": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "fixedOverheadMs",
+                        "testBodyMs",
+                        "testsExecuted",
+                        "shared"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subsumption": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Subsumed"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "dominators": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "dominators"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Readmitted"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "causes": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "dominator": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{16}$"
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dominator-ignored-at-check",
+                                        "dominator-compile-error",
+                                        "dominator-ignored-at-plan",
+                                        "dominator-remembered-without-running",
+                                        "dominator-unsettled"
+                                      ]
+                                    },
+                                    "detail": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "dominator",
+                                    "code",
+                                    "detail"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "object",
+                                "properties": {
+                                  "dominator": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{16}$"
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "dominator-ignored-at-check",
+                                      "dominator-compile-error",
+                                      "dominator-ignored-at-plan",
+                                      "dominator-remembered-without-running",
+                                      "dominator-unsettled"
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "dominator",
+                                  "code",
+                                  "detail"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "causes"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "CompileError"
+                  ]
+                },
+                "statusReason": {
+                  "type": "string",
+                  "pattern": "^(?:compile-error|remembered): [\\s\\S]*$"
+                }
+              },
+              "required": [
+                "id",
+                "fileName",
+                "location",
+                "mutatorName",
+                "replacement",
+                "static",
+                "cost",
+                "subsumption",
+                "status",
+                "statusReason"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                "fileName": {
+                  "type": "string",
+                  "pattern": "^[^\\\\]+$"
+                },
+                "location": {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "end": {
+                      "type": "object",
+                      "properties": {
+                        "line": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "column": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "required": [
+                        "line",
+                        "column"
+                      ],
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "additionalProperties": true
+                },
+                "mutatorName": {
+                  "type": "string",
+                  "pattern": "^(?:[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\/)?[A-Z][A-Za-z0-9]*$"
+                },
+                "replacement": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "static": {
+                  "type": "boolean"
+                },
+                "cost": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "fixedOverheadMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testBodyMs": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "testsExecuted": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "shared": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "fixedOverheadMs",
+                        "testBodyMs",
+                        "testsExecuted",
+                        "shared"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "subsumption": {
+                  "anyOf": [
+                    {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Subsumed"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "dominators": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "string",
+                                  "pattern": "^[0-9a-f]{16}$"
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "string",
+                                "pattern": "^[0-9a-f]{16}$"
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "dominators"
+                          ],
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "_tag": {
+                              "type": "string",
+                              "enum": [
+                                "Readmitted"
+                              ]
+                            },
+                            "rule": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "complement"
+                                  ]
+                                }
+                              ]
+                            },
+                            "causes": {
+                              "type": "array",
+                              "minItems": 1,
+                              "items": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "dominator": {
+                                      "type": "string",
+                                      "pattern": "^[0-9a-f]{16}$"
+                                    },
+                                    "code": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dominator-ignored-at-check",
+                                        "dominator-compile-error",
+                                        "dominator-ignored-at-plan",
+                                        "dominator-remembered-without-running",
+                                        "dominator-unsettled"
+                                      ]
+                                    },
+                                    "detail": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "dominator",
+                                    "code",
+                                    "detail"
+                                  ],
+                                  "additionalProperties": true
+                                }
+                              ],
+                              "additionalItems": {
+                                "type": "object",
+                                "properties": {
+                                  "dominator": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{16}$"
+                                  },
+                                  "code": {
+                                    "type": "string",
+                                    "enum": [
+                                      "dominator-ignored-at-check",
+                                      "dominator-compile-error",
+                                      "dominator-ignored-at-plan",
+                                      "dominator-remembered-without-running",
+                                      "dominator-unsettled"
+                                    ]
+                                  },
+                                  "detail": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "dominator",
+                                  "code",
+                                  "detail"
+                                ],
+                                "additionalProperties": true
+                              }
+                            }
+                          },
+                          "required": [
+                            "_tag",
+                            "rule",
+                            "causes"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "Ignored"
+                  ]
+                },
+                "statusReason": {
+                  "type": "string",
+                  "pattern": "^(?:arid-logging|arid-telemetry|arid-time|arid-config-default|arid-memoization|redundant-relational|equivalent-to-original|duplicate-at-site|ignore-static|directive|excluded-mutator|ignorer|checker): [\\s\\S]*$"
+                }
+              },
+              "required": [
+                "id",
+                "fileName",
+                "location",
+                "mutatorName",
+                "replacement",
+                "static",
+                "cost",
+                "subsumption",
+                "status",
+                "statusReason"
+              ],
+              "additionalProperties": true
             }
-          ]
+          ],
+          "description": "What is known about a settled mutant, by status. `statusReason` is `<code>: <detail>` from the status's own codes; `next` says what to do about a survivor or a failure."
         },
         "reproducer": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "string"
         }
       },
       "required": [
         "_tag",
-        "id",
-        "status",
-        "coveringTests",
-        "killedBy",
+        "mutant",
         "reproducer"
       ],
       "additionalProperties": true

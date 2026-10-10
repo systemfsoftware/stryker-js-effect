@@ -1,0 +1,101 @@
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { type LineStarts, lineStartsOf, offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
+
+export interface SourceText {
+  readonly text: string
+  readonly lineStarts: LineStarts
+}
+
+export const sourceTextOf = (text: string): SourceText => ({ text, lineStarts: lineStartsOf(text) })
+
+export interface MutantFactsInput {
+  readonly result: Mutant.RunMutantResult
+  readonly file: Mutant.CanonicalFileName
+  readonly source: Option.Option<SourceText>
+}
+
+const originalTextOf = (source: Option.Option<SourceText>, location: Mutant.Location): string =>
+  Option.getOrElse(
+    Option.flatMap(source, ({ text, lineStarts }) =>
+      Option.zipWith(
+        offsetAt(lineStarts, location.start),
+        offsetAt(lineStarts, location.end),
+        (start, end) => text.slice(start, end),
+      )),
+    () => '',
+  )
+
+const requiredReasonOf = (result: Mutant.RunMutantResult): string =>
+  Option.getOrThrowWith(
+    Option.fromUndefinedOr(result.statusReason),
+    () => new Error(`${result.status} mutant ${result.id} reached the stream without a status reason`),
+  )
+
+const sharedFactsOf = ({ result, file }: MutantFactsInput) => ({
+  id: result.id,
+  fileName: file,
+  location: result.location,
+  mutatorName: result.mutatorName,
+  replacement: result.replacement,
+  static: Option.getOrElse(Option.fromUndefinedOr(result.static), () => false),
+  cost: Option.getOrNull(Option.map(Option.fromUndefinedOr(result.cost), (cost) => RunEvent.MutantCost.make(cost))),
+  subsumption: Option.getOrNull(Option.fromUndefinedOr(result.subsumption)),
+  statusReason: requiredReasonOf(result),
+})
+
+export const mutantFactsOf = (input: MutantFactsInput): RunEvent.MutantFacts => {
+  const { result, file, source } = input
+  const shared = sharedFactsOf(input)
+  const coveredBy = [...Option.getOrElse(Option.fromUndefinedOr(result.coveredBy), () => [])]
+  const actionFacts: RunEvent.NextActionFacts = { id: result.id, file, location: result.location, coveredBy }
+  const original = () => originalTextOf(source, result.location)
+  const { cases } = RunEvent.MutantFacts
+  return Match.value(result.status).pipe(
+    Match.when('Killed', () =>
+      cases.Killed.make({
+        ...shared,
+        status: 'Killed',
+        killedBy: [...Option.getOrElse(Option.fromUndefinedOr(result.killedBy), () => [])],
+      })),
+    Match.when('Survived', () =>
+      cases.Survived.make({
+        ...shared,
+        status: 'Survived',
+        original: original(),
+        coveredBy,
+        next: RunEvent.nextActionOf(actionFacts, 'Survived'),
+      })),
+    Match.when('NoCoverage', () =>
+      cases.NoCoverage.make({
+        ...shared,
+        status: 'NoCoverage',
+        original: original(),
+        next: RunEvent.nextActionOf(actionFacts, 'NoCoverage'),
+      })),
+    Match.when('Timeout', () =>
+      cases.Timeout.make({
+        ...shared,
+        status: 'Timeout',
+        original: original(),
+        coveredBy,
+        next: RunEvent.nextActionOf(actionFacts, 'Timeout'),
+      })),
+    Match.when('RuntimeError', () =>
+      cases.RuntimeError.make({
+        ...shared,
+        status: 'RuntimeError',
+        original: original(),
+        coveredBy,
+        next: RunEvent.nextActionOf(actionFacts, 'RuntimeError'),
+      })),
+    Match.when('CompileError', () => cases.CompileError.make({ ...shared, status: 'CompileError' })),
+    Match.when('Ignored', () => cases.Ignored.make({ ...shared, status: 'Ignored' })),
+    Match.when('Pending', (): never => {
+      throw new Error(`Pending mutant ${result.id} reached the stream before it settled`)
+    }),
+    Match.exhaustive,
+  )
+}

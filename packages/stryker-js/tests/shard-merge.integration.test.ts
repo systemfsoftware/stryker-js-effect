@@ -80,7 +80,7 @@ const verdictsOfStream = (text: string): readonly Verdict[] =>
   testedOfStream(text).map((tested): Verdict => ({
     id: tested.id,
     status: tested.status,
-    reason: tested.statusReason ?? '',
+    reason: tested.statusReason,
     subsumption: tested.subsumption === null ? '' : JSON.stringify(tested.subsumption),
   }))
 

@@ -4,7 +4,7 @@
 "@systemfsoftware/stryker-js": major
 ---
 
-Every machine-stream mutant line now carries `statusReason`. An Ignored line names the rule that removed it as `<rule-id>: <detail>` (for example `arid-logging: Effect.logInfo`); other statuses carry their note or `null`. `stryker merge` keeps the reason in the JSON report.
+Every machine-stream mutant line now carries `statusReason`. An Ignored line names the rule that removed it as `<rule-id>: <detail>` (for example `arid-logging: Effect.logInfo`). `stryker merge` keeps the reason in the JSON report.
 
 Breaking:
 

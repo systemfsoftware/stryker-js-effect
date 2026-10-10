@@ -4,7 +4,6 @@ import { Reporter, TestRunner } from '@systemfsoftware/stryker-js-plugin-interfa
 import type * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
-import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
 import * as Pool from 'effect/Pool'
@@ -16,10 +15,12 @@ import { MutantRunObservation } from '../interpret-mutant-run.workflow.js'
 import { mutantCostOf, testBodyMsOf } from '../mutant-cost.js'
 import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
 import { type PooledTestRunner } from '../pooled-test-runner.handle.js'
+import { ProjectFiles } from '../project-files.service.js'
 import { offerReporterEvent } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import type { TestBasis } from './dry-run.cell.js'
+import { mutantFactsOf, type SourceText, sourceTextOf } from './mutant-facts.js'
 import { isMutantStatus, toReportedMutant, type ValidMutantStatus } from './mutation-test-plan.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
@@ -39,6 +40,7 @@ export interface RunContext {
   readonly plannedMutants: readonly Mutant.Mutant[]
   readonly rememberedMutantIds: ReadonlyArray<string>
   readonly pathService: Path.Path
+  readonly originalSources: ReadonlyMap<string, SourceText>
 }
 
 export interface ReportingInputArgs {
@@ -79,46 +81,34 @@ const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, re
   })
 })
 
-const costLineOf = (result: Mutant.RunMutantResult): RunEvent.MutantCost | null =>
-  Option.getOrNull(Option.map(Option.fromUndefinedOr(result.cost), (cost) => RunEvent.MutantCost.make(cost)))
+export const originalSourcesOf = Effect.fnUntraced(function*(basis: TestBasis) {
+  const projectFiles = yield* ProjectFiles
+  const originals = yield* projectFiles.readAllOriginal(basis.project.filesToMutate.values())
+  return new Map(originals.map(([file, text]) => [file.name, sourceTextOf(text)] as const))
+})
 
-const subsumptionLineOf = (result: Mutant.RunMutantResult): Mutant.Subsumption | null =>
-  Option.getOrNull(Option.fromUndefinedOr(result.subsumption))
-
-const requiredReasonOf = (result: Mutant.RunMutantResult): string =>
-  Option.getOrThrowWith(
-    Option.fromUndefinedOr(result.statusReason),
-    () => new Error(`Ignored mutant ${result.id} reached the stream without the rule that ignored it`),
-  )
-
-const statusReasonOf = (result: Mutant.RunMutantResult, status: Mutant.MutantStatus): string | null =>
-  Match.value(status).pipe(
-    Match.when('Ignored', () => requiredReasonOf(result)),
-    Match.orElse(() => Option.getOrNull(Option.fromUndefinedOr(result.statusReason))),
-  )
+const sourceOf = (context: RunContext, result: Mutant.RunMutantResult): Option.Option<SourceText> =>
+  Option.fromUndefinedOr(context.originalSources.get(result.fileName))
 
 const mutantLineOf = (
+  context: RunContext,
   result: Mutant.RunMutantResult,
   streamable: PreparedStreamableMutant,
-  progress: { readonly completed: number; readonly total: number },
-): RunEvent.RunMutantTested => {
-  const fields = {
-    id: result.id,
-    fileName: streamable.file,
-    location: streamable.location,
-    mutatorName: result.mutatorName,
-    replacement: result.replacement,
-    ...progress,
-    static: Option.getOrElse(Option.fromUndefinedOr(result.static), () => false),
-    cost: costLineOf(result),
-    subsumption: subsumptionLineOf(result),
-  }
-  return RunEvent.RunMutantTestedEvent.make({
-    ...fields,
-    status: streamable.status,
-    statusReason: statusReasonOf(result, streamable.status),
-  })
-}
+  completed: number,
+): RunEvent.RunMutantTested => ({
+  ...mutantFactsOf({ result, file: streamable.file, source: sourceOf(context, result) }),
+  _tag: 'mutantTested',
+  completed,
+  total: context.plannedTotal,
+})
+
+export const mutantFactsIn = Effect.fnUntraced(function*(context: RunContext, result: Mutant.RunMutantResult) {
+  const prepared = yield* preparedStreamableOf(context, result)
+  return Option.map(
+    prepared,
+    (streamable) => mutantFactsOf({ result, file: streamable.file, source: sourceOf(context, result) }),
+  )
+})
 
 const offerFinished = Effect.fnUntraced(function*(
   context: RunContext,
@@ -132,7 +122,7 @@ const offerFinished = Effect.fnUntraced(function*(
         const completed = yield* Ref.updateAndGet(context.completedRef, (n) => n + 1)
         yield* Queue.offer(
           context.progressQueue,
-          mutantLineOf(result, streamable, { completed, total: context.plannedTotal }),
+          mutantLineOf(context, result, streamable, completed),
         )
         return Option.some(completed)
       }),

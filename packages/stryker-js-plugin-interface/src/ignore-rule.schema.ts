@@ -216,10 +216,10 @@ export const StatusReason = S.Union([
   settledVariantOf('Timeout', SETTLED_CODES_BY_STATUS.Timeout),
   settledVariantOf('RuntimeError', SETTLED_CODES_BY_STATUS.RuntimeError),
   settledVariantOf('CompileError', SETTLED_CODES_BY_STATUS.CompileError),
-]).pipe(S.toTaggedUnion('status')).annotate({
+]).annotate({
   description:
     'A mutant status with its reason, `<code>: <detail>` decoded to `{ code, detail }`. Each status admits only its own codes; a Pending mutant has no reason.',
-})
+}).pipe(S.toTaggedUnion('status'))
 export type StatusReason = typeof StatusReason.Type
 
 const acceptsIgnoreStatusReason = (value: string): boolean => S.is(IgnoreStatusReasonText)(value)

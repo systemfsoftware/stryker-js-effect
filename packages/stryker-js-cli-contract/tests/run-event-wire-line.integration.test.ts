@@ -3,6 +3,8 @@ import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Option from 'effect/Option'
+import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -16,12 +18,41 @@ const WORKER = '{"_tag":"worker","schemaVersion":"8.0","role":"testRunner","inde
 
 const READS_NOWHERE = '"subsumption":null'
 
-const NO_REASON = 'null'
+const KILLED_REASON = '"killed: expected 3 to be 4"'
 
-const mutantLine = (status: string, file: string | null, cost: string, reason: string = NO_REASON): string =>
-  `{"_tag":"mutant","id":"0000000000000001","status":"${status}",${
-    file === null ? '' : `"file":"${file}",`
-  }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${cost},"statusReason":${reason},${READS_NOWHERE}}`
+const COVERED_BY = '"coveredBy":["a.test.ts > adds"]'
+
+const STRENGTHEN =
+  '"next":{"_tag":"strengthen-tests","tests":{"total":1,"shown":["a.test.ts > adds"]},"reproduce":"stryker run --mutant 0000000000000001"}'
+
+const DETECTED = '"next":{"_tag":"none-needed","why":"timeout-counts-as-detected"}'
+
+const STATUS_FACTS: Record<string, { readonly reason: string; readonly facts: string }> = {
+  Killed: { reason: KILLED_REASON, facts: '"killedBy":["a.test.ts > adds"]' },
+  Survived: {
+    reason: '"covered-not-killed: 1 covering tests ran, none failed"',
+    facts: `"original":"-",${COVERED_BY},${STRENGTHEN}`,
+  },
+  Timeout: { reason: '"timed-out: wall-clock-timeout"', facts: `"original":"-",${COVERED_BY},${DETECTED}` },
+  Ignored: { reason: '"arid-logging: console.log"', facts: '' },
+}
+
+const factsEntryOf = (status: string) => Option.getOrElse(Record.get(STATUS_FACTS, status), () => STATUS_FACTS.Killed)
+
+const factsOf = (status: string): string => factsEntryOf(status).facts
+
+const reasonFor = (status: string): string => factsEntryOf(status).reason
+
+const withFacts = (status: string, line: string): string =>
+  factsOf(status) === '' ? line : `${line.slice(0, -1)},${factsOf(status)}}`
+
+const mutantLine = (status: string, file: string | null, cost: string, reason: string = reasonFor(status)): string =>
+  withFacts(
+    status,
+    `{"_tag":"mutant","id":"0000000000000001","status":"${status}",${
+      file === null ? '' : `"file":"${file}",`
+    }${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${cost},"statusReason":${reason},${READS_NOWHERE}}`,
+  )
 
 const SUBSUMED_REFERENCE = '{"_tag":"Subsumed","rule":"complement","dominators":["0000000000000002"]}'
 
@@ -31,7 +62,10 @@ const READMITTED_REFERENCE =
 const IGNORED_REASON = '"redundant-relational: subsumed by 0000000000000002"'
 
 const lineWith = (status: string, reason: string, subsumption: string): string =>
-  `{"_tag":"mutant","id":"0000000000000001","status":"${status}","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${COST},"statusReason":${reason},"subsumption":${subsumption}}`
+  withFacts(
+    status,
+    `{"_tag":"mutant","id":"0000000000000001","status":"${status}","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"cost":${COST},"statusReason":${reason},"subsumption":${subsumption}}`,
+  )
 
 const subsumedReferenceOf = (line: string): string =>
   Result.match(S.decodeResult(RunEvent.RunEventWireLine)(line), {
@@ -120,7 +154,9 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
             Effect.sync(() => ({
               present: mutantLine('Killed', 'src/a.ts', COST),
               absent:
-                `{"_tag":"mutant","id":"0000000000000001","status":"Killed","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"statusReason":null,${READS_NOWHERE}}`,
+                `{"_tag":"mutant","id":"0000000000000001","status":"Killed","file":"src/a.ts",${LOCATION},"mutator":"ArithmeticOperator","replacement":null,"completed":1,"total":3,"static":false,"statusReason":${KILLED_REASON},${READS_NOWHERE},${
+                  factsOf('Killed')
+                }}`,
             })),
         ),
         When('each line is decoded through the wire codec')(
@@ -173,8 +209,8 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           () =>
             Effect.sync(() => ({
               subsumedIgnored: lineWith('Ignored', IGNORED_REASON, SUBSUMED_REFERENCE),
-              subsumedKilled: lineWith('Killed', NO_REASON, SUBSUMED_REFERENCE),
-              readmittedKilled: lineWith('Killed', NO_REASON, READMITTED_REFERENCE),
+              subsumedKilled: lineWith('Killed', KILLED_REASON, SUBSUMED_REFERENCE),
+              readmittedKilled: lineWith('Killed', KILLED_REASON, READMITTED_REFERENCE),
               readmittedIgnored: lineWith('Ignored', IGNORED_REASON, READMITTED_REFERENCE),
             })),
         ),
@@ -201,7 +237,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           () =>
             Effect.sync(() => ({
               named: mutantLine('Ignored', 'src/a.ts', 'null', '"arid-logging: Effect.logInfo"'),
-              unnamed: mutantLine('Ignored', 'src/a.ts', 'null'),
+              unnamed: mutantLine('Ignored', 'src/a.ts', 'null', 'null'),
               outsideVocabulary: mutantLine('Ignored', 'src/a.ts', 'null', '"made-up-rule: x"'),
               bareRule: mutantLine('Ignored', 'src/a.ts', 'null', '"arid-logging"'),
             })),
@@ -222,14 +258,14 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
     )
 
     scenario(
-      'Any other status carries a free-form reason or none, and the reason survives the codec',
+      'Every settled status carries a reason from its own codes, and the reason survives the codec',
       Gherkin.Do.pipe(
-        Given('a Killed line with no reason and a Timeout line naming its timeout kind')(
+        Given('Killed, Timeout and Ignored lines naming their codes')(
           'probes',
           () =>
             Effect.sync(() => ({
               killed: mutantLine('Killed', 'src/a.ts', COST),
-              timeout: mutantLine('Timeout', 'src/a.ts', COST, '"wall-clock-timeout"'),
+              timeout: mutantLine('Timeout', 'src/a.ts', COST),
               ignored: mutantLine('Ignored', 'src/a.ts', 'null', '"duplicate-at-site: tce"'),
             })),
         ),
@@ -244,9 +280,72 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
         ),
         Then('each decoded line keeps the reason it was written with')((s, expect) =>
           expect(s.reasons).toEqual({
-            killed: null,
-            timeout: 'wall-clock-timeout',
+            killed: 'killed: expected 3 to be 4',
+            timeout: 'timed-out: wall-clock-timeout',
             ignored: 'duplicate-at-site: tce',
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A reason missing, uncoded, or coded for another status is refused',
+      Gherkin.Do.pipe(
+        Given('Killed and Timeout lines with no reason, a free-form reason, and another status code')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              killedWithoutReason: mutantLine('Killed', 'src/a.ts', COST, 'null'),
+              timeoutFreeForm: mutantLine('Timeout', 'src/a.ts', COST, '"wall-clock-timeout"'),
+              killedWithSurvivedCode: mutantLine('Killed', 'src/a.ts', COST, '"covered-not-killed: 1 test"'),
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'outcomes',
+          (s) => Effect.sync(() => refusalsOf(s.probes)),
+        ),
+        Then('every line is refused')((s, expect) =>
+          expect(s.outcomes).toEqual({
+            killedWithoutReason: expect.stringMatching(/^refused:/),
+            timeoutFreeForm: expect.stringMatching(/^refused:/),
+            killedWithSurvivedCode: expect.stringMatching(/^refused:/),
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A line carrying the facts of another status is refused',
+      Gherkin.Do.pipe(
+        Given('a Killed line without killedBy, a Survived line without next, and a NoCoverage line with coveredBy')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              survived: mutantLine('Survived', 'src/a.ts', COST),
+              killedWithoutKiller: mutantLine('Killed', 'src/a.ts', COST).replace(
+                ',"killedBy":["a.test.ts > adds"]',
+                '',
+              ),
+              survivedWithoutNext: mutantLine('Survived', 'src/a.ts', COST).replace(`,${STRENGTHEN}`, ''),
+              noCoverageWithCoveredBy: mutantLine('Survived', 'src/a.ts', COST)
+                .replace('"status":"Survived"', '"status":"NoCoverage"')
+                .replace('"covered-not-killed: 1 covering tests ran, none failed"', '"not-covered: src/a.ts:1:1"')
+                .replace(
+                  STRENGTHEN,
+                  '"next":{"_tag":"add-test","file":"src/a.ts","line":1,"column":1}',
+                ),
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'outcomes',
+          (s) => Effect.sync(() => refusalsOf(s.probes)),
+        ),
+        Then('only the Survived line with all its facts is accepted')((s, expect) =>
+          expect(s.outcomes).toEqual({
+            survived: 'accepted: mutantTested',
+            killedWithoutKiller: expect.stringMatching(/^refused:[\s\S]*killedBy/),
+            survivedWithoutNext: expect.stringMatching(/^refused:[\s\S]*next/),
+            noCoverageWithCoveredBy: expect.stringMatching(/^refused:[\s\S]*coveredBy/),
           })
         ),
       ),
@@ -300,7 +399,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           'probes',
           () =>
             Effect.sync(() => ({
-              ignored: mutantLine('Ignored', 'src/a.ts', COST, '"arid-logging: console.log"'),
+              ignored: mutantLine('Ignored', 'src/a.ts', COST),
               killed: mutantLine('Killed', 'src/a.ts', COST),
             })),
         ),

@@ -17,6 +17,17 @@ import {
 } from './IncrementalDiff.schema.js'
 import type { PreviousReuseRecord, TimeoutEvidence } from './IncrementalDiff.schema.js'
 
+const REMEMBERED_PREFIX = 'remembered: '
+
+const priorDetailOf = (prior: string): string =>
+  Boolean.match(prior.startsWith(REMEMBERED_PREFIX), {
+    onTrue: () => prior.slice(REMEMBERED_PREFIX.length),
+    onFalse: () => prior,
+  })
+
+const rememberedReasonOf = (prior: string | undefined): string =>
+  `${REMEMBERED_PREFIX}${priorDetailOf(Option.getOrElse(Option.fromUndefinedOr(prior), () => ''))}`
+
 const isReusableStatus = S.is(Mutant.RememberedStatusSchema)
 
 const NO_PREVIOUS_RECORDS: readonly PreviousReuseRecord[] = []
@@ -61,7 +72,7 @@ export class MutantRememberedIgnored extends S.TaggedClass<MutantRememberedIgnor
 export class MutantRememberedSettled extends S.TaggedClass<MutantRememberedSettled>()('MutantRemembered', {
   ...rememberedFields,
   status: Mutant.SettledStatusSchema,
-  statusReason: S.optional(S.String),
+  statusReason: S.String,
 }) {
   readonly [IncrementalDiffTypeId] = IncrementalDiffTypeId
 }
@@ -243,7 +254,7 @@ const rememberedSettledOf = (mutant: Mutant.Mutant) => (record: SettledRecord): 
   MutantRememberedSettled.make({
     mutantId: mutant.id,
     status: record.status,
-    statusReason: record.statusReason,
+    statusReason: rememberedReasonOf(record.statusReason),
     ...rememberedOptionalFieldsOf(record),
   })
 

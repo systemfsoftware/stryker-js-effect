@@ -47,7 +47,7 @@ import {
   type SubsumptionRuling,
 } from '../readmit-subsumed.workflow.js'
 import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js'
-import { mutantDetailEventsOf, requestedIdsOf } from '../Rerun/rerun-selection.js'
+import { requestedIdsOf, requestedResultsOf } from '../Rerun/rerun-selection.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { originalFileFor } from '../Sandbox.handle.js'
@@ -59,6 +59,8 @@ import {
   announceSettledMutant,
   type CheckpointWriter,
   makeCheckpointWriter,
+  mutantFactsIn,
+  originalSourcesOf,
   reportingInputOf,
   type RunContext,
 } from './mutant-run.js'
@@ -343,6 +345,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     plannedMutants: [...rememberedResults, ...reuse.mutants],
     rememberedMutantIds: rememberedResults.map((result) => result.id),
     pathService: yield* Path.Path,
+    originalSources: yield* Effect.mapError(originalSourcesOf(basis), asMutationTestError),
   }
   const settledResults = [
     ...rememberedResults,
@@ -410,8 +413,17 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     results: [...settledResults, ...runResults],
   })
   yield* Effect.forEach(
-    mutantDetailEventsOf({ requested: requestedIdsOf(basis.options), results: allResults }),
-    (detail) => Queue.offer(progressQueue, detail),
+    requestedResultsOf({ requested: requestedIdsOf(basis.options), results: allResults }),
+    (result) =>
+      Effect.flatMap(mutantFactsIn(context, result), (facts) =>
+        Option.match(facts, {
+          onNone: () => Effect.void,
+          onSome: (mutant) =>
+            Queue.offer(
+              progressQueue,
+              RunEvent.MutantDetailReported.make({ mutant, reproducer: `stryker run --mutant ${mutant.id}` }),
+            ),
+        })),
     { discard: true },
   )
   yield* Queue.offer(
