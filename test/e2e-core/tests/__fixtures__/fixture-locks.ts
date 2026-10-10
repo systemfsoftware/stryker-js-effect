@@ -9,11 +9,14 @@ import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
 import {
+  admitFixtureLock,
+  AdmitFixtureLockCommand,
   closureMembersOf,
   committableLockOf,
   findLockDrift,
   FindLockDriftCommand,
   type FixtureManifestDocument,
+  type LockAdmission,
   type LockDrift,
   NpmLockfile,
   NpmLockfileJson,
@@ -80,7 +83,7 @@ export interface FixtureSource {
 export interface FixtureLockReport {
   readonly fixtureId: string
   readonly findings: ReadonlyArray<LockDrift>
-  readonly problems: ReadonlyArray<string>
+  readonly admission: Option.Option<LockAdmission>
 }
 
 const MANIFEST_FILE = 'package.json'
@@ -228,9 +231,21 @@ const committedLockOf = (fixture: FixtureSource) =>
       : Option.none<NpmLockfile>()
   })
 
-const NpmLsJson = S.fromJsonString(S.Struct({ problems: S.String.pipe(S.Array, S.optionalKey) }))
+export interface ListedLockInput {
+  readonly fixtureId: string
+  readonly dir: string
+}
 
-const lockProblemsOf = (context: LockContext, staged: StagedFixture, lock: NpmLockfile) =>
+export const listedLockOf = ({ fixtureId, dir }: ListedLockInput) =>
+  Effect.flatMap(
+    runCommand({
+      argv: ['npm', 'ls', '--package-lock-only', '--all', '--json', '--offline', UNREACHABLE_REGISTRY],
+      cwd: dir,
+    }),
+    (listed) => Effect.fromResult(admitFixtureLock(AdmitFixtureLockCommand.make({ fixtureId, ...listed }))),
+  )
+
+const lockAdmissionOf = (context: LockContext, staged: StagedFixture, fixtureId: string, lock: NpmLockfile) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -238,15 +253,7 @@ const lockProblemsOf = (context: LockContext, staged: StagedFixture, lock: NpmLo
       path.join(staged.dir, LOCK_FILE),
       yield* lockFileOf(overlayOf({ lock, members: context.members })),
     )
-    const listed = yield* runCommand({
-      argv: ['npm', 'ls', '--package-lock-only', '--all', '--json', '--offline', UNREACHABLE_REGISTRY],
-      cwd: staged.dir,
-    })
-    return yield* S.decodeEffect(NpmLsJson)(listed.stdout).pipe(
-      Effect.map((report) => report.problems ?? []),
-      Effect.orElseSucceed(() => [listed.stderr.trim()]),
-      Effect.map((problems) => (listed.exitCode === 0 ? [] : problems)),
-    )
+    return yield* listedLockOf({ fixtureId, dir: staged.dir })
   })
 
 export interface FixtureLockInput {
@@ -267,11 +274,11 @@ export const checkFixtureLock = ({ context, fixture }: FixtureLockInput) =>
         pins: staged.pins,
       })),
     ]).flat()
-    const problems = yield* Option.match(lock, {
-      onNone: () => Effect.succeed([]),
-      onSome: (committed) => lockProblemsOf(context, staged, committed),
+    const admission = yield* Option.match(lock, {
+      onNone: () => Effect.succeed(Option.none<LockAdmission>()),
+      onSome: (committed) => Effect.asSome(lockAdmissionOf(context, staged, fixture.fixtureId, committed)),
     })
-    return { fixtureId: fixture.fixtureId, findings, problems } satisfies FixtureLockReport
+    return { fixtureId: fixture.fixtureId, findings, admission } satisfies FixtureLockReport
   })
 
 export const lockFixture = ({ context, fixture }: FixtureLockInput) =>
@@ -313,7 +320,24 @@ const findingTextOf = Match.type<LockDrift>().pipe(
   }),
 )
 
-export const driftLinesOf = (report: FixtureLockReport): ReadonlyArray<string> =>
-  [...report.findings.map(findingTextOf), ...report.problems].map((detail) =>
-    `E2E_PINS_DRIFT: ${report.fixtureId}: ${detail}. Next: ${NEXT_ACTION}, then commit test/e2e/testResources/${report.fixtureId}/${LOCK_FILE}`
-  )
+const lockCommitOf = (fixtureId: string): string => `test/e2e/testResources/${fixtureId}/${LOCK_FILE}`
+
+const driftLineOf = (fixtureId: string) => (detail: string): string =>
+  `E2E_PINS_DRIFT: ${fixtureId}: ${detail}. Next: ${NEXT_ACTION}, then commit ${lockCommitOf(fixtureId)}`
+
+const admissionLinesOf = Match.type<LockAdmission>().pipe(
+  Match.tagsExhaustive({
+    LockAdmitted: (): ReadonlyArray<string> => [],
+    LockProblemsListed: (listed) => listed.problems.map(driftLineOf(listed.fixtureId)),
+    LockUnreadable: (unreadable) => [
+      `E2E_PINS_LOCK_UNREADABLE: ${unreadable.fixtureId}: npm ls could not load the lock (${unreadable.detail}). Next: ${NEXT_ACTION}, then commit ${
+        lockCommitOf(unreadable.fixtureId)
+      }`,
+    ],
+  }),
+)
+
+export const driftLinesOf = (report: FixtureLockReport): ReadonlyArray<string> => [
+  ...report.findings.map(findingTextOf).map(driftLineOf(report.fixtureId)),
+  ...Option.match(report.admission, { onNone: () => [], onSome: admissionLinesOf }),
+]

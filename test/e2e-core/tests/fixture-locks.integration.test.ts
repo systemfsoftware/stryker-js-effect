@@ -14,6 +14,7 @@ import {
   checkFixtureLock,
   driftLinesOf,
   type FixtureSource,
+  listedLockOf,
   type LockContext,
   lockFixture,
   packsDirOf,
@@ -183,6 +184,14 @@ const runnerWith = (manifest: Partial<PackedManifest>): ReadonlyArray<PackedMani
   { name: RUNNER, version: '1.0.0', ...manifest },
 ]
 
+const unreadableLockLines = Effect.scoped(Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'fixture-locks-' })
+  yield* writeFixture({ fixtureId: FIXTURE_ID, dir }, BASELINE)
+  const admission = yield* listedLockOf({ fixtureId: FIXTURE_ID, dir })
+  return driftLinesOf({ fixtureId: FIXTURE_ID, findings: [], admission: Option.some(admission) })
+}))
+
 Feature('Detecting a stale fixture lock')
   .withLayer(PORTS)
   .live('a generated fixture lock is checked offline against a changed closure, manifest or pin')
@@ -348,6 +357,22 @@ Feature('Detecting a stale fixture lock')
           expect(s.checked.drift).toBe(
             `E2E_PINS_DRIFT: ${FIXTURE_ID}: the fixture has no package-lock.json. Next: pnpm --filter @systemfsoftware/stryker-e2e-core fixtures:lock, then commit test/e2e/testResources/${FIXTURE_ID}/package-lock.json`,
           )
+        ),
+      ),
+    )
+
+    scenario(
+      'A lock npm cannot load fails the check with its own reason, never as a clean listing',
+      Gherkin.Do.pipe(
+        Given('a fixture directory npm finds no loadable lock in')('fixture', () => Effect.succeed(FIXTURE_ID)),
+        When('npm ls lists it and exits non-zero with an error report and no problems')(
+          'lines',
+          () => unreadableLockLines,
+        ),
+        Then('the check reports E2E_PINS_LOCK_UNREADABLE with npm error code and the next action')((s, expect) =>
+          expect(s.lines).toStrictEqual([
+            `E2E_PINS_LOCK_UNREADABLE: ${s.fixture}: npm ls could not load the lock (ENOLOCK: This command requires an existing lockfile.). Next: pnpm --filter @systemfsoftware/stryker-e2e-core fixtures:lock, then commit test/e2e/testResources/${s.fixture}/package-lock.json`,
+          ])
         ),
       ),
     )
