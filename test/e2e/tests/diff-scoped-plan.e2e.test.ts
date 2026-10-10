@@ -5,7 +5,11 @@ import type { Check, Expect } from '@systemfsoftware/vitest'
 import { Effect, Equal, Result, Schema } from 'effect'
 
 import type { ExecResult } from '../src/Harness/guest-job.schema.js'
-import { reportMutantsOf, verifyPersistedAnnotations } from './__fixtures__/annotation-oracle.fixture.js'
+import {
+  type PersistedAnnotationObservation,
+  persistedAnnotationsOf,
+  reportMutantsOf,
+} from './__fixtures__/annotation-oracle.fixture.js'
 import { E2eHarnessLive, runStrykerGuest } from './__fixtures__/e2e-harness.fixture.js'
 import { readPersistedReport } from './__fixtures__/run-artifacts.fixture.js'
 
@@ -107,7 +111,12 @@ const verifyDiffScopedPlans = (expect: Expect, shas: GitShas, plan1: ShardPlan, 
   })
 }
 
-const verifyMergedReport = (expect: Expect, plan3: ShardPlan, report: Report.MutationTestResult): Check => {
+const verifyMergedReport = (
+  expect: Expect,
+  plan3: ShardPlan,
+  report: Report.MutationTestResult,
+  annotations: PersistedAnnotationObservation,
+): Check => {
   const mutants = reportMutantsOf(report)
   const plannedIds = sortedIds(plannedIdsOf(plan3))
   return expect({
@@ -116,12 +125,14 @@ const verifyMergedReport = (expect: Expect, plan3: ShardPlan, report: Report.Mut
     everyMutantIsInTheTargetFile: mutants.every(({ file }) => file.endsWith(TARGET_FILE)),
     noMutantIsInTheOtherFile: mutants.every(({ file }) => !file.endsWith(OTHER_FILE)),
     mutantIds: sortedIds(mutants.map(({ mutant }) => mutant.id)),
+    annotations,
   }).toStrictEqual({
     mutantsAreNonEmpty: true,
     everyMutantIsOnTheChangedLine: true,
     everyMutantIsInTheTargetFile: true,
     noMutantIsInTheOtherFile: true,
     mutantIds: plannedIds,
+    annotations: { mutantsReported: mutants.length, mutantsMatched: mutants.length, annotationFailures: [] },
   })
 }
 
@@ -148,30 +159,34 @@ Feature('Planning a diff-scoped shard plan through the packed CLI', { timeout: F
         Then('the plan, shard and merge chain exited cleanly')((s, expect) =>
           verifyExit(expect, s.session.output.result)
         ),
-        When('the revisions, both plans and the merged report are read from the guest')(
+        When('the revisions and both plans are read from the guest')(
           'artifacts',
           (s) =>
             Effect.gen(function*() {
               const shasText = yield* s.session.output.readFile(SHAS_FILE)
               const plan1Text = yield* s.session.output.readFile(PLAN_ONE_FILE)
               const plan3Text = yield* s.session.output.readFile(PLAN_THREE_FILE)
-              const report = yield* readPersistedReport(MERGED_REPORT_FILE, s.session.output.readFile)
               return {
                 shas: shasOf(shasText),
                 plan1: decodePlan(PLAN_ONE_FILE, plan1Text),
                 plan3: decodePlan(PLAN_THREE_FILE, plan3Text),
-                report,
               }
             }),
         ),
         Then('both plans are DiffScoped from commit A to commit B with one shared non-empty mutant set')(
           (s, expect) => verifyDiffScopedPlans(expect, s.artifacts.shas, s.artifacts.plan1, s.artifacts.plan3),
         ),
-        Then('the merged report holds exactly the planned mutants, every one on the changed third line')((s, expect) =>
-          verifyMergedReport(expect, s.artifacts.plan3, s.artifacts.report)
+        When('the merged report is read from the guest')(
+          'report',
+          (s) => readPersistedReport(MERGED_REPORT_FILE, s.session.output.readFile),
         ),
-        Then('every merged mutant matches its authored annotation')((s, expect) =>
-          verifyPersistedAnnotations(expect, { fixture: FIXTURE, slice: SLICE, report: s.artifacts.report })
+        Then(
+          'the merged report holds exactly the planned mutants, every one on the changed third line and matching its authored annotation',
+        )((s, expect) =>
+          Effect.map(
+            persistedAnnotationsOf({ fixture: FIXTURE, slice: SLICE, report: s.report }),
+            (annotations) => verifyMergedReport(expect, s.artifacts.plan3, s.report, annotations),
+          )
         ),
       ),
     )

@@ -263,12 +263,11 @@ export interface PersistedAnnotationObservation {
  * The merged-shard-report oracle for a report with no run verdict of its own — the merged shard report. Every
  * reported mutant must match exactly one authored annotation and no annotation in a mutated file may dangle;
  * only the per-status tally agreement with a terminal verdict is unavailable here, because `stryker merge`
- * writes the report alone.
+ * writes the report alone. A clean report observes `{ mutantsReported: n, mutantsMatched: n, annotationFailures: [] }`.
  */
-export const verifyPersistedAnnotations = (
-  expect: Expect,
+export const persistedAnnotationsOf = (
   input: { readonly fixture: string; readonly slice: string; readonly report: Report.MutationTestResult },
-): Effect.Effect<Check, AnnotationOracleUnreadable, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<PersistedAnnotationObservation, AnnotationOracleUnreadable, FileSystem.FileSystem | Path.Path> =>
   Effect.map(fixtureAnnotationsOf(input), ({ annotations, parseFailures }) => {
     const mutants = reportMutantsOf(input.report)
     const { annotationFailures, mutantsMatched } = annotationTallyOf({
@@ -277,14 +276,5 @@ export const verifyPersistedAnnotations = (
       mutants,
       parseFailures,
     })
-    const observation: PersistedAnnotationObservation = {
-      mutantsReported: mutants.length,
-      mutantsMatched,
-      annotationFailures,
-    }
-    return expect(observation).toStrictEqual({
-      mutantsReported: mutants.length,
-      mutantsMatched: mutants.length,
-      annotationFailures: [],
-    })
+    return { mutantsReported: mutants.length, mutantsMatched, annotationFailures }
   })
