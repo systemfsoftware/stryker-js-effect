@@ -7,6 +7,7 @@ import {
   checkedOptionsOf,
   checkedWorkspaceFiles,
   type Observation,
+  runReasonlessWorkspace,
   runWorkspace,
   uncheckedOptionsOf,
   uncheckedWorkspaceFiles,
@@ -165,6 +166,25 @@ Feature('The measured cost recorded for a verdict the engine decided without a t
             verdictCheckIsNotRun: true,
           })
         }),
+      ),
+    )
+
+    scenario(
+      'A checker that ignores a mutant without naming a rule fails the run, naming the checker and the mutant',
+      Gherkin.Do.pipe(
+        Given('a workspace whose checker answers ignored with no reason for one module')(
+          'observed',
+          () => runReasonlessWorkspace,
+        ),
+        Then('the run fails with the refusal, which names the checker plugin and the mutant id')(
+          (s, expect) =>
+            expect({ failed: s.observed.failed, failure: s.observed.failure }).toMatchObject({
+              failed: true,
+              failure: expect.stringMatching(
+                /Checker "[^"]+" ignored mutant [0-9a-f]{16} without a reason naming a rule/u,
+              ),
+            }),
+        ),
       ),
     )
   })

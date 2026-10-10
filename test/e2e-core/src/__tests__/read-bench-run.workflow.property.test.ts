@@ -48,7 +48,7 @@ const phasesOf = (checkMs: number, reportingMs: number): RunEvent.PhaseDurations
 
 const verdictOf = (counts: Report.Metrics, phaseDurations: RunEvent.PhaseDurations | null): RunEvent.RunEvent =>
   RunEvent.VerdictReached.make({
-    schemaVersion: '6.0',
+    schemaVersion: RunEvent.StreamSchemaVersion.literal,
     runId: RUN_ID,
     mode: 'machine',
     signal: 'flag',
@@ -68,6 +68,7 @@ const mutantOf = (cost: RunEvent.MutantCost | null): RunEvent.RunMutantTestedEve
   RunEvent.RunMutantTestedEvent.make({
     id: MUTANT_ID,
     status: 'Killed',
+    statusReason: null,
     fileName: MUTANT_FILE,
     location: { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } },
     mutatorName: MUTATOR_NAME,
