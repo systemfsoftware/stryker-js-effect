@@ -145,12 +145,14 @@ const HOST_BOUND = {
 } as const
 
 Differential.compare({
-  name: 'type query: every candidate answered NotAssignable is a CompileError when the checker applies it',
+  name:
+    'type query: the fixture is answered, and every NotAssignable answer is a CompileError when the checker applies it',
   reference: verdictsOf,
   candidate: answersOf,
 })
   .on(fc.subarray([...ROWS], { minLength: 1 }), { runBudget: 6, hostBound: HOST_BOUND })
   .assert((verdicts, answers) =>
     Object.keys(verdicts).length === Object.keys(answers).length &&
+    Object.values(answers).every((answer) => !answer.startsWith('FileRefused')) &&
     Object.entries(answers).every(([id, answer]) => answer !== 'NotAssignable' || verdicts[id] === 'compileError')
   )

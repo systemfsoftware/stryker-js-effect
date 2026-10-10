@@ -242,6 +242,40 @@ const refusals = Effect.gen(function*() {
   }
 })
 
+const REASON_SITES: ReadonlyArray<SiteSpec> = [
+  { siteId: 'unannotated', line: 1, text: '1', candidates: ['""'] },
+  { siteId: 'annotation', line: 2, text: 'number', candidates: ['""'] },
+  { siteId: 'unresolved', line: 4, text: '1', candidates: ['""'] },
+  { siteId: 'generic', line: 6, text: 'value', candidates: ['""'] },
+]
+
+const OFF_THE_END: TypeQuerySite = {
+  siteId: 'off-the-end',
+  location: { start: { line: 40, column: 1 }, end: { line: 40, column: 2 } },
+  candidates: [{ candidateId: '""', text: '""' }],
+}
+
+const reasonsAndSecondFile = Effect.gen(function*() {
+  const fixture = yield* fixtureOf('type-query-reasons')
+  const reasons = yield* readQueryFile(fixture, 'reasons.ts', REASON_SITES)
+  const second = yield* readQueryFile(fixture, 'second.ts', [
+    { siteId: 'letter', line: 1, text: `'a'`, candidates: ['""'] },
+  ])
+  const response = yield* Effect.orDie(
+    query(requestOf(fixture, [{ ...reasons, sites: [...reasons.sites, OFF_THE_END] }, second])),
+  )
+  return response.files.map(outcomeText)
+})
+
+const unopenable = Effect.gen(function*() {
+  const fixture = yield* fixtureOf('type-query-reasons')
+  const second = yield* readQueryFile(fixture, 'second.ts', [])
+  const refused = yield* Effect.flip(
+    query({ ...requestOf(fixture, [second]), tsconfigFile: fixture.file('no-such-tsconfig.json') }),
+  )
+  return refused.reason
+})
+
 Feature('Answering type queries on a tsgo server of their own', { timeout: 120_000 })
   .withLayer(FILE_PORTS)
   .live('real tsgo API servers and a real checker runtime over fixture projects on disk')
@@ -328,6 +362,38 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
         Then('the first is refused unsupported-version and the second file not-in-project')((s, expect) =>
           expect(s.seen).toEqual({ unsupported: 'unsupported-version', outside: ['FileRefused not-in-project'] })
         ),
+      ),
+    )
+
+    scenario(
+      'Each site the handler cannot answer names why, and two files of one project share a server',
+      Gherkin.Do.pipe(
+        When(
+          'an unannotated, a type-node, an unresolved-type, a generic-typed and an off-the-end site are queried with a second file',
+        )(
+          'answers',
+          () => reasonsAndSecondFile,
+        ),
+        Then('each site carries its own reason and the second file is answered')((s, expect) =>
+          expect(s.answers).toEqual([
+            {
+              'unannotated ""': 'Unknown no-contextual-type',
+              'annotation ""': 'Unknown site-not-expression',
+              'unresolved ""': 'Unknown error-type',
+              'generic ""': 'Unknown instantiable-target',
+              'off-the-end ""': 'Unknown site-not-found',
+            },
+            { 'letter ""': 'NotAssignable "" to "a" | "b"' },
+          ])
+        ),
+      ),
+    )
+
+    scenario(
+      'A project tsgo cannot open refuses the request',
+      Gherkin.Do.pipe(
+        When('a request names a tsconfig that does not exist')('reason', () => unopenable),
+        Then('the request is refused project-open-failed')((s, expect) => expect(s.reason).toBe('project-open-failed')),
       ),
     )
   })

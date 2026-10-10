@@ -3,6 +3,10 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import {
+  ClassificationCase,
+  type ContextFreeProduction,
+} from '../../tests/__fixtures__/classify-candidate-law.fixture.js'
 import { ClassifyCandidateCommand } from '../CheckerCommands.schema.js'
 import {
   type CandidateContextFreeness,
@@ -10,7 +14,6 @@ import {
   ContextFree,
   NotContextFree,
 } from '../classify-candidate.workflow.js'
-import { ClassificationCase, type ContextFreeProduction } from './classify-candidate.fixture.schema.js'
 
 const render = (production: ContextFreeProduction): string =>
   Match.value(production).pipe(
@@ -25,7 +28,7 @@ const render = (production: ContextFreeProduction): string =>
 const textOf = (example: ClassificationCase): string =>
   Match.value(example).pipe(
     Match.tag('Literal', ({ production }) => render(production)),
-    Match.tag('Parenthesized', ({ production }) => `${render(production)})`),
+    Match.tag('Parenthesized', ({ production }) => `(${render(production)})`),
     Match.tag('SemicolonSuffixed', ({ production }) => `${render(production)};`),
     Match.tag('ArrayWrapped', ({ production }) => `[${render(production)}]`),
     Match.tag('ObjectLiteral', ({ production, key }) => `{${key}: ${render(production)}}`),

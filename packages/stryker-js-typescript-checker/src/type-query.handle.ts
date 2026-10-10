@@ -1,7 +1,9 @@
 import { Handle } from '@systemfsoftware/effect-cell-types'
 import { lineStartsOf, offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
 import {
+  Assignable,
   type FileOutcome,
+  NotAssignable,
   type SiteAnswer,
   type TypeAnswer,
   TypeQuery,
@@ -12,6 +14,7 @@ import {
   type TypeQueryResponse,
   type TypeQueryShape,
   type TypeQuerySite,
+  Unknown,
 } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
@@ -73,7 +76,7 @@ import {
 } from 'typescript/unstable/async'
 import type { FileSystem as TSFileSystem } from 'typescript/unstable/fs'
 
-import { answerTypeQuery } from './answer-type-query.workflow.js'
+import { type AnswerDecision, answerTypeQuery } from './answer-type-query.workflow.js'
 import {
   AnswerTypeQueryCommand,
   type CallArgument,
@@ -175,7 +178,13 @@ const openServer = (tsconfigFile: string): Effect.Effect<Server, TypeQueryRefuse
     const snapshot = yield* Effect.tryPromise({
       try: () => api.updateSnapshot({ openProjects: [tsconfigFile] }),
       catch: (cause) => projectOpenFailed(tsconfigFile, crash(cause).detail),
-    }).pipe(Effect.tapError(() => closeApi(api)))
+    }).pipe(
+      Effect.filterOrFail(
+        (opened) => opened.getProject(tsconfigFile) !== undefined,
+        () => projectOpenFailed(tsconfigFile, 'tsgo opened no project for this tsconfig'),
+      ),
+      Effect.tapError(() => closeApi(api)),
+    )
     const snapshotRef = yield* Ref.make(snapshot)
     return { tsconfigFile, api, overlay, snapshot: snapshotRef }
   })
@@ -253,7 +262,13 @@ interface Probe {
   readonly slots: ReadonlyMap<string, ProbeSlot>
 }
 
-const partOf = (text: string): string => `;(${text});`
+const PROBE_OPEN = '\n;('
+const PROBE_CLOSE = ');'
+
+const appendProbe = (probe: string, text: string): readonly [string, readonly [string, ProbeSlot]] => {
+  const start = probe.length + PROBE_OPEN.length
+  return [`${probe}${PROBE_OPEN}${text}${PROBE_CLOSE}`, [text, { start, end: start + text.length }]]
+}
 
 const buildProbe = (file: TypeQueryFile): Probe => {
   const texts = Arr.dedupe(
@@ -263,14 +278,8 @@ const buildProbe = (file: TypeQueryFile): Probe => {
         (candidate) => candidate.text,
       )),
   )
-  const [, placed] = Arr.mapAccum(texts, file.content.length + 1, (cursor, text) => {
-    const part = partOf(text)
-    return [cursor + part.length + 1, { text, start: cursor + 2, end: cursor + 2 + text.length }]
-  })
-  const slots = new Map(placed.map((entry) => [entry.text, { start: entry.start, end: entry.end }] as const))
-  const parts = Arr.map(texts, partOf)
-  const text = parts.length === 0 ? file.content : `${file.content}\n${parts.join('\n')}`
-  return { text, slots }
+  const [text, placed] = Arr.mapAccum(texts, file.content, appendProbe)
+  return { text, slots: new Map(placed) }
 }
 
 const updateProbe = (server: Server, fileName: string, probeText: string): Effect.Effect<void, ServerCrash> =>
@@ -604,6 +613,13 @@ const candidateFactsOf = (
     onFalse: () => Effect.succeed({ _tag: 'CandidateNotContextFree' } as const),
   })
 
+const portAnswerOf = (decision: AnswerDecision): TypeAnswer =>
+  Match.valueTags(decision, {
+    AnswerAssignable: ({ candidateType }) => Assignable.make({ candidateType }),
+    AnswerNotAssignable: ({ candidateType, contextualType }) => NotAssignable.make({ candidateType, contextualType }),
+    AnswerUnknown: ({ reason }) => Unknown.make({ reason }),
+  })
+
 const answerCandidate = (
   probe: Probe,
   sourceFile: SourceFile,
@@ -613,8 +629,8 @@ const answerCandidate = (
 ): Effect.Effect<{ readonly candidateId: string; readonly answer: TypeAnswer }, ServerCrash> =>
   Effect.gen(function*() {
     const facts = yield* candidateFactsOf(probe, sourceFile, project, reading.contextType, candidate)
-    const answer = decided(answerTypeQuery(AnswerTypeQueryCommand.make({ site: reading.facts, candidate: facts })))
-    return { candidateId: candidate.candidateId, answer }
+    const decision = decided(answerTypeQuery(AnswerTypeQueryCommand.make({ site: reading.facts, candidate: facts })))
+    return { candidateId: candidate.candidateId, answer: portAnswerOf(decision) }
   })
 
 const answerSite = (

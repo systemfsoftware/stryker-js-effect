@@ -3,15 +3,6 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Worker } from '@systemfsoftware/stryker-js'
 import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, type Mutant, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
-import {
-  type FileOutcome,
-  type SiteAnswer,
-  TypeQuery,
-  TypeQueryFile,
-  TypeQueryRequest,
-  TypeQuerySite,
-} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
-import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Clock from 'effect/Clock'
@@ -67,10 +58,6 @@ import {
   shardIndex,
   Side,
   TelemetryMissing,
-  TypeAnswerLine,
-  TypeQueryFileRefused,
-  type TypeQueryRefusalReason,
-  TypeQueryServers,
   Verdict,
 } from './Parity.schema.js'
 import {
@@ -87,6 +74,7 @@ import {
   projectCheckSpans,
   type SpanRecord,
 } from './span-counts.js'
+import { branchTypeQueryLines, type FileContent, type ServerTally } from './type-query-side.js'
 
 const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
 const encodeParityLine = S.encodeResult(S.fromJsonString(ParityLine))
@@ -253,219 +241,16 @@ export const decodeLines: {
     ),
 )
 
-interface ServerTally {
-  readonly live: number
-  readonly peak: number
-}
-
-const tallyProvision = (tally: Ref.Ref<ServerTally>): Effect.Effect<void> =>
-  Ref.update(tally, (current) => {
-    const live = current.live + 1
-    return { live, peak: Math.max(current.peak, live) }
-  })
-
-const tallyRelease = (tally: Ref.Ref<ServerTally>): Effect.Effect<void> =>
-  Ref.update(tally, (current) => ({ ...current, live: current.live - 1 }))
-
-interface QueryCandidateDraft {
-  readonly candidateId: string
-  readonly text: string
-  readonly wire: Checker.CheckerMutantWire
-}
-
-interface QuerySiteDraft {
-  readonly siteId: string
-  readonly location: Checker.CheckerMutantWire['location']
-  readonly candidates: ReadonlyArray<QueryCandidateDraft>
-}
-
-interface QueryFileDraft {
-  readonly fileName: string
-  readonly content: string
-  readonly sites: ReadonlyArray<QuerySiteDraft>
-}
-
-const siteDraftsOf = (wires: ReadonlyArray<Checker.CheckerMutantWire>): ReadonlyArray<QuerySiteDraft> =>
-  Object.entries(
-    Arr.groupBy(
-      wires,
-      (wire) =>
-        `${wire.location.start.line}:${wire.location.start.column}:${wire.location.end.line}:${wire.location.end.column}`,
-    ),
-  ).map(
-    ([siteId, atSite]) => ({
-      siteId,
-      location: atSite[0].location,
-      candidates: atSite.map((wire) => ({ candidateId: wire.id, text: wire.replacement, wire })),
-    }),
-  )
-
-const fileDraftsOf = (
-  contents: ReadonlyArray<{ readonly name: string; readonly content: string }>,
-  wires: ReadonlyArray<Checker.CheckerMutantWire>,
-): ReadonlyArray<QueryFileDraft> => {
-  const contentByName = HashMap.fromIterable(contents.map((entry) => [entry.name, entry.content] as const))
-  const byFile = Arr.groupBy(wires, (wire) => wire.fileName)
-  return Arr.getSomes(
-    Object.entries(byFile).map(([fileName, fileWires]) =>
-      Option.map(HashMap.get(contentByName, fileName), (content) => ({
-        fileName,
-        content,
-        sites: siteDraftsOf(fileWires),
-      }))
-    ),
-  )
-}
-
-const refusedLineOf = (
-  input: ProjectInput,
-  draft: QueryFileDraft,
-  reason: TypeQueryRefusalReason,
-  nextAction: string,
-): TypeQueryFileRefused =>
-  TypeQueryFileRefused.make({
-    schemaVersion: 1,
-    project: input.project,
-    fileName: draft.fileName,
-    reason,
-    nextAction,
-    mutantCount: draft.sites.reduce((total, site) => total + site.candidates.length, 0),
-  })
-
-const typesOf = (
-  siteAnswer: SiteAnswer,
-): { readonly siteType?: string; readonly contextualType?: string } => ({
-  ...Option.match(siteAnswer.siteType, { onNone: () => ({}), onSome: (siteType) => ({ siteType }) }),
-  ...Option.match(siteAnswer.contextualType, {
-    onNone: () => ({}),
-    onSome: (contextualType) => ({ contextualType }),
-  }),
-})
-
-const answerLinesOf = (
-  input: ProjectInput,
-  draft: QueryFileDraft,
-  siteAnswer: SiteAnswer,
-): ReadonlyArray<ParityLine> => {
-  const candidates = Option.match(
-    Option.fromUndefinedOr(draft.sites.find((site) => site.siteId === siteAnswer.siteId)),
-    { onNone: Arr.empty<QueryCandidateDraft>, onSome: (site) => site.candidates },
-  )
-  return Arr.getSomes(
-    siteAnswer.candidates.map((candidateAnswer) =>
-      Option.map(
-        Option.fromUndefinedOr(candidates.find((candidate) => candidate.candidateId === candidateAnswer.candidateId)),
-        (candidate) =>
-          TypeAnswerLine.make({
-            schemaVersion: 1,
-            side: 'branch',
-            project: input.project,
-            mutantId: candidate.candidateId,
-            fileName: candidate.wire.fileName,
-            line: candidate.wire.location.start.line,
-            column: candidate.wire.location.start.column,
-            candidate: candidate.text,
-            ...typesOf(siteAnswer),
-            answer: candidateAnswer.answer,
-          }),
-      )
-    ),
-  )
-}
-
-const fileOutcomeLines = (
-  input: ProjectInput,
-  draft: QueryFileDraft,
-  file: FileOutcome,
-): ReadonlyArray<ParityLine> =>
-  Match.valueTags(file, {
-    FileRefused: (refused) => [refusedLineOf(input, draft, refused.reason, refused.nextAction)],
-    FileAnswered: (answered) => answered.sites.flatMap((siteAnswer) => answerLinesOf(input, draft, siteAnswer)),
-  })
-
-const queryFileLines = (
-  input: ProjectInput,
-  draft: QueryFileDraft,
-  absoluteFile: string,
-): Effect.Effect<ReadonlyArray<ParityLine>, never, TypeQuery> =>
-  Effect.gen(function*() {
-    const typeQuery = yield* TypeQuery
-    const request = TypeQueryRequest.make({
-      version: 1,
-      tsconfigFile: input.tsconfigFile,
-      files: [
-        TypeQueryFile.make({
-          fileName: absoluteFile,
-          content: draft.content,
-          sites: draft.sites.map((site) =>
-            TypeQuerySite.make({
-              siteId: site.siteId,
-              location: site.location,
-              candidates: site.candidates.map((candidate) => ({
-                candidateId: candidate.candidateId,
-                text: candidate.text,
-              })),
-            })
-          ),
-        }),
-      ],
-    })
-    return Result.match(yield* typeQuery.query(request).pipe(Effect.result), {
-      onFailure: (refused) => [refusedLineOf(input, draft, refused.reason, refused.nextAction)],
-      onSuccess: (response) => response.files.flatMap((file) => fileOutcomeLines(input, draft, file)),
-    })
-  })
-
-const queryProjectLines = (
-  input: ProjectInput,
-  drafts: ReadonlyArray<QueryFileDraft>,
-): Effect.Effect<ReadonlyArray<ParityLine>, never, TypeQuery | Path.Path> =>
-  Effect.gen(function*() {
-    const path = yield* Path.Path
-    const lines = yield* Effect.forEach(
-      drafts,
-      (draft) => queryFileLines(input, draft, path.resolve(input.repoRoot, draft.fileName)),
-    )
-    return lines.flat()
-  })
-
 const fileContentsOf = (
   input: ProjectInput,
   wires: ReadonlyArray<Checker.CheckerMutantWire>,
-): Effect.Effect<ReadonlyArray<{ readonly name: string; readonly content: string }>, DriverFailure, DriverServices> =>
+): Effect.Effect<ReadonlyArray<FileContent>, DriverFailure, DriverServices> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     return yield* Effect.forEach(
       Arr.dedupe(wires.map((wire) => wire.fileName)),
       (name) => Effect.map(readText(path.resolve(input.repoRoot, name)), (content) => ({ name, content })),
     )
-  })
-
-const branchTypeQueryLines = (
-  input: ProjectInput,
-  wires: ReadonlyArray<Checker.CheckerMutantWire>,
-): Effect.Effect<ReadonlyArray<ParityLine>, DriverFailure, DriverServices> =>
-  Effect.gen(function*() {
-    const drafts = fileDraftsOf(yield* fileContentsOf(input, wires), wires)
-    return yield* Boolean.match(Arr.isReadonlyArrayNonEmpty(drafts), {
-      onFalse: () => Effect.succeed(Arr.empty<ParityLine>()),
-      onTrue: () =>
-        Effect.gen(function*() {
-          yield* tallyProvision(input.servers)
-          const lines = yield* Effect.scoped(Effect.provide(queryProjectLines(input, drafts), TypeQueryLive))
-          const peak = (yield* Ref.get(input.servers)).peak
-          yield* tallyRelease(input.servers)
-          return [
-            ...lines,
-            TypeQueryServers.make({
-              schemaVersion: 1,
-              side: 'branch',
-              project: input.project,
-              peakLiveServers: peak,
-            }),
-          ]
-        }),
-    })
   })
 
 interface SideInput {
@@ -1093,7 +878,7 @@ const checkBothSides = (
         (sideInput) => Effect.map(runSide(sideInput), (run) => ({ ...run, side: sideInput.side })),
         { concurrency: 'unbounded' },
       ),
-      branchTypeQueryLines(input, wires),
+      Effect.flatMap(fileContentsOf(input, wires), (contents) => branchTypeQueryLines(input, contents, wires)),
     ], { concurrency: 'unbounded' })
     const mutantIds = HashSet.fromIterable(wires.map((wire) => wire.id))
     const telemetry = yield* Effect.forEach(

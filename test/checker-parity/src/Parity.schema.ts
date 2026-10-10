@@ -8,7 +8,11 @@
  * line carries the repo-relative `project` (a tsconfig path, stable across sides and shards); the kinds
  * that record a side write it.
  */
-import { TypeAnswer } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import {
+  FileRefusedReason,
+  TypeAnswer,
+  TypeQueryRefusedReason,
+} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Arr from 'effect/Array'
 import { dual } from 'effect/Function'
 import * as Hash from 'effect/Hash'
@@ -125,12 +129,7 @@ export class TypeAnswerLine extends S.TaggedClass<TypeAnswerLine>()('TypeAnswerL
   answer: TypeAnswer,
 }) {}
 
-export const TypeQueryRefusalReason = S.Literals([
-  'not-in-project',
-  'server-crashed',
-  'unsupported-version',
-  'project-open-failed',
-])
+export const TypeQueryRefusalReason = S.Union([FileRefusedReason, TypeQueryRefusedReason])
 export type TypeQueryRefusalReason = typeof TypeQueryRefusalReason.Type
 
 export class TypeQueryFileRefused extends S.TaggedClass<TypeQueryFileRefused>()('TypeQueryFileRefused', {

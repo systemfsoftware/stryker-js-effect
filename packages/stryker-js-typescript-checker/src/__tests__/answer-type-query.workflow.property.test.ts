@@ -1,16 +1,17 @@
-import {
-  Assignable,
-  NotAssignable,
-  type TypeAnswer,
-  Unknown,
-  UnknownReason,
-} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import { UnknownReason } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import { describe } from '@systemfsoftware/vitest'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { answerTypeQuery } from '../answer-type-query.workflow.js'
+import { AssignableQueryInput } from '../../tests/__fixtures__/answer-type-query-law.fixture.js'
+import {
+  AnswerAssignable,
+  type AnswerDecision,
+  AnswerNotAssignable,
+  answerTypeQuery,
+  AnswerUnknown,
+} from '../answer-type-query.workflow.js'
 import {
   AnswerTypeQueryCommand,
   CallArgument,
@@ -24,7 +25,6 @@ import {
   SiteNotExpression,
   UnenforcedContext,
 } from '../CheckerCommands.schema.js'
-import { AssignableQueryInput } from './answer-type-query.fixture.schema.js'
 
 const UNKNOWN_REASON_ORDER: ReadonlyArray<UnknownReason> = [
   'candidate-not-context-free',
@@ -145,7 +145,7 @@ const commandFailingOnly = (
   }
 }
 
-const answerFor = (command: AnswerTypeQueryCommand): Result.Result<TypeAnswer, never> => answerTypeQuery(command)
+const answerFor = (command: AnswerTypeQueryCommand): Result.Result<AnswerDecision, never> => answerTypeQuery(command)
 
 describe('answerTypeQuery', (it) => {
   it.prop(
@@ -173,8 +173,8 @@ describe('answerTypeQuery', (it) => {
         onFailure: () => false,
         onSuccess: (answer) =>
           input.assignable
-            ? S.is(Assignable)(answer) && answer.candidateType === input.candidateType
-            : S.is(NotAssignable)(answer) &&
+            ? S.is(AnswerAssignable)(answer) && answer.candidateType === input.candidateType
+            : S.is(AnswerNotAssignable)(answer) &&
               answer.candidateType === input.candidateType &&
               answer.contextualType === input.contextualTypeText,
       }),
@@ -190,7 +190,7 @@ describe('answerTypeQuery', (it) => {
     (subject, [reason, candidateType, contextualText]) =>
       Result.match(subject(reason, candidateType, contextualText), {
         onFailure: () => false,
-        onSuccess: (answer) => S.is(Unknown)(answer) && answer.reason === reason,
+        onSuccess: (answer) => S.is(AnswerUnknown)(answer) && answer.reason === reason,
       }),
   )
 
@@ -203,7 +203,7 @@ describe('answerTypeQuery', (it) => {
         onFailure: () => false,
         onSuccess: (answer) => {
           if (expected !== undefined) {
-            return S.is(Unknown)(answer) && answer.reason === expected
+            return S.is(AnswerUnknown)(answer) && answer.reason === expected
           }
           if (!S.is(CandidateTyped)(command.candidate)) return false
           if (!S.is(SiteExpression)(command.site)) return false
@@ -211,8 +211,8 @@ describe('answerTypeQuery', (it) => {
           const contextual = command.site.contextualType
           if (Option.isNone(contextual)) return false
           return candidate.assignable
-            ? S.is(Assignable)(answer) && answer.candidateType === candidate.candidateType
-            : S.is(NotAssignable)(answer) &&
+            ? S.is(AnswerAssignable)(answer) && answer.candidateType === candidate.candidateType
+            : S.is(AnswerNotAssignable)(answer) &&
               answer.candidateType === candidate.candidateType &&
               answer.contextualType === contextual.value.text
         },
