@@ -49,6 +49,7 @@ export class CheckCall extends S.TaggedClass<CheckCall>()('CheckCall', {
   schemaVersion: SCHEMA_VERSION,
   side: Side,
   project: S.String,
+  fileName: S.String,
   callIndex: NonNegativeInt,
   mutantIds: S.Array(S.String),
   ms: NonNegativeFinite,
@@ -103,6 +104,7 @@ export class CacheEntry extends S.TaggedClass<CacheEntry>()('CacheEntry', {
   schemaVersion: SCHEMA_VERSION,
   side: Side,
   project: S.String,
+  fileName: S.String,
   key: S.String,
   hit: S.Boolean,
 }) {}
@@ -148,6 +150,25 @@ export class TypeQueryServers extends S.TaggedClass<TypeQueryServers>()('TypeQue
   peakLiveServers: NonNegativeInt,
 }) {}
 
+export class Deferred extends S.TaggedClass<Deferred>()('Deferred', {
+  schemaVersion: SCHEMA_VERSION,
+  side: S.NullOr(Side),
+  project: S.String,
+  fileName: S.NullOr(S.String),
+  mutants: NonNegativeInt,
+  reason: S.Literals(['deadline-passed', 'interrupted-at-deadline']),
+}) {}
+
+export class UnitOverBudget extends S.TaggedClass<UnitOverBudget>()('UnitOverBudget', {
+  schemaVersion: SCHEMA_VERSION,
+  side: Side,
+  project: S.String,
+  fileName: S.String,
+  mutantIds: S.Array(S.String),
+  interrupts: PositiveInt,
+  ms: NonNegativeFinite,
+}) {}
+
 export const PhaseLine = S.Union([CheckCall, GroupCall, DigestCall])
 export type PhaseLine = typeof PhaseLine.Type
 
@@ -164,8 +185,22 @@ export const ParityLine = S.Union([
   TypeAnswerLine,
   TypeQueryFileRefused,
   TypeQueryServers,
+  Deferred,
+  UnitOverBudget,
 ])
 export type ParityLine = typeof ParityLine.Type
+
+export class FileCost extends S.Class<FileCost>('FileCost')({
+  project: S.String,
+  fileName: S.String,
+  ms: NonNegativeFinite,
+}) {}
+
+export class FileCosts extends S.Class<FileCosts>('FileCosts')({
+  schemaVersion: SCHEMA_VERSION,
+  runs: S.Array(S.String),
+  files: S.Array(FileCost),
+}) {}
 
 export const RunScopeName = S.Literals(['pr', 'full'])
 export type RunScopeName = typeof RunScopeName.Type
