@@ -15,6 +15,7 @@ import {
   planMutants,
   PlanMutantsCommand,
 } from '../plan-mutants.workflow.js'
+import { OtherReplacement, OtherSite } from '../subsume-mutants.workflow.js'
 
 const reasonFromRule = (rule: readonly LocatedDirective[], mutatorName: string, line: number): string | undefined => {
   const lower = mutatorName.toLowerCase()
@@ -67,7 +68,11 @@ const silencingReason = (command: PlanMutantsCommand, candidate: MutantCandidate
   if (reason !== undefined) {
     return `ignorer: ${reason}`
   }
-  return policyReasonOf(command, candidate)
+  const policy = policyReasonOf(command, candidate)
+  if (policy !== undefined) {
+    return policy
+  }
+  return candidate.aridReason
 }
 
 const Namespace = Arbitrary.schema(S.Literals(['acme', 'beta']))
@@ -97,6 +102,7 @@ const commandOf = (
     rule: overrides.rule ?? [],
     directives: overrides.directives ?? [],
     candidates: [...candidates],
+    site: OtherSite.make({}),
     mutantSetPolicy: overrides.mutantSetPolicy ?? 'default',
   })
 
@@ -111,7 +117,8 @@ const providerCandidate = (mutatorName: string): MutantCandidate => ({
   mutatorName,
   replacementCode: 'n - 1',
   location: { start: { line: 2, column: 1 }, end: { line: 2, column: 2 } },
-  mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
+  mutantSet: { originalCode: 'n', replacementCode: 'n - 1' },
+  subsumption: OtherReplacement.make({}),
 })
 
 const IGNORER_NAME = 'probe-ignorer'
@@ -122,7 +129,8 @@ const ignorerCandidate = (id: MutantCandidate['id'], answer: IgnorerAnswer['answ
   replacementCode: 'n - 1',
   location: { start: { line: 2, column: 1 }, end: { line: 2, column: 2 } },
   ignorerAnswer: { ignorerName: IGNORER_NAME, answer },
-  mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
+  mutantSet: { originalCode: 'n', replacementCode: 'n - 1' },
+  subsumption: OtherReplacement.make({}),
 })
 
 describe('planMutants', () => {
@@ -177,7 +185,9 @@ describe('planMutants', () => {
       if (Result.isFailure(planned)) {
         return false
       }
-      return planned.success.mutants.at(0)?.ignoreReason === silencingReason(command, candidate)
+      const mutant = planned.success.mutants.at(0)
+      const expected = silencingReason(command, candidate)
+      return mutant !== undefined && mutant.ignoreReason === expected
     },
   )
 
@@ -195,7 +205,8 @@ describe('planMutants', () => {
             start: { ...later.at, line: later.governedLine },
             end: { ...later.at, line: later.governedLine },
           },
-          mutantSet: { originalCode: 'n', replacementCode: 'n - 1', relationalSufficient: true },
+          mutantSet: { originalCode: 'n', replacementCode: 'n - 1' },
+          subsumption: OtherReplacement.make({}),
         }],
         {
           line: later.governedLine,

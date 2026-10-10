@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -20,6 +21,15 @@ import {
   MutantSetPolicyCommand,
   type MutantSetRuleId,
 } from './mutant-set-policy.workflow.js'
+import {
+  type StaticStatus,
+  subsumeMutants,
+  SubsumeMutantsCommand,
+  type SubsumptionDecision,
+  SubsumptionReplacement,
+  SubsumptionSite,
+  Unaffected,
+} from './subsume-mutants.workflow.js'
 
 const WILDCARD = 'all'
 const NEXT_LINE = 'next-line'
@@ -29,6 +39,9 @@ const RULE_SEPARATOR = ': '
 const policyWorkflow = mutantSetPolicy
 const policyCommand = MutantSetPolicyCommand
 const keptOutcome = MutantKept
+const subsumptionWorkflow = subsumeMutants
+const subsumptionCommand = SubsumeMutantsCommand
+const unaffectedOutcome = Unaffected
 
 type IgnoreRule = 'directive' | 'excluded-mutator' | 'ignorer' | MutantSetRuleId
 
@@ -46,7 +59,9 @@ export const MutantCandidateSchema = S.Struct({
   replacementCode: S.String,
   location: S.optional(Mutant.Location),
   ignorerAnswer: S.optional(IgnorerAnswerSchema),
+  aridReason: S.optional(Mutant.IgnoreStatusReasonText),
   mutantSet: MutantSetFactsSchema,
+  subsumption: SubsumptionReplacement,
 })
 export type MutantCandidate = typeof MutantCandidateSchema.Type
 
@@ -56,6 +71,7 @@ const PlannedMutantSchema = S.Struct({
   replacementCode: S.String,
   location: Mutant.Location,
   ignoreReason: S.optional(S.String),
+  subsumption: S.optional(Mutant.Subsumed),
 })
 export type PlannedMutant = typeof PlannedMutantSchema.Type
 
@@ -68,6 +84,7 @@ export class PlanMutantsCommand extends S.TaggedClass<PlanMutantsCommand>()('Pla
   rule: S.Array(LocatedDirectiveSchema),
   directives: S.Array(LocatedDirectiveSchema),
   candidates: S.Array(MutantCandidateSchema),
+  site: SubsumptionSite,
   mutantSetPolicy: Options.MutantSetPolicy,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -204,12 +221,15 @@ const ignoreReasonOf = (
     Option.orElse(
       Option.orElse(
         Option.orElse(
-          directiveReason(command.rule, candidate.mutatorName, command.line),
-          () => exclusionReason(command.excludedMutations, candidate.mutatorName),
+          Option.orElse(
+            directiveReason(command.rule, candidate.mutatorName, command.line),
+            () => exclusionReason(command.excludedMutations, candidate.mutatorName),
+          ),
+          () => ignorerReason(candidate),
         ),
-        () => ignorerReason(candidate),
+        () => Option.fromNullishOr(policyReason),
       ),
-      () => Option.fromNullishOr(policyReason),
+      () => Option.fromNullishOr(candidate.aridReason),
     ),
   )
 
@@ -237,6 +257,61 @@ const policyReasonOf = (outcome: MutantSetOutcome): string | undefined =>
 
 const policyReasonsAt = (command: PlanMutantsCommand): readonly (string | undefined)[] =>
   policyOutcomes(command).map(policyReasonOf)
+
+const staticReasonsAt = (command: PlanMutantsCommand): readonly (string | undefined)[] => {
+  const policyReasons = policyReasonsAt(command)
+  return command.candidates.map((candidate, index) => ignoreReasonOf(command, candidate, policyReasons[index]))
+}
+
+const staticStatusOf = (reason: string | undefined): StaticStatus =>
+  Option.match(Option.fromNullishOr(reason), {
+    onNone: (): StaticStatus => 'StaticallyKept',
+    onSome: (): StaticStatus => 'StaticallyIgnored',
+  })
+
+const subsumptionsAt = (
+  command: PlanMutantsCommand,
+  staticReasons: readonly (string | undefined)[],
+): readonly SubsumptionDecision[] =>
+  Result.match(
+    subsumptionWorkflow(
+      subsumptionCommand.make({
+        policy: command.mutantSetPolicy,
+        site: command.site,
+        candidates: command.candidates.map((candidate, index) => ({
+          id: candidate.id,
+          replacement: candidate.subsumption,
+          status: staticStatusOf(staticReasons[index]),
+        })),
+      }),
+    ),
+    {
+      onFailure: () => command.candidates.map(() => unaffectedOutcome.make({})),
+      onSuccess: (decisions) => decisions,
+    },
+  )
+
+const subsumedOf = (decision: SubsumptionDecision): Option.Option<Mutant.Subsumed> =>
+  Match.value(decision).pipe(
+    Match.tag('Subsumed', (subsumed) =>
+      Option.some<Mutant.Subsumed>({ _tag: 'Subsumed', rule: subsumed.rule, dominators: subsumed.dominators })),
+    Match.tag('Unaffected', () =>
+      Option.none<Mutant.Subsumed>()),
+    Match.exhaustive,
+  )
+
+interface CandidateReasons {
+  readonly ignoreReason: string | undefined
+  readonly subsumption: Option.Option<Mutant.Subsumed>
+}
+
+const candidateReasonsAt = (command: PlanMutantsCommand): readonly CandidateReasons[] => {
+  const staticReasons = staticReasonsAt(command)
+  return Arr.zip(staticReasons, subsumptionsAt(command, staticReasons)).map(([ignoreReason, decision]) => ({
+    ignoreReason,
+    subsumption: subsumedOf(decision),
+  }))
+}
 
 const unusedDirectives = (
   directives: readonly LocatedDirective[],
@@ -294,7 +369,7 @@ const shiftedLocation = (location: Mutant.Location, offset: ScriptOrigin): Mutan
 const plannedMutant = (
   command: PlanMutantsCommand,
   candidate: MutantCandidate,
-  policyReason: string | undefined,
+  reasons: CandidateReasons,
 ): Result.Result<PlannedMutant, PlanFailure> =>
   Option.match(ignorerRefusalOf(command, candidate), {
     onSome: (refusal) => Result.fail(refusal),
@@ -308,28 +383,28 @@ const plannedMutant = (
             mutatorName: candidate.mutatorName,
             replacementCode: candidate.replacementCode,
             location: shiftedLocation(location, command.offset),
-            ignoreReason: ignoreReasonOf(command, candidate, policyReason),
+            ignoreReason: reasons.ignoreReason,
+            ...Option.match(reasons.subsumption, { onNone: () => ({}), onSome: (subsumption) => ({ subsumption }) }),
           }),
       }),
   })
 
 const plannedMutants = (
   command: PlanMutantsCommand,
-): Result.Result<readonly PlannedMutant[], PlanFailure> => {
-  const policyReasons = policyReasonsAt(command)
-  return command.candidates.reduce<Result.Result<readonly PlannedMutant[], PlanFailure>>(
-    (accumulated, candidate, index) =>
+  reasons: readonly CandidateReasons[],
+): Result.Result<readonly PlannedMutant[], PlanFailure> =>
+  Arr.zip(command.candidates, reasons).reduce<Result.Result<readonly PlannedMutant[], PlanFailure>>(
+    (accumulated, [candidate, reason]) =>
       Result.flatMap(
         accumulated,
         (mutants) =>
           Result.map(
-            plannedMutant(command, candidate, policyReasons[index]),
+            plannedMutant(command, candidate, reason),
             (mutant) => [...mutants, mutant],
           ),
       ),
     Result.succeed([]),
   )
-}
 
 const withoutReason = (mutant: PlannedMutant): boolean => mutant.ignoreReason === undefined
 
@@ -355,7 +430,8 @@ export const planMutants = Workflow.make({
   error: S.Union([MutantWithoutLocation, IgnorerAnsweredWithoutReason]),
   decide: (command: PlanMutantsCommand): Result.Result<MutantPlan, PlanFailure> =>
     Result.gen(function*() {
-      const mutants = yield* plannedMutants(command)
+      const reasons = candidateReasonsAt(command)
+      const mutants = yield* plannedMutants(command, reasons)
       return planOf(command, mutants)
     }),
 })

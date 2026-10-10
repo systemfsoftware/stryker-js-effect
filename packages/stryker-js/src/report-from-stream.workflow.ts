@@ -37,10 +37,10 @@ export class StreamVersionMismatch extends S.TaggedError<StreamVersionMismatch>(
   }
 }
 
-const presentText = (field: string, value: string | null): Readonly<Record<string, string>> =>
+const presentField = <K extends string, V>(field: K, value: V | null): { readonly [P in K]?: V } =>
   Option.match(Option.fromNullOr(value), {
     onNone: () => ({}),
-    onSome: (present) => ({ [field]: present }),
+    onSome: (present) => Record.singleton(field, present),
   })
 
 const mutantFromStream = (line: RunEvent.RunMutantTested): Report.MutantResult => ({
@@ -48,8 +48,9 @@ const mutantFromStream = (line: RunEvent.RunMutantTested): Report.MutantResult =
   mutatorName: line.mutatorName,
   status: line.status,
   location: line.location,
-  ...presentText('replacement', line.replacement),
-  ...presentText('statusReason', line.statusReason),
+  ...presentField('replacement', line.replacement),
+  ...presentField('statusReason', line.statusReason),
+  ...presentField('subsumption', line.subsumption),
 })
 
 const decodeLineText = S.decodeOption(S.fromJsonString(RunEvent.RunMutantTested))

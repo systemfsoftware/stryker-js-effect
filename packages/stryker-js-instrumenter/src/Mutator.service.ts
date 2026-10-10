@@ -44,11 +44,8 @@ import type {
 } from './Ast.handle.js'
 import { MutantNotApplied } from './Instrument.schema.js'
 import type { PlannedMutant } from './plan-mutants.workflow.js'
-import {
-  isRelationalOperator,
-  type RelationalOperator,
-  SUFFICIENT_RELATIONAL_SETS,
-} from './relational-sufficient-sets.js'
+import type { RelationalOperator } from './relational-operator.schema.js'
+import { isRelationalOperator, SUFFICIENT_RELATIONAL_SETS } from './relational-sufficient-sets.js'
 
 import { dual } from 'effect/Function'
 import {
@@ -106,6 +103,7 @@ export interface Mutant extends Mutable {
   readonly original: Node
   readonly location: ApiMutant.Location
   readonly replacementCode: string
+  readonly subsumption?: ApiMutant.Subsumed
 }
 function orDefault<T>(value: T | undefined, fallback: T): T {
   return value ?? fallback
@@ -126,6 +124,7 @@ function createMutantDataFirst(
     mutatorName: planned.mutatorName,
     ignoreReason: planned.ignoreReason,
     replacementCode: planned.replacementCode,
+    ...(planned.subsumption === undefined ? {} : { subsumption: planned.subsumption }),
   }
 }
 
@@ -133,6 +132,18 @@ export const createMutant: {
   (planned: PlannedMutant, fileName: string, original: Node, replacement: Node): Mutant
   (fileName: string, original: Node, replacement: Node): (planned: PlannedMutant) => Mutant
 } = dual((args: IArguments): boolean => args.length >= 4, createMutantDataFirst)
+const subsumptionFieldOf = (mutant: Mutant): { readonly subsumption?: ApiMutant.Subsumed } =>
+  Option.match(Option.fromUndefinedOr(mutant.subsumption), {
+    onNone: () => ({}),
+    onSome: (subsumption) => ({ subsumption }),
+  })
+
+const statusReasonOf = (mutant: Mutant): Option.Option<string> =>
+  Option.orElse(
+    Option.fromUndefinedOr(mutant.ignoreReason),
+    () => Option.map(Option.fromUndefinedOr(mutant.subsumption), ApiMutant.subsumedStatusReason),
+  )
+
 export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.SchemaError> {
   const baseFields = {
     _tag: 'Mutant' as const,
@@ -143,9 +154,15 @@ export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.S
     replacement: mutant.replacementCode,
   }
   return S.decodeResult(ApiMutant.Mutant)(
-    mutant.ignoreReason === undefined
-      ? baseFields
-      : { ...baseFields, statusReason: mutant.ignoreReason, status: 'Ignored' },
+    Option.match(statusReasonOf(mutant), {
+      onNone: () => baseFields,
+      onSome: (statusReason) => ({
+        ...baseFields,
+        statusReason,
+        status: 'Ignored',
+        ...subsumptionFieldOf(mutant),
+      }),
+    }),
   )
 }
 
@@ -895,54 +912,23 @@ function binaryOperatorOf(node: Node): string | undefined {
   return node.type === 'BinaryExpression' ? node.operator : undefined
 }
 
-const isRelationalComparison = (node: Node): boolean =>
-  Option.exists(Option.fromNullishOr(binaryOperatorOf(node)), isRelationalOperator)
+export const relationalOperatorOf = (node: Node): Option.Option<RelationalOperator> =>
+  Option.filter(Option.fromNullishOr(binaryOperatorOf(node)), isRelationalOperator)
 
-export interface RelationalSiteFacts {
+const isRelationalComparison = (node: Node): boolean => Option.isSome(relationalOperatorOf(node))
+
+interface RelationalSiteFacts {
   readonly operator: RelationalOperator
   readonly inConditionPosition: boolean
 }
 
-const relationalSiteFactsDataFirst = (node: Node, context: MutatorContext): RelationalSiteFacts | undefined =>
+const relationalSiteFacts = (node: Node, context: MutatorContext): RelationalSiteFacts | undefined =>
   Option.getOrUndefined(
     Option.map(
-      Option.filter(Option.fromNullishOr(binaryOperatorOf(node)), isRelationalOperator),
+      relationalOperatorOf(node),
       (operator) => ({ operator, inConditionPosition: isConditionPosition(node, context) }),
     ),
   )
-
-export const relationalSiteFacts: {
-  (node: Node, context: MutatorContext): RelationalSiteFacts | undefined
-  (context: MutatorContext): (node: Node) => RelationalSiteFacts | undefined
-} = dual((args: IArguments): boolean => args.length >= 2, relationalSiteFactsDataFirst)
-
-const relationalSufficientDataFirst = (facts: RelationalSiteFacts | undefined, replacement: Node): boolean =>
-  facts === undefined ? true : sufficientInCondition(facts, replacement)
-
-function sufficientInCondition(facts: RelationalSiteFacts, replacement: Node): boolean {
-  return facts.inConditionPosition ? sufficientReplacementOf(facts, replacement) : true
-}
-
-function sufficientReplacementOf(facts: RelationalSiteFacts, replacement: Node): boolean {
-  return Match.value(replacement).pipe(
-    Match.when(isBooleanLiteral, (literal) => literal.value === SUFFICIENT_RELATIONAL_SETS[facts.operator].literal),
-    Match.when(isBinaryExpressionNode, (binary) => isSufficientOperator(facts, binary.operator)),
-    Match.orElse(() => true),
-  )
-}
-
-export const relationalSufficientReplacement: {
-  (facts: RelationalSiteFacts | undefined, replacement: Node): boolean
-  (replacement: Node): (facts: RelationalSiteFacts | undefined) => boolean
-} = dual((args: IArguments): boolean => args.length >= 2, relationalSufficientDataFirst)
-
-function isSufficientOperator(facts: RelationalSiteFacts, operator: string): boolean {
-  return SUFFICIENT_RELATIONAL_SETS[facts.operator].replacements.some((sufficient) => sufficient === operator)
-}
-
-function isBinaryExpressionNode(node: Node): node is BinaryExpression {
-  return node.type === 'BinaryExpression'
-}
 
 function isBooleanExpression(node: Node): node is BinaryExpression | LogicalExpression {
   return isOperatorExpression(node) && booleanOperators.includes(node.operator)

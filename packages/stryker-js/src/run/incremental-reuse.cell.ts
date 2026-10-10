@@ -51,6 +51,7 @@ const emptyRefusalCounts = (): Record<ReuseRefusalReason, number> => ({
   flakyDependency: 0,
   timeoutUnreproduced: 0,
   noPriorRecord: 0,
+  decidedPerRun: 0,
 })
 
 const countedRefusal = (
@@ -107,6 +108,7 @@ const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
         ...optionalField('testsCompleted', mutant.testsCompleted),
         ...optionalListField('coveredBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.coveredBy)),
         ...optionalListField('killedBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.killedBy)),
+        ...optionalField('subsumption', mutant.subsumption),
       }
       return mutant.status === 'Ignored'
         ? { ...fields, status: mutant.status, statusReason: mutant.statusReason }
@@ -335,7 +337,7 @@ const closureAnalysisOf = (
   Effect.option(
     analyzeImportClosure({
       rootDir: input.basePath,
-      projectFiles: Arr.dedupe([...MutableHashMap.keys(input.project.files), ...input.project.testFiles]),
+      projectFiles: Arr.dedupe([...input.project.files.keys(), ...input.project.testFiles]),
       testFiles: closureTestFilesOf(input),
       globalInputs: input.globalTestInputs.map((file) => input.originalFileOf(file)),
       ...(input.observedModules === undefined ? {} : { observedModules: input.observedModules }),
