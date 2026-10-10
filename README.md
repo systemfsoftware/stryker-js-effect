@@ -321,7 +321,7 @@ Review and automation surfaces ship as subcommands, so a pipeline or an agent re
 
 Add the `sarif` reporter (`reporters: ['sarif']`) and a run writes `reports/mutation/mutation.sarif` beside the JSON report: SARIF 2.1.0 with each mutant's content id as the fingerprint, survivors as `warning`, and no-coverage mutants as `note`. Every run also writes `reports/mutation/reproducers.json`: one entry per mutant in the report, holding its mutated-lines diff and the `stryker run --mutant <id>` command that reproduces it.
 
-By default `mutator.mutantSetPolicy` drops mutants a rule can prove redundant — relational replacements outside the sufficient set, conditional variants that collapse to a literal, replacements equal to the original code, and duplicates already planted at the site — and names the rule id in the mutant's report entry. `mutator: { mutantSetPolicy: 'full' }` keeps every variant. `surfacing` caps how many survivors reach review surfaces and SARIF without changing what the engine computes.
+By default `mutator.mutantSetPolicy` drops mutants a rule can prove redundant — the complement of a kept ordering mutant (`a >= b` beside `a <= b` for `a < b`, reported with a `subsumption` reference to its dominator and run after all when that dominator does not run), replacements equal to the original code, and duplicates already planted at the site — and names the rule id in the mutant's report entry. `mutator: { mutantSetPolicy: 'full' }` keeps every variant. `surfacing` caps how many survivors reach review surfaces and SARIF without changing what the engine computes.
 
 ### Verdict reuse that survives a release
 
