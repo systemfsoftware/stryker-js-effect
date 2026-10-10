@@ -60,9 +60,9 @@ import {
   type CheckpointWriter,
   makeCheckpointWriter,
   mutantFactsIn,
-  originalSourcesOf,
   reportingInputOf,
   type RunContext,
+  sourceTextsOf,
 } from './mutant-run.js'
 import { draftMutationTestPlan, type HeldSubsumedPlan, type MutationTestPlan } from './mutation-test-plan.cell.js'
 import { inPlannedOrder, toReportedMutant } from './mutation-test-plan.js'
@@ -345,7 +345,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     plannedMutants: [...rememberedResults, ...reuse.mutants],
     rememberedMutantIds: rememberedResults.map((result) => result.id),
     pathService: yield* Path.Path,
-    originalSources: yield* Effect.mapError(originalSourcesOf(basis), asMutationTestError),
+    originalSources: yield* Effect.mapError(sourceTextsOf(basis), asMutationTestError),
   }
   const settledResults = [
     ...rememberedResults,
@@ -421,7 +421,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
           onSome: (mutant) =>
             Queue.offer(
               progressQueue,
-              RunEvent.MutantDetailReported.make({ mutant, reproducer: `stryker run --mutant ${mutant.id}` }),
+              RunEvent.MutantDetailReported.make({ mutant, reproducer: RunEvent.reproducerOf(mutant.id) }),
             ),
         })),
     { discard: true },

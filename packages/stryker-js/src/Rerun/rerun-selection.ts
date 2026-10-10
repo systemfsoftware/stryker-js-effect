@@ -21,5 +21,8 @@ export const requestedResultsOf = ({ requested, results }: {
 }): readonly Mutant.RunMutantResult[] =>
   Option.match(requested, {
     onNone: () => [],
-    onSome: (ids) => Arr.getSomes(Arr.map(ids, (id) => Arr.findFirst(results, (candidate) => candidate.id === id))),
+    onSome: (ids) => {
+      const byId = new Map<string, Mutant.RunMutantResult>(Arr.reverse(results).map((result) => [result.id, result]))
+      return Arr.getSomes(Arr.map(ids, (id) => Option.fromUndefinedOr(byId.get(id))))
+    },
   })

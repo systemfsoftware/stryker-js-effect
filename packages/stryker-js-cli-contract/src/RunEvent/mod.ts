@@ -1,5 +1,5 @@
-export { nextActionOf } from '../next-action.js'
-export type { ActionableStatus, NextActionByStatus, NextActionFacts } from '../next-action.js'
+export { nextActionOf, reproducerOf } from '../next-action.js'
+export type { NextActionByStatus, NextActionFacts } from '../next-action.js'
 export {
   AddTest,
   FixConfig,

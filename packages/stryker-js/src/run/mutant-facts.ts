@@ -46,12 +46,21 @@ const sharedFactsOf = ({ result, file }: MutantFactsInput) => ({
   statusReason: requiredReasonOf(result),
 })
 
-export const mutantFactsOf = (input: MutantFactsInput): RunEvent.MutantFacts => {
-  const { result, file, source } = input
-  const shared = sharedFactsOf(input)
+const actionableFactsOf = <Status extends Mutant.ActionableStatus>(
+  { result, file, source }: MutantFactsInput,
+  status: Status,
+) => {
   const coveredBy = [...Option.getOrElse(Option.fromUndefinedOr(result.coveredBy), () => [])]
-  const actionFacts: RunEvent.NextActionFacts = { id: result.id, file, location: result.location, coveredBy }
-  const original = () => originalTextOf(source, result.location)
+  return {
+    original: originalTextOf(source, result.location),
+    coveredBy,
+    next: RunEvent.nextActionOf({ id: result.id, file, location: result.location, coveredBy }, status),
+  }
+}
+
+export const mutantFactsOf = (input: MutantFactsInput): RunEvent.MutantFacts => {
+  const { result } = input
+  const shared = sharedFactsOf(input)
   const { cases } = RunEvent.MutantFacts
   return Match.value(result.status).pipe(
     Match.when('Killed', () =>
@@ -60,37 +69,22 @@ export const mutantFactsOf = (input: MutantFactsInput): RunEvent.MutantFacts => 
         status: 'Killed',
         killedBy: [...Option.getOrElse(Option.fromUndefinedOr(result.killedBy), () => [])],
       })),
-    Match.when('Survived', () =>
-      cases.Survived.make({
-        ...shared,
-        status: 'Survived',
-        original: original(),
-        coveredBy,
-        next: RunEvent.nextActionOf(actionFacts, 'Survived'),
-      })),
-    Match.when('NoCoverage', () =>
-      cases.NoCoverage.make({
-        ...shared,
-        status: 'NoCoverage',
-        original: original(),
-        next: RunEvent.nextActionOf(actionFacts, 'NoCoverage'),
-      })),
-    Match.when('Timeout', () =>
-      cases.Timeout.make({
-        ...shared,
-        status: 'Timeout',
-        original: original(),
-        coveredBy,
-        next: RunEvent.nextActionOf(actionFacts, 'Timeout'),
-      })),
-    Match.when('RuntimeError', () =>
-      cases.RuntimeError.make({
-        ...shared,
-        status: 'RuntimeError',
-        original: original(),
-        coveredBy,
-        next: RunEvent.nextActionOf(actionFacts, 'RuntimeError'),
-      })),
+    Match.when(
+      'Survived',
+      () => cases.Survived.make({ ...shared, status: 'Survived', ...actionableFactsOf(input, 'Survived') }),
+    ),
+    Match.when('NoCoverage', () => {
+      const { original, next } = actionableFactsOf(input, 'NoCoverage')
+      return cases.NoCoverage.make({ ...shared, status: 'NoCoverage', original, next })
+    }),
+    Match.when(
+      'Timeout',
+      () => cases.Timeout.make({ ...shared, status: 'Timeout', ...actionableFactsOf(input, 'Timeout') }),
+    ),
+    Match.when(
+      'RuntimeError',
+      () => cases.RuntimeError.make({ ...shared, status: 'RuntimeError', ...actionableFactsOf(input, 'RuntimeError') }),
+    ),
     Match.when('CompileError', () => cases.CompileError.make({ ...shared, status: 'CompileError' })),
     Match.when('Ignored', () => cases.Ignored.make({ ...shared, status: 'Ignored' })),
     Match.when('Pending', (): never => {

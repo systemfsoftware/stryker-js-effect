@@ -35,6 +35,11 @@ export const NextActionTests = NamedTestsSchema.pipe(
 })
 export type NextActionTests = typeof NextActionTests.Type
 
+export const nextActionTestsOf = (coveredBy: ReadonlyArray<string>): NextActionTests => ({
+  total: coveredBy.length,
+  shown: coveredBy.slice(0, SHOWN_TESTS),
+})
+
 export const StrengthenTests = S.TaggedStruct('strengthen-tests', {
   tests: NextActionTests,
   reproduce: S.String,

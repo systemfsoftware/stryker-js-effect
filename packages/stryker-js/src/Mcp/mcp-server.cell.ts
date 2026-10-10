@@ -185,7 +185,7 @@ const rerunMutant = (
     )
     const result = yield* rerunResultOf(resultsOf(settled), id)
     const diff = yield* readDiff(basePath, id)
-    return { ...rerunFactsOf(result), reproducer: `stryker run --mutant ${id}`, diff }
+    return { ...rerunFactsOf(result), reproducer: RunEvent.reproducerOf(id), diff }
   })
 
 const testsOf = (tests: ReadonlyArray<string> | undefined): ReadonlyArray<string> =>

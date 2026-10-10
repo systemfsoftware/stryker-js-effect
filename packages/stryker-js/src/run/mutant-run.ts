@@ -81,7 +81,7 @@ const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, re
   })
 })
 
-export const originalSourcesOf = Effect.fnUntraced(function*(basis: TestBasis) {
+export const sourceTextsOf = Effect.fnUntraced(function*(basis: TestBasis) {
   const projectFiles = yield* ProjectFiles
   const originals = yield* projectFiles.readAllOriginal(basis.project.filesToMutate.values())
   return new Map(originals.map(([file, text]) => [file.name, sourceTextOf(text)] as const))
