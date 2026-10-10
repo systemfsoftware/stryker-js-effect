@@ -1509,15 +1509,8 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
         })),
       }),
     )
-    mutantCollector.append(
-      Result.match(guards, {
-        onFailure: () => plan.mutants,
-        onSuccess: (decisions) => {
-          const guardsById = guardIndexOf(decisions)
-          return plan.mutants.map((mutant) => withGuard(mutant, guardOf(guardsById, mutant.id)))
-        },
-      }),
-    )
+    const guardsById = guardIndexOf(Result.getOrElse(guards, (neverError) => neverError))
+    mutantCollector.append(plan.mutants.map((mutant) => withGuard(mutant, guardOf(guardsById, mutant.id))))
     yield* applyPlan(root, plan, context)
     yield* placeHeaderIfNeeded(plan.hasLiveMutants, options, root)
 

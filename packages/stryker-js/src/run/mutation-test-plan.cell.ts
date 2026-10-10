@@ -147,13 +147,13 @@ const plannedPlanOf = (
     Match.exhaustive,
   )
 
-const heldByOf = (mutant: Mutant.Mutant, decision: EncodedPlannedDecision): Option.Option<Mutant.Guard> =>
+const heldByOf = (decision: EncodedPlannedDecision): Option.Option<Mutant.Guard> =>
   Match.value(decision).pipe(
-    Match.tag(
-      'PlannedRunMutant',
-      (run) => Option.filter(Option.fromUndefinedOr(mutant.guard), () => run.heldBy !== undefined),
-    ),
-    Match.orElse(() => Option.none()),
+    Match.tag('PlannedRunMutant', (run) =>
+      Option.flatMap(Option.fromUndefinedOr(run.heldBy), S.decodeOption(Mutant.Guard))),
+    Match.tag('PlannedEarlyResultMutant', () =>
+      Option.none()),
+    Match.exhaustive,
   )
 
 interface DraftedPlan {
@@ -177,7 +177,7 @@ const materializeDecision = Effect.fnUntraced(function*(
   })
   return yield* Effect.fromResult(
     materializeMutantPlans(MaterializeMutantPlanCommand.make({ mutant, plan: plannedPlanOf(mutant, decision) })),
-  ).pipe(Effect.map((materialized) => ({ plan: materialized.plan, heldBy: heldByOf(mutant, decision) })))
+  ).pipe(Effect.map((materialized) => ({ plan: materialized.plan, heldBy: heldByOf(decision) })))
 })
 
 const earlyResultStatusOf = (mutant: Mutant.Mutant) =>
@@ -307,10 +307,13 @@ export const draftMutationTestPlan = Effect.fn(SpanTaxonomy.Spans.mutationTestPl
     })
   )
   const heldGuards: readonly HeldGuardPlan[] = runPlans.flatMap((plan) =>
-    Option.match(Option.fromUndefinedOr(heldGuardById.get(plan.mutant.id)), {
-      onNone: (): readonly HeldGuardPlan[] => [],
-      onSome: (guard) => [{ plan, guard }],
-    })
+    Option.match(
+      Option.filter(Option.fromUndefinedOr(heldGuardById.get(plan.mutant.id)), () => !subsumedById.has(plan.mutant.id)),
+      {
+        onNone: (): readonly HeldGuardPlan[] => [],
+        onSome: (guard) => [{ plan, guard }],
+      },
+    )
   )
   const keptRunPlans = runPlans.filter((plan) =>
     !subsumedById.has(plan.mutant.id) && !heldGuardById.has(plan.mutant.id)

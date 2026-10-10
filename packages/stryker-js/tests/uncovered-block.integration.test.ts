@@ -11,6 +11,7 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
+import * as S from 'effect/Schema'
 
 const Feature = makeFeature({ it })
 
@@ -43,6 +44,18 @@ const ELSE_WORK_SOURCE = [
   '  } else {',
   '    return compute(0)',
   '  }',
+  '}',
+  '',
+].join('\n')
+
+const RELATIONAL_WORK_SOURCE = [
+  'export const compute = (value: number): number => value',
+  '',
+  'export const work = (limit: number): number => {',
+  '  if (limit > 3) {',
+  '    return compute(1 + 1)',
+  '  }',
+  '  return 0',
   '}',
   '',
 ].join('\n')
@@ -328,6 +341,30 @@ Feature('Holding a condition mutant whose guarded block no test runs')
             everyConditionRan: true,
           })
         ),
+      ),
+    )
+
+    scenario(
+      'A subsumed condition mutant whose dominators are held arid is readmitted and settles exactly once',
+      Gherkin.Do.pipe(
+        Given('a project whose guarded if tests a relational condition no test makes true')(
+          'observation',
+          () => runWorkspace(workspaceFilesOf(UNVISITED_TEST_SOURCE, RELATIONAL_WORK_SOURCE), []),
+        ),
+        Then('every mutant id has one result, and a readmitted condition mutant ran')((s, expect) => {
+          const ids = s.observation.results.map((result) => result.id)
+          return expect({
+            runSucceeded: Exit.isSuccess(s.observation.exit),
+            resultCount: ids.length,
+            readmittedConditionRan: s.observation.results.filter(onConditionLine).some((result) =>
+              S.is(Mutant.Readmitted)(result.subsumption) && ranStatus(result.status)
+            ),
+          }).toEqual({
+            runSucceeded: true,
+            resultCount: new Set(ids).size,
+            readmittedConditionRan: true,
+          })
+        }),
       ),
     )
 
