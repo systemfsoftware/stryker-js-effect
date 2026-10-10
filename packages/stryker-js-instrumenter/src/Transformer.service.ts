@@ -7,18 +7,22 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import {
   type AridCallee,
   aridCode,
   AridCodeCommand,
   type AridCodeDecision,
+  AridEffectModule,
   type AridFrame,
+  AridGlobalObject,
 } from './arid-code.workflow.js'
 import {
   type ArrowFunctionExpression,
   arrowFunctionExpression,
   attachComments,
   blockStatement,
+  type CallExpression,
   callExpression,
   childNodes,
   type ClassExpression,
@@ -55,6 +59,14 @@ import { type Ast, type ScriptAst, type SpannedComment } from './Ast.schema.js'
 import { decodeDirective, DecodeDirectiveCommand } from './directives/decode-directive.workflow.js'
 import { type Directive, type LocatedDirective } from './directives/directive.schema.js'
 import { foldRule, FoldRuleCommand, type MutantRule } from './directives/fold-rule.workflow.js'
+import {
+  buildImportTable,
+  type ImportTable,
+  isFunctionLike,
+  isImportedLocal,
+  isShadowed,
+  resolveImportedExport,
+} from './effect-imports.js'
 import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { FormatRegistry } from './Format.schema.js'
 import {
@@ -760,6 +772,7 @@ interface PlacementContext {
   readonly allMutatorNames: readonly string[]
   readonly excludedMutations: readonly string[]
   readonly mutantSetPolicy: Options.MutantSetPolicyType
+  readonly aridImportTable: ImportTable<AridEffectModule>
   readonly ignorers: readonly Ignorer[]
   readonly ordinalOf: (tuple: MutantTuple) => number
 }
@@ -884,30 +897,85 @@ function isNamedCallee(node: Node): node is NamedCallee {
   return isMemberOfIdentifierParts(node) && readKey<boolean>(node, 'computed') === false
 }
 
-const aridCalleeOf = (callee: Expression): Option.Option<AridCallee> =>
+const unshadowedGlobalOf = (
+  name: string,
+  context: MutatorContext,
+  table: ImportTable<AridEffectModule>,
+): Option.Option<AridGlobalObject> =>
+  Option.filter(
+    Option.filter(Option.some(name), S.is(AridGlobalObject)),
+    (global) => isShadowed(global, context) === false && isImportedLocal(global, table) === false,
+  )
+
+const aridGlobalCalleeOf = (
+  callee: Expression,
+  context: MutatorContext,
+  table: ImportTable<AridEffectModule>,
+): Option.Option<AridCallee> =>
   Match.value(callee).pipe(
     Match.when(isNamedCallee, (named) =>
-      Option.some<AridCallee>({ object: named.object.name, member: named.property.name })),
-    Match.orElse(() =>
-      Option.none<AridCallee>()
+      Option.map(
+        unshadowedGlobalOf(named.object.name, context, table),
+        (name): AridCallee => ({ _tag: 'Global', name, member: named.property.name }),
+      )),
+    Match.orElse((): Option.Option<AridCallee> => Option.none()),
+  )
+
+const aridCalleeOf = (
+  call: CallExpression,
+  callFrame: NodeFrame,
+  policy: Options.MutantSetPolicyType,
+  table: ImportTable<AridEffectModule>,
+): Option.Option<AridCallee> => {
+  const context = toMutatorContext([call, ...ancestorsOfFrame(callFrame)], policy)
+  return Option.orElse(
+    Option.map(
+      resolveImportedExport(call.callee, context, table),
+      (resolved): AridCallee => ({ _tag: 'EffectExport', module: resolved.module, exportName: resolved.exportName }),
     ),
+    () => aridGlobalCalleeOf(call.callee, context, table),
   )
+}
 
-const aridFrameFor = (child: Node, ancestor: Node): Option.Option<AridFrame> =>
-  ancestor.type === 'CallExpression'
-    ? Option.some({
-      callee: aridCalleeOf(ancestor.callee),
-      childIsArgument: ancestor.arguments.some((argument) => argument === child),
-    })
-    : Option.none()
+const aridCalleeWhen = (
+  childIsArgument: boolean,
+  ancestor: CallExpression,
+  ancestorFrame: NodeFrame,
+  policy: Options.MutantSetPolicyType,
+  table: ImportTable<AridEffectModule>,
+): Option.Option<AridCallee> => childIsArgument ? aridCalleeOf(ancestor, ancestorFrame, policy, table) : Option.none()
 
-const aridFramesOf = (frame: NodeFrame): readonly AridFrame[] =>
-  framesUpward(frame).flatMap((current) =>
-    Option.match(Option.fromNullishOr(current.parent), {
+const aridCallFrameFor = (
+  current: NodeFrame,
+  ancestorFrame: NodeFrame,
+  policy: Options.MutantSetPolicyType,
+  table: ImportTable<AridEffectModule>,
+): readonly AridFrame[] => {
+  const ancestor = ancestorFrame.node
+  if (ancestor.type !== 'CallExpression') return []
+  const childIsArgument = ancestor.arguments.some((argument) => argument === current.node)
+  return [{
+    _tag: 'CallFrame',
+    callee: aridCalleeWhen(childIsArgument, ancestor, ancestorFrame, policy, table),
+    childIsArgument,
+  }]
+}
+
+const functionBoundaryOf = (current: NodeFrame): readonly AridFrame[] =>
+  isFunctionLike(current.node) ? [{ _tag: 'FunctionBoundary' }] : []
+
+const aridFramesOf = (
+  frame: NodeFrame,
+  policy: Options.MutantSetPolicyType,
+  table: ImportTable<AridEffectModule>,
+): readonly AridFrame[] =>
+  framesUpward(frame).flatMap((current) => [
+    ...functionBoundaryOf(current),
+    ...Option.match(Option.fromNullishOr(current.parent), {
       onNone: (): readonly AridFrame[] => [],
-      onSome: (parent) => Option.toArray(aridFrameFor(current.node, parent.node)),
-    })
-  )
+      onSome: (parent) => aridCallFrameFor(current, parent, policy, table),
+    }),
+  ])
 
 const aridStatusReason = (decision: AridCodeDecision): Option.Option<string> =>
   Match.value(decision).pipe(
@@ -916,8 +984,12 @@ const aridStatusReason = (decision: AridCodeDecision): Option.Option<string> =>
     Match.exhaustive,
   )
 
-const aridReasonOf = (frame: NodeFrame, policy: Options.MutantSetPolicyType): Option.Option<string> =>
-  Match.value(aridCode(AridCodeCommand.make({ policy, frames: [...aridFramesOf(frame)] }))).pipe(
+const aridReasonOf = (
+  frame: NodeFrame,
+  policy: Options.MutantSetPolicyType,
+  table: ImportTable<AridEffectModule>,
+): Option.Option<string> =>
+  Match.value(aridCode(AridCodeCommand.make({ policy, frames: [...aridFramesOf(frame, policy, table)] }))).pipe(
     Match.when(Result.isSuccess, (decided) => aridStatusReason(decided.success)),
     Match.orElse(() => Option.none<string>()),
   )
@@ -944,10 +1016,9 @@ const mutablesFor = (
   const replacements = context.mutatorEntries.flatMap(([mutatorName, mutate]) =>
     [...mutate(frame.node, mutatorContext)].map((replacement) => ({ mutatorName, replacement }))
   )
-  const ignorerAnswer = replacements.length === 0
-    ? undefined
-    : Option.getOrUndefined(ignorerAnswerFor(frame.node, ancestors, context.ignorers))
-  const aridReason = Option.getOrUndefined(aridReasonOf(frame, context.mutantSetPolicy))
+  if (replacements.length === 0) return []
+  const ignorerAnswer = Option.getOrUndefined(ignorerAnswerFor(frame.node, ancestors, context.ignorers))
+  const aridReason = Option.getOrUndefined(aridReasonOf(frame, context.mutantSetPolicy, context.aridImportTable))
   const originalCode = printNode(frame.node)
   return replacements.map(({ mutatorName, replacement }): MutableCandidate => {
     const replacementCode = printNode(replacement)
@@ -1398,6 +1469,7 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
       allMutatorNames: options.mutators.known.map((name) => name.toLowerCase()),
       excludedMutations: options.excludedMutations,
       mutantSetPolicy: options.mutantSetPolicy,
+      aridImportTable: buildImportTable(root, AridEffectModule.literals),
       ignorers: options.ignorers,
       ordinalOf: mutantCollector.ordinalOf,
     }

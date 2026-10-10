@@ -1,72 +1,126 @@
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Equal from 'effect/Equal'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
   type AridCallee,
+  AridCalleeSchema,
   aridCode,
   AridCodeCommand,
   type AridCodeDecision,
-  AridFrameSchema,
+  type AridFrame,
   AridKept,
-  type AridRuleId,
   AridSuppressed,
 } from '../arid-code.workflow.js'
 
-const detailOf = (callee: AridCallee): string => `${callee.object}.${callee.member}`
+const detailOf = (callee: AridCallee): string =>
+  Match.value(callee).pipe(
+    Match.tagsExhaustive({
+      EffectExport: (effectExport) => `${effectExport.module}.${effectExport.exportName}`,
+      Global: (global) => `${global.name}.${global.member}`,
+    }),
+  )
 
 const isKept = (decided: Result.Result<AridCodeDecision, never>): boolean =>
   Result.isSuccess(decided) && S.is(AridKept)(decided.success)
 
-const namesSuppression = (
-  decided: Result.Result<AridCodeDecision, never>,
-  ruleId: AridRuleId,
-  detail: string,
-): boolean =>
-  Result.isSuccess(decided) && S.is(AridSuppressed)(decided.success) && decided.success.ruleId === ruleId &&
-  decided.success.detail === detail
+const suppressionOf = (decided: Result.Result<AridCodeDecision, never>): Option.Option<AridSuppressed> =>
+  Result.isSuccess(decided) && S.is(AridSuppressed)(decided.success) ? Option.some(decided.success) : Option.none()
 
-const argumentFrame = (callee: AridCallee): AridCodeCommand['frames'][number] => ({
+const sameDecision = (
+  left: Result.Result<AridCodeDecision, never>,
+  right: Result.Result<AridCodeDecision, never>,
+): boolean => Result.isSuccess(left) && Result.isSuccess(right) && Equal.equals(left.success, right.success)
+
+const argumentFrame = (callee: AridCallee): AridFrame => ({
+  _tag: 'CallFrame',
   callee: Option.some(callee),
   childIsArgument: true,
 })
 
-const throughCallee = (frame: AridCodeCommand['frames'][number]): AridCodeCommand['frames'][number] => ({
-  ...frame,
-  childIsArgument: false,
-})
+const FUNCTION_BOUNDARY: AridFrame = { _tag: 'FunctionBoundary' }
 
-const withoutCallee = (frame: AridCodeCommand['frames'][number]): AridCodeCommand['frames'][number] => ({
-  ...frame,
-  callee: Option.none<AridCallee>(),
-})
+const throughCallees = (frames: readonly AridFrame[]): readonly AridFrame[] =>
+  frames.flatMap((frame) =>
+    Match.value(frame).pipe(
+      Match.tagsExhaustive({
+        CallFrame: (callFrame): readonly AridFrame[] => [{ ...callFrame, childIsArgument: false }],
+        FunctionBoundary: (): readonly AridFrame[] => [],
+      }),
+    )
+  )
 
-const LOG_INFO: AridCallee = { object: 'Effect', member: 'logInfo' }
-const LOG_INFO_RULE: AridRuleId = 'arid-logging'
+const withoutCallees = (frames: readonly AridFrame[]): readonly AridFrame[] =>
+  frames.flatMap((frame) =>
+    Match.value(frame).pipe(
+      Match.tagsExhaustive({
+        CallFrame: (callFrame): readonly AridFrame[] => [{ ...callFrame, callee: Option.none<AridCallee>() }],
+        FunctionBoundary: (): readonly AridFrame[] => [],
+      }),
+    )
+  )
+
+const asLoggerOrConsole = (callee: AridCallee): AridCallee =>
+  Match.value(callee).pipe(
+    Match.tagsExhaustive({
+      EffectExport: (effectExport): AridCallee => ({ ...effectExport, module: 'Logger' }),
+      Global: (global): AridCallee => global,
+    }),
+  )
+
+const decided = (frames: readonly AridFrame[]): AridCodeCommand =>
+  AridCodeCommand.make({ policy: 'default', frames: [...frames] })
 
 describe('aridCode', () => {
   it.prop(
-    '∀cf_CommandAndFrame_≡AnAridArgumentFrameDecidesWhereTheSameFrameThroughItsCalleeDoesNot',
-    { of: [AridCodeCommand, AridFrameSchema], subject: aridCode },
-    (subject, [command, frame]) => {
-      const tail = [throughCallee(frame), ...command.frames.map(throughCallee)]
-      const asArgument = subject(
-        AridCodeCommand.make({ policy: 'default', frames: [argumentFrame(LOG_INFO), ...tail] }),
+    '∀c_Callee_≡AnyLoggerExportOrConsoleMemberIsSuppressedAsAridLoggingUnderItsCanonicalName',
+    { of: [AridCalleeSchema], subject: aridCode },
+    (subject, [callee]) => {
+      const logger = asLoggerOrConsole(callee)
+      return Option.exists(
+        suppressionOf(subject(decided([argumentFrame(logger)]))),
+        (suppressed) => suppressed.ruleId === 'arid-logging' && suppressed.detail === detailOf(logger),
       )
-      const throughTheCallee = subject(
-        AridCodeCommand.make({ policy: 'default', frames: [throughCallee(argumentFrame(LOG_INFO)), ...tail] }),
-      )
-      return namesSuppression(asArgument, LOG_INFO_RULE, detailOf(LOG_INFO)) && isKept(throughTheCallee)
     },
   )
 
   it.prop(
-    '∀c_Command_≡CalleelessOrNonArgumentFramesNeverSuppress',
+    '∀cc_CalleeAndCommand_≡TheInnermostArgumentFrameThatMatchesARuleDecidesAheadOfEveryOuterFrame',
+    { of: [AridCalleeSchema, AridCodeCommand], subject: aridCode },
+    (subject, [callee, command]) => {
+      const alone = subject(decided([argumentFrame(callee)]))
+      const withOuterFrames = subject(decided([argumentFrame(callee), ...command.frames]))
+      return Option.match(suppressionOf(alone), {
+        onNone: () => sameDecision(withOuterFrames, subject(decided(command.frames))),
+        onSome: (suppressed) => suppressed.detail === detailOf(callee) && sameDecision(withOuterFrames, alone),
+      })
+    },
+  )
+
+  it.prop(
+    '∀c_Command_≡FramesWhoseChildIsNotAnArgumentNeverSuppress',
     { of: [AridCodeCommand], subject: aridCode },
-    (subject, [command]) =>
-      isKept(subject(AridCodeCommand.make({ policy: 'default', frames: command.frames.map(throughCallee) }))) &&
-      isKept(subject(AridCodeCommand.make({ policy: 'default', frames: command.frames.map(withoutCallee) }))),
+    (subject, [command]) => isKept(subject(decided(throughCallees(command.frames)))),
+  )
+
+  it.prop(
+    '∀c_Command_≡AFrameWhoseCalleeResolvesToNoEffectModuleAndNoUnshadowedGlobalIsNeverSuppressed',
+    { of: [AridCodeCommand], subject: aridCode },
+    (subject, [command]) => isKept(subject(decided(withoutCallees(command.frames)))),
+  )
+
+  it.prop(
+    '∀cc_CalleeAndCommand_≡NoFrameBeyondAFunctionBoundarySuppressesWhileOneBelowItStillDecides',
+    { of: [AridCalleeSchema, AridCodeCommand], subject: aridCode },
+    (subject, [callee, command]) =>
+      isKept(subject(decided([FUNCTION_BOUNDARY, argumentFrame(callee), ...command.frames]))) &&
+      sameDecision(
+        subject(decided([argumentFrame(callee), FUNCTION_BOUNDARY, ...command.frames])),
+        subject(decided([argumentFrame(callee)])),
+      ),
   )
 
   it.prop(

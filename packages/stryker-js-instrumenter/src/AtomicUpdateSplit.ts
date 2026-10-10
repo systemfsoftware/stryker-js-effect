@@ -5,13 +5,12 @@ import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import { arrowFunctionExpression, cloneNode, identifier, memberExpression } from './Ast.handle.js'
+import { type EffectModuleName, onlyWhen } from './effect-imports.js'
 import {
-  type EffectModuleName,
   freshIdentifier,
   identifiersIn,
   isMovableArgument,
   moduleCall,
-  onlyWhen,
   type ResolvedEffectCall,
   resolveEffectCall,
 } from './EffectCall.js'

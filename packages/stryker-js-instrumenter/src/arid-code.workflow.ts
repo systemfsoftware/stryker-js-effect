@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -16,16 +17,36 @@ const ARID_RULE_IDS = [
 export const AridRuleId = S.Literals(ARID_RULE_IDS)
 export type AridRuleId = typeof AridRuleId.Type
 
-export const AridCalleeSchema = S.Struct({
-  object: S.String,
+export const AridEffectModule = S.Literals(['Effect', 'Logger', 'Metric', 'Schedule', 'Duration', 'Config'])
+export type AridEffectModule = typeof AridEffectModule.Type
+
+export const AridGlobalObject = S.Literals(['console'])
+export type AridGlobalObject = typeof AridGlobalObject.Type
+
+const AridEffectExportCallee = S.TaggedStruct('EffectExport', {
+  module: AridEffectModule,
+  exportName: S.String,
+})
+type AridEffectExportCallee = typeof AridEffectExportCallee.Type
+
+const AridGlobalCallee = S.TaggedStruct('Global', {
+  name: AridGlobalObject,
   member: S.String,
 })
+type AridGlobalCallee = typeof AridGlobalCallee.Type
+
+export const AridCalleeSchema = S.Union([AridEffectExportCallee, AridGlobalCallee])
 export type AridCallee = typeof AridCalleeSchema.Type
 
-export const AridFrameSchema = S.Struct({
+const AridCallFrame = S.TaggedStruct('CallFrame', {
   callee: S.Option(AridCalleeSchema),
   childIsArgument: S.Boolean,
 })
+type AridCallFrame = typeof AridCallFrame.Type
+
+const AridFunctionBoundary = S.TaggedStruct('FunctionBoundary', {})
+
+export const AridFrameSchema = S.Union([AridCallFrame, AridFunctionBoundary])
 export type AridFrame = typeof AridFrameSchema.Type
 
 interface AridRule {
@@ -33,32 +54,55 @@ interface AridRule {
   readonly matches: (callee: AridCallee) => boolean
 }
 
-const NAMED_LOGGERS: ReadonlyArray<string> = ['Logger', 'console']
+const matchCallee = (
+  callee: AridCallee,
+  arms: {
+    readonly effectExport: (effectExport: AridEffectExportCallee) => boolean
+    readonly global: (global: AridGlobalCallee) => boolean
+  },
+): boolean =>
+  Match.value(callee).pipe(
+    Match.tagsExhaustive({
+      EffectExport: arms.effectExport,
+      Global: arms.global,
+    }),
+  )
 
-const readsNamespace = (callee: AridCallee, object: string): boolean => callee.object === object
+const readsModule = (callee: AridCallee, module: AridEffectModule): boolean =>
+  matchCallee(callee, { effectExport: (effectExport) => effectExport.module === module, global: () => false })
 
-const readsName = (callee: AridCallee, name: string): boolean => callee.member === name
+const readsExport = (callee: AridCallee, module: AridEffectModule, exportName: string): boolean =>
+  matchCallee(callee, {
+    effectExport: (effectExport) =>
+      [effectExport.module === module, effectExport.exportName === exportName].every(Boolean),
+    global: () => false,
+  })
 
-const readsMember = (callee: AridCallee, object: string, member: string): boolean =>
-  [readsNamespace(callee, object), readsName(callee, member)].every(Boolean)
+const readsExportPrefixed = (callee: AridCallee, module: AridEffectModule, prefix: string): boolean =>
+  matchCallee(callee, {
+    effectExport: (effectExport) =>
+      [effectExport.module === module, effectExport.exportName.startsWith(prefix)].every(Boolean),
+    global: () => false,
+  })
 
-const readsMemberPrefixed = (callee: AridCallee, object: string, prefix: string): boolean =>
-  [readsNamespace(callee, object), callee.member.startsWith(prefix)].every(Boolean)
+const readsGlobal = (callee: AridCallee): boolean =>
+  matchCallee(callee, { effectExport: () => false, global: () => true })
 
 const ARID_RULES_IN_PRECEDENCE_ORDER: ReadonlyArray<AridRule> = [
-  { ruleId: 'arid-logging', matches: (callee) => readsMemberPrefixed(callee, 'Effect', 'log') },
-  { ruleId: 'arid-logging', matches: (callee) => NAMED_LOGGERS.includes(callee.object) },
-  { ruleId: 'arid-telemetry', matches: (callee) => readsMember(callee, 'Effect', 'withSpan') },
-  { ruleId: 'arid-telemetry', matches: (callee) => readsMemberPrefixed(callee, 'Effect', 'annotate') },
-  { ruleId: 'arid-telemetry', matches: (callee) => readsMember(callee, 'Effect', 'withLogSpan') },
-  { ruleId: 'arid-telemetry', matches: (callee) => readsNamespace(callee, 'Metric') },
-  { ruleId: 'arid-time', matches: (callee) => readsMember(callee, 'Effect', 'sleep') },
-  { ruleId: 'arid-time', matches: (callee) => readsNamespace(callee, 'Schedule') },
-  { ruleId: 'arid-time', matches: (callee) => readsNamespace(callee, 'Duration') },
-  { ruleId: 'arid-time', matches: (callee) => readsMember(callee, 'Date', 'now') },
-  { ruleId: 'arid-config-default', matches: (callee) => readsMember(callee, 'Config', 'withDefault') },
-  { ruleId: 'arid-memoization', matches: (callee) => readsMember(callee, 'Effect', 'cached') },
-  { ruleId: 'arid-memoization', matches: (callee) => readsMember(callee, 'Effect', 'cachedWithTTL') },
+  { ruleId: 'arid-logging', matches: (callee) => readsExportPrefixed(callee, 'Effect', 'log') },
+  { ruleId: 'arid-logging', matches: (callee) => readsModule(callee, 'Logger') },
+  { ruleId: 'arid-logging', matches: readsGlobal },
+  { ruleId: 'arid-telemetry', matches: (callee) => readsExport(callee, 'Effect', 'withSpan') },
+  { ruleId: 'arid-telemetry', matches: (callee) => readsExportPrefixed(callee, 'Effect', 'annotate') },
+  { ruleId: 'arid-telemetry', matches: (callee) => readsExport(callee, 'Effect', 'withLogSpan') },
+  { ruleId: 'arid-telemetry', matches: (callee) => readsModule(callee, 'Metric') },
+  { ruleId: 'arid-telemetry', matches: (callee) => readsExport(callee, 'Effect', 'fn') },
+  { ruleId: 'arid-time', matches: (callee) => readsExport(callee, 'Effect', 'sleep') },
+  { ruleId: 'arid-time', matches: (callee) => readsModule(callee, 'Schedule') },
+  { ruleId: 'arid-time', matches: (callee) => readsModule(callee, 'Duration') },
+  { ruleId: 'arid-config-default', matches: (callee) => readsExport(callee, 'Config', 'withDefault') },
+  { ruleId: 'arid-memoization', matches: (callee) => readsExport(callee, 'Effect', 'cached') },
+  { ruleId: 'arid-memoization', matches: (callee) => readsExport(callee, 'Effect', 'cachedWithTTL') },
 ]
 
 const ruleFor = (callee: AridCallee): Option.Option<AridRuleId> =>
@@ -67,7 +111,13 @@ const ruleFor = (callee: AridCallee): Option.Option<AridRuleId> =>
     (rule) => rule.ruleId,
   )
 
-const calleeDetail = (callee: AridCallee): string => `${callee.object}.${callee.member}`
+const calleeDetail = (callee: AridCallee): string =>
+  Match.value(callee).pipe(
+    Match.tagsExhaustive({
+      EffectExport: (effectExport) => `${effectExport.module}.${effectExport.exportName}`,
+      Global: (global) => `${global.name}.${global.member}`,
+    }),
+  )
 
 export class AridCodeCommand extends S.TaggedClass<AridCodeCommand>()('AridCodeCommand', {
   policy: Options.MutantSetPolicy,
@@ -99,14 +149,18 @@ interface AridMatch {
   readonly callee: AridCallee
 }
 
-const matchOfFrame = (frame: AridFrame): Option.Option<AridMatch> =>
+const matchOfFrame = (frame: AridCallFrame): Option.Option<AridMatch> =>
   Option.flatMap(
     Option.filter(frame.callee, () => frame.childIsArgument),
-    (callee) => Option.map(ruleFor(callee), (ruleId): AridMatch => ({ ruleId, callee })),
+    (callee) =>
+      Option.map(
+        ruleFor(callee),
+        (ruleId): AridMatch => ({ ruleId, callee }),
+      ),
   )
 
 const firstMatch = (frames: readonly AridFrame[]): Option.Option<AridMatch> =>
-  Option.firstSomeOf(frames.map(matchOfFrame))
+  Option.firstSomeOf(Arr.takeWhile(frames, S.is(AridCallFrame)).map(matchOfFrame))
 
 const defaultPolicyDecision = (frames: readonly AridFrame[]): AridCodeDecision =>
   Match.value(firstMatch(frames)).pipe(

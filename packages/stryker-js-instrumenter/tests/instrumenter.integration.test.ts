@@ -30,10 +30,15 @@ const INSIDE_FLAG = 'inside if (flag)'
 const IGNORED_OUTSIDE_KEEP = `ignorer: ${OUTSIDE_KEEP}`
 const IGNORED_INSIDE_FLAG = `ignorer: ${INSIDE_FLAG}`
 
-const ARID_LOG_SOURCE = `export const ready = () => Effect.logInfo("ready")
+const ARID_LOG_SOURCE = `import { Effect } from 'effect'
+export const ready = () => Effect.logInfo("ready")
 `
 
-const ARID_RULE_SOURCE = `export const logged = () => Effect.logInfo('logged')
+const ARID_RULE_SOURCE = `import { Config, Duration, Effect, Logger, Metric, Schedule } from 'effect'
+
+const logInfo = (message: string) => message
+
+export const logged = () => Effect.logInfo('logged')
 export const named = () => Logger.info('named')
 export const consoled = () => console.log('consoled')
 export const spanned = () => Effect.withSpan('spanned')
@@ -50,7 +55,9 @@ export const configuredElsewhere = () => Config.string('configuredElsewhere')
 export const cachedElsewhere = () => Effect.cache('cachedElsewhere')
 `
 
-const ARID_GATED_SOURCE = `export const announce = (level) => {
+const ARID_GATED_SOURCE = `import { Effect } from 'effect'
+
+export const announce = (level) => {
   if (level > 3) {
     Effect.logInfo('ready')
   }
@@ -62,6 +69,71 @@ const ARID_NEAR_MISS_SOURCE = `export const announce = (level) => {
     logInfo('ready')
   }
 }
+`
+
+const ARID_ALIAS_SOURCE = `import * as E from 'effect/Effect'
+export const ready = () => E.logInfo('x')
+`
+
+const ARID_LOCAL_EFFECT_SOURCE = `const Effect = { logInfo: (s: string) => s }
+export const ready = () => Effect.logInfo('x')
+`
+
+const ARID_NAMED_IMPORT_SOURCE = `import { logInfo } from 'effect/Effect'
+export const ready = () => logInfo('x')
+`
+
+const ARID_CONSOLE_SHADOW_SOURCE = `const console = { log: (s: string) => s }
+export const ready = () => console.log('x')
+`
+
+const ARID_CONSOLE_SOURCE = `export const ready = () => console.log('y')
+`
+
+const ARID_FN_SOURCE = `import { Effect } from 'effect'
+
+export const named = Effect.fn('handle', { attributes: { a: 1 } })
+export const anonymous = Effect.fn(function*() { return a + b })
+export const piped = Effect.fn('n')(function*() { return a + b })
+`
+
+const ARID_IMPORTED_CONSOLE_SOURCE = `import console from 'node:console'
+export const ready = () => console.log('x')
+`
+
+const ARID_IMPORTED_DATE_SOURCE = `import { Date } from './clock'
+export const parsed = () => Date.parse('x')
+`
+
+const ARID_SHADOWED_DATE_SOURCE = `const Date = { parse: (text: string) => text }
+export const parsed = () => Date.parse('x')
+`
+
+const ARID_ROOT_NAMESPACE_SOURCE = `import * as E from 'effect'
+export const ready = () => E.Effect.logInfo('x')
+`
+
+const ARID_FN_TEMPLATE_NAME_SOURCE = `import { Effect } from 'effect'
+export const named = Effect.fn(\`handle\`, { attributes: { kind: 'x' } })
+`
+
+const ARID_FN_MEMBER_NAME_SOURCE = `import { Effect } from 'effect'
+
+const Spans = { handle: 'handle' }
+
+export const named = Effect.fn(Spans.handle, { attributes: { kind: 'x' } })
+`
+
+const ARID_LOGGER_FUNCTION_SOURCE = `import * as Logger from 'effect/Logger'
+export const made = Logger.make((options) => options.message + '!')
+`
+
+const ARID_WITHSPAN_GEN_SOURCE = `import { Effect } from 'effect'
+export const spanned = (a, b) => Effect.withSpan(Effect.gen(function* () { return a + b }), 'span')
+`
+
+const ARID_METRIC_BARE_SOURCE = `import { counter } from 'effect/Metric'
+export const counted = () => counter('requests')
 `
 
 type Mutant = {
@@ -1018,6 +1090,354 @@ export function price(n) {
             activeStrings: 6,
           })
         }),
+      ),
+    )
+
+    scenario(
+      'An aliased effect import is arid while a local look-alike sharing its name is not',
+      Gherkin.Do.pipe(
+        Given('an aliased import and a local object named Effect')(
+          'sources',
+          () => Effect.succeed({ aliased: ARID_ALIAS_SOURCE, local: ARID_LOCAL_EFFECT_SOURCE }),
+        ),
+        When('each source is instrumented under the default policy')(
+          'results',
+          ({ sources }: { sources: { aliased: string; local: string } }) =>
+            Effect.all([
+              instrumentSource('/tmp/arid-alias.ts', sources.aliased),
+              instrumentSource('/tmp/arid-local-effect.ts', sources.local),
+            ]),
+        ),
+        When('the aliased source is instrumented under the full policy')(
+          'full',
+          ({ sources }: { sources: { aliased: string; local: string } }) =>
+            underFull('/tmp/arid-alias.ts', sources.aliased),
+        ),
+        Then('the alias is Ignored, the local is mutated, and full keeps the alias mutated')((
+          { results, full }: {
+            results: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult]
+            full: Instrument.InstrumentResult
+          },
+          expect,
+        ) => {
+          const [aliased, localized] = results
+          const strings = (result: Instrument.InstrumentResult) =>
+            result.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral')
+          return expect({
+            aliased: strings(aliased).map((mutant) => [mutant.status, mutant.statusReason]),
+            localActive: strings(localized).filter(isActive).length,
+            fullActive: strings(full).filter(isActive).length,
+          }).toEqual({
+            aliased: [['Ignored', 'arid-logging: Effect.logInfo']],
+            localActive: 1,
+            fullActive: 1,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A named import of a bare effect export is arid',
+      Gherkin.Do.pipe(
+        Given('a module importing logInfo from effect/Effect')(
+          'source',
+          () => Effect.succeed(ARID_NAMED_IMPORT_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-named-import.ts', source),
+        ),
+        Then('the argument is Ignored as the canonical Effect export')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([['Ignored', 'arid-logging: Effect.logInfo']])
+        ),
+      ),
+    )
+
+    scenario(
+      'A shadowed console stays mutated while an unshadowed console is ignored',
+      Gherkin.Do.pipe(
+        Given('a local console binding and a bare console call')(
+          'sources',
+          () => Effect.succeed({ shadowed: ARID_CONSOLE_SHADOW_SOURCE, unshadowed: ARID_CONSOLE_SOURCE }),
+        ),
+        When('each source is instrumented under the default policy')(
+          'results',
+          ({ sources }: { sources: { shadowed: string; unshadowed: string } }) =>
+            Effect.all([
+              instrumentSource('/tmp/arid-console-shadow.ts', sources.shadowed),
+              instrumentSource('/tmp/arid-console.ts', sources.unshadowed),
+            ]),
+        ),
+        Then('the shadowed call is mutated and the global is ignored')((
+          { results }: { results: readonly [Instrument.InstrumentResult, Instrument.InstrumentResult] },
+          expect,
+        ) => {
+          const [shadowed, unshadowed] = results
+          const strings = (result: Instrument.InstrumentResult) =>
+            result.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral')
+          return expect({
+            shadowedActive: strings(shadowed).filter(isActive).length,
+            unshadowed: strings(unshadowed).map((mutant) => [mutant.status, mutant.statusReason]),
+          }).toEqual({
+            shadowedActive: 1,
+            unshadowed: [['Ignored', 'arid-logging: console.log']],
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'The span name and options of Effect.fn are arid while its body is not',
+      Gherkin.Do.pipe(
+        Given('a module naming spans and passing bodies')('source', () => Effect.succeed(ARID_FN_SOURCE)),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-fn.ts', source),
+        ),
+        Then('name and options are Ignored and the arithmetic bodies stay mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const byMutator = (name: string) => result.mutants.filter((mutant) => mutant.mutatorName === name)
+          const strings = byMutator('StringLiteral')
+          const options = byMutator('ObjectLiteral')
+          const arithmetic = byMutator('ArithmeticOperator')
+          const fnReason = (mutant: Mutant) =>
+            mutant.status === 'Ignored' && mutant.statusReason === 'arid-telemetry: Effect.fn'
+          return expect({
+            fnStrings: strings.length,
+            fnStringsReasoned: strings.every(fnReason),
+            optionIgnored: options.length > 0 && options.every(fnReason),
+            arithmeticActive: arithmetic.length > 0 && arithmetic.every(isActive),
+          }).toEqual({
+            fnStrings: 2,
+            fnStringsReasoned: true,
+            optionIgnored: true,
+            arithmeticActive: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'An imported console binding stays mutated',
+      Gherkin.Do.pipe(
+        Given('a module importing console from node:console')(
+          'source',
+          () => Effect.succeed(ARID_IMPORTED_CONSOLE_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-imported-console.ts', source),
+        ),
+        Then('the console argument stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([[undefined, undefined]])
+        ),
+      ),
+    )
+
+    scenario(
+      'An imported Date binding stays mutated',
+      Gherkin.Do.pipe(
+        Given('a module importing Date from a local clock')('source', () => Effect.succeed(ARID_IMPORTED_DATE_SOURCE)),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-imported-date.ts', source),
+        ),
+        Then('the parse argument stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([[undefined, undefined]])
+        ),
+      ),
+    )
+
+    scenario(
+      'A shadowed Date binding stays mutated',
+      Gherkin.Do.pipe(
+        Given('a module shadowing Date with a local object')('source', () => Effect.succeed(ARID_SHADOWED_DATE_SOURCE)),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-shadowed-date.ts', source),
+        ),
+        Then('the parse argument stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([[undefined, undefined]])
+        ),
+      ),
+    )
+
+    scenario(
+      'A root namespace import resolves an effect export',
+      Gherkin.Do.pipe(
+        Given('a module importing the effect root as a namespace')(
+          'source',
+          () => Effect.succeed(ARID_ROOT_NAMESPACE_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-root-namespace.ts', source),
+        ),
+        Then('the log argument is Ignored as the canonical Effect export')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([['Ignored', 'arid-logging: Effect.logInfo']])
+        ),
+      ),
+    )
+
+    scenario(
+      'Effect.fn with a template-literal name is arid on every argument',
+      Gherkin.Do.pipe(
+        Given('a module naming an Effect.fn with a template literal and an option')(
+          'source',
+          () => Effect.succeed(ARID_FN_TEMPLATE_NAME_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-fn-template-name.ts', source),
+        ),
+        Then('the template name and the option value are both Ignored')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const strings = result.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral')
+          return expect(strings.map((mutant) => [mutant.status, mutant.statusReason])).toEqual([
+            ['Ignored', 'arid-telemetry: Effect.fn'],
+            ['Ignored', 'arid-telemetry: Effect.fn'],
+          ])
+        }),
+      ),
+    )
+
+    scenario(
+      'Effect.fn with a member-expression name is arid only inside its own arguments',
+      Gherkin.Do.pipe(
+        Given('a module passing a member expression and an option to Effect.fn')(
+          'source',
+          () => Effect.succeed(ARID_FN_MEMBER_NAME_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-fn-member-name.ts', source),
+        ),
+        Then('the option value is Ignored while the span registry literal stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const strings = result.mutants.filter((mutant) => mutant.mutatorName === 'StringLiteral')
+          return expect({
+            ignored: strings
+              .filter((mutant) => mutant.status === 'Ignored')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+            activeStrings: strings.filter(isActive).length,
+          }).toEqual({
+            ignored: [['Ignored', 'arid-telemetry: Effect.fn']],
+            activeStrings: 1,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A function passed to an arid callee keeps the mutants in its body',
+      Gherkin.Do.pipe(
+        Given('a module passing an arrow function to Logger.make')(
+          'source',
+          () => Effect.succeed(ARID_LOGGER_FUNCTION_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-logger-function.ts', source),
+        ),
+        Then('the string inside the callback stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([[undefined, undefined]])
+        ),
+      ),
+    )
+
+    scenario(
+      'A generator nested in an arid argument keeps its own mutants',
+      Gherkin.Do.pipe(
+        Given('a module spanning an Effect.gen body')('source', () => Effect.succeed(ARID_WITHSPAN_GEN_SOURCE)),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-withspan-gen.ts', source),
+        ),
+        Then('the span name is Ignored while the generator body stays mutable')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const byMutator = (name: string) => result.mutants.filter((mutant) => mutant.mutatorName === name)
+          return expect({
+            span: byMutator('StringLiteral').map((mutant) => [mutant.status, mutant.statusReason]),
+            arithmetic: byMutator('ArithmeticOperator').map((mutant) => [mutant.status, mutant.statusReason]),
+          }).toEqual({
+            span: [['Ignored', 'arid-telemetry: Effect.withSpan']],
+            arithmetic: [[undefined, undefined]],
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'A bare named import from a module-wide arid module is arid',
+      Gherkin.Do.pipe(
+        Given('a module importing counter from effect/Metric')(
+          'source',
+          () => Effect.succeed(ARID_METRIC_BARE_SOURCE),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/arid-metric-bare.ts', source),
+        ),
+        Then('the argument is Ignored as the canonical Metric export')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(
+            result.mutants
+              .filter((mutant) => mutant.mutatorName === 'StringLiteral')
+              .map((mutant) => [mutant.status, mutant.statusReason]),
+          ).toEqual([['Ignored', 'arid-telemetry: Metric.counter']])
+        ),
       ),
     )
 
