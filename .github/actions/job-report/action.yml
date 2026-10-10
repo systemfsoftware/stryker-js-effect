@@ -1,0 +1,80 @@
+name: Job report
+description: >-
+  Writes the job's step summary (outcome, reason code, duration, and Turbo cached/total with
+  the slowest missed tasks when given run summaries) and, when the job did not succeed, an
+  annotation titled with the reason code whose message is the next action. Call it last,
+  under `if: always()`; it only reports, so the job's outcome stays its own.
+
+inputs:
+  status:
+    description: "`job.status` of the calling job: success, failure, or cancelled."
+    required: true
+  reason:
+    description: Reason code from the CI wall-clock plan's table (for example GATE_OK or TURBO_TASK_FAILED).
+    required: true
+  next-action:
+    description: What a reader of a failed job does next. Becomes the annotation message.
+    required: false
+    default: ""
+  started-at:
+    description: Unix seconds at which the job's first step ran, for the duration line.
+    required: false
+    default: ""
+  turbo-runs:
+    description: Directory of Turbo run summaries written with `TURBO_RUN_SUMMARY=true`.
+    required: false
+    default: ""
+  details:
+    description: Extra markdown lines appended to the summary.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Write the job report
+      shell: bash
+      env:
+        STATUS: ${{ inputs.status }}
+        REASON: ${{ inputs.reason }}
+        NEXT_ACTION: ${{ inputs.next-action }}
+        STARTED_AT: ${{ inputs.started-at }}
+        TURBO_RUNS: ${{ inputs.turbo-runs }}
+        DETAILS: ${{ inputs.details }}
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        # Workflow-command data escaping: a raw newline or `%` would cut the annotation short.
+        escape() { local s=${1//'%'/'%25'}; s=${s//$'\r'/'%0D'}; printf '%s' "${s//$'\n'/'%0A'}"; }
+
+        runs=()
+        if [ -n "$TURBO_RUNS" ]; then runs=("$TURBO_RUNS"/*.json); fi
+        {
+          echo "### ${GITHUB_JOB}: ${STATUS} · \`${REASON}\`"
+          echo
+          if [ -n "$STARTED_AT" ]; then
+            elapsed=$(( $(date +%s) - STARTED_AT ))
+            echo "- Duration: $(( elapsed / 60 ))m $(( elapsed % 60 ))s"
+          fi
+          if (( ${#runs[@]} )); then
+            # Tasks without a command are Turbo's placeholders; they neither run nor cache.
+            jq -rs '
+              [.[].tasks[] | select(.command != "<NONEXISTENT>")] as $tasks
+              | [$tasks[] | select(.cache.status != "HIT")
+                 | {id: .taskId, ms: ((.execution.endTime // 0) - (.execution.startTime // 0))}]
+              | sort_by(-.ms) as $missed
+              | "- Turbo: \(($tasks | length) - ($missed | length)) cached / \($tasks | length) total, \($missed | length) missed",
+                ($missed[:5][] | "  - `\(.id)` \(.ms / 1000 | floor)s")
+            ' "${runs[@]}"
+          elif [ -n "$TURBO_RUNS" ]; then
+            echo "- Turbo: no run summary was written"
+          fi
+          if [ -n "$DETAILS" ]; then printf '%s\n' "$DETAILS"; fi
+          if [ "$STATUS" != success ] && [ -n "$NEXT_ACTION" ]; then echo "- Next: ${NEXT_ACTION}"; fi
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        case "$STATUS" in
+          success) ;;
+          cancelled) echo "::warning title=${REASON}::$(escape "${NEXT_ACTION:-The run was cancelled before this job finished.}")" ;;
+          *) echo "::error title=${REASON}::$(escape "${NEXT_ACTION:-Open the first failed step of this job.}")" ;;
+        esac

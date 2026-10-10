@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      cache:
+        description: "`cold` restores no Turbo cache in `check`, to measure a cold Gate."
+        type: choice
+        options: [warm, cold]
+        default: warm
 
 permissions:
   contents: read
@@ -22,7 +28,10 @@ jobs:
       CI: "true"
       OXLINT_FORMAT: github
       TSGO_FORMAT: github-actions
+      TURBO_RUN_SUMMARY: "true"
     steps:
+      - name: Record the job start
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       - name: dprint from the flake
@@ -34,19 +43,40 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Turbo cache
-        uses: actions/cache@v6
+      - name: Commit graph of main for repo-checks
+        run: |
+          unshallow=$([ "$(git rev-parse --is-shallow-repository)" = true ] && echo --unshallow || true)
+          git fetch --no-tags --filter=tree:0 $unshallow origin +refs/heads/main:refs/remotes/origin/main
+      - id: base
+        name: Base commit (first parent of the checked-out commit; merge-base with main on dispatch)
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            base=$(git merge-base HEAD origin/main)
+          else
+            base=$(git cat-file -p HEAD | awk '$1 == "parent" { print $2; exit }')
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      # The base commit's entry is restored on its own, with no restore-keys: `actions/cache` searches
+      # this ref before main, so one step with a prefix fallback would return this ref's newest (stale)
+      # entry ahead of main's exact base entry. The prefix fallback runs only when the base has none.
+      - id: restore-base
+        name: Restore the Turbo cache of the base commit
+        if: inputs.cache != 'cold'
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ steps.base.outputs.sha }}
+      - id: restore-newest
+        name: Restore the newest Turbo cache this ref can read
+        if: inputs.cache != 'cold' && steps.restore-base.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v6
         with:
           path: .turbo/cache
           key: turbo-${{ runner.os }}-dist-${{ github.sha }}
           restore-keys: |
             turbo-${{ runner.os }}-dist-
-            turbo-${{ runner.os }}-
-      - name: Commit graph of main for repo-checks
-        run: |
-          unshallow=$([ "$(git rev-parse --is-shallow-repository)" = true ] && echo --unshallow || true)
-          git fetch --no-tags --filter=tree:0 $unshallow origin +refs/heads/main:refs/remotes/origin/main
-      - name: pnpm gate:repo fails on a change that adds two plans
+      - id: planted
+        name: pnpm gate:repo fails on a change that adds two plans
         run: |
           planted=$(
             export GIT_INDEX_FILE="$RUNNER_TEMP/planted.index"
@@ -61,8 +91,142 @@ jobs:
           pnpm gate:repo --head "$planted" || status=$?
           test "$status" -eq 1 || { echo "::error::pnpm gate:repo must exit 1 on two planted plans, got $status" >&2; exit 1; }
       # Root package.json `check:ci` is the one definition. Never re-enumerate its steps here.
-      - name: Gate
+      - id: gate
+        name: Gate
         run: pnpm check:ci
+      - id: verdict
+        name: Verdict of the Gate
+        if: always()
+        env:
+          CANCELLED: ${{ cancelled() }}
+          COLD: ${{ inputs.cache == 'cold' }}
+          GATE: ${{ steps.gate.outcome }}
+          PLANTED: ${{ steps.planted.outcome }}
+          BASE_SHA: ${{ steps.base.outputs.sha }}
+          BASE_KEY: ${{ steps.restore-base.outputs.cache-matched-key }}
+          NEWEST_KEY: ${{ steps.restore-newest.outputs.cache-matched-key }}
+          NEWEST_HIT: ${{ steps.restore-newest.outputs.cache-hit }}
+        run: |
+          shopt -s nullglob
+          runs=(.turbo/runs/*.json)
+          missed=0 failed=""
+          if (( ${#runs[@]} )); then
+            missed=$(jq -s '[.[].tasks[] | select(.command != "<NONEXISTENT>" and .cache.status != "HIT")] | length' "${runs[@]}")
+            failed=$(jq -rs '[.[].tasks[] | select((.execution.exitCode // 0) != 0) | .taskId] | unique | join(" ")' "${runs[@]}")
+          fi
+
+          if [ "$CANCELLED" = true ]; then
+            reason=CANCELLED next="The run was cancelled before the Gate finished; re-run the job."
+          elif [ "$GATE" = success ] && [ "$PLANTED" = success ]; then
+            reason=GATE_OK next=""
+          elif [ -n "$failed" ]; then
+            reason=TURBO_TASK_FAILED next="Turbo task failed: ${failed}. Reproduce with: pnpm exec turbo run ${failed}"
+          elif [ "$PLANTED" = failure ]; then
+            reason=GATE_NON_TURBO_FAILED next="pnpm gate:repo accepted two planted plans: the single-plan check no longer fails. Read the step 'pnpm gate:repo fails on a change that adds two plans'."
+          elif [ "$GATE" = failure ]; then
+            reason=GATE_NON_TURBO_FAILED next="A Gate script outside Turbo failed: format:check (fix with pnpm format), lint:conventions, or gate:repo. Reproduce with: pnpm check:ci"
+          else
+            reason=CHECK_SETUP_FAILED next="A setup step failed before the Gate ran; open the first failed step of this job."
+          fi
+
+          if [ "$COLD" = true ]; then
+            restored="not restored (\`cache: cold\` dispatch)"
+          elif [ -n "$BASE_KEY" ]; then
+            restored="\`$BASE_KEY\` (base commit)"
+          elif [ -n "$NEWEST_KEY" ]; then
+            restored="\`$NEWEST_KEY\` (newest readable; base commit \`${BASE_SHA:0:9}\` had no entry)"
+          else
+            restored="nothing (no entry readable)"
+          fi
+
+          # Save only a passing run that computed something new, and never over this commit's own entry.
+          save=false
+          if [ "$reason" = GATE_OK ] && [ "$missed" != 0 ] && [ "$NEWEST_HIT" != true ]; then save=true; fi
+
+          {
+            echo "reason=$reason"
+            echo "next=$next"
+            echo "save=$save"
+            echo "details=- Turbo cache restored: $restored; saved: $save"
+          } >> "$GITHUB_OUTPUT"
+      - name: Drop restored cache entries this run did not use
+        if: success() && steps.verdict.outputs.save == 'true'
+        run: |
+          jq -r '.tasks[].hash' .turbo/runs/*.json | sort -u > "$RUNNER_TEMP/keep"
+          find .turbo/cache -maxdepth 1 -type f -printf '%f\n' \
+            | while read -r file; do grep -qxF "${file%%[-.]*}" "$RUNNER_TEMP/keep" || rm -f ".turbo/cache/$file"; done
+      - name: Save the Turbo cache
+        if: success() && steps.verdict.outputs.save == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ github.sha }}
+      - name: Job report
+        if: always()
+        uses: ./.github/actions/job-report
+        with:
+          status: ${{ job.status }}
+          reason: ${{ steps.verdict.outputs.reason }}
+          next-action: ${{ steps.verdict.outputs.next }}
+          started-at: ${{ env.JOB_STARTED_AT }}
+          turbo-runs: .turbo/runs
+          details: ${{ steps.verdict.outputs.details }}
+
+  # The only job that may delete caches. It deletes by cache id, never by key, so main's entry and a
+  # pull request's entry under the same key are never confused. Main keeps its newest three entries
+  # (the bases of recent PRs), every other ref its newest one, and a closed pull request none.
+  cache-sweep:
+    needs: check
+    if: ${{ !cancelled() && github.event_name == 'push' && github.event.head_commit.author.username != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Record the job start
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/actions
+      - id: sweep
+        name: Sweep Turbo cache entries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/caches?key=turbo-&sort=created_at&direction=desc&per_page=100" \
+            --jq '.actions_caches[] | [.id, .ref, .size_in_bytes] | @tsv' > "$RUNNER_TEMP/caches.tsv"
+          declare -A seen state
+          kept=0 kept_bytes=0 deleted=0 deleted_bytes=0
+          while IFS=$'\t' read -r id ref bytes; do
+            case "$ref" in
+              refs/heads/main) limit=3 ;;
+              refs/pull/*/merge)
+                pr=${ref#refs/pull/} pr=${pr%/merge}
+                [ -n "${state[$pr]:-}" ] || state[$pr]=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq .state)
+                if [ "${state[$pr]}" = open ]; then limit=1; else limit=0; fi ;;
+              *) limit=1 ;;
+            esac
+            n=$(( ${seen[$ref]:-0} + 1 ))
+            seen[$ref]=$n
+            if (( n > limit )); then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/caches/$id" > /dev/null
+              deleted=$(( deleted + 1 )) deleted_bytes=$(( deleted_bytes + bytes ))
+            else
+              kept=$(( kept + 1 )) kept_bytes=$(( kept_bytes + bytes ))
+            fi
+          done < "$RUNNER_TEMP/caches.tsv"
+          echo "details=- Turbo entries kept: $kept ($(( kept_bytes / 1000000 )) MB); deleted: $deleted ($(( deleted_bytes / 1000000 )) MB)" >> "$GITHUB_OUTPUT"
+      - name: Job report
+        if: always()
+        uses: ./.github/actions/job-report
+        with:
+          status: ${{ job.status }}
+          reason: ${{ job.status == 'success' && 'SWEEP_OK' || job.status == 'cancelled' && 'CANCELLED' || 'SWEEP_FAILED' }}
+          next-action: "Re-run the cache-sweep job; list the entries with: gh cache list --key turbo- --limit 100"
+          started-at: ${{ env.JOB_STARTED_AT }}
+          details: ${{ steps.sweep.outputs.details }}
 
   e2e:
     if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
