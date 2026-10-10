@@ -1,5 +1,4 @@
 import { describe, it } from '@systemfsoftware/vitest'
-import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -155,6 +154,23 @@ const answersAtSiteKind = (
     verdictOf('main', { mutantId: `${siteKind}-${index}`, status: 'compileError' }),
     verdictOf('branch', { mutantId: `${siteKind}-${index}`, status: 'compileError' }),
     typeAnswerLineOf(`${siteKind}-${index}`, answer, { siteKind }),
+  ])
+
+interface RecallMutant {
+  readonly mainStatus: VerdictStatus
+  readonly branchStatus: VerdictStatus
+  readonly answer?: TypeQuery.TypeAnswer
+  readonly otherProjectNotAssignable: boolean
+}
+
+const recallLinesOf = (prefix: string, mutants: ReadonlyArray<RecallMutant>): ReadonlyArray<ParityLine> =>
+  mutants.flatMap((mutant, index): ReadonlyArray<ParityLine> => [
+    verdictOf('main', { mutantId: `${prefix}${index}`, status: mutant.mainStatus }),
+    verdictOf('branch', { mutantId: `${prefix}${index}`, status: mutant.branchStatus }),
+    ...(mutant.answer === undefined ? [] : [typeAnswerLineOf(`${prefix}${index}`, mutant.answer)]),
+    ...(mutant.otherProjectNotAssignable
+      ? [typeAnswerLineOf(`${prefix}${index}`, notAssignableAnswer, { project: OTHER_PROJECT })]
+      : []),
   ])
 
 const decisionOf = (subject: typeof compareSides, command: CompareSidesCommand): ComparisonDecision =>
@@ -588,34 +604,25 @@ describe('compareSides', () => {
         S.Array(S.Struct({
           mainStatus: VerdictStatus,
           branchStatus: VerdictStatus,
-          answer: S.Option(TypeQuery.TypeAnswer),
+          answer: TypeQuery.NotAssignable,
+          otherProjectNotAssignable: S.Boolean,
+        })),
+        S.Array(S.Struct({
+          mainStatus: VerdictStatus,
+          branchStatus: VerdictStatus,
+          answer: S.optionalKey(S.Union([TypeQuery.Assignable, TypeQuery.Unknown])),
           otherProjectNotAssignable: S.Boolean,
         })),
       ],
       subject: compareSides,
     },
-    (subject, [mutants]) => {
-      const lines: ReadonlyArray<ParityLine> = [
-        ...mutants.flatMap((mutant, index): ReadonlyArray<ParityLine> => {
-          const mutantId = `m-${index}`
-          return [
-            verdictOf('main', { mutantId, status: mutant.mainStatus }),
-            verdictOf('branch', { mutantId, status: mutant.branchStatus }),
-            ...Option.toArray(Option.map(mutant.answer, (answer) => typeAnswerLineOf(mutantId, answer))),
-            ...(mutant.otherProjectNotAssignable
-              ? [typeAnswerLineOf(mutantId, notAssignableAnswer, { project: OTHER_PROJECT })]
-              : []),
-          ]
-        }),
-        countsOf(PROJECT),
-      ]
-      const branchCompileErrors = mutants.filter((mutant) => mutant.branchStatus === 'compileError')
-      const answeredNotAssignable = branchCompileErrors.filter((mutant) =>
-        Option.exists(mutant.answer, S.is(TypeQuery.NotAssignable))
-      )
+    (subject, [answeredNotAssignable, others]) => {
+      const lines = [...recallLinesOf('n', answeredNotAssignable), ...recallLinesOf('o', others), countsOf(PROJECT)]
       const { typeQuery } = decisionOf(subject, commandOf(lines)).summary
-      return typeQuery.compileErrorTotal === branchCompileErrors.length &&
-        typeQuery.compileErrorAnsweredNotAssignable === answeredNotAssignable.length
+      const answeredCompileErrors = answeredNotAssignable.filter((mutant) => mutant.branchStatus === 'compileError')
+      const otherCompileErrors = others.filter((mutant) => mutant.branchStatus === 'compileError')
+      return typeQuery.compileErrorTotal === answeredCompileErrors.length + otherCompileErrors.length &&
+        typeQuery.compileErrorAnsweredNotAssignable === answeredCompileErrors.length
     },
   )
 
