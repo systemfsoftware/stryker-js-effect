@@ -178,6 +178,7 @@ const NO_REFUSALS: RunEvent.ReuseRefusals = {
   timeoutUnreproduced: 0,
   flakyDependency: 0,
   noPriorRecord: 0,
+  decidedPerRun: 0,
 }
 
 interface Fixture {

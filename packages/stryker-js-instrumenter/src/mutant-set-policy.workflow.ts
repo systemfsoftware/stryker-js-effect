@@ -9,11 +9,10 @@ import * as S from 'effect/Schema'
 export const MutantSetFactsSchema = S.Struct({
   originalCode: S.String,
   replacementCode: S.String,
-  relationalSufficient: S.Boolean,
 })
 export type MutantSetFacts = typeof MutantSetFactsSchema.Type
 
-export const MutantSetRuleId = S.Literals(['redundant-relational', 'equivalent-to-original', 'duplicate-at-site'])
+export const MutantSetRuleId = S.Literals(['equivalent-to-original', 'duplicate-at-site'])
 export type MutantSetRuleId = typeof MutantSetRuleId.Type
 
 export class MutantSetPolicyCommand extends S.TaggedClass<MutantSetPolicyCommand>()('MutantSetPolicyCommand', {
@@ -96,22 +95,6 @@ const samePrintedCode = (left: string, right: string): boolean =>
 const alreadyPrinted = (code: string, earlier: readonly string[]): boolean =>
   [printsSomething(code), earlier.includes(printedAs(code))].every(Boolean)
 
-const relationalSuppression = (
-  facts: MutantSetFacts,
-  policy: Options.MutantSetPolicyType,
-): Option.Option<MutantSuppressed> =>
-  defaultOnly(policy, () =>
-    Option.map(
-      Option.filter(Option.some(facts), (candidate) => candidate.relationalSufficient === false),
-      () =>
-        MutantSuppressed.make({
-          ruleId: 'redundant-relational',
-          detail: `${printedAs(facts.replacementCode)} is not in the sufficient set for ${
-            printedAs(facts.originalCode)
-          }`,
-        }),
-    ))
-
 const equivalentSuppression = (
   facts: MutantSetFacts,
   policy: Options.MutantSetPolicyType,
@@ -150,10 +133,7 @@ const outcomeOf = (
   policy: Options.MutantSetPolicyType,
 ): MutantSetOutcome =>
   Option.getOrElse(
-    Option.orElse(
-      relationalSuppression(facts, policy),
-      () => Option.orElse(equivalentSuppression(facts, policy), () => duplicateSuppression(facts, earlier, policy)),
-    ),
+    Option.orElse(equivalentSuppression(facts, policy), () => duplicateSuppression(facts, earlier, policy)),
     () => MutantKept.make({}),
   )
 

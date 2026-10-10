@@ -33,9 +33,12 @@ const unreproducedWallClock = (record: PreviousReuseRecord): boolean =>
 const matchingProgramRecordDigest = (record: PreviousReuseRecord, digest: string | undefined): boolean =>
   (record.programDigest ?? '') !== '' && record.programDigest === digest
 
+const carriesReference = (record: PreviousReuseRecord): boolean => record.subsumption !== undefined
+
 const remembersWith = (record: PreviousReuseRecord, programDigest: string | undefined): boolean =>
   isReusable(record.status) &&
   !unreproducedWallClock(record) &&
+  !carriesReference(record) &&
   (record.status === 'CompileError' ? matchingProgramRecordDigest(record, programDigest) : true)
 
 const remembers = (record: PreviousReuseRecord): boolean => remembersWith(record, record.programDigest)
@@ -45,7 +48,25 @@ const refusalOfTheMatchingCommand = (record: PreviousReuseRecord): string =>
     ? 'programChanged'
     : unreproducedWallClock(record)
     ? 'timeoutUnreproduced'
+    : carriesReference(record)
+    ? 'decidedPerRun'
     : 'noPriorRecord'
+
+const subsumedMutantOf = (id: Mutant.MutantId, dominator: Mutant.MutantId): Mutant.Mutant =>
+  Mutant.Mutant.make({
+    ...mutantOf(id),
+    status: 'Ignored',
+    subsumption: Mutant.Subsumed.make({ rule: 'complement', dominators: [dominator] }),
+  })
+
+const rememberedUnlessReferenced = (
+  record: PreviousReuseRecord,
+  decision: IncrementalDiffDecision | undefined,
+  remembered: (decision: MutantRemembered) => boolean,
+): boolean =>
+  decision !== undefined && (carriesReference(record)
+    ? S.is(MutantToRun)(decision) && decision.refusal === 'decidedPerRun'
+    : S.is(MutantRemembered)(decision) && remembered(decision))
 
 const recordOf = (
   mutantId: Mutant.MutantId,
@@ -182,7 +203,7 @@ describe('incrementalDiff', () => {
       const programDigest = 'a'.repeat(64)
       const prior = { ...record, status: 'CompileError' as const, programDigest }
       const decision = onlyDecision(subject(matchingCommandOf(prior)))
-      return decision !== undefined && S.is(MutantRemembered)(decision) && decision.status === 'CompileError'
+      return rememberedUnlessReferenced(prior, decision, (remembered) => remembered.status === 'CompileError')
     },
   )
 
@@ -217,10 +238,32 @@ describe('incrementalDiff', () => {
         return false
       }
       return reproductions >= 1
-        ? S.is(MutantRemembered)(decision) && decision.status === 'Timeout' && decision.timeoutKind === 'wallClock' &&
-          decision.reproductions === reproductions
+        ? rememberedUnlessReferenced(
+          prior,
+          decision,
+          (remembered) =>
+            remembered.status === 'Timeout' && remembered.timeoutKind === 'wallClock' &&
+            remembered.reproductions === reproductions,
+        )
         : S.is(MutantToRun)(decision) && decision.refusal === 'timeoutUnreproduced' &&
           decision.priorTimeout?.timeoutKind === 'wallClock'
+    },
+  )
+
+  it.prop(
+    '∀rd_RecordAndDominator_≡ASubsumedMutantIsNeverRememberedAndRunsAsDecidedPerRunWhereTheRecordWouldBe',
+    { of: [PreviousReuseRecordSchema, Mutant.MutantId], subject: incrementalDiff },
+    (subject, [record, dominator]) => {
+      const command = commandOf([subsumedMutantOf(record.mutantId, dominator)], [record], {
+        closureDigestsByMutantId: { [record.mutantId]: record.closureDigest ?? '' },
+        engineDigest: record.engineDigest,
+        mutantSetPolicy: record.mutantSetPolicy,
+        runInputsDigest: record.runInputsDigest,
+        ...(record.programDigest === undefined ? {} : { programDigest: record.programDigest }),
+      })
+      const decision = onlyDecision(subject(command))
+      return decision !== undefined && S.is(MutantToRun)(decision) &&
+        (remembers(record) ? decision.refusal === 'decidedPerRun' : decision.refusal !== 'noPriorRecord')
     },
   )
 
@@ -230,7 +273,7 @@ describe('incrementalDiff', () => {
     (subject, [record]) => {
       const prior = { ...record, status: 'Timeout' as const, timeoutKind: 'hitLimit' as const, reproductions: 0 }
       const decision = onlyDecision(subject(matchingCommandOf(prior)))
-      return decision !== undefined && S.is(MutantRemembered)(decision) && decision.status === 'Timeout'
+      return rememberedUnlessReferenced(prior, decision, (remembered) => remembered.status === 'Timeout')
     },
   )
 
