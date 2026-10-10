@@ -7,7 +7,7 @@ artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
 origin: docs/brainstorms/2026-10-09-1842-feat-verdict-store-requirements.md
-supersedes: docs/plans/2026-10-09-1854-feat-verdict-store-plan.md
+supersedes: docs/plans/2026-10-10-1244-feat-verdict-store-plan.md
 ---
 
 # VerdictStore port with content-addressed verdict keys - Plan
@@ -19,7 +19,7 @@ supersedes: docs/plans/2026-10-09-1854-feat-verdict-store-plan.md
 - **Authority:** Product Contract (R-IDs) wins on behavior, KTDs win on mechanism, units override neither. `CONSTITUTION.md` and `AGENTS.md` (`BREAK-1`, `PLUG-1`, `START-1`..`START-6`) bind every unit.
 - **Stop conditions:** Stop and report instead of working around when emulate 0.12.1 lacks an S3 behaviour the driver needs, when a unit would require editing a read-only surface (`CONSTITUTION.md`, `repos/**`, any workflow other than `.github/workflows/mutation.yml`), or when a new third-party executable dependency beyond `@aws-sdk/client-s3` and `emulate` appears necessary. A root ruling lifts the read-only line for `mutation.yml` in U12-U14 only, as it did for #253, #256 and #263.
 - **Execution profile:** Deep. U1-U11 on branch `stryker/verdict-store` (PR #271) from `origin/main` `1e1de6d05`. U12-U14 on the stacked branch `stryker/verdict-store-ci` from `51ac1ac88`, PR base `stryker/verdict-store`. Plain pushes only; merge the parent (and through it `main`) up when it moves. No local mutation runs of any kind.
-- **Who ships:** #271 carries U1-U11; the stacked PR carries U12-U14, this plan file (which supersedes the 2026-10-09 plan by a move, so the stack adds one plan file, `REPO-D2`), and merges before or with the release that moves the dogfood pin. The operator rules on Open Questions and merges.
+- **Who ships:** #271 carries U1-U11; the stacked PR carries U12-U14, this plan file (which supersedes the 2026-10-10-1244 plan, itself a move of the 2026-10-09 plan, so the stack adds one plan file, `REPO-D2`), and merges before or with the release that moves the dogfood pin. The operator rules on Open Questions and merges.
 
 ---
 
@@ -81,10 +81,10 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 **Main's shared store (stacked layer)**
 
 - R22. The plan job and every mutation shard start from the newest combined store, `<project>/reports/stryker-verdicts/` for each project in `PROJECTS`, restored from `actions/cache`. Each shard uploads, as one artifact, the entries under the mutant ids its plan entry names. The report job restores the same store, lays every shard's part over it in plan shard order (one entry name in two parts: the later part wins, and either is a valid verdict), and saves the result under a key derived from the merged store's content, so the next run of an unchanged `main` restores everything this run wrote.
-- R23. Under a CLI that predates the store (the released 18.1.0 that the dogfood pin installs today), no store directory exists. Every new step then succeeds as a no-op, and the incremental-report cache, the plan and today's reuse are unchanged.
+- R23. Under a CLI that predates the store (the released 18.1.0 that the dogfood pin installs today), no store directory exists. Every new step then succeeds as a no-op and leaves the incremental-report cache and the plan as they are; reuse still follows today's run-inputs rule, so a tree whose lockfile or package manifest differs from the cached run re-runs every mutant once (Risks). Store reuse is measured on the second main mutation run after a release moves the pin: the first only writes the store, because v4 verdicts are discarded (KTD8).
 - R24. Each shard's stage step and the report's merge step write a step summary: staged entries per project (shard); parts merged out of shards planned, entries merged, collisions (entry names that more than one part carried), skipped non-entry files, store size and cache key (report). A failure prints a reason code and the next action in its error annotation, never "see logs". A planned shard with no part is a warning that names the shard, not a failure: its mutants re-run next time.
 - R25. No existing mutation job grows by more than its store restore, stage or merge, and save. No job of this layer runs on pull requests, so the 10-minute PR-job budget is untouched. The PR body states the cache size and that it costs nothing beyond GitHub cache storage.
-- R26. `workflow_dispatch` runs of `mutation.yml` on `stryker/verdict-store-ci` are green in every job, and the proof run's plan job prints, per project, reuse no lower than main's last run. The PR body quotes the run URL and the counts from the run's own plan output, and says that real store reuse is proven only on the first main mutation run after a release moves the dogfood pin, so this layer merges before or with that release.
+- R26. `workflow_dispatch` runs of `mutation.yml` on `stryker/verdict-store-ci` are green in every job. The proof run, an unchanged re-run on the same head after a seeding run, reuses at least 95% of each project's mutants, read from its own plan output. The PR body quotes both runs' URLs and per-project counts, and says that the first main mutation run after a release moves the dogfood pin writes the store and the next one reuses it, so this layer merges before or with that release.
 
 **Proof**
 
@@ -106,15 +106,15 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 - AE2. **Covers R9.** Given an entry file truncated mid-JSON, when a run looks up that key, the mutant runs, the run succeeds, and `reuse.refused.entryUnreadable` is 1.
 - AE3. **Covers R10.** Given an unreproduced wall-clock Timeout entry, when the re-run times out again, the entry at the same key is replaced with `reproductions: 1`, and a third run reuses it.
 - AE4. **Covers R15, R19.** Given a run SIGKILLed mid-run, when a new run starts, every entry the killed run put is reused.
-- AE5. **Covers R23.** Given the released 18.1.0 CLI, when the dispatch run finishes, every stage step reports 0 entries, the merge reports 0 parts and saves no cache, and every job is green.
-- AE6. **Covers R22.** Given two shards whose parts both carry `v1/<id>/tested-<key>.json`, the merged store holds the second part's bytes and the summary counts one collision.
+- AE5. **Covers R23.** Given the released 18.1.0 CLI, when the dispatch run finishes, every stage step reports 0 entries, the merge reports 0 entries and no key, both cache steps are skipped, and every job is green.
+- AE6. **Covers R22.** Given two shards whose parts both carry `<scheme>/<id>/tested-<key>.json`, where `<scheme>` is `schemeDirectoryOf(VerdictKeyScheme)` (`packages/stryker-js/src/verdict-store/VerdictKeyScheme.schema.ts`), the merged store holds the second part's bytes and the summary counts one collision.
 
 ### Success Criteria
 
 - The R20 journey is green on the PR head, and its assertion reads the CLI's own NDJSON `reuse` event, not a hand-computed count.
 - The R18 law suite runs, with no skips, in the stryker-js and S3-package test tasks on the PR head.
 - The R4 collision property kills the replacement of survivor `0574dc1362451398` (the `'\u0000'` join at `incremental-diff.workflow.ts:105`, deleted by U6). The entry round-trip and reuse properties target the `rememberedOf` survivors (`7c2e2e9e9da4fc43`, `c5b364135610b3a4`, `174b8e52f6c5c584`, `a4deb93c48d0b4bd`, `ec2b75971f004744`, `5c5af2eb451aef17`, `6ac950f8cd326ba3`, `e0c3736e2c4fa506`), the timeout-evidence survivor `e6d78dc9239886fb`, and the admission survivor `6d5ddbf66bb2928a` (`admit-incremental-report.workflow.ts:19`), all from main report `mutation-report-416` (head `1e1de6d05`). Main mutation runs grade them after merge.
-- The stacked layer's proof run (R26) is green in every job and its plan output shows reuse no lower than main run `38048403407` per project (`packages/stryker-js` 3175 reused, `packages/stryker-js-typescript-checker` 820, `packages/stryker-js-vitest-runner` 220, `test/e2e-core` 1227).
+- The stacked layer's proof run (R26) is green in every job and its plan output shows, per project, at least 95% of mutants reused on an unchanged re-run of the seeding run's head.
 
 ### Scope Boundaries
 
@@ -130,7 +130,7 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 ### Deferred to Follow-Up Work
 
 - A real shared S3 bucket for main's mutation shards (IaC, credentials, workflow wiring). The stacked layer's fs store through artifacts and `actions/cache` covers main until then.
-- `dryRunCoverage` and `budget` as a later store candidate under their own suite-input and run-policy keys. Until then they stay in the incremental file, which mutation.yml keeps caching and re-seeding (KTD8, R17).
+- `dryRunCoverage` and `budget` as a later store candidate under their own suite-input and run-policy keys. Until then they stay in the incremental file, which mutation.yml keeps caching and re-seeding (KTD8).
 
 ### Sources / Research
 
@@ -639,7 +639,7 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 - `env.VERDICT_STORES`: the four `<project>/reports/stryker-verdicts` paths.
 - plan and mutation jobs: `actions/cache/restore@v6`, `path: ${{ env.VERDICT_STORES }}`, `key: mutation-verdicts-none`, `restore-keys: mutation-verdicts-`, after the incremental restore.
 - mutation job, after `Mutation`: `if: always()` stage step, then `actions/upload-artifact@v7` `name: verdict-part-<slug>`, `if-no-files-found: ignore`, `retention-days: 1`, `overwrite: true` (so `rerun --failed` replaces it).
-- report job: restore the store, download `pattern: verdict-part-*` into `verdict-parts/` with `continue-on-error: true` (each artifact in its own directory), run `merge`, then `actions/cache/restore@v6` `lookup-only: true` on the merge's key and `actions/cache/save@v6` only when `entries != '0'` and the lookup missed. The existing cleanup step also deletes `verdict-part-*` artifacts.
+- report job: restore the store, download `pattern: verdict-part-*` into `verdict-parts/` with `continue-on-error: true` (each artifact in its own directory), run `merge`, which emits an empty `key` when it finds no entries. Both cache steps are guarded by `key != ''`, so a no-op run skips them: `actions/cache/restore@v6` `lookup-only: true` on the merge's key, then `actions/cache/save@v6` when that lookup missed. The existing cleanup step also deletes `verdict-part-*` artifacts.
 - Run `actionlint` on the file before every push.
 
 **Test expectation:** none in-repo: a test that re-reads the workflow file is banned (CHK1, OP12). The U14 dispatch runs are the smoke proof.
@@ -658,7 +658,8 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 
 - Dispatch `mutation.yml` on `stryker/verdict-store-ci` with defaults (`full: false`, `lane: all`): the seeding run. When it is green, dispatch again on the same head: the proof run. One `run_watch` per run.
 - Quote from the proof run's plan log each project's `reused / to run` line next to main run `38048403407`'s, every job's conclusion, the stage and merge summaries (0 entries under 18.1.0, AE5), and the added wall time per job against main.
-- PR body: proof scope (real store reuse is first proven on main's first mutation run after the release that moves the pin; merge before or with it), cache size (0 today; projected from the per-entry size times main's mutant count, labelled as a projection), zero cost beyond GitHub cache storage, the trust argument (KTD16), and the `settled-decision-invalidated` note on two runs.
+- PR body: proof scope (the first main mutation run after the release that moves the pin writes the store and the next one reuses it; merge before or with that release), cache size (0 today; projected from the per-entry size times main's mutant count, labelled as a projection), zero cost beyond GitHub cache storage, the trust argument (KTD16), and the `settled-decision-invalidated` note on two runs.
+- The store-write path (stage of real entries, merge, save) cannot be exercised here: the released 18.1.0 CLI writes no store, so both runs stage 0 entries. It is proven by #271's `e2e (verdict-store)` journey, where real CLI processes write, kill and reuse a store, and by the first post-pin main runs.
 
 **Test expectation:** none -- CI evidence only.
 
@@ -686,7 +687,8 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 - DEL1 checks return nothing for `checkpointMutants`, `incrementalSources` and `keyOf` in `incremental-diff.workflow.ts`.
 - No dead-end or experimental code from abandoned approaches remains in the diff, including spike journeys from U10's execution note.
 - The PR body states that the port, key schema and entry schema live in `packages/stryker-js/src/verdict-store/` behind `./verdict-store` for Stream A's contracts/ports package, and lists the targeted main-report mutant ids.
-- R22-R26 hold: U12's properties pass in `check`, and the U14 proof run is green with per-project reuse no lower than main's last run, quoted from its own plan output.
+- R21 holds: KTD16's trigger set (`mutation.yml` runs on `push` to `main`, `schedule` and `workflow_dispatch`, never on `pull_request`) and U11's trust-model docs.
+- R22-R26 hold: U12's properties pass in `check`, and the U14 proof run is green with at least 95% per-project reuse on an unchanged re-run, quoted from its own plan output.
 
 ## Open Questions
 
