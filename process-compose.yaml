@@ -4,7 +4,7 @@ is_tui_disabled: true
 processes:
   lgtm:
     description: Grafana LGTM — Grafana :3000, Tempo :3200 (loopback), OTLP 4317/4318 (all interfaces, container-reachable)
-    command: 'bash -c ''"${RUNTIME:-podman}" rm -f stryker-lgtm >/dev/null 2>&1 || true; exec "${RUNTIME:-podman}" run --pull=missing --stop-timeout 5 --rm --name stryker-lgtm -p 127.0.0.1:3000:3000 -p 127.0.0.1:3200:3200 -p 4317:4317 -p 4318:4318 -v "$PWD/test/e2e/lgtm/tempo-live-store.yaml:/otel-lgtm/tempo-live-store.yaml:ro" docker.io/grafana/otel-lgtm@sha256:475319e883b66594d1a2f22ef168c2459802bb94548e6f25d9782bd5f5c19a3a sh -c "cat tempo-live-store.yaml >> tempo-config.yaml && exec ./run-all.sh"'''
+    command: 'bash -c ''"${RUNTIME:-podman}" rm -f stryker-lgtm >/dev/null 2>&1 || true; rm -rf "$PWD/e2e-telemetry/capture" && mkdir -p "$PWD/e2e-telemetry/capture"; exec "${RUNTIME:-podman}" run --pull=missing --stop-timeout 25 --rm --name stryker-lgtm -p 127.0.0.1:3000:3000 -p 127.0.0.1:3200:3200 -p 4317:4317 -p 4318:4318 -e LGTM_SHUTDOWN_TIMEOUT_SECONDS=15 -e OTELCOL_EXTRA_ARGS=--config=file:./otelcol-capture.yaml -v "$PWD/test/e2e/lgtm/tempo-live-store.yaml:/otel-lgtm/tempo-live-store.yaml:ro" -v "$PWD/test/e2e/lgtm/otelcol-capture.yaml:/otel-lgtm/otelcol-capture.yaml:ro" -v "$PWD/e2e-telemetry/capture:/otel-lgtm/capture" docker.io/grafana/otel-lgtm@sha256:475319e883b66594d1a2f22ef168c2459802bb94548e6f25d9782bd5f5c19a3a sh -c "cat tempo-live-store.yaml >> tempo-config.yaml && exec ./run-all.sh"'''
     availability:
       restart: "no"
     readiness_probe:

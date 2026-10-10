@@ -16,7 +16,7 @@ applies_when:
 
 ## Context
 
-The repository's scripts `deno.json` is not private to the scripts beside it. The e2e trace scripts `export-traces.ts` and `import-traces.ts` resolve their bare `@std/*` specifiers through it: each shebang passes that `deno.json` as `--config`, as a path relative to the repository root, and CI runs them from that root. They import `@std/fs/ensure-dir`, `@std/encoding/hex`, `@std/encoding/base64` and `@std/path`, and no script beside the import map imports those modules any more.
+The repository's scripts `deno.json` is not private to the scripts beside it. The e2e trace script `import-traces.ts` resolves its bare `@std/*` specifiers through it: its shebang passes that `deno.json` as `--config`, as a path relative to the repository root. It imports `@std/path`. (The search-based `export-traces.ts`, which also imported `@std/fs/ensure-dir`, is gone; CI captures traces from the collector instead.)
 
 ## Problem
 
@@ -45,5 +45,5 @@ An import map is a shared resolution table whose consumers are declared at the u
 
 ## Prevention
 
-- Gate: the `Export telemetry` step of each CI `e2e` lane runs `export-traces.ts` against the map on every pull request and fails the job on an unresolved import.
+- Gate: the `check` job's `Repo scripts tests` step type-checks `import-traces.ts` against the scripts `deno.json` on every pull request and fails on an unresolved import.
 - Smell: a diff to the scripts `deno.json` that removes `imports` entries while a search for its path still lists a consumer outside the scripts directory.

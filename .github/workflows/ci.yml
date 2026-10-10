@@ -131,7 +131,9 @@ jobs:
           pnpm gate:repo --head "$planted" || status=$?
           test "$status" -eq 1 || { echo "::error::pnpm gate:repo must exit 1 on two planted plans, got $status" >&2; exit 1; }
       - name: Repo scripts tests
-        run: ./bin/deno test --config=scripts/deno.json scripts/
+        run: |
+          ./bin/deno test --config=scripts/deno.json scripts/
+          ./bin/deno check --config=scripts/deno.json test/e2e/scripts/import-traces.ts
       # Root package.json `check:ci` is the one definition. Never re-enumerate its steps here.
       - id: gate
         name: Gate
@@ -351,17 +353,12 @@ jobs:
           curl -sSfL -o /tmp/pc.tar.gz https://github.com/F1bonacc1/process-compose/releases/download/v1.122.0/process-compose_linux_amd64.tar.gz
           echo '9b6dbc38324c0b0481f1cd1dd828ffdc78117129ec797678f4bf8c4023311281  /tmp/pc.tar.gz' | sha256sum -c -
           sudo tar xzf /tmp/pc.tar.gz -C /usr/local/bin process-compose
-      # The trace window opens here, before any span can be sent.
       - id: lgtm-start
         name: Start LGTM
-        run: |
-          echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
-          pnpm --config.verify-deps-before-run=false lgtm:start
+        run: pnpm --config.verify-deps-before-run=false lgtm:start
       - uses: cachix/install-nix-action@v31
       - uses: ./.github/actions/released-tarballs
       - run: pnpm install --frozen-lockfile
-      - name: deno from the flake
-        run: echo "$(nix build --no-link --print-out-paths .#deno)/bin" >> "$GITHUB_PATH"
       - id: base
         name: Base commit (first parent of the checked-out commit)
         run: echo "sha=$(git cat-file -p HEAD | awk '$1 == "parent" { print $2; exit }')" >> "$GITHUB_OUTPUT"
@@ -413,10 +410,6 @@ jobs:
           fi
           echo "timed-out=$timed_out" >> "$GITHUB_OUTPUT"
           exit "$status"
-      - id: export
-        name: Export telemetry
-        if: always()
-        run: ./test/e2e/scripts/export-traces.ts
       - name: Container logs on failure
         if: failure()
         continue-on-error: true
@@ -426,10 +419,37 @@ jobs:
             name=$(docker inspect --format '{{.Name}}' "$c" | sed 's|^/||')
             docker logs "$c" > "e2e-telemetry/containers/${name}.log" 2>&1 || true
           done
+      - id: capture
+        name: Capture traces
+        if: always()
+        env:
+          ARTIFACT: e2e-telemetry-${{ github.run_id }}-${{ matrix.shard }}
+        run: |
+          capture=e2e-telemetry/capture
+          mkdir -p "$capture"
+          fail() {
+            { echo "reason=$1"; echo "next=$2"; echo "summary=\`$1\`: $2"; } >> "$GITHUB_OUTPUT"
+            echo "::error title=$1::$2"
+            exit 1
+          }
+          started=$(date +%s)
+          docker stop --time 25 stryker-lgtm > /dev/null \
+            || fail TRACE_CAPTURE_MISSING "LGTM was not running when the lane ended, so no spans were captured; read the step 'Start LGTM'."
+          [ -f "$capture/otelcol.log" ] \
+            || fail TRACE_CAPTURE_MISSING "The collector wrote no log to $capture; check that process-compose.yaml mounts test/e2e/lgtm/otelcol-capture.yaml and the capture directory and passes OTELCOL_EXTRA_ARGS."
+          grep -q 'Shutdown complete\.' "$capture/otelcol.log" \
+            || fail TRACE_CAPTURE_INCOMPLETE "The collector was stopped before it finished shutting down, so traces.jsonl may lack its last batch; read $capture/otelcol.log in the artifact $ARTIFACT."
+          [ -s "$capture/traces.jsonl" ] \
+            || fail TRACE_CAPTURE_EMPTY "The collector received no spans although OTEL_ENABLED=true; check OTEL_EXPORTER_OTLP_ENDPOINT and the exporter errors in the step 'E2E lane'."
+          counts=$(jq -rn '[inputs | .resourceSpans[].scopeSpans[].spans[].traceId] | "\(unique | length) traces, \(length) spans"' "$capture/traces.jsonl") \
+            || fail TRACE_CAPTURE_INCOMPLETE "traces.jsonl holds a line that is not OTLP JSON; read it in the artifact $ARTIFACT."
+          echo "summary=$counts, stopped in $(( $(date +%s) - started ))s" >> "$GITHUB_OUTPUT"
+          echo "Captured $counts"
       - name: Package telemetry
         if: always()
         run: tar czf e2e-telemetry.tar.gz e2e-telemetry
-      - name: Upload telemetry artifact
+      - id: upload
+        name: Upload telemetry artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -445,7 +465,11 @@ jobs:
           LGTM: ${{ steps.lgtm-start.outcome == 'failure' && 'failure' || steps.lgtm.outcome }}
           LANE: ${{ steps.lane.outcome }}
           LANE_TIMED_OUT: ${{ steps.lane.outputs.timed-out }}
-          EXPORT: ${{ steps.export.outcome }}
+          CAPTURE: ${{ steps.capture.outcome }}
+          CAPTURE_REASON: ${{ steps.capture.outputs.reason }}
+          CAPTURE_NEXT: ${{ steps.capture.outputs.next }}
+          CAPTURE_SUMMARY: ${{ steps.capture.outputs.summary }}
+          UPLOAD: ${{ steps.upload.outcome }}
           FILES: ${{ matrix.files }}
           SPLIT: ${{ matrix.split }}
           BASE_KEY: ${{ steps.restore-base.outputs.cache-matched-key }}
@@ -494,12 +518,22 @@ jobs:
             reason=E2E_LANE_TIMEOUT next="The lane ran past its 20-minute timeout and was stopped. Find the stalled span in the traces of the artifact $ARTIFACT (load them with test/e2e/scripts/import-traces.ts)."
           elif [ "$LANE" = failure ]; then
             reason=E2E_LANE_FAILED next="Failing files: ${failed:-none reported (read the step 'E2E lane')}. Inspect the traces in the artifact $ARTIFACT; reproduce with: pnpm lgtm:up && pnpm test:e2e -- <file>"
-          elif [ "$LANE" = success ] && [ "$EXPORT" = failure ]; then
-            reason=TRACE_SEARCH_FAILED next="The lane passed but its traces were not exported from Tempo; read the step 'Export telemetry'."
+          elif [ "$LANE" = success ] && [ "$CAPTURE" = failure ]; then
+            reason=${CAPTURE_REASON:-TRACE_CAPTURE_MISSING} next=${CAPTURE_NEXT:-"The lane passed but its traces were not captured; read the step 'Capture traces'."}
+          elif [ "$LANE" = success ] && [ "$UPLOAD" = failure ]; then
+            reason=TRACE_UPLOAD_FAILED next="The lane passed but the artifact $ARTIFACT was not uploaded; read the step 'Upload telemetry artifact' and re-run the job."
           elif [ "$LANE" = success ]; then
             reason=E2E_OK next=""
           else
             reason=E2E_SETUP_FAILED next="A setup step failed before the lane ran; open the first failed step of this job."
+          fi
+          if [ "$UPLOAD" = failure ]; then
+            uploaded="\`TRACE_UPLOAD_FAILED\`: not uploaded"
+            if [ "$reason" != TRACE_UPLOAD_FAILED ]; then
+              echo "::error title=TRACE_UPLOAD_FAILED::The artifact $ARTIFACT was not uploaded; read the step 'Upload telemetry artifact' and re-run the job."
+            fi
+          else
+            uploaded="\`$ARTIFACT\`"
           fi
 
           {
@@ -509,6 +543,7 @@ jobs:
             echo "- Files: \`$FILES\`; name filter: $filter"
             echo "- Vitest: $counts"
             echo "- Pre-test build: $build; Turbo cache restored: $restored"
+            echo "- Traces: ${CAPTURE_SUMMARY:-not captured (the step 'Capture traces' did not run)}; artifact: $uploaded"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
       - name: Job report

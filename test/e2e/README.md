@@ -63,11 +63,11 @@ View traces in Grafana (`http://127.0.0.1:3000`) under the `stryker-e2e` service
 
 ### Inspecting CI traces
 
-CI workflows upload an `e2e-telemetry-<run-id>` artifact on every run. To import and inspect traces locally:
+Each CI e2e leg uploads an `e2e-telemetry-<run-id>-<shard>` artifact. Its `capture/traces.jsonl` holds every span the leg's collector received, one OTLP JSON request per line, written by the collector's `file` exporter (`lgtm/otelcol-capture.yaml`) and complete once the collector has shut down (`capture/otelcol.log` ends with `Shutdown complete.`). To replay a leg's traces into a local stack:
 
 ```bash
 pnpm lgtm:up
-gh run download <run-id> -n e2e-telemetry-<run-id> -D /tmp/tele
+gh run download <run-id> -n e2e-telemetry-<run-id>-<shard> -D /tmp/tele
 tar xzf /tmp/tele/e2e-telemetry.tar.gz -C /tmp/tele
 IN_DIR=/tmp/tele/e2e-telemetry ./test/e2e/scripts/import-traces.ts
 ```

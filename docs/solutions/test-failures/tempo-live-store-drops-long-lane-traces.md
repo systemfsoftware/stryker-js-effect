@@ -48,14 +48,14 @@ did in the passing run, so no export was retrying or timing out).
 - **A contract-read trace is never cut while it is still growing.** `tempo-live-store.yaml` sets
   `max_trace_idle: 30s`, above the largest gap between span ends measured in the lifecycle traces of the failing
   and passing runs (12.3 s), and `max_trace_live: 20m`, above the shard's `timeout 1200`. The setup and bake
-  traces have gaps up to 307 s and are still cut; only the export reads them.
+  traces have gaps up to 307 s and are still cut; no contract reads them.
 - **`max_block_duration` stays at its default.** A trace becomes searchable only once the live store has cut it
-  and cut its block. With `max_block_duration: 20m`, a trace was still not searchable after 180 s, which would
-  fail the CI export step; with the default, one burst was searchable after 32 s.
-- **The export waits for search to settle.** A trace becomes searchable up to `max_trace_idle` plus one block
-  duration after its last span, so `export-traces.ts` returns only after its search results have stopped growing
-  for `TRACE_SETTLE_SECONDS` (default 70; overall deadline `TRACE_WAIT_SECONDS`, default 180). Returning at the
-  first searchable trace would miss the lifecycle trace, which ends last.
+  and cut its block. With `max_block_duration: 20m`, a trace was still not searchable after 180 s; with the
+  default, one burst was searchable after 32 s.
+- **CI's trace artifact never comes from Tempo search.** Search lags a trace's last span by `max_trace_idle` plus
+  one block, which made a search-based export wait 1.7–1.8 min per leg. The collector's `file` exporter
+  (the `otelcol-capture.yaml` overlay) writes every received span to the artifact, complete once the collector
+  shuts down (CI step `Capture traces`).
 - **The snippet is appended to the image's own config at container start.** Tempo exposes no command-line flag
   for these settings (only `-live-store.complete-block-timeout`), so `process-compose.yaml` runs
   `cat tempo-live-store.yaml >> tempo-config.yaml && exec ./run-all.sh`. No image config is vendored. An image
@@ -66,5 +66,5 @@ did in the passing run, so no export was retrying or timing out).
 ## Verification
 
 - The replay above against the pinned image with the snippet applied keeps every span.
-- `pnpm lgtm:up`, then the lifecycle lane, then `export-traces.ts`: the lane holds its trace contract and the
-  export writes the lifecycle trace.
+- `pnpm lgtm:up`, then the lifecycle lane: the lane holds its trace contract, and `docker stop stryker-lgtm`
+  leaves the lifecycle trace in the capture's `traces.jsonl`.
