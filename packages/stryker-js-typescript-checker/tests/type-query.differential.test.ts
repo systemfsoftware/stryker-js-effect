@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
-import { Differential } from '@systemfsoftware/differential-spec'
+import { Differential, Metamorphic } from '@systemfsoftware/differential-spec'
 import { Checker, Options, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
@@ -98,44 +98,48 @@ const verdictsOf = (rows: ReadonlyArray<Row>): Effect.Effect<Readonly<Record<str
     )
   }).pipe(Effect.provide(FILE_PORTS), Effect.orDie)
 
+const sitesOf = (content: string, rows: ReadonlyArray<Row>): ReadonlyArray<TypeQuery.TypeQuerySite> =>
+  Object.values(Arr.groupBy(rows, (row) => row.site.siteId)).map((siteRows) => ({
+    siteId: siteRows[0].site.siteId,
+    location: locationOf(content, siteRows[0].site),
+    candidates: siteRows.map((row) => ({ candidateId: row.id, text: row.candidate })),
+  }))
+
+const requestOf = (content: string, sites: ReadonlyArray<TypeQuery.TypeQuerySite>): TypeQuery.TypeQueryRequest => ({
+  version: 1,
+  tsconfigFile: TSCONFIG_FILE,
+  files: [{ fileName: SITES_FILE, content, sites: [...sites] }],
+})
+
+const answerEntriesOf = (
+  rows: ReadonlyArray<Row>,
+  response: TypeQuery.TypeQueryResponse,
+): ReadonlyArray<readonly [string, string]> =>
+  response.files.flatMap((outcome): ReadonlyArray<readonly [string, string]> =>
+    Match.valueTags(outcome, {
+      FileRefused: (refused) => rows.map((row) => [row.id, `FileRefused ${refused.reason}`] as const),
+      FileAnswered: (answered) =>
+        answered.sites.flatMap((site) =>
+          site.candidates.map((candidate) =>
+            [
+              candidate.candidateId,
+              Match.valueTags(candidate.answer, {
+                Assignable: () => 'Assignable',
+                NotAssignable: () => 'NotAssignable',
+                Unknown: (unknown) => `Unknown ${unknown.reason}`,
+              }),
+            ] as const
+          )
+        ),
+    })
+  )
+
 const answersOf = (rows: ReadonlyArray<Row>): Effect.Effect<Readonly<Record<string, string>>> =>
   Effect.gen(function*() {
     const content = yield* sitesContent
-    const bySite = Arr.groupBy(rows, (row) => row.site.siteId)
     const typeQuery = yield* TypeQuery.TypeQuery
-    const response = yield* typeQuery.query({
-      version: 1,
-      tsconfigFile: TSCONFIG_FILE,
-      files: [{
-        fileName: SITES_FILE,
-        content,
-        sites: Object.values(bySite).map((siteRows) => ({
-          siteId: siteRows[0].site.siteId,
-          location: locationOf(content, siteRows[0].site),
-          candidates: siteRows.map((row) => ({ candidateId: row.id, text: row.candidate })),
-        })),
-      }],
-    })
-    return Object.fromEntries(
-      response.files.flatMap((outcome): ReadonlyArray<readonly [string, string]> =>
-        Match.valueTags(outcome, {
-          FileRefused: (refused) => rows.map((row) => [row.id, `FileRefused ${refused.reason}`] as const),
-          FileAnswered: (answered) =>
-            answered.sites.flatMap((site) =>
-              site.candidates.map((candidate) =>
-                [
-                  candidate.candidateId,
-                  Match.valueTags(candidate.answer, {
-                    Assignable: () => 'Assignable',
-                    NotAssignable: () => 'NotAssignable',
-                    Unknown: (unknown) => `Unknown ${unknown.reason}`,
-                  }),
-                ] as const
-              )
-            ),
-        })
-      ),
-    )
+    const response = yield* typeQuery.query(requestOf(content, sitesOf(content, rows)))
+    return Object.fromEntries(answerEntriesOf(rows, response))
   }).pipe(Effect.provide(TypeQueryLive), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
 
 const HOST_BOUND = {
@@ -155,6 +159,46 @@ Differential.compare({
     Object.values(answers).every((answer) => !answer.startsWith('FileRefused')) &&
     Object.entries(answers).every(([id, answer]) => answer !== 'NotAssignable' || verdicts[id] === 'compileError')
   )
+
+interface PerSiteQueries {
+  readonly rows: ReadonlyArray<Row>
+  readonly concurrency: 1 | 'unbounded'
+}
+
+const perSiteAnswersOf = ({ rows, concurrency }: PerSiteQueries) =>
+  Effect.gen(function*() {
+    const content = yield* sitesContent
+    const typeQuery = yield* TypeQuery.TypeQuery
+    const responses = yield* Effect.forEach(
+      sitesOf(content, rows),
+      (site) => typeQuery.query(requestOf(content, [site])),
+      { concurrency },
+    )
+    return Object.fromEntries(responses.flatMap((response) => answerEntriesOf(rows, response)))
+  }).pipe(Effect.provide(TypeQueryLive), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
+
+const SITE_ROWS: ReadonlyArray<ReadonlyArray<Row>> = Object.values(Arr.groupBy(ROWS, (row) => row.site.siteId))
+
+const rowsOnDistinctSites: fc.Arbitrary<ReadonlyArray<Row>> = fc
+  .subarray([...SITE_ROWS], { minLength: 2 })
+  .chain((sites) => fc.tuple(...sites.map((siteRows) => fc.subarray([...siteRows], { minLength: 1 }))))
+  .map((picked) => picked.flat())
+
+Metamorphic.on({
+  name: 'type query: concurrent queries on one tsconfig answer as the same queries one at a time',
+  system: perSiteAnswersOf,
+})
+  .relation({
+    transformInput: (input) => ({ ...input, concurrency: 'unbounded' }),
+    assertOutput: (sequential, concurrent) =>
+      Object.values(concurrent).every((answer) => !answer.startsWith('FileRefused')) &&
+      Object.keys(sequential).length === Object.keys(concurrent).length &&
+      Object.entries(sequential).every(([id, answer]) => concurrent[id] === answer),
+  })
+  .on(rowsOnDistinctSites.map((rows): PerSiteQueries => ({ rows, concurrency: 1 })), {
+    runBudget: 6,
+    hostBound: HOST_BOUND,
+  })
 
 const BODIES_FIXTURE = decodeURIComponent(new URL('__fixtures__/type-query-bodies/', import.meta.url).pathname)
 const BODIES_FILE = `${BODIES_FIXTURE}bodies.ts`
