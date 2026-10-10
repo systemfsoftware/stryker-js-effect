@@ -51,7 +51,8 @@ else:
 - **Main stays green after a release that did not touch the contracts.** No narrowing and no pending intent means there is nothing to judge, so a lagging pin alone never fails the build.
 - **The failure names its fix.** The stale-baseline message tells the author to move the flake input. That move is already the declared dogfood process: a release moves `stryker-published` to its tag.
 - **The weighed package set is checked, not trusted.** The packages the law reads must equal the workspace packages whose manifest `files` declares `contract`, found by expanding the `pnpm-workspace.yaml` `<dir>/*` globs. A new contract package fails the live scenario until it gets a `released-*` alias.
-- **Main's version comes from git, not from tags.** CI `check` fetches main's commit graph without tags (`git fetch --no-tags --filter=tree:0`), so whether a tag exists cannot be read there. The live scenario dies with a fetch hint when `origin/main` is missing; it never guesses.
+- **Main's version comes from git, not from tags.** CI `check` fetches main's commit graph without tags (`git fetch --no-tags --filter=tree:0`), so whether a tag exists cannot be read there. When `origin/main` is missing the live scenario reports `code: main-baseline-unavailable` with `next: git fetch origin main`. It never guesses a version.
+- **The law's verdict is never cached.** It reads git state, the root `.changeset/` directory and the `.sfs-deps` tarballs, and none of these is a turbo input of the package. The cli-contract package's own `turbo.json` turns the `test` cache off, so a moved `origin/main` or a new changeset is always judged fresh. Gate: `turbo run test --dry=json` resolves `cache: false` for `@systemfsoftware/stryker-js-cli-contract#test`.
 
 ## Why This Works
 

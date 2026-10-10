@@ -25,6 +25,7 @@ import {
   type ContractDocument,
   type ContractLawInput,
   evaluateContractLaw,
+  mainBaselineUnavailableOf,
   type PackageContracts,
   renderFailure,
 } from './__fixtures__/contract-law.fixture.js'
@@ -97,11 +98,11 @@ const readVersion = (manifestPath: string) =>
     return decoded.success
   })
 
-const readGit = (repositoryRoot: string, args: readonly string[]) =>
+const runGit = (cwd: string, args: readonly string[]) =>
   Effect.scoped(Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const handle = yield* ChildProcess.make('git', args, {
-      cwd: repositoryRoot,
+      cwd,
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
@@ -110,23 +111,28 @@ const readGit = (repositoryRoot: string, args: readonly string[]) =>
       handle.stdout.pipe(Stream.decodeText, Stream.mkString),
       handle.stderr.pipe(Stream.decodeText, Stream.mkString),
     ], { concurrency: 2 })
-    const exitCode = Number(yield* handle.exitCode)
-    if (exitCode !== 0) {
-      return yield* Effect.die(
-        new Error(
-          `git ${
-            args.join(' ')
-          } exited ${exitCode}: ${stderr.trim()}; the law reads main's versions from ${MAIN_REF}, so fetch it first`,
-        ),
-      )
-    }
-    return stdout
+    return { stdout, stderr: stderr.trim(), exitCode: Number(yield* handle.exitCode) }
   })).pipe(Effect.orDie)
+
+const gitOutput = (cwd: string, args: readonly string[]) =>
+  Effect.gen(function*() {
+    const ran = yield* runGit(cwd, args)
+    if (ran.exitCode !== 0) {
+      return yield* Effect.die(new Error(`git ${args.join(' ')} exited ${ran.exitCode}: ${ran.stderr}`))
+    }
+    return ran.stdout
+  })
+
+const readMainBase = (repositoryRoot: string) =>
+  Effect.map(runGit(repositoryRoot, ['merge-base', MAIN_REF, 'HEAD']), (ran) =>
+    ran.exitCode === 0
+      ? Result.succeed(ran.stdout.trim())
+      : Result.fail(mainBaselineUnavailableOf({ ref: MAIN_REF, detail: ran.stderr })))
 
 const readMainVersion = (repositoryRoot: string, mainBase: string, directory: string) =>
   Effect.gen(function*() {
     const manifest = `${mainBase}:${directory}/${MANIFEST_FILE}`
-    const decoded = decodePackageVersion(yield* readGit(repositoryRoot, ['show', manifest]))
+    const decoded = decodePackageVersion(yield* gitOutput(repositoryRoot, ['show', manifest]))
     if (Result.isFailure(decoded)) {
       return yield* Effect.die(new Error(`cannot read a version from ${manifest}: ${decoded.failure.message}`))
     }
@@ -154,12 +160,15 @@ const readPendingIntents = (changesetDirectory: string) =>
     return intents.success
   })
 
-const readWorkspace = () =>
+const repositoryRootOf = () =>
+  Effect.flatMap(Path.Path, (path) => path.fromFileUrl(new URL('../../../', import.meta.url)))
+
+const readWorkspace = (repositoryRoot: string) =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const repositoryRoot = yield* path.fromFileUrl(new URL('../../../', import.meta.url))
     const releasedRoot = path.join(repositoryRoot, CLI_CONTRACT_DIRECTORY, NODE_MODULES)
-    const mainBase = (yield* readGit(repositoryRoot, ['merge-base', MAIN_REF, 'HEAD'])).trim()
+    const mainBase = yield* readMainBase(repositoryRoot)
+    if (Result.isFailure(mainBase)) return Result.fail(mainBase.failure)
     const packages: PackageContracts[] = []
     for (const ref of PACKAGES) {
       const packageDirectory = path.join(repositoryRoot, ref.directory)
@@ -168,20 +177,20 @@ const readWorkspace = () =>
         name: ref.name,
         directory: ref.directory,
         releasedVersion: yield* readVersion(path.join(releasedDirectory, MANIFEST_FILE)),
-        mainVersion: yield* readMainVersion(repositoryRoot, mainBase, ref.directory),
+        mainVersion: yield* readMainVersion(repositoryRoot, mainBase.success, ref.directory),
         committedVersion: yield* readVersion(path.join(packageDirectory, MANIFEST_FILE)),
         releasedDocuments: yield* readJsonDocuments(path.join(releasedDirectory, CONTRACT_DIRECTORY)),
         committedDocuments: yield* readJsonDocuments(path.join(packageDirectory, CONTRACT_DIRECTORY)),
       })
     }
-    return { packages, pendingIntents: yield* readPendingIntents(path.join(repositoryRoot, CHANGESET_DIRECTORY)) }
+    const pendingIntents = yield* readPendingIntents(path.join(repositoryRoot, CHANGESET_DIRECTORY))
+    return Result.succeed<ContractLawInput>({ packages, pendingIntents })
   })
 
-const readContractShippingPackages = () =>
+const readContractShippingPackages = (repositoryRoot: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const repositoryRoot = yield* path.fromFileUrl(new URL('../../../', import.meta.url))
     const globs = decodeWorkspaceGlobs(yield* fs.readFileString(path.join(repositoryRoot, WORKSPACE_MANIFEST)))
     if (Result.isFailure(globs)) {
       return yield* Effect.die(new Error(`cannot read the workspace package globs: ${globs.failure.message}`))
@@ -207,6 +216,43 @@ const readContractShippingPackages = () =>
     }
     return shipping.sort()
   })
+
+const SCRATCH_PACKAGE = 'packages/scratch'
+const COMMITTER = ['-c', 'user.email=law@test', '-c', 'user.name=law', '-c', 'commit.gpgsign=false'] as const
+
+const commitVersion = (root: string, version: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const directory = path.join(root, SCRATCH_PACKAGE)
+    yield* fs.makeDirectory(directory, { recursive: true })
+    yield* fs.writeFileString(path.join(directory, MANIFEST_FILE), `{ "name": "scratch", "version": "${version}" }\n`)
+    yield* gitOutput(root, ['add', '-A'])
+    yield* gitOutput(root, [...COMMITTER, 'commit', '-q', '--no-verify', '-m', version])
+  }).pipe(Effect.orDie)
+
+const repositoryWithoutMain = () =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory())
+    yield* gitOutput(root, ['init', '-q', '-b', 'work'])
+    yield* commitVersion(root, '1.2.0')
+    return root
+  }).pipe(Effect.orDie)
+
+const forkedRepository = () =>
+  Effect.gen(function*() {
+    const root = yield* repositoryWithoutMain()
+    yield* commitVersion(root, '2.0.0')
+    yield* gitOutput(root, ['checkout', '-q', '-b', 'mainline', 'HEAD~1'])
+    yield* commitVersion(root, '1.3.0')
+    yield* gitOutput(root, ['update-ref', `refs/remotes/${MAIN_REF}`, 'HEAD'])
+    yield* gitOutput(root, ['checkout', '-q', 'work'])
+    return root
+  })
+
+const removeRepository = (root: string) =>
+  Effect.ignore(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true })))
 
 const streamDocument = (options: { readonly schemaVersion: string; readonly pid: boolean }): Json => ({
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -342,24 +388,26 @@ Feature('The released contract documents bound what the workspace may declare ne
       Gherkin.Do.pipe(
         Given('the released documents the workspace consumes and the committed ones it ships')(
           'workspace',
-          () => readWorkspace(),
+          () => Effect.flatMap(repositoryRootOf(), readWorkspace),
         ),
         Given('every workspace package whose manifest ships a contract directory')(
           'shipping',
-          () => readContractShippingPackages(),
+          () => Effect.flatMap(repositoryRootOf(), readContractShippingPackages),
         ),
         When('the version law weighs each committed document against the released one')(
-          'failures',
-          (s) => Effect.succeed(evaluateContractLaw(s.workspace).map(renderFailure)),
+          'verdict',
+          (s) =>
+            Effect.succeed(Result.match(s.workspace, {
+              onFailure: (failure) => ({ weighed: [], failures: [renderFailure(failure)] }),
+              onSuccess: (law) => ({
+                weighed: law.packages.map((pkg) => pkg.name).sort(),
+                failures: evaluateContractLaw(law).map(renderFailure),
+              }),
+            })),
         ),
         Then(
           'every package that ships a contract directory is weighed, and none is narrower than its release without a declared next version that clears it',
-        )((s, expect) =>
-          expect({ weighed: s.workspace.packages.map((pkg) => pkg.name).sort(), failures: s.failures }).toEqual({
-            weighed: s.shipping,
-            failures: [],
-          })
-        ),
+        )((s, expect) => expect(s.verdict).toEqual({ weighed: s.shipping, failures: [] })),
       ),
     )
 
@@ -560,19 +608,21 @@ Feature('The released contract documents bound what the workspace may declare ne
           'law',
           () => Effect.succeed(lawInputOf(staleBaseline)),
         ),
-        When('the law weighs the committed documents against the stale released ones')(
-          'failures',
-          (s) => Effect.succeed(evaluateContractLaw(s.law)),
+        When('the law weighs the committed documents against the stale released ones and renders what it refuses')(
+          'rendered',
+          (s) => Effect.succeed(evaluateContractLaw(s.law).map((failure) => renderFailure(failure).split('\n'))),
         ),
-        Then('the stale baseline is named and the author is told to move the flake input')(
+        Then('the stale baseline is named with its code, both versions, and the flake move that fixes it')(
           (s, expect) =>
-            expect(s.failures).toEqual([{
-              kind: 'stale-baseline',
-              package: PLUGIN_INTERFACE,
-              reason: expect.stringContaining('move the stryker-published flake input to the latest release tag'),
-              releasedVersion: '15.0.0',
-              mainVersion: '15.1.0',
-            }]),
+            expect(s.rendered).toEqual([[
+              `error[CONTRACT-VERSION]: the released baseline of ${PLUGIN_INTERFACE} is stale`,
+              '  code: stale-baseline',
+              `  package: ${PLUGIN_INTERFACE}`,
+              '  released: 15.0.0',
+              '  main: 15.1.0',
+              `  reason: main declares 15.1.0 while the released documents come from 15.0.0, so they cannot bound what the next release of ${PLUGIN_INTERFACE} may change`,
+              '  next: move the stryker-published flake input to the latest release tag and reinstall',
+            ]]),
         ),
       ),
     )
@@ -593,10 +643,62 @@ Feature('The released contract documents bound what the workspace may declare ne
             expect(s.failures).toEqual([{
               kind: 'stale-baseline',
               package: PLUGIN_INTERFACE,
-              reason: expect.stringContaining('move the stryker-published flake input to the latest release tag'),
+              reason: expect.stringContaining('main declares 16.0.0 while the released documents come from 15.0.0'),
+              next: 'move the stryker-published flake input to the latest release tag and reinstall',
               releasedVersion: '15.0.0',
               mainVersion: '16.0.0',
             }]),
+        ),
+      ),
+    )
+
+    scenario(
+      'The version main declares is read where HEAD forked from origin/main',
+      { live: 'spawns real git in a temporary repository' },
+      Gherkin.Do.pipe(
+        Given('a repository forked from main at 1.2.0, whose HEAD declares 2.0.0 while main moved on to 1.3.0')(
+          'root',
+          () => forkedRepository(),
+        ),
+        When('the law reads the version main declares for the package')(
+          'mainVersion',
+          (s) =>
+            Effect.gen(function*() {
+              const mainBase = yield* readMainBase(s.root)
+              if (Result.isFailure(mainBase)) return mainBase.failure
+              return yield* readMainVersion(s.root, mainBase.success, SCRATCH_PACKAGE)
+            }).pipe(Effect.ensuring(removeRepository(s.root))),
+        ),
+        Then('it reads the fork point, neither the committed version nor the tip main moved to')(
+          (s, expect) => expect(s.mainVersion).toEqual('1.2.0'),
+        ),
+      ),
+    )
+
+    scenario(
+      'A checkout without origin/main is refused with the fetch that restores it',
+      { live: 'spawns real git in a temporary repository' },
+      Gherkin.Do.pipe(
+        Given('a repository holding one commit and no origin/main')('root', () => repositoryWithoutMain()),
+        When('the law reads the workspace and renders what it refuses')(
+          'rendered',
+          (s) =>
+            Effect.map(readWorkspace(s.root), (workspace) =>
+              Result.match(workspace, {
+                onFailure: (failure) => renderFailure(failure).split('\n'),
+                onSuccess: () => [],
+              })).pipe(Effect.ensuring(removeRepository(s.root))),
+        ),
+        Then('the missing baseline is named with its code and the command that fetches it')((s, expect) =>
+          expect(s.rendered).toEqual([
+            'error[CONTRACT-VERSION]: the version main declares is unavailable',
+            '  code: main-baseline-unavailable',
+            `  ref: ${MAIN_REF}`,
+            expect.stringMatching(
+              /^ {2}reason: git merge-base origin\/main HEAD failed \(.+\), so the version main declares cannot be read$/,
+            ),
+            '  next: git fetch origin main',
+          ])
         ),
       ),
     )
