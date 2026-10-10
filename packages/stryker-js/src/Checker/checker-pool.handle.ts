@@ -19,8 +19,9 @@ import type { CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { StageError } from '../Run.schema.js'
 import { PhaseClock } from '../run/phase-clock.service.js'
 import { sha256HexOf } from '../verdict-semantics.js'
+import { checkCell } from './check.cell.js'
 import type { CheckerCrash, CheckerResourceService } from './Checker.handle.js'
-import { checkPlans as checkPlansWithChecker, groupPlans as groupPlansWithChecker } from './Checker.plans.js'
+import { groupCell } from './group.cell.js'
 import {
   CheckedPlanFailed,
   CheckedPlanIgnored,
@@ -270,7 +271,7 @@ const checkedGroupsFor = (
       }),
     onSome: (checkerName) =>
       Stream.unwrap(
-        onCheckerSlot(pool, checkerIndex, (checker) => groupPlansWithChecker(checker, checkerName, plans)).pipe(
+        onCheckerSlot(pool, checkerIndex, (checker) => groupCell.run({ checker, checkerName, plans })).pipe(
           Effect.map((groups) =>
             Stream.fromIterable(groups).pipe(
               Stream.mapEffect(
@@ -279,7 +280,9 @@ const checkedGroupsFor = (
                     Effect.gen(function*() {
                       const phaseClock = yield* PhaseClock
                       const startedAt = yield* Clock.currentTimeMillis
-                      const [elapsed, checked] = yield* Effect.timed(checkPlansWithChecker(checker, checkerName, group))
+                      const [elapsed, checked] = yield* Effect.timed(
+                        checkCell.run({ checker, checkerName, plans: group }),
+                      )
                       const endedAt = yield* Clock.currentTimeMillis
                       yield* phaseClock.recordCheckerBusy({ startMs: startedAt, endMs: endedAt })
                       const split = yield* splitCheckedPlans(checked)
