@@ -1,13 +1,10 @@
 import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
 import * as S from 'effect/Schema'
 
 import { Location } from './Location.schema.js'
 
 export const TypeQueryVersion = S.Literals([1, 2])
 export type TypeQueryVersion = typeof TypeQueryVersion.Type
-
-export const TYPE_QUERY_VERSIONS: ReadonlyArray<TypeQueryVersion> = TypeQueryVersion.literals
 
 export const TypeQueryCandidate = S.Struct({
   candidateId: S.String,
@@ -150,21 +147,6 @@ export type TypeQueryNotServed = typeof TypeQueryNotServed.Type
 export const TypeQueryServing = S.Union([TypeQueryServed, TypeQueryNotServed])
 export type TypeQueryServing = typeof TypeQueryServing.Type
 
-const notServed = (capabilities: CheckerCapabilities, version: TypeQueryVersion): TypeQueryServing =>
-  TypeQueryNotServed.make({
-    version,
-    declared: capabilities.typeQuery,
-    nextAction: `Keep every mutant: this checker declares type-query versions [${
-      capabilities.typeQuery.join(', ')
-    }], not ${version}. Use a checker that declares version ${version}, or send a version it declares.`,
-  })
-
-export const typeQueryServingOf = (capabilities: CheckerCapabilities, version: TypeQueryVersion): TypeQueryServing =>
-  Boolean.match(Arr.contains(capabilities.typeQuery, version), {
-    onTrue: () => TypeQueryServed.make({ version }),
-    onFalse: () => notServed(capabilities, version),
-  })
-
 const requestDecodes = (version: number, fileCount: number): boolean =>
   S.is(TypeQueryRequest)({
     version,
@@ -189,19 +171,5 @@ if (import.meta.vitest !== void 0) {
         (v) =>
           Arr.every(Arr.append(fileCountSeeds, fileCount), (n) => subject(v, n) === namesWholeVersionAndAFile(v, n)),
       ),
-  )
-
-  const SmallVersions = S.Struct({ typeQuery: S.Array(S.Int.check(S.isBetween({ minimum: 0, maximum: 3 }))) })
-
-  it.prop(
-    '∀c,v_TypeQueryServing_≡ServedExactlyWhenTheDeclarationNamesTheVersion',
-    { of: [SmallVersions, TypeQueryVersion], subject: typeQueryServingOf },
-    (subject, [capabilities, version]) => {
-      const serving = subject(capabilities, version)
-      const declares = capabilities.typeQuery.includes(version)
-      return S.is(TypeQueryServed)(serving)
-        ? declares && serving.version === version
-        : !declares && serving.version === version && serving.declared.join() === capabilities.typeQuery.join()
-    },
   )
 }

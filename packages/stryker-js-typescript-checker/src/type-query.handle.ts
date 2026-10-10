@@ -5,7 +5,6 @@ import {
   type FileOutcome,
   NotAssignable,
   type SiteAnswer,
-  TYPE_QUERY_VERSIONS,
   type TypeAnswer,
   TypeQuery,
   type TypeQueryCandidate,
@@ -16,7 +15,7 @@ import {
   type TypeQueryShape,
   type TypeQuerySite,
   type TypeQuerySiteKind,
-  type TypeQueryVersion,
+  TypeQueryVersion,
   Unknown,
 } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Arr from 'effect/Array'
@@ -104,10 +103,8 @@ export type TypeId = typeof TypeId
 
 const REFUSAL_VERSION: TypeQueryVersion = 2
 
-const SERVED_VERSIONS: ReadonlyArray<TypeQueryVersion> = TYPE_QUERY_VERSIONS
-
 const servedVersionOf = (version: number): Option.Option<TypeQueryVersion> =>
-  Arr.findFirst(SERVED_VERSIONS, (served) => served === version)
+  Arr.findFirst(TypeQueryVersion.literals, (served) => served === version)
 
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
 
@@ -130,7 +127,7 @@ const unsupportedVersion = (version: number): TypeQueryRefused =>
     version: REFUSAL_VERSION,
     reason: 'unsupported-version',
     nextAction: `Send a TypeQueryRequest with version ${
-      SERVED_VERSIONS.join(' or ')
+      TypeQueryVersion.literals.join(' or ')
     }; this server received version ${version}.`,
   })
 
