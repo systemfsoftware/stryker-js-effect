@@ -312,6 +312,17 @@ jobs:
             files: tests/enterprise-monorepo-sabotage.e2e.test.ts
           - shard: svelte-composite
             files: tests/svelte-app.e2e.test.ts tests/enterprise-composite-checker.e2e.test.ts
+          # One file across two legs: `split` picks the scenarios whose full name matches
+          # CHECKER_SPLIT or its complement, so every scenario, including one added later, runs in
+          # exactly one of the two.
+          - shard: typescript-checker-1
+            files: tests/typescript-checker.e2e.test.ts
+            split: match
+          - shard: typescript-checker-2
+            files: tests/typescript-checker.e2e.test.ts
+            split: complement
+          # The rest legs take every file the legs above do not name, so a new file lands in one
+          # of them without a workflow edit.
           - shard: rest-1
             files: --shard=1/2
           - shard: rest-2
@@ -325,9 +336,23 @@ jobs:
       OTEL_ENABLED: "true"
       OTEL_SERVICE_NAME: stryker-js-ci
       OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+      TURBO_RUN_SUMMARY: "true"
+      CHECKER_SPLIT: 'stryker\.(?:references|preservation)\.config'
     steps:
+      - name: Record the job start
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
+      - name: Install process-compose (pinned)
+        run: |
+          curl -sSfL -o /tmp/pc.tar.gz https://github.com/F1bonacc1/process-compose/releases/download/v1.122.0/process-compose_linux_amd64.tar.gz
+          echo '9b6dbc38324c0b0481f1cd1dd828ffdc78117129ec797678f4bf8c4023311281  /tmp/pc.tar.gz' | sha256sum -c -
+          sudo tar xzf /tmp/pc.tar.gz -C /usr/local/bin process-compose
+      # The trace window opens here, before any span can be sent.
+      - name: Start LGTM
+        run: |
+          echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
+          pnpm --config.verify-deps-before-run=false lgtm:start
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -337,23 +362,53 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: deno from the flake
         run: echo "$(nix build --no-link --print-out-paths .#deno)/bin" >> "$GITHUB_PATH"
-      - name: Install process-compose (pinned)
-        run: |
-          curl -sSfL -o /tmp/pc.tar.gz https://github.com/F1bonacc1/process-compose/releases/download/v1.122.0/process-compose_linux_amd64.tar.gz
-          echo '9b6dbc38324c0b0481f1cd1dd828ffdc78117129ec797678f4bf8c4023311281  /tmp/pc.tar.gz' | sha256sum -c -
-          sudo tar xzf /tmp/pc.tar.gz -C /usr/local/bin process-compose
-      - name: Start LGTM (blocks until probe-ready)
-        run: |
-          echo "TRACE_WINDOW_START=$(date +%s)" >> "$GITHUB_ENV"
-          pnpm lgtm:up
+      # The packages the lane packs build under the same Turbo hashes as in `check`, so the legs
+      # restore `check`'s entries the way `check` does and never save one.
+      - id: base
+        name: Base commit (first parent of the checked-out commit)
+        run: echo "sha=$(git cat-file -p HEAD | awk '$1 == "parent" { print $2; exit }')" >> "$GITHUB_OUTPUT"
+      - id: restore-base
+        name: Restore the Turbo cache of the base commit
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ steps.base.outputs.sha }}
+      - id: restore-newest
+        name: Restore the newest Turbo cache this ref can read
+        if: steps.restore-base.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-dist-
+      - id: lgtm
+        name: Wait for LGTM
+        run: pnpm lgtm:ready
       # `timeout` turns a hang into a failure of this step, so the lane reports its own exit status and
       # the `if: always()` telemetry steps run inside the job's 30-minute budget. A cancelled job also
       # runs `if: always()` steps, but only within GitHub's 5-minute cancellation window.
-      - name: E2E lane
-        run: >-
-          timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e -- ${{ matrix.files }}
-          ${{ startsWith(matrix.shard, 'rest') && '--exclude=tests/enterprise-mutation-lifecycle.e2e.test.ts --exclude=tests/enterprise-monorepo-sabotage.e2e.test.ts --exclude=tests/svelte-app.e2e.test.ts --exclude=tests/enterprise-composite-checker.e2e.test.ts' || '' }}
-      - name: Export telemetry
+      # Naming reporters replaces Vitest's defaults, so the lane names them (`default` and, under
+      # GITHUB_ACTIONS, `github-actions`) beside the JSON report the verdict reads.
+      - id: lane
+        name: E2E lane
+        env:
+          FILES: ${{ matrix.files }}
+          SPLIT: ${{ matrix.split }}
+          EXCLUDE: ${{ startsWith(matrix.shard, 'rest') && '--exclude=tests/enterprise-mutation-lifecycle.e2e.test.ts --exclude=tests/enterprise-monorepo-sabotage.e2e.test.ts --exclude=tests/svelte-app.e2e.test.ts --exclude=tests/enterprise-composite-checker.e2e.test.ts --exclude=tests/typescript-checker.e2e.test.ts' || '' }}
+        run: |
+          read -ra args <<< "$FILES $EXCLUDE"
+          case "$SPLIT" in
+            match) args+=(-t "$CHECKER_SPLIT") ;;
+            complement) args+=(-t "^(?!.*(?:$CHECKER_SPLIT))") ;;
+          esac
+          args+=(--reporter=default --reporter=github-actions --reporter=json --outputFile.json="$RUNNER_TEMP/vitest.json")
+          status=0
+          timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e -- "${args[@]}" || status=$?
+          echo "exit=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+      - id: export
+        name: Export telemetry
         if: always()
         run: ./test/e2e/scripts/export-traces.ts
       - name: Container logs on failure
@@ -376,3 +431,84 @@ jobs:
           path: e2e-telemetry.tar.gz
           retention-days: 7
           if-no-files-found: error
+      - id: verdict
+        name: Verdict of the lane
+        if: always()
+        env:
+          CANCELLED: ${{ job.status == 'cancelled' }}
+          LGTM: ${{ steps.lgtm.outcome }}
+          LANE: ${{ steps.lane.outcome }}
+          LANE_EXIT: ${{ steps.lane.outputs.exit }}
+          EXPORT: ${{ steps.export.outcome }}
+          FILES: ${{ matrix.files }}
+          SPLIT: ${{ matrix.split }}
+          BASE_KEY: ${{ steps.restore-base.outputs.cache-matched-key }}
+          NEWEST_KEY: ${{ steps.restore-newest.outputs.cache-matched-key }}
+          ARTIFACT: e2e-telemetry-${{ github.run_id }}-${{ matrix.shard }}
+        run: |
+          shopt -s nullglob
+          report="$RUNNER_TEMP/vitest.json"
+          counts="no Vitest report was written" failed=""
+          if [ -f "$report" ]; then
+            counts=$(jq -r '"\(.testResults | length) files, \(.numTotalTests) tests: \(.numPassedTests) passed, \(.numFailedTests) failed, \(.numPendingTests + .numTodoTests) skipped by the name filter"' "$report")
+            failed=$(jq -r '[.testResults[] | select(.status == "failed") | .name | sub(".*/test/e2e/"; "")] | join(" ")' "$report")
+          fi
+
+          runs=(.turbo/runs/*.json)
+          build="no Turbo run summary was written"
+          if (( ${#runs[@]} )); then
+            build=$(jq -rs '
+              [.[].tasks[] | select(.command != "<NONEXISTENT>" and .task != "test:e2e")] as $tasks
+              | [$tasks[] | select(.cache.status != "HIT") | "`\(.taskId)`"] as $missed
+              | "\(($tasks | length) - ($missed | length)) cached / \($tasks | length) total"
+                + (if ($missed | length) > 0 then "; missed: \($missed | join(", "))" else "" end)
+            ' "${runs[@]}")
+          fi
+
+          case "$SPLIT" in
+            match) filter="\`-t $CHECKER_SPLIT\`" ;;
+            complement) filter="\`-t ^(?!.*(?:$CHECKER_SPLIT))\`" ;;
+            *) filter=none ;;
+          esac
+          if [ -n "$BASE_KEY" ]; then
+            restored="\`$BASE_KEY\` (base commit)"
+          elif [ -n "$NEWEST_KEY" ]; then
+            restored="\`$NEWEST_KEY\` (newest readable)"
+          else
+            restored=nothing
+          fi
+
+          if [ "$CANCELLED" = true ]; then
+            reason=CANCELLED next="The run was cancelled before the lane finished; re-run the job."
+          elif [ "$LGTM" = failure ]; then
+            reason=LGTM_NOT_READY next="Grafana LGTM was not ready within 180 s, so the lane did not run. Read the step 'Wait for LGTM' and the container logs in the artifact $ARTIFACT; reproduce with: pnpm lgtm:up"
+          elif [ "$LANE_EXIT" = 124 ]; then
+            reason=E2E_LANE_TIMEOUT next="The lane ran past its 20-minute timeout and was stopped. Find the stalled span in the traces of the artifact $ARTIFACT (load them with test/e2e/scripts/import-traces.ts)."
+          elif [ "$LANE" = failure ]; then
+            reason=E2E_LANE_FAILED next="Failing files: ${failed:-none reported (read the step 'E2E lane')}. Inspect the traces in the artifact $ARTIFACT; reproduce with: pnpm lgtm:up && pnpm test:e2e -- <file>"
+          elif [ "$LANE" = success ] && [ "$EXPORT" = failure ]; then
+            reason=TRACE_SEARCH_FAILED next="The lane passed but its traces were not exported from Tempo; read the step 'Export telemetry'."
+          elif [ "$LANE" = success ]; then
+            reason=E2E_OK next=""
+          else
+            reason=E2E_SETUP_FAILED next="A setup step failed before the lane ran; open the first failed step of this job."
+          fi
+
+          {
+            echo "reason=$reason"
+            echo "next=$next"
+            echo "details<<EOF"
+            echo "- Files: \`$FILES\`; name filter: $filter"
+            echo "- Vitest: $counts"
+            echo "- Pre-test build: $build; Turbo cache restored: $restored"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: Job report
+        if: always()
+        uses: ./.github/actions/job-report
+        with:
+          status: ${{ job.status }}
+          reason: ${{ steps.verdict.outputs.reason }}
+          next-action: ${{ steps.verdict.outputs.next }}
+          started-at: ${{ env.JOB_STARTED_AT }}
+          details: ${{ steps.verdict.outputs.details }}
