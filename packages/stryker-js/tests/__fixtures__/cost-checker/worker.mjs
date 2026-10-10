@@ -9,7 +9,8 @@ import * as Layer from 'effect/Layer'
 const REJECTED_FILE = 'src/lib/rejected.ts'
 const REJECTION_REASON = 'rejected by the fixture checker'
 const IGNORED_FILE = 'src/lib/ignored.ts'
-const IGNORE_REASON = 'ignored by the fixture checker'
+const IGNORE_REASON = 'checker: the fixture checker ignores this module'
+const REASONLESS_FILE = 'src/lib/reasonless.ts'
 
 const isFile = (mutant, file) => mutant.fileName === file || mutant.fileName.endsWith(`/${file}`)
 
@@ -19,6 +20,9 @@ const answerOf = (mutant) => {
   }
   if (isFile(mutant, IGNORED_FILE)) {
     return { status: 'ignored', reason: IGNORE_REASON }
+  }
+  if (isFile(mutant, REASONLESS_FILE)) {
+    return { status: 'ignored' }
   }
   return { status: 'passed' }
 }
