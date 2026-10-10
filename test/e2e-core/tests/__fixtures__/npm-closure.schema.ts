@@ -5,6 +5,8 @@ export const NpmManifestJson = S.fromJsonString(S.Struct({
   version: S.String,
   private: S.optional(S.Boolean),
   dependencies: S.optional(S.Record(S.String, S.String)),
+  peerDependencies: S.optional(S.Record(S.String, S.String)),
+  peerDependenciesMeta: S.optional(S.Record(S.String, S.Struct({ optional: S.optional(S.Boolean) }))),
 }))
 
 export const NpmLockEntry = S.Struct({ name: S.optional(S.String), resolved: S.optional(S.String) })

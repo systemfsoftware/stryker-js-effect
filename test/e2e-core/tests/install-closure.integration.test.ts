@@ -140,6 +140,7 @@ interface InstallOutcome {
   readonly exitCode: number
   readonly stderr: string
   readonly provenance: ReadonlyArray<LockProvenance>
+  readonly reified: ReadonlyArray<string>
 }
 
 const installOffline = (manifests: ReadonlyArray<PackedManifest>, fixtureManifest: FixtureManifest) =>
@@ -164,7 +165,6 @@ const installOffline = (manifests: ReadonlyArray<PackedManifest>, fixtureManifes
     const offline = [
       'npm',
       'install',
-      '--package-lock-only',
       '--offline',
       '--ignore-scripts',
       '--no-audit',
@@ -174,13 +174,19 @@ const installOffline = (manifests: ReadonlyArray<PackedManifest>, fixtureManifes
       '--registry=http://127.0.0.1:9/',
     ] as const
     const registryStep = yield* runCommand(offline, fixture)
-    const outcome = registryStep.exitCode === 0 ? yield* runCommand([...offline, ...specs], fixture) : registryStep
+    const outcome = registryStep.exitCode === 0
+      ? yield* runCommand([...offline, '--save-prod', ...specs], fixture)
+      : registryStep
     const lock = yield* fs.readFileString(path.join(fixture, 'package-lock.json')).pipe(
       Effect.flatMap(S.decodeEffect(NpmLockfileJson)),
       Effect.map(provenanceOf),
       Effect.orElseSucceed((): ReadonlyArray<LockProvenance> => []),
     )
-    return { exitCode: outcome.exitCode, stderr: outcome.stderr, provenance: lock } satisfies InstallOutcome
+    const reified = yield* Effect.filter(
+      WORKSPACE,
+      (name) => fs.exists(path.join(fixture, 'node_modules', name, 'package.json')),
+    )
+    return { exitCode: outcome.exitCode, stderr: outcome.stderr, provenance: lock, reified } satisfies InstallOutcome
   }))
 
 const registryResolvedWorkspacePackages = (outcome: InstallOutcome): ReadonlyArray<string> =>
@@ -319,18 +325,20 @@ Feature('Installing the packed workspace closure')
           'installed',
           (s) => installOffline(s.closure, REQUESTS_S3_STORE),
         ),
-        Then('the registry step skips the optional peer and the closure step installs it from the tarball')(
+        Then('the registry step skips the optional peer and the closure step puts it in node_modules from the tarball')(
           (s, expect) =>
             expect({
               exitCode: s.installed.exitCode,
               stderr: s.installed.exitCode === 0 ? '' : s.installed.stderr,
               registryResolved: registryResolvedWorkspacePackages(s.installed),
               installed: workspaceProvenance(s.installed),
+              reified: s.installed.reified,
             }).toStrictEqual({
               exitCode: 0,
               stderr: '',
               registryResolved: [],
               installed: [CLI, PLUGIN_INTERFACE, RUNNER, RUNNER, S3_STORE].sort(),
+              reified: [CLI, RUNNER, PLUGIN_INTERFACE, S3_STORE],
             }),
         ),
       ),

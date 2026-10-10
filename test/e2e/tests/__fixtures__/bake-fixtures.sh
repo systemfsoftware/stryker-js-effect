@@ -7,5 +7,5 @@ for dir in /baked/*/; do
   echo "[bake] $id: npm install the registry dependencies" >&2
   npm install --no-audit --no-fund --loglevel=error
   echo "[bake] $id: npm install the workspace closure tarballs" >&2
-  npm install --no-audit --no-fund --loglevel=error $(cat "/baked/$id.specs")
+  npm install --no-audit --no-fund --loglevel=error --save-prod $(cat "/baked/$id.specs")
 done
