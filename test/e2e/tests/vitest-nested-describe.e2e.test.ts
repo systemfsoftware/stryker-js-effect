@@ -18,8 +18,7 @@ interface BailObservation {
   readonly testsExecuted?: number | null
 }
 
-const isMutantTested = (event: RunEvent.RunEvent): event is RunEvent.RunMutantTestedEvent =>
-  event._tag === 'mutantTested'
+const isMutantTested = (event: RunEvent.RunEvent): event is RunEvent.RunMutantTested => event._tag === 'mutantTested'
 
 const greetingBailObservation = (events: ReadonlyArray<RunEvent.RunEvent>): BailObservation => {
   const mutant = events.filter(isMutantTested).find(
