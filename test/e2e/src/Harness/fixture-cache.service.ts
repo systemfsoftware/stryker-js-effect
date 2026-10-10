@@ -25,6 +25,9 @@ import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 import {
+  BAKE_INSTALL_DEADLINE_SECONDS,
+  BAKE_LANES,
+  bakeBudgetSeconds,
   BakeDone,
   BakeFailed,
   type BakeReason,
@@ -118,7 +121,6 @@ const STEP_INSTALL_PLAN = 'plan the workspace closure install'
 const TREE_CONCURRENCY = 16
 const UNPACK_CONCURRENCY = 4
 const STAGE_CONCURRENCY = 4
-const BAKE_BUDGET_SECONDS = 180
 const LOCKFILE_NAME = 'package-lock.json'
 const LOCK_DIGEST_CHARS = 16
 
@@ -733,20 +735,24 @@ const bakeMissing = (
       yield* leaseEntry(stagingDir)
       yield* stageFixtures(environment, stagingDir, missing.map((fixture) => fixture.fixtureId), rules)
       const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
+      const budgetSeconds = bakeBudgetSeconds({ fixtures: missing.length })
+      const argv = [
+        `--before=${REGISTRY_CUTOFF}`,
+        `--root=${GuestJobs.GUEST_BAKED_ROOT}`,
+        `--deadline=${BAKE_INSTALL_DEADLINE_SECONDS}`,
+        `--lanes=${BAKE_LANES}`,
+      ]
       yield* jobs.requireCleanExit(
         STEP_BAKE,
-        jobs.job(['sh', '-c', bakeScript, 'bake-fixtures', `--before=${REGISTRY_CUTOFF}`, ...install], [
+        jobs.job(['sh', '-c', bakeScript, 'bake-fixtures', ...argv, ...install], [
           { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
           { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
         ]),
       ).pipe(Effect.timeoutOrElse({
-        duration: `${BAKE_BUDGET_SECONDS} seconds`,
+        duration: `${budgetSeconds} seconds`,
         orElse: () =>
           Effect.fail(
-            new BakeOverBudgetFailure({
-              budgetSeconds: BAKE_BUDGET_SECONDS,
-              fixtures: missing.map((fixture) => fixture.fixtureId),
-            }),
+            new BakeOverBudgetFailure({ budgetSeconds, fixtures: missing.map((fixture) => fixture.fixtureId) }),
           ),
       }))
       yield* Effect.forEach(
@@ -831,6 +837,7 @@ const bakeRecordOf = (
         baked: outcome.baked,
         seconds,
         locks: outcome.locks,
+        entries: Object.entries(outcome.keys).map(([fixtureId, key]) => entryNameOf({ fixtureId, key })),
       }),
     onFailure: (cause) =>
       new BakeFailed({
@@ -855,7 +862,7 @@ const writeBakeRecord = (exit: Exit.Exit<BakeOutcome, HarnessError>, seconds: nu
           (json) => fs.writeFileString(file, json),
         ),
     })
-  }).pipe(Effect.orDie)
+  }).pipe(Effect.ignore({ log: 'Warn', message: 'the bake record could not be written' }))
 
 const recordedBake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessError, BakePlatform> =>
   Effect.gen(function*() {
@@ -902,7 +909,7 @@ const bakeEnvironment = Effect.gen(function*() {
     repoRoot: path.resolve(packageDir, '..', '..'),
     resourcesDir: path.join(packageDir, 'testResources'),
     bakedCacheRoot: path.join(packageDir, 'node_modules', '.cache', 'stryker-e2e', 'baked'),
-    bakeScriptPath: path.join(packageDir, 'tests', '__fixtures__', 'bake-fixtures.sh'),
+    bakeScriptPath: path.join(packageDir, '..', 'e2e-core', 'bake', 'bake-fixtures.sh'),
   }
   return environment
 })

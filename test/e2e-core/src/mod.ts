@@ -1,4 +1,5 @@
 export * from './annotation.schema.js'
+export * from './bake-budget.js'
 export * from './bake-key.schema.js'
 export * from './bake-report.js'
 export * from './bake-report.schema.js'

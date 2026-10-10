@@ -19,6 +19,7 @@ export class BakeDone extends S.TaggedClass<BakeDone>()('BakeDone', {
   baked: S.Int,
   seconds: S.Finite,
   locks: S.Record(S.String, S.String),
+  entries: S.Array(S.String),
 }) {}
 
 export class BakeFailed extends S.TaggedClass<BakeFailed>()('BakeFailed', {
@@ -32,6 +33,7 @@ export type BakeRecord = typeof BakeRecord.Type
 export const BakeReport = S.Struct({
   packsKey: S.String,
   baked: S.Int,
+  entries: S.Array(S.String),
   summary: S.String,
   annotations: S.Array(S.String),
 })

@@ -178,17 +178,31 @@ jobs:
             echo "Restored bake entry: \`${RESTORED:-none}\`." >> "$GITHUB_STEP_SUMMARY"
             jq -r '.annotations[]' "$RECORD"
             jq -r '"packs-key=\(.packsKey)", "baked=\(.baked)"' "$RECORD" >> "$GITHUB_OUTPUT"
-          elif [ "$LANE" != success ]; then
+            echo "entries=$(jq -r '.entries | join("\n")' "$RECORD" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          elif [ "$LANE" = success ]; then
+            echo "::warning title=E2E_BAKE_NO_RECORD::The E2E lane passed but global setup wrote no bake record, so this leg reports no bake state and saves no bake. Next: check that STRYKER_E2E_BAKE_RECORD reaches vitest (turbo.json test:e2e passThroughEnv)."
+          else
             printf '### Fixture bake\n\n`E2E_BAKE_NO_RECORD`: the lane ended (%s) before global setup recorded the bake.\n' "$LANE" >> "$GITHUB_STEP_SUMMARY"
             echo "::error title=E2E_BAKE_NO_RECORD::The E2E lane ended ($LANE) before global setup recorded the fixture bake. Next: read the global setup error in the E2E lane log; the e2e-telemetry artifact holds the e2e.setup spans."
           fi
-      # One leg saves, and only when it baked something, so each packs key is uploaded once.
+      # One leg saves, and only when it baked something. The key names the packs key and the
+      # fixture set, so an unchanged bake is uploaded once.
+      - name: Keep only this run's fixtures in the bake
+        if: always() && matrix.shard == 'lifecycle' && steps.bake.outputs.packs-key != '' && steps.bake.outputs.baked != '0'
+        env:
+          RECORD: ${{ runner.temp }}/e2e-bake.json
+          ROOT: test/e2e/node_modules/.cache/stryker-e2e/baked/${{ steps.bake.outputs.packs-key }}
+        run: |
+          for dir in "$ROOT"/*/; do
+            name="$(basename "$dir")"
+            jq -e --arg name "$name" '.entries | index($name)' "$RECORD" > /dev/null || rm -rf "$dir"
+          done
       - name: Save the fixture bake
         if: always() && matrix.shard == 'lifecycle' && steps.bake.outputs.packs-key != '' && steps.bake.outputs.baked != '0'
         uses: actions/cache/save@v6
         with:
           path: test/e2e/node_modules/.cache/stryker-e2e/baked
-          key: e2e-bake-${{ runner.os }}-${{ steps.bake.outputs.packs-key }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: e2e-bake-${{ runner.os }}-${{ steps.bake.outputs.packs-key }}-${{ steps.bake.outputs.entries }}
       - name: Export telemetry
         if: always()
         run: ./test/e2e/scripts/export-traces.ts

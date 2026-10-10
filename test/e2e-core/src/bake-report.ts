@@ -72,12 +72,15 @@ const lockRow = ([fixtureId, digest]: readonly [string, string]): string => `| $
 const doneReport = (done: BakeDone): BakeReport => ({
   packsKey: done.packsKey,
   baked: done.baked,
+  entries: [...done.entries].sort(),
   summary: [
     HEADING,
     '',
-    `\`${bakeStateOf(done)}\`: baked ${done.baked} of ${done.fixtures} fixtures in ${
+    `\`${
+      bakeStateOf(done)
+    }\`: baked ${done.baked} of ${done.fixtures} fixtures, packs key \`${done.packsKey}\`; global setup took ${
       done.seconds.toFixed(1)
-    } s, packs key \`${done.packsKey}\`.`,
+    } s.`,
     '',
     '| Fixture | package-lock.json sha256 |',
     '| --- | --- |',
@@ -92,7 +95,15 @@ const reasonItem = (reason: BakeReason): string => `- \`${reason.code}\`: ${reas
 const failedReport = (failed: BakeFailed): BakeReport => ({
   packsKey: '',
   baked: 0,
-  summary: [HEADING, '', `Failed after ${failed.seconds.toFixed(1)} s.`, '', ...failed.reasons.map(reasonItem), '']
+  entries: [],
+  summary: [
+    HEADING,
+    '',
+    `Global setup failed after ${failed.seconds.toFixed(1)} s.`,
+    '',
+    ...failed.reasons.map(reasonItem),
+    '',
+  ]
     .join('\n'),
   annotations: failed.reasons.map(annotationOf),
 })

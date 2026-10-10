@@ -4,20 +4,15 @@ import * as NodeHttpServer from '@effect/platform-node/NodeHttpServer'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
-import * as HttpServer from 'effect/http/HttpServer'
-import * as HttpServerRequest from 'effect/http/HttpServerRequest'
-import * as HttpServerResponse from 'effect/http/HttpServerResponse'
 import * as Layer from 'effect/Layer'
-import * as NetAddress from 'effect/net/NetAddress'
-import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
-import * as Rec from 'effect/Record'
 import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 
 import { pinnedFieldsOf, REGISTRY_CUTOFF, registryPinsOf } from '@systemfsoftware/stryker-e2e-core'
-import { NpmLockfileJson, PackumentJson, PinnedFixtureManifestJson } from './__fixtures__/npm-closure.schema.js'
+import { type Registry, serveRegistry } from './__fixtures__/local-registry.js'
+import { NpmLockfileJson, PinnedFixtureManifestJson } from './__fixtures__/npm-closure.schema.js'
 
 const Feature = makeFeature({ it })
 
@@ -31,15 +26,6 @@ const PORTS = Layer.mergeAll(
 
 const BEFORE_CUTOFF = '2026-10-01T03:11:28.537Z'
 const AFTER_CUTOFF = '2026-10-10T10:04:06.183Z'
-
-interface PublishedVersion {
-  readonly version: string
-  readonly time: string
-  readonly dependencies?: Readonly<Record<string, string>>
-  readonly peerDependencies?: Readonly<Record<string, string>>
-}
-
-type Registry = Readonly<Record<string, ReadonlyArray<PublishedVersion>>>
 
 const REGISTRY: Registry = {
   effect: [
@@ -89,53 +75,6 @@ const FIXTURE_MANIFEST = {
   devDependencies: { effect: '^4.0.0', 'packed-cli': '^1.0.0' },
 }
 
-const TARBALL_HOST = 'http://registry.invalid/'
-
-const packumentOf = (name: string, published: ReadonlyArray<PublishedVersion>) => ({
-  name,
-  'dist-tags': { latest: published.at(-1)?.version ?? '' },
-  versions: Object.fromEntries(published.map((entry) => [entry.version, {
-    name,
-    version: entry.version,
-    dependencies: entry.dependencies,
-    peerDependencies: entry.peerDependencies,
-    dist: { tarball: `${TARBALL_HOST}${name}/-/${name.replace('/', '-')}-${entry.version}.tgz` },
-  }])),
-  time: Object.fromEntries(published.map((entry) => [entry.version, entry.time])),
-})
-
-const packumentBodiesOf = (registry: Registry) =>
-  Effect.map(
-    Effect.forEach(
-      Object.entries(registry),
-      ([name, published]) =>
-        Effect.map(S.encodeEffect(PackumentJson)(packumentOf(name, published)), (body) => [name, body] as const),
-    ),
-    (bodies) => Object.fromEntries(bodies),
-  )
-
-const registryApp = (bodies: Readonly<Record<string, string>>) =>
-  Effect.map(
-    HttpServerRequest.HttpServerRequest,
-    (request) =>
-      Option.match(Rec.get(bodies, decodeURIComponent(request.url.slice(1))), {
-        onNone: () => HttpServerResponse.empty({ status: 404 }),
-        onSome: (body) => HttpServerResponse.text(body, { contentType: 'application/json' }),
-      }),
-  )
-
-const loopbackUrlOf = (address: NetAddress.SocketAddress) =>
-  NetAddress.isInetAddress(address)
-    ? Effect.succeed(`http://127.0.0.1:${address.port}/`)
-    : Effect.die(`the test registry listens on ${NetAddress.formatSocketAddress(address)}, which npm cannot reach`)
-
-const serveRegistry = (bodies: Readonly<Record<string, string>>) =>
-  Effect.gen(function*() {
-    yield* HttpServer.serveEffect(registryApp(bodies))
-    const server = yield* HttpServer.HttpServer
-    return yield* loopbackUrlOf(server.address)
-  })
-
 const runNpm = (args: ReadonlyArray<string>, cwd: string) =>
   Effect.scoped(Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -151,7 +90,7 @@ const resolveFixture = (published: Registry) =>
   Effect.scoped(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const registry = yield* serveRegistry(yield* packumentBodiesOf(published))
+    const registry = yield* serveRegistry(published)
     const root = yield* fs.makeTempDirectoryScoped({ prefix: 'hermetic-resolution-' })
     const fixture = path.join(root, 'fixture')
     yield* fs.makeDirectory(fixture)
