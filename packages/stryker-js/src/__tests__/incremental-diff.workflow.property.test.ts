@@ -33,12 +33,19 @@ const unreproducedWallClock = (record: PreviousReuseRecord): boolean =>
 const matchingProgramRecordDigest = (record: PreviousReuseRecord, digest: string | undefined): boolean =>
   (record.programDigest ?? '') !== '' && record.programDigest === digest
 
-const carriesReference = (record: PreviousReuseRecord): boolean => record.subsumption !== undefined
+const decodesToAridUncoveredBlock = (statusReason: string): boolean => {
+  const decoded = S.decodeResult(Mutant.IgnoreStatusReason)(statusReason)
+  return Result.isSuccess(decoded) && decoded.success.code === 'arid-uncovered-block'
+}
+
+const decidedFromCurrentRun = (record: PreviousReuseRecord): boolean =>
+  record.subsumption !== undefined ||
+  (record.status === 'Ignored' && decodesToAridUncoveredBlock(record.statusReason))
 
 const remembersWith = (record: PreviousReuseRecord, programDigest: string | undefined): boolean =>
   isReusable(record.status) &&
   !unreproducedWallClock(record) &&
-  !carriesReference(record) &&
+  !decidedFromCurrentRun(record) &&
   (record.status === 'CompileError' ? matchingProgramRecordDigest(record, programDigest) : true)
 
 const remembers = (record: PreviousReuseRecord): boolean => remembersWith(record, record.programDigest)
@@ -48,7 +55,7 @@ const refusalOfTheMatchingCommand = (record: PreviousReuseRecord): string =>
     ? 'programChanged'
     : unreproducedWallClock(record)
     ? 'timeoutUnreproduced'
-    : carriesReference(record)
+    : decidedFromCurrentRun(record)
     ? 'decidedPerRun'
     : 'noPriorRecord'
 
@@ -59,12 +66,12 @@ const subsumedMutantOf = (id: Mutant.MutantId, dominator: Mutant.MutantId): Muta
     subsumption: Mutant.Subsumed.make({ rule: 'complement', dominators: [dominator] }),
   })
 
-const rememberedUnlessReferenced = (
+const rememberedUnlessDecidedFromCurrentRun = (
   record: PreviousReuseRecord,
   decision: IncrementalDiffDecision | undefined,
   remembered: (decision: MutantRemembered) => boolean,
 ): boolean =>
-  decision !== undefined && (carriesReference(record)
+  decision !== undefined && (decidedFromCurrentRun(record)
     ? S.is(MutantToRun)(decision) && decision.refusal === 'decidedPerRun'
     : S.is(MutantRemembered)(decision) && remembered(decision))
 
@@ -155,6 +162,14 @@ const partitionCommandOf = (entries: readonly PartitionEntry[]) =>
     { closureDigestsByMutantId: Object.fromEntries(entries.map((entry) => [entry.id, entry.digest])) },
   )
 
+const ignoredRecordWithReason = (
+  record: PreviousReuseRecord,
+  statusReason: string,
+): PreviousReuseRecord => {
+  const { subsumption: _subsumption, ...rest } = record
+  return { ...rest, status: 'Ignored', statusReason }
+}
+
 describe('incrementalDiff', () => {
   it.prop(
     '∀m_Mutants_≡ForceRunsEveryMutantInOrderNamingNoPriorRecord',
@@ -203,7 +218,11 @@ describe('incrementalDiff', () => {
       const programDigest = 'a'.repeat(64)
       const prior = { ...record, status: 'CompileError' as const, programDigest }
       const decision = onlyDecision(subject(matchingCommandOf(prior)))
-      return rememberedUnlessReferenced(prior, decision, (remembered) => remembered.status === 'CompileError')
+      return rememberedUnlessDecidedFromCurrentRun(
+        prior,
+        decision,
+        (remembered) => remembered.status === 'CompileError',
+      )
     },
   )
 
@@ -238,7 +257,7 @@ describe('incrementalDiff', () => {
         return false
       }
       return reproductions >= 1
-        ? rememberedUnlessReferenced(
+        ? rememberedUnlessDecidedFromCurrentRun(
           prior,
           decision,
           (remembered) =>
@@ -268,12 +287,32 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
+    '∀rgg_RecordGuardAndWitness_≡AnAridUncoveredBlockIgnoredRecordIsNeverRememberedAndRunsAsDecidedPerRun',
+    { of: [PreviousReuseRecordSchema, Mutant.MutantId, Mutant.MutantId], subject: incrementalDiff },
+    (subject, [record, block, witness]) => {
+      const prior = ignoredRecordWithReason(record, Mutant.uncoveredBlockStatusReason({ block, inside: [] }, witness))
+      return runsWithRefusal(subject(matchingCommandOf(prior)), 'decidedPerRun')
+    },
+  )
+
+  it.prop(
+    '∀rs_RecordAndDetail_≡AnIgnoredRecordOfAnyOtherRuleIsRememberedWhenItsKeyMatches',
+    { of: [PreviousReuseRecordSchema, S.String], subject: incrementalDiff },
+    (subject, [record, detail]) => {
+      const prior = ignoredRecordWithReason(record, `arid-logging: ${detail}`)
+      const decision = onlyDecision(subject(matchingCommandOf(prior)))
+      return decision !== undefined && S.is(MutantRemembered)(decision) &&
+        decision.status === 'Ignored' && decision.statusReason === prior.statusReason
+    },
+  )
+
+  it.prop(
     '∀r_Record_≡AHitLimitTimeoutIsRememberedOnFirstSight',
     { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
     (subject, [record]) => {
       const prior = { ...record, status: 'Timeout' as const, timeoutKind: 'hitLimit' as const, reproductions: 0 }
       const decision = onlyDecision(subject(matchingCommandOf(prior)))
-      return rememberedUnlessReferenced(prior, decision, (remembered) => remembered.status === 'Timeout')
+      return rememberedUnlessDecidedFromCurrentRun(prior, decision, (remembered) => remembered.status === 'Timeout')
     },
   )
 

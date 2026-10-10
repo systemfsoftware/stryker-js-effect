@@ -94,12 +94,27 @@ const isUnreproducedWallClockTimeout = (record: PreviousReuseRecord): boolean =>
     ),
   )
 
-const carriesSubsumptionReference = (record: PreviousReuseRecord): boolean => record.subsumption !== undefined
+const decodeIgnoreStatusReason = S.decodeOption(Mutant.IgnoreStatusReason)
+
+const isAridUncoveredBlockReason = (statusReason: string | undefined): boolean =>
+  Option.match(
+    Option.flatMap(Option.fromUndefinedOr(statusReason), decodeIgnoreStatusReason),
+    {
+      onNone: () => false,
+      onSome: (parts) => parts.code === 'arid-uncovered-block',
+    },
+  )
+
+const decidedFromCurrentRun = (record: PreviousReuseRecord): boolean =>
+  Boolean.or(
+    record.subsumption !== undefined,
+    Boolean.and(record.status === 'Ignored', isAridUncoveredBlockReason(record.statusReason)),
+  )
 
 const isReusableRecord = (record: PreviousReuseRecord): boolean =>
   Boolean.and(
     Boolean.and(isReusableStatus(record.status), Boolean.not(isUnreproducedWallClockTimeout(record))),
-    Boolean.not(carriesSubsumptionReference(record)),
+    Boolean.not(decidedFromCurrentRun(record)),
   )
 
 const timeoutEvidenceOf = (record: PreviousReuseRecord): Option.Option<TimeoutEvidence> =>
@@ -315,7 +330,7 @@ const flakyRefusedOf = (
 const decidedPerRun = (mutant: Mutant.Mutant, records: readonly PreviousReuseRecord[]): boolean =>
   Boolean.or(
     mutant.subsumption !== undefined,
-    Option.exists(Arr.last(records), carriesSubsumptionReference),
+    Option.exists(Arr.last(records), decidedFromCurrentRun),
   )
 
 const toRunOf = (

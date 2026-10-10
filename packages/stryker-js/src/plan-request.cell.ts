@@ -23,6 +23,7 @@ import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.j
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
+import { Anchored, placementAnchors, PlacementAnchorsCommand } from './placement-anchors.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
@@ -174,7 +175,7 @@ interface ProjectPlan {
     readonly id: Mutant.MutantId
     readonly costMs: number
     readonly dependsOnDryRun: boolean
-    readonly placementKey?: Mutant.MutantId | undefined
+    readonly anchors?: PlannedMutant['anchors']
   }>
   readonly dryRunCostMs: number
   readonly reuse: ReuseObservation
@@ -219,27 +220,8 @@ const programDigestAtPlanTime = ({
     onFalse: () => Effect.as(Effect.void, undefined),
   })
 
-const subsumedOf = (mutant: Mutant.Mutant): Option.Option<Mutant.Subsumed> =>
-  Option.filter(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed))
-
-const dominatorIdsOf = (mutants: readonly Mutant.Mutant[]): ReadonlySet<Mutant.MutantId> =>
-  new Set(mutants.flatMap((mutant) =>
-    Option.match(subsumedOf(mutant), {
-      onNone: () => [],
-      onSome: (subsumed) => subsumed.dominators,
-    })
-  ))
-
-const placementKeyOf = (
-  dominatorIds: ReadonlySet<Mutant.MutantId>,
-  mutant: Mutant.Mutant,
-): Mutant.MutantId | undefined =>
-  Option.getOrUndefined(
-    Option.orElse(
-      Option.map(subsumedOf(mutant), (subsumed) => subsumed.dominators[0]),
-      () => Option.liftPredicate(mutant.id, (id) => dominatorIds.has(id)),
-    ),
-  )
+const anchorsFieldOf = (anchorsById: Record.ReadonlyRecord<string, Anchored['anchors']>, id: Mutant.MutantId) =>
+  optionalField('anchors', Option.getOrUndefined(Record.get(anchorsById, id)))
 
 const planProject = (
   request: PlanShardsRequest,
@@ -303,19 +285,24 @@ const planProject = (
           () => DEFAULT_MUTANT_COST_MS,
         ),
     })
-    const dominatorIds = dominatorIdsOf(reuse.mutants)
+    const anchors = Record.fromEntries(
+      Result.getOrElse(
+        placementAnchors(PlacementAnchorsCommand.make({ mutants: [...reuse.mutants, ...reuse.rememberedResults] })),
+        (neverError) => neverError,
+      ).filter(S.is(Anchored)).map((anchored) => [anchored.id, anchored.anchors] as const),
+    )
     const mutants = [
       ...reuse.mutants.map((mutant) => ({
         id: mutant.id,
         costMs: costOf(mutant.id, reportCosts, coverage, testCoverage),
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
-        ...optionalField('placementKey', placementKeyOf(dominatorIds, mutant)),
+        ...anchorsFieldOf(anchors, mutant.id),
       })),
       ...reuse.rememberedResults.map((mutant) => ({
         id: mutant.id,
         costMs: 0,
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
-        ...optionalField('placementKey', placementKeyOf(dominatorIds, mutant)),
+        ...anchorsFieldOf(anchors, mutant.id),
       })),
     ]
     return {

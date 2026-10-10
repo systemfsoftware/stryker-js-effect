@@ -20,14 +20,27 @@ export const PlannedMutant = S.Struct({
   id: Mutant.MutantId,
   costMs: CostMs,
   dependsOnDryRun: S.Boolean,
-  placementKey: S.optional(Mutant.MutantId),
+  anchors: S.NonEmptyArray(Mutant.MutantId).pipe(S.optional),
 })
 export type PlannedMutant = typeof PlannedMutant.Type
+
+const plannedPlacementsAreDistinct = S.makeFilter(
+  (mutants: ReadonlyArray<PlannedMutant>): string | undefined =>
+    Option.getOrUndefined(
+      Option.map(
+        Option.fromUndefinedOr(
+          Mutant.duplicatedValue(mutants.map((mutant) => `${mutant.project}\u0000${mutant.id}`)),
+        ),
+        (duplicated) => `planned mutants must be unique by project and id, got "${duplicated}"`,
+      ),
+    ),
+  { arbitraryConstraint: { uniqueBy: (mutant: PlannedMutant) => `${mutant.project}\u0000${mutant.id}` } },
+)
 
 export class PlanShardsCommand extends S.TaggedClass<PlanShardsCommand>()('PlanShardsCommand', {
   targetSeconds: PositiveSeconds,
   maxShards: S.optional(PositiveInt),
-  mutants: S.Array(PlannedMutant),
+  mutants: S.Array(PlannedMutant).check(plannedPlacementsAreDistinct),
   dryRunCosts: S.Record(S.String, CostMs),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -172,23 +185,87 @@ interface PlacementGroup {
   readonly dependsOnDryRun: boolean
 }
 
-const placementKeyOf = (mutant: PlannedMutant): string =>
-  Option.getOrElse(Option.fromUndefinedOr(mutant.placementKey), () => `\u0000${mutant.project}\u0000${mutant.id}`)
+interface AnchorComponent {
+  readonly keys: ReadonlyArray<string>
+  readonly mutants: ReadonlyArray<PlannedMutant>
+}
 
-const projectOfGroup = (members: ReadonlyArray<PlannedMutant>): string =>
-  Option.match(Arr.head(members), { onNone: () => '', onSome: (head) => head.project })
+const anchorKeysOf = (mutant: PlannedMutant): ReadonlyArray<string> => [
+  mutant.id,
+  ...Option.getOrElse(
+    Option.fromUndefinedOr(mutant.anchors),
+    (): ReadonlyArray<Mutant.MutantId> => [],
+  ),
+]
+
+const anchorComponentOf = (mutant: PlannedMutant): AnchorComponent => ({
+  keys: anchorKeysOf(mutant),
+  mutants: [mutant],
+})
+
+const sharesAnchorKey = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean =>
+  left.some((key) => right.includes(key))
+
+const unionAnchorComponents = (left: AnchorComponent, right: AnchorComponent): AnchorComponent => ({
+  keys: Arr.dedupe([...left.keys, ...right.keys]),
+  mutants: [...left.mutants, ...right.mutants],
+})
+
+const absorbAnchorComponent = (
+  components: ReadonlyArray<AnchorComponent>,
+  component: AnchorComponent,
+): ReadonlyArray<AnchorComponent> =>
+  Option.match(
+    Arr.findFirstIndex(components, (existing) => sharesAnchorKey(existing.keys, component.keys)),
+    {
+      onNone: () => [...components, component],
+      onSome: (index) =>
+        components.map((existing, at) =>
+          Boolean.match(at === index, {
+            onTrue: () => unionAnchorComponents(existing, component),
+            onFalse: () => existing,
+          })
+        ),
+    },
+  )
+
+const mergeAnchorComponents = (components: ReadonlyArray<AnchorComponent>): ReadonlyArray<AnchorComponent> =>
+  components.reduce<ReadonlyArray<AnchorComponent>>(absorbAnchorComponent, [])
+
+const anchorComponentsToFixpoint = (components: ReadonlyArray<AnchorComponent>): ReadonlyArray<AnchorComponent> => {
+  const merged = mergeAnchorComponents(components)
+  return Boolean.match(merged.length === components.length, {
+    onTrue: () => components,
+    onFalse: () => anchorComponentsToFixpoint(merged),
+  })
+}
+
+const hasAnchors = (mutant: PlannedMutant): boolean => Option.isSome(Option.fromUndefinedOr(mutant.anchors))
+
+const componentsOfProject = (projectMutants: ReadonlyArray<PlannedMutant>): ReadonlyArray<AnchorComponent> =>
+  Boolean.match(projectMutants.some(hasAnchors), {
+    onTrue: () => anchorComponentsToFixpoint(projectMutants.map(anchorComponentOf)),
+    onFalse: () => projectMutants.map(anchorComponentOf),
+  })
+
+const groupOfComponent = (project: string, component: AnchorComponent): PlacementGroup => {
+  const sorted = [...component.mutants].sort(compareProjectThenId)
+  return {
+    key: Option.match(Arr.head(sorted), {
+      onNone: () => '',
+      onSome: (head) => `\u0000${head.project}\u0000${head.id}`,
+    }),
+    project,
+    mutants: sorted,
+    costMs: totalCostMsOf(sorted),
+    dependsOnDryRun: sorted.some((mutant) => mutant.dependsOnDryRun),
+  }
+}
 
 const placementGroupsOf = (mutants: ReadonlyArray<PlannedMutant>): ReadonlyArray<PlacementGroup> =>
-  Record.toEntries(Arr.groupBy(mutants, placementKeyOf)).map(([key, members]) => {
-    const sorted = [...members].sort(compareProjectThenId)
-    return {
-      key,
-      project: projectOfGroup(sorted),
-      mutants: sorted,
-      costMs: totalCostMsOf(sorted),
-      dependsOnDryRun: sorted.some((mutant) => mutant.dependsOnDryRun),
-    }
-  })
+  Record.toEntries(Arr.groupBy(mutants, (mutant) => mutant.project)).flatMap(([project, projectMutants]) =>
+    componentsOfProject(projectMutants).map((component) => groupOfComponent(project, component))
+  )
 
 const compareGroupsCostliestFirst = (left: PlacementGroup, right: PlacementGroup): number =>
   Boolean.match(left.costMs === right.costMs, {

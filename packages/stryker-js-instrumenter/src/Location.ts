@@ -2,6 +2,7 @@ import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type { LineStarts, Offset, ScriptOrigin, Span } from './Location.schema.js'
 import { ScriptOrigin as ScriptOriginSchema } from './Location.schema.js'
@@ -78,4 +79,34 @@ export const offsetAt: {
         onSome: (next) => Option.liftPredicate(offset, (candidate) => candidate < next),
       })
     }),
+)
+
+/**
+ * The node span (`source`) is a 1-based position inside the embedded script;
+ * the region origin (`offset`) is where that script begins in its host file.
+ * The region's first line carries its column shift, later lines start at
+ * column 1, so the shift adds `offset.line - 1` lines and — only when the node
+ * sits on the region's first line — `offset.columnShift`.
+ */
+const columnOffsetOf = (source: Mutant.Position, offset: ScriptOrigin): number =>
+  Match.value(source.line === 1).pipe(
+    Match.when(true, () => offset.columnShift),
+    Match.when(false, () => 0),
+    Match.exhaustive,
+  )
+
+const shiftedPosition = (source: Mutant.Position, offset: ScriptOrigin): Mutant.Position => ({
+  column: source.column + columnOffsetOf(source, offset),
+  line: source.line + offset.line - 1,
+})
+
+export const shiftedLocation: {
+  (location: Mutant.Location, offset: ScriptOrigin): Mutant.Location
+  (offset: ScriptOrigin): (location: Mutant.Location) => Mutant.Location
+} = dual(
+  2,
+  (location: Mutant.Location, offset: ScriptOrigin): Mutant.Location => ({
+    start: shiftedPosition(location.start, offset),
+    end: shiftedPosition(location.end, offset),
+  }),
 )

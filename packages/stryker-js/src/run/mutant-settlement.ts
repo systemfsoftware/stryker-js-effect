@@ -52,6 +52,13 @@ import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { originalFileFor } from '../Sandbox.handle.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
+import {
+  BlockSettlement,
+  HeldGuard,
+  uncoveredBlock,
+  UncoveredBlockCommand,
+  type UncoveredBlockRuling,
+} from '../uncovered-block.workflow.js'
 import type { TestBasis } from './dry-run.cell.js'
 import { type IncrementalReuse, readIncrementalReuse } from './incremental-reuse.cell.js'
 import { optionalField } from './incremental-reuse.js'
@@ -62,7 +69,12 @@ import {
   reportingInputOf,
   type RunContext,
 } from './mutant-run.js'
-import { draftMutationTestPlan, type HeldSubsumedPlan, type MutationTestPlan } from './mutation-test-plan.cell.js'
+import {
+  draftMutationTestPlan,
+  type HeldGuardPlan,
+  type HeldSubsumedPlan,
+  type MutationTestPlan,
+} from './mutation-test-plan.cell.js'
 import { inPlannedOrder, toReportedMutant } from './mutation-test-plan.js'
 import type { PhaseClock } from './phase-clock.service.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
@@ -206,6 +218,37 @@ const subsumptionRulingsOf = (
     (error) => absurd<ReadonlyArray<SubsumptionRuling>>(error),
   )
 
+const blockSettlementsOf = (results: readonly Mutant.RunMutantResult[]): BlockSettlement[] =>
+  results.map((result) => BlockSettlement.make({ id: result.id, status: result.status }))
+
+const uncoveredBlockRulingsOf = (
+  plan: MutationTestPlan,
+  settlements: BlockSettlement[],
+): ReadonlyArray<UncoveredBlockRuling> =>
+  Result.getOrElse(
+    uncoveredBlock(
+      UncoveredBlockCommand.make({
+        held: plan.heldGuards.map((entry) => HeldGuard.make({ id: entry.plan.mutant.id, guard: entry.guard })),
+        settlements,
+      }),
+    ),
+    (error) => absurd<ReadonlyArray<UncoveredBlockRuling>>(error),
+  )
+
+const guardDispositionOf = (
+  [entry, ruling]: readonly [HeldGuardPlan, UncoveredBlockRuling],
+): Result.Result<Mutant.RunPlan, Mutant.RunMutantResult> =>
+  Match.value(ruling).pipe(
+    Match.tag('BlockUncovered', (uncovered) =>
+      Result.fail<Mutant.RunMutantResult>({
+        ...entry.plan.mutant,
+        status: 'Ignored',
+        statusReason: Mutant.uncoveredBlockStatusReason(entry.guard, uncovered.noCoverage),
+      })),
+    Match.tag('GuardKept', () => Result.succeed(entry.plan)),
+    Match.exhaustive,
+  )
+
 export interface Checkers {
   readonly releaseInBackground: Effect.Effect<Fiber.Fiber<void>, never, Scope.Scope>
   readonly handle: Option.Option<CheckerPoolHandle>
@@ -290,7 +333,8 @@ const announceMutationTestPlan = Effect.fnUntraced(function*(basis: TestBasis, p
   yield* Queue.offer(
     yield* RunEvents,
     RunEvent.PlanKnown.make({
-      total: plan.plansForReporter.length + plan.earlyResults.length + plan.heldSubsumed.length,
+      total: plan.plansForReporter.length + plan.earlyResults.length + plan.heldSubsumed.length +
+        plan.heldGuards.length,
       shardPlan: null,
     }),
   )
@@ -302,7 +346,7 @@ export interface Settlement<Passed extends Mutant.MutantRunPlan, E> {
   readonly reuse: IncrementalReuse
   readonly plan: MutationTestPlan
   readonly checkedPlans: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash, PhaseClock>
-  readonly checkReadmitted: (
+  readonly checkHeld: (
     plans: readonly Mutant.RunPlan[],
   ) => Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash, PhaseClock>
   readonly closureDigestsByMutantId: Record<string, string>
@@ -399,11 +443,25 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
       Arr.map(Arr.zip(plan.heldSubsumed, rulings), heldDispositionOf),
     )
     const stillSubsumedResults = yield* Effect.forEach(stillSubsumed, (result) => settleChecked(result, 0))
-    const readmittedResults = yield* Boolean.match(Arr.isArrayEmpty(readmittedPlans), {
+    const [keptGuardPlans, suppressedGuards] = Arr.separate(
+      Arr.map(
+        Arr.zip(
+          plan.heldGuards,
+          uncoveredBlockRulingsOf(
+            plan,
+            blockSettlementsOf([...rememberedResults, ...plan.earlyResults, ...checkedResults]),
+          ),
+        ),
+        guardDispositionOf,
+      ),
+    )
+    const suppressedGuardResults = yield* Effect.forEach(suppressedGuards, (result) => settleChecked(result, 0))
+    const secondPassPlans = [...readmittedPlans, ...keptGuardPlans]
+    const secondPassResults = yield* Boolean.match(Arr.isArrayEmpty(secondPassPlans), {
       onTrue: () => Effect.succeed<Mutant.RunMutantResult[]>([]),
-      onFalse: () => runChecked(settlement.checkReadmitted(readmittedPlans)),
+      onFalse: () => runChecked(settlement.checkHeld(secondPassPlans)),
     })
-    return [...checkedResults, ...stillSubsumedResults, ...readmittedResults]
+    return [...checkedResults, ...stillSubsumedResults, ...suppressedGuardResults, ...secondPassResults]
   }))
   const checkerRelease = yield* settlement.checkers.releaseInBackground
   const allResults = inPlannedOrder({

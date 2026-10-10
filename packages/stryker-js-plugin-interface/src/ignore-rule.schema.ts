@@ -20,6 +20,7 @@ const RULE_IDS = [
   'arid-time',
   'arid-config-default',
   'arid-memoization',
+  'arid-uncovered-block',
   'redundant-relational',
   'equivalent-to-original',
   'duplicate-at-site',
@@ -38,6 +39,8 @@ const RULE_DOCUMENTATION: SlashFreeCodeDocumentation<(typeof RULE_IDS)[number]> 
   'arid-time': `The mutant sits in a time or schedule value (Duration, Schedule, Date.now). ${KEEP_ALL}`,
   'arid-config-default': `The mutant sits in a config default (Config.withDefault). ${KEEP_ALL}`,
   'arid-memoization': `The mutant sits in a memoization wrapper (Effect.cached*). ${KEEP_ALL}`,
+  'arid-uncovered-block':
+    `The mutant sits in the condition of an \`if\` whose block no test ran, and that block's own NoCoverage mutants already report the test gap. Decided only under \`coverageAnalysis: 'perTest'\`. ${KEEP_ALL}`,
   'redundant-relational': `Another mutant at the same relational operator already covers this one. ${KEEP_ALL}`,
   'equivalent-to-original':
     `The mutant behaves exactly like the original code, so no test can kill it. ${KEEP_ALL} With detail \`tce\`, the TypeScript checker compiled it to the original's output; remove that checker from \`checkers\` to keep it.`,

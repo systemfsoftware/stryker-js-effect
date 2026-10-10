@@ -30,6 +30,7 @@ import {
   identifier,
   type IdentifierName,
   type IdentifierReference,
+  type IfStatement,
   ifStatement,
   isExpressionKind,
   isStatementKind,
@@ -58,6 +59,12 @@ import { foldRule, FoldRuleCommand, type MutantRule } from './directives/fold-ru
 import { errorTextOf as renderedErrorText } from './error-text.js'
 import type { FormatRegistry } from './Format.schema.js'
 import {
+  guardRelation,
+  GuardRelationCommand,
+  type GuardRelationDecision,
+  type GuardSite,
+} from './guard-relation.workflow.js'
+import {
   MutantsUnapplied,
   MutantsUnplaced,
   type MutateDescription,
@@ -67,8 +74,8 @@ import {
 } from './Instrument.schema.js'
 import { InstrumentError } from './Instrument.schema.js'
 import { COVER_MUTANT_HELPER, IS_MUTANT_ACTIVE_HELPER, placeHeaderIfNeeded } from './InstrumentHeader.js'
-import { lineStartsOf, locationOf, positionAt } from './Location.js'
-import type { LineStarts, ScriptOrigin } from './Location.schema.js'
+import { lineStartsOf, locationOf, positionAt, shiftedLocation } from './Location.js'
+import type { LineStarts, ScriptOrigin, Span } from './Location.schema.js'
 import { mutantIdOf, type MutantTuple, mutantTupleKey } from './MutantIdentity.js'
 import {
   applyMutant,
@@ -748,6 +755,7 @@ interface InstrumentationPlan {
   readonly placements: readonly PlannedPlacement[]
   readonly warnings: readonly string[]
   readonly hasLiveMutants: boolean
+  readonly guardSites: readonly GuardSite[]
 }
 
 interface PlacementContext {
@@ -771,6 +779,7 @@ interface FoldState {
   readonly claims: readonly ClaimedSite[]
   readonly placements: readonly PlannedPlacement[]
   readonly hasLiveMutants: boolean
+  readonly guardSites: readonly GuardSite[]
 }
 
 const initialFoldState = (): FoldState => ({
@@ -780,6 +789,7 @@ const initialFoldState = (): FoldState => ({
   claims: [],
   placements: [],
   hasLiveMutants: false,
+  guardSites: [],
 })
 
 const framesUpward = (frame: NodeFrame): readonly NodeFrame[] => [frame, ...framesAbove(frame)]
@@ -1010,6 +1020,45 @@ const locationOfNode = (
       onNone: () => Result.fail(NodeWithoutSpan.make({ fileName: context.fileName })),
       onSome: Result.succeed,
     },
+  )
+
+const spanOfOption = (node: Node): Option.Option<Span> => Option.fromNullishOr(spanOf(node))
+
+const blockConsequentOf = (statement: IfStatement): Option.Option<Statement> =>
+  Option.filter(Option.some(statement.consequent), (consequent) => nodeType(consequent) === 'BlockStatement')
+
+const alternateSpanOf = (statement: IfStatement): Option.Option<Option.Option<Span>> =>
+  Option.match(Option.fromNullishOr(statement.alternate), {
+    onNone: () => Option.some(Option.none()),
+    onSome: (alternate) => Option.map(spanOfOption(alternate), Option.some),
+  })
+
+const guardSiteOf = (frame: NodeFrame, context: PlacementContext): Option.Option<GuardSite> =>
+  Option.flatMap(
+    Option.filter(Option.some(frame.node), (node): node is IfStatement => node.type === 'IfStatement'),
+    (statement) =>
+      Option.flatMap(
+        blockConsequentOf(statement),
+        (block) =>
+          Option.map(
+            Option.all({
+              test: spanOfOption(statement.test),
+              block: spanOfOption(block),
+              alternate: alternateSpanOf(statement),
+            }),
+            (spans): GuardSite => {
+              const locate = (span: Span) => shiftedLocation(locationOf(context.lineStarts, span), context.offset)
+              return {
+                test: locate(spans.test),
+                block: locate(spans.block),
+                ...Option.match(spans.alternate, {
+                  onNone: () => ({}),
+                  onSome: (span) => ({ alternate: locate(span) }),
+                }),
+              }
+            },
+          ),
+      ),
   )
 
 const refusedPlacement = (
@@ -1277,9 +1326,16 @@ const foldPlacements = (
   Result.flatMap(locationOfNode(frame, context), (location) => {
     const directives = directivesOf(frame.node, location.start.line)
     const ruled: FoldState = { ...state, directiveRule: directives.reduce(foldInto, state.directiveRule) }
+    const withGuardSites: FoldState = {
+      ...ruled,
+      guardSites: Option.match(guardSiteOf(frame, context), {
+        onNone: () => ruled.guardSites,
+        onSome: (site) => [...ruled.guardSites, site],
+      }),
+    }
     return Match.value(shouldSkipNode(frame, location, context.mutateDescription)).pipe(
-      Match.when(true, () => Result.succeed(ruled)),
-      Match.when(false, () => visitFrame(frame, directives, location, ruled, context)),
+      Match.when(true, () => Result.succeed(withGuardSites)),
+      Match.when(false, () => visitFrame(frame, directives, location, withGuardSites, context)),
       Match.exhaustive,
     )
   })
@@ -1295,8 +1351,36 @@ const planInstrumentation = (
       placements: state.placements,
       warnings: state.warnings,
       hasLiveMutants: state.hasLiveMutants,
+      guardSites: state.guardSites,
     }),
   )
+
+const guardIndexOf = (
+  decisions: readonly GuardRelationDecision[],
+): ReadonlyMap<ApiMutant.MutantId, ApiMutant.Guard> =>
+  new Map(
+    decisions.flatMap((decision) =>
+      Match.value(decision).pipe(
+        Match.tag(
+          'GuardedByBlock',
+          (guarded): readonly (readonly [ApiMutant.MutantId, ApiMutant.Guard])[] => [[guarded.id, guarded.guard]],
+        ),
+        Match.tag('Guardless', () => []),
+        Match.exhaustive,
+      )
+    ),
+  )
+
+const guardOf = (
+  index: ReadonlyMap<ApiMutant.MutantId, ApiMutant.Guard>,
+  id: ApiMutant.MutantId,
+): ApiMutant.Guard | undefined => index.get(id)
+
+const withGuard = (mutant: Mutant, guard: ApiMutant.Guard | undefined): Mutant =>
+  Option.match(Option.fromUndefinedOr(guard), {
+    onNone: () => mutant,
+    onSome: (assigned) => ({ ...mutant, guard: assigned }),
+  })
 
 const applyOnePlacement = (
   placement: PlannedPlacement,
@@ -1414,7 +1498,19 @@ const transformScriptDataFirst: AstTransformer<ScriptAst> = Effect.fn(
       Match.orElse((succeeded) => Effect.succeed(succeeded.success)),
     )
 
-    mutantCollector.append(plan.mutants)
+    const guards = guardRelation(
+      GuardRelationCommand.make({
+        policy: context.mutantSetPolicy,
+        sites: plan.guardSites,
+        mutants: plan.mutants.map((mutant) => ({
+          id: mutant.id,
+          mutatorName: mutant.mutatorName,
+          location: mutant.location,
+        })),
+      }),
+    )
+    const guardsById = guardIndexOf(Result.getOrElse(guards, (neverError) => neverError))
+    mutantCollector.append(plan.mutants.map((mutant) => withGuard(mutant, guardOf(guardsById, mutant.id))))
     yield* applyPlan(root, plan, context)
     yield* placeHeaderIfNeeded(plan.hasLiveMutants, options, root)
 
