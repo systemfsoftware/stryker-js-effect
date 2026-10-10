@@ -336,7 +336,6 @@ jobs:
       OTEL_ENABLED: "true"
       OTEL_SERVICE_NAME: stryker-js-ci
       OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
-      TURBO_RUN_SUMMARY: "true"
       CHECKER_SPLIT: 'stryker\.(?:references|preservation)\.config'
     steps:
       - name: Record the job start
@@ -382,6 +381,8 @@ jobs:
           restore-keys: |
             turbo-${{ runner.os }}-dist-
       - name: Build the packed packages under check's Turbo hashes (no pass-through args)
+        env:
+          TURBO_RUN_SUMMARY: "true"
         run: pnpm exec turbo run build --filter=@systemfsoftware/stryker-e2e^...
       - id: lgtm
         name: Wait for LGTM
@@ -465,7 +466,7 @@ jobs:
           build="no Turbo run summary was written"
           if (( ${#runs[@]} )); then
             build=$(jq -rs '
-              [.[].tasks[] | select(.command != "<NONEXISTENT>" and .task != "test:e2e")] as $tasks
+              [.[].tasks[] | select(.command != "<NONEXISTENT>")] as $tasks
               | [$tasks[] | select(.cache.status != "HIT") | "`\(.taskId)`"] as $missed
               | "\(($tasks | length) - ($missed | length)) cached / \($tasks | length) total"
                 + (if ($missed | length) > 0 then "; missed: \($missed | join(", "))" else "" end)
