@@ -35,6 +35,8 @@ export {
   MutantRunOptionsSchema,
   MutantStatusSchema,
   MutatorName,
+  ReadmitCauseCode,
+  Readmitted,
   Redundancy,
   redundancyStatusReason,
   RememberedStatusSchema,

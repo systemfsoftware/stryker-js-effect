@@ -84,6 +84,25 @@ export const redundancyStatusReason = (redundancy: Redundancy): string =>
   })
 
 /**
+ * Why a subsumed mutant ran after all: none of its dominators ran, and each
+ * cause names one dominator and why it did not run, in `dominators` order.
+ */
+export const ReadmitCauseCode = S.Literals([
+  'dominator-ignored-at-check',
+  'dominator-compile-error',
+  'dominator-ignored-at-plan',
+  'dominator-remembered-without-running',
+  'dominator-unsettled',
+])
+export type ReadmitCauseCode = typeof ReadmitCauseCode.Type
+
+export const Readmitted = S.TaggedStruct('Readmitted', {
+  rule: Subsumed.fields.rule,
+  causes: S.NonEmptyArray(S.Struct({ dominator: MutantId, code: ReadmitCauseCode, detail: S.String })),
+})
+export type Readmitted = typeof Readmitted.Type
+
+/**
  * A mutant's file location in the mutation-testing-report-schema contract:
  * 1-based line and 1-based column, the same base the JSON report and the
  * machine stream emit. Every producer on the instrument path (node spans,
@@ -102,6 +121,7 @@ export const Mutant = S.TaggedStruct('Mutant', {
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
   redundancy: S.optional(Redundancy),
+  readmission: S.optional(Readmitted),
 }).check(
   S.makeFilter(
     (mutant) => mutant.statusReason === undefined || mutant.status !== undefined,
@@ -110,6 +130,10 @@ export const Mutant = S.TaggedStruct('Mutant', {
   S.makeFilter(
     (mutant) => mutant.redundancy === undefined || mutant.status === 'Ignored',
     { message: 'a mutant carries a redundancy reference only when it is Ignored' },
+  ),
+  S.makeFilter(
+    (mutant) => mutant.readmission === undefined || (mutant.redundancy === undefined && mutant.status !== 'Ignored'),
+    { message: 'a re-admitted mutant ran, so it carries no redundancy reference and is not Ignored' },
   ),
 )
 export type Mutant = typeof Mutant.Type
