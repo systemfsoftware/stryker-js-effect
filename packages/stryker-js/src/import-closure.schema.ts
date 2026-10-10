@@ -33,10 +33,89 @@ export type ExportEntry = typeof ExportEntrySchema.Type
 
 export const PackageManifestSchema = S.Struct({
   exports: S.optionalKey(S.Union([S.String, S.Record(S.String, ExportEntrySchema)])),
+  imports: S.optionalKey(S.Record(S.String, ExportEntrySchema)),
   main: S.optionalKey(S.String),
   module: S.optionalKey(S.String),
 })
 export type PackageManifest = typeof PackageManifestSchema.Type
+
+const ModuleSpecifierKindTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ModuleSpecifierKind')
+type ModuleSpecifierKindTypeId = typeof ModuleSpecifierKindTypeId
+
+export class ClassifyModuleSpecifierCommand
+  extends S.TaggedClass<ClassifyModuleSpecifierCommand>()('ClassifyModuleSpecifierCommand', {
+    specifier: S.String,
+    builtins: S.Array(S.String),
+  })
+{
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export class PathSpecifier extends S.TaggedClass<PathSpecifier>()('PathSpecifier', { specifier: S.String }) {
+  readonly [ModuleSpecifierKindTypeId] = ModuleSpecifierKindTypeId
+}
+
+export class SubpathImportSpecifier
+  extends S.TaggedClass<SubpathImportSpecifier>()('SubpathImportSpecifier', { specifier: S.String })
+{
+  readonly [ModuleSpecifierKindTypeId] = ModuleSpecifierKindTypeId
+}
+
+export class BuiltinSpecifier extends S.TaggedClass<BuiltinSpecifier>()('BuiltinSpecifier', { specifier: S.String }) {
+  readonly [ModuleSpecifierKindTypeId] = ModuleSpecifierKindTypeId
+}
+
+export class PackageSpecifier extends S.TaggedClass<PackageSpecifier>()('PackageSpecifier', {
+  packageName: S.String,
+  subpath: S.String,
+}) {
+  readonly [ModuleSpecifierKindTypeId] = ModuleSpecifierKindTypeId
+}
+
+export const ModuleSpecifierKindSchema = S.Union([
+  PathSpecifier,
+  SubpathImportSpecifier,
+  BuiltinSpecifier,
+  PackageSpecifier,
+])
+export type ModuleSpecifierKind = typeof ModuleSpecifierKindSchema.Type
+
+export class PackageExportRequest
+  extends S.TaggedClass<PackageExportRequest>()('PackageExportRequest', { subpath: S.String })
+{}
+
+export class PackageImportRequest
+  extends S.TaggedClass<PackageImportRequest>()('PackageImportRequest', { specifier: S.String })
+{}
+
+const ManifestTargetTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ManifestTarget')
+type ManifestTargetTypeId = typeof ManifestTargetTypeId
+
+export class ManifestTargetCommand extends S.TaggedClass<ManifestTargetCommand>()('ManifestTargetCommand', {
+  manifest: PackageManifestSchema,
+  request: S.Union([PackageExportRequest, PackageImportRequest]),
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export class ManifestPathTarget
+  extends S.TaggedClass<ManifestPathTarget>()('ManifestPathTarget', { target: S.String })
+{
+  readonly [ManifestTargetTypeId] = ManifestTargetTypeId
+}
+
+export class ManifestPackageTarget
+  extends S.TaggedClass<ManifestPackageTarget>()('ManifestPackageTarget', { specifier: S.String })
+{
+  readonly [ManifestTargetTypeId] = ManifestTargetTypeId
+}
+
+export class ManifestTargetMissing extends S.TaggedClass<ManifestTargetMissing>()('ManifestTargetMissing', {}) {
+  readonly [ManifestTargetTypeId] = ManifestTargetTypeId
+}
+
+export const ManifestTargetSchema = S.Union([ManifestPathTarget, ManifestPackageTarget, ManifestTargetMissing])
+export type ManifestTarget = typeof ManifestTargetSchema.Type
 
 export const ScriptLanguageSchema = S.Literals(['js', 'jsx', 'ts', 'tsx'])
 export type ScriptLanguage = typeof ScriptLanguageSchema.Type

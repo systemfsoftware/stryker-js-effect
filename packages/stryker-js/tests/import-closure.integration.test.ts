@@ -290,6 +290,44 @@ const WORKSPACE_LINK: FixtureSpec = {
 const vitestStubAt = (prefix: string): FixtureFiles =>
   Object.fromEntries(Object.entries(VITEST_STUB).map(([file, content]) => [`${prefix}/${file}`, content]))
 
+const SUBPATH_IMPORTS: FixtureSpec = {
+  files: {
+    'package.json': JSON.stringify({
+      name: '@fixture/selfhosted',
+      type: 'module',
+      imports: {
+        '#server/healthcheck': {
+          '@systemfsoftware/source': './src/server/healthcheck.ts',
+          default: './dist/server/healthcheck.js',
+        },
+      },
+    }),
+    'src/server/healthcheck.ts':
+      "import { existsSync } from 'fs'\nimport { loopback } from '../loopback.js'\nexport const healthcheck = () => existsSync('.') && loopback()\n",
+    'src/loopback.ts':
+      "import { createServer } from 'node:http'\nexport const loopback = () => createServer() !== null\n",
+    'src/unrelated.schema.ts': 'export const unrelated = 1\n',
+    'test/healthcheck.test.ts':
+      "import { test } from 'vitest'\nimport { healthcheck } from '#server/healthcheck'\ntest('healthcheck', () => { healthcheck })\n",
+  },
+  testFiles: ['test/healthcheck.test.ts'],
+  changed: { 'src/unrelated.schema.ts': 'export const unrelated = 2\n' },
+}
+
+const UNMAPPED_SUBPATH_IMPORT: FixtureSpec = {
+  files: {
+    'package.json': JSON.stringify({
+      name: '@fixture/selfhosted',
+      type: 'module',
+      imports: { '#other': './src/other.ts' },
+    }),
+    'src/other.ts': 'export const other = 1\n',
+    'test/missing.test.ts':
+      "import { test } from 'vitest'\nimport { missing } from '#server/missing'\ntest('missing', () => { missing })\n",
+  },
+  testFiles: ['test/missing.test.ts'],
+}
+
 const SIBLING_LINK: FixtureSpec = {
   files: {
     ...vitestStubAt('app'),
@@ -587,6 +625,53 @@ Feature('Mapping a test file to the import closure it can reach')
               open: openOf(s.observation.before, 'test/link.test.ts'),
             }).toEqual({ sourceConditionLink: true, mainFieldLink: true, outsideNodeModules: true, open: false })
           },
+        ),
+      ),
+    )
+
+    scenario(
+      'A subpath import and node builtins close the closure, so an unrelated change leaves its digest still',
+      Gherkin.Do.pipe(
+        Given(
+          'a project whose test file imports "#server/healthcheck" through its package.json imports, whose sources import node:http and fs',
+        )(
+          'root',
+          () => writeFixture(SUBPATH_IMPORTS),
+        ),
+        When('the closure is analyzed before and after a file nothing imports changes')(
+          'observation',
+          (s) => observe(s.root, SUBPATH_IMPORTS).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then(
+          'the closure is closed over the test file, the source-condition target and its import, and its digest stands still',
+        )(
+          (s, expect) =>
+            expect({
+              files: filesOf(s.observation.before, 'test/healthcheck.test.ts'),
+              open: openOf(s.observation.before, 'test/healthcheck.test.ts'),
+              digestMoved: digestMoved(s.observation, 'test/healthcheck.test.ts'),
+            }).toEqual({
+              files: ['src/loopback.ts', 'src/server/healthcheck.ts', 'test/healthcheck.test.ts'],
+              open: false,
+              digestMoved: false,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A subpath import the nearest package.json does not map keeps the closure open',
+      Gherkin.Do.pipe(
+        Given('a project whose test file imports "#server/missing" while its package.json maps only "#other"')(
+          'root',
+          () => writeFixture(UNMAPPED_SUBPATH_IMPORT),
+        ),
+        When('the closure of that test file is analyzed')(
+          'observation',
+          (s) => observe(s.root, UNMAPPED_SUBPATH_IMPORT).pipe(Effect.ensuring(removeDirectory(s.root))),
+        ),
+        Then('the closure is open')((s, expect) =>
+          expect({ open: openOf(s.observation.before, 'test/missing.test.ts') }).toEqual({ open: true })
         ),
       ),
     )

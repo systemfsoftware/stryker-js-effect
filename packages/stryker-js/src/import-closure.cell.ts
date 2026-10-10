@@ -4,28 +4,37 @@ import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashSet from 'effect/HashSet'
+import * as Match from 'effect/Match'
 import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
-import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { classifyModuleSpecifier } from './classify-module-specifier.workflow.js'
 import { extractModuleSpecifiers } from './extract-module-specifiers.workflow.js'
 import { relativeNormalizedFileName } from './FileMatcher.js'
 import {
-  type ExportEntry,
+  ClassifyModuleSpecifierCommand,
   ExtractModuleSpecifiersCommand,
   ImportClosureCommand,
   type ImportClosureModule,
+  type ManifestTarget,
+  ManifestTargetCommand,
+  ManifestTargetMissing,
+  type ModuleSpecifierKind,
   ModuleSpecifiersOpen,
+  PackageExportRequest,
+  PackageImportRequest,
   type PackageManifest,
   PackageManifestSchema,
+  type PackageSpecifier,
   type ScriptLanguage,
   type TestFileClosure,
 } from './import-closure.schema.js'
 import { importClosure } from './import-closure.workflow.js'
+import { selectManifestTarget } from './select-manifest-target.workflow.js'
 import { SourceParser } from './source-parser.service.js'
 import { packageManifestInputOf } from './verdict-semantics.js'
 
@@ -90,11 +99,9 @@ interface ResolveInput {
 
 const CONCURRENCY = 24
 
-const PACKAGE_SOURCE_CONDITION = '@systemfsoftware/source'
+const PACKAGE_MANIFEST_FILE = 'package.json'
 
-const DEFAULT_ENTRY_KEY = '.'
-
-const WILDCARD_ENTRY_KEY = './*'
+const BUILTIN_MODULES: readonly string[] = globalThis.process.getBuiltinModule('node:module').builtinModules
 
 const SCRIPT_LANGUAGES: Readonly<Record<string, ScriptLanguage>> = {
   '.cjs': 'js',
@@ -219,11 +226,7 @@ const joinSpecifier = (fromDirectory: string, specifier: string): string => {
 
 const directoryOf = (key: string): string => key.split('/').slice(0, -1).join('/')
 
-const isRelativeSpecifier = (specifier: string): boolean => specifier.startsWith('.')
-
 const isRootSpecifier = (specifier: string): boolean => specifier.startsWith('/')
-
-const isPathSpecifier = (specifier: string): boolean => isRelativeSpecifier(specifier) || isRootSpecifier(specifier)
 
 const pathSpecifierKey = (input: ResolveInput): string =>
   isRootSpecifier(input.specifier)
@@ -274,21 +277,12 @@ const resolvePathSpecifier = Effect.fnUntraced(function*(input: ResolveInput) {
   return yield* memberResolutionOf(input, pathSpecifierKey(input))
 })
 
-const packageNameOf = (specifier: string): string => {
-  const segments = specifier.split('/')
-  return specifier.startsWith('@')
-    ? segments.slice(0, 2).join('/')
-    : Option.getOrElse(Option.fromNullishOr(segments[0]), () => '')
-}
-
-const subpathOf = (specifier: string): string => specifier.slice(packageNameOf(specifier).length + 1)
-
 const ancestorsOf = (path: Path.Path, directory: string): readonly string[] =>
   path.dirname(directory) === directory ? [directory] : [directory, ...ancestorsOf(path, path.dirname(directory))]
 
-const packageCandidatesOf = (path: Path.Path, input: ResolveInput): readonly string[] =>
+const packageCandidatesOf = (path: Path.Path, input: ResolveInput, packageName: string): readonly string[] =>
   ancestorsOf(path, path.resolve(input.realRoot, directoryOf(input.key))).map((directory) =>
-    path.join(directory, 'node_modules', packageNameOf(input.specifier))
+    path.join(directory, 'node_modules', packageName)
   )
 
 const existingFlagsOf = Effect.fnUntraced(function*(realRoot: string, candidates: readonly string[]) {
@@ -297,8 +291,8 @@ const existingFlagsOf = Effect.fnUntraced(function*(realRoot: string, candidates
   return yield* Effect.forEach(candidates, (candidate) => fs.exists(path.resolve(realRoot, candidate)))
 })
 
-const packageDirectoryOf = Effect.fnUntraced(function*(input: ResolveInput) {
-  const candidates = packageCandidatesOf(yield* Path.Path, input)
+const packageDirectoryOf = Effect.fnUntraced(function*(input: ResolveInput, packageName: string) {
+  const candidates = packageCandidatesOf(yield* Path.Path, input, packageName)
   const flags = yield* existingFlagsOf(input.realRoot, candidates)
   return firstFlaggedOf(candidates, flags)
 })
@@ -317,99 +311,115 @@ const manifestOf = Effect.fnUntraced(function*(packageDirectory: string) {
   return Option.getOrUndefined(S.decodeOption(S.fromJsonString(PackageManifestSchema))(content))
 })
 
-const entryKeyOf = (subpath: string): string => (subpath.length === 0 ? DEFAULT_ENTRY_KEY : `./${subpath}`)
+const manifestTargetOf = (
+  manifest: PackageManifest | undefined,
+  request: PackageExportRequest | PackageImportRequest,
+): ManifestTarget =>
+  manifest === undefined
+    ? ManifestTargetMissing.make({})
+    : Result.getOrElse(
+      selectManifestTarget(ManifestTargetCommand.make({ manifest, request })),
+      (unreachable: never) => unreachable,
+    )
 
-const conditionTargetOption = (conditions: Readonly<Record<string, string>>): Option.Option<string> =>
-  Option.orElse(
-    Option.fromNullishOr(conditions[PACKAGE_SOURCE_CONDITION]),
-    () => Option.fromNullishOr(Object.values(conditions)[0]),
+const specifierKindOf = (specifier: string): ModuleSpecifierKind =>
+  Result.getOrElse(
+    classifyModuleSpecifier(ClassifyModuleSpecifierCommand.make({ specifier, builtins: BUILTIN_MODULES })),
+    (unreachable: never) => unreachable,
   )
-
-const exportEntryTargetOption = (entry: ExportEntry): Option.Option<string> =>
-  Predicate.isString(entry) ? Option.some(entry) : conditionTargetOption(entry)
-
-const entryTargetOption = (
-  exportsMap: Readonly<Record<string, ExportEntry>>,
-  key: string,
-): Option.Option<string> => Option.flatMap(Option.fromUndefinedOr(exportsMap[key]), exportEntryTargetOption)
-
-const wildcardTargetOption = (
-  exportsMap: Readonly<Record<string, ExportEntry>>,
-  subpath: string,
-): Option.Option<string> =>
-  subpath.length === 0
-    ? Option.none()
-    : Option.flatMap(entryTargetOption(exportsMap, WILDCARD_ENTRY_KEY), (target) =>
-      Option.some(target.replace('*', subpath)))
-
-const mapTargetOption = (
-  exportsMap: Readonly<Record<string, ExportEntry>>,
-  subpath: string,
-): Option.Option<string> =>
-  Option.orElse(entryTargetOption(exportsMap, entryKeyOf(subpath)), () => wildcardTargetOption(exportsMap, subpath))
-
-const rootTargetOption = (target: string, subpath: string): Option.Option<string> =>
-  subpath.length === 0 ? Option.some(target) : Option.none()
-
-const exportsTargetOption = (
-  exports: string | Readonly<Record<string, ExportEntry>>,
-  subpath: string,
-): Option.Option<string> =>
-  Predicate.isString(exports) ? rootTargetOption(exports, subpath) : mapTargetOption(exports, subpath)
-
-const mainTargetOption = (manifest: PackageManifest): Option.Option<string> =>
-  Option.orElse(Option.fromNullishOr(manifest.main), () => Option.fromNullishOr(manifest.module))
-
-const rootFallbackOption = (manifest: PackageManifest, subpath: string): Option.Option<string> =>
-  subpath.length === 0 ? mainTargetOption(manifest) : Option.none()
-
-const manifestTargetOption = (manifest: PackageManifest, subpath: string): Option.Option<string> =>
-  Option.orElse(
-    Option.flatMap(Option.fromUndefinedOr(manifest.exports), (exports) => exportsTargetOption(exports, subpath)),
-    () => rootFallbackOption(manifest, subpath),
-  )
-
-const packageTargetOf = Effect.fnUntraced(function*(packageDirectory: string, subpath: string) {
-  const manifest = yield* manifestOf(packageDirectory)
-  return Option.flatMap(Option.fromUndefinedOr(manifest), (present) => manifestTargetOption(present, subpath))
-})
 
 const followWorkspacePackage = Effect.fnUntraced(function*(
   input: ResolveInput,
   packageDirectory: string,
   packageKey: string,
+  subpath: string,
 ) {
-  const target = yield* packageTargetOf(packageDirectory, subpathOf(input.specifier))
-  return yield* Option.match(target, {
-    onNone: () => Effect.succeed(UNRESOLVED_RESOLUTION),
-    onSome: (present) => memberResolutionOf(input, joinSpecifier(packageKey, present)),
-  })
+  const target = manifestTargetOf(yield* manifestOf(packageDirectory), PackageExportRequest.make({ subpath }))
+  return yield* Match.value(target).pipe(
+    Match.tag('ManifestPathTarget', (present) => memberResolutionOf(input, joinSpecifier(packageKey, present.target))),
+    Match.tag('ManifestPackageTarget', 'ManifestTargetMissing', () => Effect.succeed(UNRESOLVED_RESOLUTION)),
+    Match.exhaustive,
+  )
 })
 
 const isNodeModulesKey = (key: string): boolean => key.split('/').includes('node_modules')
 
-const classifyPackageDirectory = Effect.fnUntraced(function*(input: ResolveInput, directory: string) {
+const classifyPackageDirectory = Effect.fnUntraced(function*(
+  input: ResolveInput,
+  directory: string,
+  subpath: string,
+) {
   const path = yield* Path.Path
   const real = yield* realPathOf(path.resolve(input.realRoot, directory))
   const key = relativeNormalizedFileName(real, input.realRoot)
   return yield* Option.match(Option.liftPredicate(key, isNodeModulesKey), {
-    onNone: () => followWorkspacePackage(input, real, key),
+    onNone: () => followWorkspacePackage(input, real, key, subpath),
     onSome: () => Effect.succeed(EXTERNAL_RESOLUTION),
   })
 })
 
-const resolvePackageSpecifier = Effect.fnUntraced(function*(input: ResolveInput) {
-  const directory = yield* packageDirectoryOf(input)
+const resolvePackageSpecifier = Effect.fnUntraced(function*(input: ResolveInput, specifier: PackageSpecifier) {
+  const directory = yield* packageDirectoryOf(input, specifier.packageName)
   return yield* Option.match(Option.fromUndefinedOr(directory), {
     onNone: () => Effect.succeed(UNRESOLVED_RESOLUTION),
-    onSome: (present) => classifyPackageDirectory(input, present),
+    onSome: (present) => classifyPackageDirectory(input, present, specifier.subpath),
   })
 })
 
-const resolveSpecifier = Effect.fnUntraced(function*(input: ResolveInput) {
-  if (isPathSpecifier(input.specifier)) return yield* resolvePathSpecifier(input)
-  return yield* resolvePackageSpecifier(input)
+const resolveBareSpecifier = (input: ResolveInput) =>
+  Match.value(specifierKindOf(input.specifier)).pipe(
+    Match.tag('BuiltinSpecifier', () => Effect.succeed(EXTERNAL_RESOLUTION)),
+    Match.tag('PackageSpecifier', (specifier) => resolvePackageSpecifier(input, specifier)),
+    Match.tag('PathSpecifier', 'SubpathImportSpecifier', () => Effect.succeed(UNRESOLVED_RESOLUTION)),
+    Match.exhaustive,
+  )
+
+const packageScopeOf = Effect.fnUntraced(function*(input: ResolveInput) {
+  const path = yield* Path.Path
+  const directories = ancestorsOf(path, path.resolve(input.realRoot, directoryOf(input.key)))
+  const flags = yield* existingFlagsOf(
+    input.realRoot,
+    directories.map((directory) => path.join(directory, PACKAGE_MANIFEST_FILE)),
+  )
+  return firstFlaggedOf(directories, flags)
 })
+
+const followPackageImport = Effect.fnUntraced(function*(input: ResolveInput, scopeDirectory: string) {
+  const real = yield* realPathOf(scopeDirectory)
+  const scopeKey = relativeNormalizedFileName(real, input.realRoot)
+  const target = manifestTargetOf(
+    yield* manifestOf(real),
+    PackageImportRequest.make({ specifier: input.specifier }),
+  )
+  return yield* Match.value(target).pipe(
+    Match.tag('ManifestPathTarget', (present) => memberResolutionOf(input, joinSpecifier(scopeKey, present.target))),
+    Match.tag('ManifestPackageTarget', (present) =>
+      resolveBareSpecifier({
+        ...input,
+        key: joinSpecifier(scopeKey, PACKAGE_MANIFEST_FILE),
+        specifier: present.specifier,
+      })),
+    Match.tag('ManifestTargetMissing', () => Effect.succeed(UNRESOLVED_RESOLUTION)),
+    Match.exhaustive,
+  )
+})
+
+const resolveSubpathImport = Effect.fnUntraced(function*(input: ResolveInput) {
+  const scope = yield* packageScopeOf(input)
+  return yield* Option.match(Option.fromUndefinedOr(scope), {
+    onNone: () => Effect.succeed(UNRESOLVED_RESOLUTION),
+    onSome: (present) => followPackageImport(input, present),
+  })
+})
+
+const resolveSpecifier = (input: ResolveInput) =>
+  Match.value(specifierKindOf(input.specifier)).pipe(
+    Match.tag('PathSpecifier', () => resolvePathSpecifier(input)),
+    Match.tag('SubpathImportSpecifier', () => resolveSubpathImport(input)),
+    Match.tag('BuiltinSpecifier', () => Effect.succeed(EXTERNAL_RESOLUTION)),
+    Match.tag('PackageSpecifier', (specifier) => resolvePackageSpecifier(input, specifier)),
+    Match.exhaustive,
+  )
 
 const resolveMemoized = Effect.fnUntraced(function*(
   memo: MutableHashMap.MutableHashMap<string, Resolution>,
@@ -449,8 +459,6 @@ const readProjectFile = Effect.fnUntraced(function*(roots: Roots, file: string) 
   const absolute = path.resolve(roots.realRoot, key)
   return { key, absolute, content: yield* fs.readFileString(absolute) }
 })
-
-const PACKAGE_MANIFEST_FILE = 'package.json'
 
 const isPackageManifest = (key: string): boolean =>
   key === PACKAGE_MANIFEST_FILE || key.endsWith(`/${PACKAGE_MANIFEST_FILE}`)
