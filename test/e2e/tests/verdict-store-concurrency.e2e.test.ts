@@ -80,6 +80,13 @@ const readArtifacts = (output: StrykerRunOutput): Effect.Effect<ScriptArtifacts,
     }
   })
 
+const refusalsLineOf = (refused: RunEvent.ReuseRefusals): string =>
+  Object.entries(refused)
+    .filter(([, count]) => count > 0)
+    .map(([reason, count]) => `${reason} ${count}`)
+    .sort()
+    .join(', ')
+
 const verifyStoreSurvivedTheKill = (
   expect: Expect,
   artifacts: ScriptArtifacts,
@@ -87,25 +94,25 @@ const verifyStoreSurvivedTheKill = (
 ): Check => {
   const total = reuse.reused + reuse.ran
   const stored = artifacts.storedBeforeRerun.length
-  const exits = {
+  const exits = JSON.stringify({
     plan: artifacts.planExit,
     killed: artifacts.killedExit,
     survivor: artifacts.survivorExit,
     rerun: artifacts.rerunExit,
-  }
-  const expectedExits = { plan: 0, killed: SIGKILLED_EXIT_CODE, survivor: 0, rerun: 0 }
+  })
+  const expectedExits = JSON.stringify({ plan: 0, killed: SIGKILLED_EXIT_CODE, survivor: 0, rerun: 0 })
+  const unstored = total - stored
+  const expectedRefusals = unstored > 0 ? `noPriorRecord ${unstored}` : ''
   return expect({
     exits,
-    logs: JSON.stringify(exits) === JSON.stringify(expectedExits) ? '' : artifacts.logs,
+    logs: exits === expectedExits ? '' : artifacts.logs,
     killLandedMidRun: stored > 0 && stored < total,
-    rerunUnreadable: reuse.refused.entryUnreadable,
-    rerunReused: reuse.reused,
+    rerun: `${stored} stored of ${total}: reused ${reuse.reused}; refused ${refusalsLineOf(reuse.refused)}`,
   }).toStrictEqual({
     exits: expectedExits,
     logs: '',
     killLandedMidRun: true,
-    rerunUnreadable: 0,
-    rerunReused: stored,
+    rerun: `${stored} stored of ${total}: reused ${stored}; refused ${expectedRefusals}`,
   })
 }
 
