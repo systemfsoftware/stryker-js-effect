@@ -1,13 +1,18 @@
 import { SchemaGetter, SchemaIssue, SchemaTransformation } from 'effect'
+import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
-import type { MutantStatus } from './Mutant.schema.js'
+import type { MutantStatus, RememberedStatus } from './Mutant.schema.js'
+
+type Sentence = `${string}.`
 
 type SlashFreeCodeDocumentation<Code extends string> = {
-  readonly [code in Code]: code extends `${string}/${string}` ? never : string
+  readonly [code in Code]: code extends `${string}/${string}` ? never : Sentence
 }
+
+type Codes = readonly [string, ...Array<string>]
 
 const RULE_IDS = [
   'arid-logging',
@@ -46,16 +51,18 @@ const RULE_DOCUMENTATION: SlashFreeCodeDocumentation<(typeof RULE_IDS)[number]> 
   checker: 'A checker plugin from `checkers` ignored it. To keep it, remove that plugin or change its rule.',
 }
 
-const SETTLED_CODES = [
-  'covered-not-killed',
-  'coverage-not-measured',
-  'not-covered',
-  'timed-out',
-  'runtime-error',
-  'compile-error',
-  'killed',
-  'remembered',
-] as const
+type SettledStatus = Exclude<MutantStatus, 'Ignored' | 'Pending'>
+
+const SETTLED_CODES_BY_STATUS = {
+  Killed: ['killed', 'remembered'],
+  Survived: ['covered-not-killed', 'coverage-not-measured', 'remembered'],
+  NoCoverage: ['not-covered', 'remembered'],
+  Timeout: ['timed-out', 'remembered'],
+  RuntimeError: ['runtime-error'],
+  CompileError: ['compile-error', 'remembered'],
+} as const satisfies { readonly [status in SettledStatus]: Codes }
+
+const SETTLED_CODES = Arr.dedupe(Object.values(SETTLED_CODES_BY_STATUS).flat())
 
 const SETTLED_DOCUMENTATION: SlashFreeCodeDocumentation<(typeof SETTLED_CODES)[number]> = {
   'covered-not-killed':
@@ -71,7 +78,7 @@ const SETTLED_DOCUMENTATION: SlashFreeCodeDocumentation<(typeof SETTLED_CODES)[n
     "CompileError: the mutant does not compile; the detail is the checker's or runner's message. It is left out of the score.",
   killed: 'Killed: a test failed with the mutant active; the detail is the failure message.',
   remembered:
-    "The status comes from the previous run's report, and the mutant did not run again; the detail names that run's code when it had one. Run with `--full` to run it again.",
+    "The status comes from the previous run's report, and the mutant did not run again; the detail names that run's code when it had one. Run with `--full` to run it again. A reused Ignored mutant keeps its rule code instead.",
 }
 
 const RUN_FAILURE_CODES = [
@@ -132,7 +139,7 @@ export type IgnoreRuleId = typeof IgnoreRuleId.Type
 
 export const SettledReasonCode = S.Literals(SETTLED_CODES).mapMembers(
   (members) => members.map((member) => member.annotate({ description: SETTLED_DOCUMENTATION[member.literal] })),
-).annotate({ description: `Why a mutant that ran has its status. ${STABLE_CODE}` })
+).annotate({ description: `Why a mutant that was judged has its status. ${STABLE_CODE}` })
 export type SettledReasonCode = typeof SettledReasonCode.Type
 
 export const RunFailureCode = S.Literals(RUN_FAILURE_CODES).mapMembers(
@@ -144,22 +151,6 @@ export const ToolRefusalCode = S.Literals(TOOL_REFUSAL_CODES).mapMembers(
   (members) => members.map((member) => member.annotate({ description: TOOL_REFUSAL_DOCUMENTATION[member.literal] })),
 ).annotate({ description: `Why a CLI or MCP query was refused. ${STABLE_CODE}` })
 export type ToolRefusalCode = typeof ToolRefusalCode.Type
-
-type Codes = readonly [string, ...Array<string>]
-
-const SETTLED_CODES_BY_STATUS = {
-  Killed: ['killed', 'remembered'],
-  Survived: ['covered-not-killed', 'coverage-not-measured', 'remembered'],
-  NoCoverage: ['not-covered', 'remembered'],
-  Timeout: ['timed-out', 'remembered'],
-  RuntimeError: ['runtime-error'],
-  CompileError: ['compile-error', 'remembered'],
-} as const satisfies {
-  readonly [status in Exclude<MutantStatus, 'Ignored' | 'Pending'>]: readonly [
-    SettledReasonCode,
-    ...Array<SettledReasonCode>,
-  ]
-}
 
 const SEPARATOR = ': '
 
@@ -199,14 +190,21 @@ export type IgnoreStatusReason = typeof IgnoreStatusReason.Type
 
 export const ignoreStatusReasonText = (parts: IgnoreStatusReason): string => `${parts.code}${SEPARATOR}${parts.detail}`
 
-const settledVariantOf = <const Status extends MutantStatus, const L extends ReadonlyArray<SettledReasonCode> & Codes>(
+type ReusedSettledStatus = Exclude<RememberedStatus, 'Ignored'>
+
+type CodesTiedToReuse<Status extends SettledStatus, L extends Codes> =
+  ('remembered' extends L[number] ? true : false) extends (Status extends ReusedSettledStatus ? true : false) ? L
+    : never
+
+const settledVariantOf = <const Status extends SettledStatus, const L extends ReadonlyArray<SettledReasonCode> & Codes>(
   status: Status,
-  codes: L,
+  codes: L & CodesTiedToReuse<Status, L>,
 ) => {
-  const { Parts, transformation } = reasonPartsOf(codes)
+  const admitted: L = codes
+  const { Parts, transformation } = reasonPartsOf(admitted)
   return S.Struct({
     status: S.Literal(status),
-    statusReason: S.String.check(reasonPatternOf(codes)).pipe(S.decodeTo(Parts, transformation)),
+    statusReason: S.String.check(reasonPatternOf(admitted)).pipe(S.decodeTo(Parts, transformation)),
   })
 }
 
@@ -228,7 +226,6 @@ const acceptsIgnoreStatusReason = (value: string): boolean => S.is(IgnoreStatusR
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const Arr = await import('effect/Array')
   const { MutantStatusSchema } = await import('./Mutant.schema.js')
   const Equal = await import('effect/Equal')
   const Record = await import('effect/Record')
@@ -362,7 +359,21 @@ if (import.meta.vitest !== void 0) {
     ['Killed', 'covered-not-killed: 2 covering tests ran, none failed', null],
     ['Ignored', 'effect-schema-declarations/tagged-tag: a declaration discriminant', null],
     ['Survived', 'covered-not-killed/strict: no assertion', null],
+    ['Killed', 'remembered: killed in the previous run', { code: 'remembered', detail: 'killed in the previous run' }],
+    ['NoCoverage', 'remembered: not-covered in the previous run', {
+      code: 'remembered',
+      detail: 'not-covered in the previous run',
+    }],
+    ['Timeout', 'remembered: timed-out in the previous run', {
+      code: 'remembered',
+      detail: 'timed-out in the previous run',
+    }],
+    ['CompileError', 'remembered: compile-error in the previous run', {
+      code: 'remembered',
+      detail: 'compile-error in the previous run',
+    }],
     ['RuntimeError', 'remembered: runtime-error in the previous run', null],
+    ['Ignored', 'remembered: directive: consecutive run', null],
     ['Pending', 'remembered: covered-not-killed in the previous run', null],
     ['Survived', 'score-below-break: 42 < 60', null],
     ['Survived', 'unknown-mutant-id: 0123456789abcdef', null],
@@ -380,5 +391,52 @@ if (import.meta.vitest !== void 0) {
             Arr.every(texts, (text) => Equal.equals(subject(status, text), readsAsStatusReason(status, text))),
         )
     },
+  )
+
+  const mainIgnoredTexts: ReadonlyArray<string> = [
+    'ignore-static: Static mutant (and "ignoreStatic" was enabled)',
+    'excluded-mutator: Ignored because of excluded mutation "ArithmeticOperator"',
+  ]
+
+  const encodeStatusReason = S.encodeOption(StatusReason)
+
+  const reEncodedStatusReasonOf = (status: string, statusReason: string): string | null =>
+    Option.getOrNull(
+      Option.map(
+        Option.flatMap(decodeStatusReason({ status, statusReason }), encodeStatusReason),
+        (encoded) => encoded.statusReason,
+      ),
+    )
+
+  it.prop(
+    '∀t_StatusReasonRoundTrip_≡EncodeGivesBackTheText',
+    { of: [S.String], subject: reEncodedStatusReasonOf },
+    (subject, [drawn]) =>
+      Arr.every(
+        [
+          ...examples.flatMap(([status, text, decoded]) => decoded === null ? [] : [[status, text] as const]),
+          ...mainIgnoredTexts.map((text) => ['Ignored', text] as const),
+          ...Object.entries(codesByStatus).flatMap(([status, codes]) =>
+            codes.map((code) => [status, `${code}${SEPARATOR}${drawn}`] as const)
+          ),
+        ],
+        ([status, text]) => subject(status, text) === text,
+      ),
+  )
+
+  const decodeIgnoreStatusReason = S.decodeUnknownOption(IgnoreStatusReason)
+  const encodeIgnoreStatusReason = S.encodeOption(IgnoreStatusReason)
+
+  const reEncodedIgnoreStatusReasonOf = (text: string): string | null =>
+    Option.getOrNull(Option.flatMap(decodeIgnoreStatusReason(text), encodeIgnoreStatusReason))
+
+  it.prop(
+    '∀t_IgnoreStatusReasonRoundTrip_≡EncodeGivesBackTheText',
+    { of: [S.String], subject: reEncodedIgnoreStatusReasonOf },
+    (subject, [drawn]) =>
+      Arr.every(
+        [...mainIgnoredTexts, ...RULE_IDS.map((ruleId) => `${ruleId}${SEPARATOR}${drawn}`)],
+        (text) => subject(text) === text,
+      ),
   )
 }
