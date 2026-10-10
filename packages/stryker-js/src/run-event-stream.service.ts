@@ -5,8 +5,6 @@ import * as Context from 'effect/Context'
 import * as DateTime from 'effect/DateTime'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
-import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
@@ -112,96 +110,8 @@ export interface RunEventDrainShape {
 export class RunEventDrain extends Context.Service<RunEventDrain, RunEventDrainShape>()(
   '@systemfsoftware/stryker-js/run-event-stream.service/RunEventDrain',
 ) {
-  static readonly layer: Layer.Layer<RunEventDrain, never, Stdio.Stdio> = Layer.effect(
-    RunEventDrain,
-    Effect.gen(function*() {
-      const stdio = yield* Stdio.Stdio
-      return RunEventDrain.of({
-        drainFramed: (framed, toStdout) => drainOf(stdio, framed, toStdout),
-        setProgressStreamFile: () => Effect.void,
-      })
-    }),
-  )
-
   static readonly DefaultProgressStreamFile = DEFAULT_PROGRESS_STREAM_FILE
-
-  static readonly fileLayer: Layer.Layer<
-    RunEventDrain,
-    never,
-    Stdio.Stdio | FileSystem.FileSystem | Path.Path
-  > = Layer.effect(
-    RunEventDrain,
-    Effect.flatMap(
-      Effect.all([Stdio.Stdio, FileSystem.FileSystem, Path.Path]),
-      ([stdio, fs, path]) => drainFileOf(stdio, fs, path),
-    ),
-  )
 }
-
-export const RunEventDrainLive = RunEventDrain.layer
-
-const encodeUtf8 = (line: string) => new TextEncoder().encode(line)
-
-const runToSink = <E>(stdio: Stdio.Stdio, lines: Stream.Stream<string, E>, toStdout: boolean) =>
-  Boolean.match(toStdout, {
-    onTrue: () => Stream.run(lines, stdio.stdout({ endOnDone: true })),
-    onFalse: () => Stream.runDrain(lines),
-  })
-
-const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.name)(function*(
-  fs: FileSystem.FileSystem,
-  path: Path.Path,
-  stdio: Stdio.Stdio,
-  fileName: string,
-  toStdout: boolean,
-  framed: Stream.Stream<string>,
-) {
-  yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
-  yield* Effect.scoped(
-    Effect.gen(function*() {
-      const handle = yield* fs.open(fileName, { flag: 'w' })
-      const withFile = framed.pipe(
-        Stream.tap((line) => handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync))),
-      )
-      yield* runToSink(stdio, withFile, toStdout).pipe(Effect.ignore)
-    }),
-  )
-})
-
-const drainStoredFile = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainStoredFile.name)(function*(
-  fs: FileSystem.FileSystem,
-  path: Path.Path,
-  stdio: Stdio.Stdio,
-  fileNameRef: Ref.Ref<string>,
-  toStdout: boolean,
-  framed: Stream.Stream<string>,
-) {
-  const fileName = yield* Ref.get(fileNameRef)
-  yield* drainToSinks(fs, path, stdio, fileName, toStdout, framed).pipe(Effect.orDie)
-})
-
-const drainFileOf = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainFile.name)(function*(
-  stdio: Stdio.Stdio,
-  fs: FileSystem.FileSystem,
-  path: Path.Path,
-) {
-  const fileNameRef = yield* Ref.make(DEFAULT_PROGRESS_STREAM_FILE)
-  return RunEventDrain.of({
-    drainFramed: (framed, toStdout) =>
-      drainStoredFile(fs, path, stdio, fileNameRef, toStdout, framed).pipe(
-        Effect.tapCause((cause) => Effect.logError('stryker.output.drain_file_failed', cause)),
-        Effect.ignoreCause,
-      ),
-    setProgressStreamFile: (fileName: string) => Ref.set(fileNameRef, fileName),
-  })
-})
-
-const drainOf = (stdio: Stdio.Stdio, framed: Stream.Stream<string>, toStdout: boolean) =>
-  runToSink(stdio, framed, toStdout).pipe(
-    Effect.withSpan(SpanTaxonomy.Spans.outputDrain.name),
-    Effect.tapCause((cause) => Effect.logError('stryker.output.drain_failed', cause)),
-    Effect.ignoreCause,
-  )
 
 const writeStderr = (stdio: Stdio.Stdio, line: string) =>
   Stream.run(Stream.succeed(`${line}\n`), stdio.stderr({ endOnDone: false })).pipe(Effect.ignore)
@@ -233,7 +143,9 @@ export interface EmitMachineModeOutputOptions {
   readonly pathService: Path.Path
 }
 
-const emitNullScoreVerdict = <Config = unknown>(params: EmitNullScoreVerdictOptions<Config>): Effect.Effect<void> => {
+export const emitNullScoreVerdict = <Config = unknown>(
+  params: EmitNullScoreVerdictOptions<Config>,
+): Effect.Effect<void> => {
   const { stream, mode, thresholds, basePath, pathService } = params
   const report: Report.MutationTestResult = {
     schemaVersion: Report.WrittenSchemaVersion.literal,
@@ -350,7 +262,7 @@ const emitNullScoreVerdictWhenOpen = (
       onFalse: () => Effect.void,
     }))
 
-const emitMachineModeOutput = Effect.fn(SpanTaxonomy.Spans.runEventStreamEmitMachineModeOutput.name)(function*(
+export const emitMachineModeOutput = Effect.fn(SpanTaxonomy.Spans.runEventStreamEmitMachineModeOutput.name)(function*(
   params: EmitMachineModeOutputOptions,
 ) {
   const { stream, mode, outcome, basePath, pathService } = params
@@ -392,16 +304,7 @@ export interface RunEventStreamPort {
 
 export class RunEventStreamPortTag extends Context.Service<RunEventStreamPortTag, RunEventStreamPort>()(
   '@systemfsoftware/stryker-js/run-event-stream.service/RunEventStreamPortTag',
-) {
-  static readonly layer: Layer.Layer<RunEventStreamPortTag, never, never> = Layer.succeed(
-    RunEventStreamPortTag,
-    RunEventStreamPortTag.of({
-      createRunEventStream: (resolved) => makeRunEventStream(resolved),
-      emitNullScoreVerdict,
-      emitMachineModeOutput,
-    }),
-  )
-}
+) {}
 
 export const RunEventStreamPort = RunEventStreamPortTag
 

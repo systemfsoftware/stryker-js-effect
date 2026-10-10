@@ -37,6 +37,7 @@ import {
   type ConfigFileUnreadableError,
   type ConfigFileUnsupportedError,
 } from './ConfigError.schema.js'
+import { stage } from './drivers/run-stage.js'
 import { recordFeedbackCell } from './Feedback/Feedback.cell.js'
 import { FeedbackUnusable } from './Feedback/Feedback.schema.js'
 import {
@@ -61,7 +62,6 @@ import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './r
 import type { HostServices } from './run/host.service.js'
 import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
-import { RunEnvironment } from './run/RunEnvironment.service.js'
 import { serveMutationServer, type ServeRequest } from './Serve/Serve.cell.js'
 import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
 import { mergeShards } from './shard/shard-merge.js'
@@ -149,7 +149,7 @@ const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(funct
 })
 
 const runStage = (channel: CliRead) =>
-  Layer.build(RunEnvironment.stage(channel.environment.host.env, channel.environment.host.events)).pipe(
+  Layer.build(stage(channel.environment.host.env, channel.environment.host.events)).pipe(
     Effect.flatMap((context) =>
       Cell.provideContext(mutationTestCell, context).run({
         cliOptions: channel.options,

@@ -1,6 +1,4 @@
-import * as TestTelemetry from '@systemfsoftware/vitest-config/telemetry'
-import { Effect, type Layer } from 'effect'
-import type { OtlpExporter } from 'effect/observability'
+import { Effect } from 'effect'
 
 export const COMPONENT_ATTRIBUTE = 'e2e.component'
 
@@ -19,8 +17,6 @@ export const SpanNames = {
   guestJob: 'e2e.guest.job',
   cliRun: 'e2e.cli.run',
 } as const
-
-export const layer: Layer.Layer<OtlpExporter.Flusher> = TestTelemetry.layer({ [COMPONENT_ATTRIBUTE]: 'harness' })
 
 export const withSeamSpan = <A, E, R>(
   name: string,

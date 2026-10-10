@@ -149,7 +149,7 @@ const executeRun = (workspace: Workspace): Effect.Effect<Observed, never, FileSy
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(8192)
     const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(workspace.directory), queue), Engine.nodePlatformLayer),
+      Layer.provide(Engine.stage(environmentFor(workspace.directory), queue), Engine.nodePlatformLayer),
       Engine.nodePlatformLayer,
     )
     const exit = yield* Engine.mutationTestCell

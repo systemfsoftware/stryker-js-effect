@@ -36,16 +36,19 @@ import { inheritableCompileCacheDirectory } from './enable-compile-cache.js'
 import { classifyRunOutcome, type FailedRunOutcome, RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
 import { concludeRunCell } from '../conclude-run.cell.js'
 import { runOutcomeCommandOf } from '../conclude-run.js'
+import { captureLayer as machineConsoleCaptureLayer, layer as machineConsoleLayer } from '../drivers/machine-console.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
-import { OutputModeProbe, OutputModeProbeLive } from '../output-mode-probe.service.js'
+import { layer as outputModeProbeLayer } from '../drivers/output-mode-probe.js'
+import { fileDrainLayer, portLayer } from '../drivers/run-event-stream.js'
+import { forStream } from '../drivers/run-stage.js'
+import { OutputModeProbe } from '../output-mode-probe.service.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
 import { FailedRunOutcomeSchema } from '../plan-run-conclusion.workflow.js'
 import { environmentParentContext } from '../reporter-stream.service.js'
 import { MachineConsole } from '../reporting/machine-console.service.js'
 import { errorEnvelopeFromOutcome, runExitCodeFromOutcome } from '../reporting/run-failure.js'
-import { RunEventDrain, RunEventStreamPort, RunEventStreamPortTag } from '../run-event-stream.service.js'
+import { RunEventStreamPort } from '../run-event-stream.service.js'
 import { type CliAnswer, type CliEnvironment } from '../run-request.cell.js'
-import { RunEnvironment } from '../run/RunEnvironment.service.js'
 import { makeStrykerCommand } from './cli-command.js'
 
 globalThis.process.title = 'stryker'
@@ -144,15 +147,15 @@ const compileCacheChildEnv = inheritableCompileCacheDirectory === undefined
 const nodePlatform = makeNodePlatformLayer({ childEnv: compileCacheChildEnv })
 
 const probeGroup = Layer.mergeAll(
-  OutputModeProbeLive,
-  RunEventStreamPortTag.layer.pipe(Layer.provide(RunEventDrain.fileLayer)),
-  RunEventDrain.fileLayer,
+  outputModeProbeLayer,
+  portLayer,
+  fileDrainLayer,
 ).pipe(Layer.provide(nodePlatform))
 
 const cliLayer = Layer.mergeAll(
   probeGroup,
   telemetryLayer,
-  MachineConsole.layer,
+  machineConsoleLayer,
   CliConfig.layer({
     builtIns: [
       GlobalFlag.Help,
@@ -216,7 +219,7 @@ const strykerProgram = Effect.gen(function*() {
   const runEvents = yield* RunEventStreamPort
   const stream = yield* runEvents.createRunEventStream(mode)
   const noColor = yield* Config.String('NO_COLOR').pipe(Effect.option)
-  const host = yield* RunEnvironment.forStream(mode, stream, {
+  const host = yield* forStream(mode, stream, {
     noColor: Option.getOrUndefined(noColor),
     builtinReporters: { html: HtmlReporter.makeHtmlReporter },
   })
@@ -234,7 +237,7 @@ const strykerProgram = Effect.gen(function*() {
   const answer = yield* Ref.make<CliAnswer>(undefined)
   const command = makeStrykerCommand({ environment, recordAnswer: (recorded) => Ref.set(answer, recorded) })
   const machineConsole = Boolean.match(mode.mode === 'machine', {
-    onTrue: () => MachineConsole.captureLayer,
+    onTrue: () => machineConsoleCaptureLayer,
     onFalse: () => Layer.empty,
   })
   const parent = Option.getOrUndefined(Option.map(yield* environmentParentContext, OtelTracer.makeExternalSpan))

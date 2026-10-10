@@ -1,4 +1,5 @@
 export { nodePlatformLayer } from '../drivers/node.js'
+export { forStream, stage } from '../drivers/run-stage.js'
 export { IncrementalReportSchema } from '../IncrementalReport.schema.js'
 export { planRequest } from '../plan-request.cell.js'
 export type { PlanChannel, PlanRequestInput, PlanShardsRequest } from '../plan-request.cell.js'

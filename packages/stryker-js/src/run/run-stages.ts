@@ -8,12 +8,13 @@ import * as Option from 'effect/Option'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Predicate from 'effect/Predicate'
 
+import { drainLayer } from '../drivers/run-event-stream.js'
+import { forStream, stage } from '../drivers/run-stage.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
-import { makeRunEventStream, RunEventDrainLive } from '../run-event-stream.service.js'
+import { makeRunEventStream } from '../run-event-stream.service.js'
 import { StageError } from '../Run.schema.js'
 import type { MutationTestDone } from './mutation-test.cell.js'
 import { mutationTestCell } from './run-stages.cell.js'
-import { RunEnvironment } from './RunEnvironment.service.js'
 import type { EnginePorts } from './StageServices.service.js'
 
 const HEADLESS_MODE: ResolvedMode = { mode: 'machine', signal: 'flag', stdoutIsTTY: false }
@@ -21,12 +22,12 @@ const HEADLESS_MODE: ResolvedMode = { mode: 'machine', signal: 'flag', stdoutIsT
 const strykerRunLayer = makeRunEventStream(HEADLESS_MODE).pipe(
   Effect.flatMap((stream) =>
     Effect.map(
-      RunEnvironment.forStream(HEADLESS_MODE, stream, { builtinReporters: { html: HtmlReporter.makeHtmlReporter } }),
-      (env) => RunEnvironment.stage(env, stream.queue),
+      forStream(HEADLESS_MODE, stream, { builtinReporters: { html: HtmlReporter.makeHtmlReporter } }),
+      (env) => stage(env, stream.queue),
     )
   ),
   Layer.unwrap,
-  Layer.provide(RunEventDrainLive),
+  Layer.provide(drainLayer),
 )
 
 export const strykerCell: {

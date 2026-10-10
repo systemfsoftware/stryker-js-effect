@@ -27,6 +27,7 @@
   },
   "scripts": {
     "typecheck": "tsc -b",
+    "attw": "attw --pack .",
     "api:check": "api-extractor run",
     "api:update": "api-extractor run --local",
     "lint:tsgo": "effect-tsgo diagnostics --project tsconfig.app.json --format ${TSGO_FORMAT:-text}"
@@ -57,6 +58,7 @@
   "devDependencies": {
     "@effect/tsgo": "catalog:",
     "@microsoft/api-extractor": "catalog:",
+    "@systemfsoftware/arethetypeswrong-cli": "catalog:",
     "@systemfsoftware/tsconfig": "catalog:",
     "@types/node": "catalog:",
     "oxlint": "catalog:"

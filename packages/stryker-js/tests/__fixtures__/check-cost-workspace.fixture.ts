@@ -94,7 +94,7 @@ export const runReasonlessWorkspace: Effect.Effect<RefusedRun> = Effect.gen(func
   const root = yield* writeWorkspace(reasonlessWorkspaceFiles)
   const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
   const ports = Engine.nodePlatformLayer
-  const runLayer = Layer.merge(Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports), ports)
+  const runLayer = Layer.merge(Layer.provide(Engine.stage(environmentFor(root), queue), ports), ports)
   const exit = yield* Engine.mutationTestCell
     .run({ cliOptions: checkedOptionsOf(root), targetMutatePatterns: undefined })
     .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit, Effect.ensuring(removeWorkspace(root)))
@@ -256,7 +256,7 @@ const runEngineWith = (
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const ports = Engine.nodePlatformLayer
     const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(directory), queue), ports),
+      Layer.provide(Engine.stage(environmentFor(directory), queue), ports),
       ports,
     )
     yield* Engine.mutationTestCell

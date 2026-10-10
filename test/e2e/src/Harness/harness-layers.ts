@@ -3,15 +3,15 @@ import { Layer } from 'effect'
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import { Readiness } from '@systemfsoftware/effect-readiness'
 
-import { BakedFixtureCache } from './fixture-cache.service.js'
-import { GuestJobs } from './guest-job.service.js'
-import { layer as harnessTelemetryLayer } from './harness-telemetry.service.js'
-import { StrykerCliRunner } from './stryker-cli-runner.service.js'
+import { layer as fixtureCacheLayer } from './drivers/fixture-cache.js'
+import { layer as guestJobLayer } from './drivers/guest-job.js'
+import { layer as harnessTelemetryLayer } from './drivers/harness-telemetry.js'
+import { layer as strykerCliRunnerLayer } from './drivers/stryker-cli-runner.js'
 
-export const HarnessServicesLive = Layer.mergeAll(BakedFixtureCache.layer, StrykerCliRunner.layer, GuestJobs.layer)
+export const HarnessServicesLive = Layer.mergeAll(fixtureCacheLayer, strykerCliRunnerLayer, guestJobLayer)
 
 export const HarnessPlatformLive = Layer.mergeAll(
-  GuestJobs.layer,
+  guestJobLayer,
   nodeServicesLayer,
   Readiness.NodeHostProber.layer,
   harnessTelemetryLayer,

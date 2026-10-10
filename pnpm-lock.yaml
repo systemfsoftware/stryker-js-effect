@@ -1454,6 +1454,9 @@ importers:
       '@microsoft/api-extractor':
         specifier: 'catalog:'
         version: 7.59.1(@types/node@24.13.3)
+      '@systemfsoftware/arethetypeswrong-cli':
+        specifier: 'catalog:'
+        version: 4.2.0
       '@systemfsoftware/tsconfig':
         specifier: 'catalog:'
         version: 2.0.1

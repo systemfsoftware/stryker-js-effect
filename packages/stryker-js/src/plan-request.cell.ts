@@ -21,6 +21,7 @@ import * as Scope from 'effect/Scope'
 import type { IncrementalReportDiscard } from './admit-incremental-report.workflow.js'
 import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.js'
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
+import { stage } from './drivers/run-stage.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
@@ -36,7 +37,6 @@ import { incrementalReportTextsOf } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
-import { RunEnvironment } from './run/RunEnvironment.service.js'
 import type { EnginePorts, RunStageServices } from './run/StageServices.service.js'
 import type { TestCoverage } from './test-coverage.schema.js'
 
@@ -229,7 +229,7 @@ const planProject = (
     const basePath = channel.environment.basePath
     const project = yield* fs.realPath(path.resolve(basePath, directory))
     const env = { ...channel.environment.host.env, basePath: project }
-    const context = yield* Layer.build(RunEnvironment.stage(env, channel.environment.host.events))
+    const context = yield* Layer.build(stage(env, channel.environment.host.events))
     const stageInput = { cliOptions: { force: request.full }, targetMutatePatterns: undefined }
     const prepared = yield* Cell.provideContext(prepareStageCell, context).run(stageInput)
     const done: PlanInstrumentDone = yield* Cell.provideContext(planInstrumentCell, context).run(prepared)

@@ -17,13 +17,12 @@ import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 import type { RunnerTask, RunnerTestCase, RunnerTestFile, RunnerTestSuite } from 'vitest'
 
-import { testRecordOf } from './drivers/vitest-node.js'
-import { interpretVitestDryRun } from './interpret-vitest-dry-run.workflow.js'
-import { makeMutantRunCell } from './MutantRun.cell.js'
-import { VitestDryRunCommand } from './vitest-run-command.schema.js'
-import { interpretVitestTestRun } from './vitest-test-run.js'
-import { CoverageDecodeFailed, type TestRunnerPhase } from './VitestRunner.schema.js'
-import { testFileOrder } from './VitestRuntime.blueprint.js'
+import { interpretVitestDryRun } from '../interpret-vitest-dry-run.workflow.js'
+import { makeMutantRunCell } from '../MutantRun.cell.js'
+import { VitestDryRunCommand } from '../vitest-run-command.schema.js'
+import { interpretVitestTestRun } from '../vitest-test-run.js'
+import { CoverageDecodeFailed, type TestRunnerPhase } from '../VitestRunner.schema.js'
+import { testFileOrder } from '../VitestRuntime.blueprint.js'
 import {
   applyRunFilter,
   clearFiles,
@@ -36,8 +35,10 @@ import {
   reportAllKillersOf,
   start,
   testFileModulesOf,
-} from './VitestRuntime.handle.js'
-import { VitestSession, type VitestSessionInput } from './VitestSession.service.js'
+} from '../VitestRuntime.handle.js'
+import { VitestSession, type VitestSessionInput } from '../VitestSession.service.js'
+import { testRecordOf } from './vitest-node.js'
+import { layer as sessionLayer } from './vitest-session.js'
 
 const asRunnerFailure = (phase: TestRunnerPhase) => <E>(cause: E) =>
   Option.match(Option.liftPredicate(cause, S.is(TestRunner.TestRunnerFailed)), {
@@ -194,7 +195,7 @@ const mergeCoverage = (to: Mutant.CoverageData, from: Mutant.CoverageData): Muta
 export const layer = (
   input: VitestSessionInput,
 ): Layer.Layer<TestRunner.TestRunner, never, Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
-  Layer.effect(TestRunner.TestRunner, makeRunner(input)).pipe(Layer.provide(VitestSession.layer(input)))
+  Layer.effect(TestRunner.TestRunner, makeRunner(input)).pipe(Layer.provide(sessionLayer(input)))
 
 const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*(input: VitestSessionInput) {
   const session = yield* VitestSession

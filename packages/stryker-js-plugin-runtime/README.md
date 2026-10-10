@@ -57,7 +57,7 @@ NodeRuntime.runMain(
 ## Worker options
 
 The host writes the run's options to `options.json` in the worker directory it
-creates; `Worker.WorkerOptions`, read through `Worker.WorkerOptions.layer`, decodes that file
+creates; `Worker.WorkerOptions`, read through `Worker.workerOptionsLayer`, decodes that file
 into the same `StrykerOptions` a local `stryker` run uses, so a worker's
 handlers see the run's options without the host passing them over the wire.
 

@@ -1,3 +1,5 @@
+export { layer as workerOptionsLayer } from '../drivers/worker-options.js'
+export { layer as workerTelemetryLayer } from '../drivers/worker-telemetry.js'
 export { WorkerOptionsWire } from '../worker-options.schema.js'
 export { WorkerOptions } from '../worker-options.service.js'
 export { workerServerLayer, type WorkerServerParams } from '../worker-server.blueprint.js'

@@ -85,7 +85,7 @@ const runLayerOf = (root: string, ports: Layer.Layer<Engine.EnginePorts> = Engin
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     return {
       queue,
-      layer: Layer.merge(Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports), ports),
+      layer: Layer.merge(Layer.provide(Engine.stage(environmentFor(root), queue), ports), ports),
     }
   })
 

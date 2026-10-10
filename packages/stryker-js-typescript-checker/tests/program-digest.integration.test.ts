@@ -2,7 +2,7 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import { CheckerRuntime, checkerRuntimeLayer } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
@@ -208,7 +208,7 @@ const digestOf = (
       const runtime = yield* CheckerRuntime
       const checker = yield* Effect.orDie(runtime.checker)
       return String(yield* Effect.orDie(checker.digest))
-    }).pipe(Effect.provide(CheckerRuntime.layer(options)))
+    }).pipe(Effect.provide(checkerRuntimeLayer(options)))
   }).pipe(Effect.orDie, Effect.provide(FILE_PORTS))
 
 const digestOutcomeOf = (

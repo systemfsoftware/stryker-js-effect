@@ -128,7 +128,7 @@ const runOnce = (root: string, options: Options.PartialStrykerOptions): Effect.E
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const ports = Engine.nodePlatformLayer
     const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports),
+      Layer.provide(Engine.stage(environmentFor(root), queue), ports),
       ports,
     )
     const exit = yield* Engine.mutationTestCell

@@ -12,8 +12,8 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 
-import { testRunnerHandlers } from './TestRunnerWorker.service.js'
-import { layer as vitestRunner } from './VitestRunner.service.js'
+import { testRunnerHandlers } from './drivers/test-runner-worker.js'
+import { layer as vitestRunner } from './drivers/vitest-runner.js'
 
 const workerPlatformLayer = Layer.unwrap(
   Effect.gen(function*() {
@@ -43,10 +43,10 @@ const vitestRunnerLayer = Layer.unwrap(
   }),
 )
 
-const servedPlatformLayer = workerPlatformLayer.pipe(Layer.provide(Worker.WorkerTelemetry.layer))
+const servedPlatformLayer = workerPlatformLayer.pipe(Layer.provide(Worker.workerTelemetryLayer))
 
 const workerRootLayer = vitestRunnerLayer.pipe(
-  Layer.provideMerge(Worker.WorkerOptions.layer.pipe(Layer.provideMerge(servedPlatformLayer))),
+  Layer.provideMerge(Worker.workerOptionsLayer.pipe(Layer.provideMerge(servedPlatformLayer))),
 )
 
 NodeRuntime.runMain(

@@ -3,7 +3,7 @@ import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Stream from 'effect/Stream'
 
-import { type TestRunnerPhase } from './VitestRunner.schema.js'
+import { type TestRunnerPhase } from '../VitestRunner.schema.js'
 
 /**
  * The worker's side of the TestRunner protocol: every call runs against the

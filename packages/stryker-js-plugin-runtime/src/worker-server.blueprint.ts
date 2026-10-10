@@ -15,7 +15,7 @@ import * as SocketServer from 'effect/socket/SocketServer'
 
 import type { Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 
-import { layerTraceContextServer } from './trace-context-rpc.service.js'
+import { layerTraceContextServer } from './drivers/trace-context-rpc.js'
 
 const traceContextServer: Layer.Layer<Trace.TraceContextMiddleware> = layerTraceContextServer
 

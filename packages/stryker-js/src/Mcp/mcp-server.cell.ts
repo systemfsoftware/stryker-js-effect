@@ -13,16 +13,17 @@ import * as S from 'effect/Schema'
 
 import { ReproducerSchema } from '../build-reproducers.workflow.js'
 import type { ConfigReadError } from '../ConfigError.schema.js'
+import { captureLayer as machineConsoleCaptureLayer, layer as machineConsoleLayer } from '../drivers/machine-console.js'
+import { stage } from '../drivers/run-stage.js'
 import { recordFeedbackCell } from '../Feedback/Feedback.cell.js'
 import { FeedbackUnusable } from '../Feedback/Feedback.schema.js'
 import { readMutationReport, readSurfacedSurvivors } from '../Feedback/read-report.js'
 import { ResolvedMode } from '../output-mode.schema.js'
-import { MachineConsole } from '../reporting/machine-console.service.js'
 import { mutantRerunAdmissionCell, RerunRefused } from '../Rerun/mod.js'
 import { mutantDetailEventsOf } from '../Rerun/rerun-selection.js'
 import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import { mutationTestCell } from '../run/run-stages.cell.js'
-import { RunEnvironment, type RunEnvironmentShape } from '../run/RunEnvironment.service.js'
+import { type RunEnvironmentShape } from '../run/RunEnvironment.service.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { StrykerPackage } from '../stryker-package.schema.js'
 import { mcpToolkit } from './mcp-tools.js'
@@ -138,8 +139,8 @@ const runRestricted = (
       allowConsoleColors: false,
     }
     const runLayer = Layer.merge(
-      RunEnvironment.stage(environment, queue),
-      MachineConsole.captureLayer.pipe(Layer.provide(MachineConsole.layer)),
+      stage(environment, queue),
+      machineConsoleCaptureLayer.pipe(Layer.provide(machineConsoleLayer)),
     )
     return yield* mutationTestCell
       .run({ cliOptions: options, targetMutatePatterns: undefined })
@@ -216,5 +217,5 @@ export const mcpServerLayer = ({ basePath }: McpServerOptions) =>
     McpServer.toolkit(mcpToolkit),
   ).pipe(
     Layer.provide(handlers(basePath)),
-    Layer.provide(MachineConsole.layer),
+    Layer.provide(machineConsoleLayer),
   )
