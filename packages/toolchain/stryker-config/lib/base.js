@@ -9,6 +9,8 @@ const envConcurrency = process.env['STRYKER_CONCURRENCY'] ??
 
 const restoredShardReports = ['reports/stryker-incremental-*.json']
 
+const killMatrixLane = process.env['STRYKER_KILL_MATRIX'] === '1'
+
 export const sharedConfig = {
   packageManager: 'pnpm',
   reporters: isAgent || isCI ? ['json', 'html'] : ['progress', 'html', 'json'],
@@ -22,6 +24,7 @@ export const sharedConfig = {
   cleanTempDir: 'always',
   thresholds: { high: 100, low: 80, break: 100 },
   ...(envConcurrency !== undefined ? { concurrency: envConcurrency } : {}),
+  ...(killMatrixLane ? { disableBail: true, mutator: { mutantSetPolicy: 'full' } } : {}),
 }
 
 /**
