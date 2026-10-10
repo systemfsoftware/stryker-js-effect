@@ -1057,9 +1057,15 @@ importers:
       '@systemfsoftware/effect-gherkin-spec':
         specifier: 'catalog:'
         version: 7.0.0(@systemfsoftware/vitest@2.0.0(effect@4.0.0)(redis@6.2.1(@opentelemetry/api@1.9.1))(vitest@5.0.1))(effect@4.0.0)(vitest@5.0.1)
+      '@systemfsoftware/effect-schema-recursion-budget':
+        specifier: 'catalog:'
+        version: 2.0.0(effect@4.0.0)
       '@systemfsoftware/oxlint-config-recommended':
         specifier: 'catalog:'
         version: 4.0.0(effect@4.0.0)(oxlint-tsgolint@7.0.2001)(oxlint@1.82.0(oxlint-tsgolint@7.0.2001))(typescript@7.0.2)
+      '@systemfsoftware/stryker-ignorer-effect-schema-declarations':
+        specifier: workspace:^
+        version: link:../ignorers/effect-schema-declarations
       '@systemfsoftware/stryker-ignorer-interface':
         specifier: workspace:^
         version: link:../ignorers/interface

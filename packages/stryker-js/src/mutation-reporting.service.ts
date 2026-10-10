@@ -272,7 +272,7 @@ const uniqueNames = (names: readonly (string | undefined)[]): readonly string[] 
 const partitionByFile = (files: Project['files'], fileNames: readonly string[]) => {
   const [present, missing] = Arr.separate(
     Arr.map(fileNames, (fileName) =>
-      Option.match(MutableHashMap.get(files, fileName), {
+      Option.match(Option.fromUndefinedOr(files.get(fileName)), {
         onNone: () => Result.fail(fileName),
         onSome: (file) => Result.succeed(file),
       })),
