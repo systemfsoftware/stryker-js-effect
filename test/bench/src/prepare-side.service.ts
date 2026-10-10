@@ -1,4 +1,16 @@
-import { Array as Arr, Boolean, Duration, Effect, FileSystem, Match, Option, Path, Schema as S, Stream } from 'effect'
+import {
+  Array as Arr,
+  Boolean,
+  Console,
+  Duration,
+  Effect,
+  FileSystem,
+  Match,
+  Option,
+  Path,
+  Schema as S,
+  Stream,
+} from 'effect'
 import type { BadArgument, PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
@@ -130,7 +142,11 @@ const timed = <A, E, R>(
   name: string,
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<Timed<A>, E, R> =>
-  Effect.map(Effect.timed(effect), ([elapsed, value]) => ({ step: { name, ms: Duration.toMillis(elapsed) }, value }))
+  Console.log(`bench setup started: ${name}`).pipe(
+    Effect.andThen(Effect.timed(effect)),
+    Effect.tap(([elapsed]) => Console.log(`bench setup finished: ${name} in ${Duration.format(elapsed)}`)),
+    Effect.map(([elapsed, value]) => ({ step: { name, ms: Duration.toMillis(elapsed) }, value })),
+  )
 
 const readCatalogs = (root: string): Effect.Effect<WorkspaceCatalogs, BenchSetupFailed, BenchPlatform> =>
   Effect.gen(function*() {
