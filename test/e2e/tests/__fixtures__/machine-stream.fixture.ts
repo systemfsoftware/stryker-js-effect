@@ -51,3 +51,11 @@ export const verdictEvent = (
           detail: `expected terminal verdict event, received: ${terminal._tag}`,
         }),
       ))
+
+export const reuseEventOf = (
+  events: ReadonlyArray<RunEvent.RunEvent>,
+): Effect.Effect<RunEvent.ReuseReported, MachineStreamError> =>
+  Option.match(Option.fromUndefinedOr(events.find(Schema.is(RunEvent.ReuseReported))), {
+    onNone: () => Effect.fail(new MachineStreamError({ line: '', detail: 'the run emitted no reuse event' })),
+    onSome: (reuse) => Effect.succeed(reuse),
+  })

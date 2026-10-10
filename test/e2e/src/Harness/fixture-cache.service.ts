@@ -102,6 +102,7 @@ const ENTRY_PACKAGES = [
   '@systemfsoftware/stryker-js-svelte',
   '@systemfsoftware/stryker-js-vitest-runner',
   '@systemfsoftware/stryker-js-typescript-checker',
+  '@systemfsoftware/stryker-js-verdict-store-s3',
 ] as const
 
 type Argv = readonly [string, ...Array<string>]

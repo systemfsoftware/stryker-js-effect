@@ -17,6 +17,7 @@
     "typecheck": "tsc -b"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "catalog:",
     "@effect/platform-node": "catalog:",
     "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/effect-microsandbox": "catalog:",
@@ -35,6 +36,7 @@
     "@systemfsoftware/vitest-config": "workspace:^",
     "@types/node": "catalog:",
     "effect": "catalog:",
+    "emulate": "catalog:",
     "microsandbox": "catalog:",
     "oxlint": "catalog:",
     "typescript": "catalog:",

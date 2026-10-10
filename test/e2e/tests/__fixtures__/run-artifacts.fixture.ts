@@ -7,7 +7,7 @@ import type { SandboxForkFailure } from '../../src/Harness/harness-failure.schem
 import type { StrykerReadFile } from './e2e-harness.fixture.js'
 import { MachineStreamError } from './machine-stream.fixture.js'
 
-export const DEFAULT_INCREMENTAL_FILE = 'reports/stryker-incremental.json'
+export const DEFAULT_VERDICT_DIRECTORY = 'reports/stryker-verdicts'
 
 export const decodePersistedReport = (
   file: string,
@@ -31,9 +31,3 @@ export const readReportOf = (
   verdict.reportFile === null || verdict.reportFile === ''
     ? Effect.fail(new MachineStreamError({ line: '', detail: 'the terminal verdict carries no report file reference' }))
     : readPersistedReport(verdict.reportFile, readFile)
-
-export const readCheckpointOf = (
-  readFile: StrykerReadFile,
-  incrementalFile: string = DEFAULT_INCREMENTAL_FILE,
-): Effect.Effect<Report.MutationTestResult, ReportUndecodable | SandboxForkFailure> =>
-  readPersistedReport(incrementalFile, readFile)

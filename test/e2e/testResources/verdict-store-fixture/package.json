@@ -1,0 +1,10 @@
+{
+  "name": "verdict-store-fixture",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@systemfsoftware/effect-cell-types": "catalog:",
+    "effect": "catalog:",
+    "vitest": "catalog:"
+  }
+}
