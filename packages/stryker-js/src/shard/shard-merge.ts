@@ -25,7 +25,7 @@ import {
   type ShardReportGap,
   type ShardReportOverlap,
 } from './merge-shard-reports.workflow.js'
-import { ShardMergeFailed } from './shard-merge.schema.js'
+import { type MergedProject, ShardMergeFailed } from './shard-merge.schema.js'
 
 const STREAM_FILE = 'mutation-stream.jsonl'
 const REPORT_FILE = 'mutation.json'
@@ -46,6 +46,7 @@ export interface ShardMergeInput {
 interface ProjectReport {
   readonly project: string
   readonly report: Report.MutationTestResult
+  readonly thresholds: Option.Option<RunEvent.VerdictThresholds>
 }
 
 interface IncrementalGroup {
@@ -83,15 +84,12 @@ const resultOfReport = (text: string) => reportFromStream(ReportFromStreamComman
 
 const decodeVerdictLine = S.decodeOption(S.fromJsonString(RunEvent.VerdictReached))
 
-const budgetOfStream = (text: string | undefined): Option.Option<RunEvent.Budget> =>
-  Option.map(
-    Arr.last(
-      Option.match(Option.fromUndefinedOr(text), {
-        onNone: () => [],
-        onSome: (present) => present.split('\n').flatMap((line) => Option.toArray(decodeVerdictLine(line.trim()))),
-      }),
-    ),
-    (verdict) => verdict.budget,
+const verdictOfStream = (text: string | undefined): Option.Option<RunEvent.VerdictReached> =>
+  Arr.last(
+    Option.match(Option.fromUndefinedOr(text), {
+      onNone: () => [],
+      onSome: (present) => present.split('\n').flatMap((line) => Option.toArray(decodeVerdictLine(line.trim()))),
+    }),
   )
 
 const shardBudgetOf = (budgets: ReadonlyArray<Option.Option<RunEvent.Budget>>): Option.Option<RunEvent.Budget> =>
@@ -163,14 +161,30 @@ const schemaVersionOf = (reports: readonly ProjectReport[]): string =>
 const thresholdsOf = (reports: readonly ProjectReport[]): Report.Thresholds =>
   Option.getOrElse(Option.map(headReportOf(reports), (first) => first.report.thresholds), () => DEFAULT_THRESHOLDS)
 
+const thresholdsOfProject = (reports: readonly ProjectReport[]): RunEvent.VerdictThresholds | null =>
+  Option.getOrNull(Arr.findFirst(reports, (entry) => entry.thresholds))
+
+const mergedProjectsOf = (reports: readonly ProjectReport[]): readonly MergedProject[] =>
+  Arr.dedupe(reports.map((entry) => entry.project)).map((project) => {
+    const own = reports.filter((entry) => entry.project === project)
+    return {
+      project,
+      thresholds: thresholdsOfProject(own),
+      files: Arr.dedupe(
+        own.flatMap((entry) => Object.keys(entry.report.files).map((file) => fileKeyOf(project, file))),
+      ),
+    }
+  })
+
 const mergedReportOf = (
   reports: readonly ProjectReport[],
   budget: Option.Option<RunEvent.Budget>,
-): Report.MutationTestResult & { readonly budget?: RunEvent.Budget } => ({
+): Report.MutationTestResult & { readonly budget?: RunEvent.Budget; readonly projects: readonly MergedProject[] } => ({
   files: mergeFiles(reports),
   schemaVersion: schemaVersionOf(reports),
   thresholds: thresholdsOf(reports),
   config: {},
+  projects: mergedProjectsOf(reports),
   ...Option.match(budget, { onNone: () => ({}), onSome: (present) => ({ budget: present }) }),
 })
 
@@ -220,11 +234,16 @@ const collectProject = (
       ),
     )
     const incrementalTexts = yield* incrementalTextsOf(projectDir)
+    const verdict = verdictOfStream(stream)
     return {
       reported: reportedOf(shard, project.project, report),
-      projectReport: Option.map(report, (present) => ({ project: project.project, report: present })),
+      projectReport: Option.map(report, (present) => ({
+        project: project.project,
+        report: present,
+        thresholds: Option.map(verdict, (reached) => reached.thresholds),
+      })),
       incremental: { project: project.project, texts: incrementalTexts },
-      budget: budgetOfStream(stream),
+      budget: Option.map(verdict, (reached) => reached.budget),
     }
   })
 
