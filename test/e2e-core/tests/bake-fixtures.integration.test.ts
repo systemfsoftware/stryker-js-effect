@@ -121,7 +121,29 @@ interface BakeRun {
   readonly fixture: Fixture
   readonly registry: string
   readonly argv: (root: string) => ReadonlyArray<string>
+  readonly fixtureIds?: ReadonlyArray<string>
 }
+
+const stageFixture = (root: string, fixtureId: string, fixture: Fixture) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const dir = path.join(root, fixtureId)
+    yield* fs.makeDirectory(dir, { recursive: true })
+    yield* fs.writeFileString(
+      path.join(dir, 'package.json'),
+      yield* S.encodeEffect(PinnedFixtureManifestJson)({
+        name: FIXTURE_ID,
+        version: '0.0.0',
+        private: true,
+        devDependencies: fixture.devDependencies,
+      }),
+    )
+    yield* fs.writeFileString(
+      path.join(dir, 'package-lock.json'),
+      yield* S.encodeEffect(NpmLockfileJson)(lockOf(fixture)),
+    )
+  })
 
 const runBake = (bake: BakeRun) =>
   Effect.scoped(Effect.gen(function*() {
@@ -130,21 +152,8 @@ const runBake = (bake: BakeRun) =>
     const script = path.join(import.meta.dirname, '..', 'bake', 'bake-fixtures.sh')
     const scratch = yield* fs.makeTempDirectoryScoped({ prefix: 'bake-fixtures-' })
     const root = path.join(scratch, 'baked')
-    const fixture = path.join(root, FIXTURE_ID)
-    yield* fs.makeDirectory(fixture, { recursive: true })
-    yield* fs.writeFileString(
-      path.join(fixture, 'package.json'),
-      yield* S.encodeEffect(PinnedFixtureManifestJson)({
-        name: FIXTURE_ID,
-        version: '0.0.0',
-        private: true,
-        devDependencies: bake.fixture.devDependencies,
-      }),
-    )
-    yield* fs.writeFileString(
-      path.join(fixture, 'package-lock.json'),
-      yield* S.encodeEffect(NpmLockfileJson)(lockOf(bake.fixture)),
-    )
+    const fixtureIds = bake.fixtureIds ?? [FIXTURE_ID]
+    yield* Effect.forEach(fixtureIds, (fixtureId) => stageFixture(root, fixtureId, bake.fixture), { discard: true })
     const outcome = yield* run(['sh', script, ...bake.argv(root)], scratch, {
       npm_config_registry: bake.registry,
       npm_config_cache: path.join(scratch, 'npm-cache'),
@@ -152,7 +161,7 @@ const runBake = (bake: BakeRun) =>
       npm_config_fetch_retries: '0',
     })
     const installed = yield* Effect.option(Effect.flatMap(
-      fs.readFileString(path.join(fixture, 'node_modules', 'left-pad', 'package.json')),
+      fs.readFileString(path.join(root, fixtureIds[0], 'node_modules', 'left-pad', 'package.json')),
       S.decodeEffect(InstalledPackageJson),
     ))
     const reasons = bakeReasonsOf({ stderrTail: outcome.stderr, exitCode: outcome.exitCode })
@@ -161,6 +170,7 @@ const runBake = (bake: BakeRun) =>
       stderr: outcome.stderr,
       reasons,
       codes: reasons.map((reason) => reason.code),
+      attempted: fixtureIds.filter((fixtureId) => outcome.stderr.includes(`[bake] ${fixtureId}: npm ci`)),
       installed: Option.getOrNull(installed),
     }
   }))
@@ -258,6 +268,38 @@ Feature('Baking fixtures from their committed locks with bake-fixtures.sh')
             codes: s.outcome.codes,
             installed: s.outcome.stderr.includes('[bake]'),
           }).toStrictEqual({ exitCode: 2, codes: ['E2E_BAKE_ARGV'], installed: false })
+        ),
+      ),
+    )
+    scenario(
+      'With more fixtures than lanes, a failed install does not stop its lane: every fixture is attempted and named',
+      Gherkin.Do.pipe(
+        Given('six fixtures whose locks each name an unpacked closure tarball, baked on four lanes')(
+          'fixtureIds',
+          () => Effect.succeed(['fixture-a', 'fixture-b', 'fixture-c', 'fixture-d', 'fixture-e', 'fixture-f']),
+        ),
+        When('the bake runs')(
+          'outcome',
+          (s) =>
+            Effect.flatMap(
+              leftPadRegistry,
+              (registry) => runBake({ fixture: RUNNER_LOCKED, registry, argv: bakeArgv, fixtureIds: s.fixtureIds }),
+            ),
+        ),
+        Then('the bake fails once, after attempting all six and naming each failure')((s, expect) =>
+          expect({
+            failed: s.outcome.exitCode !== 0,
+            attempted: s.outcome.attempted,
+            codes: s.outcome.codes,
+            named: s.fixtureIds.filter((fixtureId) =>
+              s.outcome.stderr.includes(`E2E_BAKE_TARBALL_MISSING: ${fixtureId}:`)
+            ),
+          }).toStrictEqual({
+            failed: true,
+            attempted: s.fixtureIds,
+            codes: s.fixtureIds.map(() => 'E2E_BAKE_TARBALL_MISSING'),
+            named: s.fixtureIds,
+          })
         ),
       ),
     )

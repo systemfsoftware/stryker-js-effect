@@ -53,19 +53,21 @@ install() {
   else
     reason E2E_BAKE_FAILED "$id: npm ci exited $code: ${first:-no npm error line}${mismatch:+ ($mismatch)}." "run $relock, commit test/e2e/testResources/$id/package-lock.json, and if it still fails run npm ci in that fixture on the host."
   fi
-  exit "$code"
+  return "$code"
 }
 
 lane() {
   own="$1"
   index=0
+  lane_failed=0
   for dir in "$root"/*/; do
     if [ $((index % lanes)) -eq "$own" ]; then
       cd "$dir"
-      install "$(basename "$dir")"
+      install "$(basename "$dir")" || lane_failed=1
     fi
     index=$((index + 1))
   done
+  return "$lane_failed"
 }
 
 pids=''
