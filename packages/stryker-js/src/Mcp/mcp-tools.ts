@@ -9,6 +9,7 @@ import * as Stdio from 'effect/Stdio'
 
 import { FeedbackUnusable } from '../Feedback/Feedback.schema.js'
 import { GitDiff } from '../git-diff.service.js'
+import { Reporter } from '../reporter.service.js'
 import { SurvivorRef } from '../surfacing.schema.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { MutantDetail, RerunMutantFailure, ShowMutantFailure } from './mcp-tools.schema.js'
@@ -21,6 +22,7 @@ const engineDependencies = [
   Stdio.Stdio,
   ChildProcessSpawner.ChildProcessSpawner,
   GitDiff,
+  Reporter,
   WorkerLauncher,
 ]
 

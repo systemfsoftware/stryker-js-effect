@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
@@ -56,7 +56,7 @@ const runFromProject = (
       globalThis.process.chdir(root)
       return previous
     }),
-    () => Effect.map(Effect.result(Engine.strykerCell(options)), Result.isSuccess),
+    () => Effect.map(Effect.result(Cli.strykerCell(options)), Result.isSuccess),
     (previous) =>
       Effect.sync(() => {
         globalThis.process.chdir(previous)
@@ -77,7 +77,7 @@ const sandboxesLeftIn = (root: string): Effect.Effect<number, PlatformError, Fil
 
 const SANDBOXES_LEFT = { 'its sandbox': 1, 'no sandbox': 0 } as const
 
-const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
+const runLayer = Layer.mergeAll(Cli.platformLayer, Stdio.layerTest({}))
 
 Feature('Keeping or removing the sandbox a mutation run leaves behind')
   .withLayer(runLayer)

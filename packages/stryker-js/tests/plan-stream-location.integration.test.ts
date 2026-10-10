@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
@@ -272,7 +272,7 @@ const runPlanThenRun = (
   }).pipe(Effect.orDie)
 
 Feature('Writing the plan stream beside the invocation root', { timeout: 240_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary plans from a root and then runs one of its projects unchanged')
   .body(({ scenario }) => {
     scenario(

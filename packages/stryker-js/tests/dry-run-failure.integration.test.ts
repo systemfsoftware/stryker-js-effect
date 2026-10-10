@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import { type Options, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -94,7 +94,7 @@ const runFromProject = (
       globalThis.process.chdir(root)
       return previous
     }),
-    () => Effect.result(Engine.strykerCell(options)),
+    () => Effect.result(Cli.strykerCell(options)),
     (previous) =>
       Effect.sync(() => {
         globalThis.process.chdir(previous)
@@ -155,7 +155,7 @@ const runWithRunnerPlugin = (
 
 const isProcessAlive = (pid: number): boolean => Result.isSuccess(Result.try(() => globalThis.process.kill(pid, 0)))
 
-const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
+const runLayer = Layer.mergeAll(Cli.platformLayer, Stdio.layerTest({}))
 
 Feature('Reporting why a dry run failed', { timeout: 120_000 })
   .withLayer(runLayer)

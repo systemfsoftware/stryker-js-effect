@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
@@ -132,7 +132,7 @@ const distinctScheduledOf = (plan: ShardPlan): number =>
   new Set(plan.shards.flatMap((shard) => shard.projects.flatMap((entry) => entry.mutants))).size
 
 Feature('Planning mutation shards across projects', { timeout: 180_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary instruments both projects without running a test')
   .body(({ scenario }) => {
     scenario(

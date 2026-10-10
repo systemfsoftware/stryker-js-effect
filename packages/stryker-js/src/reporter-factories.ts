@@ -23,7 +23,6 @@ import { failAsProgress } from './reporter-failures.js'
 import { ReporterOutput } from './reporter-output.service.js'
 import { sarifReport, SarifReportCommand } from './sarif-report.workflow.js'
 import { sarifFileNameOf } from './stryker-outputs.js'
-import { StrykerPackage } from './stryker-package.schema.js'
 import { surfacedSurvivorsOf } from './surfacing.js'
 
 type ReporterCellServices<C> = C extends Cell.Cell<infer _I, infer _A, infer _E, infer S> ? S : never
@@ -110,6 +109,12 @@ const readSarifReport = (events: AsyncIterable<Reporter.ReporterEvent>) =>
     (last) => Option.getOrUndefined(last),
   )
 
+const toolVersionOf = (report: Report.MutationTestResult): string =>
+  Option.match(Option.fromNullishOr(report.framework), {
+    onNone: () => '',
+    onSome: (framework) => framework.version ?? '',
+  })
+
 const writeSarifReport = (options: Options.StrykerOptions, report: Report.MutationTestResult) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -124,7 +129,7 @@ const writeSarifReport = (options: Options.StrykerOptions, report: Report.Mutati
           }),
           tool: {
             name: 'StrykerJS',
-            version: StrykerPackage.version,
+            version: toolVersionOf(report),
             informationUri: STRYKER_INFORMATION_URI,
           },
           maxResults: SARIF_MAX_RESULTS,

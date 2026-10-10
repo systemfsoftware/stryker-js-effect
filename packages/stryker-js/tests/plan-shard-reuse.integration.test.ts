@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -314,7 +314,7 @@ const planRunMergePlan = (
   }).pipe(Effect.orDie)
 
 Feature('Reusing recorded verdicts when planning mutation shards', { timeout: 240_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary plans, shards, merges and plans again over a two-project root')
   .body(({ scenario }) => {
     scenario(

@@ -15,7 +15,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from '../classify-worker-exit.workflow.js'
-import type { EnginePorts } from '../run/StageServices.service.js'
+import type { PlatformPorts } from '../run/StageServices.service.js'
 import { make as makeSpawnedSocketWorker } from '../spawned-socket-worker.handle.js'
 import { layerWorkerProtocol } from '../worker-protocol.blueprint.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
@@ -131,11 +131,11 @@ const nodeBase = Layer.mergeAll(nodeFsPathLayer, nodeSpawnerLayer, NodeStdio.lay
 
 export const makeNodePlatformLayer = (options: {
   readonly childEnv: Readonly<Record<string, string>>
-}): Layer.Layer<EnginePorts> =>
+}): Layer.Layer<PlatformPorts> =>
   Layer.mergeAll(
     nodeWorkerLauncherLayer(options.childEnv).pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
     nodeBase,
     gitDiffLayer,
   )
 
-export const nodePlatformLayer: Layer.Layer<EnginePorts> = makeNodePlatformLayer({ childEnv: {} })
+export const nodePlatformLayer: Layer.Layer<PlatformPorts> = makeNodePlatformLayer({ childEnv: {} })

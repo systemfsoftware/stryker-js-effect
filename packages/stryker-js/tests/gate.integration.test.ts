@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
@@ -178,7 +178,7 @@ const readWrittenBudgetBaseline = (
   }).pipe(Effect.orDie)
 
 Feature('Gating a pull request on the committed survivor and time-budget baselines', { timeout: 180_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary reads the finished report and the committed baseline in a real Node process')
   .body(({ scenario }) => {
     scenario(

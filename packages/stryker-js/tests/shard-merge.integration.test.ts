@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
@@ -346,7 +346,7 @@ const mergeWithDowngradedStream = (
   }).pipe(Effect.orDie)
 
 Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary runs a two-shard plan and merges it')
   .body(({ scenario }) => {
     scenario(

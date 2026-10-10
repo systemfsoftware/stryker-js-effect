@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
@@ -151,8 +151,8 @@ const executeRun = (workspace: Workspace): Effect.Effect<Observed, never, FileSy
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(8192)
     const runLayer = Layer.merge(
-      Layer.provide(Engine.stage(environmentFor(workspace.directory), queue), Engine.nodePlatformLayer),
-      Engine.nodePlatformLayer,
+      Layer.provide(Engine.stage(environmentFor(workspace.directory), queue), Cli.platformLayer),
+      Cli.platformLayer,
     )
     const exit = yield* Engine.mutationTestCell
       .run({
@@ -266,7 +266,7 @@ const annotationLinesOf = (stdout: string): ReadonlyArray<string> =>
   Arr.filter(stdout.split('\n'), (line) => line.startsWith('::'))
 
 Feature('Survivors reaching code scanning, annotations, and reproducers', { timeout: 180_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the run drives the real engine in process and writes the report, the SARIF log, and the sidecar')
   .body(({ scenario }) => {
     scenario(

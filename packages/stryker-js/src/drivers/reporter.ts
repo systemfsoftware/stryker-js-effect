@@ -6,6 +6,7 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import type * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 
 import {
@@ -23,6 +24,7 @@ import {
 } from '../reporter-name.schema.js'
 import { ReporterOutput } from '../reporter-output.service.js'
 import { Reporter } from '../reporter.service.js'
+import { layer as stdioReporterOutputLayer } from './stdio-reporter-output.js'
 
 const failAsStreamDrain = <E = unknown>(cause: E): InterfaceReporter.ReporterFailed =>
   InterfaceReporter.ReporterFailed.make({
@@ -34,7 +36,7 @@ const failAsStreamDrain = <E = unknown>(cause: E): InterfaceReporter.ReporterFai
 const drainReporterFactory: InterfaceReporter.ReporterFactory = () => (events) =>
   Stream.runDrain(Stream.fromAsyncIterable(events, failAsStreamDrain))
 
-export const layer: Layer.Layer<Reporter, never, ReporterOutput | FileSystem.FileSystem | Path.Path> = Layer
+const builtinLayer: Layer.Layer<Reporter, never, ReporterOutput | FileSystem.FileSystem | Path.Path> = Layer
   .effect(
     Reporter,
     Effect.map(Effect.all([ReporterOutput, FileSystem.FileSystem, Path.Path]), ([output, fs, path]) => {
@@ -53,3 +55,7 @@ export const layer: Layer.Layer<Reporter, never, ReporterOutput | FileSystem.Fil
       })
     }),
   )
+
+export const layer: Layer.Layer<Reporter, never, Stdio.Stdio | FileSystem.FileSystem | Path.Path> = builtinLayer.pipe(
+  Layer.provide(stdioReporterOutputLayer),
+)

@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -196,7 +196,7 @@ const bothProjectsOutputs = (
   }).pipe(Effect.orDie)
 
 Feature('Running one shard of a shard plan', { timeout: 180_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary runs a shard project by project in a real Node process')
   .body(({ scenario }) => {
     scenario(

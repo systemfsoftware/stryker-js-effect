@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
@@ -84,7 +84,7 @@ const runStrykerLocally = (
   ).pipe(Effect.orDie)
 
 Feature('Refusing a mutation run that is not on main CI', { timeout: 180_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary decides in a real Node process')
   .body(({ scenario }) => {
     scenario(

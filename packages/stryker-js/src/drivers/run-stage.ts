@@ -24,9 +24,7 @@ import { layer as idGeneratorLayer } from './id-generator.js'
 import { layer as mutationReportingLayer } from './mutation-reporting.js'
 import { layer as phaseClockLayer } from './phase-clock.js'
 import { layer as projectFilesLayer } from './project-files.js'
-import { layer as reporterLayer } from './reporter.js'
 import { workerReportsLayer } from './run-events.js'
-import { layer as reporterOutputLayer } from './stdio-reporter-output.js'
 
 export const stage: {
   (
@@ -115,9 +113,5 @@ const stageLayerOf = (
       }),
     ),
   )
-  return Layer.mergeAll(
-    stageLayer,
-    mutationReportingLayer.pipe(Layer.provide(stageLayer)),
-    reporterLayer.pipe(Layer.provide(reporterOutputLayer), Layer.provide(stageLayer)),
-  )
+  return Layer.mergeAll(stageLayer, mutationReportingLayer.pipe(Layer.provide(stageLayer)))
 }

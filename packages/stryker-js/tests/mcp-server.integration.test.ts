@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine, Mcp } from '@systemfsoftware/stryker-js'
+import { Cli, Mcp } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
@@ -98,12 +98,12 @@ const writeWorkspace = (): Effect.Effect<Workspace, never, never> =>
     yield* fs.makeDirectory(path.join(directory, 'src'), { recursive: true })
     yield* fs.writeFileString(path.join(directory, TARGET_FILE), TARGET_SOURCE)
     return { directory }
-  }).pipe(Effect.orDie, Effect.provide(Engine.nodePlatformLayer))
+  }).pipe(Effect.orDie, Effect.provide(Cli.platformLayer))
 
 const removeWorkspace = (directory: string): Effect.Effect<void, never, never> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true })).pipe(
     Effect.orDie,
-    Effect.provide(Engine.nodePlatformLayer),
+    Effect.provide(Cli.platformLayer),
   )
 
 const readText = (directory: string, file: string): Effect.Effect<string, never, never> =>
@@ -111,7 +111,7 @@ const readText = (directory: string, file: string): Effect.Effect<string, never,
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     return yield* fs.readFileString(path.join(directory, file)).pipe(Effect.orElseSucceed(() => ''))
-  }).pipe(Effect.provide(Engine.nodePlatformLayer))
+  }).pipe(Effect.provide(Cli.platformLayer))
 
 const runStryker = (
   root: string,
@@ -136,7 +136,7 @@ const runStryker = (
       const stdout = yield* Fiber.join(printed)
       return { exitCode: Number(exitCode), stdout }
     }),
-  ).pipe(Effect.orDie, Effect.provide(Engine.nodePlatformLayer))
+  ).pipe(Effect.orDie, Effect.provide(Cli.platformLayer))
 
 const bounded = <A>(effect: Effect.Effect<A, never, never>, what: string): Effect.Effect<A, never, never> =>
   Effect.flatMap(
@@ -287,10 +287,10 @@ const drive = (directory: string): Effect.Effect<Omit<Observed, 'runCompleted'>,
         reportListsTheSurfacedId: reportText.includes(id),
       }
     }),
-  ).pipe(Effect.orDie, Effect.provide(Engine.nodePlatformLayer))
+  ).pipe(Effect.orDie, Effect.provide(Cli.platformLayer))
 
 Feature('An agent listing, inspecting and re-running mutants over MCP', { timeout: 180_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker mcp server speaks JSON-RPC over stdio against a project the engine mutated')
   .body(({ scenario }) => {
     scenario(

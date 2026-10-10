@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report, type Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
@@ -101,9 +101,9 @@ const executeRun = (
     const runLayer = Layer.merge(
       Layer.provide(
         Engine.stage(environmentFor(workspace, slowReporter), queue),
-        Engine.nodePlatformLayer,
+        Cli.platformLayer,
       ),
-      Engine.nodePlatformLayer,
+      Cli.platformLayer,
     )
     const exit = yield* Engine.mutationTestCell
       .run({

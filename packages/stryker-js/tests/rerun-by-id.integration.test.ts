@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -138,7 +138,7 @@ const detailOf = (stdout: string, id: string): RunEvent.MutantDetailReported | u
   mutantDetailsOf(stdout).find((event) => event.id === id)
 
 Feature('Re-running one mutant by its id', { timeout: 180_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary re-runs a single mutant and reports its detail')
   .body(({ scenario }) => {
     scenario(

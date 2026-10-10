@@ -18,10 +18,15 @@ export type { StrykerRun } from '../run/host.service.js'
 export type { InstrumentDone } from '../run/instrument.cell.js'
 export type { PrepareDone, PrepareExecutorArgs } from '../run/prepare.cell.js'
 export { mutationTestCell } from '../run/run-stages.cell.js'
-export { strykerCell } from '../run/run-stages.js'
 export type { RunEnvironmentShape } from '../run/RunEnvironment.service.js'
 export { RunEnvironment } from '../run/RunEnvironment.service.js'
-export type { EnginePorts, RunStageServices, StageServices, WiredRunLayer } from '../run/StageServices.service.js'
+export type {
+  EnginePorts,
+  PlatformPorts,
+  RunStageServices,
+  StageServices,
+  WiredRunLayer,
+} from '../run/StageServices.service.js'
 export type { SandboxHandle } from '../Sandbox.handle.js'
 export { StrykerError } from '../stryker-error.schema.js'
 export type { TestCoverage } from '../test-coverage.schema.js'

@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
@@ -135,7 +135,7 @@ const diagnosticsOf = (output: string): readonly string[] =>
   output.split('\n').filter((line) => line.includes('error TS'))
 
 Feature('Keeping the published ./config authoring surface working from a consumer project', { timeout: 120_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live(
     'the configuration is compiled and loaded by real TypeScript and Node processes reading the built package from the host filesystem',
   )

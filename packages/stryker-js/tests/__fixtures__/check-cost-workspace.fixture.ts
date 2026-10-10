@@ -1,5 +1,5 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
@@ -94,7 +94,7 @@ export interface RefusedRun {
 export const runReasonlessWorkspace: Effect.Effect<RefusedRun> = Effect.gen(function*() {
   const root = yield* writeWorkspace(reasonlessWorkspaceFiles)
   const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
-  const ports = Engine.nodePlatformLayer
+  const ports = Cli.platformLayer
   const runLayer = Layer.merge(Layer.provide(Engine.stage(environmentFor(root), queue), ports), ports)
   const exit = yield* Engine.mutationTestCell
     .run({ cliOptions: checkedOptionsOf(root), targetMutatePatterns: undefined })
@@ -256,7 +256,7 @@ const runEngineWith = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
-    const ports = Engine.nodePlatformLayer
+    const ports = Cli.platformLayer
     const runLayer = Layer.merge(
       Layer.provide(Engine.stage(environmentFor(directory), queue), ports),
       ports,

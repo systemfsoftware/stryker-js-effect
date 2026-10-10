@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Configuration, Engine, Plugin } from '@systemfsoftware/stryker-js'
+import { Cli, Configuration, Engine, Plugin } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { strykerPlugins as vmRunnerPlugins } from '@systemfsoftware/stryker-js-vm-runner'
 import * as Arr from 'effect/Array'
@@ -82,7 +82,7 @@ const refusedDryRun = (root: string) =>
   })
 
 Feature('Running mutation tests with the vm test runner')
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('each scenario reads the real install layout or starts a real vitest runner worker')
   .body(({ scenario }) => {
     scenario(

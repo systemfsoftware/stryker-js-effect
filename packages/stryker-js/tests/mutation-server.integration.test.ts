@@ -1,6 +1,6 @@
 import { NodeSocket } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine, Serve } from '@systemfsoftware/stryker-js'
+import { Cli, Engine, Serve } from '@systemfsoftware/stryker-js'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
@@ -398,12 +398,12 @@ const writeWorkspace = (): Effect.Effect<Workspace, never, never> =>
     yield* fs.makeDirectory(path.join(directory, 'src'), { recursive: true })
     yield* fs.writeFileString(path.join(directory, TARGET_FILE), TARGET_SOURCE)
     return { directory }
-  }).pipe(Effect.orDie, Effect.provide(Engine.nodePlatformLayer))
+  }).pipe(Effect.orDie, Effect.provide(Cli.platformLayer))
 
 const removeWorkspace = (directory: string): Effect.Effect<void, never, never> =>
   Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true })).pipe(
     Effect.orDie,
-    Effect.provide(Engine.nodePlatformLayer),
+    Effect.provide(Cli.platformLayer),
   )
 
 const withDirectory = <A, E, R>(directory: string, use: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
@@ -602,7 +602,7 @@ const exposedAddressObserved = (): Effect.Effect<ExposedObserved, never, Engine.
   }))
 
 Feature('Serving the Mutation Server Protocol over stdio and sockets', { timeout: 180_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the mutation server drives the engine for a client that speaks the protocol')
   .body(({ scenario }) => {
     scenario(

@@ -32,16 +32,16 @@ export type StageServices =
   | Stdio.Stdio
   | WorkerLauncher
 
-export type EnginePorts =
+export type PlatformPorts =
   | ChildProcessSpawner.ChildProcessSpawner
   | FileSystem.FileSystem
   | GitDiff
   | Path.Path
   | Stdio.Stdio
   | WorkerLauncher
+export type EnginePorts = PlatformPorts | Reporter
 export type RunStageServices =
   | ProjectFiles
-  | Reporter
   | RunEnvironment
   | RunEvents
   | WorkerReports

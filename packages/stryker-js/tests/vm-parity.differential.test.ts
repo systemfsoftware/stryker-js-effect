@@ -1,5 +1,5 @@
 import { Differential } from '@systemfsoftware/differential-spec'
-import { Configuration, Engine, Plugin, Worker } from '@systemfsoftware/stryker-js'
+import { Cli, Configuration, Plugin, Worker } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
 import { strykerPlugins as vmRunnerPlugins } from '@systemfsoftware/stryker-js-vm-runner'
@@ -271,7 +271,7 @@ const withVmRunner = <A, R>(
     const context = contextFor(defaults, directory)
     return yield* Effect.flatMap(Plugin.buildTestRunner(context, vmChildRunner(context)), use)
   }).pipe(
-    Effect.provide(Engine.nodePlatformLayer),
+    Effect.provide(Cli.platformLayer),
     Effect.scoped,
     Effect.orDie,
   )
@@ -337,7 +337,7 @@ const mutationEngineEffect = (root: string): Effect.Effect<readonly MutantRecord
     () =>
       Effect.gen(function*() {
         const path = yield* Path.Path
-        const done = yield* Engine.strykerCell(MUTATION_RUN_OPTIONS)
+        const done = yield* Cli.strykerCell(MUTATION_RUN_OPTIONS)
         return done.results.map((result): MutantRecord => ({
           file: path.relative(root, result.fileName),
           start: { line: result.location.start.line, column: result.location.start.column },
@@ -352,11 +352,11 @@ const mutationEngineEffect = (root: string): Effect.Effect<readonly MutantRecord
       Effect.sync(() => {
         globalThis.process.chdir(previous)
       }),
-  ).pipe(Effect.provide(Engine.nodePlatformLayer), dieOnFailure)
+  ).pipe(Effect.provide(Cli.platformLayer), dieOnFailure)
 
 const generatedMutantReportOf = (project: GeneratedProject): Effect.Effect<readonly MutantRecord[]> =>
   withGeneratedProject(project, (root) => serialized(mutationEngineEffect(root))).pipe(
-    Effect.provide(Engine.nodePlatformLayer),
+    Effect.provide(Cli.platformLayer),
     dieOnFailure,
   )
 
@@ -499,7 +499,7 @@ const generatedRealMutantVerdicts = (project: GeneratedProject): Effect.Effect<O
       }))
     return recordOf(rows)
   }).pipe(
-    Effect.provide(Engine.nodePlatformLayer),
+    Effect.provide(Cli.platformLayer),
     dieOnFailure,
     labelled('the real-vitest mutant reference failed'),
   )
@@ -652,14 +652,14 @@ const withGeneratedSuite = <A>(
 
 const generatedRealOutcomes = (suite: GeneratedSuite): Effect.Effect<Outcomes> =>
   withGeneratedSuite(suite, (directory) => realTestOutcomes(directory)).pipe(
-    Effect.provide(Engine.nodePlatformLayer),
+    Effect.provide(Cli.platformLayer),
     dieOnFailure,
     labelled('the real-vitest reference failed'),
   )
 
 const generatedVmOutcomes = (suite: GeneratedSuite): Effect.Effect<Outcomes> =>
   withGeneratedSuite(suite, (directory, path) => vmTestOutcomes(directory, path)).pipe(
-    Effect.provide(Engine.nodePlatformLayer),
+    Effect.provide(Cli.platformLayer),
     dieOnFailure,
     labelled('the vm runner failed'),
   )

@@ -1,4 +1,5 @@
 export * as Checker from './Checker/mod.js'
+export * as Cli from './Cli/mod.js'
 export * as Configuration from './Configuration/mod.js'
 export * as Engine from './Engine/mod.js'
 export * as GitDiffSchema from './git-diff.schema.js'

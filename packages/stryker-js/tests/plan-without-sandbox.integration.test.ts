@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
@@ -167,7 +167,7 @@ const planThenRun = (
   }).pipe(Effect.orDie)
 
 Feature('Planning shards without materializing a sandbox')
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary plans and runs a generated temp project')
   .body(({ scenario }) => {
     scenario(

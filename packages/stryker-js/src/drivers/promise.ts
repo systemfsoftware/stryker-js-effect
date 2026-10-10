@@ -4,7 +4,7 @@ import { dual } from 'effect/Function'
 
 import type { MutationTestDone } from '../mutation-reporting.service.js'
 import { strykerCell } from '../run/run-stages.js'
-import { nodePlatformLayer } from './node.js'
+import { platformLayer } from './platform.js'
 
 export const run = dual<
   (
@@ -14,5 +14,5 @@ export const run = dual<
 >(
   (args) => args.length === 2 || Array.isArray(args[0]) === false,
   (options, targetMutatePatterns) =>
-    Effect.runPromise(strykerCell(options, targetMutatePatterns).pipe(Effect.provide(nodePlatformLayer))),
+    Effect.runPromise(strykerCell(options, targetMutatePatterns).pipe(Effect.provide(platformLayer))),
 )

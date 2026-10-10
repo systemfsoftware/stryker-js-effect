@@ -38,8 +38,8 @@ import { concludeRunCell } from '../conclude-run.cell.js'
 import { runOutcomeCommandOf } from '../conclude-run.js'
 import { mergeConfig } from '../config/merge-config.js'
 import { captureLayer as machineConsoleCaptureLayer, layer as machineConsoleLayer } from '../drivers/machine-console.js'
-import { makeNodePlatformLayer } from '../drivers/node.js'
 import { layer as outputModeProbeLayer } from '../drivers/output-mode-probe.js'
+import { makePlatformLayer } from '../drivers/platform.js'
 import { fileDrainLayer, portLayer } from '../drivers/run-event-stream.js'
 import { forStream } from '../drivers/run-stage.js'
 import { OutputModeProbe } from '../output-mode-probe.service.js'
@@ -145,7 +145,7 @@ const compileCacheChildEnv = inheritableCompileCacheDirectory === undefined
   ? {}
   : { NODE_COMPILE_CACHE: inheritableCompileCacheDirectory }
 
-const nodePlatform = makeNodePlatformLayer({ childEnv: compileCacheChildEnv })
+const nodePlatform = makePlatformLayer({ childEnv: compileCacheChildEnv })
 
 const probeGroup = Layer.mergeAll(
   outputModeProbeLayer,

@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine, GitDiff, GitDiffSchema } from '@systemfsoftware/stryker-js'
+import { Cli, Engine, GitDiff, GitDiffSchema } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
@@ -102,7 +102,7 @@ const runProject = (
               return yield* gitOutcome(input.ref)
             }),
         })
-        const ports = Layer.mergeAll(Engine.nodePlatformLayer, fakeGit)
+        const ports = Layer.mergeAll(Cli.platformLayer, fakeGit)
         const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
         const runLayer = Layer.merge(
           Layer.provide(Engine.stage(environmentFor(root), queue), ports),

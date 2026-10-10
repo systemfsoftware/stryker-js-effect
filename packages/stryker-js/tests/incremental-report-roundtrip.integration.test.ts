@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
@@ -82,7 +82,7 @@ const optionsOf = (
   incrementalFile: `${root}/reports/main.json`,
 })
 
-const runLayerOf = (root: string, ports: Layer.Layer<Engine.EnginePorts> = Engine.nodePlatformLayer) =>
+const runLayerOf = (root: string, ports: Layer.Layer<Engine.EnginePorts> = Cli.platformLayer) =>
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     return {
@@ -143,7 +143,7 @@ const runToCompletionRecordingWrites = (
   Effect.gen(function*() {
     const pathService = yield* Path.Path
     const target = pathService.join(root, 'reports', 'main.json')
-    const { layer } = yield* runLayerOf(root, Layer.merge(Engine.nodePlatformLayer, recordingFileSystemLayer(ops)))
+    const { layer } = yield* runLayerOf(root, Layer.merge(Cli.platformLayer, recordingFileSystemLayer(ops)))
     yield* Engine.mutationTestCell
       .run({ cliOptions: optionsOf(root, command), targetMutatePatterns: undefined })
       .pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)
@@ -156,7 +156,7 @@ const runToCompletionRecordingContents = (
   ops: RecordedFsOp[],
 ): Effect.Effect<void, never, never> =>
   Effect.gen(function*() {
-    const { layer } = yield* runLayerOf(root, Layer.merge(Engine.nodePlatformLayer, recordingFileSystemLayer(ops)))
+    const { layer } = yield* runLayerOf(root, Layer.merge(Cli.platformLayer, recordingFileSystemLayer(ops)))
     yield* Engine.mutationTestCell
       .run({ cliOptions: optionsOf(root, command), targetMutatePatterns: undefined })
       .pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)

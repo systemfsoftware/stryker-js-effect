@@ -41,13 +41,7 @@ import {
 } from '../run/discover-config-file.workflow.js'
 import { extendsStep, ExtendsStepCommand } from '../run/extends-step.workflow.js'
 import { StrykerError } from '../stryker-error.schema.js'
-
-export function importModule<A = unknown>(moduleName: string): Effect.Effect<A, StrykerError> {
-  return Effect.tryPromise({
-    try: (): Promise<A> => import(moduleName),
-    catch: (cause) => StrykerError.make({ message: `Failed to import module "${moduleName}"`, cause }),
-  })
-}
+import { importModule } from './import-module.js'
 
 export const initialExtendsStepState: ExtendsStepState = {
   visited: [],

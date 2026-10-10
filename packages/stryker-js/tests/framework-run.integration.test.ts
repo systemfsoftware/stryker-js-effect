@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import type * as Cause from 'effect/Cause'
@@ -191,8 +191,8 @@ const runOver = (workspace: Workspace): Effect.Effect<RunObservation, never, nev
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const runLayer = Layer.merge(
-      Layer.provide(Engine.stage(environmentFor(workspace.directory), queue), Engine.nodePlatformLayer),
-      Engine.nodePlatformLayer,
+      Layer.provide(Engine.stage(environmentFor(workspace.directory), queue), Cli.platformLayer),
+      Cli.platformLayer,
     )
     const exit = yield* Engine.mutationTestCell
       .run({

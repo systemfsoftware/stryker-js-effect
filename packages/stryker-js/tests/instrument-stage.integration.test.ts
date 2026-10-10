@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -50,7 +50,7 @@ const runFromProject = (
       globalThis.process.chdir(root)
       return previous
     }),
-    () => Effect.result(Engine.strykerCell({ mutate: ['src/**/*.ts'], ...options })),
+    () => Effect.result(Cli.strykerCell({ mutate: ['src/**/*.ts'], ...options })),
     (previous) =>
       Effect.sync(() => {
         globalThis.process.chdir(previous)
@@ -75,7 +75,7 @@ const carriesMessage = (value: unknown): value is { readonly message: string } =
 const textOf = (cause: Engine.StageError['cause']): string =>
   carriesMessage(cause) ? cause.message : 'the refused cause carried no message'
 
-const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
+const runLayer = Layer.mergeAll(Cli.platformLayer, Stdio.layerTest({}))
 
 Feature('Opting a mutation run into extra mutations')
   .withLayer(runLayer)

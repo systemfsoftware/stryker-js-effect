@@ -20,7 +20,8 @@ export {
   ConfigFileUnreadableError,
   ConfigFileUnsupportedError,
 } from '../ConfigError.schema.js'
-export { decideExtendsStep, importModule, initialExtendsStepState } from '../drivers/config.js'
+export { decideExtendsStep, initialExtendsStepState } from '../drivers/config.js'
+export { importModule } from '../drivers/import-module.js'
 export { FileMatcher } from '../matching.schema.js'
 export {
   ExtendsStepDone,

@@ -1,5 +1,5 @@
 import { Differential } from '@systemfsoftware/differential-spec'
-import { Engine, Plugin } from '@systemfsoftware/stryker-js'
+import { Cli, Plugin } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Path from 'effect/Path'
@@ -79,7 +79,7 @@ const runEngine = (root: string, fsModuleCache: boolean): Effect.Effect<ModuleCa
     () =>
       Effect.gen(function*() {
         const path = yield* Path.Path
-        const done = yield* Engine.strykerCell({
+        const done = yield* Cli.strykerCell({
           testRunner: {
             plugin: Plugin.vmRunnerPluginUrl(),
             options: { pool: 'threads', fsModuleCache },
@@ -124,7 +124,7 @@ const runEngine = (root: string, fsModuleCache: boolean): Effect.Effect<ModuleCa
       Effect.sync(() => {
         globalThis.process.chdir(previous)
       }),
-  ).pipe(Effect.provide(Engine.nodePlatformLayer), Effect.orDie)
+  ).pipe(Effect.provide(Cli.platformLayer), Effect.orDie)
 
 const exclusiveRuns = Semaphore.makeUnsafe(1)
 
@@ -164,7 +164,7 @@ const withGeneratedProject = <A, E, R>(
 const side = (fsModuleCache: boolean) => (project: GeneratedProject): Effect.Effect<ModuleCacheOutcomes> =>
   serialized(
     withGeneratedProject(project, (root) => runEngine(root, fsModuleCache)),
-  ).pipe(Effect.provide(Engine.nodePlatformLayer), Effect.orDie)
+  ).pipe(Effect.provide(Cli.platformLayer), Effect.orDie)
 
 const sameStatuses = (
   reference: Record<string, string>,

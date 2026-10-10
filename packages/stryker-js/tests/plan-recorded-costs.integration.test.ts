@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
@@ -172,7 +172,7 @@ const observedPlanAfterFullRun: Effect.Effect<
 }).pipe(Effect.orDie)
 
 Feature('Shard planning on the measured costs a run records')
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary runs and then plans a workspace whose checker rejects mutants')
   .body(({ scenario }) => {
     scenario(

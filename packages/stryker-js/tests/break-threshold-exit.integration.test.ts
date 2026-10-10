@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli } from '@systemfsoftware/stryker-js'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
@@ -89,7 +89,7 @@ const runStryker = (
 const endsWithVerdict = (line: string): boolean => Option.isSome(decodeVerdictLine(line))
 
 Feature('Failing the build when the mutation score is under the break threshold', { timeout: 180_000 })
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the built stryker binary runs a consumer project in a real Node process')
   .body(({ scenario }) => {
     scenario(

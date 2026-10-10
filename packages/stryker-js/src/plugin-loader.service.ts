@@ -14,7 +14,7 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { importModule } from './drivers/config.js'
+import { importModule } from './drivers/import-module.js'
 import {
   planPluginLoad,
   type PluginDeclaration,

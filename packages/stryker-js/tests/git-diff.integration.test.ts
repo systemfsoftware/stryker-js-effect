@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine, GitDiff, GitDiffSchema } from '@systemfsoftware/stryker-js'
+import { Cli, GitDiff, GitDiffSchema } from '@systemfsoftware/stryker-js'
 import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -87,7 +87,7 @@ const removeRepo = (root: string): Effect.Effect<void, never, FileSystem.FileSys
   Effect.ignore(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true })))
 
 Feature('Reading a repository diff since a git ref')
-  .withLayer(Engine.nodePlatformLayer)
+  .withLayer(Cli.platformLayer)
   .live('the scenarios spawn real git in a temporary repository')
   .body(({ scenario }) => {
     scenario(

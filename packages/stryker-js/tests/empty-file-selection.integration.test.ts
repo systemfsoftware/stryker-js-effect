@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Engine } from '@systemfsoftware/stryker-js'
+import { Cli, Engine } from '@systemfsoftware/stryker-js'
 import { type Options, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { PrepareError } from '@systemfsoftware/stryker-js/events'
 import * as Effect from 'effect/Effect'
@@ -60,7 +60,7 @@ const runFromProject = (
       globalThis.process.chdir(root)
       return previous
     }),
-    () => Effect.result(Engine.strykerCell(options)),
+    () => Effect.result(Cli.strykerCell(options)),
     (previous) =>
       Effect.sync(() => {
         globalThis.process.chdir(previous)
@@ -100,7 +100,7 @@ const refusalOf = (outcome: Result.Result<Engine.MutationTestDone, Engine.StageE
     onSuccess: () => ({ stage: null, causeMessage: null }),
   })
 
-const runLayer = Layer.mergeAll(Engine.nodePlatformLayer, Stdio.layerTest({}))
+const runLayer = Layer.mergeAll(Cli.platformLayer, Stdio.layerTest({}))
 
 Feature('Running mutation testing when no file is selected')
   .withLayer(runLayer)
