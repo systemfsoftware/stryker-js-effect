@@ -22,11 +22,14 @@ import {
   type CheckerEntry,
   CheckerEntrySchema,
   type IgnoredTestedEntry,
+  type KilledTestedEntry,
   type SettledTestedEntry,
   type SharedComponents,
   type TestedEntry,
   TestedEntrySchema,
+  type TimeoutKind,
   TimeoutKindSchema,
+  type TimeoutTestedEntry,
   type VerdictEntry,
   type VerdictKey,
 } from './verdict-store/VerdictEntry.schema.js'
@@ -119,13 +122,21 @@ const unreadableKeyOf = (listed: ListedEntry): ReadonlyArray<VerdictKey> =>
 const currentEntryUnreadable = (lookup: VerdictLookup): boolean =>
   lookup.entries.flatMap(unreadableKeyOf).some((key) => lookup.currentKeys.includes(key))
 
-const reproductionsOf = (entry: TestedEntry): number =>
+const isTimeoutEntry = (entry: TestedEntry): entry is TimeoutTestedEntry => entry.status === 'Timeout'
+
+const isKilledEntry = (entry: TestedEntry): entry is KilledTestedEntry => entry.status === 'Killed'
+
+const reproductionsOf = (entry: TimeoutTestedEntry): number =>
   Option.getOrElse(Option.fromUndefinedOr(entry.reproductions), () => 0)
 
-const isUnreproducedWallClock = (entry: TestedEntry): boolean =>
-  Boolean.and(entry.status === 'Timeout', Boolean.and(entry.timeoutKind !== 'hitLimit', reproductionsOf(entry) < 1))
+const isUnreproducedWallClock = (entry: TimeoutTestedEntry): boolean =>
+  Boolean.and(entry.timeoutKind !== 'hitLimit', reproductionsOf(entry) < 1)
 
-const unreproducedTimeout = (entry: VerdictEntry): boolean => Option.exists(testedOf(entry), isUnreproducedWallClock)
+const unreproducedTimeout = (entry: VerdictEntry): boolean =>
+  Option.exists(
+    testedOf(entry),
+    (tested) => Option.exists(Option.liftPredicate(tested, isTimeoutEntry), isUnreproducedWallClock),
+  )
 
 const matchingEntryOf = (lookup: VerdictLookup): Option.Option<VerdictEntry> =>
   Option.map(
@@ -136,17 +147,42 @@ const matchingEntryOf = (lookup: VerdictLookup): Option.Option<VerdictEntry> =>
     ({ entry }) => entry,
   )
 
+interface RememberedTestedFields {
+  readonly timeoutKind: TimeoutKind | undefined
+  readonly reproductions: number | undefined
+  readonly testsCompleted: number | undefined
+  readonly coveredBy: ReadonlyArray<string> | undefined
+  readonly killedBy: ReadonlyArray<string> | undefined
+}
+
+const rememberedBaseOf = (tested: TestedEntry): RememberedTestedFields => ({
+  timeoutKind: undefined,
+  reproductions: undefined,
+  testsCompleted: tested.testsCompleted,
+  coveredBy: tested.coveredBy,
+  killedBy: undefined,
+})
+
+const rememberedTestedFieldsOf = (tested: TestedEntry) =>
+  Match.value(tested).pipe(
+    Match.discriminatorsExhaustive('status')({
+      Ignored: rememberedBaseOf,
+      Survived: rememberedBaseOf,
+      NoCoverage: rememberedBaseOf,
+      Killed: (killed: KilledTestedEntry) => ({ ...rememberedBaseOf(killed), killedBy: killed.killedBy }),
+      Timeout: (timeout: TimeoutTestedEntry) => ({
+        ...rememberedBaseOf(timeout),
+        timeoutKind: timeout.timeoutKind,
+        reproductions: timeout.reproductions,
+      }),
+    }),
+  )
+
 const rememberedFieldsOf = (mutant: Mutant.Mutant, entry: VerdictEntry) => ({
   mutantId: mutant.id,
   ...Option.match(testedOf(entry), {
     onNone: () => ({}),
-    onSome: (tested) => ({
-      timeoutKind: tested.timeoutKind,
-      reproductions: tested.reproductions,
-      testsCompleted: tested.testsCompleted,
-      coveredBy: tested.coveredBy,
-      killedBy: tested.killedBy,
-    }),
+    onSome: rememberedTestedFieldsOf,
   }),
 })
 
@@ -255,7 +291,7 @@ const refusalOfLookup = (lookup: VerdictLookup, closureAnalysisFailed: boolean):
       }),
   })
 
-const timeoutEvidenceOf = (entry: TestedEntry): Option.Option<TimeoutEvidence> =>
+const timeoutEvidenceOf = (entry: TimeoutTestedEntry): Option.Option<TimeoutEvidence> =>
   Option.map(
     Option.fromUndefinedOr(entry.timeoutKind),
     (timeoutKind): TimeoutEvidence => ({ timeoutKind, reproductions: reproductionsOf(entry) }),
@@ -265,18 +301,28 @@ const priorTimeoutOf = (lookup: VerdictLookup, refusal: ReuseRefusalReason): Tim
   Option.getOrUndefined(
     Option.flatMap(
       Option.filter(Arr.head(readableEntriesOf(lookup)), () => refusal === 'timeoutUnreproduced'),
-      (newest) => Option.flatMap(testedOf(newest), timeoutEvidenceOf),
+      (newest) =>
+        Option.flatMap(
+          testedOf(newest),
+          (tested) => Option.flatMap(Option.liftPredicate(tested, isTimeoutEntry), timeoutEvidenceOf),
+        ),
     ),
   )
 
 const sameClosure = (entry: TestedEntry, current: CurrentVerdict): boolean =>
   Boolean.and(current.closureDigest !== undefined, entry.components.closureDigest === current.closureDigest)
 
+const killedByOf = (entry: TestedEntry): ReadonlyArray<string> =>
+  Option.liftPredicate(entry, isKilledEntry).pipe(
+    Option.flatMap((killed) => Option.fromUndefinedOr(killed.killedBy)),
+    Option.getOrElse((): ReadonlyArray<string> => []),
+  )
+
 const priorKilledByOf = (lookup: VerdictLookup): ReadonlyArray<string> =>
   Arr.dedupe(
     Arr.getSomes(readableEntriesOf(lookup).map(testedOf))
       .filter((entry) => sameClosure(entry, lookup.current))
-      .flatMap((entry) => Option.getOrElse(Option.fromUndefinedOr(entry.killedBy), (): ReadonlyArray<string> => [])),
+      .flatMap(killedByOf),
   )
 
 const toRunOf = (lookup: VerdictLookup, refusal: ReuseRefusalReason): MutantToRun =>

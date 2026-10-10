@@ -7,7 +7,7 @@ import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
 
 import {
-  type TestedEntry,
+  type KilledTestedEntry,
   type VerdictComponents,
   type VerdictEntry,
   VerdictEntryJson,
@@ -42,7 +42,7 @@ export interface VerdictBlobs {
 const LIST_CONCURRENCY = 8
 const ENTRY_FILE_NAME = /^(tested|checker)-([0-9a-f]{64})\.json$/u
 
-const decodeEntry = S.decodeUnknownOption(VerdictEntryJson)
+const decodeEntry = S.decodeUnknownOption(VerdictEntryJson, { onExcessProperty: 'error' })
 const encodeEntry = S.encodeEffect(VerdictEntryJson)
 const decodeKind = S.decodeUnknownOption(VerdictKindSchema)
 const decodeKey = S.decodeUnknownOption(VerdictKey)
@@ -145,7 +145,7 @@ const putOf = (blobs: VerdictBlobs) => (entry: VerdictEntry): Effect.Effect<PutO
 
 const newestFirst: Order.Order<VerdictEntry> = Order.mapInput(Order.flip(Order.Number), (entry) => entry.settledAt)
 
-const isKilled = (entry: VerdictEntry): entry is TestedEntry => entry.status === 'Killed'
+const isKilled = (entry: VerdictEntry): entry is KilledTestedEntry => entry.status === 'Killed'
 
 const killedByOf = (entry: VerdictEntry): ReadonlyArray<string> =>
   Option.liftPredicate(entry, isKilled).pipe(

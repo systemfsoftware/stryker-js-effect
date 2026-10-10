@@ -11,8 +11,11 @@ import { entryDirectoryOf, entryNameAt, entryNameOf } from './verdict-blobs.js'
 import {
   type CheckerEntry,
   CheckerEntrySchema,
-  type TestedEntry,
-  TestedEntrySchema,
+  type KilledTestedEntry,
+  KilledTestedEntrySchema,
+  type SurvivedTestedEntry,
+  SurvivedTestedEntrySchema,
+  type TimeoutTestedEntry,
   type VerdictEntry,
   VerdictEntryJson,
 } from './VerdictEntry.schema.js'
@@ -47,7 +50,8 @@ interface FixtureLaw {
   readonly history: (fixtures: Fixtures) => LawEffect
 }
 
-const decodeTested = S.decodeUnknownEffect(TestedEntrySchema)
+const decodeSurvived = S.decodeUnknownEffect(SurvivedTestedEntrySchema)
+const decodeKilled = S.decodeUnknownEffect(KilledTestedEntrySchema)
 const decodeChecker = S.decodeUnknownEffect(CheckerEntrySchema)
 const encodeEntry = S.encodeUnknownOption(VerdictEntryJson)
 
@@ -117,25 +121,25 @@ const otherMutantFixtureEncoded = {
 }
 
 interface Fixtures {
-  readonly tested: TestedEntry
+  readonly tested: SurvivedTestedEntry
   readonly checker: CheckerEntry
-  readonly otherMutant: TestedEntry
+  readonly otherMutant: KilledTestedEntry
 }
 
 const fixtures: Effect.Effect<Fixtures> = Effect.all({
-  tested: decodeTested(testedFixtureEncoded),
+  tested: decodeSurvived(testedFixtureEncoded),
   checker: decodeChecker(checkerFixtureEncoded),
-  otherMutant: decodeTested(otherMutantFixtureEncoded),
+  otherMutant: decodeKilled(otherMutantFixtureEncoded),
 }).pipe(Effect.orDie)
 
-const unreproducedTimeoutOf = (f: Fixtures): TestedEntry => ({
+const unreproducedTimeoutOf = (f: Fixtures): TimeoutTestedEntry => ({
   ...f.tested,
   status: 'Timeout',
   timeoutKind: 'wallClock',
   reproductions: 0,
 })
 
-const reproducedTimeoutOf = (f: Fixtures): TestedEntry => ({
+const reproducedTimeoutOf = (f: Fixtures): TimeoutTestedEntry => ({
   ...unreproducedTimeoutOf(f),
   reproductions: 1,
   settledAt: 2_000,
@@ -359,12 +363,17 @@ const killedUnder = (
   runInputsDigest: string,
   killedBy: ReadonlyArray<string>,
   settledAt: number,
-): TestedEntry => ({
+): KilledTestedEntry => ({
   ...f.otherMutant,
   components: { ...f.otherMutant.components, runInputsDigest },
   killedBy,
   settledAt,
 })
+
+const survivedUnder = (f: Fixtures, runInputsDigest: string, settledAt: number): SurvivedTestedEntry => {
+  const { killedBy: _killedBy, ...rest } = killedUnder(f, runInputsDigest, [], settledAt)
+  return { ...rest, status: 'Survived' }
+}
 
 const killingTestsNewestFirst: FixtureLaw = {
   law: "a mutant's killing tests come from its Killed verdicts, newest first, each named once",
@@ -372,7 +381,7 @@ const killingTestsNewestFirst: FixtureLaw = {
     Effect.gen(function*() {
       yield* put(killedUnder(f, digestOf('8'), ['rejects NaN', 'compares two numbers'], 2_400))
       yield* put(killedUnder(f, digestOf('1'), ['compares two numbers', 'orders numbers'], 1_200))
-      yield* put({ ...killedUnder(f, digestOf('9'), ['never a killer'], 3_000), status: 'Survived' })
+      yield* put(survivedUnder(f, digestOf('9'), 3_000))
       const torn = killedUnder(f, digestOf('a'), ['torn killer'], 4_000)
       yield* plant(entryNameOf(torn.components), textOf(torn).slice(0, TORN_LENGTH))
       const killing = yield* killingTests(f.otherMutant.components.mutantId)
@@ -394,6 +403,71 @@ const killingTestsNeverFail: FixtureLaw = {
     }),
 }
 
+const settledLineOf = (listed: ListedEntry): string =>
+  Match.valueTags(listed, {
+    Readable: ({ kind, key, entry }) => `Readable ${kind} ${key} settled at ${entry.settledAt}`,
+    Unreadable: ({ kind, key }) => `Unreadable ${kind} ${key}`,
+  })
+
+const settledLinesAfter = (
+  older: VerdictEntry,
+  newer: VerdictEntry,
+): Effect.Effect<ReadonlyArray<string>, never, VerdictStore | VerdictStoreHarness> =>
+  Effect.gen(function*() {
+    yield* reset
+    yield* put(older)
+    yield* put(newer)
+    const outcome = yield* VerdictStore.use((store) => store.list(older.components.mutantId))
+    return Match.valueTags(outcome, {
+      EntriesListed: (listed) => Arr.sort(listed.entries.map(settledLineOf), Order.String),
+      StoreUnavailable: (unavailable) => [`unavailable ${unavailable.reason}`],
+    })
+  })
+
+const settledLineFor = (entry: VerdictEntry, settledAt: number): string =>
+  `Readable ${entry.components._tag} ${keyOf(entry)} settled at ${settledAt}`
+
+const listingKeepsEveryKindsSettleTime: FixtureLaw = {
+  law:
+    'listing a mutant returns its verdicts of both kinds with the time each settled, so the newest one is known whatever its kind',
+  history: (f) =>
+    Effect.gen(function*() {
+      const checkerNewer = yield* settledLinesAfter({ ...f.tested, settledAt: 1_000 }, {
+        ...f.checker,
+        settledAt: 2_000,
+      })
+      const testedNewer = yield* settledLinesAfter({ ...f.checker, settledAt: 1_000 }, {
+        ...f.tested,
+        settledAt: 2_000,
+      })
+      return {
+        observed: [...checkerNewer, ...testedNewer],
+        expected: [
+          ...Arr.sort([settledLineFor(f.tested, 1_000), settledLineFor(f.checker, 2_000)], Order.String),
+          ...Arr.sort([settledLineFor(f.checker, 1_000), settledLineFor(f.tested, 2_000)], Order.String),
+        ],
+      }
+    }),
+}
+
+const crossStatusEvidenceUnreadable: FixtureLaw = {
+  law:
+    'a tested verdict carrying evidence of another status is unreadable, while the status that owns the evidence decodes',
+  history: (f) =>
+    Effect.gen(function*() {
+      yield* reset
+      yield* plant(entryNameOf(f.tested.components), `${textOf(f.tested).slice(0, -1)},"killedBy":["t"]}`)
+      const mismatched = yield* get(f.tested)
+      yield* reset
+      yield* put(f.otherMutant)
+      const killed = yield* get(f.otherMutant)
+      return {
+        observed: [mismatched, killed],
+        expected: [`unreadable ${keyOf(f.tested)}`, `found ${textOf(f.otherMutant)}`],
+      }
+    }),
+}
+
 const laws: ReadonlyArray<FixtureLaw> = [
   readAfterWrite,
   emptyStoreMisses,
@@ -407,6 +481,8 @@ const laws: ReadonlyArray<FixtureLaw> = [
   otherSchemeInvisible,
   killingTestsNewestFirst,
   killingTestsNeverFail,
+  listingKeepsEveryKindsSettleTime,
+  crossStatusEvidenceUnreadable,
 ]
 
 export const verdictStoreLaws: ReadonlyArray<VerdictStoreLaw> = laws.map((fixtureLaw) => ({

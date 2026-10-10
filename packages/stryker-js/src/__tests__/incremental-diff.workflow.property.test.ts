@@ -17,6 +17,7 @@ import { currentKeysOf } from '../run/current-verdict.js'
 import {
   CheckerEntrySchema,
   type SharedComponents,
+  type SurvivedTestedEntry,
   type TestedEntry,
   TestedEntrySchema,
   type VerdictComponents,
@@ -185,10 +186,19 @@ const appliesTo = (entry: VerdictEntry, drift: Drift): boolean =>
     checker: () => drift !== 'checkerConfigChanged',
   })
 
-const survivorOf = (entry: TestedEntry): TestedEntry => {
-  const { timeoutKind: _kind, reproductions: _reproductions, ...rest } = entry
-  return { ...rest, status: 'Survived' }
-}
+const survivorOf = (entry: TestedEntry): SurvivedTestedEntry =>
+  Match.value(entry).pipe(
+    Match.discriminatorsExhaustive('status')({
+      Survived: (survived): SurvivedTestedEntry => survived,
+      NoCoverage: (noCoverage): SurvivedTestedEntry => ({ ...noCoverage, status: 'Survived' }),
+      Killed: ({ killedBy: _killedBy, ...rest }): SurvivedTestedEntry => ({ ...rest, status: 'Survived' }),
+      Timeout: ({ timeoutKind: _timeoutKind, reproductions: _reproductions, ...rest }): SurvivedTestedEntry => ({
+        ...rest,
+        status: 'Survived',
+      }),
+      Ignored: ({ statusReason: _statusReason, ...rest }): SurvivedTestedEntry => ({ ...rest, status: 'Survived' }),
+    }),
+  )
 
 describe('incrementalDiff', () => {
   it.prop(
@@ -242,10 +252,30 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
+    '∀tcb_TestedAndCheckerEntries_≡TheNewestCurrentEntryIsRememberedWhateverItsKind',
+    { of: [TestedEntrySchema, CheckerEntrySchema, S.Boolean], subject: incrementalDiff },
+    (subject, [tested, checker, checkerIsNewer]) => {
+      const survivor = survivorOf(tested)
+      const compileError: VerdictEntry = {
+        ...checker,
+        components: { ...checker.components, ...sharedOf(survivor.components) },
+      }
+      const current: CurrentVerdict = { ...currentOf(survivor), programDigest: checker.components.programDigest }
+      const entries = checkerIsNewer
+        ? [readable({ ...survivor, settledAt: 1 }), readable({ ...compileError, settledAt: 2 })]
+        : [readable({ ...compileError, settledAt: 1 }), readable({ ...survivor, settledAt: 2 })]
+      return remembersStatus(
+        subject(commandOf([lookupOf(current, entries)])),
+        checkerIsNewer ? 'CompileError' : 'Survived',
+      )
+    },
+  )
+
+  it.prop(
     '∀er_EntryAndReproductions_≡AWallClockTimeoutIsRememberedExactlyWhenItReproduced',
     { of: [TestedEntrySchema, S.Natural], subject: incrementalDiff },
     (subject, [tested, reproductions]) => {
-      const entry: TestedEntry = { ...tested, status: 'Timeout', timeoutKind: 'wallClock', reproductions }
+      const entry: TestedEntry = { ...survivorOf(tested), status: 'Timeout', timeoutKind: 'wallClock', reproductions }
       const decision = onlyDecision(subject(commandOf([matchingLookupOf(entry)])))
       if (decision === undefined) {
         return false
@@ -262,7 +292,7 @@ describe('incrementalDiff', () => {
     '∀e_Entry_≡AHitLimitTimeoutIsRememberedOnFirstSight',
     { of: [TestedEntrySchema], subject: incrementalDiff },
     (subject, [tested]) => {
-      const entry: TestedEntry = { ...tested, status: 'Timeout', timeoutKind: 'hitLimit', reproductions: 0 }
+      const entry: TestedEntry = { ...survivorOf(tested), status: 'Timeout', timeoutKind: 'hitLimit', reproductions: 0 }
       return remembersStatus(subject(commandOf([matchingLookupOf(entry)])), 'Timeout')
     },
   )

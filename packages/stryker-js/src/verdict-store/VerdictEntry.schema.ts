@@ -56,31 +56,72 @@ const measuredFields = {
   settledAt: S.Int.check(S.isGreaterThanOrEqualTo(0)),
 }
 
-const testedFields = {
+const commonTestedFields = {
+  components: TestedComponentsSchema,
+  testsCompleted: S.optionalKey(S.Finite),
+  coveredBy: S.String.pipe(S.Array, S.optionalKey),
+}
+
+export const SurvivedTestedEntrySchema = S.Struct({
+  ...commonTestedFields,
+  ...measuredFields,
+  status: S.Literal('Survived'),
+  statusReason: S.optionalKey(S.String),
+})
+export type SurvivedTestedEntry = typeof SurvivedTestedEntrySchema.Type
+
+export const KilledTestedEntrySchema = S.Struct({
+  ...commonTestedFields,
+  killedBy: S.String.pipe(S.Array, S.optionalKey),
+  ...measuredFields,
+  status: S.Literal('Killed'),
+  statusReason: S.optionalKey(S.String),
+})
+export type KilledTestedEntry = typeof KilledTestedEntrySchema.Type
+
+export const TimeoutTestedEntrySchema = S.Struct({
   components: TestedComponentsSchema,
   timeoutKind: S.optionalKey(TimeoutKindSchema),
   reproductions: S.optionalKey(S.Natural),
   testsCompleted: S.optionalKey(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optionalKey),
-  killedBy: S.String.pipe(S.Array, S.optionalKey),
   ...measuredFields,
-}
+  status: S.Literal('Timeout'),
+  statusReason: S.optionalKey(S.String),
+})
+export type TimeoutTestedEntry = typeof TimeoutTestedEntrySchema.Type
+
+export const NoCoverageTestedEntrySchema = S.Struct({
+  ...commonTestedFields,
+  ...measuredFields,
+  status: S.Literal('NoCoverage'),
+  statusReason: S.optionalKey(S.String),
+})
+export type NoCoverageTestedEntry = typeof NoCoverageTestedEntrySchema.Type
 
 export const IgnoredTestedEntrySchema = S.Struct({
-  ...testedFields,
+  ...commonTestedFields,
+  ...measuredFields,
   status: S.Literal('Ignored'),
   statusReason: Mutant.IgnoreStatusReasonText,
 })
 export type IgnoredTestedEntry = typeof IgnoredTestedEntrySchema.Type
 
-export const SettledTestedEntrySchema = S.Struct({
-  ...testedFields,
-  status: TestedStatusSchema.pick(['Survived', 'Killed', 'Timeout', 'NoCoverage']),
-  statusReason: S.optionalKey(S.String),
-})
+export const SettledTestedEntrySchema = S.Union([
+  SurvivedTestedEntrySchema,
+  KilledTestedEntrySchema,
+  TimeoutTestedEntrySchema,
+  NoCoverageTestedEntrySchema,
+])
 export type SettledTestedEntry = typeof SettledTestedEntrySchema.Type
 
-export const TestedEntrySchema = S.Union([IgnoredTestedEntrySchema, SettledTestedEntrySchema])
+export const TestedEntrySchema = S.Union([
+  SurvivedTestedEntrySchema,
+  KilledTestedEntrySchema,
+  TimeoutTestedEntrySchema,
+  NoCoverageTestedEntrySchema,
+  IgnoredTestedEntrySchema,
+])
 export type TestedEntry = typeof TestedEntrySchema.Type
 
 export const CheckerEntrySchema = S.Struct({

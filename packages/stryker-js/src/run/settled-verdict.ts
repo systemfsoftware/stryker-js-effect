@@ -90,32 +90,45 @@ const measuredOf = (settled: SettledVerdict) => ({
   settledAt: settled.settledAt,
 })
 
-const testedFieldsOf = (settled: SettledVerdict, components: TestedComponents) => ({
+const testedCommonOf = (settled: SettledVerdict, components: TestedComponents) => ({
   components,
-  ...timeoutFieldsOf(settled.result, settled.evidence),
   ...presentField('testsCompleted', settled.result.testsCompleted),
   ...presentField('coveredBy', settled.result.coveredBy),
-  ...presentField('killedBy', settled.result.killedBy),
+  ...presentField('statusReason', settled.result.statusReason),
   ...measuredOf(settled),
 })
+
+const settledTestedEntryOf = (
+  settled: SettledVerdict,
+  components: TestedComponents,
+  status: Exclude<TestedStatus, 'Ignored'>,
+): TestedEntry =>
+  Match.value(status).pipe(
+    Match.when('Killed', (): TestedEntry => ({
+      ...testedCommonOf(settled, components),
+      ...presentField('killedBy', settled.result.killedBy),
+      status: 'Killed',
+    })),
+    Match.when('Timeout', (): TestedEntry => ({
+      ...testedCommonOf(settled, components),
+      ...timeoutFieldsOf(settled.result, settled.evidence),
+      status: 'Timeout',
+    })),
+    Match.when('Survived', (): TestedEntry => ({ ...testedCommonOf(settled, components), status: 'Survived' })),
+    Match.orElse((): TestedEntry => ({ ...testedCommonOf(settled, components), status: 'NoCoverage' })),
+  )
 
 const ignoredEntryOf = (settled: SettledVerdict, components: TestedComponents): Option.Option<TestedEntry> =>
   Option.map(
     Option.liftPredicate(Option.fromUndefinedOr(settled.result.statusReason), S.is(Mutant.IgnoreStatusReasonText)),
-    (statusReason): TestedEntry => ({ ...testedFieldsOf(settled, components), status: 'Ignored', statusReason }),
+    (statusReason): TestedEntry => ({ ...testedCommonOf(settled, components), status: 'Ignored', statusReason }),
   )
 
 const testedEntryOf = (settled: SettledVerdict, status: TestedStatus): Option.Option<VerdictEntry> =>
   Option.flatMap(testedComponentsOf(settled.current), (components) =>
     Match.value(status).pipe(
       Match.when('Ignored', () => ignoredEntryOf(settled, components)),
-      Match.orElse((settledStatus) =>
-        Option.some<TestedEntry>({
-          ...testedFieldsOf(settled, components),
-          status: settledStatus,
-          ...presentField('statusReason', settled.result.statusReason),
-        })
-      ),
+      Match.orElse((settledStatus) => Option.some(settledTestedEntryOf(settled, components, settledStatus))),
     ))
 
 const checkerEntryOf = (settled: SettledVerdict): Option.Option<VerdictEntry> =>
