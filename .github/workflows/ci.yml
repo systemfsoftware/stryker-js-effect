@@ -141,3 +141,286 @@ jobs:
           path: e2e-telemetry.tar.gz
           retention-days: 7
           if-no-files-found: error
+
+  drop-audit:
+    if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MATRIX_DIR: kill-matrix
+      AUDIT_OUT: reports/audit.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - id: matrix
+        name: Download main's newest kill matrix
+        run: |
+          found=''
+          for page in 1 2 3 4 5; do
+            found=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100&page=$page" --jq '
+              [.artifacts[]
+                | select((.name | test("^kill-matrix-[0-9]+$")) and (.expired | not) and .workflow_run.head_branch == "main")]
+              | sort_by(.name | ltrimstr("kill-matrix-") | tonumber) | last // empty
+              | "\(.name) \(.workflow_run.id) \(.workflow_run.head_sha)"')
+            [ -n "$found" ] && break
+          done
+          next='Dispatch the Kill matrix workflow on main (gh workflow run kill-matrix.yml --ref main), wait for its collect job to publish kill-matrix-<n>, then re-run this job.'
+          t='`'
+          if [ -z "$found" ]; then
+            echo "::error title=Drop audit has no kill matrix (matrix-missing)::No unexpired kill-matrix-<n> artifact from a main run exists. $next"
+            echo "## Drop audit"$'\n\n'"**Failed: ${t}matrix-missing${t}.** No unexpired ${t}kill-matrix-<n>${t} artifact from a main run exists. $next" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          read -r name run sha <<< "$found"
+          gh run download "$run" --name "$name" --dir "$MATRIX_DIR"
+          projects=$(find "$MATRIX_DIR" -name stryker-incremental.json -printf '%h\n' | sed "s|^$MATRIX_DIR/||" | sort | paste -sd, -)
+          if [ -z "$projects" ]; then
+            echo "::error title=Drop audit has no kill matrix (matrix-missing)::Artifact $name of run $run holds no <project>/stryker-incremental.json. $next"
+            echo "## Drop audit"$'\n\n'"**Failed: ${t}matrix-missing${t}.** Artifact ${t}$name${t} holds no ${t}<project>/stryker-incremental.json${t}. $next" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          {
+            echo "name=$name"
+            echo "sha=$sha"
+            echo "url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
+            echo "projects=$projects"
+          } >> "$GITHUB_OUTPUT"
+
+      - id: scope
+        name: Scope the audit
+        env:
+          EVENT: ${{ github.event_name }}
+          MATRIX_NAME: ${{ steps.matrix.outputs.name }}
+          MATRIX_SHA: ${{ steps.matrix.outputs.sha }}
+          MATRIX_PROJECTS: ${{ steps.matrix.outputs.projects }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import { execFileSync } from 'node:child_process'
+          import { appendFileSync, readFileSync } from 'node:fs'
+
+          const { EVENT, MATRIX_DIR, MATRIX_NAME, MATRIX_SHA, MATRIX_PROJECTS, GITHUB_OUTPUT, GITHUB_STEP_SUMMARY } = process.env
+          const projects = MATRIX_PROJECTS.split(',')
+          const output = (fields) =>
+            appendFileSync(GITHUB_OUTPUT, Object.entries(fields).map(([key, value]) => `${key}=${value}\n`).join(''))
+          const corpus = (why) => output({ mode: 'corpus', projects: projects.join(','), files: '', scope: `the whole corpus, ${why}` })
+
+          if (EVENT !== 'pull_request') {
+            corpus(`on ${EVENT}`)
+            process.exit(0)
+          }
+
+          const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 1 << 28 })
+          git('fetch', '--quiet', '--no-tags', '--depth=1', 'origin', '+refs/heads/main:refs/remotes/origin/main')
+          const onMain = (path) => {
+            try {
+              return git('show', `refs/remotes/origin/main:${path}`)
+            } catch {
+              return undefined
+            }
+          }
+          // HEAD is the pull request's merge commit; HEAD^1 is the base branch it merges into.
+          const changed = git('diff', '--name-only', '--no-renames', 'HEAD^1', 'HEAD').split('\n').filter(Boolean)
+          const deciders = ['packages/stryker-js-instrumenter/', 'packages/toolchain/stryker-config/', ...projects.map((project) => `${project}/stryker.config.`)]
+          const decidingChanges = changed.filter((path) => deciders.some((prefix) => path.startsWith(prefix)))
+          const reports = new Map(projects.map((project) => [project, JSON.parse(readFileSync(`${MATRIX_DIR}/${project}/stryker-incremental.json`, 'utf8'))]))
+          const recorded = changed.flatMap((path) => {
+            const project = projects.find((candidate) => path.startsWith(`${candidate}/`))
+            const file = project === undefined ? undefined : reports.get(project).files?.[path.slice(project.length + 1)]
+            return file === undefined ? [] : [{ path, project, source: file.source }]
+          })
+
+          // The audit instruments the sources the matrix recorded. When main has changed a file this pull
+          // request touches since the matrix was recorded, the audit would judge code main no longer has.
+          const stale = recorded.filter((file) => onMain(file.path) !== file.source).map((file) => file.path)
+          if (stale.length > 0) {
+            const next = `Wait for a Kill matrix run on a main commit that has those changes (or dispatch one: gh workflow run kill-matrix.yml --ref main), then re-run this job.`
+            const shown = stale.slice(0, 10).join(', ') + (stale.length > 10 ? ` and ${stale.length - 10} more` : '')
+            console.log(`::error title=Drop audit matrix is stale (matrix-stale)::Main changed ${shown} after ${MATRIX_NAME} was recorded at ${MATRIX_SHA.slice(0, 9)}. ${next}`)
+            appendFileSync(GITHUB_STEP_SUMMARY, [
+              '## Drop audit',
+              '',
+              `**Failed: \`matrix-stale\`.** \`${MATRIX_NAME}\` was recorded at main \`${MATRIX_SHA.slice(0, 9)}\`, and main has changed ${stale.length} file(s) this pull request touches since then, so the matrix does not describe them. ${next}`,
+              '',
+              ...stale.slice(0, 20).map((path) => `- \`${path}\``),
+              '',
+            ].join('\n'))
+            process.exit(1)
+          }
+
+          if (decidingChanges.length > 0) {
+            corpus(`because this pull request changes what decides drops (${decidingChanges.slice(0, 3).join(', ')}${decidingChanges.length > 3 ? ', ...' : ''})`)
+          } else if (recorded.length > 0) {
+            output({
+              mode: 'files',
+              projects: [...new Set(recorded.map((file) => file.project))].join(','),
+              files: recorded.map((file) => file.path).join(','),
+              scope: `the ${recorded.length} file(s) this pull request changes that the matrix records`,
+            })
+          } else {
+            output({ mode: 'none', projects: '', files: '', scope: '' })
+            appendFileSync(GITHUB_STEP_SUMMARY, [
+              '## Drop audit',
+              '',
+              `**Passed: nothing to audit.** This pull request changes no file that \`${MATRIX_NAME}\` (main \`${MATRIX_SHA.slice(0, 9)}\`) records, and nothing that decides drops (${deciders.slice(0, 2).join(', ')} or a project's stryker config).`,
+              '',
+            ].join('\n'))
+          }
+          NODE
+
+      - if: steps.scope.outputs.mode != 'none'
+        uses: ./.github/actions/released-tarballs
+      - id: build-key
+        if: steps.scope.outputs.mode != 'none'
+        name: Content key of the build
+        env:
+          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**', 'test/e2e-core/**') }}
+        run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+      - if: steps.scope.outputs.mode != 'none'
+        run: pnpm install --frozen-lockfile
+      - name: Restore the build the mutation lane cached
+        if: steps.scope.outputs.mode != 'none'
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: ${{ steps.build-key.outputs.key }}
+          restore-keys: |
+            mutation-build-${{ runner.os }}-
+      - name: Build the CLI and the audited projects
+        if: steps.scope.outputs.mode != 'none'
+        env:
+          SCOPE_PROJECTS: ${{ steps.scope.outputs.projects }}
+        run: |
+          mapfile -t filters < <(tr ',' '\n' <<< "packages/stryker-js,$SCOPE_PROJECTS" | sort -u | sed 's|^|--filter=./|')
+          pnpm exec turbo run build --output-logs=errors-only --log-order=stream "${filters[@]}"
+
+      - id: audit
+        name: stryker audit
+        if: steps.scope.outputs.mode != 'none'
+        env:
+          SCOPE_PROJECTS: ${{ steps.scope.outputs.projects }}
+          SCOPE_FILES: ${{ steps.scope.outputs.files }}
+        run: |
+          args=(audit --matrix "$MATRIX_DIR" --projects "$SCOPE_PROJECTS" --out "$AUDIT_OUT")
+          if [ -n "$SCOPE_FILES" ]; then args+=(--files "$SCOPE_FILES"); fi
+          status=0
+          node packages/stryker-js/dist/main.mjs "${args[@]}" 2> audit.stderr || status=$?
+          cat audit.stderr >&2
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - id: upload
+        if: steps.audit.outcome == 'success' && steps.audit.outputs.status != '2'
+        uses: actions/upload-artifact@v7
+        with:
+          name: drop-audit-${{ github.run_id }}
+          path: ${{ env.AUDIT_OUT }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Report the audit
+        if: steps.audit.outcome == 'success'
+        env:
+          AUDIT_STATUS: ${{ steps.audit.outputs.status }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          SCOPE: ${{ steps.scope.outputs.scope }}
+          MATRIX_NAME: ${{ steps.matrix.outputs.name }}
+          MATRIX_SHA: ${{ steps.matrix.outputs.sha }}
+          MATRIX_URL: ${{ steps.matrix.outputs.url }}
+        run: |
+          node --input-type=module - <<'NODE'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs'
+
+          const { AUDIT_STATUS, ARTIFACT_URL, AUDIT_OUT, SCOPE, MATRIX_DIR, MATRIX_NAME, MATRIX_SHA, MATRIX_URL, GITHUB_STEP_SUMMARY } = process.env
+          const status = Number(AUDIT_STATUS)
+          const escape = (text) => String(text).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+          const property = (text) => escape(text).replaceAll(':', '%3A').replaceAll(',', '%2C')
+          const error = (title, message, at) =>
+            console.log(`::error ${at === undefined ? '' : `file=${property(at.file)},line=${at.line},`}title=${property(title)}::${escape(message)}`)
+          const summary = (lines) => appendFileSync(GITHUB_STEP_SUMMARY, [...lines, ''].join('\n'))
+          const header = ['## Drop audit', '', `Scope: ${SCOPE}.`, '', `Matrix: \`${MATRIX_NAME}\`, main \`${MATRIX_SHA.slice(0, 9)}\` (${MATRIX_URL}).`, '']
+
+          if (!existsSync(AUDIT_OUT)) {
+            const lines = readFileSync('audit.stderr', 'utf8').split('\n')
+            const refusal = lines.find((text) => text.includes('stryker audit ('))
+            const exitLine = lines.find((text) => /^exit \d+ \(/.test(text))
+            const reason = refusal !== undefined
+              ? refusal.slice(refusal.indexOf('stryker audit ('))
+              : `stryker audit exited ${status} without writing ${AUDIT_OUT}: ${exitLine ?? 'no exit line on stderr'}. Read the "stryker audit" step log.`
+            error('Drop audit could not run', reason)
+            summary([...header, `**Failed (exit ${status}): the audit did not produce a report.** ${reason}`])
+            process.exit(status === 0 ? 1 : status)
+          }
+
+          const report = JSON.parse(readFileSync(AUDIT_OUT, 'utf8'))
+          const full = `Full report: ${ARTIFACT_URL} (${AUDIT_OUT} in artifact drop-audit-${process.env.GITHUB_RUN_ID}).`
+          const matrices = new Map()
+          const locate = (project, id) => {
+            if (!matrices.has(project)) {
+              matrices.set(project, JSON.parse(readFileSync(`${MATRIX_DIR}/${project}/stryker-incremental.json`, 'utf8')))
+            }
+            for (const [key, file] of Object.entries(matrices.get(project).files)) {
+              const mutant = file.mutants.find((candidate) => candidate.id === id)
+              if (mutant !== undefined) return { file: `${project}/${key}`, line: mutant.location.start.line }
+            }
+            return undefined
+          }
+
+          const verdictOf = (pair) => pair._tag === 'UnjoinablePair' ? 'Unjoinable' : pair.verdict._tag
+          const reasonOf = (pair) => pair._tag === 'UnjoinablePair' ? pair.reason : pair.verdict.reason
+          const tally = { Pass: 0, Vacuous: 0, AttributionUnverified: 0, Fail: 0, Unjoinable: 0 }
+          for (const pair of report.pairs) tally[verdictOf(pair)] += 1
+          const failed = report.pairs.filter((pair) => verdictOf(pair) === 'Fail')
+          const unverified = report.pairs.filter((pair) => verdictOf(pair) === 'AttributionUnverified')
+          const unattested = report.rules.filter((rule) => rule._tag === 'Unattested')
+          const orphans = report.orphanedTests
+
+          for (const pair of failed.slice(0, 20)) {
+            error(
+              `Drop audit: Fail ${pair.verdict.reason}`,
+              `Mutant ${pair.mutant} is dropped for ${pair.dominator} (rule ${pair.rule}). ${pair.next} ${full}`,
+              locate(pair.project, pair.mutant),
+            )
+          }
+          for (const rule of unattested) {
+            error(`Drop audit: rule ${rule.rule} unattested`, `${rule.drops} drop(s), none joined the matrix (${rule.reason}). ${rule.next} ${full}`)
+          }
+          for (const orphan of orphans.slice(0, 20)) {
+            error('Drop audit: test left without a kill', `${orphan.test} (${orphan.project}) kills only dropped mutants: ${orphan.killed.join(', ')}. ${orphan.next} ${full}`)
+          }
+          if (status !== 0) {
+            error('Drop audit failed', `${tally.Fail} Fail, ${unattested.length} unattested rule(s), ${orphans.length} test(s) left without a kill. ${full}`)
+          }
+
+          const detail = [
+            ...failed.map((pair) => `- Fail \`${pair.verdict.reason}\`: \`${pair.mutant}\` dropped for \`${pair.dominator}\` (${pair.project}). ${pair.next}`),
+            ...unattested.map((rule) => `- Unattested rule \`${rule.rule}\`: ${rule.drops} drop(s). ${rule.next}`),
+            ...orphans.map((orphan) => `- Orphaned test \`${orphan.test}\` (${orphan.project}). ${orphan.next}`),
+            ...unverified.map((pair) => `- AttributionUnverified \`${reasonOf(pair)}\`: \`${pair.mutant}\` dropped for \`${pair.dominator}\` (${pair.project})`),
+          ]
+          summary([
+            ...header,
+            `**${status === 0 ? 'Passed' : `Failed (exit ${status})`}**: ${report.pairs.length} drop pair(s) over ${report.projects.length} project(s).`,
+            '',
+            '| Verdict | Count |',
+            '| --- | ---: |',
+            ...Object.entries(tally).map(([verdict, count]) => `| ${verdict} | ${count} |`),
+            `| Unattested rules | ${unattested.length} |`,
+            `| Tests left without a kill | ${orphans.length} |`,
+            '',
+            ...detail.slice(0, 20),
+            ...(detail.length > 20 ? [`- ... and ${detail.length - 20} more in the full report`] : []),
+            '',
+            full,
+          ])
+          process.exit(status)
+          NODE
