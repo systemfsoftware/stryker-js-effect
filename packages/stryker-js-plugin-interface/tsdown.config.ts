@@ -6,6 +6,7 @@ const documents = ['./contract/report.schema.json']
 export default defineConfig({
   entry: {
     index: './src/mod.ts',
+    'type-query': './src/TypeQuery/mod.ts',
   },
   format: 'esm',
   dts: true,
