@@ -104,13 +104,19 @@ jobs:
           install A "$SIDE_A"
           install B "$GITHUB_WORKSPACE"
 
-      - name: Turbo cache
-        uses: actions/cache@v6
+      - id: restore-base
+        name: Restore the Turbo cache of the base commit
+        uses: actions/cache/restore@v6
         with:
           path: .turbo/cache
-          key: turbo-${{ runner.os }}-bench-${{ matrix.target.slug }}-${{ github.event.pull_request.head.sha }}
+          key: turbo-${{ runner.os }}-dist-${{ steps.sides.outputs.base }}
+      - name: Restore the newest Turbo cache this ref can read
+        if: steps.restore-base.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ github.event.pull_request.head.sha }}
           restore-keys: |
-            turbo-${{ runner.os }}-bench-${{ matrix.target.slug }}-
             turbo-${{ runner.os }}-dist-
 
       - name: Bench
