@@ -2,12 +2,12 @@
   "repo": [
     {
       "project": "packages/stryker-js-vitest-runner",
-      "mutate": ["src/interpret-vitest-mutant-run.workflow.ts:85-160"],
+      "mutate": ["src/interpret-vitest-mutant-run.workflow.ts:85-109"],
       "testFiles": ["src/__tests__/interpret-vitest-mutant-run.workflow.property.test.ts"]
     },
     {
       "project": "packages/stryker-js-typescript-checker",
-      "mutate": ["src/classify-tce.workflow.ts"],
+      "mutate": ["src/classify-tce.workflow.ts:66-89"],
       "testFiles": ["src/__tests__/classify-tce.workflow.property.test.ts"]
     },
     {
