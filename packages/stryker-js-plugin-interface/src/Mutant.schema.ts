@@ -80,7 +80,7 @@ export type Subsumed = typeof Subsumed.Type
 
 export const subsumedStatusReason = (subsumed: Subsumed): string =>
   ignoreStatusReasonText({
-    ruleId: 'redundant-relational',
+    code: 'redundant-relational',
     detail: `subsumed by ${subsumed.dominators[0]} (${subsumed.rule}): every test that kills ${
       subsumed.dominators[0]
     } kills this mutant, so act on ${subsumed.dominators[0]}, or set mutator.mutantSetPolicy 'full' to run it`,

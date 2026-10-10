@@ -18,6 +18,8 @@ import * as S from 'effect/Schema'
 import type { SchemaError } from 'effect/Schema'
 
 import { type Admitted } from './admit-survivors-run.workflow.js'
+import { auditRequest } from './audit-request.cell.js'
+import type { AuditFailed, AuditInputUnusable, NothingCounted } from './audit.schema.js'
 import { Baseline } from './Baseline.schema.js'
 import { BudgetExceeded, budgetGate, BudgetGateCommand, BudgetInputUnusable } from './budget-gate.workflow.js'
 import { BudgetBaseline } from './BudgetBaseline.schema.js'
@@ -116,6 +118,9 @@ export type CliFailure =
   | BudgetExceeded
   | BudgetInputUnusable
   | AnnotationsUnusable
+  | AuditFailed
+  | AuditInputUnusable
+  | NothingCounted
   | ShardPlanInvalid
   | ShardUnknown
   | ShardChildFailed
@@ -651,6 +656,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
     CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(remediateGateRefusal)),
     CliAnnotateRequested: (annotate, channel) => annotateReport(annotate, channel),
     CliPlanRequested: (plan, channel) => planRequest({ request: plan, channel }),
+    CliAuditRequested: (audit, channel) => auditRequest({ request: audit, channel }),
     CliFeedbackRequested: (feedback, channel) => feedbackRoute(feedback, channel),
     CliMcpRequested: (_, channel) =>
       Layer.launch(mcpServerLayer({ basePath: channel.environment.basePath })).pipe(Effect.scoped, Effect.orDie),
