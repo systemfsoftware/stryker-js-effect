@@ -1,3 +1,4 @@
+import type { Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Checker, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Arr from 'effect/Array'
@@ -80,7 +81,7 @@ const siteDraftsOf = (wires: ReadonlyArray<Checker.CheckerMutantWire>): Readonly
     }),
   )
 
-const BLOCK_STATEMENT_MUTATOR = 'BlockStatement'
+const BLOCK_STATEMENT_MUTATOR: keyof typeof Mutator.defaultMutators = 'BlockStatement'
 const EMPTY_BLOCK = '{}'
 
 const siteKindOf = (site: QuerySiteDraft): TypeQuery.TypeQuerySiteKind =>
@@ -92,9 +93,6 @@ const siteKindOf = (site: QuerySiteDraft): TypeQuery.TypeQuerySiteKind =>
       ])),
     { onTrue: () => 'function-body', onFalse: () => 'expression' },
   )
-
-const siteKindKeyOf = (kind: TypeQuery.TypeQuerySiteKind): { readonly kind?: TypeQuery.TypeQuerySiteKind } =>
-  Boolean.match(kind === 'function-body', { onTrue: () => ({ kind }), onFalse: () => ({}) })
 
 const fileDraftsOf = (
   contents: ReadonlyArray<FileContent>,
@@ -202,7 +200,7 @@ const queryFileLines = (
           sites: draft.sites.map((site) =>
             TypeQuery.TypeQuerySite.make({
               siteId: site.siteId,
-              ...siteKindKeyOf(siteKindOf(site)),
+              kind: siteKindOf(site),
               location: site.location,
               candidates: site.candidates.map((candidate) => ({
                 candidateId: candidate.candidateId,

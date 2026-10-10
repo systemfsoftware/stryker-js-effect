@@ -60,6 +60,7 @@ const queryFileOf = (fileName: string, content: string, sites: ReadonlyArray<Sit
   content,
   sites: sites.map((site) => ({
     siteId: site.siteId,
+    kind: 'expression',
     location: locationOf(content, site.line, site.text),
     candidates: site.candidates.map((text) => ({ candidateId: text, text })),
   })),
@@ -250,6 +251,7 @@ const REASON_SITES: ReadonlyArray<SiteSpec> = [
 
 const OFF_THE_END: TypeQuery.TypeQuerySite = {
   siteId: 'off-the-end',
+  kind: 'expression',
   location: { start: { line: 40, column: 1 }, end: { line: 40, column: 2 } },
   candidates: [{ candidateId: '""', text: '""' }],
 }

@@ -17,7 +17,7 @@ export type TypeQuerySiteKind = typeof TypeQuerySiteKind.Type
 
 export const TypeQuerySite = S.Struct({
   siteId: S.String,
-  kind: S.optionalKey(TypeQuerySiteKind),
+  kind: TypeQuerySiteKind,
   location: Location,
   candidates: S.Array(TypeQueryCandidate),
 })

@@ -9,6 +9,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
+import * as Semaphore from 'effect/Semaphore'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 import {
   type BinaryExpression,
@@ -122,10 +123,8 @@ const functionBodyNeedsVersionTwo = (): TypeQuery.TypeQueryRefused =>
       'Send a version 2 TypeQuery.TypeQueryRequest for function-body sites; version 1 answers expression sites only.',
   })
 
-const siteKindOf = (site: TypeQuery.TypeQuerySite): TypeQuery.TypeQuerySiteKind => site.kind ?? 'expression'
-
 const hasFunctionBodySite = (request: TypeQuery.TypeQueryRequest): boolean =>
-  Arr.some(request.files, (file) => Arr.some(file.sites, (site) => siteKindOf(site) === 'function-body'))
+  Arr.some(request.files, (file) => Arr.some(file.sites, (site) => site.kind === 'function-body'))
 
 const projectOpenFailed = (tsconfigFile: string, detail: string): TypeQuery.TypeQueryRefused =>
   TypeQuery.TypeQueryRefused.make({
@@ -172,9 +171,13 @@ interface Server {
   readonly api: API
   readonly overlay: Overlay
   readonly snapshot: Ref.Ref<Snapshot>
+  readonly lock: Semaphore.Semaphore
 }
 
-const closeApi = (api: API): Effect.Effect<void> => Effect.tryPromise(() => api.close()).pipe(Effect.ignore)
+const CLOSE_GRACE = '1 second'
+
+const closeApi = (api: API): Effect.Effect<void> =>
+  Effect.tryPromise(() => api.close()).pipe(Effect.timeoutOption(CLOSE_GRACE), Effect.ignore)
 
 const closeServer = (server: Server): Effect.Effect<void> => closeApi(server.api)
 
@@ -196,7 +199,8 @@ const openServer = (tsconfigFile: string): Effect.Effect<Server, TypeQuery.TypeQ
       Effect.tapError(() => closeApi(api)),
     )
     const snapshotRef = yield* Ref.make(snapshot)
-    return { tsconfigFile, api, overlay, snapshot: snapshotRef }
+    const lock = yield* Semaphore.make(1)
+    return { tsconfigFile, api, overlay, snapshot: snapshotRef, lock }
   })
 
 type Servers = SynchronizedRef.SynchronizedRef<HashMap.HashMap<string, Server>>
@@ -215,10 +219,23 @@ const getOrOpen = (servers: Servers, tsconfigFile: string): Effect.Effect<Server
         Effect.map(openServer(tsconfigFile), (server) => [server, HashMap.set(map, tsconfigFile, server)] as const),
     }))
 
-const discardServer = (servers: Servers, tsconfigFile: string): Effect.Effect<void> =>
+const discardServer = (servers: Servers, server: Server): Effect.Effect<void> =>
   Effect.flatMap(
-    SynchronizedRef.modify(servers, (map) => [HashMap.get(map, tsconfigFile), HashMap.remove(map, tsconfigFile)]),
-    (removed) => Option.match(removed, { onNone: () => Effect.void, onSome: closeServer }),
+    SynchronizedRef.modify(servers, (map) =>
+      Option.match(
+        Option.filter(HashMap.get(map, server.tsconfigFile), (current) => current === server),
+        {
+          onNone: () => [false, map] as const,
+          onSome: () => [true, HashMap.remove(map, server.tsconfigFile)] as const,
+        },
+      )),
+    (removed) => Boolean.match(removed, { onFalse: () => Effect.void, onTrue: () => closeServer(server) }),
+  )
+
+const isCurrent = (servers: Servers, server: Server): Effect.Effect<boolean> =>
+  Effect.map(
+    SynchronizedRef.get(servers),
+    (map) => Option.exists(HashMap.get(map, server.tsconfigFile), (current) => current === server),
   )
 
 const closeAllServers = (servers: Servers): Effect.Effect<void> =>
@@ -283,7 +300,7 @@ const appendProbe = (probe: string, text: string): readonly [string, readonly [s
 const buildProbe = (file: TypeQuery.TypeQueryFile): Probe => {
   const texts = Arr.dedupe(
     Arr.flatMap(file.sites, (site) =>
-      Boolean.match(siteKindOf(site) === 'function-body', {
+      Boolean.match(site.kind === 'function-body', {
         onTrue: () => Arr.empty<string>(),
         onFalse: () =>
           Arr.map(
@@ -721,7 +738,7 @@ const readSite = (
   return Option.match(node, {
     onNone: () => Effect.succeed(missingReading(site)),
     onSome: (found) =>
-      Boolean.match(siteKindOf(site) === 'function-body', {
+      Boolean.match(site.kind === 'function-body', {
         onTrue: () => functionBodyReading(project, site, found),
         onFalse: () => readingOf(project, site, found),
       }),
@@ -798,7 +815,7 @@ const answerCandidate = (
   candidate: TypeQuery.TypeQueryCandidate,
 ): Effect.Effect<{ readonly candidateId: string; readonly answer: TypeQuery.TypeAnswer }, ServerCrash> =>
   Effect.gen(function*() {
-    const facts = yield* Boolean.match(siteKindOf(reading.site) === 'function-body', {
+    const facts = yield* Boolean.match(reading.site.kind === 'function-body', {
       onTrue: () => Effect.succeed<CandidateFacts>({ _tag: 'CandidateBodyText', text: candidate.text } as const),
       onFalse: () => candidateFactsOf(probe, sourceFile, project, reading.contextType, candidate),
     })
@@ -897,18 +914,27 @@ const serveFile = (
   tsconfigFile: string,
   file: TypeQuery.TypeQueryFile,
 ): Effect.Effect<TypeQuery.FileOutcome, TypeQuery.TypeQueryRefused> =>
-  Effect.gen(function*() {
-    const server = yield* getOrOpen(servers, tsconfigFile)
-    return yield* processFile(server, file).pipe(
-      Effect.catchTag('ServerCrash', () =>
-        Effect.map(discardServer(servers, tsconfigFile), (): TypeQuery.FileOutcome => ({
-          _tag: 'FileRefused',
-          fileName: file.fileName,
-          reason: 'server-crashed',
-          nextAction: SERVER_CRASHED_NEXT_ACTION,
-        }))),
-    )
-  })
+  Effect.flatMap(getOrOpen(servers, tsconfigFile), (server) =>
+    Semaphore.withPermit(
+      server.lock,
+      Effect.flatMap(isCurrent(servers, server), (current) =>
+        Boolean.match(current, {
+          onFalse: () => Effect.suspend(() => serveFile(servers, tsconfigFile, file)),
+          onTrue: () =>
+            processFile(server, file).pipe(
+              Effect.catchTag('ServerCrash', () =>
+                Effect.as(
+                  discardServer(servers, server),
+                  {
+                    _tag: 'FileRefused',
+                    fileName: file.fileName,
+                    reason: 'server-crashed',
+                    nextAction: SERVER_CRASHED_NEXT_ACTION,
+                  } satisfies TypeQuery.FileOutcome,
+                )),
+            ),
+        })),
+    ))
 
 const makeShape = (servers: Servers): TypeQuery.TypeQueryShape => ({
   query: (

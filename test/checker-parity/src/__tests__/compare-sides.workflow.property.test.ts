@@ -156,6 +156,23 @@ const answersAtSiteKind = (
     typeAnswerLineOf(`${siteKind}-${index}`, answer, { siteKind }),
   ])
 
+interface RecallMutant {
+  readonly mainStatus: VerdictStatus
+  readonly branchStatus: VerdictStatus
+  readonly answer?: TypeQuery.TypeAnswer
+  readonly otherProjectNotAssignable: boolean
+}
+
+const recallLinesOf = (prefix: string, mutants: ReadonlyArray<RecallMutant>): ReadonlyArray<ParityLine> =>
+  mutants.flatMap((mutant, index): ReadonlyArray<ParityLine> => [
+    verdictOf('main', { mutantId: `${prefix}${index}`, status: mutant.mainStatus }),
+    verdictOf('branch', { mutantId: `${prefix}${index}`, status: mutant.branchStatus }),
+    ...(mutant.answer === undefined ? [] : [typeAnswerLineOf(`${prefix}${index}`, mutant.answer)]),
+    ...(mutant.otherProjectNotAssignable
+      ? [typeAnswerLineOf(`${prefix}${index}`, notAssignableAnswer, { project: OTHER_PROJECT })]
+      : []),
+  ])
+
 const decisionOf = (subject: typeof compareSides, command: CompareSidesCommand): ComparisonDecision =>
   Result.getOrThrow(subject(command))
 
@@ -577,6 +594,35 @@ describe('compareSides', () => {
           violation.verdict === status &&
           violation.candidate === candidate
         )
+    },
+  )
+
+  it.prop(
+    '∀r_RecallCounters_≡BranchCompileErrorsAndThoseItsOwnProjectAnsweredNotAssignable',
+    {
+      of: [
+        S.Array(S.Struct({
+          mainStatus: VerdictStatus,
+          branchStatus: VerdictStatus,
+          answer: TypeQuery.NotAssignable,
+          otherProjectNotAssignable: S.Boolean,
+        })),
+        S.Array(S.Struct({
+          mainStatus: VerdictStatus,
+          branchStatus: VerdictStatus,
+          answer: S.optionalKey(S.Union([TypeQuery.Assignable, TypeQuery.Unknown])),
+          otherProjectNotAssignable: S.Boolean,
+        })),
+      ],
+      subject: compareSides,
+    },
+    (subject, [answeredNotAssignable, others]) => {
+      const lines = [...recallLinesOf('n', answeredNotAssignable), ...recallLinesOf('o', others), countsOf(PROJECT)]
+      const { typeQuery } = decisionOf(subject, commandOf(lines)).summary
+      const answeredCompileErrors = answeredNotAssignable.filter((mutant) => mutant.branchStatus === 'compileError')
+      const otherCompileErrors = others.filter((mutant) => mutant.branchStatus === 'compileError')
+      return typeQuery.compileErrorTotal === answeredCompileErrors.length + otherCompileErrors.length &&
+        typeQuery.compileErrorAnsweredNotAssignable === answeredCompileErrors.length
     },
   )
 

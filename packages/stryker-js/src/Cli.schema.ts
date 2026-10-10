@@ -106,6 +106,16 @@ const PlanRequestSchema = S.TaggedStruct('plan', {
 
 export type PlanRequest = S.Schema.Type<typeof PlanRequestSchema>
 
+const AuditRequestSchema = S.TaggedStruct('audit', {
+  matrix: S.String,
+  out: S.String,
+  countsOnly: S.Boolean,
+  projects: S.Array(S.String).pipe(S.optional),
+  files: S.Array(S.String).pipe(S.optional),
+})
+
+export type AuditRequest = S.Schema.Type<typeof AuditRequestSchema>
+
 export type CliRequest =
   | RunRequest
   | MergeRequest
@@ -113,6 +123,7 @@ export type CliRequest =
   | GateRequest
   | AnnotateRequest
   | PlanRequest
+  | AuditRequest
   | ServeRouteRequest
   | FeedbackRouteRequest
   | McpRouteRequest
@@ -126,6 +137,7 @@ export class CliRouteCommand extends S.TaggedClass<CliRouteCommand>()('CliRouteC
     GateRequestSchema,
     AnnotateRequestSchema,
     PlanRequestSchema,
+    AuditRequestSchema,
     ServeRouteRequestSchema,
     FeedbackRouteRequestSchema,
     McpRouteRequestSchema,
