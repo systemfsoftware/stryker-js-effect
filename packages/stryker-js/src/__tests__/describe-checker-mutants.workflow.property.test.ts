@@ -64,11 +64,27 @@ const sharesSourceFields = (description: MutantDescription, mutant: Mutant.Mutan
   description.wire.replacement === mutant.replacement &&
   Equal.equals(description.wire.location, mutant.location)
 
-const refusesNaming = (description: MutantDescription, mutant: Mutant.Mutant): boolean =>
+const refusalReasonOf = (corruption: Exclude<Corruption, 'none'>): string =>
+  Match.value(corruption).pipe(
+    Match.when(
+      'lowercaseMutator',
+      () =>
+        'Expected a PascalCase mutator name, optionally prefixed by a lowercase kebab-case namespace and a slash\n  at ["mutatorName"]',
+    ),
+    Match.when('reasonWithoutStatus', () => 'a mutant carries a status reason only together with a status'),
+    Match.when('zeroLine', () => 'Expected a value greater than or equal to 1\n  at ["location"]["start"]["line"]'),
+    Match.exhaustive,
+  )
+
+const refusesNaming = (
+  description: MutantDescription,
+  mutant: Mutant.Mutant,
+  corruption: Exclude<Corruption, 'none'>,
+): boolean =>
   S.is(MutantUndescribable)(description) &&
   description.undescribable.id === mutant.id &&
   description.undescribable.fileName === mutant.fileName &&
-  description.undescribable.reason.length > 0
+  description.undescribable.reason === refusalReasonOf(corruption)
 
 describe('describeCheckerMutants', () => {
   it.prop(
@@ -88,7 +104,9 @@ describe('describeCheckerMutants', () => {
       Arr.every(
         Arr.zip(describedOf(subject, drawn), drawn),
         ([description, { mutant, corruption }]) =>
-          corruption === 'none' ? sharesSourceFields(description, mutant) : refusesNaming(description, mutant),
+          corruption === 'none'
+            ? sharesSourceFields(description, mutant)
+            : refusesNaming(description, mutant, corruption),
       ),
   )
 })
