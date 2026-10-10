@@ -4,6 +4,7 @@ set -eu
 before="$1"
 shift
 deadline_seconds=300
+kill_after_seconds=10
 
 install() {
   id="$1"
@@ -11,7 +12,7 @@ install() {
   shift 2
   echo "[bake] $id: npm install $what" >&2
   started="$(date +%s)"
-  if timeout -s TERM "$deadline_seconds" npm install --no-audit --no-fund --loglevel=error "$before" "$@"; then
+  if timeout -s TERM -k "$kill_after_seconds" "$deadline_seconds" npm install --no-audit --no-fund --loglevel=error --min-release-age=1 "$before" "$@"; then
     return 0
   else
     code=$?
