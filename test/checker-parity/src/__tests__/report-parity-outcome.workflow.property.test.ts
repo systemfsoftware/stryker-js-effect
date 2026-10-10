@@ -5,6 +5,7 @@ import * as S from 'effect/Schema'
 
 import { ParityBroken, ParityHolds, Violation } from '../compare-sides.workflow.js'
 import { DriverFailure } from '../DriverFailure.schema.js'
+import { LegScope, ScopeSettings } from '../Parity.schema.js'
 import {
   CompareFinished,
   DriverFailedReport,
@@ -29,8 +30,21 @@ const finishedOf = (
   decision: ParityBroken | ParityHolds,
   summaryFile: string,
   projectShards: ReadonlyArray<ProjectShard>,
+  legs: ReadonlyArray<LegScope> = [],
 ): CompareFinished =>
-  CompareFinished.make({ decision, lineCount: 0, shards: 1, summaryFile, projectShards: [...projectShards] })
+  CompareFinished.make({
+    decision,
+    lineCount: 0,
+    shards: 1,
+    summaryFile,
+    projectShards: [...projectShards],
+    legs: [...legs],
+  })
+
+const encodeLeg = S.encodeResult(LegScope)
+
+const prLegOf = (leg: LegScope, settings: ScopeSettings): LegScope =>
+  LegScope.make({ ...Result.getOrThrow(encodeLeg(leg)), scope: 'pr', settings })
 
 const WORKFLOW_ERROR_COMMAND = /^::error [a-z]+=[^,:\r\n]*(?:,[a-z]+=[^,:\r\n]*)*::[^\r\n]*$/u
 
@@ -69,6 +83,23 @@ describe('reportParityOutcome', () => {
       const report = reportOf(subject, finishedOf(held, summaryFile, projectShards), githubActions, runId)
       return S.is(ParityHeldReport)(report) && report.annotations.length === 0 &&
         report.stepSummary.startsWith('### checker-parity: pass')
+    },
+  )
+
+  it.prop(
+    '∀l_PullRequestLegs_≡SummaryNamesSeedSizeAndCheckedTotal',
+    {
+      of: [ParityHolds, S.Boolean, S.String, S.String, S.Array(ProjectShard), LegScope, LegScope, ScopeSettings],
+      subject: reportParityOutcome,
+    },
+    (subject, [held, githubActions, runId, summaryFile, projectShards, first, second, settings]) => {
+      const legs = [prLegOf(first, settings), prLegOf(second, settings)]
+      const finished = finishedOf(held, summaryFile, projectShards, legs)
+      const summary = reportOf(subject, finished, githubActions, runId).stepSummary
+      return summary.includes(`seed \`${settings.seed}\``) &&
+        summary.includes(`drift ${settings.perProject} per project over ${settings.driftProjects} project(s)`) &&
+        summary.includes(`at most ${settings.perChangedFile} per changed file`) &&
+        summary.includes(`${first.checkedMutants + second.checkedMutants} mutants checked`)
     },
   )
 

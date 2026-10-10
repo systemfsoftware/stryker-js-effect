@@ -19,7 +19,6 @@ export class VerdictCacheIdentity extends S.Class<VerdictCacheIdentity>('Verdict
 
 export class ReuseCachedVerdictsCommand
   extends S.TaggedClass<ReuseCachedVerdictsCommand>()('ReuseCachedVerdictsCommand', {
-    readCache: S.Boolean,
     current: VerdictCacheIdentity,
     stored: S.NullOr(VerdictCacheIdentity),
   })
@@ -32,7 +31,6 @@ export class VerdictsReused extends S.TaggedClass<VerdictsReused>()('VerdictsReu
 }
 
 export const FreshReason = S.Literals([
-  'push-refreshes-cache',
   'no-cached-verdicts',
   'bundle-changed',
   'program-changed',
@@ -79,10 +77,7 @@ const storedChanges = (command: ReuseCachedVerdictsCommand): ReadonlyArray<reado
 
 const reuseOf = (command: ReuseCachedVerdictsCommand): VerdictReuse =>
   Option.match(
-    Arr.findFirst(
-      [['push-refreshes-cache', !command.readCache] as const, ...storedChanges(command)],
-      ([, changed]) => changed,
-    ),
+    Arr.findFirst(storedChanges(command), ([, changed]) => changed),
     {
       onNone: () => VerdictsReused.make({}),
       onSome: ([reason]) => CheckFreshly.make({ reason }),

@@ -5,6 +5,7 @@ import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, type Mutant, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -23,7 +24,7 @@ import type * as RpcGroup from 'effect/rpc/RpcGroup'
 import * as S from 'effect/Schema'
 import * as Str from 'effect/String'
 
-import { appendStepSummary, type CiEnvironment, readsCache } from './ci-environment.js'
+import { appendStepSummary, type CiEnvironment } from './ci-environment.js'
 import {
   corpusEntries,
   ISOLATED_DECLARATIONS_PROJECT,
@@ -32,6 +33,7 @@ import {
 } from './corpus.js'
 import { DriverFailure } from './DriverFailure.schema.js'
 import { execText } from './exec-text.js'
+import { changedFiles } from './lane-trigger.js'
 import { type OtlpReceiver, startOtlpReceiver } from './otlp-receiver.js'
 import {
   CacheEntry,
@@ -39,11 +41,15 @@ import {
   Counts,
   DigestCall,
   GroupCall,
+  LegScope,
   ParityLine,
   PhaseLine,
   ProjectBootFailed,
   ProjectSkipped,
+  type RunScopeName,
+  ScopeSettings,
   type Shard,
+  shardCount,
   shardIndex,
   Side,
   TelemetryMissing,
@@ -54,8 +60,16 @@ import {
   ReuseCachedVerdictsCommand,
   VerdictCacheIdentity,
 } from './reuse-cached-verdicts.workflow.js'
+import { driftLegOf, sampleFileOrder } from './select-scope.js'
+import { selectScope, SelectScopeCommand } from './select-scope.workflow.js'
 import { inShard } from './shard.js'
-import { COUNTS_SCHEMA_VERSION, countsOfSpans, countsSchemaVersionsOf, projectCheckSpans } from './span-counts.js'
+import {
+  COUNTS_SCHEMA_VERSION,
+  countsOfSpans,
+  countsSchemaVersionsOf,
+  projectCheckSpans,
+  type SpanRecord,
+} from './span-counts.js'
 
 const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
 const encodeParityLine = S.encodeResult(S.fromJsonString(ParityLine))
@@ -64,6 +78,9 @@ const decodeTypescriptPackage = S.decodeResult(
 )
 
 export interface RunCommand {
+  readonly scope: RunScopeName
+  readonly base: Option.Option<string>
+  readonly settings: Option.Option<string>
   readonly mainWorker: string
   readonly branchWorker: string
   readonly shard: Shard
@@ -76,7 +93,8 @@ export type DriverServices = FileSystem.FileSystem | Path.Path | ChildProcessSpa
 const MAIN_SERVICE = 'checker-parity-main'
 const BRANCH_SERVICE = 'checker-parity-branch'
 const CHECKER_NAME = 'typescript'
-const DRAIN = Duration.millis(500)
+const SPAN_POLL = Duration.millis(25)
+const SPAN_POLLS = 200
 
 type CheckerRpcsUnion = typeof Plugin.CheckerRpcs extends RpcGroup.RpcGroup<infer Rpcs> ? Rpcs : never
 type CheckerClient = RpcClient.RpcClient<CheckerRpcsUnion, RpcClientError>
@@ -226,16 +244,23 @@ interface SideInput {
   readonly workerPath: string
   readonly bundleHash: string
   readonly cacheDir: string
-  readonly readCache: boolean
   readonly wires: ReadonlyArray<Checker.CheckerMutantWire>
   readonly receiver: OtlpReceiver
   readonly serviceName: string
+}
+
+interface FileRun {
+  readonly lines: ReadonlyArray<ParityLine>
+  readonly freshCheckCalls: number
+  readonly cached: boolean
 }
 
 interface SideRun {
   readonly bootFailed: boolean
   readonly lines: ReadonlyArray<ParityLine>
   readonly expectedCheckSpans: number
+  readonly cachedFiles: number
+  readonly freshFiles: number
 }
 
 const cachedLine = (line: ParityLine): Option.Option<ParityLine> =>
@@ -291,23 +316,34 @@ const unsupportedVersion = (version: number): DriverFailure =>
       'Align the checker count attributes with this driver (packages/stryker-js-typescript-checker/src/ts-compiler.handle.ts).',
   })
 
-const branchCountsLine = (input: SideInput): Effect.Effect<Counts, DriverFailure> =>
-  Effect.gen(function*() {
-    yield* Effect.sleep(DRAIN)
-    const checkSpans = projectCheckSpans(
-      yield* input.receiver.spans,
-      input.serviceName,
-      HashSet.fromIterable(input.wires.map((wire) => wire.id)),
-    )
-    yield* Option.match(
+const awaitCheckSpans = (
+  input: SideInput,
+  mutantIds: HashSet.HashSet<string>,
+  expected: number,
+  attempts: number,
+): Effect.Effect<ReadonlyArray<SpanRecord>> =>
+  Effect.flatMap(input.receiver.spans, (spans) => {
+    const found = projectCheckSpans(spans, input.serviceName, mutantIds)
+    return Boolean.match(Boolean.some([found.length >= expected, attempts <= 0]), {
+      onTrue: () => Effect.succeed(found),
+      onFalse: () => Effect.andThen(Effect.sleep(SPAN_POLL), awaitCheckSpans(input, mutantIds, expected, attempts - 1)),
+    })
+  })
+
+const branchCountsOf = (
+  input: SideInput,
+  checkSpans: ReadonlyArray<SpanRecord>,
+): Effect.Effect<Counts, DriverFailure> =>
+  Effect.as(
+    Option.match(
       Arr.findFirst(countsSchemaVersionsOf(checkSpans), (version) => version !== COUNTS_SCHEMA_VERSION),
       {
         onNone: () => Effect.void,
         onSome: (version) => Effect.fail(unsupportedVersion(version)),
       },
-    )
-    return Counts.make({ schemaVersion: 1, side: 'branch', project: input.project, ...countsOfSpans(checkSpans) })
-  })
+    ),
+    Counts.make({ schemaVersion: 1, side: 'branch', project: input.project, ...countsOfSpans(checkSpans) }),
+  )
 
 interface CacheSlot {
   readonly key: string
@@ -319,9 +355,13 @@ interface CacheSlot {
 const encodeIdentity = S.encodeResult(S.fromJsonString(VerdictCacheIdentity))
 const decodeIdentity = S.decodeResult(S.fromJsonString(VerdictCacheIdentity))
 
-const cacheSlotOf = (input: SideInput, identity: VerdictCacheIdentity): Effect.Effect<CacheSlot, never, Path.Path> =>
+const cacheSlotOf = (
+  input: SideInput,
+  fileName: string,
+  identity: VerdictCacheIdentity,
+): Effect.Effect<CacheSlot, never, Path.Path> =>
   Path.Path.useSync((path) => {
-    const key = bytesToHex(sha256(utf8ToBytes(input.project)))
+    const key = bytesToHex(sha256(utf8ToBytes(`${input.project}\u0000${fileName}`)))
     return {
       key,
       verdictsFile: path.join(input.cacheDir, `${input.side}-${key}.ndjson`),
@@ -341,12 +381,11 @@ const storedIdentityOf = (slot: CacheSlot): Effect.Effect<VerdictCacheIdentity |
 const cacheEntry = (input: SideInput, key: string, hit: boolean): CacheEntry =>
   CacheEntry.make({ schemaVersion: 1, side: input.side, project: input.project, key, hit })
 
-const freshSideRun = (
+const storeFile = (
   input: SideInput,
   slot: CacheSlot,
   lines: ReadonlyArray<ParityLine>,
-  groups: number,
-): Effect.Effect<SideRun, DriverFailure, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<void, DriverFailure, FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const identityText = yield* Effect.fromResult(
       Result.mapError(encodeIdentity(slot.identity), (issue) =>
@@ -360,7 +399,6 @@ const freshSideRun = (
     )
     yield* writeText(slot.verdictsFile, yield* ndjsonOf(lines))
     yield* writeText(slot.identityFile, identityText)
-    return { bootFailed: false, lines: [cacheEntry(input, slot.key, false), ...lines], expectedCheckSpans: groups }
   })
 
 const checkGroup = (
@@ -394,21 +432,36 @@ const checkGroup = (
     return [call, ...verdicts]
   })
 
-const freshlyChecked = (
+const branchCountsLines = (
+  input: SideInput,
+  fileWires: ReadonlyArray<Checker.CheckerMutantWire>,
+  groups: number,
+): Effect.Effect<{ readonly lines: ReadonlyArray<Counts>; readonly complete: boolean }, DriverFailure> =>
+  Effect.gen(function*() {
+    const spans = yield* awaitCheckSpans(
+      input,
+      HashSet.fromIterable(fileWires.map((wire) => wire.id)),
+      groups,
+      SPAN_POLLS,
+    )
+    return { lines: [yield* branchCountsOf(input, spans)], complete: spans.length >= groups }
+  })
+
+const freshlyCheckedFile = (
   client: CheckerClient,
   input: SideInput,
   slot: CacheSlot,
-  digestLine: DigestCall,
-): Effect.Effect<SideRun, DriverFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem | Path.Path> =>
+  fileWires: ReadonlyArray<Checker.CheckerMutantWire>,
+): Effect.Effect<FileRun, DriverFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem> =>
   Effect.gen(function*() {
     const [groupDuration, groups] = yield* Effect.timed(
-      client.group({ checkerName: CHECKER_NAME, mutants: [...input.wires] }),
+      client.group({ checkerName: CHECKER_NAME, mutants: [...fileWires] }),
     )
-    const wireById = HashMap.fromIterable(input.wires.map((wire) => [wire.id, wire] as const))
+    const wireById = HashMap.fromIterable(fileWires.map((wire) => [wire.id, wire] as const))
     const groupLines = yield* Effect.forEach(groups, checkGroup(client, input, wireById))
-    const branchLines = yield* Boolean.match(input.side === 'branch', {
-      onTrue: () => Effect.map(branchCountsLine(input), Arr.of),
-      onFalse: () => Effect.succeed(Arr.empty<Counts>()),
+    const counts = yield* Boolean.match(input.side === 'branch', {
+      onTrue: () => branchCountsLines(input, fileWires, groups.length),
+      onFalse: () => Effect.succeed({ lines: Arr.empty<Counts>(), complete: true }),
     })
     const groupLine = GroupCall.make({
       schemaVersion: 1,
@@ -418,38 +471,68 @@ const freshlyChecked = (
       groups: groups.length,
       cached: false,
     })
-    return yield* freshSideRun(
-      input,
-      slot,
-      [digestLine, groupLine, ...groupLines.flat(), ...branchLines],
-      groups.length,
-    )
+    const lines = [groupLine, ...groupLines.flat(), ...counts.lines]
+    yield* Boolean.match(counts.complete, {
+      onTrue: () => storeFile(input, slot, lines),
+      onFalse: () => Effect.void,
+    })
+    return { lines: [cacheEntry(input, slot.key, false), ...lines], freshCheckCalls: groups.length, cached: false }
   })
 
-const sideBody = (
+const fileRunOf = (
   client: CheckerClient,
   input: SideInput,
-): Effect.Effect<SideRun, DriverFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem | Path.Path> =>
+  digest: Checker.ProgramDigest,
+) =>
+(
+  fileWires: ReadonlyArray<Checker.CheckerMutantWire>,
+): Effect.Effect<FileRun, DriverFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
-    const [digestDuration, digest] = yield* Effect.timed(client.digest({ checkerName: CHECKER_NAME }))
     const slot = yield* cacheSlotOf(
       input,
+      Option.getOrElse(Option.map(Arr.head(fileWires), (wire) => wire.fileName), () => ''),
       VerdictCacheIdentity.make({
         schemaVersion: 1,
         bundleHash: input.bundleHash,
         programDigest: digest,
-        wires: [...input.wires],
+        wires: [...fileWires],
       }),
     )
     const reuse = yield* Effect.fromResult(
       reuseCachedVerdicts(
-        ReuseCachedVerdictsCommand.make({
-          readCache: input.readCache,
-          current: slot.identity,
-          stored: yield* storedIdentityOf(slot),
-        }),
+        ReuseCachedVerdictsCommand.make({ current: slot.identity, stored: yield* storedIdentityOf(slot) }),
       ),
     )
+    return yield* Match.valueTags(reuse, {
+      VerdictsReused: () =>
+        Effect.map(readCacheFile(slot.verdictsFile), (lines) => ({
+          lines: [cacheEntry(input, slot.key, true), ...lines],
+          freshCheckCalls: 0,
+          cached: true,
+        })),
+      CheckFreshly: () => freshlyCheckedFile(client, input, slot, fileWires),
+    })
+  })
+
+const wiresByFile = (
+  wires: ReadonlyArray<Checker.CheckerMutantWire>,
+): ReadonlyArray<ReadonlyArray<Checker.CheckerMutantWire>> =>
+  Arr.sortWith(
+    Object.values(Arr.groupBy(wires, (wire) => wire.fileName)),
+    (fileWires) => fileWires[0].fileName,
+    Str.Order,
+  )
+
+const sideBody = (
+  client: CheckerClient,
+  input: SideInput,
+): Effect.Effect<
+  SideRun,
+  DriverFailure | Checker.CheckerFailed | RpcClientError,
+  FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function*() {
+    const [digestDuration, digest] = yield* Effect.timed(client.digest({ checkerName: CHECKER_NAME }))
     const digestLine = DigestCall.make({
       schemaVersion: 1,
       side: input.side,
@@ -458,15 +541,14 @@ const sideBody = (
       digest,
       cached: false,
     })
-    return yield* Match.valueTags(reuse, {
-      VerdictsReused: () =>
-        Effect.map(readCacheFile(slot.verdictsFile), (lines) => ({
-          bootFailed: false,
-          lines: [cacheEntry(input, slot.key, true), ...lines],
-          expectedCheckSpans: 0,
-        })),
-      CheckFreshly: () => freshlyChecked(client, input, slot, digestLine),
-    })
+    const files = yield* Effect.forEach(wiresByFile(input.wires), fileRunOf(client, input, digest))
+    return {
+      bootFailed: false,
+      lines: [digestLine, ...files.flatMap((file) => file.lines)],
+      expectedCheckSpans: files.reduce((total, file) => total + file.freshCheckCalls, 0),
+      cachedFiles: files.filter((file) => file.cached).length,
+      freshFiles: files.filter((file) => !file.cached).length,
+    }
   })
 
 const bootFailedRun = (input: SideInput, error: Worker.WorkerBootError): Effect.Effect<SideRun> =>
@@ -476,6 +558,8 @@ const bootFailedRun = (input: SideInput, error: Worker.WorkerBootError): Effect.
       ProjectBootFailed.make({ schemaVersion: 1, side: input.side, project: input.project, reason: error.message }),
     ],
     expectedCheckSpans: 0,
+    cachedFiles: 0,
+    freshFiles: 0,
   })
 
 const runSide = (
@@ -493,7 +577,7 @@ const runSide = (
         entrypoint: entrypoint.href,
         workingDirectory: input.repoRoot,
         execArgv: [],
-        tempDirPrefix: 'stryker-checker-',
+        tempDirPrefix: `stryker-checker-${input.side}-`,
         env: {
           OTEL_ENABLED: 'true',
           OTEL_EXPORTER_OTLP_ENDPOINT: input.receiver.endpoint,
@@ -512,13 +596,19 @@ const runSide = (
     }),
   )
 
+interface PullRequestScope {
+  readonly changedFiles: HashSet.HashSet<string>
+  readonly settings: ScopeSettings
+  readonly driftLegs: HashMap.HashMap<string, number>
+}
+
 interface ProjectInput {
   readonly project: string
   readonly tsconfigFile: string
   readonly repoRoot: string
   readonly shard: Shard
+  readonly pullRequest: Option.Option<PullRequestScope>
   readonly cacheDir: string
-  readonly readCache: boolean
   readonly mainWorker: string
   readonly branchWorker: string
   readonly mainBundleHash: string
@@ -526,18 +616,38 @@ interface ProjectInput {
   readonly receiver: OtlpReceiver
 }
 
-type ProjectStatus = 'ran' | 'skipped' | 'boot-failed'
+type ProjectStatus = 'ran' | 'skipped' | 'boot-failed' | 'out-of-scope'
 
 interface ProjectResult {
   readonly lines: ReadonlyArray<ParityLine>
   readonly status: ProjectStatus
   readonly mutants: number
+  readonly changedFiles: number
+  readonly changedMutants: number
+  readonly sampledMutants: number
+  readonly cachedFiles: number
+  readonly freshFiles: number
+  readonly listAndInstrumentMs: number
+  readonly workersMs: number
+}
+
+const EMPTY_RESULT: ProjectResult = {
+  lines: [],
+  status: 'out-of-scope',
+  mutants: 0,
+  changedFiles: 0,
+  changedMutants: 0,
+  sampledMutants: 0,
+  cachedFiles: 0,
+  freshFiles: 0,
+  listAndInstrumentMs: 0,
+  workersMs: 0,
 }
 
 const skippedProject = (project: string, reason: string): ProjectResult => ({
+  ...EMPTY_RESULT,
   lines: [ProjectSkipped.make({ schemaVersion: 1, project, reason })],
   status: 'skipped',
-  mutants: 0,
 })
 
 const tscBinPath: Effect.Effect<string, DriverFailure, FileSystem.FileSystem | Path.Path> = Effect.gen(function*() {
@@ -586,7 +696,6 @@ const sideInputOf =
     workerPath: bySide(side, input.mainWorker, input.branchWorker),
     bundleHash: bySide(side, input.mainBundleHash, input.branchBundleHash),
     cacheDir: input.cacheDir,
-    readCache: input.readCache,
     wires,
     receiver: input.receiver,
     serviceName: serviceOf(side),
@@ -612,21 +721,21 @@ const telemetryLineOf = (
       : []
   })
 
-const instrumentShard = (
+const instrumentFiles = (
   input: ProjectInput,
-  shardFiles: ReadonlyArray<string>,
+  files: ReadonlyArray<string>,
 ): Effect.Effect<ReadonlyArray<Checker.CheckerMutantWire>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const files = yield* Effect.forEach(
-      shardFiles,
+    const sources = yield* Effect.forEach(
+      files,
       (file) =>
         Effect.map(readText(path.resolve(input.repoRoot, file)), (content) => ({ name: file, content, mutate: true })),
     )
-    const instrumented = yield* Instrument.instrument(files, instrumenterOptions).pipe(
+    const instrumented = yield* Instrument.instrument(sources, instrumenterOptions).pipe(
       Effect.mapError((cause) =>
         ioFailure(
-          `Instrumenting ${files.length} file(s) of ${input.project} failed: ${cause.message}`,
+          `Instrumenting ${sources.length} file(s) of ${input.project} failed: ${cause.message}`,
           'Fix what the branch instrumenter reports for this project.',
         )
       ),
@@ -634,15 +743,121 @@ const instrumentShard = (
     return instrumented.mutants.map(toWire)
   })
 
+interface ScopedWires {
+  readonly wires: ReadonlyArray<Checker.CheckerMutantWire>
+  readonly changedFiles: number
+  readonly changedMutants: number
+  readonly sampledMutants: number
+}
+
+const instrumentNonEmpty = (
+  input: ProjectInput,
+  files: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<Checker.CheckerMutantWire>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
+  Boolean.match(Arr.isReadonlyArrayNonEmpty(files), {
+    onTrue: () => instrumentFiles(input, files),
+    onFalse: () => Effect.succeed(Arr.empty<Checker.CheckerMutantWire>()),
+  })
+
+const fullScope = (
+  input: ProjectInput,
+  owned: ReadonlyArray<string>,
+): Effect.Effect<ScopedWires, DriverFailure, FileSystem.FileSystem | Path.Path> =>
+  Effect.map(
+    instrumentNonEmpty(input, owned.filter((file) => inShard(file, input.shard))),
+    (wires) => ({ wires, changedFiles: 0, changedMutants: 0, sampledMutants: 0 }),
+  )
+
+interface SampleFile {
+  readonly file: string
+  readonly wires: ReadonlyArray<Checker.CheckerMutantWire>
+}
+
+const firstFileWithMutants = (
+  input: ProjectInput,
+  candidates: ReadonlyArray<string>,
+): Effect.Effect<Option.Option<SampleFile>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
+  Arr.match(candidates, {
+    onEmpty: () => Effect.succeedNone,
+    onNonEmpty: ([file, ...rest]) =>
+      Effect.flatMap(instrumentFiles(input, [file]), (wires) =>
+        Boolean.match(Arr.isReadonlyArrayNonEmpty(wires), {
+          onTrue: () => Effect.succeedSome({ file, wires }),
+          onFalse: () => firstFileWithMutants(input, rest),
+        })),
+  })
+
+const samplesOnThisLeg = (input: ProjectInput): boolean =>
+  Option.exists(
+    input.pullRequest,
+    (pullRequest) => Option.contains(HashMap.get(pullRequest.driftLegs, input.project), shardIndex(input.shard)),
+  )
+
+const changedOnThisLeg = (input: ProjectInput, pullRequest: PullRequestScope) => (file: string): boolean =>
+  HashSet.has(pullRequest.changedFiles, file) && inShard(file, input.shard)
+
+const pullRequestScope = (
+  input: ProjectInput,
+  owned: ReadonlyArray<string>,
+  pullRequest: PullRequestScope,
+): Effect.Effect<ScopedWires, DriverFailure, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const changed = owned.filter(changedOnThisLeg(input, pullRequest))
+    const changedWires = yield* instrumentNonEmpty(input, changed)
+    const sample = yield* Boolean.match(samplesOnThisLeg(input), {
+      onTrue: () => firstFileWithMutants(input, sampleFileOrder(pullRequest.settings.seed, owned)),
+      onFalse: () => Effect.succeedNone,
+    })
+    const mutants = Arr.dedupeWith(
+      [
+        ...changedWires,
+        ...Option.match(sample, {
+          onNone: () => Arr.empty<Checker.CheckerMutantWire>(),
+          onSome: (found) => found.wires,
+        }),
+      ],
+      (left: Checker.CheckerMutantWire, right: Checker.CheckerMutantWire) => left.id === right.id,
+    )
+    const selected = yield* Effect.fromResult(
+      selectScope(
+        SelectScopeCommand.make({
+          changedFiles: changed,
+          sampleFile: Option.getOrNull(Option.map(sample, (found) => found.file)),
+          mutants,
+          settings: pullRequest.settings,
+        }),
+      ),
+    )
+    return Match.valueTags(selected, {
+      ScopeSelected: (scope): ScopedWires => ({
+        wires: scope.wires,
+        changedFiles: changed.length,
+        changedMutants: scope.changed.length,
+        sampledMutants: scope.sampled.length,
+      }),
+      NothingSelected: (): ScopedWires => ({
+        wires: [],
+        changedFiles: changed.length,
+        changedMutants: 0,
+        sampledMutants: 0,
+      }),
+    })
+  })
+
 const checkBothSides = (
   input: ProjectInput,
   wires: ReadonlyArray<Checker.CheckerMutantWire>,
-): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<
+  Pick<ProjectResult, 'lines' | 'status' | 'cachedFiles' | 'freshFiles'>,
+  DriverFailure,
+  Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path
+> =>
   Effect.gen(function*() {
     const sideInputs = Side.literals.map(sideInputOf(input, wires))
     const runs = yield* Effect.forEach(
       sideInputs,
       (sideInput) => Effect.map(runSide(sideInput), (run) => ({ ...run, side: sideInput.side })),
+      { concurrency: 'unbounded' },
     )
     const mutantIds = HashSet.fromIterable(wires.map((wire) => wire.id))
     const telemetry = yield* Effect.forEach(
@@ -652,27 +867,68 @@ const checkBothSides = (
     return {
       lines: [...runs.flatMap((run) => run.lines), ...telemetry.flat()],
       status: runs.some((run) => run.bootFailed) ? 'boot-failed' : 'ran',
-      mutants: wires.length,
+      cachedFiles: runs.reduce((total, run) => total + run.cachedFiles, 0),
+      freshFiles: runs.reduce((total, run) => total + run.freshFiles, 0),
     }
   })
+
+const projectDirectoryOf = (project: string): string => project.slice(0, project.lastIndexOf('/') + 1)
+
+const inScopeOf = (input: ProjectInput): boolean =>
+  Option.match(input.pullRequest, {
+    onNone: () => true,
+    onSome: (pullRequest) =>
+      samplesOnThisLeg(input) ||
+      HashSet.some(
+        pullRequest.changedFiles,
+        (file) => file.startsWith(projectDirectoryOf(input.project)) && inShard(file, input.shard),
+      ),
+  })
+
+const checkedProject = (
+  input: ProjectInput,
+  scoped: ScopedWires,
+  listAndInstrumentMs: number,
+): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> => {
+  const counted: ProjectResult = {
+    ...EMPTY_RESULT,
+    mutants: scoped.wires.length,
+    changedFiles: scoped.changedFiles,
+    changedMutants: scoped.changedMutants,
+    sampledMutants: scoped.sampledMutants,
+    listAndInstrumentMs,
+  }
+  return Boolean.match(Arr.isReadonlyArrayNonEmpty(scoped.wires), {
+    onTrue: () =>
+      Effect.map(
+        Effect.timed(checkBothSides(input, scoped.wires)),
+        ([elapsed, checked]): ProjectResult => ({ ...counted, ...checked, workersMs: Duration.toMillis(elapsed) }),
+      ),
+    onFalse: () =>
+      Effect.succeed({
+        ...counted,
+        lines: skippedProject(input.project, 'no mutants in scope on this leg').lines,
+        status: 'skipped',
+      }),
+  })
+}
 
 const processProject = (
   input: ProjectInput,
 ): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | DriverServices> =>
-  Effect.gen(function*() {
-    const shardFiles = (yield* listProgramFiles(input)).filter((file) => inShard(file, input.shard))
-    const wires = yield* Boolean.match(Arr.isReadonlyArrayNonEmpty(shardFiles), {
-      onTrue: () => instrumentShard(input, shardFiles),
-      onFalse: () => Effect.succeed(Arr.empty<Checker.CheckerMutantWire>()),
-    })
-    return yield* Match.value({ files: shardFiles.length, mutants: wires.length }).pipe(
-      Match.when({ files: 0 }, () => Effect.succeed(skippedProject(input.project, 'no program files in this shard'))),
-      Match.when({ mutants: 0 }, () =>
-        Effect.succeed(skippedProject(input.project, 'no mutants produced in this shard'))),
-      Match.orElse(() =>
-        checkBothSides(input, wires)
-      ),
-    )
+  Boolean.match(inScopeOf(input), {
+    onFalse: () => Effect.succeed(EMPTY_RESULT),
+    onTrue: () =>
+      Effect.gen(function*() {
+        const [prepared, scoped] = yield* Effect.timed(
+          Effect.flatMap(listProgramFiles(input), (owned) =>
+            Option.match(input.pullRequest, {
+              onNone: () => fullScope(input, owned),
+              onSome: (pullRequest) => pullRequestScope(input, owned, pullRequest),
+            })),
+        )
+        return yield* checkedProject(input, scoped, Duration.toMillis(prepared))
+      }),
   })
 
 const isPhaseLine = S.is(PhaseLine)
@@ -685,22 +941,33 @@ const phaseMsOf = (lines: ReadonlyArray<ParityLine>, side: Side): number =>
 const countWith = (results: ReadonlyArray<ProjectResult>, status: ProjectStatus): number =>
   results.filter((result) => result.status === status).length
 
-const shardSummary = (shard: Shard, results: ReadonlyArray<ProjectResult>): string => {
-  const sum = (of: (result: ProjectResult) => number): number =>
-    results.reduce((total, result) => total + of(result), 0)
-  return [
-    `### checker-parity shard ${shard}`,
+const sumOf = (results: ReadonlyArray<ProjectResult>, of: (result: ProjectResult) => number): number =>
+  results.reduce((total, result) => total + of(result), 0)
+
+const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)} s`
+
+const shardSummary = (scope: LegScope, results: ReadonlyArray<ProjectResult>): string =>
+  [
+    `### checker-parity leg ${scope.shard} (${scope.scope === 'pr' ? 'pull request scope' : 'full corpus'})`,
     '',
-    '| projects run | skipped | boot-failed | mutants | main check ms | branch check ms |',
-    '| --- | --- | --- | --- | --- | --- |',
-    `| ${results.length - countWith(results, 'skipped')} | ${countWith(results, 'skipped')} | ${
+    ...Option.match(Option.fromNullishOr(scope.settings), {
+      onNone: Arr.empty<string>,
+      onSome: (settings) => [
+        `Scope settings: seed \`${settings.seed}\`; drift ${settings.perProject} mutant(s) per project over ${settings.driftProjects} project(s); at most ${settings.perChangedFile} mutant(s) per changed file.`,
+        '',
+      ],
+    }),
+    '| projects run | skipped | boot-failed | changed files | changed mutants | sampled mutants | checked mutants | files from cache | files checked | discovery | list + instrument | workers | main check | branch check | wall |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    `| ${scope.projects} | ${countWith(results, 'skipped')} | ${
       countWith(results, 'boot-failed')
-    } | ${sum((result) => result.mutants)} | ${sum((result) => phaseMsOf(result.lines, 'main'))} | ${
-      sum((result) => phaseMsOf(result.lines, 'branch'))
-    } |`,
+    } | ${scope.changedFiles} | ${scope.changedMutants} | ${scope.sampledMutants} | ${scope.checkedMutants} | ${scope.cachedFiles} | ${scope.freshFiles} | ${
+      seconds(scope.corpusDiscoveryMs)
+    } | ${seconds(scope.listAndInstrumentMs)} | ${seconds(scope.workersMs)} | ${
+      seconds(sumOf(results, (result) => phaseMsOf(result.lines, 'main')))
+    } | ${seconds(sumOf(results, (result) => phaseMsOf(result.lines, 'branch')))} | ${seconds(scope.wallMs)} |`,
     '',
   ].join('\n')
-}
 
 const requireWorker = (
   [flag, workerPath]: readonly [string, string],
@@ -737,6 +1004,82 @@ const corpusProjects = (repoRoot: string): Effect.Effect<ReadonlyArray<string>, 
     )
   })
 
+const usageFailure = (reason: string, nextAction: string): DriverFailure =>
+  DriverFailure.make({ schemaVersion: 1, code: 'usage-error', reason, nextAction })
+
+const decodeSettings = S.decodeResult(S.fromJsonString(ScopeSettings))
+
+const driftLegsOf = (
+  settings: ScopeSettings,
+  projects: ReadonlyArray<string>,
+  shards: number,
+): HashMap.HashMap<string, number> =>
+  HashMap.fromIterable(
+    Arr.take(sampleFileOrder(settings.seed, projects), settings.driftProjects).map((project, rank) =>
+      [project, driftLegOf(rank, shards)] as const
+    ),
+  )
+
+const pullRequestScopeOf = (
+  command: RunCommand,
+  repoRoot: string,
+  projects: ReadonlyArray<string>,
+): Effect.Effect<Option.Option<PullRequestScope>, DriverFailure, DriverServices> =>
+  Match.value(command.scope).pipe(
+    Match.when('full', () => Effect.succeedNone),
+    Match.when('pr', () =>
+      Effect.gen(function*() {
+        const base = yield* Effect.fromOption(command.base).pipe(
+          Effect.mapError(() => usageFailure('--scope pr needs --base', 'Pass --base <merge-base sha>.')),
+        )
+        const settingsFile = yield* Effect.fromOption(command.settings).pipe(
+          Effect.mapError(() =>
+            usageFailure('--scope pr needs --settings', 'Pass --settings test/checker-parity/pr-scope.json.')
+          ),
+        )
+        const settings = yield* Effect.fromResult(
+          Result.mapError(
+            decodeSettings(yield* readText(settingsFile)),
+            (issue) =>
+              usageFailure(`${settingsFile} is not a scope settings file: ${issue.message}`, `Fix ${settingsFile}.`),
+          ),
+        )
+        const changed = yield* changedFiles({ base, repoRoot })
+        return Option.some({
+          changedFiles: HashSet.fromIterable(changed),
+          settings,
+          driftLegs: driftLegsOf(settings, projects, shardCount(command.shard)),
+        })
+      })),
+    Match.exhaustive,
+  )
+
+const legScopeOf = (
+  command: RunCommand,
+  pullRequest: Option.Option<PullRequestScope>,
+  results: ReadonlyArray<ProjectResult>,
+  timings: { readonly corpusDiscoveryMs: number; readonly wallMs: number },
+): LegScope =>
+  LegScope.make({
+    schemaVersion: 1,
+    shard: command.shard,
+    scope: command.scope,
+    settings: Option.getOrNull(Option.map(pullRequest, (scope) => scope.settings)),
+    changedFiles: sumOf(results, (result) => result.changedFiles),
+    changedMutants: sumOf(results, (result) => result.changedMutants),
+    sampledMutants: sumOf(results, (result) => result.sampledMutants),
+    checkedMutants: sumOf(results, (result) => result.mutants),
+    projects: countWith(results, 'ran') + countWith(results, 'boot-failed'),
+    cachedFiles: sumOf(results, (result) => result.cachedFiles),
+    freshFiles: sumOf(results, (result) => result.freshFiles),
+    corpusDiscoveryMs: timings.corpusDiscoveryMs,
+    listAndInstrumentMs: sumOf(results, (result) => result.listAndInstrumentMs),
+    workersMs: sumOf(results, (result) => result.workersMs),
+    wallMs: timings.wallMs,
+  })
+
+const encodeLegScope = S.encodeResult(S.fromJsonString(LegScope))
+
 type ShardRun = Effect.Effect<void, DriverFailure, Worker.WorkerLauncher | DriverServices>
 
 export const runShard: {
@@ -745,6 +1088,7 @@ export const runShard: {
 } = dual(2, (command: RunCommand, environment: CiEnvironment): ShardRun =>
   Effect.scoped(
     Effect.gen(function*() {
+      const started = yield* Clock.currentTimeMillis
       const path = yield* Path.Path
       const repoRoot = path.resolve('.')
       yield* Effect.forEach(
@@ -753,9 +1097,17 @@ export const runShard: {
         { discard: true },
       )
       const receiver = yield* startOtlpReceiver
-      const mainBundleHash = yield* sha256Tree(path.dirname(command.mainWorker))
-      const branchBundleHash = yield* sha256Tree(path.dirname(command.branchWorker))
-      const projects = yield* corpusProjects(repoRoot)
+      const [discovery, { mainBundleHash, branchBundleHash, projects, pullRequest }] = yield* Effect.timed(
+        Effect.gen(function*() {
+          const projects = yield* corpusProjects(repoRoot)
+          return {
+            mainBundleHash: yield* sha256Tree(path.dirname(command.mainWorker)),
+            branchBundleHash: yield* sha256Tree(path.dirname(command.branchWorker)),
+            projects,
+            pullRequest: yield* pullRequestScopeOf(command, repoRoot, projects),
+          }
+        }),
+      )
       const cacheDir = path.resolve(repoRoot, command.cache)
       const outDir = path.resolve(repoRoot, command.out)
       const shardFile = path.join(outDir, `shard-${shardIndex(command.shard)}.ndjson`)
@@ -771,8 +1123,8 @@ export const runShard: {
                 tsconfigFile,
                 repoRoot,
                 shard: command.shard,
+                pullRequest,
                 cacheDir,
-                readCache: readsCache(environment),
                 mainWorker: command.mainWorker,
                 branchWorker: command.branchWorker,
                 mainBundleHash,
@@ -784,6 +1136,16 @@ export const runShard: {
             Effect.tap((result) => Effect.flatMap(ndjsonOf(result.lines), (ndjson) => appendText(shardFile, ndjson))),
           )
       })
-      yield* appendStepSummary(environment, shardSummary(command.shard, results))
+      const finished = yield* Clock.currentTimeMillis
+      const scope = legScopeOf(command, pullRequest, results, {
+        corpusDiscoveryMs: Duration.toMillis(discovery),
+        wallMs: finished - started,
+      })
+      const scopeText = yield* Effect.fromResult(
+        Result.mapError(encodeLegScope(scope), (issue) =>
+          ioFailure(`Could not encode the leg scope: ${issue.message}`, 'Inspect LegScope in Parity.schema.ts.')),
+      )
+      yield* writeText(path.join(outDir, `scope-${shardIndex(command.shard)}.json`), scopeText)
+      yield* appendStepSummary(environment, shardSummary(scope, results))
     }),
   ))

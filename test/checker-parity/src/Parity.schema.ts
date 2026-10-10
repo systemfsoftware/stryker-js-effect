@@ -121,6 +121,35 @@ export const ParityLine = S.Union([
 ])
 export type ParityLine = typeof ParityLine.Type
 
+export const RunScopeName = S.Literals(['pr', 'full'])
+export type RunScopeName = typeof RunScopeName.Type
+
+export class ScopeSettings extends S.Class<ScopeSettings>('ScopeSettings')({
+  schemaVersion: SCHEMA_VERSION,
+  seed: S.String,
+  driftProjects: PositiveInt,
+  perProject: PositiveInt,
+  perChangedFile: PositiveInt,
+}) {}
+
+export class LegScope extends S.Class<LegScope>('LegScope')({
+  schemaVersion: SCHEMA_VERSION,
+  shard: S.String,
+  scope: RunScopeName,
+  settings: S.NullOr(ScopeSettings),
+  changedFiles: NonNegativeInt,
+  changedMutants: NonNegativeInt,
+  sampledMutants: NonNegativeInt,
+  checkedMutants: NonNegativeInt,
+  projects: NonNegativeInt,
+  cachedFiles: NonNegativeInt,
+  freshFiles: NonNegativeInt,
+  corpusDiscoveryMs: NonNegativeFinite,
+  listAndInstrumentMs: NonNegativeFinite,
+  workersMs: NonNegativeFinite,
+  wallMs: NonNegativeFinite,
+}) {}
+
 const SHARD = /^([1-9][0-9]*)\/([1-9][0-9]*)$/u
 
 const shardParts = (value: string): readonly [number, number] | undefined => {

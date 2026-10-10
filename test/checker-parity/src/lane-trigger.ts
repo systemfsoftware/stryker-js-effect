@@ -15,7 +15,7 @@ const decodeWorkspaceListing = S.decodeResult(S.fromJsonString(S.Array(S.Struct(
 
 export interface LaneTriggerInput {
   readonly base: string
-  readonly pushEvent: boolean
+  readonly fullCorpus: boolean
   readonly repoRoot: string
 }
 
@@ -48,8 +48,8 @@ const closureDirectories = (
     return projects.map((project) => path.relative(repoRoot, project.path).split(path.sep).join('/'))
   })
 
-const changedFiles = (
-  input: LaneTriggerInput,
+export const changedFiles = (
+  input: { readonly base: string; readonly repoRoot: string },
 ): Effect.Effect<ReadonlyArray<string>, DriverFailure, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.map(
     execText({ file: 'git', args: ['diff', '--name-only', `${input.base}...HEAD`], cwd: input.repoRoot }),
@@ -61,9 +61,9 @@ export const laneTrigger = (
 ): Effect.Effect<LaneTrigger, DriverFailure, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
   Effect.gen(function*() {
     const command = TriggerParityLaneCommand.make({
-      pushEvent: input.pushEvent,
+      fullCorpus: input.fullCorpus,
       closureDirectories: [...yield* closureDirectories(input.repoRoot)],
-      changedFiles: input.pushEvent ? [] : [...yield* changedFiles(input)],
+      changedFiles: input.fullCorpus ? [] : [...yield* changedFiles(input)],
     })
     return yield* Effect.fromResult(triggerParityLane(command))
   })

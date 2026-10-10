@@ -16,12 +16,12 @@ const triggerOf = (
   subject: typeof triggerParityLane,
   closureDirectories: ReadonlyArray<string>,
   changedFiles: ReadonlyArray<string>,
-  pushEvent = false,
+  fullCorpus = false,
 ): LaneTrigger =>
   Result.getOrThrow(
     subject(
       TriggerParityLaneCommand.make({
-        pushEvent,
+        fullCorpus,
         closureDirectories: [...closureDirectories],
         changedFiles: [...changedFiles],
       }),
@@ -32,11 +32,11 @@ const outsideFiles = (names: ReadonlyArray<string>): ReadonlyArray<string> => na
 
 describe('triggerParityLane', () => {
   it.prop(
-    '∀e_PushEvent_≡Run',
+    '∀e_FullCorpusEvent_≡RunEvenWithAMatchingChange',
     { of: [S.Array(S.String), S.Array(S.String)], subject: triggerParityLane },
     (subject, [closure, changed]) => {
       const trigger = triggerOf(subject, closure, changed, true)
-      return S.is(RunLane)(trigger) && trigger.reason === 'push'
+      return S.is(RunLane)(trigger) && trigger.reason === 'full-corpus'
     },
   )
 
