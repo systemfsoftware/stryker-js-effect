@@ -35,9 +35,15 @@ export {
   MutantRunOptionsSchema,
   MutantStatusSchema,
   MutatorName,
+  ReadmitCauseCode,
+  Readmitted,
   RememberedStatusSchema,
   RunOptionsFields,
   SettledStatusSchema,
+  Subsumed,
+  subsumedStatusReason,
+  Subsumption,
+  subsumptionMatchesStatus,
   SurvivorStatusSchema,
 } from '../Mutant.schema.js'
 export type {

@@ -77,8 +77,7 @@ import {
   type MutatorContext,
   type MutatorEntry,
   type MutatorOptions,
-  relationalSiteFacts,
-  relationalSufficientReplacement,
+  relationalOperatorOf,
 } from './Mutator.service.js'
 import { type ParseFailed } from './Parser.service.js'
 import {
@@ -100,6 +99,14 @@ import {
   type PlannedMutant,
 } from './plan-mutants.workflow.js'
 import { printNode } from './print/SourceText.js'
+import {
+  OrderingOperator,
+  OtherReplacement,
+  OtherSite,
+  RelationalSite,
+  type SubsumptionReplacement,
+  type SubsumptionSite,
+} from './subsume-mutants.workflow.js'
 
 const comparePositions = (a: ApiMutant.Position, b: ApiMutant.Position): number => {
   const lineDelta = a.line - b.line
@@ -704,7 +711,6 @@ interface MutableCandidate {
   readonly node: Node
   readonly replacement: Node
   readonly data: MutantCandidate
-  readonly aridReason: Option.Option<string>
 }
 
 function isMutateRangeList(value: MutateDescription): value is readonly ApiMutant.Location[] {
@@ -916,6 +922,18 @@ const aridReasonOf = (frame: NodeFrame, policy: Options.MutantSetPolicyType): Op
     Match.orElse(() => Option.none<string>()),
   )
 
+const subsumptionSiteOf = (node: Node): SubsumptionSite =>
+  Option.match(relationalOperatorOf(node), {
+    onNone: (): SubsumptionSite => OtherSite.make({}),
+    onSome: (operator) => RelationalSite.make({ operator }),
+  })
+
+const subsumptionReplacementOf = (mutatorName: string, replacement: Node): SubsumptionReplacement =>
+  Option.match(Option.filter(relationalOperatorOf(replacement), () => mutatorName === 'EqualityOperator'), {
+    onNone: (): SubsumptionReplacement => OtherReplacement.make({}),
+    onSome: (operator) => OrderingOperator.make({ operator }),
+  })
+
 const mutablesFor = (
   frame: NodeFrame,
   location: ApiMutant.Location,
@@ -929,27 +947,23 @@ const mutablesFor = (
   const ignorerAnswer = replacements.length === 0
     ? undefined
     : Option.getOrUndefined(ignorerAnswerFor(frame.node, ancestors, context.ignorers))
-  const aridReason = aridReasonOf(frame, context.mutantSetPolicy)
+  const aridReason = Option.getOrUndefined(aridReasonOf(frame, context.mutantSetPolicy))
   const originalCode = printNode(frame.node)
-  const relationalSite = relationalSiteFacts(frame.node, mutatorContext)
   return replacements.map(({ mutatorName, replacement }): MutableCandidate => {
     const replacementCode = printNode(replacement)
     const tuple: MutantTuple = { fileName: context.fileName, mutatorName, originalCode, replacementCode }
     return {
       node: frame.node,
       replacement,
-      aridReason,
       data: {
         id: mutantIdOf({ ...tuple, ordinal: context.ordinalOf(tuple) }),
         mutatorName,
         replacementCode,
         location,
         ignorerAnswer,
-        mutantSet: {
-          originalCode,
-          replacementCode,
-          relationalSufficient: relationalSufficientReplacement(relationalSite, replacement),
-        },
+        ...(aridReason === undefined ? {} : { aridReason }),
+        mutantSet: { originalCode, replacementCode },
+        subsumption: subsumptionReplacementOf(mutatorName, replacement),
       },
     }
   })
@@ -1068,20 +1082,6 @@ const attachPlaceable = (
     Match.exhaustive,
   )
 
-const aridReasonAt = (candidates: readonly MutableCandidate[], index: number): Option.Option<string> =>
-  Option.flatMap(Option.fromNullishOr(candidates[index]), (candidate) => candidate.aridReason)
-
-const withAridReason = (mutant: PlannedMutant, reason: Option.Option<string>): PlannedMutant =>
-  Option.match(reason, {
-    onNone: () => mutant,
-    onSome: (text) => (mutant.ignoreReason === undefined ? { ...mutant, ignoreReason: text } : mutant),
-  })
-
-const withAridReasons = (
-  candidates: readonly MutableCandidate[],
-  planned: readonly PlannedMutant[],
-): readonly PlannedMutant[] => planned.map((mutant, index) => withAridReason(mutant, aridReasonAt(candidates, index)))
-
 const collectPlan = (
   frame: NodeFrame,
   candidates: readonly MutableCandidate[],
@@ -1089,8 +1089,7 @@ const collectPlan = (
   state: FoldState,
   context: PlacementContext,
 ): Result.Result<FoldState, InstrumentationRefusal> => {
-  const planned = withAridReasons(candidates, plan.mutants)
-  const collected = plannedWithNodes(candidates, planned, context.fileName, () => true)
+  const collected = plannedWithNodes(candidates, plan.mutants, context.fileName, () => true)
   const nextState: FoldState = {
     ...state,
     mutants: [...state.mutants, ...collected],
@@ -1101,9 +1100,9 @@ const collectPlan = (
       const placeable = new Set(plannedPlan.placeableIds)
       const live = plannedWithNodes(
         candidates,
-        planned,
+        plan.mutants,
         context.fileName,
-        (mutant) => placeable.has(mutant.id) && mutant.ignoreReason === undefined,
+        (mutant) => placeable.has(mutant.id),
       )
       return attachPlaceable(
         live,
@@ -1135,6 +1134,7 @@ const planMutantsAt = (
       rule: [...state.directiveRule],
       directives: [...directives],
       candidates: candidates.map((candidate) => candidate.data),
+      site: subsumptionSiteOf(frame.node),
       mutantSetPolicy: context.mutantSetPolicy,
     }),
   )

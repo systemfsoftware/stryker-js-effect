@@ -190,7 +190,12 @@ describe('planShards', () => {
       const flat = PlanShardsCommand.make({
         targetSeconds: command.targetSeconds,
         maxShards: command.maxShards,
-        mutants: command.mutants.map((mutant) => ({ ...mutant, dependsOnDryRun: false })),
+        mutants: command.mutants.map(({ project, id, costMs }) => ({
+          project,
+          id,
+          costMs,
+          dependsOnDryRun: false,
+        })),
         dryRunCosts: {},
       })
       const shards = shardsOf(subject, flat)
