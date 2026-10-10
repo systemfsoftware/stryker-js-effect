@@ -164,7 +164,7 @@ const resolveSpec = (
           (catalog) => Option.fromNullishOr(catalog[packageName]),
         ),
         {
-          onNone: () => Result.fail(new UnresolvedCatalogSpec({ manifest, packageName, catalog: spec })),
+          onNone: () => Result.fail(UnresolvedCatalogSpec.make({ manifest, packageName, catalog: spec })),
           onSome: (range) => Result.succeed(range),
         },
       ),
@@ -191,7 +191,7 @@ const resolveField = (
     onSome: (present) =>
       Result.match(Schema.decodeUnknownResult(DependencyRecord)(present), {
         onFailure: () =>
-          Result.fail(new MalformedFixtureManifest({ manifest, detail: `"${field}" is not a map of version ranges` })),
+          Result.fail(MalformedFixtureManifest.make({ manifest, detail: `"${field}" is not a map of version ranges` })),
         onSuccess: (entries) => Result.map(resolveEntries(manifest, catalogs, entries), Option.some),
       }),
   })
@@ -227,7 +227,7 @@ export const parseFixtureManifest: {
   (manifest: string, bytes: Uint8Array): Result.Result<JsonObject, MalformedFixtureManifest> =>
     Result.mapError(
       Schema.decodeResult(ManifestDocument)(new TextDecoder().decode(bytes)),
-      () => new MalformedFixtureManifest({ manifest, detail: 'the manifest is not a JSON object' }),
+      () => MalformedFixtureManifest.make({ manifest, detail: 'the manifest is not a JSON object' }),
     ),
 )
 
