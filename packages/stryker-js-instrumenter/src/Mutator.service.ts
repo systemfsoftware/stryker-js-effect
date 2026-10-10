@@ -103,7 +103,7 @@ export interface Mutant extends Mutable {
   readonly original: Node
   readonly location: ApiMutant.Location
   readonly replacementCode: string
-  readonly redundancy?: ApiMutant.Redundancy
+  readonly subsumption?: ApiMutant.Subsumed
 }
 function orDefault<T>(value: T | undefined, fallback: T): T {
   return value ?? fallback
@@ -124,7 +124,7 @@ function createMutantDataFirst(
     mutatorName: planned.mutatorName,
     ignoreReason: planned.ignoreReason,
     replacementCode: planned.replacementCode,
-    ...(planned.redundancy === undefined ? {} : { redundancy: planned.redundancy }),
+    ...(planned.subsumption === undefined ? {} : { subsumption: planned.subsumption }),
   }
 }
 
@@ -132,16 +132,16 @@ export const createMutant: {
   (planned: PlannedMutant, fileName: string, original: Node, replacement: Node): Mutant
   (fileName: string, original: Node, replacement: Node): (planned: PlannedMutant) => Mutant
 } = dual((args: IArguments): boolean => args.length >= 4, createMutantDataFirst)
-const redundancyFieldOf = (mutant: Mutant): { readonly redundancy?: ApiMutant.Redundancy } =>
-  Option.match(Option.fromUndefinedOr(mutant.redundancy), {
+const subsumptionFieldOf = (mutant: Mutant): { readonly subsumption?: ApiMutant.Subsumed } =>
+  Option.match(Option.fromUndefinedOr(mutant.subsumption), {
     onNone: () => ({}),
-    onSome: (redundancy) => ({ redundancy }),
+    onSome: (subsumption) => ({ subsumption }),
   })
 
 const statusReasonOf = (mutant: Mutant): Option.Option<string> =>
   Option.orElse(
     Option.fromUndefinedOr(mutant.ignoreReason),
-    () => Option.map(Option.fromUndefinedOr(mutant.redundancy), ApiMutant.redundancyStatusReason),
+    () => Option.map(Option.fromUndefinedOr(mutant.subsumption), ApiMutant.subsumedStatusReason),
   )
 
 export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.SchemaError> {
@@ -160,7 +160,7 @@ export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.S
         ...baseFields,
         statusReason,
         status: 'Ignored',
-        ...redundancyFieldOf(mutant),
+        ...subsumptionFieldOf(mutant),
       }),
     }),
   )

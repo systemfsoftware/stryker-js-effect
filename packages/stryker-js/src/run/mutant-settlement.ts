@@ -147,21 +147,21 @@ const readmittedOf = (
   })
 
 const stillSubsumedResultOf = (entry: HeldSubsumedPlan, running: Mutant.MutantId): Mutant.RunMutantResult => {
-  const redundancy = Mutant.Subsumed.make({
-    rule: entry.redundancy.rule,
-    dominators: Arr.prepend(entry.redundancy.dominators.filter((candidate) => candidate !== running), running),
+  const subsumption = Mutant.Subsumed.make({
+    rule: entry.subsumed.rule,
+    dominators: Arr.prepend(entry.subsumed.dominators.filter((candidate) => candidate !== running), running),
   })
   return {
     ...entry.plan.mutant,
     status: 'Ignored',
-    statusReason: Mutant.redundancyStatusReason(redundancy),
-    redundancy,
+    statusReason: Mutant.subsumedStatusReason(subsumption),
+    subsumption,
   }
 }
 
 const readmittedPlanOf = (entry: HeldSubsumedPlan, ruling: Readmitted): Mutant.RunPlan => ({
   ...entry.plan,
-  mutant: { ...entry.plan.mutant, readmission: readmittedOf(entry.redundancy.rule, ruling.causes) },
+  mutant: { ...entry.plan.mutant, subsumption: readmittedOf(entry.subsumed.rule, ruling.causes) },
 })
 
 const heldDispositionOf = (
@@ -197,7 +197,7 @@ const subsumptionRulingsOf = (
     readmitSubsumed(
       ReadmitSubsumedCommand.make({
         held: plan.heldSubsumed.map((entry) =>
-          HeldMutant.make({ id: entry.plan.mutant.id, dominators: entry.redundancy.dominators })
+          HeldMutant.make({ id: entry.plan.mutant.id, dominators: entry.subsumed.dominators })
         ),
         settlements,
       }),

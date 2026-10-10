@@ -73,8 +73,7 @@ const mutantFieldsOf = (fixture: MutantFixture) => ({
       testsExecuted: 1,
       shared: false,
     }),
-  redundancy: null,
-  readmission: null,
+  subsumption: null,
 })
 
 const mutantLineOf = (fixture: MutantFixture): CliContract.RunMutantTested =>

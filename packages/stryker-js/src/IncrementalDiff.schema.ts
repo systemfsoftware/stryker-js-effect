@@ -51,8 +51,7 @@ const previousReuseRecordFields = {
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
-  redundancy: S.optional(Mutant.Redundancy),
-  readmission: S.optional(Mutant.Readmitted),
+  subsumption: S.optional(Mutant.Subsumption),
 }
 
 const PreviousReuseRecordIgnoredSchema = S.Struct({
@@ -83,8 +82,7 @@ const reuseMutantFields = {
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
-  redundancy: S.optional(Mutant.Redundancy),
-  readmission: S.optional(Mutant.Readmitted),
+  subsumption: S.optional(Mutant.Subsumption),
   remembered: S.Boolean,
 }
 

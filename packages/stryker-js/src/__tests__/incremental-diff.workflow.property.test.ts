@@ -33,8 +33,7 @@ const unreproducedWallClock = (record: PreviousReuseRecord): boolean =>
 const matchingProgramRecordDigest = (record: PreviousReuseRecord, digest: string | undefined): boolean =>
   (record.programDigest ?? '') !== '' && record.programDigest === digest
 
-const carriesReference = (record: PreviousReuseRecord): boolean =>
-  record.redundancy !== undefined || record.readmission !== undefined
+const carriesReference = (record: PreviousReuseRecord): boolean => record.subsumption !== undefined
 
 const remembersWith = (record: PreviousReuseRecord, programDigest: string | undefined): boolean =>
   isReusable(record.status) &&
@@ -57,7 +56,7 @@ const subsumedMutantOf = (id: Mutant.MutantId, dominator: Mutant.MutantId): Muta
   Mutant.Mutant.make({
     ...mutantOf(id),
     status: 'Ignored',
-    redundancy: Mutant.Subsumed.make({ rule: 'complement', dominators: [dominator] }),
+    subsumption: Mutant.Subsumed.make({ rule: 'complement', dominators: [dominator] }),
   })
 
 const rememberedUnlessReferenced = (

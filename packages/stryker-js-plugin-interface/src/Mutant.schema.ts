@@ -1,4 +1,5 @@
 /// <reference types="vitest/importMeta" />
+import { dual } from 'effect/Function'
 import * as S from 'effect/Schema'
 import * as SGetter from 'effect/SchemaGetter'
 
@@ -71,27 +72,18 @@ export const CanonicalFileName = S.String.pipe(
 )
 export type CanonicalFileName = typeof CanonicalFileName.Type
 
-/**
- * Why a mutant was dropped as redundant: under `Subsumed`, every test that
- * kills the first entry of `dominators` also kills this mutant, so the run
- * reports it Ignored instead of executing it. `rule` names the subsumption
- * rule that proved it.
- */
 export const Subsumed = S.TaggedStruct('Subsumed', {
   rule: S.Literals(['complement']),
   dominators: S.NonEmptyArray(MutantId),
 })
 export type Subsumed = typeof Subsumed.Type
 
-export const Redundancy = S.Union([Subsumed])
-export type Redundancy = typeof Redundancy.Type
-
-export const redundancyStatusReason = (redundancy: Redundancy): string =>
+export const subsumedStatusReason = (subsumed: Subsumed): string =>
   ignoreStatusReasonText({
     ruleId: 'redundant-relational',
-    detail: `subsumed by ${redundancy.dominators[0]} (${redundancy.rule}): every test that kills ${
-      redundancy.dominators[0]
-    } kills this mutant, so act on ${redundancy.dominators[0]}, or set mutator.mutantSetPolicy 'full' to run it`,
+    detail: `subsumed by ${subsumed.dominators[0]} (${subsumed.rule}): every test that kills ${
+      subsumed.dominators[0]
+    } kills this mutant, so act on ${subsumed.dominators[0]}, or set mutator.mutantSetPolicy 'full' to run it`,
   })
 
 /**
@@ -113,6 +105,18 @@ export const Readmitted = S.TaggedStruct('Readmitted', {
 })
 export type Readmitted = typeof Readmitted.Type
 
+export const Subsumption = S.Union([Subsumed, Readmitted])
+export type Subsumption = typeof Subsumption.Type
+
+export const subsumptionMatchesStatus: {
+  (status: MutantStatus | undefined): (subsumption: Subsumption) => boolean
+  (subsumption: Subsumption, status: MutantStatus | undefined): boolean
+} = dual(
+  2,
+  (subsumption: Subsumption, status: MutantStatus | undefined): boolean =>
+    S.is(Subsumed)(subsumption) ? status === 'Ignored' : status !== 'Ignored',
+)
+
 /**
  * A mutant's file location in the mutation-testing-report-schema contract:
  * 1-based line and 1-based column, the same base the JSON report and the
@@ -131,24 +135,15 @@ export const Mutant = S.TaggedStruct('Mutant', {
   static: S.optional(S.Boolean),
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
-  redundancy: S.optional(Redundancy),
-  readmission: S.optional(Readmitted),
+  subsumption: S.optional(Subsumption),
 }).check(
   S.makeFilter(
     (mutant) => mutant.statusReason === undefined || mutant.status !== undefined,
     { message: 'a mutant carries a status reason only together with a status' },
   ),
   S.makeFilter(
-    (mutant) => mutant.redundancy === undefined || mutant.status === 'Ignored',
-    { message: 'a mutant carries a redundancy reference only when it is Ignored' },
-  ),
-  S.makeFilter(
-    (mutant) => mutant.readmission === undefined || mutant.redundancy === undefined,
-    { message: 'a re-admitted mutant ran, so it carries no redundancy reference' },
-  ),
-  S.makeFilter(
-    (mutant) => mutant.readmission === undefined || mutant.status !== 'Ignored',
-    { message: 'a re-admitted mutant ran, so it is not Ignored' },
+    (mutant) => mutant.subsumption === undefined || subsumptionMatchesStatus(mutant.subsumption, mutant.status),
+    { message: 'a Subsumed mutant is Ignored, and a Readmitted mutant ran, so it is not Ignored' },
   ),
 )
 export type Mutant = typeof Mutant.Type
@@ -371,5 +366,30 @@ if (import.meta.vitest !== void 0) {
     (subject, [drawn]) =>
       Arr.every(statusProbes, (value) => subject(value) === S.is(MutantStatusSchema)(value)) &&
       subject(drawn) === S.is(MutantStatusSchema)(drawn),
+  )
+
+  const decodesWith = (subsumption: Subsumption, status: MutantStatus | null): boolean =>
+    Option.isSome(
+      S.decodeOption(Mutant)({
+        _tag: 'Mutant',
+        id: '0123456789abcdef',
+        fileName: 'src/a.ts',
+        mutatorName: 'EqualityOperator',
+        replacement: 'a >= b',
+        location: { start: { line: 1, column: 1 }, end: { line: 1, column: 6 } },
+        subsumption,
+        ...(status === null ? {} : { status }),
+      }),
+    )
+  const ACCEPTED_BY_TAG: Readonly<Record<Subsumption['_tag'], ReadonlyArray<MutantStatus | null>>> = {
+    Subsumed: ['Ignored'],
+    Readmitted: ['Killed', 'Survived', 'NoCoverage', 'CompileError', 'RuntimeError', 'Timeout', 'Pending', null],
+  }
+
+  it.prop(
+    '∀r,s_SubsumptionRefusal_≡SubsumedOnlyIgnoredReadmittedNeverIgnored',
+    { of: [Subsumption, S.NullOr(MutantStatusSchema)], subject: decodesWith },
+    (subject, [subsumption, status]) =>
+      subject(subsumption, status) === ACCEPTED_BY_TAG[subsumption._tag].includes(status),
   )
 }

@@ -8,6 +8,7 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import { MaterializeMutantPlanCommand, materializeMutantPlans } from '../materialize-mutant-plans.workflow.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
@@ -84,7 +85,7 @@ const planCommandOf = (
 const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
   Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant] as const))
 
-const isSubsumed = (mutant: Mutant.Mutant): boolean => Option.isSome(Option.fromUndefinedOr(mutant.redundancy))
+const isSubsumed = (mutant: Mutant.Mutant): boolean => Option.isSome(Option.fromUndefinedOr(mutant.subsumption))
 
 const planningMutantOf = (mutant: Mutant.Mutant): Mutant.Mutant =>
   isSubsumed(mutant)
@@ -237,7 +238,7 @@ export interface MutationTestPlanInput {
 
 export interface HeldSubsumedPlan {
   readonly plan: Mutant.RunPlan
-  readonly redundancy: Mutant.Redundancy
+  readonly subsumed: Mutant.Subsumed
 }
 
 export interface MutationTestPlan {
@@ -248,12 +249,12 @@ export interface MutationTestPlan {
   readonly plansForReporter: readonly Mutant.RunPlan[]
 }
 
-const redundancyByIdOf = (mutants: readonly Mutant.Mutant[]): ReadonlyMap<string, Mutant.Redundancy> =>
+const subsumedByIdOf = (mutants: readonly Mutant.Mutant[]): ReadonlyMap<string, Mutant.Subsumed> =>
   new Map(
     mutants.flatMap((mutant) =>
-      Option.match(Option.fromUndefinedOr(mutant.redundancy), {
-        onNone: (): readonly (readonly [string, Mutant.Redundancy])[] => [],
-        onSome: (redundancy) => [[mutant.id, redundancy] as const],
+      Option.match(Option.filter(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed)), {
+        onNone: (): readonly (readonly [string, Mutant.Subsumed])[] => [],
+        onSome: (subsumed) => [[mutant.id, subsumed] as const],
       })
     ),
   )
@@ -261,16 +262,16 @@ const redundancyByIdOf = (mutants: readonly Mutant.Mutant[]): ReadonlyMap<string
 export const draftMutationTestPlan = Effect.fn(SpanTaxonomy.Spans.mutationTestPlan.name)(function*(
   input: MutationTestPlanInput,
 ) {
-  const redundancyById = redundancyByIdOf(input.mutants)
+  const subsumedById = subsumedByIdOf(input.mutants)
   const plans = yield* planMutantTestsCell.run(input)
   const { runPlans, earlyPlans } = partitionRunPlans(plans)
   const heldSubsumed: readonly HeldSubsumedPlan[] = runPlans.flatMap((plan) =>
-    Option.match(Option.fromUndefinedOr(redundancyById.get(plan.mutant.id)), {
+    Option.match(Option.fromUndefinedOr(subsumedById.get(plan.mutant.id)), {
       onNone: (): readonly HeldSubsumedPlan[] => [],
-      onSome: (redundancy) => [{ plan, redundancy }],
+      onSome: (subsumed) => [{ plan, subsumed }],
     })
   )
-  const keptRunPlans = runPlans.filter((plan) => !redundancyById.has(plan.mutant.id))
+  const keptRunPlans = runPlans.filter((plan) => !subsumedById.has(plan.mutant.id))
   const earlyResults = yield* Effect.forEach(earlyPlans, (plan) => earlyResultOf(plan))
   const sortedPlans = sortedRunPlans(keptRunPlans)
   const plansForReporter: readonly Mutant.RunPlan[] = [...sortedPlans]

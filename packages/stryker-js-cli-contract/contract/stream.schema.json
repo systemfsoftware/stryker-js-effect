@@ -522,7 +522,7 @@
             }
           ]
         },
-        "redundancy": {
+        "subsumption": {
           "anyOf": [
             {
               "anyOf": [
@@ -566,104 +566,97 @@
                     "dominators"
                   ],
                   "additionalProperties": true
-                }
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "readmission": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "_tag": {
-                  "type": "string",
-                  "enum": [
-                    "Readmitted"
-                  ]
                 },
-                "rule": {
-                  "anyOf": [
-                    {
+                {
+                  "type": "object",
+                  "properties": {
+                    "_tag": {
                       "type": "string",
                       "enum": [
-                        "complement"
+                        "Readmitted"
                       ]
-                    }
-                  ]
-                },
-                "causes": {
-                  "type": "array",
-                  "minItems": 1,
-                  "items": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "dominator": {
-                          "type": "string",
-                          "pattern": "^[0-9a-f]{16}$"
-                        },
-                        "code": {
+                    },
+                    "rule": {
+                      "anyOf": [
+                        {
                           "type": "string",
                           "enum": [
-                            "dominator-ignored-at-check",
-                            "dominator-compile-error",
-                            "dominator-ignored-at-plan",
-                            "dominator-remembered-without-running",
-                            "dominator-unsettled"
+                            "complement"
                           ]
-                        },
-                        "detail": {
-                          "type": "string"
                         }
-                      },
-                      "required": [
-                        "dominator",
-                        "code",
-                        "detail"
-                      ],
-                      "additionalProperties": true
-                    }
-                  ],
-                  "additionalItems": {
-                    "type": "object",
-                    "properties": {
-                      "dominator": {
-                        "type": "string",
-                        "pattern": "^[0-9a-f]{16}$"
-                      },
-                      "code": {
-                        "type": "string",
-                        "enum": [
-                          "dominator-ignored-at-check",
-                          "dominator-compile-error",
-                          "dominator-ignored-at-plan",
-                          "dominator-remembered-without-running",
-                          "dominator-unsettled"
-                        ]
-                      },
-                      "detail": {
-                        "type": "string"
-                      }
+                      ]
                     },
-                    "required": [
-                      "dominator",
-                      "code",
-                      "detail"
-                    ],
-                    "additionalProperties": true
-                  }
+                    "causes": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "dominator": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{16}$"
+                            },
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "dominator-ignored-at-check",
+                                "dominator-compile-error",
+                                "dominator-ignored-at-plan",
+                                "dominator-remembered-without-running",
+                                "dominator-unsettled"
+                              ]
+                            },
+                            "detail": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "dominator",
+                            "code",
+                            "detail"
+                          ],
+                          "additionalProperties": true
+                        }
+                      ],
+                      "additionalItems": {
+                        "type": "object",
+                        "properties": {
+                          "dominator": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{16}$"
+                          },
+                          "code": {
+                            "type": "string",
+                            "enum": [
+                              "dominator-ignored-at-check",
+                              "dominator-compile-error",
+                              "dominator-ignored-at-plan",
+                              "dominator-remembered-without-running",
+                              "dominator-unsettled"
+                            ]
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "dominator",
+                          "code",
+                          "detail"
+                        ],
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "required": [
+                    "_tag",
+                    "rule",
+                    "causes"
+                  ],
+                  "additionalProperties": true
                 }
-              },
-              "required": [
-                "_tag",
-                "rule",
-                "causes"
-              ],
-              "additionalProperties": true
+              ]
             },
             {
               "type": "null"
@@ -705,8 +698,7 @@
         "total",
         "static",
         "cost",
-        "redundancy",
-        "readmission",
+        "subsumption",
         "status",
         "statusReason"
       ],

@@ -71,7 +71,7 @@ const PlannedMutantSchema = S.Struct({
   replacementCode: S.String,
   location: Mutant.Location,
   ignoreReason: S.optional(S.String),
-  redundancy: S.optional(Mutant.Redundancy),
+  subsumption: S.optional(Mutant.Subsumed),
 })
 export type PlannedMutant = typeof PlannedMutantSchema.Type
 
@@ -291,25 +291,25 @@ const subsumptionsAt = (
     },
   )
 
-const redundancyOf = (decision: SubsumptionDecision): Option.Option<Mutant.Redundancy> =>
+const subsumedOf = (decision: SubsumptionDecision): Option.Option<Mutant.Subsumed> =>
   Match.value(decision).pipe(
     Match.tag('Subsumed', (subsumed) =>
-      Option.some<Mutant.Redundancy>({ _tag: 'Subsumed', rule: subsumed.rule, dominators: subsumed.dominators })),
+      Option.some<Mutant.Subsumed>({ _tag: 'Subsumed', rule: subsumed.rule, dominators: subsumed.dominators })),
     Match.tag('Unaffected', () =>
-      Option.none<Mutant.Redundancy>()),
+      Option.none<Mutant.Subsumed>()),
     Match.exhaustive,
   )
 
 interface CandidateReasons {
   readonly ignoreReason: string | undefined
-  readonly redundancy: Option.Option<Mutant.Redundancy>
+  readonly subsumption: Option.Option<Mutant.Subsumed>
 }
 
 const candidateReasonsAt = (command: PlanMutantsCommand): readonly CandidateReasons[] => {
   const staticReasons = staticReasonsAt(command)
-  return Arr.zip(staticReasons, subsumptionsAt(command, staticReasons)).map(([ignoreReason, subsumption]) => ({
+  return Arr.zip(staticReasons, subsumptionsAt(command, staticReasons)).map(([ignoreReason, decision]) => ({
     ignoreReason,
-    redundancy: redundancyOf(subsumption),
+    subsumption: subsumedOf(decision),
   }))
 }
 
@@ -384,7 +384,7 @@ const plannedMutant = (
             replacementCode: candidate.replacementCode,
             location: shiftedLocation(location, command.offset),
             ignoreReason: reasons.ignoreReason,
-            ...Option.match(reasons.redundancy, { onNone: () => ({}), onSome: (redundancy) => ({ redundancy }) }),
+            ...Option.match(reasons.subsumption, { onNone: () => ({}), onSome: (subsumption) => ({ subsumption }) }),
           }),
       }),
   })

@@ -108,8 +108,7 @@ const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
         ...optionalField('testsCompleted', mutant.testsCompleted),
         ...optionalListField('coveredBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.coveredBy)),
         ...optionalListField('killedBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.killedBy)),
-        ...optionalField('redundancy', mutant.redundancy),
-        ...optionalField('readmission', mutant.readmission),
+        ...optionalField('subsumption', mutant.subsumption),
       }
       return mutant.status === 'Ignored'
         ? { ...fields, status: mutant.status, statusReason: mutant.statusReason }

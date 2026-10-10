@@ -197,14 +197,20 @@ interface MutantOutcome {
   readonly testsCompleted?: number | undefined
 }
 
-const readmissionOf = (
+const subsumptionOf = (
   mutant: Mutant.MutantTestCoverage,
   status: Mutant.RunMutantResult['status'],
-): { readonly readmission?: Mutant.Readmitted } =>
-  Option.match(Option.filter(Option.fromUndefinedOr(mutant.readmission), () => status !== 'Ignored'), {
-    onNone: () => ({}),
-    onSome: (readmission) => ({ readmission }),
-  })
+): { readonly subsumption?: Mutant.Subsumption } =>
+  Option.match(
+    Option.filter(
+      Option.fromUndefinedOr(mutant.subsumption),
+      (subsumption) => Mutant.subsumptionMatchesStatus(subsumption, status),
+    ),
+    {
+      onNone: () => ({}),
+      onSome: (subsumption) => ({ subsumption }),
+    },
+  )
 
 const reportMutant = (
   mutant: Mutant.MutantTestCoverage,
@@ -224,7 +230,7 @@ const reportMutant = (
       static: mutant.static,
       testsCompleted: mutant.testsCompleted,
       description: mutant.description,
-      ...readmissionOf(mutant, status),
+      ...subsumptionOf(mutant, status),
       ...outcome,
     }) satisfies Mutant.RunMutantResult,
   )
@@ -490,8 +496,7 @@ const reportMutantOf = (
   ...presentField('static', mutant.static),
   ...presentField('killedBy', remap.testIds(mutant.killedBy)),
   ...presentField('coveredBy', remap.testIds(mutant.coveredBy)),
-  ...presentField('redundancy', mutant.redundancy),
-  ...presentField('readmission', mutant.readmission),
+  ...presentField('subsumption', mutant.subsumption),
   ...timeoutFieldsOf(mutant, evidence),
 })
 

@@ -218,16 +218,27 @@ const programDigestAtPlanTime = ({
     onFalse: () => Effect.as(Effect.void, undefined),
   })
 
+const subsumedOf = (mutant: Mutant.Mutant): Option.Option<Mutant.Subsumed> =>
+  Option.filter(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed))
+
 const dominatorIdsOf = (mutants: readonly Mutant.Mutant[]): ReadonlySet<Mutant.MutantId> =>
-  new Set(mutants.flatMap((mutant) => (mutant.redundancy === undefined ? [] : [...mutant.redundancy.dominators])))
+  new Set(mutants.flatMap((mutant) =>
+    Option.match(subsumedOf(mutant), {
+      onNone: () => [],
+      onSome: (subsumed) => subsumed.dominators,
+    })
+  ))
 
 const placementKeyOf = (
   dominatorIds: ReadonlySet<Mutant.MutantId>,
   mutant: Mutant.Mutant,
 ): Mutant.MutantId | undefined =>
-  mutant.redundancy !== undefined
-    ? mutant.redundancy.dominators[0]
-    : Option.getOrUndefined(Option.liftPredicate(mutant.id, (id) => dominatorIds.has(id)))
+  Option.getOrUndefined(
+    Option.orElse(
+      Option.map(subsumedOf(mutant), (subsumed) => subsumed.dominators[0]),
+      () => Option.liftPredicate(mutant.id, (id) => dominatorIds.has(id)),
+    ),
+  )
 
 const planProject = (
   request: PlanShardsRequest,

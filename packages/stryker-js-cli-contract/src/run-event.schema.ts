@@ -107,8 +107,7 @@ const mutantTestedFields = {
   total: Report.NonNegativeInt,
   static: S.Boolean,
   cost: S.NullOr(MutantCost),
-  redundancy: S.NullOr(Mutant.Redundancy),
-  readmission: S.NullOr(Mutant.Readmitted),
+  subsumption: S.NullOr(Mutant.Subsumption),
 }
 
 const IgnoredStatusReason = S.Struct({ status: S.Literal('Ignored'), statusReason: Mutant.IgnoreStatusReasonText })
@@ -119,13 +118,19 @@ const statusReasonCheck = S.makeFilter(S.is(S.Union([IgnoredStatusReason, Settle
   expected: 'an Ignored mutant whose statusReason names an ignore rule (`<rule-id>: <detail>`)',
 })
 
+const subsumptionCheck = S.makeFilter(
+  (line: { readonly subsumption: Mutant.Subsumption | null; readonly status: Mutant.MutantStatus }) =>
+    line.subsumption === null || Mutant.subsumptionMatchesStatus(line.subsumption, line.status),
+  { expected: 'a Subsumed reference only on an Ignored mutant, and a Readmitted one only on a mutant that ran' },
+)
+
 export class RunMutantTestedEvent extends S.TaggedClass<RunMutantTestedEvent>()(
   'mutantTested',
   S.Struct({
     ...mutantTestedFields,
     status: Mutant.MutantStatusSchema,
     statusReason: S.NullOr(S.String),
-  }).check(statusReasonCheck),
+  }).check(statusReasonCheck, subsumptionCheck),
 ) {}
 
 /**
@@ -147,8 +152,7 @@ const mutantWireFields = {
   total: Report.NonNegativeInt,
   static: S.Boolean,
   cost: S.NullOr(MutantCost),
-  redundancy: S.NullOr(Mutant.Redundancy),
-  readmission: S.NullOr(Mutant.Readmitted),
+  subsumption: S.NullOr(Mutant.Subsumption),
 }
 
 const MutantWireCommon = S.Struct(mutantWireFields)
@@ -163,15 +167,14 @@ const eventFieldsOf = (line: typeof MutantWireCommon.Type) => ({
   total: line.total,
   static: line.static,
   cost: line.cost,
-  redundancy: line.redundancy,
-  readmission: line.readmission,
+  subsumption: line.subsumption,
 })
 
 const MutantTestedWireSchema = S.TaggedStruct('mutant', {
   ...mutantWireFields,
   status: Mutant.MutantStatusSchema,
   statusReason: S.NullOr(S.String),
-}).check(statusReasonCheck)
+}).check(statusReasonCheck, subsumptionCheck)
 
 export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSchema.Encoded> = MutantTestedWireSchema
   .pipe(
@@ -190,8 +193,7 @@ export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSc
         total: tested.total,
         static: tested.static,
         cost: tested.cost,
-        redundancy: tested.redundancy,
-        readmission: tested.readmission,
+        subsumption: tested.subsumption,
         status: tested.status,
         statusReason: tested.statusReason,
       })),

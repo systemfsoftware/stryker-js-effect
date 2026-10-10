@@ -94,8 +94,7 @@ const isUnreproducedWallClockTimeout = (record: PreviousReuseRecord): boolean =>
     ),
   )
 
-const carriesSubsumptionReference = (record: PreviousReuseRecord): boolean =>
-  Boolean.or(record.redundancy !== undefined, record.readmission !== undefined)
+const carriesSubsumptionReference = (record: PreviousReuseRecord): boolean => record.subsumption !== undefined
 
 const isReusableRecord = (record: PreviousReuseRecord): boolean =>
   Boolean.and(
@@ -315,7 +314,7 @@ const flakyRefusedOf = (
 
 const decidedPerRun = (mutant: Mutant.Mutant, records: readonly PreviousReuseRecord[]): boolean =>
   Boolean.or(
-    mutant.redundancy !== undefined,
+    mutant.subsumption !== undefined,
     Option.exists(Arr.last(records), carriesSubsumptionReference),
   )
 
@@ -337,7 +336,7 @@ const rememberableOf = (
   command: IncrementalDiffCommand,
   records: readonly PreviousReuseRecord[],
 ): Option.Option<PreviousReuseRecord> =>
-  Option.filter(newestMatchingOf(records, command), () => mutant.redundancy === undefined)
+  Option.filter(newestMatchingOf(records, command), () => mutant.subsumption === undefined)
 
 const decideForMutant = (
   mutant: Mutant.Mutant,

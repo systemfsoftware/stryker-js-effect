@@ -82,11 +82,8 @@ const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, re
 const costLineOf = (result: Mutant.RunMutantResult): RunEvent.MutantCost | null =>
   Option.getOrNull(Option.map(Option.fromUndefinedOr(result.cost), (cost) => RunEvent.MutantCost.make(cost)))
 
-const redundancyLineOf = (result: Mutant.RunMutantResult): Mutant.Redundancy | null =>
-  Option.getOrNull(Option.fromUndefinedOr(result.redundancy))
-
-const readmissionLineOf = (result: Mutant.RunMutantResult): Mutant.Readmitted | null =>
-  Option.getOrNull(Option.fromUndefinedOr(result.readmission))
+const subsumptionLineOf = (result: Mutant.RunMutantResult): Mutant.Subsumption | null =>
+  Option.getOrNull(Option.fromUndefinedOr(result.subsumption))
 
 const requiredReasonOf = (result: Mutant.RunMutantResult): string =>
   Option.getOrThrowWith(
@@ -114,8 +111,7 @@ const mutantLineOf = (
     ...progress,
     static: Option.getOrElse(Option.fromUndefinedOr(result.static), () => false),
     cost: costLineOf(result),
-    redundancy: redundancyLineOf(result),
-    readmission: readmissionLineOf(result),
+    subsumption: subsumptionLineOf(result),
   }
   return RunEvent.RunMutantTestedEvent.make({
     ...fields,
