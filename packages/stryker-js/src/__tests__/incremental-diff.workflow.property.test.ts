@@ -35,7 +35,7 @@ const matchingProgramRecordDigest = (record: PreviousReuseRecord, digest: string
 
 const decodesToAridUncoveredBlock = (statusReason: string): boolean => {
   const decoded = S.decodeResult(Mutant.IgnoreStatusReason)(statusReason)
-  return Result.isSuccess(decoded) && decoded.success.ruleId === 'arid-uncovered-block'
+  return Result.isSuccess(decoded) && decoded.success.code === 'arid-uncovered-block'
 }
 
 const decidedFromCurrentRun = (record: PreviousReuseRecord): boolean =>

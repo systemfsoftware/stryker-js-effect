@@ -76,7 +76,8 @@ import {
   type MutationTestPlan,
 } from './mutation-test-plan.cell.js'
 import { inPlannedOrder, toReportedMutant } from './mutation-test-plan.js'
-import { RunEnvironment } from './RunEnvironment.service.js'
+import type { PhaseClock } from './phase-clock.service.js'
+import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
 const TCE_EQUIVALENT_TO_ORIGINAL_REASON = 'equivalent-to-original: tce'
@@ -344,10 +345,10 @@ export interface Settlement<Passed extends Mutant.MutantRunPlan, E> {
   readonly checkers: Checkers
   readonly reuse: IncrementalReuse
   readonly plan: MutationTestPlan
-  readonly checkedPlans: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash>
+  readonly checkedPlans: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash, PhaseClock>
   readonly checkHeld: (
     plans: readonly Mutant.RunPlan[],
-  ) => Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash>
+  ) => Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash, PhaseClock>
   readonly closureDigestsByMutantId: Record<string, string>
   readonly runPlanOf: (
     settling: PlanSettling,
@@ -406,7 +407,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
         yield* checkpoint.record(measured)
         return measured
       })
-    const runChecked = (checkedPlans: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash>) =>
+    const runChecked = (checkedPlans: Stream.Stream<CheckedPlans<Passed>, StageError | CheckerCrash, PhaseClock>) =>
       runCheckedPlans(checkedPlans, {
         settleFailure: (mutantPlan, result, checkMs) =>
           Effect.flatMap(
@@ -479,6 +480,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
       duplicateAtSite: countIgnoredByReason(allResults, TCE_DUPLICATE_AT_SITE_REASON),
     }),
   )
+  yield* phaseEntered('reporting')
   const outcomeResult = yield* reporting.reportAll({
     ...reportingInputOf({ prev: basis, env, results: allResults, rememberedMutantIds: context.rememberedMutantIds }),
     closureDigestsByMutantId: settlement.closureDigestsByMutantId,

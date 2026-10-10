@@ -101,7 +101,7 @@ const isAridUncoveredBlockReason = (statusReason: string | undefined): boolean =
     Option.flatMap(Option.fromUndefinedOr(statusReason), decodeIgnoreStatusReason),
     {
       onNone: () => false,
-      onSome: (parts) => parts.ruleId === 'arid-uncovered-block',
+      onSome: (parts) => parts.code === 'arid-uncovered-block',
     },
   )
 

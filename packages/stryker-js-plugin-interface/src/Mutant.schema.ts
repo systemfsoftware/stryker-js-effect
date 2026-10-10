@@ -80,7 +80,7 @@ export type Subsumed = typeof Subsumed.Type
 
 export const subsumedStatusReason = (subsumed: Subsumed): string =>
   ignoreStatusReasonText({
-    ruleId: 'redundant-relational',
+    code: 'redundant-relational',
     detail: `subsumed by ${subsumed.dominators[0]} (${subsumed.rule}): every test that kills ${
       subsumed.dominators[0]
     } kills this mutant, so act on ${subsumed.dominators[0]}, or set mutator.mutantSetPolicy 'full' to run it`,
@@ -130,7 +130,7 @@ export const uncoveredBlockStatusReason: {
   (guard: Guard, noCoverage: MutantId): string
 } = dual(2, (guard: Guard, noCoverage: MutantId): string =>
   ignoreStatusReasonText({
-    ruleId: 'arid-uncovered-block',
+    code: 'arid-uncovered-block',
     detail:
       `no test ran the block this condition guards (${guard.block}); its NoCoverage mutant ${noCoverage} already reports that gap, so add a test that runs the block, or set mutator.mutantSetPolicy 'full' to run this mutant`,
   }))
