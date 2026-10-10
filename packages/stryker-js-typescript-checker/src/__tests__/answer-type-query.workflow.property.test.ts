@@ -22,6 +22,7 @@ import {
   type SiteFacts,
   SiteMissing,
   SiteNotExpression,
+  UnenforcedContext,
 } from '../CheckerCommands.schema.js'
 import { AssignableQueryInput } from './answer-type-query.fixture.schema.js'
 
@@ -34,6 +35,7 @@ const UNKNOWN_REASON_ORDER: ReadonlyArray<UnknownReason> = [
   'error-type',
   'instantiable-target',
   'overloaded-or-generic-call',
+  'context-not-enforced',
 ]
 
 const reasonFails = (site: SiteFacts, candidate: CandidateFacts, reason: UnknownReason): boolean => {
@@ -55,9 +57,11 @@ const reasonFails = (site: SiteFacts, candidate: CandidateFacts, reason: Unknown
     case 'overloaded-or-generic-call':
       return (
         S.is(SiteExpression)(site) &&
-        S.is(CallArgument)(site.call) &&
-        (site.call.signatureCount > 1 || site.call.declaredGeneric)
+        S.is(CallArgument)(site.origin) &&
+        (site.origin.signatureCount > 1 || site.origin.declaredGeneric)
       )
+    case 'context-not-enforced':
+      return S.is(SiteExpression)(site) && S.is(UnenforcedContext)(site.origin)
   }
 }
 
@@ -67,7 +71,7 @@ const firstFailingReason = (site: SiteFacts, candidate: CandidateFacts): Unknown
 const satisfiedSite = (contextualText: string): SiteFacts => ({
   _tag: 'SiteExpression',
   contextualType: Option.some({ text: contextualText, isError: false, instantiable: false }),
-  call: { _tag: 'NotACallArgument' },
+  origin: { _tag: 'DeclaredContext' },
 })
 
 const typedCandidate = (candidateType: string): CandidateFacts => ({
@@ -99,7 +103,7 @@ const commandFailingOnly = (
       return AnswerTypeQueryCommand.make({ site: { _tag: 'SiteNotExpression' }, candidate })
     case 'no-contextual-type':
       return AnswerTypeQueryCommand.make({
-        site: { _tag: 'SiteExpression', contextualType: Option.none(), call: { _tag: 'NotACallArgument' } },
+        site: { _tag: 'SiteExpression', contextualType: Option.none(), origin: { _tag: 'DeclaredContext' } },
         candidate,
       })
     case 'error-type':
@@ -107,7 +111,7 @@ const commandFailingOnly = (
         site: {
           _tag: 'SiteExpression',
           contextualType: Option.some({ text: contextualText, isError: true, instantiable: false }),
-          call: { _tag: 'NotACallArgument' },
+          origin: { _tag: 'DeclaredContext' },
         },
         candidate,
       })
@@ -116,7 +120,7 @@ const commandFailingOnly = (
         site: {
           _tag: 'SiteExpression',
           contextualType: Option.some({ text: contextualText, isError: false, instantiable: true }),
-          call: { _tag: 'NotACallArgument' },
+          origin: { _tag: 'DeclaredContext' },
         },
         candidate,
       })
@@ -125,7 +129,16 @@ const commandFailingOnly = (
         site: {
           _tag: 'SiteExpression',
           contextualType: Option.some({ text: contextualText, isError: false, instantiable: false }),
-          call: { _tag: 'CallArgument', signatureCount: 2, declaredGeneric: false },
+          origin: { _tag: 'CallArgument', signatureCount: 2, declaredGeneric: false },
+        },
+        candidate,
+      })
+    case 'context-not-enforced':
+      return AnswerTypeQueryCommand.make({
+        site: {
+          _tag: 'SiteExpression',
+          contextualType: Option.some({ text: contextualText, isError: false, instantiable: false }),
+          origin: { _tag: 'UnenforcedContext' },
         },
         candidate,
       })
@@ -149,7 +162,7 @@ describe('answerTypeQuery', (it) => {
                 isError: false,
                 instantiable: false,
               }),
-              call: input.call,
+              origin: input.origin,
             },
             candidate: { _tag: 'CandidateTyped', candidateType: input.candidateType, assignable: input.assignable },
           }),

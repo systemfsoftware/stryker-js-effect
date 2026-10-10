@@ -23,8 +23,44 @@ import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
-import type { CallExpression, Expression, NewExpression, Node, SourceFile } from 'typescript/unstable/ast'
-import { isCallExpression, isExpression, isNewExpression } from 'typescript/unstable/ast/is'
+import {
+  type BinaryExpression,
+  type CallExpression,
+  type Expression,
+  type FunctionLikeDeclaration,
+  type NewExpression,
+  type Node,
+  type SourceFile,
+  SyntaxKind,
+  type TypeNode,
+} from 'typescript/unstable/ast'
+import {
+  isArrayLiteralExpression,
+  isArrowFunction,
+  isAsExpression,
+  isBinaryExpression,
+  isCallExpression,
+  isConditionalExpression,
+  isExpression,
+  isFunctionExpression,
+  isFunctionLikeDeclaration,
+  isIdentifier,
+  isNewExpression,
+  isNonNullExpression,
+  isObjectLiteralExpression,
+  isParameterDeclaration,
+  isParenthesizedExpression,
+  isPropertyAssignment,
+  isPropertyDeclaration,
+  isReturnStatement,
+  isSatisfiesExpression,
+  isShorthandPropertyAssignment,
+  isSpreadAssignment,
+  isSpreadElement,
+  isTypeAssertion,
+  isTypeReferenceNode,
+  isVariableDeclaration,
+} from 'typescript/unstable/ast/is'
 import {
   API,
   type Checker,
@@ -40,9 +76,10 @@ import type { FileSystem as TSFileSystem } from 'typescript/unstable/fs'
 import { answerTypeQuery } from './answer-type-query.workflow.js'
 import {
   AnswerTypeQueryCommand,
-  type CallFacts,
+  type CallArgument,
   type CandidateFacts,
   ClassifyCandidateCommand,
+  type ContextOrigin,
   type ContextualTypeFacts,
   type SiteFacts,
 } from './CheckerCommands.schema.js'
@@ -322,17 +359,121 @@ const contextualFactsOf = (checker: Checker, type: Type): Effect.Effect<Contextu
 const isCallLike = (parent: Node): parent is CallExpression | NewExpression =>
   isCallExpression(parent) || isNewExpression(parent)
 
-const callParentOf = (node: Expression): Option.Option<CallExpression | NewExpression> =>
-  Option.flatMap(
-    Option.fromUndefinedOr(node.parent),
-    (parent) => isCallLike(parent) ? Option.some(parent) : Option.none(),
-  )
-
-const isArgumentOf = (parent: CallExpression | NewExpression, node: Expression): boolean =>
+const isArgumentOf = (parent: CallExpression | NewExpression, node: Node): boolean =>
   Arr.some(parent.arguments ?? [], (argument) => argument === node)
 
-const argumentParentOf = (node: Expression): Option.Option<CallExpression | NewExpression> =>
-  Option.filter(callParentOf(node), (parent) => isArgumentOf(parent, node))
+type Origin = Effect.Effect<ContextOrigin, ServerCrash>
+type Link = (checker: Checker, parent: Node, node: Node) => Option.Option<Origin>
+
+const DECLARED_CONTEXT: ContextOrigin = { _tag: 'DeclaredContext' }
+const UNENFORCED_CONTEXT: ContextOrigin = { _tag: 'UnenforcedContext' }
+
+const declared = (): Origin => Effect.succeed(DECLARED_CONTEXT)
+const unenforced = (): Origin => Effect.succeed(UNENFORCED_CONTEXT)
+
+const linkOf = <N extends Node>(
+  guard: (parent: Node) => parent is N,
+  resolve: (checker: Checker, parent: N, node: Node) => Origin,
+): Link =>
+(checker, parent, node) => guard(parent) ? Option.some(resolve(checker, parent, node)) : Option.none()
+
+const climb = (checker: Checker, parent: Node): Origin => originOf(checker, parent)
+
+const whenSlot = (filled: boolean, origin: () => Origin): Origin => filled ? origin() : unenforced()
+
+const SHORT_CIRCUIT_OPERATORS: ReadonlyArray<SyntaxKind> = [
+  SyntaxKind.QuestionQuestionToken,
+  SyntaxKind.BarBarToken,
+  SyntaxKind.AmpersandAmpersandToken,
+]
+
+const isConstName = (name: Node): boolean => isIdentifier(name) && name.text === 'const'
+
+const isConstAssertion = (type: TypeNode): boolean => isTypeReferenceNode(type) && isConstName(type.typeName)
+
+const annotatedOrigin = (declaration: { readonly type?: TypeNode | undefined }): Origin =>
+  declaration.type === undefined ? unenforced() : declared()
+
+const enclosingFunctionOf = (node: Node): Option.Option<FunctionLikeDeclaration> =>
+  Option.flatMap(
+    Option.fromUndefinedOr(node.parent),
+    (parent) => isFunctionLikeDeclaration(parent) ? Option.some(parent) : enclosingFunctionOf(parent),
+  )
+
+const isExpressionFunction = (fn: FunctionLikeDeclaration): boolean => isArrowFunction(fn) || isFunctionExpression(fn)
+
+const unannotatedReturnOrigin = (checker: Checker, fn: FunctionLikeDeclaration): Origin =>
+  whenSlot(isExpressionFunction(fn), () => climb(checker, fn))
+
+const returnOrigin = (checker: Checker, fn: FunctionLikeDeclaration): Origin =>
+  fn.type === undefined ? unannotatedReturnOrigin(checker, fn) : declared()
+
+const shortCircuitOrigin = (checker: Checker, binary: BinaryExpression): Origin =>
+  whenSlot(Arr.contains(SHORT_CIRCUIT_OPERATORS, binary.operatorToken.kind), () => climb(checker, binary))
+
+const operatorOrigin = (checker: Checker, binary: BinaryExpression): Origin =>
+  binary.operatorToken.kind === SyntaxKind.EqualsToken ? declared() : shortCircuitOrigin(checker, binary)
+
+const initializerLinkOf = <
+  N extends Node & { readonly initializer?: Node | undefined; readonly type?: TypeNode | undefined },
+>(
+  guard: (parent: Node) => parent is N,
+): Link =>
+  linkOf(
+    guard,
+    (_, declaration, node) => whenSlot(declaration.initializer === node, () => annotatedOrigin(declaration)),
+  )
+
+const LINKS: ReadonlyArray<Link> = [
+  linkOf(isParenthesizedExpression, climb),
+  linkOf(isArrayLiteralExpression, climb),
+  linkOf(isObjectLiteralExpression, climb),
+  linkOf(isSpreadElement, climb),
+  linkOf(isSpreadAssignment, climb),
+  linkOf(isShorthandPropertyAssignment, climb),
+  linkOf(isNonNullExpression, climb),
+  linkOf(
+    isPropertyAssignment,
+    (checker, property, node) => whenSlot(property.initializer === node, () => climb(checker, property)),
+  ),
+  linkOf(
+    isConditionalExpression,
+    (checker, conditional, node) => whenSlot(conditional.condition !== node, () => climb(checker, conditional)),
+  ),
+  linkOf(
+    isBinaryExpression,
+    (checker, binary, node) => whenSlot(binary.right === node, () => operatorOrigin(checker, binary)),
+  ),
+  linkOf(
+    isAsExpression,
+    (checker, assertion) => whenSlot(isConstAssertion(assertion.type), () => climb(checker, assertion)),
+  ),
+  linkOf(isTypeAssertion, unenforced),
+  linkOf(isSatisfiesExpression, declared),
+  linkOf(
+    isCallLike,
+    (checker, call, node) => whenSlot(isArgumentOf(call, node), () => callArgumentFactsOf(checker, call)),
+  ),
+  linkOf(isArrowFunction, (checker, fn, node) => whenSlot(fn.body === node, () => returnOrigin(checker, fn))),
+  linkOf(isReturnStatement, (checker, statement) =>
+    Option.match(enclosingFunctionOf(statement), {
+      onNone: unenforced,
+      onSome: (fn) => returnOrigin(checker, fn),
+    })),
+  initializerLinkOf(isVariableDeclaration),
+  initializerLinkOf(isPropertyDeclaration),
+  initializerLinkOf(isParameterDeclaration),
+]
+
+const originFromParent = (checker: Checker, parent: Node, node: Node): Origin =>
+  Option.getOrElse(Arr.findFirst(LINKS, (link) => link(checker, parent, node)), unenforced)
+
+function originOf(checker: Checker, node: Node): Origin {
+  return Option.match(Option.fromUndefinedOr(node.parent), {
+    onNone: unenforced,
+    onSome: (parent) => originFromParent(checker, parent, node),
+  })
+}
 
 const signatureKindOf = (parent: CallExpression | NewExpression): SignatureKind =>
   isNewExpression(parent) ? SignatureKind.Construct : SignatureKind.Call
@@ -340,7 +481,7 @@ const signatureKindOf = (parent: CallExpression | NewExpression): SignatureKind 
 const callArgumentFactsOf = (
   checker: Checker,
   parent: CallExpression | NewExpression,
-): Effect.Effect<CallFacts, ServerCrash> =>
+): Effect.Effect<CallArgument, ServerCrash> =>
   Effect.gen(function*() {
     const calleeType = yield* typeAt(checker, parent.expression)
     const signatures = yield* Option.match(calleeType, {
@@ -356,12 +497,6 @@ const callArgumentFactsOf = (
       signatureCount: signatures.length,
       declaredGeneric: Arr.some(typeParameterCounts, (count) => count > 0),
     } as const
-  })
-
-const callFactsOf = (checker: Checker, node: Expression): Effect.Effect<CallFacts, ServerCrash> =>
-  Option.match(argumentParentOf(node), {
-    onNone: () => Effect.succeed({ _tag: 'NotACallArgument' } as const),
-    onSome: (parent) => callArgumentFactsOf(checker, parent),
   })
 
 const asExpression = (node: Node): Option.Option<Expression> =>
@@ -382,10 +517,10 @@ const expressionReadingOf = (
       onNone: () => Effect.succeed(Option.none<ContextualTypeFacts>()),
       onSome: (type) => Effect.asSome(contextualFactsOf(project.checker, type)),
     })
-    const call = yield* callFactsOf(project.checker, node)
+    const origin = yield* originOf(project.checker, node)
     return {
       site,
-      facts: { _tag: 'SiteExpression', contextualType: contextual, call },
+      facts: { _tag: 'SiteExpression', contextualType: contextual, origin },
       contextType,
       siteType,
       contextualText: Option.map(contextual, (facts) => facts.text),

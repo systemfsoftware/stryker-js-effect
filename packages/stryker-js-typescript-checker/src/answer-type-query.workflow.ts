@@ -9,8 +9,8 @@ import * as S from 'effect/Schema'
 import { assignableAnswer, notAssignableAnswer, unknownAnswer } from './answer-type-query.schema.js'
 import {
   AnswerTypeQueryCommand,
-  type CallFacts,
   type CandidateTyped,
+  type ContextOrigin,
   type ContextualTypeFacts,
   type SiteExpression,
   type SiteFacts,
@@ -22,9 +22,13 @@ const typedAnswerOf = (candidate: CandidateTyped, contextualType: ContextualType
     onFalse: () => notAssignableAnswer({ candidateType: candidate.candidateType, contextualType: contextualType.text }),
   })
 
-const callAnswerOf = (candidate: CandidateTyped, call: CallFacts, contextualType: ContextualTypeFacts): TypeAnswer =>
-  Match.value(call).pipe(
-    Match.tag('NotACallArgument', () => typedAnswerOf(candidate, contextualType)),
+const originAnswerOf = (
+  candidate: CandidateTyped,
+  origin: ContextOrigin,
+  contextualType: ContextualTypeFacts,
+): TypeAnswer =>
+  Match.value(origin).pipe(
+    Match.tag('DeclaredContext', () => typedAnswerOf(candidate, contextualType)),
     Match.tag(
       'CallArgument',
       (argument) =>
@@ -33,12 +37,13 @@ const callAnswerOf = (candidate: CandidateTyped, call: CallFacts, contextualType
           onFalse: () => typedAnswerOf(candidate, contextualType),
         }),
     ),
+    Match.tag('UnenforcedContext', () => unknownAnswer('context-not-enforced')),
     Match.exhaustive,
   )
 
 const contextualAnswerOf = (
   candidate: CandidateTyped,
-  call: CallFacts,
+  origin: ContextOrigin,
   contextualType: ContextualTypeFacts,
 ): TypeAnswer =>
   Boolean.match(contextualType.isError, {
@@ -46,7 +51,7 @@ const contextualAnswerOf = (
     onFalse: () =>
       Boolean.match(contextualType.instantiable, {
         onTrue: () => unknownAnswer('instantiable-target'),
-        onFalse: () => callAnswerOf(candidate, call, contextualType),
+        onFalse: () => originAnswerOf(candidate, origin, contextualType),
       }),
   })
 
@@ -57,7 +62,7 @@ const siteAnswerOf = (candidate: CandidateTyped, site: SiteFacts): TypeAnswer =>
     Match.tag('SiteExpression', (expression: SiteExpression) =>
       Option.match(expression.contextualType, {
         onNone: () => unknownAnswer('no-contextual-type'),
-        onSome: (contextualType) => contextualAnswerOf(candidate, expression.call, contextualType),
+        onSome: (contextualType) => contextualAnswerOf(candidate, expression.origin, contextualType),
       })),
     Match.exhaustive,
   )

@@ -127,6 +127,11 @@ const SITES: ReadonlyArray<SiteSpec> = [
   { siteId: 'union', line: 1, text: `'a'`, candidates: ['""', '"b"'] },
   { siteId: 'tuple', line: 3, text: `['x']`, candidates: ['[]'] },
   { siteId: 'generic', line: 5, text: `'x'`, candidates: ['""'] },
+  { siteId: 'codes', line: 9, text: `'b'`, candidates: ['""'] },
+  { siteId: 'asserted', line: 10, text: '"a"', candidates: ['{}'] },
+  { siteId: 'lazy', line: 11, text: `'x'`, candidates: ['""'] },
+  { siteId: 'letters', line: 12, text: `'a'`, candidates: ['""'] },
+  { siteId: 'pair', line: 13, text: 'true', candidates: ['0'] },
 ]
 
 const answeredSites = Effect.gen(function*() {
@@ -242,19 +247,29 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
   .live('real tsgo API servers and a real checker runtime over fixture projects on disk')
   .body(({ scenario }) => {
     scenario(
-      'A literal that cannot sit where the site sits is NotAssignable, and nothing outside the grammar or under a generic call is',
+      'A literal is NotAssignable only where a declared type constrains it: never outside the grammar, under a generic call or an assertion',
       Gherkin.Do.pipe(
-        When('a union-typed initializer, a tuple argument and a generic argument are queried')(
+        When(
+          'union-typed, generic, const-asserted and annotated-array sites are queried, directly and through literals and arrow bodies',
+        )(
           'answers',
           () => answeredSites,
         ),
-        Then('only the out-of-union literal is NotAssignable, with its literal type')((s, expect) =>
+        Then('only the out-of-union literals under a declared type are NotAssignable, with their literal type')((
+          s,
+          expect,
+        ) =>
           expect(s.answers).toEqual([
             {
               'union ""': 'NotAssignable "" to "a" | "b"',
               'union "b"': 'Assignable "b"',
               'tuple []': 'Unknown candidate-not-context-free',
               'generic ""': 'Unknown overloaded-or-generic-call',
+              'codes ""': 'Unknown overloaded-or-generic-call',
+              'asserted {}': 'Unknown context-not-enforced',
+              'lazy ""': 'Unknown overloaded-or-generic-call',
+              'letters ""': 'NotAssignable "" to "a" | "b"',
+              'pair 0': 'NotAssignable 0 to boolean',
             },
           ])
         ),

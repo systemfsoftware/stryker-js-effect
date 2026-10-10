@@ -43,6 +43,11 @@ const TUPLE: Site = { siteId: 'tuple', line: 3, text: `['x']` }
 const GENERIC: Site = { siteId: 'generic', line: 5, text: `'x'` }
 const NUMBER: Site = { siteId: 'number', line: 6, text: '1' }
 const BOOLEAN: Site = { siteId: 'boolean', line: 7, text: 'true' }
+const CONST_GENERIC_ELEMENT: Site = { siteId: 'codes', line: 9, text: `'b'` }
+const PLAIN_ASSERTION: Site = { siteId: 'asserted', line: 10, text: '"a"' }
+const GENERIC_ARROW_BODY: Site = { siteId: 'lazy', line: 11, text: `'x'` }
+const ANNOTATED_ELEMENT: Site = { siteId: 'letters', line: 12, text: `'a'` }
+const CONST_ASSERTED_UNDER_ANNOTATION: Site = { siteId: 'pair', line: 13, text: 'true' }
 
 const CANDIDATES: ReadonlyArray<readonly [Site, ReadonlyArray<string>]> = [
   [UNION, ['""', '"b"', '0', 'null', 'true', '{}', '`a`']],
@@ -50,6 +55,11 @@ const CANDIDATES: ReadonlyArray<readonly [Site, ReadonlyArray<string>]> = [
   [GENERIC, ['""', '0', 'null']],
   [NUMBER, ['""', '0', '-1', '1n', 'true', 'null', 'undefined', '() => undefined', '() => {}']],
   [BOOLEAN, ['false', '0', '""', 'undefined', '{}']],
+  [CONST_GENERIC_ELEMENT, ['""', '0', 'null']],
+  [PLAIN_ASSERTION, ['{}', '""', '0']],
+  [GENERIC_ARROW_BODY, ['""', '0']],
+  [ANNOTATED_ELEMENT, ['""', '"b"', '0']],
+  [CONST_ASSERTED_UNDER_ANNOTATION, ['0', '""', 'false']],
 ]
 
 const ROWS: ReadonlyArray<Row> = CANDIDATES.flatMap(([site, candidates]) =>

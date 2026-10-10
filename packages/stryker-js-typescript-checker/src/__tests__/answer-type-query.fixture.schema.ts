@@ -1,7 +1,7 @@
 import * as S from 'effect/Schema'
 
-export const SatisfiedCall = S.Union([
-  S.TaggedStruct('NotACallArgument', {}),
+export const SatisfiedOrigin = S.Union([
+  S.TaggedStruct('DeclaredContext', {}),
   S.TaggedStruct('CallArgument', { signatureCount: S.Literal(1), declaredGeneric: S.Literal(false) }),
 ])
 
@@ -9,6 +9,6 @@ export const AssignableQueryInput = S.Struct({
   candidateType: S.String,
   assignable: S.Boolean,
   contextualTypeText: S.String,
-  call: SatisfiedCall,
+  origin: SatisfiedOrigin,
 })
 export type AssignableQueryInput = typeof AssignableQueryInput.Type

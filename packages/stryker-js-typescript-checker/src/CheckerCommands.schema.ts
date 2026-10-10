@@ -97,8 +97,8 @@ export const ContextualTypeFacts = S.Struct({
 })
 export type ContextualTypeFacts = typeof ContextualTypeFacts.Type
 
-export const NotACallArgument = S.TaggedStruct('NotACallArgument', {})
-export type NotACallArgument = typeof NotACallArgument.Type
+export const DeclaredContext = S.TaggedStruct('DeclaredContext', {})
+export type DeclaredContext = typeof DeclaredContext.Type
 
 export const CallArgument = S.TaggedStruct('CallArgument', {
   signatureCount: S.Int,
@@ -106,8 +106,11 @@ export const CallArgument = S.TaggedStruct('CallArgument', {
 })
 export type CallArgument = typeof CallArgument.Type
 
-export const CallFacts = S.Union([NotACallArgument, CallArgument])
-export type CallFacts = typeof CallFacts.Type
+export const UnenforcedContext = S.TaggedStruct('UnenforcedContext', {})
+export type UnenforcedContext = typeof UnenforcedContext.Type
+
+export const ContextOrigin = S.Union([DeclaredContext, CallArgument, UnenforcedContext])
+export type ContextOrigin = typeof ContextOrigin.Type
 
 export const SiteMissing = S.TaggedStruct('SiteMissing', {})
 export type SiteMissing = typeof SiteMissing.Type
@@ -117,7 +120,7 @@ export type SiteNotExpression = typeof SiteNotExpression.Type
 
 export const SiteExpression = S.TaggedStruct('SiteExpression', {
   contextualType: S.OptionFromNullOr(ContextualTypeFacts),
-  call: CallFacts,
+  origin: ContextOrigin,
 })
 export type SiteExpression = typeof SiteExpression.Type
 

@@ -42,6 +42,7 @@ export const UnknownReason = S.Literals([
   'error-type',
   'instantiable-target',
   'overloaded-or-generic-call',
+  'context-not-enforced',
 ])
 export type UnknownReason = typeof UnknownReason.Type
 

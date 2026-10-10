@@ -1,5 +1,10 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Assignable, NotAssignable, Unknown } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import {
+  Assignable,
+  NotAssignable,
+  Unknown,
+  UnknownReason,
+} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as HashMap from 'effect/HashMap'
@@ -159,16 +164,7 @@ export const TypeQueryAnswerCounts = S.Struct({
 })
 export type TypeQueryAnswerCounts = typeof TypeQueryAnswerCounts.Type
 
-export const TypeQueryUnknownCounts = S.Struct({
-  'candidate-not-context-free': S.Int,
-  'candidate-not-found': S.Int,
-  'site-not-found': S.Int,
-  'site-not-expression': S.Int,
-  'no-contextual-type': S.Int,
-  'error-type': S.Int,
-  'instantiable-target': S.Int,
-  'overloaded-or-generic-call': S.Int,
-})
+export const TypeQueryUnknownCounts = S.Record(UnknownReason, S.Int)
 export type TypeQueryUnknownCounts = typeof TypeQueryUnknownCounts.Type
 
 export const TypeQueryProjectShare = S.Struct({
@@ -721,14 +717,12 @@ const answerCountsOf = (
   unknown: answers.filter((line) => isUnknown(line.answer)).length,
 })
 
-const unknownReasonOf = (line: TypeAnswerLine): Option.Option<string> =>
+const unknownReasonOf = (line: TypeAnswerLine): Option.Option<UnknownReason> =>
   Option.map(Option.liftPredicate(line.answer, isUnknown), (answer) => answer.reason)
 
-const unknownReasonsOf = (
-  answers: ReadonlyArray<TypeAnswerLine>,
-): { readonly [K in keyof TypeQueryUnknownCounts]: number } => {
+const unknownReasonsOf = (answers: ReadonlyArray<TypeAnswerLine>): TypeQueryUnknownCounts => {
   const reasons = Arr.getSomes(answers.map(unknownReasonOf))
-  const count = (reason: string): number => reasons.filter((answered) => answered === reason).length
+  const count = (reason: UnknownReason): number => reasons.filter((answered) => answered === reason).length
   return {
     'candidate-not-context-free': count('candidate-not-context-free'),
     'candidate-not-found': count('candidate-not-found'),
@@ -738,6 +732,7 @@ const unknownReasonsOf = (
     'error-type': count('error-type'),
     'instantiable-target': count('instantiable-target'),
     'overloaded-or-generic-call': count('overloaded-or-generic-call'),
+    'context-not-enforced': count('context-not-enforced'),
   }
 }
 
