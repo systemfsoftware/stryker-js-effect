@@ -1,3 +1,4 @@
+import type { Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Checker, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Arr from 'effect/Array'
@@ -80,7 +81,7 @@ const siteDraftsOf = (wires: ReadonlyArray<Checker.CheckerMutantWire>): Readonly
     }),
   )
 
-const BLOCK_STATEMENT_MUTATOR = 'BlockStatement'
+const BLOCK_STATEMENT_MUTATOR: keyof typeof Mutator.defaultMutators = 'BlockStatement'
 const EMPTY_BLOCK = '{}'
 
 const siteKindOf = (site: QuerySiteDraft): TypeQuery.TypeQuerySiteKind =>
