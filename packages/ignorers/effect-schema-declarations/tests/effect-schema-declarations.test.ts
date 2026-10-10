@@ -11,6 +11,8 @@ import {
   GENERATION_ANNOTATION_IGNORED,
   LINK_TRANSFORMATION_IGNORED,
   OPTIONAL_DEFAULT_IGNORED,
+  RECURSION_BUDGET_HOLDER_IGNORED,
+  RECURSION_BUDGET_IGNORED,
   strykerIgnorers,
   SYMBOL_DESCRIPTION_IGNORED,
   TAGGED_FIELDS_IGNORED,
@@ -62,6 +64,18 @@ const decodingDefaultKeyCall = 'S.Boolean.pipe(S.withDecodingDefaultKey(Effect.s
 const decodingDefaultCall = 'S.String.pipe(S.withDecodingDefault(Effect.succeed("x")))'
 const constructorDefaultCall = 'S.String.pipe(S.withConstructorDefault(Effect.succeed("x")))'
 const typeIdConstant = "const TypeId = '~stryker/mutation-run/StageError' as const"
+
+const patternAstDeclaration = [
+  'export const PatternAst: Schema.Codec<PatternAst> = Schema.suspend((): Schema.Codec<PatternAst> =>',
+  '  Schema.Union([SemanticAst, DeterministicAst, AndAst, OrAst, NotAst])',
+  ').annotate({',
+  "  identifier: 'PatternAst',",
+  "  recursionBudget: { maxDepth: 6, depthSize: 'small' },",
+  '})',
+].join('\n')
+const patternAstAnnotation =
+  "{\n  identifier: 'PatternAst',\n  recursionBudget: { maxDepth: 6, depthSize: 'small' },\n}"
+const patternAstBudget = "{ maxDepth: 6, depthSize: 'small' }"
 
 describe('effect-schema-declarations', () => {
   it('Should_Register_The_Descriptor', function*({ expect }) {
@@ -244,6 +258,17 @@ await testIgnorer(descriptor, {
       code: typeIdConstant,
       ignores: [{ text: "'~stryker/mutation-run/StageError'", reason: TYPE_ID_IGNORED }],
     },
+    {
+      name: 'a recursive declaration whose annotate object carries a `recursionBudget` the transform must read',
+      code: patternAstDeclaration,
+      lang: 'ts',
+      ignores: [
+        { text: patternAstAnnotation, reason: RECURSION_BUDGET_HOLDER_IGNORED },
+        { text: patternAstBudget, reason: RECURSION_BUDGET_IGNORED },
+        { text: "'small'", reason: RECURSION_BUDGET_IGNORED },
+        { text: "'PatternAst'", reason: ANNOTATION_TEXT_IGNORED },
+      ],
+    },
   ],
   kept: [
     {
@@ -406,6 +431,38 @@ await testIgnorer(descriptor, {
       name: 'a `makeFilter` annotation object with a non-declaration entry stays live',
       code: 'S.makeFilter(isCanonical, { toCodec: () => 1 })',
       keeps: ['{ toCodec: () => 1 }'],
+    },
+    {
+      name: 'the union a recursive declaration suspends stays live beside its ignored budget',
+      code: patternAstDeclaration,
+      lang: 'ts',
+      keeps: ['[SemanticAst, DeterministicAst, AndAst, OrAst, NotAst]'],
+    },
+    {
+      name: 'a `recursionBudget` key outside an annotate call stays live, object and value',
+      code: "const config = { recursionBudget: { maxDepth: 6, depthSize: 'small' } }",
+      keeps: [patternAstBudget, "'small'"],
+    },
+    {
+      name: 'an annotate object holding a budget beside a behaviour hook stays live as an object',
+      code: 'S.suspend(() => Expr).annotate({ recursionBudget: { maxDepth: 6 }, toEquivalence: () => eq })',
+      keeps: ['{ recursionBudget: { maxDepth: 6 }, toEquivalence: () => eq }', '() => eq'],
+    },
+    {
+      name: 'a `recursionBudget` at the second argument of `S.annotations` stays live',
+      code: 'S.annotations("other", { recursionBudget: { maxDepth: 6 } })',
+      keeps: ['{ recursionBudget: { maxDepth: 6 } }', '{ maxDepth: 6 }'],
+    },
+    {
+      name: 'a computed `recursionBudget` key stays live, object and value',
+      code: 'S.suspend(() => Expr).annotate({ ["recursionBudget"]: { maxDepth: 6 } })',
+      keeps: ['{ ["recursionBudget"]: { maxDepth: 6 } }', '{ maxDepth: 6 }'],
+    },
+    {
+      name: 'a checked refinement next to a budgeted annotation stays live',
+      code:
+        'S.Finite.pipe(S.check(S.isBetween({ minimum: 0, maximum: 1 })), S.annotate({ recursionBudget: { maxDepth: 2 } }))',
+      keeps: ['{ minimum: 0, maximum: 1 }'],
     },
   ],
 })

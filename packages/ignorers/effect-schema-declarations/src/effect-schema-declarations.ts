@@ -10,27 +10,52 @@ import type {
 } from '@systemfsoftware/stryker-ignorer-interface'
 import { defineIgnorer, type IgnorerContext } from '@systemfsoftware/stryker-ignorer-kit'
 
-export const SYMBOL_DESCRIPTION_IGNORED = 'Symbol.for() brand description is identity-only data, not behaviour' as const
-export const TAGGED_TAG_IGNORED = 'TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour' as const
-export const TAGGED_STRUCT_TAG_IGNORED = 'TaggedStruct _tag is a declaration discriminant, not behaviour' as const
-export const TAGGED_FIELDS_IGNORED = 'TaggedClass/TaggedError field schema is a declaration, not behaviour' as const
-export const CLASS_ID_IGNORED = 'Schema.Class identifier is a declaration name, not behaviour' as const
-export const BRAND_NAME_IGNORED = 'Schema.brand name is identity-only data, not behaviour' as const
-export const OPTIONAL_DEFAULT_IGNORED = 'optionalWith default value is config, not behaviour' as const
-export const DECODING_DEFAULT_IGNORED =
-  'withDecodingDefault/withConstructorDefault default is config, not behaviour' as const
-export const ANNOTATION_OBJECT_IGNORED =
-  'annotations object holding only documentation is a declaration, not behaviour' as const
-export const ANNOTATION_TEXT_IGNORED = 'annotation documentation value is declaration data, not behaviour' as const
-export const CHECK_ANNOTATION_OBJECT_IGNORED =
-  'filter/check annotation object holds documentation and generation hints, not behaviour' as const
-export const CHECK_ANNOTATION_TEXT_IGNORED =
-  'filter/check annotation value is documentation data, not behaviour' as const
-export const GENERATION_ANNOTATION_IGNORED =
-  'arbitrary-generation annotation never runs in production, not behaviour' as const
-export const LINK_TRANSFORMATION_IGNORED =
-  'S.link() transformation feeds arbitrary generation only, not production codecs' as const
-export const TYPE_ID_IGNORED = 'a TypeId constant is a declaration identity, not behaviour' as const
+export const REASON_CODES = {
+  'symbol-description': 'Symbol.for() brand description is identity-only data, not behaviour',
+  'tagged-tag': 'TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour',
+  'tagged-struct-tag': 'TaggedStruct _tag is a declaration discriminant, not behaviour',
+  'tagged-fields': 'TaggedClass/TaggedError field schema is a declaration, not behaviour',
+  'class-id': 'Schema.Class identifier is a declaration name, not behaviour',
+  'brand-name': 'Schema.brand name is identity-only data, not behaviour',
+  'optional-default': 'optionalWith default value is config, not behaviour',
+  'decoding-default': 'withDecodingDefault/withConstructorDefault default is config, not behaviour',
+  'annotation-object': 'annotations object holding only documentation is a declaration, not behaviour',
+  'annotation-text': 'annotation documentation value is declaration data, not behaviour',
+  'check-annotation-object': 'filter/check annotation object holds documentation and generation hints, not behaviour',
+  'check-annotation-text': 'filter/check annotation value is documentation data, not behaviour',
+  'generation-annotation': 'arbitrary-generation annotation never runs in production, not behaviour',
+  'link-transformation': 'S.link() transformation feeds arbitrary generation only, not production codecs',
+  'type-id': 'a TypeId constant is a declaration identity, not behaviour',
+  'recursion-budget-holder':
+    'annotate object holding a recursionBudget must stay a literal object for the recursion-budget transform to read it',
+  'recursion-budget': 'recursionBudget value bounds arbitrary generation only, not behaviour',
+} as const
+
+export type ReasonCode = keyof typeof REASON_CODES
+
+export const KEEP_IGNORED_MUTANT =
+  "To keep these mutants, remove '@systemfsoftware/stryker-ignorer-effect-schema-declarations' from `ignorers`." as const
+
+const reasonFor = <C extends ReasonCode>(code: C) =>
+  `effect-schema-declarations/${code}: ${REASON_CODES[code]}` as const
+
+export const SYMBOL_DESCRIPTION_IGNORED = reasonFor('symbol-description')
+export const TAGGED_TAG_IGNORED = reasonFor('tagged-tag')
+export const TAGGED_STRUCT_TAG_IGNORED = reasonFor('tagged-struct-tag')
+export const TAGGED_FIELDS_IGNORED = reasonFor('tagged-fields')
+export const CLASS_ID_IGNORED = reasonFor('class-id')
+export const BRAND_NAME_IGNORED = reasonFor('brand-name')
+export const OPTIONAL_DEFAULT_IGNORED = reasonFor('optional-default')
+export const DECODING_DEFAULT_IGNORED = reasonFor('decoding-default')
+export const ANNOTATION_OBJECT_IGNORED = reasonFor('annotation-object')
+export const ANNOTATION_TEXT_IGNORED = reasonFor('annotation-text')
+export const CHECK_ANNOTATION_OBJECT_IGNORED = reasonFor('check-annotation-object')
+export const CHECK_ANNOTATION_TEXT_IGNORED = reasonFor('check-annotation-text')
+export const GENERATION_ANNOTATION_IGNORED = reasonFor('generation-annotation')
+export const LINK_TRANSFORMATION_IGNORED = reasonFor('link-transformation')
+export const TYPE_ID_IGNORED = reasonFor('type-id')
+export const RECURSION_BUDGET_HOLDER_IGNORED = reasonFor('recursion-budget-holder')
+export const RECURSION_BUDGET_IGNORED = reasonFor('recursion-budget')
 
 const DOCUMENTATION_KEYS: Record<string, true> = {
   identifier: true,
@@ -51,6 +76,10 @@ const GENERATION_KEYS: Record<string, true> = {
   toArbitrary: true,
   arbitraryConstraint: true,
   arbitrary: true,
+}
+
+const RECURSION_BUDGET_KEYS: Record<string, true> = {
+  recursionBudget: true,
 }
 
 const PRODUCTION_CODEC_KEYS: Record<string, true> = {
@@ -157,6 +186,8 @@ const isCheckTextKeyNode = (key: Node) => isKeyOf(key, CHECK_TEXT_KEYS)
 
 const isGenerationKeyNode = (key: Node) => isKeyOf(key, GENERATION_KEYS)
 
+const isRecursionBudgetKeyNode = (key: Node) => isKeyOf(key, RECURSION_BUDGET_KEYS)
+
 const isDocumentationOrCheckKeyNode = (key: Node) => isDocumentationKeyNode(key) || isCheckTextKeyNode(key)
 
 const isDeclarationKeyNode = (key: Node) => isDocumentationOrCheckKeyNode(key) || isGenerationKeyNode(key)
@@ -165,6 +196,11 @@ const isDocumentationEntry = (property: Node) =>
   isComputedFreeProperty(property) && isDocumentationKeyNode(property.key)
 
 const isDeclarationEntry = (property: Node) => isComputedFreeProperty(property) && isDeclarationKeyNode(property.key)
+
+const isRecursionBudgetEntry = (property: Node) =>
+  isComputedFreeProperty(property) && isRecursionBudgetKeyNode(property.key)
+
+const isBudgetHolderEntry = (property: Node) => isDocumentationEntry(property) || isRecursionBudgetEntry(property)
 
 const holdsEntries = (properties: readonly Node[], holds: (property: Node) => boolean) =>
   properties.length > 0 && properties.every(holds)
@@ -175,6 +211,11 @@ const isDocumentationOnlyObject = (node: Node) =>
 const isDeclarationAnnotationObject = (node: Node) =>
   isObjectNode(node) && holdsEntries(node.properties, isDeclarationEntry)
 
+const holdsBudgetAmongDocumentation = (node: ObjectExpression) =>
+  node.properties.some(isRecursionBudgetEntry) && node.properties.every(isBudgetHolderEntry)
+
+const isBudgetHolderObject = (node: Node) => isObjectNode(node) && holdsBudgetAmongDocumentation(node)
+
 const isArgumentAt = (
   node: Node | undefined,
   call: Node | undefined,
@@ -184,6 +225,9 @@ const isArgumentAt = (
 
 const isDocumentationObjectArgument = (node: Node, call: CallExpression | undefined) =>
   isDocumentationOnlyObject(node) && holdsArgumentOf(node, call, 0, isAnnotationsCallee)
+
+const isBudgetHolderArgument = (node: Node, call: CallExpression | undefined) =>
+  isBudgetHolderObject(node) && holdsArgumentOf(node, call, 0, isAnnotationsCallee)
 
 const isDeclarationAnnotationArgument = (node: Node, call: CallExpression | undefined) =>
   isDeclarationAnnotationObject(node) && holdsArgumentOf(node, call, 1, isAnnotationObjectCallee)
@@ -210,6 +254,7 @@ const LITERAL_ARGUMENT_RULES: readonly ArgumentRule[] = [
 const OBJECT_ARGUMENT_RULES: readonly ArgumentRule[] = [
   simpleArgumentRule(1, isTaggedFactoryCallee, TAGGED_FIELDS_IGNORED),
   { holds: isDocumentationObjectArgument, reason: ANNOTATION_OBJECT_IGNORED },
+  { holds: isBudgetHolderArgument, reason: RECURSION_BUDGET_HOLDER_IGNORED },
   { holds: isDeclarationAnnotationArgument, reason: CHECK_ANNOTATION_OBJECT_IGNORED },
 ]
 
@@ -259,6 +304,12 @@ const isDocumentationEntrySlot = (slot: Slot): slot is EntrySlot =>
 const isDocumentationSlot = (slot: Slot): slot is EntrySlot =>
   isDocumentationEntrySlot(slot) && isArgumentAt(slot.holder, slot.call, 0, isAnnotationsCallee)
 
+const isRecursionBudgetEntrySlot = (slot: Slot): slot is EntrySlot =>
+  isEntrySlot(slot) && isRecursionBudgetKeyNode(slot.ancestor.key)
+
+const isRecursionBudgetSlot = (slot: Slot): slot is EntrySlot =>
+  isRecursionBudgetEntrySlot(slot) && isArgumentAt(slot.holder, slot.call, 0, isAnnotationsCallee)
+
 const isCallArgumentSlot = (slot: Slot, index: number): slot is CallSlot =>
   isCallNode(slot.ancestor) && slot.ancestor.arguments[index] === slot.child
 
@@ -292,6 +343,8 @@ const entrySlotReason = (slot: Slot) => isAnnotationEntrySlot(slot) ? keyReason(
 
 const documentationSlotReason = (slot: Slot) => isDocumentationSlot(slot) ? ANNOTATION_TEXT_IGNORED : undefined
 
+const recursionBudgetSlotReason = (slot: Slot) => isRecursionBudgetSlot(slot) ? RECURSION_BUDGET_IGNORED : undefined
+
 const argumentSlotReason =
   (index: number, callee: (expression: Expression) => boolean, reason: string) => (slot: Slot) =>
     isArgumentSlot(slot, index, callee) ? reason : undefined
@@ -315,6 +368,7 @@ type SlotRule = (slot: Slot, slots: readonly Slot[]) => string | undefined
 
 const rulesFor = (node: Node): readonly SlotRule[] => [
   documentationSlotReason,
+  recursionBudgetSlotReason,
   entrySlotReason,
   linkSlotReason,
   argumentSlotReason(0, isDefaultCallee, DECODING_DEFAULT_IGNORED),
