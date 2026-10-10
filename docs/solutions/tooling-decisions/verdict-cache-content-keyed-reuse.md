@@ -4,10 +4,10 @@ date: 2026-09-28
 category: tooling-decisions
 problem_type: stale and false-miss verdict reuse from incidental cache-key inputs
 input_shape: solution
-subject: A mutation verdict is reusable exactly when the mutant's content, its covering tests' closure, the run inputs that change behavior, the engine that produced it, and the mutant-set policy are identical - so the key names none of the things that vary between shards, branches, paths, and machines
+subject: A mutation verdict is reusable exactly when the mutant's content, its covering tests' closure, the run inputs that change behavior, the checker configuration, the engine that produced it, and the mutant-set policy are identical - so the key names none of the things that vary between shards, branches, paths, and machines, and each verdict is stored as its own entry named by that key
 applies_when:
-  - changing what enters the verdict-cache key or the run-inputs fingerprint
-  - relocating, sharding, or merging incremental reports
+  - changing what enters the verdict key or the run-inputs fingerprint
+  - sharing, relocating, or sharding a verdict store, or adding a store driver
   - widening the project-file crawl that feeds the test closure digest
   - changing which inputs open a closure or how workspace and installed imports resolve
   - changing which installed files identify the engine that produced a verdict
@@ -69,10 +69,32 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
 ## Architectural Invariants
 
 - **A verdict's key is its content and its true inputs.** The key is the
-  mutant id, the covering tests' closure digest, the run-inputs digest, the
-  engine digest, and the mutant-set policy. Nothing in it names a shard, a
-  branch, a report path, or a machine, so reports computed anywhere union by
-  key.
+  mutant id, the covering tests' closure digest and ids, the run-inputs digest,
+  the checkers' configuration digest, the engine digest, and the mutant-set
+  policy; a CompileError verdict substitutes the checker's program digest for
+  the closure. Nothing in it names a shard, a branch, a report path, or a
+  machine, so verdicts computed anywhere meet by key in one store.
+  `encodeVerdictKey` derives it. Gate:
+  `pnpm --filter @systemfsoftware/stryker-js exec vitest run encode-verdict-key.workflow.property`
+  fails when a component change keeps the key or equal components split it.
+- **A store holds one immutable entry per key.** An entry lives at
+  `<store>/<scheme>/<mutantId>/<kind>-<key>.json`, where `<scheme>` is
+  `schemeNameOf(VerdictKeyScheme)`, so a store written under another key or id
+  scheme is a clean miss rather than a misread. The filesystem driver writes a
+  temporary file and renames it, and S3 never exposes a partial object. Two
+  writers of one key both hold a verdict for identical inputs, differing only
+  in measured cost and settle time, so the last writer winning loses nothing.
+  A reader skips a torn or undecodable entry and counts it as
+  `entryUnreadable`; it never fails the run. Every driver passes the one law
+  suite in `verdict-store/laws`. Gate:
+  `pnpm --filter @systemfsoftware/stryker-js exec vitest run verdict-store-laws.integration`
+  (in-memory fake and filesystem) and
+  `pnpm --filter @systemfsoftware/stryker-js-verdict-store-s3 exec vitest run s3-verdict-store.laws.integration`
+  (S3 against `emulate`).
+- **Whoever can write a store can forge a verdict.** Reuse trusts every entry
+  whose key matches. Share a store only between writers you trust, as you
+  would a build cache. A store the run cannot open stops the run before
+  testing (`VerdictStoreUnavailable`).
 - **The fingerprint carries only behavior-affecting inputs.** Exclude
   scope-only options (the `mutate` patterns, `since`, explicit mutant ids) and
   every environment-derived or presentation option (reporters, console colors,
@@ -84,9 +106,10 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   place.
 - **Refusal is named.** Every mutant a key refuses carries exactly one reason
   by fixed precedence - semantics changed, policy changed, run inputs changed,
-  closure changed, a flaky dependency, a timeout that has not reproduced, or no
-  prior record - and the run's `reuse` line partitions reused, ran, and refused
-  so the split is auditable.
+  checker configuration changed, closure changed, a flaky dependency, a
+  timeout that has not reproduced, an unreadable entry, an unavailable store,
+  or no prior record - and the run's `reuse` line partitions reused, ran, and
+  refused so the split is auditable.
 - **A closure opens only on a dynamic specifier.** Workspace links are followed
   and their sources hashed; an installed file the runner reports (a setup file)
   is a content-hashed leaf whose imports are not followed, because the
@@ -111,14 +134,16 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   human has to remember that a release altered what a status means.
 
 ```text
-key(mutant) = (
+key(mutant) = sha256(
   contentId(mutant),
-  closureDigest(coveringTests(mutant)),        # static import closure, open on unresolved specifiers
+  closureDigest(coveringTests(mutant)), coveringTestIds(mutant),
+                                               # CompileError: programDigest instead
   runInputsDigest(options minus scope minus presentation minus environment),
+  checkerConfigDigest(checkers),
   engineDigest(installed files of the engine and its runner),
   mutantSetPolicy,
 )
-reuse(mutant) = priorEntry with the same key, else refuse(named reason)
+reuse(mutant) = newest readable entry with the same key, else refuse(named reason)
 ```
 
 ## Verification
@@ -126,9 +151,14 @@ reuse(mutant) = priorEntry with the same key, else refuse(named reason)
 - Run an unchanged project twice: the second run reuses every verdict and
   reports zero refusals. A refusal count above zero on an unchanged tree is the
   false-miss signature.
-- Move an incremental report to another path and list it through the report
-  globs: the verdicts are still reused, proving the key does not name a path or
-  shard.
+- Point a second machine, shard, or pull request at the same store, or copy
+  the store directory elsewhere and point `verdictStore` at the copy: the
+  verdicts are still reused, proving the key does not name a path or shard.
+  The e2e journeys `verdict-store-reuse` (an unchanged re-run on a fresh
+  machine against a shared S3 bucket reuses at least 95%, read from the run's
+  own `reuse` line) and `verdict-store-concurrency` (a shard SIGKILLed
+  mid-write leaves no unreadable entry, and the next run reuses exactly what
+  was stored) hold this on the packed CLI.
 - Change a presentation option (reporters, console colors) and re-run: reuse is
   unchanged. Change the code of a helper two imports below a covering test, and
   only that test's dependents are refused. On a real package, count open test
