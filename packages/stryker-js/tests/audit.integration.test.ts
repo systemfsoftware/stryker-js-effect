@@ -253,14 +253,16 @@ Feature('Auditing the mutants the default policy drops against a kill matrix', {
       'Counting a finished run reads planned, CompileError and compiled from the reports alone',
       Gherkin.Do.pipe(
         Given('a project')('root', () => prepareProject()),
-        Given('a report with one Killed, one CompileError and one Ignored mutant')(
+        Given(
+          "an ordinary run's report, under the default policy, with one Killed, one CompileError and one Ignored mutant",
+        )(
           'matrix',
           (s) =>
             writeMatrix(s.root, [
               { id: '1a1a1a1a1a1a1a1a', status: 'Killed', killedBy: [NAMED_TEST] },
               { id: '2b2b2b2b2b2b2b2b', status: 'CompileError', killedBy: [] },
               { id: '3c3c3c3c3c3c3c3c', status: 'Ignored', killedBy: [] },
-            ]),
+            ], 'default'),
         ),
         When('stryker audits with --counts-only')(
           'ran',
