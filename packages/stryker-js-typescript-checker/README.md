@@ -3,7 +3,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../../LICENSE)
 [![npm version](https://img.shields.io/npm/v/@systemfsoftware/stryker-js-typescript-checker.svg)](https://www.npmjs.com/package/@systemfsoftware/stryker-js-typescript-checker)
 
-TypeScript checker plugin for Stryker mutation testing — provides native support for TypeScript 5.x through 7.x.
+TypeScript checker plugin for Stryker mutation testing, built on the native TypeScript 7 compiler.
 
 ## Why Use a Type Checker Plugin?
 
@@ -14,7 +14,7 @@ The TypeScript checker intercepts mutants _before_ they reach the test runner. I
 ## Prerequisites
 
 - Node.js `>=22.18.0`
-- TypeScript `>=5.0.0`
+- TypeScript `>=7.0.0`
 - `@systemfsoftware/stryker-js` `>=5.0.0`
 
 ## Install
