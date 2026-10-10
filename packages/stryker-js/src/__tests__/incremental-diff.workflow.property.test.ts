@@ -52,15 +52,19 @@ const recordOf = (
   status: Mutant.MutantStatus,
   closureDigest: string | undefined,
   overrides: Partial<PreviousReuseRecord> = {},
-): PreviousReuseRecord => ({
-  mutantId,
-  status,
-  ...(closureDigest === undefined ? {} : { closureDigest }),
-  engineDigest: 'engine',
-  mutantSetPolicy: 'default',
-  runInputsDigest: 'run-inputs',
-  ...overrides,
-})
+): PreviousReuseRecord => {
+  const fields = {
+    mutantId,
+    engineDigest: 'engine',
+    mutantSetPolicy: 'default' as const,
+    runInputsDigest: 'run-inputs',
+    ...(closureDigest === undefined ? {} : { closureDigest }),
+    ...overrides,
+  }
+  return status === 'Ignored'
+    ? { ...fields, status: 'Ignored', statusReason: 'ignorer: the provider said so' }
+    : { ...fields, status }
+}
 
 interface CommandFields {
   readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
@@ -157,7 +161,7 @@ describe('incrementalDiff', () => {
   )
 
   it.prop(
-    '∀r_Record_≡AMatchingCacheKeyRemembersExactlyTheReusableStatuses',
+    '∀r_Record_≡AMatchingCacheKeyRemembersExactlyTheReusableStatusesWithTheirReasons',
     { of: [PreviousReuseRecordSchema], subject: incrementalDiff },
     (subject, [record]) => {
       const decision = onlyDecision(subject(matchingCommandOf(record)))
@@ -165,7 +169,8 @@ describe('incrementalDiff', () => {
         return false
       }
       return remembersWith(record, record.programDigest)
-        ? S.is(MutantRemembered)(decision) && decision.mutantId === record.mutantId && decision.status === record.status
+        ? S.is(MutantRemembered)(decision) && decision.mutantId === record.mutantId &&
+          decision.status === record.status && decision.statusReason === record.statusReason
         : S.is(MutantToRun)(decision) && decision.refusal === refusalOfTheMatchingCommand(record)
     },
   )

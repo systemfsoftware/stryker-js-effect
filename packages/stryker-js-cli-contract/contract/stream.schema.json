@@ -66,7 +66,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "runId": {
@@ -368,7 +368,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "role": {
@@ -408,19 +408,6 @@
         "id": {
           "type": "string",
           "pattern": "^[0-9a-f]{16}$"
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "Killed",
-            "Survived",
-            "NoCoverage",
-            "CompileError",
-            "RuntimeError",
-            "Timeout",
-            "Ignored",
-            "Pending"
-          ]
         },
         "file": {
           "type": "string",
@@ -530,12 +517,34 @@
               "type": "null"
             }
           ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Killed",
+            "Survived",
+            "NoCoverage",
+            "CompileError",
+            "RuntimeError",
+            "Timeout",
+            "Ignored",
+            "Pending"
+          ]
+        },
+        "statusReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "_tag",
         "id",
-        "status",
         "file",
         "location",
         "mutator",
@@ -543,7 +552,9 @@
         "completed",
         "total",
         "static",
-        "cost"
+        "cost",
+        "status",
+        "statusReason"
       ],
       "additionalProperties": true
     },
@@ -1012,7 +1023,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "runId": {
@@ -1320,7 +1331,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "code": {
@@ -1465,7 +1476,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "code": {
@@ -1502,7 +1513,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "6.0"
+            "7.0"
           ]
         },
         "rule": {

@@ -12,6 +12,8 @@ export interface SharedConfig {
   cleanTempDir: 'always'
   thresholds: { high: number; low: number; break: number }
   concurrency?: string
+  disableBail?: boolean
+  mutator?: { mutantSetPolicy: 'default' | 'full'; [key: string]: unknown }
 }
 
 export const sharedConfig: SharedConfig
