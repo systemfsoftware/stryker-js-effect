@@ -35,9 +35,13 @@ import {
   type PackedTree,
   type PackInput,
   packsKeyBytes,
+  parseFixtureManifest,
+  parseWorkspaceCatalogs,
   pruneStaleEntries as pruneStaleEntriesWorkflow,
   PruneStaleEntriesCommand,
+  resolveCatalogSpecs,
   type StagedFixtureManifest,
+  type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
 
 import type { BakeOutcome, PackedPackage, PackedPackageLookup, TurboDryClosure } from './bake-key.schema.js'
@@ -49,8 +53,6 @@ import {
   TurboClosure,
   TurboDryRun,
 } from './bake-key.schema.js'
-import type { WorkspaceCatalogs } from './catalog-resolution.js'
-import { parseFixtureManifest, parseWorkspaceCatalogs, resolveCatalogSpecs } from './catalog-resolution.js'
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'

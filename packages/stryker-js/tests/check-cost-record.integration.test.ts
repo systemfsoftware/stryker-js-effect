@@ -1,5 +1,7 @@
 import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 
 import {
   checkedOptionsOf,
@@ -19,6 +21,32 @@ const idsWithStatus = (statuses: Readonly<Record<string, string>>, status: strin
 
 const isMeasured = (actualMs: number | null | undefined): boolean =>
   typeof actualMs === 'number' && Number.isFinite(actualMs) && actualMs >= 0
+
+const checkIsMeasuredAboveZero = (check: RunEvent.CheckDuration | null): boolean =>
+  check !== null &&
+  Match.value(check).pipe(
+    Match.tag('measured', (measured) => measured.ms > 0),
+    Match.orElse(() => false),
+  )
+
+const checkIsNotRun = (check: RunEvent.CheckDuration | null): boolean =>
+  check !== null &&
+  Match.value(check).pipe(
+    Match.tag('not-run', () => true),
+    Match.orElse(() => false),
+  )
+
+const reportingIsMeasured = (reporting: RunEvent.ReportingDuration | null): boolean =>
+  reporting !== null &&
+  Match.value(reporting).pipe(
+    Match.tag('measured', (measured) => measured.ms >= 0),
+    Match.orElse(() => false),
+  )
+
+const reportingFollowsMutationTest = (phases: ReadonlyArray<RunEvent.RunPhase>): boolean =>
+  phases.includes('mutation-test') &&
+  phases.includes('reporting') &&
+  phases.indexOf('reporting') > phases.indexOf('mutation-test')
 
 const budgetPricesOnlyTheVerdictsThatRanATest = (observed: Observation): boolean => {
   const testRunning = [
@@ -74,6 +102,9 @@ const recordSummaryOf = (observed: Observation) => {
         (observed.costs[id]?.actualMs ?? Number.POSITIVE_INFINITY) < (observed.costs[id]?.predictedMs ?? 0)
       ),
     budgetPricesOnlyTheVerdictsThatRanATest: budgetPricesOnlyTheVerdictsThatRanATest(observed),
+    verdictCheckIsMeasured: checkIsMeasuredAboveZero(observed.verdictCheck),
+    verdictReportingIsMeasured: reportingIsMeasured(observed.verdictReporting),
+    reportingFollowsMutationTest: reportingFollowsMutationTest(observed.phases),
   }
 }
 
@@ -106,6 +137,9 @@ Feature('The measured cost recorded for a verdict the engine decided without a t
               testRunningKeepsItsMeasuredTestTime: true,
               coveredCompileErrorsCostLessThanTheirWholeSuitePrediction: true,
               budgetPricesOnlyTheVerdictsThatRanATest: true,
+              verdictCheckIsMeasured: true,
+              verdictReportingIsMeasured: true,
+              reportingFollowsMutationTest: true,
             }),
         ),
       ),
@@ -124,7 +158,12 @@ Feature('The measured cost recorded for a verdict the engine decided without a t
             noCoverageCountAboveZero: noCoverage.length > 0,
             everyUncoveredMutantIsPricedAtZero: noCoverage.length > 0 &&
               noCoverage.every((id) => s.observed.costs[id]?.actualMs === 0),
-          }).toEqual({ noCoverageCountAboveZero: true, everyUncoveredMutantIsPricedAtZero: true })
+            verdictCheckIsNotRun: checkIsNotRun(s.observed.verdictCheck),
+          }).toEqual({
+            noCoverageCountAboveZero: true,
+            everyUncoveredMutantIsPricedAtZero: true,
+            verdictCheckIsNotRun: true,
+          })
         }),
       ),
     )

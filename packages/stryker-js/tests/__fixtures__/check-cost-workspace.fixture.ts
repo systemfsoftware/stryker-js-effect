@@ -177,6 +177,9 @@ export interface Observation {
   readonly idsByFile: Readonly<Record<string, readonly string[]>>
   readonly streamCosts: Readonly<Record<string, number>>
   readonly verdictBudget: RunEvent.Budget | null
+  readonly verdictCheck: RunEvent.CheckDuration | null
+  readonly verdictReporting: RunEvent.ReportingDuration | null
+  readonly phases: ReadonlyArray<RunEvent.RunPhase>
 }
 
 export type ReportObservation = Pick<Observation, 'costs' | 'statuses' | 'idsByFile'>
@@ -217,6 +220,23 @@ const streamCostsOf = (events: ReadonlyArray<RunEvent.RunEvent>): Readonly<Recor
 const verdictBudgetOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.Budget | null =>
   Option.getOrNull(Option.map(Arr.findLast(events, S.is(RunEvent.VerdictReached)), (event) => event.budget))
 
+const verdictCheckOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.CheckDuration | null =>
+  Option.getOrNull(
+    Option.flatMap(Arr.findLast(events, S.is(RunEvent.VerdictReached)), (event) =>
+      Option.map(Option.fromNullishOr(event.phaseDurations), (durations) => durations.check)),
+  )
+
+const verdictReportingOf = (events: ReadonlyArray<RunEvent.RunEvent>): RunEvent.ReportingDuration | null =>
+  Option.getOrNull(
+    Option.flatMap(
+      Arr.findLast(events, S.is(RunEvent.VerdictReached)),
+      (event) => Option.map(Option.fromNullishOr(event.phaseDurations), (durations) => durations.reporting),
+    ),
+  )
+
+const phasesOf = (events: ReadonlyArray<RunEvent.RunEvent>): ReadonlyArray<RunEvent.RunPhase> =>
+  events.flatMap((event) => (S.is(RunEvent.PhaseEntered)(event) ? [event.phase] : []))
+
 const runEngineWith = (
   directory: string,
   options: Options.PartialStrykerOptions,
@@ -238,7 +258,14 @@ const runEngineWith = (
       Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
     )
     const text = yield* fs.readFileString(path.join(directory, REPORT_FILE)).pipe(Effect.orElseSucceed(() => ''))
-    return { ...readReport(text), streamCosts: streamCostsOf(events), verdictBudget: verdictBudgetOf(events) }
+    return {
+      ...readReport(text),
+      streamCosts: streamCostsOf(events),
+      verdictBudget: verdictBudgetOf(events),
+      verdictCheck: verdictCheckOf(events),
+      verdictReporting: verdictReportingOf(events),
+      phases: phasesOf(events),
+    }
   }).pipe(Effect.orDie, Effect.provide(filePorts))
 
 export const runEngine: {

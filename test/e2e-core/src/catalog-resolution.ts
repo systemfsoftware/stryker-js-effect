@@ -1,6 +1,13 @@
-import { Array, Boolean, Match, Option, Result, Schema } from 'effect'
+import { Array, Boolean, Function, Match, Option, Result, Schema } from 'effect'
+import type { Json, JsonObject } from 'effect/Schema'
 
-import { MalformedFixtureManifest, UnresolvedCatalogSpec } from './harness-failure.schema.js'
+import {
+  CatalogMode,
+  DependencyRecord,
+  MalformedFixtureManifest,
+  ManifestDocument,
+  UnresolvedCatalogSpec,
+} from './catalog-resolution.schema.js'
 
 export interface WorkspaceCatalogs {
   readonly default: Readonly<Record<string, string>>
@@ -12,14 +19,6 @@ type ResolveFailure = MalformedFixtureManifest | UnresolvedCatalogSpec
 const CATALOG_PROTOCOL = 'catalog:'
 const DEFAULT_CATALOG_NAMES: ReadonlyArray<string> = ['', 'default']
 const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const
-
-const ManifestDocument = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
-const DependencyRecord = Schema.Record(Schema.String, Schema.String)
-
-type CatalogMode =
-  | { readonly _tag: 'None' }
-  | { readonly _tag: 'Default' }
-  | { readonly _tag: 'Named'; readonly name: string }
 
 interface CatalogAccumulator {
   readonly mode: CatalogMode
@@ -111,7 +110,8 @@ const childStep = (state: CatalogAccumulator, body: string): CatalogAccumulator 
       Match.value(state.mode).pipe(
         Match.tag('Default', () => withDefaultEntry(state, key, value)),
         Match.tag('Named', (mode) => withNamedEntry(state, mode.name, key, value)),
-        Match.orElse(() => state),
+        Match.tag('None', () => state),
+        Match.exhaustive,
       ),
   })
 
@@ -184,7 +184,7 @@ const resolveField = (
   manifest: string,
   catalogs: WorkspaceCatalogs,
   field: string,
-  value: unknown,
+  value: Json | undefined,
 ): Result.Result<Option.Option<Record<string, string>>, ResolveFailure> =>
   Option.match(Option.fromNullishOr(value), {
     onNone: () => Result.succeed(Option.none<Record<string, string>>()),
@@ -196,29 +196,37 @@ const resolveField = (
       }),
   })
 
-export const resolveCatalogSpecs = (
-  manifest: string,
-  packageJson: Record<string, unknown>,
-  catalogs: WorkspaceCatalogs,
-): Result.Result<Record<string, unknown>, ResolveFailure> =>
-  Result.map(
-    collect(DEPENDENCY_FIELDS.map((field) => resolveField(manifest, catalogs, field, packageJson[field]))),
-    (fields) =>
-      Array.zip(DEPENDENCY_FIELDS, fields).reduce<Record<string, unknown>>(
-        (resolved, [field, value]) =>
-          Option.match(value, {
-            onNone: () => resolved,
-            onSome: (entries) => ({ ...resolved, [field]: entries }),
-          }),
-        { ...packageJson },
-      ),
-  )
+export const resolveCatalogSpecs: {
+  (
+    packageJson: JsonObject,
+    catalogs: WorkspaceCatalogs,
+  ): (manifest: string) => Result.Result<JsonObject, ResolveFailure>
+  (manifest: string, packageJson: JsonObject, catalogs: WorkspaceCatalogs): Result.Result<JsonObject, ResolveFailure>
+} = Function.dual(
+  3,
+  (manifest: string, packageJson: JsonObject, catalogs: WorkspaceCatalogs): Result.Result<JsonObject, ResolveFailure> =>
+    Result.map(
+      collect(DEPENDENCY_FIELDS.map((field) => resolveField(manifest, catalogs, field, packageJson[field]))),
+      (fields) =>
+        Array.zip(DEPENDENCY_FIELDS, fields).reduce<JsonObject>(
+          (resolved, [field, value]) =>
+            Option.match(value, {
+              onNone: () => resolved,
+              onSome: (entries) => Object.assign({}, resolved, { [field]: entries }),
+            }),
+          packageJson,
+        ),
+    ),
+)
 
-export const parseFixtureManifest = (
-  manifest: string,
-  bytes: Uint8Array,
-): Result.Result<Record<string, unknown>, MalformedFixtureManifest> =>
-  Result.mapError(
-    Schema.decodeResult(ManifestDocument)(new TextDecoder().decode(bytes)),
-    () => new MalformedFixtureManifest({ manifest, detail: 'the manifest is not a JSON object' }),
-  )
+export const parseFixtureManifest: {
+  (bytes: Uint8Array): (manifest: string) => Result.Result<JsonObject, MalformedFixtureManifest>
+  (manifest: string, bytes: Uint8Array): Result.Result<JsonObject, MalformedFixtureManifest>
+} = Function.dual(
+  2,
+  (manifest: string, bytes: Uint8Array): Result.Result<JsonObject, MalformedFixtureManifest> =>
+    Result.mapError(
+      Schema.decodeResult(ManifestDocument)(new TextDecoder().decode(bytes)),
+      () => new MalformedFixtureManifest({ manifest, detail: 'the manifest is not a JSON object' }),
+    ),
+)

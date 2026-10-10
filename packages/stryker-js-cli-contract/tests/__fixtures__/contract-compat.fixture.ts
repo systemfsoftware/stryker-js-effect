@@ -146,6 +146,21 @@ const isConstrained = (node: JsonObject): boolean =>
 const stringList = (value: Json | undefined): readonly string[] =>
   isArrayValue(value) ? value.filter(isStringValue) : []
 
+const typeKeyOf = (node: Json | undefined): string | undefined => {
+  if (!isObjectValue(node)) return undefined
+  const types = typeSet(memberOf(node, 'type'))
+  return types.length === 0 ? undefined : [...types].sort().join('|')
+}
+
+const soleSameTypeBranchIndex = (branch: Json | undefined, candidates: JsonArray, root: Json): number => {
+  const key = typeKeyOf(branch)
+  if (key === undefined) return -1
+  const matches = candidates.flatMap((candidate, index) =>
+    typeKeyOf(resolveRef(candidate, root)) === key ? [index] : []
+  )
+  return matches.length === 1 ? matches[0] ?? -1 : -1
+}
+
 const compareSchema = (
   beforeRaw: Json | undefined,
   afterRaw: Json | undefined,
@@ -209,11 +224,15 @@ const compareSchema = (
   if (beforeBranches !== undefined && afterBranches !== undefined) {
     for (const [index, branch] of beforeBranches.entries()) {
       const tag = branchTag(beforeRoot, branch)
-      const matchIndex = afterBranches.findIndex((candidate) => {
+      const resolvedBranch = resolveRef(branch, beforeRoot)
+      const exactIndex = afterBranches.findIndex((candidate) => {
         const candidateTag = branchTag(afterRoot, candidate)
         if (tag !== undefined && candidateTag !== undefined) return tag === candidateTag
-        return deepEqual(resolveRef(branch, beforeRoot), resolveRef(candidate, afterRoot))
+        return deepEqual(resolvedBranch, resolveRef(candidate, afterRoot))
       })
+      const matchIndex = exactIndex >= 0 || tag !== undefined
+        ? exactIndex
+        : soleSameTypeBranchIndex(resolvedBranch, afterBranches, afterRoot)
       const branchPointer = pointerJoin(pointerJoin(pointer, unionMember), String(index))
       if (matchIndex < 0) {
         out.push({

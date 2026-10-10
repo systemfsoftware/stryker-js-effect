@@ -2,6 +2,7 @@ import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/ef
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -28,6 +29,33 @@ const refusalsOf = (probes: Record<string, string>): Record<string, string> => {
   for (const [name, line] of Object.entries(probes)) outcomes[name] = refusalOf(line)
   return outcomes
 }
+
+const COUNTS =
+  '{"pending":0,"killed":1,"timeout":0,"survived":0,"noCoverage":0,"runtimeErrors":0,"compileErrors":0,"ignored":0}'
+
+const PHASES = '"prepare":1,"instrument":2,"dry-run":3,"mutation-test":4'
+
+const verdictLine = (phaseDurations: string): string =>
+  `{"_tag":"verdict","schemaVersion":"6.0","runId":"01ARZ3NDEKTSV4RRFFQ69G5FAV","mode":"machine","signal":"flag","score":100,"thresholds":{"high":80,"low":60,"break":null},"reportFile":null,"counts":${COUNTS},"mutants":[],"scope":"full","mutantSetPolicy":"default","phaseDurations":${phaseDurations},"static":null,"budget":{"predictedSeconds":0,"actualSeconds":1}}`
+
+const durationOf = (line: string, phase: 'check' | 'reporting'): string =>
+  Result.match(S.decodeResult(RunEvent.RunEventWireLine)(line), {
+    onFailure: (error) => `refused: ${error.message}`,
+    onSuccess: (event) =>
+      Match.value(event).pipe(
+        Match.tag('verdict', (verdict) =>
+          verdict.phaseDurations === null
+            ? 'accepted without phase durations: verdict'
+            : JSON.stringify(verdict.phaseDurations[phase])),
+        Match.orElse(() => 'accepted as a non-verdict event'),
+      ),
+  })
+
+const reencodedOf = (line: string): string =>
+  Result.match(
+    Result.flatMap(S.decodeResult(RunEvent.RunEventWireLine)(line), S.encodeResult(RunEvent.RunEventWireLine)),
+    { onFailure: (error) => `refused: ${error.message}`, onSuccess: (encoded) => encoded },
+  )
 
 Feature('The machine-stream wire codec refuses lines the contract does not declare')
   .withLayer(Layer.empty)
@@ -141,6 +169,76 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           expect(s.outcomes).toEqual({
             declared: 'accepted: worker',
             undeclared: expect.stringMatching(/^refused:/),
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A verdict line written before the check and reporting durations existed decodes both as not recorded, never as zero',
+      Gherkin.Do.pipe(
+        Given('a verdict line whose phase durations carry no check and no reporting key')(
+          'line',
+          () => Effect.sync(() => verdictLine(`{${PHASES}}`)),
+        ),
+        When('the line is decoded through the wire codec')(
+          'durations',
+          (s) =>
+            Effect.sync(() => ({ check: durationOf(s.line, 'check'), reporting: durationOf(s.line, 'reporting') })),
+        ),
+        Then('the check and reporting durations are not-recorded')((s, expect) =>
+          expect(s.durations).toEqual({ check: '{"_tag":"not-recorded"}', reporting: '{"_tag":"not-recorded"}' })
+        ),
+      ),
+    )
+
+    scenario(
+      'A measured reporting duration with a measured or not-run check survives a decode and re-encode byte for byte',
+      Gherkin.Do.pipe(
+        Given('a verdict line with a measured check and one with a check that did not run, both with reporting')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              measured: verdictLine(
+                `{${PHASES},"check":{"_tag":"measured","ms":2.5},"reporting":{"_tag":"measured","ms":0.5}}`,
+              ),
+              notRun: verdictLine(`{${PHASES},"check":{"_tag":"not-run"},"reporting":{"_tag":"measured","ms":0.5}}`),
+            })),
+        ),
+        When('each line is decoded and encoded again')(
+          'reencoded',
+          (s) =>
+            Effect.sync(() => ({ measured: reencodedOf(s.probes.measured), notRun: reencodedOf(s.probes.notRun) })),
+        ),
+        Then('each re-encoded line equals its original, newline-terminated')((s, expect) =>
+          expect(s.reencoded).toEqual({ measured: `${s.probes.measured}\n`, notRun: `${s.probes.notRun}\n` })
+        ),
+      ),
+    )
+
+    scenario(
+      'A check duration that is negative, non-finite or of an undeclared kind is refused',
+      Gherkin.Do.pipe(
+        Given('verdict lines whose check is negative, infinite as a string, or tagged zero')(
+          'probes',
+          () =>
+            Effect.sync(() => ({
+              negative: verdictLine(`{${PHASES},"check":{"_tag":"measured","ms":-1}}`),
+              nonFinite: verdictLine(`{${PHASES},"check":{"_tag":"measured","ms":"Infinity"}}`),
+              undeclared: verdictLine(`{${PHASES},"check":{"_tag":"zero"}}`),
+              declared: verdictLine(`{${PHASES},"check":{"_tag":"measured","ms":0}}`),
+            })),
+        ),
+        When('each line is decoded through the wire codec')(
+          'outcomes',
+          (s) => Effect.sync(() => refusalsOf(s.probes)),
+        ),
+        Then('only the measured zero is accepted')((s, expect) =>
+          expect(s.outcomes).toEqual({
+            negative: expect.stringMatching(/^refused:/),
+            nonFinite: expect.stringMatching(/^refused:/),
+            undeclared: expect.stringMatching(/^refused:/),
+            declared: 'accepted: verdict',
           })
         ),
       ),

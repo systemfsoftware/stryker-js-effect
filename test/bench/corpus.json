@@ -1,0 +1,20 @@
+{
+  "repo": [
+    {
+      "project": "packages/stryker-js-vitest-runner",
+      "mutate": ["src/interpret-vitest-mutant-run.workflow.ts"]
+    },
+    {
+      "project": "packages/stryker-js-typescript-checker",
+      "mutate": ["src/classify-tce.workflow.ts"]
+    },
+    {
+      "project": "test/e2e-core",
+      "mutate": ["src/placement-closure.workflow.ts"]
+    }
+  ],
+  "enterprise": {
+    "fixture": "test/e2e/testResources/enterprise-monorepo-fixture",
+    "config": "stryker.config.ts"
+  }
+}
