@@ -135,7 +135,7 @@ export const makeNodePlatformLayer = (options: {
   Layer.mergeAll(
     nodeWorkerLauncherLayer(options.childEnv).pipe(Layer.provide(Layer.merge(nodeBase, NodeCrypto.layer))),
     nodeBase,
-    GitDiff.layer.pipe(Layer.provide(nodeSpawnerLayer)),
+    GitDiff.layer.pipe(Layer.provide(Layer.merge(nodeSpawnerLayer, nodeFsPathLayer))),
   )
 
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = makeNodePlatformLayer({ childEnv: {} })

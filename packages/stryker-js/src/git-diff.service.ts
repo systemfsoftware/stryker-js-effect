@@ -199,20 +199,23 @@ const changedSince = (input: GitDiffInput): Effect.Effect<GitDiffResult, GitDiff
 export class GitDiff extends Context.Service<GitDiff, GitDiffShape>()(
   '@systemfsoftware/stryker-js/git-diff.service/GitDiff',
 ) {
-  static readonly layer: Layer.Layer<GitDiff, never, ChildProcessSpawner.ChildProcessSpawner> = Layer.effect(
-    GitDiff,
-    Effect.map(ChildProcessSpawner.ChildProcessSpawner, (spawner) => {
-      const spawning = <A, E>(effect: Effect.Effect<A, E, GitEnv>): Effect.Effect<A, E> =>
-        Effect.scoped(
-          effect.pipe(
-            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-            Effect.provide(Path.layer),
-          ),
-        )
-      return {
-        changedSince: (input: GitDiffInput) => spawning(changedSince(input)),
-        head: (cwd: string) => spawning(readHead(cwd)),
-      }
-    }),
-  )
+  static readonly layer: Layer.Layer<GitDiff, never, ChildProcessSpawner.ChildProcessSpawner | Path.Path> = Layer
+    .effect(
+      GitDiff,
+      Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+        const path = yield* Path.Path
+        const spawning = <A, E>(effect: Effect.Effect<A, E, GitEnv>): Effect.Effect<A, E> =>
+          Effect.scoped(
+            effect.pipe(
+              Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+              Effect.provideService(Path.Path, path),
+            ),
+          )
+        return {
+          changedSince: (input: GitDiffInput) => spawning(changedSince(input)),
+          head: (cwd: string) => spawning(readHead(cwd)),
+        }
+      }),
+    )
 }
