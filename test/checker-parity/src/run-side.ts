@@ -26,7 +26,7 @@ import * as S from 'effect/Schema'
 import * as Str from 'effect/String'
 
 import { assignDriftLegs, AssignDriftLegsCommand } from './assign-drift-legs.workflow.js'
-import { balanceFileShards, BalanceFileShardsCommand, CorpusFile } from './balance-file-shards.workflow.js'
+import { blocksOf, DEFAULT_BLOCK_MUTANTS } from './blocks.js'
 import { appendStepSummary, type CiEnvironment } from './ci-environment.js'
 import {
   corpusEntries,
@@ -44,13 +44,15 @@ import {
   Counts,
   Deferred,
   DigestCall,
-  FileCosts,
   GroupCall,
   LegFile,
   LegScope,
   LegStarted,
   ParityLine,
+  ParityPlan,
   PhaseLine,
+  PlannedLeg,
+  PlannedUnit,
   ProjectBootFailed,
   ProjectSkipped,
   type RunScopeName,
@@ -64,6 +66,7 @@ import {
   UnitOverBudget,
   Verdict,
 } from './Parity.schema.js'
+import { CorpusFile } from './plan-legs.workflow.js'
 import {
   BatchInterrupts,
   reuseCachedVerdicts,
@@ -95,7 +98,7 @@ export interface RunCommand {
   readonly shard: Shard
   readonly cache: string
   readonly out: string
-  readonly costs: Option.Option<string>
+  readonly plan: Option.Option<string>
   readonly deadline: Option.Option<number>
 }
 
@@ -262,6 +265,7 @@ interface SideInput {
   readonly workerPath: string
   readonly bundleHash: string
   readonly cacheDir: string
+  readonly blockMutants: number
   readonly wires: ReadonlyArray<Checker.CheckerMutantWire>
   readonly receiver: OtlpReceiver
   readonly serviceName: string
@@ -691,16 +695,18 @@ const fileRunOf = (
         }),
       onFalse: () =>
         Effect.gen(function*() {
-          const [groupDuration, groups] = yield* Effect.timed(
-            client.group({ checkerName: CHECKER_NAME, mutants: [...fileWires] }),
+          const blockTimings = yield* Effect.forEach(
+            blocksOf(fileWires, input.blockMutants),
+            (block) => Effect.timed(client.group({ checkerName: CHECKER_NAME, mutants: [...block] })),
           )
+          const groups = blockTimings.flatMap(([, grouped]) => grouped)
           const wireById = HashMap.fromIterable(fileWires.map((wire) => [wire.id, wire] as const))
           const runs = yield* Effect.forEach(batchesOf(fileName, groups, wireById), batchRunOf(client, input, digest))
           const groupLine = GroupCall.make({
             schemaVersion: 1,
             side: input.side,
             project: input.project,
-            ms: Duration.toMillis(groupDuration),
+            ms: blockTimings.reduce((total, [duration]) => total + Duration.toMillis(duration), 0),
             groups: groups.length,
             cached: false,
           })
@@ -807,7 +813,8 @@ interface ProjectInput {
   readonly repoRoot: string
   readonly shard: Shard
   readonly pullRequest: Option.Option<PullRequestScope>
-  readonly plannedFiles: Option.Option<ReadonlyArray<string>>
+  readonly plannedUnits: Option.Option<ReadonlyArray<PlannedUnit>>
+  readonly blockMutants: number
   readonly cacheDir: string
   readonly mainWorker: string
   readonly branchWorker: string
@@ -900,6 +907,7 @@ const sideInputOf =
     workerPath: bySide(side, input.mainWorker, input.branchWorker),
     bundleHash: bySide(side, input.mainBundleHash, input.branchBundleHash),
     cacheDir: input.cacheDir,
+    blockMutants: input.blockMutants,
     wires,
     receiver: input.receiver,
     serviceName: serviceOf(side),
@@ -927,7 +935,8 @@ const telemetryLineOf = (
   })
 
 const instrumentFiles = (
-  input: ProjectInput,
+  repoRoot: string,
+  project: string,
   files: ReadonlyArray<string>,
 ): Effect.Effect<ReadonlyArray<Checker.CheckerMutantWire>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
@@ -935,12 +944,12 @@ const instrumentFiles = (
     const sources = yield* Effect.forEach(
       files,
       (file) =>
-        Effect.map(readText(path.resolve(input.repoRoot, file)), (content) => ({ name: file, content, mutate: true })),
+        Effect.map(readText(path.resolve(repoRoot, file)), (content) => ({ name: file, content, mutate: true })),
     )
     const instrumented = yield* Instrument.instrument(sources, instrumenterOptions).pipe(
       Effect.mapError((cause) =>
         ioFailure(
-          `Instrumenting ${sources.length} file(s) of ${input.project} failed: ${cause.message}`,
+          `Instrumenting ${sources.length} file(s) of ${project} failed: ${cause.message}`,
           'Fix what the branch instrumenter reports for this project.',
         )
       ),
@@ -960,16 +969,58 @@ const instrumentNonEmpty = (
   files: ReadonlyArray<string>,
 ): Effect.Effect<ReadonlyArray<Checker.CheckerMutantWire>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Boolean.match(Arr.isReadonlyArrayNonEmpty(files), {
-    onTrue: () => instrumentFiles(input, files),
+    onTrue: () => instrumentFiles(input.repoRoot, input.project, files),
     onFalse: () => Effect.succeed(Arr.empty<Checker.CheckerMutantWire>()),
+  })
+
+const planStaleFiles = (input: ProjectInput, fileName: string, planned: number, actual: number): DriverFailure =>
+  DriverFailure.make({
+    schemaVersion: 1,
+    code: 'plan-stale',
+    reason:
+      `The plan allocates ${planned} mutant(s) of ${fileName} in ${input.project}, but instrumenting it produced ${actual}.`,
+    nextAction:
+      'The plan and the leg instrumented different sources: rerun the whole workflow so the plan step re-instruments the corpus.',
+  })
+
+const blocksInUnit = (
+  fileWires: ReadonlyArray<Checker.CheckerMutantWire>,
+  unit: PlannedUnit,
+  blockMutants: number,
+): ReadonlyArray<Checker.CheckerMutantWire> =>
+  blocksOf(fileWires, blockMutants).slice(unit.fromBlock, unit.toBlock).flat()
+
+const plannedWiresOf = (
+  input: ProjectInput,
+  units: ReadonlyArray<PlannedUnit>,
+): Effect.Effect<ReadonlyArray<Checker.CheckerMutantWire>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const byFile = Arr.sortWith(
+      Object.entries(Arr.groupBy(units, (unit) => unit.fileName)),
+      ([fileName]) => fileName,
+      Str.Order,
+    )
+    const chunks = yield* Effect.forEach(
+      byFile,
+      ([fileName, fileUnits]) =>
+        Effect.flatMap(instrumentFiles(input.repoRoot, input.project, [fileName]), (fileWires) => {
+          const planned = Arr.headNonEmpty(fileUnits).fileMutants
+          return Boolean.match(planned === fileWires.length, {
+            onTrue: () =>
+              Effect.succeed(fileUnits.flatMap((unit) => blocksInUnit(fileWires, unit, input.blockMutants))),
+            onFalse: () => Effect.fail(planStaleFiles(input, fileName, planned, fileWires.length)),
+          })
+        }),
+    )
+    return chunks.flat()
   })
 
 const plannedScope = (
   input: ProjectInput,
-  files: ReadonlyArray<string>,
+  units: ReadonlyArray<PlannedUnit>,
 ): Effect.Effect<ScopedWires, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.map(
-    instrumentNonEmpty(input, files),
+    plannedWiresOf(input, units),
     (wires) => ({ wires, changedFiles: 0, changedMutants: 0, sampledMutants: 0 }),
   )
 
@@ -985,9 +1036,10 @@ const firstFileWithMutants = (
   Arr.match(candidates, {
     onEmpty: () => Effect.succeedNone,
     onNonEmpty: ([file, ...rest]) =>
-      Effect.flatMap(instrumentFiles(input, [file]), (wires) =>
+      Effect.flatMap(instrumentFiles(input.repoRoot, input.project, [file]), (wires) =>
         Boolean.match(Arr.isReadonlyArrayNonEmpty(wires), {
-          onTrue: () => Effect.succeedSome({ file, wires }),
+          onTrue: () =>
+            Effect.succeedSome({ file, wires }),
           onFalse: () => firstFileWithMutants(input, rest),
         })),
   })
@@ -1151,8 +1203,8 @@ const startedProject = (
       `checker-parity heartbeat +${seconds(now - input.deadline.startedAt)} project ${input.project}`,
     )
     const [prepared, scoped] = yield* Effect.timed(
-      Option.match(input.plannedFiles, {
-        onSome: (files) => plannedScope(input, files),
+      Option.match(input.plannedUnits, {
+        onSome: (units) => plannedScope(input, units),
         onNone: () =>
           Option.match(input.pullRequest, {
             onSome: (pullRequest) => scopedWiresOf(input, pullRequest),
@@ -1340,96 +1392,116 @@ const writeLegFile = (file: string, leg: LegFile): Effect.Effect<void, DriverFai
     (text) => writeText(file, text),
   )
 
-const decodeFileCosts = S.decodeResult(S.fromJsonString(FileCosts))
-
-const fileCostsOf = (file: Option.Option<string>): Effect.Effect<FileCosts['files'], DriverFailure, DriverServices> =>
-  Option.match(file, {
-    onNone: () => Effect.succeed([]),
-    onSome: (costsFile) =>
-      Effect.flatMap(readText(costsFile), (text) =>
-        Effect.fromResult(
-          Result.mapBoth(decodeFileCosts(text), {
-            onFailure: (issue) =>
-              usageFailure(
-                `${costsFile} is not a file-costs table: ${issue.message}`,
-                `Fix ${costsFile}, or replace it with the checker-parity-costs.json a full-corpus compare uploads.`,
-              ),
-            onSuccess: (costs) => costs.files,
-          }),
-        )),
-  })
-
-interface LegPlan {
-  readonly files: HashMap.HashMap<string, ReadonlyArray<string>>
-  readonly summary: string
-}
-
-const corpusFilesOf = (
+export const corpusMutantCounts = (
   repoRoot: string,
-  projects: ReadonlyArray<string>,
 ): Effect.Effect<ReadonlyArray<CorpusFile>, DriverFailure, DriverServices> =>
-  Effect.map(
-    Effect.forEach(projects, (project) =>
+  Effect.gen(function*() {
+    const projects = yield* corpusProjects(repoRoot)
+    const counts = yield* Effect.forEach(projects, (project) =>
       Effect.flatMap(exists(`${repoRoot}/${project}`), (present) =>
         Boolean.match(present, {
           onTrue: () =>
-            Effect.map(
+            Effect.flatMap(
               listProgramFiles(`${repoRoot}/${project}`, repoRoot),
               (files) =>
-                files.map((fileName) => CorpusFile.make({ project, fileName })),
+                Effect.map(instrumentFiles(repoRoot, project, files), (wires) => {
+                  const counted = HashMap.fromIterable(
+                    Object.entries(Arr.groupBy(wires, (wire) =>
+                      wire.fileName)).map(
+                        ([fileName, owned]) => [String(fileName), owned.length] as const,
+                      ),
+                  )
+                  return files.map((fileName) =>
+                    CorpusFile.make({
+                      project,
+                      fileName,
+                      mutants: Option.getOrElse(HashMap.get(counted, fileName), () => 0),
+                    })
+                  )
+                }),
             ),
           onFalse: () => Effect.succeed(Arr.empty<CorpusFile>()),
-        }))),
-    (listed) =>
-      listed.flat(),
-  )
+        })))
+    return counts.flat()
+  })
 
-const planSummaryOf = (
-  shard: Shard,
-  files: ReadonlyArray<{ readonly shard: number; readonly source: string }>,
-  loads: ReadonlyArray<number>,
-): string => {
-  const own = files.filter((file) => file.shard === shardIndex(shard))
-  const measured = own.filter((file) => file.source === 'measured').length
-  return `Planned check load ${
-    seconds(loads[shardIndex(shard) - 1] ?? 0)
-  } over ${own.length} file(s) (${measured} measured, ${own.length - measured} estimated); every leg: ${
-    loads.map(seconds).join(', ')
-  }.`
+interface LegPlan {
+  readonly units: HashMap.HashMap<string, ReadonlyArray<PlannedUnit>>
+  readonly blockMutants: number
+  readonly summary: string
 }
 
-const legPlanOf = (
+const costSourcesOf = (leg: PlannedLeg): string => {
+  const counts = Arr.groupBy(leg.units, (unit) => unit.source)
+  return Object.entries(counts).map(([source, units]) => `${source}: ${units.length}`).join(', ')
+}
+
+const planSummaryOf = (plan: ParityPlan, leg: PlannedLeg): string =>
+  `Planned ${seconds(leg.ms)} of ${seconds(plan.capacityMs)} capacity over ${leg.units.length} unit(s) (${
+    costSourcesOf(leg)
+  }); every leg: ${plan.legs.map((planned) => seconds(planned.ms)).join(', ')} (total ${seconds(plan.totalMs)}).`
+
+const planStale = (reason: string, nextAction: string): DriverFailure =>
+  DriverFailure.make({ schemaVersion: 1, code: 'plan-stale', reason, nextAction })
+
+const legPlanFrom = (command: RunCommand, plan: ParityPlan): Effect.Effect<LegPlan, DriverFailure> =>
+  Boolean.match(plan.legs.length === shardCount(command.shard), {
+    onTrue: () =>
+      Option.match(Arr.findFirst(plan.legs, (leg) => leg.leg === shardIndex(command.shard)), {
+        onNone: () =>
+          Effect.fail(
+            planStale(
+              `The plan has no leg ${shardIndex(command.shard)} although it has ${shardCount(command.shard)} leg(s).`,
+              'The plan and the matrix disagree on the leg numbers: rerun the whole workflow so the plan step and the matrix are built from the same run.',
+            ),
+          ),
+        onSome: (leg) =>
+          Effect.succeed(
+            {
+              units: HashMap.fromIterable(Object.entries(Arr.groupBy(leg.units, (unit) => unit.project))),
+              blockMutants: plan.blockMutants,
+              summary: planSummaryOf(plan, leg),
+            } satisfies LegPlan,
+          ),
+      }),
+    onFalse: () =>
+      Effect.fail(
+        planStale(
+          `The plan has ${plan.legs.length} leg(s), but this run dispatches ${shardCount(command.shard)}.`,
+          'The matrix width and the plan disagree: rerun the whole workflow so the plan step and the matrix are built from the same run.',
+        ),
+      ),
+  })
+
+const decodeParityPlan = S.decodeResult(S.fromJsonString(ParityPlan))
+
+const planOf = (
   command: RunCommand,
-  repoRoot: string,
-  projects: ReadonlyArray<string>,
-): Effect.Effect<Option.Option<LegPlan>, DriverFailure, DriverServices> =>
+): Effect.Effect<Option.Option<LegPlan>, DriverFailure, FileSystem.FileSystem> =>
   Match.value(command.scope).pipe(
     Match.when('pr', () => Effect.succeedNone),
     Match.when('full', () =>
       Effect.gen(function*() {
-        const decision = yield* Effect.fromResult(
-          balanceFileShards(
-            BalanceFileShardsCommand.make({
-              files: [...(yield* corpusFilesOf(repoRoot, projects))],
-              costs: [...(yield* fileCostsOf(command.costs))],
-              shards: shardCount(command.shard),
-            }),
+        const planFile = yield* Effect.fromOption(command.plan).pipe(
+          Effect.mapError(() =>
+            usageFailure(
+              'Full scope needs --plan pointing at the checker-parity-plan.json this run wrote.',
+              'Pass --plan <path>; --scope full cannot recompute its leg layout.',
+            )
           ),
         )
-        return Option.some(Match.valueTags(decision, {
-          FileShardsBalanced: (balanced): LegPlan => ({
-            files: HashMap.fromIterable(
-              Object.entries(
-                Arr.groupBy(
-                  balanced.files.filter((file) => file.shard === shardIndex(command.shard)),
-                  (file) => file.project,
-                ),
-              ).map(([project, owned]) => [project, owned.map((file) => file.fileName)] as const),
-            ),
-            summary: planSummaryOf(command.shard, balanced.files, balanced.loads),
-          }),
-          NoCorpusFiles: (): LegPlan => ({ files: HashMap.empty(), summary: 'No corpus file to plan.' }),
-        }))
+        const plan = yield* Effect.flatMap(readText(planFile), (text) =>
+          Effect.fromResult(
+            Result.mapError(decodeParityPlan(text), (issue) =>
+              DriverFailure.make({
+                schemaVersion: 1,
+                code: 'decode-failed',
+                reason: `${planFile} is not a parity plan: ${issue.message}`,
+                nextAction:
+                  'Point --plan at the checker-parity-plan.json artifact of this run, or rerun the workflow so the plan step writes it again.',
+              })),
+          ))
+        return Option.some(yield* legPlanFrom(command, plan))
       })),
     Match.exhaustive,
   )
@@ -1490,11 +1562,15 @@ export const runShard: {
             branchBundleHash: yield* sha256Tree(path.dirname(command.branchWorker)),
             projects,
             pullRequest: yield* pullRequestScopeOf(command, repoRoot, projects),
-            plan: yield* legPlanOf(command, repoRoot, projects),
+            plan: yield* planOf(command),
           }
         }),
       )
       const planSummary = Option.match(plan, { onNone: () => '', onSome: (planned) => planned.summary })
+      const blockMutants = Option.match(plan, {
+        onNone: () => DEFAULT_BLOCK_MUTANTS,
+        onSome: (planned) => planned.blockMutants,
+      })
       yield* Console.error(`checker-parity leg ${command.shard}: ${planSummary}`)
       const cacheDir = path.resolve(repoRoot, command.cache)
       const outDir = path.resolve(repoRoot, command.out)
@@ -1524,10 +1600,11 @@ export const runShard: {
                 repoRoot,
                 shard: command.shard,
                 pullRequest,
-                plannedFiles: Option.map(
+                plannedUnits: Option.map(
                   plan,
-                  (planned) => Option.getOrElse(HashMap.get(planned.files, project), Arr.empty<string>),
+                  (planned) => Option.getOrElse(HashMap.get(planned.units, project), () => Arr.empty<PlannedUnit>()),
                 ),
+                blockMutants,
                 cacheDir,
                 mainWorker: command.mainWorker,
                 branchWorker: command.branchWorker,

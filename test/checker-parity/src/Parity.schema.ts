@@ -149,16 +149,58 @@ export const ParityLine = S.Union([
 ])
 export type ParityLine = typeof ParityLine.Type
 
-export class FileCost extends S.Class<FileCost>('FileCost')({
+const ONE_HOUR_MS = 3_600_000
+const MAX_MUTANTS = 1_000_000
+const BoundedMs = S.Finite.check(S.isBetween({ minimum: 0, maximum: ONE_HOUR_MS }))
+const MutantCount = S.Int.check(S.isBetween({ minimum: 1, maximum: MAX_MUTANTS }))
+
+export class FileRate extends S.Class<FileRate>('FileRate')({
   project: S.String,
   fileName: S.String,
-  ms: NonNegativeFinite,
+  msPerMutant: BoundedMs,
+  mutants: MutantCount,
+}) {}
+
+export class ProjectOverhead extends S.Class<ProjectOverhead>('ProjectOverhead')({
+  project: S.String,
+  ms: BoundedMs,
 }) {}
 
 export class FileCosts extends S.Class<FileCosts>('FileCosts')({
-  schemaVersion: SCHEMA_VERSION,
+  schemaVersion: S.Literal(2),
   runs: S.Array(S.String),
-  files: S.Array(FileCost),
+  files: S.Array(FileRate),
+  projects: S.Array(ProjectOverhead),
+}) {}
+
+export const CostSource = S.Literals(['measured', 'project-mean', 'corpus-mean', 'no-measurements'])
+export type CostSource = typeof CostSource.Type
+
+export class PlannedUnit extends S.Class<PlannedUnit>('PlannedUnit')({
+  project: S.String,
+  fileName: S.String,
+  fromBlock: NonNegativeInt,
+  toBlock: PositiveInt,
+  mutants: MutantCount,
+  fileMutants: MutantCount,
+  ms: NonNegativeFinite,
+  source: CostSource,
+}) {}
+
+export class PlannedLeg extends S.Class<PlannedLeg>('PlannedLeg')({
+  leg: PositiveInt,
+  ms: NonNegativeFinite,
+  units: S.NonEmptyArray(PlannedUnit),
+}) {}
+
+export class ParityPlan extends S.Class<ParityPlan>('ParityPlan')({
+  schemaVersion: S.Literal(1),
+  deadlineSeconds: PositiveInt,
+  fill: S.Finite.check(S.isBetween({ minimum: 0, maximum: 1, exclusiveMinimum: true })),
+  capacityMs: NonNegativeFinite,
+  blockMutants: PositiveInt,
+  totalMs: NonNegativeFinite,
+  legs: S.Array(PlannedLeg),
 }) {}
 
 export const RunScopeName = S.Literals(['pr', 'full'])
