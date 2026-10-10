@@ -12,16 +12,17 @@ import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 
 import { ReproducerSchema } from '../build-reproducers.workflow.js'
+import type { ConfigOverlay } from '../config/stryker-config.schema.js'
 import type { ConfigReadError } from '../ConfigError.schema.js'
 import { captureLayer as machineConsoleCaptureLayer, layer as machineConsoleLayer } from '../drivers/machine-console.js'
 import { stage } from '../drivers/run-stage.js'
 import { recordFeedbackCell } from '../Feedback/Feedback.cell.js'
 import { FeedbackUnusable } from '../Feedback/Feedback.schema.js'
 import { readMutationReport, readSurfacedSurvivors } from '../Feedback/read-report.js'
+import type { MutationTestDone } from '../mutation-reporting.service.js'
 import { ResolvedMode } from '../output-mode.schema.js'
 import { mutantRerunAdmissionCell, RerunRefused } from '../Rerun/mod.js'
 import { mutantDetailEventsOf } from '../Rerun/rerun-selection.js'
-import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import { mutationTestCell } from '../run/run-stages.cell.js'
 import { type RunEnvironmentShape } from '../run/RunEnvironment.service.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
@@ -40,6 +41,7 @@ const MCP_MODE = ResolvedMode.make({ mode: 'machine', signal: 'tool', stdoutIsTT
 
 export interface McpServerOptions {
   readonly basePath: string
+  readonly configOverlay: ConfigOverlay
 }
 
 const readReproducers = (
@@ -126,6 +128,7 @@ const restrictedOptionsOf = ({
 
 const runRestricted = (
   basePath: string,
+  configOverlay: ConfigOverlay,
   options: Options.PartialStrykerOptions,
 ): Effect.Effect<MutationTestDone, never, EnginePorts> =>
   Effect.gen(function*() {
@@ -136,6 +139,7 @@ const runRestricted = (
       runStartedAt: 0,
       basePath,
       builtinReporters: {},
+      configOverlay,
       allowConsoleColors: false,
     }
     const runLayer = Layer.merge(
@@ -168,7 +172,7 @@ const rerunFailureOf =
     S.is(MutantUnusable)(error) ? error : RerunUnusable.make({ id, reason: reasonOfRerun(error) })
 
 const rerunMutant = (
-  basePath: string,
+  { basePath, configOverlay }: McpServerOptions,
   id: Mutant.MutantId,
 ): Effect.Effect<MutantDetail, MutantUnusable | RerunUnusable, EnginePorts> =>
   Effect.gen(function*() {
@@ -176,10 +180,11 @@ const rerunMutant = (
       ids: [id],
       cliOptions: {},
       mode: MCP_MODE.mode,
+      configOverlay,
       basePath,
       settle: {
         runAdmitted: ({ ids, mutateSpans, resolvedOptions }) =>
-          runRestricted(basePath, restrictedOptionsOf({ ids, mutateSpans, resolvedOptions })),
+          runRestricted(basePath, configOverlay, restrictedOptionsOf({ ids, mutateSpans, resolvedOptions })),
       },
     }).pipe(
       Effect.catchTag('SchemaError', Effect.die),
@@ -197,16 +202,16 @@ const rerunMutant = (
     }
   })
 
-const handlers = (basePath: string) =>
+const handlers = (options: McpServerOptions) =>
   mcpToolkit.toLayer({
-    list_survivors: () => readSurfacedSurvivors(basePath),
-    show_mutant: ({ id }) => showMutant(basePath, id),
-    rerun_mutant: ({ id }) => rerunMutant(basePath, id),
+    list_survivors: () => readSurfacedSurvivors(options.basePath),
+    show_mutant: ({ id }) => showMutant(options.basePath, id),
+    rerun_mutant: ({ id }) => rerunMutant(options, id),
     report_usefulness: ({ id, judgment, reason }) =>
-      recordFeedbackCell({ basePath, id, judgment, reason: reason ?? null }),
+      recordFeedbackCell({ basePath: options.basePath, id, judgment, reason: reason ?? null }),
   })
 
-export const mcpServerLayer = ({ basePath }: McpServerOptions) =>
+export const mcpServerLayer = (options: McpServerOptions) =>
   Layer.merge(
     McpServer.layerStdio({
       name: 'stryker',
@@ -216,6 +221,6 @@ export const mcpServerLayer = ({ basePath }: McpServerOptions) =>
     }),
     McpServer.toolkit(mcpToolkit),
   ).pipe(
-    Layer.provide(handlers(basePath)),
+    Layer.provide(handlers(options)),
     Layer.provide(machineConsoleLayer),
   )

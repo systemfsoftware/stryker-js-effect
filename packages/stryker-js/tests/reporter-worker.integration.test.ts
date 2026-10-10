@@ -1,5 +1,5 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Plugin as StrykerPlugin, RunEvent, type Worker as StrykerWorker } from '@systemfsoftware/stryker-js'
+import { Engine, RunEvent, type Worker as StrykerWorker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   Options,
@@ -31,7 +31,7 @@ const PROJECT_BASE_PATH = '/project'
 const MARKER_FILE = 'src/marker.ts'
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01'
 const TRACEPARENT_PARTS = Option.getOrThrow(S.decodeOption(Trace.Traceparent)(TRACEPARENT))
-const LARGE_RUN = StrykerPlugin.REPORTER_EVENT_BATCH_BOUND * 3 + 7
+const LARGE_RUN = Engine.REPORTER_EVENT_BATCH_BOUND * 3 + 7
 
 const location = { start: { line: 1, column: 1 }, end: { line: 1, column: 8 } }
 
@@ -176,7 +176,7 @@ const driveReporterWorker = (
       const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({})
       const trace = yield* makeReporterWorkerTrace
       const launcher = yield* reporterServingLauncher(trace)
-      const client = yield* StrykerPlugin.spawnReporterWorker({
+      const client = yield* Engine.spawnReporterWorker({
         entrypoint: target.entrypoint,
         projectBasePath: target.projectBasePath,
         execArgv: [],
@@ -184,7 +184,7 @@ const driveReporterWorker = (
         tempDirPrefix: 'stryker-reporter-',
       }).pipe(Effect.provide(launcher.layer))
 
-      yield* StrykerPlugin.reporterWorkerFactory(client)(options, { traceparent: TRACEPARENT })(
+      yield* Engine.reporterWorkerFactory(client)(options, { traceparent: TRACEPARENT })(
         asStream(produce(trace.gauge, trace)),
       )
 
@@ -265,15 +265,15 @@ Feature('Reporting a mutation run through a reporter plugin process')
             yielded: s.driven.yielded,
             delivered: s.driven.delivered.length,
             deliverySizes: s.driven.deliverySizes,
-            maxLagWithinOneDelivery: s.driven.maxLag > 0 && s.driven.maxLag <= StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
+            maxLagWithinOneDelivery: s.driven.maxLag > 0 && s.driven.maxLag <= Engine.REPORTER_EVENT_BATCH_BOUND,
           }).toEqual({
             yielded: LARGE_RUN,
             delivered: LARGE_RUN,
             deliverySizes: [
-              StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
-              StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
-              StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
-              LARGE_RUN - 3 * StrykerPlugin.REPORTER_EVENT_BATCH_BOUND,
+              Engine.REPORTER_EVENT_BATCH_BOUND,
+              Engine.REPORTER_EVENT_BATCH_BOUND,
+              Engine.REPORTER_EVENT_BATCH_BOUND,
+              LARGE_RUN - 3 * Engine.REPORTER_EVENT_BATCH_BOUND,
             ],
             maxLagWithinOneDelivery: true,
           })

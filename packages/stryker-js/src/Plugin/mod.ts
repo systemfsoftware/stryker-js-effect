@@ -16,14 +16,6 @@ export type {
   WorkerPluginSource,
 } from '../Plugins.schema.js'
 export type { PooledTestRunner } from '../pooled-test-runner.handle.js'
-export type { ReporterStage } from '../reporter-stream.service.js'
-export {
-  REPORTER_EVENT_BATCH_BOUND,
-  type ReporterWorkerClient,
-  reporterWorkerFactory,
-  spawnReporterWorker,
-  type SpawnReporterWorkerParams,
-} from '../reporter-stream.service.js'
 export type { TestRunnerBuildContext } from '../TestRunner.blueprint.js'
 export { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.blueprint.js'
 export type { PooledTestRunnerError } from '../TestRunner.schema.js'

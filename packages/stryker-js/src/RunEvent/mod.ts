@@ -1,15 +1,10 @@
-export { drainLayer } from '../drivers/run-event-stream.js'
-export type { ResolvedMode } from '../output-mode.schema.js'
+export { drainLayer, makeRunEventStream } from '../drivers/run-event-stream.js'
+export type { ResolvedMode, ResolvedModeInput } from '../output-mode.schema.js'
 export { metricsResultFromFiles } from '../reporting/metrics-from-report.js'
 export { MetricsResultFromReport } from '../reporting/metrics-from-report.schema.js'
 export { staticVerdictOf } from '../reporting/static-verdict.js'
 export { buildVerdictEnvelope } from '../reporting/verdict-envelope.js'
 export { VerdictEnvelope } from '../reporting/verdict-envelope.schema.js'
-export {
-  makeRunEventStream,
-  type ResolvedModeInput,
-  RunEventDrain,
-  type RunEventStream,
-} from '../run-event-stream.service.js'
+export { RunEventDrain, type RunEventStream } from '../run-event-stream.service.js'
 export { RunEvents, RunIdentity } from '../run-events.service.js'
 export type { RunIdentityShape } from '../run-events.service.js'

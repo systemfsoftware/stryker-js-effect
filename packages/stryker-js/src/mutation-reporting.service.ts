@@ -1,6 +1,11 @@
 import { Format } from '@systemfsoftware/stryker-js-instrumenter'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { type Checker, type Options, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  type Checker,
+  Mutant,
+  type Options,
+  type Plugin,
+  type TestRunner,
+} from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Context from 'effect/Context'
 import type * as Effect from 'effect/Effect'
 import type { PlatformError } from 'effect/PlatformError'
@@ -8,9 +13,24 @@ import type { PlatformError } from 'effect/PlatformError'
 import type { TimeoutEvidence } from './IncrementalDiff.schema.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import type { Project } from './Project.schema.js'
-import type { ReporterStage } from './reporter-stream.service.js'
-import type { MutationTestDone } from './run/mutation-test.cell.js'
 import type { TestCoverage } from './test-coverage.schema.js'
+
+export const ReporterStageTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ReporterStage')
+
+/**
+ * An attached reporter stage, opaque at the engine boundary: the published
+ * phase types carry this handle so the attachment machinery (queues, fibers,
+ * the state latch) never reaches an adopter's compiler. Constructed only by
+ * `attachReporterFactories`.
+ */
+export interface ReporterStage {
+  readonly [ReporterStageTypeId]: typeof ReporterStageTypeId
+}
+
+export interface MutationTestDone {
+  readonly results: readonly Mutant.RunMutantResult[]
+  readonly verdict: Plugin.ExitClass | null
+}
 
 export interface MutationReportingInput {
   readonly results: readonly Mutant.RunMutantResult[]

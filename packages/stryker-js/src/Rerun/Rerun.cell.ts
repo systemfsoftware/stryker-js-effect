@@ -7,9 +7,10 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
+import type { ConfigOverlay } from '../config/stryker-config.schema.js'
 import { relativeNormalizedFileName } from '../FileMatcher.js'
+import type { MutationTestDone } from '../mutation-reporting.service.js'
 import { readConfig } from '../run/load-config.js'
-import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { PriorReportDocument } from '../Survivors/Survivors.schema.js'
 import { admitMutantRerun, type PriorMutantShape, RerunRefused } from './admit-mutant-rerun.workflow.js'
@@ -30,6 +31,7 @@ export interface MutantRerunInput {
   readonly ids: ReadonlyArray<string>
   readonly cliOptions: Options.PartialStrykerOptions
   readonly mode: OutputMode.OutputMode
+  readonly configOverlay: ConfigOverlay
   readonly basePath: string
   readonly settle: MutantRerunSettlement
 }
@@ -39,8 +41,9 @@ const DEFAULT_PRIOR_REPORT = 'reports/mutation/mutation.json'
 const resolveRerunOptions = Effect.fnUntraced(function*(input: {
   readonly cliOptions: Options.PartialStrykerOptions
   readonly mode: OutputMode.OutputMode
+  readonly configOverlay: ConfigOverlay
 }) {
-  return yield* readConfig(input.cliOptions, { command: 'run', mode: input.mode })
+  return yield* readConfig(input.cliOptions, { command: 'run', mode: input.mode, overlay: input.configOverlay })
 })
 
 const priorReportText = Effect.fnUntraced(function*(priorReportPath: string) {
@@ -71,7 +74,11 @@ const priorMutantsOf = (text: string, basePath: string): ReadonlyArray<typeof Pr
   })
 
 const readMutantRerun = Effect.fnUntraced(function*(input: MutantRerunInput) {
-  const resolvedOptions = yield* resolveRerunOptions({ cliOptions: input.cliOptions, mode: input.mode })
+  const resolvedOptions = yield* resolveRerunOptions({
+    cliOptions: input.cliOptions,
+    mode: input.mode,
+    configOverlay: input.configOverlay,
+  })
   const priorReportPath = DEFAULT_PRIOR_REPORT
   const text = yield* priorReportText(priorReportPath)
   return {

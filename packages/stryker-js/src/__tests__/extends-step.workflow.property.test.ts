@@ -5,7 +5,6 @@ import * as Equal from 'effect/Equal'
 import * as S from 'effect/Schema'
 
 import { type ConfigDocument, ExtendsStepStateSchema } from '../Config.schema.js'
-import { mergeConfigs } from '../config/merge-config.js'
 import {
   extendsStep,
   ExtendsStepCommand,
@@ -14,6 +13,7 @@ import {
   ExtendsStepRefused,
   ExtendsStepResolve,
 } from '../run/extends-step.workflow.js'
+import { mergeConfigs } from '../run/merge-configs.js'
 
 const RELATIVE_PREFIXES: readonly string[] = ['./', '../', '/', '\\']
 

@@ -1,6 +1,7 @@
 import { NodeSocket } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine, Serve } from '@systemfsoftware/stryker-js'
+import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Effect from 'effect/Effect'
@@ -423,7 +424,7 @@ const withDirectory = <A, E, R>(directory: string, use: Effect.Effect<A, E, R>):
 const stdioSessionObserved = (): Effect.Effect<StdioObserved, never, Engine.EnginePorts> =>
   Effect.scoped(Effect.gen(function*() {
     const harness = yield* makeHarness()
-    const server = yield* Serve.serveMutationServer({ channel: 'stdio' }).pipe(
+    const server = yield* Serve.serveMutationServer({ channel: 'stdio', configOverlay: mergeConfig }).pipe(
       Effect.provideService(Stdio.Stdio, harness.stdio),
       Effect.scoped,
       Effect.forkScoped,
@@ -473,7 +474,7 @@ const stdioSessionObserved = (): Effect.Effect<StdioObserved, never, Engine.Engi
 const socketSessionObserved = (): Effect.Effect<SocketObserved, never, Engine.EnginePorts> =>
   Effect.scoped(Effect.gen(function*() {
     const harness = yield* makeHarness()
-    const server = yield* Serve.serveMutationServer({ channel: 'socket', port: 0 }).pipe(
+    const server = yield* Serve.serveMutationServer({ channel: 'socket', port: 0, configOverlay: mergeConfig }).pipe(
       Effect.provideService(Stdio.Stdio, harness.stdio),
       Effect.scoped,
       Effect.forkScoped,
@@ -497,7 +498,7 @@ const socketSessionObserved = (): Effect.Effect<SocketObserved, never, Engine.En
     yield* Fiber.interrupt(server)
 
     const reboundHarness = yield* makeHarness()
-    const rebound = yield* Serve.serveMutationServer({ channel: 'socket', port }).pipe(
+    const rebound = yield* Serve.serveMutationServer({ channel: 'socket', port, configOverlay: mergeConfig }).pipe(
       Effect.provideService(Stdio.Stdio, reboundHarness.stdio),
       Effect.scoped,
       Effect.exit,
@@ -538,7 +539,7 @@ const socketSessionObserved = (): Effect.Effect<SocketObserved, never, Engine.En
 const takenPortObserved = (): Effect.Effect<TakenPortObserved, never, Engine.EnginePorts> =>
   Effect.scoped(Effect.gen(function*() {
     const harness = yield* makeHarness()
-    const server = yield* Serve.serveMutationServer({ channel: 'socket', port: 0 }).pipe(
+    const server = yield* Serve.serveMutationServer({ channel: 'socket', port: 0, configOverlay: mergeConfig }).pipe(
       Effect.provideService(Stdio.Stdio, harness.stdio),
       Effect.scoped,
       Effect.forkScoped,
@@ -551,7 +552,12 @@ const takenPortObserved = (): Effect.Effect<TakenPortObserved, never, Engine.Eng
     const { host, port } = announcedAddressOf(announced)
 
     const probeHarness = yield* makeHarness()
-    const taken = yield* Serve.serveMutationServer({ channel: 'socket', port, address: host }).pipe(
+    const taken = yield* Serve.serveMutationServer({
+      channel: 'socket',
+      port,
+      address: host,
+      configOverlay: mergeConfig,
+    }).pipe(
       Effect.provideService(Stdio.Stdio, probeHarness.stdio),
       Effect.scoped,
       Effect.result,
@@ -575,7 +581,12 @@ const takenPortObserved = (): Effect.Effect<TakenPortObserved, never, Engine.Eng
 const exposedAddressObserved = (): Effect.Effect<ExposedObserved, never, Engine.EnginePorts> =>
   Effect.scoped(Effect.gen(function*() {
     const harness = yield* makeHarness()
-    const server = yield* Serve.serveMutationServer({ channel: 'socket', port: 0, address: '0.0.0.0' }).pipe(
+    const server = yield* Serve.serveMutationServer({
+      channel: 'socket',
+      port: 0,
+      address: '0.0.0.0',
+      configOverlay: mergeConfig,
+    }).pipe(
       Effect.provideService(Stdio.Stdio, harness.stdio),
       Effect.scoped,
       Effect.forkScoped,

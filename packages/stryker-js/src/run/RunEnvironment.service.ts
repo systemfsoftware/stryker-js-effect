@@ -5,6 +5,7 @@ import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as Queue from 'effect/Queue'
 
+import type { ConfigOverlay } from '../config/stryker-config.schema.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
 import { RunEvents } from '../run-events.service.js'
 import { PhaseClock } from './phase-clock.service.js'
@@ -15,6 +16,7 @@ export interface RunEnvironmentShape {
   readonly runStartedAt: number
   readonly basePath: string
   readonly builtinReporters: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
+  readonly configOverlay: ConfigOverlay
   readonly allowConsoleColors: boolean
 }
 

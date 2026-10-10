@@ -2,7 +2,7 @@ import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
 import { dual } from 'effect/Function'
 
-import type { MutationTestDone } from '../run/mutation-test.cell.js'
+import type { MutationTestDone } from '../mutation-reporting.service.js'
 import { strykerCell } from '../run/run-stages.js'
 import { nodePlatformLayer } from './node.js'
 

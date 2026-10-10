@@ -54,12 +54,6 @@ export class EventSuppressed extends S.TaggedClass<EventSuppressed>()(
 
 export type FrameRunEventDecision = EventFramed | EventSuppressed
 
-export const ResolvedModeInput = S.Struct({
-  mode: OutputMode.OutputMode,
-  signal: OutputMode.ModeSignal,
-})
-export type ResolvedModeInput = typeof ResolvedModeInput.Type
-
 const nextFramingState = (state: FramingState, event: RunEvent.RunEvent): FramingState =>
   Match.value(event).pipe(
     Match.tag('verdict', 'error', 'help', 'refused', () =>

@@ -2,6 +2,7 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Arr from 'effect/Array'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
@@ -113,6 +114,7 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   runStartedAt: 0,
   basePath: directory,
   builtinReporters: {},
+  configOverlay: mergeConfig,
   allowConsoleColors: false,
 })
 

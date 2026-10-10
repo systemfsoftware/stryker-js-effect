@@ -8,12 +8,13 @@ import * as Option from 'effect/Option'
 import type { PlatformError } from 'effect/PlatformError'
 import * as Predicate from 'effect/Predicate'
 
+import { mergeConfig } from '../config/merge-config.js'
 import { drainLayer } from '../drivers/run-event-stream.js'
+import { makeRunEventStream } from '../drivers/run-event-stream.js'
 import { forStream, stage } from '../drivers/run-stage.js'
+import type { MutationTestDone } from '../mutation-reporting.service.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
-import { makeRunEventStream } from '../run-event-stream.service.js'
 import { StageError } from '../Run.schema.js'
-import type { MutationTestDone } from './mutation-test.cell.js'
 import { mutationTestCell } from './run-stages.cell.js'
 import type { EnginePorts } from './StageServices.service.js'
 
@@ -22,7 +23,10 @@ const HEADLESS_MODE: ResolvedMode = { mode: 'machine', signal: 'flag', stdoutIsT
 const strykerRunLayer = makeRunEventStream(HEADLESS_MODE).pipe(
   Effect.flatMap((stream) =>
     Effect.map(
-      forStream(HEADLESS_MODE, stream, { builtinReporters: { html: HtmlReporter.makeHtmlReporter } }),
+      forStream(HEADLESS_MODE, stream, {
+        builtinReporters: { html: HtmlReporter.makeHtmlReporter },
+        configOverlay: mergeConfig,
+      }),
       (env) => stage(env, stream.queue),
     )
   ),

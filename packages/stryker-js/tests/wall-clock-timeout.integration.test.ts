@@ -4,6 +4,7 @@ import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -103,6 +104,7 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   runStartedAt: 0,
   basePath: directory,
   builtinReporters: {},
+  configOverlay: mergeConfig,
   allowConsoleColors: false,
 })
 

@@ -13,6 +13,7 @@ import * as Queue from 'effect/Queue'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
+import type { ConfigOverlay } from '../config/stryker-config.schema.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
 import type { RunEventStream } from '../run-event-stream.service.js'
 import { RunEvents } from '../run-events.service.js'
@@ -50,6 +51,7 @@ export const forStream: {
     host: {
       readonly noColor?: string | undefined
       readonly builtinReporters: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
+      readonly configOverlay: ConfigOverlay
     },
   ): Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem>
   (
@@ -57,6 +59,7 @@ export const forStream: {
     host: {
       readonly noColor?: string | undefined
       readonly builtinReporters: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
+      readonly configOverlay: ConfigOverlay
     },
   ): (mode: ResolvedMode) => Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem>
 } = dual(
@@ -67,6 +70,7 @@ export const forStream: {
     host: {
       readonly noColor?: string | undefined
       readonly builtinReporters: Readonly<Record<string, InterfaceReporter.ReporterFactory>>
+      readonly configOverlay: ConfigOverlay
     },
   ): Effect.Effect<RunEnvironmentShape, PlatformError, FileSystem.FileSystem> =>
     Effect.map(
@@ -77,6 +81,7 @@ export const forStream: {
         runStartedAt: stream.startedAt,
         basePath,
         builtinReporters: host.builtinReporters,
+        configOverlay: host.configOverlay,
         allowConsoleColors: mode.mode === 'human' &&
           Option.isNone(Option.filter(Option.fromUndefinedOr(host.noColor), S.is(S.NonEmptyString))),
       }),

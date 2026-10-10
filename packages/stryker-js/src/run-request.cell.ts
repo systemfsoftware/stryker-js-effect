@@ -31,6 +31,7 @@ import {
   VerdictSchema,
   VerdictsDiffer,
 } from './compare-verdicts.workflow.js'
+import { mergeConfig } from './config/merge-config.js'
 import {
   type ConfigFileInvalidError,
   type ConfigFileNotFoundError,
@@ -48,6 +49,7 @@ import {
   GateRejected,
 } from './gate-new-survivors.workflow.js'
 import { mcpServerLayer } from './Mcp/mod.js'
+import type { MutationTestDone } from './mutation-reporting.service.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { planRequest } from './plan-request.cell.js'
 import { AnnotationsUnusable, renderAnnotations, RenderAnnotationsCommand } from './render-annotations.workflow.js'
@@ -60,7 +62,6 @@ import {
 import { routeCliRequest } from './route-cli-request.workflow.js'
 import { RunEventDrain, type RunEventStream, type RunEventStreamPort } from './run-event-stream.service.js'
 import type { HostServices } from './run/host.service.js'
-import type { MutationTestDone } from './run/mutation-test.cell.js'
 import { mutationTestCell } from './run/run-stages.cell.js'
 import { serveMutationServer, type ServeRequest } from './Serve/Serve.cell.js'
 import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
@@ -177,6 +178,7 @@ const settlementOf = (channel: CliRead): SurvivorsSettlement => ({
 const survivorsInputOf = (channel: CliRead): SurvivorsAdmissionInput => ({
   cliOptions: channel.options,
   mode: channel.environment.mode.mode,
+  configOverlay: mergeConfig,
   basePath: channel.environment.basePath,
   settle: settlementOf(channel),
 })
@@ -210,6 +212,7 @@ const rerunInputOf = (channel: CliRead, ids: ReadonlyArray<string>): MutantRerun
   ids,
   cliOptions: channel.options,
   mode: channel.environment.mode.mode,
+  configOverlay: mergeConfig,
   basePath: channel.environment.basePath,
   settle: rerunSettlementOf(channel),
 })
@@ -580,6 +583,7 @@ const serveRequestOf = (
 ): ServeRequest => ({
   channel: serve.channel,
   cliOptions,
+  configOverlay: mergeConfig,
   ...portFields(serve.port),
   ...addressFields(serve.address),
 })
@@ -653,7 +657,10 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
     CliPlanRequested: (plan, channel) => planRequest({ request: plan, channel }),
     CliFeedbackRequested: (feedback, channel) => feedbackRoute(feedback, channel),
     CliMcpRequested: (_, channel) =>
-      Layer.launch(mcpServerLayer({ basePath: channel.environment.basePath })).pipe(Effect.scoped, Effect.orDie),
+      Layer.launch(mcpServerLayer({ basePath: channel.environment.basePath, configOverlay: mergeConfig })).pipe(
+        Effect.scoped,
+        Effect.orDie,
+      ),
     CliServeRequested: (serve, channel) =>
       serveMutationServer(serveRequestOf(serve, channel.options)).pipe(Effect.scoped),
     CliRunRequested: (_, channel) => runStage(channel),

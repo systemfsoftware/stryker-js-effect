@@ -1,7 +1,7 @@
 import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Plugin } from '@systemfsoftware/stryker-js'
+import { Engine } from '@systemfsoftware/stryker-js'
 import { Options, Trace } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace as RuntimeTrace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
@@ -52,7 +52,7 @@ const makeClient = (plan: TraceWorkerPlan) =>
     const record = yield* makeTraceWorkerRecord
     const launcher = yield* traceServingLauncher(record)
     const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({})
-    const client = yield* Plugin.spawnReporterWorker({
+    const client = yield* Engine.spawnReporterWorker({
       entrypoint: plan.entrypoint,
       projectBasePath: plan.projectBasePath,
       execArgv: [],

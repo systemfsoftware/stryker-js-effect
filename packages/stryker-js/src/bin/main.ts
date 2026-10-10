@@ -36,6 +36,7 @@ import { inheritableCompileCacheDirectory } from './enable-compile-cache.js'
 import { classifyRunOutcome, type FailedRunOutcome, RunExit, RunParseFailed } from '../classify-run-outcome.workflow.js'
 import { concludeRunCell } from '../conclude-run.cell.js'
 import { runOutcomeCommandOf } from '../conclude-run.js'
+import { mergeConfig } from '../config/merge-config.js'
 import { captureLayer as machineConsoleCaptureLayer, layer as machineConsoleLayer } from '../drivers/machine-console.js'
 import { makeNodePlatformLayer } from '../drivers/node.js'
 import { layer as outputModeProbeLayer } from '../drivers/output-mode-probe.js'
@@ -222,6 +223,7 @@ const strykerProgram = Effect.gen(function*() {
   const host = yield* forStream(mode, stream, {
     noColor: Option.getOrUndefined(noColor),
     builtinReporters: { html: HtmlReporter.makeHtmlReporter },
+    configOverlay: mergeConfig,
   })
   const pathService = yield* Path.Path
   const realConsole = yield* Console.Console

@@ -1,14 +1,21 @@
 export { nodePlatformLayer } from '../drivers/node.js'
 export { forStream, stage } from '../drivers/run-stage.js'
 export { IncrementalReportSchema } from '../IncrementalReport.schema.js'
+export type { MutationTestDone } from '../mutation-reporting.service.js'
 export { planRequest } from '../plan-request.cell.js'
 export type { PlanChannel, PlanRequestInput, PlanShardsRequest } from '../plan-request.cell.js'
 export type { Project, ProjectFile } from '../Project.schema.js'
+export {
+  REPORTER_EVENT_BATCH_BOUND,
+  type ReporterWorkerClient,
+  reporterWorkerFactory,
+  spawnReporterWorker,
+  type SpawnReporterWorkerParams,
+} from '../reporter-stream.service.js'
 export { StageError } from '../Run.schema.js'
 export type { DryRunDone } from '../run/dry-run.cell.js'
 export type { StrykerRun } from '../run/host.service.js'
 export type { InstrumentDone } from '../run/instrument.cell.js'
-export type { MutationTestDone } from '../run/mutation-test.cell.js'
 export type { PrepareDone, PrepareExecutorArgs } from '../run/prepare.cell.js'
 export { mutationTestCell } from '../run/run-stages.cell.js'
 export { strykerCell } from '../run/run-stages.js'

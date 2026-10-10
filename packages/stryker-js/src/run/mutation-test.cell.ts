@@ -1,7 +1,6 @@
 import { type Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Clock from 'effect/Clock'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
@@ -10,7 +9,7 @@ import * as Scope from 'effect/Scope'
 
 import { admitMutationTest, MutationTestError } from '../admit-mutation-test.workflow.js'
 import { checkPlansStream as checkPlansWithConfiguredCheckers } from '../Checker/checker-pool.handle.js'
-import { MutationReporting } from '../mutation-reporting.service.js'
+import { MutationReporting, type MutationTestDone } from '../mutation-reporting.service.js'
 import { MutationTestCommand } from '../MutationTest.schema.js'
 import { withPhaseSpan } from '../reporter-stream.service.js'
 import { requestedIdsOf, restrictedToRequestedIds } from '../Rerun/rerun-selection.js'
@@ -31,11 +30,6 @@ import {
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 import { scoped as testRunnerPoolScoped } from './test-runner-pool.blueprint.js'
-
-export interface MutationTestDone {
-  readonly results: readonly Mutant.RunMutantResult[]
-  readonly verdict: Plugin.ExitClass | null
-}
 
 type MutationTestRaw = typeof MutationTestCommand.Encoded & {
   readonly prev: DryRunDone

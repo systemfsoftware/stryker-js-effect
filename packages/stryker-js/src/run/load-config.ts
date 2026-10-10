@@ -10,7 +10,7 @@ import * as S from 'effect/Schema'
 
 import { type OutputMode, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { forkOptionsSchema } from '../Config.schema.js'
-import type { ConfigEnv } from '../config/stryker-config.schema.js'
+import type { ConfigEnv, ConfigOverlay } from '../config/stryker-config.schema.js'
 import { ConfigError } from '../ConfigError.schema.js'
 import { type ConfigReadError, readConfigDocument } from '../drivers/config.js'
 import { describeConfigError, DescribeConfigErrorCommand } from './describe-config-error.workflow.js'
@@ -23,6 +23,7 @@ export type { ValidationSchemaDocument } from './validate-options-admission.work
 export interface ConfigInvocation {
   readonly command: 'run' | 'merge'
   readonly mode: OutputMode.OutputMode
+  readonly overlay: ConfigOverlay
 }
 
 export interface LoadedConfig {
@@ -77,7 +78,11 @@ export const readLoadConfig = Effect.fn(SpanTaxonomy.Spans.configLoad.name)(func
     mode: input.invocation.mode,
     isDryRun: input.cliOptions['dryRunOnly'] === true,
   })
-  const loaded = yield* readConfigDocument({ cliOptions: input.cliOptions, configEnv })
+  const loaded = yield* readConfigDocument({
+    cliOptions: input.cliOptions,
+    configEnv,
+    overlay: input.invocation.overlay,
+  })
   const command: typeof LoadConfigCommand.Encoded = {
     _tag: 'LoadConfigCommand',
     document: loaded.document,

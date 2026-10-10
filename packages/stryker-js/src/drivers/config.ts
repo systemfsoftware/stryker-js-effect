@@ -19,8 +19,7 @@ import {
   LegacyConfigFileExtensions,
   SupportedConfigFileExtensions,
 } from '../Config.schema.js'
-import { mergeConfig } from '../config/merge-config.js'
-import type { ConfigEnv } from '../config/stryker-config.schema.js'
+import type { ConfigEnv, ConfigOverlay } from '../config/stryker-config.schema.js'
 import {
   ConfigFactoryFailed,
   ConfigFileInvalidError,
@@ -443,11 +442,12 @@ export type ConfigReadError =
 export const readConfigDocument = Effect.fn(SpanTaxonomy.Spans.configReadDocument.name)(function*(input: {
   readonly cliOptions: Options.PartialStrykerOptions
   readonly configEnv: ConfigEnv
+  readonly overlay: ConfigOverlay
 }) {
   const cliRecord = yield* S.decodeEffect(ConfigDocumentSchema)(input.cliOptions).pipe(Effect.orDie)
   const fileOptions = yield* loadOptionsFromConfigFile(cliRecord, input.configEnv)
   return {
-    document: mergeConfig(Option.getOrElse(fileOptions, () => ({})), cliRecord),
+    document: input.overlay(Option.getOrElse(fileOptions, () => ({})), cliRecord),
     fileFound: Option.isSome(fileOptions),
   }
 })

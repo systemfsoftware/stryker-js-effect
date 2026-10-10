@@ -1,6 +1,7 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Configuration } from '@systemfsoftware/stryker-js'
 import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { mergeConfig } from '@systemfsoftware/stryker-js/config'
 import * as Array from 'effect/Array'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
@@ -83,7 +84,7 @@ interface ReadOutcome<E = ConfigFileReadError> {
 
 type ReadEffect<A> = Effect.Effect<A, never, ReadRecorder | FileSystem.FileSystem | Path.Path>
 
-const DEFAULT_INVOCATION: Configuration.ConfigInvocation = { command: 'run', mode: 'human' }
+const DEFAULT_INVOCATION: Configuration.ConfigInvocation = { command: 'run', mode: 'human', overlay: mergeConfig }
 
 const outcomeOf = (
   cliOptions: Options.PartialStrykerOptions,
@@ -532,6 +533,7 @@ Feature('Configuring a Stryker run from a module config file')
             outcomeOf({ configFile: fixtureFile('factory-config', 'stryker.config.ts') }, {
               command: 'run',
               mode: 'machine',
+              overlay: mergeConfig,
             }),
         ),
         When('the run reads its configuration for machine-readable output')(

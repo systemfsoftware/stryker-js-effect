@@ -40,6 +40,7 @@ import * as Stdio from 'effect/Stdio'
 import * as Stream from 'effect/Stream'
 
 import { concurrencyCell } from '../concurrency.cell.js'
+import type { ConfigOverlay } from '../config/stryker-config.schema.js'
 import { stage } from '../drivers/run-stage.js'
 import type { ResolvedMode } from '../output-mode.schema.js'
 import { readProjectCell } from '../read-project.cell.js'
@@ -79,6 +80,7 @@ export interface ServeRequest {
   readonly port?: number
   readonly address?: string
   readonly cliOptions?: Options.PartialStrykerOptions
+  readonly configOverlay: ConfigOverlay
 }
 
 interface FailureLike {
@@ -109,12 +111,17 @@ interface EngineRun {
   readonly context: Context.Context<RunStageServices>
 }
 
-const serveEnvironment = (basePath: string, startedAt: number): RunEnvironmentShape => ({
+const serveEnvironment = (
+  basePath: string,
+  startedAt: number,
+  configOverlay: ConfigOverlay,
+): RunEnvironmentShape => ({
   runId: generateRunId(DateTime.makeUnsafe(startedAt)),
   resolvedMode: HEADLESS_MODE,
   runStartedAt: startedAt,
   basePath,
   builtinReporters: { html: HtmlReporter.makeHtmlReporter },
+  configOverlay,
   allowConsoleColors: false,
 })
 
@@ -150,6 +157,7 @@ const bucketOf = <A>(grouped: Map<string, Array<A>>, key: string): Array<A> =>
   )
 
 const withEngine = <A, E>(
+  configOverlay: ConfigOverlay,
   consume: (event: RunEvent.RunEvent) => Effect.Effect<void, ServeError>,
   use: (run: EngineRun) => Effect.Effect<A, E, EnginePorts>,
 ): Effect.Effect<A, E | ServeError, EnginePorts> =>
@@ -159,7 +167,7 @@ const withEngine = <A, E>(
       Effect.mapError(() => ServeError.make({ reason: 'cannot resolve the working directory' })),
     )
     const startedAt = yield* Clock.currentTimeMillis
-    const env = serveEnvironment(basePath, startedAt)
+    const env = serveEnvironment(basePath, startedAt, configOverlay)
     const events = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const consumer = yield* Stream.fromQueue(events).pipe(Stream.runForEach(consume), Effect.forkChild)
     const run = Effect.scoped(
@@ -294,10 +302,11 @@ const mutationTestOptionsOf = (
   })
 
 const runDiscover = (
+  configOverlay: ConfigOverlay,
   options: ServeOptions,
   targetMutatePatterns: ReadonlyArray<string> | undefined,
 ): Effect.Effect<DiscoverResult, ServeError, EnginePorts> =>
-  withEngine(() => Effect.void, ({ env, context }) =>
+  withEngine(configOverlay, () => Effect.void, ({ env, context }) =>
     Effect.gen(function*() {
       const path = yield* Path.Path
       const done = yield* Cell.provideContext(discoverStageCell, context).run({
@@ -310,11 +319,13 @@ const runDiscover = (
     ))
 
 const runMutationTest = (
+  configOverlay: ConfigOverlay,
   options: ServeOptions,
   targetMutatePatterns: ReadonlyArray<string> | undefined,
   notify: (tested: RunEvent.RunMutantTestedEvent) => Effect.Effect<void, ServeError>,
 ): Effect.Effect<MutationTestResult, ServeError, EnginePorts> =>
   withEngine(
+    configOverlay,
     (event) =>
       Match.value(event).pipe(
         Match.tag('mutantTested', (tested) => notify(tested)),
@@ -380,7 +391,7 @@ const runRequested = (
     Match.tag('MspDiscoverRequested', ({ id, params }) =>
       Effect.gen(function*() {
         const result = yield* Effect.result(
-          runDiscover(optionsOf(invocation, yield* state), restrictPatternsOf(params.files)),
+          runDiscover(invocation.configOverlay, optionsOf(invocation, yield* state), restrictPatternsOf(params.files)),
         )
         yield* Result.match(result, {
           onFailure: (failure) => respondError(connection, id, MSP_INTERNAL_ERROR, failure.reason),
@@ -391,6 +402,7 @@ const runRequested = (
       Effect.gen(function*() {
         const result = yield* Effect.result(
           runMutationTest(
+            invocation.configOverlay,
             mutationTestOptionsOf(invocation, yield* state, params),
             undefined,
             (tested) => notifyProgress(connection, progressOf(tested)),

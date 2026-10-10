@@ -6,6 +6,8 @@ import { CliCommandSchema } from '../Cli.schema.js'
 
 export type StrykerConfig = Options.PartialStrykerOptions
 
+export type ConfigOverlay = (fileOptions: StrykerConfig, cliOptions: StrykerConfig) => StrykerConfig
+
 export type Primitive = boolean | number | string | null | undefined
 
 export type ImmutablePrimitive = Primitive | ((...args: never[]) => void)

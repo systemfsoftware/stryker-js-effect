@@ -12,6 +12,7 @@ import * as Result from 'effect/Result'
 import { MaterializeMutantPlanCommand, materializeMutantPlans } from '../materialize-mutant-plans.workflow.js'
 import { UnknownPlannedMutant } from '../MutantsError.schema.js'
 import { MutantTestPlanCommand } from '../MutantTestPlanCommand.schema.js'
+import type { ReporterStage } from '../mutation-reporting.service.js'
 import {
   CoveredMutantHitCountMissing,
   MutantTimeoutNotFinite,
@@ -20,7 +21,6 @@ import {
   PlannedRunMutant,
 } from '../plan-mutant-tests.workflow.js'
 import type { Project } from '../Project.schema.js'
-import type { ReporterStage } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
 import type { SandboxHandle } from '../Sandbox.handle.js'
 import { OrderedRunPlan, SortRunPlans, sortRunPlans } from '../sort-run-plans.workflow.js'

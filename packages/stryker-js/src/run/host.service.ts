@@ -4,8 +4,8 @@ import type * as Cause from 'effect/Cause'
 import type * as Effect from 'effect/Effect'
 import type * as Queue from 'effect/Queue'
 
+import type { MutationTestDone } from '../mutation-reporting.service.js'
 import type { StageError } from '../Run.schema.js'
-import type { MutationTestDone } from './mutation-test.cell.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
 export interface HostServices {

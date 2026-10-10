@@ -24,6 +24,7 @@ import * as Stream from 'effect/Stream'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 
 import { ConfigError } from './ConfigError.schema.js'
+import { type ReporterStage, ReporterStageTypeId } from './mutation-reporting.service.js'
 import { ReporterFactoryThrew, ReporterStageForged } from './stryker-error.schema.js'
 import { makeWorkerClient } from './worker-client.blueprint.js'
 import type { WorkerBootError } from './Worker.schema.js'
@@ -53,18 +54,6 @@ const portsOf = (attachment: ReporterAttachment): ReporterChannelPorts => ({
   channel: attachment.channel,
   state: attachment.state,
 })
-
-const ReporterStageTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ReporterStage')
-
-/**
- * An attached reporter stage, opaque at the engine boundary: the published
- * phase types carry this handle so the attachment machinery (queues, fibers,
- * the state latch) never reaches an adopter's compiler. Constructed only by
- * `attachReporterFactories`.
- */
-export interface ReporterStage {
-  readonly [ReporterStageTypeId]: typeof ReporterStageTypeId
-}
 
 interface ReporterStageAttachments extends ReporterStage {
   readonly attachments: readonly ReporterAttachment[]

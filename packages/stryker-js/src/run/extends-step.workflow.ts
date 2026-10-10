@@ -11,7 +11,7 @@ import {
   type ExtendsStepState,
   ExtendsStepStateSchema,
 } from '../Config.schema.js'
-import { mergeConfigs } from '../config/merge-config.js'
+import { mergeConfigs } from './merge-configs.js'
 
 const RELATIVE_SPECIFIER_PREFIXES: readonly string[] = ['./', '../', '/', '\\']
 

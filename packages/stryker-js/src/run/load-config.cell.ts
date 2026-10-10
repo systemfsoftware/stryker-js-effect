@@ -18,7 +18,7 @@ const readRunConfig = Effect.fn(SpanTaxonomy.Spans.configReadRun.name)(function*
   const env = yield* RunEnvironment
   const raw = yield* readLoadConfig({
     cliOptions: input.cliOptions,
-    invocation: { command: 'run', mode: env.resolvedMode.mode },
+    invocation: { command: 'run', mode: env.resolvedMode.mode, overlay: env.configOverlay },
   }).pipe(Effect.tapCause(() => emitPreparePhaseEntered))
   return {
     ...raw,

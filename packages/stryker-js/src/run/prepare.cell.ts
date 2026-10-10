@@ -13,6 +13,7 @@ import * as Scope from 'effect/Scope'
 
 import type { MutatorSelectionDecoded } from '../decode-mutator-selection.workflow.js'
 import { layer as temporaryDirectoryLayer } from '../drivers/temporary-directory.js'
+import type { ReporterStage } from '../mutation-reporting.service.js'
 import type { MergedCatalog } from '../plan-mutator-catalogs.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import type { Project } from '../Project.schema.js'
@@ -21,7 +22,6 @@ import {
   attachReporterFactories,
   currentReporterInit,
   type PhaseSpan,
-  type ReporterStage,
   withPhaseSpan,
 } from '../reporter-stream.service.js'
 import { reporterInputsOf } from '../reporter-wiring.service.js'

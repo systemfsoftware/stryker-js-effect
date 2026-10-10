@@ -7,3 +7,9 @@ export const ResolvedMode = S.Struct({
   stdoutIsTTY: S.Boolean,
 })
 export type ResolvedMode = typeof ResolvedMode.Type
+
+export const ResolvedModeInput = S.Struct({
+  mode: OutputModeContract.OutputMode,
+  signal: OutputModeContract.ModeSignal,
+})
+export type ResolvedModeInput = typeof ResolvedModeInput.Type

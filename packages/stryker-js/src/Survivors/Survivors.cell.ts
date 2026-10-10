@@ -19,11 +19,12 @@ import {
   Admitted,
   SurvivorsRejection,
 } from '../admit-survivors-run.workflow.js'
+import type { ConfigOverlay } from '../config/stryker-config.schema.js'
 import { ConfigFileUnreadableError } from '../ConfigError.schema.js'
 import { relativeNormalizedFileName } from '../FileMatcher.js'
+import type { MutationTestDone } from '../mutation-reporting.service.js'
 import { MutationReportFileName } from '../reporting/report-assembly.schema.js'
 import { readConfig } from '../run/load-config.js'
-import type { MutationTestDone } from '../run/mutation-test.cell.js'
 import type { EnginePorts } from '../run/StageServices.service.js'
 import { StrykerPackage } from '../stryker-package.schema.js'
 import { PriorReportDocument, type PriorReportMutant } from './Survivors.schema.js'
@@ -44,6 +45,7 @@ export interface SurvivorsSettlement {
 export interface SurvivorsAdmissionInput {
   readonly cliOptions: Options.PartialStrykerOptions
   readonly mode: OutputMode.OutputMode
+  readonly configOverlay: ConfigOverlay
   readonly basePath: string
   readonly settle: SurvivorsSettlement
 }
@@ -120,8 +122,9 @@ const resolveSurvivorsRunOptions = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissi
   function*(input: {
     readonly cliOptions: Options.PartialStrykerOptions
     readonly mode: OutputMode.OutputMode
+    readonly configOverlay: ConfigOverlay
   }) {
-    return yield* readConfig(input.cliOptions, { command: 'run', mode: input.mode })
+    return yield* readConfig(input.cliOptions, { command: 'run', mode: input.mode, overlay: input.configOverlay })
   },
 )
 
@@ -232,7 +235,11 @@ const survivorsRawOf = (input: {
 
 const readSurvivorsAdmission = Effect.fn(SpanTaxonomy.Spans.survivorsAdmissionGather.name)(
   function*(input: SurvivorsAdmissionInput) {
-    const resolvedOptions = yield* resolveSurvivorsRunOptions({ cliOptions: input.cliOptions, mode: input.mode })
+    const resolvedOptions = yield* resolveSurvivorsRunOptions({
+      cliOptions: input.cliOptions,
+      mode: input.mode,
+      configOverlay: input.configOverlay,
+    })
     const priorReportPath = priorReportPathOf(resolvedOptions)
     const read = yield* readPriorReport(priorReportPath)
     const sourceContentHashes = yield* currentSourceHashesFor(priorReportFileKeys(read.raw))
