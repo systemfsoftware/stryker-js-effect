@@ -1,11 +1,22 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
 import * as Equal from 'effect/Equal'
+import * as Rec from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { parseFixtureManifest, resolveCatalogSpecs, type WorkspaceCatalogs } from '../catalog-resolution.js'
-import { MalformedFixtureManifest, UnresolvedCatalogSpec } from '../catalog-resolution.schema.js'
+import {
+  parseFixtureManifest,
+  parseWorkspaceCatalogs,
+  resolveCatalogSpecs,
+  type WorkspaceCatalogs,
+} from '../catalog-resolution.js'
+import {
+  DependencySpecs,
+  MalformedFixtureManifest,
+  UnresolvedCatalogSpec,
+  WorkspaceCatalogsYaml,
+} from '../catalog-resolution.schema.js'
 
 const MANIFEST = 'fixture/package.json'
 const DEFAULT_SENTINEL = 'default-catalog-sentinel'
@@ -136,5 +147,27 @@ describe('parseFixtureManifest', () => {
         onSuccess: () => false,
       })
     },
+  )
+})
+
+describe('parseWorkspaceCatalogs', () => {
+  it.prop(
+    '∀s_WorkspaceCatalogSection_≡DefaultCatalog',
+    { of: [DependencySpecs], subject: parseWorkspaceCatalogs },
+    (subject, [specs]) => Equal.equals(subject(`catalog: ${JSON.stringify(specs)}\n`), { default: specs, named: {} }),
+  )
+
+  it.prop(
+    '∀s_WorkspaceCatalogsDefaultSection_≡DefaultCatalog',
+    { of: [DependencySpecs], subject: parseWorkspaceCatalogs },
+    (subject, [specs]) =>
+      Equal.equals(subject(`catalogs: ${JSON.stringify({ default: specs })}\n`), { default: specs, named: {} }),
+  )
+
+  it.prop(
+    '∀w_WorkspaceCatalogsSection_≡NamedCatalogsWithoutDefault',
+    { of: [WorkspaceCatalogsYaml], subject: parseWorkspaceCatalogs },
+    (subject, [workspace]) =>
+      Equal.equals(subject(JSON.stringify(workspace)).named, Rec.remove(workspace.catalogs ?? {}, 'default')),
   )
 })
