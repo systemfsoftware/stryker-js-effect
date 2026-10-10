@@ -59,7 +59,7 @@ export const MutantCandidateSchema = S.Struct({
   replacementCode: S.String,
   location: S.optional(Mutant.Location),
   ignorerAnswer: S.optional(IgnorerAnswerSchema),
-  aridReason: S.optional(S.String),
+  aridReason: S.optional(Mutant.IgnoreStatusReasonText),
   mutantSet: MutantSetFactsSchema,
   subsumption: SubsumptionReplacement,
 })
