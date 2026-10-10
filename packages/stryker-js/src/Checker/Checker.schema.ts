@@ -181,15 +181,16 @@ if (import.meta.vitest !== void 0) {
 
   it.prop(
     '∀u_CompileErrorAnswers_≡EachIdAnsweredWithItsLastReason',
-    { of: [S.Array(UndescribableMutant)], subject: compileErrorAnswersOf },
-    (subject, [undescribable]) => {
-      const answers = subject(undescribable)
-      const lastReasonById = new Map(undescribable.map((mutant) => [mutant.id, mutant.reason]))
-      return Object.keys(answers).length === lastReasonById.size &&
-        Arr.every(
-          [...lastReasonById],
-          ([id, reason]) => JSON.stringify(answers[id]) === JSON.stringify({ status: 'compileError', reason }),
-        )
+    { of: [S.Array(S.Tuple([UndescribableMutant, S.String]))], subject: compileErrorAnswersOf },
+    (subject, [drawn]) => {
+      const restated = drawn.map(([mutant, laterReason]) =>
+        UndescribableMutant.make({ id: mutant.id, fileName: mutant.fileName, reason: laterReason })
+      )
+      const answers = subject([...drawn.map(([mutant]) => mutant), ...restated])
+      return Object.keys(answers).length === new Set(drawn.map(([mutant]) => mutant.id)).size &&
+        Arr.every(restated, (mutant, index) =>
+          restated.findLastIndex((later) => later.id === mutant.id) !== index ||
+          JSON.stringify(answers[mutant.id]) === JSON.stringify({ status: 'compileError', reason: mutant.reason }))
     },
   )
 
@@ -234,14 +235,15 @@ if (import.meta.vitest !== void 0) {
     { of: [S.String, DrawnRunPlans], subject: plansByIdOf },
     (subject, [checkerName, drawn]) => {
       const plans = runPlansOf(drawn)
-      const byId = subject({ checkerName, plans })
-      const lastPlanById = Arr.reduce(
-        plans,
-        new Map<string, Mutant.RunPlan>(),
-        (latest, plan) => latest.set(plan.mutant.id, plan),
-      )
-      return byId.size === lastPlanById.size &&
-        Arr.every([...lastPlanById], ([id, plan]) => byId.get(id) === plan)
+      const restated = plans.map((plan): Mutant.RunPlan => ({ ...plan }))
+      const byId = subject({ checkerName, plans: [...plans, ...restated] })
+      return byId.size === new Set(plans.map((plan) => plan.mutant.id)).size &&
+        Arr.every(
+          restated,
+          (plan, index) =>
+            restated.findLastIndex((later) => later.mutant.id === plan.mutant.id) !== index ||
+            byId.get(plan.mutant.id) === plan,
+        )
     },
   )
 
