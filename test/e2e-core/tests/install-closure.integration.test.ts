@@ -18,7 +18,7 @@ import {
   type PackedMember,
   type StagedFixtureManifest,
 } from '@systemfsoftware/stryker-e2e-core'
-import { type NpmLockfile, NpmLockfileJson, NpmManifestJson } from './__fixtures__/npm-closure.schema.js'
+import { type NpmLockfile, NpmLockfileJson, NpmManifestJson } from '@systemfsoftware/stryker-e2e-core'
 
 const Feature = makeFeature({ it })
 
@@ -38,6 +38,7 @@ const VERSION_ABSENT_FROM_THE_REGISTRY = '9999.0.0'
 
 const manifestOf = (name: string, dependencies: Record<string, string>): PackedManifest => ({
   name,
+  version: VERSION_ABSENT_FROM_THE_REGISTRY,
   dependencies,
 })
 

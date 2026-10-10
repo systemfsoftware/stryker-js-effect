@@ -1,0 +1,16 @@
+{
+  "$schema": "https://v2-10-1.turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/pnpm-workspace.yaml",
+        "$TURBO_ROOT$/turbo.json",
+        "$TURBO_ROOT$/packages/*/package.json",
+        "$TURBO_ROOT$/packages/*/*/package.json",
+        "$TURBO_ROOT$/test/e2e/testResources/**"
+      ]
+    }
+  }
+}

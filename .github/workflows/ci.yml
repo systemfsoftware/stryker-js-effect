@@ -353,9 +353,27 @@ jobs:
       # the `if: always()` telemetry steps run inside the job's 30-minute budget. A cancelled job also
       # runs `if: always()` steps, but only within GitHub's 5-minute cancellation window.
       - name: E2E lane
+        id: lane
+        env:
+          STRYKER_E2E_BAKE_RECORD: ${{ runner.temp }}/e2e-bake.json
         run: >-
           timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e -- ${{ matrix.files }}
           ${{ startsWith(matrix.shard, 'rest') && '--exclude=tests/enterprise-mutation-lifecycle.e2e.test.ts --exclude=tests/enterprise-monorepo-sabotage.e2e.test.ts --exclude=tests/svelte-app.e2e.test.ts --exclude=tests/enterprise-composite-checker.e2e.test.ts' || '' }}
+      - name: Bake report
+        if: always()
+        env:
+          RECORD: ${{ runner.temp }}/e2e-bake.json
+          LANE: ${{ steps.lane.outcome }}
+        run: |
+          if [ -f "$RECORD" ]; then
+            jq -r .summary "$RECORD" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.annotations[]' "$RECORD"
+          elif [ "$LANE" = success ]; then
+            echo "::warning title=E2E_BAKE_NO_RECORD::The E2E lane passed but global setup wrote no bake record, so this leg reports no bake state. Next: check that STRYKER_E2E_BAKE_RECORD reaches vitest (turbo.json test:e2e passThroughEnv)."
+          else
+            printf "### Fixture bake\n\n\`E2E_BAKE_NO_RECORD\`: the lane ended (%s) before global setup recorded the bake.\n" "$LANE" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=E2E_BAKE_NO_RECORD::The E2E lane ended ($LANE) before global setup recorded the fixture bake. Next: read the global setup error in the E2E lane log; the e2e-telemetry artifact holds the e2e.setup spans."
+          fi
       - name: Export telemetry
         if: always()
         run: ./test/e2e/scripts/export-traces.ts

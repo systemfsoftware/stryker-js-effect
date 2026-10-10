@@ -19,7 +19,6 @@ const joinChunks = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
 export const packsKeyBytes = (input: PackInput): Uint8Array =>
   joinChunks([
     encodeChunk(`image\0${input.baseImage}\0`),
-    encodeChunk('bake\0'),
     input.bakeScript,
     encodeChunk('\0'),
     ...[...input.packs]

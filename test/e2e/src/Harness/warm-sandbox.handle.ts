@@ -48,7 +48,6 @@ export const isSandboxFork = SandboxForkDef.is
 
 const sandboxOf = (forked: SandboxFork): Sandbox => SandboxForkDef.slot(forked).sandbox
 
-const IDLE_WORKLOAD = ['tail', '-f', '/dev/null'] as const
 const HOST_ACCESS_PROFILES = ['public', 'host'] as const
 const STOP_TIMEOUT_MS = 10_000
 const KILL_TIMEOUT_MS = 5_000
@@ -69,9 +68,7 @@ const bootAndCapture = (bakedFixtureDir: string, fixtureId: string, snapshotName
   Effect.scoped(Effect.gen(function*() {
     const jobs = yield* GuestJobs
     const step = `boot the warm ${fixtureId} microVM`
-    const vm = yield* jobs.job(IDLE_WORKLOAD, [{ host: bakedFixtureDir, guest: GuestJobs.GUEST_BAKED_ROOT }])
-      .scoped
-      .pipe(Effect.mapError((cause) => new GuestJobFailure({ step, cause })))
+    const vm = yield* jobs.boot(step, [{ host: bakedFixtureDir, guest: GuestJobs.GUEST_BAKED_ROOT }])
     const populated = yield* MicroVM.exec(vm, 'sh', ['-c', populateScript]).pipe(
       Effect.mapError((cause) => new GuestJobFailure({ step, cause })),
     )

@@ -1,6 +1,7 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
 import * as Equal from 'effect/Equal'
+import * as Rec from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -10,7 +11,12 @@ import {
   resolveCatalogSpecs,
   type WorkspaceCatalogs,
 } from '../catalog-resolution.js'
-import { MalformedFixtureManifest, UnresolvedCatalogSpec } from '../catalog-resolution.schema.js'
+import {
+  DependencySpecs,
+  MalformedFixtureManifest,
+  UnresolvedCatalogSpec,
+  WorkspaceCatalogsYaml,
+} from '../catalog-resolution.schema.js'
 
 const MANIFEST = 'fixture/package.json'
 const DEFAULT_SENTINEL = 'default-catalog-sentinel'
@@ -146,20 +152,22 @@ describe('parseFixtureManifest', () => {
 
 describe('parseWorkspaceCatalogs', () => {
   it.prop(
-    '∀c_WorkspaceDefaultCatalogSection_≡DefaultCatalog',
-    { of: [nameArb, rangeArb], subject: parseWorkspaceCatalogs },
-    (subject, [packageName, range]) => {
-      const catalogs = subject(`catalog:\n  ${packageName}: ${range}\n`)
-      return Equal.equals(catalogs, { default: { [packageName]: range }, named: {} })
-    },
+    '∀s_WorkspaceCatalogSection_≡DefaultCatalog',
+    { of: [DependencySpecs], subject: parseWorkspaceCatalogs },
+    (subject, [specs]) => Equal.equals(subject(`catalog: ${JSON.stringify(specs)}\n`), { default: specs, named: {} }),
   )
 
   it.prop(
-    '∀c_WorkspaceNamedCatalogSection_≡NamedCatalog',
-    { of: [catalogNameArb, nameArb, rangeArb], subject: parseWorkspaceCatalogs },
-    (subject, [catalogName, packageName, range]) => {
-      const catalogs = subject(`catalogs:\n  ${catalogName}:\n    ${packageName}: ${range}\n`)
-      return Equal.equals(catalogs, { default: {}, named: { [catalogName]: { [packageName]: range } } })
-    },
+    '∀s_WorkspaceCatalogsDefaultSection_≡DefaultCatalog',
+    { of: [DependencySpecs], subject: parseWorkspaceCatalogs },
+    (subject, [specs]) =>
+      Equal.equals(subject(`catalogs: ${JSON.stringify({ default: specs })}\n`), { default: specs, named: {} }),
+  )
+
+  it.prop(
+    '∀w_WorkspaceCatalogsSection_≡NamedCatalogsWithoutDefault',
+    { of: [WorkspaceCatalogsYaml], subject: parseWorkspaceCatalogs },
+    (subject, [workspace]) =>
+      Equal.equals(subject(JSON.stringify(workspace)).named, Rec.remove(workspace.catalogs ?? {}, 'default')),
   )
 })

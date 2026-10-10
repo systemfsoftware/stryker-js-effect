@@ -15,6 +15,7 @@
     "clean": "rimraf dist",
     "build": "tsdown",
     "typecheck": "tsc -b",
+    "fixtures:lock": "tsx --conditions=@systemfsoftware/source scripts/lock-fixtures.ts",
     "test": "vitest run",
     "mutation": "stryker run",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
@@ -24,7 +25,8 @@
     "@systemfsoftware/effect-cell-types": "catalog:",
     "@systemfsoftware/stryker-js-cli-contract": "workspace:^",
     "@systemfsoftware/stryker-js-plugin-interface": "workspace:^",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
@@ -51,6 +53,7 @@
     "rimraf": "catalog:",
     "ts-morph": "catalog:",
     "tsdown": "catalog:",
+    "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

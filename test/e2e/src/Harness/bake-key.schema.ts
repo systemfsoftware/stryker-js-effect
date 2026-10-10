@@ -2,41 +2,11 @@ import { Schema } from 'effect'
 
 export const PackedPackage = Schema.Struct({
   name: Schema.String,
-  version: Schema.String,
   fileName: Schema.String,
   tarballPath: Schema.String,
 })
 
 export type PackedPackage = typeof PackedPackage.Type
-
-export class FoundPackage extends Schema.TaggedClass<FoundPackage>()('Found', { pack: PackedPackage }) {}
-
-export class MissingTarball extends Schema.TaggedClass<MissingTarball>()('MissingTarball', {
-  prefix: Schema.String,
-  directory: Schema.String,
-}) {}
-
-export const PackedPackageLookup = Schema.Union([FoundPackage, MissingTarball])
-
-export type PackedPackageLookup = typeof PackedPackageLookup.Type
-
-export const TurboTask = Schema.Struct({
-  command: Schema.optional(Schema.String),
-  package: Schema.optional(Schema.String),
-  taskId: Schema.String,
-})
-
-export const TurboDryRun = Schema.Struct({ tasks: Schema.Array(TurboTask) })
-
-export class TurboClosure extends Schema.TaggedClass<TurboClosure>()('Closure', {
-  packages: Schema.Array(Schema.String),
-}) {}
-
-export class MalformedClosure extends Schema.TaggedClass<MalformedClosure>()('Malformed', {}) {}
-
-export const TurboDryClosure = Schema.Union([TurboClosure, MalformedClosure])
-
-export type TurboDryClosure = typeof TurboDryClosure.Type
 
 export const FixtureKeys = Schema.Record(Schema.String, Schema.String)
 
@@ -46,6 +16,10 @@ export const BakeOutcome = Schema.Struct({
   root: Schema.String,
   keys: FixtureKeys,
   lease: Schema.String,
+  baked: Schema.Number,
+  locks: FixtureKeys,
+  bootSeconds: Schema.NullOr(Schema.Number),
+  installSeconds: Schema.NullOr(Schema.Number),
 })
 
 export type BakeOutcome = typeof BakeOutcome.Type

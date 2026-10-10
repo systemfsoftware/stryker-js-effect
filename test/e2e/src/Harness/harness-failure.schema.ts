@@ -1,4 +1,5 @@
 import { MicroVM } from '@systemfsoftware/effect-microsandbox'
+import { overBudgetReason } from '@systemfsoftware/stryker-e2e-core'
 import type { MalformedFixtureManifest, UnresolvedCatalogSpec } from '@systemfsoftware/stryker-e2e-core'
 import { Match, Schema } from 'effect'
 import type { Config } from 'effect'
@@ -57,6 +58,16 @@ export class ExitFailure extends Schema.TaggedError<ExitFailure>()('ExitFailure'
   }
 }
 
+export class BakeOverBudgetFailure extends Schema.TaggedError<BakeOverBudgetFailure>()('BakeOverBudgetFailure', {
+  budgetSeconds: Schema.Number,
+  fixtures: Schema.Array(Schema.String),
+  bootSeconds: Schema.NullOr(Schema.Number),
+}) {
+  override get message(): string {
+    return overBudgetReason(this).detail
+  }
+}
+
 export class FixtureMissingFailure extends Schema.TaggedError<FixtureMissingFailure>()('FixtureMissingFailure', {
   directory: Schema.String,
 }) {
@@ -85,6 +96,7 @@ export class SandboxForkFailure extends Schema.TaggedError<SandboxForkFailure>()
 }
 
 export type HarnessFailure =
+  | BakeOverBudgetFailure
   | ExitFailure
   | FixtureMissingFailure
   | GuestJobFailure

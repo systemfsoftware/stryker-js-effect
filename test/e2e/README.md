@@ -9,9 +9,7 @@ The suite resolves the workspace closure of the CLI and its plugins, packs each 
 - Full mutation runs against realistic test suites
 - Exit codes and typed machine-mode JSON error envelopes on failure
 
-The closure installs in one `npm install` with no `@systemfsoftware` workspace package taken from the registry. `pnpm pack` rewrites a workspace alias (`"@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^"`) to `npm:<target>@^<version>`, and npm resolves an `npm:` spec from the registry even when the target's tarball is in the same install. So the install passes every packed tarball plus one `<alias>@file:<target tarball>` spec per alias edge between closure members (`installClosure` in `@systemfsoftware/stryker-e2e-core`). Global setup fails, naming the edge, instead of reaching the registry when a packed member depends on a workspace package the closure did not pack (`UnpackedWorkspaceDependency`), when one alias name would install two different packages (`ConflictingAliasTargets`), or when a fixture manifest names a workspace package itself (`FixtureNamesWorkspacePackage`). The closure is installed into every fixture, so a fixture never names it.
-
-Both bake installs resolve registry dependencies fresh, so they pass `--min-release-age=1`: a release less than a day old never reaches a fixture. A half-published release, such as `@effect/platform-node@4.0.3` declaring a peer `effect@^4.0.3` that was not yet on the registry, otherwise leaves npm resolving forever. Each install runs under a 300 s `timeout`, with a KILL 10 s later for an npm that ignores TERM. When one runs over, the bake fails and its stderr, which global setup reports, names the fixture and the step that ran over. The guest's `timeout` is busybox, which exits with the killed command's status (143 or 137) rather than GNU's 124, so the script decides "ran over" from elapsed time, not from the exit code.
+Each fixture installs its committed `package-lock.json` with one `npm ci`, and no `@systemfsoftware` workspace package comes from the registry. The staged fixture manifest lists every packed closure member, plus one entry per alias edge between members, as a `file:` dependency on its versionless tarball, `../../packs/<scope>-<name>.tgz` (`stagedFixtureOf` and `installClosure` in `@systemfsoftware/stryker-e2e-core`). The alias entries exist because `pnpm pack` rewrites a workspace alias (`"@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^"`) to `npm:<target>@^<version>`, which npm would otherwise resolve from the registry. Global setup fails, naming the edge, instead of reaching the registry when a packed member depends on a workspace package the closure did not pack (`UnpackedWorkspaceDependency`), when one alias name would install two different packages (`ConflictingAliasTargets`), or when a fixture manifest names a workspace package itself (`FixtureNamesWorkspacePackage`). The closure is staged into every fixture, so a fixture never names it.
 
 ## Running locally
 
@@ -37,9 +35,33 @@ OTEL_ENABLED=true pnpm --filter @systemfsoftware/stryker-e2e exec vitest run tes
 
 ### Fixture cache
 
-Global setup keys the prepared fixtures on two inputs: the packed closure (base image, `tests/__fixtures__/bake-fixtures.sh`, and the unpacked contents of every packed tarball) and, separately, each fixture's own source files with its manifests resolved against the catalogs in the repo-root `pnpm-workspace.yaml`. The cache holds `node_modules/.cache/stryker-e2e/baked/<packs-key>/<fixtureId>.<fixture-key>`, so editing one fixture re-bakes that fixture alone; editing a workspace package or a catalog entry lands a new closure key and re-bakes its fixture set, with no manual invalidation.
+Global setup keys the prepared fixtures on two inputs: the packed closure (base image, `test/e2e-core/bake/bake-fixtures.sh`, and the unpacked contents of every packed tarball) and, separately, each fixture's own source files, its committed lock included, with its manifests staged the way the bake installs them. The cache holds `node_modules/.cache/stryker-e2e/baked/<packs-key>/<fixtureId>.<fixture-key>`, so editing one fixture re-bakes that fixture alone; editing a workspace package or a catalog entry lands a new closure key and re-bakes its fixture set, with no manual invalidation.
 
 A run leases its entry for as long as it lives and prunes unleased entries of other keys from its global teardown, so concurrent runs sharing the cache do not delete each other's entries.
+
+### Committed fixture locks
+
+Every fixture under `testResources/` commits a `package-lock.json`, and the bake installs it with `npm ci`, so the bake makes no resolution choice and a new registry release cannot change a fixture. Closure members appear in the lock as `file:` entries without `version` or `integrity`, so a workspace release leaves every lock unchanged and `npm ci` installs the freshly packed tarball.
+
+Regenerate the locks after changing a fixture manifest, a catalog entry, an `effect` or `@effect/*` version in `pnpm-lock.yaml`, or a closure member's dependencies, then commit them:
+
+```bash
+pnpm --filter @systemfsoftware/stryker-e2e-core fixtures:lock
+```
+
+The `@systemfsoftware/stryker-e2e-core` `test` task checks every lock offline against the staged manifest, the packed closure and the root pins, and prints one `E2E_PINS_DRIFT: <fixture>: <finding>. Next: …` line per problem, so a stale lock fails `check` before any e2e lane runs.
+
+Each `npm ci` runs under a 300 s `timeout`, with a KILL 10 s later, in four parallel lanes, and the whole bake has a budget of ⌈fixtures / 4⌉ × 310 s + 30 s. The guest's `timeout` is busybox, which exits with the killed command's status (143 or 137) rather than GNU's 124, so the script decides "ran over" from elapsed time. Each e2e leg's step summary reports the bake (`BAKE_HIT`, `BAKE_PARTIAL` or `BAKE_FULL`, with each lock's digest); a failed bake names its reason there and in a `::error` annotation:
+
+| Code                       | Meaning                                                                                                                                             |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `E2E_BAKE_STALLED`         | An `npm ci` ran past its deadline. Names the fixture and the deadline.                                                                              |
+| `E2E_BAKE_TARBALL_MISSING` | A lock names a closure tarball the harness did not pack. Names the tarball.                                                                         |
+| `E2E_BAKE_FAILED`          | `npm ci` failed for another reason. Names the fixture and npm's first error line.                                                                   |
+| `E2E_BAKE_OVER_BUDGET`     | The whole bake ran past its budget. Names the phase it was in: pulling the guest image and booting the microVM, or installing (with the boot time). |
+| `E2E_BAKE_ARGV`            | The harness called the bake script with the wrong arguments.                                                                                        |
+| `E2E_SETUP_FAILED`         | Global setup failed before the bake finished.                                                                                                       |
+| `E2E_BAKE_NO_RECORD`       | Global setup wrote no bake record, so the leg reports no bake state.                                                                                |
 
 ### Warm snapshots and forks
 
