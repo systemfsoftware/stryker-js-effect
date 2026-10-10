@@ -294,7 +294,7 @@ const closureAnalysisOf = (
   Effect.option(
     analyzeImportClosure({
       rootDir: input.basePath,
-      projectFiles: Arr.dedupe([...MutableHashMap.keys(input.project.files), ...input.project.testFiles]),
+      projectFiles: Arr.dedupe([...input.project.files.keys(), ...input.project.testFiles]),
       testFiles: closureTestFilesOf(input),
       globalInputs: input.globalTestInputs.map((file) => input.originalFileOf(file)),
       ...(input.observedModules === undefined ? {} : { observedModules: input.observedModules }),

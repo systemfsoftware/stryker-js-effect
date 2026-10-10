@@ -1,17 +1,14 @@
-import type { JsonValue } from '@std/jsonc'
-import { parse } from '@std/jsonc'
 import { Blueprint } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { ErrorText, Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import { Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Boolean, Predicate, Schema as S } from 'effect'
+import { type Format, Instrument } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Boolean } from 'effect'
 import * as Config from 'effect/Config'
 import * as Context from 'effect/Context'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
-import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
@@ -23,9 +20,9 @@ import * as Stream from 'effect/Stream'
 import { matchesFile } from './FileMatcher.js'
 import { FileMatcher } from './matching.schema.js'
 import { ProjectFiles } from './project-files.service.js'
-import type { Project, ProjectFile } from './Project.schema.js'
+import { type Project, withPreprocessedFiles } from './Project.schema.js'
+import { sandboxTsconfigCell } from './sandbox-tsconfig.cell.js'
 import { make as makeHandle, type SandboxHandle } from './Sandbox.handle.js'
-import { ExtendsArraySchema, type TSConfig, TsConfigSchema } from './Sandbox.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
 
 export interface MakeSandboxInput {
@@ -39,50 +36,23 @@ export interface MakeSandboxInput {
 
 export type FilePreprocessor = (
   project: Project,
-) => Effect.Effect<void, PlatformError | StrykerError, FileSystem.FileSystem | Path.Path | ProjectFiles>
+) => Effect.Effect<Project, PlatformError | StrykerError, FileSystem.FileSystem | Path.Path | ProjectFiles>
 
-const combinePreprocessors = (preprocessors: readonly FilePreprocessor[]) => (project: Project) =>
-  Effect.forEach(preprocessors, (pre) => pre(project), { discard: true })
+const combinePreprocessors = (preprocessors: readonly FilePreprocessor[]): FilePreprocessor => (project) =>
+  Effect.reduce(preprocessors, () => project, (current, preprocess) => preprocess(current))
 
-const mergeUpdatedFile = (project: Project, updated: ProjectFile): void => {
-  MutableHashMap.set(project.files, updated.name, updated)
-  Option.match(MutableHashMap.get(project.filesToMutate, updated.name), {
-    onNone: () => undefined,
-    onSome: () => MutableHashMap.set(project.filesToMutate, updated.name, updated),
-  })
-}
-
-const updateOf = (updated: ProjectFile | Option.Option<ProjectFile> | undefined) =>
-  Match.value(updated).pipe(
-    Match.when(undefined, () => undefined),
-    Match.when(Option.isOption, (option) => Option.getOrUndefined(option)),
-    Match.orElse((file) => file),
-  )
-
-const mergeUpdatedInto = (project: Project) => (updated: ProjectFile | Option.Option<ProjectFile> | undefined) => {
-  const file = updateOf(updated)
-  Option.match(Option.fromUndefinedOr(file), {
-    onNone: () => undefined,
-    onSome: (present) => mergeUpdatedFile(project, present),
-  })
-}
-
-const makeDisableTypeChecksPreprocessor = (
-  options: Options.StrykerOptions,
-  registry: Format.FormatRegistry,
-  impl: typeof Instrument.disableTypeChecks,
-) =>
+const makeDisableTypeChecksPreprocessor = (options: Options.StrykerOptions, registry: Format.FormatRegistry) =>
   Effect.fn(SpanTaxonomy.Spans.sandboxPreprocessDisableTypeChecks.name)(function*(project: Project) {
     const pathService = yield* Path.Path
     const files = yield* ProjectFiles
     const matcher = FileMatcher.make({ pattern: options.disableTypeChecks, allowHiddenFiles: true })
-    const matched = [...project.files].filter(([name]) => matchesFile(matcher, pathService, name))
-    const instrumented = yield* files.readAll(matched.map(([, file]) => file))
+    const matched = [...project.files.values()].filter((file) => matchesFile(matcher, pathService, file.name))
+    const instrumented = yield* files.readAll(matched)
     const updates = yield* Effect.forEach(
       instrumented,
       ([file, content]) =>
         Effect.map(
-          impl({ content, mutate: file.mutate, name: file.name }, registry).pipe(
+          Instrument.disableTypeChecks({ content, mutate: file.mutate, name: file.name }, registry).pipe(
             Effect.map((instrumentedFile) => instrumentedFile.content),
             Effect.mapError((cause) => StrykerError.make({ message: 'disableTypeChecks failed', cause })),
           ),
@@ -90,222 +60,19 @@ const makeDisableTypeChecksPreprocessor = (
         ),
       { concurrency: 'unbounded' },
     )
-    updates.forEach(mergeUpdatedInto(project))
+    return withPreprocessedFiles(project, updates)
   })
 
-const parseJsonText = (jsonText: string): Effect.Effect<JsonValue, string> =>
-  Effect.try({
-    try: () => parse(jsonText.replace(/^\uFEFF/, '')),
-    catch: (cause) => Option.getOrElse(Option.map(ErrorText.errorTextOf(cause), (rendered) => rendered.text), () => ''),
-  })
-
-const tsConfigShapeOf = (parsed: JsonValue): Option.Option<TSConfig> =>
-  Option.filter(Option.some(parsed), S.is(TsConfigSchema))
-
-const parseTsConfig = (fileName: string, jsonText: string): Effect.Effect<TSConfig, string> =>
-  Effect.flatMap(parseJsonText(jsonText), (parsed) =>
-    Effect.fromOption(
-      tsConfigShapeOf(parsed),
-      () => `parsed to ${JSON.stringify(parsed)}, which does not match the tsconfig shape this package consumes`,
-    ))
-
-const makeTSConfigPreprocessor = (options: Options.StrykerOptions, basePath: string): FilePreprocessor => {
-  const rewriteReferenceOrKeep = (reference: string, tsconfigFileName: string, pathService: Path.Path) =>
-    Match.value(tryRewriteReference(reference, tsconfigFileName, pathService, basePath)).pipe(
-      Match.when(Predicate.isString, (rewritten) => rewritten),
-      Match.orElse(() => reference),
-    )
-
-  const isStringArray = (value: unknown): value is readonly string[] =>
-    Array.isArray(value) && value.every((entry) => typeof entry === 'string')
-
-  const rewriteFileArrayProperty = (
-    config: TSConfig,
-    tsconfigFileName: string,
-    prop: 'exclude' | 'files' | 'include',
-    pathService: Path.Path,
-  ): void => {
-    const value = config[prop]
-    Option.match(Option.filter(Option.fromUndefinedOr(value), isStringArray), {
-      onSome: (entries) => {
-        config[prop] = entries.map((entry) => rewriteReferenceOrKeep(entry, tsconfigFileName, pathService))
-      },
-      onNone: () => undefined,
-    })
-  }
-
-  const rewriteFileArrayProperties = Effect.fn(SpanTaxonomy.Spans.sandboxTsconfigRewriteFileArrays.name)(function*(
-    config: TSConfig,
-    tsconfigFile: ProjectFile,
-    tsconfigFileName: string,
-    pathService: Path.Path,
-  ) {
-    rewriteFileArrayProperty(config, tsconfigFileName, 'include', pathService)
-    rewriteFileArrayProperty(config, tsconfigFileName, 'exclude', pathService)
-    rewriteFileArrayProperty(config, tsconfigFileName, 'files', pathService)
-    const rewritten = yield* S.encodeEffect(S.fromJsonString(TsConfigSchema, { space: 2 }))(
-      config,
-    ).pipe(Effect.orDie)
-    Object.assign(tsconfigFile, { content: rewritten })
-  })
-
-  const rewriteTSConfigFile = (
-    project: Project,
-    tsconfigFileName: string,
-    pathService: Path.Path,
-  ): Effect.Effect<void, PlatformError, ProjectFiles> =>
-    Effect.flatMap(ProjectFiles, (files) =>
-      Option.match(MutableHashMap.get(project.files, tsconfigFileName), {
-        onNone: () => Effect.void,
-        onSome: (tsconfigFile) =>
-          Effect.flatMap(
-            files.read(tsconfigFile),
-            (content) =>
-              Effect.matchEffect(parseTsConfig(tsconfigFileName, content), {
-                onFailure: (reason) =>
-                  Effect.logWarning(
-                    `Could not rewrite tsconfig file "${tsconfigFileName}": ${reason}. Its extends, project references, and file array properties were not rewritten for the sandbox, so this file still points at paths outside it.`,
-                  ),
-                onSuccess: (config) =>
-                  Effect.all(
-                    [
-                      rewriteExtends(config, tsconfigFileName, pathService, project),
-                      rewriteProjectReferences(config, tsconfigFileName, pathService, project),
-                    ],
-                    { discard: true },
-                  ).pipe(
-                    Effect.flatMap(() =>
-                      rewriteFileArrayProperties(config, tsconfigFile, tsconfigFileName, pathService)
-                    ),
-                  ),
-              }),
-          ),
-      }))
-
-  const rewriteExtendsEntry = (
-    config: TSConfig,
-    extend: string,
-    tsconfigFileName: string,
-    pathService: Path.Path,
-    project: Project,
-  ): Effect.Effect<string, PlatformError, ProjectFiles> =>
-    Match.value(tryRewriteReference(extend, tsconfigFileName, pathService, basePath)).pipe(
-      Match.when(Predicate.isString, (rewritten) => Effect.succeed(rewritten)),
-      Match.orElse(() =>
-        rewriteTSConfigFile(
-          project,
-          pathService.resolve(pathService.dirname(tsconfigFileName), extend),
-          pathService,
-        ).pipe(Effect.as(extend))
+const makeTSConfigPreprocessor = (options: Options.StrykerOptions, basePath: string): FilePreprocessor => (project) =>
+  Boolean.match(options.inPlace, {
+    onTrue: () => Effect.succeed(project),
+    onFalse: () =>
+      Effect.flatMap(
+        Path.Path,
+        (pathService) =>
+          sandboxTsconfigCell.run({ project, fileName: pathService.resolve(options.tsconfigFile), basePath }),
       ),
-    )
-
-  const rewriteSingleExtends = (
-    config: TSConfig,
-    extend: string,
-    tsconfigFileName: string,
-    pathService: Path.Path,
-    project: Project,
-  ): Effect.Effect<void, PlatformError, ProjectFiles> =>
-    Effect.flatMap(rewriteExtendsEntry(config, extend, tsconfigFileName, pathService, project), (rewritten) => {
-      config.extends = rewritten
-      return Effect.void
-    })
-
-  const rewriteExtendsArray = (
-    config: TSConfig,
-    extendEntries: readonly string[],
-    tsconfigFileName: string,
-    pathService: Path.Path,
-    project: Project,
-  ): Effect.Effect<void, PlatformError, ProjectFiles> =>
-    Effect.forEach(extendEntries, (entry) => rewriteExtendsEntry(config, entry, tsconfigFileName, pathService, project))
-      .pipe(
-        Effect.flatMap((rewritten) => {
-          config.extends = rewritten
-          return Effect.void
-        }),
-      )
-
-  const rewriteExtends = (
-    config: TSConfig,
-    tsconfigFileName: string,
-    pathService: Path.Path,
-    project: Project,
-  ): Effect.Effect<void, PlatformError, ProjectFiles> =>
-    Match.value(config.extends).pipe(
-      Match.when(Predicate.isString, (extend) =>
-        rewriteSingleExtends(config, extend, tsconfigFileName, pathService, project)),
-      Match.when(S.is(ExtendsArraySchema), (extendEntries) =>
-        rewriteExtendsArray(config, extendEntries, tsconfigFileName, pathService, project)),
-      Match.orElse(() =>
-        Effect.void
-      ),
-    )
-
-  const referencedTsConfigPath = (referencePath: string) =>
-    Boolean.match(referencePath.endsWith('.json'), {
-      onTrue: () => referencePath,
-      onFalse: () => `${referencePath}/tsconfig.json`,
-    })
-
-  const rewriteReference = (
-    ref: { path: string },
-    originTSConfigFileName: string,
-    pathService: Path.Path,
-    project: Project,
-  ): Effect.Effect<void, PlatformError, ProjectFiles> =>
-    Match.value(tryRewriteReference(ref.path, originTSConfigFileName, pathService, basePath)).pipe(
-      Match.when(Predicate.isString, (rewritten) => {
-        ref.path = rewritten
-        return Effect.void
-      }),
-      Match.orElse(() =>
-        rewriteTSConfigFile(
-          project,
-          pathService.resolve(pathService.dirname(originTSConfigFileName), referencedTsConfigPath(ref.path)),
-          pathService,
-        )
-      ),
-    )
-
-  const rewriteProjectReferences = (
-    config: TSConfig,
-    originTSConfigFileName: string,
-    pathService: Path.Path,
-    project: Project,
-  ): Effect.Effect<void, PlatformError, ProjectFiles> =>
-    Option.match(Option.fromUndefinedOr(config.references), {
-      onNone: () => Effect.void,
-      onSome: (references) =>
-        Effect.forEach(references, (ref) => rewriteReference(ref, originTSConfigFileName, pathService, project)).pipe(
-          Effect.asVoid,
-        ),
-    })
-
-  return (project) =>
-    Boolean.match(options.inPlace, {
-      onTrue: () => Effect.void,
-      onFalse: () =>
-        Effect.flatMap(Path.Path, (pathService) =>
-          rewriteTSConfigFile(project, pathService.resolve(options.tsconfigFile), pathService)),
-    })
-}
-
-const tryRewriteReference = (
-  reference: string,
-  originTSConfigFileName: string,
-  pathService: Path.Path,
-  basePath: string,
-) => {
-  const fileName = pathService.resolve(pathService.dirname(originTSConfigFileName), reference)
-  const relativeToSandbox = pathService.relative(basePath, fileName)
-  return Boolean.match(relativeToSandbox.startsWith('..'), {
-    onTrue: () =>
-      ['..', '..', Option.getOrElse(S.decodeOption(Mutant.CanonicalFileName)(reference), () => reference)].join('/'),
-    onFalse: () => false as const,
   })
-}
 
 const createPreprocessor = (
   options: Options.StrykerOptions,
@@ -313,7 +80,7 @@ const createPreprocessor = (
   registry: Format.FormatRegistry,
 ): FilePreprocessor =>
   combinePreprocessors([
-    makeDisableTypeChecksPreprocessor(options, registry, Instrument.disableTypeChecks),
+    makeDisableTypeChecksPreprocessor(options, registry),
     makeTSConfigPreprocessor(options, basePath),
   ])
 
@@ -666,13 +433,13 @@ const acquireSandbox = Effect.fn(SpanTaxonomy.Spans.sandboxAcquire.name)(functio
     createPreprocessor(options, basePath, spec.formatRegistry),
     ...spec.preprocessors,
   ])
-  yield* preprocessor(project).pipe(
+  const preprocessed = yield* preprocessor(project).pipe(
     Effect.mapError((cause) => StrykerError.make({ message: 'Sandbox preprocessor failed', cause })),
   )
   const files = yield* ProjectFiles
   const entries = yield* Boolean.match(options.inPlace, {
-    onTrue: () => files.writeAllInPlace([...project.files], { backupDirectory, basePath }),
-    onFalse: () => files.writeAllToSandbox([...project.files], { workingDirectory, basePath }),
+    onTrue: () => files.writeAllInPlace(preprocessed.files, { backupDirectory, basePath }),
+    onFalse: () => files.writeAllToSandbox(preprocessed.files, { workingDirectory, basePath }),
   })
   const fileMap = toFileMap(entries)
 

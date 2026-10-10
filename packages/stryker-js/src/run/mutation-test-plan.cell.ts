@@ -92,7 +92,7 @@ const readPlanCommand = Effect.fn(SpanTaxonomy.Spans.mutationTestPlanRead.name)(
     const sandboxFileByName: Record<string, string> = Object.fromEntries(
       yield* sandboxFilesOf({
         sandbox: input.sandbox,
-        fileNames: [...MutableHashMap.keys(input.project.filesToMutate)],
+        fileNames: [...input.project.filesToMutate.keys()],
       }),
     )
     const command = planCommandOf(
