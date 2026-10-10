@@ -78,6 +78,10 @@ const checkerBreachToStageError = (error: CheckerContractBroken | Checker.Checke
         }`,
         cause: breach,
       })),
+    Match.tag(
+      'CheckerIgnoredWithoutRule',
+      (breach) => StageError.make({ stage: 'mutationTest', reason: breach.message, cause: breach }),
+    ),
     Match.exhaustive,
   )
 
@@ -105,6 +109,7 @@ const onCheckerSlot = <A>(
             CheckerFailed: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
             CheckerAnsweredUnrequested: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
             CheckerSkippedRequested: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
+            CheckerIgnoredWithoutRule: (error) => error.pipe(checkerBreachToStageError, Effect.fail),
           }),
         ),
     }))

@@ -533,7 +533,7 @@
         },
         "statusReason": {
           "type": "string",
-          "pattern": "^(?:arid-logging|arid-telemetry|arid-time|arid-config-default|arid-memoization|redundant-relational|equivalent-to-original|duplicate-at-site|ignore-static|directive|excluded-mutator|ignorer): [\\s\\S]*$"
+          "pattern": "^(?:arid-logging|arid-telemetry|arid-time|arid-config-default|arid-memoization|redundant-relational|equivalent-to-original|duplicate-at-site|ignore-static|directive|excluded-mutator|ignorer|checker): [\\s\\S]*$"
         }
       },
       "required": [

@@ -28,6 +28,15 @@ export class ReportFromStreamAbsent extends S.TaggedClass<ReportFromStreamAbsent
   readonly [ReportFromStreamTypeId] = ReportFromStreamTypeId
 }
 
+export class StreamVersionMismatch extends S.TaggedError<StreamVersionMismatch>()('StreamVersionMismatch', {
+  expected: S.String,
+  found: S.String,
+}) {
+  override get message(): string {
+    return `Stream schema ${this.found} cannot be read by a reader of stream schema ${this.expected}. Re-run that shard with the same stryker release as \`stryker merge\`.`
+  }
+}
+
 const presentText = (field: string, value: string | null): Readonly<Record<string, string>> =>
   Option.match(Option.fromNullOr(value), {
     onNone: () => ({}),
@@ -44,6 +53,20 @@ const mutantFromStream = (line: RunEvent.RunMutantTested): Report.MutantResult =
 })
 
 const decodeLineText = S.decodeOption(S.fromJsonString(RunEvent.RunMutantTested))
+
+const decodeVersionNamedLine = S.decodeOption(S.fromJsonString(S.Struct({ schemaVersion: S.String })))
+
+const READER_VERSION = RunEvent.StreamSchemaVersion.literal
+
+const majorOf = (version: string): string => Option.getOrElse(Arr.head(version.split('.')), () => version)
+
+const namedVersions = (text: string): readonly string[] =>
+  text.split('\n').flatMap((raw) =>
+    Option.toArray(decodeVersionNamedLine(raw.trim())).map((line) => line.schemaVersion)
+  )
+
+const mismatchedVersion = (text: string): Option.Option<string> =>
+  Arr.findFirst(namedVersions(text), (version) => majorOf(version) !== majorOf(READER_VERSION))
 
 const streamLines = (text: string) => text.split('\n').flatMap((raw) => Option.toArray(decodeLineText(raw.trim())))
 
@@ -72,9 +95,12 @@ const decideReportFromStream = (command: ReportFromStreamCommand): ReportFromStr
 export const reportFromStream = Workflow.make({
   command: ReportFromStreamCommand,
   decision: S.Union([ReportFromStreamRebuilt, ReportFromStreamAbsent]),
-  error: S.Never,
+  error: StreamVersionMismatch,
   decide: (
     command,
-  ): Result.Result<ReportFromStreamRebuilt | ReportFromStreamAbsent, never> =>
-    Result.succeed(decideReportFromStream(command)),
+  ): Result.Result<ReportFromStreamRebuilt | ReportFromStreamAbsent, StreamVersionMismatch> =>
+    Option.match(mismatchedVersion(command.text), {
+      onNone: () => Result.succeed(decideReportFromStream(command)),
+      onSome: (found) => Result.fail(StreamVersionMismatch.make({ expected: READER_VERSION, found })),
+    }),
 })

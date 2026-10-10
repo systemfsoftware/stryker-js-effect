@@ -202,6 +202,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     completedRef: yield* Ref.make(0),
     plannedTotal: plan.plannedTotal,
     plannedMutants: [...rememberedResults, ...reuse.mutants],
+    rememberedMutantIds: rememberedResults.map((result) => result.id),
     pathService: yield* Path.Path,
   }
   const settledResults = [
@@ -268,10 +269,9 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     }),
   )
   const outcomeResult = yield* reporting.reportAll({
-    ...reportingInputOf({ prev: basis, env, results: allResults }),
+    ...reportingInputOf({ prev: basis, env, results: allResults, rememberedMutantIds: context.rememberedMutantIds }),
     closureDigestsByMutantId: settlement.closureDigestsByMutantId,
     timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
-    rememberedMutantIds: reuse.rememberedResults.map((result) => result.id),
     ...optionalField('programDigest', reuse.programDigest),
   })
   yield* Fiber.await(checkerRelease)

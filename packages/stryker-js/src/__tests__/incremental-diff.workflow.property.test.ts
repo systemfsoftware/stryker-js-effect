@@ -52,15 +52,19 @@ const recordOf = (
   status: Mutant.MutantStatus,
   closureDigest: string | undefined,
   overrides: Partial<PreviousReuseRecord> = {},
-): PreviousReuseRecord => ({
-  mutantId,
-  status,
-  ...(closureDigest === undefined ? {} : { closureDigest }),
-  engineDigest: 'engine',
-  mutantSetPolicy: 'default',
-  runInputsDigest: 'run-inputs',
-  ...overrides,
-})
+): PreviousReuseRecord => {
+  const fields = {
+    mutantId,
+    engineDigest: 'engine',
+    mutantSetPolicy: 'default' as const,
+    runInputsDigest: 'run-inputs',
+    ...(closureDigest === undefined ? {} : { closureDigest }),
+    ...overrides,
+  }
+  return status === 'Ignored'
+    ? { ...fields, status: 'Ignored', statusReason: 'ignorer: the provider said so' }
+    : { ...fields, status }
+}
 
 interface CommandFields {
   readonly closureDigestsByMutantId?: Readonly<Record<string, string>>

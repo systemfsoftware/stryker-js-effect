@@ -3,8 +3,9 @@ import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
-import type * as Cause from 'effect/Cause'
+import * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as Layer from 'effect/Layer'
@@ -73,7 +74,35 @@ export const uncheckedWorkspaceFiles: ReadonlyArray<readonly [string, string]> =
   ['test/sample.test.mjs', FAST_TEST_SOURCE],
 ]
 
+const REASONLESS_SOURCE = 'export const reasonless = (value: number): number => value - 1\n'
+
+const reasonlessWorkspaceFiles: ReadonlyArray<readonly [string, string]> = [
+  ['package.json', '{ "type": "commonjs" }\n'],
+  ['src/lib/reasonless.ts', REASONLESS_SOURCE],
+  ['test/sample.test.mjs', FAST_TEST_SOURCE],
+  ['src/lib/kept.ts', KEPT_SOURCE],
+]
+
 export const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+
+export interface RefusedRun {
+  readonly failed: boolean
+  readonly failure: string
+}
+
+export const runReasonlessWorkspace: Effect.Effect<RefusedRun> = Effect.gen(function*() {
+  const root = yield* writeWorkspace(reasonlessWorkspaceFiles)
+  const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
+  const ports = Engine.nodePlatformLayer
+  const runLayer = Layer.merge(Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports), ports)
+  const exit = yield* Engine.mutationTestCell
+    .run({ cliOptions: checkedOptionsOf(root), targetMutatePatterns: undefined })
+    .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit, Effect.ensuring(removeWorkspace(root)))
+  return Exit.match(exit, {
+    onFailure: (cause) => ({ failed: true, failure: Cause.pretty(cause) }),
+    onSuccess: () => ({ failed: false, failure: '' }),
+  })
+}).pipe(Effect.orDie, Effect.provide(filePorts))
 
 export const PLAN_FILE = 'plan.json'
 

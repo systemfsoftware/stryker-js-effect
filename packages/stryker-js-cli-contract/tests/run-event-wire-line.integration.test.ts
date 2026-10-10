@@ -22,7 +22,9 @@ const mutantLine = (status: string, file: string | null, cost: string, reason: s
 
 const reasonOf = (line: string): string | null => {
   const decoded = S.decodeResult(RunEvent.RunEventWireLine)(line)
-  return Result.isSuccess(decoded) && decoded.success._tag === 'mutantTested' ? decoded.success.statusReason : null
+  return Result.isSuccess(decoded) && S.is(RunEvent.RunMutantTested)(decoded.success)
+    ? decoded.success.statusReason
+    : null
 }
 
 const refusalOf = (line: string): string => {

@@ -6,7 +6,7 @@
 
 // @public (undocumented)
 export namespace Checker {
-    export { CheckResult, CheckResultSchema, CheckStatus, Checker, CheckerFailed, CheckerMutantWire, CheckerService, FailedCheckResult, IgnoredCheckResult, PassedCheckResult, ProgramDigest };
+    export { CheckAnswer, CheckAnswerSchema, CheckResult, CheckResultSchema, CheckStatus, Checker, CheckerFailed, CheckerMutantWire, CheckerService, FailedCheckResult, IgnoredCheckResult, PassedCheckResult, ProgramDigest };
 }
 
 // @public (undocumented)

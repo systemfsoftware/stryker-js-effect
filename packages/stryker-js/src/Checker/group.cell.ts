@@ -9,6 +9,7 @@ import * as Result from 'effect/Result'
 import {
   admitCheckerAnswer,
   CheckerAnsweredUnrequested,
+  CheckerIgnoredWithoutRule,
   CheckerSkippedRequested,
 } from '../admit-checker-answer.workflow.js'
 import {
@@ -68,5 +69,6 @@ export const groupCell: Cell.Cell<CheckerRequest, GroupedPlansResult, CheckerCel
       Effect.fail(CheckerSkippedRequested.make({ checkerName: raw.checkerName, phase: 'group', missingIds: [] })),
     CheckerAnsweredUnrequested: (breach) => Effect.fail(CheckerAnsweredUnrequested.make(breach)),
     CheckerSkippedRequested: (breach) => Effect.fail(CheckerSkippedRequested.make(breach)),
+    CheckerIgnoredWithoutRule: (breach) => Effect.fail(CheckerIgnoredWithoutRule.make(breach)),
     CommandRejected: ({ issue }, raw) => Effect.fail(commandFailed({ issue, input: raw })),
   })

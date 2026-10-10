@@ -126,7 +126,7 @@ export interface MutationReportingInput {
   readonly timeOverheadMs: number
   readonly closureDigestsByMutantId?: Readonly<Record<string, string>>
   readonly timeoutEvidenceByMutantId?: Readonly<Record<string, TimeoutEvidence>>
-  readonly rememberedMutantIds?: ReadonlyArray<string>
+  readonly rememberedMutantIds: ReadonlyArray<string>
   readonly programDigest?: string
   readonly concurrency: number
   readonly runStartedAt: number
@@ -312,7 +312,7 @@ const stampClosureDigests = (
 
 const stampRemembered = (
   files: Record<string, Report.FileResult>,
-  rememberedIds: ReadonlyArray<string> | undefined,
+  rememberedIds: ReadonlyArray<string>,
 ): Record<string, Report.FileResult> => {
   const remembered = new Set(rememberedIds)
   return Object.fromEntries(

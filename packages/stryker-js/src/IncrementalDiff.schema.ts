@@ -38,10 +38,8 @@ export const TimeoutEvidenceSchema = S.Struct({
 
 export type TimeoutEvidence = S.Schema.Type<typeof TimeoutEvidenceSchema>
 
-export const PreviousReuseRecordSchema = S.Struct({
+const previousReuseRecordFields = {
   mutantId: Mutant.MutantId,
-  status: Mutant.MutantStatusSchema,
-  statusReason: S.optional(S.String),
   closureDigest: S.optional(S.String),
   programDigest: S.optional(S.String),
   engineDigest: S.String,
@@ -52,7 +50,24 @@ export const PreviousReuseRecordSchema = S.Struct({
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
+}
+
+const PreviousReuseRecordIgnoredSchema = S.Struct({
+  ...previousReuseRecordFields,
+  status: S.Literal('Ignored'),
+  statusReason: Mutant.IgnoreStatusReasonText,
 })
+
+const PreviousReuseRecordSettledSchema = S.Struct({
+  ...previousReuseRecordFields,
+  status: Mutant.SettledStatusSchema,
+  statusReason: S.optional(S.String),
+})
+
+export const PreviousReuseRecordSchema = S.Union([
+  PreviousReuseRecordIgnoredSchema,
+  PreviousReuseRecordSettledSchema,
+])
 
 export type PreviousReuseRecord = S.Schema.Type<typeof PreviousReuseRecordSchema>
 
@@ -137,7 +152,7 @@ if (import.meta.vitest !== void 0) {
     Result.isSuccess(S.decodeUnknownResult(ReuseMutantSchema)(recordLineOf(status, statusReason)))
 
   const namesAnIgnoreRule = (reason: string | undefined): boolean =>
-    reason !== undefined && Mutant.IgnoreRuleId.literals.some((ruleId) => reason.startsWith(`${ruleId}: `))
+    reason !== undefined && Mutant.IgnoreRuleId.members.some(({ literal }) => reason.startsWith(`${literal}: `))
 
   it.prop(
     '∀sr_RecordLineRefusal_≡IgnoredOnlyWithAnIgnoreRuleReason',

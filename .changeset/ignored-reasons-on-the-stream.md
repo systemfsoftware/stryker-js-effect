@@ -8,6 +8,5 @@ Every machine-stream mutant line now carries `statusReason`. An Ignored line nam
 
 Breaking:
 
-- The stream `schemaVersion` is now `7.0`. A mutant line without `statusReason`, or an Ignored line whose reason names no known rule, is refused.
+- The stream `schemaVersion` is now `7.0`. A mutant line without `statusReason`, or an Ignored line whose reason names no known rule, is refused. `stryker merge` refuses a shard stream of another major version, naming both versions.
 - `RunEvent.RunMutantTestedEvent` is removed. Decode with `RunEvent.RunMutantTested`, a union of `RunMutantIgnored` and `RunMutantSettled`, and narrow on `status`.
-- A checker reporting `ignored` must give a reason of the form `<rule-id>: <detail>`.

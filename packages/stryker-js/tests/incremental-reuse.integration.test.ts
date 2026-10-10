@@ -8,6 +8,7 @@ import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Logger from 'effect/Logger'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Queue from 'effect/Queue'
@@ -455,6 +456,33 @@ const asWrittenByAnotherEngine = (text: string): string =>
     () => text,
   )
 
+const STALE_CACHE_VERSION = '4'
+
+const asWrittenUnderOlderLayout = (text: string): string =>
+  Option.getOrElse(
+    Option.flatMap(
+      S.decodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))(text),
+      (report) =>
+        S.encodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))({
+          ...report,
+          incrementalVersion: STALE_CACHE_VERSION,
+        }),
+    ),
+    () => text,
+  )
+
+interface LogEntry {
+  readonly level: string
+  readonly text: string
+}
+
+const capturingLogger = (logs: Array<LogEntry>): Layer.Layer<never> =>
+  Logger.layer([
+    Logger.make((entry) => {
+      logs.push({ level: entry.logLevel, text: [entry.message].flat().map(String).join(' ') })
+    }),
+  ])
+
 const killerNamesOf = (text: string, mutantIds: ReadonlySet<string>): readonly string[] =>
   Option.getOrElse(
     Option.map(S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text), (report) => {
@@ -858,6 +886,58 @@ Feature('Content-keyed reuse across incremental reports')
             relocatedReportReused: true,
             firstRanEverything: true,
           })
+        ),
+      ),
+    )
+
+    scenario(
+      'An incrementalSources record written under an older cache layout is reported as discarded and re-runs its mutants',
+      Gherkin.Do.pipe(
+        Given('a workspace whose relocated shard report predates the current cache layout')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* writeFixture([['src/math.ts', SOURCE]])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const options = optionsOf(root, { incrementalSources: ['reports/shard-*.json'] })
+                  const first = yield* runOnce(root, options)
+                  const mainPath = path.join(root, 'reports', 'main.json')
+                  const shardPath = path.join(root, 'reports', 'shard-old.json')
+                  yield* fs.writeFileString(shardPath, asWrittenUnderOlderLayout(yield* fs.readFileString(mainPath)))
+                  yield* fs.remove(mainPath, { force: true })
+                  const logs: Array<LogEntry> = []
+                  const second = yield* runOnce(root, options).pipe(Effect.provide(capturingLogger(logs)))
+                  return { first, second, logs }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then('the second run reports the stale shard as discarded with its cache layout reason and runs its mutants')(
+          (s, expect) => {
+            const discardLines = s.fixture.logs
+              .map((entry) => entry.text)
+              .filter((text) => text.includes('shard-old.json'))
+            return expect({
+              runSucceeded: Exit.isSuccess(s.fixture.second.exit),
+              firstRanEverything: s.fixture.first.reuse?.reused === 0,
+              second: {
+                reused: s.fixture.second.reuse?.reused,
+                ran: s.fixture.second.reuse?.ran,
+              },
+              discardLineCount: discardLines.length,
+              namesTheReason: discardLines.some((text) => text.includes('has cache layout version 4, expected 5')),
+            }).toEqual({
+              runSucceeded: true,
+              firstRanEverything: true,
+              second: { reused: 0, ran: s.fixture.second.mutants.length },
+              discardLineCount: 1,
+              namesTheReason: true,
+            })
+          },
         ),
       ),
     )

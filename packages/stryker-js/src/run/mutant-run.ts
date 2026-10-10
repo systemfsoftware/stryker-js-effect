@@ -4,6 +4,7 @@ import { Reporter, TestRunner } from '@systemfsoftware/stryker-js-plugin-interfa
 import type * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
 import * as Pool from 'effect/Pool'
@@ -36,6 +37,7 @@ export interface RunContext {
   readonly completedRef: Ref.Ref<number>
   readonly plannedTotal: number
   readonly plannedMutants: readonly Mutant.Mutant[]
+  readonly rememberedMutantIds: ReadonlyArray<string>
   readonly pathService: Path.Path
 }
 
@@ -43,6 +45,7 @@ export interface ReportingInputArgs {
   readonly prev: TestBasis
   readonly env: RunEnvironmentShape
   readonly results: readonly Mutant.RunMutantResult[]
+  readonly rememberedMutantIds: ReadonlyArray<string>
 }
 
 export const reportingInputOf = (input: ReportingInputArgs): MutationReportingInput => ({
@@ -58,6 +61,7 @@ export const reportingInputOf = (input: ReportingInputArgs): MutationReportingIn
   formatRegistry: input.prev.formatRegistry,
   concurrency: input.prev.concurrency.testRunners + input.prev.concurrency.checkers,
   runStartedAt: input.env.runStartedAt,
+  rememberedMutantIds: input.rememberedMutantIds,
 })
 
 const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, result: Mutant.RunMutantResult) {
@@ -78,6 +82,42 @@ const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, re
 const costLineOf = (result: Mutant.RunMutantResult): RunEvent.MutantCost | null =>
   Option.getOrNull(Option.map(Option.fromUndefinedOr(result.cost), (cost) => RunEvent.MutantCost.make(cost)))
 
+const requiredReasonOf = (result: Mutant.RunMutantResult): string =>
+  Option.getOrThrowWith(
+    Option.fromUndefinedOr(result.statusReason),
+    () => new Error(`Ignored mutant ${result.id} reached the stream without the rule that ignored it`),
+  )
+
+const mutantLineOf = (
+  result: Mutant.RunMutantResult,
+  streamable: PreparedStreamableMutant,
+  progress: { readonly completed: number; readonly total: number },
+): RunEvent.RunMutantTested => {
+  const fields = {
+    id: result.id,
+    fileName: streamable.file,
+    location: streamable.location,
+    mutatorName: result.mutatorName,
+    replacement: result.replacement,
+    ...progress,
+    static: Option.getOrElse(Option.fromUndefinedOr(result.static), () => false),
+    cost: costLineOf(result),
+  }
+  return Match.value(streamable.status).pipe(
+    Match.when(
+      'Ignored',
+      (status) => RunEvent.RunMutantIgnored.make({ ...fields, status, statusReason: requiredReasonOf(result) }),
+    ),
+    Match.orElse((status) =>
+      RunEvent.RunMutantSettled.make({
+        ...fields,
+        status,
+        statusReason: Option.getOrNull(Option.fromUndefinedOr(result.statusReason)),
+      })
+    ),
+  )
+}
+
 const offerFinished = Effect.fnUntraced(function*(
   context: RunContext,
   result: Mutant.RunMutantResult,
@@ -88,25 +128,10 @@ const offerFinished = Effect.fnUntraced(function*(
     onSome: (streamable) =>
       Effect.gen(function*() {
         const completed = yield* Ref.updateAndGet(context.completedRef, (n) => n + 1)
-        const fields = {
-          id: result.id,
-          fileName: streamable.file,
-          location: streamable.location,
-          mutatorName: result.mutatorName,
-          replacement: result.replacement,
-          completed,
-          total: context.plannedTotal,
-          static: result.static ?? false,
-          cost: costLineOf(result),
-        }
-        const line = streamable.status === 'Ignored'
-          ? RunEvent.RunMutantIgnored.make({ ...fields, status: 'Ignored', statusReason: result.statusReason ?? '' })
-          : RunEvent.RunMutantSettled.make({
-            ...fields,
-            status: streamable.status,
-            statusReason: result.statusReason ?? null,
-          })
-        yield* Queue.offer(context.progressQueue, line)
+        yield* Queue.offer(
+          context.progressQueue,
+          mutantLineOf(result, streamable, { completed, total: context.plannedTotal }),
+        )
         return Option.some(completed)
       }),
   })
@@ -159,7 +184,12 @@ export const announceSettledMutant = Effect.fnUntraced(function*(
 
 const writeCheckpoint = (context: RunContext, results: readonly Mutant.RunMutantResult[]) =>
   context.reporting.checkpoint(
-    reportingInputOf({ prev: context.prev, env: context.env, results }),
+    reportingInputOf({
+      prev: context.prev,
+      env: context.env,
+      results,
+      rememberedMutantIds: context.rememberedMutantIds,
+    }),
     context.plannedMutants,
   ).pipe(
     Effect.tapCause((cause) => Effect.logWarning('Failed to persist the mutation checkpoint', cause)),

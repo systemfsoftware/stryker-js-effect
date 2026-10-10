@@ -17,6 +17,7 @@ import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { ReuseSourceDiscarded, ReuseSourceKept } from '../admit-reuse-source.workflow.js'
 import { relativeNormalizedFileName } from '../FileMatcher.js'
 import { analyzeImportClosure, type ImportClosureAnalysis } from '../import-closure.cell.js'
 import {
@@ -36,7 +37,7 @@ import { reportTestIds, ResolveReportTestIds } from '../report-test-ids.workflow
 import { StageError } from '../Run.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { engineDigestOf, runInputsDigestOf } from '../verdict-semantics.js'
-import { incrementalReportTextsOf, optionalField, reportOfText } from './incremental-reuse.js'
+import { type IncrementalSourceRead, incrementalSourceReadsOf, optionalField } from './incremental-reuse.js'
 
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
@@ -93,34 +94,73 @@ const runnerTestIdsOf = (
 const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] => {
   const runnerTestIdByPosition = runnerTestIdTableOf(report)
   return Object.values(report.files).flatMap((file) =>
-    file.mutants.map((mutant): PreviousReuseRecord => ({
-      mutantId: mutant.id,
-      status: mutant.status,
-      ...optionalField('statusReason', mutant.statusReason),
-      ...digestField(mutant.closureDigest),
-      ...optionalField('programDigest', mutant.programDigest),
-      engineDigest: report.engineDigest,
-      mutantSetPolicy: report.mutantSetPolicy,
-      runInputsDigest: report.runInputsDigest,
-      ...optionalField('timeoutKind', mutant.timeoutKind),
-      ...optionalField('reproductions', mutant.reproductions),
-      ...optionalField('testsCompleted', mutant.testsCompleted),
-      ...optionalListField('coveredBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.coveredBy)),
-      ...optionalListField('killedBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.killedBy)),
-    }))
+    file.mutants.map((mutant): PreviousReuseRecord => {
+      const fields = {
+        mutantId: mutant.id,
+        ...digestField(mutant.closureDigest),
+        ...optionalField('programDigest', mutant.programDigest),
+        engineDigest: report.engineDigest,
+        mutantSetPolicy: report.mutantSetPolicy,
+        runInputsDigest: report.runInputsDigest,
+        ...optionalField('timeoutKind', mutant.timeoutKind),
+        ...optionalField('reproductions', mutant.reproductions),
+        ...optionalField('testsCompleted', mutant.testsCompleted),
+        ...optionalListField('coveredBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.coveredBy)),
+        ...optionalListField('killedBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.killedBy)),
+      }
+      return mutant.status === 'Ignored'
+        ? { ...fields, status: mutant.status, statusReason: mutant.statusReason }
+        : { ...fields, status: mutant.status, ...optionalField('statusReason', mutant.statusReason) }
+    })
   )
 }
 
-const recordsOfTexts = (texts: readonly string[]): readonly PreviousReuseRecord[] =>
-  texts.flatMap((text) =>
-    Option.match(reportOfText(text), {
+const keptReportOfRead = (read: IncrementalSourceRead): Option.Option<ReuseReport> =>
+  Option.map(Option.liftPredicate(read.decision, S.is(ReuseSourceKept)), (kept) => kept.report)
+
+const recordsOfReads = (reads: readonly IncrementalSourceRead[]): readonly PreviousReuseRecord[] =>
+  reads.flatMap((read) =>
+    Option.match(keptReportOfRead(read), {
       onNone: (): readonly PreviousReuseRecord[] => [],
       onSome: recordsOfReport,
     })
   )
 
+const sourceDiscardOf = (read: IncrementalSourceRead): Option.Option<ReuseSourceDiscarded> =>
+  Boolean.match(read.primary, {
+    onTrue: () => Option.none(),
+    onFalse: () => Option.liftPredicate(read.decision, S.is(ReuseSourceDiscarded)),
+  })
+
+const shownOf = (value: string | undefined): string => Option.getOrElse(Option.fromUndefinedOr(value), () => 'none')
+
+const sourceDiscardTextOf = (file: string, discard: ReuseSourceDiscarded): string =>
+  Boolean.match(discard.reason === 'cacheLayoutChanged', {
+    onTrue: () =>
+      `Incremental result file at ${file} has cache layout version ${
+        shownOf(discard.actual)
+      }, expected ${discard.expected}; its verdicts will not be reused. Re-run the project that wrote it with this release to refresh it.`,
+    onFalse: () =>
+      `Incremental result file at ${file} could not be decoded as a reuse record: ${
+        shownOf(discard.issue)
+      }; its verdicts will not be reused. Re-run the project that wrote it with this release to refresh it.`,
+  })
+
+const logSourceDiscardsOf = (reads: readonly IncrementalSourceRead[]): Effect.Effect<void> =>
+  Effect.forEach(
+    reads,
+    (read) =>
+      Option.getOrElse(
+        Option.map(sourceDiscardOf(read), (discard) => Effect.logInfo(sourceDiscardTextOf(read.file, discard))),
+        () => Effect.void,
+      ),
+    { discard: true },
+  )
+
 const previousRecordsOf = Effect.fnUntraced(function*(input: IncrementalReuseInput) {
-  return recordsOfTexts(yield* incrementalReportTextsOf(input))
+  const reads = yield* incrementalSourceReadsOf(input)
+  yield* logSourceDiscardsOf(reads)
+  return recordsOfReads(reads)
 })
 
 const hasTestFileName = (

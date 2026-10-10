@@ -34,12 +34,18 @@ type IgnoreRule = 'directive' | 'excluded-mutator' | 'ignorer' | MutantSetRuleId
 
 const ignoreReasonFor = (ruleId: IgnoreRule, detail: string): string => `${ruleId}${RULE_SEPARATOR}${detail}`
 
+const IgnorerAnswerSchema = S.Struct({
+  ignorerName: S.String,
+  answer: S.Unknown,
+})
+export type IgnorerAnswer = typeof IgnorerAnswerSchema.Type
+
 export const MutantCandidateSchema = S.Struct({
   id: Mutant.MutantId,
   mutatorName: MutatorNameSchema,
   replacementCode: S.String,
   location: S.optional(Mutant.Location),
-  ignorerReason: S.optional(S.String),
+  ignorerAnswer: S.optional(IgnorerAnswerSchema),
   mutantSet: MutantSetFactsSchema,
 })
 export type MutantCandidate = typeof MutantCandidateSchema.Type
@@ -96,7 +102,20 @@ export class MutantWithoutLocation extends S.TaggedError<MutantWithoutLocation>(
   }
 }
 
-export type PlanFailure = MutantWithoutLocation
+export class IgnorerAnsweredWithoutReason extends S.TaggedError<IgnorerAnsweredWithoutReason>()(
+  'IgnorerAnsweredWithoutReason',
+  {
+    fileName: S.String,
+    mutantId: Mutant.MutantId,
+    ignorerName: S.String,
+  },
+) {
+  override get message(): string {
+    return `Ignorer "${this.ignorerName}" ignored mutant ${this.mutantId} in ${this.fileName} without a reason. Make its \`shouldIgnore\` return a non-empty reason string, or \`undefined\` to keep the mutant.`
+  }
+}
+
+export type PlanFailure = MutantWithoutLocation | IgnorerAnsweredWithoutReason
 
 const reachedLine = (located: LocatedDirective, line: number): boolean =>
   Match.value(located.directive.scope).pipe(
@@ -147,9 +166,32 @@ const exclusionReason = (
     Match.exhaustive,
   )
 
+const ignorerReasonText = (answered: IgnorerAnswer): Option.Option<string> =>
+  Option.filter(S.decodeUnknownOption(S.String)(answered.answer), (reason) => reason.trim().length > 0)
+
+const ignorerRefusalOf = (
+  command: PlanMutantsCommand,
+  candidate: MutantCandidate,
+): Option.Option<IgnorerAnsweredWithoutReason> =>
+  Option.flatMap(
+    Option.fromNullishOr(candidate.ignorerAnswer),
+    (answered) =>
+      Option.match(ignorerReasonText(answered), {
+        onNone: () =>
+          Option.some(
+            IgnorerAnsweredWithoutReason.make({
+              fileName: command.fileName,
+              mutantId: candidate.id,
+              ignorerName: answered.ignorerName,
+            }),
+          ),
+        onSome: () => Option.none<IgnorerAnsweredWithoutReason>(),
+      }),
+  )
+
 const ignorerReason = (candidate: MutantCandidate): Option.Option<string> =>
   Option.map(
-    Option.fromNullishOr(candidate.ignorerReason),
+    Option.flatMap(Option.fromNullishOr(candidate.ignorerAnswer), ignorerReasonText),
     (reason) => ignoreReasonFor('ignorer', reason),
   )
 
@@ -253,25 +295,29 @@ const plannedMutant = (
   command: PlanMutantsCommand,
   candidate: MutantCandidate,
   policyReason: string | undefined,
-): Result.Result<PlannedMutant, MutantWithoutLocation> =>
-  Option.match(Option.fromNullishOr(candidate.location), {
+): Result.Result<PlannedMutant, PlanFailure> =>
+  Option.match(ignorerRefusalOf(command, candidate), {
+    onSome: (refusal) => Result.fail(refusal),
     onNone: () =>
-      Result.fail(MutantWithoutLocation.make({ fileName: command.fileName, mutatorName: candidate.mutatorName })),
-    onSome: (location) =>
-      Result.succeed({
-        id: candidate.id,
-        mutatorName: candidate.mutatorName,
-        replacementCode: candidate.replacementCode,
-        location: shiftedLocation(location, command.offset),
-        ignoreReason: ignoreReasonOf(command, candidate, policyReason),
+      Option.match(Option.fromNullishOr(candidate.location), {
+        onNone: () =>
+          Result.fail(MutantWithoutLocation.make({ fileName: command.fileName, mutatorName: candidate.mutatorName })),
+        onSome: (location) =>
+          Result.succeed({
+            id: candidate.id,
+            mutatorName: candidate.mutatorName,
+            replacementCode: candidate.replacementCode,
+            location: shiftedLocation(location, command.offset),
+            ignoreReason: ignoreReasonOf(command, candidate, policyReason),
+          }),
       }),
   })
 
 const plannedMutants = (
   command: PlanMutantsCommand,
-): Result.Result<readonly PlannedMutant[], MutantWithoutLocation> => {
+): Result.Result<readonly PlannedMutant[], PlanFailure> => {
   const policyReasons = policyReasonsAt(command)
-  return command.candidates.reduce<Result.Result<readonly PlannedMutant[], MutantWithoutLocation>>(
+  return command.candidates.reduce<Result.Result<readonly PlannedMutant[], PlanFailure>>(
     (accumulated, candidate, index) =>
       Result.flatMap(
         accumulated,
@@ -306,7 +352,7 @@ const planOf = (command: PlanMutantsCommand, mutants: readonly PlannedMutant[]):
 export const planMutants = Workflow.make({
   command: PlanMutantsCommand,
   decision: S.Union([MutantsPlanned, MutantsFullyIgnored]),
-  error: MutantWithoutLocation,
+  error: S.Union([MutantWithoutLocation, IgnorerAnsweredWithoutReason]),
   decide: (command: PlanMutantsCommand): Result.Result<MutantPlan, PlanFailure> =>
     Result.gen(function*() {
       const mutants = yield* plannedMutants(command)

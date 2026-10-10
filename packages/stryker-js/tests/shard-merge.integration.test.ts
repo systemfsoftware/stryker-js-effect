@@ -11,6 +11,7 @@ import * as Order from 'effect/Order'
 import * as Path from 'effect/Path'
 import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import * as Record from 'effect/Record'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
@@ -302,6 +303,48 @@ const mergeAndBootstrapBudget = (
     }
   }).pipe(Effect.orDie)
 
+const downgradeLine = (raw: string): string =>
+  Option.match(S.decodeOption(S.fromJsonString(S.Record(S.String, S.Unknown)))(raw.trim()), {
+    onNone: () => raw,
+    onSome: (line) =>
+      Record.has(line, 'schemaVersion')
+        ? JSON.stringify({ ...line, schemaVersion: '6.0' })
+        : Record.has(line, 'statusReason')
+        ? JSON.stringify(Record.remove(line, 'statusReason'))
+        : raw,
+  })
+
+const downgradeStream = (file: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const text = yield* fs.readFileString(file)
+    yield* fs.writeFileString(file, text.split('\n').map(downgradeLine).join('\n'))
+  }).pipe(Effect.orDie)
+
+const mergeWithDowngradedStream = (
+  fixture: Fixture,
+): Effect.Effect<
+  ExecOutcome,
+  never,
+  FileSystem.FileSystem | Path.Path | Scope.Scope | ChildProcessSpawner.ChildProcessSpawner
+> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const { root } = fixture
+    yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '1/2', '--out', 'reports/downgraded-1'])
+    yield* spawnCli(root, ['run', '--plan', 'plan.json', '--shard', '2/2', '--out', 'reports/downgraded-2'])
+    yield* downgradeStream(path.join(root, 'reports', 'downgraded-1', 'mutation-stream.jsonl'))
+    return yield* spawnCli(root, [
+      'merge',
+      '--plan',
+      'plan.json',
+      'reports/downgraded-1',
+      'reports/downgraded-2',
+      '--out',
+      'reports/downgraded-merged',
+    ])
+  }).pipe(Effect.orDie)
+
 Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary runs a two-shard plan and merges it')
@@ -353,6 +396,24 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
               gateExitCode: 0,
               baselineSeconds: Option.some(s.outcome.slowestShardSeconds),
             }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A shard stream written under another schema version is refused by the merge',
+      Gherkin.Do.pipe(
+        Given('a fixture whose unsharded run and two-shard plan are prepared')('fixture', () => prepareFixture()),
+        When('two shards run and one shard stream is rewritten under an older schema version')(
+          'outcome',
+          (s) => mergeWithDowngradedStream(s.fixture),
+        ),
+        Then('the merge fails and names both the written and the expected schema versions')((s, expect) =>
+          expect({
+            exitCode: s.outcome.exitCode === 0 ? 0 : 1,
+            namesWrittenVersion: s.outcome.output.includes('6.0'),
+            namesExpectedVersion: s.outcome.output.includes('7.0'),
+          }).toEqual({ exitCode: 1, namesWrittenVersion: true, namesExpectedVersion: true })
         ),
       ),
     )

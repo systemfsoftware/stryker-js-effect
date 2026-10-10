@@ -90,6 +90,8 @@ import {
   PlaceMutantsCommand,
 } from './place-mutants.workflow.js'
 import {
+  type IgnorerAnswer,
+  type IgnorerAnsweredWithoutReason,
   type MutantCandidate,
   type MutantPlan,
   type MutantWithoutLocation,
@@ -711,7 +713,12 @@ function isMutateRangeList(value: MutateDescription): value is readonly ApiMutan
 
 const MUTATION_OFFSET: ScriptOrigin = { line: 1, columnShift: 0 }
 
-type InstrumentationRefusal = NodeWithoutSpan | MutantsUnplaced | PlacementRefused | MutantWithoutLocation
+type InstrumentationRefusal =
+  | NodeWithoutSpan
+  | MutantsUnplaced
+  | PlacementRefused
+  | MutantWithoutLocation
+  | IgnorerAnsweredWithoutReason
 
 interface NodeFrame {
   readonly node: Node
@@ -828,14 +835,19 @@ const plannedWithNodes = (
     })
   )
 
-const ignorersReasonFor = (
+const ignorerAnswerFor = (
   node: Node,
   ancestors: readonly Node[],
   ignorers: readonly Ignorer[],
-): Option.Option<string> =>
+): Option.Option<IgnorerAnswer> =>
   ignorers.reduce(
-    (reason, ignorer) => Option.orElse(reason, () => Option.fromNullishOr(ignorer.shouldIgnore(node, ancestors))),
-    Option.none<string>(),
+    (answered, ignorer) =>
+      Option.orElse(answered, () =>
+        Option.map(
+          Option.fromNullishOr(ignorer.shouldIgnore(node, ancestors)),
+          (answer): IgnorerAnswer => ({ ignorerName: ignorer.name, answer }),
+        )),
+    Option.none<IgnorerAnswer>(),
   )
 
 interface NamedCallee extends StaticMemberExpression {
@@ -914,9 +926,9 @@ const mutablesFor = (
   const replacements = context.mutatorEntries.flatMap(([mutatorName, mutate]) =>
     [...mutate(frame.node, mutatorContext)].map((replacement) => ({ mutatorName, replacement }))
   )
-  const ignorerReason = replacements.length === 0
+  const ignorerAnswer = replacements.length === 0
     ? undefined
-    : Option.getOrUndefined(ignorersReasonFor(frame.node, ancestors, context.ignorers))
+    : Option.getOrUndefined(ignorerAnswerFor(frame.node, ancestors, context.ignorers))
   const aridReason = aridReasonOf(frame, context.mutantSetPolicy)
   const originalCode = printNode(frame.node)
   const relationalSite = relationalSiteFacts(frame.node, mutatorContext)
@@ -932,7 +944,7 @@ const mutablesFor = (
         mutatorName,
         replacementCode,
         location,
-        ignorerReason,
+        ignorerAnswer,
         mutantSet: {
           originalCode,
           replacementCode,
@@ -1358,6 +1370,12 @@ const refusalError = (refusal: InstrumentationRefusal): InstrumentError =>
     Match.tag('MutantWithoutLocation', (failed) =>
       InstrumentError.make({
         message: `Mutant without a source location: ${failed.mutatorName} in ${failed.fileName}`,
+        cause: undefined,
+      })),
+    Match.tag('IgnorerAnsweredWithoutReason', (failed) =>
+      InstrumentError.make({
+        message:
+          `Ignorer "${failed.ignorerName}" ignored mutant ${failed.mutantId} in ${failed.fileName} without a reason`,
         cause: undefined,
       })),
     Match.exhaustive,
