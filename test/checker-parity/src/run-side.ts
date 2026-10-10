@@ -3,6 +3,15 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Worker } from '@systemfsoftware/stryker-js'
 import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, type Mutant, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import {
+  type FileOutcome,
+  type SiteAnswer,
+  TypeQuery,
+  TypeQueryFile,
+  TypeQueryRequest,
+  TypeQuerySite,
+} from '@systemfsoftware/stryker-js-plugin-interface/type-query'
+import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Duration from 'effect/Duration'
@@ -16,6 +25,7 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import type * as RpcClient from 'effect/rpc/RpcClient'
 import type { RpcClientError } from 'effect/rpc/RpcClientError'
@@ -47,6 +57,10 @@ import {
   shardIndex,
   Side,
   TelemetryMissing,
+  TypeAnswerLine,
+  TypeQueryFileRefused,
+  type TypeQueryRefusalReason,
+  TypeQueryServers,
   Verdict,
 } from './Parity.schema.js'
 import {
@@ -218,6 +232,208 @@ export const decodeLines: {
     ),
 )
 
+interface ServerTally {
+  readonly live: number
+  readonly peak: number
+}
+
+const tallyProvision = (tally: Ref.Ref<ServerTally>): Effect.Effect<void> =>
+  Ref.update(tally, (current) => {
+    const live = current.live + 1
+    return { live, peak: Math.max(current.peak, live) }
+  })
+
+const tallyRelease = (tally: Ref.Ref<ServerTally>): Effect.Effect<void> =>
+  Ref.update(tally, (current) => ({ ...current, live: current.live - 1 }))
+
+interface QueryCandidateDraft {
+  readonly candidateId: string
+  readonly text: string
+  readonly wire: Checker.CheckerMutantWire
+}
+
+interface QuerySiteDraft {
+  readonly siteId: string
+  readonly location: Checker.CheckerMutantWire['location']
+  readonly candidates: ReadonlyArray<QueryCandidateDraft>
+}
+
+interface QueryFileDraft {
+  readonly fileName: string
+  readonly content: string
+  readonly sites: ReadonlyArray<QuerySiteDraft>
+}
+
+const siteDraftsOf = (wires: ReadonlyArray<Checker.CheckerMutantWire>): ReadonlyArray<QuerySiteDraft> =>
+  Object.entries(
+    Arr.groupBy(
+      wires,
+      (wire) =>
+        `${wire.location.start.line}:${wire.location.start.column}:${wire.location.end.line}:${wire.location.end.column}`,
+    ),
+  ).map(
+    ([siteId, atSite]) => ({
+      siteId,
+      location: atSite[0].location,
+      candidates: atSite.map((wire) => ({ candidateId: wire.id, text: wire.replacement, wire })),
+    }),
+  )
+
+const fileDraftsOf = (
+  contents: ReadonlyArray<{ readonly name: string; readonly content: string }>,
+  wires: ReadonlyArray<Checker.CheckerMutantWire>,
+): ReadonlyArray<QueryFileDraft> => {
+  const contentByName = HashMap.fromIterable(contents.map((entry) => [entry.name, entry.content] as const))
+  const byFile = Arr.groupBy(wires, (wire) => wire.fileName)
+  return Arr.getSomes(
+    Object.entries(byFile).map(([fileName, fileWires]) =>
+      Option.map(HashMap.get(contentByName, fileName), (content) => ({
+        fileName,
+        content,
+        sites: siteDraftsOf(fileWires),
+      }))
+    ),
+  )
+}
+
+const refusedLineOf = (
+  input: SideInput,
+  draft: QueryFileDraft,
+  reason: TypeQueryRefusalReason,
+  nextAction: string,
+): TypeQueryFileRefused =>
+  TypeQueryFileRefused.make({
+    schemaVersion: 1,
+    project: input.project,
+    fileName: draft.fileName,
+    reason,
+    nextAction,
+    mutantCount: draft.sites.reduce((total, site) => total + site.candidates.length, 0),
+  })
+
+const typesOf = (
+  siteAnswer: SiteAnswer,
+): { readonly siteType?: string; readonly contextualType?: string } => ({
+  ...Option.match(siteAnswer.siteType, { onNone: () => ({}), onSome: (siteType) => ({ siteType }) }),
+  ...Option.match(siteAnswer.contextualType, {
+    onNone: () => ({}),
+    onSome: (contextualType) => ({ contextualType }),
+  }),
+})
+
+const answerLinesOf = (
+  input: SideInput,
+  draft: QueryFileDraft,
+  siteAnswer: SiteAnswer,
+): ReadonlyArray<ParityLine> => {
+  const candidates = Option.match(
+    Option.fromUndefinedOr(draft.sites.find((site) => site.siteId === siteAnswer.siteId)),
+    { onNone: Arr.empty<QueryCandidateDraft>, onSome: (site) => site.candidates },
+  )
+  return Arr.getSomes(
+    siteAnswer.candidates.map((candidateAnswer) =>
+      Option.map(
+        Option.fromUndefinedOr(candidates.find((candidate) => candidate.candidateId === candidateAnswer.candidateId)),
+        (candidate) =>
+          TypeAnswerLine.make({
+            schemaVersion: 1,
+            side: 'branch',
+            project: input.project,
+            mutantId: candidate.candidateId,
+            fileName: candidate.wire.fileName,
+            line: candidate.wire.location.start.line,
+            column: candidate.wire.location.start.column,
+            candidate: candidate.text,
+            ...typesOf(siteAnswer),
+            answer: candidateAnswer.answer,
+          }),
+      )
+    ),
+  )
+}
+
+const fileOutcomeLines = (
+  input: SideInput,
+  draft: QueryFileDraft,
+  file: FileOutcome,
+): ReadonlyArray<ParityLine> =>
+  Match.valueTags(file, {
+    FileRefused: (refused) => [refusedLineOf(input, draft, refused.reason, refused.nextAction)],
+    FileAnswered: (answered) => answered.sites.flatMap((siteAnswer) => answerLinesOf(input, draft, siteAnswer)),
+  })
+
+const queryFileLines = (
+  input: SideInput,
+  draft: QueryFileDraft,
+  absoluteFile: string,
+): Effect.Effect<ReadonlyArray<ParityLine>, never, TypeQuery> =>
+  Effect.gen(function*() {
+    const typeQuery = yield* TypeQuery
+    const request = TypeQueryRequest.make({
+      version: 1,
+      tsconfigFile: input.tsconfigFile,
+      files: [
+        TypeQueryFile.make({
+          fileName: absoluteFile,
+          content: draft.content,
+          sites: draft.sites.map((site) =>
+            TypeQuerySite.make({
+              siteId: site.siteId,
+              location: site.location,
+              candidates: site.candidates.map((candidate) => ({
+                candidateId: candidate.candidateId,
+                text: candidate.text,
+              })),
+            })
+          ),
+        }),
+      ],
+    })
+    return Result.match(yield* typeQuery.query(request).pipe(Effect.result), {
+      onFailure: (refused) => [refusedLineOf(input, draft, refused.reason, refused.nextAction)],
+      onSuccess: (response) => response.files.flatMap((file) => fileOutcomeLines(input, draft, file)),
+    })
+  })
+
+const queryProjectLines = (
+  input: SideInput,
+  drafts: ReadonlyArray<QueryFileDraft>,
+): Effect.Effect<ReadonlyArray<ParityLine>, never, TypeQuery | Path.Path> =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const lines = yield* Effect.forEach(
+      drafts,
+      (draft) => queryFileLines(input, draft, path.resolve(input.repoRoot, draft.fileName)),
+    )
+    return lines.flat()
+  })
+
+const branchTypeQueryLines = (
+  input: SideInput,
+): Effect.Effect<ReadonlyArray<ParityLine>, never, Path.Path> =>
+  Effect.gen(function*() {
+    const drafts = fileDraftsOf(input.contents, input.wires)
+    return yield* Boolean.match(Arr.isReadonlyArrayNonEmpty(drafts), {
+      onFalse: () => Effect.succeed(Arr.empty<ParityLine>()),
+      onTrue: () =>
+        Effect.gen(function*() {
+          yield* tallyProvision(input.servers)
+          const lines = yield* Effect.scoped(Effect.provide(queryProjectLines(input, drafts), TypeQueryLive))
+          const peak = (yield* Ref.get(input.servers)).peak
+          yield* tallyRelease(input.servers)
+          return [
+            ...lines,
+            TypeQueryServers.make({
+              schemaVersion: 1,
+              side: 'branch',
+              project: input.project,
+              peakLiveServers: peak,
+            }),
+          ]
+        }),
+    })
+  })
+
 interface SideInput {
   readonly side: Side
   readonly project: string
@@ -228,6 +444,8 @@ interface SideInput {
   readonly cacheDir: string
   readonly readCache: boolean
   readonly wires: ReadonlyArray<Checker.CheckerMutantWire>
+  readonly contents: ReadonlyArray<{ readonly name: string; readonly content: string }>
+  readonly servers: Ref.Ref<ServerTally>
   readonly receiver: OtlpReceiver
   readonly serviceName: string
 }
@@ -237,6 +455,14 @@ interface SideRun {
   readonly lines: ReadonlyArray<ParityLine>
   readonly expectedCheckSpans: number
 }
+
+const carriedThroughCache = (line: ParityLine): boolean =>
+  Boolean.some([
+    S.is(Counts)(line),
+    S.is(TypeAnswerLine)(line),
+    S.is(TypeQueryFileRefused)(line),
+    S.is(TypeQueryServers)(line),
+  ])
 
 const cachedLine = (line: ParityLine): Option.Option<ParityLine> =>
   S.is(Verdict)(line)
@@ -253,7 +479,7 @@ const cachedLine = (line: ParityLine): Option.Option<ParityLine> =>
         cached: true,
       }),
     )
-    : Option.liftPredicate(line, S.is(Counts))
+    : Option.liftPredicate(line, carriedThroughCache)
 
 const readCacheFile = (file: string): Effect.Effect<ReadonlyArray<ParityLine>, DriverFailure, FileSystem.FileSystem> =>
   Effect.flatMap(
@@ -401,6 +627,10 @@ const freshlyChecked = (
   digestLine: DigestCall,
 ): Effect.Effect<SideRun, DriverFailure | Checker.CheckerFailed | RpcClientError, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
+    const typeQueryLines = yield* Boolean.match(input.side === 'branch', {
+      onTrue: () => branchTypeQueryLines(input),
+      onFalse: () => Effect.succeed(Arr.empty<ParityLine>()),
+    })
     const [groupDuration, groups] = yield* Effect.timed(
       client.group({ checkerName: CHECKER_NAME, mutants: [...input.wires] }),
     )
@@ -421,7 +651,7 @@ const freshlyChecked = (
     return yield* freshSideRun(
       input,
       slot,
-      [digestLine, groupLine, ...groupLines.flat(), ...branchLines],
+      [digestLine, groupLine, ...groupLines.flat(), ...branchLines, ...typeQueryLines],
       groups.length,
     )
   })
@@ -523,6 +753,7 @@ interface ProjectInput {
   readonly branchWorker: string
   readonly mainBundleHash: string
   readonly branchBundleHash: string
+  readonly servers: Ref.Ref<ServerTally>
   readonly receiver: OtlpReceiver
 }
 
@@ -572,20 +803,26 @@ const bySide = <A>(side: Side, main: A, branch: A): A => side === 'main' ? main 
 
 const serviceOf = (side: Side): string => bySide(side, MAIN_SERVICE, BRANCH_SERVICE)
 
-const sideInputOf =
-  (input: ProjectInput, wires: ReadonlyArray<Checker.CheckerMutantWire>) => (side: Side): SideInput => ({
-    side,
-    project: input.project,
-    tsconfigFile: input.tsconfigFile,
-    repoRoot: input.repoRoot,
-    workerPath: bySide(side, input.mainWorker, input.branchWorker),
-    bundleHash: bySide(side, input.mainBundleHash, input.branchBundleHash),
-    cacheDir: input.cacheDir,
-    readCache: input.readCache,
-    wires,
-    receiver: input.receiver,
-    serviceName: serviceOf(side),
-  })
+const sideInputOf = (
+  input: ProjectInput,
+  wires: ReadonlyArray<Checker.CheckerMutantWire>,
+  contents: ReadonlyArray<{ readonly name: string; readonly content: string }>,
+) =>
+(side: Side): SideInput => ({
+  side,
+  project: input.project,
+  tsconfigFile: input.tsconfigFile,
+  repoRoot: input.repoRoot,
+  workerPath: bySide(side, input.mainWorker, input.branchWorker),
+  bundleHash: bySide(side, input.mainBundleHash, input.branchBundleHash),
+  cacheDir: input.cacheDir,
+  readCache: input.readCache,
+  wires,
+  contents,
+  servers: input.servers,
+  receiver: input.receiver,
+  serviceName: serviceOf(side),
+})
 
 const telemetryLineOf = (
   input: ProjectInput,
@@ -607,10 +844,15 @@ const telemetryLineOf = (
       : []
   })
 
+interface InstrumentedShard {
+  readonly wires: ReadonlyArray<Checker.CheckerMutantWire>
+  readonly contents: ReadonlyArray<{ readonly name: string; readonly content: string }>
+}
+
 const instrumentShard = (
   input: ProjectInput,
   shardFiles: ReadonlyArray<string>,
-): Effect.Effect<ReadonlyArray<Checker.CheckerMutantWire>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<InstrumentedShard, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const files = yield* Effect.forEach(
@@ -626,15 +868,19 @@ const instrumentShard = (
         )
       ),
     )
-    return instrumented.mutants.map(toWire)
+    return {
+      wires: instrumented.mutants.map(toWire),
+      contents: files.map(({ name, content }) => ({ name, content })),
+    }
   })
 
 const checkBothSides = (
   input: ProjectInput,
   wires: ReadonlyArray<Checker.CheckerMutantWire>,
+  contents: ReadonlyArray<{ readonly name: string; readonly content: string }>,
 ): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
-    const sideInputs = Side.literals.map(sideInputOf(input, wires))
+    const sideInputs = Side.literals.map(sideInputOf(input, wires, contents))
     const runs = yield* Effect.forEach(
       sideInputs,
       (sideInput) => Effect.map(runSide(sideInput), (run) => ({ ...run, side: sideInput.side })),
@@ -656,16 +902,16 @@ const processProject = (
 ): Effect.Effect<ProjectResult, DriverFailure, Worker.WorkerLauncher | DriverServices> =>
   Effect.gen(function*() {
     const shardFiles = (yield* listProgramFiles(input)).filter((file) => inShard(file, input.shard))
-    const wires = yield* Boolean.match(Arr.isReadonlyArrayNonEmpty(shardFiles), {
+    const instrumented = yield* Boolean.match(Arr.isReadonlyArrayNonEmpty(shardFiles), {
       onTrue: () => instrumentShard(input, shardFiles),
-      onFalse: () => Effect.succeed(Arr.empty<Checker.CheckerMutantWire>()),
+      onFalse: () => Effect.succeed({ wires: Arr.empty<Checker.CheckerMutantWire>(), contents: Arr.empty() }),
     })
-    return yield* Match.value({ files: shardFiles.length, mutants: wires.length }).pipe(
+    return yield* Match.value({ files: shardFiles.length, mutants: instrumented.wires.length }).pipe(
       Match.when({ files: 0 }, () => Effect.succeed(skippedProject(input.project, 'no program files in this shard'))),
       Match.when({ mutants: 0 }, () =>
         Effect.succeed(skippedProject(input.project, 'no mutants produced in this shard'))),
       Match.orElse(() =>
-        checkBothSides(input, wires)
+        checkBothSides(input, instrumented.wires, instrumented.contents)
       ),
     )
   })
@@ -756,6 +1002,7 @@ export const runShard: {
       const shardFile = path.join(outDir, `shard-${shardIndex(command.shard)}.ndjson`)
       yield* makeDirectory(outDir)
       yield* writeText(shardFile, '')
+      const servers = yield* Ref.make<ServerTally>({ live: 0, peak: 0 })
       const results = yield* Effect.forEach(projects, (project) => {
         const tsconfigFile = path.resolve(repoRoot, project)
         return Effect.flatMap(exists(tsconfigFile), (present) =>
@@ -772,6 +1019,7 @@ export const runShard: {
                 branchWorker: command.branchWorker,
                 mainBundleHash,
                 branchBundleHash,
+                servers,
                 receiver,
               }),
             onFalse: () => Effect.succeed(skippedProject(project, `tsconfig not found at ${project}`)),

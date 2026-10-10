@@ -26,6 +26,11 @@
       "types": "./dist/runtime.d.mts",
       "default": "./dist/runtime.mjs"
     },
+    "./type-query": {
+      "@systemfsoftware/source": "./src/type-query/mod.ts",
+      "types": "./dist/type-query.d.mts",
+      "default": "./dist/type-query.mjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -118,6 +123,10 @@
       "./runtime": {
         "types": "./dist/runtime.d.mts",
         "default": "./dist/runtime.mjs"
+      },
+      "./type-query": {
+        "types": "./dist/type-query.d.mts",
+        "default": "./dist/type-query.mjs"
       },
       "./package.json": "./package.json"
     }

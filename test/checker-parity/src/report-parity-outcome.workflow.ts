@@ -94,6 +94,11 @@ const describeViolation = (violation: Violation): string =>
     SlowerThanMain: (slower) => `${slower.code} branch ${slower.branchMs} ms, main ${slower.mainMs} ms`,
     NothingCompared: (nothing) =>
       `${nothing.code} 0 mutants compared across ${nothing.projectCount} project(s), ${nothing.skippedCount} skipped`,
+    WrongNotAssignable: (wrong) =>
+      `${wrong.code} ${wrong.project} ${wrong.mutantId} ${wrong.fileName}:${wrong.line} candidate ${
+        JSON.stringify(wrong.candidate)
+      } (${wrong.candidateType}) not assignable to ${wrong.contextualType} but verdict ${wrong.verdict}`,
+    ZeroNotAssignable: (zero) => zero.code,
   })
 
 const projectOf = (violation: Violation): Option.Option<string> =>
@@ -105,6 +110,8 @@ const projectOf = (violation: Violation): Option.Option<string> =>
     ZeroShortcuts: () => Option.none(),
     SlowerThanMain: () => Option.none(),
     NothingCompared: () => Option.none(),
+    WrongNotAssignable: (wrong) => Option.some(wrong.project),
+    ZeroNotAssignable: () => Option.none(),
   })
 
 const locationOf = (violation: Violation): string =>
@@ -116,6 +123,8 @@ const locationOf = (violation: Violation): string =>
     ZeroShortcuts: () => '',
     SlowerThanMain: () => '',
     NothingCompared: () => '',
+    WrongNotAssignable: (wrong) => `file=${escapeProperty(wrong.fileName)},line=${wrong.line},`,
+    ZeroNotAssignable: () => '',
   })
 
 const shardOf = (finished: CompareFinished, violation: Violation): string =>

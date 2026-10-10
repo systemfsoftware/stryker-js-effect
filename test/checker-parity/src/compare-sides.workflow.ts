@@ -1,8 +1,11 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Assignable, NotAssignable, Unknown } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as HashMap from 'effect/HashMap'
+import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
+import * as Num from 'effect/Number'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -17,6 +20,9 @@ import {
   ProjectSkipped,
   Side,
   TelemetryMissing,
+  TypeAnswerLine,
+  TypeQueryFileRefused,
+  TypeQueryServers,
   Verdict,
   VerdictStatus,
 } from './Parity.schema.js'
@@ -93,6 +99,27 @@ export class NothingCompared extends S.TaggedClass<NothingCompared>()('NothingCo
   skippedCount: S.Int,
 }) {}
 
+export class WrongNotAssignable extends S.TaggedClass<WrongNotAssignable>()('WrongNotAssignable', {
+  schemaVersion: SCHEMA_VERSION,
+  code: S.Literal('wrong-not-assignable'),
+  nextAction: S.String,
+  project: S.String,
+  mutantId: S.String,
+  fileName: S.String,
+  line: S.Int,
+  column: S.Int,
+  candidate: S.String,
+  candidateType: S.String,
+  contextualType: S.String,
+  verdict: VerdictStatus,
+}) {}
+
+export class ZeroNotAssignable extends S.TaggedClass<ZeroNotAssignable>()('ZeroNotAssignable', {
+  schemaVersion: SCHEMA_VERSION,
+  code: S.Literal('zero-not-assignable'),
+  nextAction: S.String,
+}) {}
+
 export const Violation = S.Union([
   VerdictMismatch,
   BootAsymmetry,
@@ -101,6 +128,8 @@ export const Violation = S.Union([
   ZeroShortcuts,
   SlowerThanMain,
   NothingCompared,
+  WrongNotAssignable,
+  ZeroNotAssignable,
 ])
 export type Violation = typeof Violation.Type
 
@@ -123,6 +152,47 @@ export type SkippedProject = typeof SkippedProject.Type
 export const ShortcutCounts = S.Struct({ overall: S.Int, isolatedDeclarations: S.Int })
 export type ShortcutCounts = typeof ShortcutCounts.Type
 
+export const TypeQueryAnswerCounts = S.Struct({
+  assignable: S.Int,
+  notAssignable: S.Int,
+  unknown: S.Int,
+})
+export type TypeQueryAnswerCounts = typeof TypeQueryAnswerCounts.Type
+
+export const TypeQueryUnknownCounts = S.Struct({
+  'candidate-not-context-free': S.Int,
+  'candidate-not-found': S.Int,
+  'site-not-found': S.Int,
+  'site-not-expression': S.Int,
+  'no-contextual-type': S.Int,
+  'error-type': S.Int,
+  'instantiable-target': S.Int,
+  'overloaded-or-generic-call': S.Int,
+})
+export type TypeQueryUnknownCounts = typeof TypeQueryUnknownCounts.Type
+
+export const TypeQueryProjectShare = S.Struct({
+  project: S.String,
+  queried: S.Int,
+  assignable: S.Int,
+  notAssignable: S.Int,
+  unknown: S.Int,
+})
+export type TypeQueryProjectShare = typeof TypeQueryProjectShare.Type
+
+export const TypeQuerySummary = S.Struct({
+  queried: S.Int,
+  answers: TypeQueryAnswerCounts,
+  unknownReasons: TypeQueryUnknownCounts,
+  notAssignable: S.Int,
+  compileErrorAnsweredNotAssignable: S.Int,
+  compileErrorTotal: S.Int,
+  projects: S.Array(TypeQueryProjectShare),
+  refusedFiles: S.Int,
+  peakServers: S.Int,
+})
+export type TypeQuerySummary = typeof TypeQuerySummary.Type
+
 export const ComparisonSummary = S.Struct({
   schemaVersion: SCHEMA_VERSION,
   projectCount: S.Int,
@@ -132,6 +202,7 @@ export const ComparisonSummary = S.Struct({
   main: SideTotals,
   branch: SideTotals,
   shortcutCount: ShortcutCounts,
+  typeQuery: TypeQuerySummary,
 })
 export type ComparisonSummary = typeof ComparisonSummary.Type
 
@@ -596,6 +667,7 @@ const summaryOf = (command: CompareSidesCommand): ComparisonSummary => {
         (counts) => counts.importerShortcuts,
       ),
     },
+    typeQuery: typeQuerySummaryOf(command.lines, projects),
   }
 }
 
@@ -630,6 +702,137 @@ const nothingComparedViolations = (
     }),
   )
 
+const isTypeAnswerLine = S.is(TypeAnswerLine)
+const isTypeQueryFileRefused = S.is(TypeQueryFileRefused)
+const isTypeQueryServers = S.is(TypeQueryServers)
+const isAssignable = S.is(Assignable)
+const isNotAssignable = S.is(NotAssignable)
+const isUnknown = S.is(Unknown)
+
+const typeAnswerLinesIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<TypeAnswerLine> =>
+  lines.filter((line): line is TypeAnswerLine => isTypeAnswerLine(line))
+
+const answerCountsOf = (
+  answers: ReadonlyArray<TypeAnswerLine>,
+): { readonly assignable: number; readonly notAssignable: number; readonly unknown: number } => ({
+  assignable: answers.filter((line) => isAssignable(line.answer)).length,
+  notAssignable: answers.filter((line) => isNotAssignable(line.answer)).length,
+  unknown: answers.filter((line) => isUnknown(line.answer)).length,
+})
+
+const unknownReasonOf = (line: TypeAnswerLine): Option.Option<string> =>
+  Option.map(Option.liftPredicate(line.answer, isUnknown), (answer) => answer.reason)
+
+const unknownReasonsOf = (
+  answers: ReadonlyArray<TypeAnswerLine>,
+): { readonly [K in keyof TypeQueryUnknownCounts]: number } => {
+  const reasons = Arr.getSomes(answers.map(unknownReasonOf))
+  const count = (reason: string): number => reasons.filter((answered) => answered === reason).length
+  return {
+    'candidate-not-context-free': count('candidate-not-context-free'),
+    'candidate-not-found': count('candidate-not-found'),
+    'site-not-found': count('site-not-found'),
+    'site-not-expression': count('site-not-expression'),
+    'no-contextual-type': count('no-contextual-type'),
+    'error-type': count('error-type'),
+    'instantiable-target': count('instantiable-target'),
+    'overloaded-or-generic-call': count('overloaded-or-generic-call'),
+  }
+}
+
+const projectSharesOf = (
+  lines: ReadonlyArray<ParityLine>,
+  projects: ReadonlyArray<string>,
+): ReadonlyArray<TypeQueryProjectShare> =>
+  projects.map((project) => {
+    const answers = typeAnswerLinesIn(linesOf(lines, project))
+    return { project, queried: answers.length, ...answerCountsOf(answers) }
+  })
+
+const notAssignableKeysOf = (lines: ReadonlyArray<ParityLine>): HashSet.HashSet<string> =>
+  HashSet.fromIterable(
+    typeAnswerLinesIn(lines)
+      .filter((line) => isNotAssignable(line.answer))
+      .map((line) => `${line.project}\u0000${line.mutantId}`),
+  )
+
+const typeQuerySummaryOf = (
+  lines: ReadonlyArray<ParityLine>,
+  projects: ReadonlyArray<string>,
+): TypeQuerySummary => {
+  const answers = typeAnswerLinesIn(lines)
+  const counts = answerCountsOf(answers)
+  const notAssignableKeys = notAssignableKeysOf(lines)
+  const compileErrors = verdictsIn(lines).filter((verdict) =>
+    Boolean.every([verdict.side === 'branch', verdict.status === 'compileError'])
+  )
+  return {
+    queried: answers.length,
+    answers: counts,
+    unknownReasons: unknownReasonsOf(answers),
+    notAssignable: counts.notAssignable,
+    compileErrorAnsweredNotAssignable:
+      compileErrors.filter((verdict) => HashSet.has(notAssignableKeys, `${verdict.project}\u0000${verdict.mutantId}`))
+        .length,
+    compileErrorTotal: compileErrors.length,
+    projects: projectSharesOf(lines, projects),
+    refusedFiles: lines.filter((line): line is TypeQueryFileRefused => isTypeQueryFileRefused(line)).length,
+    peakServers: lines
+      .filter((line): line is TypeQueryServers => isTypeQueryServers(line))
+      .map((line) => line.peakLiveServers)
+      .reduce((max, peak) => Num.max(max, peak), 0),
+  }
+}
+
+const branchVerdictsByKey = (lines: ReadonlyArray<ParityLine>): HashMap.HashMap<string, Verdict> =>
+  HashMap.fromIterable(
+    verdictsIn(lines)
+      .filter((verdict) => verdict.side === 'branch')
+      .map((verdict) => [`${verdict.project}\u0000${verdict.mutantId}`, verdict] as const),
+  )
+
+const wrongNotAssignableViolations = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<WrongNotAssignable> => {
+  const branchVerdicts = branchVerdictsByKey(lines)
+  return Arr.getSomes(
+    typeAnswerLinesIn(lines).map((line) =>
+      Option.flatMap(Option.liftPredicate(line.answer, isNotAssignable), (answer) =>
+        Option.map(
+          Option.filter(
+            HashMap.get(branchVerdicts, `${line.project}\u0000${line.mutantId}`),
+            (verdict) => verdict.status !== 'compileError',
+          ),
+          (verdict) =>
+            WrongNotAssignable.make({
+              schemaVersion: 1,
+              code: 'wrong-not-assignable',
+              nextAction:
+                `Compare the TypeAnswerLine and Verdict rows for ${line.mutantId} in ${line.fileName} (project ${line.project}) in the shard NDJSON: the branch query answered NotAssignable but the checker verdict is ${verdict.status}. Re-check the site or drop the candidate.`,
+              project: line.project,
+              mutantId: line.mutantId,
+              fileName: line.fileName,
+              line: line.line,
+              column: line.column,
+              candidate: line.candidate,
+              candidateType: answer.candidateType,
+              contextualType: answer.contextualType,
+              verdict: verdict.status,
+            }),
+        ))
+    ),
+  )
+}
+
+const zeroNotAssignableViolation = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<ZeroNotAssignable> =>
+  when(
+    typeAnswerLinesIn(lines).filter((line) => isNotAssignable(line.answer)).length === 0,
+    ZeroNotAssignable.make({
+      schemaVersion: 1,
+      code: 'zero-not-assignable',
+      nextAction:
+        'The run answered no mutant NotAssignable, so the gate is vacuous: read the TypeAnswerLine rows and the summary typeQuery counts and confirm the corpus has context-free replacements, then rerun the shard.',
+    }),
+  )
+
 const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> => {
   const projects = projectsOf(command.lines)
   return [
@@ -642,6 +845,8 @@ const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> =>
     ...shortcutViolationsFor(command),
     ...speedViolationsFor(command),
     ...nothingComparedViolations(command.lines, projects),
+    ...wrongNotAssignableViolations(command.lines),
+    ...zeroNotAssignableViolation(command.lines),
   ]
 }
 

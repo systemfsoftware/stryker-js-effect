@@ -44,14 +44,23 @@ export const UnknownReason = S.Literals([
 ])
 export type UnknownReason = typeof UnknownReason.Type
 
-export const Assignable = S.TaggedStruct('Assignable', { candidateType: S.String })
-export type Assignable = typeof Assignable.Type
+export const TypeAnswerTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-plugin-interface/TypeAnswer')
+export type TypeAnswerTypeId = typeof TypeAnswerTypeId
 
-export const NotAssignable = S.TaggedStruct('NotAssignable', { candidateType: S.String, contextualType: S.String })
-export type NotAssignable = typeof NotAssignable.Type
+export class Assignable extends S.TaggedClass<Assignable>()('Assignable', { candidateType: S.String }) {
+  readonly [TypeAnswerTypeId] = TypeAnswerTypeId
+}
 
-export const Unknown = S.TaggedStruct('Unknown', { reason: UnknownReason })
-export type Unknown = typeof Unknown.Type
+export class NotAssignable extends S.TaggedClass<NotAssignable>()('NotAssignable', {
+  candidateType: S.String,
+  contextualType: S.String,
+}) {
+  readonly [TypeAnswerTypeId] = TypeAnswerTypeId
+}
+
+export class Unknown extends S.TaggedClass<Unknown>()('Unknown', { reason: UnknownReason }) {
+  readonly [TypeAnswerTypeId] = TypeAnswerTypeId
+}
 
 export const TypeAnswer = S.Union([Assignable, NotAssignable, Unknown])
 export type TypeAnswer = typeof TypeAnswer.Type

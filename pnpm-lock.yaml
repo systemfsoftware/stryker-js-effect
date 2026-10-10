@@ -1571,6 +1571,9 @@ importers:
       '@systemfsoftware/stryker-js-plugin-interface':
         specifier: workspace:^
         version: link:../../packages/stryker-js-plugin-interface
+      '@systemfsoftware/stryker-js-typescript-checker':
+        specifier: workspace:^
+        version: link:../../packages/stryker-js-typescript-checker
       effect:
         specifier: 'catalog:'
         version: 4.0.0

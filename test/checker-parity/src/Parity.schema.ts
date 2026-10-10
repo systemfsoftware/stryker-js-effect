@@ -5,9 +5,10 @@
  *
  * The driver writes these lines; `compare` decodes every `*.ndjson` under its input directories
  * through `S.fromJsonString(ParityLine)` and hands the lines to the pure `compare-sides` workflow. Every
- * line carries the repo-relative `project` (a tsconfig path, stable across sides and shards) and,
- * except {@link ProjectSkipped}, the `side` that wrote it.
+ * line carries the repo-relative `project` (a tsconfig path, stable across sides and shards); the kinds
+ * that record a side write it.
  */
+import { TypeAnswer } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as S from 'effect/Schema'
 
 export const Side = S.Literals(['main', 'branch'])
@@ -105,6 +106,44 @@ export class TelemetryMissing extends S.TaggedClass<TelemetryMissing>()('Telemet
   receivedSpans: NonNegativeInt,
 }) {}
 
+export class TypeAnswerLine extends S.TaggedClass<TypeAnswerLine>()('TypeAnswerLine', {
+  schemaVersion: SCHEMA_VERSION,
+  side: S.Literal('branch'),
+  project: S.String,
+  mutantId: S.String,
+  fileName: S.String,
+  line: PositiveInt,
+  column: PositiveInt,
+  candidate: S.String,
+  siteType: S.optional(S.String),
+  contextualType: S.optional(S.String),
+  answer: TypeAnswer,
+}) {}
+
+export const TypeQueryRefusalReason = S.Literals([
+  'not-in-project',
+  'server-crashed',
+  'unsupported-version',
+  'project-open-failed',
+])
+export type TypeQueryRefusalReason = typeof TypeQueryRefusalReason.Type
+
+export class TypeQueryFileRefused extends S.TaggedClass<TypeQueryFileRefused>()('TypeQueryFileRefused', {
+  schemaVersion: SCHEMA_VERSION,
+  project: S.String,
+  fileName: S.String,
+  reason: TypeQueryRefusalReason,
+  nextAction: S.String,
+  mutantCount: NonNegativeInt,
+}) {}
+
+export class TypeQueryServers extends S.TaggedClass<TypeQueryServers>()('TypeQueryServers', {
+  schemaVersion: SCHEMA_VERSION,
+  side: S.Literal('branch'),
+  project: S.String,
+  peakLiveServers: NonNegativeInt,
+}) {}
+
 export const PhaseLine = S.Union([CheckCall, GroupCall, DigestCall])
 export type PhaseLine = typeof PhaseLine.Type
 
@@ -118,6 +157,9 @@ export const ParityLine = S.Union([
   ProjectSkipped,
   CacheEntry,
   TelemetryMissing,
+  TypeAnswerLine,
+  TypeQueryFileRefused,
+  TypeQueryServers,
 ])
 export type ParityLine = typeof ParityLine.Type
 

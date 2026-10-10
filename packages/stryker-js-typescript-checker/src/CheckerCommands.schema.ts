@@ -89,3 +89,71 @@ export class ParseTsconfigTextCommand extends S.TaggedClass<ParseTsconfigTextCom
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
+
+export const ContextualTypeFacts = S.Struct({
+  text: S.String,
+  isError: S.Boolean,
+  instantiable: S.Boolean,
+})
+export type ContextualTypeFacts = typeof ContextualTypeFacts.Type
+
+export const NotACallArgument = S.TaggedStruct('NotACallArgument', {})
+export type NotACallArgument = typeof NotACallArgument.Type
+
+export const CallArgument = S.TaggedStruct('CallArgument', {
+  signatureCount: S.Int,
+  resolvedHasTypeParameters: S.Boolean,
+})
+export type CallArgument = typeof CallArgument.Type
+
+export const CallFacts = S.Union([NotACallArgument, CallArgument])
+export type CallFacts = typeof CallFacts.Type
+
+export const SiteMissing = S.TaggedStruct('SiteMissing', {})
+export type SiteMissing = typeof SiteMissing.Type
+
+export const SiteNotExpression = S.TaggedStruct('SiteNotExpression', {})
+export type SiteNotExpression = typeof SiteNotExpression.Type
+
+export const SiteExpression = S.TaggedStruct('SiteExpression', {
+  contextualType: S.OptionFromNullOr(ContextualTypeFacts),
+  call: CallFacts,
+})
+export type SiteExpression = typeof SiteExpression.Type
+
+export const SiteFacts = S.Union([SiteMissing, SiteNotExpression, SiteExpression])
+export type SiteFacts = typeof SiteFacts.Type
+
+export const CandidateNotContextFree = S.TaggedStruct('CandidateNotContextFree', {})
+export type CandidateNotContextFree = typeof CandidateNotContextFree.Type
+
+export const CandidateMissing = S.TaggedStruct('CandidateMissing', {})
+export type CandidateMissing = typeof CandidateMissing.Type
+
+export const CandidateTyped = S.TaggedStruct('CandidateTyped', {
+  candidateType: S.String,
+  assignable: S.Boolean,
+})
+export type CandidateTyped = typeof CandidateTyped.Type
+
+export const CandidateFacts = S.Union([CandidateNotContextFree, CandidateMissing, CandidateTyped])
+export type CandidateFacts = typeof CandidateFacts.Type
+
+export class ClassifyCandidateCommand extends S.TaggedClass<ClassifyCandidateCommand>()(
+  'ClassifyCandidateCommand',
+  {
+    text: S.String,
+  },
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export class AnswerTypeQueryCommand extends S.TaggedClass<AnswerTypeQueryCommand>()(
+  'AnswerTypeQueryCommand',
+  {
+    site: SiteFacts,
+    candidate: CandidateFacts,
+  },
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
