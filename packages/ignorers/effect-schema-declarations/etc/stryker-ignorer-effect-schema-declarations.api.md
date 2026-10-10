@@ -7,52 +7,85 @@
 import { Ignorer } from '@systemfsoftware/stryker-ignorer-interface';
 
 // @public (undocumented)
-export const ANNOTATION_OBJECT_IGNORED: 'annotations object holding only documentation is a declaration, not behaviour';
+export const ANNOTATION_OBJECT_IGNORED: "effect-schema-declarations/annotation-object: annotations object holding only documentation is a declaration, not behaviour";
 
 // @public (undocumented)
-export const ANNOTATION_TEXT_IGNORED: 'annotation documentation value is declaration data, not behaviour';
+export const ANNOTATION_TEXT_IGNORED: "effect-schema-declarations/annotation-text: annotation documentation value is declaration data, not behaviour";
 
 // @public (undocumented)
-export const BRAND_NAME_IGNORED: 'Schema.brand name is identity-only data, not behaviour';
+export const BRAND_NAME_IGNORED: "effect-schema-declarations/brand-name: Schema.brand name is identity-only data, not behaviour";
 
 // @public (undocumented)
-export const CHECK_ANNOTATION_OBJECT_IGNORED: 'filter/check annotation object holds documentation and generation hints, not behaviour';
+export const CHECK_ANNOTATION_OBJECT_IGNORED: "effect-schema-declarations/check-annotation-object: filter/check annotation object holds documentation and generation hints, not behaviour";
 
 // @public (undocumented)
-export const CHECK_ANNOTATION_TEXT_IGNORED: 'filter/check annotation value is documentation data, not behaviour';
+export const CHECK_ANNOTATION_TEXT_IGNORED: "effect-schema-declarations/check-annotation-text: filter/check annotation value is documentation data, not behaviour";
 
 // @public (undocumented)
-export const CLASS_ID_IGNORED: 'Schema.Class identifier is a declaration name, not behaviour';
+export const CLASS_ID_IGNORED: "effect-schema-declarations/class-id: Schema.Class identifier is a declaration name, not behaviour";
 
 // @public (undocumented)
-export const DECODING_DEFAULT_IGNORED: 'withDecodingDefault/withConstructorDefault default is config, not behaviour';
+export const DECODING_DEFAULT_IGNORED: "effect-schema-declarations/decoding-default: withDecodingDefault/withConstructorDefault default is config, not behaviour";
 
 // @public (undocumented)
-export const GENERATION_ANNOTATION_IGNORED: 'arbitrary-generation annotation never runs in production, not behaviour';
+export const GENERATION_ANNOTATION_IGNORED: "effect-schema-declarations/generation-annotation: arbitrary-generation annotation never runs in production, not behaviour";
 
 // @public (undocumented)
-export const LINK_TRANSFORMATION_IGNORED: 'S.link() transformation feeds arbitrary generation only, not production codecs';
+export const KEEP_IGNORED_MUTANT: "To keep these mutants, remove '@systemfsoftware/stryker-ignorer-effect-schema-declarations' from `ignorers`.";
 
 // @public (undocumented)
-export const OPTIONAL_DEFAULT_IGNORED: 'optionalWith default value is config, not behaviour';
+export const LINK_TRANSFORMATION_IGNORED: "effect-schema-declarations/link-transformation: S.link() transformation feeds arbitrary generation only, not production codecs";
+
+// @public (undocumented)
+export const OPTIONAL_DEFAULT_IGNORED: "effect-schema-declarations/optional-default: optionalWith default value is config, not behaviour";
+
+// @public (undocumented)
+export const REASON_CODES: {
+    readonly 'symbol-description': 'Symbol.for() brand description is identity-only data, not behaviour';
+    readonly 'tagged-tag': 'TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour';
+    readonly 'tagged-struct-tag': 'TaggedStruct _tag is a declaration discriminant, not behaviour';
+    readonly 'tagged-fields': 'TaggedClass/TaggedError field schema is a declaration, not behaviour';
+    readonly 'class-id': 'Schema.Class identifier is a declaration name, not behaviour';
+    readonly 'brand-name': 'Schema.brand name is identity-only data, not behaviour';
+    readonly 'optional-default': 'optionalWith default value is config, not behaviour';
+    readonly 'decoding-default': 'withDecodingDefault/withConstructorDefault default is config, not behaviour';
+    readonly 'annotation-object': 'annotations object holding only documentation is a declaration, not behaviour';
+    readonly 'annotation-text': 'annotation documentation value is declaration data, not behaviour';
+    readonly 'check-annotation-object': 'filter/check annotation object holds documentation and generation hints, not behaviour';
+    readonly 'check-annotation-text': 'filter/check annotation value is documentation data, not behaviour';
+    readonly 'generation-annotation': 'arbitrary-generation annotation never runs in production, not behaviour';
+    readonly 'link-transformation': 'S.link() transformation feeds arbitrary generation only, not production codecs';
+    readonly 'type-id': 'a TypeId constant is a declaration identity, not behaviour';
+    readonly 'recursion-budget-holder': 'annotate object holding a recursionBudget must stay a literal object for the recursion-budget transform to read it';
+    readonly 'recursion-budget': 'recursionBudget value bounds arbitrary generation only, not behaviour';
+};
+
+// @public (undocumented)
+export type ReasonCode = keyof typeof REASON_CODES;
+
+// @public (undocumented)
+export const RECURSION_BUDGET_HOLDER_IGNORED: "effect-schema-declarations/recursion-budget-holder: annotate object holding a recursionBudget must stay a literal object for the recursion-budget transform to read it";
+
+// @public (undocumented)
+export const RECURSION_BUDGET_IGNORED: "effect-schema-declarations/recursion-budget: recursionBudget value bounds arbitrary generation only, not behaviour";
 
 // @public (undocumented)
 export const strykerIgnorers: readonly Ignorer[];
 
 // @public (undocumented)
-export const SYMBOL_DESCRIPTION_IGNORED: 'Symbol.for() brand description is identity-only data, not behaviour';
+export const SYMBOL_DESCRIPTION_IGNORED: "effect-schema-declarations/symbol-description: Symbol.for() brand description is identity-only data, not behaviour";
 
 // @public (undocumented)
-export const TAGGED_FIELDS_IGNORED: 'TaggedClass/TaggedError field schema is a declaration, not behaviour';
+export const TAGGED_FIELDS_IGNORED: "effect-schema-declarations/tagged-fields: TaggedClass/TaggedError field schema is a declaration, not behaviour";
 
 // @public (undocumented)
-export const TAGGED_STRUCT_TAG_IGNORED: 'TaggedStruct _tag is a declaration discriminant, not behaviour';
+export const TAGGED_STRUCT_TAG_IGNORED: "effect-schema-declarations/tagged-struct-tag: TaggedStruct _tag is a declaration discriminant, not behaviour";
 
 // @public (undocumented)
-export const TAGGED_TAG_IGNORED: 'TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour';
+export const TAGGED_TAG_IGNORED: "effect-schema-declarations/tagged-tag: TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour";
 
 // @public (undocumented)
-export const TYPE_ID_IGNORED: 'a TypeId constant is a declaration identity, not behaviour';
+export const TYPE_ID_IGNORED: "effect-schema-declarations/type-id: a TypeId constant is a declaration identity, not behaviour";
 
 // (No @packageDocumentation comment for this package)
 
