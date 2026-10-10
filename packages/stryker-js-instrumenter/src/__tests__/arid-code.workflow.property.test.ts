@@ -63,10 +63,30 @@ const withoutCallees = (frames: readonly AridFrame[]): readonly AridFrame[] =>
     )
   )
 
+const asLoggerOrConsole = (callee: AridCallee): AridCallee =>
+  Match.value(callee).pipe(
+    Match.tagsExhaustive({
+      EffectExport: (effectExport): AridCallee => ({ ...effectExport, module: 'Logger' }),
+      Global: (global): AridCallee => global,
+    }),
+  )
+
 const decided = (frames: readonly AridFrame[]): AridCodeCommand =>
   AridCodeCommand.make({ policy: 'default', frames: [...frames] })
 
 describe('aridCode', () => {
+  it.prop(
+    '∀c_Callee_≡AnyLoggerExportOrConsoleMemberIsSuppressedAsAridLoggingUnderItsCanonicalName',
+    { of: [AridCalleeSchema], subject: aridCode },
+    (subject, [callee]) => {
+      const logger = asLoggerOrConsole(callee)
+      return Option.exists(
+        suppressionOf(subject(decided([argumentFrame(logger)]))),
+        (suppressed) => suppressed.ruleId === 'arid-logging' && suppressed.detail === detailOf(logger),
+      )
+    },
+  )
+
   it.prop(
     '∀cc_CalleeAndCommand_≡TheInnermostArgumentFrameThatMatchesARuleDecidesAheadOfEveryOuterFrame',
     { of: [AridCalleeSchema, AridCodeCommand], subject: aridCode },
