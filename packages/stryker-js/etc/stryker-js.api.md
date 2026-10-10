@@ -6,7 +6,7 @@
 
 // @public (undocumented)
 export namespace Checker {
-    export { CheckerAnsweredUnrequested, CheckerContractBroken, CheckerCrash, CheckerResourceService, CheckerSkippedRequested, checkGroupedCell };
+    export { CheckerAnsweredUnrequested, CheckerContractBroken, CheckerCrash, CheckerIgnoredWithoutRule, CheckerResourceService, CheckerSkippedRequested, checkGroupedPlans };
 }
 
 // @public (undocumented)

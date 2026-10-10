@@ -16,6 +16,7 @@ const MutantResultLikeSchema = S.Struct({
   coveredBy: S.String.pipe(S.Array, S.optional),
   static: S.optional(S.Boolean),
   statusReason: S.optional(S.String),
+  remembered: S.optional(S.Boolean),
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
   duration: S.optional(S.Finite),

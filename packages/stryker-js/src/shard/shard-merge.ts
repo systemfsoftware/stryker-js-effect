@@ -10,7 +10,12 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { writeFileAtomic } from '../atomic-write.cell.js'
-import { reportFromStream, ReportFromStreamCommand, ReportFromStreamRebuilt } from '../report-from-stream.workflow.js'
+import {
+  reportFromStream,
+  ReportFromStreamCommand,
+  ReportFromStreamRebuilt,
+  StreamVersionMismatch,
+} from '../report-from-stream.workflow.js'
 import { INCREMENTAL_PART_NAME, unionIncrementalReports } from './incremental-union.js'
 import {
   mergeShardReports,
@@ -61,13 +66,18 @@ const readText = (file: string): Effect.Effect<string | undefined, never, FileSy
     (text) => Option.getOrUndefined(text),
   )
 
-const rebuiltReportOf = (text: string | undefined): Option.Option<Report.MutationTestResult> =>
-  Option.flatMap(Option.fromUndefinedOr(text), (present) =>
-    Result.match(resultOfReport(present), {
-      onFailure: () => Option.none<Report.MutationTestResult>(),
-      onSuccess: (decision) =>
-        Option.map(Option.liftPredicate(decision, S.is(ReportFromStreamRebuilt)), (rebuilt) => rebuilt.report),
-    }))
+const rebuiltReportOf = (
+  text: string | undefined,
+): Result.Result<Option.Option<Report.MutationTestResult>, StreamVersionMismatch> =>
+  Option.match(Option.fromUndefinedOr(text), {
+    onNone: () => Result.succeed(Option.none<Report.MutationTestResult>()),
+    onSome: (present) =>
+      Result.map(
+        resultOfReport(present),
+        (decision) =>
+          Option.map(Option.liftPredicate(decision, S.is(ReportFromStreamRebuilt)), (rebuilt) => rebuilt.report),
+      ),
+  })
 
 const resultOfReport = (text: string) => reportFromStream(ReportFromStreamCommand.make({ text }))
 
@@ -193,13 +203,22 @@ const collectProject = (
     readonly incremental: IncrementalGroup
     readonly budget: Option.Option<RunEvent.Budget>
   },
-  never,
+  ShardMergeFailed,
   FileSystem.FileSystem
 > =>
   Effect.gen(function*() {
     const projectDir = path.join(path.resolve(input.basePath, dir), project.project)
-    const stream = yield* readText(path.join(projectDir, STREAM_FILE))
-    const report = rebuiltReportOf(stream)
+    const streamFile = path.join(projectDir, STREAM_FILE)
+    const stream = yield* readText(streamFile)
+    const report = yield* Effect.fromResult(
+      Result.mapError(
+        rebuiltReportOf(stream),
+        (mismatch) =>
+          ShardMergeFailed.make({
+            reason: `${project.project}: ${streamFile}: ${mismatch.message}`,
+          }),
+      ),
+    )
     const incrementalTexts = yield* incrementalTextsOf(projectDir)
     return {
       reported: reportedOf(shard, project.project, report),
@@ -214,7 +233,7 @@ const collectShardReports = (
   path: Path.Path,
   dir: string,
   shard: { readonly index: number; readonly projects: ReadonlyArray<{ readonly project: string }> },
-): Effect.Effect<CollectedReports, never, FileSystem.FileSystem> =>
+): Effect.Effect<CollectedReports, ShardMergeFailed, FileSystem.FileSystem> =>
   Effect.forEach(
     shard.projects,
     (project) => collectProject(input, path, dir, shard.index, project),

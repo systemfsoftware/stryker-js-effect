@@ -37,6 +37,7 @@ export {
   MutatorName,
   RememberedStatusSchema,
   RunOptionsFields,
+  SettledStatusSchema,
   SurvivorStatusSchema,
 } from '../Mutant.schema.js'
 export type {
@@ -50,6 +51,7 @@ export type {
   MutantStatus,
   MutatorName as MutatorNameValue,
   RememberedStatus,
+  SettledStatus,
   SurvivorStatus,
 } from '../Mutant.schema.js'
 export { duplicatedValue } from '../MutatorCatalog.schema.js'
