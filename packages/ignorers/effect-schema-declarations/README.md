@@ -30,7 +30,7 @@ export default defineConfig({
 })
 ```
 
-Mutants recognized by the ignorer are reported with status `Ignored`, carrying the exact reason why skipping is safe. Every reason starts with a stable code, `effect-schema-declarations/<code>:`; `REASON_CODES` maps each code to what it means. Renaming or removing a code is a breaking change. To keep a mutant the ignorer removes, remove the package from `ignorers`.
+Mutants recognized by the ignorer are reported with status `Ignored`. Their `statusReason` is `ignorer: effect-schema-declarations/<code>: <meaning>`: the engine's `ignorer` rule id, then a stable code from `REASON_CODES`, which maps each code to what it means. Renaming or removing a code is a breaking change. `KEEP_ADVICE` maps each code to the next action that keeps its mutants tested: for every code but the two `recursion-budget` ones, remove the package from `ignorers`.
 
 ## What It Ignores
 
@@ -49,11 +49,13 @@ Mutants recognized by the ignorer are reported with status `Ignored`, carrying t
 | Generation-only declaration callbacks                     | `S.declare(pred, { toCodecArbitrary: () => arbitrary })`                             |
 | Arbitrary link transformations                            | `S.link<T>()(S.Null, { decode: …, encode: … })` outside a production `toCodec*` slot |
 | Type identity constants                                   | `const TypeId = '…/StageError' as const`                                             |
-| `recursionBudget` annotations                             | `S.suspend(() => …).annotate({ recursionBudget: { maxDepth: 6 } })`                  |
+| `recursionBudget` annotation values                       | `S.suspend(() => …).annotate({ recursionBudget: { maxDepth: 6 } })`                  |
 
 ## What Stays Graded
 
-Everything a mutant can still change at run time stays live: filter predicates and bounds, patterns, literal vocabularies, struct field sets, codec decode/encode transformations, and any object or string a schema uses to decide acceptance. The ignorer only removes mutants whose position cannot change a decoded value, a routing decision, or an encoded value. A `recursionBudget` annotation is the one exception that is ignored for a build reason: the [`@systemfsoftware/effect-schema-recursion-budget`](https://www.npmjs.com/package/@systemfsoftware/effect-schema-recursion-budget) transform reads the literal annotate object, so instrumenting it fails the dry run with `Budget_RequiresTransform`.
+Everything a mutant can still change at run time stays live: filter predicates and bounds, patterns, literal vocabularies, struct field sets, codec decode/encode transformations, and any object or string a schema uses to decide acceptance. The ignorer only removes mutants whose position cannot change a decoded value, a routing decision, or an encoded value.
+
+`recursionBudget` is the one exception, and it is not an equivalence claim. Its value is test and generation metadata: only the [`@systemfsoftware/effect-schema-recursion-budget`](https://www.npmjs.com/package/@systemfsoftware/effect-schema-recursion-budget) build transform, that package's runtime, and the recursion laws of `@systemfsoftware/effect-schema-law` read it. The ignorer drops the mutants inside a `recursionBudget` value in the first argument of `annotate` or `annotations`. It also drops the mutants of the object holding that value, whatever the object's other keys are, because the transform only reads the budget from an annotate object written as a literal: a mutated object fails the dry run with `Budget_RequiresTransform`. The other keys' own values stay graded, so a behaviour key such as `toEquivalence` is still mutated inside its value. A `recursionBudget` key anywhere else stays mutated. Removing the ignorer does not keep these mutants: the transform reads the annotate object as written, so the dry run fails with `Budget_RequiresTransform`.
 
 ## License
 
