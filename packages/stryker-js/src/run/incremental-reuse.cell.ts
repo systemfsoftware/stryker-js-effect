@@ -51,6 +51,7 @@ const emptyRefusalCounts = (): Record<ReuseRefusalReason, number> => ({
   flakyDependency: 0,
   timeoutUnreproduced: 0,
   noPriorRecord: 0,
+  decidedPerRun: 0,
 })
 
 const countedRefusal = (
@@ -107,6 +108,7 @@ const recordsOfReport = (report: ReuseReport): readonly PreviousReuseRecord[] =>
         ...optionalField('testsCompleted', mutant.testsCompleted),
         ...optionalListField('coveredBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.coveredBy)),
         ...optionalListField('killedBy', runnerTestIdsOf(runnerTestIdByPosition, mutant.killedBy)),
+        ...optionalField('subsumption', mutant.subsumption),
       }
       return mutant.status === 'Ignored'
         ? { ...fields, status: mutant.status, statusReason: mutant.statusReason }

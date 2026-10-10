@@ -106,6 +106,8 @@ const proceedPipeline = Effect.fnUntraced(function*(raw: MutationTestRaw) {
     reuse,
     plan,
     checkedPlans: checkPlansWithConfiguredCheckers(Option.getOrUndefined(checkers.handle), plan.runPlans),
+    checkReadmitted: (readmitted) =>
+      checkPlansWithConfiguredCheckers(Option.getOrUndefined(checkers.handle), readmitted),
     closureDigestsByMutantId: reuse.closureDigestsByMutantId,
     runPlanOf: ({ context, checkpoint, settleChecked }) => (runPlan, checkMs) =>
       Option.match(Option.liftPredicate(runPlan, isNoCoveragePlan), {
