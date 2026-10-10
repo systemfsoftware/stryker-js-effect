@@ -319,7 +319,7 @@ jobs:
           echo "status=$status" >> "$GITHUB_OUTPUT"
 
       - id: upload
-        if: steps.audit.outputs.status == '0' || steps.audit.outputs.status == '1'
+        if: steps.audit.outcome == 'success' && steps.audit.outputs.status != '2'
         uses: actions/upload-artifact@v7
         with:
           name: drop-audit-${{ github.run_id }}
@@ -328,7 +328,7 @@ jobs:
           retention-days: 14
 
       - name: Report the audit
-        if: steps.audit.outputs.status != ''
+        if: steps.audit.outcome == 'success'
         env:
           AUDIT_STATUS: ${{ steps.audit.outputs.status }}
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
