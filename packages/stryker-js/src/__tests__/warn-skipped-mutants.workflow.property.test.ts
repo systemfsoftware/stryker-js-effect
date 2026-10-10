@@ -1,5 +1,6 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Arbitrary from 'effect/Arbitrary'
+import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -49,5 +50,17 @@ describe('warnSkippedMutants', () => {
           !S.is(MutantsSkippedWarned)(decision) ||
           (decision.skipped === command.skipped.length && decision.warning === expectedWarningOf(command)),
       }),
+  )
+
+  it.prop(
+    '∀n_SkippedCountRefusal_≡AtLeastOne',
+    { of: [S.Int, S.String], subject: S.decodeUnknownResult(MutantsSkippedWarned) },
+    (subject, [drawn, warning]) =>
+      Arr.every(
+        Arr.append([-1, 0, 1, Number.MAX_SAFE_INTEGER], drawn),
+        (skipped) =>
+          Result.isSuccess(subject({ _tag: 'MutantsSkippedWarned', skipped, warning })) ===
+            (Number.isSafeInteger(skipped) && skipped >= 1),
+      ),
   )
 })
