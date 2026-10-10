@@ -269,3 +269,34 @@ export class AuditInputUnusable extends S.TaggedError<AuditInputUnusable>()('Aud
     return this.reason
   }
 }
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+  const Result = await import('effect/Result')
+
+  const boundaries: ReadonlyArray<number> = [
+    -1,
+    -0,
+    0,
+    0.5,
+    1,
+    Number.MAX_SAFE_INTEGER,
+    Number.MAX_SAFE_INTEGER + 1,
+    Number.NaN,
+    Infinity,
+    -Infinity,
+  ]
+
+  const decodesCount = (value: number): boolean => Result.isSuccess(S.decodeResult(Count)(value))
+
+  it.prop(
+    '∀n_CountRefusal_≡AcceptsExactlyTheNonNegativeSafeIntegers',
+    { of: [S.Finite], subject: decodesCount },
+    (subject, [drawn]) =>
+      Arr.every(
+        Arr.prepend(boundaries, drawn),
+        (value) => subject(value) === (Number.isSafeInteger(value) && value >= 0),
+      ),
+  )
+}
