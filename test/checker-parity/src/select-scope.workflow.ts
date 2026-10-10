@@ -2,20 +2,18 @@ import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
-import * as Hash from 'effect/Hash'
 import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Str from 'effect/String'
 
-import { ScopeSettings } from './Parity.schema.js'
+import { ScopeSettings, seededOrder } from './Parity.schema.js'
 
 const SelectScopeTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-checker-parity/SelectScope')
 type SelectScopeTypeId = typeof SelectScopeTypeId
 
 type Wire = Checker.CheckerMutantWire
-type Stratum = readonly [string, ReadonlyArray<Wire>]
 
 export class SelectScopeCommand extends S.TaggedClass<SelectScopeCommand>()('SelectScopeCommand', {
   changedFiles: S.Array(S.String),
@@ -41,33 +39,19 @@ export class NothingSelected extends S.TaggedClass<NothingSelected>()('NothingSe
 export const ScopeDecision = S.Union([ScopeSelected, NothingSelected])
 export type ScopeDecision = typeof ScopeDecision.Type
 
-const orderKey = (seed: string) => (value: string): number => Hash.string(`${seed}\u0000${value}`)
-
 const fileNameOf = (mutant: Wire): string => mutant.fileName
-
-const strataEntries = (mutants: ReadonlyArray<Wire>): ReadonlyArray<Stratum> =>
-  Object.entries(Arr.groupBy(mutants, (mutant) => mutant.mutatorName))
 
 const mutantsOfFile = (mutants: ReadonlyArray<Wire>, file: string): ReadonlyArray<Wire> =>
   Arr.filter(mutants, (mutant) => fileNameOf(mutant) === file)
 
-const strataOf = (seed: string, mutants: ReadonlyArray<Wire>): ReadonlyArray<ReadonlyArray<Wire>> =>
-  Arr.map(
-    Arr.sort(
-      strataEntries(mutants),
-      Order.combine(
-        Order.mapInput(Order.Number, ([name]: Stratum) => orderKey(seed)(name)),
-        Order.mapInput(Str.Order, ([name]: Stratum) => name),
-      ),
-    ),
-    ([, group]: Stratum) =>
-      Arr.sort(
-        group,
-        Order.combine(
-          Order.mapInput(Order.Number, (wire: Wire) => orderKey(seed)(wire.id)),
-          Order.mapInput(Str.Order, (wire: Wire) => wire.id),
-        ),
-      ),
+const inSeededOrder = (settings: ScopeSettings, wires: ReadonlyArray<Wire>): ReadonlyArray<Wire> => {
+  const order = seededOrder(settings, wires.map((wire) => wire.id))
+  return Arr.sort(wires, Order.mapInput(Order.Number, (wire: Wire) => order.indexOf(wire.id)))
+}
+
+const strataOf = (settings: ScopeSettings, mutants: ReadonlyArray<Wire>): ReadonlyArray<ReadonlyArray<Wire>> =>
+  seededOrder(settings, mutants.map((mutant) => mutant.mutatorName)).map((name) =>
+    inSeededOrder(settings, mutants.filter((mutant) => mutant.mutatorName === name))
   )
 
 const roundRobin = (strata: ReadonlyArray<ReadonlyArray<Wire>>, target: number): ReadonlyArray<Wire> =>
@@ -77,8 +61,8 @@ const roundRobin = (strata: ReadonlyArray<ReadonlyArray<Wire>>, target: number):
     target,
   )
 
-const sampleOf = (seed: string, cap: number, mutants: ReadonlyArray<Wire>): ReadonlyArray<Wire> => {
-  const strata = strataOf(seed, mutants)
+const sampleOf = (settings: ScopeSettings, cap: number, mutants: ReadonlyArray<Wire>): ReadonlyArray<Wire> => {
+  const strata = strataOf(settings, mutants)
   const target = Order.min(Order.Number)(cap, mutants.length)
   return Boolean.match(strata.length === 0, {
     onTrue: () => Arr.empty<Wire>(),
@@ -89,14 +73,13 @@ const sampleOf = (seed: string, cap: number, mutants: ReadonlyArray<Wire>): Read
 const changedInFiles = (command: SelectScopeCommand): ReadonlyArray<Wire> =>
   Arr.flatMap(
     Arr.dedupe(command.changedFiles),
-    (file) => sampleOf(command.settings.seed, command.settings.perChangedFile, mutantsOfFile(command.mutants, file)),
+    (file) => sampleOf(command.settings, command.settings.perChangedFile, mutantsOfFile(command.mutants, file)),
   )
 
 const sampledOf = (command: SelectScopeCommand): ReadonlyArray<Wire> =>
   Option.match(Option.fromNullishOr(command.sampleFile), {
     onNone: () => Arr.empty<Wire>(),
-    onSome: (file) =>
-      sampleOf(command.settings.seed, command.settings.perProject, mutantsOfFile(command.mutants, file)),
+    onSome: (file) => sampleOf(command.settings, command.settings.perProject, mutantsOfFile(command.mutants, file)),
   })
 
 const wiresOf = (changed: ReadonlyArray<Wire>, sampled: ReadonlyArray<Wire>): ReadonlyArray<Wire> =>

@@ -8,7 +8,12 @@
  * line carries the repo-relative `project` (a tsconfig path, stable across sides and shards) and,
  * except {@link ProjectSkipped}, the `side` that wrote it.
  */
+import * as Arr from 'effect/Array'
+import { dual } from 'effect/Function'
+import * as Hash from 'effect/Hash'
+import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
+import * as Str from 'effect/String'
 
 export const Side = S.Literals(['main', 'branch'])
 export type Side = typeof Side.Type
@@ -132,6 +137,21 @@ export class ScopeSettings extends S.Class<ScopeSettings>('ScopeSettings')({
   perChangedFile: PositiveInt,
 }) {}
 
+export const seededOrder: {
+  (values: ReadonlyArray<string>): (settings: ScopeSettings) => ReadonlyArray<string>
+  (settings: ScopeSettings, values: ReadonlyArray<string>): ReadonlyArray<string>
+} = dual(
+  2,
+  (settings: ScopeSettings, values: ReadonlyArray<string>): ReadonlyArray<string> =>
+    Arr.sort(
+      Arr.dedupe(values),
+      Order.combine(
+        Order.mapInput(Order.Number, (value: string) => Hash.string(`${settings.seed}\u0000${value}`)),
+        Str.Order,
+      ),
+    ),
+)
+
 export class LegScope extends S.Class<LegScope>('LegScope')({
   schemaVersion: SCHEMA_VERSION,
   shard: S.String,
@@ -183,3 +203,22 @@ export const Gates = S.Struct({
   speed: S.Boolean,
 })
 export type Gates = typeof Gates.Type
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  it.prop(
+    '∀o_SeededOrder_≡DistinctPermutationIndependentOfInputOrder',
+    { of: [ScopeSettings, S.Array(S.String)], subject: seededOrder },
+    (subject, [settings, values]) => {
+      const ordered = subject(settings, values)
+      const reversed = subject(settings, Arr.reverse(values))
+      const distinct = new Set(values)
+      return Arr.every([
+        ordered.length === distinct.size,
+        Arr.every(ordered, (value) => distinct.has(value)),
+        Arr.every(ordered, (value, index) => value === reversed[index]),
+      ], (holds) => holds)
+    },
+  )
+}

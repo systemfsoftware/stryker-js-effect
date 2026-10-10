@@ -5,8 +5,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Str from 'effect/String'
 
-import { ScopeSettings, Shard, shardCount, shardIndex } from '../Parity.schema.js'
-import { driftLegOf, sampleFileOrder } from '../select-scope.js'
+import { ScopeSettings } from '../Parity.schema.js'
 import {
   NothingSelected,
   type ScopeDecision,
@@ -112,26 +111,5 @@ describe('selectScope', () => {
         ? S.is(NothingSelected)(decision)
         : wireIds.length === union.length && wireIds.every((id, index) => id === union[index])
     },
-  )
-
-  it.prop(
-    '∀o_SampleFileOrder_≡PermutationIndependentOfInputOrder',
-    { of: [SelectScopeCommand], subject: sampleFileOrder },
-    (subject, [command]) => {
-      const files = command.changedFiles
-      const ordered = subject(command.settings.seed, files)
-      const reversed = subject(command.settings.seed, Arr.reverse(files))
-      const orderedSorted = Arr.sort(ordered, Str.Order)
-      const filesSorted = Arr.sort(files, Str.Order)
-      return ordered.length === files.length &&
-        orderedSorted.every((file, index) => file === filesSorted[index]) &&
-        ordered.every((file, index) => file === reversed[index])
-    },
-  )
-
-  it.prop(
-    '∀s_Shard_≡RankBeforeItsIndexLandsOnIt',
-    { of: [Shard], subject: driftLegOf },
-    (subject, [shard]) => subject(shardIndex(shard) - 1, shardCount(shard)) === shardIndex(shard),
   )
 })

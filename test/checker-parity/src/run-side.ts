@@ -24,6 +24,7 @@ import type * as RpcGroup from 'effect/rpc/RpcGroup'
 import * as S from 'effect/Schema'
 import * as Str from 'effect/String'
 
+import { assignDriftLegs, AssignDriftLegsCommand } from './assign-drift-legs.workflow.js'
 import { appendStepSummary, type CiEnvironment } from './ci-environment.js'
 import {
   corpusEntries,
@@ -48,6 +49,7 @@ import {
   ProjectSkipped,
   type RunScopeName,
   ScopeSettings,
+  seededOrder,
   type Shard,
   shardCount,
   shardIndex,
@@ -60,7 +62,6 @@ import {
   ReuseCachedVerdictsCommand,
   VerdictCacheIdentity,
 } from './reuse-cached-verdicts.workflow.js'
-import { driftLegOf, sampleFileOrder } from './select-scope.js'
 import { selectScope, SelectScopeCommand } from './select-scope.workflow.js'
 import { inShard } from './shard.js'
 import {
@@ -805,7 +806,7 @@ const pullRequestScope = (
     const changed = owned.filter(changedOnThisLeg(input, pullRequest))
     const changedWires = yield* instrumentNonEmpty(input, changed)
     const sample = yield* Boolean.match(samplesOnThisLeg(input), {
-      onTrue: () => firstFileWithMutants(input, sampleFileOrder(pullRequest.settings.seed, owned)),
+      onTrue: () => firstFileWithMutants(input, seededOrder(pullRequest.settings, owned)),
       onFalse: () => Effect.succeedNone,
     })
     const mutants = Arr.dedupeWith(
@@ -1013,11 +1014,14 @@ const driftLegsOf = (
   settings: ScopeSettings,
   projects: ReadonlyArray<string>,
   shards: number,
-): HashMap.HashMap<string, number> =>
-  HashMap.fromIterable(
-    Arr.take(sampleFileOrder(settings.seed, projects), settings.driftProjects).map((project, rank) =>
-      [project, driftLegOf(rank, shards)] as const
-    ),
+): Effect.Effect<HashMap.HashMap<string, number>> =>
+  Effect.map(
+    Effect.fromResult(assignDriftLegs(AssignDriftLegsCommand.make({ settings, projects: [...projects], shards }))),
+    Match.valueTags({
+      DriftLegsAssigned: (assigned) =>
+        HashMap.fromIterable(assigned.projects.map((drift) => [drift.project, drift.leg] as const)),
+      NoDriftProjects: () => HashMap.empty<string, number>(),
+    }),
   )
 
 const pullRequestScopeOf = (
@@ -1048,7 +1052,7 @@ const pullRequestScopeOf = (
         return Option.some({
           changedFiles: HashSet.fromIterable(changed),
           settings,
-          driftLegs: driftLegsOf(settings, projects, shardCount(command.shard)),
+          driftLegs: yield* driftLegsOf(settings, projects, shardCount(command.shard)),
         })
       })),
     Match.exhaustive,
