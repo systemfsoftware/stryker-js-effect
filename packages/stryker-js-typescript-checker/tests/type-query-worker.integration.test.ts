@@ -156,11 +156,17 @@ const refusalsOf = (response: TypeQuery.TypeQueryResponse): ReadonlyArray<{ read
 
 const servingFacts = (
   serving: TypeQuery.TypeQueryServing,
-): { readonly tag: string; readonly declared: ReadonlyArray<number>; readonly nextAction: string } =>
+): {
+  readonly tag: string
+  readonly version: number
+  readonly declared: ReadonlyArray<number>
+  readonly nextAction: string
+} =>
   Match.valueTags(serving, {
-    TypeQueryServed: () => ({ tag: 'TypeQueryServed', declared: [], nextAction: '' }),
+    TypeQueryServed: (served) => ({ tag: 'TypeQueryServed', version: served.version, declared: [], nextAction: '' }),
     TypeQueryNotServed: (notServed) => ({
       tag: 'TypeQueryNotServed',
+      version: notServed.version,
       declared: notServed.declared,
       nextAction: notServed.nextAction,
     }),
@@ -229,13 +235,17 @@ const settleToZero = (budget: number): Effect.Effect<number, never, FileSystem.F
 const declaredServing: Effect.Effect<
   {
     readonly declared: ReadonlyArray<number>
-    readonly servedTag: string
+    readonly served: ReadonlyArray<string | number>
+    readonly servedTwo: ReadonlyArray<string | number>
     readonly emptyTag: string
+    readonly emptyVersion: number
     readonly emptyNextAction: boolean
     readonly emptyDeclared: ReadonlyArray<number>
     readonly strippedTag: string
+    readonly strippedVersion: number
     readonly strippedNextAction: boolean
     readonly strippedDeclared: ReadonlyArray<number>
+    readonly strippedTwo: ReadonlyArray<string | number | ReadonlyArray<number>>
     readonly unknownIsUnknownChecker: boolean
   },
   never,
@@ -244,20 +254,28 @@ const declaredServing: Effect.Effect<
   const client = yield* makeClient
   const capabilities = yield* client.capabilities({ checkerName: 'typescript' }).pipe(Effect.orDie)
   const served = servingFacts(TypeQuery.typeQueryServingOf(capabilities, 1))
+  const servedTwo = servingFacts(TypeQuery.typeQueryServingOf(capabilities, 2))
   const empty = servingFacts(TypeQuery.typeQueryServingOf({ typeQuery: [] }, 1))
   const stripped = servingFacts(
     TypeQuery.typeQueryServingOf({ typeQuery: capabilities.typeQuery.filter((version) => version !== 1) }, 1),
   )
+  const strippedTwo = servingFacts(
+    TypeQuery.typeQueryServingOf({ typeQuery: capabilities.typeQuery.filter((version) => version !== 2) }, 2),
+  )
   const unknown = yield* Effect.flip(client.capabilities({ checkerName: 'ruby' }))
   return {
     declared: capabilities.typeQuery,
-    servedTag: served.tag,
+    served: [served.tag, served.version],
+    servedTwo: [servedTwo.tag, servedTwo.version],
     emptyTag: empty.tag,
+    emptyVersion: empty.version,
     emptyNextAction: empty.nextAction.length > 0,
     emptyDeclared: empty.declared,
     strippedTag: stripped.tag,
+    strippedVersion: stripped.version,
     strippedNextAction: stripped.nextAction.length > 0,
     strippedDeclared: stripped.declared,
+    strippedTwo: [strippedTwo.tag, strippedTwo.version, strippedTwo.declared],
     unknownIsUnknownChecker: String(unknown).includes('does not exist'),
   }
 }).pipe(Effect.orDie)
@@ -318,25 +336,33 @@ Feature('Serving type queries over the checker worker’s RPC group', { timeout:
   .live('the packed worker bundle, real tsgo servers, and the real child processes they spawn')
   .body(({ scenario }) => {
     scenario(
-      'The worker names the type-query versions it serves and refuses a declaration without version 1',
+      'The worker names the type-query versions it serves, and a caller is refused a version the worker does not declare',
       Gherkin.Do.pipe(
-        When('the worker answers one capability declaration and two declarations that dropped version 1')(
+        When(
+          'the worker declares its type-query versions, and the caller asks for each version with and without it declared',
+        )(
           'serving',
           () => declaredServing,
         ),
-        Then('version 1 is served when declared, not served with a next action otherwise, and unknown checkers fail')((
+        Then(
+          'each version is served when declared, not served with that version and a next action otherwise, and unknown checkers fail',
+        )((
           s,
           expect,
         ) =>
           expect(s.serving).toEqual({
             declared: [1, 2],
-            servedTag: 'TypeQueryServed',
+            served: ['TypeQueryServed', 1],
+            servedTwo: ['TypeQueryServed', 2],
             emptyTag: 'TypeQueryNotServed',
+            emptyVersion: 1,
             emptyNextAction: true,
             emptyDeclared: [],
             strippedTag: 'TypeQueryNotServed',
+            strippedVersion: 1,
             strippedNextAction: true,
             strippedDeclared: [2],
+            strippedTwo: ['TypeQueryNotServed', 2, [1]],
             unknownIsUnknownChecker: true,
           })
         ),
