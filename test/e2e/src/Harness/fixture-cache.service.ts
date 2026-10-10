@@ -1,3 +1,4 @@
+import { MicroVM } from '@systemfsoftware/effect-microsandbox'
 import type { Readiness } from '@systemfsoftware/effect-readiness'
 import {
   Array,
@@ -15,6 +16,7 @@ import {
   Match,
   Option,
   Path,
+  Ref,
   Schema,
   Scope,
   Stream,
@@ -97,6 +99,7 @@ interface BakeEnvironment {
 }
 
 const STEP_BAKE = 'bake every fixture in the preparation microVM'
+const STEP_BAKE_BOOT = 'pull the guest image and boot the preparation microVM'
 const STEP_CLOSURE = 'build the packed workspace closure'
 const STEP_TARBALLS = 'read the packed tarballs'
 const STEP_KEY = 'derive the bake cache key'
@@ -577,6 +580,31 @@ const bakeArgv = [
   `--lanes=${BAKE_LANES}`,
 ]
 
+interface BakePhases {
+  readonly bootSeconds: number | null
+  readonly installSeconds: number | null
+}
+
+const NOTHING_BAKED: BakePhases = { bootSeconds: null, installSeconds: null }
+
+const secondsSince = (started: number) => Effect.map(Clock.currentTimeMillis, (now) => (now - started) / 1000)
+
+const runBakeScript = (
+  bakeScript: string,
+  mounts: ReadonlyArray<MicroVM.Mount>,
+  booted: Ref.Ref<Option.Option<number>>,
+) =>
+  Effect.scoped(Effect.gen(function*() {
+    const jobs = yield* GuestJobs
+    const started = yield* Clock.currentTimeMillis
+    const vm = yield* jobs.boot(STEP_BAKE_BOOT, mounts)
+    const bootSeconds = yield* secondsSince(started)
+    yield* Ref.set(booted, Option.some(bootSeconds))
+    const installing = yield* Clock.currentTimeMillis
+    yield* jobs.requireCleanExec(STEP_BAKE, vm, ['sh', '-c', bakeScript, 'bake-fixtures', ...bakeArgv])
+    return { bootSeconds, installSeconds: yield* secondsSince(installing) } satisfies BakePhases
+  }))
+
 const bakeMissing = (
   environment: BakeEnvironment,
   packsDir: string,
@@ -588,10 +616,9 @@ const bakeMissing = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const crypto = yield* Crypto.Crypto
-    const jobs = yield* GuestJobs
     const missingIds = missing.map((fixture) => fixture.fixtureId)
     const stagingDir = `${root}${STAGING_MARKER}${yield* crypto.randomUUIDv4}`
-    yield* Effect.gen(function*() {
+    return yield* Effect.gen(function*() {
       yield* fs.remove(stagingDir, { recursive: true, force: true })
       yield* fs.makeDirectory(stagingDir, { recursive: true })
       yield* leaseEntry(stagingDir)
@@ -602,21 +629,31 @@ const bakeMissing = (
       )
       const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
       const budgetSeconds = bakeBudgetSeconds({ fixtures: missing.length })
-      yield* jobs.requireCleanExit(
-        STEP_BAKE,
-        jobs.job(['sh', '-c', bakeScript, 'bake-fixtures', ...bakeArgv], [
-          { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
-          { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
-        ]),
-      ).pipe(Effect.timeoutOrElse({
+      const booted = yield* Ref.make(Option.none<number>())
+      const phases = yield* runBakeScript(bakeScript, [
+        { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
+        { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
+      ], booted).pipe(Effect.timeoutOrElse({
         duration: `${budgetSeconds} seconds`,
-        orElse: () => Effect.fail(new BakeOverBudgetFailure({ budgetSeconds, fixtures: missingIds })),
+        orElse: () =>
+          Effect.flatMap(
+            Ref.get(booted),
+            (bootSeconds) =>
+              Effect.fail(
+                new BakeOverBudgetFailure({
+                  budgetSeconds,
+                  fixtures: missingIds,
+                  bootSeconds: Option.getOrNull(bootSeconds),
+                }),
+              ),
+          ),
       }))
       yield* Effect.forEach(
         missing,
         (fixture) => publishFixture(stagingDir, fixture, path.join(root, entryNameOf(fixture))),
         { discard: true, concurrency: UNPACK_CONCURRENCY },
       )
+      return phases
     }).pipe(Effect.ensuring(fs.remove(stagingDir, { recursive: true, force: true }).pipe(Effect.orDie)))
   }).pipe(
     seamSpan(SpanNames.bake, {
@@ -657,14 +694,21 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
       yield* fs.makeDirectory(root, { recursive: true })
       const lease = yield* leaseEntry(root)
       const missing = yield* missingFixtures(root, fixtures)
-      yield* Boolean.match(missing.length === 0, {
-        onTrue: () => Effect.void,
+      const phases = yield* Boolean.match(missing.length === 0, {
+        onTrue: () => Effect.succeed(NOTHING_BAKED),
         onFalse: () => bakeMissing(environment, packsDir, root, missing, fixtureInputs),
       })
       const locks = yield* Effect.forEach(fixtures, (fixture) => lockDigestOf(root, fixture), {
         concurrency: UNPACK_CONCURRENCY,
       })
-      return { root, keys: keysRecordOf(fixtures), lease, baked: missing.length, locks: Object.fromEntries(locks) }
+      return {
+        root,
+        keys: keysRecordOf(fixtures),
+        lease,
+        baked: missing.length,
+        locks: Object.fromEntries(locks),
+        ...phases,
+      }
     }).pipe(Effect.ensuring(fs.remove(scratch, { recursive: true, force: true }).pipe(Effect.orDie)))
   })
 
@@ -694,6 +738,8 @@ const bakeRecordOf = (
         fixtures: Object.keys(outcome.keys).length,
         baked: outcome.baked,
         seconds,
+        bootSeconds: outcome.bootSeconds,
+        installSeconds: outcome.installSeconds,
         locks: outcome.locks,
         entries: Object.entries(outcome.keys).map(([fixtureId, key]) => entryNameOf({ fixtureId, key })),
       }),

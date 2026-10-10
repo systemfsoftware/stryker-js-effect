@@ -18,6 +18,8 @@ export const BakeOutcome = Schema.Struct({
   lease: Schema.String,
   baked: Schema.Number,
   locks: FixtureKeys,
+  bootSeconds: Schema.NullOr(Schema.Number),
+  installSeconds: Schema.NullOr(Schema.Number),
 })
 
 export type BakeOutcome = typeof BakeOutcome.Type

@@ -1,6 +1,7 @@
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
+import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 import {
@@ -37,13 +38,31 @@ export const bakeReasonsOf = (
   })
 
 export const overBudgetReason = (
-  failure: { readonly budgetSeconds: number; readonly fixtures: ReadonlyArray<string> },
-): BakeReason => ({
-  code: 'E2E_BAKE_OVER_BUDGET',
-  detail: `The bake of ${failure.fixtures.join(', ')} did not finish within its ${failure.budgetSeconds}s budget.`,
-  next:
-    'if the registry was slow, re-run the job; if it runs over again, compare the e2e.setup.bake span in the e2e-telemetry artifact with the last green run.',
-})
+  failure: {
+    readonly budgetSeconds: number
+    readonly fixtures: ReadonlyArray<string>
+    readonly bootSeconds: number | null
+  },
+): BakeReason =>
+  failure.bootSeconds === null
+    ? {
+      code: 'E2E_BAKE_OVER_BUDGET',
+      detail: `The bake of ${
+        failure.fixtures.join(', ')
+      } ran past its ${failure.budgetSeconds}s budget while pulling the guest image and booting the microVM, before any npm ci started.`,
+      next:
+        'if the image registry or the runner was slow, re-run the job; if it runs over again, compare the e2e.setup.bake span in the e2e-telemetry artifact with the last green run.',
+    }
+    : {
+      code: 'E2E_BAKE_OVER_BUDGET',
+      detail: `The bake of ${
+        failure.fixtures.join(', ')
+      } ran past its ${failure.budgetSeconds}s budget while installing; pulling the guest image and booting the microVM took ${
+        failure.bootSeconds.toFixed(1)
+      } s of it.`,
+      next:
+        'if the npm registry was slow, re-run the job; if it runs over again, compare the e2e.setup.bake span in the e2e-telemetry artifact with the last green run.',
+    }
 
 export const setupFailedReason = (message: string): BakeReason => ({
   code: 'E2E_SETUP_FAILED',
@@ -69,6 +88,13 @@ const HEADING = '### Fixture bake'
 
 const lockRow = ([fixtureId, digest]: readonly [string, string]): string => `| ${fixtureId} | \`${digest}\` |`
 
+const phasesOf = (done: Pick<BakeDone, 'bootSeconds' | 'installSeconds'>): string =>
+  Option.match(Option.all([Option.fromNullOr(done.bootSeconds), Option.fromNullOr(done.installSeconds)]), {
+    onNone: () => '',
+    onSome: ([boot, install]) =>
+      ` Pulling the guest image and booting the microVM took ${boot.toFixed(1)} s, npm ci ${install.toFixed(1)} s.`,
+  })
+
 const doneReport = (done: BakeDone): BakeReport => ({
   packsKey: done.packsKey,
   baked: done.baked,
@@ -80,7 +106,7 @@ const doneReport = (done: BakeDone): BakeReport => ({
       bakeStateOf(done)
     }\`: baked ${done.baked} of ${done.fixtures} fixtures, packs key \`${done.packsKey}\`; global setup took ${
       done.seconds.toFixed(1)
-    } s.`,
+    } s.${phasesOf(done)}`,
     '',
     '| Fixture | package-lock.json sha256 |',
     '| --- | --- |',
@@ -127,6 +153,27 @@ if (import.meta.vitest !== void 0) {
         !/[\r\n]/.test(line),
         line.startsWith(prefix),
         unescapeData(line.slice(prefix.length)) === `${reason.detail} Next: ${reason.next}`,
+      ]
+      return checks.every((check) => check)
+    },
+  )
+
+  const OverBudget = S.Struct({
+    budgetSeconds: S.Int.check(S.isGreaterThan(0)),
+    fixtures: S.NonEmptyArray(S.String),
+    bootSeconds: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
+  })
+
+  it.prop(
+    '∀f_OverBudget_≡NamesBootPhaseOrInstallPhaseWithItsBootTime',
+    { of: [OverBudget], subject: overBudgetReason },
+    (subject, [failure]) => {
+      const booting = subject({ ...failure, bootSeconds: null })
+      const installing = subject(failure)
+      const checks = [
+        booting.detail !== installing.detail,
+        !booting.detail.includes(' s of it'),
+        installing.detail.includes(`took ${failure.bootSeconds.toFixed(1)} s of it`),
       ]
       return checks.every((check) => check)
     },

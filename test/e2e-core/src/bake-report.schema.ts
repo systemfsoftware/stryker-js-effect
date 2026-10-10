@@ -18,6 +18,8 @@ export class BakeDone extends S.TaggedClass<BakeDone>()('BakeDone', {
   fixtures: S.Int,
   baked: S.Int,
   seconds: S.Finite,
+  bootSeconds: S.NullOr(S.Finite),
+  installSeconds: S.NullOr(S.Finite),
   locks: S.Record(S.String, S.String),
   entries: S.Array(S.String),
 }) {}
