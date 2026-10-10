@@ -124,7 +124,7 @@ const benchEnv = Effect.all({
 
 const abortedReport = (env: Pick<BenchEnv, 'baseSha' | 'headSha'>, code: BenchAbortCode, reason: string) =>
   BenchReport.make({
-    schemaVersion: '1.0',
+    schemaVersion: '1.1',
     baseSha: env.baseSha,
     headSha: env.headSha,
     outcome: abortedOutcomeOf(code, reason),

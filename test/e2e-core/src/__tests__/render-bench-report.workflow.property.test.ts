@@ -74,7 +74,13 @@ const withDriftedDigest = (
 ): ReadonlyArray<BenchRunMeasured> => runs.map((run, index) => index === 0 ? runFrom('A', 0, sample, { digest }) : run)
 
 const reportRunsOf = (runs: ReadonlyArray<BenchRun>): ReadonlyArray<BenchReportRun> =>
-  runs.map((run) => ({ key: run.key, wallMs: 1, exitCode: 0 }))
+  runs.map((run) => ({
+    key: run.key,
+    wallMs: 1,
+    exitCode: 0,
+    testsExecuted: 2,
+    workloadDigest: { _tag: 'verified', digest: 'digest-entry' },
+  }))
 
 const summaryOf = (runs: ReadonlyArray<BenchRun>): BenchSummary =>
   Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ runs })))
@@ -86,7 +92,7 @@ const reportOf = (
   headSha: string,
 ): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.0',
+    schemaVersion: '1.1',
     baseSha,
     headSha,
     outcome: { _tag: 'summarized', projects: summary.projects },
@@ -122,7 +128,7 @@ const medianOf = (values: ReadonlyArray<number>): number => {
 
 const failedReportOf = (invalid: ReadonlyArray<BenchRunInvalid>): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.0',
+    schemaVersion: '1.1',
     baseSha: 'base',
     headSha: 'head',
     outcome: { _tag: 'failed', invalid },
@@ -148,7 +154,7 @@ const invalidOf = (
 
 const abortedReportOf = (code: BenchAbortCode, reason: string): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.0',
+    schemaVersion: '1.1',
     baseSha: 'base',
     headSha: 'head',
     outcome: abortedOutcomeOf(code, reason),

@@ -268,13 +268,19 @@ export const runBench = (
       onSuccess: (decision) => ({ _tag: 'summarized' as const, projects: decision.projects }),
     })
     const report = BenchReport.make({
-      schemaVersion: '1.0',
+      schemaVersion: '1.1',
       baseSha: input.baseSha,
       headSha: input.headSha,
       outcome,
       runs: Arr.map(
         Arr.filter(runs, S.is(BenchRunMeasured)),
-        (run) => ({ key: run.key, wallMs: run.wallMs, exitCode: run.exitCode }),
+        (run) => ({
+          key: run.key,
+          wallMs: run.wallMs,
+          exitCode: run.exitCode,
+          testsExecuted: run.testsExecuted,
+          workloadDigest: run.workloadDigest,
+        }),
       ),
       setupSteps: [...input.setupSteps],
     })
