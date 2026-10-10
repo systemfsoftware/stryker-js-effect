@@ -1,5 +1,4 @@
 import * as Effect from 'effect/Effect'
-import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
@@ -7,11 +6,10 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 
+import { replaceFileAtomically } from '../replace-file-atomically.js'
 import { makeVerdictStore, type VerdictBlobs } from '../verdict-store/verdict-blobs.js'
 import { VerdictBlobFailed, VerdictStoreUnavailable } from '../verdict-store/VerdictStore.schema.js'
 import { VerdictStore } from '../verdict-store/VerdictStore.service.js'
-
-const textEncoder = new TextEncoder()
 
 const failedAt = (name: string) => (error: PlatformError): VerdictBlobFailed =>
   VerdictBlobFailed.make({ name, reason: error.message })
@@ -27,30 +25,6 @@ const absentWhenNotFound = recoverWhen('NotFound')
 
 const existingWhenAlreadyExists = recoverWhen('AlreadyExists')
 
-const writeSynced = (fs: FileSystem.FileSystem, file: string, text: string): Effect.Effect<void, PlatformError> =>
-  Effect.scoped(
-    Effect.gen(function*() {
-      const handle = yield* fs.open(file, { flag: 'w' })
-      yield* handle.writeAll(textEncoder.encode(text))
-      yield* handle.sync
-    }),
-  )
-
-const replaceAtomically = Effect.fnUntraced(function*(
-  fs: FileSystem.FileSystem,
-  path: Path.Path,
-  file: string,
-  text: string,
-) {
-  const directory = path.dirname(file)
-  yield* fs.makeDirectory(directory, { recursive: true })
-  const temp = yield* fs.makeTempFile({ directory, prefix: `.${path.basename(file)}.`, suffix: '.tmp' })
-  yield* writeSynced(fs, temp, text).pipe(
-    Effect.andThen(fs.rename(temp, file)),
-    Effect.onExit((exit) => Exit.isSuccess(exit) ? Effect.void : fs.remove(temp).pipe(Effect.ignore)),
-  )
-})
-
 const fsBlobsOf = (fs: FileSystem.FileSystem, path: Path.Path, root: string): VerdictBlobs => ({
   read: (name) =>
     fs.readFileString(path.join(root, name)).pipe(
@@ -58,7 +32,8 @@ const fsBlobsOf = (fs: FileSystem.FileSystem, path: Path.Path, root: string): Ve
       Effect.catchTag('PlatformError', absentWhenNotFound(Option.none<string>())),
       Effect.mapError(failedAt(name)),
     ),
-  write: (name, text) => replaceAtomically(fs, path, path.join(root, name), text).pipe(Effect.mapError(failedAt(name))),
+  write: (name, text) =>
+    replaceFileAtomically({ fs, path }, path.join(root, name), text).pipe(Effect.mapError(failedAt(name))),
   list: (directory) =>
     fs.readDirectory(path.join(root, directory)).pipe(
       Effect.catchTag('PlatformError', absentWhenNotFound<ReadonlyArray<string>>([])),

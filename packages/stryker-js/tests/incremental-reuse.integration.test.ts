@@ -125,6 +125,13 @@ const removeFixture = (root: string): Effect.Effect<void, never, never> =>
     filePorts,
   )
 
+const projectEntriesOf = (root: string): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem> =>
+  Effect.orDie(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readDirectory(root, { recursive: true })))
+
+const TEMP_ENTRY = /(^|\/)\.[^/]*\.tmp$|\.json\.[A-Za-z0-9]{6}$/
+
+const isTempEntry = (entry: string): boolean => TEMP_ENTRY.test(entry)
+
 const runOnce = (root: string, options: Options.PartialStrykerOptions): Effect.Effect<RunObservation, never, never> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -629,18 +636,20 @@ Feature('Content-keyed reuse across incremental reports')
                 Effect.gen(function*() {
                   const options = optionsOf(root, { ignorePatterns: [] })
                   const first = yield* runOnce(root, options)
+                  const projectAfterFirst = yield* projectEntriesOf(root)
                   const second = yield* runOnce(root, options)
-                  return { first, second }
+                  return { first, projectAfterFirst, second }
                 }),
                 removeFixture(root),
               )
             }).pipe(Effect.provide(filePorts)),
         ),
-        Then('the second run reuses every verdict although the first run wrote reports into the project')(
+        Then('the first run leaves no temp entry behind, and the second run reuses every verdict')(
           (s, expect) => {
             const planned = s.fixture.first.mutants.length
             return expect({
               runSucceeded: Exit.isSuccess(s.fixture.second.exit),
+              leftTempEntries: s.fixture.projectAfterFirst.filter(isTempEntry),
               plannedNonZero: planned > 0,
               second: {
                 reused: s.fixture.second.reuse?.reused,
@@ -649,6 +658,7 @@ Feature('Content-keyed reuse across incremental reports')
               },
             }).toEqual({
               runSucceeded: true,
+              leftTempEntries: [],
               plannedNonZero: true,
               second: { reused: planned, ran: 0, refused: ZERO_REFUSALS },
             })
