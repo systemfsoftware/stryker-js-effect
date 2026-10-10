@@ -123,36 +123,26 @@ const TOOL_REFUSAL_DOCUMENTATION: SlashFreeCodeDocumentation<(typeof TOOL_REFUSA
   'rerun-refused': 'The rerun was refused; the detail says why. Fix what it names, then rerun.',
 }
 
-const SETTLED_DESCRIPTION =
-  'Why a mutant that ran has its status. A stable code shared by every consumer: renaming or removing one is a breaking change.'
+const STABLE_CODE = 'A stable code shared by every consumer: renaming or removing one is a breaking change.'
 
 export const IgnoreRuleId = S.Literals(RULE_IDS).mapMembers(
   (members) => members.map((member) => member.annotate({ description: RULE_DOCUMENTATION[member.literal] })),
-).annotate({
-  description:
-    'Why an Ignored mutant was removed. A stable code shared by every consumer: renaming or removing one is a breaking change.',
-})
+).annotate({ description: `Why an Ignored mutant was removed. ${STABLE_CODE}` })
 export type IgnoreRuleId = typeof IgnoreRuleId.Type
 
 export const SettledReasonCode = S.Literals(SETTLED_CODES).mapMembers(
   (members) => members.map((member) => member.annotate({ description: SETTLED_DOCUMENTATION[member.literal] })),
-).annotate({ description: SETTLED_DESCRIPTION })
+).annotate({ description: `Why a mutant that ran has its status. ${STABLE_CODE}` })
 export type SettledReasonCode = typeof SettledReasonCode.Type
 
 export const RunFailureCode = S.Literals(RUN_FAILURE_CODES).mapMembers(
   (members) => members.map((member) => member.annotate({ description: RUN_FAILURE_DOCUMENTATION[member.literal] })),
-).annotate({
-  description:
-    'Why a run failed or was refused. A stable code shared by every consumer: renaming or removing one is a breaking change.',
-})
+).annotate({ description: `Why a run failed or was refused. ${STABLE_CODE}` })
 export type RunFailureCode = typeof RunFailureCode.Type
 
 export const ToolRefusalCode = S.Literals(TOOL_REFUSAL_CODES).mapMembers(
   (members) => members.map((member) => member.annotate({ description: TOOL_REFUSAL_DOCUMENTATION[member.literal] })),
-).annotate({
-  description:
-    'Why a CLI or MCP query was refused. A stable code shared by every consumer: renaming or removing one is a breaking change.',
-})
+).annotate({ description: `Why a CLI or MCP query was refused. ${STABLE_CODE}` })
 export type ToolRefusalCode = typeof ToolRefusalCode.Type
 
 type Codes = readonly [string, ...Array<string>]
@@ -188,7 +178,7 @@ const reasonPartsOf = <const L extends Codes>(codes: L) => {
   type Parts = typeof Parts.Type
   const partsOf = (text: string): Option.Option<Parts> =>
     Option.map(
-      Option.fromNullishOr(codes.find((code) => text.startsWith(`${code}${SEPARATOR}`))),
+      Option.fromNullishOr(codes.find((code) => text.startsWith(code) && text.startsWith(SEPARATOR, code.length))),
       (code): Parts => ({ code, detail: text.slice(code.length + SEPARATOR.length) }),
     )
   const transformation = SchemaTransformation.makeTransformation({
@@ -236,21 +226,25 @@ export type StatusReason = typeof StatusReason.Type
 
 const acceptsIgnoreStatusReason = (value: string): boolean => S.is(IgnoreStatusReasonText)(value)
 
-const decodedStatusReasonOf = (
-  status: string,
-  statusReason: string,
-): { readonly code: string; readonly detail: string } | null =>
-  Option.getOrNull(
-    Option.map(
-      S.decodeUnknownOption(StatusReason)({ status, statusReason }),
-      (decoded) => ({ code: decoded.statusReason.code, detail: decoded.statusReason.detail }),
-    ),
-  )
-
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const Arr = await import('effect/Array')
   const { MutantStatusSchema } = await import('./Mutant.schema.js')
+  const Equal = await import('effect/Equal')
+  const Record = await import('effect/Record')
+
+  const decodeStatusReason = S.decodeUnknownOption(StatusReason)
+
+  const decodedStatusReasonOf = (
+    status: string,
+    statusReason: string,
+  ): { readonly code: string; readonly detail: string } | null =>
+    Option.getOrNull(
+      Option.map(
+        decodeStatusReason({ status, statusReason }),
+        (decoded) => ({ code: decoded.statusReason.code, detail: decoded.statusReason.detail }),
+      ),
+    )
 
   const reasonBoundaries: ReadonlyArray<string> = [
     '',
@@ -292,20 +286,13 @@ if (import.meta.vitest !== void 0) {
 
   type Decoded = { readonly code: string; readonly detail: string } | null
 
-  const keyOf = (decoded: Decoded): string => decoded === null ? 'refused' : `${decoded.code}\u0000${decoded.detail}`
-
-  const sameReason = (left: Decoded, right: Decoded): boolean => keyOf(left) === keyOf(right)
-
-  const codesByStatus: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = Object.entries({
+  const codesByStatus: { readonly [status: string]: ReadonlyArray<string> } = {
     Ignored: RULE_IDS,
     ...SETTLED_CODES_BY_STATUS,
-  })
+  }
 
   const codesOf = (status: string): ReadonlyArray<string> =>
-    Option.getOrElse(
-      Option.map(Arr.findFirst(codesByStatus, ([candidate]) => candidate === status), ([, codes]) => codes),
-      () => [],
-    )
+    Option.getOrElse(Record.get(codesByStatus, status), () => [])
 
   const readsAsStatusReason = (status: string, text: string): Decoded =>
     Option.getOrNull(
@@ -384,12 +371,14 @@ if (import.meta.vitest !== void 0) {
   it.prop(
     '∀t_StatusReasonRefusal_≡ACodeOfThatStatusThenDetail',
     { of: [S.String], subject: decodedStatusReasonOf },
-    (subject, [drawn]) =>
-      Arr.every(examples, ([status, text, decoded]) => sameReason(subject(status, text), decoded)) &&
-      Arr.every(
-        statusProbes,
-        (status) =>
-          Arr.every(textsOf(drawn), (text) => sameReason(subject(status, text), readsAsStatusReason(status, text))),
-      ),
+    (subject, [drawn]) => {
+      const texts = textsOf(drawn)
+      return Arr.every(examples, ([status, text, decoded]) => Equal.equals(subject(status, text), decoded)) &&
+        Arr.every(
+          statusProbes,
+          (status) =>
+            Arr.every(texts, (text) => Equal.equals(subject(status, text), readsAsStatusReason(status, text))),
+        )
+    },
   )
 }
