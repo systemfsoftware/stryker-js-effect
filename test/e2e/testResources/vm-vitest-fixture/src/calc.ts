@@ -8,7 +8,8 @@ export function add(a: number, b: number): number {
 
 // @stryker-expect next-line Killed: BlockStatement
 export function isPositive(n: number): boolean {
-  // @stryker-expect next-line Killed: ConditionalExpression, EqualityOperator
+  // @stryker-expect next-line Killed: ConditionalExpression, EqualityOperator="n >= 0"
+  // @stryker-expect next-line Ignored: EqualityOperator="n <= 0"
   return n > 0
 }
 
