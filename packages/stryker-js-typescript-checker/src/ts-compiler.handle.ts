@@ -1388,7 +1388,7 @@ export interface MutantCheck {
   readonly tce?: TceClassification
 }
 
-const projectOfFile = (
+const firstHolderOf = (
   projects: ReadonlyArray<Project>,
   fileName: string,
 ): Effect.Effect<Option.Option<OwnedSourceFile>> =>
@@ -1399,11 +1399,26 @@ const projectOfFile = (
         Effect.promise(() => project.program.getSourceFile(fileName)),
         (sourceFile) =>
           Option.match(Option.fromUndefinedOr(sourceFile), {
-            onNone: () => projectOfFile(Arr.drop(projects, 1), fileName),
+            onNone: () => firstHolderOf(Arr.drop(projects, 1), fileName),
             onSome: (found) => Effect.succeedSome({ project, sourceFile: found }),
           }),
       ),
   })
+
+const listsAsRootFile = (fileName: string) => (project: Project): boolean =>
+  Arr.some(project.rootFiles, (rootFile) => normalizeFileName(rootFile) === fileName)
+
+const projectOfFile = (
+  projects: ReadonlyArray<Project>,
+  fileName: string,
+): Effect.Effect<Option.Option<OwnedSourceFile>> =>
+  firstHolderOf(
+    [
+      ...Arr.filter(projects, listsAsRootFile(fileName)),
+      ...Arr.filter(projects, (project) => Boolean.not(listsAsRootFile(fileName)(project))),
+    ],
+    fileName,
+  )
 
 const importerErrorsOf = (
   projects: ReadonlyArray<Project>,

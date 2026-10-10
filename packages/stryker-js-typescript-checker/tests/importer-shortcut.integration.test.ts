@@ -48,17 +48,31 @@ const AE5 = '00000000000000a5'
 const AE7 = '00000000000000a7'
 const AE8 = '00000000000000a8'
 const AE9 = '00000000000000a9'
+const AE10 = '0000000000000a10'
 
-const FIXTURE_FILES = [
-  'annotated.ts',
-  'box.ts',
-  'closer.ts',
-  'consumer.ts',
-  'contextual.ts',
-  'defaults.ts',
-  'inferred.ts',
-  'loader.ts',
-]
+interface Fixture {
+  readonly directory: string
+  readonly files: ReadonlyArray<string>
+}
+
+const SINGLE_PROJECT: Fixture = {
+  directory: 'importer-shortcut',
+  files: [
+    'annotated.ts',
+    'box.ts',
+    'closer.ts',
+    'consumer.ts',
+    'contextual.ts',
+    'defaults.ts',
+    'inferred.ts',
+    'loader.ts',
+  ],
+}
+
+const REFERENCED_PROJECT: Fixture = {
+  directory: 'importer-shortcut-references',
+  files: ['lib/src/counter.ts', 'app/src/consumer.ts'],
+}
 
 const AE1_EDIT: Edit = { id: AE1, file: 'annotated.ts', target: 'x + 1', replacement: 'x - 1' }
 const AE5_EDIT: Edit = { id: AE5, file: 'closer.ts', target: 'return x', replacement: 'return -x' }
@@ -95,9 +109,9 @@ const wireOf = (texts: HashMap.HashMap<string, string>, join: (name: string) => 
   }
 }
 
-const blamedFilesOf = (result: Checker.CheckResult): ReadonlyArray<string> =>
+const blamedFilesOf = (fixture: Fixture) => (result: Checker.CheckResult): ReadonlyArray<string> =>
   result.status === 'compileError'
-    ? FIXTURE_FILES.filter((file) => result.reason.includes(file))
+    ? fixture.files.filter((file) => result.reason.includes(file))
     : []
 
 const SHORTCUT_PREFIX = 'typescript.importer_shortcut.'
@@ -110,6 +124,7 @@ const checkSpanAttributesOf = (exporter: InMemorySpanExporter) => {
 }
 
 const runOf = (
+  fixture: Fixture,
   edits: ReadonlyArray<Edit>,
   importerCheck: ImporterCheck,
 ): Effect.Effect<Run, never, FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner> =>
@@ -117,11 +132,11 @@ const runOf = (
     const fs = yield* FileSystem.FileSystem
     const pathService = yield* Path.Path
     const here = yield* pathService.fromFileUrl(new URL(import.meta.url))
-    const directory = pathService.join(pathService.dirname(here), '__fixtures__', 'importer-shortcut')
+    const directory = pathService.join(pathService.dirname(here), '__fixtures__', fixture.directory)
     const join = (name: string) => pathService.join(directory, name)
     const texts = HashMap.fromIterable(
       yield* Effect.forEach(
-        FIXTURE_FILES,
+        fixture.files,
         (file) => Effect.map(fs.readFileString(join(file)), (text) => [file, text] as const),
       ),
     )
@@ -149,7 +164,9 @@ const runOf = (
         ) => [edit.id, Option.match(resultOf(edit.id), { onNone: () => 'missing', onSome: (r) => r.status })]),
       ),
       blamed: Object.fromEntries(
-        edits.map((edit) => [edit.id, Option.match(resultOf(edit.id), { onNone: () => [], onSome: blamedFilesOf })]),
+        edits.map((
+          edit,
+        ) => [edit.id, Option.match(resultOf(edit.id), { onNone: () => [], onSome: blamedFilesOf(fixture) })]),
       ),
       shortcutCounts: Object.fromEntries(
         Object.entries(attributes)
@@ -160,8 +177,10 @@ const runOf = (
     }
   }).pipe(Effect.orDie)
 
-const bothModes = (edits: ReadonlyArray<Edit>) =>
-  Effect.all({ rule: runOf(edits, 'location-rule'), always: runOf(edits, 'always') })
+const bothModes = (edits: ReadonlyArray<Edit>, fixture: Fixture = SINGLE_PROJECT) =>
+  Effect.all({ rule: runOf(fixture, edits, 'location-rule'), always: runOf(fixture, edits, 'always') })
+
+const REFERENCED_EDIT: Edit = { id: AE10, file: 'lib/src/counter.ts', target: 'x + 1', replacement: 'x.missing' }
 
 Feature('Skipping importer re-checks for edits inside a function body', { timeout: 240_000 })
   .withLayer(FILE_PORTS)
@@ -231,6 +250,29 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
             statuses: [{ [AE1]: 'passed', [AE5]: 'passed' }, { [AE1]: 'passed', [AE5]: 'passed' }],
             counts: [{ count: 2 }, { count: 0 }],
             updates: [2, 3],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A body edit in a referenced project is checked by the project that owns the file',
+      Gherkin.Do.pipe(
+        When(
+          'a compile-breaking body edit in a project another project references is checked once per importerCheck value',
+        )(
+          'seen',
+          () => bothModes([REFERENCED_EDIT], REFERENCED_PROJECT),
+        ),
+        Then('both runs reject it, blame the edited file, and the rule run takes the shortcut')((s, expect) =>
+          expect({
+            statuses: [s.seen.rule.statuses, s.seen.always.statuses],
+            blamed: [s.seen.rule.blamed, s.seen.always.blamed],
+            counts: [s.seen.rule.shortcutCounts, s.seen.always.shortcutCounts],
+          }).toEqual({
+            statuses: [{ [AE10]: 'compileError' }, { [AE10]: 'compileError' }],
+            blamed: [{ [AE10]: ['lib/src/counter.ts'] }, { [AE10]: ['lib/src/counter.ts'] }],
+            counts: [{ count: 1 }, { count: 0 }],
           })
         ),
       ),
