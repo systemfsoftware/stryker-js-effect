@@ -1,7 +1,8 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import type { Ignorer, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
-import { Effect, Layer } from 'effect'
+import { Mutant as ApiMutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Effect, Layer, Schema as S } from 'effect'
 
 import { stockOptions } from './__fixtures__/instrument.js'
 
@@ -151,9 +152,32 @@ const activeReplacements = (result: Instrument.InstrumentResult): readonly strin
 
 const ignoredComparisonReasons = (result: Instrument.InstrumentResult): readonly string[] =>
   result.mutants
-    .filter((mutant) => !isActive(mutant) && COMPARISON_MUTATORS.includes(mutant.mutatorName))
+    .filter((mutant) =>
+      !isActive(mutant) && mutant.subsumption === undefined && COMPARISON_MUTATORS.includes(mutant.mutatorName)
+    )
     .map((mutant) => `${mutant.replacement} <= ${mutant.statusReason ?? ''}`)
     .toSorted()
+
+type SubsumedPair = readonly [string | undefined, string | undefined, string | undefined, string | undefined]
+
+const SUBSUMED_REASON =
+  "redundant-relational: subsumed by <dominator> (complement): every test that kills <dominator> kills this mutant, so act on <dominator>, or set mutator.mutantSetPolicy 'full' to run it"
+
+const subsumedPairs = (result: Instrument.InstrumentResult): readonly SubsumedPair[] => {
+  const replacementOf = new Map(result.mutants.map((mutant) => [mutant.id, mutant.replacement]))
+  return result.mutants
+    .flatMap((mutant): SubsumedPair[] =>
+      S.is(ApiMutant.Subsumed)(mutant.subsumption)
+        ? [[
+          mutant.replacement,
+          replacementOf.get(mutant.subsumption.dominators[0]),
+          mutant.status,
+          mutant.statusReason?.replaceAll(mutant.subsumption.dominators[0], '<dominator>'),
+        ]]
+        : []
+    )
+    .toSorted((left, right) => String(left).localeCompare(String(right)))
+}
 
 const underFull = (fileName: string, source: string) =>
   Instrument.instrument(
@@ -998,7 +1022,7 @@ export function price(n) {
     )
 
     scenario(
-      'A relational comparison in a condition emits the sufficient set under default',
+      'A relational comparison in a condition drops its complement, naming the kept dominator',
       Gherkin.Do.pipe(
         Given('a guard comparing two numbers')(
           'source',
@@ -1012,7 +1036,7 @@ export function price(n) {
           'full',
           ({ source }: { source: string }) => underFull('/tmp/u17-if.ts', source),
         ),
-        Then('default keeps the sufficient set and names every removal')((
+        Then('default drops >= for <=, and full drops nothing')((
           { defaulted, full }: {
             defaulted: Instrument.InstrumentResult
             full: Instrument.InstrumentResult
@@ -1022,23 +1046,24 @@ export function price(n) {
           expect({
             defaultedActive: activeReplacements(defaulted),
             defaultedIgnored: ignoredComparisonReasons(defaulted),
+            defaultedSubsumed: subsumedPairs(defaulted),
             fullActive: activeReplacements(full),
             fullIgnored: ignoredComparisonReasons(full),
+            fullSubsumed: subsumedPairs(full),
           }).toEqual({
-            defaultedActive: ['a != b', 'a <= b', 'false'],
-            defaultedIgnored: [
-              'a >= b <= redundant-relational: a >= b is not in the sufficient set for a < b',
-              'true <= redundant-relational: true is not in the sufficient set for a < b',
-            ],
+            defaultedActive: ['a != b', 'a <= b', 'false', 'true'],
+            defaultedIgnored: [],
+            defaultedSubsumed: [['a >= b', 'a <= b', 'Ignored', SUBSUMED_REASON]],
             fullActive: ['a <= b', 'a >= b', 'false', 'true'],
             fullIgnored: [],
+            fullSubsumed: [],
           })
         ),
       ),
     )
 
     scenario(
-      'A loop and a ternary condition each emit their own sufficient set under default',
+      'A loop and a ternary condition each drop their complement',
       Gherkin.Do.pipe(
         Given('a while loop and a ternary comparing numbers')(
           'source',
@@ -1055,7 +1080,7 @@ export function price(n) {
           'full',
           ({ source }: { source: string }) => underFull('/tmp/u17-loops.ts', source),
         ),
-        Then('each condition position keeps only its sufficient set')((
+        Then('<= drops > for <, > drops <= for >=, and full drops nothing')((
           { defaulted, full }: {
             defaulted: Instrument.InstrumentResult
             full: Instrument.InstrumentResult
@@ -1065,51 +1090,103 @@ export function price(n) {
           expect({
             defaultedActive: activeReplacements(defaulted),
             defaultedIgnored: ignoredComparisonReasons(defaulted),
+            defaultedSubsumed: subsumedPairs(defaulted),
             fullActive: activeReplacements(full),
+            fullSubsumed: subsumedPairs(full),
           }).toEqual({
-            defaultedActive: ['a != b', 'a < b', 'a == b', 'a >= b', 'false', 'true'],
-            defaultedIgnored: [
-              'a <= b <= redundant-relational: a <= b is not in the sufficient set for a > b',
-              'a > b <= redundant-relational: a > b is not in the sufficient set for a <= b',
-              'false <= redundant-relational: false is not in the sufficient set for a <= b',
-              'true <= redundant-relational: true is not in the sufficient set for a > b',
-            ],
+            defaultedActive: ['a != b', 'a < b', 'a == b', 'a >= b', 'false', 'false', 'true', 'true'],
+            defaultedIgnored: [],
+            defaultedSubsumed: [['a <= b', 'a >= b', 'Ignored', SUBSUMED_REASON], [
+              'a > b',
+              'a < b',
+              'Ignored',
+              SUBSUMED_REASON,
+            ]],
             fullActive: ['a < b', 'a <= b', 'a > b', 'a >= b', 'false', 'false', 'true'],
+            fullSubsumed: [],
           })
         ),
       ),
     )
 
     scenario(
-      'A bare comparison keeps today’s variants under both policies',
+      'A comparison outside a condition drops its complement too',
       Gherkin.Do.pipe(
-        Given('a comparison assigned to a local')(
+        Given('a length comparison assigned to a local and the same comparison in a guard')(
           'source',
-          () => Effect.succeed(`export const ok = (a, b) => { const x = a < b; return x }`),
+          () =>
+            Effect.succeed(
+              `export const has = (trapFile) => { const x = trapFile.length > 0; return x }\nexport const guard = (trapFile) => { if (trapFile.length > 0) { return 1 } return 0 }\n`,
+            ),
         ),
         When('it is instrumented under the default policy')(
           'defaulted',
-          ({ source }: { source: string }) => instrumentSource('/tmp/u17-bare.ts', source),
+          ({ source }: { source: string }) => instrumentSource('/tmp/u4-length.ts', source),
         ),
-        When('it is instrumented under the full policy')(
-          'full',
-          ({ source }: { source: string }) => underFull('/tmp/u17-bare.ts', source),
+        Then('both sites drop <= 0, each naming the id of its own >= 0 mutant')((
+          { defaulted }: { defaulted: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect(subsumedPairs(defaulted)).toEqual([
+            ['trapFile.length <= 0', 'trapFile.length >= 0', 'Ignored', SUBSUMED_REASON],
+            ['trapFile.length <= 0', 'trapFile.length >= 0', 'Ignored', SUBSUMED_REASON],
+          ])
         ),
-        Then('both policies keep the same replacements')((
-          { defaulted, full }: {
-            defaulted: Instrument.InstrumentResult
-            full: Instrument.InstrumentResult
-          },
+      ),
+    )
+
+    scenario(
+      'A greater-or-equal comparison drops its less-than complement',
+      Gherkin.Do.pipe(
+        Given('a guard testing a >= b')(
+          'source',
+          () => Effect.succeed(`export function f(a, b) { if (a >= b) { return 1 } return 0 }`),
+        ),
+        When('it is instrumented under the default policy')(
+          'defaulted',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u4-ge.ts', source),
+        ),
+        Then('< is dropped for >, and the other ordering replacements run')((
+          { defaulted }: { defaulted: Instrument.InstrumentResult },
           expect,
         ) =>
           expect({
-            defaultedActive: activeReplacements(defaulted),
-            defaultedIgnored: ignoredComparisonReasons(defaulted),
-            fullActive: activeReplacements(full),
+            active: activeReplacements(defaulted),
+            subsumed: subsumedPairs(defaulted),
           }).toEqual({
-            defaultedActive: ['a <= b', 'a >= b', 'false', 'true'],
-            defaultedIgnored: [],
-            fullActive: ['a <= b', 'a >= b', 'false', 'true'],
+            active: ['a == b', 'a > b', 'false', 'true'],
+            subsumed: [['a < b', 'a > b', 'Ignored', SUBSUMED_REASON]],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A directive reason outranks subsumption',
+      Gherkin.Do.pipe(
+        Given('a guard whose ordering mutants a directive disables')(
+          'source',
+          () =>
+            Effect.succeed(
+              `export function f(a, b) {\n  // Stryker disable next-line EqualityOperator: covered elsewhere\n  if (a < b) { return 1 }\n  return 0\n}\n`,
+            ),
+        ),
+        When('it is instrumented under the default policy')(
+          'defaulted',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u4-directive.ts', source),
+        ),
+        Then('the >= mutant carries the directive reason and nothing is subsumed')((
+          { defaulted }: { defaulted: Instrument.InstrumentResult },
+          expect,
+        ) =>
+          expect({
+            greaterOrEqual: defaulted.mutants
+              .filter((mutant) => mutant.replacement === 'a >= b')
+              .map((mutant) => mutant.statusReason),
+            subsumed: subsumedPairs(defaulted),
+          }).toEqual({
+            greaterOrEqual: ['directive: covered elsewhere'],
+            subsumed: [],
           })
         ),
       ),
