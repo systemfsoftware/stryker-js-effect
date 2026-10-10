@@ -86,7 +86,7 @@ const inconclusiveVerdict = (
 const redVerdict = (
   side: BenchSide,
   failure: SetupFailure,
-  also: Option.Option<OtherFailure> = NO_OTHER,
+  also: Option.Option<OtherFailure>,
 ): SetupVerdict =>
   SetupRed.make({
     side,
@@ -127,7 +127,7 @@ const classify = (a: SideSetup, b: SideSetup): SetupVerdict =>
         onNone: proceedVerdict,
         onSome: (aFailure) =>
           Boolean.match(kindOf(aFailure) === 'out-of-time', {
-            onTrue: () => redVerdict('A', aFailure),
+            onTrue: () => redVerdict('A', aFailure, NO_OTHER),
             onFalse: () => baseVerdict(aFailure),
           }),
       }),
@@ -136,7 +136,7 @@ const classify = (a: SideSetup, b: SideSetup): SetupVerdict =>
         onNone: () =>
           Boolean.match(externalRecovered(a, bFailure), {
             onTrue: () => externalVerdict(bFailure, NO_OTHER),
-            onFalse: () => redVerdict('B', bFailure),
+            onFalse: () => redVerdict('B', bFailure, NO_OTHER),
           }),
         onSome: (aFailure) =>
           Boolean.match(externalAt(aFailure, bFailure), {
