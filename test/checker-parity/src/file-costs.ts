@@ -1,6 +1,9 @@
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import { dual } from 'effect/Function'
+import * as HashMap from 'effect/HashMap'
 import * as Num from 'effect/Number'
+import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
 import * as Str from 'effect/String'
@@ -12,10 +15,11 @@ import {
   FileRate,
   type ParityLine,
   ProjectOverhead,
+  type RunId,
   type Side,
 } from './Parity.schema.js'
 
-export const EMPTY_COSTS: FileCosts = FileCosts.make({ schemaVersion: 2, runs: [], files: [], projects: [] })
+export const EMPTY_COSTS: FileCosts = FileCosts.make({ schemaVersion: 3, runs: [], files: [], projects: [] })
 
 interface FileKey {
   readonly project: string
@@ -86,19 +90,20 @@ const slowerOrder: Order.Order<FileTally> = Order.combine(
   Order.mapInput(Order.Number, (tally: FileTally) => tally.mutants),
 )
 
-const slowerSide = (sides: Arr.NonEmptyArray<FileTally>): FileRate => {
+const slowerSide = (sides: Arr.NonEmptyArray<FileTally>, runId: RunId): FileRate => {
   const winner = Arr.reduce(sides, sides[0], (best, side) => (slowerOrder(side, best) >= 0 ? side : best))
   return FileRate.make({
     project: winner.project,
     fileName: winner.fileName,
     msPerMutant: winner.ms / winner.mutants,
     mutants: winner.mutants,
+    runId,
   })
 }
 
-const fileRatesOf = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<FileRate> =>
+const fileRatesOf = (lines: ReadonlyArray<ParityLine>, runId: RunId): ReadonlyArray<FileRate> =>
   Arr.sort(
-    Object.values(Arr.groupBy(talliesOf(lines), fileKey)).map((sides) => slowerSide(sides)),
+    Object.values(Arr.groupBy(talliesOf(lines), fileKey)).map((sides) => slowerSide(sides, runId)),
     fileRateOrder,
   )
 
@@ -113,12 +118,13 @@ const digestTalliesOf = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<Digest
       Num.max(max, call.ms), 0),
   }))
 
-const overheadsOf = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<ProjectOverhead> =>
+const overheadsOf = (lines: ReadonlyArray<ParityLine>, runId: RunId): ReadonlyArray<ProjectOverhead> =>
   Arr.sort(
     Object.values(Arr.groupBy(digestTalliesOf(lines), (tally) => tally.project)).map((sides) =>
       ProjectOverhead.make({
         project: sides[0].project,
         ms: sides.reduce((max, side) => Num.max(max, side.ms), 0),
+        runId,
       })
     ),
     overheadOrder,
@@ -129,40 +135,55 @@ export interface CostMeasurement {
   readonly projects: ReadonlyArray<ProjectOverhead>
 }
 
-export const measuredCostsOf = (lines: ReadonlyArray<ParityLine>): CostMeasurement => ({
-  files: fileRatesOf(lines),
-  projects: overheadsOf(lines),
-})
+export const measuredCostsOf: {
+  (runId: RunId): (lines: ReadonlyArray<ParityLine>) => CostMeasurement
+  (lines: ReadonlyArray<ParityLine>, runId: RunId): CostMeasurement
+} = dual(2, (lines: ReadonlyArray<ParityLine>, runId: RunId): CostMeasurement => ({
+  files: fileRatesOf(lines, runId),
+  projects: overheadsOf(lines, runId),
+}))
 
 export interface CostMerge {
   readonly base: FileCosts
   readonly measured: CostMeasurement
-  readonly runId: string
 }
 
-const runsOf = (anything: boolean, base: ReadonlyArray<string>, runId: string): ReadonlyArray<string> =>
-  Boolean.match(anything, { onTrue: () => Arr.dedupe([...base, runId]), onFalse: () => base })
+const newerOf = <A extends { readonly runId: RunId }>(earlier: A, later: A): A =>
+  Boolean.match(later.runId >= earlier.runId, { onTrue: () => later, onFalse: () => earlier })
 
-const hasMeasured = (measured: CostMeasurement): boolean =>
-  Arr.match(measured.files, { onEmpty: () => false, onNonEmpty: () => true }) ||
-  Arr.match(measured.projects, { onEmpty: () => false, onNonEmpty: () => true })
-
-export const mergeCosts = (merge: CostMerge): FileCosts => {
-  const measuredFileKeys = new Set(merge.measured.files.map(fileKey))
-  const measuredProjectKeys = new Set(merge.measured.projects.map((overhead) => overhead.project))
-  return FileCosts.make({
-    schemaVersion: 2,
-    runs: runsOf(hasMeasured(merge.measured), merge.base.runs, merge.runId),
-    files: Arr.sort(
-      [...merge.base.files.filter((rate) => !measuredFileKeys.has(fileKey(rate))), ...merge.measured.files],
-      fileRateOrder,
+const newestByKey = <A extends { readonly runId: RunId }>(
+  entries: ReadonlyArray<A>,
+  keyOf: (entry: A) => string,
+): ReadonlyArray<A> =>
+  HashMap.toValues(
+    entries.reduce(
+      (kept, entry) =>
+        HashMap.set(
+          kept,
+          keyOf(entry),
+          Option.match(HashMap.get(kept, keyOf(entry)), {
+            onNone: () => entry,
+            onSome: (earlier) => newerOf(earlier, entry),
+          }),
+        ),
+      HashMap.empty<string, A>(),
     ),
+  )
+
+export const mergeCosts = (merge: CostMerge): FileCosts =>
+  FileCosts.make({
+    schemaVersion: 3,
+    runs: Arr.sort(
+      Arr.dedupe([
+        ...merge.base.runs,
+        ...merge.measured.files.map((rate) => rate.runId),
+        ...merge.measured.projects.map((overhead) => overhead.runId),
+      ]),
+      Order.Number,
+    ),
+    files: Arr.sort(newestByKey([...merge.base.files, ...merge.measured.files], fileKey), fileRateOrder),
     projects: Arr.sort(
-      [
-        ...merge.base.projects.filter((overhead) => !measuredProjectKeys.has(overhead.project)),
-        ...merge.measured.projects,
-      ],
+      newestByKey([...merge.base.projects, ...merge.measured.projects], (overhead) => overhead.project),
       overheadOrder,
     ),
   })
-}
