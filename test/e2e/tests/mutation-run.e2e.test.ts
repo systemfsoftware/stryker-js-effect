@@ -59,7 +59,7 @@ const verifyRunIdConsistency = (
 
 const Feature = makeFeature({ it })
 
-Feature('Running one mutation run through the packed CLI')
+Feature('Running one mutation run through the packed CLI', { timeout: 300_000 })
   .withLayer(E2eHarnessLive)
   .live(
     'boots a warm microVM per scenario and runs the packed CLI, exporting host and worker spans to the Grafana LGTM collector',

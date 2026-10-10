@@ -37,7 +37,7 @@ const verifyReachesVerdict = (expect: Expect, run: ExecResult): Check => expect(
 
 const Feature = makeFeature({ it })
 
-Feature('Killing the mutants whose only covering tests sit inside describe blocks')
+Feature('Killing the mutants whose only covering tests sit inside describe blocks', { timeout: 300_000 })
   .withLayer(E2eHarnessLive)
   .live(
     'boots a warm microVM per scenario and runs the packed CLI, exporting host and worker spans to the Grafana LGTM collector',
