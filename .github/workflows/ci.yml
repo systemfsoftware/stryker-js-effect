@@ -134,6 +134,15 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - uses: ./.github/actions/released-tarballs
       - run: pnpm install --frozen-lockfile
+      # The newest bake entry this ref can read. Global setup reuses its root only when
+      # the packs key matches, and prunes it otherwise.
+      - name: Restore the fixture bake
+        id: restore-bake
+        uses: actions/cache/restore@v6
+        with:
+          path: test/e2e/node_modules/.cache/stryker-e2e/baked
+          key: e2e-bake-${{ runner.os }}-${{ github.sha }}
+          restore-keys: e2e-bake-${{ runner.os }}-
       - name: deno from the flake
         run: echo "$(nix build --no-link --print-out-paths .#deno)/bin" >> "$GITHUB_PATH"
       - name: Install process-compose (pinned)
@@ -150,9 +159,36 @@ jobs:
       # would suppress the telemetry artifact on exactly the hang scenario it
       # exists for.
       - name: E2E lane
+        id: lane
+        env:
+          STRYKER_E2E_BAKE_RECORD: ${{ runner.temp }}/e2e-bake.json
         run: >-
           timeout --signal=TERM --kill-after=10s 1200 pnpm test:e2e -- ${{ matrix.files }}
           ${{ startsWith(matrix.shard, 'rest') && '--exclude=tests/enterprise-mutation-lifecycle.e2e.test.ts --exclude=tests/enterprise-monorepo-sabotage.e2e.test.ts --exclude=tests/svelte-app.e2e.test.ts --exclude=tests/enterprise-composite-checker.e2e.test.ts' || '' }}
+      - name: Bake report
+        id: bake
+        if: always()
+        env:
+          RECORD: ${{ runner.temp }}/e2e-bake.json
+          LANE: ${{ steps.lane.outcome }}
+          RESTORED: ${{ steps.restore-bake.outputs.cache-matched-key }}
+        run: |
+          if [ -f "$RECORD" ]; then
+            jq -r .summary "$RECORD" >> "$GITHUB_STEP_SUMMARY"
+            echo "Restored bake entry: \`${RESTORED:-none}\`." >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.annotations[]' "$RECORD"
+            jq -r '"packs-key=\(.packsKey)", "baked=\(.baked)"' "$RECORD" >> "$GITHUB_OUTPUT"
+          elif [ "$LANE" != success ]; then
+            printf '### Fixture bake\n\n`E2E_BAKE_NO_RECORD`: the lane ended (%s) before global setup recorded the bake.\n' "$LANE" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=E2E_BAKE_NO_RECORD::The E2E lane ended ($LANE) before global setup recorded the fixture bake. Next: read the global setup error in the E2E lane log; the e2e-telemetry artifact holds the e2e.setup spans."
+          fi
+      # One leg saves, and only when it baked something, so each packs key is uploaded once.
+      - name: Save the fixture bake
+        if: always() && matrix.shard == 'lifecycle' && steps.bake.outputs.packs-key != '' && steps.bake.outputs.baked != '0'
+        uses: actions/cache/save@v6
+        with:
+          path: test/e2e/node_modules/.cache/stryker-e2e/baked
+          key: e2e-bake-${{ runner.os }}-${{ steps.bake.outputs.packs-key }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Export telemetry
         if: always()
         run: ./test/e2e/scripts/export-traces.ts

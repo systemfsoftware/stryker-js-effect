@@ -3,10 +3,13 @@ import {
   Array,
   Boolean,
   Cache,
+  Cause,
+  Clock,
   Config,
   Context,
   Crypto,
   Effect,
+  Exit,
   FileSystem,
   Layer,
   Match,
@@ -22,6 +25,12 @@ import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 import {
+  BakeDone,
+  BakeFailed,
+  type BakeReason,
+  bakeReasonsOf,
+  BakeReportJson,
+  bakeReportOf,
   type FileBytes,
   type FixtureInput,
   fixtureKeyBytes,
@@ -30,6 +39,7 @@ import {
   InstallClosureCommand,
   missingFixtures as missingFixturesWorkflow,
   MissingFixturesCommand,
+  overBudgetReason,
   PackedManifest,
   type PackedMember,
   type PackedTree,
@@ -42,6 +52,7 @@ import {
   REGISTRY_CUTOFF,
   type RegistryPins,
   registryPinsOf,
+  setupFailedReason,
   type StagedFixtureManifest,
 } from '@systemfsoftware/stryker-e2e-core'
 
@@ -57,7 +68,13 @@ import {
 import type { WorkspaceCatalogs } from './catalog-resolution.js'
 import { parseFixtureManifest, parseWorkspaceCatalogs, resolveCatalogSpecs } from './catalog-resolution.js'
 import { GuestJobs } from './guest-job.service.js'
-import { ExitFailure, FixtureMissingFailure, MalformedFixtureManifest, PackFailure } from './harness-failure.schema.js'
+import {
+  BakeOverBudgetFailure,
+  ExitFailure,
+  FixtureMissingFailure,
+  MalformedFixtureManifest,
+  PackFailure,
+} from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
 import { seamSpan, SpanNames, withSeamSpan } from './harness-telemetry.service.js'
 import * as Warm from './warm-sandbox.handle.js'
@@ -101,6 +118,9 @@ const STEP_INSTALL_PLAN = 'plan the workspace closure install'
 const TREE_CONCURRENCY = 16
 const UNPACK_CONCURRENCY = 4
 const STAGE_CONCURRENCY = 4
+const BAKE_BUDGET_SECONDS = 180
+const LOCKFILE_NAME = 'package-lock.json'
+const LOCK_DIGEST_CHARS = 16
 
 const ENTRY_PACKAGES = [
   '@systemfsoftware/stryker-js',
@@ -719,7 +739,16 @@ const bakeMissing = (
           { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
           { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
         ]),
-      )
+      ).pipe(Effect.timeoutOrElse({
+        duration: `${BAKE_BUDGET_SECONDS} seconds`,
+        orElse: () =>
+          Effect.fail(
+            new BakeOverBudgetFailure({
+              budgetSeconds: BAKE_BUDGET_SECONDS,
+              fixtures: missing.map((fixture) => fixture.fixtureId),
+            }),
+          ),
+      }))
       yield* Effect.forEach(
         missing,
         (fixture) => publishFixture(stagingDir, fixture, path.join(root, entryNameOf(fixture))),
@@ -732,6 +761,19 @@ const bakeMissing = (
       'e2e.fixture.ids': missing.map((fixture) => fixture.fixtureId).sort().join(','),
     }),
   )
+
+const lockDigestOf = (root: string, fixture: BakedFixture) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const crypto = yield* Crypto.Crypto
+    const bytes = yield* Effect.option(fs.readFile(path.join(root, entryNameOf(fixture), LOCKFILE_NAME)))
+    const digest = yield* Option.match(bytes, {
+      onNone: () => Effect.succeed('absent'),
+      onSome: (present) => Effect.map(hashOf(crypto, present), (hex) => hex.slice(0, LOCK_DIGEST_CHARS)),
+    })
+    return [fixture.fixtureId, digest] as const
+  })
 
 const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessError, BakePlatform> =>
   Effect.gen(function*() {
@@ -755,8 +797,73 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
         onTrue: () => Effect.void,
         onFalse: () => bakeMissing(environment, packsDir, root, missing, rules, packsInput, fixtureInputs),
       })
-      return { root, keys: keysRecordOf(fixtures), lease }
+      const locks = yield* Effect.forEach(fixtures, (fixture) => lockDigestOf(root, fixture), {
+        concurrency: UNPACK_CONCURRENCY,
+      })
+      return { root, keys: keysRecordOf(fixtures), lease, baked: missing.length, locks: Object.fromEntries(locks) }
     }).pipe(Effect.ensuring(fs.remove(scratch, { recursive: true, force: true }).pipe(Effect.orDie)))
+  })
+
+const RECORD_ENV = 'STRYKER_E2E_BAKE_RECORD'
+
+const bakeReasonsOfError = (error: HarnessError): Array.NonEmptyReadonlyArray<BakeReason> =>
+  Match.value(error).pipe(
+    Match.when(
+      { _tag: 'ExitFailure', step: STEP_BAKE },
+      (failure): Array.NonEmptyReadonlyArray<BakeReason> => bakeReasonsOf(failure),
+    ),
+    Match.when({ _tag: 'BakeOverBudgetFailure' }, (failure): Array.NonEmptyReadonlyArray<BakeReason> => [
+      overBudgetReason(failure),
+    ]),
+    Match.orElse((other): Array.NonEmptyReadonlyArray<BakeReason> => [setupFailedReason(other.message)]),
+  )
+
+const bakeRecordOf = (
+  exit: Exit.Exit<BakeOutcome, HarnessError>,
+  seconds: number,
+  packsKeyOf: (root: string) => string,
+) =>
+  Exit.match(exit, {
+    onSuccess: (outcome) =>
+      new BakeDone({
+        packsKey: packsKeyOf(outcome.root),
+        fixtures: Object.keys(outcome.keys).length,
+        baked: outcome.baked,
+        seconds,
+        locks: outcome.locks,
+      }),
+    onFailure: (cause) =>
+      new BakeFailed({
+        reasons: Option.match(Cause.findErrorOption(cause), {
+          onNone: (): Array.NonEmptyReadonlyArray<BakeReason> => [setupFailedReason(Cause.pretty(cause))],
+          onSome: bakeReasonsOfError,
+        }),
+        seconds,
+      }),
+  })
+
+const writeBakeRecord = (exit: Exit.Exit<BakeOutcome, HarnessError>, seconds: number) =>
+  Effect.gen(function*() {
+    const target = yield* Config.option(Config.String(RECORD_ENV))
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    yield* Option.match(target, {
+      onNone: () => Effect.void,
+      onSome: (file) =>
+        Effect.flatMap(
+          Schema.encodeEffect(BakeReportJson)(bakeReportOf(bakeRecordOf(exit, seconds, path.basename))),
+          (json) => fs.writeFileString(file, json),
+        ),
+    })
+  }).pipe(Effect.orDie)
+
+const recordedBake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessError, BakePlatform> =>
+  Effect.gen(function*() {
+    const started = yield* Clock.currentTimeMillis
+    const exit = yield* Effect.exit(bake(environment))
+    const finished = yield* Clock.currentTimeMillis
+    yield* writeBakeRecord(exit, (finished - started) / 1000)
+    return yield* exit
   })
 
 const warmFixtureInto = (
@@ -814,7 +921,7 @@ export class BakedFixtureCache extends Context.Service<BakedFixtureCache, BakedF
   static readonly bakeProgram: Effect.Effect<BakeOutcome, HarnessError, BakePlatform> = withSeamSpan(
     SpanNames.setup,
     {},
-    Effect.flatMap(bakeEnvironment, bake),
+    Effect.flatMap(bakeEnvironment, recordedBake),
   )
 
   static readonly teardownProgram = (outcome: BakeOutcome): Effect.Effect<void, HarnessError, BakePlatform> =>

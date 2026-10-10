@@ -39,11 +39,25 @@ Global setup keys the prepared fixtures on two inputs: the packed closure (base 
 
 A run leases its entry for as long as it lives and prunes unleased entries of other keys from its global teardown, so concurrent runs sharing the cache do not delete each other's entries.
 
+In CI every e2e leg restores the newest `e2e-bake-<os>-` cache entry its ref can read, before the lane. A leg whose packs key matches skips the bake; any other restored root is pruned at teardown. The `lifecycle` leg saves the baked root as `e2e-bake-<os>-<packs-key>-<run>` whenever it baked a fixture, on main pushes and in the pull request's own scope. The bake installs the fixtures in four concurrent lanes, registry dependencies before workspace tarballs within each fixture.
+
 ### Registry snapshot
 
 The bake never resolves against the live registry. Every `npm install` in the bake runs with `--before=<REGISTRY_CUTOFF>` (`test/e2e-core/src/registry-pins.ts`), and every staged fixture manifest pins the `effect` and `@effect/*` packages to the exact versions the root `pnpm-lock.yaml` resolves, as direct specs and, in the fixture's root manifest, as `overrides` that reach the packed closure's transitive dependencies. A release published after the cutoff therefore cannot change a fixture or stall the bake. The cutoff is the commit time of the root lockfile; move it to the new lockfile commit time when a lockfile change needs a newer registry release in the fixtures.
 
-Each install in the bake has a 300-second deadline. An install that hits it fails the bake with `E2E_BAKE_STALLED`, naming the fixture, the install step and the host command that reproduces the resolution.
+Each install in the bake has a 90-second deadline, and the whole bake a 180-second budget, so a failing bake ends the leg well inside its step timeout. Global setup writes a bake record when `STRYKER_E2E_BAKE_RECORD` names a file, and the CI step `Bake report` publishes it as the leg's step summary and one `::error` annotation per reason:
+
+| Reason code             | Raised when                                                                | Next action in the annotation                                                      |
+| ----------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `E2E_BAKE_ARGV`         | `bake-fixtures.sh` was not given `--before=<cutoff>` as its first argument | pass the cutoff ahead of the tarball specs                                         |
+| `E2E_BAKE_STALLED`      | one install did not finish within its deadline (the detail names its exit) | re-run if the registry was slow; otherwise resolve the staged manifest on the host |
+| `E2E_BAKE_CUTOFF_STALE` | npm found no version of a spec published before the cutoff                 | move `REGISTRY_CUTOFF` to the `pnpm-lock.yaml` commit time                         |
+| `E2E_BAKE_OVER_BUDGET`  | the whole bake ran past its budget                                         | re-run; otherwise compare the `e2e.setup.bake` span with the last green run        |
+| `E2E_BAKE_FAILED`       | the bake exited non-zero without naming a reason                           | read the npm output in the global setup error                                      |
+| `E2E_SETUP_FAILED`      | global setup failed before or around the bake for another cause            | read the global setup error                                                        |
+| `E2E_BAKE_NO_RECORD`    | the lane step failed before global setup wrote a record (CI step only)     | read the global setup error                                                        |
+
+A green bake's summary names its state (`BAKE_HIT`, `BAKE_PARTIAL`, `BAKE_FULL`), the fixture counts, the packs key, the restored cache entry and each fixture's `package-lock.json` digest.
 
 ### Warm snapshots and forks
 

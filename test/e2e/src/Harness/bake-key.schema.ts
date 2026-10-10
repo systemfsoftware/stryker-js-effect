@@ -46,6 +46,8 @@ export const BakeOutcome = Schema.Struct({
   root: Schema.String,
   keys: FixtureKeys,
   lease: Schema.String,
+  baked: Schema.Number,
+  locks: FixtureKeys,
 })
 
 export type BakeOutcome = typeof BakeOutcome.Type
