@@ -63,14 +63,24 @@ const makeDisableTypeChecksPreprocessor = (options: Options.StrykerOptions, regi
     return withPreprocessedFiles(project, updates)
   })
 
+const rewriteTsconfigTree = (
+  project: Project,
+  fileName: string,
+  basePath: string,
+): Effect.Effect<Project, PlatformError | StrykerError, Path.Path | ProjectFiles> =>
+  Effect.flatMap(sandboxTsconfigCell.run({ project, fileName, basePath }), ({ rewritten, follow }) =>
+    Effect.map(
+      Effect.reduce(follow, () => project, (current, followed) => rewriteTsconfigTree(current, followed, basePath)),
+      (followedProject) => withPreprocessedFiles(followedProject, Option.toArray(rewritten)),
+    ))
+
 const makeTSConfigPreprocessor = (options: Options.StrykerOptions, basePath: string): FilePreprocessor => (project) =>
   Boolean.match(options.inPlace, {
     onTrue: () => Effect.succeed(project),
     onFalse: () =>
       Effect.flatMap(
         Path.Path,
-        (pathService) =>
-          sandboxTsconfigCell.run({ project, fileName: pathService.resolve(options.tsconfigFile), basePath }),
+        (pathService) => rewriteTsconfigTree(project, pathService.resolve(options.tsconfigFile), basePath),
       ),
   })
 

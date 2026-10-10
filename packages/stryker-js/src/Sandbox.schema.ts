@@ -73,7 +73,7 @@ if (import.meta.vitest !== void 0) {
     compilerOptions: { strict: true },
   })
 
-  const extendsListOf = (drawn: DrawnConfig['extends']): ReadonlyArray<string> => [drawn ?? []].flat()
+  const listOf = (drawn: string | ReadonlyArray<string> | undefined): ReadonlyArray<string> => [drawn ?? []].flat()
 
   const sameSequence = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean =>
     left.length === right.length && Arr.every(Arr.zip(left, right), ([entry, other]) => entry === other)
@@ -81,12 +81,32 @@ if (import.meta.vitest !== void 0) {
   it.prop(
     '∀config_ExtendsEntries_≡EveryExtendsEntryInOrder',
     { of: [DrawnConfig], subject: extendsEntriesOf },
-    (subject, [drawn]) => sameSequence(subject(configOf(drawn)), extendsListOf(drawn.extends)),
+    (subject, [drawn]) => sameSequence(subject(configOf(drawn)), listOf(drawn.extends)),
   )
 
   it.prop(
     '∀config_ReferencePaths_≡EveryReferencePathInOrder',
     { of: [DrawnConfig], subject: referencePathsOf },
-    (subject, [drawn]) => sameSequence(subject(configOf(drawn)), entriesOf(drawn.references)),
+    (subject, [drawn]) => sameSequence(subject(configOf(drawn)), listOf(drawn.references)),
+  )
+
+  it.prop(
+    '∀config_ReferencedEntries_≡IncludeExcludeFilesExtendsReferencesInThatOrder',
+    { of: [DrawnConfig], subject: referencedEntriesOf },
+    (subject, [drawn]) =>
+      sameSequence(
+        subject(configOf(drawn)),
+        Arr.flatMap([drawn.include, drawn.exclude, drawn.files, drawn.extends, drawn.references], listOf),
+      ),
+  )
+
+  it.prop(
+    '∀entries_Entries_≡TheEntriesWhenPresentNoneWhenAbsent',
+    { of: [S.UndefinedOr(Drawn)], subject: entriesOf },
+    (subject, [drawn]) =>
+      Option.match(Option.fromUndefinedOr(drawn), {
+        onNone: () => subject(drawn).length === 0,
+        onSome: (present) => sameSequence(subject(drawn), present),
+      }),
   )
 }

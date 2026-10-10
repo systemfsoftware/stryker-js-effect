@@ -12,7 +12,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import * as S from 'effect/Schema'
 
 import { ProjectFiles } from './project-files.service.js'
-import { type Project, type ProjectFile, withPreprocessedFiles } from './Project.schema.js'
+import type { Project, ProjectFile } from './Project.schema.js'
 import { rewriteSandboxTsconfig, RewriteSandboxTsconfigCommand } from './rewrite-sandbox-tsconfig.workflow.js'
 import { referencedEntriesOf, type TSConfig, TsConfigSchema } from './Sandbox.schema.js'
 import { StrykerError } from './stryker-error.schema.js'
@@ -69,38 +69,37 @@ const readSandboxTsconfig = Effect.fnUntraced(function*(input: SandboxTsconfigIn
   return { _tag: 'RewriteSandboxTsconfigCommand' as const, tsconfig, input, file }
 })
 
-const withRewrittenContent = (project: Project, file: Option.Option<ProjectFile>, content: string): Project =>
-  withPreprocessedFiles(project, Option.toArray(Option.map(file, (present) => ({ ...present, content }))))
+export interface SandboxTsconfigRewrite {
+  readonly rewritten: Option.Option<ProjectFile>
+  readonly follow: ReadonlyArray<string>
+}
 
-const followAll = (follow: ReadonlyArray<string>, input: SandboxTsconfigInput, pathService: Path.Path) =>
-  Effect.reduce(follow, () => input.project, (project, entry) =>
-    sandboxTsconfigCell.run({
-      project,
-      fileName: pathService.resolve(pathService.dirname(input.fileName), entry),
-      basePath: input.basePath,
-    }))
+const unchanged: SandboxTsconfigRewrite = { rewritten: Option.none(), follow: [] }
 
 export const sandboxTsconfigCell: Cell.Cell<
   SandboxTsconfigInput,
-  Project,
+  SandboxTsconfigRewrite,
   PlatformError | StrykerError,
   Path.Path | ProjectFiles
 > = Sandwich.named(SpanTaxonomy.Spans.sandboxTsconfigRewriteFileArrays.name)(readSandboxTsconfig)
   .decide(rewriteSandboxTsconfig)
   .write({
-    TsconfigSkipped: (_decision, raw) => Effect.succeed(raw.input.project),
+    TsconfigSkipped: () => Effect.succeed(unchanged),
     TsconfigKept: ({ reason }, raw) =>
       Effect.as(
         Effect.logWarning(
           `Could not rewrite tsconfig file "${raw.input.fileName}": ${reason}. Its extends, project references, and file array properties were not rewritten for the sandbox, so this file still points at paths outside it.`,
         ),
-        raw.input.project,
+        unchanged,
       ),
     TsconfigRewritten: ({ config, follow }, raw) =>
       Effect.gen(function*() {
-        const followed = yield* followAll(follow, raw.input, yield* Path.Path)
+        const pathService = yield* Path.Path
         const content = yield* S.encodeEffect(S.fromJsonString(TsConfigSchema, { space: 2 }))(config).pipe(Effect.orDie)
-        return withRewrittenContent(followed, raw.file, content)
+        return {
+          rewritten: Option.map(raw.file, (present) => ({ ...present, content })),
+          follow: Arr.map(follow, (entry) => pathService.resolve(pathService.dirname(raw.input.fileName), entry)),
+        }
       }),
     CommandRejected: ({ issue }) =>
       Effect.fail(StrykerError.make({ message: `Could not decide the sandbox rewrite of a tsconfig file: ${issue}` })),

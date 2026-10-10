@@ -143,70 +143,69 @@ export const enteringInstrumentPhase: {
     ),
 )
 
-const projectOf = (seeds: readonly ProjectFile[]): Project => {
-  const uniqueByName = [...new Map(seeds.map((seed) => [seed.name, seed])).values()]
-  return {
-    fileDescriptions: {},
-    incrementalReport: undefined,
-    testFiles: [],
-    files: new Map(uniqueByName.map((seed) => [seed.name, seed] as const)),
-    filesToMutate: new Map(
-      uniqueByName.filter((seed) => seed.mutate !== false).map((seed) => [seed.name, seed] as const),
-    ),
-  }
-}
-
-const updatedContentOf = (updates: Map<string, string>, file: ProjectFile) =>
-  Option.getOrElse(Option.fromUndefinedOr(updates.get(file.name)), () => file.content)
-
-const untouchedApartFromContent = (file: ProjectFile, after: ProjectFile): boolean =>
-  after.mutate === file.mutate && after.originalContent === file.originalContent
-
-const contentApplied = (updates: Map<string, string>, file: ProjectFile, after: ProjectFile): boolean =>
-  after.content === updatedContentOf(updates, file)
-
-const filesMatchReference = (
-  folded: Project,
-  initial: readonly ProjectFile[],
-  updates: Map<string, string>,
-): boolean =>
-  folded.files.size === initial.length &&
-  initial.every((file) =>
-    Option.match(Option.fromUndefinedOr(folded.files.get(file.name)), {
-      onNone: () => false,
-      onSome: (after) => contentApplied(updates, file, after) && untouchedApartFromContent(file, after),
-    })
-  )
-
-const filesToMutateMatchReference = (folded: Project, mutatable: readonly ProjectFile[]): boolean =>
-  folded.filesToMutate.size === mutatable.length &&
-  mutatable.every((file) =>
-    Option.match(Option.fromUndefinedOr(folded.filesToMutate.get(file.name)), {
-      onNone: () => false,
-      onSome: (after) =>
-        Option.match(Option.fromUndefinedOr(folded.files.get(file.name)), {
-          onNone: () => false,
-          onSome: (inFiles) => after.content === inFiles.content,
-        }),
-    })
-  )
-
-const referenceLawHolds = (
-  fold: typeof withInstrumentedFiles,
-  seeds: readonly ProjectFile[],
-  instrumented: readonly { readonly name: string; readonly content: string }[],
-): boolean => {
-  const project = projectOf(seeds)
-  const folded = fold(project, instrumented)
-  const updates = new Map(instrumented.map(({ name, content }) => [name, content]))
-  const initial = [...project.files.values()]
-  const mutatable = initial.filter((file) => file.mutate !== false)
-  return filesMatchReference(folded, initial, updates) && filesToMutateMatchReference(folded, mutatable)
-}
-
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const { Schema } = await import('effect')
+  const projectOf = (seeds: readonly ProjectFile[]): Project => {
+    const uniqueByName = [...new Map(seeds.map((seed) => [seed.name, seed])).values()]
+    return {
+      fileDescriptions: {},
+      incrementalReport: undefined,
+      testFiles: [],
+      files: new Map(uniqueByName.map((seed) => [seed.name, seed] as const)),
+      filesToMutate: new Map(
+        uniqueByName.filter((seed) => seed.mutate !== false).map((seed) => [seed.name, seed] as const),
+      ),
+    }
+  }
+
+  const updatedContentOf = (updates: Map<string, string>, file: ProjectFile) =>
+    Option.getOrElse(Option.fromUndefinedOr(updates.get(file.name)), () => file.content)
+
+  const untouchedApartFromContent = (file: ProjectFile, after: ProjectFile): boolean =>
+    after.mutate === file.mutate && after.originalContent === file.originalContent
+
+  const contentApplied = (updates: Map<string, string>, file: ProjectFile, after: ProjectFile): boolean =>
+    after.content === updatedContentOf(updates, file)
+
+  const filesMatchReference = (
+    folded: Project,
+    initial: readonly ProjectFile[],
+    updates: Map<string, string>,
+  ): boolean =>
+    folded.files.size === initial.length &&
+    initial.every((file) =>
+      Option.match(Option.fromUndefinedOr(folded.files.get(file.name)), {
+        onNone: () => false,
+        onSome: (after) => contentApplied(updates, file, after) && untouchedApartFromContent(file, after),
+      })
+    )
+
+  const filesToMutateMatchReference = (folded: Project, mutatable: readonly ProjectFile[]): boolean =>
+    folded.filesToMutate.size === mutatable.length &&
+    mutatable.every((file) =>
+      Option.match(Option.fromUndefinedOr(folded.filesToMutate.get(file.name)), {
+        onNone: () => false,
+        onSome: (after) =>
+          Option.match(Option.fromUndefinedOr(folded.files.get(file.name)), {
+            onNone: () => false,
+            onSome: (inFiles) => after.content === inFiles.content,
+          }),
+      })
+    )
+
+  const referenceLawHolds = (
+    fold: typeof withInstrumentedFiles,
+    seeds: readonly ProjectFile[],
+    instrumented: readonly { readonly name: string; readonly content: string }[],
+  ): boolean => {
+    const project = projectOf(seeds)
+    const folded = fold(project, instrumented)
+    const updates = new Map(instrumented.map(({ name, content }) => [name, content]))
+    const initial = [...project.files.values()]
+    const mutatable = initial.filter((file) => file.mutate !== false)
+    return filesMatchReference(folded, initial, updates) && filesToMutateMatchReference(folded, mutatable)
+  }
 
   const ProjectSeedSchema = Schema.Struct({
     name: Schema.String.pipe(Schema.check(Schema.isMaxLength(32))),

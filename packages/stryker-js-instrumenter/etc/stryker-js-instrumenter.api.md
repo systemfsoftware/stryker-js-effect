@@ -21,7 +21,7 @@ export namespace Format {
 
 // @public (undocumented)
 export namespace Instrument {
-    export { File, FileDescription, FileDescriptions, InstrumentError, InstrumentFileSkip, InstrumentResult, InstrumenterContext, InstrumenterOptions, MutateDescription, ParserOptions, disableTypeChecks, instrument };
+    export { File, FileDescription, FileDescriptions, InstrumentError, InstrumentFileSkip, InstrumentResult, InstrumenterContext, InstrumenterOptions, MutateDescription, MutateDescriptionSchema, ParserOptions, disableTypeChecks, instrument };
 }
 
 // @public (undocumented)
