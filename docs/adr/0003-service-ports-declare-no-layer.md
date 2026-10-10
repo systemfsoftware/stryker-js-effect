@@ -9,11 +9,11 @@ supersedes: ["ADR-0001"]
 
 ## Context and Problem Statement
 
-ADR-0001's taxonomy row for `*.service.ts` (line 44) lets a service file hold a `Context.Service<Self, Shape>()` contract "and their static layers". Twenty `*.service.ts` files declare a tag and export a Layer beside it, and five more export a Layer and declare no tag. Importing one of those contracts imports its implementation too, along with whatever that implementation reaches: `CheckerRuntime.service.ts` pulls in `typescript/unstable/async`, `run-event-stream.service.ts` pulls in `Stdio` and `FileSystem`. A consumer cannot take a contract without the code that satisfies it, so no package can be split along a contract boundary.
+ADR-0001's taxonomy row for `*.service.ts` lets a service file hold a `Context.Service<Self, Shape>()` contract "and their static layers". Twenty `*.service.ts` files declare a tag and export a Layer beside it, and five more export a Layer and declare no tag. Importing one of those contracts imports its implementation too, along with whatever that implementation reaches: `CheckerRuntime.service.ts` pulls in `typescript/unstable/async`, `run-event-stream.service.ts` pulls in `Stdio` and `FileSystem`. A consumer cannot take a contract without the code that satisfies it, so no package can be split along a contract boundary.
 
 Two cell-architecture pack rules disagree on this. `ports-separate-from-layers` says port files "export no `Layer` values". The tier-2 clause of `service-and-layer-boundaries` allows a `static layer(options)` on the service class when no driver is involved. The Stream A ruling binds the first.
 
-This record supersedes only ADR-0001's `*.service.ts` row and extends its `src/drivers/` row. Every other clause of ADR-0001 stands, including line 60 on where functions over a schema's data live.
+This record supersedes only ADR-0001's `*.service.ts` row and extends its `src/drivers/` row. Every other clause of ADR-0001 stands, apart from the one ADR-0002 supersedes: where pure operations over a schema's data live.
 
 ## Decision Drivers
 
