@@ -1,7 +1,6 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
@@ -24,6 +23,7 @@ import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.j
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
+import { Anchored, placementAnchors, PlacementAnchorsCommand } from './placement-anchors.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
 import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
@@ -220,54 +220,8 @@ const programDigestAtPlanTime = ({
     onFalse: () => Effect.as(Effect.void, undefined),
   })
 
-const subsumedOf = (mutant: Mutant.Mutant): Option.Option<Mutant.Subsumed> =>
-  Option.filter(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed))
-
-const subsumedDominatorsOf = (mutant: Mutant.Mutant): ReadonlyArray<Mutant.MutantId> =>
-  Option.match(subsumedOf(mutant), {
-    onNone: (): ReadonlyArray<Mutant.MutantId> => [],
-    onSome: (subsumed) => subsumed.dominators,
-  })
-
-const guardBlockOf = (mutant: Mutant.Mutant): ReadonlyArray<Mutant.MutantId> =>
-  Option.match(Option.fromUndefinedOr(mutant.guard), {
-    onNone: (): ReadonlyArray<Mutant.MutantId> => [],
-    onSome: (guard) => [guard.block],
-  })
-
-const insideAnchorsOf = (
-  sources: ReadonlyArray<ReadonlyArray<Mutant.Mutant>>,
-): Record<string, ReadonlyArray<Mutant.MutantId>> => {
-  const byInsideId: Record<string, Mutant.MutantId[]> = {}
-  Arr.forEach(sources, (source) =>
-    Arr.forEach(source, (mutant) =>
-      Option.match(Option.fromUndefinedOr(mutant.guard), {
-        onNone: () => undefined,
-        onSome: (guard) =>
-          Arr.forEach(guard.inside, (insideId) => {
-            const anchors = Option.getOrElse(Record.get(byInsideId, insideId), (): Mutant.MutantId[] => [])
-            anchors.push(guard.block)
-            byInsideId[insideId] = anchors
-          }),
-      })))
-  return byInsideId
-}
-
-const anchorsOf = (
-  insideAnchors: Record<string, ReadonlyArray<Mutant.MutantId>>,
-  mutant: Mutant.Mutant,
-): ReadonlyArray<Mutant.MutantId> =>
-  Arr.dedupe([
-    ...subsumedDominatorsOf(mutant),
-    ...guardBlockOf(mutant),
-    ...Option.getOrElse(Record.get(insideAnchors, mutant.id), (): ReadonlyArray<Mutant.MutantId> => []),
-  ])
-
-const optionalAnchorsOf = (
-  insideAnchors: Record<string, ReadonlyArray<Mutant.MutantId>>,
-  mutant: Mutant.Mutant,
-): Arr.NonEmptyReadonlyArray<Mutant.MutantId> | undefined =>
-  Option.getOrUndefined(Option.liftPredicate(anchorsOf(insideAnchors, mutant), Arr.isReadonlyArrayNonEmpty))
+const anchorsFieldOf = (anchorsById: Record.ReadonlyRecord<string, Anchored['anchors']>, id: Mutant.MutantId) =>
+  optionalField('anchors', Option.getOrUndefined(Record.get(anchorsById, id)))
 
 const planProject = (
   request: PlanShardsRequest,
@@ -331,19 +285,24 @@ const planProject = (
           () => DEFAULT_MUTANT_COST_MS,
         ),
     })
-    const insideAnchors = insideAnchorsOf([reuse.mutants, reuse.rememberedResults])
+    const anchors = Record.fromEntries(
+      Result.getOrElse(
+        placementAnchors(PlacementAnchorsCommand.make({ mutants: [...reuse.mutants, ...reuse.rememberedResults] })),
+        (neverError) => neverError,
+      ).filter(S.is(Anchored)).map((anchored) => [anchored.id, anchored.anchors] as const),
+    )
     const mutants = [
       ...reuse.mutants.map((mutant) => ({
         id: mutant.id,
         costMs: costOf(mutant.id, reportCosts, coverage, testCoverage),
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
-        ...optionalField('anchors', optionalAnchorsOf(insideAnchors, mutant)),
+        ...anchorsFieldOf(anchors, mutant.id),
       })),
       ...reuse.rememberedResults.map((mutant) => ({
         id: mutant.id,
         costMs: 0,
         dependsOnDryRun: HashSet.has(dependentIds, mutant.id),
-        ...optionalField('anchors', optionalAnchorsOf(insideAnchors, mutant)),
+        ...anchorsFieldOf(anchors, mutant.id),
       })),
     ]
     return {
