@@ -2,6 +2,7 @@ export { PluginLoadFailureReason } from '../plugin-load-failure-reason.schema.js
 export { RunEventWireLine } from '../run-event-wire.schema.js'
 export {
   Budget,
+  CheckDuration,
   FeedbackJudgment,
   FeedbackReported,
   FormatClaimShadowingRow,
@@ -24,6 +25,7 @@ export {
   PluginsReported,
   RefusalRule,
   Refused,
+  ReportingDuration,
   ReuseRefusals,
   ReuseReported,
   RunEvent,
