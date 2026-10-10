@@ -12,6 +12,7 @@ import {
   FileRefusedReason,
   TypeAnswer,
   TypeQueryRefusedReason,
+  TypeQuerySiteKind,
 } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Arr from 'effect/Array'
 import { dual } from 'effect/Function'
@@ -126,6 +127,7 @@ export class TypeAnswerLine extends S.TaggedClass<TypeAnswerLine>()('TypeAnswerL
   line: PositiveInt,
   column: PositiveInt,
   candidate: S.String,
+  siteKind: TypeQuerySiteKind,
   siteType: S.optional(S.String),
   contextualType: S.optional(S.String),
   answer: TypeAnswer,

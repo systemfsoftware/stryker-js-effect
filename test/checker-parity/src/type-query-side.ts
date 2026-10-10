@@ -6,6 +6,7 @@ import {
   TypeQueryFile,
   TypeQueryRequest,
   TypeQuerySite,
+  type TypeQuerySiteKind,
 } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Arr from 'effect/Array'
@@ -88,6 +89,22 @@ const siteDraftsOf = (wires: ReadonlyArray<Checker.CheckerMutantWire>): Readonly
     }),
   )
 
+const BLOCK_STATEMENT_MUTATOR = 'BlockStatement'
+const EMPTY_BLOCK = '{}'
+
+const siteKindOf = (site: QuerySiteDraft): TypeQuerySiteKind =>
+  Boolean.match(
+    Arr.every(site.candidates, (candidate) =>
+      Boolean.every([
+        candidate.wire.mutatorName === BLOCK_STATEMENT_MUTATOR,
+        candidate.wire.replacement === EMPTY_BLOCK,
+      ])),
+    { onTrue: () => 'function-body', onFalse: () => 'expression' },
+  )
+
+const siteKindKeyOf = (kind: TypeQuerySiteKind): { readonly kind?: TypeQuerySiteKind } =>
+  Boolean.match(kind === 'function-body', { onTrue: () => ({ kind }), onFalse: () => ({}) })
+
 const fileDraftsOf = (
   contents: ReadonlyArray<FileContent>,
   wires: ReadonlyArray<Checker.CheckerMutantWire>,
@@ -135,10 +152,15 @@ const answerLinesOf = (
   draft: QueryFileDraft,
   siteAnswer: SiteAnswer,
 ): ReadonlyArray<ParityLine> => {
-  const candidates = Option.match(
-    Option.fromUndefinedOr(draft.sites.find((site) => site.siteId === siteAnswer.siteId)),
-    { onNone: Arr.empty<QueryCandidateDraft>, onSome: (site) => site.candidates },
-  )
+  const site = Option.fromUndefinedOr(draft.sites.find((candidateSite) => candidateSite.siteId === siteAnswer.siteId))
+  const candidates = Option.match(site, {
+    onNone: Arr.empty<QueryCandidateDraft>,
+    onSome: (found) => found.candidates,
+  })
+  const siteKind = Option.match(site, {
+    onNone: (): TypeQuerySiteKind => 'expression',
+    onSome: siteKindOf,
+  })
   return Arr.getSomes(
     siteAnswer.candidates.map((candidateAnswer) =>
       Option.map(
@@ -153,6 +175,7 @@ const answerLinesOf = (
             line: candidate.wire.location.start.line,
             column: candidate.wire.location.start.column,
             candidate: candidate.text,
+            siteKind,
             ...typesOf(siteAnswer),
             answer: candidateAnswer.answer,
           }),
@@ -179,7 +202,7 @@ const queryFileLines = (
   Effect.gen(function*() {
     const typeQuery = yield* TypeQuery
     const request = TypeQueryRequest.make({
-      version: 1,
+      version: 2,
       tsconfigFile: input.tsconfigFile,
       files: [
         TypeQueryFile.make({
@@ -188,6 +211,7 @@ const queryFileLines = (
           sites: draft.sites.map((site) =>
             TypeQuerySite.make({
               siteId: site.siteId,
+              ...siteKindKeyOf(siteKindOf(site)),
               location: site.location,
               candidates: site.candidates.map((candidate) => ({
                 candidateId: candidate.candidateId,

@@ -2,6 +2,7 @@ import { Workflow } from '@systemfsoftware/effect-cell-types'
 import {
   Assignable,
   NotAssignable,
+  type TypeQuerySiteKind,
   Unknown,
   UnknownReason,
 } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
@@ -177,6 +178,12 @@ export const TypeQueryAnswerCounts = S.Struct({
 })
 export type TypeQueryAnswerCounts = typeof TypeQueryAnswerCounts.Type
 
+export const TypeQueryAnswerCountsBySiteKind = S.Struct({
+  expression: TypeQueryAnswerCounts,
+  'function-body': TypeQueryAnswerCounts,
+})
+export type TypeQueryAnswerCountsBySiteKind = typeof TypeQueryAnswerCountsBySiteKind.Type
+
 export const TypeQueryUnknownCounts = S.Record(UnknownReason, NonNegativeInt)
 export type TypeQueryUnknownCounts = typeof TypeQueryUnknownCounts.Type
 
@@ -195,6 +202,7 @@ export type TypeQueryProjectShare = typeof TypeQueryProjectShare.Type
 export const TypeQuerySummary = S.Struct({
   queried: NonNegativeInt,
   answers: TypeQueryAnswerCounts,
+  answersBySiteKind: TypeQueryAnswerCountsBySiteKind,
   unknownReasons: TypeQueryUnknownCounts,
   notAssignable: NonNegativeInt,
   compileErrorAnsweredNotAssignable: NonNegativeInt,
@@ -748,6 +756,14 @@ const answerCountsOf = (
   unknown: answers.filter((line) => isUnknown(line.answer)).length,
 })
 
+const answerCountsBySiteKindOf = (
+  answers: ReadonlyArray<TypeAnswerLine>,
+): TypeQueryAnswerCountsBySiteKind => {
+  const ofKind = (kind: TypeQuerySiteKind): TypeQueryAnswerCounts =>
+    answerCountsOf(answers.filter((line) => line.siteKind === kind))
+  return { expression: ofKind('expression'), 'function-body': ofKind('function-body') }
+}
+
 const unknownReasonOf = (line: TypeAnswerLine): Option.Option<UnknownReason> =>
   Option.map(Option.liftPredicate(line.answer, isUnknown), (answer) => answer.reason)
 
@@ -764,6 +780,14 @@ const unknownReasonsOf = (answers: ReadonlyArray<TypeAnswerLine>): TypeQueryUnkn
     'instantiable-target': count('instantiable-target'),
     'overloaded-or-generic-call': count('overloaded-or-generic-call'),
     'context-not-enforced': count('context-not-enforced'),
+    'site-not-function-body': count('site-not-function-body'),
+    'candidate-not-empty-body': count('candidate-not-empty-body'),
+    'return-type-not-declared': count('return-type-not-declared'),
+    'generator-body': count('generator-body'),
+    'constructor-body': count('constructor-body'),
+    'getter-requires-return': count('getter-requires-return'),
+    'implicit-return-rejected': count('implicit-return-rejected'),
+    'async-return-not-promise': count('async-return-not-promise'),
   }
 }
 
@@ -808,6 +832,7 @@ const typeQuerySummaryOf = (
   return {
     queried: answers.length,
     answers: counts,
+    answersBySiteKind: answerCountsBySiteKindOf(answers),
     unknownReasons: unknownReasonsOf(answers),
     notAssignable: counts.notAssignable,
     compileErrorAnsweredNotAssignable:

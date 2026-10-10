@@ -5,6 +5,7 @@ import {
   type FileOutcome,
   NotAssignable,
   type SiteAnswer,
+  TYPE_QUERY_VERSIONS,
   type TypeAnswer,
   TypeQuery,
   type TypeQueryCandidate,
@@ -14,6 +15,8 @@ import {
   type TypeQueryResponse,
   type TypeQueryShape,
   type TypeQuerySite,
+  type TypeQuerySiteKind,
+  type TypeQueryVersion,
   Unknown,
 } from '@systemfsoftware/stryker-js-plugin-interface/type-query'
 import * as Arr from 'effect/Array'
@@ -31,6 +34,7 @@ import {
   type CallExpression,
   type Expression,
   type FunctionLikeDeclaration,
+  ModifierFlags,
   type NewExpression,
   type Node,
   type SourceFile,
@@ -42,11 +46,14 @@ import {
   isArrowFunction,
   isAsExpression,
   isBinaryExpression,
+  isBlock,
   isCallExpression,
   isConditionalExpression,
+  isConstructorDeclaration,
   isExpression,
   isFunctionExpression,
   isFunctionLikeDeclaration,
+  isGetAccessorDeclaration,
   isIdentifier,
   isNewExpression,
   isNonNullExpression,
@@ -57,6 +64,7 @@ import {
   isPropertyDeclaration,
   isReturnStatement,
   isSatisfiesExpression,
+  isSetAccessorDeclaration,
   isShorthandPropertyAssignment,
   isSpreadAssignment,
   isSpreadElement,
@@ -84,7 +92,9 @@ import {
   ClassifyCandidateCommand,
   type ContextOrigin,
   type ContextualTypeFacts,
+  type FunctionBodyKind,
   type SiteFacts,
+  type SiteFunctionBody,
 } from './CheckerCommands.schema.js'
 import { classifyCandidate } from './classify-candidate.workflow.js'
 import type { ServerCrash } from './type-query.schema.js'
@@ -92,7 +102,12 @@ import type { ServerCrash } from './type-query.schema.js'
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TypeQuery')
 export type TypeId = typeof TypeId
 
-const TSQUERY_VERSION = 1
+const REFUSAL_VERSION: TypeQueryVersion = 2
+
+const SERVED_VERSIONS: ReadonlyArray<TypeQueryVersion> = TYPE_QUERY_VERSIONS
+
+const servedVersionOf = (version: number): Option.Option<TypeQueryVersion> =>
+  Arr.findFirst(SERVED_VERSIONS, (served) => served === version)
 
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
 
@@ -112,14 +127,28 @@ const isContextFree = (text: string): boolean => {
 
 const unsupportedVersion = (version: number): TypeQueryRefused =>
   TypeQueryRefused.make({
-    version: TSQUERY_VERSION,
+    version: REFUSAL_VERSION,
     reason: 'unsupported-version',
-    nextAction: `Send a TypeQueryRequest with version ${TSQUERY_VERSION}; this server received version ${version}.`,
+    nextAction: `Send a TypeQueryRequest with version ${
+      SERVED_VERSIONS.join(' or ')
+    }; this server received version ${version}.`,
   })
+
+const functionBodyNeedsVersionTwo = (): TypeQueryRefused =>
+  TypeQueryRefused.make({
+    version: REFUSAL_VERSION,
+    reason: 'unsupported-version',
+    nextAction: 'Send a version 2 TypeQueryRequest for function-body sites; version 1 answers expression sites only.',
+  })
+
+const siteKindOf = (site: TypeQuerySite): TypeQuerySiteKind => site.kind ?? 'expression'
+
+const hasFunctionBodySite = (request: TypeQueryRequest): boolean =>
+  Arr.some(request.files, (file) => Arr.some(file.sites, (site) => siteKindOf(site) === 'function-body'))
 
 const projectOpenFailed = (tsconfigFile: string, detail: string): TypeQueryRefused =>
   TypeQueryRefused.make({
-    version: TSQUERY_VERSION,
+    version: REFUSAL_VERSION,
     reason: 'project-open-failed',
     nextAction: `Open '${tsconfigFile}' with a valid TypeScript project and retry; opening it failed with: ${detail}`,
   })
@@ -273,10 +302,14 @@ const appendProbe = (probe: string, text: string): readonly [string, readonly [s
 const buildProbe = (file: TypeQueryFile): Probe => {
   const texts = Arr.dedupe(
     Arr.flatMap(file.sites, (site) =>
-      Arr.map(
-        Arr.filter(site.candidates, (candidate) => isContextFree(candidate.text)),
-        (candidate) => candidate.text,
-      )),
+      Boolean.match(siteKindOf(site) === 'function-body', {
+        onTrue: () => Arr.empty<string>(),
+        onFalse: () =>
+          Arr.map(
+            Arr.filter(site.candidates, (candidate) => isContextFree(candidate.text)),
+            (candidate) => candidate.text,
+          ),
+      })),
   )
   const [text, placed] = Arr.mapAccum(texts, file.content, appendProbe)
   return { text, slots: new Map(placed) }
@@ -548,6 +581,149 @@ const readingOf = (project: Project, site: TypeQuerySite, node: Node): Effect.Ef
     })
   })
 
+const notFunctionBodyReading = (site: TypeQuerySite): SiteReading => ({
+  site,
+  facts: { _tag: 'SiteNotFunctionBody' },
+  contextType: Option.none(),
+  siteType: Option.none(),
+  contextualText: Option.none(),
+})
+
+const asyncOf = (fn: FunctionLikeDeclaration): boolean => (fn.modifierFlags & ModifierFlags.Async) !== 0
+
+const functionLikeBodyOf = (node: Node): Option.Option<FunctionLikeDeclaration> =>
+  Boolean.match(isBlock(node), {
+    onFalse: () => Option.none(),
+    onTrue: () =>
+      Option.filter(
+        Option.flatMap(
+          Option.fromUndefinedOr(node.parent),
+          (parent) => Option.filter(Option.some(parent), isFunctionLikeDeclaration),
+        ),
+        (fn) => fn.body === node,
+      ),
+  })
+
+const FUNCTION_BODY_KIND_GUARDS: ReadonlyArray<
+  readonly [(fn: FunctionLikeDeclaration) => boolean, FunctionBodyKind]
+> = [
+  [isGetAccessorDeclaration, 'getter'],
+  [isSetAccessorDeclaration, 'setter'],
+  [isConstructorDeclaration, 'constructor'],
+]
+
+const functionKindOf = (fn: FunctionLikeDeclaration): FunctionBodyKind =>
+  Option.getOrElse(
+    Option.map(Arr.findFirst(FUNCTION_BODY_KIND_GUARDS, ([guard]) => guard(fn)), ([, kind]) => kind),
+    () => 'other',
+  )
+
+const promiseArgumentOf = (fn: FunctionLikeDeclaration): Option.Option<TypeNode> =>
+  Option.flatMap(
+    Option.fromUndefinedOr(fn.type),
+    (annotation) =>
+      Option.flatMap(Option.filter(Option.some(annotation), isTypeReferenceNode), (reference) =>
+        Option.flatMap(Option.filter(Option.some(reference.typeName), isIdentifier), (name) =>
+          Boolean.match(name.text === 'Promise', {
+            onTrue: () =>
+              Arr.head(reference.typeArguments ?? []),
+            onFalse: () =>
+              Option.none(),
+          }))),
+  )
+
+const promiseArgumentForTargetOf = (fn: FunctionLikeDeclaration): Option.Option<TypeNode> =>
+  Boolean.match(asyncOf(fn), {
+    onTrue: () => promiseArgumentOf(fn),
+    onFalse: () => Option.none(),
+  })
+
+const isVoidLikeFlag = (type: Type): boolean =>
+  (type.flags & (TypeFlags.Void | TypeFlags.Undefined | TypeFlags.Any)) !== 0
+
+const allowsImplicitReturnOf = (type: Type): Effect.Effect<boolean, ServerCrash> =>
+  Boolean.match(isVoidLikeFlag(type), {
+    onTrue: () => Effect.succeed(true),
+    onFalse: () =>
+      Effect.map(
+        Option.match(unionTypesOf(type), {
+          onNone: () => Effect.succeed(Arr.empty<Type>()),
+          onSome: (evaluate) => tryPromise(evaluate),
+        }),
+        (members) => Arr.some(members, (member) => (member.flags & TypeFlags.Void) !== 0),
+      ),
+  })
+
+const signatureReturnTypeOf = (
+  checker: Checker,
+  fn: FunctionLikeDeclaration,
+): Effect.Effect<Option.Option<Type>, ServerCrash> =>
+  Effect.gen(function*() {
+    const signature = yield* tryPromise(() => checker.getSignatureFromDeclaration(fn))
+    return yield* Option.match(Option.fromUndefinedOr(signature), {
+      onNone: () => Effect.succeed(Option.none<Type>()),
+      onSome: (found) => Effect.map(tryPromise(() => checker.getReturnTypeOfSignature(found)), Option.fromUndefinedOr),
+    })
+  })
+
+const targetTypeOf = (
+  checker: Checker,
+  fn: FunctionLikeDeclaration,
+): Effect.Effect<Option.Option<Type>, ServerCrash> =>
+  Option.match(promiseArgumentForTargetOf(fn), {
+    onNone: () => signatureReturnTypeOf(checker, fn),
+    onSome: (argument) => Effect.map(tryPromise(() => checker.getTypeFromTypeNode(argument)), Option.fromUndefinedOr),
+  })
+
+const functionBodyFactsOf = (
+  checker: Checker,
+  fn: FunctionLikeDeclaration,
+): Effect.Effect<SiteFunctionBody, ServerCrash> =>
+  Effect.gen(function*() {
+    const targetType = yield* targetTypeOf(checker, fn)
+    const target = yield* Option.match(targetType, {
+      onNone: () => Effect.succeed(Option.none<ContextualTypeFacts>()),
+      onSome: (type) => Effect.asSome(contextualFactsOf(checker, type)),
+    })
+    const undefinedType = yield* tryPromise(() => checker.getUndefinedType())
+    const undefinedAssignable = yield* Option.match(targetType, {
+      onNone: () => Effect.succeed(false),
+      onSome: (type) => tryPromise(() => checker.isTypeAssignableTo(undefinedType, type)),
+    })
+    const targetAllowsImplicitReturn = yield* Option.match(targetType, {
+      onNone: () => Effect.succeed(false),
+      onSome: allowsImplicitReturnOf,
+    })
+    return {
+      _tag: 'SiteFunctionBody',
+      functionKind: functionKindOf(fn),
+      generator: fn.asteriskToken !== undefined,
+      async: asyncOf(fn),
+      returnTypeDeclared: fn.type !== undefined,
+      asyncReturnIsPromise: Boolean.and(asyncOf(fn), Option.isSome(promiseArgumentOf(fn))),
+      target,
+      undefinedAssignable,
+      targetAllowsImplicitReturn,
+    } as const
+  })
+
+const functionBodyReading = (
+  project: Project,
+  site: TypeQuerySite,
+  node: Node,
+): Effect.Effect<SiteReading, ServerCrash> =>
+  Option.match(functionLikeBodyOf(node), {
+    onNone: () => Effect.succeed(notFunctionBodyReading(site)),
+    onSome: (fn) =>
+      Effect.map(functionBodyFactsOf(project.checker, fn), (facts) => ({
+        site,
+        facts,
+        contextType: Option.none(),
+        siteType: Option.none(),
+        contextualText: Option.map(facts.target, (target) => target.text),
+      })),
+  })
+
 const readSite = (
   sourceFile: SourceFile,
   project: Project,
@@ -559,7 +735,11 @@ const readSite = (
   const node = Option.flatMap(range, ([start, end]) => nodeWithSpanOf(sourceFile, start, end))
   return Option.match(node, {
     onNone: () => Effect.succeed(missingReading(site)),
-    onSome: (found) => readingOf(project, site, found),
+    onSome: (found) =>
+      Boolean.match(siteKindOf(site) === 'function-body', {
+        onTrue: () => functionBodyReading(project, site, found),
+        onFalse: () => readingOf(project, site, found),
+      }),
   })
 }
 
@@ -628,7 +808,10 @@ const answerCandidate = (
   candidate: TypeQueryCandidate,
 ): Effect.Effect<{ readonly candidateId: string; readonly answer: TypeAnswer }, ServerCrash> =>
   Effect.gen(function*() {
-    const facts = yield* candidateFactsOf(probe, sourceFile, project, reading.contextType, candidate)
+    const facts = yield* Boolean.match(siteKindOf(reading.site) === 'function-body', {
+      onTrue: () => Effect.succeed<CandidateFacts>({ _tag: 'CandidateBodyText', text: candidate.text } as const),
+      onFalse: () => candidateFactsOf(probe, sourceFile, project, reading.contextType, candidate),
+    })
     const decision = decided(answerTypeQuery(AnswerTypeQueryCommand.make({ site: reading.facts, candidate: facts })))
     return { candidateId: candidate.candidateId, answer: portAnswerOf(decision) }
   })
@@ -734,14 +917,16 @@ const serveFile = (
 const makeShape = (servers: Servers): TypeQueryShape => ({
   query: (request: TypeQueryRequest): Effect.Effect<TypeQueryResponse, TypeQueryRefused> =>
     Effect.gen(function*() {
-      if (request.version !== TSQUERY_VERSION) {
-        return yield* unsupportedVersion(request.version)
-      }
+      const version = yield* Effect.fromOption(servedVersionOf(request.version), () =>
+        unsupportedVersion(request.version))
       const tsconfigFile = normalizeFileName(request.tsconfigFile)
-      const files = yield* Effect.forEach(request.files, (file) => serveFile(servers, tsconfigFile, file), {
-        concurrency: 1,
+      const files = yield* Boolean.match(Boolean.and(version === 1, hasFunctionBodySite(request)), {
+        onTrue: () =>
+          Effect.fail(functionBodyNeedsVersionTwo()),
+        onFalse: () =>
+          Effect.forEach(request.files, (file) => serveFile(servers, tsconfigFile, file), { concurrency: 1 }),
       })
-      return { version: TSQUERY_VERSION, files }
+      return { version, files }
     }),
 })
 

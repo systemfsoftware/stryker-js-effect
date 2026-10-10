@@ -124,7 +124,31 @@ export const SiteExpression = S.TaggedStruct('SiteExpression', {
 })
 export type SiteExpression = typeof SiteExpression.Type
 
-export const SiteFacts = S.Union([SiteMissing, SiteNotExpression, SiteExpression])
+export const FunctionBodyKind = S.Literals(['getter', 'setter', 'constructor', 'other'])
+export type FunctionBodyKind = typeof FunctionBodyKind.Type
+
+export const SiteNotFunctionBody = S.TaggedStruct('SiteNotFunctionBody', {})
+export type SiteNotFunctionBody = typeof SiteNotFunctionBody.Type
+
+export const SiteFunctionBody = S.TaggedStruct('SiteFunctionBody', {
+  functionKind: FunctionBodyKind,
+  generator: S.Boolean,
+  async: S.Boolean,
+  returnTypeDeclared: S.Boolean,
+  asyncReturnIsPromise: S.Boolean,
+  target: S.OptionFromNullOr(ContextualTypeFacts),
+  undefinedAssignable: S.Boolean,
+  targetAllowsImplicitReturn: S.Boolean,
+})
+export type SiteFunctionBody = typeof SiteFunctionBody.Type
+
+export const SiteFacts = S.Union([
+  SiteMissing,
+  SiteNotExpression,
+  SiteExpression,
+  SiteNotFunctionBody,
+  SiteFunctionBody,
+])
 export type SiteFacts = typeof SiteFacts.Type
 
 export const CandidateNotContextFree = S.TaggedStruct('CandidateNotContextFree', {})
@@ -139,7 +163,12 @@ export const CandidateTyped = S.TaggedStruct('CandidateTyped', {
 })
 export type CandidateTyped = typeof CandidateTyped.Type
 
-export const CandidateFacts = S.Union([CandidateNotContextFree, CandidateMissing, CandidateTyped])
+export const CandidateBodyText = S.TaggedStruct('CandidateBodyText', {
+  text: S.String,
+})
+export type CandidateBodyText = typeof CandidateBodyText.Type
+
+export const CandidateFacts = S.Union([CandidateNotContextFree, CandidateMissing, CandidateTyped, CandidateBodyText])
 export type CandidateFacts = typeof CandidateFacts.Type
 
 export class ClassifyCandidateCommand extends S.TaggedClass<ClassifyCandidateCommand>()(
