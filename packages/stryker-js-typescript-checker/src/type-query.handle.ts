@@ -123,10 +123,8 @@ const functionBodyNeedsVersionTwo = (): TypeQuery.TypeQueryRefused =>
       'Send a version 2 TypeQuery.TypeQueryRequest for function-body sites; version 1 answers expression sites only.',
   })
 
-const siteKindOf = (site: TypeQuery.TypeQuerySite): TypeQuery.TypeQuerySiteKind => site.kind ?? 'expression'
-
 const hasFunctionBodySite = (request: TypeQuery.TypeQueryRequest): boolean =>
-  Arr.some(request.files, (file) => Arr.some(file.sites, (site) => siteKindOf(site) === 'function-body'))
+  Arr.some(request.files, (file) => Arr.some(file.sites, (site) => site.kind === 'function-body'))
 
 const projectOpenFailed = (tsconfigFile: string, detail: string): TypeQuery.TypeQueryRefused =>
   TypeQuery.TypeQueryRefused.make({
@@ -302,7 +300,7 @@ const appendProbe = (probe: string, text: string): readonly [string, readonly [s
 const buildProbe = (file: TypeQuery.TypeQueryFile): Probe => {
   const texts = Arr.dedupe(
     Arr.flatMap(file.sites, (site) =>
-      Boolean.match(siteKindOf(site) === 'function-body', {
+      Boolean.match(site.kind === 'function-body', {
         onTrue: () => Arr.empty<string>(),
         onFalse: () =>
           Arr.map(
@@ -740,7 +738,7 @@ const readSite = (
   return Option.match(node, {
     onNone: () => Effect.succeed(missingReading(site)),
     onSome: (found) =>
-      Boolean.match(siteKindOf(site) === 'function-body', {
+      Boolean.match(site.kind === 'function-body', {
         onTrue: () => functionBodyReading(project, site, found),
         onFalse: () => readingOf(project, site, found),
       }),
@@ -817,7 +815,7 @@ const answerCandidate = (
   candidate: TypeQuery.TypeQueryCandidate,
 ): Effect.Effect<{ readonly candidateId: string; readonly answer: TypeQuery.TypeAnswer }, ServerCrash> =>
   Effect.gen(function*() {
-    const facts = yield* Boolean.match(siteKindOf(reading.site) === 'function-body', {
+    const facts = yield* Boolean.match(reading.site.kind === 'function-body', {
       onTrue: () => Effect.succeed<CandidateFacts>({ _tag: 'CandidateBodyText', text: candidate.text } as const),
       onFalse: () => candidateFactsOf(probe, sourceFile, project, reading.contextType, candidate),
     })

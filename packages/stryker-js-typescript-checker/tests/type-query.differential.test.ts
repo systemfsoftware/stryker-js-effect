@@ -101,6 +101,7 @@ const verdictsOf = (rows: ReadonlyArray<Row>): Effect.Effect<Readonly<Record<str
 const sitesOf = (content: string, rows: ReadonlyArray<Row>): ReadonlyArray<TypeQuery.TypeQuerySite> =>
   Object.values(Arr.groupBy(rows, (row) => row.site.siteId)).map((siteRows) => ({
     siteId: siteRows[0].site.siteId,
+    kind: 'expression' as const,
     location: locationOf(content, siteRows[0].site),
     candidates: siteRows.map((row) => ({ candidateId: row.id, text: row.candidate })),
   }))

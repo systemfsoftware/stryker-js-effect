@@ -75,11 +75,13 @@ const requestOf = (project: Fixture): TypeQuery.TypeQueryRequest => ({
       sites: [
         {
           siteId: 'union',
+          kind: 'expression',
           location: locationOf(project.source, 2, `'a'`),
           candidates: [{ candidateId: '""', text: '""' }],
         },
         {
           siteId: 'call',
+          kind: 'expression',
           location: locationOf(project.source, 11, `{ capture: 'x' }`),
           candidates: [{ candidateId: '{}', text: '{}' }],
         },

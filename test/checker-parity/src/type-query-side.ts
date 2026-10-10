@@ -94,9 +94,6 @@ const siteKindOf = (site: QuerySiteDraft): TypeQuery.TypeQuerySiteKind =>
     { onTrue: () => 'function-body', onFalse: () => 'expression' },
   )
 
-const siteKindKeyOf = (kind: TypeQuery.TypeQuerySiteKind): { readonly kind?: TypeQuery.TypeQuerySiteKind } =>
-  Boolean.match(kind === 'function-body', { onTrue: () => ({ kind }), onFalse: () => ({}) })
-
 const fileDraftsOf = (
   contents: ReadonlyArray<FileContent>,
   wires: ReadonlyArray<Checker.CheckerMutantWire>,
@@ -203,7 +200,7 @@ const queryFileLines = (
           sites: draft.sites.map((site) =>
             TypeQuery.TypeQuerySite.make({
               siteId: site.siteId,
-              ...siteKindKeyOf(siteKindOf(site)),
+              kind: siteKindOf(site),
               location: site.location,
               candidates: site.candidates.map((candidate) => ({
                 candidateId: candidate.candidateId,
