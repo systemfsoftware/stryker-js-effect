@@ -7,8 +7,11 @@
 import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as S from 'effect/Schema'
 
+export const ImporterCheck = S.Literals(['location-rule', 'always'])
+export type ImporterCheck = typeof ImporterCheck.Type
+
 export const TypescriptCheckerOptionsSchema = S.Struct({
-  typescriptChecker: S.optional(S.Struct({})),
+  typescriptChecker: S.optional(S.Struct({ importerCheck: S.optional(ImporterCheck) })),
 })
 
 // ── command ────────────────────────────────────────────────────────────────

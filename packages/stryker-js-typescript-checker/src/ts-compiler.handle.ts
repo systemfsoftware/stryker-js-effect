@@ -23,12 +23,10 @@ import * as S from 'effect/Schema'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 import type { Node, SourceFile } from 'typescript/unstable/ast'
 import { SyntaxKind } from 'typescript/unstable/ast'
-import { isModuleDeclaration } from 'typescript/unstable/ast/is'
 import {
   API,
   type Diagnostic,
   DiagnosticCategory,
-  ModifierFlags,
   type Program,
   type Project,
   type Snapshot,
@@ -38,6 +36,7 @@ import type { FileSystem as TSFileSystem } from 'typescript/unstable/fs'
 import { captureAliasSpecifier } from './capture-alias-specifier.workflow.js'
 import {
   CaptureAliasSpecifierCommand,
+  GROUP_MUTANT_BOUND,
   GroupMutantsCommand,
   OverrideTsconfigOptionsCommand,
   ParseTsconfigTextCommand,
@@ -60,6 +59,7 @@ import {
   type TceDecision,
 } from './classify-tce.workflow.js'
 import { type CompilerError, CompilerFailed, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
+import { editSiteFactsOf } from './edit-site.schema.js'
 import { groupMutants } from './group-mutants.workflow.js'
 import { identifyProgram as identifyProgramWorkflow, IdentifyProgramCommand } from './identify-program.workflow.js'
 import { overrideTsconfigOptions } from './override-tsconfig-options.workflow.js'
@@ -119,7 +119,7 @@ interface SourceFileEntry {
 
 type SourceFiles = HashMap.HashMap<string, SourceFileEntry>
 
-interface CompilerState {
+export interface CompilerState {
   readonly api: API | undefined
   readonly snapshot: Snapshot | undefined
   readonly sourceFiles: SourceFiles
@@ -138,9 +138,9 @@ interface CheckTally {
   readonly tceMs: number
 }
 
-const emptyTally: CheckTally = { snapshotUpdates: 0, resplices: 0, tceBuilds: 0, tceMs: 0 }
+export const emptyTally: CheckTally = { snapshotUpdates: 0, resplices: 0, tceBuilds: 0, tceMs: 0 }
 
-interface TSCompilerRuntime {
+export interface TSCompilerRuntime {
   readonly options: Options.StrykerOptions
   readonly host: FileSystem.FileSystem
   readonly pathService: Path.Path
@@ -157,7 +157,7 @@ export type TSCompiler = Handle.Of<typeof TSCompiler>
 
 export const isTSCompiler = TSCompiler.is
 
-const runtimeOf = (self: TSCompiler): TSCompilerRuntime => TSCompiler.slot(self)
+export const runtimeOf = (self: TSCompiler): TSCompilerRuntime => TSCompiler.slot(self)
 
 const decided = <A>(result: Result.Result<A, never>): A =>
   Result.match(result, { onFailure: (refused) => refused, onSuccess: (decision) => decision })
@@ -842,7 +842,7 @@ const parseHeldOf = (sourceFile: SourceFile, file: ScriptFile, mutant: Checker.C
     onSome: (start) => hasSpanOf(sourceFile, start, start + mutant.replacement.length),
   })
 
-const mutatedSourceFileOf = (
+const currentSourceFileOf = (
   rt: TSCompilerRuntime,
   fileName: string,
 ): Effect.Effect<Option.Option<SourceFile>, CompilerFailed> =>
@@ -852,6 +852,29 @@ const mutatedSourceFileOf = (
       Effect.map(projectOfFile(projects, fileName), (owned) => Option.map(owned, (found) => found.sourceFile)),
   )
 
+export interface EditTree {
+  readonly sourceFile: SourceFile
+  readonly syntaxErrors: boolean
+}
+
+const editTreeOf = (rt: TSCompilerRuntime, fileName: string): Effect.Effect<Option.Option<EditTree>, CompilerFailed> =>
+  Effect.flatMap(
+    projectsOf(rt),
+    (projects) =>
+      Effect.flatMap(projectOfFile(projects, fileName), (owned) =>
+        Option.match(owned, {
+          onNone: () => Effect.succeedNone,
+          onSome: (found) =>
+            Effect.asSome(Effect.map(
+              Effect.promise(() => found.project.program.getSyntacticDiagnostics(fileName)),
+              (diagnostics): EditTree => ({
+                sourceFile: found.sourceFile,
+                syntaxErrors: errorDiagnosticsOf(diagnostics).length > 0,
+              }),
+            )),
+        })),
+  )
+
 const parseHeldAfterSpliceOf = (
   rt: TSCompilerRuntime,
   file: Option.Option<ScriptFile>,
@@ -859,7 +882,7 @@ const parseHeldAfterSpliceOf = (
   fileName: string,
 ): Effect.Effect<boolean, CompilerFailed> =>
   Effect.gen(function*() {
-    const sourceFile = yield* mutatedSourceFileOf(rt, fileName)
+    const sourceFile = yield* currentSourceFileOf(rt, fileName)
     return Option.match(Option.all([file, sourceFile]), {
       onNone: () => true,
       onSome: ([spliced, mutated]) => parseHeldOf(mutated, spliced, mutant),
@@ -937,7 +960,7 @@ const refreshSnapshot = (rt: TSCompilerRuntime, changedFiles: ReadonlyArray<stri
       }),
   )
 
-const annotateDiagnosticSample = (diagnostics: readonly DiagnosticDecoded[]): Effect.Effect<void> =>
+export const annotateDiagnosticSample = (diagnostics: readonly DiagnosticDecoded[]): Effect.Effect<void> =>
   Boolean.match(diagnostics.length === 0, {
     onTrue: () => Effect.void,
     onFalse: () =>
@@ -1388,7 +1411,7 @@ export interface MutantCheck {
   readonly tce?: TceClassification
 }
 
-const projectOfFile = (
+const firstHolderOf = (
   projects: ReadonlyArray<Project>,
   fileName: string,
 ): Effect.Effect<Option.Option<OwnedSourceFile>> =>
@@ -1399,24 +1422,25 @@ const projectOfFile = (
         Effect.promise(() => project.program.getSourceFile(fileName)),
         (sourceFile) =>
           Option.match(Option.fromUndefinedOr(sourceFile), {
-            onNone: () => projectOfFile(Arr.drop(projects, 1), fileName),
+            onNone: () => firstHolderOf(Arr.drop(projects, 1), fileName),
             onSome: (found) => Effect.succeedSome({ project, sourceFile: found }),
           }),
       ),
   })
 
-const isAmbientGlobal = (sourceFile: SourceFile, statement: Node): boolean =>
-  isModuleDeclaration(statement)
-    ? Boolean.and(
-      (statement.modifierFlags & ModifierFlags.Ambient) !== 0,
-      statement.name.getText(sourceFile) === 'global',
-    )
-    : false
+const listsAsRootFile = (fileName: string) => (project: Project): boolean =>
+  Arr.some(project.rootFiles, (rootFile) => normalizeFileName(rootFile) === fileName)
 
-const declaresGlobalScope = (sourceFile: SourceFile): boolean =>
-  Boolean.or(
-    sourceFile.externalModuleIndicator === undefined,
-    Arr.some(sourceFile.statements, (statement) => isAmbientGlobal(sourceFile, statement)),
+const projectOfFile = (
+  projects: ReadonlyArray<Project>,
+  fileName: string,
+): Effect.Effect<Option.Option<OwnedSourceFile>> =>
+  firstHolderOf(
+    [
+      ...Arr.filter(projects, listsAsRootFile(fileName)),
+      ...Arr.filter(projects, (project) => Boolean.not(listsAsRootFile(fileName)(project))),
+    ],
+    fileName,
   )
 
 const importerErrorsOf = (
@@ -1451,6 +1475,12 @@ const affectedFileNamesOf = (
   return HashSet.fromIterable(Arr.map(affected, (affectedFile) => affectedFile.fileName))
 }
 
+const declaresGlobalScope = (sourceFile: SourceFile): boolean =>
+  Boolean.or(
+    sourceFile.externalModuleIndicator === undefined,
+    editSiteFactsOf(sourceFile, { start: sourceFile.end, end: sourceFile.end }, false).declaresGlobal,
+  )
+
 const beyondOwnErrorsOf = (
   state: CompilerState,
   projects: ReadonlyArray<Project>,
@@ -1474,40 +1504,58 @@ const checkedIn = (
       onFalse: () => beyondOwnErrorsOf(state, projects, owned, fileName),
     }))
 
-const checkOne = (
-  self: TSCompiler,
-  rt: TSCompilerRuntime,
-  state: CompilerState,
-  mutant: Checker.CheckerMutantWire,
-  previousMutants: ReadonlyArray<Checker.CheckerMutantWire>,
-): Effect.Effect<MutantCheck, CompilerFailed> =>
-  Effect.gen(function*() {
-    yield* resetMutatedFiles(rt, previousMutants)
-    const fileName = resolveFileName(rt, mutant.fileName)
-    const previousFileNames = Arr.map(previousMutants, (previous) => resolveFileName(rt, previous.fileName))
-    const changedFiles = Arr.dedupe([...previousFileNames, fileName])
-    const file = yield* getFile(rt.files, fileName)
-    yield* applyMutant(rt, mutant, mutant.replacement)
-    yield* refreshSnapshot(rt, changedFiles)
-    const held = yield* parseHeldAfterSpliceOf(rt, file, mutant, fileName)
-    yield* Boolean.match(held, {
-      onTrue: () => Effect.void,
-      onFalse: () => parenthesizedSpliceOf(rt, mutant, fileName, changedFiles),
-    })
-    const projects = yield* projectsOf(rt)
-    const owned = yield* projectOfFile(projects, fileName)
-    const diagnostics = yield* Option.match(owned, {
-      onNone: (): Effect.Effect<ReadonlyArray<Diagnostic>> => Effect.succeed([]),
-      onSome: (found) => checkedIn(state, projects, found, fileName),
-    })
-    const rendered = yield* describeDiagnostics(self, diagnostics)
-    return { mutantId: mutant.id, diagnostics: rendered }
-  })
-
-interface CheckAccumulator {
-  readonly previous: Option.Option<Checker.CheckerMutantWire>
-  readonly results: ReadonlyArray<MutantCheck>
+export interface CheckSteps {
+  readonly resolveFileName: (fileName: string) => string
+  readonly fileOf: (fileName: string) => Effect.Effect<Option.Option<ScriptFile>>
+  readonly editTreeOf: (fileName: string) => Effect.Effect<Option.Option<EditTree>, CompilerFailed>
+  readonly parseHeldAfterSplice: (
+    file: Option.Option<ScriptFile>,
+    mutant: Checker.CheckerMutantWire,
+    fileName: string,
+  ) => Effect.Effect<boolean, CompilerFailed>
+  readonly parenthesizedSplice: (
+    mutant: Checker.CheckerMutantWire,
+    fileName: string,
+    changedFiles: ReadonlyArray<string>,
+  ) => Effect.Effect<void, CompilerFailed>
+  readonly applyMutant: (mutant: Checker.CheckerMutantWire, replacement: string) => Effect.Effect<void, CompilerFailed>
+  readonly resetMutatedFiles: (mutants: ReadonlyArray<Checker.CheckerMutantWire>) => Effect.Effect<void>
+  readonly refreshSnapshot: (changedFiles: ReadonlyArray<string>) => Effect.Effect<void>
+  readonly ownErrorsIn: (fileName: string) => Effect.Effect<ReadonlyArray<Diagnostic>, CompilerFailed>
+  readonly allErrorsIn: (
+    state: CompilerState,
+    fileName: string,
+  ) => Effect.Effect<ReadonlyArray<Diagnostic>, CompilerFailed>
 }
+
+const errorsOfOwned = (
+  rt: TSCompilerRuntime,
+  fileName: string,
+  errorsOf: (projects: ReadonlyArray<Project>, owned: OwnedSourceFile) => Effect.Effect<ReadonlyArray<Diagnostic>>,
+): Effect.Effect<ReadonlyArray<Diagnostic>, CompilerFailed> =>
+  Effect.flatMap(
+    projectsOf(rt),
+    (projects) =>
+      Effect.flatMap(projectOfFile(projects, fileName), (owned) =>
+        Option.match(owned, {
+          onNone: () => Effect.succeed<ReadonlyArray<Diagnostic>>([]),
+          onSome: (found) => errorsOf(projects, found),
+        })),
+  )
+
+export const checkStepsOf = (rt: TSCompilerRuntime): CheckSteps => ({
+  resolveFileName: (fileName) => resolveFileName(rt, fileName),
+  fileOf: (fileName) => getFile(rt.files, fileName),
+  editTreeOf: (fileName) => editTreeOf(rt, fileName),
+  parseHeldAfterSplice: (file, mutant, fileName) => parseHeldAfterSpliceOf(rt, file, mutant, fileName),
+  parenthesizedSplice: (mutant, fileName, changedFiles) => parenthesizedSpliceOf(rt, mutant, fileName, changedFiles),
+  applyMutant: (mutant, replacement) => applyMutant(rt, mutant, replacement),
+  resetMutatedFiles: (mutants) => Effect.asVoid(resetMutatedFiles(rt, [...mutants])),
+  refreshSnapshot: (changedFiles) => refreshSnapshot(rt, changedFiles),
+  ownErrorsIn: (fileName) => errorsOfOwned(rt, fileName, (_, owned) => ownErrorsOf(owned, fileName)),
+  allErrorsIn: (state, fileName) =>
+    errorsOfOwned(rt, fileName, (projects, owned) => checkedIn(state, projects, owned, fileName)),
+})
 
 const siteKeyOf = (mutant: Checker.CheckerMutantWire): string =>
   `${mutant.fileName}:${mutant.location.start.line}:${mutant.location.start.column}:${mutant.location.end.line}:${mutant.location.end.column}`
@@ -1618,7 +1666,7 @@ const decisionsOfFile = Effect.fnUntraced(function*(
   })
 })
 
-const classifyBatchTce = Effect.fnUntraced(function*(
+export const classifyBatchTce = Effect.fnUntraced(function*(
   rt: TSCompilerRuntime,
   tsconfigFile: string,
   mutants: readonly Checker.CheckerMutantWire[],
@@ -1650,73 +1698,13 @@ const classifyBatchTce = Effect.fnUntraced(function*(
   )
 })
 
-export const check: {
-  (
-    mutants: readonly Checker.CheckerMutantWire[],
-  ): (self: TSCompiler) => Effect.Effect<ReadonlyArray<MutantCheck>, CompilerError>
-  (
-    self: TSCompiler,
-    mutants: readonly Checker.CheckerMutantWire[],
-  ): Effect.Effect<ReadonlyArray<MutantCheck>, CompilerError>
-} = dual(
-  2,
-  Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerCheck.name)(function*(
-    self: TSCompiler,
-    mutants: readonly Checker.CheckerMutantWire[],
-  ): Effect.fn.Return<ReadonlyArray<MutantCheck>, CompilerError> {
-    const rt = runtimeOf(self)
-    yield* Effect.annotateCurrentSpan({
-      'stryker.mutants.count': mutants.length,
-      'stryker.mutants.ids': Arr.map(mutants, (mutant) => mutant.id).join(','),
-    })
-    yield* Ref.set(rt.tally, emptyTally)
-    const state = yield* SynchronizedRef.get(rt.state)
-    yield* resetMutatedFiles(rt, state.lastMutants)
-    const batchFileNames = Arr.dedupe(Arr.map(mutants, (mutant) => resolveFileName(rt, mutant.fileName)))
-    yield* refreshSnapshot(rt, Arr.dedupe([...state.lastMutatedFileNames, ...batchFileNames]))
-    const accumulated = yield* Effect.reduce(
-      mutants,
-      (): CheckAccumulator => ({ previous: Option.none(), results: [] }),
-      (previous, mutant) =>
-        Effect.map(
-          checkOne(self, rt, state, mutant, Option.toArray(previous.previous)),
-          (result): CheckAccumulator => ({ previous: Option.some(mutant), results: [...previous.results, result] }),
-        ),
-    )
-    const checked = yield* classifyBatchTce(rt, state.tsconfigFile, mutants, accumulated.results)
-    yield* SynchronizedRef.update(rt.state, (prev) => ({
-      ...prev,
-      lastMutants: [...mutants],
-      lastMutatedFileNames: batchFileNames,
-    }))
-    const failed = Arr.filter(checked, (entry) => entry.diagnostics.length > 0)
-    const equivalentToOriginal = Arr.filter(checked, (entry) => entry.tce === 'original').length
-    const duplicateAtSite = Arr.filter(checked, (entry) => entry.tce === 'sibling').length
-    const tally = yield* Ref.get(rt.tally)
-    yield* Effect.annotateCurrentSpan({
-      'typescript.diagnostics.count': Arr.reduce(checked, 0, (total, entry) => total + entry.diagnostics.length),
-      'typescript.compile_errors.count': failed.length,
-      'typescript.tce.equivalent_to_original.count': equivalentToOriginal,
-      'typescript.tce.duplicate_at_site.count': duplicateAtSite,
-      'typescript.counts.schema_version': 1,
-      'typescript.snapshot_updates.count': tally.snapshotUpdates,
-      'typescript.resplices.count': tally.resplices,
-      'typescript.tce_builds.count': tally.tceBuilds,
-      'typescript.tce.ms': tally.tceMs,
-      'typescript.importer_shortcut.count': 0,
-    })
-    yield* annotateDiagnosticSample(Arr.flatten(Arr.map(failed, (entry) => entry.diagnostics)))
-    return checked
-  }),
-)
-
 export const nodes = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerNodes.name)(function*(self: TSCompiler) {
   return yield* self.pipe(runtimeOf, nodesOf)
 })
 
 const groupedMutants = (mutants: readonly Checker.CheckerMutantWire[]): ReadonlyArray<ReadonlyArray<string>> =>
   Arr.map(
-    decided(groupMutants(GroupMutantsCommand.make({ mutants: [...mutants] }))),
+    decided(groupMutants(GroupMutantsCommand.make({ mutants: [...mutants], bound: GROUP_MUTANT_BOUND }))),
     (group) => group.ids,
   )
 

@@ -11,11 +11,13 @@ import {
   ComparisonDecision,
   type ObservedVerdict,
   type ParityBroken,
+  type ParityHolds,
   type SideTotals,
   type TypeQueryAnswerCounts,
   type TypeQueryProjectShare,
   type TypeQuerySummary,
   type Violation,
+  type Warning,
 } from './compare-sides.workflow.js'
 import { DriverFailure } from './DriverFailure.schema.js'
 import { LegScope, type RunScopeName, type ScopeSettings } from './Parity.schema.js'
@@ -174,6 +176,18 @@ const groupsByCode = (violations: ReadonlyArray<Violation>): ReadonlyArray<Arr.N
     ),
   )
 
+const warningCodeOf = (warning: Warning): string => warning.code
+
+const warningsByCode = (warnings: ReadonlyArray<Warning>): ReadonlyArray<Warning> =>
+  Arr.dedupeWith(warnings, (a, b) => warningCodeOf(a) === warningCodeOf(b))
+
+const warningAnnotationsOf = (warnings: ReadonlyArray<Warning>): ReadonlyArray<string> =>
+  warningsByCode(warnings).map((warning) =>
+    `::warning title=${escapeProperty(`checker-parity ${warning.code}`)}::${
+      escapeData(`${warning.code}: ${warning.nextAction}`)
+    }`
+  )
+
 const ratiosOf = (side: SideTotals): string =>
   `${side.mutants} mutants, ${side.checkCalls} check calls, ${side.phaseMs} ms, ${
     side.snapshotUpdatesPerMutant.toFixed(3)
@@ -248,16 +262,21 @@ const typeQueryLines = (typeQuery: TypeQuerySummary): ReadonlyArray<string> => [
   ...typeQuery.projects.map(typeQueryProjectLine),
 ]
 
+const warningLines = (warnings: ReadonlyArray<Warning>): ReadonlyArray<string> =>
+  warnings.map((warning) => `- warning ${warning.code}: ${warning.nextAction}`)
+
 const summaryMarkdown = (
   verdict: 'FAIL' | 'pass',
   finished: CompareFinished,
   violations: ReadonlyArray<Violation>,
+  warnings: ReadonlyArray<Warning>,
 ): string => {
   const summary = finished.decision.summary
   return [
     `### checker-parity: ${verdict}`,
     '',
     `- violations: ${violations.length}${codesSuffix(violations)}`,
+    ...warningLines(warnings),
     ...scopeLines(finished.legs),
     `- projects: ${summary.measuredProjectCount} measured of ${summary.projectCount}, ${summary.excludedCachedProjectCount} cached-excluded, ${summary.skipped.length} skipped`,
     `- main: ${ratiosOf(summary.main)}`,
@@ -268,13 +287,17 @@ const summaryMarkdown = (
   ].join('\n')
 }
 
-const heldReport = (finished: CompareFinished): ParityHeldReport =>
+const heldReport = (
+  command: ReportParityOutcomeCommand,
+  finished: CompareFinished,
+  held: ParityHolds,
+): ParityHeldReport =>
   ParityHeldReport.make({
     exitCode: 0,
     stdout: [`parity holds over ${finished.lineCount} lines across ${finished.shards} shards`],
     stderr: [],
-    annotations: [],
-    stepSummary: summaryMarkdown('pass', finished, []),
+    annotations: inActions(command, () => warningAnnotationsOf(held.warnings)),
+    stepSummary: summaryMarkdown('pass', finished, [], held.warnings),
   })
 
 const brokenReport = (
@@ -292,11 +315,11 @@ const brokenReport = (
       }),
     ],
     stderr: [],
-    annotations: inActions(
-      command,
-      () => groupsByCode(broken.violations).map((group) => annotationOf(command, finished, group)),
-    ),
-    stepSummary: summaryMarkdown('FAIL', finished, broken.violations),
+    annotations: inActions(command, () => [
+      ...groupsByCode(broken.violations).map((group) => annotationOf(command, finished, group)),
+      ...warningAnnotationsOf(broken.warnings),
+    ]),
+    stepSummary: summaryMarkdown('FAIL', finished, broken.violations, broken.warnings),
   })
 
 const failedReport = (command: ReportParityOutcomeCommand, failure: DriverFailure): DriverFailedReport =>
@@ -318,7 +341,7 @@ const reportOf = (command: ReportParityOutcomeCommand): ParityOutcomeReport =>
     DriverFailure: (failure) => failedReport(command, failure),
     CompareFinished: (finished) =>
       Match.valueTags(finished.decision, {
-        ParityHolds: () => heldReport(finished),
+        ParityHolds: (held) => heldReport(command, finished, held),
         ParityBroken: (broken) => brokenReport(command, finished, broken),
       }),
   })

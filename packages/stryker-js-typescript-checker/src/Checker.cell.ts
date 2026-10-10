@@ -7,10 +7,11 @@ import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
 
 import { checkMutants } from './check-mutants.workflow.js'
+import { check } from './check-rounds.js'
 import { CheckMutantsCommand } from './Checker.schema.js'
 import { CheckMutantsInput, MutantVerdict, tceFieldOf } from './CheckMutants.schema.js'
 import type { CompilerError } from './Compiler.schema.js'
-import { check, type MutantCheck } from './ts-compiler.handle.js'
+import type { MutantCheck } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
 
 type CheckRefusalCause = CompilerError | string

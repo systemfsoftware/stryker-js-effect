@@ -1,11 +1,17 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
+import { EditSiteFacts } from './edit-site.schema.js'
 import { TsConfigDocumentSchema } from './Tsconfig.schema.js'
+
+const MutantBound = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
+export type MutantBoundType = typeof MutantBound.Type
 
 export class GroupMutantsCommand extends S.TaggedClass<GroupMutantsCommand>()('GroupMutantsCommand', {
   mutants: S.Array(Checker.CheckerMutantWire),
+  bound: MutantBound,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -189,3 +195,51 @@ export class AnswerTypeQueryCommand extends S.TaggedClass<AnswerTypeQueryCommand
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
+
+export const ShortcutClause = S.Literals([
+  'outside-function-body',
+  'body-dependent-signature',
+  'not-typescript-module',
+  'module-reference',
+  'syntax-error',
+])
+export type ShortcutClause = typeof ShortcutClause.Type
+
+export const ShortcutTree = S.Literals(['original', 'mutated'])
+export type ShortcutTree = typeof ShortcutTree.Type
+
+export class DecideImporterShortcutCommand extends S.TaggedClass<DecideImporterShortcutCommand>()(
+  'DecideImporterShortcutCommand',
+  {
+    original: EditSiteFacts,
+    mutated: EditSiteFacts,
+  },
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export const RoundCandidate = S.Struct({
+  id: S.String,
+  fileName: S.String,
+  eligible: S.Boolean,
+})
+export type RoundCandidate = typeof RoundCandidate.Type
+
+const roundCandidateIdsAreDistinct = S.makeFilter(
+  (candidates: ReadonlyArray<RoundCandidate>): string | undefined =>
+    Option.getOrUndefined(
+      Option.map(
+        Option.fromUndefinedOr(Mutant.duplicatedValue(candidates.map((candidate) => candidate.id))),
+        (duplicated) => `round candidate ids must identify distinct mutants, got "${duplicated}"`,
+      ),
+    ),
+  { arbitraryConstraint: { uniqueBy: (candidate: RoundCandidate) => candidate.id } },
+)
+
+export class PlanCheckRoundsCommand extends S.TaggedClass<PlanCheckRoundsCommand>()('PlanCheckRoundsCommand', {
+  candidates: S.Array(RoundCandidate).check(roundCandidateIdsAreDistinct),
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export const GROUP_MUTANT_BOUND: MutantBoundType = 256
