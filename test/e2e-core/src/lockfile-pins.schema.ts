@@ -1,3 +1,4 @@
+import * as Function from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Rec from 'effect/Record'
@@ -23,7 +24,7 @@ export const PnpmNode = S.Struct({
   resolved: S.optional(S.String),
   path: S.optional(S.String),
   deduped: S.optional(S.Boolean),
-  dedupedDependenciesCount: S.optional(S.Number),
+  dedupedDependenciesCount: S.optional(S.Natural),
   dependencies: S.optional(S.Record(S.String, S.suspend((): S.Codec<PnpmNode> => PnpmNode))),
   optionalDependencies: S.optional(S.Record(S.String, S.suspend((): S.Codec<PnpmNode> => PnpmNode))),
 }).annotate({ identifier: 'PnpmNode' })
@@ -94,11 +95,17 @@ const withPinnedFields = (manifest: JsonObject, pins: LockfilePins): JsonObject 
     manifest,
   )
 
-export const pinnedManifest = (manifest: JsonObject, pins: LockfilePins, role: ManifestRole): JsonObject => {
-  const pinned = withPinnedFields(manifest, pins)
-  return Match.value(role).pipe(
-    Match.when('root', (): JsonObject => Object.assign({}, pinned, { overrides: sortedRecord(pins.pins) })),
-    Match.when('member', (): JsonObject => pinned),
-    Match.exhaustive,
-  )
-}
+export const pinnedManifest: {
+  (pins: LockfilePins, role: ManifestRole): (manifest: JsonObject) => JsonObject
+  (manifest: JsonObject, pins: LockfilePins, role: ManifestRole): JsonObject
+} = Function.dual(
+  3,
+  (manifest: JsonObject, pins: LockfilePins, role: ManifestRole): JsonObject => {
+    const pinned = withPinnedFields(manifest, pins)
+    return Match.value(role).pipe(
+      Match.when('root', (): JsonObject => Object.assign({}, pinned, { overrides: sortedRecord(pins.pins) })),
+      Match.when('member', (): JsonObject => pinned),
+      Match.exhaustive,
+    )
+  },
+)

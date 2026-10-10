@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as HashSet from 'effect/HashSet'
 import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
 import * as Rec from 'effect/Record'
@@ -76,13 +77,13 @@ const pinOf = (occurrences: ReadonlyArray<Occurrence>, name: string): Option.Opt
   })
 }
 
-const workspacesIn = (command: LockfilePinsCommand): ReadonlySet<string> =>
-  new Set([...command.workspaceNames, ...Arr.map(command.listing, (project) => project.name)])
+const workspacesIn = (command: LockfilePinsCommand): HashSet.HashSet<string> =>
+  HashSet.fromIterable([...command.workspaceNames, ...Arr.map(command.listing, (project) => project.name)])
 
 const pinsOf = (command: LockfilePinsCommand): LockfilePins => {
   const occurrences = occurrencesIn(command.listing)
   const workspaces = workspacesIn(command)
-  const eligible = Arr.filter(namesOf(occurrences), (name) => Boolean.not(workspaces.has(name)))
+  const eligible = Arr.filter(namesOf(occurrences), (name) => Boolean.not(HashSet.has(workspaces, name)))
   const pins = Object.fromEntries(
     Arr.getSomes(Arr.map(Arr.sort(eligible, Order.String), (name) => pinOf(occurrences, name))),
   )

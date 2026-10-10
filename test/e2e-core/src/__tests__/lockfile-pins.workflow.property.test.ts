@@ -20,26 +20,10 @@ import {
 import { lockfilePins, LockfilePinsCommand } from '../lockfile-pins.workflow.js'
 
 const REGISTRY = 'https://registry.npmjs.org/'
-const PROJECT = 'root-project'
 const NAMES = ['pkg-a', 'pkg-b', '@scope/pkg-c'] as const
 const VERSIONS = ['1.0.0', '2.0.0', '1.0.0-rc.1'] as const
 const VERSION_LITERALS = [...VERSIONS, 'link:../dep'] as const
 const EXACT = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
-
-const Entry = S.Struct({
-  key: S.Literals(NAMES),
-  from: S.Literals(NAMES),
-  version: S.Literals(VERSION_LITERALS),
-  resolved: S.Literals(['registry', 'file', 'jsr', 'absent']),
-})
-type Entry = typeof Entry.Type
-
-const entriesArb = Arbitrary.array(Arbitrary.schema(Entry), { maxLength: 8 })
-const workspaceArb = Arbitrary.map(
-  Arbitrary.array(Arbitrary.schema(S.Literals(NAMES)), { maxLength: 2 }),
-  (names): ReadonlyArray<string> => names,
-)
-const projectNameArb = Arbitrary.schema(S.Literals(NAMES))
 
 const RESOLVED_PREFIX: Readonly<Record<string, string>> = {
   registry: REGISTRY,
@@ -47,69 +31,9 @@ const RESOLVED_PREFIX: Readonly<Record<string, string>> = {
   jsr: 'https://npm.jsr.io/',
 }
 
-const nodeOf = (entry: Entry): PnpmNode => ({
-  from: entry.from,
-  version: entry.version,
-  resolved: entry.resolved === 'absent' ? undefined : `${RESOLVED_PREFIX[entry.resolved]}${entry.key}`,
-})
-
-const chainOf = (entries: ReadonlyArray<Entry>): PnpmNode | undefined =>
-  entries.reduce<{ readonly node: PnpmNode | undefined; readonly depth: number }>(
-    ({ node, depth }, entry) => ({
-      node: node === undefined
-        ? nodeOf(entry)
-        : { ...nodeOf(entry), dependencies: { [`k${depth + 1}`]: node } },
-      depth: depth + 1,
-    }),
-    { node: undefined, depth: 0 },
-  ).node
-
-const projectOf = (entries: ReadonlyArray<Entry>, name: string): PnpmProject => {
-  const node = chainOf(entries)
-  return { name, version: '0.0.0', path: '/root', devDependencies: node === undefined ? {} : { k0: node } }
-}
-
-const duplicatedProjectOf = (entries: ReadonlyArray<Entry>, name: string): PnpmProject => {
-  const node = chainOf(entries)
-  return {
-    name,
-    version: '0.0.0',
-    path: '/root',
-    devDependencies: node === undefined ? {} : { k0: node, kDup: node },
-  }
-}
-
-const expectedPins = (
-  entries: ReadonlyArray<Entry>,
-  workspaceNames: ReadonlyArray<string>,
-  projectName: string,
-): Readonly<Record<string, string>> => {
-  const byName = new Map<string, ReadonlyArray<Entry>>()
-  for (const entry of entries) byName.set(entry.from, [...(byName.get(entry.from) ?? []), entry])
-  const pins: Record<string, string> = {}
-  for (const [name, list] of byName) {
-    const versions = [...new Set(list.map((entry) => entry.version))]
-    const pinnable = list.every((entry) => entry.resolved === 'registry' && EXACT.test(entry.version))
-    if (pinnable && versions.length === 1 && name !== projectName && !workspaceNames.includes(name)) {
-      pins[name] = versions[0]
-    }
-  }
-  return pins
-}
-
-const expectedVariant = (
-  entries: ReadonlyArray<Entry>,
-  workspaceNames: ReadonlyArray<string>,
-  projectName: string,
-  pins: Readonly<Record<string, string>>,
-): string => {
-  const withheld = [...new Set(entries.map((entry) => entry.from))].some((name) =>
-    name !== projectName && !workspaceNames.includes(name) && !Object.hasOwn(pins, name)
-  )
-  return withheld ? 'LockfilePinsPartial' : 'LockfilePinsResolved'
-}
-
 const LINK_KEY = '@systemfsoftware/stryker-js-vm-runner'
+const PINS_ANCHOR = '4.5.6'
+const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const
 
 const listingCaseArb = Arbitrary.map(Arbitrary.schema(PnpmListing), (listing) => {
   const head: PnpmProject = listing.length === 0
@@ -123,59 +47,88 @@ const listingCaseArb = Arbitrary.map(Arbitrary.schema(PnpmListing), (listing) =>
     dedupedDependenciesCount: head.name.length,
   }
   const link: PnpmNode = { from: `link-${head.name}`, version: `link:../${head.path}`, path: `link-${head.version}` }
-  const marked: PnpmListing = [
-    { ...head, dependencies: { ...(head.dependencies ?? {}), effect: deduped, [LINK_KEY]: link } },
-    ...listing.slice(1),
-  ]
-  return {
-    text: JSON.stringify(
-      marked,
-      (_key, value: unknown) => typeof value === 'number' && !Number.isFinite(value) ? undefined : value,
-    ),
-    expected: marked[0].dependencies ?? {},
-  }
+  const dependencies = { ...head.dependencies, effect: deduped, [LINK_KEY]: link }
+  const marked: PnpmListing = [{ ...head, dependencies }, ...listing.slice(1)]
+  return { text: JSON.stringify(marked), expected: dependencies }
 })
-
-const PINS_ANCHOR = '4.5.6'
-
-const PinExtra = S.Struct({ name: S.Literals(['pkg-b', 'pkg-c']), version: S.Literals(VERSIONS) })
-
-const pinsArb = Arbitrary.map(
-  Arbitrary.array(Arbitrary.schema(PinExtra), { maxLength: 2 }),
-  (extras): LockfilePins =>
-    LockfilePinsResolved.make({
-      pins: Object.fromEntries([
-        ['pkg-a', PINS_ANCHOR] as const,
-        ...extras.map((extra) => [extra.name, extra.version] as const),
-      ]),
-    }),
-)
-
-const ManifestSpecs = S.Struct({
-  dependencies: S.NonEmptyString,
-  devDependencies: S.NonEmptyString,
-  optionalDependencies: S.NonEmptyString,
-  overrides: S.Array(S.NonEmptyString),
-})
-
-const manifestArb = Arbitrary.map(Arbitrary.schema(ManifestSpecs), (specs): JsonObject => ({
-  name: 'app',
-  version: '0.0.0',
-  dependencies: { 'pkg-a': specs.dependencies, 'pkg-b': '~2.0.0' },
-  devDependencies: { 'pkg-a': specs.devDependencies },
-  optionalDependencies: { 'pkg-a': specs.optionalDependencies, 'pkg-c': '3.3.3' },
-  peerDependencies: { 'pkg-a': '^1.0.0' },
-  ...(specs.overrides.length === 0 ? {} : { overrides: { kept: specs.overrides[0] } }),
-}))
-
-const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies'] as const
-
-const specsIn = (manifest: JsonObject, field: string): Readonly<Record<string, string>> | undefined =>
-  Option.getOrUndefined(
-    Option.flatMap(Option.fromNullishOr(manifest[field]), (value) => S.decodeUnknownOption(DependencyRecord)(value)),
-  )
 
 describe('lockfilePins', () => {
+  const Entry = S.Struct({
+    key: S.Literals(NAMES),
+    from: S.Literals(NAMES),
+    version: S.Literals(VERSION_LITERALS),
+    resolved: S.Literals(['registry', 'file', 'jsr', 'absent']),
+  })
+  type Entry = typeof Entry.Type
+
+  const entriesArb = Arbitrary.array(Arbitrary.schema(Entry), { maxLength: 8 })
+  const workspaceArb = Arbitrary.map(
+    Arbitrary.array(Arbitrary.schema(S.Literals(NAMES)), { maxLength: 2 }),
+    (names): ReadonlyArray<string> => names,
+  )
+  const projectNameArb = Arbitrary.schema(S.Literals(NAMES))
+
+  const nodeOf = (entry: Entry, dependencies?: Readonly<Record<string, PnpmNode>>): PnpmNode => ({
+    from: entry.from,
+    version: entry.version,
+    resolved: entry.resolved === 'absent' ? undefined : `${RESOLVED_PREFIX[entry.resolved]}${entry.key}`,
+    ...(dependencies === undefined ? {} : { dependencies }),
+  })
+
+  const chainOf = (entries: ReadonlyArray<Entry>): PnpmNode | undefined =>
+    entries.reduce<{ readonly node: PnpmNode | undefined; readonly depth: number }>(
+      ({ node, depth }, entry) => ({
+        node: node === undefined ? nodeOf(entry) : nodeOf(entry, { [`k${depth + 1}`]: node }),
+        depth: depth + 1,
+      }),
+      { node: undefined, depth: 0 },
+    ).node
+
+  const projectOf = (entries: ReadonlyArray<Entry>, name: string): PnpmProject => {
+    const node = chainOf(entries)
+    return { name, version: '0.0.0', path: '/root', devDependencies: node === undefined ? {} : { k0: node } }
+  }
+
+  const duplicatedProjectOf = (entries: ReadonlyArray<Entry>, name: string): PnpmProject => {
+    const node = chainOf(entries)
+    return {
+      name,
+      version: '0.0.0',
+      path: '/root',
+      devDependencies: node === undefined ? {} : { k0: node, kDup: node },
+    }
+  }
+
+  const expectedPins = (
+    entries: ReadonlyArray<Entry>,
+    workspaceNames: ReadonlyArray<string>,
+    projectName: string,
+  ): Readonly<Record<string, string>> => {
+    const byName = new Map<string, ReadonlyArray<Entry>>()
+    for (const entry of entries) byName.set(entry.from, [...(byName.get(entry.from) ?? []), entry])
+    const pins: Record<string, string> = {}
+    for (const [name, list] of byName) {
+      const versions = [...new Set(list.map((entry) => entry.version))]
+      const pinnable = list.every((entry) => entry.resolved === 'registry' && EXACT.test(entry.version))
+      if (pinnable && versions.length === 1 && name !== projectName && !workspaceNames.includes(name)) {
+        pins[name] = versions[0]
+      }
+    }
+    return pins
+  }
+
+  const expectedVariant = (
+    entries: ReadonlyArray<Entry>,
+    workspaceNames: ReadonlyArray<string>,
+    projectName: string,
+    pins: Readonly<Record<string, string>>,
+  ): string => {
+    const withheld = [...new Set(entries.map((entry) => entry.from))].some((name) =>
+      name !== projectName && !workspaceNames.includes(name) && !Object.hasOwn(pins, name)
+    )
+    return withheld ? 'LockfilePinsPartial' : 'LockfilePinsResolved'
+  }
+
   it.prop(
     '∀t_Occurrences_≡NamedPinnedToItsOnlyExactRegistryVersion',
     { of: [entriesArb, workspaceArb, projectNameArb], subject: lockfilePins },
@@ -243,6 +196,41 @@ describe('PnpmListingJson', () => {
 })
 
 describe('pinnedManifest', () => {
+  const PinExtra = S.Struct({ name: S.Literals(['pkg-b', 'pkg-c']), version: S.Literals(VERSIONS) })
+
+  const pinsArb = Arbitrary.map(
+    Arbitrary.array(Arbitrary.schema(PinExtra), { maxLength: 2 }),
+    (extras): LockfilePins =>
+      LockfilePinsResolved.make({
+        pins: Object.fromEntries([
+          ['pkg-a', PINS_ANCHOR] as const,
+          ...extras.map((extra) => [extra.name, extra.version] as const),
+        ]),
+      }),
+  )
+
+  const ManifestSpecs = S.Struct({
+    dependencies: S.NonEmptyString,
+    devDependencies: S.NonEmptyString,
+    optionalDependencies: S.NonEmptyString,
+    overrides: S.Array(S.NonEmptyString),
+  })
+
+  const manifestArb = Arbitrary.map(Arbitrary.schema(ManifestSpecs), (specs): JsonObject => ({
+    name: 'app',
+    version: '0.0.0',
+    dependencies: { 'pkg-a': specs.dependencies, 'pkg-b': '~2.0.0' },
+    devDependencies: { 'pkg-a': specs.devDependencies },
+    optionalDependencies: { 'pkg-a': specs.optionalDependencies, 'pkg-c': '3.3.3' },
+    peerDependencies: { 'pkg-a': '^1.0.0' },
+    ...(specs.overrides.length === 0 ? {} : { overrides: { kept: specs.overrides[0] } }),
+  }))
+
+  const specsIn = (manifest: JsonObject, field: string): Readonly<Record<string, string>> | undefined =>
+    Option.getOrUndefined(
+      Option.flatMap(Option.fromNullishOr(manifest[field]), (value) => S.decodeUnknownOption(DependencyRecord)(value)),
+    )
+
   it.prop(
     '∀m,p,r_Manifest_≡PinnedSpecsWithRoleOverrides',
     { of: [manifestArb, pinsArb, S.Literals(['root', 'member'])], subject: pinnedManifest },
