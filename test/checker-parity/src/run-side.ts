@@ -737,7 +737,7 @@ const sideBody = (
   FileSystem.FileSystem | Path.Path
 > =>
   Effect.gen(function*() {
-    const [digestDuration, digest] = yield* Effect.timed(client.digest({ checkerName: CHECKER_NAME }))
+    const [digestDuration, digest] = yield* Effect.timed(client.digest({ checkerName: CHECKER_NAME, scope: 'program' }))
     const digestLine = DigestCall.make({
       schemaVersion: 1,
       side: input.side,
