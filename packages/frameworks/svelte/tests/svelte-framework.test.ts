@@ -2,10 +2,9 @@ import type {
   EmbeddedDocument,
   Framework,
   FrameworkParseResult,
-  Program,
   ScriptFormat,
-  Statement,
 } from '@systemfsoftware/stryker-framework-interface'
+import type { Program, Statement } from '@systemfsoftware/stryker-ignorer-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import type { AST } from 'svelte/compiler'
 import { parse } from 'svelte/compiler'

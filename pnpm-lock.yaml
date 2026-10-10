@@ -263,6 +263,9 @@ importers:
       '@systemfsoftware/stryker-framework-interface':
         specifier: workspace:^
         version: link:../interface
+      '@systemfsoftware/stryker-ignorer-interface':
+        specifier: workspace:^
+        version: link:../../ignorers/interface
       angular-html-parser:
         specifier: 'catalog:'
         version: 10.12.0
@@ -370,6 +373,9 @@ importers:
       '@systemfsoftware/stryker-framework-interface':
         specifier: workspace:^
         version: link:../interface
+      '@systemfsoftware/stryker-ignorer-interface':
+        specifier: workspace:^
+        version: link:../../ignorers/interface
     devDependencies:
       '@effect/tsgo':
         specifier: 'catalog:'

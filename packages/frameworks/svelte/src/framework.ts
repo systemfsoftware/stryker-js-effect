@@ -4,11 +4,10 @@ import type {
   FrameworkContext,
   FrameworkContractVersion,
   FrameworkParseResult,
-  Program,
   ScriptFormat,
   ScriptRegion,
-  Statement,
 } from '@systemfsoftware/stryker-framework-interface'
+import type { Program, Statement } from '@systemfsoftware/stryker-ignorer-interface'
 import type { AST } from 'svelte/compiler'
 
 import type { CompilerModule } from './compiler.js'

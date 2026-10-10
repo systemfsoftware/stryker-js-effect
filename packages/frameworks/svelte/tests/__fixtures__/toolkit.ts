@@ -1,4 +1,5 @@
-import type { FrameworkContext, Program, ScriptFormat, Statement } from '@systemfsoftware/stryker-framework-interface'
+import type { FrameworkContext, ScriptFormat } from '@systemfsoftware/stryker-framework-interface'
+import type { Program, Statement } from '@systemfsoftware/stryker-ignorer-interface'
 import { parseSync } from 'oxc-parser'
 
 export interface RecordedScript {

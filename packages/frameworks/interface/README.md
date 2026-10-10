@@ -13,10 +13,12 @@ print back into the raw document, and which report language the file carries.
 The plugin module exports `strykerFrameworks`, an array of plain objects the host
 loads in-process and calls synchronously. This package carries the shapes of that
 contract and nothing that runs. It has **no** Effect dependency, runtime or
-development: the declaration re-exports the AST vocabulary from
+development: its own signatures name the AST vocabulary of
 `@systemfsoftware/stryker-ignorer-interface` (declared as a runtime dependency,
 so the emitted declaration keeps one physical copy of the recursive `Node`), and
-the lint preset bans Effect imports outright.
+it never re-exports that vocabulary — `Node`, `Program`, `Statement` and every
+node are imported from `@systemfsoftware/stryker-ignorer-interface`, the one
+package that owns them. The lint preset bans Effect imports outright.
 
 | Export                     | What it is                                                                                                                                                                                                                                                                                                                                                   |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -32,7 +34,7 @@ the lint preset bans Effect imports outright.
 | `ScriptRegion`             | One located script inside that document: `{ start, end, isExpression, scriptAst }`, offsets into the document, never the slice — `scriptAst` is the region's slice parsed to a `Program`, handed over by the core, so a hook never re-parses or re-checks it                                                                                                 |
 | `FrameworkContext`         | The toolkit the core hands a hook: `parseScript`, `printScript`, `instrumentationHeader` — the core constructs it at hook invocation, the plugin only calls it                                                                                                                                                                                               |
 | `FrameworkPackageManifest` | The `package.json` shape of a plugin package: a top-level `"strykerFramework": { "extensions": [...] }` naming the extensions the plugin's framework claims. The host reads it from installed packages to name a plugin in a skip reason without importing the module                                                                                        |
-| vocabulary                 | the AST vocabulary, re-exported from [`@systemfsoftware/stryker-ignorer-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-ignorer-interface) — `Node`, `Program`, `Statement`, and every node                                                                                                                                               |
+| vocabulary                 | the AST vocabulary this package names in its signatures, imported from [`@systemfsoftware/stryker-ignorer-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-ignorer-interface) — `Node`, `Program`, `Statement`, and every node; this package does not re-export them                                                                       |
 
 Everything the package publishes is a type.
 

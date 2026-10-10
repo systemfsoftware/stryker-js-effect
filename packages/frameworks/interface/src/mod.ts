@@ -1,7 +1,5 @@
 import type { Program, Statement } from '@systemfsoftware/stryker-ignorer-interface'
 
-export type * from '@systemfsoftware/stryker-ignorer-interface'
-
 export type FormatId = string
 
 export type ScriptFormat = 'js' | 'ts' | 'tsx'

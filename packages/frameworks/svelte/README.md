@@ -58,7 +58,10 @@ stops before instrumentation as a configuration error.
 ## Boundaries
 
 - The package depends inward only: on
-  [`@systemfsoftware/stryker-framework-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-framework-interface).
+  [`@systemfsoftware/stryker-framework-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-framework-interface)
+  for the contract, and on
+  [`@systemfsoftware/stryker-ignorer-interface`](https://www.npmjs.com/package/@systemfsoftware/stryker-ignorer-interface)
+  for the AST vocabulary its hooks handle.
   It has no Effect dependency and never depends on the instrumenter or the host.
 
 ## Contributing

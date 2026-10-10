@@ -117,9 +117,6 @@ export interface ScriptRegion {
     readonly start: number;
 }
 
-
-export * from "@systemfsoftware/stryker-ignorer-interface";
-
 // (No @packageDocumentation comment for this package)
 
 ```

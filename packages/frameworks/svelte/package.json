@@ -51,7 +51,8 @@
     ]
   },
   "dependencies": {
-    "@systemfsoftware/stryker-framework-interface": "workspace:^"
+    "@systemfsoftware/stryker-framework-interface": "workspace:^",
+    "@systemfsoftware/stryker-ignorer-interface": "workspace:^"
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",

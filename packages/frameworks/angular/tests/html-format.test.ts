@@ -3,9 +3,9 @@ import type {
   Framework,
   FrameworkContext,
   FrameworkParseResult,
-  Program,
   ScriptFormat,
 } from '@systemfsoftware/stryker-framework-interface'
+import type { Program } from '@systemfsoftware/stryker-ignorer-interface'
 import { describe, it } from '@systemfsoftware/vitest'
 import { parseSync } from 'oxc-parser'
 
