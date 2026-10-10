@@ -3,6 +3,7 @@ import * as S from 'effect/Schema'
 export class BenchRepoEntry extends S.Class<BenchRepoEntry>('BenchRepoEntry')({
   project: S.NonEmptyString,
   mutate: S.NonEmptyArray(S.NonEmptyString),
+  testFiles: S.NonEmptyString.pipe(S.NonEmptyArray, S.optionalKey),
 }) {}
 
 export class BenchEnterpriseCorpus extends S.Class<BenchEnterpriseCorpus>('BenchEnterpriseCorpus')({

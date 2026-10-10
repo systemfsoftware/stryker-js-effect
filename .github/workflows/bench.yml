@@ -2,6 +2,9 @@ name: Bench
 
 on:
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
 
 permissions:
   contents: read
@@ -11,18 +14,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  bench:
-    name: bench · phase timings against the base
+  plan:
+    name: bench · one job per corpus entry
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    env:
-      CI: "true"
+    timeout-minutes: 1
+    outputs:
+      targets: ${{ steps.targets.outputs.targets }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          sparse-checkout: test/bench/corpus.json
+          sparse-checkout-cone-mode: false
+      - id: targets
+        name: Corpus entries
+        run: |
+          targets=$(jq -c '[.repo[].project, .enterprise.fixture] | map({ entry: ., slug: gsub("[^A-Za-z0-9._-]+"; "-") })' test/bench/corpus.json)
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+
+  bench:
+    name: bench · ${{ matrix.target.entry }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.plan.outputs.targets) }}
+    env:
+      CI: "true"
+    steps:
+      - name: Bench deadline, 7.5 minutes after the job starts
+        run: echo "BENCH_DEADLINE_MS=$(($(date +%s%3N) + 450000))" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-      - uses: cachix/install-nix-action@v31
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -38,61 +66,56 @@ jobs:
           base=$(git merge-base HEAD "origin/$BASE_REF")
           side_a="$RUNNER_TEMP/bench-a"
           git worktree add --detach "$side_a" "$base"
-          pin_key() {
-            jq -er '.nodes["stryker-published"].locked | "\(.rev)-\(.narHash)"' "$1/flake.lock" | sha256sum | cut -c1-64
-          }
+          pin() { jq -c '.nodes["stryker-published"].locked' "$1/flake.lock"; }
           {
             echo "base=$base"
             echo "a=$side_a"
-            echo "key-a=bench-sfs-deps-$RUNNER_OS-$(pin_key "$side_a")"
-            echo "key-b=bench-sfs-deps-$RUNNER_OS-$(pin_key .)"
+            echo "same-pin=$([ "$(pin "$side_a")" = "$(pin .)" ] && echo true || echo false)"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Released tarballs, side A
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}/bench-tarballs/a
-          key: ${{ steps.sides.outputs.key-a }}
       - name: Released tarballs, side B
-        uses: actions/cache@v6
-        with:
-          path: ${{ runner.temp }}/bench-tarballs/b
-          key: ${{ steps.sides.outputs.key-b }}
+        uses: ./.github/actions/released-tarballs
+      - if: steps.sides.outputs.same-pin != 'true'
+        uses: cachix/install-nix-action@v31
 
       - name: Tarballs and install, both sides by one mechanism
         env:
           SIDE_A: ${{ steps.sides.outputs.a }}
+          SAME_PIN: ${{ steps.sides.outputs.same-pin }}
           TIMINGS: ${{ runner.temp }}/bench-setup.tsv
         run: |
-          prepare() {
-            local name=$1 root=$2 tarballs=$3 started published
+          started=$(date +%s%3N)
+          rm -rf "$SIDE_A/.sfs-deps"
+          if [ "$SAME_PIN" = true ]; then
+            cp -r .sfs-deps "$SIDE_A/.sfs-deps"
+          else
+            published=$(cd "$SIDE_A" && nix build --no-link --print-out-paths .#stryker-published)
+            mkdir "$SIDE_A/.sfs-deps"
+            cp "$published"/*.tgz "$SIDE_A/.sfs-deps/"
+            chmod u+w "$SIDE_A"/.sfs-deps/*.tgz
+          fi
+          printf 'side A: released tarballs\t%s\n' "$(($(date +%s%3N) - started))" >> "$TIMINGS"
+          install() {
+            local name=$1 root=$2 started
             started=$(date +%s%3N)
-            if ! compgen -G "$tarballs/*.tgz" > /dev/null; then
-              published=$(cd "$root" && nix build --no-link --print-out-paths .#stryker-published)
-              mkdir -p "$tarballs"
-              cp "$published"/*.tgz "$tarballs/"
-              chmod u+w "$tarballs"/*.tgz
-            fi
-            rm -rf "$root/.sfs-deps"
-            mkdir "$root/.sfs-deps"
-            cp "$tarballs"/*.tgz "$root/.sfs-deps/"
             (cd "$root" && pnpm install --frozen-lockfile)
-            printf 'side %s: released tarballs and install\t%s\n' "$name" "$(($(date +%s%3N) - started))" >> "$TIMINGS"
+            printf 'side %s: pnpm install\t%s\n' "$name" "$(($(date +%s%3N) - started))" >> "$TIMINGS"
           }
-          prepare A "$SIDE_A" "$RUNNER_TEMP/bench-tarballs/a"
-          prepare B "$GITHUB_WORKSPACE" "$RUNNER_TEMP/bench-tarballs/b"
+          install A "$SIDE_A"
+          install B "$GITHUB_WORKSPACE"
 
       - name: Turbo cache
         uses: actions/cache@v6
         with:
           path: .turbo/cache
-          key: turbo-${{ runner.os }}-bench-${{ github.event.pull_request.head.sha }}
+          key: turbo-${{ runner.os }}-bench-${{ matrix.target.slug }}-${{ github.event.pull_request.head.sha }}
           restore-keys: |
-            turbo-${{ runner.os }}-bench-
+            turbo-${{ runner.os }}-bench-${{ matrix.target.slug }}-
             turbo-${{ runner.os }}-dist-
 
       - name: Bench
         env:
+          BENCH_ENTRY: ${{ matrix.target.entry }}
           BENCH_SIDE_A: ${{ steps.sides.outputs.a }}
           BENCH_SIDE_B: ${{ github.workspace }}
           BENCH_BASE_SHA: ${{ steps.sides.outputs.base }}
@@ -104,7 +127,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: bench-report
+          name: bench-report-${{ matrix.target.slug }}
           path: ${{ runner.temp }}/bench-report/bench-report.json
           if-no-files-found: warn
           retention-days: 30

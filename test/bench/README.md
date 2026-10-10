@@ -1,10 +1,12 @@
 # @systemfsoftware/stryker-bench
 
-The report-only A/B bench lane's orchestrator. One CI job builds the PR's
-merge-base with its base branch (side A) and the PR head (side B) on the same
-runner, runs both interleaved over two corpora, and reads every number from
-each run's own NDJSON. Nothing here compares statuses, stores a baseline, or
-fails a PR on a timing delta.
+The report-only A/B bench lane's orchestrator. The `bench` workflow runs one job
+per corpus entry (`BENCH_ENTRY`); each job builds the PR's merge-base with its
+base branch (side A) and the PR head (side B) on the same runner, runs both
+interleaved over that entry's workload, and reads every number from each run's
+own NDJSON. Nothing here compares statuses, stores a baseline, or fails a PR on
+a timing delta. When the job's `BENCH_DEADLINE_MS` stops or precedes a run, the
+report aborts with `budget-exceeded`.
 
 `pnpm --filter @systemfsoftware/stryker-bench bench` runs `src/main.ts` through
 `tsx` with the workspace source condition, so the orchestrator itself needs no
@@ -27,3 +29,7 @@ work on every run:
 `packages/stryker-js` is deliberately excluded: its dry run runs 1,099 tests
 and would dominate every repetition. Each entry, and the enterprise fixture, is
 its own project in the report; a repetition of a project is one CLI run.
+
+Each entry is bounded so its eight runs fit the job budget (10 minutes per
+job): a repo entry may pin `mutate` line ranges and `testFiles`, the same on
+both sides. The bound shapes timing only; it never feeds a verdict.

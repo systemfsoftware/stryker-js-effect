@@ -19,7 +19,9 @@ export const BenchAbortCode = S.Literals([
   'environment-incomplete',
   'corpus-unreadable',
   'setup-timings-malformed',
+  'entry-unknown',
   'side-setup-failed',
+  'budget-exceeded',
   'report-unwritable',
   'defect',
 ])
@@ -30,8 +32,12 @@ const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
     'set the BENCH_* variables, RUNNER_TEMP and GITHUB_STEP_SUMMARY the bench workflow exports, then re-run the job',
   'corpus-unreadable': 'fix test/bench/corpus.json on the PR head so it decodes as BenchCorpusJson, then push',
   'setup-timings-malformed': 'fix the step in bench.yml that appends tab-separated "name<TAB>ms" lines, then re-run',
+  'entry-unknown':
+    'name a repo project or the enterprise fixture listed in test/bench/corpus.json in BENCH_ENTRY; the plan job derives the matrix from that file, so re-run the whole workflow',
   'side-setup-failed':
     'read the failing step and output tail in the reason; rerun that step command in the named side checkout',
+  'budget-exceeded':
+    "the eight runs did not fit the job budget: shrink this entry's mutate ranges or testFiles in test/bench/corpus.json until a run takes well under a minute, then push",
   'report-unwritable': 'check free space and permissions under RUNNER_TEMP on the runner, then re-run the job',
   'defect': 'a bench bug: open an issue with this job log, the stack above, and the base and head SHAs',
 }

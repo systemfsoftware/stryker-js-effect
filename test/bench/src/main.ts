@@ -3,7 +3,9 @@ import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import {
   abortedOutcomeOf,
   type BenchAbortCode,
+  type BenchCorpus,
   BenchCorpusJson,
+  type BenchCorpusName,
   BenchReport,
   BenchReportJson,
   type BenchRun,
@@ -12,6 +14,7 @@ import {
   RenderBenchReportCommand,
   type SetupStep,
 } from '@systemfsoftware/stryker-e2e-core'
+import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
@@ -24,6 +27,7 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { BenchOrchestrationFailed } from './bench-failure.schema.js'
+import { BenchTarget } from './bench-target.schema.js'
 import { prepareSide } from './prepare-side.service.js'
 import { runBench } from './run-bench.service.js'
 
@@ -95,6 +99,8 @@ interface BenchEnv {
   readonly sideBRoot: string
   readonly baseSha: string
   readonly headSha: string
+  readonly entry: string
+  readonly deadlineMs: number
   readonly setupTimingsFile: string
   readonly runnerTemp: string
   readonly stepSummary: string
@@ -106,6 +112,8 @@ const benchEnv = Effect.all({
   sideBRoot: Config.String('BENCH_SIDE_B'),
   baseSha: Config.String('BENCH_BASE_SHA'),
   headSha: Config.String('BENCH_HEAD_SHA'),
+  entry: Config.String('BENCH_ENTRY'),
+  deadlineMs: Config.Number('BENCH_DEADLINE_MS'),
   setupTimingsFile: Config.String('BENCH_SETUP_TIMINGS'),
   runnerTemp: Config.String('RUNNER_TEMP'),
   stepSummary: Config.String('GITHUB_STEP_SUMMARY'),
@@ -121,6 +129,22 @@ const abortedReport = (env: Pick<BenchEnv, 'baseSha' | 'headSha'>, code: BenchAb
     runs: [],
     setupSteps: [],
   })
+
+const targetOf = (corpus: BenchCorpus, entry: string): Option.Option<BenchTarget> =>
+  Option.orElse(
+    Option.map(
+      Arr.findFirst(corpus.repo, (repo) => repo.project === entry),
+      (repo) => BenchTarget.cases.repo.make({ entry: repo }),
+    ),
+    () =>
+      Option.map(
+        Option.liftPredicate(corpus.enterprise, (enterprise) => enterprise.fixture === entry),
+        (enterprise) => BenchTarget.cases.enterprise.make({ corpus: enterprise }),
+      ),
+  )
+
+const corpusNameOf = (target: BenchTarget): BenchCorpusName =>
+  Match.valueTags(target, { repo: (): BenchCorpusName => 'repo', enterprise: (): BenchCorpusName => 'enterprise' })
 
 const bench = (env: BenchEnv) =>
   Effect.gen(function*() {
@@ -138,6 +162,11 @@ const bench = (env: BenchEnv) =>
         orchestrationFailed('corpus-unreadable', `${corpusPath} does not decode: ${error.message}`)
       ),
     )
+    const target = yield* Effect.fromOption(targetOf(corpus, env.entry)).pipe(
+      Effect.mapError(() =>
+        orchestrationFailed('entry-unknown', `${corpusPath} lists no repo project or fixture ${env.entry}`)
+      ),
+    )
 
     const setupSteps = yield* readSetupSteps(fs, env.setupTimingsFile)
     const workRoot = path.join(env.runnerTemp, BENCH_WORK_DIR)
@@ -146,7 +175,7 @@ const bench = (env: BenchEnv) =>
     const fixtureSource = path.join(env.sideBRoot, corpus.enterprise.fixture)
 
     const prepareNamed = (side: BenchSide, root: string, workDir: string) =>
-      prepareSide({ side, root, fixtureSource, workDir: path.join(workRoot, workDir), corpus, turboCacheDir }).pipe(
+      prepareSide({ side, root, fixtureSource, workDir: path.join(workRoot, workDir), target, turboCacheDir }).pipe(
         Effect.mapError((failure) => orchestrationFailed('side-setup-failed', `side ${side}: ${failure.message}`)),
       )
     const prepared = yield* Effect.all({
@@ -155,7 +184,8 @@ const bench = (env: BenchEnv) =>
     })
 
     const result = yield* runBench({
-      corpus,
+      corpus: corpusNameOf(target),
+      entry: env.entry,
       sideA: prepared.sideA,
       sideB: prepared.sideB,
       runsRoot,
@@ -163,6 +193,7 @@ const bench = (env: BenchEnv) =>
       baseSha: env.baseSha,
       headSha: env.headSha,
       runTimeoutMs: env.runTimeoutMs,
+      deadlineMs: env.deadlineMs,
     })
     yield* Effect.forEach(result.runs, (run) => Console.log(runLogLine(run)))
     return result.report

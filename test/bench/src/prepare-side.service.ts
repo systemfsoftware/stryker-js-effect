@@ -1,9 +1,10 @@
-import { Array as Arr, Boolean, Duration, Effect, FileSystem, Option, Path, Schema as S, Stream } from 'effect'
+import { Array as Arr, Boolean, Duration, Effect, FileSystem, Match, Option, Path, Schema as S, Stream } from 'effect'
 import type { BadArgument, PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 import {
-  type BenchCorpus,
+  type BenchEnterpriseCorpus,
+  type BenchRepoEntry,
   type BenchSide,
   FixtureManifest,
   installClosure,
@@ -17,6 +18,7 @@ import {
   type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
 
+import type { BenchTarget } from './bench-target.schema.js'
 import {
   BenchSetupFailed,
   PackageEntrypoints,
@@ -24,14 +26,14 @@ import {
   type TurboTask,
   WorkspaceListing,
 } from './prepare-side.schema.js'
-import type { PreparedRepoEntry, PreparedSide } from './prepared-side.js'
+import type { PreparedSide } from './prepared-side.js'
 
 export interface PrepareSideInput {
   readonly side: BenchSide
   readonly root: string
   readonly fixtureSource: string
   readonly workDir: string
-  readonly corpus: BenchCorpus
+  readonly target: BenchTarget
   readonly turboCacheDir: string
 }
 
@@ -161,11 +163,17 @@ const entryUrlOf = (root: string, project: string): Effect.Effect<string, BenchS
     return url.href
   })
 
+const testFilesLine = (testFiles: ReadonlyArray<string> | undefined): string =>
+  Option.match(Option.fromUndefinedOr(testFiles), {
+    onNone: () => '',
+    onSome: (files) => `  testFiles: ${JSON.stringify(files)},\n`,
+  })
+
 const benchConfigSource = (input: {
   readonly vitestRunnerUrl: string
   readonly typescriptCheckerUrl: string
   readonly ignorerUrls: ReadonlyArray<string>
-  readonly mutate: ReadonlyArray<string>
+  readonly entry: BenchRepoEntry
 }): string =>
   `import base from './stryker.config.ts'
 
@@ -176,38 +184,31 @@ const config = {
     JSON.stringify(input.typescriptCheckerUrl)
   } })),
   ignorers: ${JSON.stringify(input.ignorerUrls)},
-  mutate: ${JSON.stringify(input.mutate)},
-  thresholds: { ...base.thresholds, break: null },
+  mutate: ${JSON.stringify(input.entry.mutate)},
+${testFilesLine(input.entry.testFiles)}  thresholds: { ...base.thresholds, break: null },
 }
 
 export default config
 `
 
-const writeRepoEntries = (
+const writeRepoEntry = (
   input: PrepareSideInput,
-): Effect.Effect<ReadonlyArray<PreparedRepoEntry>, BenchSetupFailed, BenchPlatform> =>
+  entry: BenchRepoEntry,
+): Effect.Effect<string, BenchSetupFailed, BenchPlatform> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const vitestRunnerUrl = yield* entryUrlOf(input.root, VITEST_RUNNER_DIR)
     const typescriptCheckerUrl = yield* entryUrlOf(input.root, TYPESCRIPT_CHECKER_DIR)
     const ignorerUrls = yield* Effect.forEach(IGNORER_DIRS, (project) => entryUrlOf(input.root, project))
-    return yield* Effect.forEach(input.corpus.repo, (entry) =>
-      Effect.gen(function*() {
-        const cwd = path.join(input.root, entry.project)
-        const source = benchConfigSource({
-          vitestRunnerUrl,
-          typescriptCheckerUrl,
-          ignorerUrls,
-          mutate: entry.mutate,
-        })
-        yield* fs.writeFileString(path.join(cwd, BENCH_CONFIG_FILE), source).pipe(
-          Effect.mapError((cause) =>
-            fail(STEP_CONFIGS, `${entry.project}/${BENCH_CONFIG_FILE} could not be written`, cause)
-          ),
-        )
-        return { entry, cwd, configFile: BENCH_CONFIG_FILE } satisfies PreparedRepoEntry
-      }))
+    const cwd = path.join(input.root, entry.project)
+    const source = benchConfigSource({ vitestRunnerUrl, typescriptCheckerUrl, ignorerUrls, entry })
+    yield* fs.writeFileString(path.join(cwd, BENCH_CONFIG_FILE), source).pipe(
+      Effect.mapError((cause) =>
+        fail(STEP_CONFIGS, `${entry.project}/${BENCH_CONFIG_FILE} could not be written`, cause)
+      ),
+    )
+    return cwd
   })
 
 const buildTaskNames = (task: TurboTask): ReadonlyArray<string> =>
@@ -399,19 +400,17 @@ const enterpriseInstallSpecs = (
 
 const prepareEnterprise = (
   input: PrepareSideInput,
-): Effect.Effect<
-  { readonly enterprise: PreparedSide['enterprise']; readonly steps: ReadonlyArray<SetupStep> },
-  BenchSetupFailed,
-  BenchPlatform
-> =>
+  corpus: BenchEnterpriseCorpus,
+): Effect.Effect<PreparedSide, BenchSetupFailed, BenchPlatform> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
+    const label = sideLabel(input.side)
     const bundleRoot = path.join(input.workDir, 'enterprise')
     const packsDir = path.join(input.workDir, 'packs')
 
     const manifests = yield* timed(
-      STEP_ENTERPRISE_MANIFESTS,
+      `${label} ${STEP_ENTERPRISE_MANIFESTS}`,
       Effect.gen(function*() {
         yield* fs.remove(bundleRoot, { recursive: true, force: true }).pipe(
           Effect.mapError((cause) => fail(STEP_ENTERPRISE_MANIFESTS, `${bundleRoot} could not be cleared`, cause)),
@@ -428,7 +427,7 @@ const prepareEnterprise = (
     )
 
     const closure = yield* timed(
-      STEP_ENTERPRISE_CLOSURE,
+      `${label} ${STEP_ENTERPRISE_CLOSURE}`,
       Effect.gen(function*() {
         yield* fs.remove(packsDir, { recursive: true, force: true }).pipe(Effect.orDie)
         yield* fs.makeDirectory(packsDir, { recursive: true }).pipe(Effect.orDie)
@@ -437,7 +436,7 @@ const prepareEnterprise = (
     )
 
     const install = yield* timed(
-      STEP_ENTERPRISE_INSTALL,
+      `${label} ${STEP_ENTERPRISE_INSTALL}`,
       Effect.gen(function*() {
         const specs = yield* enterpriseInstallSpecs(input.root, bundleRoot, closure.value)
         yield* runChecked(
@@ -454,23 +453,23 @@ const prepareEnterprise = (
     )
 
     return {
-      enterprise: {
-        cwd: bundleRoot,
-        cli: path.join(bundleRoot, ...ENTERPRISE_CLI_RELATIVE),
-        configFile: input.corpus.enterprise.config,
-      },
-      steps: [manifests.step, closure.step, install.step],
-    }
+      side: input.side,
+      root: input.root,
+      cwd: bundleRoot,
+      cli: path.join(bundleRoot, ...ENTERPRISE_CLI_RELATIVE),
+      configFile: corpus.config,
+      setupSteps: [manifests.step, closure.step, install.step],
+    } satisfies PreparedSide
   })
 
-export const prepareSide = (
+const prepareRepo = (
   input: PrepareSideInput,
+  entry: BenchRepoEntry,
 ): Effect.Effect<PreparedSide, BenchSetupFailed, BenchPlatform> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const label = sideLabel(input.side)
 
-    const repoBuildFilters = [...ENGINE_BUILD_DIRS, ...input.corpus.repo.map((entry) => entry.project)]
     const repoBuild = yield* timed(
       `${label} ${STEP_REPO_BUILD}`,
       runChecked(
@@ -482,21 +481,28 @@ export const prepareSide = (
           'run',
           'build',
           `--cache-dir=${input.turboCacheDir}`,
-          ...repoBuildFilters.map((project) => `--filter=./${project}`),
+          ...[...ENGINE_BUILD_DIRS, entry.project].map((project) => `--filter=./${project}`),
         ],
         input.root,
       ),
     )
 
-    const configs = yield* timed(`${label} ${STEP_CONFIGS}`, writeRepoEntries(input))
-    const enterprise = yield* prepareEnterprise(input)
+    const config = yield* timed(`${label} ${STEP_CONFIGS}`, writeRepoEntry(input, entry))
 
     return {
       side: input.side,
       root: input.root,
+      cwd: config.value,
       cli: path.join(input.root, ...CLI_MAIN_RELATIVE),
-      repoEntries: configs.value,
-      enterprise: enterprise.enterprise,
-      setupSteps: [repoBuild.step, configs.step, ...enterprise.steps],
+      configFile: BENCH_CONFIG_FILE,
+      setupSteps: [repoBuild.step, config.step],
     } satisfies PreparedSide
+  })
+
+export const prepareSide = (
+  input: PrepareSideInput,
+): Effect.Effect<PreparedSide, BenchSetupFailed, BenchPlatform> =>
+  Match.valueTags(input.target, {
+    repo: ({ entry }) => prepareRepo(input, entry),
+    enterprise: ({ corpus }) => prepareEnterprise(input, corpus),
   })
