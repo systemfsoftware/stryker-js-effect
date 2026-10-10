@@ -98,7 +98,7 @@ jobs:
         name: Verdict of the Gate
         if: always()
         env:
-          CANCELLED: ${{ cancelled() }}
+          CANCELLED: ${{ job.status == 'cancelled' }}
           COLD: ${{ inputs.cache == 'cold' }}
           GATE: ${{ steps.gate.outcome }}
           PLANTED: ${{ steps.planted.outcome }}
