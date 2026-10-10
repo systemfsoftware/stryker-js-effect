@@ -1,7 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
@@ -29,27 +28,45 @@ export class ReportFromStreamAbsent extends S.TaggedClass<ReportFromStreamAbsent
   readonly [ReportFromStreamTypeId] = ReportFromStreamTypeId
 }
 
-const mutantFromStream = (line: RunEvent.RunMutantTested) => {
-  const mutant = {
-    id: line.id,
-    mutatorName: line.mutatorName,
-    status: line.status,
-    location: line.location,
+export class StreamVersionMismatch extends S.TaggedError<StreamVersionMismatch>()('StreamVersionMismatch', {
+  expected: S.String,
+  found: S.String,
+}) {
+  override get message(): string {
+    return `Stream schema ${this.found} cannot be read by a reader of stream schema ${this.expected}. Re-run that shard with the same stryker release as \`stryker merge\`.`
   }
-  const withReplacement = Option.match(
-    Option.liftPredicate(line.replacement, (value) => typeof value === 'string'),
-    {
-      onNone: () => mutant,
-      onSome: (replacement) => ({ ...mutant, replacement }),
-    },
-  )
-  return Option.match(Option.fromNullishOr(line.redundancy), {
-    onNone: () => withReplacement,
-    onSome: (redundancy) => ({ ...withReplacement, statusReason: Mutant.redundancyStatusReason(redundancy) }),
-  })
 }
 
+const presentText = (field: string, value: string | null): Readonly<Record<string, string>> =>
+  Option.match(Option.fromNullOr(value), {
+    onNone: () => ({}),
+    onSome: (present) => ({ [field]: present }),
+  })
+
+const mutantFromStream = (line: RunEvent.RunMutantTested): Report.MutantResult => ({
+  id: line.id,
+  mutatorName: line.mutatorName,
+  status: line.status,
+  location: line.location,
+  ...presentText('replacement', line.replacement),
+  ...presentText('statusReason', line.statusReason),
+})
+
 const decodeLineText = S.decodeOption(S.fromJsonString(RunEvent.RunMutantTested))
+
+const decodeVersionNamedLine = S.decodeOption(S.fromJsonString(S.Struct({ schemaVersion: S.String })))
+
+const READER_VERSION = RunEvent.StreamSchemaVersion.literal
+
+const majorOf = (version: string): string => Option.getOrElse(Arr.head(version.split('.')), () => version)
+
+const namedVersions = (text: string): readonly string[] =>
+  text.split('\n').flatMap((raw) =>
+    Option.toArray(decodeVersionNamedLine(raw.trim())).map((line) => line.schemaVersion)
+  )
+
+const mismatchedVersion = (text: string): Option.Option<string> =>
+  Arr.findFirst(namedVersions(text), (version) => majorOf(version) !== majorOf(READER_VERSION))
 
 const streamLines = (text: string) => text.split('\n').flatMap((raw) => Option.toArray(decodeLineText(raw.trim())))
 
@@ -78,9 +95,12 @@ const decideReportFromStream = (command: ReportFromStreamCommand): ReportFromStr
 export const reportFromStream = Workflow.make({
   command: ReportFromStreamCommand,
   decision: S.Union([ReportFromStreamRebuilt, ReportFromStreamAbsent]),
-  error: S.Never,
+  error: StreamVersionMismatch,
   decide: (
     command,
-  ): Result.Result<ReportFromStreamRebuilt | ReportFromStreamAbsent, never> =>
-    Result.succeed(decideReportFromStream(command)),
+  ): Result.Result<ReportFromStreamRebuilt | ReportFromStreamAbsent, StreamVersionMismatch> =>
+    Option.match(mismatchedVersion(command.text), {
+      onNone: () => Result.succeed(decideReportFromStream(command)),
+      onSome: (found) => Result.fail(StreamVersionMismatch.make({ expected: READER_VERSION, found })),
+    }),
 })

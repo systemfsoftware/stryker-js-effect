@@ -26,10 +26,12 @@ type Subject = typeof readmitSubsumed
 
 const NON_RUNNING_STATUSES: ReadonlyArray<Mutant.MutantStatus> = ['CompileError', 'Ignored', 'Pending']
 
-const statusOf = (outcome: ReadmitCauseOutcome): Option.Option<Mutant.MutantStatus> =>
+type AnyOutcome = DominatorOutcome | ReadmitCauseOutcome
+
+const statusOf = (outcome: AnyOutcome): Option.Option<Mutant.MutantStatus> =>
   S.is(Settled)(outcome) || S.is(Remembered)(outcome) ? Option.some(outcome.status) : Option.none()
 
-const outcomeRuns = (outcome: ReadmitCauseOutcome): boolean =>
+const outcomeRuns = (outcome: AnyOutcome): boolean =>
   Option.match(statusOf(outcome), {
     onNone: () => false,
     onSome: (status) => !Arr.contains(NON_RUNNING_STATUSES, status),
@@ -44,7 +46,7 @@ const settlementOutcomeOf = (command: ReadmitSubsumedCommand, id: Mutant.MutantI
 const dominatorRuns = (command: ReadmitSubsumedCommand, dominator: Mutant.MutantId): boolean =>
   Option.match(settlementOutcomeOf(command, dominator), { onNone: () => false, onSome: outcomeRuns })
 
-const expectedCauseOutcome = (command: ReadmitSubsumedCommand, dominator: Mutant.MutantId): ReadmitCauseOutcome =>
+const expectedCauseOutcome = (command: ReadmitSubsumedCommand, dominator: Mutant.MutantId): AnyOutcome =>
   Option.getOrElse(settlementOutcomeOf(command, dominator), () => Unsettled.make({}))
 
 const firstRunningOf = (command: ReadmitSubsumedCommand, held: HeldMutant): Option.Option<Mutant.MutantId> =>
@@ -84,10 +86,10 @@ const namesARunningNamedDominator = (subject: Subject, command: ReadmitSubsumedC
           : true),
   })
 
-const outcomeTagOf = (outcome: ReadmitCauseOutcome): string =>
+const outcomeTagOf = (outcome: AnyOutcome): string =>
   S.is(Settled)(outcome) || S.is(Remembered)(outcome) ? `${outcome._tag}:${outcome.status}` : outcome._tag
 
-const outcomeKeyOf = (outcome: ReadmitCauseOutcome): string =>
+const outcomeKeyOf = (outcome: AnyOutcome): string =>
   S.is(IgnoredAtCheck)(outcome) ? `${outcome._tag}:${outcome.reason}` : outcomeTagOf(outcome)
 
 const causeKeyOf = (cause: ReadmitCause): string => `${cause.dominator}=${outcomeKeyOf(cause.outcome)}`

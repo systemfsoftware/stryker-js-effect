@@ -1,5 +1,6 @@
 import * as S from 'effect/Schema'
 
+import { IgnoreStatusReasonText } from './ignore-rule.schema.js'
 import { Location } from './Location.schema.js'
 import { CanonicalFileName, MutantId, MutatorName } from './Mutant.schema.js'
 
@@ -29,8 +30,15 @@ export type ProgramDigest = typeof ProgramDigest.Type
 export const CheckResultSchema = S.Union([
   S.Struct({ status: S.Literal('passed') }),
   S.Struct({ status: S.Literal('compileError'), reason: S.String }),
-  S.Struct({ status: S.Literal('ignored'), reason: S.String }),
+  S.Struct({ status: S.Literal('ignored'), reason: IgnoreStatusReasonText }),
 ]).pipe(S.toTaggedUnion('status'))
+
+export const CheckAnswerSchema = S.Union([
+  S.Struct({ status: S.Literal('passed') }),
+  S.Struct({ status: S.Literal('compileError'), reason: S.String }),
+  S.Struct({ status: S.Literal('ignored'), reason: S.optional(S.Unknown) }),
+]).pipe(S.toTaggedUnion('status'))
+export type CheckAnswer = typeof CheckAnswerSchema.Type
 
 export const CheckStatus = S.Literals(CheckResultSchema.discriminants)
 export type CheckStatus = typeof CheckStatus.Type

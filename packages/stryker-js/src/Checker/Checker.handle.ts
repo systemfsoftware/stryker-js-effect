@@ -10,7 +10,9 @@ import type * as RpcClient from 'effect/rpc/RpcClient'
 import type { RpcClientError } from 'effect/rpc/RpcClientError'
 import type * as RpcGroup from 'effect/rpc/RpcGroup'
 
+import type { CheckerCommand, CheckerContractBroken } from '../admit-checker-answer.workflow.js'
 import { ChildProcessCrashedError, OutOfMemoryError } from '../Worker.schema.js'
+import type { CheckerPlans } from './Checker.schema.js'
 
 export type CheckerCrash = ChildProcessCrashedError | OutOfMemoryError
 
@@ -55,7 +57,7 @@ export interface CheckerResourceService {
   readonly check: (
     checkerName: string,
     mutants: readonly Checker.CheckerMutantWire[],
-  ) => Effect.Effect<Record<string, Checker.CheckResult>, CheckerCrash | Checker.CheckerFailed>
+  ) => Effect.Effect<Record<string, Checker.CheckAnswer>, CheckerCrash | Checker.CheckerFailed>
   readonly group: (
     checkerName: string,
     mutants: readonly Checker.CheckerMutantWire[],
@@ -64,6 +66,14 @@ export interface CheckerResourceService {
     checkerName: string,
   ) => Effect.Effect<Checker.ProgramDigest, CheckerCrash | Checker.CheckerFailed>
 }
+
+export interface CheckerRequest extends CheckerPlans {
+  readonly checker: CheckerResourceService
+}
+
+export type CheckRaw = typeof CheckerCommand.Encoded & CheckerRequest
+
+export type CheckerCellError = CheckerCrash | Checker.CheckerFailed | CheckerContractBroken
 
 export const connectionCrashed = (cause: string): ChildProcessCrashedError =>
   ChildProcessCrashedError.make({ pid: 0, exit: { _tag: 'Code', code: 1 }, cause })
@@ -130,12 +140,12 @@ export const check: {
   (
     checkerName: string,
     mutants: readonly Checker.CheckerMutantWire[],
-  ): (self: CheckerHandle) => Effect.Effect<Record<string, Checker.CheckResult>, CheckerCrash | Checker.CheckerFailed>
+  ): (self: CheckerHandle) => Effect.Effect<Record<string, Checker.CheckAnswer>, CheckerCrash | Checker.CheckerFailed>
   (
     self: CheckerHandle,
     checkerName: string,
     mutants: readonly Checker.CheckerMutantWire[],
-  ): Effect.Effect<Record<string, Checker.CheckResult>, CheckerCrash | Checker.CheckerFailed>
+  ): Effect.Effect<Record<string, Checker.CheckAnswer>, CheckerCrash | Checker.CheckerFailed>
 } = dual(
   (args) => isCheckerHandle(args[0]),
   (self: CheckerHandle, checkerName: string, mutants: readonly Checker.CheckerMutantWire[]) =>

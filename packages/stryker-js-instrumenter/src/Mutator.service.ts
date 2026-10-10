@@ -135,6 +135,18 @@ export const createMutant: {
   (planned: PlannedMutant, fileName: string, original: Node, replacement: Node): Mutant
   (fileName: string, original: Node, replacement: Node): (planned: PlannedMutant) => Mutant
 } = dual((args: IArguments): boolean => args.length >= 4, createMutantDataFirst)
+const redundancyFieldOf = (mutant: Mutant): { readonly redundancy?: ApiMutant.Redundancy } =>
+  Option.match(Option.fromUndefinedOr(mutant.redundancy), {
+    onNone: () => ({}),
+    onSome: (redundancy) => ({ redundancy }),
+  })
+
+const statusReasonOf = (mutant: Mutant): Option.Option<string> =>
+  Option.orElse(
+    Option.fromUndefinedOr(mutant.ignoreReason),
+    () => Option.map(Option.fromUndefinedOr(mutant.redundancy), ApiMutant.redundancyStatusReason),
+  )
+
 export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.SchemaError> {
   const baseFields = {
     _tag: 'Mutant' as const,
@@ -145,14 +157,15 @@ export function toApiMutant(mutant: Mutant): Result.Result<ApiMutant.Mutant, S.S
     replacement: mutant.replacementCode,
   }
   return S.decodeResult(ApiMutant.Mutant)(
-    mutant.ignoreReason === undefined
-      ? baseFields
-      : {
+    Option.match(statusReasonOf(mutant), {
+      onNone: () => baseFields,
+      onSome: (statusReason) => ({
         ...baseFields,
-        statusReason: mutant.ignoreReason,
+        statusReason,
         status: 'Ignored',
-        ...(mutant.redundancy === undefined ? {} : { redundancy: mutant.redundancy }),
-      },
+        ...redundancyFieldOf(mutant),
+      }),
+    }),
   )
 }
 

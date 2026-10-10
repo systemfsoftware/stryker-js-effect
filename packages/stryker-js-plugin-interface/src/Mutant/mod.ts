@@ -41,6 +41,7 @@ export {
   redundancyStatusReason,
   RememberedStatusSchema,
   RunOptionsFields,
+  SettledStatusSchema,
   Subsumed,
   SurvivorStatusSchema,
 } from '../Mutant.schema.js'
@@ -55,6 +56,7 @@ export type {
   MutantStatus,
   MutatorName as MutatorNameValue,
   RememberedStatus,
+  SettledStatus,
   SurvivorStatus,
 } from '../Mutant.schema.js'
 export { duplicatedValue } from '../MutatorCatalog.schema.js'

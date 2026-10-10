@@ -7,7 +7,7 @@ import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 
 const DOMINATOR_REPLACEMENT = 'a <= b'
-const IGNORE_REASON = 'ignored by the subsumption fixture checker'
+const IGNORE_REASON = 'checker: ignored by the subsumption fixture checker'
 
 const answerOf = (mutant) =>
   mutant.replacement === DOMINATOR_REPLACEMENT

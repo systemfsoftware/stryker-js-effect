@@ -36,7 +36,7 @@ const verifyTypedErrorDocument = (
     carriesVerdict: tags.includes('verdict'),
   }).toStrictEqual({
     terminalTag: 'error',
-    schemaVersion: '6.0',
+    schemaVersion: '7.0',
     code: FAILING_DRY_RUN_RUNTIME_ERROR_CODE,
     errorIsString: true,
     remediationHasContent: true,

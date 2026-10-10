@@ -100,7 +100,10 @@ const planningMutantOf = (mutant: Mutant.Mutant): Mutant.Mutant =>
       replacement: mutant.replacement,
       location: mutant.location,
       ...optionalField('static', mutant.static),
-      ...optionalField('coveredBy', mutant.coveredBy === undefined ? undefined : [...mutant.coveredBy]),
+      ...optionalField(
+        'coveredBy',
+        Option.getOrUndefined(Option.map(Option.fromUndefinedOr(mutant.coveredBy), (tests) => [...tests])),
+      ),
       ...optionalField('testsCompleted', mutant.testsCompleted),
       ...optionalField('description', mutant.description),
     })

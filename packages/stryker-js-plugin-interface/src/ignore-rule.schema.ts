@@ -16,9 +16,35 @@ const RULE_IDS = [
   'directive',
   'excluded-mutator',
   'ignorer',
+  'checker',
 ] as const
 
-export const IgnoreRuleId = S.Literals(RULE_IDS)
+const KEEP_ALL = "To keep these mutants, set `mutator.mutantSetPolicy: 'full'`."
+
+const RULE_DOCUMENTATION: { readonly [ruleId in (typeof RULE_IDS)[number]]: string } = {
+  'arid-logging': `The mutant sits in a logging call (console.*, Logger, Effect.log*). ${KEEP_ALL}`,
+  'arid-telemetry': `The mutant sits in a telemetry span or annotation (Effect.withSpan, annotate). ${KEEP_ALL}`,
+  'arid-time': `The mutant sits in a time or schedule value (Duration, Schedule, Date.now). ${KEEP_ALL}`,
+  'arid-config-default': `The mutant sits in a config default (Config.withDefault). ${KEEP_ALL}`,
+  'arid-memoization': `The mutant sits in a memoization wrapper (Effect.cached*). ${KEEP_ALL}`,
+  'redundant-relational': `Another mutant at the same relational operator already covers this one. ${KEEP_ALL}`,
+  'equivalent-to-original':
+    `The mutant behaves exactly like the original code, so no test can kill it. ${KEEP_ALL} With detail \`tce\`, the TypeScript checker compiled it to the original's output; remove that checker from \`checkers\` to keep it.`,
+  'duplicate-at-site':
+    `Another mutant at the same site produces the same code. ${KEEP_ALL} With detail \`tce\`, the TypeScript checker compiled both to the same output; remove that checker from \`checkers\` to keep it.`,
+  'ignore-static': 'The mutant is static (it runs once at module load). To keep it, set `ignoreStatic: false`.',
+  directive: 'A `// Stryker disable` comment covers the mutant. To keep it, remove or narrow the comment.',
+  'excluded-mutator': 'Its mutator is listed in `mutator.excludedMutations`. To keep it, remove it from that list.',
+  ignorer: 'An ignorer plugin from `ignorers` removed it. To keep it, remove that plugin or change its rule.',
+  checker: 'A checker plugin from `checkers` ignored it. To keep it, remove that plugin or change its rule.',
+}
+
+export const IgnoreRuleId = S.Literals(RULE_IDS).mapMembers(
+  (members) => members.map((member) => member.annotate({ description: RULE_DOCUMENTATION[member.literal] })),
+).annotate({
+  description:
+    'Why an Ignored mutant was removed. A stable code shared by every consumer: renaming or removing one is a breaking change.',
+})
 export type IgnoreRuleId = typeof IgnoreRuleId.Type
 
 const SEPARATOR = ': '
@@ -86,6 +112,8 @@ if (import.meta.vitest !== void 0) {
     'xdirective: x',
     'ignore-staticx: x',
     'ignorers: x',
+    'checker: the third-party checker proved it equivalent',
+    'checkers: x',
     'arid-time',
     'arid-time:',
   ]

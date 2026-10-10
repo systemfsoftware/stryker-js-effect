@@ -19,9 +19,9 @@ const Feature = makeFeature({ it })
 const PLAN_KNOWN = CliContract.PlanKnown.make({ total: 4, shardPlan: null })
 const PHASE_ENTERED = CliContract.PhaseEntered.make({ phase: 'dry-run', elapsedMs: 1 })
 const HEARTBEAT = CliContract.Heartbeat.make({ elapsedMs: 2, completed: 1, total: 4 })
-const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '7.0', code: 0, help: 'usage' })
+const HELP_RENDERED = CliContract.HelpRendered.make({ schemaVersion: '8.0', code: 0, help: 'usage' })
 const RUN_FAILED = CliContract.RunFailed.make({
-  schemaVersion: '7.0',
+  schemaVersion: '8.0',
   code: 3,
   error: 'x',
   remediation: 'y',
@@ -56,27 +56,34 @@ const IGNORED_STATIC_MUTANTS: ReadonlyArray<MutantFixture> = [
 
 const mutantIdTextOf = (index: number): string => String(index).padStart(16, '0')
 
-const mutantLineOf = (fixture: MutantFixture): CliContract.RunMutantTestedEvent =>
+const mutantFieldsOf = (fixture: MutantFixture) => ({
+  id: Mutant.MutantId.make(mutantIdTextOf(fixture.index)),
+  fileName: Mutant.CanonicalFileName.make('src/a.ts'),
+  location: MUTANT_LOCATION,
+  mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
+  replacement: '+',
+  completed: fixture.index,
+  total: 4,
+  static: fixture.static,
+  cost: fixture.bodyMs === null
+    ? null
+    : CliContract.MutantCost.make({
+      fixedOverheadMs: 0,
+      testBodyMs: fixture.bodyMs,
+      testsExecuted: 1,
+      shared: false,
+    }),
+  redundancy: null,
+  readmission: null,
+})
+
+const mutantLineOf = (fixture: MutantFixture): CliContract.RunMutantTested =>
   CliContract.RunMutantTestedEvent.make({
-    id: Mutant.MutantId.make(mutantIdTextOf(fixture.index)),
+    ...mutantFieldsOf(fixture),
     status: fixture.status,
-    fileName: Mutant.CanonicalFileName.make('src/a.ts'),
-    location: MUTANT_LOCATION,
-    mutatorName: Mutant.MutatorName.make('ArithmeticOperator'),
-    replacement: '+',
-    completed: fixture.index,
-    total: 4,
-    static: fixture.static,
-    cost: fixture.bodyMs === null
-      ? null
-      : CliContract.MutantCost.make({
-        fixedOverheadMs: 0,
-        testBodyMs: fixture.bodyMs,
-        testsExecuted: 1,
-        shared: false,
-      }),
-    redundancy: null,
-    readmission: null,
+    statusReason: fixture.status === 'Ignored'
+      ? 'ignore-static: Static mutant (and "ignoreStatic" was enabled)'
+      : null,
   })
 
 const reportOf = (fixtures: ReadonlyArray<MutantFixture>): Report.MutationTestResult => ({
@@ -257,7 +264,7 @@ Feature('Streaming a run to machine readers')
             tags: ['stream', 'plan', 'phase', 'tick', 'help'],
             newlineTerminated: true,
             stderr: [],
-            opening: { mode: 'machine', signal: 'tty', schemaVersion: '7.0', runIdIsNonEmpty: true },
+            opening: { mode: 'machine', signal: 'tty', schemaVersion: '8.0', runIdIsNonEmpty: true },
           })
         }),
       ),
@@ -383,7 +390,7 @@ Feature('Streaming a run to machine readers')
             open: s.result.open,
           }).toEqual({
             tags: ['stream', 'error'],
-            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '7.0' },
+            failure: { code: 3, error: 'x', remediation: 'y', schemaVersion: '8.0' },
             open: false,
           })
         }),

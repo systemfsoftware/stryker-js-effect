@@ -6,6 +6,8 @@ decision-makers: ["ryan"]
 
 # Module taxonomy and Effect idioms for the cell architecture
 
+Superseded in part by ADR-0002 (line 60: where pure operations over a schema's data live).
+
 ## Context and Problem Statement
 
 Every Effect package in this monorepo borrows the cell vocabulary (`Sandwich.named`, `Workflow.make`, `Context.Service`), but the code between those pieces is procedural. Some examples:

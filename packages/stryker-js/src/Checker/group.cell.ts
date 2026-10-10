@@ -1,6 +1,5 @@
 import { Cell, Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { type Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Array from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as Option from 'effect/Option'
@@ -9,25 +8,26 @@ import * as Result from 'effect/Result'
 import {
   admitCheckerAnswer,
   CheckerAnsweredUnrequested,
+  CheckerIgnoredWithoutRule,
   CheckerSkippedRequested,
 } from '../admit-checker-answer.workflow.js'
+import type { CheckerCellError, CheckerRequest, CheckRaw } from './Checker.handle.js'
 import {
-  type CheckerCellError,
-  type CheckerRequest,
-  type CheckRaw,
   commandFailed,
+  describeCommandOf,
   type GroupedPlansResult,
-  partitionedFor,
+  partitionedMutantsOf,
   plansByIdOf,
   singletonGroupsOf,
   undescribableIdsOf,
-} from './Checker.protocol.js'
+} from './Checker.schema.js'
+import { describeCheckerMutants } from './describe-checker-mutants.workflow.js'
 
 const attachPlansToGroups = (
-  plans: readonly Mutant.RunPlan[],
+  request: CheckerRequest,
   groups: readonly (readonly string[])[],
 ): GroupedPlansResult => {
-  const byId = plansByIdOf(plans)
+  const byId = plansByIdOf(request)
   return groups.map((group) =>
     Array.filterMap(
       group,
@@ -37,7 +37,8 @@ const attachPlansToGroups = (
 }
 
 const readGroupCommand = Effect.fnUntraced(function*(input: CheckerRequest) {
-  const partitioned = partitionedFor(input)
+  const described = yield* Effect.fromResult(describeCheckerMutants(describeCommandOf(input)))
+  const partitioned = partitionedMutantsOf(described)
   yield* Effect.annotateCurrentSpan({
     'stryker.checker.skipped_mutants_count': partitioned.undescribable.length,
   })
@@ -54,7 +55,6 @@ const readGroupCommand = Effect.fnUntraced(function*(input: CheckerRequest) {
     idGroups: [...singletonGroupsOf(partitioned.undescribable), ...withoutSkipped],
     checker: input.checker,
     plans: input.plans,
-    lookup: input.lookup,
   } satisfies CheckRaw
 })
 
@@ -63,10 +63,11 @@ export const groupCell: Cell.Cell<CheckerRequest, GroupedPlansResult, CheckerCel
 )(readGroupCommand)
   .decide(admitCheckerAnswer)
   .write({
-    CheckGroupDecision: ({ groups }, raw) => Effect.succeed(attachPlansToGroups(raw.plans, groups)),
+    CheckGroupDecision: ({ groups }, raw) => Effect.succeed(attachPlansToGroups(raw, groups)),
     CheckResultDecision: (_decision, raw) =>
       Effect.fail(CheckerSkippedRequested.make({ checkerName: raw.checkerName, phase: 'group', missingIds: [] })),
     CheckerAnsweredUnrequested: (breach) => Effect.fail(CheckerAnsweredUnrequested.make(breach)),
     CheckerSkippedRequested: (breach) => Effect.fail(CheckerSkippedRequested.make(breach)),
+    CheckerIgnoredWithoutRule: (breach) => Effect.fail(CheckerIgnoredWithoutRule.make(breach)),
     CommandRejected: ({ issue }, raw) => Effect.fail(commandFailed({ issue, input: raw })),
   })

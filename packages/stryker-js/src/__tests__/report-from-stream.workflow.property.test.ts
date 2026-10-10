@@ -5,12 +5,12 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import {
   reportFromStream,
   ReportFromStreamAbsent,
   ReportFromStreamCommand,
   ReportFromStreamRebuilt,
+  StreamVersionMismatch,
 } from '../report-from-stream.workflow.js'
 
 const STREAM_HEADER = '{"_tag":"stream"}'
@@ -35,8 +35,12 @@ const reportOf = (subject: typeof reportFromStream, text: string): Option.Option
 const streamTextOf = (mutants: ReadonlyArray<RunEvent.RunMutantTested>): string =>
   [STREAM_HEADER, ...Arr.flatMap(mutants, (mutant) => Option.toArray(lineOf(mutant))), TORN_LINE].join('\n')
 
-const expectedStatusReasonOf = (line: RunEvent.RunMutantTested): string | undefined =>
-  line.redundancy === null ? undefined : Mutant.redundancyStatusReason(line.redundancy)
+const headerOf = (version: string): string => `{"_tag":"stream","schemaVersion":${JSON.stringify(version)}}`
+
+const streamTextWithHeader = (header: string, mutants: ReadonlyArray<RunEvent.RunMutantTested>): string =>
+  [header, ...Arr.flatMap(mutants, (mutant) => Option.toArray(lineOf(mutant))), TORN_LINE].join('\n')
+
+const CURRENT_MAJOR = Number(RunEvent.StreamSchemaVersion.literal.split('.')[0])
 
 describe('reportFromStream', () => {
   it.prop(
@@ -65,23 +69,21 @@ describe('reportFromStream', () => {
   )
 
   it.prop(
-    '∀m_SubsumedMutantLine_≡StatusReasonRenderedFromItsReference',
-    { of: [RunEvent.RunMutantTested], subject: reportFromStream },
-    (subject, [line]) =>
-      Option.match(reportOf(subject, streamTextOf([line])), {
-        onNone: () => false,
-        onSome: (report) =>
-          Option.match(
-            Option.fromNullishOr(
-              (report.files[line.fileName]?.mutants ?? []).find((entry) => entry.id === line.id),
-            ),
-            {
-              onNone: () => false,
-              onSome: (entry) =>
-                entry.statusReason === expectedStatusReasonOf(line) &&
-                (line.redundancy === null || (entry.statusReason ?? '').includes(line.redundancy.dominators[0])),
-            },
-          ),
-      }),
+    '∀v_StreamVersionOtherMajor_≡RefusedNamingBothVersions',
+    { of: [S.Int, S.Int, S.Array(RunEvent.RunMutantTested)], subject: reportFromStream },
+    (subject, [drawnMajor, minor, mutants]) => {
+      const major = drawnMajor === CURRENT_MAJOR ? drawnMajor + 1 : drawnMajor
+      const version = `${major}.${minor}`
+      return Result.match(
+        subject(ReportFromStreamCommand.make({ text: streamTextWithHeader(headerOf(version), mutants) })),
+        {
+          onFailure: (error) =>
+            S.is(StreamVersionMismatch)(error) &&
+            error.found === version &&
+            error.expected === RunEvent.StreamSchemaVersion.literal,
+          onSuccess: () => false,
+        },
+      )
+    },
   )
 })

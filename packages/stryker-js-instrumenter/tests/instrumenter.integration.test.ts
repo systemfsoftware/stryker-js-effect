@@ -121,6 +121,15 @@ const failingRuleIgnorer: Ignorer = {
     throw new Error('the rule refuses to decide')
   },
 }
+const blankReasonIgnorer: Ignorer = {
+  name: 'silent-ignorer',
+  shouldIgnore: (node) => {
+    if (node.type === 'BinaryExpression') {
+      return ''
+    }
+    return undefined
+  },
+}
 const countByMutator = (mutants: readonly Mutant[]): Record<string, number> => {
   const counts: Record<string, number> = {}
   for (const mutant of mutants) {
@@ -149,10 +158,12 @@ const ignoredComparisonReasons = (result: Instrument.InstrumentResult): readonly
     .map((mutant) => `${mutant.replacement} <= ${mutant.statusReason ?? ''}`)
     .toSorted()
 
-const subsumedPairs = (result: Instrument.InstrumentResult): readonly (readonly unknown[])[] => {
+type SubsumedPair = readonly [string | undefined, string | undefined, string | undefined, boolean]
+
+const subsumedPairs = (result: Instrument.InstrumentResult): readonly SubsumedPair[] => {
   const replacementOf = new Map(result.mutants.map((mutant) => [mutant.id, mutant.replacement]))
   return result.mutants
-    .flatMap((mutant) =>
+    .flatMap((mutant): SubsumedPair[] =>
       mutant.redundancy === undefined ? [] : [[
         mutant.replacement,
         replacementOf.get(mutant.redundancy.dominators[0]),
@@ -700,6 +711,44 @@ export function price(n) {
             ),
           }).toEqual({ namesFile: true, namesReason: true })
         ),
+      ),
+    )
+
+    scenario(
+      'An ignorer that answers a blank reason stops the run naming the mutant and the ignorer',
+      Gherkin.Do.pipe(
+        Given('a source with a mutable addition')('source', () => Effect.succeed('export const a = 1 + 1\n')),
+        When('it is instrumented with no ignorer to learn the mutant id')(
+          'baseline',
+          ({ source }: { source: string }) =>
+            Instrument.instrument(
+              [{ name: '/tmp/blank-ignorer.ts', content: source, mutate: true }],
+              stockOptions({ ignorers: [], excludedMutations: [] }),
+            ),
+        ),
+        When('it is instrumented with an ignorer that answers a blank reason')(
+          'error',
+          ({ source }: { source: string }) =>
+            Instrument.instrument(
+              [{ name: '/tmp/blank-ignorer.ts', content: source, mutate: true }],
+              stockOptions({ ignorers: [blankReasonIgnorer], excludedMutations: [] }),
+            ).pipe(Effect.flip),
+        ),
+        Then('the run fails with the typed failure naming the mutant and the ignorer')((
+          { baseline, error }: { baseline: Instrument.InstrumentResult; error: Instrument.InstrumentError },
+          expect,
+        ) => {
+          const arithmeticId = baseline.mutants
+            .filter((mutant) => mutant.mutatorName === 'ArithmeticOperator')
+            .map((mutant) => mutant.id)
+            .at(0)
+          const refusal = error.cause instanceof Error ? error.cause.message : ''
+          return expect({
+            namesFile: error.message.includes('/tmp/blank-ignorer.ts'),
+            namesMutant: arithmeticId !== undefined && refusal.includes(arithmeticId),
+            namesIgnorer: refusal.includes('"silent-ignorer"'),
+          }).toEqual({ namesFile: true, namesMutant: true, namesIgnorer: true })
+        }),
       ),
     )
 

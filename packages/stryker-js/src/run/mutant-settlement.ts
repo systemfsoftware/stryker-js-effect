@@ -120,7 +120,6 @@ const readmitCauseCodeOf = (outcome: ReadmitCauseOutcome): Mutant.ReadmitCauseCo
     Match.tag('IgnoredAtPlan', (): Mutant.ReadmitCauseCode => 'dominator-ignored-at-plan'),
     Match.tag('Remembered', (): Mutant.ReadmitCauseCode => 'dominator-remembered-without-running'),
     Match.tag('Unsettled', (): Mutant.ReadmitCauseCode => 'dominator-unsettled'),
-    Match.tag('Settled', () => absurd(outcome as never)),
     Match.exhaustive,
   )
 
@@ -131,7 +130,6 @@ const readmitCauseDetailOf = (outcome: ReadmitCauseOutcome): string =>
     Match.tag('IgnoredAtPlan', () => 'the dominator was ignored at plan time'),
     Match.tag('Remembered', (remembered) => `a remembered result with status ${remembered.status}`),
     Match.tag('Unsettled', () => 'the dominator had no settlement in this run'),
-    Match.tag('Settled', () => absurd(outcome as never)),
     Match.exhaustive,
   )
 
@@ -340,6 +338,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     completedRef: yield* Ref.make(0),
     plannedTotal: plan.plannedTotal,
     plannedMutants: [...rememberedResults, ...reuse.mutants],
+    rememberedMutantIds: rememberedResults.map((result) => result.id),
     pathService: yield* Path.Path,
   }
   const settledResults = [
@@ -420,7 +419,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     }),
   )
   const outcomeResult = yield* reporting.reportAll({
-    ...reportingInputOf({ prev: basis, env, results: allResults }),
+    ...reportingInputOf({ prev: basis, env, results: allResults, rememberedMutantIds: context.rememberedMutantIds }),
     closureDigestsByMutantId: settlement.closureDigestsByMutantId,
     timeoutEvidenceByMutantId: reuse.timeoutEvidenceByMutantId,
     ...optionalField('programDigest', reuse.programDigest),

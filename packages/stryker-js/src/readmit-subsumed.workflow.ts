@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -30,7 +31,7 @@ export class Unsettled extends S.TaggedClass<Unsettled>()('Unsettled', {}) {}
 export const DominatorOutcome = S.Union([Settled, IgnoredAtCheck, CompiledWithError, IgnoredAtPlan, Remembered])
 export type DominatorOutcome = typeof DominatorOutcome.Type
 
-export const ReadmitCauseOutcome = S.Union([DominatorOutcome, Unsettled])
+export const ReadmitCauseOutcome = S.Union([IgnoredAtCheck, CompiledWithError, IgnoredAtPlan, Remembered, Unsettled])
 export type ReadmitCauseOutcome = typeof ReadmitCauseOutcome.Type
 
 export const ReadmitCause = S.Struct({
@@ -88,41 +89,38 @@ const RUNNING_STATUSES: ReadonlyArray<Mutant.MutantStatus> = [
 
 const runsWithStatus = (status: Mutant.MutantStatus): boolean => Arr.contains(RUNNING_STATUSES, status)
 
-const dominatorRuns = (outcome: DominatorOutcome): boolean =>
+type DominatorVerdict = Result.Result<ReadmitCauseOutcome, Mutant.MutantId>
+
+const verdictOfOutcome = (outcome: DominatorOutcome, dominator: Mutant.MutantId): DominatorVerdict =>
   Match.value(outcome).pipe(
-    Match.tag('Settled', () => true),
-    Match.tag('Remembered', (remembered) => runsWithStatus(remembered.status)),
-    Match.tag('IgnoredAtCheck', () => false),
-    Match.tag('IgnoredAtPlan', () => false),
-    Match.tag('CompiledWithError', () => false),
+    Match.tag('Settled', (): DominatorVerdict => Result.fail(dominator)),
+    Match.tag('Remembered', (remembered): DominatorVerdict =>
+      Boolean.match(runsWithStatus(remembered.status), {
+        onTrue: () => Result.fail(dominator),
+        onFalse: () => Result.succeed(remembered),
+      })),
+    Match.tag('IgnoredAtCheck', (ignored): DominatorVerdict => Result.succeed(ignored)),
+    Match.tag('IgnoredAtPlan', (ignored): DominatorVerdict => Result.succeed(ignored)),
+    Match.tag('CompiledWithError', (compiled): DominatorVerdict => Result.succeed(compiled)),
     Match.exhaustive,
   )
 
-const settlementRuns = (settlements: ReadonlyArray<DominatorSettlement>, id: Mutant.MutantId): boolean =>
-  Option.match(Arr.findFirst(settlements, (settlement) => settlement.id === id), {
-    onNone: () => false,
-    onSome: (settlement) => dominatorRuns(settlement.outcome),
-  })
-
-const causeOutcomeOf = (
+const causeOf = (
   settlements: ReadonlyArray<DominatorSettlement>,
   dominator: Mutant.MutantId,
-): ReadmitCauseOutcome =>
-  Option.match(Arr.findFirst(settlements, (settlement) => settlement.id === dominator), {
-    onNone: () => Unsettled.make({}),
-    onSome: (settlement) => settlement.outcome,
-  })
-
-const causesOf = (command: ReadmitSubsumedCommand, held: HeldMutant): Arr.NonEmptyReadonlyArray<ReadmitCause> =>
-  Arr.map(
-    held.dominators,
-    (dominator) => ReadmitCause.make({ dominator, outcome: causeOutcomeOf(command.settlements, dominator) }),
+): Result.Result<ReadmitCause, Mutant.MutantId> =>
+  Result.map(
+    Option.match(Arr.findFirst(settlements, (settlement) => settlement.id === dominator), {
+      onNone: (): DominatorVerdict => Result.succeed(Unsettled.make({})),
+      onSome: (settlement) => verdictOfOutcome(settlement.outcome, dominator),
+    }),
+    (outcome) => ReadmitCause.make({ dominator, outcome }),
   )
 
 const rulingOf = (command: ReadmitSubsumedCommand, held: HeldMutant): SubsumptionRuling =>
-  Option.match(Arr.findFirst(held.dominators, (dominator) => settlementRuns(command.settlements, dominator)), {
-    onNone: () => Readmitted.make({ id: held.id, causes: causesOf(command, held) }),
-    onSome: (dominator) => StillSubsumed.make({ id: held.id, dominator }),
+  Result.match(Result.all(Arr.map(held.dominators, (dominator) => causeOf(command.settlements, dominator))), {
+    onFailure: (dominator) => StillSubsumed.make({ id: held.id, dominator }),
+    onSuccess: (causes) => Readmitted.make({ id: held.id, causes }),
   })
 
 const rulingsOf = (command: ReadmitSubsumedCommand): ReadonlyArray<SubsumptionRuling> =>

@@ -2,6 +2,7 @@ import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
@@ -40,17 +41,33 @@ export class IncrementalDiffCommand extends S.TaggedClass<IncrementalDiffCommand
   } as const
 }
 
-export class MutantRemembered extends S.TaggedClass<MutantRemembered>()('MutantRemembered', {
+const rememberedFields = {
   mutantId: Mutant.MutantId,
-  status: Mutant.RememberedStatusSchema,
   timeoutKind: S.optional(TimeoutKindSchema),
   reproductions: S.optional(S.Natural),
   testsCompleted: S.optional(S.Finite),
   coveredBy: S.String.pipe(S.Array, S.optional),
   killedBy: S.String.pipe(S.Array, S.optional),
+}
+
+export class MutantRememberedIgnored extends S.TaggedClass<MutantRememberedIgnored>()('MutantRemembered', {
+  ...rememberedFields,
+  status: S.Literal('Ignored'),
+  statusReason: Mutant.IgnoreStatusReasonText,
 }) {
   readonly [IncrementalDiffTypeId] = IncrementalDiffTypeId
 }
+
+export class MutantRememberedSettled extends S.TaggedClass<MutantRememberedSettled>()('MutantRemembered', {
+  ...rememberedFields,
+  status: Mutant.SettledStatusSchema,
+  statusReason: S.optional(S.String),
+}) {
+  readonly [IncrementalDiffTypeId] = IncrementalDiffTypeId
+}
+
+export const MutantRemembered = S.Union([MutantRememberedIgnored, MutantRememberedSettled])
+export type MutantRemembered = typeof MutantRemembered.Type
 
 export class MutantToRun extends S.TaggedClass<MutantToRun>()('MutantToRun', {
   mutant: Mutant.Mutant,
@@ -68,8 +85,6 @@ type CacheKeyComponents = {
   readonly runInputsDigest: string
 }
 
-type RememberedReuseRecord = PreviousReuseRecord & { readonly status: Mutant.RememberedStatus }
-
 const isUnreproducedWallClockTimeout = (record: PreviousReuseRecord): boolean =>
   Boolean.and(
     record.status === 'Timeout',
@@ -82,7 +97,7 @@ const isUnreproducedWallClockTimeout = (record: PreviousReuseRecord): boolean =>
 const carriesSubsumptionReference = (record: PreviousReuseRecord): boolean =>
   Boolean.or(record.redundancy !== undefined, record.readmission !== undefined)
 
-const isReusableRecord = (record: PreviousReuseRecord): record is RememberedReuseRecord =>
+const isReusableRecord = (record: PreviousReuseRecord): boolean =>
   Boolean.and(
     Boolean.and(isReusableStatus(record.status), Boolean.not(isUnreproducedWallClockTimeout(record))),
     Boolean.not(carriesSubsumptionReference(record)),
@@ -119,7 +134,7 @@ const matchingProgramKey = (command: IncrementalDiffCommand, record: PreviousReu
     keyOf(record.mutantId, record.programDigest, record) === keyOf(record.mutantId, command.programDigest, command),
   )
 
-const matchingKey = (command: IncrementalDiffCommand, record: RememberedReuseRecord): boolean =>
+const matchingKey = (command: IncrementalDiffCommand, record: PreviousReuseRecord): boolean =>
   Boolean.and(
     Boolean.not(command.closureAnalysisFailed),
     Boolean.match(isCompileErrorRecord(record), {
@@ -176,10 +191,10 @@ const refusalOf = (command: IncrementalDiffCommand, record: PreviousReuseRecord)
 const newestMatchingOf = (
   records: readonly PreviousReuseRecord[],
   command: IncrementalDiffCommand,
-): Option.Option<RememberedReuseRecord> =>
+): Option.Option<PreviousReuseRecord> =>
   Arr.reduce(
     records,
-    Option.none<RememberedReuseRecord>(),
+    Option.none<PreviousReuseRecord>(),
     (found, record) =>
       Option.match(Option.liftPredicate(record, isReusableRecord), {
         onNone: () => found,
@@ -191,31 +206,63 @@ const newestMatchingOf = (
       }),
   )
 
-const rememberedOf = (mutant: Mutant.Mutant, record: RememberedReuseRecord) =>
-  MutantRemembered.make({
+const rememberedOptionalFieldsOf = (record: PreviousReuseRecord) => ({
+  ...Option.match(Option.fromUndefinedOr(record.timeoutKind), {
+    onNone: () => ({}),
+    onSome: (timeoutKind) => ({ timeoutKind }),
+  }),
+  ...Option.match(Option.fromUndefinedOr(record.reproductions), {
+    onNone: () => ({}),
+    onSome: (reproductions) => ({ reproductions }),
+  }),
+  ...Option.match(Option.fromUndefinedOr(record.testsCompleted), {
+    onNone: () => ({}),
+    onSome: (testsCompleted) => ({ testsCompleted }),
+  }),
+  ...Option.match(Option.fromUndefinedOr(record.coveredBy), {
+    onNone: () => ({}),
+    onSome: (coveredBy) => ({ coveredBy: [...coveredBy] }),
+  }),
+  ...Option.match(Option.fromUndefinedOr(record.killedBy), {
+    onNone: () => ({}),
+    onSome: (killedBy) => ({ killedBy: [...killedBy] }),
+  }),
+})
+
+type IgnoredRecord = Extract<PreviousReuseRecord, { readonly status: 'Ignored' }>
+type SettledRecord = Exclude<PreviousReuseRecord, IgnoredRecord>
+
+const rememberedIgnoredOf = (mutant: Mutant.Mutant) => (record: IgnoredRecord): MutantRemembered =>
+  MutantRememberedIgnored.make({
+    mutantId: mutant.id,
+    status: 'Ignored',
+    statusReason: record.statusReason,
+    ...rememberedOptionalFieldsOf(record),
+  })
+
+const rememberedSettledOf = (mutant: Mutant.Mutant) => (record: SettledRecord): MutantRemembered =>
+  MutantRememberedSettled.make({
     mutantId: mutant.id,
     status: record.status,
-    ...Option.match(Option.fromUndefinedOr(record.timeoutKind), {
-      onNone: () => ({}),
-      onSome: (timeoutKind) => ({ timeoutKind }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(record.reproductions), {
-      onNone: () => ({}),
-      onSome: (reproductions) => ({ reproductions }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(record.testsCompleted), {
-      onNone: () => ({}),
-      onSome: (testsCompleted) => ({ testsCompleted }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(record.coveredBy), {
-      onNone: () => ({}),
-      onSome: (coveredBy) => ({ coveredBy: [...coveredBy] }),
-    }),
-    ...Option.match(Option.fromUndefinedOr(record.killedBy), {
-      onNone: () => ({}),
-      onSome: (killedBy) => ({ killedBy: [...killedBy] }),
-    }),
+    statusReason: record.statusReason,
+    ...rememberedOptionalFieldsOf(record),
   })
+
+const rememberedOf = (mutant: Mutant.Mutant, record: PreviousReuseRecord): MutantRemembered => {
+  const settled = rememberedSettledOf(mutant)
+  return Match.value(record).pipe(
+    Match.discriminatorsExhaustive('status')({
+      Ignored: rememberedIgnoredOf(mutant),
+      Killed: settled,
+      Survived: settled,
+      NoCoverage: settled,
+      CompileError: settled,
+      RuntimeError: settled,
+      Timeout: settled,
+      Pending: settled,
+    }),
+  )
+}
 
 const refusalForMutant = (
   command: IncrementalDiffCommand,
@@ -289,7 +336,7 @@ const rememberableOf = (
   mutant: Mutant.Mutant,
   command: IncrementalDiffCommand,
   records: readonly PreviousReuseRecord[],
-): Option.Option<RememberedReuseRecord> =>
+): Option.Option<PreviousReuseRecord> =>
   Option.filter(newestMatchingOf(records, command), () => mutant.redundancy === undefined)
 
 const decideForMutant = (

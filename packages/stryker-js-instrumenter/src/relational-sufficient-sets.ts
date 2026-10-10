@@ -14,8 +14,10 @@
  * sets assume numeric operands without `NaN`; `mutantSetPolicy: 'full'`
  * restores every variant.
  */
-export const RELATIONAL_OPERATORS = ['<', '<=', '>', '>='] as const
-export type RelationalOperator = typeof RELATIONAL_OPERATORS[number]
+import { RelationalOperator } from './relational-operator.schema.js'
+
+export const RELATIONAL_OPERATORS = RelationalOperator.literals
+export type { RelationalOperator }
 
 export const COMPARISON_OPERATORS = ['<', '<=', '>', '>=', '==', '!='] as const
 export type ComparisonOperator = typeof COMPARISON_OPERATORS[number]

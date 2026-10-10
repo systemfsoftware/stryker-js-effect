@@ -36,6 +36,17 @@ export type EphemeralStatus = typeof EphemeralStatusSchema.Type
 export const ActionableStatusSchema = S.Literals(['Survived', 'NoCoverage', 'Timeout', 'RuntimeError'])
 export type ActionableStatus = typeof ActionableStatusSchema.Type
 
+export const SettledStatusSchema = MutantStatusSchema.pick([
+  'Killed',
+  'Survived',
+  'NoCoverage',
+  'CompileError',
+  'RuntimeError',
+  'Timeout',
+  'Pending',
+])
+export type SettledStatus = typeof SettledStatusSchema.Type
+
 export const MutantId = S.String.check(
   S.isPattern(/^[0-9a-f]{16}$/u, {
     expected: 'a 16-character lowercase hexadecimal mutant id',
@@ -132,8 +143,12 @@ export const Mutant = S.TaggedStruct('Mutant', {
     { message: 'a mutant carries a redundancy reference only when it is Ignored' },
   ),
   S.makeFilter(
-    (mutant) => mutant.readmission === undefined || (mutant.redundancy === undefined && mutant.status !== 'Ignored'),
-    { message: 'a re-admitted mutant ran, so it carries no redundancy reference and is not Ignored' },
+    (mutant) => mutant.readmission === undefined || mutant.redundancy === undefined,
+    { message: 'a re-admitted mutant ran, so it carries no redundancy reference' },
+  ),
+  S.makeFilter(
+    (mutant) => mutant.readmission === undefined || mutant.status !== 'Ignored',
+    { message: 'a re-admitted mutant ran, so it is not Ignored' },
   ),
 )
 export type Mutant = typeof Mutant.Type

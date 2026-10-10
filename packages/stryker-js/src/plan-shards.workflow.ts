@@ -1,6 +1,7 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { ShardProject } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
@@ -174,22 +175,11 @@ interface PlacementGroup {
 const placementKeyOf = (mutant: PlannedMutant): string =>
   Option.getOrElse(Option.fromUndefinedOr(mutant.placementKey), () => `\u0000${mutant.project}\u0000${mutant.id}`)
 
-const projectOfGroup = (members: ReadonlyArray<PlannedMutant>): string => {
-  const [head] = members
-  return head === undefined ? '' : head.project
-}
+const projectOfGroup = (members: ReadonlyArray<PlannedMutant>): string =>
+  Option.match(Arr.head(members), { onNone: () => '', onSome: (head) => head.project })
 
-const placementGroupsOf = (mutants: ReadonlyArray<PlannedMutant>): ReadonlyArray<PlacementGroup> => {
-  const byKey = new Map<string, ReadonlyArray<PlannedMutant>>()
-  for (const mutant of mutants) {
-    const key = placementKeyOf(mutant)
-    const members = Option.getOrElse(
-      Option.fromUndefinedOr(byKey.get(key)),
-      (): ReadonlyArray<PlannedMutant> => [],
-    )
-    byKey.set(key, [...members, mutant])
-  }
-  return [...byKey.entries()].map(([key, members]) => {
+const placementGroupsOf = (mutants: ReadonlyArray<PlannedMutant>): ReadonlyArray<PlacementGroup> =>
+  Record.toEntries(Arr.groupBy(mutants, placementKeyOf)).map(([key, members]) => {
     const sorted = [...members].sort(compareProjectThenId)
     return {
       key,
@@ -199,7 +189,6 @@ const placementGroupsOf = (mutants: ReadonlyArray<PlannedMutant>): ReadonlyArray
       dependsOnDryRun: sorted.some((mutant) => mutant.dependsOnDryRun),
     }
   })
-}
 
 const compareGroupsCostliestFirst = (left: PlacementGroup, right: PlacementGroup): number =>
   Boolean.match(left.costMs === right.costMs, {

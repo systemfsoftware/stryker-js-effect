@@ -16,11 +16,12 @@ const MutantResultLikeSchema = S.Struct({
   coveredBy: S.String.pipe(S.Array, S.optional),
   static: S.optional(S.Boolean),
   statusReason: S.optional(S.String),
+  remembered: S.optional(S.Boolean),
   testsCompleted: S.optional(S.Finite),
   description: S.optional(S.String),
   duration: S.optional(S.Finite),
-  redundancy: S.optional(S.toEncoded(Mutant.Redundancy)),
-  readmission: S.optional(S.toEncoded(Mutant.Readmitted)),
+  redundancy: Mutant.Redundancy.pipe(S.toEncoded, S.optional),
+  readmission: Mutant.Readmitted.pipe(S.toEncoded, S.optional),
 })
 
 const FileResultLikeSchema = S.Struct({

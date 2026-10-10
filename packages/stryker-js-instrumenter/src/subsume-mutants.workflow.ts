@@ -6,7 +6,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { RELATIONAL_OPERATORS, type RelationalOperator } from './relational-sufficient-sets.js'
+import { RelationalOperator } from './relational-operator.schema.js'
 
 const COMPLEMENT_ROWS: Readonly<
   Record<RelationalOperator, { readonly complement: RelationalOperator; readonly dominator: RelationalOperator }>
@@ -17,10 +17,8 @@ const COMPLEMENT_ROWS: Readonly<
   '>=': { complement: '<', dominator: '>' },
 }
 
-const RelationalOperatorSchema = S.Literals(RELATIONAL_OPERATORS)
-
 export class RelationalSite extends S.TaggedClass<RelationalSite>()('RelationalSite', {
-  operator: RelationalOperatorSchema,
+  operator: RelationalOperator,
 }) {}
 
 export class OtherSite extends S.TaggedClass<OtherSite>()('OtherSite', {}) {}
@@ -29,7 +27,7 @@ export const SubsumptionSite = S.Union([RelationalSite, OtherSite])
 export type SubsumptionSite = typeof SubsumptionSite.Type
 
 export class OrderingOperator extends S.TaggedClass<OrderingOperator>()('OrderingOperator', {
-  operator: RelationalOperatorSchema,
+  operator: RelationalOperator,
 }) {}
 
 export class OtherReplacement extends S.TaggedClass<OtherReplacement>()('OtherReplacement', {}) {}

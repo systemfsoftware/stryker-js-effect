@@ -1,5 +1,5 @@
-import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arr from 'effect/Array'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -11,10 +11,18 @@ import {
   type SubsumptionDecision,
 } from '../subsume-mutants.workflow.js'
 
+type Candidate = SubsumeMutantsCommand['candidates'][number]
+type DecidedPair = [Candidate, SubsumptionDecision]
+type SubsumedPair = [Candidate, Subsumed]
+
 const decisionsOf = (decided: Result.Result<readonly SubsumptionDecision[], never>): readonly SubsumptionDecision[] =>
   Result.getOrElse(decided, () => [])
 
 const isSubsumed = S.is(Subsumed)
+
+const isSubsumedPair = (pair: DecidedPair): pair is SubsumedPair => isSubsumed(pair[1])
+
+const isKeptUnaffectedPair = (pair: DecidedPair): boolean => pair[0].status === 'StaticallyKept' && !isSubsumed(pair[1])
 
 describe('subsumeMutants', () => {
   it.prop(
@@ -22,14 +30,11 @@ describe('subsumeMutants', () => {
     { of: [SubsumeMutantsCommand], subject: subsumeMutants },
     (subject, [command]) => {
       const decisions = decisionsOf(subject(command))
-      const keptUnaffected = (id: Mutant.MutantId): boolean =>
-        command.candidates.some((candidate, index) =>
-          candidate.id === id && candidate.status === 'StaticallyKept' && !isSubsumed(decisions[index])
-        )
+      const pairs = Arr.zip(command.candidates, decisions)
+      const keptUnaffected = new Set(pairs.filter(isKeptUnaffectedPair).map(([candidate]) => candidate.id))
       return decisions.length === command.candidates.length &&
-        decisions.every((decision, index) =>
-          !isSubsumed(decision) ||
-          (command.candidates[index]!.status === 'StaticallyKept' && decision.dominators.every(keptUnaffected))
+        pairs.filter(isSubsumedPair).every(([candidate, subsumed]) =>
+          candidate.status === 'StaticallyKept' && subsumed.dominators.every((id) => keptUnaffected.has(id))
         )
     },
   )
@@ -38,16 +43,15 @@ describe('subsumeMutants', () => {
     '∀c_Command_≡IgnoringEveryNamedDominatorLeavesTheMutantUnaffected',
     { of: [SubsumeMutantsCommand], subject: subsumeMutants },
     (subject, [command]) => {
-      const named = new Set(
-        decisionsOf(subject(command)).flatMap((decision) => isSubsumed(decision) ? decision.dominators : []),
-      )
+      const named = new Set(decisionsOf(subject(command)).filter(isSubsumed).flatMap((subsumed) => subsumed.dominators))
       const withoutDominators = SubsumeMutantsCommand.make({
-        ...command,
+        policy: command.policy,
+        site: command.site,
         candidates: command.candidates.map((candidate) =>
           named.has(candidate.id) ? { ...candidate, status: 'StaticallyIgnored' as const } : candidate
         ),
       })
-      return decisionsOf(subject(withoutDominators)).every((decision) => !isSubsumed(decision))
+      return !decisionsOf(subject(withoutDominators)).some(isSubsumed)
     },
   )
 
@@ -55,8 +59,18 @@ describe('subsumeMutants', () => {
     '∀c_Command_≡OnlyARelationalSiteUnderTheDefaultPolicySubsumes',
     { of: [SubsumeMutantsCommand], subject: subsumeMutants },
     (subject, [command]) => {
-      const full = decisionsOf(subject(SubsumeMutantsCommand.make({ ...command, policy: 'full' })))
-      const other = decisionsOf(subject(SubsumeMutantsCommand.make({ ...command, site: OtherSite.make({}) })))
+      const full = decisionsOf(
+        subject(SubsumeMutantsCommand.make({ policy: 'full', site: command.site, candidates: command.candidates })),
+      )
+      const other = decisionsOf(
+        subject(
+          SubsumeMutantsCommand.make({
+            policy: command.policy,
+            site: OtherSite.make({}),
+            candidates: command.candidates,
+          }),
+        ),
+      )
       return [full, other].every((decisions) =>
         decisions.length === command.candidates.length && !decisions.some(isSubsumed)
       )

@@ -1,7 +1,8 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 
 import { checkCell } from './check.cell.js'
-import type { CheckedPlansResult, CheckerCellError, CheckerRequest } from './Checker.protocol.js'
+import type { CheckerCellError, CheckerRequest } from './Checker.handle.js'
+import type { CheckedPlansResult } from './Checker.schema.js'
 import { groupCell } from './group.cell.js'
 
 export const checkGroupedCell: Cell.Cell<CheckerRequest, CheckedPlansResult, CheckerCellError, never> = groupCell.pipe(

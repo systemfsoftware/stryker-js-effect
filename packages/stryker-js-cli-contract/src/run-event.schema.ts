@@ -97,15 +97,8 @@ export const MutantCost = S.Struct({
 })
 export type MutantCost = typeof MutantCost.Type
 
-/**
- * The machine-stream line a tested mutant is published as. Its wire shape is a
- * published contract: the `mutant` tag and the `file`/`mutator` keys must not
- * change. The line carries the verified fields of `Reporter.MutantTested` plus
- * the static classification (R24) and the measured cost breakdown (R39).
- */
-export class RunMutantTestedEvent extends S.TaggedClass<RunMutantTestedEvent>()('mutantTested', {
+const mutantTestedFields = {
   id: Mutant.MutantId,
-  status: Mutant.MutantStatusSchema,
   fileName: Mutant.CanonicalFileName,
   location: Mutant.Location,
   mutatorName: Mutant.MutatorName,
@@ -116,13 +109,36 @@ export class RunMutantTestedEvent extends S.TaggedClass<RunMutantTestedEvent>()(
   cost: S.NullOr(MutantCost),
   redundancy: S.NullOr(Mutant.Redundancy),
   readmission: S.NullOr(Mutant.Readmitted),
-}) {}
+}
 
+const IgnoredStatusReason = S.Struct({ status: S.Literal('Ignored'), statusReason: Mutant.IgnoreStatusReasonText })
+
+const SettledStatusReason = S.Struct({ status: Mutant.SettledStatusSchema, statusReason: S.NullOr(S.String) })
+
+const statusReasonCheck = S.makeFilter(S.is(S.Union([IgnoredStatusReason, SettledStatusReason])), {
+  expected: 'an Ignored mutant whose statusReason names an ignore rule (`<rule-id>: <detail>`)',
+})
+
+export class RunMutantTestedEvent extends S.TaggedClass<RunMutantTestedEvent>()(
+  'mutantTested',
+  S.Struct({
+    ...mutantTestedFields,
+    status: Mutant.MutantStatusSchema,
+    statusReason: S.NullOr(S.String),
+  }).check(statusReasonCheck),
+) {}
+
+/**
+ * The machine-stream line a tested mutant is published as. Its wire shape is a
+ * published contract: the `mutant` tag and the `file`/`mutator` keys must not
+ * change. The line carries the verified fields of `Reporter.MutantTested`, the
+ * status reason, the static classification (R24) and the measured cost
+ * breakdown (R39).
+ */
 export type RunMutantTested = RunMutantTestedEvent
 
-const MutantTestedWireSchema = S.TaggedStruct('mutant', {
+const mutantWireFields = {
   id: Mutant.MutantId,
-  status: Mutant.MutantStatusSchema,
   file: S.toType(Mutant.CanonicalFileName),
   location: Mutant.Location,
   mutator: Mutant.MutatorName,
@@ -133,31 +149,39 @@ const MutantTestedWireSchema = S.TaggedStruct('mutant', {
   cost: S.NullOr(MutantCost),
   redundancy: S.NullOr(Mutant.Redundancy),
   readmission: S.NullOr(Mutant.Readmitted),
+}
+
+const MutantWireCommon = S.Struct(mutantWireFields)
+
+const eventFieldsOf = (line: typeof MutantWireCommon.Type) => ({
+  id: line.id,
+  fileName: line.file,
+  location: line.location,
+  mutatorName: line.mutator,
+  replacement: line.replacement,
+  completed: line.completed,
+  total: line.total,
+  static: line.static,
+  cost: line.cost,
+  redundancy: line.redundancy,
+  readmission: line.readmission,
 })
+
+const MutantTestedWireSchema = S.TaggedStruct('mutant', {
+  ...mutantWireFields,
+  status: Mutant.MutantStatusSchema,
+  statusReason: S.NullOr(S.String),
+}).check(statusReasonCheck)
 
 export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSchema.Encoded> = MutantTestedWireSchema
   .pipe(
     S.decodeTo(S.toType(RunMutantTestedEvent), {
       decode: SchemaGetter.transform((line) =>
-        RunMutantTestedEvent.make({
-          id: line.id,
-          status: line.status,
-          fileName: line.file,
-          location: line.location,
-          mutatorName: line.mutator,
-          replacement: line.replacement,
-          completed: line.completed,
-          total: line.total,
-          static: line.static,
-          cost: line.cost,
-          redundancy: line.redundancy,
-          readmission: line.readmission,
-        })
+        RunMutantTestedEvent.make({ ...eventFieldsOf(line), status: line.status, statusReason: line.statusReason })
       ),
       encode: SchemaGetter.transform((tested) => ({
         _tag: 'mutant' as const,
         id: tested.id,
-        status: tested.status,
         file: tested.fileName,
         location: tested.location,
         mutator: tested.mutatorName,
@@ -168,6 +192,8 @@ export const RunMutantTested: S.Codec<RunMutantTested, typeof MutantTestedWireSc
         cost: tested.cost,
         redundancy: tested.redundancy,
         readmission: tested.readmission,
+        status: tested.status,
+        statusReason: tested.statusReason,
       })),
     }),
   )
@@ -364,7 +390,7 @@ export const RunEvent = Object.assign(
     RunFailed,
     HelpRendered,
     Refused,
-  ]),
+  ]).pipe(S.toTaggedUnion('_tag')),
   { QUEUE_BOUND: 256 },
 )
 export type RunEvent = typeof RunEvent.Type

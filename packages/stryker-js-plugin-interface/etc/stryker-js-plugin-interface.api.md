@@ -6,7 +6,7 @@
 
 // @public (undocumented)
 export namespace Checker {
-    export { CheckResult, CheckResultSchema, CheckStatus, Checker, CheckerFailed, CheckerMutantWire, CheckerService, FailedCheckResult, IgnoredCheckResult, PassedCheckResult, ProgramDigest };
+    export { CheckAnswer, CheckAnswerSchema, CheckResult, CheckResultSchema, CheckStatus, Checker, CheckerFailed, CheckerMutantWire, CheckerService, FailedCheckResult, IgnoredCheckResult, PassedCheckResult, ProgramDigest };
 }
 
 // @public (undocumented)
@@ -16,7 +16,7 @@ export namespace Evaluator {
 
 // @public (undocumented)
 export namespace Mutant {
-    export { ActionableStatus, ActionableStatusSchema, CanonicalFileName, CanonicalFileName as CanonicalFileNameValue, Column, Coverage, CoverageData, CoveragePerTestId, EarlyResultPlan, Ends, EphemeralStatus, EphemeralStatusSchema, HitCount, IgnoreRuleId, IgnoreRuleId as IgnoreRuleIdValue, IgnoreStatusReason, IgnoreStatusReasonText, IgnoreStatusReason as IgnoreStatusReasonValue, Line, Location, Mutant, MutantActivation, MutantActivationSchema, MutantCost, MutantCoverage, MutantCoverageSchema, MutantEarlyResultPlan, MutantFromUnknown, MutantFromUnknown as MutantFromUnknownValue, MutantId, MutantId as MutantIdValue, MutantRunOptions, MutantRunOptionsSchema, MutantRunPlan, MutantStatus, MutantStatusSchema, MutantTestCoverage, MutantTestPlan, MutatorName, MutatorName as MutatorNameValue, OpenEndLocation, Position, Redundancy, RememberedStatus, RememberedStatusSchema, RunMutantResult, RunOptions, RunOptionsFields, RunPlan, Subsumed, SurvivorStatus, SurvivorStatusSchema, TestPlan, duplicatedValue, inOrder, notReversed, redundancyStatusReason };
+    export { ActionableStatus, ActionableStatusSchema, CanonicalFileName, CanonicalFileName as CanonicalFileNameValue, Column, Coverage, CoverageData, CoveragePerTestId, EarlyResultPlan, Ends, EphemeralStatus, EphemeralStatusSchema, HitCount, IgnoreRuleId, IgnoreRuleId as IgnoreRuleIdValue, IgnoreStatusReason, IgnoreStatusReasonText, IgnoreStatusReason as IgnoreStatusReasonValue, Line, Location, Mutant, MutantActivation, MutantActivationSchema, MutantCost, MutantCoverage, MutantCoverageSchema, MutantEarlyResultPlan, MutantFromUnknown, MutantFromUnknown as MutantFromUnknownValue, MutantId, MutantId as MutantIdValue, MutantRunOptions, MutantRunOptionsSchema, MutantRunPlan, MutantStatus, MutantStatusSchema, MutantTestCoverage, MutantTestPlan, MutatorName, MutatorName as MutatorNameValue, OpenEndLocation, Position, ReadmitCauseCode, Readmitted, Redundancy, RememberedStatus, RememberedStatusSchema, RunMutantResult, RunOptions, RunOptionsFields, RunPlan, SettledStatus, SettledStatusSchema, Subsumed, SurvivorStatus, SurvivorStatusSchema, TestPlan, duplicatedValue, inOrder, notReversed, redundancyStatusReason };
 }
 
 // @public (undocumented)
