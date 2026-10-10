@@ -565,7 +565,12 @@ const listProgramFiles = (input: ProjectInput): Effect.Effect<ReadonlyArray<stri
       args: [tsc, '--listFilesOnly', '-p', input.tsconfigFile],
       cwd: input.repoRoot,
     })
-    return programFilesFromListing({ listing, repoRoot: input.repoRoot, path })
+    return programFilesFromListing({
+      listing,
+      repoRoot: input.repoRoot,
+      projectRoot: path.dirname(input.tsconfigFile),
+      path,
+    })
   })
 
 const bySide = <A>(side: Side, main: A, branch: A): A => side === 'main' ? main : branch

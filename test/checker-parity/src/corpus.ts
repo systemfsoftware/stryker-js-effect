@@ -56,10 +56,11 @@ export const tsconfigsNamedByConfig = (input: NamedByConfig): ReadonlyArray<stri
 export interface ProgramListing {
   readonly listing: string
   readonly repoRoot: string
+  readonly projectRoot: string
   readonly path: Path.Path
 }
 
-const insideRepo = (path: Path.Path, relative: string): boolean =>
+const inside = (path: Path.Path, relative: string): boolean =>
   Boolean.every([Str.isNonEmpty(relative), !relative.startsWith('..'), !path.isAbsolute(relative)])
 
 const underNodeModules = (file: string): boolean =>
@@ -72,8 +73,9 @@ export const programFilesFromListing = (input: ProgramListing): ReadonlyArray<st
       .map(Str.trim)
       .filter((line) => Str.isNonEmpty(line) && input.path.isAbsolute(line))
       .filter((file) => !DECLARATION_FILE.test(file) && !underNodeModules(file))
+      .filter((file) => inside(input.path, input.path.relative(input.path.resolve(input.projectRoot), file)))
       .map((file) => input.path.relative(input.path.resolve(input.repoRoot), file))
-      .filter((relative) => insideRepo(input.path, relative))
+      .filter((relative) => inside(input.path, relative))
       .map((relative) => relative.split(input.path.sep).join('/')),
     Str.Order,
   )
