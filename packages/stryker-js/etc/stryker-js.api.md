@@ -55,6 +55,11 @@ export namespace Serve {
 }
 
 // @public (undocumented)
+export namespace SourceParser {
+    export { ParsedSource, SourceParser, SourceParserShape };
+}
+
+// @public (undocumented)
 export namespace Worker {
     export { ChildProcessCrashedError, ClassifyWorkerExitCommand, ClassifyWorkerExitDecision, OutOfMemoryError, SpawnedSocketWorker, WorkerBootError, WorkerBootTimeoutError, WorkerClientParams, WorkerExit, WorkerLauncher, WorkerLauncherShape, WorkerSpawnParams, classifyWorkerExit, layerWorkerProtocol, make as makeSpawnedSocketWorker, makeWorkerClient };
 }

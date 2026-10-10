@@ -8,8 +8,8 @@ import { describedConfigErrorOf, emitPreparePhaseEntered, failConfigWith, readLo
 import { resolveConfig } from './resolve-config.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 
-export type { ConfigReadError } from '../drivers/config.js'
 export type { ConfigInvocation, LoadedConfig } from './load-config.js'
+export type { ConfigReadError } from './read-config-document.js'
 export type { ValidationSchemaDocument } from './validate-options-admission.workflow.js'
 
 const readRunConfig = Effect.fn(SpanTaxonomy.Spans.configReadRun.name)(function*(input: {
