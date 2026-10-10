@@ -189,11 +189,16 @@ const GUARD_BLOCK_ID = Mutant.MutantId.make('0000000000000001')
 
 const GUARD_INSIDE_ID = Mutant.MutantId.make('0000000000000002')
 
+const GUARD_ALTERNATE_ID = Mutant.MutantId.make('0000000000000003')
+
 const GUARD_COVERING_TEST_ID = TestRunner.TestId.make('guard-test')
 
 const guardCommandArb = Arbitrary.all([
   Arbitrary.schema(Mutant.Mutant),
   Arbitrary.schema(S.Literals(['off', 'all', 'perTest'])),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Boolean),
   Arbitrary.schema(S.Boolean),
   Arbitrary.schema(S.Boolean),
   Arbitrary.schema(S.Boolean),
@@ -217,10 +222,14 @@ const guardCommandArb = Arbitrary.all([
       blockStatic,
       staticPresent,
       insidePresent,
+      alternatePresent,
+      alternateCovered,
+      alternateStatic,
     ]) => {
       const guard = Mutant.Guard.make({
         block: GUARD_BLOCK_ID,
         inside: insidePresent ? [GUARD_INSIDE_ID] : [],
+        ...(alternatePresent ? { alternate: GUARD_ALTERNATE_ID } : {}),
       })
       return MutantTestPlanCommand.make({
         _tag: 'MutantTestPlanCommand',
@@ -241,13 +250,22 @@ const guardCommandArb = Arbitrary.all([
             subsumption: undefined,
             guard: undefined,
           }),
+          Mutant.Mutant.make({
+            ...baseMutant,
+            id: GUARD_ALTERNATE_ID,
+            status: undefined,
+            statusReason: undefined,
+            subsumption: undefined,
+            guard: undefined,
+          }),
         ],
         timeOverheadMS: 1,
         timeSpentAllTests: 1,
-        hitsByMutantId: { [GUARD_CONDITION_ID]: 1, [GUARD_BLOCK_ID]: 1 },
+        hitsByMutantId: { [GUARD_CONDITION_ID]: 1, [GUARD_BLOCK_ID]: 1, [GUARD_ALTERNATE_ID]: 1 },
         testsByMutantId: {
           [GUARD_CONDITION_ID]: conditionCovered ? [GUARD_COVERING_TEST_ID] : [],
           [GUARD_BLOCK_ID]: blockCovered ? [GUARD_COVERING_TEST_ID] : [],
+          [GUARD_ALTERNATE_ID]: alternateCovered ? [GUARD_COVERING_TEST_ID] : [],
         },
         testTimeById: { [GUARD_COVERING_TEST_ID]: 1 },
         ...(staticPresent
@@ -255,6 +273,7 @@ const guardCommandArb = Arbitrary.all([
             staticCoverage: {
               [GUARD_CONDITION_ID]: conditionStatic ? 1 : 0,
               [GUARD_BLOCK_ID]: blockStatic ? 1 : 0,
+              [GUARD_ALTERNATE_ID]: alternateStatic ? 1 : 0,
             },
           }
           : {}),
@@ -271,13 +290,17 @@ const blockIsCovered = (command: MutantTestPlanCommand, mutantId: Mutant.MutantI
 const blockIsStatic = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
   staticCountOf(command, mutantId) > 0
 
+const alternateIsCovered = (command: MutantTestPlanCommand, guard: Mutant.Guard): boolean =>
+  guard.alternate !== undefined && blockIsCovered(command, guard.alternate)
+
 const expectedHeldByOf = (command: MutantTestPlanCommand, mutant: Mutant.Mutant): boolean =>
   mutant.status === undefined &&
   mutant.guard !== undefined &&
   command.options.coverageAnalysis === 'perTest' &&
   !isPerTestUncoveredNonStatic(command, mutant) &&
   !(command.options.ignoreStatic && isUncoveredStatic(command, mutant)) &&
-  !blockIsCovered(command, mutant.guard.block)
+  !blockIsCovered(command, mutant.guard.block) &&
+  !alternateIsCovered(command, mutant.guard)
 
 const heldByOfDecision = (
   decision: PlannedEarlyResultMutant | PlannedRunMutant,
@@ -666,6 +689,18 @@ describe('planMutantTests', () => {
         Option.match(Option.fromUndefinedOr(mutant.guard), {
           onNone: () => false,
           onSome: (guard) => blockIsCovered(command, guard.block),
+        })),
+  )
+
+  it.prop(
+    '∀e_CoveredElseBlock_≡GuardNotHeld',
+    { of: [guardCommandArb], subject: planMutantTests },
+    (subject, [command]) =>
+      heldAsDefined(subject, command) &&
+      refusesHeldBy(subject, command, (mutant) =>
+        Option.match(Option.fromUndefinedOr(mutant.guard), {
+          onNone: () => false,
+          onSome: (guard) => alternateIsCovered(command, guard),
         })),
   )
 

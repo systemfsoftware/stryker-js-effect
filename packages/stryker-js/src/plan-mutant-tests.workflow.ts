@@ -344,20 +344,34 @@ const mutantIsCovered = (command: MutantTestPlanCommand, mutantId: Mutant.Mutant
 const coveringTestIdsOf = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId) =>
   Option.getOrElse(Record.get(command.testsByMutantId, mutantId), (): readonly TestRunner.TestId[] => [])
 
-const mutantIdIsPerTestUncoveredNonStatic = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
+const isPerTestUncoveredNonStatic = (
+  command: MutantTestPlanCommand,
+  mutantId: Mutant.MutantId,
+  isStatic: boolean,
+): boolean =>
   Boolean.every([
     command.options.coverageAnalysis === 'perTest',
-    Boolean.not(mutantIsStatic(command, mutantId)),
+    Boolean.not(isStatic),
     Boolean.not(mutantIsCovered(command, mutantId)),
   ])
 
+const mutantIdIsPerTestUncoveredNonStatic = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
+  isPerTestUncoveredNonStatic(command, mutantId, mutantIsStatic(command, mutantId))
+
 const mutantIsOpen = (mutant: Mutant.Mutant): boolean => Option.isNone(Option.fromUndefinedOr(mutant.status))
+
+const alternateIsUnexecuted = (command: MutantTestPlanCommand, guard: Mutant.Guard): boolean =>
+  Option.match(Option.fromUndefinedOr(guard.alternate), {
+    onNone: () => true,
+    onSome: (alternate) => mutantIdIsPerTestUncoveredNonStatic(command, alternate),
+  })
 
 const heldByHolds = (command: MutantTestPlanCommand, mutant: Mutant.Mutant, guard: Mutant.Guard): boolean =>
   Boolean.every([
     mutantIsOpen(mutant),
     Boolean.not(mutantIdIsPerTestUncoveredNonStatic(command, mutant.id)),
     mutantIdIsPerTestUncoveredNonStatic(command, guard.block),
+    alternateIsUnexecuted(command, guard),
   ])
 
 const heldByOf = (command: MutantTestPlanCommand, mutant: Mutant.Mutant): Mutant.Guard | undefined =>
@@ -374,7 +388,7 @@ const decidePlanForMutant = (
     onSome: (status) =>
       Result.succeed(toEarlyResultPlan(mutant, isStatic, status, mutant.statusReason, coveredByOfMutant(mutant))),
     onNone: () =>
-      Boolean.match(mutantIdIsPerTestUncoveredNonStatic(command, mutant.id), {
+      Boolean.match(isPerTestUncoveredNonStatic(command, mutant.id, isStatic), {
         onTrue: () => toNoCoverageRunPlan(mutant, command, isStatic, coveringTestIdsOf(command, mutant.id)),
         onFalse: () =>
           Boolean.match(hasCoverageForPlan(command.staticCoverage), {

@@ -1397,7 +1397,7 @@ export function price(n) {
           'result',
           ({ source }: { source: string }) => instrumentSource('/tmp/u7-else.ts', source),
         ),
-        Then('every condition guard names the consequent block and lists no else mutant')((
+        Then('every condition guard names the consequent block and the else block, and lists no else mutant')((
           { result }: { result: Instrument.InstrumentResult },
           expect,
         ) => {
@@ -1409,14 +1409,112 @@ export function price(n) {
             conditionCount: conditions.length,
             blockLines: blocks.map((mutant) => mutant.location.start.line).toSorted((left, right) => left - right),
             guardsNameConsequent: conditions.every((mutant) => mutant.guard?.block === consequentBlock?.id),
+            guardsNameElse: conditions.every((mutant) =>
+              elseBlock !== undefined && mutant.guard?.alternate === elseBlock.id
+            ),
             insideEmpty: conditions.every((mutant) => mutant.guard?.inside.length === 0),
-            elseBlockNotNamed: conditions.every((mutant) => mutant.guard?.block !== elseBlock?.id),
           }).toEqual({
             conditionCount: 2,
             blockLines: [1, 3],
             guardsNameConsequent: true,
+            guardsNameElse: true,
             insideEmpty: true,
-            elseBlockNotNamed: true,
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      'An if whose else is not a block statement carries no guard',
+      Gherkin.Do.pipe(
+        Given('an else-if chain and an if with a bare else statement')(
+          'source',
+          () =>
+            Effect.succeed(`if (a) {
+  f(1)
+} else if (b) {
+  g(2)
+}
+if (c) {
+  h(3)
+} else h(4)
+`),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u7-else-statement.ts', source),
+        ),
+        Then('only the last if in the chain guards its condition, with no else block')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const conditions = result.mutants.filter((mutant) => mutant.mutatorName === 'ConditionalExpression')
+          const lastInChainBlock = result.mutants.find((mutant) =>
+            mutant.mutatorName === 'BlockStatement' && mutant.location.start.line === 3
+          )
+          const linesOf = (guarded: boolean) =>
+            conditions
+              .filter((mutant) => (mutant.guard !== undefined) === guarded)
+              .map((mutant) => mutant.location.start.line)
+              .toSorted((left, right) => left - right)
+          return expect({
+            guardedLines: linesOf(true),
+            guardlessLines: linesOf(false),
+            lastInChainGuard: conditions
+              .filter((mutant) => mutant.location.start.line === 3)
+              .map((mutant) => ({
+                namesItsBlock: mutant.guard?.block === lastInChainBlock?.id,
+                alternate: mutant.guard?.alternate,
+              })),
+          }).toEqual({
+            guardedLines: [3, 3],
+            guardlessLines: [1, 1, 6, 6],
+            lastInChainGuard: [{ namesItsBlock: true, alternate: undefined }, {
+              namesItsBlock: true,
+              alternate: undefined,
+            }],
+          })
+        }),
+      ),
+    )
+
+    scenario(
+      "An if inside a callback in another if's condition guards its condition with its own block",
+      Gherkin.Do.pipe(
+        Given('an if whose condition calls a callback that holds an if')(
+          'source',
+          () =>
+            Effect.succeed(`if (xs.some((x) => {
+  if (x) {
+    f(1)
+  }
+  return x
+})) {
+  g(2)
+}
+`),
+        ),
+        When('it is instrumented under the default policy')(
+          'result',
+          ({ source }: { source: string }) => instrumentSource('/tmp/u7-callback-condition.ts', source),
+        ),
+        Then('the inner condition names the inner block and the outer condition names the outer block')((
+          { result }: { result: Instrument.InstrumentResult },
+          expect,
+        ) => {
+          const conditions = result.mutants.filter((mutant) => mutant.mutatorName === 'ConditionalExpression')
+          const blockAt = (line: number) =>
+            result.mutants.find((mutant) =>
+              mutant.mutatorName === 'BlockStatement' && mutant.location.start.line === line
+            )
+          const guardBlocksOn = (line: number) =>
+            conditions.filter((mutant) => mutant.location.start.line === line).map((mutant) => mutant.guard?.block)
+          return expect({
+            innerConditionGuards: guardBlocksOn(2),
+            outerConditionGuards: guardBlocksOn(1),
+          }).toEqual({
+            innerConditionGuards: [blockAt(2)?.id, blockAt(2)?.id],
+            outerConditionGuards: [blockAt(6)?.id, blockAt(6)?.id],
           })
         }),
       ),

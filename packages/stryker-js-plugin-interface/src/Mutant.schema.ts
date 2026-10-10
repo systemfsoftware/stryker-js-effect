@@ -122,6 +122,10 @@ export const Guard = S.Struct({
   inside: S.Array(MutantId).annotate({
     description: 'Every other mutant inside the consequent block.',
   }),
+  alternate: S.optional(MutantId).annotate({
+    description:
+      "The BlockStatement mutant that empties the `if`'s else block; absent when the `if` has no else. An `if` whose else is not a non-empty block carries no guard.",
+  }),
 }).annotate({ description: 'The `if` whose condition this mutant sits in.' })
 export type Guard = typeof Guard.Type
 

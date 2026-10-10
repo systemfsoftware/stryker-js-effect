@@ -15,6 +15,7 @@ const BLOCK_MUTATOR = 'BlockStatement'
 export const GuardSiteSchema = S.Struct({
   test: Mutant.Location,
   block: Mutant.Location,
+  alternate: S.optional(Mutant.Location),
 })
 export type GuardSite = typeof GuardSiteSchema.Type
 
@@ -77,17 +78,17 @@ const testOrder: Order.Order<Mutant.Location> = Order.combine(
 
 interface ResolvedSite {
   readonly test: Mutant.Location
-  readonly block: Mutant.Location
-  readonly blockMutantId: Mutant.MutantId
-  readonly inside: readonly Mutant.MutantId[]
+  readonly guard: Mutant.Guard
 }
 
 const locationKeyOf = (location: Mutant.Location): string =>
   `${location.start.line}:${location.start.column}:${location.end.line}:${location.end.column}`
 
-const emptyBlockMutantIndex: Readonly<Record<string, Mutant.MutantId | undefined>> = {}
+type BlockMutantIndex = Readonly<Record<string, Mutant.MutantId | undefined>>
 
-const blockMutantIndex = (mutants: readonly GuardMutant[]): Readonly<Record<string, Mutant.MutantId | undefined>> =>
+const emptyBlockMutantIndex: BlockMutantIndex = {}
+
+const blockMutantIndex = (mutants: readonly GuardMutant[]): BlockMutantIndex =>
   Arr.reduce(
     Arr.filter(mutants, (mutant) => mutant.mutatorName === BLOCK_MUTATOR),
     emptyBlockMutantIndex,
@@ -108,17 +109,37 @@ const insideOf = (
     (mutant) => [contains(block, mutant.location), mutant.id !== blockMutantId].every(Boolean),
   ).map((mutant) => mutant.id)
 
+const alternateFieldOf = (alternate: Option.Option<Mutant.MutantId>): { readonly alternate?: Mutant.MutantId } =>
+  Option.match(alternate, { onNone: () => ({}), onSome: (present) => ({ alternate: present }) })
+
+const blockMutantAt = (blockMutants: BlockMutantIndex, location: Mutant.Location): Option.Option<Mutant.MutantId> =>
+  Option.fromNullishOr(blockMutants[locationKeyOf(location)])
+
+const alternateOf = (
+  site: GuardSite,
+  blockMutants: BlockMutantIndex,
+): Option.Option<Option.Option<Mutant.MutantId>> =>
+  Option.match(Option.fromUndefinedOr(site.alternate), {
+    onNone: () => Option.some(Option.none()),
+    onSome: (alternate) => Option.map(blockMutantAt(blockMutants, alternate), Option.some),
+  })
+
 const resolvedSites = (command: GuardRelationCommand): readonly ResolvedSite[] => {
   const blockMutants = blockMutantIndex(command.mutants)
   return command.sites.flatMap((site) =>
     Option.toArray(
       Option.map(
-        Option.fromNullishOr(blockMutants[locationKeyOf(site.block)]),
-        (blockMutantId): ResolvedSite => ({
+        Option.all({
+          blockMutantId: blockMutantAt(blockMutants, site.block),
+          alternateMutantId: alternateOf(site, blockMutants),
+        }),
+        ({ blockMutantId, alternateMutantId }): ResolvedSite => ({
           test: site.test,
-          block: site.block,
-          blockMutantId,
-          inside: insideOf(site.block, blockMutantId, command.mutants),
+          guard: {
+            block: blockMutantId,
+            inside: insideOf(site.block, blockMutantId, command.mutants),
+            ...alternateFieldOf(alternateMutantId),
+          },
         }),
       ),
     )
@@ -147,11 +168,7 @@ const ownerOf = (sites: readonly ResolvedSite[], location: Mutant.Location): Opt
 const decisionFor = (sites: readonly ResolvedSite[], mutant: GuardMutant): GuardRelationDecision =>
   Option.match(ownerOf(sites, mutant.location), {
     onNone: () => Guardless.make({ id: mutant.id }),
-    onSome: (site) =>
-      GuardedByBlock.make({
-        id: mutant.id,
-        guard: { block: site.blockMutantId, inside: [...site.inside] },
-      }),
+    onSome: (site) => GuardedByBlock.make({ id: mutant.id, guard: site.guard }),
   })
 
 const decisionsUnderDefault = (command: GuardRelationCommand): readonly GuardRelationDecision[] => {

@@ -1027,6 +1027,12 @@ const spanOfOption = (node: Node): Option.Option<Span> => Option.fromNullishOr(s
 const blockConsequentOf = (statement: IfStatement): Option.Option<Statement> =>
   Option.filter(Option.some(statement.consequent), (consequent) => nodeType(consequent) === 'BlockStatement')
 
+const alternateSpanOf = (statement: IfStatement): Option.Option<Option.Option<Span>> =>
+  Option.match(Option.fromNullishOr(statement.alternate), {
+    onNone: () => Option.some(Option.none()),
+    onSome: (alternate) => Option.map(spanOfOption(alternate), Option.some),
+  })
+
 const guardSiteOf = (frame: NodeFrame, context: PlacementContext): Option.Option<GuardSite> =>
   Option.flatMap(
     Option.filter(Option.some(frame.node), (node): node is IfStatement => node.type === 'IfStatement'),
@@ -1035,11 +1041,22 @@ const guardSiteOf = (frame: NodeFrame, context: PlacementContext): Option.Option
         blockConsequentOf(statement),
         (block) =>
           Option.map(
-            Option.all({ test: spanOfOption(statement.test), block: spanOfOption(block) }),
-            (spans): GuardSite => ({
-              test: shiftedLocation(locationOf(context.lineStarts, spans.test), context.offset),
-              block: shiftedLocation(locationOf(context.lineStarts, spans.block), context.offset),
+            Option.all({
+              test: spanOfOption(statement.test),
+              block: spanOfOption(block),
+              alternate: alternateSpanOf(statement),
             }),
+            (spans): GuardSite => {
+              const locate = (span: Span) => shiftedLocation(locationOf(context.lineStarts, span), context.offset)
+              return {
+                test: locate(spans.test),
+                block: locate(spans.block),
+                ...Option.match(spans.alternate, {
+                  onNone: () => ({}),
+                  onSome: (span) => ({ alternate: locate(span) }),
+                }),
+              }
+            },
           ),
       ),
   )

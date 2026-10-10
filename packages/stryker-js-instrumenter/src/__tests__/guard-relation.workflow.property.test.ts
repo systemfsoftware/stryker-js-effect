@@ -42,6 +42,64 @@ const probeOf = (command: Command): Command =>
     ],
   })
 
+const lineShiftOf = (command: Command): number => command.sites[0]?.test.start.line ?? 0
+
+const shifted = (location: Mutant.Location, lines: number): Mutant.Location =>
+  located(location.start.line + lines, location.start.column, location.end.line + lines, location.end.column)
+
+const OUTER_TEST_LOC = located(1, 1, 1, 40)
+const INNER_TEST_LOC = located(1, 10, 1, 14)
+const INNER_COND_LOC = located(1, 10, 1, 13)
+const INNER_BLOCK_LOC = located(1, 16, 1, 25)
+const OUTER_BLOCK_LOC = located(2, 1, 4, 1)
+
+const callbackInConditionProbeOf = (command: Command): Command => {
+  const at = (location: Mutant.Location) => shifted(location, lineShiftOf(command))
+  return GuardRelationCommand.make({
+    policy: 'default',
+    sites: [
+      { test: at(OUTER_TEST_LOC), block: at(OUTER_BLOCK_LOC) },
+      { test: at(INNER_TEST_LOC), block: at(INNER_BLOCK_LOC) },
+    ],
+    mutants: [
+      { id: idAt(command, 0, '00000000000000b1'), mutatorName: 'BlockStatement', location: at(OUTER_BLOCK_LOC) },
+      { id: idAt(command, 1, '00000000000000b2'), mutatorName: 'BlockStatement', location: at(INNER_BLOCK_LOC) },
+      { id: idAt(command, 2, '00000000000000d3'), mutatorName: 'ConditionalExpression', location: at(INNER_COND_LOC) },
+    ],
+  })
+}
+
+const ELSE_LOC = located(4, 8, 6, 1)
+
+const elseProbeOf = (command: Command, elseHasBlockMutant: boolean): Command => {
+  const at = (location: Mutant.Location) => shifted(location, lineShiftOf(command))
+  return GuardRelationCommand.make({
+    policy: 'default',
+    sites: [{ test: at(TEST_LOC), block: at(BLOCK_LOC), alternate: at(ELSE_LOC) }],
+    mutants: [
+      { id: idAt(command, 0, '00000000000000b1'), mutatorName: 'BlockStatement', location: at(BLOCK_LOC) },
+      { id: idAt(command, 2, '00000000000000d3'), mutatorName: 'ConditionalExpression', location: at(COND_LOC) },
+      ...(elseHasBlockMutant
+        ? [{ id: idAt(command, 3, '00000000000000e4'), mutatorName: 'BlockStatement', location: at(ELSE_LOC) }]
+        : []),
+    ],
+  })
+}
+
+const guardOf = (
+  decisions: readonly GuardRelationDecision[],
+  id: Mutant.MutantId,
+): Option.Option<Mutant.Guard> =>
+  Option.flatMap(
+    Option.fromUndefinedOr(decisions.find((decision) => decision.id === id)),
+    (decision) =>
+      Match.value(decision).pipe(
+        Match.tag('GuardedByBlock', (guarded) => Option.some(guarded.guard)),
+        Match.tag('Guardless', () => Option.none()),
+        Match.exhaustive,
+      ),
+  )
+
 const positionOrder: Order.Order<Mutant.Position> = Order.combine(
   Order.mapInput(Order.Number, (position: Mutant.Position) => position.line),
   Order.mapInput(Order.Number, (position: Mutant.Position) => position.column),
@@ -190,5 +248,36 @@ describe('guardRelation', () => {
     '∀c_Command_≡ASiteWithoutABlockStatementMutantGuardsNothing',
     { of: [GuardRelationCommand], subject: guardRelation },
     (subject, [command]) => decisionsOf(subject(withoutBlockMutants(command))).every(Geo.guardless),
+  )
+
+  it.prop(
+    '∀c_Command_≡AMutantInNestedTestsIsGuardedByTheInnermostSitesBlock',
+    { of: [GuardRelationCommand], subject: guardRelation },
+    (subject, [command]) => {
+      const probe = callbackInConditionProbeOf(command)
+      const [, inner, condition] = probe.mutants
+      return inner !== undefined && condition !== undefined &&
+        Option.exists(guardOf(decisionsOf(subject(probe)), condition.id), (guard) => guard.block === inner.id)
+    },
+  )
+
+  it.prop(
+    '∀c_Command_≡AGuardNamesTheBlockStatementMutantOfItsSitesElse',
+    { of: [GuardRelationCommand], subject: guardRelation },
+    (subject, [command]) => {
+      const probe = elseProbeOf(command, true)
+      const [block, condition, alternate] = probe.mutants
+      return block !== undefined && condition !== undefined && alternate !== undefined &&
+        Option.exists(
+          guardOf(decisionsOf(subject(probe)), condition.id),
+          (guard) => guard.block === block.id && guard.alternate === alternate.id,
+        )
+    },
+  )
+
+  it.prop(
+    '∀c_Command_≡ASiteWhoseElseHasNoBlockStatementMutantGuardsNothing',
+    { of: [GuardRelationCommand], subject: guardRelation },
+    (subject, [command]) => decisionsOf(subject(elseProbeOf(command, false))).every(Geo.guardless),
   )
 })

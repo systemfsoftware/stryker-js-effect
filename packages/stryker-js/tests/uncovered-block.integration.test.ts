@@ -34,6 +34,19 @@ const WORK_SOURCE = [
   '',
 ].join('\n')
 
+const ELSE_WORK_SOURCE = [
+  'export const compute = (value: number): number => value',
+  '',
+  'export const work = (flag: boolean): number => {',
+  '  if (flag) {',
+  '    return compute(1 + 1)',
+  '  } else {',
+  '    return compute(0)',
+  '  }',
+  '}',
+  '',
+].join('\n')
+
 const CONDITION_LINE = 4
 const BLOCK_BODY_LINE = 5
 const BLOCK_END_LINE = 6
@@ -61,9 +74,12 @@ const VISITED_TEST_SOURCE = [
 
 const VITEST_CONFIG_SOURCE = 'export default { test: { testTimeout: 600_000, hookTimeout: 600_000 } }\n'
 
-const workspaceFilesOf = (testSource: string): ReadonlyArray<readonly [string, string]> => [
+const workspaceFilesOf = (
+  testSource: string,
+  workSource: string = WORK_SOURCE,
+): ReadonlyArray<readonly [string, string]> => [
   ['vitest.config.ts', VITEST_CONFIG_SOURCE],
-  [WORK_FILE, WORK_SOURCE],
+  [WORK_FILE, workSource],
   ['test/sample.test.mjs', testSource],
 ]
 
@@ -285,6 +301,24 @@ Feature('Holding a condition mutant whose guarded block no test runs')
         Given('a project whose tests call the guarded function with both flag values')(
           'observation',
           () => runWorkspace(workspaceFilesOf(VISITED_TEST_SOURCE), []),
+        ),
+        Then('no mutant is ignored arid and the condition mutants ran')((s, expect) =>
+          expect(refusalShapeOf(s.observation)).toEqual({
+            runSucceeded: true,
+            aridReasons: 0,
+            conditionCount: 2,
+            everyConditionRan: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A test that runs the else block keeps the condition mutants out of the arid ruling',
+      Gherkin.Do.pipe(
+        Given('a project whose only test calls the function with the flag false, so its else block runs')(
+          'observation',
+          () => runWorkspace(workspaceFilesOf(UNVISITED_TEST_SOURCE, ELSE_WORK_SOURCE), []),
         ),
         Then('no mutant is ignored arid and the condition mutants ran')((s, expect) =>
           expect(refusalShapeOf(s.observation)).toEqual({
