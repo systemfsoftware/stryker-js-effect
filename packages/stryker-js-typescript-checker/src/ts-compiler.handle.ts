@@ -6,6 +6,7 @@ import { offsetAt } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
@@ -16,6 +17,7 @@ import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
 import * as Path from 'effect/Path'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
@@ -129,6 +131,15 @@ interface CompilerState {
   readonly tsconfigFile: string
 }
 
+interface CheckTally {
+  readonly snapshotUpdates: number
+  readonly resplices: number
+  readonly tceBuilds: number
+  readonly tceMs: number
+}
+
+const emptyTally: CheckTally = { snapshotUpdates: 0, resplices: 0, tceBuilds: 0, tceMs: 0 }
+
 interface TSCompilerRuntime {
   readonly options: Options.StrykerOptions
   readonly host: FileSystem.FileSystem
@@ -137,6 +148,7 @@ interface TSCompilerRuntime {
   readonly files: TSFiles
   readonly sourceFileSystem: TSFileSystem
   readonly state: SynchronizedRef.SynchronizedRef<CompilerState>
+  readonly tally: Ref.Ref<CheckTally>
 }
 
 const TSCompiler = Handle.make<object, TSCompilerRuntime>()(TypeId)
@@ -189,6 +201,7 @@ export const make: {
       allTSConfigFiles: HashSet.fromIterable([tsconfigFile]),
       tsconfigFile,
     })
+    const tally = yield* Ref.make(emptyTally)
     return TSCompiler.make({}, {
       options,
       host: services.host,
@@ -197,6 +210,7 @@ export const make: {
       files,
       sourceFileSystem: tsFileSystem(files),
       state,
+      tally,
     })
   }),
 )
@@ -858,7 +872,11 @@ const parenthesizedSpliceOf = (
   fileName: string,
   changedFiles: ReadonlyArray<string>,
 ): Effect.Effect<void, CompilerFailed> =>
-  Effect.flatMap(applyMutant(rt, mutant, '(' + mutant.replacement + ')'), () => refreshSnapshot(rt, changedFiles))
+  Effect.flatMap(applyMutant(rt, mutant, '(' + mutant.replacement + ')'), () =>
+    Effect.andThen(
+      Ref.update(rt.tally, (tally) => ({ ...tally, resplices: tally.resplices + 1 })),
+      refreshSnapshot(rt, changedFiles),
+    ))
 
 const applyMutant = (
   rt: TSCompilerRuntime,
@@ -906,6 +924,7 @@ const updateSnapshot = Effect.fnUntraced(function*(
   )
   yield* Effect.promise(() => initialized.snapshot.dispose())
   yield* SynchronizedRef.update(rt.state, (prev) => ({ ...prev, snapshot: next }))
+  yield* Ref.update(rt.tally, (tally) => ({ ...tally, snapshotUpdates: tally.snapshotUpdates + 1 }))
 })
 
 const refreshSnapshot = (rt: TSCompilerRuntime, changedFiles: ReadonlyArray<string>): Effect.Effect<void> =>
@@ -1553,6 +1572,17 @@ const emitForFile = (
     Effect.provideService(FileSystem.FileSystem, rt.host),
     Effect.provideService(Path.Path, rt.pathService),
     Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, rt.spawner),
+    Effect.timed,
+    Effect.flatMap(([elapsed, emitted]) =>
+      Effect.as(
+        Ref.update(rt.tally, (tally) => ({
+          ...tally,
+          tceBuilds: tally.tceBuilds + 1,
+          tceMs: tally.tceMs + Duration.toMillis(elapsed),
+        })),
+        emitted,
+      )
+    ),
   )
 
 const tceScriptOf = <A>(file: Option.Option<A>, fileName: string): Result.Result<A, CompilerFailed> =>
@@ -1639,6 +1669,7 @@ export const check: {
       'stryker.mutants.count': mutants.length,
       'stryker.mutants.ids': Arr.map(mutants, (mutant) => mutant.id).join(','),
     })
+    yield* Ref.set(rt.tally, emptyTally)
     const state = yield* SynchronizedRef.get(rt.state)
     yield* resetMutatedFiles(rt, state.lastMutants)
     const batchFileNames = Arr.dedupe(Arr.map(mutants, (mutant) => resolveFileName(rt, mutant.fileName)))
@@ -1661,11 +1692,18 @@ export const check: {
     const failed = Arr.filter(checked, (entry) => entry.diagnostics.length > 0)
     const equivalentToOriginal = Arr.filter(checked, (entry) => entry.tce === 'original').length
     const duplicateAtSite = Arr.filter(checked, (entry) => entry.tce === 'sibling').length
+    const tally = yield* Ref.get(rt.tally)
     yield* Effect.annotateCurrentSpan({
       'typescript.diagnostics.count': Arr.reduce(checked, 0, (total, entry) => total + entry.diagnostics.length),
       'typescript.compile_errors.count': failed.length,
       'typescript.tce.equivalent_to_original.count': equivalentToOriginal,
       'typescript.tce.duplicate_at_site.count': duplicateAtSite,
+      'typescript.counts.schema_version': 1,
+      'typescript.snapshot_updates.count': tally.snapshotUpdates,
+      'typescript.resplices.count': tally.resplices,
+      'typescript.tce_builds.count': tally.tceBuilds,
+      'typescript.tce.ms': tally.tceMs,
+      'typescript.importer_shortcut.count': 0,
     })
     yield* annotateDiagnosticSample(Arr.flatten(Arr.map(failed, (entry) => entry.diagnostics)))
     return checked
