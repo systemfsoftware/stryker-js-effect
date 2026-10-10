@@ -182,7 +182,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           'outcomes',
           (s) => Effect.sync(() => refusalsOf(s.probes)),
         ),
-        Then('only a Subsumed Ignored line and a Readmitted line that ran are accepted')((s, expect) =>
+        Then('only a Subsumed Ignored line and a Readmitted line that is not Ignored are accepted')((s, expect) =>
           expect(s.outcomes).toEqual({
             subsumedIgnored: 'accepted: mutantTested',
             subsumedKilled: expect.stringMatching(/^refused:[\s\S]*Subsumed reference only on an Ignored/),

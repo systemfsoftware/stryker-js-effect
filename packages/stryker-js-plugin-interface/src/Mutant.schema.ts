@@ -143,7 +143,7 @@ export const Mutant = S.TaggedStruct('Mutant', {
   ),
   S.makeFilter(
     (mutant) => mutant.subsumption === undefined || subsumptionMatchesStatus(mutant.subsumption, mutant.status),
-    { message: 'a Subsumed mutant is Ignored, and a Readmitted mutant ran, so it is not Ignored' },
+    { message: 'a Subsumed mutant is Ignored, and a Readmitted mutant is not Ignored' },
   ),
 )
 export type Mutant = typeof Mutant.Type

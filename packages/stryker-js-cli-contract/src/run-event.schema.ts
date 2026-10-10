@@ -121,7 +121,10 @@ const statusReasonCheck = S.makeFilter(S.is(S.Union([IgnoredStatusReason, Settle
 const subsumptionCheck = S.makeFilter(
   (line: { readonly subsumption: Mutant.Subsumption | null; readonly status: Mutant.MutantStatus }) =>
     line.subsumption === null || Mutant.subsumptionMatchesStatus(line.subsumption, line.status),
-  { expected: 'a Subsumed reference only on an Ignored mutant, and a Readmitted one only on a mutant that ran' },
+  {
+    expected:
+      'a Subsumed reference only on an Ignored mutant, and a Readmitted one only on a mutant that is not Ignored',
+  },
 )
 
 export class RunMutantTestedEvent extends S.TaggedClass<RunMutantTestedEvent>()(
