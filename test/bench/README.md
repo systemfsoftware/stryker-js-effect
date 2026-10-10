@@ -11,9 +11,9 @@ report aborts with `budget-exceeded`.
 Setup runs side A, then side B, one step at a time. Each step has its own
 deadline (the lower of its cap and the time left before the job deadline), is
 retried once inside that deadline, and on failure records its output tail. The
-outcome is classified by which side failed. Both sides exiting non-zero, or
-both overrunning the step deadline, at the same step, or side A recovering on
-retry at the step where side B exited, is the
+outcome is classified by which side failed. Both sides' first attempts at the
+same step exiting non-zero, or both overrunning the step deadline, or side A
+recovering on retry at the step where side B's first attempt exited, is the
 `setup-external` warning; side A failing alone, other than by running out of
 job time, is the `base-setup-failed` warning. Every other failure is red with
 `side-setup-failed` or `setup-timed-out`, naming side B whenever it failed. A

@@ -9,6 +9,7 @@ import * as S from 'effect/Schema'
 import { type BenchSide } from './bench-run.schema.js'
 import {
   type SetupFailure,
+  type SetupFailureKind,
   SetupInconclusive,
   type SetupInconclusiveCode,
   SetupProceed,
@@ -26,13 +27,11 @@ export class ClassifySetupCommand extends S.TaggedClass<ClassifySetupCommand>()(
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-type FailureKind = 'exited' | 'overran' | 'out-of-time'
-
 type OtherFailure = readonly [BenchSide, SetupFailure]
 
-const kindOf = (failure: SetupFailure): FailureKind => failure._tag
+const kindOf = (failure: SetupFailure): SetupFailureKind => failure._tag
 
-const RED_CODE: { readonly [K in FailureKind]: SetupRedCode } = {
+const RED_CODE: { readonly [K in SetupFailureKind]: SetupRedCode } = {
   exited: 'side-setup-failed',
   overran: 'setup-timed-out',
   'out-of-time': 'setup-timed-out',
@@ -57,10 +56,16 @@ const retriedAt = (side: SideSetup, step: string): boolean =>
       retried: (retried) => Arr.contains(retried.steps, step),
     }))
 
+const attemptsOf = (failure: SetupFailure): string =>
+  Boolean.match(failure.firstAttempt === kindOf(failure), {
+    onTrue: () => kindOf(failure),
+    onFalse: () => `${failure.firstAttempt}, then ${kindOf(failure)} on its retry`,
+  })
+
 const describeFailure = (side: BenchSide, failure: SetupFailure): string =>
   Arr.join(
     Arr.filter(
-      [`side ${side} failed at step ${failure.step} (${kindOf(failure)}): ${failure.reason}`, failure.outputTail],
+      [`side ${side} failed at step ${failure.step} (${attemptsOf(failure)}): ${failure.reason}`, failure.outputTail],
       (part) => part.length > 0,
     ),
     '; ',
@@ -109,16 +114,22 @@ const externalVerdict = (failure: SetupFailure, also: Option.Option<OtherFailure
     }),
   )
 
-const externalKind = (kind: FailureKind): boolean => Boolean.or(kind === 'exited', kind === 'overran')
+const externalKind = (kind: SetupFailureKind): boolean => Boolean.or(kind === 'exited', kind === 'overran')
+
+const outageShaped = (failure: SetupFailure): boolean =>
+  Boolean.and(externalKind(failure.firstAttempt), kindOf(failure) !== 'out-of-time')
 
 const externalAt = (aFailure: SetupFailure, bFailure: SetupFailure): boolean =>
   Boolean.and(
-    externalKind(kindOf(bFailure)),
-    Boolean.and(aFailure.step === bFailure.step, kindOf(aFailure) === kindOf(bFailure)),
+    Boolean.and(outageShaped(aFailure), outageShaped(bFailure)),
+    Boolean.and(aFailure.step === bFailure.step, aFailure.firstAttempt === bFailure.firstAttempt),
   )
 
 const externalRecovered = (a: SideSetup, bFailure: SetupFailure): boolean =>
-  Boolean.and(kindOf(bFailure) === 'exited', retriedAt(a, bFailure.step))
+  Boolean.and(
+    Boolean.and(bFailure.firstAttempt === 'exited', kindOf(bFailure) !== 'out-of-time'),
+    retriedAt(a, bFailure.step),
+  )
 
 const classify = (a: SideSetup, b: SideSetup): SetupVerdict =>
   Option.match(failureOf(b), {

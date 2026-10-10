@@ -36,6 +36,7 @@ import {
   PnpmListingJson,
   resolvedManifestText,
   type SetupFailure,
+  type SetupFailureKind,
   setupRecoveryOf,
   type SetupStep,
   type StagedFixtureManifest,
@@ -188,23 +189,28 @@ const failureOf = (
   kind: 'overran' | 'out-of-time',
   name: string,
   budgetMs: number,
+  wasRetried: boolean,
   outputTail: string,
-): SetupFailure =>
-  Match.value(kind).pipe(
+): SetupFailure => {
+  const firstAttempt = Boolean.match(wasRetried, { onTrue: (): SetupFailureKind => 'exited', onFalse: () => kind })
+  return Match.value(kind).pipe(
     Match.when('overran', (): SetupFailure => ({
       _tag: 'overran',
       step: name,
+      firstAttempt,
       reason: `did not finish within its own ${seconds(budgetMs)}s deadline and was killed`,
       outputTail,
     })),
     Match.when('out-of-time', (): SetupFailure => ({
       _tag: 'out-of-time',
       step: name,
+      firstAttempt,
       reason: `was still running when the job deadline came (${seconds(budgetMs)}s were left when it started)`,
       outputTail,
     })),
     Match.exhaustive,
   )
+}
 
 const runStep = <A, R>(
   label: string,
@@ -240,6 +246,7 @@ const runStep = <A, R>(
         Effect.fail({
           _tag: 'exited',
           step: spec.name,
+          firstAttempt: 'exited',
           reason: `${name}: ${failed.detail}`,
           outputTail,
         }),
@@ -251,6 +258,7 @@ const runStep = <A, R>(
                 Boolean.match(clipped, { onTrue: () => 'out-of-time', onFalse: () => 'overran' }),
                 spec.name,
                 budgetMs,
+                wasRetried,
                 outputTail,
               ),
             ),

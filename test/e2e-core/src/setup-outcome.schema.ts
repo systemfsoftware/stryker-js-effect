@@ -4,8 +4,12 @@ import * as S from 'effect/Schema'
 
 import { BenchSide } from './bench-run.schema.js'
 
+export const SetupFailureKind = S.Literals(['exited', 'overran', 'out-of-time'])
+export type SetupFailureKind = typeof SetupFailureKind.Type
+
 const FailureFields = {
   step: S.NonEmptyString,
+  firstAttempt: SetupFailureKind,
   reason: S.String,
   outputTail: S.String,
 }

@@ -20,15 +20,21 @@ import {
 
 type FailureKind = 'exited' | 'overran' | 'out-of-time'
 
-const failureMakers: {
-  readonly [K in FailureKind]: (
-    fields: { readonly step: string; readonly reason: string; readonly outputTail: string },
-  ) => SetupFailure
-} = {
+interface FailureFields {
+  readonly step: string
+  readonly firstAttempt: FailureKind
+  readonly reason: string
+  readonly outputTail: string
+}
+
+const failureMakers: { readonly [K in FailureKind]: (fields: FailureFields) => SetupFailure } = {
   exited: (fields) => SetupFailure.cases.exited.make(fields),
   overran: (fields) => SetupFailure.cases.overran.make(fields),
   'out-of-time': (fields) => SetupFailure.cases['out-of-time'].make(fields),
 }
+
+const onceFailed = (kind: FailureKind, step: string, reason: string): SetupFailure =>
+  failureMakers[kind]({ step, firstAttempt: kind, reason, outputTail: '' })
 
 const noneRecovery = (): SetupRecovery => SetupRecovery.cases.none.make({})
 const retriedRecovery = (head: string, tail: ReadonlyArray<string>): SetupRecovery =>
@@ -37,7 +43,6 @@ const readySetup = (recovered: SetupRecovery): SideSetup => SideSetup.cases.read
 const failedSetup = (failure: SetupFailure): SideSetup => SideSetup.cases.failed.make({ failure })
 
 const isExited = S.is(SetupFailure.cases.exited)
-const isOverran = S.is(SetupFailure.cases.overran)
 const isOutOfTime = S.is(SetupFailure.cases['out-of-time'])
 const isRetried = S.is(SetupRecovery.cases.retried)
 
@@ -47,8 +52,8 @@ const textArb = Arbitrary.schema(S.String)
 const boolArb = Arbitrary.schema(S.Boolean)
 
 const failureArb = Arbitrary.map(
-  Arbitrary.all([stepArb, kindArb, textArb, textArb]),
-  ([step, kind, reason, outputTail]) => failureMakers[kind]({ step, reason, outputTail }),
+  Arbitrary.all([stepArb, kindArb, kindArb, textArb, textArb]),
+  ([step, kind, firstAttempt, reason, outputTail]) => failureMakers[kind]({ step, firstAttempt, reason, outputTail }),
 )
 
 const recoveryArb = Arbitrary.map(
@@ -72,16 +77,18 @@ const retriedAt = (side: SideSetup, step: string): boolean => {
   return recovered !== null && isRetried(recovered) && recovered.steps.includes(step)
 }
 
-const sameKind = (a: SetupFailure, b: SetupFailure): boolean =>
-  (isExited(a) && isExited(b)) || (isOverran(a) && isOverran(b)) || (isOutOfTime(a) && isOutOfTime(b))
+const outageShaped = (failure: SetupFailure): boolean =>
+  (failure.firstAttempt === 'exited' || failure.firstAttempt === 'overran') && !isOutOfTime(failure)
 
 const ruleExternal = (a: SideSetup, b: SideSetup): boolean => {
   const bFailure = failureOf(b)
-  if (bFailure === null) return false
-  if (!isExited(bFailure) && !isOverran(bFailure)) return false
+  if (bFailure === null || !outageShaped(bFailure)) return false
   const aFailure = failureOf(a)
-  if (aFailure !== null) return aFailure.step === bFailure.step && sameKind(aFailure, bFailure)
-  return isExited(bFailure) && retriedAt(a, bFailure.step)
+  if (aFailure !== null) {
+    return outageShaped(aFailure) && aFailure.step === bFailure.step &&
+      aFailure.firstAttempt === bFailure.firstAttempt
+  }
+  return bFailure.firstAttempt === 'exited' && retriedAt(a, bFailure.step)
 }
 
 const soleOutOfTimeSide = (a: SideSetup, b: SideSetup): BenchSide | null => {
@@ -193,7 +200,7 @@ describe('classifySetup acceptance examples', () => {
     { of: [S.NonEmptyString, S.String], subject: classifySetup },
     (subject, [step, reason]) => {
       const a = readySetup(noneRecovery())
-      const b = failedSetup(failureMakers.exited({ step, reason, outputTail: '' }))
+      const b = failedSetup(onceFailed('exited', step, reason))
       const verdict = Result.getOrThrow(subject(commandOf(a, b)))
       return isRed(verdict) && verdict.side === 'B' && verdict.code === 'side-setup-failed' &&
         verdict.step === step && verdict.reason.includes(reason)
@@ -204,8 +211,8 @@ describe('classifySetup acceptance examples', () => {
     '∀s_AeTwoBothInstallsOverranAtS_≡InconclusiveSetupExternal',
     { of: [S.NonEmptyString, S.String, S.String], subject: classifySetup },
     (subject, [step, reasonA, reasonB]) => {
-      const a = failedSetup(failureMakers.overran({ step, reason: reasonA, outputTail: '' }))
-      const b = failedSetup(failureMakers.overran({ step, reason: reasonB, outputTail: '' }))
+      const a = failedSetup(onceFailed('overran', step, reasonA))
+      const b = failedSetup(onceFailed('overran', step, reasonB))
       const verdict = Result.getOrThrow(subject(commandOf(a, b)))
       return isInconclusive(verdict) && verdict.code === 'setup-external' && verdict.step === step &&
         verdict.reason.includes(reasonA) && verdict.reason.includes(reasonB)
@@ -216,8 +223,8 @@ describe('classifySetup acceptance examples', () => {
     '∀s_AeThreeAInstallOverranBInstallExitedAtS_≡RedWithSideSetupFailedNamingB',
     { of: [S.NonEmptyString], subject: classifySetup },
     (subject, [step]) => {
-      const a = failedSetup(failureMakers.overran({ step, reason: 'A overran', outputTail: '' }))
-      const b = failedSetup(failureMakers.exited({ step, reason: 'B exited', outputTail: '' }))
+      const a = failedSetup(onceFailed('overran', step, 'A overran'))
+      const b = failedSetup(onceFailed('exited', step, 'B exited'))
       const verdict = Result.getOrThrow(subject(commandOf(a, b)))
       return isRed(verdict) && verdict.side === 'B' && verdict.code === 'side-setup-failed' && verdict.step === step
     },
@@ -227,7 +234,7 @@ describe('classifySetup acceptance examples', () => {
     '∀s_AeFiveAClosureBuildExitedAtS_≡InconclusiveBaseSetupFailedNamingA',
     { of: [S.NonEmptyString, S.String], subject: classifySetup },
     (subject, [step, reason]) => {
-      const a = failedSetup(failureMakers.exited({ step, reason, outputTail: '' }))
+      const a = failedSetup(onceFailed('exited', step, reason))
       const b = readySetup(noneRecovery())
       const verdict = Result.getOrThrow(subject(commandOf(a, b)))
       return isInconclusive(verdict) && verdict.code === 'base-setup-failed' && verdict.step === step &&
@@ -240,7 +247,7 @@ describe('classifySetup acceptance examples', () => {
     { of: [S.NonEmptyString], subject: classifySetup },
     (subject, [step]) => {
       const a = readySetup(retriedRecovery(step, []))
-      const b = failedSetup(failureMakers.exited({ step, reason: 'B exited', outputTail: '' }))
+      const b = failedSetup(onceFailed('exited', step, 'B exited'))
       const verdict = Result.getOrThrow(subject(commandOf(a, b)))
       return isInconclusive(verdict) && verdict.code === 'setup-external' && verdict.step === step
     },
@@ -253,9 +260,21 @@ describe('classifySetup with several retried steps', () => {
     { of: [S.NonEmptyString.pipe(S.Option, S.Array), S.NonEmptyString], subject: classifySetup },
     (subject, [earlier, step]) => {
       const a = readySetup(setupRecoveryOf([...earlier, Option.some(step)]))
-      const b = failedSetup(failureMakers.exited({ step, reason: 'B exited', outputTail: '' }))
+      const b = failedSetup(onceFailed('exited', step, 'B exited'))
       const verdict = Result.getOrThrow(subject(commandOf(a, b)))
       return isInconclusive(verdict) && verdict.code === 'setup-external' && verdict.step === step
+    },
+  )
+
+  it.prop(
+    '∀s_FirstAttemptsBothExitedWhileTheRetryOfAHung_≡InconclusiveSetupExternal',
+    { of: [S.NonEmptyString], subject: classifySetup },
+    (subject, [step]) => {
+      const a = failedSetup(failureMakers.overran({ step, firstAttempt: 'exited', reason: 'A hung', outputTail: '' }))
+      const b = failedSetup(onceFailed('exited', step, 'B exited twice'))
+      const verdict = Result.getOrThrow(subject(commandOf(a, b)))
+      return isInconclusive(verdict) && verdict.code === 'setup-external' && verdict.step === step &&
+        verdict.reason.includes('exited, then overran on its retry')
     },
   )
 })
