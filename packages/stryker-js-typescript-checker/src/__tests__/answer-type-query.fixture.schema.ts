@@ -2,7 +2,7 @@ import * as S from 'effect/Schema'
 
 export const SatisfiedCall = S.Union([
   S.TaggedStruct('NotACallArgument', {}),
-  S.TaggedStruct('CallArgument', { signatureCount: S.Literal(1), resolvedHasTypeParameters: S.Literal(false) }),
+  S.TaggedStruct('CallArgument', { signatureCount: S.Literal(1), declaredGeneric: S.Literal(false) }),
 ])
 
 export const AssignableQueryInput = S.Struct({

@@ -28,7 +28,7 @@ const callAnswerOf = (candidate: CandidateTyped, call: CallFacts, contextualType
     Match.tag(
       'CallArgument',
       (argument) =>
-        Boolean.match(Boolean.or(argument.signatureCount > 1, argument.resolvedHasTypeParameters), {
+        Boolean.match(Boolean.or(argument.signatureCount > 1, argument.declaredGeneric), {
           onTrue: () => unknownAnswer('overloaded-or-generic-call'),
           onFalse: () => typedAnswerOf(candidate, contextualType),
         }),

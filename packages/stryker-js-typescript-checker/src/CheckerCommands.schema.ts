@@ -102,7 +102,7 @@ export type NotACallArgument = typeof NotACallArgument.Type
 
 export const CallArgument = S.TaggedStruct('CallArgument', {
   signatureCount: S.Int,
-  resolvedHasTypeParameters: S.Boolean,
+  declaredGeneric: S.Boolean,
 })
 export type CallArgument = typeof CallArgument.Type
 

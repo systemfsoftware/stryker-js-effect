@@ -56,7 +56,7 @@ const reasonFails = (site: SiteFacts, candidate: CandidateFacts, reason: Unknown
       return (
         S.is(SiteExpression)(site) &&
         S.is(CallArgument)(site.call) &&
-        (site.call.signatureCount > 1 || site.call.resolvedHasTypeParameters)
+        (site.call.signatureCount > 1 || site.call.declaredGeneric)
       )
   }
 }
@@ -125,7 +125,7 @@ const commandFailingOnly = (
         site: {
           _tag: 'SiteExpression',
           contextualType: Option.some({ text: contextualText, isError: false, instantiable: false }),
-          call: { _tag: 'CallArgument', signatureCount: 2, resolvedHasTypeParameters: false },
+          call: { _tag: 'CallArgument', signatureCount: 2, declaredGeneric: false },
         },
         candidate,
       })

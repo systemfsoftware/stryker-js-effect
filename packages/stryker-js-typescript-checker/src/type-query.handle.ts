@@ -29,6 +29,7 @@ import {
   API,
   type Checker,
   type Project,
+  type Signature,
   SignatureKind,
   type Snapshot,
   type Type,
@@ -341,20 +342,20 @@ const callArgumentFactsOf = (
   parent: CallExpression | NewExpression,
 ): Effect.Effect<CallFacts, ServerCrash> =>
   Effect.gen(function*() {
-    const kind = signatureKindOf(parent)
     const calleeType = yield* typeAt(checker, parent.expression)
-    const signatureCount = yield* Option.match(calleeType, {
-      onNone: () => Effect.succeed(0),
-      onSome: (type) =>
-        Effect.map(tryPromise(() => checker.getSignaturesOfType(type, kind)), (signatures) => signatures.length),
+    const signatures = yield* Option.match(calleeType, {
+      onNone: () => Effect.succeed(Arr.empty<Signature>()),
+      onSome: (type) => tryPromise(() => checker.getSignaturesOfType(type, signatureKindOf(parent))),
     })
-    const signature = Option.fromUndefinedOr(yield* tryPromise(() => checker.getResolvedSignature(parent)))
-    const resolvedHasTypeParameters = yield* Option.match(signature, {
-      onNone: () => Effect.succeed(false),
-      onSome: (resolved) =>
-        Effect.map(tryPromise(() => resolved.getTypeParameters()), (parameters) => parameters.length > 0),
-    })
-    return { _tag: 'CallArgument', signatureCount, resolvedHasTypeParameters } as const
+    const typeParameterCounts = yield* Effect.forEach(
+      signatures,
+      (signature) => Effect.map(tryPromise(() => signature.getTypeParameters()), (parameters) => parameters.length),
+    )
+    return {
+      _tag: 'CallArgument',
+      signatureCount: signatures.length,
+      declaredGeneric: Arr.some(typeParameterCounts, (count) => count > 0),
+    } as const
   })
 
 const callFactsOf = (checker: Checker, node: Expression): Effect.Effect<CallFacts, ServerCrash> =>
