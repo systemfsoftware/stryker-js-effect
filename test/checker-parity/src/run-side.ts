@@ -14,6 +14,7 @@ import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Predicate from 'effect/Predicate'
 import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Result from 'effect/Result'
 import type * as RpcClient from 'effect/rpc/RpcClient'
@@ -252,7 +253,15 @@ const readCacheFile = (file: string): Effect.Effect<ReadonlyArray<ParityLine>, S
     (content) => Effect.map(decodeLines(content, file), (lines) => Arr.getSomes(lines.map(cachedLine))),
   )
 
-const verdictOf = (input: SideInput, wire: Checker.CheckerMutantWire, result: Checker.CheckResult): Verdict =>
+const answerReasonOf = (answer: Checker.CheckAnswer): string | undefined =>
+  Checker.CheckAnswerSchema.match(answer, {
+    passed: () => undefined,
+    compileError: ({ reason }) => reason,
+    ignored: ({ reason }) =>
+      Option.getOrElse(Option.liftPredicate(reason, Predicate.isString), () => JSON.stringify(reason)),
+  })
+
+const verdictOf = (input: SideInput, wire: Checker.CheckerMutantWire, answer: Checker.CheckAnswer): Verdict =>
   Verdict.make({
     schemaVersion: 1,
     side: input.side,
@@ -260,8 +269,8 @@ const verdictOf = (input: SideInput, wire: Checker.CheckerMutantWire, result: Ch
     mutantId: wire.id,
     fileName: wire.fileName,
     line: wire.location.start.line,
-    status: result.status,
-    reason: result.status === 'passed' ? undefined : result.reason,
+    status: answer.status,
+    reason: answerReasonOf(answer),
     cached: false,
   })
 
