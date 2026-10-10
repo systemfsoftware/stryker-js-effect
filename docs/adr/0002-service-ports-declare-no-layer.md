@@ -34,10 +34,10 @@ Chosen option: "Put every Layer that satisfies a service in a driver module", be
 
 ### The rows that change
 
-| Suffix or place          | Holds                                                                                                                                                                                                                                  | Never holds                                                                                                          |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `*.service.ts`           | One `Context.Service<Self, Shape>()` contract: the tag, its shape types, and functions that reach the service only through its tag                                                                                                     | A `Layer` value, a function returning a `Layer`, a static `layer` or `*Layer` member, a `*Live` name, driver imports |
-| `src/drivers/<binds>.ts` | Adapters to Node, vitest, typescript, and other foreign APIs, and every `Layer` that satisfies a service contract. A driver exports `layer` (a value, or a function where it takes options); one that binds several names each by role | Decisions                                                                                                            |
+| Suffix or place          | Holds                                                                                                                                                                                                                                  | Never holds                                                                                                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `*.service.ts`           | One `Context.Service<Self, Shape>()` contract: the tag, its shape types, and functions that reach the service only through its tag                                                                                                     | A `Layer` value, a function returning a `Layer`, a static `layer` or `*Layer` member, a `*Live` name; in a file that declares a tag, driver imports |
+| `src/drivers/<binds>.ts` | Adapters to Node, vitest, typescript, and other foreign APIs, and every `Layer` that satisfies a service contract. A driver exports `layer` (a value, or a function where it takes options); one that binds several names each by role | Decisions                                                                                                                                           |
 
 `RunEnvironment.stage` and `RunEnvironment.forStream` assemble Layers, so they live in `src/drivers/run-stage.ts`; the `RunEnvironment` port keeps its tag, `RunEnvironmentShape`, and `phaseEntered`.
 
@@ -47,10 +47,13 @@ Chosen option: "Put every Layer that satisfies a service in a driver module", be
 - Good, because a consumer can provide its own implementation of any service without loading the default one.
 - Bad, because published names change: static `layer` members and the `*Live` aliases (`OutputModeProbeLive`, `RunEventDrainLive`, `WorkerReportsLive`) are removed, and each package ships a breaking changeset.
 - Bad, because five hosts that run a stage inside a cell (`Mcp/mcp-server.cell.ts`, `Serve/Serve.cell.ts`, `run-request.cell.ts`, `plan-request.cell.ts`, `run/run-stages.ts`) import `drivers/run-stage.ts`. Inward import direction does not hold for them, and the binding stays mid-pipeline until the engine split moves it to a composition root.
+- Bad, because one `*.service.ts` that declares no tag, `plugin-loader.service.ts`, still imports `importModule` from `src/drivers/config.ts`. It is not a port, so the import row binds only files that declare a tag, and no tagged `*.service.ts` imports a driver today. The engine split moves `importModule` into the worker-host package (plan U11) and rehomes and renames `plugin-loader.service.ts` there (plan U12).
 
 ### Confirmation
 
 The gritlint `cell-architecture` pack refuses a `*.service.ts` that exports a `Layer` value, a function returning one, a static `layer` member, or a `*Live` name. Its bad fixtures prove it refuses each form, and `pnpm lint:conventions` runs it in `check:ci`.
+
+No lint checks the driver-import half yet; review checks it, and `git grep -nE "from '(\./|\.\./)+drivers/" -- '*.service.ts'` names only `plugin-loader.service.ts`, which declares no tag. Once the engine split lands, the core ports live in `@systemfsoftware/stryker-js-contracts`, which has no `src/drivers/` and depends on no package that does, so a driver import from one of them fails `tsc -b` (plan U10, KTD8). Tagged ports that stay in the plugin packages and the e2e harness remain review-checked.
 
 ## Pros and Cons of the Options
 

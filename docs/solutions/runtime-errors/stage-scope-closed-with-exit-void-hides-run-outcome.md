@@ -29,12 +29,12 @@ Issue #143: the `.stryker-tmp/sandbox-*` directory ignored how the run ended. Tw
 ## What Didn't Work
 
 - Fixing only the `keepTempDir` workflow. It was necessary but not sufficient. The `TemporaryDirectory` finalizer never received a failure `Exit`, so "keep on failure" could not fire.
-- Reasoning that `Layer.build(TemporaryDirectory.layer(...))` in `applyPrepare` registers its cleanup in the outer `Effect.scoped` scope, so the finalizer must already see the run's exit. An independent adversarial reviewer made this exact claim during review, and it is wrong. `Layer.build` takes its `Scope` from the context, and the cells run with the `RunEnvironment.stage` context provided. That context's `Scope.Scope` is the stage scope.
+- Reasoning that `Layer.build(temporaryDirectoryLayer(...))` in `applyPrepare` registers its cleanup in the outer `Effect.scoped` scope, so the finalizer must already see the run's exit. An independent adversarial reviewer made this exact claim during review, and it is wrong. `Layer.build` takes its `Scope` from the context, and the cells run with the `Engine.stage` context provided. That context's `Scope.Scope` is the stage scope.
 
 ## Mechanism
 
 1. `KeepTempDirCommand` carried a single `failed` field. The sandbox service filled it with the option value (`true`/`false`), and `keepTempDir` read it as the run outcome, so `true` kept every sandbox and `false` removed every one.
-2. `RunEnvironment.stage` builds a stage scope and registers `Scope.close(stageScope, Exit.void)` as the parent's finalizer. Every finalizer attached to the stage scope, including the `TemporaryDirectory` finalizer that decides from `Exit.isFailure(exit)`, sees `Exit.void` regardless of the run's real exit.
+2. `Engine.stage` builds a stage scope and registers `Scope.close(stageScope, Exit.void)` as the parent's finalizer. Every finalizer attached to the stage scope, including the `TemporaryDirectory` finalizer that decides from `Exit.isFailure(exit)`, sees `Exit.void` regardless of the run's real exit.
 
 Either link alone yields a wrong cell. Link 1 makes four cells wrong; with link 1 fixed, link 2 still makes (`true`, failed) wrong.
 

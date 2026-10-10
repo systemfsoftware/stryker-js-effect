@@ -6,6 +6,7 @@ import type { StrykerNamespace, VitestRunnerOptions } from './VitestRunner.schem
 import type { VitestResolver } from './VitestRuntime.blueprint.js'
 import type { HarnessKey, HarnessValue, VitestRuntime } from './VitestRuntime.handle.js'
 
+/** Everything one worker's run of the vitest runner is configured with. */
 export interface VitestSessionInput {
   readonly options: Options.StrykerOptions
   readonly sandboxDirectory: string
@@ -14,6 +15,10 @@ export interface VitestSessionInput {
   readonly setupFilePath?: string
 }
 
+/**
+ * The session a run works through: the live runtime, the options it was built
+ * with, and the two writes a run makes before it collects.
+ */
 export interface VitestSessionShape {
   readonly options: Effect.Effect<VitestRunnerOptions, TestRunner.TestRunnerFailed>
   readonly runtime: Effect.Effect<VitestRuntime, TestRunner.TestRunnerFailed>
