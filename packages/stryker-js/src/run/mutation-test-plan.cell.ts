@@ -85,7 +85,8 @@ const planCommandOf = (
 const mutantsByIdOf = (mutants: ReadonlyArray<Mutant.Mutant>): Record<string, Mutant.Mutant> =>
   Object.fromEntries(mutants.map((mutant) => [mutant.id, mutant] as const))
 
-const isSubsumed = (mutant: Mutant.Mutant): boolean => Option.isSome(Option.fromUndefinedOr(mutant.subsumption))
+const isSubsumed = (mutant: Mutant.Mutant): boolean =>
+  Option.exists(Option.fromUndefinedOr(mutant.subsumption), S.is(Mutant.Subsumed))
 
 const planningMutantOf = (mutant: Mutant.Mutant): Mutant.Mutant =>
   isSubsumed(mutant)

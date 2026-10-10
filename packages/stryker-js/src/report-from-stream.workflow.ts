@@ -1,6 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
-import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
@@ -37,18 +37,10 @@ export class StreamVersionMismatch extends S.TaggedError<StreamVersionMismatch>(
   }
 }
 
-const presentText = (field: string, value: string | null): Readonly<Record<string, string>> =>
+const presentField = <K extends string, V>(field: K, value: V | null): { readonly [P in K]?: V } =>
   Option.match(Option.fromNullOr(value), {
     onNone: () => ({}),
-    onSome: (present) => ({ [field]: present }),
-  })
-
-const presentSubsumption = (
-  subsumption: Mutant.Subsumption | null,
-): { readonly subsumption?: Mutant.Subsumption } =>
-  Option.match(Option.fromNullOr(subsumption), {
-    onNone: () => ({}),
-    onSome: (present) => ({ subsumption: present }),
+    onSome: (present) => Record.singleton(field, present),
   })
 
 const mutantFromStream = (line: RunEvent.RunMutantTested): Report.MutantResult => ({
@@ -56,9 +48,9 @@ const mutantFromStream = (line: RunEvent.RunMutantTested): Report.MutantResult =
   mutatorName: line.mutatorName,
   status: line.status,
   location: line.location,
-  ...presentText('replacement', line.replacement),
-  ...presentText('statusReason', line.statusReason),
-  ...presentSubsumption(line.subsumption),
+  ...presentField('replacement', line.replacement),
+  ...presentField('statusReason', line.statusReason),
+  ...presentField('subsumption', line.subsumption),
 })
 
 const decodeLineText = S.decodeOption(S.fromJsonString(RunEvent.RunMutantTested))
