@@ -27,7 +27,7 @@ export const REASON_CODES = {
   'link-transformation': 'S.link() transformation feeds arbitrary generation only, not production codecs',
   'type-id': 'a TypeId constant is a declaration identity, not behaviour',
   'recursion-budget-holder':
-    'annotate object holding a recursionBudget beside documentation only must stay a literal object for the recursion-budget transform to read it',
+    'annotate object holding a recursionBudget must stay a literal object for the recursion-budget transform to read it',
   'recursion-budget':
     'recursionBudget is test/generation-only metadata: only the recursion-budget transform, its runtime and the schema recursion laws read it',
 } as const
@@ -224,8 +224,6 @@ const isDeclarationEntry = (property: Node) => isComputedFreeProperty(property) 
 const isRecursionBudgetEntry = (property: Node) =>
   isComputedFreeProperty(property) && isRecursionBudgetKeyNode(property.key)
 
-const isBudgetHolderEntry = (property: Node) => isDocumentationEntry(property) || isRecursionBudgetEntry(property)
-
 const holdsEntries = (properties: readonly Node[], holds: (property: Node) => boolean) =>
   properties.length > 0 && properties.every(holds)
 
@@ -235,10 +233,7 @@ const isDocumentationOnlyObject = (node: Node) =>
 const isDeclarationAnnotationObject = (node: Node) =>
   isObjectNode(node) && holdsEntries(node.properties, isDeclarationEntry)
 
-const holdsBudgetAmongDocumentation = (node: ObjectExpression) =>
-  node.properties.some(isRecursionBudgetEntry) && node.properties.every(isBudgetHolderEntry)
-
-const isBudgetHolderObject = (node: Node) => isObjectNode(node) && holdsBudgetAmongDocumentation(node)
+const isBudgetHolderObject = (node: Node) => isObjectNode(node) && node.properties.some(isRecursionBudgetEntry)
 
 const isArgumentAt = (
   node: Node | undefined,

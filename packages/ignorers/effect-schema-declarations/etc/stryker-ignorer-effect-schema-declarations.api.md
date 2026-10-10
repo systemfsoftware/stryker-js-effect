@@ -62,7 +62,7 @@ export const REASON_CODES: {
     readonly 'generation-annotation': 'arbitrary-generation annotation never runs in production, not behaviour';
     readonly 'link-transformation': 'S.link() transformation feeds arbitrary generation only, not production codecs';
     readonly 'type-id': 'a TypeId constant is a declaration identity, not behaviour';
-    readonly 'recursion-budget-holder': 'annotate object holding a recursionBudget beside documentation only must stay a literal object for the recursion-budget transform to read it';
+    readonly 'recursion-budget-holder': 'annotate object holding a recursionBudget must stay a literal object for the recursion-budget transform to read it';
     readonly 'recursion-budget': 'recursionBudget is test/generation-only metadata: only the recursion-budget transform, its runtime and the schema recursion laws read it';
 };
 
@@ -70,7 +70,7 @@ export const REASON_CODES: {
 export type ReasonCode = keyof typeof REASON_CODES;
 
 // @public (undocumented)
-export const RECURSION_BUDGET_HOLDER_IGNORED: "effect-schema-declarations/recursion-budget-holder: annotate object holding a recursionBudget beside documentation only must stay a literal object for the recursion-budget transform to read it";
+export const RECURSION_BUDGET_HOLDER_IGNORED: "effect-schema-declarations/recursion-budget-holder: annotate object holding a recursionBudget must stay a literal object for the recursion-budget transform to read it";
 
 // @public (undocumented)
 export const RECURSION_BUDGET_IGNORED: "effect-schema-declarations/recursion-budget: recursionBudget is test/generation-only metadata: only the recursion-budget transform, its runtime and the schema recursion laws read it";

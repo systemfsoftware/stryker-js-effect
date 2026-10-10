@@ -33,7 +33,7 @@ const LINK_TRANSFORMATION_IGNORED =
   'effect-schema-declarations/link-transformation: S.link() transformation feeds arbitrary generation only, not production codecs'
 const TYPE_ID_IGNORED = 'effect-schema-declarations/type-id: a TypeId constant is a declaration identity, not behaviour'
 const RECURSION_BUDGET_HOLDER_IGNORED =
-  'effect-schema-declarations/recursion-budget-holder: annotate object holding a recursionBudget beside documentation only must stay a literal object for the recursion-budget transform to read it'
+  'effect-schema-declarations/recursion-budget-holder: annotate object holding a recursionBudget must stay a literal object for the recursion-budget transform to read it'
 const RECURSION_BUDGET_IGNORED =
   'effect-schema-declarations/recursion-budget: recursionBudget is test/generation-only metadata: only the recursion-budget transform, its runtime and the schema recursion laws read it'
 
@@ -285,10 +285,16 @@ await testIgnorer(descriptor, {
       ],
     },
     {
-      name: 'a `recursionBudget` beside a behaviour hook is ignored while the object and the hook stay live',
+      name: 'a `recursionBudget` beside a behaviour hook keeps its object literal while the hook stays live',
       code: 'S.suspend(() => Expr).annotate({ recursionBudget: { maxDepth: 6 }, toEquivalence: () => eq })',
-      ignores: [{ text: '{ maxDepth: 6 }', reason: RECURSION_BUDGET_IGNORED }],
-      keeps: ['{ recursionBudget: { maxDepth: 6 }, toEquivalence: () => eq }', '() => eq'],
+      ignores: [
+        {
+          text: '{ recursionBudget: { maxDepth: 6 }, toEquivalence: () => eq }',
+          reason: RECURSION_BUDGET_HOLDER_IGNORED,
+        },
+        { text: '{ maxDepth: 6 }', reason: RECURSION_BUDGET_IGNORED },
+      ],
+      keeps: ['() => eq'],
     },
     {
       name: 'an annotate object holding only a `recursionBudget` is ignored with its budget',
