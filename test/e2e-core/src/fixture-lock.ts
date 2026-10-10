@@ -1,12 +1,10 @@
-import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
-import * as Option from 'effect/Option'
 import * as Rec from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
-  catalogPinsOf,
+  lockedCatalogNamesOf,
   parseFixtureManifest,
   parseLockedCatalogs,
   parseWorkspaceCatalogs,
@@ -117,7 +115,7 @@ export const stagedFixtureOf = (input: FixtureStagingInput): Result.Result<Stage
     )
     const locked = parseLockedCatalogs(input.pnpmLockfile)
     const catalogs = pinnedCatalogsOf({ workspace: parseWorkspaceCatalogs(input.workspaceYaml), locked })
-    const registryPins = registryPinsOf(input.pnpmLockfile)
+    const registryPins = registryPinsOf(input.pnpmLockfile, lockedCatalogNamesOf(locked))
     const manifests = yield* Result.all(parsed.map((file) =>
       Result.map(
         stagedManifestOf({
@@ -131,16 +129,5 @@ export const stagedFixtureOf = (input: FixtureStagingInput): Result.Result<Stage
         (document): StagedFixtureFile => ({ relativePath: file.relativePath, document }),
       )
     ))
-    const root = Arr.findFirst(parsed, (file) => file.relativePath === MANIFEST_FILE)
-    return {
-      manifests,
-      closure: Object.keys(install.dependencies).sort(),
-      pins: {
-        ...registryPins,
-        ...Option.match(root, {
-          onNone: () => ({}),
-          onSome: (file) => catalogPinsOf({ document: file.document, locked }),
-        }),
-      },
-    }
+    return { manifests, closure: Object.keys(install.dependencies).sort(), pins: registryPins }
   })

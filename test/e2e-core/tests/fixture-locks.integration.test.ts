@@ -47,6 +47,7 @@ interface World {
   readonly members: ReadonlyArray<PackedManifest>
   readonly devDependencies: Readonly<Record<string, string>>
   readonly effectPin: string
+  readonly catalogPins: Readonly<Record<string, string>>
 }
 
 const BASELINE: World = {
@@ -56,17 +57,33 @@ const BASELINE: World = {
   ],
   devDependencies: {},
   effectPin: '4.0.0',
+  catalogPins: {},
 }
 
-const pnpmLockfileOf = (effectPin: string): string =>
+const catalogsSectionOf = (catalogPins: Readonly<Record<string, string>>): ReadonlyArray<string> =>
+  Object.keys(catalogPins).length === 0 ? [] : [
+    'catalogs:',
+    '  default:',
+    ...Object.entries(catalogPins).flatMap(([name, version]) => [
+      `    ${name}:`,
+      `      specifier: ^${version}`,
+      `      version: ${version}`,
+    ]),
+    '',
+  ]
+
+const pnpmLockfileOf = (world: World): string =>
   [
     "lockfileVersion: '9.0'",
     '',
+    ...catalogsSectionOf(world.catalogPins),
     'packages:',
     '',
-    `  effect@${effectPin}:`,
-    '    resolution: {integrity: sha512-pinned}',
-    '',
+    ...[['effect', world.effectPin] as const, ...Object.entries(world.catalogPins)].flatMap(([name, version]) => [
+      `  ${name}@${version}:`,
+      '    resolution: {integrity: sha512-pinned}',
+      '',
+    ]),
   ].join('\n')
 
 const packScratchMember = (root: string, packs: string, manifest: PackedManifest) =>
@@ -101,7 +118,7 @@ const contextOf = (root: string, label: string, registry: string, world: World) 
       stagingRoot,
       members,
       workspace: world.members.map((manifest) => manifest.name),
-      pnpmLockfile: pnpmLockfileOf(world.effectPin),
+      pnpmLockfile: pnpmLockfileOf(world),
       workspaceYaml: '',
       npmArgs: [`--registry=${registry}`, `--cache=${path.join(root, 'npm-cache')}`],
     } satisfies LockContext
@@ -283,6 +300,33 @@ Feature('Detecting a stale fixture lock')
         Then('the check reports the moved pin')((s, expect) =>
           expect(s.checked.drift).toContain(
             `E2E_PINS_DRIFT: ${FIXTURE_ID}: effect: pnpm-lock.yaml pins 4.0.1, the lock has 4.0.0.`,
+          )
+        ),
+      ),
+    )
+
+    scenario(
+      'A catalog package a packed member pulls in is locked at pnpm-lock.yaml’s version, and a move of it fails the check',
+      Gherkin.Do.pipe(
+        Given('a runner that depends on left-pad >=1.0.0, with pnpm-lock.yaml’s catalog locking left-pad at 1.0.0')(
+          'before',
+          () =>
+            Effect.succeed({
+              ...withMembers(BASELINE, runnerWith({ dependencies: { 'left-pad': '>=1.0.0' } })),
+              catalogPins: { 'left-pad': '1.0.0' },
+            }),
+        ),
+        When('the lock is generated, then pnpm-lock.yaml’s catalog moves left-pad to 2.0.0')(
+          'checked',
+          (s) =>
+            lockThenCheck(s.before, { ...s.before, catalogPins: { 'left-pad': '2.0.0' } }, { lock: true, ci: false }),
+        ),
+        Then('the lock holds 1.0.0, not the newest version the range allows, and the check names the move')((
+          s,
+          expect,
+        ) =>
+          expect(s.checked.drift).toContain(
+            `E2E_PINS_DRIFT: ${FIXTURE_ID}: left-pad: pnpm-lock.yaml pins 2.0.0, the lock has 1.0.0.`,
           )
         ),
       ),

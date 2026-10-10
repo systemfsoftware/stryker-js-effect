@@ -1,3 +1,4 @@
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import { dual, pipe } from 'effect/Function'
 import * as Option from 'effect/Option'
@@ -12,7 +13,6 @@ import {
   FixtureManifestJson,
   LockedCatalogsYaml,
   MalformedFixtureManifest,
-  ManifestDependencies,
   UnresolvedCatalogSpec,
   WorkspaceCatalogsYaml,
 } from './catalog-resolution.schema.js'
@@ -196,28 +196,5 @@ export const resolvedManifestText: {
     ),
 )
 
-const presentFieldsOf = (dependencies: ManifestDependencies) =>
-  DEPENDENCY_FIELDS.flatMap((field) =>
-    Option.toArray(Option.map(Option.fromUndefinedOr(dependencies[field]), (specs) => [field, specs] as const))
-  )
-
-const lockedPinOf = (locked: WorkspaceCatalogs, [packageName, spec]: readonly [string, string]) =>
-  Option.toArray(Option.map(
-    Option.flatMap(catalogNameOf(spec), (catalog) => catalogEntryOf(locked, packageName, catalog)),
-    (version) => [packageName, version] as const,
-  ))
-
-export const catalogPinsOf = (
-  input: { readonly document: FixtureManifestDocument; readonly locked: WorkspaceCatalogs },
-): Record<string, string> =>
-  pipe(
-    S.decodeOption(ManifestDependencies)(input.document),
-    Option.map((dependencies) =>
-      Object.fromEntries(
-        presentFieldsOf(dependencies).flatMap(([, specs]) =>
-          Object.entries(specs).flatMap((entry) => lockedPinOf(input.locked, entry))
-        ),
-      )
-    ),
-    Option.getOrElse((): Record<string, string> => ({})),
-  )
+export const lockedCatalogNamesOf = (locked: WorkspaceCatalogs): ReadonlyArray<string> =>
+  Arr.dedupe([locked.default, ...Object.values(locked.named)].flatMap((entries) => Object.keys(entries)))
