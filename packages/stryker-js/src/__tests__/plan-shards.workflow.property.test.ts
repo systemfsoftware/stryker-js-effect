@@ -2,7 +2,9 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
 
-import { type PlannedMutant, type PlannedShard, planShards, PlanShardsCommand } from '../plan-shards.workflow.js'
+import * as S from 'effect/Schema'
+
+import { PlannedMutant, type PlannedShard, planShards, PlanShardsCommand } from '../plan-shards.workflow.js'
 
 type PlanSubject = (command: PlanShardsCommand) => Result.Result<readonly PlannedShard[], never>
 
@@ -327,6 +329,22 @@ describe('planShards', () => {
     (subject, [command]) => {
       const shards = shardsOf(subject, command)
       return shards !== undefined && everyAnchoredMutantSharesAShardWithItsAnchor(command, shards)
+    },
+  )
+
+  it.prop(
+    '∀c_CommandAndMutant_≡TheDrawnPlacementsDecodeAndPlacingOneMutantTwiceIsRefused',
+    { of: [PlanShardsCommand, PlannedMutant], subject: S.decodeUnknownResult(PlanShardsCommand) },
+    (subject, [command, repeated]) => {
+      const payloadOf = (mutants: ReadonlyArray<PlannedMutant>) => ({
+        _tag: 'PlanShardsCommand',
+        targetSeconds: command.targetSeconds,
+        ...(command.maxShards === undefined ? {} : { maxShards: command.maxShards }),
+        mutants,
+        dryRunCosts: command.dryRunCosts,
+      })
+      return Result.isSuccess(subject(payloadOf(command.mutants))) &&
+        Result.isFailure(subject(payloadOf([...command.mutants, repeated, repeated])))
     },
   )
 })
