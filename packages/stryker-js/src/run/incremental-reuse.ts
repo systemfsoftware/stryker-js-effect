@@ -12,12 +12,11 @@ export interface IncrementalSourcesInput {
 const absoluteSourceOf = (path: Path.Path, basePath: string, file: string): string =>
   path.isAbsolute(file) ? file : path.join(basePath, file)
 
-export const incrementalReportTextsOf = Effect.fnUntraced(function*(input: IncrementalSourcesInput) {
+export const incrementalReportTextOf = Effect.fnUntraced(function*(input: IncrementalSourcesInput) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const text = yield* fs.readFileString(absoluteSourceOf(path, input.basePath, input.options.incrementalFile)).pipe(
+  return yield* fs.readFileString(absoluteSourceOf(path, input.basePath, input.options.incrementalFile)).pipe(
     Effect.option,
     Effect.map((read) => Option.getOrElse(read, () => '')),
   )
-  return [text]
 })

@@ -11,7 +11,7 @@ import * as S from 'effect/Schema'
 
 import { writeFileAtomic } from '../atomic-write.cell.js'
 import { reportFromStream, ReportFromStreamCommand, ReportFromStreamRebuilt } from '../report-from-stream.workflow.js'
-import { INCREMENTAL_PART_NAME, unionIncrementalReports } from './incremental-union.js'
+import { firstIncrementalReportWithCoverage, INCREMENTAL_PART_NAME } from './incremental-union.js'
 import {
   mergeShardReports,
   MergeShardReportsCommand,
@@ -285,7 +285,7 @@ const writeProjectIncrementals = (
   Effect.forEach(
     Record.toEntries(incrementalsByProject(groups)),
     ([project, texts]) =>
-      Option.match(Option.fromUndefinedOr(unionIncrementalReports(texts)), {
+      Option.match(Option.fromUndefinedOr(firstIncrementalReportWithCoverage(texts)), {
         onNone: () => Effect.void,
         onSome: (incremental) =>
           fs.makeDirectory(path.join(outDir, project), { recursive: true }).pipe(

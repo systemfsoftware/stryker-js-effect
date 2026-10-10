@@ -24,13 +24,16 @@ const dryRunCoverageFieldOf = (reports: readonly Record<string, Json>[]): Record
     onSome: (coverage) => ({ [DRY_RUN_COVERAGE]: coverage }),
   })
 
-export const unionIncrementalReports = (texts: readonly string[]): string | undefined => {
-  const reports = texts.flatMap((text) => Option.toArray(decodedReportOf(text)))
+export const firstIncrementalReportWithCoverage = (texts: readonly string[]): string | undefined => {
+  const decoded = Arr.map(texts, decodedReportOf)
   return Option.getOrUndefined(
     Option.flatMap(
-      Arr.head(reports),
+      Option.firstSomeOf(decoded),
       (first) =>
-        S.encodeOption(S.fromJsonString(S.Json, { space: 2 }))({ ...first, ...dryRunCoverageFieldOf(reports) }),
+        S.encodeOption(S.fromJsonString(S.Json, { space: 2 }))({
+          ...first,
+          ...dryRunCoverageFieldOf(Arr.getSomes(decoded)),
+        }),
     ),
   )
 }

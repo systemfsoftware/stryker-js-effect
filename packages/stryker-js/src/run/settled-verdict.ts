@@ -28,8 +28,7 @@ const timeoutKindIn = (reason: string | undefined): TimeoutKind | undefined =>
     Match.orElse((): TimeoutKind | undefined => undefined),
   )
 
-const evidenceKindOf = (evidence: TimeoutEvidence | undefined): TimeoutKind | undefined =>
-  Option.getOrUndefined(Option.map(Option.fromUndefinedOr(evidence), (present) => present.timeoutKind))
+const evidenceKindOf = (evidence: TimeoutEvidence | undefined): TimeoutKind | undefined => evidence?.timeoutKind
 
 const timeoutKindOf = (
   mutant: Mutant.RunMutantResult,

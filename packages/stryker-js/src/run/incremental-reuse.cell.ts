@@ -1,5 +1,3 @@
-import { sha256 } from '@noble/hashes/sha2.js'
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, type Options, type TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
@@ -35,7 +33,7 @@ import {
 import type { Project } from '../Project.schema.js'
 import { StageError } from '../Run.schema.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
-import { engineDigestOf, runInputsDigestOf } from '../verdict-semantics.js'
+import { engineDigestOf, runInputsDigestOf, sha256HexOf } from '../verdict-semantics.js'
 import type { SharedComponents, TestedComponents } from '../verdict-store/VerdictEntry.schema.js'
 import { verdictKeyOf } from '../verdict-store/VerdictKey.js'
 import type { ListedEntry, ListOutcome } from '../verdict-store/VerdictStore.schema.js'
@@ -43,8 +41,6 @@ import type { VerdictStoreShape } from '../verdict-store/VerdictStore.service.js
 import { currentKeysOf, testedComponentsOf } from './current-verdict.js'
 
 const LOOKUP_CONCURRENCY = 16
-
-const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
 const emptyRefusalCounts = (): Record<ReuseRefusalReason, number> => ({
   semanticsChanged: 0,
@@ -91,7 +87,7 @@ const observedTestFilesOf = (testCoverage: TestCoverage): readonly string[] =>
 const closureTestFilesOf = (input: IncrementalReuseInput): readonly string[] =>
   Arr.dedupe([...input.project.testFiles, ...observedTestFilesOf(input.testCoverage)])
 
-const digestOfEntries = (entries: readonly string[]): string => hashOf(entries.join('\n'))
+const digestOfEntries = (entries: readonly string[]): string => sha256HexOf(entries.join('\n'))
 
 const staticCoverageCountOf = (staticCoverage: Record<string, number> | undefined, mutantId: string): number =>
   Option.getOrElse(
@@ -109,17 +105,6 @@ const openEntryOf = (open: boolean | undefined, digest: string, projectDigest: s
   Boolean.match(open === true, {
     onTrue: () => projectDigest,
     onFalse: () => digest,
-  })
-
-const closureEntryOf = (
-  digestByTestFile: Readonly<Record<string, string>>,
-  openByTestFile: Readonly<Record<string, boolean>>,
-  projectDigest: string,
-  file: string,
-): string =>
-  Option.match(Option.fromUndefinedOr(digestByTestFile[file]), {
-    onNone: () => projectDigest,
-    onSome: (digest) => openEntryOf(openByTestFile[file], digest, projectDigest),
   })
 
 const coveringEntryOf = (
@@ -158,25 +143,13 @@ const wholeSuiteDigestOf = (
   closureEntries: readonly (readonly [string, string])[],
 ): string => digestOfEntries(closureEntries.map(([testFile, digest]) => `${testFile}\u0000${digest}`).sort())
 
-const entryDigestsOf = (analysis: ImportClosureAnalysis): Record<string, string> => {
-  const digestByTestFile = Object.fromEntries(analysis.closures.map((closure) => [closure.testFile, closure.digest]))
-  const openByTestFile = Object.fromEntries(analysis.closures.map((closure) => [closure.testFile, closure.open]))
-  return Object.fromEntries(
-    analysis.closures.map((closure) => [
-      closure.testFile,
-      closureEntryOf(digestByTestFile, openByTestFile, analysis.projectDigest, closure.testFile),
-    ]),
-  )
-}
-
 const closureEntriesOf = (
   analysis: ImportClosureAnalysis,
-  entryByTestFile: Readonly<Record<string, string>>,
 ): readonly (readonly [string, string])[] =>
   analysis.closures.map((closure) =>
     [
       closure.testFile,
-      coveringEntryOf(entryByTestFile, analysis.projectDigest, closure.testFile),
+      openEntryOf(closure.open, closure.digest, analysis.projectDigest),
     ] as const
   )
 
@@ -184,8 +157,8 @@ const digestsFromAnalysisOf = (
   input: IncrementalReuseInput,
   analysis: ImportClosureAnalysis,
 ): Record<string, string> => {
-  const entryByTestFile = entryDigestsOf(analysis)
-  const closureEntries = closureEntriesOf(analysis, entryByTestFile)
+  const closureEntries = closureEntriesOf(analysis)
+  const entryByTestFile = Object.fromEntries(closureEntries)
   const wholeSuiteDigest = Boolean.match(closureEntries.length > 0, {
     onTrue: () => wholeSuiteDigestOf(closureEntries),
     onFalse: () => analysis.projectDigest,
@@ -276,7 +249,7 @@ const sharedComponentsOf = (
   mutantId: mutant.id,
   fileName: mutant.fileName,
   mutatorName: mutant.mutatorName,
-  replacementDigest: hashOf(mutant.replacement),
+  replacementDigest: sha256HexOf(mutant.replacement),
   location: mutant.location,
   fileContentDigest,
 })
@@ -583,19 +556,13 @@ const currentOfParts = (parts: readonly IncrementalReusePart[]): Record<string, 
   )
 
 const timeoutEvidenceOfParts = (parts: readonly IncrementalReusePart[]): Record<string, TimeoutEvidence> =>
-  parts.reduce<Record<string, TimeoutEvidence>>(
-    (accumulated, part) => ({ ...accumulated, ...part.timeoutEvidenceByMutantId }),
-    {},
-  )
+  Object.fromEntries(parts.flatMap((part) => Object.entries(part.timeoutEvidenceByMutantId)))
 
 const countRefusalOfPart = (counts: RefusalCounts, part: IncrementalReusePart): RefusalCounts =>
   part.refusal === undefined ? counts : countedRefusal(counts, part.refusal)
 
 const priorKilledByOfParts = (parts: readonly IncrementalReusePart[]): Record<string, readonly string[]> =>
-  parts.reduce<Record<string, readonly string[]>>(
-    (accumulated, part) => ({ ...accumulated, ...part.priorKilledByByMutantId }),
-    {},
-  )
+  Object.fromEntries(parts.flatMap((part) => Object.entries(part.priorKilledByByMutantId)))
 
 export const readIncrementalReuse = Effect.fnUntraced(function*(input: IncrementalReuseInput) {
   const programDigestOf = yield* Effect.cached(input.programDigestOf)

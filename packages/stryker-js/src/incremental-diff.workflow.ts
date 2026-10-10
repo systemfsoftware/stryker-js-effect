@@ -2,6 +2,7 @@ import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
@@ -241,18 +242,16 @@ const toRunOf = (lookup: VerdictLookup, refusal: ReuseRefusalReason): MutantToRu
     priorKilledBy: priorKilledByOf(lookup),
   })
 
-const flakyMutantIdsOf = (command: IncrementalDiffCommand): readonly string[] =>
-  Option.getOrElse(Option.fromUndefinedOr(command.flakyMutantIds), (): readonly string[] => [])
+const flakyMutantIdsOf = (command: IncrementalDiffCommand): HashSet.HashSet<string> =>
+  HashSet.fromIterable(Option.getOrElse(Option.fromUndefinedOr(command.flakyMutantIds), (): readonly string[] => []))
 
 /**
  * A mutant is flaky-dependent when a flaky test covers it — or when it is static and any test is
  * flaky, because a static mutant runs every test in the suite and so inherits every flaky test's
  * instability even though it never appears in the per-test coverage.
  */
-const flakyDependent = (command: IncrementalDiffCommand, mutant: Mutant.Mutant): boolean => {
-  const flaky = flakyMutantIdsOf(command)
-  return Boolean.or(flaky.includes(mutant.id), Boolean.and(mutant.static === true, flaky.length > 0))
-}
+const flakyDependent = (flaky: HashSet.HashSet<string>, mutant: Mutant.Mutant): boolean =>
+  Boolean.or(HashSet.has(flaky, mutant.id), Boolean.and(mutant.static === true, HashSet.size(flaky) > 0))
 
 const decideFromStore = (command: IncrementalDiffCommand, lookup: VerdictLookup): IncrementalDiffDecision =>
   Option.match(Option.filter(matchingEntryOf(lookup), () => Boolean.not(command.closureAnalysisFailed)), {
@@ -266,20 +265,28 @@ const decideAvailable = (command: IncrementalDiffCommand, lookup: VerdictLookup)
     onFalse: () => decideFromStore(command, lookup),
   })
 
-const decideLookup = (command: IncrementalDiffCommand) => (lookup: VerdictLookup): IncrementalDiffDecision =>
-  Boolean.match(flakyDependent(command, lookup.mutant), {
-    onTrue: () => toRunOf(lookup, 'flakyDependency'),
-    onFalse: () => decideAvailable(command, lookup),
-  })
+const decideLookup =
+  (command: IncrementalDiffCommand, flaky: HashSet.HashSet<string>) =>
+  (lookup: VerdictLookup): IncrementalDiffDecision =>
+    Boolean.match(flakyDependent(flaky, lookup.mutant), {
+      onTrue: () => toRunOf(lookup, 'flakyDependency'),
+      onFalse: () => decideAvailable(command, lookup),
+    })
 
 const forcedRun = (lookup: VerdictLookup): IncrementalDiffDecision =>
   MutantToRun.make({ mutant: lookup.mutant, refusal: 'noPriorRecord' })
 
-const decide = (command: IncrementalDiffCommand): Result.Result<readonly IncrementalDiffDecision[], never> =>
-  Result.succeed(command.lookups.map(Boolean.match(command.force, {
-    onTrue: () => forcedRun,
-    onFalse: () => decideLookup(command),
-  })))
+const decide = (command: IncrementalDiffCommand): Result.Result<readonly IncrementalDiffDecision[], never> => {
+  const flaky = flakyMutantIdsOf(command)
+  return Result.succeed(
+    command.lookups.map(
+      Boolean.match(command.force, {
+        onTrue: () => forcedRun,
+        onFalse: () => decideLookup(command, flaky),
+      }),
+    ),
+  )
+}
 
 export const incrementalDiff = Workflow.make({
   command: IncrementalDiffCommand,

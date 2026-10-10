@@ -19,6 +19,9 @@ const refuse = (
 ): Checker.CheckerFailed =>
   Checker.CheckerFailed.make({ checkerName, mutantIds: mutants.map((mutant) => mutant.id), cause })
 
+const unknownChecker = (checkerName: string, mutants: readonly Checker.CheckerMutantWire[]): Checker.CheckerFailed =>
+  refuse(checkerName, mutants, 'Checker ' + checkerName + ' does not exist')
+
 const resolve = (
   runtime: CheckerRuntimeShape,
   checkerName: string,
@@ -35,7 +38,7 @@ const resolve = (
           }),
         ),
       )),
-    Match.orElse(() => Effect.fail(refuse(checkerName, mutants, 'Checker ' + checkerName + ' does not exist'))),
+    Match.orElse(() => Effect.fail(unknownChecker(checkerName, mutants))),
   )
 
 const compilerRefusal = (checkerName: string, cause: CompilerError): Checker.CheckerFailed =>
@@ -54,7 +57,7 @@ const configDigestOf = (
         Effect.flatMap((compiler) => configDigest(compiler)),
         Effect.mapError((cause) => compilerRefusal(checkerName, cause)),
       )),
-    Match.orElse(() => Effect.fail(refuse(checkerName, [], 'Checker ' + checkerName + ' does not exist'))),
+    Match.orElse(() => Effect.fail(unknownChecker(checkerName, []))),
   )
 
 export const checkerHandlers = Plugin.CheckerRpcs.toLayer(

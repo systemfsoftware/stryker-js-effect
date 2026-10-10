@@ -28,13 +28,13 @@ import { Reporter } from '../reporter.service.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { TemporaryDirectory } from '../Sandbox.service.js'
-import { VerdictStore, type VerdictStoreShape } from '../verdict-store/VerdictStore.service.js'
+import type { VerdictStoreShape } from '../verdict-store/VerdictStore.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import type { FrameworkClaimant } from './explain-file-skip.workflow.js'
 import { planPrepare } from './plan-prepare.workflow.js'
 import { admitPreparedProject, type PrepareRaw, readPrepare } from './prepare.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
-import { verdictStoreLayerOf } from './verdict-store-layer.js'
+import { verdictStoreOf } from './verdict-store-layer.js'
 
 export interface PrepareDone {
   readonly project: Project
@@ -69,10 +69,7 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
       StageError.make({ stage: 'prepare', reason: 'Failed to create temporary directory', cause })
     ),
   )
-  const verdictStore = yield* Effect.map(
-    Layer.build(verdictStoreLayerOf({ options: raw.options.verdictStore, basePath: raw.env.basePath })),
-    (built) => Context.get(built, VerdictStore),
-  ).pipe(
+  const verdictStore = yield* verdictStoreOf({ options: raw.options.verdictStore, basePath: raw.env.basePath }).pipe(
     Effect.mapError((cause) => StageError.make({ stage: 'prepare', reason: cause.message, cause })),
   )
   const reporterInputs = yield* reporterInputsOf(

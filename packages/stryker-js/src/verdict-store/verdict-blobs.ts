@@ -159,7 +159,7 @@ const readableEntryOf = (listed: ListedEntry): ReadonlyArray<VerdictEntry> =>
     Unreadable: (): ReadonlyArray<VerdictEntry> => [],
   })
 
-const readableEntriesOf = (outcome: ListOutcome): ReadonlyArray<VerdictEntry> =>
+export const readableEntriesOf = (outcome: ListOutcome): ReadonlyArray<VerdictEntry> =>
   Match.valueTags(outcome, {
     EntriesListed: ({ entries }) => entries.flatMap(readableEntryOf),
     StoreUnavailable: (): ReadonlyArray<VerdictEntry> => [],

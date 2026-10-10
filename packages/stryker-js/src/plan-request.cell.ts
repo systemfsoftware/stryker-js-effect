@@ -37,16 +37,15 @@ import { dryRunChoiceOf, requireDryRunCommandOf } from './run/dry-run-choice.js'
 import { reusedTestCoverage } from './run/dry-run-coverage.js'
 import type { HostServices } from './run/host.service.js'
 import { readIncrementalReuse, type RefusalCounts } from './run/incremental-reuse.cell.js'
-import { incrementalReportTextsOf } from './run/incremental-reuse.js'
+import { incrementalReportTextOf } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
 import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
 import { newestCostsOf, priorEntriesOf } from './run/prior-entries.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
 import type { EnginePorts, RunStageServices } from './run/StageServices.service.js'
-import { verdictStoreLayerOf } from './run/verdict-store-layer.js'
+import { verdictStoreOf } from './run/verdict-store-layer.js'
 import type { TestCoverage } from './test-coverage.schema.js'
-import { VerdictStore } from './verdict-store/VerdictStore.service.js'
 
 export interface PlanShardsRequest {
   readonly targetSeconds: number
@@ -78,9 +77,6 @@ const decodeCoverage = (text: string): Option.Option<DryRunCoverage> =>
     S.decodeOption(S.fromJsonString(ReportedDryRunCoverageSchema))(text),
     (report) => Option.fromNullishOr(report.dryRunCoverage),
   )
-
-const firstCoverageOf = (texts: readonly string[]): Option.Option<DryRunCoverage> =>
-  Option.firstSomeOf(texts.map(decodeCoverage))
 
 const testsTimeOf = (tests: ReadonlyArray<{ readonly timeSpentMs: number }>): number =>
   tests.reduce((total, test) => total + test.timeSpentMs, 0)
@@ -217,8 +213,8 @@ const planProject = (
     const stageInput = { cliOptions: { force: request.full }, targetMutatePatterns: undefined }
     const prepared = yield* Cell.provideContext(prepareStageCell, context).run(stageInput)
     const done: PlanInstrumentDone = yield* Cell.provideContext(planInstrumentCell, context).run(prepared)
-    const texts = yield* incrementalReportTextsOf({ basePath: project, options: done.options })
-    const coverage = firstCoverageOf(texts)
+    const text = yield* incrementalReportTextOf({ basePath: project, options: done.options })
+    const coverage = decodeCoverage(text)
     const testCoverage = Option.match(coverage, { onNone: emptyTestCoverage, onSome: reusedTestCoverage })
     const label = labelOf(path, labelBase, project)
     const checkerDigests = yield* checkerDigestsAtPlanTime({
@@ -227,10 +223,7 @@ const planProject = (
       loadedPlugins: prepared.loadedPlugins,
       project,
     })
-    const store = yield* Effect.map(
-      Layer.build(verdictStoreLayerOf({ options: done.options.verdictStore, basePath: project })),
-      (built) => Context.get(built, VerdictStore),
-    )
+    const store = yield* verdictStoreOf({ options: done.options.verdictStore, basePath: project })
     const reuse = yield* readIncrementalReuse({
       project: done.project,
       currentMutants: [...done.mutants],
@@ -255,7 +248,7 @@ const planProject = (
         requireDryRunCommandOf({
           options: done.options,
           mutants: [...reuse.mutants, ...reuse.rememberedResults],
-          texts,
+          text,
           priorEntries,
         }),
       ),

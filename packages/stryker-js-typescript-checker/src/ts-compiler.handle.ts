@@ -330,19 +330,27 @@ const decidedProgramIdentity = (
   )
 }
 
+const requireToolchainVersions = (
+  rt: TSCompilerRuntime,
+): Effect.Effect<{ readonly typescriptVersion: string; readonly checkerVersion: string }, CompilerError> =>
+  Effect.gen(function*() {
+    const typescriptVersion = yield* readTypescriptVersion(rt)
+    const checkerVersion = yield* readCheckerVersion(rt)
+    yield* Boolean.match(Boolean.or(typescriptVersion === '', checkerVersion === ''), {
+      onTrue: () =>
+        Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: 'toolchain version' })),
+      onFalse: () => Effect.void,
+    })
+    return { typescriptVersion, checkerVersion }
+  })
+
 export const programDigest = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerProgramDigest.name)(function*(
   self: TSCompiler,
 ): Effect.fn.Return<Checker.ProgramDigest, CompilerError> {
   const rt = runtimeOf(self)
   const programs = yield* programsOf(rt)
   const state = yield* SynchronizedRef.get(rt.state)
-  const typescriptVersion = yield* readTypescriptVersion(rt)
-  const checkerVersion = yield* readCheckerVersion(rt)
-  yield* Boolean.match(Boolean.or(typescriptVersion === '', checkerVersion === ''), {
-    onTrue: () =>
-      Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: 'toolchain version' })),
-    onFalse: () => Effect.void,
-  })
+  const { typescriptVersion, checkerVersion } = yield* requireToolchainVersions(rt)
   const checkerOptionsJson = yield* checkerOptionsJsonOf(rt.options)
   const root = rt.pathService.dirname(state.tsconfigFile)
   const sourceFiles = yield* readProgramFiles(rt, root, yield* sortedSourceFileNamesOf(programs))
@@ -360,13 +368,7 @@ export const configDigest = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompil
   self: TSCompiler,
 ): Effect.fn.Return<Checker.ProgramDigest, CompilerError> {
   const rt = runtimeOf(self)
-  const typescriptVersion = yield* readTypescriptVersion(rt)
-  const checkerVersion = yield* readCheckerVersion(rt)
-  yield* Boolean.match(Boolean.or(typescriptVersion === '', checkerVersion === ''), {
-    onTrue: () =>
-      Effect.fail(CompilerFailed.make({ reason: 'program-digest-unavailable', subject: 'toolchain version' })),
-    onFalse: () => Effect.void,
-  })
+  const { typescriptVersion, checkerVersion } = yield* requireToolchainVersions(rt)
   const checkerOptionsJson = yield* checkerOptionsJsonOf(rt.options)
   const tsconfigFile = normalizeFileName(rt.pathService.resolve(rt.options.tsconfigFile))
   const root = rt.pathService.dirname(tsconfigFile)

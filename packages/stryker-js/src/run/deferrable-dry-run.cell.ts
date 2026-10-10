@@ -17,7 +17,7 @@ import { requestedIdsOf, restrictedToRequestedIds } from '../Rerun/rerun-selecti
 import type { StageError } from '../Run.schema.js'
 import { requireDryRunCommandOf } from './dry-run-choice.js'
 import { dryRunCell, type TestBasis } from './dry-run.cell.js'
-import { incrementalReportTextsOf } from './incremental-reuse.js'
+import { incrementalReportTextOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
 import { acquireCheckers, asMutationTestError, reuseAndPlan, settleMutants } from './mutant-settlement.js'
 import type { MutationTestPlan } from './mutation-test-plan.cell.js'
@@ -102,11 +102,11 @@ const checkerSettledRun = Effect.fnUntraced(function*(command: InstrumentDone) {
 const enterDryRun = Effect.fnUntraced(function*(command: InstrumentDone) {
   yield* phaseEntered('dry-run')
   const env = yield* RunEnvironment
-  const texts = yield* incrementalReportTextsOf({ basePath: env.basePath, options: command.options })
+  const text = yield* incrementalReportTextOf({ basePath: env.basePath, options: command.options })
   const plannable = plannableOf(command).plannable
   const priorEntries = yield* priorEntriesOf(command.verdictStore, plannable.map((mutant) => mutant.id))
   const decision = Result.getOrElse(
-    requireDryRun(requireDryRunCommandOf({ options: command.options, mutants: plannable, texts, priorEntries })),
+    requireDryRun(requireDryRunCommandOf({ options: command.options, mutants: plannable, text, priorEntries })),
     (never: never) => never,
   )
   return yield* Match.value(decision).pipe(
