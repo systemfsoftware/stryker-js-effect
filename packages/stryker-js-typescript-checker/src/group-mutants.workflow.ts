@@ -2,12 +2,11 @@ import { Workflow } from '@systemfsoftware/effect-cell-types'
 import type { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
-import * as HashMap from 'effect/HashMap'
-import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { GroupMutantsCommand } from './CheckerCommands.schema.js'
+import { fileIdsOf } from './FileIds.schema.js'
 
 const GroupingTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/Grouping')
 type GroupingTypeId = typeof GroupingTypeId
@@ -21,34 +20,8 @@ export class MutantGroup extends S.TaggedClass<MutantGroup>()('MutantGroup', {
 export const MutantGroups = S.Array(MutantGroup)
 export type MutantGroups = typeof MutantGroups.Type
 
-type MutantWire = Checker.CheckerMutantWire
-
-interface Batching {
-  readonly files: ReadonlyArray<string>
-  readonly idsByFile: HashMap.HashMap<string, ReadonlyArray<string>>
-}
-
-const emptyBatching: Batching = { files: [], idsByFile: HashMap.empty() }
-
-const accumulate = (batching: Batching, mutant: MutantWire): Batching =>
-  Option.match(HashMap.get(batching.idsByFile, mutant.fileName), {
-    onNone: () => ({
-      files: [...batching.files, mutant.fileName],
-      idsByFile: HashMap.set(batching.idsByFile, mutant.fileName, [mutant.id]),
-    }),
-    onSome: (ids) => ({
-      ...batching,
-      idsByFile: HashMap.set(batching.idsByFile, mutant.fileName, [...ids, mutant.id]),
-    }),
-  })
-
-const fileBatchesOf = (mutants: ReadonlyArray<MutantWire>): ReadonlyArray<ReadonlyArray<string>> => {
-  const batching = Arr.reduce(mutants, emptyBatching, accumulate)
-  return Arr.map(
-    batching.files,
-    (fileName) => Option.getOrElse(HashMap.get(batching.idsByFile, fileName), (): ReadonlyArray<string> => []),
-  )
-}
+const fileBatchesOf = (mutants: ReadonlyArray<Checker.CheckerMutantWire>): ReadonlyArray<ReadonlyArray<string>> =>
+  Arr.map(fileIdsOf(mutants), (file) => file.ids)
 
 interface Packing {
   readonly groups: ReadonlyArray<ReadonlyArray<string>>
