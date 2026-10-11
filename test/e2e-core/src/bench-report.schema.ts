@@ -46,6 +46,8 @@ export const BenchAbortCode = S.Literals([
   'side-setup-failed',
   'report-unwritable',
   'leg-incomplete',
+  'run-path-occupied',
+  'run-path-unrestored',
   'defect',
 ])
 export type BenchAbortCode = typeof BenchAbortCode.Type
@@ -63,6 +65,10 @@ const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
   'report-unwritable': 'check free space and permissions under RUNNER_TEMP on the runner, then re-run the job',
   'leg-incomplete':
     "the job stopped before its final report (GitHub's 60-minute job timeout or a cancel): find the named step in the job log and the finished runs' streams in the bench-runs artifact, then fix what hung",
+  'run-path-occupied':
+    'something already sits at the run path under RUNNER_TEMP before a side moved in (a stray tree or a run that never moved back): read the reason for the path and the side, find what left it in the job log, then re-run the job',
+  'run-path-unrestored':
+    "a side's tree could not be moved back from the run path to its home after a run: read the reason for both paths and the rename error, then re-run the job",
   'defect': 'a bench bug: open an issue with this job log, the stack above, and the base and head SHAs',
 }
 

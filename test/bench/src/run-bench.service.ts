@@ -7,8 +7,11 @@ import {
   BenchRunInvalid,
   BenchRunKey,
   BenchRunMeasured,
+  planRunPath,
+  PlanRunPathCommand,
   readBenchRun,
   ReadBenchRunCommand,
+  type RunPathMoveIn,
   summarizeBench,
   SummarizeBenchCommand,
 } from '@systemfsoftware/stryker-e2e-core'
@@ -18,6 +21,7 @@ import * as Crypto from 'effect/Crypto'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
+import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import * as Ref from 'effect/Ref'
@@ -36,6 +40,7 @@ export interface RunBenchInput {
   readonly sideA: PreparedSide
   readonly sideB: PreparedSide
   readonly runsRoot: string
+  readonly runnerTemp: string
   readonly sha: string
   readonly parentSha: string
   readonly ref: string
@@ -115,6 +120,78 @@ const streamLines = (
     Effect.map((text) => text.split('\n')),
     Effect.orElseSucceed((): ReadonlyArray<string> => []),
   )
+const orchestrationFailed = (code: BenchOrchestrationFailed['code'], reason: string): BenchOrchestrationFailed =>
+  BenchOrchestrationFailed.make({ code, reason })
+
+const planned = (
+  input: RunBenchInput,
+  prepared: PreparedSide,
+): Effect.Effect<RunPathMoveIn, BenchOrchestrationFailed, BenchPlatform> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const entries = yield* fs.readDirectory(input.runnerTemp).pipe(
+      Effect.mapError((cause) =>
+        orchestrationFailed(
+          'run-path-occupied',
+          `side ${prepared.side}: ${input.runnerTemp} could not be listed to check the run path is absent: ${cause.message}`,
+        )
+      ),
+    )
+    const plan = yield* Result.match(
+      planRunPath(
+        PlanRunPathCommand.make({
+          runnerTemp: input.runnerTemp,
+          runnerTempEntries: [...entries],
+          side: prepared.side,
+          tree: prepared.tree,
+          cwd: prepared.cwd,
+          cli: prepared.cli,
+        }),
+      ),
+      {
+        onFailure: (outside) => Effect.fail(orchestrationFailed('defect', outside.message)),
+        onSuccess: Effect.succeed,
+      },
+    )
+    return yield* Match.valueTags(plan, {
+      RunPathOccupied: (occupied) =>
+        Effect.fail(
+          orchestrationFailed(
+            'run-path-occupied',
+            `side ${occupied.side}: ${occupied.runPath} already exists before the side's tree moved in`,
+          ),
+        ),
+      RunPathMoveIn: (moveIn) => Effect.succeed(moveIn),
+    })
+  })
+
+const atRunPath = <A, R>(
+  moveIn: RunPathMoveIn,
+  use: Effect.Effect<A, BenchOrchestrationFailed, R>,
+): Effect.Effect<A, BenchOrchestrationFailed, R | FileSystem.FileSystem> =>
+  Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      yield* fs.rename(moveIn.tree, moveIn.runPath).pipe(
+        Effect.mapError((cause) =>
+          orchestrationFailed(
+            'run-path-occupied',
+            `side ${moveIn.side}: ${moveIn.tree} could not be moved to the run path ${moveIn.runPath}: ${cause.message}`,
+          )
+        ),
+      )
+      const exit = yield* Effect.exit(restore(use))
+      yield* fs.rename(moveIn.runPath, moveIn.tree).pipe(
+        Effect.mapError((cause) =>
+          orchestrationFailed(
+            'run-path-unrestored',
+            `side ${moveIn.side}: ${moveIn.runPath} could not be moved back to ${moveIn.tree}: ${cause.message}`,
+          )
+        ),
+      )
+      return yield* exit
+    })
+  )
 
 const runOne = (
   input: RunBenchInput,
@@ -131,22 +208,27 @@ const runOne = (
 
     yield* restoreTree(pristine).pipe(
       Effect.mapError((cause) =>
-        BenchOrchestrationFailed.make({
-          code: 'side-setup-failed',
-          reason:
-            `side ${prepared.side}: ${pristine.root} could not be restored to its prepared state: ${cause.message}`,
-        })
+        orchestrationFailed(
+          'side-setup-failed',
+          `side ${prepared.side}: ${pristine.root} could not be restored to its prepared state: ${cause.message}`,
+        )
       ),
     )
-    const startedAt = yield* Clock.currentTimeMillis
-    const cliExit = yield* runCli({
-      cli: prepared.cli,
-      cwd: prepared.cwd,
-      configFile: prepared.configFile,
-      streamFile,
-      incrementalFile,
-    })
-    const wallMs = (yield* Clock.currentTimeMillis) - startedAt
+    const moveIn = yield* planned(input, prepared)
+    const { cliExit, wallMs } = yield* atRunPath(
+      moveIn,
+      Effect.gen(function*() {
+        const startedAt = yield* Clock.currentTimeMillis
+        const cliExit = yield* runCli({
+          cli: moveIn.cli,
+          cwd: moveIn.cwd,
+          configFile: prepared.configFile,
+          streamFile,
+          incrementalFile,
+        })
+        return { cliExit, wallMs: (yield* Clock.currentTimeMillis) - startedAt }
+      }),
+    )
 
     const lines = yield* streamLines(fs, streamFile)
     const digest = yield* workloadDigest({

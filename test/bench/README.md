@@ -77,3 +77,15 @@ are put back, and the Vitest results cache under `node_modules/.vite` is
 deleted. Without that, one run's leftovers (reports, sandboxes, compiled
 output, Vitest's file order cache) change which tests the next run selects,
 and the workload digest reads `changed` on a tree nobody edited.
+
+Both sides are detached worktrees under `RUNNER_TEMP` (`bench-a`, `bench-b`);
+the job's checkout holds only the harness, and run output goes to
+`RUNNER_TEMP/bench-runs`, never into a side's tree. Every run executes from one
+fixed path, `RUNNER_TEMP/bench-run`: the bench renames the side's tree there,
+runs, and renames it back, even when the run fails. Mutant ids and the run's
+inputs digest hash absolute paths, so without a shared path the two sides
+would test the same mutants under different ids, in a different order. If the
+run path already exists before a move-in, the leg aborts with
+`run-path-occupied`; if a tree cannot be moved back, it aborts with
+`run-path-unrestored`. A symlink would not work, because Node resolves it to
+the real path.

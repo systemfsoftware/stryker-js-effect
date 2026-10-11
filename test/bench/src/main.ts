@@ -48,7 +48,6 @@ const BENCH_RUNS_DIR = 'bench-runs'
 const BENCH_REPORT_DIR = 'bench-report'
 const BENCH_REPORT_FILE = 'bench-report.json'
 const CORPUS_FILE = ['test', 'bench', 'corpus.json'] as const
-const TURBO_CACHE_DIR = ['.turbo', 'cache'] as const
 const UNKNOWN_SHA = 'unknown'
 const UNKNOWN_REF = 'unknown'
 
@@ -109,6 +108,7 @@ const readSetupSteps = (
 interface BenchEnv {
   readonly sideARoot: string
   readonly sideBRoot: string
+  readonly turboCacheDir: string
   readonly baseSha: string
   readonly headSha: string
   readonly ref: string
@@ -122,6 +122,7 @@ interface BenchEnv {
 const benchEnv = Effect.all({
   sideARoot: Config.String('BENCH_SIDE_A'),
   sideBRoot: Config.String('BENCH_SIDE_B'),
+  turboCacheDir: Config.String('BENCH_TURBO_CACHE_DIR'),
   baseSha: Config.String('BENCH_BASE_SHA'),
   headSha: Config.String('BENCH_HEAD_SHA'),
   ref: Config.String('BENCH_REF'),
@@ -206,11 +207,17 @@ const bench = (env: BenchEnv) =>
     const setupSteps = yield* readSetupSteps(fs, env.setupTimingsFile)
     const workRoot = path.join(env.runnerTemp, BENCH_WORK_DIR)
     const runsRoot = path.join(env.runnerTemp, BENCH_RUNS_DIR)
-    const turboCacheDir = path.join(env.sideBRoot, ...TURBO_CACHE_DIR)
     const fixtureSource = path.join(env.sideBRoot, corpus.enterprise.fixture)
 
     const prepareNamed = (side: BenchSide, root: string, workDir: string) =>
-      prepareSide({ side, root, fixtureSource, workDir: path.join(workRoot, workDir), target, turboCacheDir }).pipe(
+      prepareSide({
+        side,
+        root,
+        fixtureSource,
+        workDir: path.join(workRoot, workDir),
+        target,
+        turboCacheDir: env.turboCacheDir,
+      }).pipe(
         Effect.mapError((failure) => orchestrationFailed('side-setup-failed', `side ${side}: ${failure.message}`)),
       )
     const prepared = yield* Effect.all({
@@ -246,6 +253,7 @@ const bench = (env: BenchEnv) =>
       sideA: prepared.sideA,
       sideB: prepared.sideB,
       runsRoot,
+      runnerTemp: env.runnerTemp,
       sha: env.headSha,
       parentSha: env.baseSha,
       ref: env.ref,

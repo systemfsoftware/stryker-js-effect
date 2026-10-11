@@ -6,7 +6,7 @@ topic: bench-main-only
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-11-1154-ci-bench-main-only-plan.md
+supersedes: docs/plans/2026-10-11-1155-ci-bench-main-only-plan.md
 ---
 
 # Bench On Main Only - Plan
@@ -57,6 +57,8 @@ The enterprise leg also stalls on main as it stands. `prepare-side.service.ts:49
 
 - R1. `bench.yml` has no `pull_request` trigger. It runs on push to main, keeping today's `paths-ignore` for `**/*.md` and `docs/**`, and on `workflow_dispatch`.
 - R2. Side B is `github.sha` and side A is its first parent (`github.sha^1`). The same-runner A/B protocol of the 1719 plan (R2, R5-R8a) is otherwise unchanged.
+- R2a. Both sides are detached worktrees under the runner temp dir (`bench-a`, `bench-b`). The job checkout holds only the harness, and no run output goes inside a side's tree. (session-settled: user-directed, A/A proof run 38135504932 ruling, chosen over keeping side B in the job checkout.)
+- R2b. Every measured run, on both sides and every leg including enterprise, executes from one fixed absolute run path, `RUNNER_TEMP/bench-run`. The side's tree is renamed there before the run and back after, including when the run fails. The run path must be absent before each move-in (`run-path-occupied` otherwise), and the tree must be back in place after each run (`run-path-unrestored` otherwise). Either is an abort with a next action, never a skip. Mutant ids and `runInputsDigest` hash absolute paths (the file path in the instrumenter's mutant id; plugin URLs in the options fingerprint), so without one path the sides test the same mutants under disjoint ids, dispatched in a different order. (session-settled: user-directed, A/A proof run 38135504932 ruling, chosen over engine-side path-relative ids, which would rekey every verdict store entry, incremental report and cited id, and are routed to root as a separate item; also over symlinks, which Node resolves to the real path, and bind mounts.)
 - R3. Runs share the concurrency group `bench-${{ github.sha }}` with `cancel-in-progress: false`, so no main commit's bench is ever cancelled by a later push.
 - R4. Permissions stay `contents: read`. The lane opens no issue, reverts nothing, and writes nothing outside its own step summary, annotations and artifacts.
 
@@ -92,6 +94,7 @@ The enterprise leg also stalls on main as it stands. `prepare-side.service.ts:49
 - AE5. **Covers R7.** **Given** side A's closure build exits non-zero and side B is ready, **when** setup ends, **then** the report aborts with `side-setup-failed` naming side A and the step, and the job exits 1.
 - AE6. **Covers R12.** **Given** the registry holds a release newer than the side's locked version, with a peer on an unpublished version (as `@effect/opentelemetry@4.0.3` does today), **when** the fixture installs, **then** the locked version (4.0.0) is installed through the root `overrides` and the install completes.
 - AE6a. **Covers R12.** **Given** the side's lockfile holds `typescript` at two versions, **when** the fixture installs, **then** `typescript` is absent from the `overrides`, the npm argv carries `--before=<the lockfile's last commit time>`, and the report's `withheldPins` and step summary name the side, the cutoff and the withheld count. **Given** every eligible name is pinned, **then** the argv carries no `--before` and `withheldPins` is empty.
+- AE7. **Covers R2b.** **Given** a product-identical commit and its parent, **when** a leg runs, **then** for every leg `runInputsDigest` and the mutant id set are identical across sides. **Given** anything already sits at `RUNNER_TEMP/bench-run` before a move-in, **then** the leg aborts with `run-path-occupied`, naming the side and the path.
 
 ### Scope Boundaries
 
