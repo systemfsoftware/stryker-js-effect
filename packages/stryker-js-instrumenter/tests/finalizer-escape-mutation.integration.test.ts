@@ -192,11 +192,7 @@ const exportLineRange = (content: string, exportName: string): ExportLineRange =
 const instrumentSource = (source: string) =>
   instrument(
     [{ name: '/tmp/finalizer-escape-probe.ts', content: source, mutate: true }],
-    stockOptions({
-      ignorers: [],
-      excludedMutations: [],
-      optInMutations: [FINALIZER_ESCAPE],
-    }),
+    stockOptions({ ignorers: [], excludedMutations: [] }),
   )
 
 const finalizerCount = (result: Instrument.InstrumentResult): number =>
@@ -218,7 +214,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
           'fixtures',
           () => effectConcurrencyFixtureFiles,
         ),
-        When('the files are instrumented with only the finalizer escape enabled')(
+        When('the files are instrumented with the default mutators')(
           'report',
           ({ fixtures }: { fixtures: readonly FixtureFile[] }) =>
             instrument(
@@ -227,7 +223,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
                 content: fixture.content,
                 mutate: true,
               })),
-              stockOptions({ ignorers: [], excludedMutations: [], optInMutations: [FINALIZER_ESCAPE] }),
+              stockOptions({ ignorers: [], excludedMutations: [] }),
             ),
         ),
         Then(
@@ -276,7 +272,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
       (row) =>
         Gherkin.Do.pipe(
           Given('a module with one covered cleanup call')('source', () => Effect.succeed(row.source)),
-          When('the module is instrumented with only the finalizer escape enabled')(
+          When('the module is instrumented with the default mutators')(
             'mutants',
             ({ source }: { source: string }) => Effect.map(instrumentSource(source), finalizerMutantsOf),
           ),
@@ -296,7 +292,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
       (row) =>
         Gherkin.Do.pipe(
           Given(row.situation)('source', () => Effect.succeed(row.source)),
-          When('the module is instrumented with only the finalizer escape enabled')(
+          When('the module is instrumented with the default mutators')(
             'count',
             ({ source }: { source: string }) => Effect.map(instrumentSource(source), finalizerCount),
           ),
@@ -314,7 +310,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
           'source',
           () => Effect.succeed(LEADER_LOCK_SOURCE),
         ),
-        When('the module is instrumented with only the finalizer escape enabled')(
+        When('the module is instrumented with the default mutators')(
           'mutants',
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), finalizerMutantsOf),
         ),
@@ -336,7 +332,7 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
           'source',
           () => Effect.succeed(SUPPRESSED_SOURCE),
         ),
-        When('the module is instrumented with only the finalizer escape enabled')(
+        When('the module is instrumented with the default mutators')(
           'mutants',
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), finalizerMutantsOf),
         ),
@@ -347,6 +343,34 @@ Feature('Exposing missing cleanup after interruptions by letting finalizers esca
               status: mutants[0]?.status,
               reason: mutants[0]?.statusReason,
             }).toEqual({ count: 1, status: 'Ignored', reason: 'directive: cleanup proven by concurrency tests' }),
+        ),
+      ),
+    )
+
+    scenario(
+      'A run that excludes the finalizer escape still reports its mutants, ignored',
+      Gherkin.Do.pipe(
+        Given('the evidence module from the issue, closing a scope behind a handler and a cleanup')(
+          'source',
+          () => Effect.succeed(LEADER_LOCK_SOURCE),
+        ),
+        When('the module is instrumented with the finalizer escape excluded')(
+          'mutants',
+          ({ source }: { source: string }) =>
+            Effect.map(
+              instrument(
+                [{ name: '/tmp/finalizer-escape-probe.ts', content: source, mutate: true }],
+                stockOptions({ ignorers: [], excludedMutations: [FINALIZER_ESCAPE] }),
+              ),
+              finalizerMutantsOf,
+            ),
+        ),
+        Then('both mutants are reported as ignored for the exclusion')(
+          ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+            expect(mutants.map((mutant) => [mutant.status, mutant.statusReason])).toEqual([
+              ['Ignored', `excluded-mutator: Ignored because of excluded mutation "${FINALIZER_ESCAPE}"`],
+              ['Ignored', `excluded-mutator: Ignored because of excluded mutation "${FINALIZER_ESCAPE}"`],
+            ]),
         ),
       ),
     )

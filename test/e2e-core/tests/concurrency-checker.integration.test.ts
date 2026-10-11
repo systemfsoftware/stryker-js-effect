@@ -25,20 +25,16 @@ import { determineCompileErrorsWithDiagnostics, evaluateWithProjects } from './_
 
 const Feature = makeFeature({ it })
 
-const LIVE_OPT_IN_MUTATIONS: readonly string[] = [
-  'AtomicUpdateSplit',
-  'SynchronizationRemoval',
-  'FinalizerEscape',
-]
-
 const EXPECTED_MUTANTS_BY_MUTATOR: Record<string, number> = {
   AtomicUpdateSplit: 42,
   FinalizerEscape: 20,
   SynchronizationRemoval: 11,
 }
 
+const CONCURRENCY_MUTATORS: readonly string[] = Object.keys(EXPECTED_MUTANTS_BY_MUTATOR)
+
 const expectedMutantCount = (): number =>
-  LIVE_OPT_IN_MUTATIONS.reduce((total, mutatorName) => total + (EXPECTED_MUTANTS_BY_MUTATOR[mutatorName] ?? 0), 0)
+  Object.values(EXPECTED_MUTANTS_BY_MUTATOR).reduce((total, count) => total + count, 0)
 
 const runLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
@@ -89,11 +85,11 @@ const instrumentedWires = (layout: FixtureLayout) =>
       ignorers: [],
       excludedMutations: [],
       mutantSetPolicy: 'full',
-      mutators: Mutator.selectMutators(Mutator.stockRegistry, LIVE_OPT_IN_MUTATIONS),
+      mutators: Mutator.selectMutators(Mutator.stockRegistry, []),
     })
     return instrumented.mutants
       .filter((mutant) =>
-        LIVE_OPT_IN_MUTATIONS.includes(mutant.mutatorName)
+        CONCURRENCY_MUTATORS.includes(mutant.mutatorName)
       )
       .map(wireOf)
   })
@@ -185,7 +181,7 @@ const illTypedControl = (wires: ReadonlyArray<Checker.CheckerMutantWire>): Optio
     (wire) => ({ ...wire, replacement: '1' }),
   )
 
-Feature('The TypeScript checker accepting opted-in concurrency faults')
+Feature('The TypeScript checker accepting the default concurrency faults')
   .withLayer(runLayer)
   .live('the rig drives the real TS7 checker runtime over the instrumented concurrency definitions')
   .body(({ scenario }) => {

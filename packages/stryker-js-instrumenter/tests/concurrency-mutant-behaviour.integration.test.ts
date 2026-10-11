@@ -1471,7 +1471,7 @@ const buildHarness = Effect.gen(function*() {
       ...sources.map((source) => ({ ...source, mutate: true })),
       ...supportSources.map((source) => ({ ...source, mutate: false })),
     ],
-    stockOptions({ ignorers: [], excludedMutations: [], optInMutations: [...LIVE] }),
+    stockOptions({ ignorers: [], excludedMutations: [] }),
   )
   yield* fs.remove(filePathOf(SCRATCH_URL), { recursive: true, force: true })
   yield* fs.makeDirectory(filePathOf(new URL('effect-concurrency/', SCRATCH_URL)), { recursive: true })
@@ -1513,10 +1513,10 @@ Feature('Keeping single-fiber behaviour while exposing races in Effect concurren
     )
 
     scenario(
-      'Every live opt-in fault covers the shapes that name it',
+      'Every live concurrency fault covers the shapes that name it',
       Gherkin.Do.pipe(
-        Given('the live opt-in registry')('coverage', () => Effect.succeed(coverageReport())),
-        Then('every opt-in fault is live and every naming shape carries scenarios')(({ coverage }, expect) =>
+        Given('the live concurrency mutators')('coverage', () => Effect.succeed(coverageReport())),
+        Then('every concurrency fault is live and every naming shape carries scenarios')(({ coverage }, expect) =>
           expect({
             live: coverage.live,
             notLive: coverage.notLive,

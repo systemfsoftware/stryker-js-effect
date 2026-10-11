@@ -6,7 +6,7 @@ export const annotatedSampleSlice: PlacementSliceEncoded = {
   mutateFiles: ['src/arithmetic.ts', 'src/effect-concurrency.ts'],
   packageGlobs: ['.'],
   excludedMutations: ['UpdateOperator'],
-  optInMutations: ['AtomicUpdateSplit', 'SynchronizationRemoval', 'FinalizerEscape'],
+  optInMutations: ['acme/FlipSide'],
   providerModules: ['provider.mjs'],
   coverageAnalysis: 'perTest',
   waivers: [],

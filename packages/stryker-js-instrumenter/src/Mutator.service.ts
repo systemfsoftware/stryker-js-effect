@@ -1397,9 +1397,6 @@ function isUpdateExpression(node: Node): node is UpdateExpression {
  *
  * Naming each mutator here costs one line when a mutator is added and makes
  * that line a compile-checked import instead of a runtime effect.
- *
- * `optInMutators` below follows the same hand-written rule, for the same
- * reason: a mutator exists for a run only when a human named it here.
  */
 export const defaultMutators: Readonly<Record<StockCatalog.StockDefaultName, Mutator>> = Object.freeze({
   ArithmeticOperator: arithmeticOperatorMutator,
@@ -1418,9 +1415,6 @@ export const defaultMutators: Readonly<Record<StockCatalog.StockDefaultName, Mut
   StringLiteral: stringLiteralMutator,
   UnaryOperator: unaryOperatorMutator,
   UpdateOperator: updateOperatorMutator,
-})
-
-export const optInMutators: Readonly<Record<StockCatalog.StockOptInName, Mutator>> = Object.freeze({
   AtomicUpdateSplit: atomicUpdateSplitMutator,
   SynchronizationRemoval: synchronizationRemovalMutator,
   FinalizerEscape: finalizerEscapeMutator,
@@ -1433,7 +1427,7 @@ export interface MutatorRegistry {
   readonly optIn: Readonly<Record<string, Mutator>>
 }
 
-export const stockRegistry: MutatorRegistry = { defaults: defaultMutators, optIn: optInMutators }
+export const stockRegistry: MutatorRegistry = { defaults: defaultMutators, optIn: {} }
 
 export interface RegistryCatalog {
   readonly entries: ReadonlyArray<{ readonly name: string; readonly tier: MutatorCatalog.Tier }>
@@ -1449,7 +1443,6 @@ const registryOfDataFirst = (
 ): MutatorRegistry => {
   const implementations = new Map<string, Mutator>([
     ...Object.entries(defaultMutators),
-    ...Object.entries(optInMutators),
     ...contributions.flatMap(({ entries }) => entries.map((entry) => [entry.name, entry.implementation] as const)),
   ])
   const entries = catalogs.flatMap((catalog) => catalog.entries)

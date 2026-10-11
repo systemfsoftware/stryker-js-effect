@@ -20,8 +20,8 @@ class, the `RunEventWireLine` newline-delimited JSON codec a consumer decodes
 stdout with, and `StreamSchemaVersion` (`8.0`, the version the stream
 declares). `OutputMode` holds the output mode and its signal (`OutputMode`,
 `ModeSignal`) as the stream header carries them. `StockCatalog` holds the stock
-mutator catalog and its name vocabulary (`StockCatalog`, `StockMutatorName`,
-`StockDefaultName`, `StockOptInName`). `SpanTaxonomy` holds the names the CLI's
+mutator catalog, every entry of which is default-tier, and its name vocabulary
+(`StockCatalog`, `StockDefaultName`). `SpanTaxonomy` holds the names the CLI's
 traces use and each member's attributes (`Spans`, `SpanName`, `SpanMember`,
 `spanMembers`), plus `rpcServedSpanOf` for the RPC method spans a plugin worker
 serves.

@@ -191,11 +191,7 @@ const exportLineRange = (content: string, exportName: string): ExportLineRange =
 const instrumentSource = (source: string) =>
   instrument(
     [{ name: '/tmp/atomic-split-probe.ts', content: source, mutate: true }],
-    stockOptions({
-      ignorers: [],
-      excludedMutations: [],
-      optInMutations: [ATOMIC_UPDATE_SPLIT],
-    }),
+    stockOptions({ ignorers: [], excludedMutations: [] }),
   )
 
 const atomicCount = (result: Instrument.InstrumentResult): number =>
@@ -220,7 +216,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
         title,
         Gherkin.Do.pipe(
           Given(givenText)('sources', () => Effect.succeed(sources)),
-          When('the files are instrumented with only the atomic-update split enabled')(
+          When('the files are instrumented with the default mutators')(
             'counts',
             ({ sources }: { sources: readonly string[] }) =>
               Effect.forEach(sources, (source) => Effect.map(instrumentSource(source), atomicCount)),
@@ -239,7 +235,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           'fixtures',
           () => effectConcurrencyFixtureFiles,
         ),
-        When('the files are instrumented with only the atomic-update split enabled')(
+        When('the files are instrumented with the default mutators')(
           'report',
           ({ fixtures }: { fixtures: readonly FixtureFile[] }) =>
             instrument(
@@ -248,7 +244,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
                 content: fixture.content,
                 mutate: true,
               })),
-              stockOptions({ ignorers: [], excludedMutations: [], optInMutations: [ATOMIC_UPDATE_SPLIT] }),
+              stockOptions({ ignorers: [], excludedMutations: [] }),
             ),
         ),
         Then(
@@ -357,7 +353,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
       'The replacement for a direct update reads once, yields, and writes back through a snapshot',
       Gherkin.Do.pipe(
         Given('a module with a direct update of a ref')('source', () => Effect.succeed(DATA_FIRST_SOURCE)),
-        When('the file is instrumented with only the atomic-update split enabled')(
+        When('the file is instrumented with the default mutators')(
           'mutants',
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), atomicMutantsOf),
         ),
@@ -375,7 +371,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
       'The replacement for a piped update moves the same split behind a self binder',
       Gherkin.Do.pipe(
         Given('a module piping an update into a ref')('source', () => Effect.succeed(DATA_LAST_SOURCE)),
-        When('the file is instrumented with only the atomic-update split enabled')(
+        When('the file is instrumented with the default mutators')(
           'mutants',
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), atomicMutantsOf),
         ),
@@ -396,7 +392,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           'source',
           () => Effect.succeed(BINDER_CAPTURE_SOURCE),
         ),
-        When('the file is instrumented with only the atomic-update split enabled')(
+        When('the file is instrumented with the default mutators')(
           'mutants',
           ({ source }: { source: string }) => Effect.map(instrumentSource(source), atomicMutantsOf),
         ),
@@ -417,7 +413,7 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
           'source',
           () => Effect.succeed(SUPPRESSED_SOURCE),
         ),
-        When('the file is instrumented with only the atomic-update split enabled')(
+        When('the file is instrumented with the default mutators')(
           'report',
           ({ source }: { source: string }) => instrumentSource(source),
         ),
@@ -438,16 +434,12 @@ Feature('Exposing lost ref updates by splitting atomic ref updates')
       'A run that excludes the split still reports its mutants, ignored',
       Gherkin.Do.pipe(
         Given('a module with a plain update call')('source', () => Effect.succeed(COVERED_SOURCE)),
-        When('the file is instrumented with the split enabled but excluded')(
+        When('the file is instrumented with the split excluded')(
           'report',
           ({ source }: { source: string }) =>
             instrument(
               [{ name: '/tmp/atomic-split-probe.ts', content: source, mutate: true }],
-              stockOptions({
-                ignorers: [],
-                excludedMutations: [ATOMIC_UPDATE_SPLIT],
-                optInMutations: [ATOMIC_UPDATE_SPLIT],
-              }),
+              stockOptions({ ignorers: [], excludedMutations: [ATOMIC_UPDATE_SPLIT] }),
             ),
         ),
         Then('the single mutant is reported as ignored for the exclusion')(

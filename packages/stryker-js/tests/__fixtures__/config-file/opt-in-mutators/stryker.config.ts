@@ -1,3 +1,3 @@
 export default {
-  mutator: { optInMutations: ['FinalizerEscape'] },
+  mutator: { optInMutations: ['acme/RaceProbe'] },
 }

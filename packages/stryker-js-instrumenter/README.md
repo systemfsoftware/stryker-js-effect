@@ -20,23 +20,25 @@ File formats resolve through a format registry: `coreFormatRegistry` carries the
 
 `options.mutantSetPolicy` states which mutant set the run wants and is required: `'default'` is the product default, and `'full'` turns off the mutant-set pruning the instrumenter would otherwise apply, so the run keeps every mutation the selected mutators can plant.
 
-## Opt-in mutators
+## Effect concurrency mutators
 
-Three mutators that plant Effect concurrency faults are available on request and stay out of the default set. Enable any subset in your Stryker config:
-
-```json
-{
-  "mutator": {
-    "optInMutations": ["AtomicUpdateSplit", "SynchronizationRemoval", "FinalizerEscape"]
-  }
-}
-```
+Three default mutators plant Effect concurrency faults:
 
 - **AtomicUpdateSplit** turns read-modify-write calls such as `Ref.update` or `SynchronizedRef.modify` into a separate read, a yield, and a separate write, so an interleaved mutation can lose an update.
 - **SynchronizationRemoval** drops the guarding effect of `Semaphore.withPermits`/`withPermit` and `Effect.uninterruptible`, letting code that assumed exclusivity or uninterruptibility run without it.
 - **FinalizerEscape** weakens `Effect.ensuring`, `Effect.onExit`, `Effect.onError`, and `Effect.onInterrupt` so their cleanup no longer runs on interruption.
 
-Naming a mutator that does not exist fails the run before instrumentation, as a config failure naming the entry. The replacements these mutators plant use Effect 4 APIs, so a repository on Effect 3.x must not opt in.
+The replacements these mutators plant use Effect 4 APIs, so a repository on Effect 3.x excludes them:
+
+```json
+{
+  "mutator": {
+    "excludedMutations": ["AtomicUpdateSplit", "SynchronizationRemoval", "FinalizerEscape"]
+  }
+}
+```
+
+Every stock mutator is default-tier. `mutator.optInMutations` names opt-in entries from a plugin's mutator catalog; naming a stock mutator there, or a mutator no loaded catalog declares, fails the run before instrumentation as a config failure naming the entry.
 
 ## License
 

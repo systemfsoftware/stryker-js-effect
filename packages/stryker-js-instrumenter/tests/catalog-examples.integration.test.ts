@@ -17,15 +17,9 @@ interface CatalogEntry {
 
 const STOCK_CATALOG: readonly CatalogEntry[] = StockCatalog.StockCatalog.entries
 
-const STOCK_NAMES: readonly string[] = [
-  ...Object.keys(Mutator.stockRegistry.defaults),
-  ...Object.keys(Mutator.stockRegistry.optIn),
-].sort()
+const STOCK_NAMES: readonly string[] = Object.keys(Mutator.stockRegistry.defaults).sort()
 
-const IMPLEMENTATIONS: Readonly<Record<string, Mutator.Mutator>> = {
-  ...Mutator.stockRegistry.defaults,
-  ...Mutator.stockRegistry.optIn,
-}
+const IMPLEMENTATIONS: Readonly<Record<string, Mutator.Mutator>> = Mutator.stockRegistry.defaults
 
 const onlyThese = (names: readonly string[]): Mutator.MutatorSelection => ({
   active: names.map((name) => {
@@ -85,17 +79,6 @@ const withoutReplacement = (): readonly CatalogEntry[] =>
     )
   )
 
-const firstReplacementOf = (entry: CatalogEntry): CatalogEntry | undefined => {
-  const index = entry.examples.findIndex((example) => example.after.length > 0)
-  return index === -1 ? undefined : withOneExample(entry, index, 'first-replacement')
-}
-
-const optInEntries = (): readonly CatalogEntry[] =>
-  STOCK_CATALOG.filter((entry) => entry.tier === 'optIn').flatMap((entry) => {
-    const probe = firstReplacementOf(entry)
-    return probe === undefined ? [] : [probe]
-  })
-
 const Feature = makeFeature({ it })
 
 Feature('The stock mutations this instrumenter promises')
@@ -134,62 +117,6 @@ Feature('The stock mutations this instrumenter promises')
             implemented: STOCK_NAMES,
           }).toStrictEqual({ disagreements: [], checked: STOCK_NAMES, implemented: STOCK_NAMES })
         }),
-      ),
-    )
-
-    scenario(
-      'An extra mutation stays out of a run that does not name it',
-      Gherkin.Do.pipe(
-        Given('every opt-in entry and one example that it replaces')(
-          'probes',
-          () => Effect.succeed<readonly CatalogEntry[]>(optInEntries()),
-        ),
-        When('each example is instrumented without that entry and then with it')(
-          'observed',
-          ({ probes }: { probes: readonly CatalogEntry[] }) =>
-            Effect.map(
-              Effect.forEach(probes, (probe) =>
-                Effect.map(
-                  Effect.all([
-                    runEntries([probe], () => Object.keys(Mutator.stockRegistry.defaults)),
-                    runEntries([probe], () => [probe.name]),
-                  ]),
-                  ([unselected, selected]) => ({ probe, unselected, selected }),
-                )),
-              (runs) =>
-                runs.map(({ probe, unselected, selected }) => ({
-                  entry: probe.id,
-                  unselected: unselected.flatMap((run) =>
-                    run.mutants
-                      .filter((mutant) => mutant.mutatorName === probe.name)
-                      .map((mutant) => mutant.replacement)
-                  ),
-                  proposed: selected.flatMap((run) =>
-                    run.mutants.filter((mutant) => mutant.mutatorName === probe.name)
-                  ).length,
-                })),
-            ),
-        ),
-        Then('the unnamed run proposes none of them and the named run proposes some')((
-          { observed }: {
-            readonly observed: readonly {
-              readonly entry: string
-              readonly unselected: readonly string[]
-              readonly proposed: number
-            }[]
-          },
-          expect,
-        ) =>
-          expect({
-            entries: observed.map((row) => row.entry),
-            unselected: observed.flatMap((row) => row.unselected),
-            everyNamedRunProposed: observed.every((row) => row.proposed > 0),
-          }).toStrictEqual({
-            entries: optInEntries().map((probe) => probe.id),
-            unselected: [],
-            everyNamedRunProposed: true,
-          })
-        ),
       ),
     )
 

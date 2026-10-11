@@ -7,7 +7,7 @@ import { type ShapeEntry, shapes } from '../testResources/effect-concurrency/sha
 import { effectConcurrencyFixtureFiles, type FixtureFile } from './__fixtures__/effect-concurrency-files.js'
 import { instrument, stockOptions } from './__fixtures__/instrument.js'
 
-const OPT_IN_MUTATOR_NAMES: readonly string[] = ['AtomicUpdateSplit', 'SynchronizationRemoval', 'FinalizerEscape']
+const CONCURRENCY_MUTATOR_NAMES: readonly string[] = ['AtomicUpdateSplit', 'FinalizerEscape', 'SynchronizationRemoval']
 
 const R6_PAIRS: Record<string, true> = {
   'Ref.modify': true,
@@ -44,18 +44,18 @@ const pairOf = (entry: ShapeEntry): string => `${entry.module}.${entry.operation
 
 const Feature = makeFeature({ it })
 
-Feature('Keeping the Effect concurrency faults off unless a run asks for them')
+Feature('Planting the Effect concurrency faults by default')
   .live('reads fixture files from disk and parses real source with the oxc parser')
   .withLayer(NodeFileSystem.layer)
   .body(({ scenario }) => {
     scenario(
-      'A run that names no concurrency mutator finds none of them, and every fixture still carries ordinary mutants',
+      'A run that sets no mutator option plants every concurrency fault, and every fixture still carries ordinary mutants',
       Gherkin.Do.pipe(
         Given('every concurrency fixture module has been read from disk')(
           'fixtures',
           () => effectConcurrencyFixtureFiles,
         ),
-        When('the files are instrumented without naming any concurrency mutator')(
+        When('the files are instrumented with no mutator option set')(
           'result',
           ({ fixtures }: { fixtures: readonly FixtureFile[] }) =>
             instrument(
@@ -63,18 +63,22 @@ Feature('Keeping the Effect concurrency faults off unless a run asks for them')
               stockOptions({ ignorers: [], excludedMutations: [] }),
             ),
         ),
-        Then('the report names no concurrency mutator, and no fixture came out empty')((
+        Then('the report names every concurrency mutator, and no fixture came out empty')((
           { fixtures, result }: { fixtures: readonly FixtureFile[]; result: Instrument.InstrumentResult },
           expect,
         ) =>
           expect({
-            concurrencyMutants: result.mutants
-              .filter((mutant) => OPT_IN_MUTATOR_NAMES.includes(mutant.mutatorName))
-              .map((mutant) => `${mutant.fileName}:${mutant.location.start.line} ${mutant.mutatorName}`),
+            concurrencyMutators: [
+              ...new Set(
+                result.mutants
+                  .map((mutant) => mutant.mutatorName)
+                  .filter((name) => CONCURRENCY_MUTATOR_NAMES.includes(name)),
+              ),
+            ].sort(),
             emptyFiles: fixtures
               .filter((fixture) => !result.mutants.some((mutant) => mutant.fileName === fixture.name))
               .map((fixture) => fixture.name),
-          }).toEqual({ concurrencyMutants: [], emptyFiles: [] })
+          }).toEqual({ concurrencyMutators: CONCURRENCY_MUTATOR_NAMES, emptyFiles: [] })
         ),
       ),
     )
