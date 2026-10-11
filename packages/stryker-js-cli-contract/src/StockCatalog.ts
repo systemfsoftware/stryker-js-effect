@@ -98,6 +98,41 @@ export const localEnsuringRefusal = (effect: Effect.Effect<number>, closed: Ref.
   ensuring(effect, Ref.set(closed, true))
 `
 
+const REFINEMENT_BOUND = `import { Schema as S } from 'effect'
+
+export const Positive = S.Number.check(S.isGreaterThan(0))
+`
+
+const REFINEMENT_BETWEEN = `import * as S from 'effect/Schema'
+
+export const Digit = S.Int.check(S.isBetween({ minimum: 1, maximum: 9 }))
+`
+
+const REFINEMENT_MIN_LENGTH = `import * as S from 'effect/Schema'
+
+export const Pair = S.String.check(S.isMinLength(2))
+`
+
+const REFINEMENT_LOCAL_HELPER = `const isGreaterThan = (n: number) => (x: number) => x > n
+
+export const positive = isGreaterThan(0)
+`
+
+const REFINEMENT_TWO_CHECKS = `import * as S from 'effect/Schema'
+
+export const Slug = S.String.check(S.isMinLength(1), S.isPattern(/^[a-z]+$/))
+`
+
+const REFINEMENT_PIPED_CHECK = `import * as S from 'effect/Schema'
+
+export const Count = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
+`
+
+const REFINEMENT_LOCAL_CHECK = `const box = { check: (n: number) => n > 0 }
+
+export const checked = box.check(1)
+`
+
 const entries = [
   {
     id: 'arithmetic-operator',
@@ -318,6 +353,41 @@ const entries = [
       { before: FINALIZER_ACQUIRE_RELEASE, after: [FINALIZER_ACQUIRE_RELEASE_REPLACEMENT] },
       { before: FINALIZER_ACQUIRE_USE_RELEASE, after: [FINALIZER_ACQUIRE_USE_RELEASE_REPLACEMENT] },
       { before: FINALIZER_LOCAL_HELPER, after: [] },
+    ],
+  },
+  {
+    id: 'refinement-boundary',
+    name: 'RefinementBoundary',
+    tier: 'default',
+    definition:
+      'A Schema bound moves by one inclusivity step: `isGreaterThan` and `isGreaterThanOrEqualTo` swap, as do `isLessThan` and `isLessThanOrEqualTo`; `isBetween` toggles one exclusivity flag per mutant; `isMinLength(n)` becomes `isMinLength(n + 1)` and `isMaxLength(n)` becomes `isMaxLength(n - 1)`. A swap needs the Schema module in scope, and a bound or flag the mutant could not change, a non-literal `isBetween` options object, and a local function sharing a check name are refused.',
+    examples: [
+      { before: REFINEMENT_BOUND, after: ['S.isGreaterThanOrEqualTo(0)'] },
+      {
+        before: REFINEMENT_BETWEEN,
+        after: [
+          'S.isBetween({ minimum: 1, maximum: 9, exclusiveMinimum: true })',
+          'S.isBetween({ minimum: 1, maximum: 9, exclusiveMaximum: true })',
+        ],
+      },
+      { before: REFINEMENT_MIN_LENGTH, after: ['S.isMinLength(2 + 1)'] },
+      { before: REFINEMENT_LOCAL_HELPER, after: [] },
+    ],
+  },
+  {
+    id: 'refinement-removal',
+    name: 'RefinementRemoval',
+    tier: 'default',
+    definition:
+      'One Schema refinement is removed, so the schema accepts what it refused: a `.check(...)` or `S.check(...)` with several checks loses one per mutant; a method `.check(c)` with one check becomes its schema, and a piped `S.check(c)` becomes `self => self`. A `check` that does not resolve to the Schema module, and a lone `S.check(c)` outside a pipe, are refused.',
+    examples: [
+      {
+        before: REFINEMENT_TWO_CHECKS,
+        after: ['S.String.check(S.isPattern(/^[a-z]+$/))', 'S.String.check(S.isMinLength(1))'],
+      },
+      { before: REFINEMENT_BOUND, after: ['S.Number'] },
+      { before: REFINEMENT_PIPED_CHECK, after: ['self => self'] },
+      { before: REFINEMENT_LOCAL_CHECK, after: [] },
     ],
   },
 ] as const satisfies ReadonlyArray<StockCatalogEntry>

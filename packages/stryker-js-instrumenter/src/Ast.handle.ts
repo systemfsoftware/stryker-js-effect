@@ -7,6 +7,7 @@ import type {
   IdentifierName,
   IdentifierReference,
   Node,
+  ObjectProperty,
   ParamPattern,
   Program,
   SimpleAssignmentTarget,
@@ -185,6 +186,14 @@ export const booleanLiteral: {
   (value: boolean, loc?: Loc): Expression => mark({ type: 'Literal', value, raw: null }, loc),
 )
 
+export const numericLiteral: {
+  (value: number, loc?: Loc): Expression
+  (loc?: Loc): (value: number) => Expression
+} = dual(
+  (args: IArguments): boolean => typeof args[0] === 'number',
+  (value: number, loc?: Loc): Expression => mark({ type: 'Literal', value, raw: null }, loc),
+)
+
 export const regExpLiteral: {
   (pattern: string, flags: string, loc?: Loc): Expression
   (flags: string, loc?: Loc): (pattern: string) => Expression
@@ -229,6 +238,18 @@ export const memberExpression: {
   (object: Expression, property: IdentifierName, optional: boolean, loc?: Loc): Expression =>
     mark<Expression>(
       { type: 'MemberExpression', object, property, computed: false, optional },
+      loc,
+    ),
+)
+
+export const objectProperty: {
+  (key: IdentifierName, value: Expression, loc?: Loc): ObjectProperty
+  (value: Expression, loc?: Loc): (key: IdentifierName) => ObjectProperty
+} = dual(
+  (args: IArguments): boolean => isDataFirstArity(args, 2),
+  (key: IdentifierName, value: Expression, loc?: Loc): ObjectProperty =>
+    mark<ObjectProperty>(
+      { type: 'Property', kind: 'init', key, value, method: false, shorthand: false, computed: false },
       loc,
     ),
 )
@@ -343,7 +364,7 @@ export const unaryExpression: {
 
 export const binaryExpression: {
   (
-    operator: Extract<Oxc.BinaryOperator, '===' | '!=='>,
+    operator: Extract<Oxc.BinaryOperator, '===' | '!==' | '+' | '-'>,
     left: Expression,
     right: Expression,
     loc?: Loc,
@@ -352,11 +373,11 @@ export const binaryExpression: {
     left: Expression,
     right: Expression,
     loc?: Loc,
-  ): (operator: Extract<Oxc.BinaryOperator, '===' | '!=='>) => Expression
+  ): (operator: Extract<Oxc.BinaryOperator, '===' | '!==' | '+' | '-'>) => Expression
 } = dual(
   (args: IArguments): boolean => isDataFirstArity(args, 3),
   (
-    operator: Extract<Oxc.BinaryOperator, '===' | '!=='>,
+    operator: Extract<Oxc.BinaryOperator, '===' | '!==' | '+' | '-'>,
     left: Expression,
     right: Expression,
     loc?: Loc,

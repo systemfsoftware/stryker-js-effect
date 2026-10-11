@@ -31,8 +31,7 @@ import * as Option from 'effect/Option'
 import { arrowFunctionExpression, callExpression, cloneNode, identifier, memberExpression } from './Ast.handle.js'
 import {
   type EffectCallForm,
-  freshIdentifier,
-  identifiersIn,
+  identityFunction,
   isDroppableArgument,
   isMovableArgument,
   moduleCall,
@@ -119,14 +118,6 @@ const argumentReplacement = (call: ResolvedEffectCall, index: number): Option.Op
   Option.map(Arr.get(call.args, index), (argument) => cloneNode(argument))
 
 const identityFunctionOf = (call: ResolvedEffectCall): Option.Option<Expression> => Option.some(identityFunction(call))
-
-const identityFunction = (call: ResolvedEffectCall): Expression => {
-  const name = freshIdentifier('self', takenNames(call))
-  return arrowFunctionExpression([identifier(name)], identifier(name))
-}
-
-const takenNames = (call: ResolvedEffectCall): ReadonlySet<string> =>
-  new Set(call.args.flatMap((argument) => identifiersIn(argument)))
 
 const whenDroppable = (
   call: ResolvedEffectCall,

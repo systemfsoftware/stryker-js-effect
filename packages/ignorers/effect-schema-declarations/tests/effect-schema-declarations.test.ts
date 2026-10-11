@@ -317,6 +317,11 @@ await testIgnorer(descriptor, {
   ],
   kept: [
     {
+      name: 'an annotated refinement and the check holding it stay live for the Schema mutators',
+      code: 'S.Number.check(S.isGreaterThan(0, { title: "t" }))',
+      keeps: ['S.Number.check(S.isGreaterThan(0, { title: "t" }))', 'S.isGreaterThan(0, { title: "t" })', '0'],
+    },
+    {
       name: 'a documentation property consulted as the node itself stays live',
       code: annotations(singleIdentifierObject),
       keeps: ['identifier: "HexBytes"'],

@@ -1,0 +1,49 @@
+import type { CallExpression, Expression, MemberExpression, Node } from '@systemfsoftware/stryker-ignorer-interface'
+import { dual } from 'effect/Function'
+import * as Option from 'effect/Option'
+import { callExpression, cloneNode, nodeType } from './Ast.handle.js'
+import { identityFunction, onlyWhen, type ResolvedEffectCall, resolveEffectCall } from './EffectCall.js'
+import type { MutatorContext } from './Mutator.service.js'
+
+const refinementRemovalMutatorDataFirst = (node: Node, context: MutatorContext): readonly Node[] =>
+  Option.match(
+    Option.flatMap(Option.liftPredicate(node, isCallExpression), (call) =>
+      Option.map(Option.filter(resolveEffectCall(call, context), isSchemaCheck), (resolved) =>
+        removals(call, resolved))),
+    {
+      onNone: () => [],
+      onSome: (mutants) =>
+        mutants,
+    },
+  )
+
+export const refinementRemovalMutator: {
+  (node: Node, context: MutatorContext): readonly Node[]
+  (context: MutatorContext): (node: Node) => readonly Node[]
+} = dual((args: IArguments): boolean => args.length >= 2, refinementRemovalMutatorDataFirst)
+
+const isSchemaCheck = (call: ResolvedEffectCall): boolean => call.module === 'Schema' && call.exportName === 'check'
+
+const removals = (call: CallExpression, resolved: ResolvedEffectCall): readonly Expression[] =>
+  resolved.args.length >= 2
+    ? resolved.args.map((_, dropped) =>
+      callExpression(
+        cloneNode(call.callee),
+        resolved.args.filter((__, index) => index !== dropped).map((argument) => cloneNode(argument)),
+      )
+    )
+    : Option.toArray(wholeCallRemoval(call, resolved))
+
+const wholeCallRemoval = (call: CallExpression, resolved: ResolvedEffectCall): Option.Option<Expression> =>
+  Option.flatMap(onlyWhen(resolved.args.length === 1, resolved), (single) =>
+    single.form === 'receiver-method'
+      ? Option.map(receiverOf(call), (receiver) => cloneNode(receiver))
+      : Option.some(identityFunction(single)))
+
+const receiverOf = (call: CallExpression): Option.Option<Expression> =>
+  Option.map(Option.liftPredicate(call.callee, isMemberExpression), (member) => member.object)
+
+const isMemberExpression = (callee: CallExpression['callee']): callee is MemberExpression =>
+  nodeType(callee) === 'MemberExpression'
+
+const isCallExpression = (node: Node): node is CallExpression => nodeType(node) === 'CallExpression'

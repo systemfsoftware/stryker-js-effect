@@ -54,6 +54,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import {
+  arrowFunctionExpression,
   callExpression,
   identifier,
   make,
@@ -64,7 +65,7 @@ import {
 } from './Ast.handle.js'
 import type { MutatorContext } from './Mutator.service.js'
 
-export type EffectModuleName = 'Effect' | 'Ref' | 'Semaphore' | 'SynchronizedRef'
+export type EffectModuleName = 'Effect' | 'Ref' | 'Schema' | 'Semaphore' | 'SynchronizedRef'
 
 export type EffectCallForm =
   | 'data-first'
@@ -72,6 +73,7 @@ export type EffectCallForm =
   | 'data-last-pipe-method'
   | 'data-last-immediate'
   | 'piped-reference'
+  | 'receiver-method'
 
 export interface ResolvedEffectCall {
   readonly module: EffectModuleName
@@ -81,7 +83,7 @@ export interface ResolvedEffectCall {
   readonly moduleAccess: (module: EffectModuleName) => Option.Option<Expression>
 }
 
-const MODULE_NAMES: readonly EffectModuleName[] = ['Effect', 'Ref', 'Semaphore', 'SynchronizedRef']
+const MODULE_NAMES: readonly EffectModuleName[] = ['Effect', 'Ref', 'Schema', 'Semaphore', 'SynchronizedRef']
 
 const EFFECT_SOURCE = 'effect'
 const FUNCTION_SOURCE = 'effect/Function'
@@ -91,6 +93,7 @@ const DATA_LAST_PIPE_ARG: EffectCallForm = 'data-last-pipe-arg'
 const DATA_LAST_PIPE_METHOD: EffectCallForm = 'data-last-pipe-method'
 const DATA_LAST_IMMEDIATE: EffectCallForm = 'data-last-immediate'
 const PIPED_REFERENCE: EffectCallForm = 'piped-reference'
+const RECEIVER_METHOD: EffectCallForm = 'receiver-method'
 
 const NO_ARGUMENTS: readonly Expression[] = Object.freeze([])
 
@@ -117,11 +120,24 @@ const ARITIES: Readonly<Record<string, Arity>> = Object.freeze({
   'Effect.uninterruptibleMask': { dataFirst: [1] },
   'Effect.acquireRelease': { dataFirst: [2, 3] },
   'Effect.acquireUseRelease': { dataFirst: [3] },
+  'Schema.isGreaterThan': { dataFirst: [1, 2] },
+  'Schema.isGreaterThanOrEqualTo': { dataFirst: [1, 2] },
+  'Schema.isLessThan': { dataFirst: [1, 2] },
+  'Schema.isLessThanOrEqualTo': { dataFirst: [1, 2] },
+  'Schema.isBetween': { dataFirst: [1, 2] },
+  'Schema.isMinLength': { dataFirst: [1, 2] },
+  'Schema.isMaxLength': { dataFirst: [1, 2] },
+  'Schema.check': { dataFirst: [], variadicDataLast: true },
+})
+
+const RECEIVER_METHODS: Readonly<Record<string, true>> = Object.freeze({
+  'Schema.check': true,
 })
 
 interface Arity {
   readonly dataFirst: readonly number[]
   readonly dataLast?: number
+  readonly variadicDataLast?: true
 }
 
 type ImportSpecifierUnion = ImportDeclaration['specifiers'][number]
@@ -301,6 +317,7 @@ interface Callee {
   readonly module: EffectModuleName
   readonly exportName: string
   readonly owner: Option.Option<ModuleObject>
+  readonly onReceiver: boolean
 }
 
 interface ModuleObject {
@@ -409,6 +426,7 @@ const resolveBareCallee = (
         module: binding.module,
         exportName: binding.exportName,
         owner: Option.none<ModuleObject>(),
+        onReceiver: false,
       })),
   )
 
@@ -420,12 +438,45 @@ const resolveMemberCallee = (
   Option.flatMap(
     staticMemberName(member),
     (exportName) =>
-      Option.map(resolveModuleObject(member.object, context, table), (owner) => ({
-        module: owner.module,
+      Option.orElse(
+        Option.map(resolveModuleObject(member.object, context, table), (owner) => ({
+          module: owner.module,
+          exportName,
+          owner: Option.some(owner),
+          onReceiver: false,
+        })),
+        () => receiverMethodCallee(member.object, exportName, context, table),
+      ),
+  )
+
+const receiverMethodCallee = (
+  receiver: Expression,
+  exportName: string,
+  context: MutatorContext,
+  table: ImportTable,
+): Option.Option<Callee> =>
+  Option.flatMap(
+    receiverRoot(receiver, context, table),
+    (owner) =>
+      Option.map(onlyWhen(RECEIVER_METHODS[`${owner.module}.${exportName}`] === true, owner), (methodOwner) => ({
+        module: methodOwner.module,
         exportName,
-        owner: Option.some(owner),
+        owner: Option.some(methodOwner),
+        onReceiver: true,
       })),
   )
+
+const receiverRoot = (
+  expression: Expression,
+  context: MutatorContext,
+  table: ImportTable,
+): Option.Option<ModuleObject> =>
+  Option.orElse(resolveModuleObject(expression, context, table), () =>
+    Match.value(expression).pipe(
+      Match.when(isMemberExpression, (member) => receiverRoot(member.object, context, table)),
+      Match.when(isCallExpression, (call) => receiverRoot(call.callee, context, table)),
+      Match.orElse(() => Option.none()),
+    ))
 
 const resolveModuleObject = (
   expression: Expression,
@@ -509,12 +560,21 @@ const callForm = (
   context: MutatorContext,
   table: ImportTable,
 ): Option.Option<EffectCallForm> =>
-  Option.flatMap(arityOf(callee), (arity) =>
-    Match.value(args.length).pipe(
-      Match.when((count) => arity.dataFirst.includes(count), () => Option.some(DATA_FIRST)),
-      Match.when((count) => arity.dataLast === count, () => dataLastForm(call, context, table)),
-      Match.orElse(() => Option.none()),
-    ))
+  Match.value(callee.onReceiver).pipe(
+    Match.when(true, () => Option.some(RECEIVER_METHOD)),
+    Match.orElse(() =>
+      Option.flatMap(arityOf(callee), (arity) =>
+        Match.value(args.length).pipe(
+          Match.when((count) => arity.dataFirst.includes(count), () => Option.some(DATA_FIRST)),
+          Match.when((count) => arity.dataLast === count, () => dataLastForm(call, context, table)),
+          Match.when(
+            (count) => Bool.and(arity.variadicDataLast === true, count >= 1),
+            () => dataLastForm(call, context, table),
+          ),
+          Match.orElse(() => Option.none()),
+        ))
+    ),
+  )
 
 const arityOf = (callee: Callee): Option.Option<Arity> =>
   Option.fromNullishOr(ARITIES[`${callee.module}.${callee.exportName}`])
@@ -705,6 +765,11 @@ export const freshIdentifier: {
   (base: string, taken: ReadonlySet<string>): string
   (taken: ReadonlySet<string>): (base: string) => string
 } = dual((args: IArguments): boolean => args.length >= 2, freshIdentifierDataFirst)
+
+export const identityFunction = (call: ResolvedEffectCall): Expression => {
+  const name = freshIdentifier('self', new Set(call.args.flatMap((argument) => identifiersIn(argument))))
+  return arrowFunctionExpression([identifier(name)], identifier(name))
+}
 
 const freeIdentifier = (base: string, taken: ReadonlySet<string>, suffix: number): string =>
   Match.value(taken.has(suffixedName(base, suffix))).pipe(

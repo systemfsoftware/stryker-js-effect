@@ -20,5 +20,7 @@ export const StockDefaultName = S.Literals([
   'AtomicUpdateSplit',
   'SynchronizationRemoval',
   'FinalizerEscape',
+  'RefinementBoundary',
+  'RefinementRemoval',
 ])
 export type StockDefaultName = typeof StockDefaultName.Type
