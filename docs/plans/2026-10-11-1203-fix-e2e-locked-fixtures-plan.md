@@ -6,6 +6,7 @@ topic: e2e-locked-fixtures
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
+supersedes: docs/plans/2026-10-11-1115-fix-e2e-locked-fixtures-plan.md
 ---
 
 # E2E Fixtures Install From Committed Locks - Plan
@@ -53,7 +54,7 @@ The packed `@systemfsoftware/stryker-js` depends on `@effect/platform-node: ^4.0
 **Determinism**
 
 - R3. Every committed lock resolves `effect`, `@effect/platform-node`, `@effect/platform-node-shared` and `@effect/opentelemetry` to the versions `pnpm-lock.yaml` pins, which are 4.0.0 at `pnpm-lock.yaml:1989`, `:2021`, `:2027` and `:3861`. The PR shows this per lock with command output.
-- R4. Committed locks carry no `integrity` and no `version` on closure (`file:`) entries. Before `npm ci`, the harness copies onto each closure entry every field npm's lock takes from a package manifest, read from that entry's freshly packed manifest. It touches no other entry.
+- R4. Committed locks carry no `integrity` and no `version` on closure (`file:`) entries. Before `npm ci`, the harness copies onto each closure entry the five fields npm ci checks, read from that entry's freshly packed manifest: `version`, and the four edge fields `dependencies`, `optionalDependencies`, `peerDependencies` and `peerDependenciesMeta` (KTD2). It touches no other field and no other entry.
 - R5. The harness packs each closure package to `<packs>/<name>.tgz` with no version in the file name. The staged root manifest lists the whole closure, aliases included, as `file:../../packs/<name>.tgz` devDependencies, so the paths match in the guest (`/baked/<id>`, `/packs`) and in the regeneration staging.
 
 **Drift**
@@ -84,16 +85,16 @@ The packed `@systemfsoftware/stryker-js` depends on `@effect/platform-node: ^4.0
 
 ## Planning Contract
 
-**Product Contract preservation:** changed R4 and R9 under the root's rulings, scope unchanged. R4 now copies every manifest-sourced lock field, not the five named before (ruling 2). R9 now counts tests and docs (ruling 5). The two deferred questions are resolved by KTD5 and KTD6.
+**Product Contract preservation:** changed R4 and R9 under the root's rulings, scope unchanged. R4 copies only the five fields npm ci checks (sub-conductor ruling of 2026-10-11, which replaced ruling 2's full manifest-field list). R9 now counts tests and docs (ruling 5). The two deferred questions are resolved by KTD5 and KTD6.
 
 ### Key Technical Decisions
 
 - KTD1. **The fill-in and strip are pure functions over plain JSON in `test/e2e-core`.** They narrow `unknown` with effect's `Predicate.isObject` (a non-null, non-array object, `repos/effect/packages/effect/src/Predicate.ts:1042`), so CONST-B5 holds without a cast, and no Schema describes npm's lock or manifest. (session-settled: user-directed — chosen over an Effect Schema of npm's lock and manifest formats: the root ruled out any wire schema.) Governs R4.
-- KTD2. **The copied fields are npm's own list.** `@npmcli/arborist/lib/shrinkwrap.js` `pkgMetaKeys` names what npm writes from a manifest: `version`, `dependencies`, `peerDependencies`, `peerDependenciesMeta`, `optionalDependencies`, `bundleDependencies`, `acceptDependencies`, `funding`, `engines`, `os`, `cpu`, `libc`, `license`, `bin`, `deprecated` and `workspaces`. Three more keys in that list come from the registry or are derived, and are left alone: `_integrity`, `_hasShrinkwrap` and `hasInstallScript`. A field the manifest lacks is removed from the entry, so a dropped dependency leaves the lock too. Governs R4, R6.
+- KTD2. **The copied fields are the ones npm ci checks.** npm ci builds the ideal tree from the lock and fails when an ideal node is absent from the lock or differs in `version` (`npm/lib/utils/validate-lockfile.js:13-24`). Arborist builds a lock node's edges from `dependencies`, `optionalDependencies`, `peerDependencies` and `peerDependenciesMeta` (`@npmcli/arborist/lib/node.js:907-922`). So `version` lets a release-bumped tarball install, and the four edge fields make a dependency the lock lacks fail with "Missing: … from lock file". Every other committed field, `bin` included, stays as npm last wrote it. Governs R4.
 - KTD3. **`installClosure` also returns the closure as a name-to-spec record.** `ClosureInstall` gains `dependencies` (each member's name, and each alias name, mapped to `file:<tarball path>`) next to `specs`, so the harness writes the staged root manifest from the same decision. Its refusals (`UnpackedWorkspaceDependency`, `ConflictingAliasTargets`, `FixtureNamesWorkspacePackage`) keep guarding it. The bench still reads `specs`. Governs R5.
 - KTD4. **The bake and the lock script stage fixtures through one harness path.** Staging copies the fixture, resolves `catalog:` specs, adds the closure devDependencies, and fills the committed lock when one exists. The bake mounts that staging at `/baked`. The script runs npm over the same staging on the host. A missing lock is staged without one, so the bake fails as AE5 says and the script writes a fresh lock. Governs R5, R6, R7.
 - KTD5. **The lock script runs under `tsx --conditions=@systemfsoftware/source`, declared as `"tsx": "catalog:"` in `test/e2e`.** Node type stripping cannot load the harness: its relative imports name `.ts` files with `.js` specifiers, and Node does not remap them. tsx 4.23.15 is already in `pnpm-lock.yaml`, and `test/bench` runs its Effect entry point the same way (`test/bench/package.json:15`), so no new package enters the lockfile. Governs R7.
-- KTD6. **One property test covers the fill-in.** It lives at `test/e2e-core/src/__tests__/closure-lock.property.test.ts`, the colocated property layer the repo uses for pure decisions. It covers AE3 and AE4's precondition. (session-settled: user-directed — chosen over a new e2e journey or a harness integration test: the root admitted one small test at the layer the test-admission gate allows.) Governs R4.
+- KTD6. **One property suite covers the fill-in, in-source in `test/e2e-core/src/closure-lock.ts`.** The repo's `test-discipline` lint forbids a `src/__tests__/` property file for a module that is not a workflow and routes it to an `if (import.meta.vitest)` block, as `key-material.ts` does. It covers AE3, AE4's precondition and a registry entry passing through. (session-settled: user-directed — chosen over a new e2e journey or a harness integration test: the root admitted one small test at the layer the test-admission gate allows.) Governs R4.
 - KTD7. **The first regeneration is seeded from #285's seven locks.** They already pin R3's four packages at 4.0.0 and `@opentelemetry/sdk-trace-base` at 2.11.0, as `pnpm-lock.yaml` does. `npm install --package-lock-only` keeps a locked version that still satisfies its widened `^` range (Appendix A, answer 2). Governs R3, R7.
 
 ### Data flow
@@ -116,7 +117,7 @@ flowchart TB
 ### Assumptions
 
 - The root pre-authorised this run end to end, so the scoping synthesis was announced, not confirmed.
-- A fixture's `node_modules/.bin/stryker` link comes from the closure entry's `bin`, which KTD2 copies, as #285's green runs show.
+- A fixture's `node_modules/.bin/stryker` link comes from the closure entry's `bin`, which the committed lock keeps; a release that changes `bin` needs `fixtures:lock`.
 
 ---
 
@@ -129,16 +130,16 @@ flowchart TB
 - **Dependencies:** none.
 - **Files:**
   - `test/e2e-core/src/closure-lock.ts` (new)
-  - `test/e2e-core/src/__tests__/closure-lock.property.test.ts` (new)
+  - (the property suite is in-source in `closure-lock.ts`, KTD6)
   - `test/e2e-core/src/install-closure.workflow.ts`
   - `test/e2e-core/src/mod.ts`
 - **Approach:**
   1. A closure entry is any `packages` entry whose `resolved` is `file:<path>.tgz`. Its key is the tarball's file name.
   2. Fill-in takes the lock and a record from tarball file name to raw manifest. It rewrites matching entries per KTD2 and returns every other entry unchanged.
   3. Strip removes `integrity` and `version` from every closure entry.
-  4. A third helper adds the closure record to a root manifest's `devDependencies`.
+  4. A third helper adds the closure record to a root manifest's `devDependencies`. The two-argument helpers are `Function.dual`.
   5. `installOf` builds `dependencies` from the members and the alias edges it already resolves.
-- **Patterns to follow:** `it.prop` with `Arbitrary.schema` arbitraries, as in `test/e2e-core/src/__tests__/catalog-resolution.workflow.property.test.ts`. Plain helper modules sit beside workflows, as `catalog-resolution.ts` and `key-material.ts` do.
+- **Patterns to follow:** `it.prop` with schema inputs in an in-source `if (import.meta.vitest)` block, as in `test/e2e-core/src/key-material.ts`. Plain helper modules sit beside workflows, as `catalog-resolution.ts` and `key-material.ts` do.
 - **Test scenarios:**
   - Covers AE3. A lock with a closure entry at `../../packs/<t>.tgz` holding stale `version` and `dependencies` is filled from a manifest with an arbitrary new `version` and dependency map. The filled entry carries exactly the manifest's `version` and `dependencies`.
   - Covers AE4's precondition. The manifest names a dependency the stale entry lacks. The filled entry lists it, so `npm ci` finds it missing from the lock.
@@ -174,8 +175,8 @@ flowchart TB
   - `pnpm-lock.yaml` (the `tsx` edge only)
   - `test/e2e/testResources/*/package-lock.json` (seven, generated)
 - **Approach:**
-  1. The script stages every fixture into a scoped temp directory through U2's entry point.
-  2. For each fixture it runs `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` in the staged copy, with npm's output on the terminal.
+  1. The script runs `BakedFixtureCache.lockProgram` with `NodeServices`. The harness stages every fixture into a scoped temp directory through the bake's own staging.
+  2. For each fixture it runs `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` in the staged copy through the harness's `runChecked`, so a failure carries npm's stderr tail.
   3. It strips the result with U1's helper and writes it to `test/e2e/testResources/<id>/package-lock.json` with npm's two-space indent and trailing newline.
   4. The first run starts from #285's seven locks checked out into `testResources` (KTD7).
 - **Test expectation:** none. The output is the seven locks, which R3's jq check and the e2e legs verify.
@@ -186,7 +187,7 @@ flowchart TB
 
 ### U4. Docs and the stall lesson
 
-- **Goal:** the README and solutions docs describe one `npm ci` from committed locks, and the tarball-placement hang is recorded once.
+- **Goal:** the README and solutions docs describe one `npm ci` from committed locks.
 - **Requirements:** R2, R6, R7.
 - **Dependencies:** U2, U3.
 - **Files:**
@@ -195,8 +196,9 @@ flowchart TB
   - `docs/solutions/build-errors/e2e-bake-resolved-an-npm-alias-edge-from-the-registry.md`
 - **Approach:**
   1. README line 14 becomes the lock rule: one `npm ci` per fixture, the regeneration command, and when to run it.
-  2. The closure lesson's install table and its "splitting the install" anti-pattern name the single `npm ci`. It gains the hang lesson, which no solutions doc records yet (README line 14 only names the age-gate workaround). The lesson: placing a tarball whose dependency admits a release with an unsatisfiable peer hangs npm silently and ignores SIGTERM, while the same edges at the root fail in 2 s with `ERESOLVE`.
-  3. The alias lesson's versioned tarball-name lookup becomes the version-free name.
+  2. The closure lesson's install table names the closure-plan step and the single `npm ci`. The hang itself stays recorded in Appendix A, answer 1, not in a solutions doc (scope review).
+  3. The alias lesson's sentence that the harness passes the plan to `bake-fixtures.sh` as arguments becomes the staged-manifest devDependencies and the one `npm ci`.
+  4. The alias lesson's versioned tarball-name lookup becomes the version-free name.
 - **Test expectation:** none -- documentation.
 - **Verification:** `pnpm format:check` passes, and no doc names `--min-release-age`, the 300 s install timeout or the versioned tarball lookup.
 
@@ -204,14 +206,14 @@ flowchart TB
 
 ## Verification Contract
 
-| Gate      | Command                                                                                                       | Proves                    |
-| --------- | ------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| New test  | `pnpm --filter @systemfsoftware/stryker-e2e-core exec vitest run src/__tests__/closure-lock.property.test.ts` | U1, AE3, AE4 precondition |
-| Typecheck | `pnpm --filter @systemfsoftware/stryker-e2e-core --filter @systemfsoftware/stryker-e2e typecheck`             | U1-U3                     |
-| Lint      | the same two filters with `lint` and `lint:tsgo`                                                              | U1-U3                     |
-| Format    | `pnpm format:check`                                                                                           | all                       |
-| Pins      | jq over `test/e2e/testResources/*/package-lock.json` next to `pnpm-lock.yaml:1989,2021,2027,3861`             | R3                        |
-| PR CI     | every check on the PR head, run_watch only                                                                    | R8                        |
+| Gate      | Command                                                                                           | Proves                    |
+| --------- | ------------------------------------------------------------------------------------------------- | ------------------------- |
+| New test  | `pnpm --filter @systemfsoftware/stryker-e2e-core exec vitest run src/closure-lock.ts`             | U1, AE3, AE4 precondition |
+| Typecheck | `pnpm --filter @systemfsoftware/stryker-e2e-core --filter @systemfsoftware/stryker-e2e typecheck` | U1-U3                     |
+| Lint      | the same two filters with `lint` and `lint:tsgo`                                                  | U1-U3                     |
+| Format    | `pnpm format:check`                                                                               | all                       |
+| Pins      | jq over `test/e2e/testResources/*/package-lock.json` next to `pnpm-lock.yaml:1989,2021,2027,3861` | R3                        |
+| PR CI     | every check on the PR head, run_watch only                                                        | R8                        |
 
 Never run locally: e2e (`pnpm test:e2e`) and mutation of any kind.
 
