@@ -63,6 +63,7 @@ const EXCLUDED_EDIT_ID = '0000000000000b11'
 const SECOND_CALL_EDIT_ID = '0000000000000b12'
 const IMPLICIT_RETURN_EDIT_ID = '00000000000000b9'
 const INDEXED_ACCESS_EDIT_ID = '0000000000000b10'
+const SETTER_EDIT_ID = '0000000000000b13'
 
 interface Fixture {
   readonly directory: string
@@ -86,6 +87,7 @@ const SINGLE_PROJECT: Fixture = {
     'loader.ts',
     'required.ts',
     'script.ts',
+    'stored.ts',
   ],
 }
 
@@ -182,6 +184,7 @@ const RULE_EDITS: ReadonlyArray<Edit> = [
   { id: AE8, file: 'contextual.ts', target: 'x + 1', replacement: 'String(x)' },
   { id: AE9, file: 'box.ts', target: 'this.items.length', replacement: '""' },
   { id: CONSTRUCTOR_EDIT_ID, file: 'constructed.ts', target: '1', replacement: "'one'" },
+  { id: SETTER_EDIT_ID, file: 'stored.ts', target: 'next + 1', replacement: 'next - 1' },
 ]
 
 const positionOf = (text: string, offset: number): Checker.CheckerMutantWire['location']['start'] => {
@@ -362,11 +365,11 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
   .live('real tsgo checks fixture files on disk with the importer shortcut on and off')
   .body(({ scenario }) => {
     scenario(
-      'Every Soundness Rule case gets the same verdicts with the shortcut on and off, and a constructor body never takes it',
+      'Every Soundness Rule case gets the same verdicts with the shortcut on and off, a set accessor body takes it, and a constructor body never does',
       Gherkin.Do.pipe(
         When('one mutant per rule case is checked once per importerCheck value')('seen', () => bothModes(RULE_EDITS)),
         Then(
-          'only the annotated body edit takes the shortcut, each other case names its failing clause, and the verdicts agree',
+          'only the annotated function and set accessor body edits take the shortcut, each other case names its failing clause, and the verdicts agree',
         )((s, expect) =>
           expect({
             rule: s.seen.rule.statuses,
@@ -385,6 +388,7 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
               [AE8]: 'compileError',
               [AE9]: 'compileError',
               [CONSTRUCTOR_EDIT_ID]: 'compileError',
+              [SETTER_EDIT_ID]: 'passed',
             },
             always: s.seen.rule.statuses,
             blamed: {
@@ -396,10 +400,11 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
               [AE8]: ['contextual.ts'],
               [AE9]: ['consumer.ts'],
               [CONSTRUCTOR_EDIT_ID]: ['consumer.ts'],
+              [SETTER_EDIT_ID]: [],
             },
             blamedAlways: s.seen.rule.blamed,
             ruleCounts: {
-              'count': 1,
+              'count': 2,
               'fallback.original.body-dependent-signature.count': 4,
               'fallback.original.outside-function-body.count': 1,
               'fallback.original.module-reference.count': 1,
