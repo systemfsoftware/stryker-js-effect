@@ -24,6 +24,11 @@ export const CoverageRootSchema = S.Union([RecordedRootSchema, UnrecordedRootSch
 
 export type CoverageRoot = typeof CoverageRootSchema.Type
 
+export const DryRunCandidateRootsSchema = S.Struct({
+  recordRoot: CoverageRootSchema,
+  headerRoot: CoverageRootSchema,
+})
+
 export const PriorUnderCurrentRootSchema = S.TaggedStruct('PriorUnderCurrentRoot', {
   testClosureDigest: S.String,
   runInputsDigest: S.String,
