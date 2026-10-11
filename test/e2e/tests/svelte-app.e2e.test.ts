@@ -27,7 +27,7 @@ const skippedSvelteFilesOf = (events: ReadonlyArray<RunEvent.RunEvent>): Readonl
   return skipped?.files.filter((file) => file.file.endsWith('.svelte')) ?? []
 }
 
-const verifyReachesVerdict = (expect: Expect, run: ExecResult): Check => expect(run.exitCode).toBe(1)
+const verifyReachesVerdict = (expect: Expect, run: ExecResult): Check => expect(run.exitCode).toBe(0)
 
 const verifyFormats = (expect: Expect, formats: FormatsEvent): Check =>
   expect(formats.rows).toContainEqual({

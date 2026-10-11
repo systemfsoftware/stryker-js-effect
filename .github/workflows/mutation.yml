@@ -354,9 +354,9 @@ jobs:
           actual=${BASH_REMATCH[1]} allowed=${BASH_REMATCH[2]}
           {
             echo "### Mutation budget exceeded (code \`BUDGET_EXCEEDED\`)"
-            echo "The run took ${actual}s against the ${allowed}s budget (\`$BUDGET_BASELINE\`). The job passes; the score and survivor verdicts are unaffected."
+            echo "The run took ${actual}s against the ${allowed}s budget (\`$BUDGET_BASELINE\`). This budget is the workflow's only verdict, and it is report-only per the owner's ruling, so the job passes."
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::warning title=BUDGET_EXCEEDED::Mutation took ${actual}s against the ${allowed}s budget in $BUDGET_BASELINE. Next action: accept the new cost with \`stryker gate --update-budget-baseline\` and commit the baseline, or speed the run up."
+          echo "::warning title=BUDGET_EXCEEDED::Mutation took ${actual}s against the ${allowed}s budget in $BUDGET_BASELINE. Next action: compare executed vs reused mutants per shard against the previous main Mutation run. A lockfile edit that drops reuse is fixed by #303 once it is released. Update the baseline only with numbers showing new mutated code at an unchanged per-mutant cost."
 
       - uses: actions/upload-artifact@v7
         if: ${{ steps.gate.outputs.bootstrapped == 'true' }}
