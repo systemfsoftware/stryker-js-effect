@@ -89,7 +89,7 @@ Renamed text was identical with and without libs. CI's 414 s over 300 runs is 1.
 
 - R4. Every task that `check:ci` runs today still runs on every PR, in exactly one `check` part, with the same assertions.
 - R5. Every `stryker-js` test file runs in exactly one shard. The summed per-shard test count equals the unsharded count from run 38108376853, 1,619 tests in 266 files, adjusted only for tests added or removed on the branch.
-- R6. Every test file lands in exactly one shard by construction, with no assignment check: the manifest maps each file to one shard, and the default shard runs every file the other shards were not given, including new and renamed files.
+- R6. A test file with no recorded duration, including a new or renamed one, lands in the default shard, which runs every file the other shards were not given. A file assigned to zero shards or to two still fails `check` with its own reason code naming the file.
 - R7. `compile-error-reuse` and `incremental-reuse` move into scenario-group files with every scenario and assertion unchanged. The test count and scenario names before and after are identical.
 - R8. The α-Conversion property keeps its 300 runs, its generator, and its assertion. Only the cost of each run changes, and the renamed text is identical for the inputs CI generates.
 
@@ -111,7 +111,7 @@ Renamed text was identical with and without libs. CI's 414 s over 300 runs is 1.
 ### Key Decisions
 
 - **Each shard builds its inputs from the Turbo cache; no build artifact is shared.** (session-settled: user-directed — chosen over one build job shared through `actions/upload-artifact`: that route puts a second setup plus upload and download, about 1.8 minutes, in series on every run, projects 10.3 minutes cold, and saves only runner-minutes, which are free on this public repository.) Governs R1, R3, R10.
-- **Shards are balanced by a committed duration manifest packed longest-first, not by Vitest's `--shard`.** `--shard` splits by file count and can put both 6-minute files on one shard. A committed manifest gives the same assignment for a given commit, so a shard can be re-run locally. The default shard excludes the other shards' lists instead of listing its own, so coverage holds by construction and no new gate is minted (GATE1). A stale manifest costs balance, never coverage. Governs R5, R6.
+- **Shards are balanced by a committed duration manifest packed longest-first, not by Vitest's `--shard`.** (session-settled: user-directed — the operator's ruling sets the assignment check and its reason code, which is the sign-off GATE1 requires.) `--shard` splits by file count and can put both 6-minute files on one shard. A committed manifest gives the same assignment for a given commit, so a shard can be re-run locally. The default shard excludes the other shards' lists instead of listing its own, so a stale manifest costs balance, never coverage, and the assignment check catches a file placed in zero shards or two. Governs R5, R6.
 - **`compile-error-reuse` and `incremental-reuse` are split by scenario group before sharding.** Whole files cap a shard at 6.8 minutes. The test-code cut is about 5%, and the engine cut is a product change still unsized (Q1). Governs R7.
 - **α-Conversion gets cheaper runs, not fewer.** The lib load per `Project` is the cost, so the rename must stop paying it on every run. Governs R8.
 - **Three test shards.** At three, the balance reaches its floor (`vm-parity`, 4.5 minutes), and the parent plan's contention cap (KTD10, at most 3) holds. Governs R1.
@@ -121,7 +121,7 @@ Renamed text was identical with and without libs. CI's 414 s over 300 runs is 1.
 ### Acceptance Examples
 
 - AE1. Covers R9. **Given** a branch commit that plants a failing assertion in one shard's file, **when** CI runs, **then** that shard fails, the aggregate `check` fails naming the shard, and the other shards report success.
-- AE2. Covers R6. **Given** a new `stryker-js` test file absent from the manifest, **when** CI runs, **then** it runs in the default shard and in no other, and the summed per-shard test count still equals the unsharded count.
+- AE2. Covers R6. **Given** a new `stryker-js` test file absent from the manifest, **when** CI runs, **then** it runs in the default shard and in no other, and the summed per-shard test count still equals the unsharded count. **Given** an assignment that drops or duplicates a file, **then** `check` fails with the assignment reason code naming that file.
 - AE3. Covers R10. **Given** a warm run on a PR that changes only `stryker-js` sources, **when** the shards build, **then** each shard's summary shows its upstream build tasks as hits with the same hashes the non-test part reports.
 - AE4. Covers R11. **Given** a main push whose Gate fails on one test task, **when** the next PR off that commit runs, **then** it restores the base commit's entry and misses only the failed task, the tasks whose inputs the PR changed, and their dependents.
 
@@ -156,7 +156,7 @@ This plan covers `check`'s critical path on PRs that change `stryker-js`. The re
 - The engine's per-run fixed cost (Q1); this plan shards around it.
 - `vm-parity.differential` stays one scenario; its 240 s is the accepted shard floor.
 - `@systemfsoftware/vitest`'s leaked-state re-run stays on every test.
-- No permanent test is added. Moved scenarios keep their files' existing layer, AE1's planted failure is reverted before the PR is ready, and coverage of the shard split is proved by test counts on real runs rather than by a new gate.
+- No permanent test is added. Moved scenarios keep their files' existing layer, and AE1's planted failure is reverted before the PR is ready. Coverage of the split is proved by the assignment check and by test counts on real runs.
 - No bigger runners, raised timeouts, skipped or quarantined tests, `continue-on-error`, optional checks, self-hosted runners, cloud credentials, or new third-party actions or executables.
 
 ### Outstanding Questions
