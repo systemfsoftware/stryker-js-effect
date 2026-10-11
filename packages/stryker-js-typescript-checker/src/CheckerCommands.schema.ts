@@ -202,6 +202,7 @@ export const ShortcutClause = S.Literals([
   'not-typescript-module',
   'module-reference',
   'syntax-error',
+  'shared-file',
 ])
 export type ShortcutClause = typeof ShortcutClause.Type
 
@@ -213,6 +214,7 @@ export class DecideImporterShortcutCommand extends S.TaggedClass<DecideImporterS
   {
     original: EditSiteFacts,
     mutated: EditSiteFacts,
+    compiledElsewhere: S.Boolean,
   },
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const

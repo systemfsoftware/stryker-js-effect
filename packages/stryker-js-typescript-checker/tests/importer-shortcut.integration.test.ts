@@ -58,6 +58,8 @@ const TERMINATOR_EDIT_ID = '00000000000000b5'
 const SYNTAX_EDIT_ID = '00000000000000b6'
 const UNHELD_EDIT_ID = '00000000000000b7'
 const CONSTRUCTOR_EDIT_ID = '00000000000000b8'
+const IMPLICIT_RETURN_EDIT_ID = '00000000000000b9'
+const INDEXED_ACCESS_EDIT_ID = '0000000000000b10'
 
 interface Fixture {
   readonly directory: string
@@ -87,6 +89,26 @@ const REFERENCED_PROJECT: Fixture = {
   directory: 'importer-shortcut-references',
   files: ['lib/src/counter.ts', 'app/src/consumer.ts'],
 }
+
+const OVERLAPPING_PROJECTS: Fixture = {
+  directory: 'importer-shortcut-overlap',
+  files: ['shared/total.ts'],
+}
+
+const OVERLAP_EDITS: ReadonlyArray<Edit> = [
+  {
+    id: IMPLICIT_RETURN_EDIT_ID,
+    file: 'shared/total.ts',
+    target: '1',
+    replacement: 'Number(((x: number) => { if (x) return 1 })(n))',
+  },
+  {
+    id: INDEXED_ACCESS_EDIT_ID,
+    file: 'shared/total.ts',
+    target: 'n + 1',
+    replacement: 'n + [1][0]',
+  },
+]
 
 const AE1_EDIT: Edit = { id: AE1, file: 'annotated.ts', target: 'x + 1', replacement: 'x - 1' }
 const AE5_EDIT: Edit = { id: AE5, file: 'closer.ts', target: 'return x', replacement: 'return -x' }
@@ -393,6 +415,32 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
             statuses: [{ [AE10]: 'compileError' }, { [AE10]: 'compileError' }],
             blamed: [{ [AE10]: ['lib/src/counter.ts'] }, { [AE10]: ['lib/src/counter.ts'] }],
             counts: [{ count: 1 }, { count: 0 }],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A body edit in a file two unrelated projects compile is checked by both of them',
+      Gherkin.Do.pipe(
+        When(
+          'one body edit that only the noImplicitReturns project rejects and one that only the noUncheckedIndexedAccess project rejects are checked once per importerCheck value',
+        )('seen', () => bothModes(OVERLAP_EDITS, OVERLAPPING_PROJECTS)),
+        Then('both runs reject both edits, and the rule run counts each under the shared-file fallback')((s, expect) =>
+          expect({
+            statuses: [s.seen.rule.statuses, s.seen.always.statuses],
+            blamed: [s.seen.rule.blamed, s.seen.always.blamed],
+            counts: [s.seen.rule.shortcutCounts, s.seen.always.shortcutCounts],
+          }).toEqual({
+            statuses: [
+              { [IMPLICIT_RETURN_EDIT_ID]: 'compileError', [INDEXED_ACCESS_EDIT_ID]: 'compileError' },
+              { [IMPLICIT_RETURN_EDIT_ID]: 'compileError', [INDEXED_ACCESS_EDIT_ID]: 'compileError' },
+            ],
+            blamed: [
+              { [IMPLICIT_RETURN_EDIT_ID]: ['shared/total.ts'], [INDEXED_ACCESS_EDIT_ID]: ['shared/total.ts'] },
+              { [IMPLICIT_RETURN_EDIT_ID]: ['shared/total.ts'], [INDEXED_ACCESS_EDIT_ID]: ['shared/total.ts'] },
+            ],
+            counts: [{ count: 0, 'fallback.original.shared-file.count': 2 }, { count: 0 }],
           })
         ),
       ),

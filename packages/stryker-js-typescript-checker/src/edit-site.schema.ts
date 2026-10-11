@@ -275,10 +275,15 @@ if (import.meta.vitest !== void 0) {
   )
 
   const admits = (facts: EditSiteFacts): boolean =>
-    Result.match(admitImporterShortcut(DecideImporterShortcutCommand.make({ original: facts, mutated: facts })), {
-      onFailure: () => false,
-      onSuccess: S.is(ShortcutTaken),
-    })
+    Result.match(
+      admitImporterShortcut(
+        DecideImporterShortcutCommand.make({ original: facts, mutated: facts, compiledElsewhere: false }),
+      ),
+      {
+        onFailure: () => false,
+        onSuccess: S.is(ShortcutTaken),
+      },
+    )
 
   const SHAPES = {
     function: { header: 'export function f(x: number): number ', tail: '\n' },

@@ -49,9 +49,10 @@ When a mutant compiles in its own file, the checker normally re-checks every fil
 - the edit sits inside the body of one function, method, constructor, accessor or arrow function;
 - that function has an explicit return type annotation, or is a `set` accessor (a constructor never qualifies: an unannotated class property takes its type from the constructor's assignments, so a constructor body edit can change what importers see);
 - the file is a TypeScript module with no `declare global`;
-- the edit holds no `import()`, `require()` or `import("…")` type.
+- the edit holds no `import()`, `require()` or `import("…")` type;
+- no other project compiles the file: a project that includes or imports it without reaching its owner through `references` checks it under its own compiler options, so its errors in that file are read too.
 
-All four must hold before and after the edit, and the function's header (everything before its body) must be unchanged. Mutants that meet the rule and sit in different files are checked together in one snapshot update. Under `isolatedDeclarations`, every exported function has an annotation, so the rule applies to most of its body edits.
+All five must hold before and after the edit, and the function's header (everything before its body) must be unchanged. Mutants that meet the rule and sit in different files are checked together in one snapshot update. Under `isolatedDeclarations`, every exported function has an annotation, so the rule applies to most of its body edits.
 
 `'always'` re-checks importers for every mutant that compiles in its own file and checks one mutant per snapshot update. Use it if you suspect a verdict is wrong. Changing the option changes the program digest, so incremental runs never mix verdicts from the two modes.
 

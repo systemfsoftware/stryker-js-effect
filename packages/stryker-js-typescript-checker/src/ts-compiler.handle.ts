@@ -82,7 +82,9 @@ import {
   tsFileSystem,
 } from './ts-files.handle.js'
 import {
+  otherCompilersOf,
   PathAliasesSchema,
+  type ReferenceGraph,
   type TsConfigCompilerOptions,
   type TsConfigDocument,
   TsConfigNotFoundError,
@@ -128,6 +130,7 @@ export interface CompilerState {
   readonly lastMutatedFileNames: ReadonlyArray<string>
   readonly allTSConfigFiles: HashSet.HashSet<string>
   readonly aliases: ReadonlyArray<PathAlias>
+  readonly references: ReferenceGraph
   readonly tsconfigFile: string
 }
 
@@ -198,6 +201,7 @@ export const make: {
       lastMutants: [],
       lastMutatedFileNames: [],
       aliases: [],
+      references: {},
       allTSConfigFiles: HashSet.fromIterable([tsconfigFile]),
       tsconfigFile,
     })
@@ -696,6 +700,7 @@ interface TsConfigWalk {
   readonly files: HashSet.HashSet<string>
   readonly processed: HashSet.HashSet<string>
   readonly aliases: ReadonlyArray<PathAlias>
+  readonly references: ReferenceGraph
 }
 
 const compilerOptionsOf = (config: TsConfigDocument): TsConfigCompilerOptions =>
@@ -731,16 +736,16 @@ const recordTsConfig = (
 ): TsConfigWalk =>
   Result.match(parseTsConfig(fileName, jsonText), {
     onFailure: () => ({ ...walk, overrides: HashMap.set(walk.overrides, fileName, jsonText) }),
-    onSuccess: (config) => ({
-      overrides: HashMap.set(walk.overrides, fileName, overrideTextOf(config, buildMode)),
-      aliases: [...walk.aliases, ...pathAliasesOf(rt.pathService, fileName, config)],
-      files: Arr.reduce(
-        referencedProjectsOf(rt, config, rt.pathService.dirname(fileName)),
-        walk.files,
-        (files, referenced) => HashSet.add(files, normalizeFileName(referenced)),
-      ),
-      processed: walk.processed,
-    }),
+    onSuccess: (config) => {
+      const referenced = referencedProjectsOf(rt, config, rt.pathService.dirname(fileName))
+      return {
+        overrides: HashMap.set(walk.overrides, fileName, overrideTextOf(config, buildMode)),
+        aliases: [...walk.aliases, ...pathAliasesOf(rt.pathService, fileName, config)],
+        references: { ...walk.references, [fileName]: referenced },
+        files: Arr.reduce(referenced, walk.files, (files, project) => HashSet.add(files, normalizeFileName(project))),
+        processed: walk.processed,
+      }
+    },
   })
 
 const enqueueUnseen = (walk: TsConfigWalk, pending: ReadonlyArray<string>): ReadonlyArray<string> =>
@@ -1320,6 +1325,7 @@ export const init = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerInit.n
       overrides: HashMap.empty(),
       processed: HashSet.empty(),
       aliases: [],
+      references: {},
     },
     [tsconfigFile],
     HashMap.fromIterable([[tsconfigFile, tsconfigText] as const]),
@@ -1329,6 +1335,7 @@ export const init = Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerInit.n
     ...prev,
     allTSConfigFiles: walk.files,
     aliases: walk.aliases,
+    references: walk.references,
   }))
   const api = new API({ fs: rt.sourceFileSystem })
   const snapshot = yield* Effect.promise(() => api.updateSnapshot({ openProjects: Array.from(walk.files) }))
@@ -1523,6 +1530,7 @@ export interface CheckSteps {
     state: CompilerState,
     fileName: string,
   ) => Effect.Effect<ReadonlyArray<Diagnostic>, CompilerFailed>
+  readonly compiledElsewhereIn: (fileName: string) => Effect.Effect<boolean, CompilerFailed>
 }
 
 const errorsOfOwned = (
@@ -1540,6 +1548,43 @@ const errorsOfOwned = (
         })),
   )
 
+const configKeyOf = (project: Project): string => normalizeFileName(project.configFileName)
+
+const holdersOf = (projects: ReadonlyArray<Project>, fileName: string): Effect.Effect<ReadonlyArray<Project>> =>
+  Effect.map(
+    Effect.forEach(
+      projects,
+      (project) =>
+        Effect.map(Effect.promise(() => project.program.getSourceFile(fileName)), (sourceFile) => ({
+          project,
+          held: sourceFile !== undefined,
+        })),
+      { concurrency: 1 },
+    ),
+    (checked) => Arr.map(Arr.filter(checked, (entry) => entry.held), (entry) => entry.project),
+  )
+
+const compiledElsewhereIn = (rt: TSCompilerRuntime, fileName: string): Effect.Effect<boolean, CompilerFailed> =>
+  Effect.flatMap(
+    SynchronizedRef.get(rt.state),
+    (state) =>
+      Effect.flatMap(
+        projectsOf(rt),
+        (projects) =>
+          Effect.flatMap(projectOfFile(projects, fileName), (owned) =>
+            Option.match(owned, {
+              onNone: () => Effect.succeed(false),
+              onSome: (found) =>
+                Effect.map(holdersOf(projects, fileName), (holders) =>
+                  Arr.isReadonlyArrayNonEmpty(otherCompilersOf({
+                    references: state.references,
+                    owner: configKeyOf(found.project),
+                    holders: Arr.map(holders, configKeyOf),
+                  }))),
+            })),
+      ),
+  )
+
 export const checkStepsOf = (rt: TSCompilerRuntime): CheckSteps => ({
   resolveFileName: (fileName) => resolveFileName(rt, fileName),
   fileOf: (fileName) => getFile(rt.files, fileName),
@@ -1552,6 +1597,7 @@ export const checkStepsOf = (rt: TSCompilerRuntime): CheckSteps => ({
   ownErrorsIn: (fileName) => errorsOfOwned(rt, fileName, (_, owned) => ownErrorsOf(owned, fileName)),
   allErrorsIn: (state, fileName) =>
     errorsOfOwned(rt, fileName, (projects, owned) => checkedIn(state, projects, owned, fileName)),
+  compiledElsewhereIn: (fileName) => compiledElsewhereIn(rt, fileName),
 })
 
 const siteKeyOf = (mutant: Checker.CheckerMutantWire): string =>

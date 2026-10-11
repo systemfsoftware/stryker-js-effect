@@ -62,7 +62,12 @@ interface CallContext {
   readonly rt: TSCompilerRuntime
   readonly steps: CheckSteps
   readonly state: CompilerState
-  readonly originals: HashMap.HashMap<string, EditSiteFacts>
+  readonly originals: HashMap.HashMap<string, Original>
+}
+
+interface Original {
+  readonly facts: EditSiteFacts
+  readonly compiledElsewhere: boolean
 }
 
 interface Progress {
@@ -70,10 +75,18 @@ interface Progress {
   readonly outcomes: ReadonlyArray<Outcome>
 }
 
-const admitted = (original: EditSiteFacts, mutated: EditSiteFacts): ImporterShortcutDecision =>
-  decided(admitImporterShortcut(DecideImporterShortcutCommand.make({ original, mutated })))
+const admitted = (original: Original, mutated: EditSiteFacts): ImporterShortcutDecision =>
+  decided(
+    admitImporterShortcut(
+      DecideImporterShortcutCommand.make({
+        original: original.facts,
+        mutated,
+        compiledElsewhere: original.compiledElsewhere,
+      }),
+    ),
+  )
 
-const eligibleOn = (original: EditSiteFacts): boolean => takesShortcut(admitted(original, original))
+const eligibleOn = (original: Original): boolean => takesShortcut(admitted(original, original.facts))
 
 const outcomeTakesShortcut = (outcome: Outcome): boolean => Option.exists(outcome.decision, takesShortcut)
 
@@ -101,18 +114,23 @@ const fileOriginalsOf = (
   steps: CheckSteps,
   fileName: string,
   fileMutants: ReadonlyArray<Mutant>,
-): Effect.Effect<ReadonlyArray<readonly [string, EditSiteFacts]>, CompilerFailed> =>
+): Effect.Effect<ReadonlyArray<readonly [string, Original]>, CompilerFailed> =>
   Effect.gen(function*() {
     const file = yield* steps.fileOf(fileName)
     const tree = yield* steps.editTreeOf(fileName)
+    const compiledElsewhere = yield* steps.compiledElsewhereIn(fileName)
     return Option.match(Option.all([file, tree]), {
-      onNone: (): ReadonlyArray<readonly [string, EditSiteFacts]> => [],
+      onNone: (): ReadonlyArray<readonly [string, Original]> => [],
       onSome: ([script, edited]) =>
         Arr.getSomes(
           Arr.map(fileMutants, (mutant) =>
             Option.map(
               spanOf(script, mutant),
-              (span) => [mutant.id, editSiteFactsOf(edited.sourceFile, span, edited.syntaxErrors)] as const,
+              (span) =>
+                [mutant.id, {
+                  facts: editSiteFactsOf(edited.sourceFile, span, edited.syntaxErrors),
+                  compiledElsewhere,
+                }] as const,
             )),
         ),
     })
@@ -121,7 +139,7 @@ const fileOriginalsOf = (
 const locationRuleOriginalsOf = (
   steps: CheckSteps,
   mutants: ReadonlyArray<Mutant>,
-): Effect.Effect<HashMap.HashMap<string, EditSiteFacts>, CompilerFailed> =>
+): Effect.Effect<HashMap.HashMap<string, Original>, CompilerFailed> =>
   Effect.map(
     Effect.forEach(fileNamesOf(steps, mutants), (fileName) =>
       fileOriginalsOf(
@@ -136,9 +154,9 @@ const originalsOf = (
   steps: CheckSteps,
   mode: ImporterCheck,
   mutants: ReadonlyArray<Mutant>,
-): Effect.Effect<HashMap.HashMap<string, EditSiteFacts>, CompilerFailed> =>
+): Effect.Effect<HashMap.HashMap<string, Original>, CompilerFailed> =>
   Match.value(mode).pipe(
-    Match.when('always', () => Effect.succeed(HashMap.empty<string, EditSiteFacts>())),
+    Match.when('always', () => Effect.succeed(HashMap.empty<string, Original>())),
     Match.when('location-rule', () => locationRuleOriginalsOf(steps, mutants)),
     Match.exhaustive,
   )
@@ -149,7 +167,7 @@ const appliedOf = (mutant: Mutant, held: boolean): string =>
 const mutatedFactsOf = (
   steps: CheckSteps,
   fileName: string,
-  original: EditSiteFacts,
+  original: Original,
   applied: string,
 ): Effect.Effect<Option.Option<EditSiteFacts>, CompilerFailed> =>
   Effect.map(
@@ -157,7 +175,7 @@ const mutatedFactsOf = (
     Option.map((edited: EditTree) =>
       editSiteFactsOf(
         edited.sourceFile,
-        { start: original.span.start, end: original.span.start + applied.length },
+        { start: original.facts.span.start, end: original.facts.span.start + applied.length },
         edited.syntaxErrors,
       )
     ),
@@ -173,7 +191,7 @@ const decisionAfterApplyOf = (
     onNone: () => Effect.succeedNone,
     onSome: (original) =>
       Boolean.match(eligibleOn(original), {
-        onFalse: () => Effect.succeedSome(admitted(original, original)),
+        onFalse: () => Effect.succeedSome(admitted(original, original.facts)),
         onTrue: () =>
           Effect.map(
             mutatedFactsOf(ctx.steps, fileName, original, applied),

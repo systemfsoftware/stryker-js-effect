@@ -95,6 +95,10 @@ const rulesOf = (command: DecideImporterShortcutCommand): ReadonlyArray<Rule> =>
       fails: command.original.syntaxErrors,
     },
     {
+      verdict: { clause: 'shared-file', tree: 'original' },
+      fails: command.compiledElsewhere,
+    },
+    {
       verdict: { clause: 'not-typescript-module', tree: 'mutated' },
       fails: notTypescriptModule(command.mutated),
     },

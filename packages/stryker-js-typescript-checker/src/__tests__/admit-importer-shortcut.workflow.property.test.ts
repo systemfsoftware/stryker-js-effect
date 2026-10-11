@@ -83,54 +83,70 @@ const mutatedSite = (
 
 const shortcutCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outerOf(knobs, BODY_END)]),
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)]),
   })
 
 const outsideBodyCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [factsAt(knobs, 0, BODY_START, SPAN_END - 1, true, knobs.header)]),
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)]),
   })
 
 const dependentSignatureCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [factsAt(knobs, 0, BODY_START, BODY_END, false, knobs.header)]),
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)]),
   })
 
 const originalModuleCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outerOf(knobs, BODY_END)], { typescriptModule: false }),
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)]),
   })
 
 const originalReferenceCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outerOf(knobs, BODY_END)], { moduleReference: true }),
+    mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)]),
+  })
+
+const sharedFileCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
+  DecideImporterShortcutCommand.make({
+    compiledElsewhere: true,
+    original: originalSite(knobs, [outerOf(knobs, BODY_END)]),
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)]),
   })
 
 const mutatedModuleCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outerOf(knobs, BODY_END)]),
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)], { typescriptModule: false }),
   })
 
 const mutatedReferenceCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outerOf(knobs, BODY_END)]),
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)], { moduleReference: true }),
   })
 
 const originalSyntaxCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outerOf(knobs, BODY_END)], { syntaxErrors: true }),
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)]),
   })
 
 const mutatedSyntaxCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outerOf(knobs, BODY_END)]),
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta)], { syntaxErrors: true }),
   })
@@ -141,6 +157,7 @@ type BodyEnd = typeof BODY_ENDS[number]
 const spanAtBodyEndCommand = (knobs: Knobs, bodyEnd: BodyEnd, blockBody: boolean): DecideImporterShortcutCommand => {
   const end = bodyEnd === 'on-last-character' ? SPAN_END : SPAN_END + 1
   return DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [factsAt(knobs, 0, BODY_START, end, true, knobs.header, blockBody)]),
     mutated: mutatedSite(knobs, [factsAt(knobs, 0, BODY_START, end + knobs.delta, true, knobs.header, blockBody)]),
   })
@@ -148,18 +165,21 @@ const spanAtBodyEndCommand = (knobs: Knobs, bodyEnd: BodyEnd, blockBody: boolean
 
 const unmatchedMutatedCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outerOf(knobs, BODY_END)]),
     mutated: mutatedSite(knobs, []),
   })
 
 const lengthDriftCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outerOf(knobs, BODY_END)]),
     mutated: mutatedSite(knobs, [outerOf(knobs, BODY_END + knobs.delta + 1)]),
   })
 
 const headerDriftCommand = (knobs: Knobs): DecideImporterShortcutCommand =>
   DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outerOf(knobs, BODY_END)]),
     mutated: mutatedSite(knobs, [factsAt(knobs, 0, BODY_START, BODY_END + knobs.delta, true, knobs.header + 'x')]),
   })
@@ -169,6 +189,7 @@ const nestedCommand = (knobs: Knobs): DecideImporterShortcutCommand => {
   const outer = (bodyEndOffset: number) => outerOf(knobs, bodyEndOffset)
   const inner = (bodyEndOffset: number) => factsAt(knobs, 1, BODY_START + 1, bodyEndOffset, false, innerHeader)
   return DecideImporterShortcutCommand.make({
+    compiledElsewhere: false,
     original: originalSite(knobs, [outer(30), inner(15)]),
     mutated: mutatedSite(knobs, [outer(30 + knobs.delta), inner(15 + knobs.delta)]),
   })
@@ -186,6 +207,7 @@ const CLAUSE_CASES: ReadonlyArray<ClauseCase> = [
   { clause: 'not-typescript-module', tree: 'original', build: originalModuleCommand },
   { clause: 'module-reference', tree: 'original', build: originalReferenceCommand },
   { clause: 'syntax-error', tree: 'original', build: originalSyntaxCommand },
+  { clause: 'shared-file', tree: 'original', build: sharedFileCommand },
   { clause: 'not-typescript-module', tree: 'mutated', build: mutatedModuleCommand },
   { clause: 'module-reference', tree: 'mutated', build: mutatedReferenceCommand },
   { clause: 'syntax-error', tree: 'mutated', build: mutatedSyntaxCommand },
