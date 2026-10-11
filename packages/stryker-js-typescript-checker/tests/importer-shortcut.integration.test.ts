@@ -6,6 +6,7 @@ import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gh
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
@@ -59,6 +60,7 @@ const SYNTAX_EDIT_ID = '00000000000000b6'
 const UNHELD_EDIT_ID = '00000000000000b7'
 const CONSTRUCTOR_EDIT_ID = '00000000000000b8'
 const EXCLUDED_EDIT_ID = '0000000000000b11'
+const SECOND_CALL_EDIT_ID = '0000000000000b12'
 const IMPLICIT_RETURN_EDIT_ID = '00000000000000b9'
 const INDEXED_ACCESS_EDIT_ID = '0000000000000b10'
 
@@ -155,11 +157,25 @@ const GUARD_ROWS: Readonly<Record<string, GuardRow>> = {
 
 const EXCLUDED_EDIT: Edit = { id: EXCLUDED_EDIT_ID, file: 'excluded.ts', target: 'x * 3', replacement: 'x / 3' }
 
+const RETYPED_EDIT: Edit = {
+  id: AE2,
+  file: 'inferred.ts',
+  target: 'return doubled',
+  replacement: 'return String(doubled)',
+}
+
+const SECOND_CALL_EDIT: Edit = {
+  id: SECOND_CALL_EDIT_ID,
+  file: 'consumer.ts',
+  target: 'increment(1)',
+  replacement: 'increment(2)',
+}
+
 const UNHELD_EDIT: Edit = { id: UNHELD_EDIT_ID, file: 'annotated.ts', target: '1', replacement: '1 ? 2 : 3' }
 
 const RULE_EDITS: ReadonlyArray<Edit> = [
   AE1_EDIT,
-  { id: AE2, file: 'inferred.ts', target: 'return doubled', replacement: 'return String(doubled)' },
+  RETYPED_EDIT,
   { id: AE3, file: 'defaults.ts', target: '1', replacement: '""' },
   { id: AE4, file: 'loader.ts', target: "'./annotated.js'", replacement: "''" },
   AE7_EDIT,
@@ -195,7 +211,7 @@ const SHORTCUT_PREFIX = 'typescript.importer_shortcut.'
 type SpanAttributes = ReadableSpan['attributes']
 
 const checkSpanAttributesOf = (exporter: InMemorySpanExporter): SpanAttributes => {
-  const span = exporter.getFinishedSpans().find((found) =>
+  const span = exporter.getFinishedSpans().findLast((found) =>
     found.name === SpanTaxonomy.Spans.typescriptCheckerCompilerCheck.name
   )
   return span === undefined ? {} : span.attributes
@@ -212,7 +228,7 @@ interface CheckerOptionsInput {
 
 const checkedWith = (
   fixture: Fixture,
-  edits: ReadonlyArray<Edit>,
+  calls: ReadonlyArray<ReadonlyArray<Edit>>,
   checkerOptions: CheckerOptionsInput,
 ): Effect.Effect<
   Checked,
@@ -235,9 +251,10 @@ const checkedWith = (
       tsconfigFile: join('tsconfig.json'),
       ...checkerOptions,
     }).pipe(Effect.orDie)
-    const wires = yield* S.decodeEffect(S.Array(Checker.CheckerMutantWire))(edits.map(wireOf(texts, join))).pipe(
-      Effect.orDie,
-    )
+    const wiresPerCall = yield* Effect.forEach(
+      calls,
+      (edits) => S.decodeEffect(S.Array(Checker.CheckerMutantWire))(edits.map(wireOf(texts, join))),
+    ).pipe(Effect.orDie)
     const exporter = new InMemorySpanExporter()
     const telemetry = NodeSdk.layer(() => ({
       resource: { serviceName: 'importer-shortcut-test' },
@@ -246,7 +263,12 @@ const checkedWith = (
     return yield* Effect.gen(function*() {
       const runtime = yield* CheckerRuntime
       const checker = yield* runtime.checker.pipe(Effect.orDie)
-      const results = yield* checker.check([...wires])
+      const perCall = yield* Effect.forEach(wiresPerCall, (wires) => checker.check([...wires]))
+      const results = Arr.reduce(
+        perCall,
+        HashMap.empty<string, Checker.CheckResult>(),
+        (merged, call) => HashMap.union(merged, call),
+      )
       return { results, attributes: checkSpanAttributesOf(exporter) }
     }).pipe(Effect.provide(CheckerRuntime.layer(options).pipe(Layer.provideMerge(telemetry))))
   })
@@ -260,10 +282,11 @@ const shortcutCountsOf = (attributes: SpanAttributes): Readonly<Record<string, n
 
 const runOf = (
   fixture: Fixture,
-  edits: ReadonlyArray<Edit>,
+  calls: ReadonlyArray<ReadonlyArray<Edit>>,
   importerCheck: ImporterCheck,
 ): Effect.Effect<Run, never, FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.map(checkedWith(fixture, edits, { typescriptChecker: { importerCheck } }), ({ results, attributes }) => {
+  Effect.map(checkedWith(fixture, calls, { typescriptChecker: { importerCheck } }), ({ results, attributes }) => {
+    const edits = calls.flat()
     const resultOf = (id: string) => HashMap.get(results, id)
     return {
       statuses: Object.fromEntries(
@@ -296,7 +319,7 @@ const duplicateOutcomeOf = (
   never,
   FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
 > =>
-  checkedWith(SINGLE_PROJECT, edits, {}).pipe(
+  checkedWith(SINGLE_PROJECT, [edits], {}).pipe(
     Effect.match({
       onFailure: (failed) => ({
         mutantIds: [...failed.mutantIds],
@@ -309,7 +332,7 @@ const duplicateOutcomeOf = (
 const optionOutcomeOf = (
   checkerOptions: CheckerOptionsInput,
 ): Effect.Effect<OptionOutcome, never, FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner> =>
-  checkedWith(SINGLE_PROJECT, [AE1_EDIT], checkerOptions).pipe(
+  checkedWith(SINGLE_PROJECT, [[AE1_EDIT]], checkerOptions).pipe(
     Effect.match({
       onFailure: (failed): OptionOutcome => ({
         refused: { mutantIds: [...failed.mutantIds], invalidOptions: failed.cause.includes(INVALID_OPTIONS_TEXT) },
@@ -321,8 +344,10 @@ const optionOutcomeOf = (
     }),
   )
 
-const bothModes = (edits: ReadonlyArray<Edit>, fixture: Fixture = SINGLE_PROJECT) =>
-  Effect.all({ rule: runOf(fixture, edits, 'location-rule'), always: runOf(fixture, edits, 'always') })
+const bothModesAcross = (calls: ReadonlyArray<ReadonlyArray<Edit>>, fixture: Fixture = SINGLE_PROJECT) =>
+  Effect.all({ rule: runOf(fixture, calls, 'location-rule'), always: runOf(fixture, calls, 'always') })
+
+const bothModes = (edits: ReadonlyArray<Edit>, fixture: Fixture = SINGLE_PROJECT) => bothModesAcross([edits], fixture)
 
 const REFERENCED_EDIT: Edit = { id: AE10, file: 'lib/src/counter.ts', target: 'x + 1', replacement: 'x.missing' }
 
@@ -466,6 +491,30 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
             statuses: [{ [EXCLUDED_EDIT_ID]: 'passed' }, { [EXCLUDED_EDIT_ID]: 'passed' }],
             blamed: [{ [EXCLUDED_EDIT_ID]: [] }, { [EXCLUDED_EDIT_ID]: [] }],
             counts: [{ count: 0, 'fallback.unread.count': 1 }, { count: 0 }],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A check call starts from the original files, not from the last mutant of the call before it',
+      Gherkin.Do.pipe(
+        When(
+          'one call checks an edit that changes a type the consumer reads, and the next call checks an edit in that consumer',
+        )('seen', () => bothModesAcross([[RETYPED_EDIT], [SECOND_CALL_EDIT]])),
+        Then('the first edit is rejected in the consumer, and the consumer edit in the next call passes')((s, expect) =>
+          expect({
+            statuses: [s.seen.rule.statuses, s.seen.always.statuses],
+            blamed: [s.seen.rule.blamed, s.seen.always.blamed],
+          }).toEqual({
+            statuses: [
+              { [AE2]: 'compileError', [SECOND_CALL_EDIT_ID]: 'passed' },
+              { [AE2]: 'compileError', [SECOND_CALL_EDIT_ID]: 'passed' },
+            ],
+            blamed: [{ [AE2]: ['consumer.ts'], [SECOND_CALL_EDIT_ID]: [] }, {
+              [AE2]: ['consumer.ts'],
+              [SECOND_CALL_EDIT_ID]: [],
+            }],
           })
         ),
       ),
