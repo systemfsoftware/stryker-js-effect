@@ -6,6 +6,7 @@ topic: bench-main-only
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
+supersedes: docs/plans/2026-10-11-0909-ci-bench-main-only-plan.md
 ---
 
 # Bench On Main Only - Plan
@@ -48,6 +49,7 @@ The enterprise leg also stalls on main as it stands. `prepare-side.service.ts:49
 - **Only the lockfile-pinned enterprise install carries over from bench-lane-fit.** (session-settled: user-directed — chosen over carrying the Turbo restore from base (9797b7a3b) and the corpus narrowing (69856d908): those served the per-job deadline that this unit deletes.) Governs R12.
 - **The leg target is 10 minutes.** No systemfsoftware compound pack names a per-job budget. Upstream main at 02bf9653 ships exactly boundary-testing, cell-architecture, mutation-discipline, package-topology, schema-laws and storybook-testing, so the ruling's fallback applies. The nearest repo figure is the same: the 10-minute PR-job ceiling, R3 of `docs/plans/2026-10-10-0702-perf-ci-wall-clock-plan.md`. (session-settled: user-directed — the fallback was named in the ruling.) Governs R9.
 - **The report schema moves to `2.0` and the PR title carries `!`.** Deleting decodable codes breaks readers of earlier reports. #274 (70aaafd26, `feat(repo)!:`) and #262 (4bf59526d, `feat(stryker-js)!:`) marked their breaks with `!`. #274's 1.0 to 1.1 step was additive, so removing codes takes the major step. Governs R6, R10.
+- **Only a leg's `total` decides a regression; every other phase attributes it.** (session-settled: user-directed, round-2 review R1 — chosen over requiring two regressed metrics, because the phases are correlated with `total` and `mutation-test` is most of it, so two-metric agreement is close to one metric; and over a "re-run" next action, because the bench has no cross-run memory and every false alarm would cost a root turn.) A decisive verdict also needs |Δ median| >= max(3% of A's median, 10 ms): readings are integer ms, and a phase whose A median is 0 (`instrument` is 0-1 ms on every leg) makes the 3% bar zero, so a 1 ms separation would read as regressed. The derivation: complete separation in one direction in a 4-vs-4 ABBA schedule has null probability 1/C(8,4) = 1/70 per cell. Over the ~28 cells of the four legs, a rule that fires on any cell raises a false regression on up to 1 - (69/70)^28 ~ 33% of unchanged commits. Over the four totals it is at most 4/70 ~ 5.7%, and the 3% bar cuts it further because a total's run-to-run range is ~0.5-2% (bench run 38071277981, the #274 head run). That run also shows the rule still catches real regressions: typescript-checker total +4.1% and e2e-core total +6.0% were both separated. Governs R10.
 
 ### Requirements
 
@@ -68,7 +70,7 @@ The enterprise leg also stalls on main as it stands. `prepare-side.service.ts:49
 
 **Regression report**
 
-- R10. When any cell regressed, the verdict line, the step summary and the JSON report all carry the same fields: reason code `phase-regressed`, this SHA, the parent SHA, and each regressed metric (project and phase) with its delta in ms and in percent of side A's median. They also carry the next action verbatim: "root opens a revert PR of the culprit or a root-fix P0".
+- R10. When a leg's `total` regressed, the verdict line, the step summary and the JSON report all carry the same fields: reason code `phase-regressed`, this SHA, the parent SHA, and the regressed metrics with their delta in ms and in percent of side A's median: that `total` first, then every phase of the same leg that also regressed, as attribution. They also carry the next action verbatim: "root opens a revert PR of the culprit or a root-fix P0". A phase that regressed while its leg's `total` did not stays in the table as a diagnostic verdict only, with no regression block and no `::error` line. A verdict is decisive only when the four-run samples do not overlap and |Δ median| >= max(3% of A's median, 10 ms).
 - R11. A computed regression is still a `summarized` outcome. The leg exits 0 and the verdict line stays `::error`, as `test/e2e-core/src/render-bench-report.workflow.ts:115-125` renders it today.
 
 **Enterprise install**
@@ -82,7 +84,7 @@ The enterprise leg also stalls on main as it stands. `prepare-side.service.ts:49
 ### Acceptance Examples
 
 - AE1. **Covers R1, R3.** **Given** this unit's PR, **when** its checks are listed, **then** no Bench check appears on it, and a search of `.github/workflows` on its head finds no `pull_request` trigger in `bench.yml`.
-- AE2. **Covers R2, R10, R11.** **Given** a main commit whose `mutation-test` phase on one project is slower than its parent's past the signal rule, **when** the leg reports, **then** the job exits 0. The verdict line is `::error` with `phase-regressed`, both SHAs, that project and phase, the delta in seconds and percent, and the verbatim next action. The JSON report holds the same fields.
+- AE2. **Covers R2, R10, R11.** **Given** a main commit whose `mutation-test` phase on one project is slower than its parent's past the signal rule, and so is that project's `total`, **when** the leg reports, **then** the job exits 0. The verdict line is `::error` with `phase-regressed`, both SHAs, that project's `total` and then its `mutation-test`, each with the delta in seconds and percent, and the verbatim next action. The JSON report holds the same fields. **Given** only `check` separated past the rule while `total` did not, **then** the table reads `regressed` on `check`, the verdict line is a `::notice`, and the report's `regression` is null.
 - AE3. **Covers R8, R9.** **Given** a leg whose wall time is 14 minutes, **when** it reports, **then** the summary shows 14 minutes against the 10-minute target. Its exit code and verdict level are what a 6-minute leg with the same cells would get.
 - AE4. **Covers R5, R6.** **Given** a run or setup command that never returns, **when** it hangs, **then** no bench code stops it and GitHub cancels the job at 60 minutes.
 - AE5. **Covers R7.** **Given** side A's closure build exits non-zero and side B is ready, **when** setup ends, **then** the report aborts with `side-setup-failed` naming side A and the step, and the job exits 1.

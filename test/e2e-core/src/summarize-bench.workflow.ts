@@ -194,12 +194,17 @@ const cellGapOf = (cell: SideCell, side: BenchSide, phase: BenchPhase): Readonly
 
 const SUPPRESSED_REASON = "mutation-test includes reporting and a side's reporting was not recorded"
 
+const MIN_SIGNAL_MS = 10
+
 const decisiveVerdict = (a: MeasuredSideCell, b: MeasuredSideCell, workloadSame: boolean): PhaseVerdict => {
   const statsA = statisticsOf(a)
   const statsB = statisticsOf(b)
   const deltaMs = statsB.medianMs - statsA.medianMs
   const separated = Boolean.or(statsB.maxMs < statsA.minMs, statsB.minMs > statsA.maxMs)
-  const decisive = Boolean.and(separated, Boolean.and(abs(deltaMs) >= 0.03 * statsA.medianMs, workloadSame))
+  const decisive = Boolean.and(
+    separated,
+    Boolean.and(abs(deltaMs) >= max(0.03 * statsA.medianMs, MIN_SIGNAL_MS), workloadSame),
+  )
   const deltaShareOfA = shareOf(deltaMs, statsA.medianMs)
   return Boolean.match(decisive, {
     onTrue: () =>
@@ -389,11 +394,21 @@ const regressedMetricsOf = (project: BenchProjectSummary): ReadonlyArray<Regress
       'not-measured': (): ReadonlyArray<RegressedMetric> => [],
     }))
 
+const isTotal = (metric: RegressedMetric): boolean => metric.phase === 'total'
+
+const legRegressionOf = (project: BenchProjectSummary): ReadonlyArray<RegressedMetric> => {
+  const regressed = regressedMetricsOf(project)
+  return Arr.match(Arr.filter(regressed, isTotal), {
+    onEmpty: (): ReadonlyArray<RegressedMetric> => [],
+    onNonEmpty: (totals) => [...totals, ...Arr.filter(regressed, (metric) => !isTotal(metric))],
+  })
+}
+
 const regressionOf = (
   command: SummarizeBenchCommand,
   projects: ReadonlyArray<BenchProjectSummary>,
 ): PhaseRegression | null =>
-  Arr.match(Arr.flatMap(projects, regressedMetricsOf), {
+  Arr.match(Arr.flatMap(projects, legRegressionOf), {
     onEmpty: () => null,
     onNonEmpty: (metrics): PhaseRegression => ({
       code: 'phase-regressed',

@@ -240,7 +240,7 @@ describe('renderBenchReport', () => {
     (subject, [rawB, rawExtra]) => {
       const b = positives(rawB)
       const spread = Math.max(...b) - Math.min(...b)
-      const gap = Math.max(spread, medianOf(b) * 0.1) + Math.abs(rawExtra) + 1
+      const gap = Math.max(spread, medianOf(b) * 0.1) + Math.abs(rawExtra) + 10
       const a = b.map((sample) => sample + gap)
       const runs = runsOf(a, b)
       const markdown = markdownOf(subject, reportOf(summaryOf(runs), runs, 'base', 'head'))
@@ -265,7 +265,7 @@ describe('renderBenchReport', () => {
   )
 
   it.prop(
-    '∀ab_Annotation_≡ErrorIffRegressedElseNoticeAndOneLine',
+    '∀ab_Annotation_≡ErrorIffARegressionElseNoticeAndOneLine',
     {
       of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Tuple([S.Int, S.Int, S.Int, S.Int])],
       subject: renderBenchReport,
@@ -274,8 +274,7 @@ describe('renderBenchReport', () => {
       const runs = runsOf(positives(rawA), positives(rawB))
       const summary = summaryOf(runs)
       const line = annotationOf(subject, reportOf(summary, runs, 'base', 'head'))
-      const regressed = rowCountOf(summary, 'regressed')
-      const level = regressed > 0 ? '::error title=phase-regressed::' : '::notice title=Bench '
+      const level = summary.regression !== null ? '::error title=phase-regressed::' : '::notice title=Bench '
       return line.startsWith(level) && line.includes('\n') === false
     },
   )
@@ -291,7 +290,7 @@ describe('renderBenchReport', () => {
       const summary = summaryOf(runs)
       const line = annotationOf(subject, reportOf(summary, runs, 'base', 'head'))
       return countOf(line, 'improved') === rowCountOf(summary, 'improved') &&
-        countOf(line, 'regressed') === rowCountOf(summary, 'regressed')
+        countOf(line, 'regressed') === (summary.regression?.metrics.length ?? 0)
     },
   )
 
@@ -392,7 +391,7 @@ describe('renderBenchReport', () => {
     { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int], subject: renderBenchReport },
     (subject, [rawA, rawExtra]) => {
       const a = positives(rawA)
-      const gap = Math.max(Math.max(...a) - Math.min(...a), Math.max(...a) * 0.1) + Math.abs(rawExtra) + 1
+      const gap = Math.max(Math.max(...a) - Math.min(...a), Math.max(...a) * 0.1) + Math.abs(rawExtra) + 10
       const runs = runsOf(a, a.map((sample) => sample + gap))
       const rendered = renderedOf(subject, reportOf(summaryOf(runs), runs, 'base', 'head'))
       const fields = [

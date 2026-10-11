@@ -92,7 +92,7 @@ const improvedItemsOf = (projects: ReadonlyArray<BenchProjectSummary>): Readonly
         'not-measured': (): ReadonlyArray<string> => [],
       })))
 
-const RULE = '(N=4 per side, non-overlap and >=3% rule)'
+const RULE = '(N=4 per side, non-overlap and >= max(3%, 10 ms) rule; only a leg total decides a regression)'
 
 const unverifiedText = (projects: ReadonlyArray<BenchProjectSummary>): string => {
   const unverified = Arr.filter(projects, (project) => S.is(Workload.cases.unverified)(project.workload))
@@ -146,7 +146,7 @@ const TABLE_HEADER = '| phase | parent (A) | commit (B) | Δ | verdict |'
 const TABLE_RULE = '| --- | --- | --- | --- | --- |'
 
 const SIGNAL_NOTE =
-  'Signal needs the four-run samples not to overlap and |Δ median| >= 3% of A; under the null a cell is a false signal in at most 2/70 ~ 2.9% of orderings, so a lone signal is a lead to re-run, not proof.'
+  "Signal needs the four-run samples not to overlap and |Δ median| >= max(3% of A, 10 ms). Only a leg's total decides a regression; a phase verdict attributes it. Under the null a total separates upward in 1/70 of orderings: at most 1/70 ~ 1.4% of unchanged commits raise a false regression on one leg and 4/70 ~ 5.7% on any of the four, before the 3% bar cuts it further."
 
 const percent = (share: number): string => `${round(share * 100)}%`
 
