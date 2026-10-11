@@ -1,3 +1,5 @@
+import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import type { Json } from 'effect/Schema'
 
 import {
@@ -25,7 +27,6 @@ export type ContractDocument = {
 export type PackageContracts = {
   readonly name: string
   readonly directory: string
-  readonly releasedVersion: string
   readonly mainVersion: string
   readonly committedVersion: string
   readonly releasedDocuments: readonly ContractDocument[]
@@ -58,13 +59,75 @@ export type StreamVersionFailure = {
   readonly declaredStreamVersion: string
 }
 
-export type StaleBaselineFailure = {
-  readonly kind: 'stale-baseline'
+const releaseNextOf = (pkg: string): string =>
+  `add a changeset for ${pkg} and merge the version PR, so a release writes a version its manifest has not declared before`
+
+const baselineFields = { package: S.String, manifest: S.String, version: S.String }
+
+export class NoVersionCommit extends S.TaggedError<NoVersionCommit>()('NoVersionCommit', baselineFields) {
+  readonly code = 'no-version-commit'
+  get reason(): string {
+    return `no commit on main's first-parent history sets "version": "${this.version}" in ${this.manifest}, so the commit that released ${this.version} cannot be found`
+  }
+  get next(): string {
+    return releaseNextOf(this.package)
+  }
+}
+
+export class HistoryTruncated extends S.TaggedError<HistoryTruncated>()('HistoryTruncated', {
+  ...baselineFields,
+  boundary: S.String,
+}) {
+  readonly code = 'history-truncated'
+  get reason(): string {
+    return `the history of this checkout ends at ${this.boundary}, so whether that commit set ${this.version} in ${this.manifest} cannot be read`
+  }
+  get next(): string {
+    return 'git fetch --unshallow origin main'
+  }
+}
+
+export class VersionUnchanged extends S.TaggedError<VersionUnchanged>()('VersionUnchanged', {
+  ...baselineFields,
+  commit: S.String,
+}) {
+  readonly code = 'version-unchanged'
+  get reason(): string {
+    return `${this.commit} rewrites the line declaring ${this.version} in ${this.manifest} while its parent already declares ${this.version}, so it cannot be told apart from the commit that released ${this.version}`
+  }
+  get next(): string {
+    return releaseNextOf(this.package)
+  }
+}
+
+export class VersionRollback extends S.TaggedError<VersionRollback>()('VersionRollback', {
+  ...baselineFields,
+  commit: S.String,
+  parentVersion: S.String,
+}) {
+  readonly code = 'version-rollback'
+  get reason(): string {
+    return `${this.commit} moves ${this.manifest} back from ${this.parentVersion} to ${this.version}, so its documents are not the ones ${this.version} shipped`
+  }
+  get next(): string {
+    return releaseNextOf(this.package)
+  }
+}
+
+export type ReleasedBaselineUnavailable = NoVersionCommit | HistoryTruncated | VersionUnchanged | VersionRollback
+
+export type VersionCommitParent =
+  | { readonly status: 'outside-history' }
+  | { readonly status: 'no-manifest' }
+  | { readonly status: 'declares'; readonly version: string }
+
+export type VersionCommitEvidence = {
   readonly package: string
-  readonly reason: string
-  readonly next: string
-  readonly releasedVersion: string
+  readonly manifest: string
   readonly mainVersion: string
+  readonly candidate:
+    | { readonly commit: string; readonly declares: string | undefined; readonly parent: VersionCommitParent }
+    | undefined
 }
 
 export type MainBaselineUnavailableFailure = {
@@ -77,7 +140,7 @@ export type MainBaselineUnavailableFailure = {
 export type ContractVersionFailure =
   | ContractChangeFailure
   | StreamVersionFailure
-  | StaleBaselineFailure
+  | ReleasedBaselineUnavailable
   | MainBaselineUnavailableFailure
 
 const ABSENT_STREAM_VERSION = 'absent'
@@ -162,15 +225,24 @@ const changeFailuresOf = (context: {
     declaredVersion: context.declaredVersion,
   }))
 
-const staleBaselineFailureOf = (pkg: PackageContracts): readonly StaleBaselineFailure[] => [{
-  kind: 'stale-baseline',
-  package: pkg.name,
-  reason:
-    `main declares ${pkg.mainVersion} while the released documents come from ${pkg.releasedVersion}, so they cannot bound what the next release of ${pkg.name} may change`,
-  next: 'move the stryker-published flake input to the latest release tag and reinstall',
-  releasedVersion: pkg.releasedVersion,
-  mainVersion: pkg.mainVersion,
-}]
+export const versionCommitOf = (
+  evidence: VersionCommitEvidence,
+): Result.Result<string, ReleasedBaselineUnavailable> => {
+  const fields = { package: evidence.package, manifest: evidence.manifest, version: evidence.mainVersion }
+  const candidate = evidence.candidate
+  if (candidate === undefined || candidate.declares !== fields.version) {
+    return Result.fail(NoVersionCommit.make(fields))
+  }
+  const parent = candidate.parent
+  if (parent.status === 'outside-history') {
+    return Result.fail(HistoryTruncated.make({ ...fields, boundary: candidate.commit }))
+  }
+  if (parent.status === 'no-manifest') return Result.succeed(candidate.commit)
+  const order = compareVersions({ left: parent.version, right: fields.version })
+  if (order < 0) return Result.succeed(candidate.commit)
+  if (order === 0) return Result.fail(VersionUnchanged.make({ ...fields, commit: candidate.commit }))
+  return Result.fail(VersionRollback.make({ ...fields, commit: candidate.commit, parentVersion: parent.version }))
+}
 
 export const mainBaselineUnavailableOf = (context: {
   readonly ref: string
@@ -222,27 +294,23 @@ const failuresForPackage = (
 ): readonly ContractVersionFailure[] => {
   const pending = pendingIntents.filter((intent) => intent.package === pkg.name)
   const declaredVersion = declaredNextVersion({ version: pkg.committedVersion, intents: pending })
-  const releasedMajor = majorOf(pkg.releasedVersion)
-  const requiredLevel = releasedMajor > 0 ? 'major' : 'minor'
-  const requiredVersion = releasedMajor > 0 ? nextMajorOf(pkg.releasedVersion) : nextMinorOf(pkg.releasedVersion)
+  const mainMajor = majorOf(pkg.mainVersion)
+  const requiredLevel = mainMajor > 0 ? 'major' : 'minor'
+  const requiredVersion = mainMajor > 0 ? nextMajorOf(pkg.mainVersion) : nextMinorOf(pkg.mainVersion)
   const cleared = compareVersions({ left: declaredVersion, right: requiredVersion }) >= 0
 
-  const changesWhen = (forgiven: boolean): readonly ContractVersionFailure[] =>
-    documentNamesOf(pkg).flatMap((name) =>
-      failuresForDocument({
-        pkg,
-        documentPath: `${pkg.directory}/contract/${name}`,
-        released: documentNamed(pkg.releasedDocuments, name),
-        committed: documentNamed(pkg.committedDocuments, name),
-        cleared: forgiven,
-        requiredLevel,
-        requiredVersion,
-        declaredVersion,
-      })
-    )
-
-  if (pkg.mainVersion === pkg.releasedVersion) return changesWhen(cleared)
-  return pending.length > 0 || changesWhen(false).length > 0 ? staleBaselineFailureOf(pkg) : []
+  return documentNamesOf(pkg).flatMap((name) =>
+    failuresForDocument({
+      pkg,
+      documentPath: `${pkg.directory}/contract/${name}`,
+      released: documentNamed(pkg.releasedDocuments, name),
+      committed: documentNamed(pkg.committedDocuments, name),
+      cleared,
+      requiredLevel,
+      requiredVersion,
+      declaredVersion,
+    })
+  )
 }
 
 export const evaluateContractLaw = (input: ContractLawInput): readonly ContractVersionFailure[] =>
@@ -251,22 +319,21 @@ export const evaluateContractLaw = (input: ContractLawInput): readonly ContractV
 const pointerLineOf = (pointer: string): string => (pointer === '' ? '/' : pointer)
 
 export const renderFailure = (failure: ContractVersionFailure): string => {
+  if ('_tag' in failure) {
+    return [
+      `error[CONTRACT-VERSION]: the released baseline of ${failure.package} is unavailable`,
+      `  code: ${failure.code}`,
+      `  package: ${failure.package}`,
+      `  version: ${failure.version}`,
+      `  reason: ${failure.reason}`,
+      `  next: ${failure.next}`,
+    ].join('\n')
+  }
   if (failure.kind === 'main-baseline-unavailable') {
     return [
       `error[CONTRACT-VERSION]: the version main declares is unavailable`,
       `  code: ${failure.kind}`,
       `  ref: ${failure.ref}`,
-      `  reason: ${failure.reason}`,
-      `  next: ${failure.next}`,
-    ].join('\n')
-  }
-  if (failure.kind === 'stale-baseline') {
-    return [
-      `error[CONTRACT-VERSION]: the released baseline of ${failure.package} is stale`,
-      `  code: ${failure.kind}`,
-      `  package: ${failure.package}`,
-      `  released: ${failure.releasedVersion}`,
-      `  main: ${failure.mainVersion}`,
       `  reason: ${failure.reason}`,
       `  next: ${failure.next}`,
     ].join('\n')
