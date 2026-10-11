@@ -30,6 +30,7 @@ import { assignDriftLegs, AssignDriftLegsCommand } from './assign-drift-legs.wor
 import { blocksOf, DEFAULT_BLOCK_MUTANTS } from './blocks.js'
 import { appendStepSummary, type CiEnvironment } from './ci-environment.js'
 import {
+  checkedOnEveryPullRequest,
   corpusEntries,
   ISOLATED_DECLARATIONS_PROJECT,
   programFilesFromListing,
@@ -1065,7 +1066,8 @@ const samplesOnThisLeg = (input: ProjectInput): boolean =>
   )
 
 const changedOnThisLeg = (input: ProjectInput, pullRequest: PullRequestScope) => (file: string): boolean =>
-  HashSet.has(pullRequest.changedFiles, file) && inShard(file, input.shard)
+  Boolean.or(checkedOnEveryPullRequest(input.project), HashSet.has(pullRequest.changedFiles, file)) &&
+  inShard(file, input.shard)
 
 const pullRequestScope = (
   input: ProjectInput,

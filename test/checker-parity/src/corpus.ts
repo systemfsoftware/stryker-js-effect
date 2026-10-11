@@ -26,6 +26,8 @@ export const corpusEntries = (tracked: ReadonlyArray<string>): CorpusEntries => 
   e2eConfigs: distinctSorted(tracked.filter((file) => E2E_CHECKER_CONFIG.test(file))),
 })
 
+export const checkedOnEveryPullRequest = (project: string): boolean => project === ISOLATED_DECLARATIONS_PROJECT
+
 export interface NamedByConfig {
   readonly configText: string
   readonly configDirectory: string
