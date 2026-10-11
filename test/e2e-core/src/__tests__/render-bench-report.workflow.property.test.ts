@@ -146,7 +146,7 @@ const invalidOf = (
   code: BenchRunFailureCode,
   reason: string,
   lineNumber: number | null,
-  exitCode: number | null,
+  exitCode: number,
   stderrTail: string,
 ): BenchRunInvalid =>
   BenchRunInvalid.make({
@@ -331,7 +331,7 @@ describe('renderBenchReport', () => {
     '∀rl_FailedOutcome_≡FailureSectionNamesTheRun',
     { of: [S.NonEmptyString, S.NullOr(S.Int)], subject: renderBenchReport },
     (subject, [reason, lineNumber]) => {
-      const report = failedReportOf([invalidOf('stream-undecodable', reason, lineNumber, null, '')])
+      const report = failedReportOf([invalidOf('stream-undecodable', reason, lineNumber, 0, '')])
       const markdown = markdownOf(subject, report)
       const line = lineNumber === null ? '' : ` (line ${lineNumber})`
       return markdown.includes('### Failures') &&
@@ -350,11 +350,11 @@ describe('renderBenchReport', () => {
 
   it.prop(
     '∀rlce_FailedOutcomeMarkdown_≡NamesEachRunsCodeExitAndStderrTail',
-    { of: [BenchRunFailureCode, S.NonEmptyString, S.Boolean, S.Int, S.String], subject: renderBenchReport },
-    (subject, [code, reason, hasExit, exitCode, stderrTail]) => {
-      const report = failedReportOf([invalidOf(code, reason, null, hasExit ? exitCode : null, stderrTail)])
+    { of: [BenchRunFailureCode, S.NonEmptyString, S.Int, S.String], subject: renderBenchReport },
+    (subject, [code, reason, exitCode, stderrTail]) => {
+      const report = failedReportOf([invalidOf(code, reason, null, exitCode, stderrTail)])
       const markdown = markdownOf(subject, report)
-      const exitText = hasExit ? markdown.includes(`(exit ${exitCode})`) : true
+      const exitText = markdown.includes(`(exit ${exitCode})`)
       const stderrText = stderrTail.length === 0 ? true : markdown.includes(stderrTail)
       return markdown.includes('### Failures') &&
         markdown.includes(`— ${code}:`) &&

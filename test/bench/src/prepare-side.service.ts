@@ -27,6 +27,7 @@ import {
   lockfilePins,
   LockfilePinsCommand,
   ManifestDocument,
+  type ManifestRole,
   PackedManifest,
   type PackedMember,
   parseWorkspaceCatalogs,
@@ -476,7 +477,7 @@ const pinManifests = (
           const manifest = yield* S.decodeEffect(ManifestDocument)(text).pipe(
             Effect.mapError((cause) => fail(STEP_ENTERPRISE_INSTALL, `${relativePath} is not a JSON object`, cause)),
           )
-          const role = relativePath === MANIFEST_FILE_NAME ? 'root' : 'member'
+          const role: ManifestRole = relativePath === MANIFEST_FILE_NAME ? 'root' : 'member'
           const pinned = yield* S.encodeEffect(ManifestDocument)(pinnedManifest(manifest, pins, role)).pipe(
             Effect.mapError((cause) => fail(STEP_ENTERPRISE_INSTALL, `${relativePath} could not be encoded`, cause)),
           )

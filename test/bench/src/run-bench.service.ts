@@ -7,7 +7,6 @@ import {
   BenchRunInvalid,
   BenchRunKey,
   BenchRunMeasured,
-  type BenchSide,
   readBenchRun,
   ReadBenchRunCommand,
   summarizeBench,
@@ -189,13 +188,6 @@ const prepareTarget = (
     (pristine) => ({ prepared, pristine }),
   )
 
-const runAt = (
-  input: RunBenchInput,
-  targets: { readonly A: PreparedTarget; readonly B: PreparedTarget },
-) =>
-(side: BenchSide, position: number): Effect.Effect<BenchRun, BenchOrchestrationFailed, BenchPlatform> =>
-  runOne(input, targets[side].prepared, targets[side].pristine, position)
-
 const reportRunOf = (run: BenchRunMeasured): BenchReportRun => ({
   key: run.key,
   wallMs: run.wallMs,
@@ -209,7 +201,10 @@ export const runBench = (
 ): Effect.Effect<RunBenchResult, BenchOrchestrationFailed, BenchPlatform> =>
   Effect.gen(function*() {
     const targets = { A: yield* prepareTarget(input.sideA), B: yield* prepareTarget(input.sideB) }
-    const runs = yield* Effect.forEach(BENCH_ORDER, runAt(input, targets))
+    const runs = yield* Effect.forEach(
+      BENCH_ORDER,
+      (side, position) => runOne(input, targets[side].prepared, targets[side].pristine, position),
+    )
 
     const summary = summarizeBench(
       SummarizeBenchCommand.make({ sha: input.sha, parentSha: input.parentSha, runs: [...runs] }),

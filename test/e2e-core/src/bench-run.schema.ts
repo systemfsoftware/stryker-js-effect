@@ -48,7 +48,7 @@ export class BenchRunInvalid extends S.TaggedClass<BenchRunInvalid>()('invalid',
   code: BenchRunFailureCode,
   reason: S.String,
   lineNumber: S.NullOr(S.Int),
-  exitCode: S.NullOr(S.Int),
+  exitCode: S.Int,
   stderrTail: S.String,
 }) {
   readonly [BenchRunTypeId] = BenchRunTypeId

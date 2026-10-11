@@ -131,10 +131,7 @@ const summarizedAnnotation = (summarized: SummarizedOutcome): Annotation => {
   })
 }
 
-const firstInvalidText = (run: BenchRunInvalid): string =>
-  `${run.key.label} (${run.code}${
-    Option.getOrElse(Option.map(Option.fromNullishOr(run.exitCode), (code) => `, exit ${code}`), () => '')
-  })`
+const firstInvalidText = (run: BenchRunInvalid): string => `${run.key.label} (${run.code}, exit ${run.exitCode})`
 
 const invalidAnnotation = (invalid: ReadonlyArray<BenchRunInvalid>): Annotation =>
   error(
@@ -219,9 +216,9 @@ const stderrBlock = (run: BenchRunInvalid): string =>
   })
 
 const failureLine = (run: BenchRunInvalid): string =>
-  `- ${run.key.label} — ${run.code}: ${run.reason}${optionalText(run.lineNumber, (line) => ` (line ${line})`)}${
-    optionalText(run.exitCode, (code) => ` (exit ${code})`)
-  }${stderrBlock(run)}`
+  `- ${run.key.label} — ${run.code}: ${run.reason}${
+    optionalText(run.lineNumber, (line) => ` (line ${line})`)
+  } (exit ${run.exitCode})${stderrBlock(run)}`
 
 const runText = (run: BenchReportRun): string =>
   `${run.key.label} → ${seconds(run.wallMs)}s${
