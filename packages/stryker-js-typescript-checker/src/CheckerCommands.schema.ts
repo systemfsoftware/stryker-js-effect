@@ -243,3 +243,34 @@ export class PlanCheckRoundsCommand extends S.TaggedClass<PlanCheckRoundsCommand
 }
 
 export const GROUP_MUTANT_BOUND: MutantBoundType = 256
+
+const accepts = {
+  mutantBound: S.is(MutantBound),
+  roundCandidates: S.is(PlanCheckRoundsCommand.fields.candidates),
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+
+  const isPositiveBound = (bound: number): boolean => bound >= 1
+  const namesEachIdOnce = (candidates: ReadonlyArray<RoundCandidate>): boolean =>
+    new Set(Arr.map(candidates, (candidate) => candidate.id)).size === candidates.length
+
+  it.prop(
+    '∀n_MutantBoundRefusal_≡BelowOne',
+    { of: [S.Int], subject: accepts },
+    (subject, [drawn]) =>
+      Arr.every([-1, 0, 1, drawn], (bound) => subject.mutantBound(bound) === isPositiveBound(bound)),
+  )
+
+  it.prop(
+    '∀c_RoundCandidatesRefusal_≡AnIdNamedTwice',
+    { of: [S.Array(RoundCandidate)], subject: accepts },
+    (subject, [drawn]) =>
+      Arr.every(
+        [drawn, Arr.appendAll(drawn, Arr.take(drawn, 1))],
+        (candidates) => subject.roundCandidates(candidates) === namesEachIdOnce(candidates),
+      ),
+  )
+}

@@ -30,3 +30,28 @@ export const fallbackKeyOf = (decision: ImporterShortcutDecision): Option.Option
     ShortcutTaken: () => Option.none<string>(),
     ImportersRechecked: (rechecked) => Option.some(`${rechecked.tree}.${rechecked.clause}`),
   })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+
+  it.prop(
+    '∀d_TakesShortcut_≡OnlyForTheTakenTag',
+    { of: [ImporterShortcutDecision], subject: takesShortcut },
+    (subject, [decision]) =>
+      subject(decision) === Match.valueTags(decision, { ShortcutTaken: () => true, ImportersRechecked: () => false }),
+  )
+
+  it.prop(
+    '∀d_FallbackKeyOf_≡NoneForTheShortcutTreeThenClauseForARecheck',
+    { of: [ImporterShortcutDecision], subject: fallbackKeyOf },
+    (subject, [decision]) =>
+      Option.match(subject(decision), {
+        onNone: () => S.is(ShortcutTaken)(decision),
+        onSome: (key) =>
+          Option.exists(
+            Option.liftPredicate(S.is(ImportersRechecked))(decision),
+            (rechecked) => key.split('.').join(' ') === `${rechecked.tree} ${rechecked.clause}`,
+          ),
+      }),
+  )
+}

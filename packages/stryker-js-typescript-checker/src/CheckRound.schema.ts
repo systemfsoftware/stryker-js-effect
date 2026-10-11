@@ -29,6 +29,10 @@ export const roundOfLayer = ([id, ...others]: Arr.NonEmptyReadonlyArray<Mutant.M
     onNonEmpty: (rest) => SharedRound.make({ ids: [id, ...rest] }),
   })
 
+const accepts = {
+  sharedRoundIds: S.is(SharedRound.fields.ids),
+}
+
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
 
@@ -42,5 +46,17 @@ if (import.meta.vitest !== void 0) {
       const round = subject(layer)
       return S.is(SoloRound)(round) === (layer.length === 1) && sameIds(idsOf(round), layer)
     },
+  )
+
+  const holdsTwoOrMore = (ids: ReadonlyArray<Mutant.MutantId>): boolean => ids.length > 1
+
+  it.prop(
+    '∀i_SharedRoundIdsRefusal_≡FewerThanTwoIds',
+    { of: [S.Array(Mutant.MutantId)], subject: accepts },
+    (subject, [drawn]) =>
+      Arr.every(
+        [Arr.take(drawn, 0), Arr.take(drawn, 1), drawn],
+        (ids) => subject.sharedRoundIds(ids) === holdsTwoOrMore(ids),
+      ),
   )
 }

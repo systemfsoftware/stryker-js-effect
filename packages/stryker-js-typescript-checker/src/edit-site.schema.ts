@@ -203,6 +203,10 @@ export const editSiteFactsOf: {
   }
 })
 
+const accepts = {
+  editSpan: S.is(EditSpan),
+}
+
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const { API } = await import('typescript/unstable/sync')
@@ -217,19 +221,58 @@ if (import.meta.vitest !== void 0) {
     compilerOptions: { noEmit: true, target: 'es2022', module: 'esnext', types: [] },
   })
 
-  const readSite = <A>(text: string, read: (sourceFile: SourceFile) => A): Option.Option<A> => {
-    const api = new API({ fs: createVirtualFileSystem({ [TSCONFIG]: TSCONFIG_TEXT, [SITE]: text }) })
+  const readFile = <A>(fileName: string, text: string, read: (sourceFile: SourceFile) => A): Option.Option<A> => {
+    const api = new API({ fs: createVirtualFileSystem({ [TSCONFIG]: TSCONFIG_TEXT, [fileName]: text }) })
     const snapshot = api.updateSnapshot({ openProjects: [TSCONFIG] })
     const read_ = Option.map(
       Option.flatMap(
         Option.fromUndefinedOr(snapshot.getProject(TSCONFIG)),
-        (project) => Option.fromUndefinedOr(project.program.getSourceFile(SITE)),
+        (project) => Option.fromUndefinedOr(project.program.getSourceFile(fileName)),
       ),
       read,
     )
     api.close()
     return read_
   }
+
+  const readSite = <A>(text: string, read: (sourceFile: SourceFile) => A): Option.Option<A> =>
+    readFile(SITE, text, read)
+
+  const isPlacedSpan = (start: number, length: number): boolean => Boolean.and(start >= 0, length >= 0)
+
+  it.prop(
+    '∀e_EditSpanRefusal_≡ANegativeStartOrLength',
+    { of: [S.Int, S.Int], subject: accepts },
+    (subject, [start, length]) =>
+      Arr.every(
+        [[start, length], [-1, length], [start, -1], [0, 0]] as const,
+        ([s, l]) => subject.editSpan({ start: s, length: l }) === isPlacedSpan(s, l),
+      ),
+  )
+
+  const FileExtension = S.Literals(['.ts', '.tsx', '.mts', '.cts', '.d.ts'])
+  const ALWAYS_MODULE = ['.mts', '.cts']
+  const isModuleFile = (extension: string, exported: boolean): boolean =>
+    Boolean.and(extension !== '.d.ts', Boolean.or(exported, ALWAYS_MODULE.includes(extension)))
+  const EXPORT_LINE = { true: 'export const x = 1\n', false: 'const x = 1\n' } as const
+  const GLOBAL_BLOCK = {
+    true: 'declare global {\n  interface Probe {\n    readonly n: number\n  }\n}\n',
+    false: '',
+  } as const
+
+  it.prop(
+    '∀f_FileFactsOf_≡AModuleOnlyForANonDeclarationFileWithAnExportAndGlobalOnlyWhenDeclared',
+    { of: [FileExtension, S.Boolean, S.Boolean], subject: fileFactsOf, runs: 30 },
+    (subject, [extension, exported, global]) =>
+      Option.exists(
+        readFile(`/law/file${extension}`, `${EXPORT_LINE[`${exported}`]}${GLOBAL_BLOCK[`${global}`]}`, subject),
+        (facts) =>
+          Boolean.and(
+            facts.typescriptModule === isModuleFile(extension, exported),
+            facts.declaresGlobal === global,
+          ),
+      ),
+  )
 
   const admits = (facts: EditSiteFacts): boolean =>
     Result.match(admitImporterShortcut(DecideImporterShortcutCommand.make({ original: facts, mutated: facts })), {
