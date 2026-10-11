@@ -2,7 +2,7 @@ name: E2E
 
 on:
   push:
-    branches: [main]
+    branches: [main, ci/e2e-postsubmit]
   workflow_dispatch:
 
 permissions:
