@@ -9,6 +9,7 @@ import {
   Option,
   Path,
   Ref,
+  Result,
   Schema as S,
   Stream,
 } from 'effect'
@@ -22,9 +23,15 @@ import {
   FixtureManifest,
   installClosure,
   InstallClosureCommand,
+  type LockfilePins,
+  lockfilePins,
+  LockfilePinsCommand,
+  ManifestDocument,
   PackedManifest,
   type PackedMember,
   parseWorkspaceCatalogs,
+  pinnedManifest,
+  PnpmListingJson,
   resolvedManifestText,
   type SetupStep,
   type StagedFixtureManifest,
@@ -75,7 +82,6 @@ interface Timed<A> {
 const BENCH_CONFIG_FILE = 'stryker.bench.config.ts'
 const MANIFEST_FILE_NAME = 'package.json'
 const WORKSPACE_CATALOGS_FILE = 'pnpm-workspace.yaml'
-const LOCKFILE = 'pnpm-lock.yaml'
 const STDERR_TAIL_CHARS = 4000
 const PACKED_MANIFEST_PATH = 'package/package.json'
 const CLI_BUILD_FILTER = '@systemfsoftware/stryker-js'
@@ -161,15 +167,6 @@ const timed = <A, E, R>(
     Effect.andThen(Effect.timed(effect)),
     Effect.tap(([elapsed]) => Console.log(`bench setup finished: ${name} in ${Duration.format(elapsed)}`)),
     Effect.map(([elapsed, value]) => ({ step: { name, ms: Duration.toMillis(elapsed) }, value })),
-  )
-
-const lastLockfileCommitTimeOf = (root: string): Effect.Effect<string, BenchSetupFailed, BenchPlatform> =>
-  runChecked(STEP_ENTERPRISE_INSTALL, ['git', '-C', root, 'log', '-1', '--format=%cI', '--', LOCKFILE]).pipe(
-    Effect.map((outcome) => outcome.stdout.trim()),
-    Effect.filterOrFail(
-      (cutoff) => cutoff.length > 0,
-      () => fail(STEP_ENTERPRISE_INSTALL, `no commit in ${root} touches ${LOCKFILE}, so the install has no cutoff`),
-    ),
   )
 
 const readCatalogs = (root: string): Effect.Effect<WorkspaceCatalogs, BenchSetupFailed, BenchPlatform> =>
@@ -431,12 +428,11 @@ const rewriteManifests = (
   })
 
 const enterpriseInstallSpecs = (
-  root: string,
+  workspace: ReadonlyArray<string>,
   bundleRoot: string,
   packs: ReadonlyArray<PackedTarball>,
 ): Effect.Effect<ReadonlyArray<string>, BenchSetupFailed, BenchPlatform> =>
   Effect.gen(function*() {
-    const workspace = yield* workspacePackages(root)
     const members = yield* Effect.forEach(packs, packedMemberOf)
     const fixtures = yield* stagedManifestsOf(bundleRoot)
     const install = yield* Effect.fromResult(
@@ -444,6 +440,55 @@ const enterpriseInstallSpecs = (
     ).pipe(Effect.mapError((failure) => fail(STEP_ENTERPRISE_CLOSURE, failure.message)))
     return install.specs
   })
+
+const sideLockfilePins = (
+  root: string,
+  workspace: ReadonlyArray<string>,
+): Effect.Effect<LockfilePins, BenchSetupFailed, BenchPlatform> =>
+  Effect.gen(function*() {
+    const listed = yield* runChecked(
+      STEP_ENTERPRISE_INSTALL,
+      ['pnpm', 'ls', '-r', '--json', '--depth=Infinity'],
+      root,
+    )
+    const listing = yield* S.decodeEffect(PnpmListingJson)(listed.stdout).pipe(
+      Effect.mapError((cause) => fail(STEP_ENTERPRISE_INSTALL, 'pnpm ls wrote no parseable dependency tree', cause)),
+    )
+    return Result.merge(lockfilePins(LockfilePinsCommand.make({ listing, workspaceNames: workspace })))
+  })
+
+const pinManifests = (
+  bundleRoot: string,
+  pins: LockfilePins,
+): Effect.Effect<void, BenchSetupFailed, BenchPlatform> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const manifests = yield* manifestPathsUnder(bundleRoot, STEP_ENTERPRISE_INSTALL)
+    yield* Effect.forEach(
+      manifests,
+      (relativePath) =>
+        Effect.gen(function*() {
+          const manifestPath = path.join(bundleRoot, relativePath)
+          const text = yield* fs.readFileString(manifestPath).pipe(
+            Effect.mapError((cause) => fail(STEP_ENTERPRISE_INSTALL, `${relativePath} could not be read`, cause)),
+          )
+          const manifest = yield* S.decodeEffect(ManifestDocument)(text).pipe(
+            Effect.mapError((cause) => fail(STEP_ENTERPRISE_INSTALL, `${relativePath} is not a JSON object`, cause)),
+          )
+          const role = relativePath === MANIFEST_FILE_NAME ? 'root' : 'member'
+          const pinned = yield* S.encodeEffect(ManifestDocument)(pinnedManifest(manifest, pins, role)).pipe(
+            Effect.mapError((cause) => fail(STEP_ENTERPRISE_INSTALL, `${relativePath} could not be encoded`, cause)),
+          )
+          yield* fs.writeFileString(manifestPath, pinned).pipe(
+            Effect.mapError((cause) => fail(STEP_ENTERPRISE_INSTALL, `${relativePath} could not be written`, cause)),
+          )
+        }),
+      { discard: true },
+    )
+  })
+
+const NPM_INSTALL: Argv = ['npm', 'install', '--no-audit', '--no-fund', '--loglevel=warn']
 
 const prepareEnterprise = (
   input: PrepareSideInput,
@@ -490,18 +535,11 @@ const prepareEnterprise = (
     const install = yield* timed(
       `${label} ${STEP_ENTERPRISE_INSTALL}`,
       Effect.gen(function*() {
-        const specs = yield* enterpriseInstallSpecs(input.root, bundleRoot, closure.value)
-        const lockfileCommitTime = yield* lastLockfileCommitTimeOf(input.root)
-        const npmInstall: Argv = [
-          'npm',
-          'install',
-          '--no-audit',
-          '--no-fund',
-          '--loglevel=warn',
-          `--before=${lockfileCommitTime}`,
-        ]
-        yield* runChecked(STEP_ENTERPRISE_INSTALL, npmInstall, bundleRoot)
-        yield* runChecked(STEP_ENTERPRISE_INSTALL, [...npmInstall, ...specs], bundleRoot)
+        const workspace = yield* workspacePackages(input.root)
+        const specs = yield* enterpriseInstallSpecs(workspace, bundleRoot, closure.value)
+        yield* pinManifests(bundleRoot, yield* sideLockfilePins(input.root, workspace))
+        yield* runChecked(STEP_ENTERPRISE_INSTALL, NPM_INSTALL, bundleRoot)
+        yield* runChecked(STEP_ENTERPRISE_INSTALL, [...NPM_INSTALL, ...specs], bundleRoot)
       }),
     )
 
