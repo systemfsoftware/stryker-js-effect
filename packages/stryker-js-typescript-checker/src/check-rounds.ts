@@ -14,16 +14,14 @@ import * as S from 'effect/Schema'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 import type { Diagnostic } from 'typescript/unstable/async'
 
-import {
-  admitImporterShortcut,
-  type ImporterShortcutDecision,
-  ShortcutTaken,
-} from './admit-importer-shortcut.workflow.js'
+import { admitImporterShortcut } from './admit-importer-shortcut.workflow.js'
 import { type ImporterCheck, TypescriptCheckerOptionsSchema } from './Checker.schema.js'
 import { DecideImporterShortcutCommand, PlanCheckRoundsCommand } from './CheckerCommands.schema.js'
+import type { CheckRound, CheckRounds } from './CheckRound.schema.js'
 import { type CompilerError, CompilerFailed } from './Compiler.schema.js'
 import { type EditSiteFacts, editSiteFactsOf, type Span } from './edit-site.schema.js'
-import { type CheckRound, planCheckRounds } from './plan-check-rounds.workflow.js'
+import { fallbackKeyOf, type ImporterShortcutDecision, takesShortcut } from './ImporterShortcut.schema.js'
+import { planCheckRounds } from './plan-check-rounds.workflow.js'
 import {
   annotateDiagnosticSample,
   type CheckSteps,
@@ -75,15 +73,23 @@ interface Progress {
   readonly outcomes: ReadonlyArray<Outcome>
 }
 
-const isShortcutTaken = S.is(ShortcutTaken)
-
 const admitted = (original: EditSiteFacts, mutated: EditSiteFacts): ImporterShortcutDecision =>
   decided(admitImporterShortcut(DecideImporterShortcutCommand.make({ original, mutated })))
 
-const eligibleOn = (original: EditSiteFacts): boolean => isShortcutTaken(admitted(original, original))
+const eligibleOn = (original: EditSiteFacts): boolean => takesShortcut(admitted(original, original))
 
-const takesShortcut = (decision: Option.Option<ImporterShortcutDecision>): boolean =>
-  Option.exists(decision, isShortcutTaken)
+const outcomeTakesShortcut = (outcome: Outcome): boolean => Option.exists(outcome.decision, takesShortcut)
+
+const outcomeFallbackKeyOf = (outcome: Outcome): Option.Option<string> =>
+  Option.match(outcome.decision, { onNone: () => Option.some('unread'), onSome: fallbackKeyOf })
+
+const locationRuleAttributesOf = (outcomes: ReadonlyArray<Outcome>): Record<string, number> => ({
+  'typescript.importer_shortcut.count': Arr.filter(outcomes, outcomeTakesShortcut).length,
+  ...Object.fromEntries(
+    Object.entries(Arr.groupBy(Arr.getSomes(Arr.map(outcomes, outcomeFallbackKeyOf)), (key) => key))
+      .map(([key, keys]) => [`typescript.importer_shortcut.fallback.${key}.count`, keys.length]),
+  ),
+})
 
 const fileNamesOf = (steps: CheckSteps, mutants: ReadonlyArray<Mutant>): ReadonlyArray<string> =>
   Arr.dedupe(Arr.map(mutants, (mutant) => steps.resolveFileName(mutant.fileName)))
@@ -204,7 +210,7 @@ const soloOutcomeOf = (ctx: CallContext, mutant: Mutant, previous: ReadonlyArray
       onFalse: () => ctx.steps.parenthesizedSplice(mutant, fileName, changedFiles),
     })
     const decision = yield* decisionAfterApplyOf(ctx, mutant, fileName, appliedOf(mutant, held))
-    const diagnostics = yield* Boolean.match(takesShortcut(decision), {
+    const diagnostics = yield* Boolean.match(Option.exists(decision, takesShortcut), {
       onTrue: () => ctx.steps.ownErrorsIn(fileName),
       onFalse: () => ctx.steps.allErrorsIn(ctx.state, fileName),
     })
@@ -285,7 +291,7 @@ const sharedOutcomesOf = (
       ))
     return yield* Boolean.match(
       Arr.every(decidedMembers, (member) =>
-        takesShortcut(member.decision)),
+        Option.exists(member.decision, takesShortcut)),
       {
         onFalse: () =>
           Effect.succeedNone,
@@ -334,43 +340,28 @@ const roundProgressOf = (
     SharedRound: (shared) => sharedProgressOf(ctx, mutantsOf(byId, shared.ids), progress),
   })
 
-const roundsOf = (ctx: CallContext, mutants: ReadonlyArray<Mutant>): ReadonlyArray<CheckRound> =>
-  decided(
-    planCheckRounds(
-      PlanCheckRoundsCommand.make({
-        candidates: Arr.map(mutants, (mutant) => ({
-          id: mutant.id,
-          fileName: ctx.steps.resolveFileName(mutant.fileName),
-          eligible: Option.exists(HashMap.get(ctx.originals, mutant.id), eligibleOn),
-        })),
-      }),
-    ),
+const decodePlanCheckRoundsCommand = S.decodeEffect(PlanCheckRoundsCommand)
+
+const roundsOf = (ctx: CallContext, mutants: ReadonlyArray<Mutant>): Effect.Effect<CheckRounds, CompilerFailed> =>
+  Effect.mapBoth(
+    decodePlanCheckRoundsCommand({
+      _tag: 'PlanCheckRoundsCommand',
+      candidates: Arr.map(mutants, (mutant) => ({
+        id: mutant.id,
+        fileName: ctx.steps.resolveFileName(mutant.fileName),
+        eligible: Option.exists(HashMap.get(ctx.originals, mutant.id), eligibleOn),
+      })),
+    }),
+    {
+      onFailure: (issue) => CompilerFailed.make({ reason: 'duplicate-mutant-ids', subject: issue.message }),
+      onSuccess: (command) => decided(planCheckRounds(command)),
+    },
   )
 
 const inInputOrder = (mutants: ReadonlyArray<Mutant>, outcomes: ReadonlyArray<Outcome>): ReadonlyArray<Outcome> => {
   const byId = HashMap.fromIterable(Arr.map(outcomes, (outcome) => [outcome.check.mutantId, outcome] as const))
   return Arr.getSomes(Arr.map(mutants, (mutant) => HashMap.get(byId, mutant.id)))
 }
-
-const fallbackKeyOf = (decision: Option.Option<ImporterShortcutDecision>): Option.Option<string> =>
-  Option.match(decision, {
-    onNone: () => Option.some('unread'),
-    onSome: (decided) =>
-      Match.valueTags(decided, {
-        ShortcutTaken: () => Option.none<string>(),
-        ImportersRechecked: (rechecked) => Option.some(`${rechecked.tree}.${rechecked.clause}`),
-      }),
-  })
-
-const locationRuleAttributesOf = (outcomes: ReadonlyArray<Outcome>): Record<string, number> => ({
-  'typescript.importer_shortcut.count': Arr.filter(outcomes, (outcome) => takesShortcut(outcome.decision)).length,
-  ...Object.fromEntries(
-    Object.entries(
-      Arr.groupBy(Arr.getSomes(Arr.map(outcomes, (outcome) => fallbackKeyOf(outcome.decision))), (key) => key),
-    )
-      .map(([key, keys]) => [`typescript.importer_shortcut.fallback.${key}.count`, keys.length]),
-  ),
-})
 
 const shortcutAttributesOf = (mode: ImporterCheck, outcomes: ReadonlyArray<Outcome>): Record<string, number> =>
   Match.value(mode).pipe(
@@ -407,8 +398,9 @@ export const check: {
     const originals = yield* originalsOf(steps, mode, mutants)
     const ctx: CallContext = { self, rt, steps, state, originals }
     const byId = HashMap.fromIterable(Arr.map(mutants, (mutant) => [mutant.id, mutant] as const))
+    const rounds = yield* roundsOf(ctx, mutants)
     const progress = yield* Effect.reduce(
-      roundsOf(ctx, mutants),
+      rounds,
       (): Progress => ({ previous: [], outcomes: [] }),
       (current, round) => roundProgressOf(ctx, byId, current, round),
     )

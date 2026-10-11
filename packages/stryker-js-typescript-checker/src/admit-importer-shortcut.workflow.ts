@@ -5,27 +5,9 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { DecideImporterShortcutCommand, ShortcutClause, ShortcutTree } from './CheckerCommands.schema.js'
+import { DecideImporterShortcutCommand, type ShortcutClause, type ShortcutTree } from './CheckerCommands.schema.js'
 import type { EditSiteFacts, EditSpan, FunctionLikeFacts } from './edit-site.schema.js'
-
-const ImporterShortcutTypeId: unique symbol = Symbol.for(
-  '@systemfsoftware/stryker-js-typescript-checker/ImporterShortcutDecision',
-)
-type ImporterShortcutTypeId = typeof ImporterShortcutTypeId
-
-export class ShortcutTaken extends S.TaggedClass<ShortcutTaken>()('ShortcutTaken', {}) {
-  readonly [ImporterShortcutTypeId] = ImporterShortcutTypeId
-}
-
-export class ImportersRechecked extends S.TaggedClass<ImportersRechecked>()('ImportersRechecked', {
-  clause: ShortcutClause,
-  tree: ShortcutTree,
-}) {
-  readonly [ImporterShortcutTypeId] = ImporterShortcutTypeId
-}
-
-export const ImporterShortcutDecision = S.Union([ShortcutTaken, ImportersRechecked])
-export type ImporterShortcutDecision = typeof ImporterShortcutDecision.Type
+import { ImporterShortcutDecision, ImportersRechecked, ShortcutTaken } from './ImporterShortcut.schema.js'
 
 interface Verdict {
   readonly clause: ShortcutClause

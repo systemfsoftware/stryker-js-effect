@@ -58,6 +58,7 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
     'mutant-outside-file',
     'program-digest-unavailable',
     'invalid-checker-options',
+    'duplicate-mutant-ids',
   ]),
   subject: S.optional(S.String),
 }) {
@@ -84,6 +85,13 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
       Match.when(
         'invalid-checker-options',
         () => `The typescriptChecker options are invalid: ${this.subject ?? 'unknown value'}`,
+      ),
+      Match.when(
+        'duplicate-mutant-ids',
+        () =>
+          `One check call named the same mutant more than once (${
+            this.subject ?? 'unknown id'
+          }); send each mutant id once per check call`,
       ),
       Match.exhaustive,
     )

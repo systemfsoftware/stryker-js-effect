@@ -8,7 +8,8 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { PlanCheckRoundsCommand, type RoundCandidate } from '../CheckerCommands.schema.js'
-import { type CheckRound, planCheckRounds, SharedRound, SoloRound } from '../plan-check-rounds.workflow.js'
+import { type CheckRound, SharedRound, SoloRound } from '../CheckRound.schema.js'
+import { planCheckRounds } from '../plan-check-rounds.workflow.js'
 
 const FILE_POOL_SIZE = 3
 

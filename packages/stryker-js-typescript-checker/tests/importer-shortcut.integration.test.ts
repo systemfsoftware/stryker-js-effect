@@ -258,6 +258,24 @@ type OptionOutcome =
   | { readonly status: string; readonly shortcuts: number }
 
 const INVALID_OPTIONS_TEXT = 'The typescriptChecker options are invalid'
+const DUPLICATE_IDS_TEXT = 'send each mutant id once per check call'
+
+const duplicateOutcomeOf = (
+  edits: ReadonlyArray<Edit>,
+): Effect.Effect<
+  { readonly mutantIds: ReadonlyArray<string>; readonly duplicateIds: boolean } | 'checked',
+  never,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> =>
+  checkedWith(SINGLE_PROJECT, edits, {}).pipe(
+    Effect.match({
+      onFailure: (failed) => ({
+        mutantIds: [...failed.mutantIds],
+        duplicateIds: failed.cause.includes(DUPLICATE_IDS_TEXT),
+      }),
+      onSuccess: () => 'checked' as const,
+    }),
+  )
 
 const optionOutcomeOf = (
   checkerOptions: CheckerOptionsInput,
@@ -398,6 +416,23 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
             always: { status: 'passed', shortcuts: 0 },
             locationRule: { status: 'passed', shortcuts: 1 },
             omitted: { status: 'passed', shortcuts: 1 },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A check call that names one mutant twice is refused with the duplicate reason',
+      Gherkin.Do.pipe(
+        When('the same annotated body edit is sent twice in one call, and once')('seen', () =>
+          Effect.all({
+            twice: duplicateOutcomeOf([AE1_EDIT, AE1_EDIT]),
+            once: duplicateOutcomeOf([AE1_EDIT]),
+          })),
+        Then('the doubled call fails naming the duplicate reason and the single call is checked')((s, expect) =>
+          expect(s.seen).toEqual({
+            twice: { mutantIds: [AE1, AE1], duplicateIds: true },
+            once: 'checked',
           })
         ),
       ),

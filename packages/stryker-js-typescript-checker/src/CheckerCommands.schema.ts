@@ -219,7 +219,7 @@ export class DecideImporterShortcutCommand extends S.TaggedClass<DecideImporterS
 }
 
 export const RoundCandidate = S.Struct({
-  id: S.String,
+  id: Mutant.MutantId,
   fileName: S.String,
   eligible: S.Boolean,
 })
