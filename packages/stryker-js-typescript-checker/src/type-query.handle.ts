@@ -8,7 +8,6 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
-import * as Result from 'effect/Result'
 import * as Semaphore from 'effect/Semaphore'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 import {
@@ -80,6 +79,7 @@ import {
   type SiteFunctionBody,
 } from './CheckerCommands.schema.js'
 import { classifyCandidate } from './classify-candidate.workflow.js'
+import { decided } from './ts-compiler.handle.js'
 import type { ServerCrash } from './type-query.schema.js'
 
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TypeQuery')
@@ -91,9 +91,6 @@ const servedVersionOf = (version: number): Option.Option<TypeQuery.TypeQueryVers
   Arr.findFirst(TypeQuery.TypeQueryVersion.literals, (served) => served === version)
 
 const normalizeFileName = (fileName: string): string => fileName.replace(/\\/g, '/')
-
-const decided = <A>(result: Result.Result<A, never>): A =>
-  Result.match(result, { onFailure: (refused) => refused, onSuccess: (decision) => decision })
 
 const isContextFree = (text: string): boolean => {
   const command = ClassifyCandidateCommand.make({ text })

@@ -159,7 +159,7 @@ export const isTSCompiler = TSCompiler.is
 
 export const runtimeOf = (self: TSCompiler): TSCompilerRuntime => TSCompiler.slot(self)
 
-const decided = <A>(result: Result.Result<A, never>): A =>
+export const decided = <A>(result: Result.Result<A, never>): A =>
   Result.match(result, { onFailure: (refused) => refused, onSuccess: (decision) => decision })
 
 export const make: {

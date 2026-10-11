@@ -9,7 +9,6 @@ import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Ref from 'effect/Ref'
-import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 import type { Diagnostic } from 'typescript/unstable/async'
@@ -28,6 +27,7 @@ import {
   checkStepsOf,
   classifyBatchTce,
   type CompilerState,
+  decided,
   describeDiagnostics,
   type EditTree,
   emptyTally,
@@ -51,9 +51,6 @@ const importerCheckOf = (options: Options.StrykerOptions): Effect.Effect<Importe
   })
 
 type Mutant = Checker.CheckerMutantWire
-
-const decided = <A>(result: Result.Result<A, never>): A =>
-  Result.match(result, { onFailure: (refused) => refused, onSuccess: (decision) => decision })
 
 interface Outcome {
   readonly check: MutantCheck
