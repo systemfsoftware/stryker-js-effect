@@ -335,6 +335,14 @@ export const Gates = S.Struct({
 })
 export type Gates = typeof Gates.Type
 
+export const ProjectLeg = S.Struct({
+  project: S.String,
+  changedFiles: S.Array(S.String),
+  samplesOnLeg: S.Boolean,
+  shard: Shard,
+})
+export type ProjectLeg = typeof ProjectLeg.Type
+
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
 

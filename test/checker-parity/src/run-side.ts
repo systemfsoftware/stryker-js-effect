@@ -30,10 +30,11 @@ import { assignDriftLegs, AssignDriftLegsCommand } from './assign-drift-legs.wor
 import { blocksOf, DEFAULT_BLOCK_MUTANTS } from './blocks.js'
 import { appendStepSummary, type CiEnvironment } from './ci-environment.js'
 import {
-  checkedOnEveryPullRequest,
+  checkedOnLeg,
   corpusEntries,
   ISOLATED_DECLARATIONS_PROJECT,
   programFilesFromListing,
+  projectOnLeg,
   tsconfigsNamedByConfig,
 } from './corpus.js'
 import { DriverFailure } from './DriverFailure.schema.js'
@@ -56,6 +57,7 @@ import {
   PlannedLeg,
   PlannedUnit,
   ProjectBootFailed,
+  type ProjectLeg,
   ProjectSkipped,
   type RunScopeName,
   ScopeSettings,
@@ -76,7 +78,6 @@ import {
   VerdictCacheIdentity,
 } from './reuse-cached-verdicts.workflow.js'
 import { selectScope, SelectScopeCommand } from './select-scope.workflow.js'
-import { inShard } from './shard.js'
 import {
   COUNTS_SCHEMA_VERSION,
   countsOfSpans,
@@ -1065,9 +1066,12 @@ const samplesOnThisLeg = (input: ProjectInput): boolean =>
     (pullRequest) => Option.contains(HashMap.get(pullRequest.driftLegs, input.project), shardIndex(input.shard)),
   )
 
-const changedOnThisLeg = (input: ProjectInput, pullRequest: PullRequestScope) => (file: string): boolean =>
-  Boolean.or(checkedOnEveryPullRequest(input.project), HashSet.has(pullRequest.changedFiles, file)) &&
-  inShard(file, input.shard)
+const legOf = (input: ProjectInput, pullRequest: PullRequestScope): ProjectLeg => ({
+  project: input.project,
+  changedFiles: Arr.fromIterable(pullRequest.changedFiles),
+  samplesOnLeg: samplesOnThisLeg(input),
+  shard: input.shard,
+})
 
 const pullRequestScope = (
   input: ProjectInput,
@@ -1075,7 +1079,7 @@ const pullRequestScope = (
   pullRequest: PullRequestScope,
 ): Effect.Effect<ScopedWires, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
-    const changed = owned.filter(changedOnThisLeg(input, pullRequest))
+    const changed = owned.filter(checkedOnLeg(legOf(input, pullRequest)))
     const changedWires = yield* instrumentNonEmpty(input, changed)
     const sample = yield* Boolean.match(samplesOnThisLeg(input), {
       onTrue: () => firstFileWithMutants(input, seededOrder(pullRequest.settings, owned)),
@@ -1148,17 +1152,10 @@ const checkBothSides = (
     }
   })
 
-const projectDirectoryOf = (project: string): string => project.slice(0, project.lastIndexOf('/') + 1)
-
 const inScopeOf = (input: ProjectInput): boolean =>
   Option.match(input.pullRequest, {
     onNone: () => true,
-    onSome: (pullRequest) =>
-      samplesOnThisLeg(input) ||
-      HashSet.some(
-        pullRequest.changedFiles,
-        (file) => file.startsWith(projectDirectoryOf(input.project)) && inShard(file, input.shard),
-      ),
+    onSome: (pullRequest) => projectOnLeg(legOf(input, pullRequest)),
   })
 
 const checkedProject = (
