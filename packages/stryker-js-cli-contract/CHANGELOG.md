@@ -1,5 +1,25 @@
 # @systemfsoftware/stryker-js-cli-contract
 
+## 0.5.0
+
+The verdict line's `phaseDurations` gains `check` and `reporting`. `check` is checker-busy wall-clock (the union of the intervals in which any checker was starting or checking); it overlaps the other phases, and a run with no checker configured reports `{ "_tag": "not-run" }` rather than zero. `reporting` runs from the end of mutant execution to the verdict, so `mutation-test` now stops where `reporting` starts, and the five sequential phases add up to the elapsed time.
+
+Breaking:
+
+- The stream emits a `phase` event for `reporting`, so `RunPhase` gains that value; exhaustive matches over `RunPhase` must handle it.
+- `mutation-test` no longer includes reporting time.
+- Verdict lines written before this release decode both new members as `{ "_tag": "not-recorded" }`. The published package manifest lists three more development dependencies. Nothing you import or run from this package changes. Tests: the contract version law checks the released documents against the version main declares, not the committed one. A version PR is now judged by the version it declares instead of being refused as a stale baseline. A pin that lags main's version is still refused. Without `origin/main` the law reports `main-baseline-unavailable` with `git fetch origin main` as the next step, and the package's test task is no longer cached. No shipped file changes. Every machine-stream mutant line now carries `statusReason`. An Ignored line names the rule that removed it as `<rule-id>: <detail>` (for example `arid-logging: Effect.logInfo`); other statuses carry their note or `null`. `stryker merge` keeps the reason in the JSON report.
+
+Breaking:
+
+- The stream `schemaVersion` is now `8.0`, which also adds the `subsumption` key. A mutant line without `statusReason`, or an Ignored line whose reason names no known rule, is refused. `stryker merge` refuses a shard stream of another major version, naming both versions.
+- `RunEvent.RunMutantTestedEvent` carries `statusReason`. Building or decoding an Ignored event whose reason names no ignore rule fails.
+- `RunEvent.RunEvent` is a tagged union keyed by `_tag`: use its `cases`, `guards` and `match` to handle each event kind. **Breaking:** the run stream moves to schema version `8.0`. Every `mutant` line has a required `subsumption` key: `null`, a `Subsumed` reference (rule and dominator ids) on an Ignored line, or a `Readmitted` reference (rule, each dominator and its cause code) on a line that is not Ignored. A line that lacks the key or whose reference disagrees with its status is refused. `stryker merge` refuses a `7.0` shard stream and keeps `subsumption` in the merged report. Read the key, or set `mutator: { mutantSetPolicy: 'full' }` to get only `null`.
+
+The incremental report keeps the reference on each record, and a record carrying one is never remembered: it counts under the new reuse refusal `decidedPerRun`.
+
+Subsumed mutants are Ignored, so the mutation score covers only the kept mutants and differs from a `full`-policy run.
+
 ## 0.4.0
 
 An incremental run now reuses `CompileError` verdicts instead of type-checking
