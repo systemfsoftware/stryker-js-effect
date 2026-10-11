@@ -55,9 +55,9 @@ A registry fallback for a workspace package is never a valid outcome. An optiona
 
 ### I3: Tarball lookup is exact
 
-_A member's tarball is `<scope>-<name>-<semver>.tgz`, not any file that starts with `<scope>-<name>-`._ With prefix matching, `@systemfsoftware/stryker-js` could select `systemfsoftware-stryker-js-vitest-runner-*.tgz`. That would drop the CLI's own tarball from the bake cache key, and now that the install is planned from the looked-up tarballs, from the install too.
+_A member's tarball is `<scope>-<name>.tgz`, packed by `pnpm pack --out`, not any file that starts with `<scope>-<name>-`._ With prefix matching, `@systemfsoftware/stryker-js` could select `systemfsoftware-stryker-js-vitest-runner-*.tgz`. That would drop the CLI's own tarball from the bake cache key and from the install. Without the version in the name, a release does not move the spec a committed fixture lock records.
 
-`installClosure` and its refusals in `@systemfsoftware/stryker-e2e-core` implement I1 and I2. The harness plans the install only when a fixture needs baking, and passes the plan to `bake-fixtures.sh` as arguments. The step that copied the packed runner over the alias directory is deleted.
+`installClosure` and its refusals in `@systemfsoftware/stryker-e2e-core` implement I1 and I2. The harness writes the plan into each staged fixture manifest as devDependencies, and `bake-fixtures.sh` runs one `npm ci` per fixture from its committed lock. The step that copied the packed runner over the alias directory is deleted.
 
 ## Anti-Pattern Code Smells
 
