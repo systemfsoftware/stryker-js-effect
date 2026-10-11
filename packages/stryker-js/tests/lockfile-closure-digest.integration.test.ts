@@ -43,14 +43,6 @@ const ORACLE_TEMPLATE_FILES = [
   'c/package.json',
 ]
 
-const INSTALL_SETTING_LINES = [
-  'hoist: false',
-  "hoistPattern:\n  - '*eslint*'",
-  "publicHoistPattern: '*types*'",
-  'nodeLinker: hoisted',
-  'shamefullyHoist: true',
-] as const
-
 const SOURCE = 'export const add = (left: number, right: number): number => left + right\n'
 
 const ROOT_MANIFEST = '{ "name": "lockfile-closure-root", "private": true, "packageManager": "pnpm@11.27.0" }\n'
@@ -469,30 +461,22 @@ Feature('Keeping saved verdicts across lockfile edits outside a project dependen
     )
 
     scenario(
-      'Changing any hoisting setting in pnpm-workspace.yaml re-tests every project',
+      'Changing a hoisting setting in pnpm-workspace.yaml re-tests every project',
       Gherkin.Do.pipe(
-        Given('the oracle workspace and, for each hoisting setting in turn, the workspace with it set')(
+        Given('the oracle workspace and the same workspace switched to the hoisted node linker')(
           'workspaces',
           () =>
             Effect.map(oracleWorkspaceOf('base'), (base) => ({
-              base,
-              edited: INSTALL_SETTING_LINES.map((line) =>
-                withFileEdited(base, 'pnpm-workspace.yaml', (text) => `${text}${line}\n`)
-              ),
+              before: base,
+              after: withFileEdited(base, 'pnpm-workspace.yaml', (text) => `${text}nodeLinker: hoisted\n`),
             })),
         ),
-        When('projects a and b run once on the base workspace and again with each setting')(
+        When('projects a and b run once on each workspace')(
           'outcomes',
-          (s) =>
-            Effect.forEach(
-              s.workspaces.edited,
-              (edited) => secondRunOutcomesOf(s.workspaces.base, edited, ORACLE_PROJECTS),
-            ),
+          (s) => secondRunOutcomesOf(s.workspaces.before, s.workspaces.after, ORACLE_PROJECTS),
         ),
-        Then('both projects re-test their mutants for every setting')((s, expect) =>
-          expect(s.outcomes).toEqual(
-            INSTALL_SETTING_LINES.map(() => everyProject(ORACLE_PROJECTS, outcomeOf('refusedForRunInputs'))),
-          )
+        Then('both projects re-test their mutants')((s, expect) =>
+          expect(s.outcomes).toEqual(everyProject(ORACLE_PROJECTS, outcomeOf('refusedForRunInputs')))
         ),
       ),
     )
@@ -519,27 +503,6 @@ Feature('Keeping saved verdicts across lockfile edits outside a project dependen
           expect(s.outcomes).toEqual(
             everyProject(ORACLE_PROJECTS, outcomeOf('refusedForRunInputs', ['InstallSettingsUnparseable'])),
           )
-        ),
-      ),
-    )
-
-    scenario(
-      'A packageManager bump in the root manifest re-tests every project',
-      Gherkin.Do.pipe(
-        Given('the oracle workspace and the same workspace whose root manifest pins the next pnpm')(
-          'workspaces',
-          () =>
-            Effect.map(oracleWorkspaceOf('base'), (base) => ({
-              before: base,
-              after: withFileEdited(base, 'package.json', (text) => text.replace('pnpm@11.27.0', 'pnpm@11.28.0')),
-            })),
-        ),
-        When('projects a and b run once on each workspace')(
-          'outcomes',
-          (s) => secondRunOutcomesOf(s.workspaces.before, s.workspaces.after, ORACLE_PROJECTS),
-        ),
-        Then('both projects re-test their mutants')((s, expect) =>
-          expect(s.outcomes).toEqual(everyProject(ORACLE_PROJECTS, outcomeOf('refusedForRunInputs')))
         ),
       ),
     )

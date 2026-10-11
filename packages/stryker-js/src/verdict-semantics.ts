@@ -11,7 +11,7 @@ import * as Order from 'effect/Order'
 import * as Path from 'effect/Path'
 import * as S from 'effect/Schema'
 import * as Str from 'effect/String'
-import { parseDocument } from 'yaml'
+import { parseDocument, stringify } from 'yaml'
 import { EngineIdentityUnreadable, EngineManifestSchema } from './engine-identity.schema.js'
 import {
   InstallSettingsRead,
@@ -632,5 +632,92 @@ if (import.meta.vitest !== void 0) {
         ]),
         ([project, source, moved]) => project === source && moved !== project,
       ),
+  )
+
+  type InstallVariant = readonly [PnpmWorkspaceSettings, string]
+
+  type DigestPair = readonly [string, string]
+
+  type PresentSettings = NonNullable<PnpmWorkspaceSettings>
+
+  const presentOf = (settings: PnpmWorkspaceSettings): PresentSettings => settings ?? {}
+
+  const flippedOf = (value: boolean | undefined): boolean => !(value ?? true)
+
+  const patternsMovedOf = (value: string | ReadonlyArray<string> | undefined): ReadonlyArray<string> => [
+    ...Arr.ensure(value ?? []),
+    'moved',
+  ]
+
+  const INSTALL_EDITS: ReadonlyArray<(settings: PresentSettings, packageManager: string) => InstallVariant> = [
+    (settings, packageManager) => [{ ...settings, hoist: flippedOf(settings.hoist) }, packageManager],
+    (
+      settings,
+      packageManager,
+    ) => [{ ...settings, hoistPattern: patternsMovedOf(settings.hoistPattern) }, packageManager],
+    (settings, packageManager) => [
+      { ...settings, publicHoistPattern: patternsMovedOf(settings.publicHoistPattern) },
+      packageManager,
+    ],
+    (settings, packageManager) => [{ ...settings, nodeLinker: `${settings.nodeLinker ?? ''}-moved` }, packageManager],
+    (
+      settings,
+      packageManager,
+    ) => [{ ...settings, shamefullyHoist: flippedOf(settings.shamefullyHoist) }, packageManager],
+    (settings, packageManager) => [settings, `${packageManager}-moved`],
+  ]
+
+  const writeStaged = (root: string, file: string, content: string) =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const pathService = yield* Path.Path
+      yield* fs.makeDirectory(pathService.dirname(pathService.join(root, file)), { recursive: true })
+      yield* fs.writeFileString(pathService.join(root, file), content)
+    }).pipe(Effect.orDie)
+
+  const stagedProjectsRoot = Effect.gen(function*() {
+    const root = yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped({ prefix: 'install-settings-' })
+    yield* writeStaged(
+      root,
+      'pnpm-lock.yaml',
+      stringify({ lockfileVersion: '9.0', importers: { '.': {}, p: {}, q: {} } }),
+    )
+    yield* writeStaged(root, 'p/package.json', '{ "name": "p" }')
+    yield* writeStaged(root, 'q/package.json', '{ "name": "q" }')
+    return root
+  }).pipe(Effect.orDie)
+
+  const installDigestsAt = (
+    root: string,
+    [settings, packageManager]: InstallVariant,
+    options: Options.StrykerOptions,
+  ) =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const pathService = yield* Path.Path
+      const manifest = yield* S.encodeEffect(S.fromJsonString(PackageManagerManifestSchema))({ packageManager })
+      yield* writeStaged(root, 'pnpm-workspace.yaml', stringify(settings))
+      yield* writeStaged(root, 'package.json', manifest)
+      return yield* Effect.all([
+        runInputsDigestOf(fs, pathService, pathService.join(root, 'p'), options),
+        runInputsDigestOf(fs, pathService, pathService.join(root, 'q'), options),
+      ])
+    }).pipe(Effect.orDie)
+
+  const movedEverywhereOf = (digests: ReadonlyArray<DigestPair>): boolean =>
+    Option.exists(Arr.head(digests), (base) => Arr.drop(digests, 1).every(([p, q]) => p !== base[0] && q !== base[1]))
+
+  it.effect.prop(
+    '∀wmo_PnpmWorkspaceSettings_≡EachInstallSettingEditMovesEveryProject',
+    { of: [PnpmWorkspaceSettingsSchema, S.String, Options.StrykerOptionsSchema], subject: installDigestsAt },
+    (subject, [settings, packageManager, options]) =>
+      Effect.gen(function*() {
+        const root = yield* stagedProjectsRoot
+        const variants: ReadonlyArray<InstallVariant> = [
+          [settings, packageManager],
+          ...INSTALL_EDITS.map((edit) => edit(presentOf(settings), packageManager)),
+        ]
+        return movedEverywhereOf(yield* Effect.forEach(variants, (variant) => subject(root, variant, options)))
+      }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))),
   )
 }
