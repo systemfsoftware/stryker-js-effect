@@ -6,15 +6,11 @@ import { freshIdentifier, identifiersIn, onlyWhen, type ResolvedEffectCall, reso
 import type { MutatorContext } from './Mutator.service.js'
 
 const refinementRemovalMutatorDataFirst = (node: Node, context: MutatorContext): readonly Node[] =>
-  Option.match(
+  Option.getOrElse(
     Option.flatMap(Option.liftPredicate(node, isCallExpression), (call) =>
       Option.map(Option.filter(resolveEffectCall(call, context), isSchemaCheck), (resolved) =>
         removals(call, resolved))),
-    {
-      onNone: () => [],
-      onSome: (mutants) =>
-        mutants,
-    },
+    (): readonly Node[] => [],
   )
 
 export const refinementRemovalMutator: {

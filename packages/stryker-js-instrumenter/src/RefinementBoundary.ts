@@ -45,15 +45,11 @@ const LENGTH_SHIFTS: Readonly<Record<string, LengthShift>> = Object.freeze({
 const EXCLUSIVITY_FLAGS: readonly string[] = ['exclusiveMinimum', 'exclusiveMaximum']
 
 const refinementBoundaryMutatorDataFirst = (node: Node, context: MutatorContext): readonly Node[] =>
-  Option.match(
+  Option.getOrElse(
     Option.flatMap(Option.liftPredicate(node, isCallExpression), (call) =>
       Option.map(Option.filter(resolveEffectCall(call, context), isDataFirstSchemaCall), (resolved) =>
         boundaryShifts(call, resolved))),
-    {
-      onNone: () => [],
-      onSome: (shifts) =>
-        shifts,
-    },
+    (): readonly Node[] => [],
   )
 
 export const refinementBoundaryMutator: {
