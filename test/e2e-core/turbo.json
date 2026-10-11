@@ -6,6 +6,7 @@
       "inputs": [
         "$TURBO_EXTENDS$",
         "$TURBO_ROOT$/pnpm-workspace.yaml",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
         "$TURBO_ROOT$/turbo.json",
         "$TURBO_ROOT$/packages/*/package.json",
         "$TURBO_ROOT$/packages/*/*/package.json",
