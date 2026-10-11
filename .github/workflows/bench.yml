@@ -123,7 +123,7 @@ jobs:
         run: pnpm --filter @systemfsoftware/stryker-bench bench
 
       - name: Bench report artifact
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: bench-report-${{ matrix.target.slug }}
@@ -132,7 +132,7 @@ jobs:
           retention-days: 30
 
       - name: Bench run streams artifact
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: bench-runs-${{ matrix.target.slug }}
