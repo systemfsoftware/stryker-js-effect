@@ -20,6 +20,7 @@ import {
   type BenchEnterpriseCorpus,
   type BenchRepoEntry,
   type BenchSide,
+  type EnterpriseInstall,
   FixtureManifest,
   installClosure,
   InstallClosureCommand,
@@ -27,15 +28,17 @@ import {
   lockfilePins,
   LockfilePinsCommand,
   ManifestDocument,
-  type ManifestRole,
   PackedManifest,
   type PackedMember,
   parseWorkspaceCatalogs,
   pinnedManifest,
+  planEnterpriseInstall,
+  PlanEnterpriseInstallCommand,
   PnpmListingJson,
   resolvedManifestText,
   type SetupStep,
   type StagedFixtureManifest,
+  type WithheldPins,
   type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
 
@@ -83,6 +86,7 @@ interface Timed<A> {
 const BENCH_CONFIG_FILE = 'stryker.bench.config.ts'
 const MANIFEST_FILE_NAME = 'package.json'
 const WORKSPACE_CATALOGS_FILE = 'pnpm-workspace.yaml'
+const LOCKFILE = 'pnpm-lock.yaml'
 const STDERR_TAIL_CHARS = 4000
 const PACKED_MANIFEST_PATH = 'package/package.json'
 const CLI_BUILD_FILTER = '@systemfsoftware/stryker-js'
@@ -168,6 +172,15 @@ const timed = <A, E, R>(
     Effect.andThen(Effect.timed(effect)),
     Effect.tap(([elapsed]) => Console.log(`bench setup finished: ${name} in ${Duration.format(elapsed)}`)),
     Effect.map(([elapsed, value]) => ({ step: { name, ms: Duration.toMillis(elapsed) }, value })),
+  )
+
+const lastLockfileCommitTimeOf = (root: string): Effect.Effect<string, BenchSetupFailed, BenchPlatform> =>
+  runChecked(STEP_ENTERPRISE_INSTALL, ['git', '-C', root, 'log', '-1', '--format=%cI', '--', LOCKFILE]).pipe(
+    Effect.map((outcome) => outcome.stdout.trim()),
+    Effect.filterOrFail(
+      (cutoff) => cutoff.length > 0,
+      () => fail(STEP_ENTERPRISE_INSTALL, `no commit in ${root} touches ${LOCKFILE}, so the install has no cutoff`),
+    ),
   )
 
 const readCatalogs = (root: string): Effect.Effect<WorkspaceCatalogs, BenchSetupFailed, BenchPlatform> =>
@@ -477,8 +490,7 @@ const pinManifests = (
           const manifest = yield* S.decodeEffect(ManifestDocument)(text).pipe(
             Effect.mapError((cause) => fail(STEP_ENTERPRISE_INSTALL, `${relativePath} is not a JSON object`, cause)),
           )
-          const role: ManifestRole = relativePath === MANIFEST_FILE_NAME ? 'root' : 'member'
-          const pinned = yield* S.encodeEffect(ManifestDocument)(pinnedManifest(manifest, pins, role)).pipe(
+          const pinned = yield* S.encodeEffect(ManifestDocument)(pinnedManifest(manifest, pins, relativePath)).pipe(
             Effect.mapError((cause) => fail(STEP_ENTERPRISE_INSTALL, `${relativePath} could not be encoded`, cause)),
           )
           yield* fs.writeFileString(manifestPath, pinned).pipe(
@@ -489,7 +501,11 @@ const pinManifests = (
     )
   })
 
-const NPM_INSTALL: Argv = ['npm', 'install', '--no-audit', '--no-fund', '--loglevel=warn']
+const withheldOf = (install: EnterpriseInstall): Option.Option<WithheldPins> =>
+  Match.valueTags(install, {
+    EnterpriseInstallExact: () => Option.none<WithheldPins>(),
+    EnterpriseInstallBounded: (bounded) => Option.some(bounded.withheld),
+  })
 
 const prepareEnterprise = (
   input: PrepareSideInput,
@@ -538,9 +554,15 @@ const prepareEnterprise = (
       Effect.gen(function*() {
         const workspace = yield* workspacePackages(input.root)
         const specs = yield* enterpriseInstallSpecs(workspace, bundleRoot, closure.value)
-        yield* pinManifests(bundleRoot, yield* sideLockfilePins(input.root, workspace))
-        yield* runChecked(STEP_ENTERPRISE_INSTALL, NPM_INSTALL, bundleRoot)
-        yield* runChecked(STEP_ENTERPRISE_INSTALL, [...NPM_INSTALL, ...specs], bundleRoot)
+        const pins = yield* sideLockfilePins(input.root, workspace)
+        const cutoff = yield* lastLockfileCommitTimeOf(input.root)
+        const plan = Result.merge(
+          planEnterpriseInstall(PlanEnterpriseInstallCommand.make({ side: input.side, pins, cutoff })),
+        )
+        yield* pinManifests(bundleRoot, pins)
+        yield* runChecked(STEP_ENTERPRISE_INSTALL, plan.argv, bundleRoot)
+        yield* runChecked(STEP_ENTERPRISE_INSTALL, [...plan.argv, ...specs], bundleRoot)
+        return withheldOf(plan)
       }),
     )
 
@@ -551,6 +573,7 @@ const prepareEnterprise = (
       cli: path.join(bundleRoot, ...ENTERPRISE_CLI_RELATIVE),
       configFile: BENCH_CONFIG_FILE,
       setupSteps: [manifests.step, closure.step, install.step],
+      withheldPins: install.value,
     } satisfies PreparedSide
   })
 
@@ -588,6 +611,7 @@ const prepareRepo = (
       cli: path.join(input.root, ...CLI_MAIN_RELATIVE),
       configFile: BENCH_CONFIG_FILE,
       setupSteps: [repoBuild.step, config.step],
+      withheldPins: Option.none(),
     } satisfies PreparedSide
   })
 

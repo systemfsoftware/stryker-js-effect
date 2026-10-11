@@ -28,6 +28,7 @@ import {
   statisticsOf,
   Workload,
 } from './bench-summary.schema.js'
+import { type WithheldPins } from './lockfile-pins.schema.js'
 
 export class RenderBenchReportCommand extends S.TaggedClass<RenderBenchReportCommand>()('RenderBenchReportCommand', {
   report: BenchReport,
@@ -141,7 +142,7 @@ const invalidAnnotation = (invalid: ReadonlyArray<BenchRunInvalid>): Annotation 
     }.`,
   )
 
-const TABLE_HEADER = '| phase | main (A) | PR (B) | Δ | verdict |'
+const TABLE_HEADER = '| phase | parent (A) | commit (B) | Δ | verdict |'
 const TABLE_RULE = '| --- | --- | --- | --- | --- |'
 
 const SIGNAL_NOTE =
@@ -241,15 +242,30 @@ const overrunText = (wallMs: number, targetMs: number): string =>
   })
 
 const legText = (leg: LegTime): string =>
-  Option.match(Option.fromNullishOr(leg.wallMs), {
-    onNone: () => `**Leg wall time:** not measured; target ${minutes(leg.targetMs)} min`,
-    onSome: (wallMs) =>
-      `**Leg wall time:** ${minutes(wallMs)} min; target ${minutes(leg.targetMs)} min${
-        overrunText(wallMs, leg.targetMs)
+  Match.valueTags(leg, {
+    LegNotMeasured: (notMeasured) => `**Leg wall time:** not measured; target ${minutes(notMeasured.targetMs)} min`,
+    LegMeasured: (measured) =>
+      `**Leg wall time:** ${minutes(measured.wallMs)} min; target ${minutes(measured.targetMs)} min${
+        overrunText(measured.wallMs, measured.targetMs)
       }`,
   })
 
-const headOf = (report: BenchReport): ReadonlyArray<string> => [headingOf(report), legText(report.leg)]
+const withheldText = (withheld: WithheldPins): string =>
+  `side ${withheld.side} ${withheld.names.length} (installed with --before=${withheld.cutoff})`
+
+const withheldLines = (report: BenchReport): ReadonlyArray<string> =>
+  Arr.match(report.withheldPins, {
+    onEmpty: (): ReadonlyArray<string> => [],
+    onNonEmpty: (withheld): ReadonlyArray<string> => [
+      `**Names the lockfile holds at several versions, left unpinned:** ${Arr.map(withheld, withheldText).join('; ')}`,
+    ],
+  })
+
+const headOf = (report: BenchReport): ReadonlyArray<string> => [
+  headingOf(report),
+  legText(report.leg),
+  ...withheldLines(report),
+]
 
 const abortedBlock = (code: BenchAbortCode, reason: string, nextAction: string): string =>
   [`### Aborted: ${code}`, reason, `**Next action:** ${nextAction}`].join('\n\n')
@@ -285,9 +301,20 @@ const annotationOf = (outcome: BenchReportOutcome): Annotation =>
     summarized: summarizedAnnotation,
   })
 
+const exitCodeOf = (outcome: BenchReportOutcome): 0 | 1 =>
+  Match.valueTags(outcome, {
+    summarized: (): 0 | 1 => 0,
+    failed: (): 0 | 1 => 1,
+    aborted: (): 0 | 1 => 1,
+  })
+
 const renderedOf = (report: BenchReport): BenchRendered => {
   const annotation = annotationOf(report.outcome)
-  const fields = { annotationLine: annotationLineOf(annotation), markdown: markdownOf(report) }
+  const fields = {
+    annotationLine: annotationLineOf(annotation),
+    markdown: markdownOf(report),
+    exitCode: exitCodeOf(report.outcome),
+  }
   return Match.value(annotation.level).pipe(
     Match.when('notice', (): BenchRendered => BenchRenderedNotice.make(fields)),
     Match.when('error', (): BenchRendered => BenchRenderedError.make(fields)),

@@ -117,17 +117,21 @@ describe('lockfilePins', () => {
     return pins
   }
 
-  const expectedVariant = (
+  const expectedWithheld = (
     entries: ReadonlyArray<Entry>,
     workspaceNames: ReadonlyArray<string>,
     projectName: string,
     pins: Readonly<Record<string, string>>,
-  ): string => {
-    const withheld = [...new Set(entries.map((entry) => entry.from))].some((name) =>
-      name !== projectName && !workspaceNames.includes(name) && !Object.hasOwn(pins, name)
-    )
-    return withheld ? 'LockfilePinsPartial' : 'LockfilePinsResolved'
-  }
+  ): ReadonlyArray<string> =>
+    [...new Set(entries.map((entry) => entry.from))]
+      .filter((name) => name !== projectName && !workspaceNames.includes(name) && !Object.hasOwn(pins, name))
+      .sort()
+
+  const withheldOf = (pins: LockfilePins): ReadonlyArray<string> =>
+    Match.valueTags(pins, {
+      LockfilePinsResolved: (): ReadonlyArray<string> => [],
+      LockfilePinsPartial: (partial): ReadonlyArray<string> => partial.withheld,
+    })
 
   it.prop(
     '∀t_Occurrences_≡NamedPinnedToItsOnlyExactRegistryVersion',
@@ -140,8 +144,24 @@ describe('lockfilePins', () => {
           onSuccess: (pins) => {
             const expected = expectedPins(entries, workspaceNames, projectName)
             return Equal.equals(pins.pins, expected) &&
-              Equal.equals(pins._tag, expectedVariant(entries, workspaceNames, projectName, expected)) &&
               Object.keys(pins.pins).every((name) => name !== projectName && !workspaceNames.includes(name))
+          },
+        },
+      ),
+  )
+
+  it.prop(
+    '∀t_Withheld_≡EligibleNamesAbsentFromThePins',
+    { of: [entriesArb, workspaceArb, projectNameArb], subject: lockfilePins },
+    (subject, [entries, workspaceNames, projectName]) =>
+      Result.match(
+        subject(LockfilePinsCommand.make({ listing: [projectOf(entries, projectName)], workspaceNames })),
+        {
+          onFailure: () => false,
+          onSuccess: (pins) => {
+            const expected = expectedWithheld(entries, workspaceNames, projectName, pins.pins)
+            return Equal.equals(withheldOf(pins), expected) &&
+              Equal.equals(pins._tag, expected.length === 0 ? 'LockfilePinsResolved' : 'LockfilePinsPartial')
           },
         },
       ),
@@ -231,11 +251,13 @@ describe('pinnedManifest', () => {
       Option.flatMap(Option.fromNullishOr(manifest[field]), (value) => S.decodeUnknownOption(DependencyRecord)(value)),
     )
 
+  const ManifestPath = S.Literals(['package.json', 'packages/package.json', 'apps/web/package.json'])
+
   it.prop(
-    '∀m,p,r_Manifest_≡PinnedSpecsWithRoleOverrides',
-    { of: [manifestArb, pinsArb, S.Literals(['root', 'member'])], subject: pinnedManifest },
-    (subject, [manifest, pins, role]) => {
-      const output = subject(manifest, pins, role)
+    '∀m,p,f_Manifest_≡PinnedSpecsWithOverridesOnlyAtTheBundleRoot',
+    { of: [manifestArb, pinsArb, ManifestPath], subject: pinnedManifest },
+    (subject, [manifest, pins, relativePath]) => {
+      const output = subject(manifest, pins, relativePath)
       const fieldsPinned = DEPENDENCY_FIELDS.every((field) => {
         const before = specsIn(manifest, field) ?? {}
         const after = specsIn(output, field) ?? {}
@@ -245,18 +267,18 @@ describe('pinnedManifest', () => {
       })
       const peersUntouched = Equal.equals(output.peerDependencies, manifest.peerDependencies)
       const metadataUntouched = Equal.equals(output.name, 'app') && Equal.equals(output.version, '0.0.0')
-      const idempotent = Equal.equals(subject(output, pins, role), output)
-      const overridesHeld = Match.value(role).pipe(
-        Match.when('root', () => {
+      const idempotent = Equal.equals(subject(output, pins, relativePath), output)
+      const overridesHeld = Match.value(relativePath).pipe(
+        Match.when('package.json', () => {
           const overrides = specsIn(output, 'overrides')
           return overrides !== undefined &&
             Equal.equals(overrides, pins.pins) &&
             Object.keys(overrides).join() === Object.keys(overrides).slice().sort().join()
         }),
-        Match.when('member', () =>
+        Match.orElse(() =>
           Object.hasOwn(output, 'overrides') === Object.hasOwn(manifest, 'overrides') &&
-          Equal.equals(output.overrides, manifest.overrides)),
-        Match.exhaustive,
+          Equal.equals(output.overrides, manifest.overrides)
+        ),
       )
       return fieldsPinned && peersUntouched && metadataUntouched && idempotent && overridesHeld
     },

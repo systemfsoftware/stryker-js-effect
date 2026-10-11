@@ -11,10 +11,12 @@ import {
   BenchReportJson,
   BenchReportOutcome,
   type BenchReportRun,
+  LegMeasured,
   LegTime,
 } from '../bench-report.schema.js'
 import { BenchRun, BenchRunFailureCode, BenchRunInvalid, BenchRunKey, BenchRunMeasured } from '../bench-run.schema.js'
 import { type BenchSummary, PhaseVerdict } from '../bench-summary.schema.js'
+import { WithheldPins } from '../lockfile-pins.schema.js'
 import { renderBenchReport, RenderBenchReportCommand } from '../render-bench-report.workflow.js'
 import { summarizeBench, SummarizeBenchCommand } from '../summarize-bench.workflow.js'
 
@@ -86,7 +88,7 @@ const reportRunsOf = (runs: ReadonlyArray<BenchRun>): ReadonlyArray<BenchReportR
 const summaryOf = (runs: ReadonlyArray<BenchRun>): BenchSummary =>
   Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ sha: 'head', parentSha: 'base', runs })))
 
-const LEG: LegTime = { wallMs: 60_000, targetMs: 600_000 }
+const LEG: LegTime = LegMeasured.make({ wallMs: 60_000, targetMs: 600_000 })
 
 const reportOf = (
   summary: BenchSummary,
@@ -94,6 +96,7 @@ const reportOf = (
   baseSha: string,
   headSha: string,
   leg: LegTime = LEG,
+  withheldPins: ReadonlyArray<WithheldPins> = [],
 ): BenchReport =>
   BenchReport.make({
     schemaVersion: '2.0',
@@ -103,6 +106,7 @@ const reportOf = (
     outcome: { _tag: 'summarized', projects: summary.projects, regression: summary.regression },
     runs: reportRunsOf(runs),
     setupSteps: [],
+    withheldPins: [...withheldPins],
   })
 
 type RenderReport = typeof renderBenchReport
@@ -140,6 +144,7 @@ const failedReportOf = (invalid: ReadonlyArray<BenchRunInvalid>): BenchReport =>
     outcome: { _tag: 'failed', invalid },
     runs: [],
     setupSteps: [],
+    withheldPins: [],
   })
 
 const invalidOf = (
@@ -167,6 +172,7 @@ const abortedReportOf = (code: BenchAbortCode, reason: string): BenchReport =>
     outcome: abortedOutcomeOf(code, reason),
     runs: [],
     setupSteps: [],
+    withheldPins: [],
   })
 
 const nextActionOf = (outcome: BenchReportOutcome): string =>
@@ -413,12 +419,40 @@ describe('renderBenchReport', () => {
       const summary = summaryOf(runs)
       const v = renderedOf(subject, reportOf(summary, runs, 'base', 'head', legV))
       const w = renderedOf(subject, reportOf(summary, runs, 'base', 'head', legW))
-      const wallText = legW.wallMs === null ? 'not measured' : `${(legW.wallMs / 60_000).toFixed(1)} min`
-      const over = legW.wallMs !== null && legW.wallMs > legW.targetMs
+      const wallText = S.is(LegMeasured)(legW) ? `${(legW.wallMs / 60_000).toFixed(1)} min` : 'not measured'
+      const over = S.is(LegMeasured)(legW) && legW.wallMs > legW.targetMs
       return S.is(BenchRenderedError)(v) === S.is(BenchRenderedError)(w) &&
         v.annotationLine === w.annotationLine &&
         w.markdown.includes(`**Leg wall time:** ${wallText}; target 10.0 min`) &&
         w.markdown.includes('min over (reported, never enforced)') === over
+    },
+  )
+
+  it.prop(
+    '∀r_Report_≡ExitZeroIffSummarizedWithOrWithoutARegression',
+    { of: [BenchReport], subject: renderBenchReport },
+    (subject, [report]) =>
+      renderedOf(subject, report).exitCode === (S.is(BenchReportOutcome.cases.summarized)(report.outcome) ? 0 : 1),
+  )
+
+  it.prop(
+    '∀abw_WithheldPins_≡OneLineCountingEachSidesNamesWithItsCutoff',
+    {
+      of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Array(WithheldPins)],
+      subject: renderBenchReport,
+    },
+    (subject, [rawA, rawB, withheld]) => {
+      const runs = runsOf(positives(rawA), positives(rawB))
+      const summary = summaryOf(runs)
+      const bare = renderedOf(subject, reportOf(summary, runs, 'base', 'head'))
+      const pinned = renderedOf(subject, reportOf(summary, runs, 'base', 'head', LEG, withheld))
+      const heading = '**Names the lockfile holds at several versions, left unpinned:**'
+      return pinned.annotationLine === bare.annotationLine &&
+        pinned.exitCode === bare.exitCode &&
+        pinned.markdown.split(heading).length - 1 === (withheld.length === 0 ? 0 : 1) &&
+        withheld.every((side) =>
+          pinned.markdown.includes(`side ${side.side} ${side.names.length} (installed with --before=${side.cutoff})`)
+        )
     },
   )
 })

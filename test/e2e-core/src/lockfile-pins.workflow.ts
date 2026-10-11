@@ -83,14 +83,14 @@ const workspacesIn = (command: LockfilePinsCommand): HashSet.HashSet<string> =>
 const pinsOf = (command: LockfilePinsCommand): LockfilePins => {
   const occurrences = occurrencesIn(command.listing)
   const workspaces = workspacesIn(command)
-  const eligible = Arr.filter(namesOf(occurrences), (name) => Boolean.not(HashSet.has(workspaces, name)))
-  const pins = Object.fromEntries(
-    Arr.getSomes(Arr.map(Arr.sort(eligible, Order.String), (name) => pinOf(occurrences, name))),
+  const eligible = Arr.sort(
+    Arr.filter(namesOf(occurrences), (name) => Boolean.not(HashSet.has(workspaces, name))),
+    Order.String,
   )
-  const withheld = Arr.filter(eligible, (name) => Boolean.not(Rec.has(pins, name)))
-  return Boolean.match(withheld.length === 0, {
-    onTrue: () => LockfilePinsResolved.make({ pins }),
-    onFalse: () => LockfilePinsPartial.make({ pins }),
+  const pins = Object.fromEntries(Arr.getSomes(Arr.map(eligible, (name) => pinOf(occurrences, name))))
+  return Arr.match(Arr.filter(eligible, (name) => Boolean.not(Rec.has(pins, name))), {
+    onEmpty: (): LockfilePins => LockfilePinsResolved.make({ pins }),
+    onNonEmpty: (withheld): LockfilePins => LockfilePinsPartial.make({ pins, withheld }),
   })
 }
 

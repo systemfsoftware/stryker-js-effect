@@ -46,6 +46,15 @@ repo entry may pin `mutate` line ranges and `testFiles`, and the enterprise
 fixture pins `mutate` to four files, the same on both sides. The bound shapes
 timing only; it never feeds a verdict.
 
+The enterprise fixture installs each registry package at the version its side's
+`pnpm-lock.yaml` locks: the fixture's root `package.json` gets one `overrides`
+entry per package the lockfile holds at a single version. A package the
+lockfile holds at several versions cannot be pinned that way; when any exist,
+both `npm install` calls also take `--before=<that side's last pnpm-lock.yaml
+commit time>`, so those packages resolve only to releases that existed when the
+lockfile last changed. The report's `withheldPins` lists them per side, and the
+step summary counts them with the cutoff.
+
 Every run starts from its side's tree exactly as setup left it. Before each
 run the bench restores the project directory to the snapshot it took after
 setup, outside `node_modules`: files a run added are removed, changed files

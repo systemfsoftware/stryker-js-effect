@@ -12,10 +12,15 @@ import {
   type BenchReportRun,
   type BenchRun,
   type BenchSide,
+  LegNotMeasured,
   LegTargetMs,
+  type LegTime,
+  measureLeg,
+  MeasureLegCommand,
   renderBenchReport,
   RenderBenchReportCommand,
   type SetupStep,
+  type WithheldPins,
 } from '@systemfsoftware/stryker-e2e-core'
 import * as Arr from 'effect/Array'
 import * as Cause from 'effect/Cause'
@@ -125,27 +130,33 @@ interface ReportBody {
   readonly outcome: BenchReportOutcome
   readonly runs: ReadonlyArray<BenchReportRun>
   readonly setupSteps: ReadonlyArray<SetupStep>
+  readonly withheldPins: ReadonlyArray<WithheldPins>
 }
 
 const abortedBody = (code: BenchAbortCode, reason: string): ReportBody => ({
   outcome: abortedOutcomeOf(code, reason),
   runs: [],
   setupSteps: [],
+  withheldPins: [],
 })
 
-const reportOf = (env: Pick<BenchEnv, 'baseSha' | 'headSha'>, wallMs: number | null, body: ReportBody) =>
+const reportOf = (env: Pick<BenchEnv, 'baseSha' | 'headSha'>, leg: LegTime, body: ReportBody) =>
   BenchReport.make({
     schemaVersion: '2.0',
     baseSha: env.baseSha,
     headSha: env.headSha,
-    leg: { wallMs, targetMs: LegTargetMs.literal },
+    leg,
     outcome: body.outcome,
     runs: [...body.runs],
     setupSteps: [...body.setupSteps],
+    withheldPins: [...body.withheldPins],
   })
 
-const legWallMs = (env: BenchEnv): Effect.Effect<number> =>
-  Effect.map(Clock.currentTimeMillis, (now) => Math.max(0, now - env.jobStartedAtSeconds * 1000))
+const legOf = (env: BenchEnv): Effect.Effect<LegTime> =>
+  Effect.map(
+    Clock.currentTimeMillis,
+    (nowMs) => Result.merge(measureLeg(MeasureLegCommand.make({ startedAtSeconds: env.jobStartedAtSeconds, nowMs }))),
+  )
 
 const targetOf = (corpus: BenchCorpus, entry: string): Option.Option<BenchTarget> =>
   Option.orElse(
@@ -214,6 +225,7 @@ const bench = (env: BenchEnv) =>
       outcome: result.outcome,
       runs: result.reportRuns,
       setupSteps: [...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps, ...setupSteps],
+      withheldPins: Arr.getSomes([prepared.sideA.withheldPins, prepared.sideB.withheldPins]),
     } satisfies ReportBody
   }).pipe(
     Effect.catchTag(
@@ -236,16 +248,12 @@ const writeReport = (env: BenchEnv, report: BenchReport) =>
       Effect.succeed(
         reportOf(
           env,
-          report.leg.wallMs,
+          report.leg,
           abortedBody('report-unwritable', `the bench report could not be written or read back: ${failure.message}`),
         ),
       )
     ),
   )
-
-const failExit = Effect.sync(() => {
-  globalThis.process.exitCode = 1
-})
 
 const publish = (report: BenchReport, stepSummary: Option.Option<string>) =>
   Effect.gen(function*() {
@@ -256,10 +264,8 @@ const publish = (report: BenchReport, stepSummary: Option.Option<string>) =>
       onSome: (file) => fs.writeFileString(file, `${rendered.markdown}\n`, { flag: 'a' }).pipe(Effect.ignore),
     })
     yield* Console.log(rendered.annotationLine)
-    yield* Match.valueTags(report.outcome, {
-      summarized: () => Effect.void,
-      failed: () => failExit,
-      aborted: () => failExit,
+    yield* Effect.sync(() => {
+      globalThis.process.exitCode = rendered.exitCode
     })
   })
 
@@ -270,14 +276,14 @@ const program = Effect.gen(function*() {
       publish(
         reportOf(
           { baseSha: UNKNOWN_SHA, headSha: UNKNOWN_SHA },
-          null,
+          LegNotMeasured.make({ targetMs: LegTargetMs.literal }),
           abortedBody('environment-incomplete', error.message),
         ),
         Option.none(),
       ),
     onSuccess: (present) =>
       bench(present).pipe(
-        Effect.flatMap((body) => Effect.map(legWallMs(present), (wallMs) => reportOf(present, wallMs, body))),
+        Effect.flatMap((body) => Effect.map(legOf(present), (leg) => reportOf(present, leg, body))),
         Effect.flatMap((report) => writeReport(present, report)),
         Effect.flatMap((report) => publish(report, Option.some(present.stepSummary))),
       ),

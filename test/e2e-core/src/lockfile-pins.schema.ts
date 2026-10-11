@@ -1,10 +1,11 @@
+import * as Boolean from 'effect/Boolean'
 import * as Function from 'effect/Function'
-import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Rec from 'effect/Record'
 import * as S from 'effect/Schema'
 import type { Json, JsonObject } from 'effect/Schema'
 
+import { BenchSide } from './bench-run.schema.js'
 import { DependencyRecord } from './catalog-resolution.schema.js'
 
 export interface PnpmNode {
@@ -56,6 +57,7 @@ export class LockfilePinsResolved extends S.TaggedClass<LockfilePinsResolved>()(
 
 export class LockfilePinsPartial extends S.TaggedClass<LockfilePinsPartial>()('LockfilePinsPartial', {
   pins: S.Record(S.String, S.String),
+  withheld: S.NonEmptyArray(S.String),
 }) {
   readonly [LockfilePinsTypeId] = LockfilePinsTypeId
 }
@@ -63,8 +65,33 @@ export class LockfilePinsPartial extends S.TaggedClass<LockfilePinsPartial>()('L
 export const LockfilePins = S.Union([LockfilePinsResolved, LockfilePinsPartial])
 export type LockfilePins = typeof LockfilePins.Type
 
-export const ManifestRole = S.Literals(['root', 'member'])
-export type ManifestRole = typeof ManifestRole.Type
+export const WithheldPins = S.Struct({
+  side: BenchSide,
+  cutoff: S.NonEmptyString,
+  names: S.NonEmptyArray(S.String),
+})
+export type WithheldPins = typeof WithheldPins.Type
+
+const EnterpriseInstallTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/EnterpriseInstall')
+type EnterpriseInstallTypeId = typeof EnterpriseInstallTypeId
+
+export class EnterpriseInstallExact extends S.TaggedClass<EnterpriseInstallExact>()('EnterpriseInstallExact', {
+  argv: S.NonEmptyArray(S.String),
+}) {
+  readonly [EnterpriseInstallTypeId] = EnterpriseInstallTypeId
+}
+
+export class EnterpriseInstallBounded extends S.TaggedClass<EnterpriseInstallBounded>()('EnterpriseInstallBounded', {
+  argv: S.NonEmptyArray(S.String),
+  withheld: WithheldPins,
+}) {
+  readonly [EnterpriseInstallTypeId] = EnterpriseInstallTypeId
+}
+
+export const EnterpriseInstall = S.Union([EnterpriseInstallExact, EnterpriseInstallBounded])
+export type EnterpriseInstall = typeof EnterpriseInstall.Type
+
+const ROOT_MANIFEST_PATH = 'package.json'
 
 const sortedRecord = (record: Readonly<Record<string, string>>): Record<string, string> =>
   Object.fromEntries(Object.keys(record).sort().map((name): readonly [string, string] => [name, record[name]]))
@@ -96,16 +123,15 @@ const withPinnedFields = (manifest: JsonObject, pins: LockfilePins): JsonObject 
   )
 
 export const pinnedManifest: {
-  (pins: LockfilePins, role: ManifestRole): (manifest: JsonObject) => JsonObject
-  (manifest: JsonObject, pins: LockfilePins, role: ManifestRole): JsonObject
+  (pins: LockfilePins, relativePath: string): (manifest: JsonObject) => JsonObject
+  (manifest: JsonObject, pins: LockfilePins, relativePath: string): JsonObject
 } = Function.dual(
   3,
-  (manifest: JsonObject, pins: LockfilePins, role: ManifestRole): JsonObject => {
+  (manifest: JsonObject, pins: LockfilePins, relativePath: string): JsonObject => {
     const pinned = withPinnedFields(manifest, pins)
-    return Match.value(role).pipe(
-      Match.when('root', (): JsonObject => Object.assign({}, pinned, { overrides: sortedRecord(pins.pins) })),
-      Match.when('member', (): JsonObject => pinned),
-      Match.exhaustive,
-    )
+    return Boolean.match(relativePath === ROOT_MANIFEST_PATH, {
+      onTrue: (): JsonObject => Object.assign({}, pinned, { overrides: sortedRecord(pins.pins) }),
+      onFalse: (): JsonObject => pinned,
+    })
   },
 )

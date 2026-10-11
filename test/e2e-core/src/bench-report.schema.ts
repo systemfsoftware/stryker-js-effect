@@ -4,6 +4,7 @@ import * as S from 'effect/Schema'
 
 import { BenchRunInvalid, BenchRunKey, WorkloadDigest } from './bench-run.schema.js'
 import { BenchProjectSummary, PhaseRegression } from './bench-summary.schema.js'
+import { WithheldPins } from './lockfile-pins.schema.js'
 
 export const SetupStep = S.Struct({ name: S.String, ms: Report.NonNegativeFinite })
 export type SetupStep = typeof SetupStep.Type
@@ -20,7 +21,21 @@ export type BenchReportRun = typeof BenchReportRun.Type
 // Source: R3 of docs/plans/2026-10-10-0702-perf-ci-wall-clock-plan.md (10-minute job ceiling); no compound pack names a per-job budget.
 export const LegTargetMs = S.Literal(600_000)
 
-export const LegTime = S.Struct({ wallMs: S.NullOr(Report.NonNegativeFinite), targetMs: LegTargetMs })
+const LegTimeTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/LegTime')
+type LegTimeTypeId = typeof LegTimeTypeId
+
+export class LegMeasured extends S.TaggedClass<LegMeasured>()('LegMeasured', {
+  wallMs: Report.NonNegativeFinite,
+  targetMs: LegTargetMs,
+}) {
+  readonly [LegTimeTypeId] = LegTimeTypeId
+}
+
+export class LegNotMeasured extends S.TaggedClass<LegNotMeasured>()('LegNotMeasured', { targetMs: LegTargetMs }) {
+  readonly [LegTimeTypeId] = LegTimeTypeId
+}
+
+export const LegTime = S.Union([LegMeasured, LegNotMeasured])
 export type LegTime = typeof LegTime.Type
 
 export const BenchAbortCode = S.Literals([
@@ -75,6 +90,7 @@ export class BenchReport extends S.Class<BenchReport>('BenchReport')({
   outcome: BenchReportOutcome,
   runs: S.Array(BenchReportRun),
   setupSteps: S.Array(SetupStep),
+  withheldPins: S.Array(WithheldPins),
 }) {
   readonly [BenchReportTypeId] = BenchReportTypeId
 }
@@ -84,7 +100,11 @@ export const BenchReportJson = S.fromJsonString(BenchReport)
 const BenchRenderedTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchRendered')
 type BenchRenderedTypeId = typeof BenchRenderedTypeId
 
-const RenderedFields = { annotationLine: S.NonEmptyString, markdown: S.NonEmptyString }
+const RenderedFields = {
+  annotationLine: S.NonEmptyString,
+  markdown: S.NonEmptyString,
+  exitCode: S.Literals([0, 1]),
+}
 
 export class BenchRenderedNotice extends S.TaggedClass<BenchRenderedNotice>()('notice', RenderedFields) {
   readonly [BenchRenderedTypeId] = BenchRenderedTypeId
