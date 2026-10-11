@@ -11,6 +11,7 @@
   },
   "type": "module",
   "scripts": {
+    "fixtures:lock": "tsx --conditions=@systemfsoftware/source scripts/lock-fixtures.ts",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
     "seed-status-fault": "node scripts/seed-status-fault.ts",
     "test:e2e": "vitest run",
@@ -37,6 +38,7 @@
     "effect": "catalog:",
     "microsandbox": "catalog:",
     "oxlint": "catalog:",
+    "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

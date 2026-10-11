@@ -22,6 +22,7 @@ import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 import {
+  committableLockOf,
   type FileBytes,
   filledLockOf,
   type FixtureInput,
@@ -63,12 +64,6 @@ export type BakePlatform =
 
 type StagePlatform = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 
-export interface StagedFixtures {
-  readonly resourcesDir: string
-  readonly stagedDir: string
-  readonly fixtureIds: ReadonlyArray<string>
-}
-
 interface StagedClosure {
   readonly dependencies: Readonly<Record<string, string>>
   readonly manifests: Readonly<Record<string, Schema.Json>>
@@ -101,6 +96,7 @@ const STEP_CLOSURE = 'build the packed workspace closure'
 const STEP_TARBALLS = 'read the packed tarballs'
 const STEP_KEY = 'derive the bake cache key'
 const STEP_INSTALL_PLAN = 'plan the workspace closure install'
+const STEP_LOCK = 'regenerate a fixture lock'
 
 const TREE_CONCURRENCY = 16
 const UNPACK_CONCURRENCY = 4
@@ -114,6 +110,8 @@ const ENTRY_PACKAGES = [
 ] as const
 
 type Argv = readonly [string, ...Array<string>]
+
+const LOCK_ONLY_INSTALL: Argv = ['npm', 'install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund']
 
 const PACKS_DIR = 'packs'
 const STAGED_FIXTURES_DIR = 'baked'
@@ -271,16 +269,12 @@ const listFixtureIds = (environment: BakeEnvironment) =>
     return kept.flat().sort()
   })
 
-const stageClosure = (fixtureId: string, destination: string, closure: StagedClosure) =>
+const stageClosure = (destination: string, closure: StagedClosure) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const manifestPath = path.join(destination, MANIFEST_FILE_NAME)
-    const manifest = yield* Schema.decodeEffect(JsonText)(yield* fs.readFileString(manifestPath)).pipe(
-      Effect.mapError(() =>
-        new PackFailure({ step: STEP_INSTALL_PLAN, detail: `${fixtureId}/${MANIFEST_FILE_NAME} is not JSON` })
-      ),
-    )
+    const manifest = yield* Effect.orDie(Schema.decodeEffect(JsonText)(yield* fs.readFileString(manifestPath)))
     yield* fs.writeFileString(manifestPath, jsonTextOf(withClosureDevDependencies(manifest, closure.dependencies)))
     const lockPath = path.join(destination, LOCKFILE_NAME)
     const lock = yield* Effect.option(Effect.flatMap(fs.readFileString(lockPath), Schema.decodeEffect(JsonText)))
@@ -307,7 +301,7 @@ const stageFixtures = (
         yield* fs.copy(path.join(environment.resourcesDir, fixtureId), destination)
         yield* fs.remove(path.join(destination, 'node_modules'), { recursive: true, force: true })
         yield* rewriteStagedManifests(fixtureId, destination, catalogs)
-        yield* stageClosure(fixtureId, destination, closure)
+        yield* stageClosure(destination, closure)
       }),
     { discard: true, concurrency: STAGE_CONCURRENCY },
   )
@@ -619,11 +613,10 @@ const closureInstallOf = (
     ).pipe(
       Effect.mapError((failure) => new PackFailure({ step: STEP_INSTALL_PLAN, detail: failure.message })),
     )
-    const closure: StagedClosure = {
+    return {
       dependencies: install.dependencies,
       manifests: Object.fromEntries(packed.map(({ fileName, json }) => [fileName, json])),
     }
-    return closure
   })
 
 const fixtureInputsOf = (
@@ -725,30 +718,33 @@ const bakeMissing = (
     }),
   )
 
-const prepareInputs = (environment: BakeEnvironment, scratch: string, packsDir: string) =>
-  Effect.gen(function*() {
+const lockFixtures = (environment: BakeEnvironment) =>
+  Effect.scoped(Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const scratch = yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-e2e-fixture-locks-' })
+    const packsDir = path.join(scratch, PACKS_DIR)
+    const stagedDir = path.join(scratch, STAGED_FIXTURES_DIR)
+    yield* fs.makeDirectory(packsDir)
     const packs = yield* packWorkspaceClosure(environment, packsDir)
     const fixtureIds = yield* listFixtureIds(environment)
     const catalogs = yield* loadWorkspaceCatalogs(environment)
     const packsInput = yield* packsInputOf(environment, packs, scratch)
     const fixtureInputs = yield* fixtureInputsOf(environment, fixtureIds, catalogs)
-    return { fixtureIds, catalogs, packsInput, fixtureInputs }
-  })
-
-const stage = (environment: BakeEnvironment, directory: string) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const packsDir = path.join(directory, PACKS_DIR)
-    const stagedDir = path.join(directory, STAGED_FIXTURES_DIR)
-    yield* fs.makeDirectory(packsDir, { recursive: true })
-    yield* fs.makeDirectory(stagedDir, { recursive: true })
-    const { fixtureIds, catalogs, packsInput, fixtureInputs } = yield* prepareInputs(environment, directory, packsDir)
     const closure = yield* closureInstallOf(environment, packsInput, fixtureInputs)
     yield* stageFixtures(environment, stagedDir, fixtureIds, catalogs, closure)
-    const staged: StagedFixtures = { resourcesDir: environment.resourcesDir, stagedDir, fixtureIds }
-    return staged
-  })
+    yield* Effect.forEach(fixtureIds, (fixtureId) =>
+      Effect.gen(function*() {
+        yield* runChecked(STEP_LOCK, LOCK_ONLY_INSTALL, path.join(stagedDir, fixtureId))
+        const lock = yield* fs.readFileString(path.join(stagedDir, fixtureId, LOCKFILE_NAME))
+        const committable = committableLockOf(yield* Effect.orDie(Schema.decodeEffect(JsonText)(lock)))
+        yield* fs.writeFileString(
+          path.join(environment.resourcesDir, fixtureId, LOCKFILE_NAME),
+          jsonTextOf(committable),
+        )
+        yield* Effect.log(`locked ${fixtureId}`)
+      }), { discard: true })
+  }))
 
 const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessError, BakePlatform> =>
   Effect.gen(function*() {
@@ -758,7 +754,11 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
     const packsDir = path.join(scratch, 'packs')
     return yield* Effect.gen(function*() {
       yield* fs.makeDirectory(packsDir)
-      const { catalogs, packsInput, fixtureInputs } = yield* prepareInputs(environment, scratch, packsDir)
+      const packs = yield* packWorkspaceClosure(environment, packsDir)
+      const fixtureIds = yield* listFixtureIds(environment)
+      const catalogs = yield* loadWorkspaceCatalogs(environment)
+      const packsInput = yield* packsInputOf(environment, packs, scratch)
+      const fixtureInputs = yield* fixtureInputsOf(environment, fixtureIds, catalogs)
       const { packsKey, fixtures } = yield* deriveBakeKeys(packsInput, fixtureInputs)
       const root = path.join(environment.bakedCacheRoot, packsKey)
       yield* fs.makeDirectory(root, { recursive: true })
@@ -830,8 +830,7 @@ export class BakedFixtureCache extends Context.Service<BakedFixtureCache, BakedF
     Effect.flatMap(bakeEnvironment, bake),
   )
 
-  static readonly stageProgram = (directory: string) =>
-    Effect.flatMap(bakeEnvironment, (environment) => stage(environment, directory))
+  static readonly lockProgram = Effect.flatMap(bakeEnvironment, lockFixtures)
 
   static readonly teardownProgram = (outcome: BakeOutcome): Effect.Effect<void, HarnessError, BakePlatform> =>
     Effect.gen(function*() {
