@@ -59,7 +59,7 @@ import {
   type TceDecision,
 } from './classify-tce.workflow.js'
 import { type CompilerError, CompilerFailed, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
-import { editSiteFactsOf } from './edit-site.schema.js'
+import { fileFactsOf } from './edit-site.schema.js'
 import { groupMutants } from './group-mutants.workflow.js'
 import { identifyProgram as identifyProgramWorkflow, IdentifyProgramCommand } from './identify-program.workflow.js'
 import { overrideTsconfigOptions } from './override-tsconfig-options.workflow.js'
@@ -1476,10 +1476,7 @@ const affectedFileNamesOf = (
 }
 
 const declaresGlobalScope = (sourceFile: SourceFile): boolean =>
-  Boolean.or(
-    sourceFile.externalModuleIndicator === undefined,
-    editSiteFactsOf(sourceFile, { start: sourceFile.end, end: sourceFile.end }, false).declaresGlobal,
-  )
+  Boolean.or(sourceFile.externalModuleIndicator === undefined, fileFactsOf(sourceFile).declaresGlobal)
 
 const beyondOwnErrorsOf = (
   state: CompilerState,

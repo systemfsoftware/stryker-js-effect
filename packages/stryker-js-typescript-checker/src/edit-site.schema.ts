@@ -2,6 +2,7 @@ import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
+import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import type {
   CallExpression,
@@ -35,10 +36,15 @@ export const FunctionLikeFacts = S.Struct({
 })
 export type FunctionLikeFacts = typeof FunctionLikeFacts.Type
 
-export const EditSiteFacts = S.Struct({
-  span: EditSpan,
+export const FileFacts = S.Struct({
   typescriptModule: S.Boolean,
   declaresGlobal: S.Boolean,
+})
+export type FileFacts = typeof FileFacts.Type
+
+export const EditSiteFacts = S.Struct({
+  span: EditSpan,
+  ...FileFacts.fields,
   moduleReference: S.Boolean,
   syntaxErrors: S.Boolean,
   enclosing: S.Array(FunctionLikeFacts),
@@ -147,12 +153,15 @@ const factsOf = (found: FunctionLikeBody, sourceFile: SourceFile): FunctionLikeF
 interface SiteScan {
   readonly enclosing: ReadonlyArray<FunctionLikeFacts>
   readonly moduleReference: boolean
+  readonly inspected: number
 }
 
 const scanOf = (sourceFile: SourceFile, span: Span): SiteScan => {
   const enclosing: Array<FunctionLikeFacts> = []
   let moduleReference = false
-  const inspect = (node: Node): undefined => {
+  let inspected = 0
+  const inspect = (node: Node): true | undefined => {
+    inspected += 1
     Option.match(Option.filter(functionLikeBodyOf(node), (found) => containsSpan(found.node, span)), {
       onNone: () => undefined,
       onSome: (found) => enclosing.push(factsOf(found, sourceFile)),
@@ -163,11 +172,22 @@ const scanOf = (sourceFile: SourceFile, span: Span): SiteScan => {
     )
     return node.forEachChild(visit)
   }
-  const visit = (node: Node): undefined =>
-    Boolean.match(node.end < span.start, { onTrue: () => undefined, onFalse: () => inspect(node) })
+  const visit = (node: Node): true | undefined =>
+    Boolean.match(span.end < node.pos, {
+      onTrue: () => true,
+      onFalse: () => Boolean.match(node.end < span.start, { onTrue: () => undefined, onFalse: () => inspect(node) }),
+    })
   sourceFile.forEachChild(visit)
-  return { enclosing, moduleReference }
+  return { enclosing, moduleReference, inspected }
 }
+
+export const fileFactsOf = (sourceFile: SourceFile): FileFacts => ({
+  typescriptModule: Boolean.and(
+    isTypeScriptModuleFileName(sourceFile.fileName),
+    sourceFile.externalModuleIndicator !== undefined,
+  ),
+  declaresGlobal: declaresGlobalOf(sourceFile),
+})
 
 export const editSiteFactsOf: {
   (span: Span, syntaxErrors: boolean): (sourceFile: SourceFile) => EditSiteFacts
@@ -176,13 +196,143 @@ export const editSiteFactsOf: {
   const scan = scanOf(sourceFile, span)
   return {
     span: { start: span.start, length: span.end - span.start },
-    typescriptModule: Boolean.and(
-      isTypeScriptModuleFileName(sourceFile.fileName),
-      sourceFile.externalModuleIndicator !== undefined,
-    ),
-    declaresGlobal: declaresGlobalOf(sourceFile),
+    ...fileFactsOf(sourceFile),
     moduleReference: scan.moduleReference,
     syntaxErrors,
     enclosing: scan.enclosing,
   }
 })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const { API } = await import('typescript/unstable/sync')
+  const { createVirtualFileSystem } = await import('typescript/unstable/fs')
+  const { admitImporterShortcut } = await import('./admit-importer-shortcut.workflow.js')
+  const { DecideImporterShortcutCommand } = await import('./CheckerCommands.schema.js')
+  const { ShortcutTaken } = await import('./ImporterShortcut.schema.js')
+
+  const TSCONFIG = '/law/tsconfig.json'
+  const SITE = '/law/site.ts'
+  const TSCONFIG_TEXT = JSON.stringify({
+    compilerOptions: { noEmit: true, target: 'es2022', module: 'esnext', types: [] },
+  })
+
+  const readSite = <A>(text: string, read: (sourceFile: SourceFile) => A): Option.Option<A> => {
+    const api = new API({ fs: createVirtualFileSystem({ [TSCONFIG]: TSCONFIG_TEXT, [SITE]: text }) })
+    const snapshot = api.updateSnapshot({ openProjects: [TSCONFIG] })
+    const read_ = Option.map(
+      Option.flatMap(
+        Option.fromUndefinedOr(snapshot.getProject(TSCONFIG)),
+        (project) => Option.fromUndefinedOr(project.program.getSourceFile(SITE)),
+      ),
+      read,
+    )
+    api.close()
+    return read_
+  }
+
+  const admits = (facts: EditSiteFacts): boolean =>
+    Result.match(admitImporterShortcut(DecideImporterShortcutCommand.make({ original: facts, mutated: facts })), {
+      onFailure: () => false,
+      onSuccess: S.is(ShortcutTaken),
+    })
+
+  const SHAPES = {
+    function: { header: 'export function f(x: number): number ', tail: '\n' },
+    method: { header: 'export class C {\n  m(x: number): number ', tail: '\n}\n' },
+    arrow: { header: 'export const f = (x: number): number => ', tail: '\n' },
+  } as const
+  const Shape = S.Literals(['function', 'method', 'arrow'])
+  type Shape = typeof Shape.Type
+  const BODY = '{\n  return x + 1\n}'
+
+  interface Site {
+    readonly text: string
+    readonly bodyStart: number
+    readonly closingBrace: number
+  }
+
+  const siteOf = (shape: Shape, later: number): Site => {
+    const { header, tail } = SHAPES[shape]
+    const bodyStart = header.length
+    const later_ = Arr.makeBy(later, (index) => `export function g${index}(): number {\n  return ${index}\n}\n`).join(
+      '',
+    )
+    return {
+      text: header + BODY + tail + later_,
+      bodyStart,
+      closingBrace: bodyStart + BODY.length - 1,
+    }
+  }
+
+  const Offset = S.Int.check(S.isBetween({ minimum: 0, maximum: BODY.length }))
+
+  const spanOf = (site: Site, from: number, to: number): Span => ({
+    start: site.bodyStart + Math.min(from, to),
+    end: site.bodyStart + Math.max(from, to),
+  })
+
+  it.prop(
+    '∀s_EditSiteFactsOf_≡AdmittedOnlyWhenTheSpanStopsBeforeTheClosingBrace',
+    { of: [Shape, Offset, Offset], subject: editSiteFactsOf, runs: 40 },
+    (subject, [shape, from, to]) => {
+      const site = siteOf(shape, 0)
+      const span = spanOf(site, from, to)
+      return Option.exists(
+        readSite(site.text, (sourceFile) => admits(subject(sourceFile, span, false))),
+        (admitted) => admitted === (span.end <= site.closingBrace),
+      )
+    },
+  )
+
+  it.prop(
+    '∀w_EditSiteFactsOf_≡WideningNeverTurnsARefusalIntoAnAdmit',
+    { of: [Shape, Offset, Offset, Offset, Offset], subject: editSiteFactsOf, runs: 40 },
+    (subject, [shape, from, to, before, after]) => {
+      const site = siteOf(shape, 0)
+      const narrow = spanOf(site, from, to)
+      const wide = { start: Math.max(0, narrow.start - before), end: Math.min(site.text.length, narrow.end + after) }
+      return Option.exists(
+        readSite(site.text, (sourceFile) => ({
+          narrow: admits(subject(sourceFile, narrow, false)),
+          wide: admits(subject(sourceFile, wide, false)),
+        })),
+        (admitted) => Boolean.or(Boolean.not(admitted.wide), admitted.narrow),
+      )
+    },
+  )
+
+  const childrenOf = (node: Node): ReadonlyArray<Node> => {
+    const children: Array<Node> = []
+    node.forEachChild((child) => {
+      children.push(child)
+    })
+    return children
+  }
+
+  const overlappingNodesOf = (node: Node, span: Span): number =>
+    Boolean.match(Boolean.or(span.end < node.pos, node.end < span.start), {
+      onTrue: () => 0,
+      onFalse: () => 1 + Arr.reduce(childrenOf(node), 0, (total, child) => total + overlappingNodesOf(child, span)),
+    })
+
+  it.prop(
+    '∀k_ScanOf_≡InspectsExactlyTheNodesWhoseAncestorsAllReachTheEdit',
+    {
+      of: [Shape, Offset, Offset, S.Int.check(S.isBetween({ minimum: 0, maximum: 12 }))],
+      subject: scanOf,
+      runs: 20,
+    },
+    (subject, [shape, from, to, later]) => {
+      const site = siteOf(shape, later)
+      const span = spanOf(site, from, to)
+      return Option.exists(
+        readSite(site.text, (sourceFile) => ({
+          inspected: subject(sourceFile, span).inspected,
+          model: Arr.reduce(childrenOf(sourceFile), 0, (total, child) => total + overlappingNodesOf(child, span)),
+        })),
+        ({ inspected, model }) => inspected === model,
+      )
+    },
+  )
+}
