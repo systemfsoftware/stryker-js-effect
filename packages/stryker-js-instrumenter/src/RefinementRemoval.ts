@@ -1,8 +1,8 @@
 import type { CallExpression, Expression, MemberExpression, Node } from '@systemfsoftware/stryker-ignorer-interface'
 import { dual } from 'effect/Function'
 import * as Option from 'effect/Option'
-import { callExpression, cloneNode, nodeType } from './Ast.handle.js'
-import { identityFunction, onlyWhen, type ResolvedEffectCall, resolveEffectCall } from './EffectCall.js'
+import { arrowFunctionExpression, callExpression, cloneNode, identifier, nodeType } from './Ast.handle.js'
+import { freshIdentifier, identifiersIn, onlyWhen, type ResolvedEffectCall, resolveEffectCall } from './EffectCall.js'
 import type { MutatorContext } from './Mutator.service.js'
 
 const refinementRemovalMutatorDataFirst = (node: Node, context: MutatorContext): readonly Node[] =>
@@ -38,7 +38,12 @@ const wholeCallRemoval = (call: CallExpression, resolved: ResolvedEffectCall): O
   Option.flatMap(onlyWhen(resolved.args.length === 1, resolved), (single) =>
     single.form === 'receiver-method'
       ? Option.map(receiverOf(call), (receiver) => cloneNode(receiver))
-      : Option.some(identityFunction(single)))
+      : Option.some(identityOf(single)))
+
+const identityOf = (call: ResolvedEffectCall): Expression => {
+  const name = freshIdentifier('self', new Set(call.args.flatMap((argument) => identifiersIn(argument))))
+  return arrowFunctionExpression([identifier(name)], identifier(name))
+}
 
 const receiverOf = (call: CallExpression): Option.Option<Expression> =>
   Option.map(Option.liftPredicate(call.callee, isMemberExpression), (member) => member.object)
