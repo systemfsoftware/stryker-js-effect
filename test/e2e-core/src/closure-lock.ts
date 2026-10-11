@@ -8,9 +8,6 @@ const CLOSURE_TARBALL = /^file:.*\/([^/]+\.tgz)$/
 const objectOf = (json: Json | undefined): Option.Option<JsonObject> =>
   Option.liftPredicate(json, (value): value is JsonObject => Predicate.isObject(value))
 
-const pick = (object: JsonObject, keep: (key: string) => boolean): JsonObject =>
-  Record.filter(object, (_, key) => keep(key))
-
 const mapClosureEntries = (lock: Json, rewrite: (entry: JsonObject, tarball: string) => JsonObject): Json =>
   Option.getOrElse(
     Option.gen(function*() {
@@ -43,14 +40,14 @@ export const filledLockOf: {
         onNone: () => entry,
         onSome: (manifest) =>
           Object.assign(
-            pick(entry, (key) => !FILLED_FIELDS.includes(key)),
-            pick(manifest, (key) => FILLED_FIELDS.includes(key)),
+            Record.filter(entry, (_, key) => !FILLED_FIELDS.includes(key)),
+            Record.filter(manifest, (_, key) => FILLED_FIELDS.includes(key)),
           ),
       })),
 )
 
 export const committableLockOf = (lock: Json): Json =>
-  mapClosureEntries(lock, (entry) => pick(entry, (key) => !UNPINNED_FIELDS.includes(key)))
+  mapClosureEntries(lock, (entry) => Record.filter(entry, (_, key) => !UNPINNED_FIELDS.includes(key)))
 
 export const withClosureDevDependencies: {
   (closure: Readonly<Record<string, string>>): (manifest: Json) => Json
