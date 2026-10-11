@@ -378,7 +378,7 @@ const stripRecordedRoots = (root: string): Effect.Effect<void, never, FileSystem
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const file = path.join(root, 'reports', 'main.json')
+    const file = path.join(root, INCREMENTAL_FILE)
     const report = yield* S.decodeEffect(S.fromJsonString(S.Json))(yield* fs.readFileString(file))
     yield* fs.writeFileString(file, yield* S.encodeEffect(S.fromJsonString(S.Json))(withoutProjectRoot(report)))
   }).pipe(Effect.orDie)
@@ -499,9 +499,7 @@ Feature('Reusing dry-run coverage of a project that was built elsewhere')
               firstKilled: (s.observed.first.statuses['Killed'] ?? 0) > 0,
               firstNoCoverage: (s.observed.first.statuses['NoCoverage'] ?? 0) > 0,
               secondStatuses: s.observed.second.statuses,
-              secondReusedCoverage: s.observed.second.logs.some((line) =>
-                line.includes('Reusing the persisted dry-run coverage')
-              ),
+              secondReusedCoverage: reusedCoverageIn(s.observed.second),
               secondRootRefusal: s.observed.second.logs.some((line) =>
                 line.includes('(rootChanged)') &&
                 line.includes(s.observed.realA) &&

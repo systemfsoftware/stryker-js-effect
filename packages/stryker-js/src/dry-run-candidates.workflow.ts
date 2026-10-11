@@ -65,8 +65,8 @@ const recordedPathsOf = (roots: readonly CoverageRoot[]): readonly string[] =>
     )
   )
 
-const noneKept = (roots: readonly CoverageRoot[]): DryRunCandidatesDecision =>
-  Arr.match(recordedPathsOf(roots), {
+const noneKept = (roots: readonly CoverageRoot[], recordedPaths: readonly string[]): DryRunCandidatesDecision =>
+  Arr.match(recordedPaths, {
     onEmpty: () =>
       Arr.match(roots, {
         onEmpty: (): DryRunCandidatesDecision => NoCandidates.make({}),
@@ -90,7 +90,7 @@ const decideCandidates = (command: DryRunCandidatesCommand): DryRunCandidatesDec
     )
   )
   return Arr.match(indices, {
-    onEmpty: () => noneKept(roots),
+    onEmpty: () => noneKept(roots, paths),
     onNonEmpty: (kept): DryRunCandidatesDecision =>
       CandidatesKept.make({
         indices: kept,
