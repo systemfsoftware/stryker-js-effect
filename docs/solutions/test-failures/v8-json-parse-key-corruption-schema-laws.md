@@ -77,7 +77,7 @@ To eliminate the non-deterministic CI failure without disabling schema roundtrip
 
 No property seed is pinned any more. The `propertySeed` hook left the shared Vitest config in #109, and the plugin-runtime pin was removed in #110, so every package runs its schema laws on unpinned seeds.
 
-- The bug affects Node 24 and 26 (V8 12.8 and later). Node 22 (V8 12.4) is not affected.
+- The bug affects V8 13.6 and 14.6 (Node 24 and 26) and not V8 12.4 (Node 22); the regression lies somewhere between V8 12.4 and 13.6, per the version sweep on `nodejs/node#63785`.
 - `packages/stryker-js/README.md` carries a **Known issues** entry for it: on Node 24 a long-lived process that has parsed an object key ending in an escaped backslash can misread a later escaped key, which affects tools that read Stryker report JSON in the same process.
 - Generated `S.fromJsonString` laws over open-keyed records (for example `∀x_CountedReportJson_=x` and `∀x_KillMatrixReportJson_=x`, over the `CountedReportJson` and `KillMatrixReportJson` codecs) can still fail intermittently on Node 24 when an earlier value in the same worker parsed a backslash-ending key.
 - **Removal Condition:** Remove the README known-issues entry, and expect these intermittent law failures to stop, once a Node 24 release carries the backport in [nodejs/node#66542](https://github.com/nodejs/node/pull/66542) (V8 fix `93cd21e825`).
