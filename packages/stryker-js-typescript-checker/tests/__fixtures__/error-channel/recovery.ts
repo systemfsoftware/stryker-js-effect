@@ -19,3 +19,9 @@ export const recordFenced = (program: Effect.Effect<number, Missing>): Effect.Ef
 
 export const recordOpen = (program: Effect.Effect<number, Missing>) =>
   Effect.catchTags(program, { NotFound: () => Effect.succeed(0), Gone: () => Effect.succeed(1) })
+
+export const recordPipedFenced = (program: Effect.Effect<number, Missing>): Effect.Effect<number> =>
+  program.pipe(Effect.catchTags({ NotFound: () => Effect.succeed(0), Gone: () => Effect.succeed(1) }))
+
+export const recordPipedOpen = (program: Effect.Effect<number, Missing>) =>
+  program.pipe(Effect.catchTags({ NotFound: () => Effect.succeed(0), Gone: () => Effect.succeed(1) }))

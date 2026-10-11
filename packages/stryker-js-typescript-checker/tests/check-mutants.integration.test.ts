@@ -579,7 +579,7 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
           () => recoveryVerdicts,
         ),
         Then(
-          'the removed catchTag handlers under a return type forbidding the error are CompileErrors, and every other removal compiles, the record handlers under that return type included',
+          'every removal under a return type forbidding the error it leaks is a CompileError, except a data-first catchTags record handler, whose overload takes its error type from that return type, and every unannotated removal compiles',
         )((s, expect) =>
           expect(s.verdicts).toEqual({
             pipedFenced: ['compileError'],
@@ -588,6 +588,8 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
             dataFirstOpen: ['passed'],
             recordFenced: ['passed', 'passed'],
             recordOpen: ['passed', 'passed'],
+            recordPipedFenced: ['compileError', 'compileError'],
+            recordPipedOpen: ['passed', 'passed'],
           })
         ),
       ),
