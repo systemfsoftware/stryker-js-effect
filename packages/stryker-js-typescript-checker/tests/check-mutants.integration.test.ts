@@ -1,8 +1,10 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
-import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
+import { Checker, type Mutant, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
@@ -351,6 +353,59 @@ const checkPathsProject = (
     return { ...observation, files: [...regular].sort() }
   })).pipe(Effect.orDie)
 
+const RECOVERY_REMOVAL = 'RecoveryRemoval'
+
+const DECLARED_SITE = /^export const (\w+)/u
+
+const siteOf = (lines: ReadonlyArray<string>, line: number): string =>
+  Option.getOrElse(
+    Arr.last(
+      lines.slice(0, line).flatMap((text) => Option.toArray(Option.fromNullishOr(DECLARED_SITE.exec(text)?.[1]))),
+    ),
+    () => '',
+  )
+
+const wireOf = (mutant: Mutant.Mutant): Checker.CheckerMutantWire => ({
+  id: mutant.id,
+  fileName: mutant.fileName,
+  mutatorName: mutant.mutatorName,
+  replacement: mutant.replacement,
+  location: mutant.location,
+})
+
+const recoveryVerdicts: Effect.Effect<
+  Readonly<Record<string, ReadonlyArray<string>>>,
+  never,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const pathService = yield* Path.Path
+  const here = yield* pathService.fromFileUrl(new URL(import.meta.url))
+  const directory = pathService.join(pathService.dirname(here), '__fixtures__', 'error-channel')
+  const fileName = pathService.join(directory, 'recovery.ts')
+  const content = yield* fs.readFileString(fileName)
+  const instrumented = yield* Instrument.instrument([{ name: fileName, content, mutate: true }], {
+    ignorers: [],
+    excludedMutations: [],
+    mutantSetPolicy: 'full',
+    mutators: Mutator.selectMutators(Mutator.stockRegistry, []),
+  })
+  const removals = instrumented.mutants.filter((mutant) => mutant.mutatorName === RECOVERY_REMOVAL)
+  const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({
+    tsconfigFile: pathService.join(directory, 'tsconfig.json'),
+  })
+  const results = yield* Effect.gen(function*() {
+    const runtime = yield* CheckerRuntime
+    const checker = yield* runtime.checker
+    return yield* checker.check(removals.map(wireOf))
+  }).pipe(Effect.provide(CheckerRuntime.layer(options)))
+  const lines = content.split('\n')
+  return removals.reduce<Readonly<Record<string, ReadonlyArray<string>>>>((verdicts, mutant) => {
+    const site = siteOf(lines, mutant.location.start.line)
+    return { ...verdicts, [site]: [...(verdicts[site] ?? []), statusOf(results, mutant.id)] }
+  }, {})
+}).pipe(Effect.orDie)
+
 Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
   .withLayer(FILE_PORTS)
   .live('one warm TypeScript 7 program and the real filesystem settle batches in process')
@@ -511,6 +566,28 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
               [TCE_DUPLICATE_ID]: 'ignored',
             },
             files: ['dep.ts', 'lib/shared.ts', 'tsconfig.json'],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'The checker discards a recovery removal only when the compiler sees the error it leaks',
+      Gherkin.Do.pipe(
+        When('every RecoveryRemoval mutant planted in the error-channel fixture is handed to the checker runtime')(
+          'verdicts',
+          () => recoveryVerdicts,
+        ),
+        Then(
+          'the removed catchTag handlers under a return type forbidding the error are CompileErrors, and every other removal compiles, the record handlers under that return type included',
+        )((s, expect) =>
+          expect(s.verdicts).toEqual({
+            pipedFenced: ['compileError'],
+            pipedOpen: ['passed'],
+            dataFirstFenced: ['compileError'],
+            dataFirstOpen: ['passed'],
+            recordFenced: ['passed', 'passed'],
+            recordOpen: ['passed', 'passed'],
           })
         ),
       ),
