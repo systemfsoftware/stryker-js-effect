@@ -5,9 +5,15 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { DecideImporterShortcutCommand, type ShortcutClause, type ShortcutTree } from './CheckerCommands.schema.js'
+import { DecideImporterShortcutCommand } from './CheckerCommands.schema.js'
 import type { EditSiteFacts, EditSpan, FunctionLikeFacts } from './edit-site.schema.js'
-import { ImporterShortcutDecision, ImportersRechecked, ShortcutTaken } from './ImporterShortcut.schema.js'
+import {
+  ImporterShortcutDecision,
+  ImportersRechecked,
+  type ShortcutClause,
+  ShortcutTaken,
+  type ShortcutTree,
+} from './ImporterShortcut.schema.js'
 
 interface Verdict {
   readonly clause: ShortcutClause

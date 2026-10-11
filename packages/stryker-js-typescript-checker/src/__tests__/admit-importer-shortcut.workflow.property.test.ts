@@ -4,9 +4,15 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import { admitImporterShortcut } from '../admit-importer-shortcut.workflow.js'
-import { DecideImporterShortcutCommand, type ShortcutClause, type ShortcutTree } from '../CheckerCommands.schema.js'
+import { DecideImporterShortcutCommand } from '../CheckerCommands.schema.js'
 import type { EditSiteFacts, FunctionLikeFacts } from '../edit-site.schema.js'
-import { type ImporterShortcutDecision, ImportersRechecked, ShortcutTaken } from '../ImporterShortcut.schema.js'
+import {
+  type ImporterShortcutDecision,
+  ImportersRechecked,
+  type ShortcutClause,
+  ShortcutTaken,
+  type ShortcutTree,
+} from '../ImporterShortcut.schema.js'
 
 interface Knobs {
   readonly offset: number

@@ -14,8 +14,17 @@ import * as SynchronizedRef from 'effect/SynchronizedRef'
 import type { Diagnostic } from 'typescript/unstable/async'
 
 import { admitImporterShortcut } from './admit-importer-shortcut.workflow.js'
-import { type ImporterCheck, TypescriptCheckerOptionsSchema } from './Checker.schema.js'
-import { DecideImporterShortcutCommand, PlanCheckRoundsCommand } from './CheckerCommands.schema.js'
+import {
+  type ImporterCheck,
+  importerCheckOf,
+  readsEditSites,
+  TypescriptCheckerOptionsSchema,
+} from './Checker.schema.js'
+import {
+  ConcludeSharedRoundCommand,
+  DecideImporterShortcutCommand,
+  PlanCheckRoundsCommand,
+} from './CheckerCommands.schema.js'
 import type { CheckRound, CheckRounds } from './CheckRound.schema.js'
 import {
   type CompilerError,
@@ -23,8 +32,9 @@ import {
   DuplicateMutantIds,
   InvalidCheckerOptions,
 } from './Compiler.schema.js'
+import { concludeSharedRound } from './conclude-shared-round.workflow.js'
 import { type EditSiteFacts, editSiteFactsOf, type Span } from './edit-site.schema.js'
-import { fallbackKeyOf, type ImporterShortcutDecision, takesShortcut } from './ImporterShortcut.schema.js'
+import { type ImporterShortcutDecision, shortcutCountsOf, takesShortcut } from './ImporterShortcut.schema.js'
 import { planCheckRounds } from './plan-check-rounds.workflow.js'
 import {
   annotateDiagnosticSample,
@@ -45,14 +55,12 @@ import type { ScriptFile } from './ts-files.handle.js'
 
 const decodeCheckerOptions = S.decodeUnknownEffect(TypescriptCheckerOptionsSchema)
 
-const importerCheckOf = (options: Options.StrykerOptions): Effect.Effect<ImporterCheck, InvalidCheckerOptions> =>
+const importerCheckOfOptions = (
+  options: Options.StrykerOptions,
+): Effect.Effect<ImporterCheck, InvalidCheckerOptions> =>
   Effect.mapBoth(decodeCheckerOptions(options), {
     onFailure: (issue) => InvalidCheckerOptions.make({ detail: issue.message }),
-    onSuccess: (decoded) =>
-      Option.getOrElse(
-        Option.flatMapNullishOr(Option.fromUndefinedOr(decoded.typescriptChecker), (options) => options.importerCheck),
-        (): ImporterCheck => 'location-rule',
-      ),
+    onSuccess: importerCheckOf,
   })
 
 type Mutant = Checker.CheckerMutantWire
@@ -92,19 +100,6 @@ const admitted = (original: Original, mutated: EditSiteFacts): ImporterShortcutD
   )
 
 const eligibleOn = (original: Original): boolean => takesShortcut(admitted(original, original.facts))
-
-const outcomeTakesShortcut = (outcome: Outcome): boolean => Option.exists(outcome.decision, takesShortcut)
-
-const outcomeFallbackKeyOf = (outcome: Outcome): Option.Option<string> =>
-  Option.match(outcome.decision, { onNone: () => Option.some('unread'), onSome: fallbackKeyOf })
-
-const locationRuleAttributesOf = (outcomes: ReadonlyArray<Outcome>): Record<string, number> => ({
-  'typescript.importer_shortcut.count': Arr.filter(outcomes, outcomeTakesShortcut).length,
-  ...Object.fromEntries(
-    Object.entries(Arr.groupBy(Arr.getSomes(Arr.map(outcomes, outcomeFallbackKeyOf)), (key) => key))
-      .map(([key, keys]) => [`typescript.importer_shortcut.fallback.${key}.count`, keys.length]),
-  ),
-})
 
 const fileNamesOf = (steps: CheckSteps, mutants: ReadonlyArray<Mutant>): ReadonlyArray<string> =>
   Arr.dedupe(Arr.map(mutants, (mutant) => steps.resolveFileName(mutant.fileName)))
@@ -160,11 +155,10 @@ const originalsOf = (
   mode: ImporterCheck,
   mutants: ReadonlyArray<Mutant>,
 ): Effect.Effect<HashMap.HashMap<string, Original>, CompilerFailed> =>
-  Match.value(mode).pipe(
-    Match.when('always', () => Effect.succeed(HashMap.empty<string, Original>())),
-    Match.when('location-rule', () => locationRuleOriginalsOf(steps, mutants)),
-    Match.exhaustive,
-  )
+  Boolean.match(readsEditSites(mode), {
+    onFalse: () => Effect.succeed(HashMap.empty<string, Original>()),
+    onTrue: () => locationRuleOriginalsOf(steps, mutants),
+  })
 
 const appliedOf = (mutant: Mutant, held: boolean): string =>
   Boolean.match(held, { onTrue: () => mutant.replacement, onFalse: () => `(${mutant.replacement})` })
@@ -309,13 +303,19 @@ const sharedOutcomesOf = (
         decisionAfterApplyOf(ctx, member.mutant, member.fileName, appliedOf(member.mutant, member.held)),
         (decision) => ({ ...member, decision }),
       ))
-    return yield* Boolean.match(
-      Arr.every(decidedMembers, (member) =>
-        Option.exists(member.decision, takesShortcut)),
+    return yield* Match.valueTags(
+      decided(
+        concludeSharedRound(
+          ConcludeSharedRoundCommand.make({
+            decisions: Arr.map(decidedMembers, (member) =>
+              member.decision),
+          }),
+        ),
+      ),
       {
-        onFalse: () =>
+        SharedRoundRedone: () =>
           Effect.succeedNone,
-        onTrue: () => Effect.asSome(ownOutcomesOf(ctx, decidedMembers)),
+        SharedRoundKept: () => Effect.asSome(ownOutcomesOf(ctx, decidedMembers)),
       },
     )
   })
@@ -386,13 +386,6 @@ const inInputOrder = (mutants: ReadonlyArray<Mutant>, outcomes: ReadonlyArray<Ou
   return Arr.getSomes(Arr.map(mutants, (mutant) => HashMap.get(byId, mutant.id)))
 }
 
-const shortcutAttributesOf = (mode: ImporterCheck, outcomes: ReadonlyArray<Outcome>): Record<string, number> =>
-  Match.value(mode).pipe(
-    Match.when('always', () => ({ 'typescript.importer_shortcut.count': 0 })),
-    Match.when('location-rule', () => locationRuleAttributesOf(outcomes)),
-    Match.exhaustive,
-  )
-
 export const check: {
   (
     mutants: readonly Checker.CheckerMutantWire[],
@@ -415,7 +408,7 @@ export const check: {
     })
     yield* Ref.set(rt.tally, emptyTally)
     const state = yield* SynchronizedRef.get(rt.state)
-    const mode = yield* importerCheckOf(rt.options)
+    const mode = yield* importerCheckOfOptions(rt.options)
     yield* steps.resetMutatedFiles(state.lastMutants)
     yield* steps.refreshSnapshot(Arr.dedupe([...state.lastMutatedFileNames, ...fileNamesOf(steps, mutants)]))
     const originals = yield* originalsOf(steps, mode, mutants)
@@ -453,7 +446,7 @@ export const check: {
       'typescript.resplices.count': tally.resplices,
       'typescript.tce_builds.count': tally.tceBuilds,
       'typescript.tce.ms': tally.tceMs,
-      ...shortcutAttributesOf(mode, outcomes),
+      ...shortcutCountsOf({ importerCheck: mode, decisions: Arr.map(outcomes, (outcome) => outcome.decision) }),
     })
     yield* annotateDiagnosticSample(Arr.flatten(Arr.map(failed, (entry) => entry.diagnostics)))
     return checked

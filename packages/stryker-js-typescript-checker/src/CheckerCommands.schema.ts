@@ -4,6 +4,7 @@ import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 import { EditSiteFacts } from './edit-site.schema.js'
+import { ImporterShortcutDecision } from './ImporterShortcut.schema.js'
 import { TsConfigDocumentSchema } from './Tsconfig.schema.js'
 
 const MutantBound = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
@@ -196,25 +197,21 @@ export class AnswerTypeQueryCommand extends S.TaggedClass<AnswerTypeQueryCommand
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-export const ShortcutClause = S.Literals([
-  'outside-function-body',
-  'body-dependent-signature',
-  'not-typescript-module',
-  'module-reference',
-  'syntax-error',
-  'shared-file',
-])
-export type ShortcutClause = typeof ShortcutClause.Type
-
-export const ShortcutTree = S.Literals(['original', 'mutated'])
-export type ShortcutTree = typeof ShortcutTree.Type
-
 export class DecideImporterShortcutCommand extends S.TaggedClass<DecideImporterShortcutCommand>()(
   'DecideImporterShortcutCommand',
   {
     original: EditSiteFacts,
     mutated: EditSiteFacts,
     compiledElsewhere: S.Boolean,
+  },
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export class ConcludeSharedRoundCommand extends S.TaggedClass<ConcludeSharedRoundCommand>()(
+  'ConcludeSharedRoundCommand',
+  {
+    decisions: ImporterShortcutDecision.pipe(S.Option, S.Array),
   },
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const

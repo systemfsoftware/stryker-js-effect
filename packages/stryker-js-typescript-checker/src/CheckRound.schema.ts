@@ -29,6 +29,22 @@ export const roundOfLayer = ([id, ...others]: Arr.NonEmptyReadonlyArray<Mutant.M
     onNonEmpty: (rest) => SharedRound.make({ ids: [id, ...rest] }),
   })
 
+const ConclusionTypeId: unique symbol = Symbol.for(
+  '@systemfsoftware/stryker-js-typescript-checker/SharedRoundConclusion',
+)
+type ConclusionTypeId = typeof ConclusionTypeId
+
+export class SharedRoundKept extends S.TaggedClass<SharedRoundKept>()('SharedRoundKept', {}) {
+  readonly [ConclusionTypeId] = ConclusionTypeId
+}
+
+export class SharedRoundRedone extends S.TaggedClass<SharedRoundRedone>()('SharedRoundRedone', {}) {
+  readonly [ConclusionTypeId] = ConclusionTypeId
+}
+
+export const SharedRoundConclusion = S.Union([SharedRoundKept, SharedRoundRedone])
+export type SharedRoundConclusion = typeof SharedRoundConclusion.Type
+
 const accepts = {
   sharedRoundIds: S.is(SharedRound.fields.ids),
 }
