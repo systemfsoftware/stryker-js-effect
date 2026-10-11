@@ -220,6 +220,7 @@ const fallbackPriorOf = (decision: DryRunCandidatesDecision): DryRunReusePrior =
 
 export interface DryRunChoice extends PriorChoice {
   readonly candidates: readonly DryRunCoverage[]
+  readonly kept: readonly DryRunCoverage[]
   readonly candidatesDecision: DryRunCandidatesDecision
   readonly currentRoot: string
   readonly currentTestClosureDigest: Option.Option<string>
@@ -251,6 +252,7 @@ export const dryRunChoiceOf = Effect.fnUntraced(function*(target: DryRunTarget, 
   return {
     ...choice,
     candidates: candidates.map((candidate) => candidate.coverage),
+    kept,
     candidatesDecision,
     currentRoot,
     currentTestClosureDigest,
