@@ -67,19 +67,20 @@ To eliminate the non-deterministic CI failure without disabling schema roundtrip
    const seeded = propertySeed === undefined ? {} : { seed: propertySeed }
    ```
 
-4. In `packages/stryker-js-plugin-runtime/vitest.config.ts`, `propertySeed` is provided with a verified seed:
+4. In `packages/stryker-js-plugin-runtime/vitest.config.ts`, `propertySeed` was provided with a verified seed:
    ```ts
    const seedAvoidingNodeIssue63785JsonParseKeyCorruption = 1
    ```
    Seed `1` was verified passing 5/5 at every property run budget (local 100, CI 1000, mutation worker 30), whereas an unpinned control seed (`7`) failed 5/5 runs.
 
-## Scope and Removal
+## Current State
 
-Pinning a property seed narrows test exploration for every property in that package. Therefore, seed pinning is applied strictly where necessary:
+No property seed is pinned any more. The `propertySeed` hook left the shared Vitest config in #109, and the plugin-runtime pin was removed in #110, so every package runs its schema laws on unpinned seeds.
 
-- Only packages whose property laws perform `JSON.parse` on objects with arbitrary open keys hit this engine vulnerability.
-- In `packages/stryker-js`, `RunEventWireLine` (`packages/stryker-js/src/run-event-wire.schema.ts`) uses `S.fromJsonString(RunEvent)`. It was tested across 100 CI-budget law runs and 30 full test suite runs with 0 failures, so `packages/stryker-js` remains unpinned.
-- **Removal Condition:** Drop the `propertySeed` pin in `packages/stryker-js-plugin-runtime/vitest.config.ts` once Node CI upgrades to an engine release containing the upstream fix for `nodejs/node#63785`.
+- The bug affects Node 24 and 26 (V8 12.8 and later). Node 22 (V8 12.4) is not affected.
+- `packages/stryker-js/README.md` carries a **Known issues** entry for it: on Node 24 a long-lived process that has parsed an object key ending in an escaped backslash can misread a later escaped key, which affects tools that read Stryker report JSON in the same process.
+- Generated `S.fromJsonString` laws over open-keyed records (for example `∀x_CountedReportJson_=x` and `∀x_KillMatrixReportJson_=x`, over the `CountedReportJson` and `KillMatrixReportJson` codecs) can still fail intermittently on Node 24 when an earlier value in the same worker parsed a backslash-ending key.
+- **Removal Condition:** Remove the README known-issues entry, and expect these intermittent law failures to stop, once a Node 24 release carries the backport in [nodejs/node#66542](https://github.com/nodejs/node/pull/66542) (V8 fix `93cd21e825`).
 
 ## Prevention
 

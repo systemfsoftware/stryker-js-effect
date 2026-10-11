@@ -4,7 +4,7 @@ date: 2026-09-27
 category: test-failures
 problem_type: flaky codec round-trip law caused by a V8 JSON.parse defect
 input_shape: solution
-subject: A generated wire line whose object keys carry escaped backslashes and lone surrogates decodes to different keys under V8 12.4 to 13.6, so a stream round-trip law over a schema with open JSON records fails on some seeds only
+subject: A generated wire line whose object keys carry escaped backslashes and lone surrogates decodes to different keys under V8 12.8 and later (Node 24 and 26), so a stream round-trip law over a schema with open JSON records fails on some seeds only
 applies_when:
   - adding a field to a `RunEvent` schema in the CLI contract package
   - reusing a generated `Report` shape (a struct with a rest record of arbitrary JSON) inside a stream event
@@ -33,7 +33,9 @@ returned the right keys, so the fault depends on what the parser read before.
    escaped backslash, a later escaped key in the same parse can decode to the
    cached key instead of its own text. This is
    [nodejs/node#63785](https://github.com/nodejs/node/issues/63785), open
-   against V8 12.4 to 13.6 (Node 22 to 26).
+   against V8 12.8 and later (Node 24 and 26). Node 22 (V8 12.4) is not
+   affected: the version sweep on that issue and a probe on Node 22.23.3 both
+   return the right key.
 2. A schema with a rest record lets the property generator emit any key, so
    some seeds produce the poisoning key followed by the victim key.
 3. The round-trip law compares the parsed value with the generated one, so the
