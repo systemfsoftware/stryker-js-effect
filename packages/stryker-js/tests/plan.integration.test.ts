@@ -231,4 +231,38 @@ Feature('Planning mutation shards across projects', { timeout: 180_000 })
         ),
       ),
     )
+    scenario(
+      'Naming one project through a symlink plans it once, exactly as naming it once does',
+      Gherkin.Do.pipe(
+        Given('a fixture whose project proj-a is also reachable through the symlink link-a')(
+          'fixture',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* prepareFixture()
+              yield* fs.symlink(path.join(root, 'proj-a'), path.join(root, 'link-a')).pipe(Effect.orDie)
+              return root
+            }),
+        ),
+        When('stryker plans proj-a alone and proj-a together with link-a')(
+          'ran',
+          (s) =>
+            Effect.gen(function*() {
+              const alone = yield* runPlan(s.fixture, 'plan-alone.json', 'proj-a')
+              const aliased = yield* runPlan(s.fixture, 'plan-aliased.json', 'proj-a,link-a')
+              const aloneText = yield* readPlanText(s.fixture, 'plan-alone.json')
+              const aliasedText = yield* readPlanText(s.fixture, 'plan-aliased.json')
+              return { alone, aliased, aloneText, aliasedText }
+            }),
+        ),
+        Then('both exit 0 and write the same plan bytes')(
+          (s, expect) =>
+            expect({
+              exitCodes: [s.ran.alone.exitCode, s.ran.aliased.exitCode],
+              samePlan: s.ran.aloneText === s.ran.aliasedText,
+            }).toStrictEqual({ exitCodes: [0, 0], samePlan: true }),
+        ),
+      ),
+    )
   })
