@@ -2,6 +2,7 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
+import * as Rec from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -168,6 +169,14 @@ const movedWhenReached = (
 
 const movedAndClosed = (before: LockfileClosureDecision, after: LockfileClosureDecision): boolean =>
   Boolean.every([Option.isSome(closureOf(before)), Option.isSome(closureOf(after)), !sameDecision(before, after)])
+
+const keptAndClosed = (before: LockfileClosureDecision, after: LockfileClosureDecision): boolean =>
+  Boolean.and(Option.isSome(closureOf(before)), sameDecision(before, after))
+
+const withSettingMoved = (settings: Readonly<Record<string, S.Json>>, key: string): Record<string, S.Json> => ({
+  ...settings,
+  [key]: [Option.getOrNull(Rec.get(settings, key))],
+})
 
 const brokenReadsOf = (
   lockfile: PnpmLockfile,
@@ -351,6 +360,24 @@ describe('lockfileClosure', () => {
         decisionOf(subject, readOf(lockfile, project)),
         decisionOf(subject, readOf(lockfile, project, { ...DEFAULT_INSTALL, ...change })),
       )
+    },
+  )
+
+  it.prop(
+    '∀lok_PnpmLockfile_≡SettingsMoveEveryProjectWhileAnOutsideEditMovesNone',
+    { of: [PnpmLockfileSchema, PnpmLockfileSchema, S.String], subject: lockfileClosure },
+    (subject, [drawn, other, key]) => {
+      const settings = other.settings ?? {}
+      const lockfile = { ...consistentOf(drawn), settings }
+      const moved = { ...lockfile, settings: withSettingMoved(settings, key) }
+      const outside = withSnapshots(lockfile, { 'outside@1.0.0': { dependencies: { stray: '1.0.0' } } })
+      return IMPORTERS.every((project) => {
+        const before = decisionOf(subject, readOf(lockfile, project))
+        return Boolean.and(
+          movedAndClosed(before, decisionOf(subject, readOf(moved, project))),
+          keptAndClosed(before, decisionOf(subject, readOf(outside, project))),
+        )
+      })
     },
   )
 
