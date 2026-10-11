@@ -349,24 +349,22 @@ const assemblePlan = (
     (command) => shardPlanOf(request, Result.getOrElse(planShards(command), (neverError) => neverError)),
   )
 
-const shardPlanOf = (request: PlanShardsRequest, shards: ReadonlyArray<PlannedShard>): ShardPlan => {
-  return {
-    version: 1,
-    targetSeconds: request.targetSeconds,
-    shards: shards.map((shard) => ({
-      index: shard.index,
-      count: shard.count,
+const shardPlanOf = (request: PlanShardsRequest, shards: ReadonlyArray<PlannedShard>): ShardPlan => ({
+  version: 1,
+  targetSeconds: request.targetSeconds,
+  shards: shards.map((shard) => ({
+    index: shard.index,
+    count: shard.count,
+    predictedSeconds: shard.predictedSeconds,
+    projects: shard.projects.map((entry) => ({ project: entry.project, mutants: [...entry.mutants] })),
+  })),
+  matrix: {
+    include: shards.map((shard) => ({
+      shard: `${shard.index}/${shard.count}`,
       predictedSeconds: shard.predictedSeconds,
-      projects: shard.projects.map((entry) => ({ project: entry.project, mutants: [...entry.mutants] })),
     })),
-    matrix: {
-      include: shards.map((shard) => ({
-        shard: `${shard.index}/${shard.count}`,
-        predictedSeconds: shard.predictedSeconds,
-      })),
-    },
-  }
-}
+  },
+})
 
 const writePlan = (
   request: PlanShardsRequest,
