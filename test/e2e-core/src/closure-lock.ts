@@ -66,3 +66,54 @@ export const withClosureDevDependencies: {
         }),
     }),
 )
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Equal = await import('effect/Equal')
+  const S = await import('effect/Schema')
+
+  const tarball = 'systemfsoftware-stryker-js.tgz'
+  const resolved = `file:../../packs/${tarball}`
+  const bin = { stryker: 'dist/main.mjs' }
+  const lockOf = (entry: JsonObject): Json => ({ packages: { 'node_modules/@systemfsoftware/stryker-js': entry } })
+
+  it.prop(
+    '∀m_StaleClosureEntry_≡ManifestVersionAndDependencies',
+    { of: [S.NonEmptyString, S.NonEmptyString], subject: filledLockOf },
+    (subject, [name, version]) => {
+      const stale = {
+        resolved,
+        dev: true,
+        bin,
+        version: `${version}-stale`,
+        dependencies: { [`dep-${name}-stale`]: '1' },
+      }
+      const manifest = { version, license: 'Apache-2.0', dependencies: { [`dep-${name}`]: version } }
+      const filled = { resolved, dev: true, bin, version, dependencies: manifest.dependencies }
+      return Equal.equals(subject(lockOf(stale), { [tarball]: manifest }), lockOf(filled))
+    },
+  )
+
+  it.prop(
+    '∀d_DependencyAbsentFromLock_∈FilledEntry',
+    { of: [S.NonEmptyString, S.NonEmptyString], subject: filledLockOf },
+    (subject, [name, version]) => {
+      const stale = { resolved, dev: true, dependencies: { effect: '^4.0.0' } }
+      const manifest = { version, dependencies: { effect: '^4.0.0', [`dep-${name}`]: version } }
+      const filled = { resolved, dev: true, version, dependencies: manifest.dependencies }
+      return Equal.equals(subject(lockOf(stale), { [tarball]: manifest }), lockOf(filled))
+    },
+  )
+
+  it.prop(
+    '∀r_RegistryEntry_≡Unchanged',
+    { of: [S.NonEmptyString, S.NonEmptyString], subject: filledLockOf },
+    (subject, [name, version]) => {
+      const lock = lockOf({ version, resolved: `https://registry.npmjs.org/${name}.tgz`, integrity: `sha512-${name}` })
+      return Equal.equals(
+        subject(lock, { [tarball]: { version: '0.0.0', dependencies: { [`dep-${name}`]: '1' } } }),
+        lock,
+      )
+    },
+  )
+}
