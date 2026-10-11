@@ -4,6 +4,7 @@ import { Engine } from '@systemfsoftware/stryker-js'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
+import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -183,6 +184,153 @@ const copyReport = (
     )
   }).pipe(Effect.orDie)
 
+const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
+
+const PER_TEST_CONFIG = `export default {
+  testRunner: 'vm',
+  plugins: [],
+  reporters: [],
+  checkers: [],
+  mutate: ['src/**/*.js'],
+  coverageAnalysis: 'perTest',
+  cleanTempDir: 'always',
+  incremental: true,
+  incrementalFile: 'reports/main.json',
+}
+`
+
+const PER_TEST_FILES: ReadonlyArray<readonly [string, string]> = [
+  ['package.json', '{ "type": "commonjs" }\n'],
+  ['stryker.config.mjs', PER_TEST_CONFIG],
+  [
+    'src/math.js',
+    ['function add(left, right) {', '  return left + right;', '}', '', 'module.exports = { add };', ''].join('\n'),
+  ],
+  [
+    'src/other.js',
+    ['function label() {', "  return 'left' + 'right';", '}', '', 'module.exports = { label };', ''].join('\n'),
+  ],
+  [
+    'test/passing.test.mjs',
+    [
+      "import { test } from 'vitest'",
+      "import math from '../src/math.js'",
+      '',
+      "test('executes add without asserting on its result', () => {",
+      '  math.add(1, 2)',
+      '})',
+      '',
+    ].join('\n'),
+  ],
+  [
+    'test/killing.test.mjs',
+    [
+      "import { expect, test } from 'vitest'",
+      "import math from '../src/math.js'",
+      '',
+      "test('adds two numbers', () => {",
+      '  expect(math.add(1, 2)).toBe(3)',
+      '})',
+      '',
+    ].join('\n'),
+  ],
+]
+
+const writePerTestFixture: Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const root = yield* fs.makeTempDirectory()
+  yield* writeFiles(root, PER_TEST_FILES)
+  yield* fs.symlink(path.join(PACKAGE_ROOT, 'node_modules'), path.join(root, 'node_modules'))
+  return root
+}).pipe(Effect.orDie)
+
+const withChdir = <A, E, R>(directory: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = globalThis.process.cwd()
+      globalThis.process.chdir(directory)
+      return previous
+    }),
+    () => effect,
+    (previous) => Effect.sync(() => globalThis.process.chdir(previous)),
+  )
+
+interface PerTestRun {
+  readonly statuses: Readonly<Record<string, number>>
+  readonly logs: readonly string[]
+}
+
+const statusCountsOf = (events: ReadonlyArray<RunEvent.RunEvent>): Readonly<Record<string, number>> =>
+  events.reduce<Readonly<Record<string, number>>>(
+    (counts, event) =>
+      S.is(RunEvent.RunMutantTested)(event)
+        ? { ...counts, [event.status]: (counts[event.status] ?? 0) + 1 }
+        : counts,
+    {},
+  )
+
+const runPerTest = (root: string): Effect.Effect<PerTestRun, never, never> =>
+  withChdir(
+    root,
+    Effect.gen(function*() {
+      const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
+      const ports = Engine.nodePlatformLayer
+      const logs: string[] = []
+      const layer = Layer.mergeAll(
+        Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports),
+        ports,
+        Logger.layer([
+          Logger.make((entry) => {
+            logs.push([entry.message].flat().map(String).join(' '))
+          }),
+        ]),
+      )
+      yield* Engine.mutationTestCell
+        .run({ cliOptions: {}, targetMutatePatterns: undefined })
+        .pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)
+      const events = yield* Queue.end(queue).pipe(
+        Effect.andThen(Queue.takeAll(queue)),
+        Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
+      )
+      return { statuses: statusCountsOf(events), logs }
+    }),
+  )
+
+const PLAN_REQUEST = {
+  targetSeconds: 1,
+  maxShards: 4,
+  projects: ['.'],
+  out: 'plan.json',
+  full: false,
+} satisfies Engine.PlanRequestInput['request']
+
+const shardPlanOf = (root: string): Effect.Effect<RunEvent.PlanKnown['shardPlan'], never, never> =>
+  withChdir(
+    root,
+    Effect.gen(function*() {
+      const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
+      const consoleService = yield* Console.Console
+      yield* Engine.planRequest({
+        request: PLAN_REQUEST,
+        channel: {
+          environment: {
+            basePath: root,
+            host: { env: environmentFor(root), events: queue },
+            console: consoleService,
+          },
+        },
+      }).pipe(Effect.provide(Engine.nodePlatformLayer))
+      const events = [
+        ...(yield* Queue.takeAll(queue).pipe(
+          Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
+        )),
+      ]
+      const plan = events.find((event): event is RunEvent.PlanKnown => S.is(RunEvent.PlanKnown)(event))
+      return plan === undefined ? null : plan.shardPlan
+    }).pipe(Effect.orDie),
+  )
+
 Feature('Reusing dry-run coverage of a project that was built elsewhere')
   .withLayer(Layer.empty)
   .live('the scenarios drive the real engine over the host filesystem, so build logs and roots are the real ones')
@@ -236,53 +384,87 @@ Feature('Reusing dry-run coverage of a project that was built elsewhere')
     )
 
     scenario(
-      'The same project built at another absolute root keeps the digest the first root recorded',
+      "A project moved to another root does not score its mutants from the first root's coverage",
       Gherkin.Do.pipe(
-        Given("a workspace whose build is repeated in a second root from the first root's report")(
+        Given("root A's report copied into root B after root A is deleted")(
+          'observed',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const rootA = yield* writePerTestFixture
+              const rootB = yield* writePerTestFixture
+              const realA = yield* fs.realPath(rootA)
+              const realB = yield* fs.realPath(rootB)
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const first = yield* runPerTest(rootA)
+                  yield* copyReport(rootA, rootB)
+                  yield* removeFixture(rootA)
+                  const second = yield* runPerTest(rootB)
+                  return { realA, realB, first, second }
+                }),
+                Effect.andThen(removeFixture(rootA), removeFixture(rootB)),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then('root B refuses the coverage, runs its own dry run, and scores its mutants as root A did')(
+          (s, expect) =>
+            expect({
+              firstKilled: (s.observed.first.statuses['Killed'] ?? 0) > 0,
+              firstNoCoverage: (s.observed.first.statuses['NoCoverage'] ?? 0) > 0,
+              secondStatuses: s.observed.second.statuses,
+              secondReusedCoverage: s.observed.second.logs.some((line) =>
+                line.includes('Reusing the persisted dry-run coverage')
+              ),
+              secondRootRefusal: s.observed.second.logs.some((line) =>
+                line.includes('(rootChanged)') &&
+                line.includes(s.observed.realA) &&
+                line.includes(s.observed.realB) &&
+                line.includes('records its coverage under')
+              ),
+            }).toEqual({
+              firstKilled: true,
+              firstNoCoverage: true,
+              secondStatuses: s.observed.first.statuses,
+              secondReusedCoverage: false,
+              secondRootRefusal: true,
+            }),
+        ),
+      ),
+    )
+
+    scenario(
+      "Shard planning under another root does not price the plan from the first root's coverage",
+      Gherkin.Do.pipe(
+        Given("root B planned with root A's copied report and again once the report is removed")(
           'observed',
           () =>
             Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
               const path = yield* Path.Path
-              const spawnLog = yield* fs.makeTempFile({ prefix: 'reroot-spawns', suffix: '.log' })
-              const rootA = yield* writeFixture([
-                ['.turbo/turbo-build.log', ''],
-                ['package.json', '{"name":"root-a","private":true}\n'],
-              ])
-              yield* fs.writeFileString(path.join(rootA, '.turbo', 'turbo-build.log'), buildLogOf(rootA, 1000))
-              const rootB = yield* writeFixture([
-                ['.turbo/turbo-build.log', ''],
-                ['package.json', '{"name":"root-a","private":true}\n'],
-              ])
-              yield* fs.writeFileString(path.join(rootB, '.turbo', 'turbo-build.log'), buildLogOf(rootB, 2000))
+              const rootA = yield* writePerTestFixture
+              const rootB = yield* writePerTestFixture
               return yield* Effect.ensuring(
                 Effect.gen(function*() {
-                  const first = yield* runOnce(rootA, spawnLog)
+                  yield* runPerTest(rootA)
                   yield* copyReport(rootA, rootB)
-                  const second = yield* runOnce(rootB, spawnLog)
-                  return { first, second }
+                  yield* removeFixture(rootA)
+                  const withReport = yield* shardPlanOf(rootB)
+                  yield* fs.remove(path.join(rootB, 'reports'), { recursive: true })
+                  const withoutReport = yield* shardPlanOf(rootB)
+                  return { withReport, withoutReport }
                 }),
-                Effect.andThen(
-                  removeFixture(rootA),
-                  Effect.andThen(removeFixture(rootB), Effect.orDie(fs.remove(spawnLog, { force: true }))),
-                ),
+                Effect.andThen(removeFixture(rootA), removeFixture(rootB)),
               )
             }).pipe(Effect.orDie, Effect.provide(filePorts)),
         ),
-        Then("the second root records the first root's digest and reuses the pending coverage")((s, expect) =>
+        Then('both plans are the same whole shard plan')((s, expect) =>
           expect({
-            digestsEqual: closureDigestOf(s.observed.first.report) === closureDigestOf(s.observed.second.report),
-            rootDigestNamed: closureDigestOf(s.observed.first.report).length > 0,
-            secondRun: {
-              reusedCoverage: s.observed.second.logs.some((line) =>
-                line.includes('Reusing the persisted dry-run coverage')
-              ),
-              refusedCoverage: s.observed.second.logs.some((line) => line.includes('dry-run coverage reuse refused')),
-            },
+            planned: s.observed.withoutReport !== null,
+            withReport: s.observed.withReport,
           }).toEqual({
-            digestsEqual: true,
-            rootDigestNamed: true,
-            secondRun: { reusedCoverage: true, refusedCoverage: false },
+            planned: true,
+            withReport: s.observed.withoutReport,
           })
         ),
       ),
