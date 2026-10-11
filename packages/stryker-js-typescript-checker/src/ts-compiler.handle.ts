@@ -23,7 +23,12 @@ import * as S from 'effect/Schema'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
 import type { BinaryExpression, Expression, Node, SourceFile } from 'typescript/unstable/ast'
 import { SyntaxKind } from 'typescript/unstable/ast'
-import { isBinaryExpression, isModuleDeclaration, isPropertyAccessExpression } from 'typescript/unstable/ast/is'
+import {
+  isBinaryExpression,
+  isIdentifier,
+  isModuleDeclaration,
+  isPropertyAccessExpression,
+} from 'typescript/unstable/ast/is'
 import {
   API,
   type Checker as TypeChecker,
@@ -833,25 +838,16 @@ const spanContainsOf = (node: Node, start: number, end: number): boolean => {
   return span.start <= start && end <= span.end
 }
 
-const nodeWithSpanOf = <A extends Node>(
-  node: Node,
-  start: number,
-  end: number,
-  accept: (candidate: Node) => candidate is A,
-): Option.Option<A> =>
-  Option.orElse(
-    Option.filter(Option.liftPredicate(node, accept), (accepted) => spanEqualsOf(accepted, start, end)),
-    () =>
-      Arr.findFirst(
-        Arr.filter(childrenOf(node), (child) => spanContainsOf(child, start, end)),
-        (child) => nodeWithSpanOf(child, start, end, accept),
-      ),
-  )
-
-const isAnyNode = (_candidate: Node): _candidate is Node => true
+const nodesWithSpanOf = (node: Node, start: number, end: number): ReadonlyArray<Node> => [
+  ...Arr.filter([node], (candidate) => spanEqualsOf(candidate, start, end)),
+  ...Arr.flatMap(
+    Arr.filter(childrenOf(node), (child) => spanContainsOf(child, start, end)),
+    (child: Node): ReadonlyArray<Node> => nodesWithSpanOf(child, start, end),
+  ),
+]
 
 const hasSpanOf = (node: Node, start: number, end: number): boolean =>
-  Option.isSome(nodeWithSpanOf(node, start, end, isAnyNode))
+  Arr.isReadonlyArrayNonEmpty(nodesWithSpanOf(node, start, end))
 
 const parseHeldOf = (sourceFile: SourceFile, file: ScriptFile, mutant: Checker.CheckerMutantWire): boolean =>
   Option.match(offsetAt(file.lineStarts, mutant.location.start), {
@@ -1501,11 +1497,25 @@ const SIZE_OPERATORS: Readonly<Partial<Record<SyntaxKind, SizeOperator>>> = {
 interface LengthOperand {
   readonly side: SizeComparison['lengthSide']
   readonly receiver: Expression
+  readonly referenceReceiver: boolean
   readonly other: Expression
 }
 
+const strictNullChecksOf = (options: Project['compilerOptions']): boolean =>
+  (options.strictNullChecks ?? options.strict) === true
+
 const binaryWithSpanOf = (node: Node, start: number, end: number): Option.Option<BinaryExpression> =>
-  nodeWithSpanOf(node, start, end, isBinaryExpression)
+  Arr.findFirst(nodesWithSpanOf(node, start, end), isBinaryExpression)
+
+const isReferenceChain = (expression: Expression): boolean =>
+  Boolean.some([
+    isIdentifier(expression),
+    expression.kind === SyntaxKind.ThisKeyword,
+    Option.exists(
+      Option.liftPredicate(expression, isPropertyAccessExpression),
+      (access) => Boolean.every([access.questionDotToken === undefined, isReferenceChain(access.expression)]),
+    ),
+  ])
 
 const lengthReceiverOf = (expression: Expression): Option.Option<Expression> =>
   Option.map(
@@ -1520,12 +1530,14 @@ const lengthOperandOf = (binary: BinaryExpression): Option.Option<LengthOperand>
     Option.map(lengthReceiverOf(binary.left), (receiver): LengthOperand => ({
       side: 'left',
       receiver,
+      referenceReceiver: isReferenceChain(binary.left),
       other: binary.right,
     })),
     () =>
       Option.map(lengthReceiverOf(binary.right), (receiver): LengthOperand => ({
         side: 'right',
         receiver,
+        referenceReceiver: isReferenceChain(binary.right),
         other: binary.left,
       })),
   )
@@ -1583,6 +1595,8 @@ const sizeComparisonAt = (
             lengthSide: operand.side,
             againstZero: operand.other.getText(owned.sourceFile).trim() === '0',
             receiver,
+            referenceReceiver: operand.referenceReceiver,
+            strictNullChecks: strictNullChecksOf(owned.project.compilerOptions),
           })),
     },
   )

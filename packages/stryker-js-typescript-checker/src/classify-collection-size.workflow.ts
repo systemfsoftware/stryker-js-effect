@@ -24,6 +24,8 @@ export const SizeComparison = S.Struct({
   lengthSide: LengthSide,
   againstZero: S.Boolean,
   receiver: S.Array(ReceiverKind),
+  referenceReceiver: S.Boolean,
+  strictNullChecks: S.Boolean,
 })
 export type SizeComparison = typeof SizeComparison.Type
 
@@ -63,7 +65,13 @@ const receiverIsCollection = (receiver: ReadonlyArray<ReceiverKind>): boolean =>
 const constantOf = (comparison: SizeComparison): Option.Option<boolean> =>
   Option.filter(
     Option.fromUndefinedOr(ALWAYS[comparison.lengthSide][comparison.operator]),
-    () => Boolean.every([comparison.againstZero, receiverIsCollection(comparison.receiver)]),
+    () =>
+      Boolean.every([
+        comparison.againstZero,
+        comparison.referenceReceiver,
+        comparison.strictNullChecks,
+        receiverIsCollection(comparison.receiver),
+      ]),
   )
 
 const keptLiteralAt = (site: MutantSite, index: number, always: boolean): boolean =>
