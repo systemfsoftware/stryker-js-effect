@@ -69,8 +69,8 @@ jobs:
       - name: Export telemetry
         if: always()
         run: ./test/e2e/scripts/export-traces.ts
-      - name: Container logs on failure
-        if: failure()
+      - name: Container logs on failure or cancellation
+        if: failure() || cancelled()
         continue-on-error: true
         run: |
           mkdir -p e2e-telemetry/containers
