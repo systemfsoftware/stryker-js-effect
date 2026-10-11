@@ -1,5 +1,17 @@
 # @systemfsoftware/stryker-ignorer-effect-schema-declarations
 
+## 0.3.0
+
+A schema that annotates a `recursionBudget` beside a behaviour key such as `toEquivalence` no longer fails the dry run with `Budget_RequiresTransform`.
+
+- The object holding a `recursionBudget` in the first argument of `annotate` or `annotations` is now ignored whatever its other keys are. The other keys' values are still mutated.
+- The `recursion-budget` reason calls `recursionBudget` metadata that only the recursion-budget transform, its runtime and the schema recursion laws read. The `recursion-budget-holder` reason and `RECURSION_BUDGET_HOLDER_IGNORED` drop "beside documentation only".
+- New `KEEP_ADVICE` maps every reason code to the next action that keeps its mutants tested: `KEEP_RECURSION_BUDGET_MUTANT` (remove the `recursionBudget` annotation) for the two budget codes, `KEEP_IGNORED_MUTANT` for the rest. A `recursionBudget` annotation on a recursive schema is no longer mutated, so a run over a project using `@systemfsoftware/effect-schema-recursion-budget` no longer fails its dry run with `Budget_RequiresTransform`. Both the annotate object holding the budget and the budget value are reported as `Ignored`.
+
+Every reason the ignorer reports now starts with a stable code, as `effect-schema-declarations/<code>: <why>`. `REASON_CODES` maps each code to what it means, and `KEEP_IGNORED_MUTANT` says how to keep a mutant the ignorer removes.
+
+Breaking: the exported reason constants (`BRAND_NAME_IGNORED`, `TYPE_ID_IGNORED`, and the rest) now hold the coded text. Code that compares against the old text must use the constants or match on the code.
+
 ## 0.2.1
 
 Effect moves to `4.0.0-rc.117`, together with the `@effect/*` packages these libraries use. Projects that install `effect` next to them need the same release.

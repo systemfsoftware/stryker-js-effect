@@ -1,5 +1,18 @@
 # @systemfsoftware/stryker-js-instrumenter
 
+## 13.0.0
+
+Under the default `mutator.mutantSetPolicy`, a relational comparison in an `if`, loop, or ternary test no longer has its mutants Ignored by the sufficient-set table. That table dropped the complementary operator and one boolean literal at every such site, but its proof assumes numeric operands, which JavaScript does not guarantee. In `if (a < b)` with `a` null and `b` undefined, the dropped `true` mutant enters the branch and no kept mutant does, so a test that killed only that mutant went uncounted. Operands whose `valueOf` has side effects defeat the dropped operators the same way. Those mutants now run.
+
+Breaking: default runs plant more active mutants in condition positions, so mutation scores and the set of mutants that run differ from the previous release. The generated mutants and their ids are unchanged. `Instrument.MutateDescriptionSchema` is exported, so a consumer can declare a file's `mutate` field with the same schema the instrumenter uses. The published package manifest lists two more development dependencies. Nothing you import or run from this package changes. Plugins that ignore a mutant must now say why. Each ignore rule id (`Mutant.IgnoreRuleId`) is documented in the schema with what it means and the option that keeps its mutants; the ids are stable.
+
+Breaking:
+
+- A checker answering `ignored` must give a reason of the form `<rule-id>: <detail>`, or the run fails naming the checker and the mutant. A third-party checker with no rule of its own uses the new `checker` rule: `checker: <detail>`.
+- An ignorer whose `shouldIgnore` returns an empty or non-string reason now fails instrumentation, naming the ignorer, the mutant id, and the file. Return a non-empty string to ignore a mutant, or `undefined` to keep it. Under the default `mutator.mutantSetPolicy`, a relational comparison no longer runs its complement when the matching ordering mutant is kept: for `a < b`, `a >= b` is Ignored because every test that kills `a <= b` also kills it (likewise `>` for `<=`, `<=` for `>`, `<` for `>=`). This holds for every JavaScript operand, `NaN`, `BigInt`, strings, and `valueOf` side effects included. Its status reason reads `redundant-relational: subsumed by <dominator id> (complement): ...` and says what to do next.
+
+A plugin `Mutant` gains an optional `subsumption` field: `{ _tag: 'Subsumed', rule, dominators }` on an `Ignored` mutant, or `{ _tag: 'Readmitted', rule, causes }` on one that is not Ignored, because it is re-admitted to run. A `Mutant` whose `subsumption` disagrees with its status does not decode. Set `mutator: { mutantSetPolicy: 'full' }` to run every complement.
+
 ## 12.1.2
 
 Effect moves to `4.0.0-rc.117`, together with the `@effect/*` packages these libraries use. Projects that install `effect` next to them need the same release.
