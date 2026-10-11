@@ -346,6 +346,7 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           [ "$status" -ne 0 ] || exit 0
+          # A CLI that rewords this message stops matching, so its exit 1 fails the job instead of warning.
           budget='run took ([0-9.]+)s, over the ([0-9.]+)s budget'
           if [ "$status" -ne 1 ] || ! [[ "$(cat "$RUNNER_TEMP/gate.log")" =~ $budget ]]; then
             exit "$status"
