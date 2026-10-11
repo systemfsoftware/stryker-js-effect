@@ -9,21 +9,39 @@ import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 import type { PackedMember } from './install-closure.schema.js'
 
+const NPM_NAME = '(?:@[a-z0-9-*~][a-z0-9-*._~]*/)?[a-z0-9-~][a-z0-9-._~]*'
+
+const PATH_SEGMENT = '[a-z0-9-~][a-z0-9-._~]*'
+
+const keyOf = (pattern: string, expected: string) =>
+  S.String.pipe(S.decodeTo(S.String.check(S.isPattern(new RegExp(`^(?:${pattern})$`), { expected }))))
+
+const NpmPackageName = keyOf(NPM_NAME, 'an npm package name')
+
+const NpmLockPath = keyOf(
+  `|node_modules/${NPM_NAME}(?:/node_modules/${NPM_NAME})*|${PATH_SEGMENT}(?:/${PATH_SEGMENT})*`,
+  'an npm lock package path',
+)
+
+const NamedSpecs = S.Record(NpmPackageName, S.String)
+
 export const NpmManifestJson = S.fromJsonString(S.Struct({
   name: S.String,
   version: S.String,
   private: S.optionalKey(S.Boolean),
-  dependencies: S.optionalKey(S.Record(S.String, S.String)),
-  devDependencies: S.optionalKey(S.Record(S.String, S.String)),
+  dependencies: S.optionalKey(NamedSpecs),
+  devDependencies: S.optionalKey(NamedSpecs),
 }))
 
-const Specs = S.optionalKey(S.Record(S.String, S.String))
+const Specs = S.optionalKey(NamedSpecs)
 
 const Flag = S.optionalKey(S.Boolean)
 
 const Strings = S.String.pipe(S.Array, S.optionalKey)
 
-const NpmMetadata = S.optionalKey(S.Json)
+const FundingSource = S.Union([S.String, S.Struct({ type: S.optionalKey(S.String), url: S.String })])
+
+const Funding = S.Union([FundingSource, S.Array(FundingSource)])
 
 export const NpmLockEntry = S.Struct({
   name: S.optionalKey(S.String),
@@ -38,18 +56,18 @@ export const NpmLockEntry = S.Struct({
   inBundle: Flag,
   hasInstallScript: Flag,
   hasShrinkwrap: Flag,
-  bin: NpmMetadata,
-  license: NpmMetadata,
-  engines: NpmMetadata,
+  bin: S.optionalKey(S.Record(NpmPackageName, S.String)),
+  license: S.optionalKey(S.String),
+  engines: Specs,
   os: Strings,
   cpu: Strings,
   libc: Strings,
   deprecated: S.optionalKey(S.String),
-  funding: NpmMetadata,
+  funding: S.optionalKey(Funding),
   dependencies: Specs,
   optionalDependencies: Specs,
   peerDependencies: Specs,
-  peerDependenciesMeta: S.optionalKey(S.Record(S.String, S.Struct({ optional: Flag }))),
+  peerDependenciesMeta: S.optionalKey(S.Record(NpmPackageName, S.Struct({ optional: Flag }))),
   devDependencies: Specs,
   bundleDependencies: Strings,
   workspaces: Strings,
@@ -61,7 +79,7 @@ export const NpmLockfile = S.Struct({
   version: S.optionalKey(S.String),
   lockfileVersion: S.Int,
   requires: Flag,
-  packages: S.Record(S.String, NpmLockEntry),
+  packages: S.Record(NpmLockPath, NpmLockEntry),
 })
 export type NpmLockfile = typeof NpmLockfile.Type
 
