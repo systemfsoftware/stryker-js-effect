@@ -473,7 +473,11 @@ const receiverRoot = (
   Option.orElse(resolveModuleObject(expression, context, table), () =>
     Match.value(expression).pipe(
       Match.when(isMemberExpression, (member) => receiverRoot(member.object, context, table)),
-      Match.when(isCallExpression, (call) => receiverRoot(call.callee, context, table)),
+      Match.when(isCallExpression, (call) =>
+        Option.flatMap(
+          Option.liftPredicate(call.callee, Predicate.not(isCallExpression)),
+          (callee) => receiverRoot(callee, context, table),
+        )),
       Match.orElse(() => Option.none()),
     ))
 

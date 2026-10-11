@@ -65,6 +65,31 @@ export const shadowed = (S: { String: { check: (n: number) => number } }) => S.S
   },
 ] as const
 
+const RECEIVER_CASES = [
+  {
+    receiver: 'value decoded by a curried Schema decoder',
+    source: schemaModule(`const Box = S.Struct({ n: S.Number })
+
+export const checked = S.decodeUnknownSync(Box)({ n: 1 }).check(1, 2)`),
+    replacements: [],
+  },
+  {
+    receiver: 'struct built by a Schema constructor call',
+    source: schemaModule(
+      'export const Range = S.Struct({ low: S.Number, high: S.Number }).check(S.makeFilter((r) => r.low <= r.high), S.makeFilter((r) => r.high < 100))',
+    ),
+    replacements: [
+      'S.Struct({ low: S.Number, high: S.Number }).check(S.makeFilter(r => r.high < 100))',
+      'S.Struct({ low: S.Number, high: S.Number }).check(S.makeFilter(r => r.low <= r.high))',
+    ],
+  },
+  {
+    receiver: 'Schema member read straight off the module',
+    source: schemaModule('export const Name = S.String.check(S.isMinLength(1))'),
+    replacements: ['S.String'],
+  },
+] as const
+
 const instrumentSource = (source: string) =>
   instrument(
     [{ name: '/tmp/refinement-removal-probe.ts', content: source, mutate: true }],
@@ -109,6 +134,23 @@ Feature('Removing one Schema refinement so the schema accepts what it refused')
               Effect.map(instrumentSource(source), (result) => removalMutantsOf(result).length),
           ),
           Then('no mutant is proposed')(({ count }: { count: number }, expect) => expect(count).toBe(0)),
+        ),
+    )
+
+    scenarioOutline(
+      'A check method on a <receiver> is a Schema check only when the receiver is a schema',
+      RECEIVER_CASES,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given(`a check method called on a ${row.receiver}`)('source', () => Effect.succeed(row.source)),
+          When('the module is instrumented with the default mutators')(
+            'mutants',
+            ({ source }: { source: string }) => Effect.map(instrumentSource(source), removalMutantsOf),
+          ),
+          Then('the proposed mutants are exactly the schema-receiver removals')(
+            ({ mutants }: { mutants: readonly Mutant.Mutant[] }, expect) =>
+              expect(mutants.map((mutant) => mutant.replacement)).toEqual([...row.replacements]),
+          ),
         ),
     )
   })
