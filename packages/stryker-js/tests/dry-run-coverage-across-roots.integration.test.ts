@@ -6,6 +6,7 @@ import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Console from 'effect/Console'
 import * as Effect from 'effect/Effect'
+import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
@@ -270,14 +271,12 @@ const statusCountsOf = (events: ReadonlyArray<RunEvent.RunEvent>): Readonly<Reco
     {},
   )
 
-const runPerTest = (root: string): Effect.Effect<PerTestRun, never, never> =>
-  withChdir(
-    root,
-    Effect.gen(function*() {
-      const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
-      const ports = Engine.nodePlatformLayer
-      const logs: string[] = []
-      const layer = Layer.mergeAll(
+const perTestLayerOf = (root: string, logs: string[]) =>
+  Effect.map(Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND), (queue) => {
+    const ports = Engine.nodePlatformLayer
+    return {
+      queue,
+      layer: Layer.mergeAll(
         Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports),
         ports,
         Logger.layer([
@@ -285,9 +284,21 @@ const runPerTest = (root: string): Effect.Effect<PerTestRun, never, never> =>
             logs.push([entry.message].flat().map(String).join(' '))
           }),
         ]),
-      )
+      ),
+    }
+  })
+
+const runPerTest = (
+  root: string,
+  cliOptions: Options.PartialStrykerOptions = {},
+): Effect.Effect<PerTestRun, never, never> =>
+  withChdir(
+    root,
+    Effect.gen(function*() {
+      const logs: string[] = []
+      const { queue, layer } = yield* perTestLayerOf(root, logs)
       yield* Engine.mutationTestCell
-        .run({ cliOptions: {}, targetMutatePatterns: undefined })
+        .run({ cliOptions, targetMutatePatterns: undefined })
         .pipe(Effect.provide(layer), Effect.scoped, Effect.orDie)
       const events = yield* Queue.end(queue).pipe(
         Effect.andThen(Queue.takeAll(queue)),
@@ -296,6 +307,67 @@ const runPerTest = (root: string): Effect.Effect<PerTestRun, never, never> =>
       return { statuses: statusCountsOf(events), logs }
     }),
   )
+
+const reusedCoverageIn = (run: PerTestRun): boolean =>
+  run.logs.some((line) => line.includes('Reusing the persisted dry-run coverage'))
+
+const refusedCoverageIn = (run: PerTestRun, reason: string): boolean =>
+  run.logs.some((line) => line.includes(`dry-run coverage reuse refused (${reason})`))
+
+const slimReportWithCoverage = (text: string): boolean =>
+  Option.exists(
+    S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text),
+    (report) => report['framework'] === undefined && report.dryRunCoverage !== undefined,
+  )
+
+const interruptAtFirstSlimReport = (root: string): Effect.Effect<string, never, never> =>
+  withChdir(
+    root,
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const file = path.join(root, 'reports', 'main.json')
+      const { layer } = yield* perTestLayerOf(root, [])
+      const fiber = yield* Engine.mutationTestCell
+        .run({ cliOptions: {}, targetMutatePatterns: undefined })
+        .pipe(Effect.provide(layer), Effect.scoped, Effect.exit, Effect.forkChild)
+      const waitForSlimReport = (attempts: number): Effect.Effect<string> =>
+        fs.readFileString(file).pipe(
+          Effect.orElseSucceed(() => ''),
+          Effect.flatMap((text) =>
+            slimReportWithCoverage(text)
+              ? Effect.succeed(text)
+              : attempts <= 0
+              ? Effect.succeed('')
+              : Effect.andThen(Effect.sleep(10), waitForSlimReport(attempts - 1))
+          ),
+        )
+      const slim = yield* waitForSlimReport(3000)
+      yield* Fiber.interrupt(fiber)
+      yield* fs.writeFileString(file, slim)
+      return slim
+    }).pipe(Effect.provide(filePorts), Effect.orDie),
+  )
+
+type Json = S.Schema.Type<typeof S.Json>
+
+const withoutProjectRoot = (value: Json): Json =>
+  S.is(S.Record(S.String, S.Json))(value)
+    ? Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => key !== 'projectRoot')
+        .map(([key, entry]) => [key, key === 'dryRunCoverage' ? withoutProjectRoot(entry) : entry]),
+    )
+    : value
+
+const stripRecordedRoots = (root: string): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const file = path.join(root, 'reports', 'main.json')
+    const report = yield* S.decodeEffect(S.fromJsonString(S.Json))(yield* fs.readFileString(file))
+    yield* fs.writeFileString(file, yield* S.encodeEffect(S.fromJsonString(S.Json))(withoutProjectRoot(report)))
+  }).pipe(Effect.orDie)
 
 const PLAN_REQUEST = {
   targetSeconds: 1,
@@ -466,6 +538,93 @@ Feature('Reusing dry-run coverage of a project that was built elsewhere')
             planned: true,
             withReport: s.observed.withoutReport,
           })
+        ),
+      ),
+    )
+
+    scenario(
+      'A run interrupted after its first checkpoint leaves coverage the next run under the same root reuses',
+      Gherkin.Do.pipe(
+        Given('a run under root A interrupted once its first slim report with coverage lands')(
+          'observed',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writePerTestFixture
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const slim = yield* interruptAtFirstSlimReport(root)
+                  const next = yield* runPerTest(root)
+                  return { slim, next }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then("the next run under A reuses the interrupted run's coverage")((s, expect) =>
+          expect({
+            interruptedAtSlimReport: s.observed.slim.length > 0,
+            reused: reusedCoverageIn(s.observed.next),
+          }).toEqual({ interruptedAtSlimReport: true, reused: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'A dry-run-only run leaves coverage the next run under the same root reuses',
+      Gherkin.Do.pipe(
+        Given('a dry-run-only run under root A followed by a full run under A')(
+          'observed',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writePerTestFixture
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  yield* runPerTest(root, { dryRunOnly: true })
+                  return yield* runPerTest(root)
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then("the full run reuses the dry-run-only run's coverage")((s, expect) =>
+          expect({ reused: reusedCoverageIn(s.observed) }).toEqual({ reused: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'Coverage that records no root anywhere costs exactly one dry run',
+      Gherkin.Do.pipe(
+        Given("root A's report with the root removed from its coverage and its header, then two runs under A")(
+          'observed',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* writePerTestFixture
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  yield* runPerTest(root)
+                  yield* stripRecordedRoots(root)
+                  const first = yield* runPerTest(root)
+                  const second = yield* runPerTest(root)
+                  return { first, second }
+                }),
+                removeFixture(root),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then('the first run refuses with rootUnrecorded and runs its dry run, and the second run reuses')(
+          (s, expect) =>
+            expect({
+              first: {
+                refusedUnrecorded: refusedCoverageIn(s.observed.first, 'rootUnrecorded'),
+                namedOlderVersion: s.observed.first.logs.some((line) => line.includes('recorded no project root')),
+                reused: reusedCoverageIn(s.observed.first),
+              },
+              secondReused: reusedCoverageIn(s.observed.second),
+            }).toEqual({
+              first: { refusedUnrecorded: true, namedOlderVersion: true, reused: false },
+              secondReused: true,
+            }),
         ),
       ),
     )
