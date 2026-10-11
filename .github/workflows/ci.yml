@@ -554,7 +554,7 @@ jobs:
             exit 0
           elif [ -z "$EXIT" ]; then
             code=shard-not-run
-            next="The run step recorded no exit code: an earlier step of this leg failed, or the step reached its 60-minute cap, before the checkers finished. Open the first failed step of this job. Verdicts of every finished batch are in the saved cache; rerun the failed legs and they resume from it."
+            next="The run step recorded no exit code: an earlier step of this leg failed before the checkers finished. Open the first failed step of this job. Verdicts of every finished batch are in the saved cache; rerun the failed legs and they resume from it."
           else
             code=shard-failed
             next="Read lines with _tag ProjectBootFailed or TelemetryMissing in shard-$SHARD.ndjson; they name the project and the reason."
