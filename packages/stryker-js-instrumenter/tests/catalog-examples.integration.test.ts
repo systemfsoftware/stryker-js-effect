@@ -11,7 +11,6 @@ interface AuthoredExample {
 interface CatalogEntry {
   readonly id: string
   readonly name: string
-  readonly tier: string
   readonly examples: readonly AuthoredExample[]
 }
 
