@@ -6,6 +6,7 @@ import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
@@ -63,24 +64,30 @@ type Workspace = Readonly<Record<string, string>>
 type SecondRun = 'keptVerdicts' | 'refusedForRunInputs' | 'other'
 
 interface RunOutcome {
+  readonly completed: boolean
   readonly reuse: RunEvent.ReuseReported | undefined
   readonly fallbacks: ReadonlyArray<string>
 }
 
+interface FirstRun {
+  readonly completed: boolean
+  readonly fallbacks: ReadonlyArray<string>
+}
+
 interface ProjectOutcome {
+  readonly completed: boolean
   readonly second: SecondRun
   readonly fallbacks: ReadonlyArray<string>
 }
 
 const outcomeOf = (second: SecondRun, fallbacks: ReadonlyArray<string> = []): ProjectOutcome => ({
+  completed: true,
   second,
   fallbacks,
 })
 
-const everyProject = (
-  projects: ReadonlyArray<string>,
-  outcome: ProjectOutcome,
-): Readonly<Record<string, ProjectOutcome>> => Object.fromEntries(projects.map((project) => [project, outcome]))
+const everyProject = <A>(projects: ReadonlyArray<string>, outcome: A): Readonly<Record<string, A>> =>
+  Object.fromEntries(projects.map((project) => [project, outcome]))
 
 const secondRunOf = (reuse: RunEvent.ReuseReported | undefined): SecondRun =>
   reuse !== undefined && reuse.reused > 0 && reuse.ran === 0
@@ -202,7 +209,7 @@ const runOf = (project: string): Effect.Effect<RunOutcome, never, never> =>
       Layer.provide(Engine.RunEnvironment.stage(environmentFor(project), queue), ports),
       ports,
     )
-    yield* Engine.mutationTestCell
+    const exit = yield* Engine.mutationTestCell
       .run({ cliOptions: optionsOf(project), targetMutatePatterns: undefined })
       .pipe(Effect.provide(Layer.merge(runLayer, capturingLogger(logs))), Effect.scoped, Effect.exit)
     const events = [
@@ -212,6 +219,7 @@ const runOf = (project: string): Effect.Effect<RunOutcome, never, never> =>
       )),
     ]
     return {
+      completed: Exit.isSuccess(exit),
       reuse: events.find((event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event)),
       fallbacks: fallbackReasonsOf(logs),
     }
@@ -248,20 +256,29 @@ const secondRunOutcomesOf = (
       return Object.fromEntries(
         Arr.zipWith(Arr.zip(projects, first), second, ([project, earlier], later) => [
           project,
-          outcomeOf(secondRunOf(later.reuse), Arr.dedupe([...earlier.fallbacks, ...later.fallbacks])),
+          {
+            completed: earlier.completed && later.completed,
+            second: secondRunOf(later.reuse),
+            fallbacks: Arr.dedupe([...earlier.fallbacks, ...later.fallbacks]),
+          },
         ]),
       )
     }))
 
-const firstRunFallbacksOf = (
+const firstRunsOf = (
   workspace: Workspace,
   projects: ReadonlyArray<string>,
-): Effect.Effect<Readonly<Record<string, ReadonlyArray<string>>>, never, FilePorts> =>
+): Effect.Effect<Readonly<Record<string, FirstRun>>, never, FilePorts> =>
   stagedRunsOf(workspace, projects, (root) =>
     Effect.gen(function*() {
       const pathService = yield* Path.Path
       const runs = yield* Effect.forEach(projects, (project) => runOf(pathService.join(root, project)))
-      return Object.fromEntries(Arr.zipWith(projects, runs, (project, run) => [project, Arr.dedupe(run.fallbacks)]))
+      return Object.fromEntries(
+        Arr.zipWith(projects, runs, (project, run) => [
+          project,
+          { completed: run.completed, fallbacks: Arr.dedupe(run.fallbacks) },
+        ]),
+      )
     }))
 
 Feature('Keeping saved verdicts across lockfile edits outside a project dependencies')
@@ -532,14 +549,12 @@ Feature('Keeping saved verdicts across lockfile edits outside a project dependen
       Gherkin.Do.pipe(
         Given('the repository pnpm-lock.yaml as it stands in this checkout')('lockfile', () => liveLockfileText),
         When('each mutated project runs once against it')(
-          'fallbacks',
-          (s) => firstRunFallbacksOf(repositoryWorkspaceOf(s.lockfile), MUTATED_PROJECTS),
+          'runs',
+          (s) => firstRunsOf(repositoryWorkspaceOf(s.lockfile), MUTATED_PROJECTS),
         ),
         Then(
-          'no project falls back to the whole lockfile; a listed reason code means pnpm wrote a ref form the grammar misses: regenerate the oracle with `pnpm --filter @systemfsoftware/stryker-js fixtures:lockfile-oracle`, then fix the grammar its pins expose',
-        )((s, expect) =>
-          expect(s.fallbacks).toEqual(Object.fromEntries(MUTATED_PROJECTS.map((project) => [project, []])))
-        ),
+          'every run completes and no project falls back to the whole lockfile; a listed reason code means pnpm wrote a ref form the grammar misses: regenerate the oracle with `pnpm --filter @systemfsoftware/stryker-js fixtures:lockfile-oracle`, then fix the grammar its pins expose',
+        )((s, expect) => expect(s.runs).toEqual(everyProject(MUTATED_PROJECTS, { completed: true, fallbacks: [] }))),
       ),
     )
   })
