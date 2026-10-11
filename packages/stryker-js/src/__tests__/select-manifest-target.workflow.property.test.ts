@@ -1,6 +1,7 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
+import type * as S from 'effect/Schema'
 
 import {
   type ExportEntry,
@@ -16,6 +17,8 @@ type SelectSubject = (command: ManifestTargetCommand) => Result.Result<ManifestT
 
 type EntryMap = Readonly<Record<string, ExportEntry>>
 
+const INVALID_SEGMENTS: readonly string[] = ['.', '..', 'node_modules', 'Node_Modules']
+
 const SOURCE_CONDITION = '@systemfsoftware/source'
 
 const textOf = (command: ManifestTargetCommand): string =>
@@ -25,6 +28,8 @@ const textOf = (command: ManifestTargetCommand): string =>
       PackageImportRequest: ({ specifier }) => specifier,
     }),
   )
+
+const oneSegmentOf = (command: ManifestTargetCommand): string => textOf(command).replaceAll(/[/\\]/g, '')
 
 const exportKeyOf = (subpath: string): string => (subpath.length === 0 ? '.' : `./${subpath}`)
 
@@ -52,7 +57,7 @@ const exported = (
   subpath: string,
 ) => selected(subject, { ...command.manifest, exports }, PackageExportRequest.make({ subpath }))
 
-const imported = (subject: SelectSubject, command: ManifestTargetCommand, imports: EntryMap, specifier: string) =>
+const imported = (subject: SelectSubject, command: ManifestTargetCommand, imports: S.Json, specifier: string) =>
   selected(subject, { ...command.manifest, imports }, PackageImportRequest.make({ specifier }))
 
 describe('selectManifestTarget', () => {
@@ -70,11 +75,56 @@ describe('selectManifestTarget', () => {
     '∀c_ExportSubpath_≡ExactKeyBeforeWildcardWhichSubstitutesTheSubpath',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
-      const subpath = `x$&${textOf(command)}`
+      const subpath = `x$&${oneSegmentOf(command)}`
       return [
         exported(subject, command, { './*': './wild/*', [`./${subpath}`]: './exact.js' }, subpath),
         exported(subject, command, { './*': './wild/*' }, subpath),
       ].join('|') === `path:./exact.js|path:./wild/${subpath}`
+    },
+  )
+
+  it.prop(
+    '∀c_ExportPatterns_≡LongestPrefixBeatsTheRootWildcardInEitherKeyOrder',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const captured = `$&${oneSegmentOf(command)}x`
+      const subpath = `features/${captured}`
+      return [
+        exported(subject, command, { './*': './wild/*', './features/*': './feat/*.js' }, subpath),
+        exported(subject, command, { './features/*': './feat/*.js', './*': './wild/*' }, subpath),
+      ].every((target) => target === `path:./feat/${captured}.js`)
+    },
+  )
+
+  it.prop(
+    '∀c_ExportPattern_≡AnyPatternKeyResolvesWithoutTheRootWildcard',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const captured = `${oneSegmentOf(command)}x`
+      return [
+        exported(subject, command, { './features/*.js': './feat/*.ts' }, `features/${captured}.js`),
+        exported(subject, command, { './features/*.js': './feat/*.ts' }, `other/${captured}.js`),
+      ].join('|') === `path:./feat/${captured}.ts|missing`
+    },
+  )
+
+  it.prop(
+    '∀c_MapTarget_≡MissingWhenASegmentAfterTheLeadingDotSlashIsDotDotDotOrNodeModules',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const subpath = `x${oneSegmentOf(command)}`
+      const specifier = `#${subpath}`
+      const outcomes = INVALID_SEGMENTS.flatMap((segment) => [
+        exported(subject, command, { [`./${subpath}`]: `./a/${segment}/b.js` }, subpath),
+        exported(subject, command, { './*': './src/*' }, `${segment}/${subpath}`),
+        imported(subject, command, { [specifier]: `./a/${segment}/b.js` }, specifier),
+        imported(subject, command, { '#*': './src/*' }, `#${segment}/${subpath}`),
+      ])
+      return [
+        outcomes.every((outcome) => outcome === 'missing'),
+        exported(subject, command, { [`./${subpath}`]: './a/b.js' }, subpath) === 'path:./a/b.js',
+        imported(subject, command, { [specifier]: './a/b.js' }, specifier) === 'path:./a/b.js',
+      ].every((holds) => holds)
     },
   )
 
@@ -101,7 +151,7 @@ describe('selectManifestTarget', () => {
     '∀c_ImportPatterns_≡LongestPrefixWinsInEitherKeyOrderAndSubstitutesTheCapture',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
-      const captured = `$&${textOf(command)}x`
+      const captured = `$&${oneSegmentOf(command)}x`
       const specifier = `#a/${captured}`
       return [
         imported(subject, command, { '#*': './short/*', '#a/*': './long/*' }, specifier),

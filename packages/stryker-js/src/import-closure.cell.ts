@@ -366,14 +366,6 @@ const resolvePackageSpecifier = Effect.fnUntraced(function*(input: ResolveInput,
   })
 })
 
-const resolveBareSpecifier = (input: ResolveInput) =>
-  Match.value(specifierKindOf(input.specifier)).pipe(
-    Match.tag('BuiltinSpecifier', () => Effect.succeed(EXTERNAL_RESOLUTION)),
-    Match.tag('PackageSpecifier', (specifier) => resolvePackageSpecifier(input, specifier)),
-    Match.tag('PathSpecifier', 'SubpathImportSpecifier', () => Effect.succeed(UNRESOLVED_RESOLUTION)),
-    Match.exhaustive,
-  )
-
 const packageScopeOf = Effect.fnUntraced(function*(input: ResolveInput) {
   const path = yield* Path.Path
   const directories = ancestorsOf(path, path.resolve(input.realRoot, directoryOf(input.key)))
@@ -384,7 +376,10 @@ const packageScopeOf = Effect.fnUntraced(function*(input: ResolveInput) {
   return firstFlaggedOf(directories, flags)
 })
 
-const followPackageImport = Effect.fnUntraced(function*(input: ResolveInput, scopeDirectory: string) {
+const followPackageImport = Effect.fnUntraced(function*(
+  input: ResolveInput,
+  scopeDirectory: string,
+): Effect.fn.Return<Resolution, PlatformError, FileSystem.FileSystem | Path.Path> {
   const real = yield* realPathOf(scopeDirectory)
   const scopeKey = relativeNormalizedFileName(real, input.realRoot)
   const target = manifestTargetOf(
@@ -394,7 +389,7 @@ const followPackageImport = Effect.fnUntraced(function*(input: ResolveInput, sco
   return yield* Match.value(target).pipe(
     Match.tag('ManifestPathTarget', (present) => memberResolutionOf(input, joinSpecifier(scopeKey, present.target))),
     Match.tag('ManifestPackageTarget', (present) =>
-      resolveBareSpecifier({
+      resolveSpecifier({
         ...input,
         key: joinSpecifier(scopeKey, PACKAGE_MANIFEST_FILE),
         specifier: present.specifier,
@@ -412,7 +407,9 @@ const resolveSubpathImport = Effect.fnUntraced(function*(input: ResolveInput) {
   })
 })
 
-const resolveSpecifier = (input: ResolveInput) =>
+const resolveSpecifier = (
+  input: ResolveInput,
+): Effect.Effect<Resolution, PlatformError, FileSystem.FileSystem | Path.Path> =>
   Match.value(specifierKindOf(input.specifier)).pipe(
     Match.tag('PathSpecifier', () => resolvePathSpecifier(input)),
     Match.tag('SubpathImportSpecifier', () => resolveSubpathImport(input)),
