@@ -21,17 +21,20 @@ import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as SynchronizedRef from 'effect/SynchronizedRef'
-import type { Node, SourceFile } from 'typescript/unstable/ast'
+import type { BinaryExpression, Expression, Node, SourceFile } from 'typescript/unstable/ast'
 import { SyntaxKind } from 'typescript/unstable/ast'
-import { isModuleDeclaration } from 'typescript/unstable/ast/is'
+import { isBinaryExpression, isModuleDeclaration, isPropertyAccessExpression } from 'typescript/unstable/ast/is'
 import {
   API,
+  type Checker as TypeChecker,
   type Diagnostic,
   DiagnosticCategory,
   ModifierFlags,
   type Program,
   type Project,
   type Snapshot,
+  type Type,
+  TypeFlags,
 } from 'typescript/unstable/async'
 import type { FileSystem as TSFileSystem } from 'typescript/unstable/fs'
 
@@ -47,18 +50,20 @@ import {
   TraceAffectedFilesCommand,
 } from './CheckerCommands.schema.js'
 import {
+  type CheckIgnore,
   type DiagnosticDecoded,
   DiagnosticLine,
   type DiagnosticSeverity,
   type NodeDecodedShape,
 } from './CheckMutants.schema.js'
 import {
-  classifyTce,
-  ClassifyTceCommand,
-  type TceCandidate,
-  type TceClassification,
-  type TceDecision,
-} from './classify-tce.workflow.js'
+  classifyCollectionSize,
+  ClassifyCollectionSizeCommand,
+  type ReceiverKind,
+  type SizeComparison,
+  type SizeOperator,
+} from './classify-collection-size.workflow.js'
+import { classifyTce, ClassifyTceCommand, type TceCandidate, type TceDecision } from './classify-tce.workflow.js'
 import { type CompilerError, CompilerFailed, UnsupportedTypeScriptVersionError } from './Compiler.schema.js'
 import { groupMutants } from './group-mutants.workflow.js'
 import { identifyProgram as identifyProgramWorkflow, IdentifyProgramCommand } from './identify-program.workflow.js'
@@ -1385,7 +1390,7 @@ interface OwnedSourceFile {
 export interface MutantCheck {
   readonly mutantId: Checker.CheckerMutantWire['id']
   readonly diagnostics: ReadonlyArray<DiagnosticDecoded>
-  readonly tce?: TceClassification
+  readonly ignore?: CheckIgnore
 }
 
 const projectOfFile = (
@@ -1474,13 +1479,131 @@ const checkedIn = (
       onFalse: () => beyondOwnErrorsOf(state, projects, owned, fileName),
     }))
 
+const SIZE_OPERATORS: Readonly<Partial<Record<SyntaxKind, SizeOperator>>> = {
+  [SyntaxKind.LessThanToken]: '<',
+  [SyntaxKind.LessThanEqualsToken]: '<=',
+  [SyntaxKind.GreaterThanToken]: '>',
+  [SyntaxKind.GreaterThanEqualsToken]: '>=',
+}
+
+interface LengthOperand {
+  readonly side: SizeComparison['lengthSide']
+  readonly receiver: Expression
+  readonly other: Expression
+}
+
+const binaryWithSpanOf = (node: Node, start: number, end: number): Option.Option<BinaryExpression> =>
+  Option.orElse(
+    Option.filter(Option.liftPredicate(node, isBinaryExpression), (binary) => spanEqualsOf(binary, start, end)),
+    () =>
+      Arr.findFirst(
+        Arr.filter(childrenOf(node), (child) => spanContainsOf(child, start, end)),
+        (child) => binaryWithSpanOf(child, start, end),
+      ),
+  )
+
+const lengthReceiverOf = (expression: Expression): Option.Option<Expression> =>
+  Option.map(
+    Option.filter(Option.liftPredicate(expression, isPropertyAccessExpression), (access) =>
+      access.name.text === 'length'),
+    (access) =>
+      access.expression,
+  )
+
+const lengthOperandOf = (binary: BinaryExpression): Option.Option<LengthOperand> =>
+  Option.orElse(
+    Option.map(lengthReceiverOf(binary.left), (receiver): LengthOperand => ({
+      side: 'left',
+      receiver,
+      other: binary.right,
+    })),
+    () =>
+      Option.map(lengthReceiverOf(binary.right), (receiver): LengthOperand => ({
+        side: 'right',
+        receiver,
+        other: binary.left,
+      })),
+  )
+
+const receiverKindOf = (checker: TypeChecker, type: Type): Effect.Effect<ReceiverKind> =>
+  (type.flags & TypeFlags.StringLike) !== 0
+    ? Effect.succeed('string')
+    : Effect.flatMap(Effect.promise(() => checker.isTupleType(type)), (tuple) =>
+      tuple
+        ? Effect.succeed('tuple')
+        : Effect.map(Effect.promise(() => checker.isArrayType(type)), (array) => (array ? 'array' : 'other')))
+
+const receiverKindsOf = (checker: TypeChecker, type: Type): Effect.Effect<ReadonlyArray<ReceiverKind>> =>
+  type.isUnionType()
+    ? Effect.flatMap(
+      Effect.promise(() => type.getTypes()),
+      (members) => Effect.forEach(members, (member) => receiverKindOf(checker, member)),
+    )
+    : Effect.map(receiverKindOf(checker, type), (kind) => [kind])
+
+const receiverKindsAt = (checker: TypeChecker, receiver: Expression): Effect.Effect<ReadonlyArray<ReceiverKind>> =>
+  Effect.flatMap(
+    Effect.promise(() => checker.getTypeAtLocation(receiver)),
+    (type) =>
+      Option.match(Option.fromUndefinedOr(type), {
+        onNone: () => Effect.succeed([]),
+        onSome: (present) => receiverKindsOf(checker, present),
+      }),
+  )
+
+const sizeComparisonAt = (
+  owned: OwnedSourceFile,
+  start: number,
+  end: number,
+): Effect.Effect<Option.Option<SizeComparison>> =>
+  Option.match(
+    Option.flatMap(binaryWithSpanOf(owned.sourceFile, start, end), (binary) =>
+      Option.all({
+        operator: Option.fromUndefinedOr(SIZE_OPERATORS[binary.operatorToken.kind]),
+        operand: lengthOperandOf(binary),
+      })),
+    {
+      onNone: () => Effect.succeedNone,
+      onSome: ({ operator, operand }) =>
+        Effect.map(receiverKindsAt(owned.project.checker, operand.receiver), (receiver) =>
+          Option.some({
+            operator,
+            lengthSide: operand.side,
+            againstZero: operand.other.getText(owned.sourceFile).trim() === '0',
+            receiver,
+          })),
+    },
+  )
+
+const sizeComparisonOf = (
+  owned: Option.Option<OwnedSourceFile>,
+  file: Option.Option<ScriptFile>,
+  mutant: Checker.CheckerMutantWire,
+  held: boolean,
+): Effect.Effect<Option.Option<SizeComparison>> =>
+  Option.match(
+    Option.all([owned, Option.flatMap(file, (script) => offsetAt(script.lineStarts, mutant.location.start))]),
+    {
+      onNone: () => Effect.succeedNone,
+      onSome: ([found, offset]) => {
+        const start = held ? offset : offset + 1
+        return sizeComparisonAt(found, start, start + mutant.replacement.length)
+      },
+    },
+  )
+
+interface CheckedMutant {
+  readonly check: MutantCheck
+  readonly comparison: Option.Option<SizeComparison>
+}
+
 const checkOne = (
   self: TSCompiler,
   rt: TSCompilerRuntime,
   state: CompilerState,
   mutant: Checker.CheckerMutantWire,
   previousMutants: ReadonlyArray<Checker.CheckerMutantWire>,
-): Effect.Effect<MutantCheck, CompilerFailed> =>
+): Effect.Effect<CheckedMutant, CompilerFailed> =>
   Effect.gen(function*() {
     yield* resetMutatedFiles(rt, previousMutants)
     const fileName = resolveFileName(rt, mutant.fileName)
@@ -1501,12 +1624,19 @@ const checkOne = (
       onSome: (found) => checkedIn(state, projects, found, fileName),
     })
     const rendered = yield* describeDiagnostics(self, diagnostics)
-    return { mutantId: mutant.id, diagnostics: rendered }
+    const comparison = yield* Boolean.match(
+      Boolean.and(diagnostics.length === 0, mutant.replacement.includes('.length')),
+      {
+        onFalse: () => Effect.succeedNone,
+        onTrue: () => sizeComparisonOf(owned, file, mutant, held),
+      },
+    )
+    return { check: { mutantId: mutant.id, diagnostics: rendered }, comparison }
   })
 
 interface CheckAccumulator {
   readonly previous: Option.Option<Checker.CheckerMutantWire>
-  readonly results: ReadonlyArray<MutantCheck>
+  readonly results: ReadonlyArray<CheckedMutant>
 }
 
 const siteKeyOf = (mutant: Checker.CheckerMutantWire): string =>
@@ -1645,10 +1775,46 @@ const classifyBatchTce = Effect.fnUntraced(function*(
     (entry) =>
       Option.match(Arr.findFirst(decisions, (decision) => decision.id === entry.mutantId), {
         onNone: () => entry,
-        onSome: (decision) => ({ ...entry, tce: decision.classification }),
+        onSome: (decision) => ({ ...entry, ignore: decision.classification }),
       }),
   )
 })
+
+const booleanLiteralOf = (replacement: string): Option.Option<boolean> =>
+  Option.map(
+    Option.filter(Option.some(replacement.trim()), (text) => Arr.contains(['true', 'false'], text)),
+    (text) => text === 'true',
+  )
+
+const classifyBatchCollectionSize = (
+  mutants: readonly Checker.CheckerMutantWire[],
+  measured: ReadonlyArray<CheckedMutant>,
+  checked: ReadonlyArray<MutantCheck>,
+): ReadonlyArray<MutantCheck> => {
+  const candidates = Arr.zipWith(
+    Arr.zip(mutants, measured),
+    checked,
+    ([mutant, { comparison }], entry) => ({
+      site: siteKeyOf(mutant),
+      candidate: {
+        id: mutant.id,
+        kept: Boolean.and(entry.diagnostics.length === 0, entry.ignore === undefined),
+        literal: booleanLiteralOf(mutant.replacement),
+        comparison,
+      },
+    }),
+  )
+  const sites = Object.values(Arr.groupBy(candidates, (entry) => entry.site))
+  const decisions = decided(classifyCollectionSize(ClassifyCollectionSizeCommand.make({
+    sites: Arr.map(sites, (site) => ({ candidates: Arr.map(site, (entry) => entry.candidate) })),
+  })))
+  const always = HashMap.fromIterable(Arr.map(decisions, (decision) => [decision.id, decision.always] as const))
+  return Arr.map(checked, (entry) =>
+    Option.match(HashMap.get(always, entry.mutantId), {
+      onNone: () => entry,
+      onSome: (constant): MutantCheck => ({ ...entry, ignore: constant ? 'always-true' : 'always-false' }),
+    }))
+}
 
 export const check: {
   (
@@ -1683,15 +1849,22 @@ export const check: {
           (result): CheckAccumulator => ({ previous: Option.some(mutant), results: [...previous.results, result] }),
         ),
     )
-    const checked = yield* classifyBatchTce(rt, state.tsconfigFile, mutants, accumulated.results)
+    const measured = accumulated.results
+    const tceChecked = yield* classifyBatchTce(
+      rt,
+      state.tsconfigFile,
+      mutants,
+      Arr.map(measured, (entry) => entry.check),
+    )
+    const checked = classifyBatchCollectionSize(mutants, measured, tceChecked)
     yield* SynchronizedRef.update(rt.state, (prev) => ({
       ...prev,
       lastMutants: [...mutants],
       lastMutatedFileNames: batchFileNames,
     }))
     const failed = Arr.filter(checked, (entry) => entry.diagnostics.length > 0)
-    const equivalentToOriginal = Arr.filter(checked, (entry) => entry.tce === 'original').length
-    const duplicateAtSite = Arr.filter(checked, (entry) => entry.tce === 'sibling').length
+    const equivalentToOriginal = Arr.filter(checked, (entry) => entry.ignore === 'original').length
+    const duplicateAtSite = Arr.filter(checked, (entry) => entry.ignore === 'sibling').length
     const tally = yield* Ref.get(rt.tally)
     yield* Effect.annotateCurrentSpan({
       'typescript.diagnostics.count': Arr.reduce(checked, 0, (total, entry) => total + entry.diagnostics.length),

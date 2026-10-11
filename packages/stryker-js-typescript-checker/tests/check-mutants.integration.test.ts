@@ -28,6 +28,7 @@ const CLASS_BROKEN_ID = '0000000000000003'
 interface Observation {
   readonly batches: ReadonlyArray<ReadonlyArray<string>>
   readonly statuses: Readonly<Record<string, string>>
+  readonly ignoreReasons: Readonly<Record<string, string>>
   readonly brokenBlamesTheImporter: boolean
   readonly brokenReason: string
   readonly brokenLine: string
@@ -46,6 +47,12 @@ interface Case {
 
 const statusOf = (results: HashMap.HashMap<string, Checker.CheckResult>, id: string): string =>
   Option.match(HashMap.get(results, id), { onNone: () => 'missing', onSome: (result) => result.status })
+
+const ignoreReasonOf = (results: HashMap.HashMap<string, Checker.CheckResult>, id: string): string =>
+  Option.match(HashMap.get(results, id), {
+    onNone: () => '',
+    onSome: (result) => (result.status === 'ignored' ? String(result.reason) : ''),
+  })
 
 const brokenReasonOf = (
   testCase: Case,
@@ -70,6 +77,7 @@ const observedOf = (
   return {
     batches,
     statuses: Object.fromEntries(testCase.observedIds.map((id) => [id, statusOf(results, id)])),
+    ignoreReasons: Object.fromEntries(testCase.observedIds.map((id) => [id, ignoreReasonOf(results, id)])),
     brokenBlamesTheImporter: brokenReason.includes(testCase.importerFile) &&
       !brokenReason.includes(testCase.mutatedFile),
     brokenReason,
@@ -301,6 +309,74 @@ const tcePathsCase: Case = {
   wires: (join) => tceCase.wires(join).map((wire) => ({ ...wire, location: TCE_PATHS_SITE })),
 }
 
+interface SizeMutant {
+  readonly id: string
+  readonly line: number
+  readonly from: number
+  readonly to: number
+  readonly mutatorName: string
+  readonly replacement: string
+}
+
+const sizeMutant = (
+  id: string,
+  [line, from, to]: readonly [number, number, number],
+  mutatorName: string,
+  replacement: string,
+): SizeMutant => ({ id, line, from, to, mutatorName, replacement })
+
+const STRING_ARRAY_SITE = [1, 52, 65] as const
+const STRUCTURAL_SITE = [2, 60, 74] as const
+const ANY_SITE = [3, 44, 57] as const
+const AGAINST_ONE_SITE = [4, 54, 67] as const
+const NO_TRUE_SIBLING_SITE = [5, 50, 63] as const
+const NOT_CONSTANT_SITE = [6, 50, 63] as const
+const COLLECTION_UNION_SITE = [7, 63, 76] as const
+const MIXED_UNION_SITE = [8, 74, 87] as const
+
+const SIZE_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000020', STRING_ARRAY_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000021', STRING_ARRAY_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000022', STRING_ARRAY_SITE, 'EqualityOperator', 'xs.length < 0'),
+  sizeMutant('0000000000000023', STRING_ARRAY_SITE, 'ConditionalExpression', 'false'),
+  sizeMutant('0000000000000024', STRUCTURAL_SITE, 'EqualityOperator', 'box.length >= 0'),
+  sizeMutant('0000000000000025', STRUCTURAL_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000026', ANY_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000027', ANY_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000028', AGAINST_ONE_SITE, 'EqualityOperator', 'xs.length >= 1'),
+  sizeMutant('0000000000000029', AGAINST_ONE_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000030', NO_TRUE_SIBLING_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000031', NO_TRUE_SIBLING_SITE, 'ConditionalExpression', 'false'),
+  sizeMutant('0000000000000032', NOT_CONSTANT_SITE, 'EqualityOperator', 'xs.length <= 0'),
+  sizeMutant('0000000000000033', NOT_CONSTANT_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000034', COLLECTION_UNION_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000035', COLLECTION_UNION_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000036', MIXED_UNION_SITE, 'EqualityOperator', 'xs.length >= 0'),
+  sizeMutant('0000000000000037', MIXED_UNION_SITE, 'ConditionalExpression', 'true'),
+]
+
+const collectionSizeCase: Case = {
+  fixture: 'per-mutant-collection-size',
+  brokenId: '',
+  observedIds: SIZE_MUTANTS.map((mutant) => mutant.id),
+  importerFile: 'size.ts',
+  mutatedFile: 'size.ts',
+  wires: (join) =>
+    SIZE_MUTANTS.map((mutant) => ({
+      id: mutant.id,
+      fileName: join('size.ts'),
+      mutatorName: mutant.mutatorName,
+      replacement: mutant.replacement,
+      location: {
+        start: { line: mutant.line, column: mutant.from },
+        end: { line: mutant.line, column: mutant.to },
+      },
+    })),
+}
+
+const culledIdsOf = (reasons: Readonly<Record<string, string>>): Readonly<Record<string, string>> =>
+  Object.fromEntries(Object.entries(reasons).filter(([, reason]) => reason !== ''))
+
 const PATHS_PROJECT: Readonly<Record<string, string>> = {
   'tsconfig.json': JSON.stringify({
     compilerOptions: {
@@ -511,6 +587,31 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
               [TCE_DUPLICATE_ID]: 'ignored',
             },
             files: ['dep.ts', 'lib/shared.ts', 'tsconfig.json'],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A size comparison the types make constant is ignored only when a kept sibling already is that constant',
+      Gherkin.Do.pipe(
+        When('comparisons of a length with zero, and their true and false siblings, are handed to the checker')(
+          'seen',
+          () => checkFixture(collectionSizeCase),
+        ),
+        Then(
+          'only the array and all-collection-union comparisons are ignored, and every other mutant passes',
+        )((s, expect) =>
+          expect({
+            passed: Object.values(s.seen.statuses).filter((status) => status === 'passed').length,
+            culled: culledIdsOf(s.seen.ignoreReasons),
+          }).toEqual({
+            passed: SIZE_MUTANTS.length - 3,
+            culled: {
+              '0000000000000020': 'constant-collection-size: xs.length >= 0 is always true',
+              '0000000000000022': 'constant-collection-size: xs.length < 0 is always false',
+              '0000000000000034': 'constant-collection-size: xs.length >= 0 is always true',
+            },
           })
         ),
       ),

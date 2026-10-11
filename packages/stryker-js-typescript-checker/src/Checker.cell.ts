@@ -8,7 +8,7 @@ import * as Option from 'effect/Option'
 
 import { checkMutants } from './check-mutants.workflow.js'
 import { CheckMutantsCommand } from './Checker.schema.js'
-import { CheckMutantsInput, MutantVerdict, tceFieldOf } from './CheckMutants.schema.js'
+import { CheckMutantsInput, ignoreFieldOf, MutantVerdict } from './CheckMutants.schema.js'
 import type { CompilerError } from './Compiler.schema.js'
 import { check, type MutantCheck } from './ts-compiler.handle.js'
 import { TypeScriptCompiler } from './ts-compiler.service.js'
@@ -31,7 +31,7 @@ const verdictsOf = (checked: ReadonlyArray<MutantCheck>): ReadonlyArray<MutantVe
     MutantVerdict.make({
       id: entry.mutantId,
       diagnostics: [...entry.diagnostics],
-      ...tceFieldOf(entry.tce),
+      ...ignoreFieldOf(entry.ignore),
     }))
 
 export const checkCell = Sandwich.named(SpanTaxonomy.Spans.typescriptCheckerCheckMutants.name)((

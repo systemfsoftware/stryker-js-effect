@@ -4,13 +4,13 @@ import { Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
-export const TceOutcome = S.Literals(['original', 'sibling'])
-export type TceOutcome = typeof TceOutcome.Type
+export const CheckIgnore = S.Literals(['original', 'sibling', 'always-true', 'always-false'])
+export type CheckIgnore = typeof CheckIgnore.Type
 
-export const tceFieldOf = (tce: TceOutcome | undefined): { readonly tce?: TceOutcome } =>
-  Option.match(Option.fromUndefinedOr(tce), {
+export const ignoreFieldOf = (ignore: CheckIgnore | undefined): { readonly ignore?: CheckIgnore } =>
+  Option.match(Option.fromUndefinedOr(ignore), {
     onNone: () => ({}),
-    onSome: (present) => ({ tce: present }),
+    onSome: (present) => ({ ignore: present }),
   })
 
 export const SourceFileSchema = S.NonEmptyString.pipe(S.check(S.isPattern(/\.[^./\\]+$/u)))
@@ -39,7 +39,7 @@ export interface NodeDecodedShape {
 export class MutantVerdict extends S.Class<MutantVerdict>('MutantVerdict')({
   id: Mutant.MutantId,
   diagnostics: S.Array(DiagnosticLine),
-  tce: S.optional(TceOutcome),
+  ignore: S.optional(CheckIgnore),
 }) {}
 
 export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput>()(

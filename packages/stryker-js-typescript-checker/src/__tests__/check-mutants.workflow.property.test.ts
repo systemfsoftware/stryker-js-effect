@@ -29,11 +29,19 @@ const expectedOutcomes = (input: CheckMutantsInput): ReadonlyArray<Expected> => 
     )
     const reason = Arr.map(verdict.diagnostics, renderedLine).join('\n')
     if (reason !== '') return { id: mutant.id, status: 'compileError' as const, reason }
-    if (verdict.tce === 'original') {
+    if (verdict.ignore === 'original') {
       return { id: mutant.id, status: 'ignored' as const, reason: 'equivalent-to-original: tce' }
     }
-    if (verdict.tce === 'sibling') {
+    if (verdict.ignore === 'sibling') {
       return { id: mutant.id, status: 'ignored' as const, reason: 'duplicate-at-site: tce' }
+    }
+    if (verdict.ignore === 'always-true' || verdict.ignore === 'always-false') {
+      const constant = verdict.ignore === 'always-true' ? 'true' : 'false'
+      return {
+        id: mutant.id,
+        status: 'ignored' as const,
+        reason: `constant-collection-size: ${mutant.replacement} is always ${constant}`,
+      }
     }
     return { id: mutant.id, status: 'passed' as const, reason: '' }
   })
