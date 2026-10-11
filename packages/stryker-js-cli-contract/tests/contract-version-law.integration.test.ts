@@ -28,7 +28,7 @@ import {
   evaluateContractLaw,
   mainBaselineUnavailableOf,
   type PackageContracts,
-  type ReleasedBaselineCause,
+  type ReleasedBaselineUnavailable,
   renderFailure,
   type VersionCommitEvidence,
   versionCommitOf,
@@ -145,19 +145,21 @@ const readVersionAt = (repositoryRoot: string, commit: string, directory: string
 const OUTSIDE_HISTORY: VersionCommitParent = { status: 'outside-history' }
 const NO_MANIFEST: VersionCommitParent = { status: 'no-manifest' }
 
+const readDeclaredVersionAt = (repositoryRoot: string, commit: string, directory: string) =>
+  Effect.gen(function*() {
+    const held = yield* runGit(repositoryRoot, ['cat-file', '-e', `${commit}:${directory}/${MANIFEST_FILE}`])
+    if (held.exitCode !== 0) return undefined
+    return yield* readVersionAt(repositoryRoot, commit, directory)
+  })
+
 const readVersionCommitParent = (repositoryRoot: string, parent: string | undefined, directory: string) =>
   Effect.gen(function*() {
     if (parent === undefined) {
       const shallow = yield* gitOutput(repositoryRoot, ['rev-parse', '--is-shallow-repository'])
       return shallow.trim() === 'true' ? OUTSIDE_HISTORY : NO_MANIFEST
     }
-    const held = yield* runGit(repositoryRoot, ['cat-file', '-e', `${parent}:${directory}/${MANIFEST_FILE}`])
-    if (held.exitCode !== 0) return NO_MANIFEST
-    const declared: VersionCommitParent = {
-      status: 'declares',
-      version: yield* readVersionAt(repositoryRoot, parent, directory),
-    }
-    return declared
+    const version = yield* readDeclaredVersionAt(repositoryRoot, parent, directory)
+    return version === undefined ? NO_MANIFEST : { status: 'declares', version } satisfies VersionCommitParent
   })
 
 const readVersionCommitEvidence = (repositoryRoot: string, mainBase: string, ref: PackageRef, mainVersion: string) =>
@@ -180,7 +182,11 @@ const readVersionCommitEvidence = (repositoryRoot: string, mainBase: string, ref
       mainVersion,
       candidate: commit === undefined
         ? undefined
-        : { commit, parent: yield* readVersionCommitParent(repositoryRoot, fields.at(1), ref.directory) },
+        : {
+          commit,
+          declares: yield* readDeclaredVersionAt(repositoryRoot, commit, ref.directory),
+          parent: yield* readVersionCommitParent(repositoryRoot, fields.at(1), ref.directory),
+        },
     }
     return evidence
   })
@@ -318,6 +324,38 @@ const forkedRepository = () =>
     yield* gitOutput(root, ['update-ref', `refs/remotes/${MAIN_REF}`, 'HEAD'])
     yield* gitOutput(root, ['checkout', '-q', 'work'])
     return root
+  })
+
+const SCRATCH_REF: PackageRef = { name: 'scratch', directory: SCRATCH_PACKAGE }
+
+const releasedRepository = (versions: readonly string[]) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory())
+    yield* gitOutput(root, ['init', '-q', '-b', 'main'])
+    yield* Effect.forEach(versions, (version) => commitVersion(root, version), { discard: true })
+    yield* fs.writeFileString(path.join(root, 'NOTES'), 'after the release\n')
+    yield* gitOutput(root, ['add', '-A'])
+    yield* gitOutput(root, [...COMMITTER, 'commit', '-q', '--no-verify', '-m', 'notes'])
+    yield* gitOutput(root, ['update-ref', `refs/remotes/${MAIN_REF}`, 'HEAD'])
+    return root
+  }).pipe(Effect.orDie)
+
+const shallowCloneOf = (source: string, depth: number) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const root = yield* fs.realPath(yield* fs.makeTempDirectory())
+    yield* gitOutput(root, ['clone', '-q', `--depth=${depth}`, '--branch', 'main', `file://${source}`, '.'])
+    return root
+  }).pipe(Effect.orDie)
+
+const pickVersionCommit = (root: string) =>
+  Effect.gen(function*() {
+    const mainBase = yield* readMainBase(root)
+    if (Result.isFailure(mainBase)) return yield* Effect.die(new Error(renderFailure(mainBase.failure)))
+    const mainVersion = yield* readVersionAt(root, mainBase.success, SCRATCH_PACKAGE)
+    return versionCommitOf(yield* readVersionCommitEvidence(root, mainBase.success, SCRATCH_REF, mainVersion))
   })
 
 const removeRepository = (root: string) =>
@@ -795,29 +833,42 @@ Feature('The released contract documents bound what the workspace may declare ne
     )
 
     scenarioOutline(
-      'A released baseline that cannot be established is refused with its cause and the action that restores it',
+      'A released baseline that cannot be established is refused as its own variant with the action that restores it',
       [
-        { mainVersion: '0.5.0', candidate: undefined, cause: 'no-version-commit', next: RELEASE_NEXT },
         {
           mainVersion: '0.5.0',
-          candidate: { commit: VERSION_COMMIT, parent: { status: 'outside-history' } },
-          cause: 'history-truncated',
+          candidate: undefined,
+          tag: 'NoVersionCommit',
+          code: 'no-version-commit',
+          next: RELEASE_NEXT,
+        },
+        {
+          mainVersion: '0.5.0',
+          candidate: { commit: VERSION_COMMIT, declares: '0.5.0', parent: { status: 'outside-history' } },
+          tag: 'HistoryTruncated',
+          code: 'history-truncated',
           next: 'git fetch --unshallow origin main',
         },
         {
           mainVersion: '0.5.0',
-          candidate: { commit: VERSION_COMMIT, parent: { status: 'declares', version: '0.5.0' } },
-          cause: 'version-unchanged',
+          candidate: { commit: VERSION_COMMIT, declares: '0.5.0', parent: { status: 'declares', version: '0.5.0' } },
+          tag: 'VersionUnchanged',
+          code: 'version-unchanged',
           next: RELEASE_NEXT,
         },
         {
           mainVersion: '0.4.0',
-          candidate: { commit: VERSION_COMMIT, parent: { status: 'declares', version: '0.5.0' } },
-          cause: 'version-rollback',
+          candidate: { commit: VERSION_COMMIT, declares: '0.4.0', parent: { status: 'declares', version: '0.5.0' } },
+          tag: 'VersionRollback',
+          code: 'version-rollback',
           next: RELEASE_NEXT,
         },
       ] satisfies ReadonlyArray<
-        Pick<VersionCommitEvidence, 'mainVersion' | 'candidate'> & { cause: ReleasedBaselineCause; next: string }
+        Pick<VersionCommitEvidence, 'mainVersion' | 'candidate'> & {
+          tag: ReleasedBaselineUnavailable['_tag']
+          code: ReleasedBaselineUnavailable['code']
+          next: string
+        }
       >,
       (row) =>
         Gherkin.Do.pipe(
@@ -832,28 +883,30 @@ Feature('The released contract documents bound what the workspace may declare ne
               }),
           ),
           When('the law picks the version commit and renders what it refuses')(
-            'rendered',
+            'refusal',
             (s) =>
               Effect.succeed(Result.match(versionCommitOf(s.evidence), {
-                onFailure: (failure) => renderFailure(failure).split('\n'),
-                onSuccess: (commit) => [commit],
+                onFailure: (failure) => ({ tag: failure._tag, rendered: renderFailure(failure).split('\n') }),
+                onSuccess: (commit) => ({ tag: 'accepted', rendered: [commit] }),
               })),
           ),
-          Then('the refusal names its code, its cause, the package, the version sought and the next action')(
+          Then('the refusal is its own variant, naming its code, the package, the version sought and the next action')(
             (s, expect) =>
-              expect(s.rendered).toEqual([
-                `error[CONTRACT-VERSION]: the released baseline of ${CLI_CONTRACT} is unavailable`,
-                '  code: released-baseline-unavailable',
-                `  cause: ${row.cause}`,
-                `  package: ${CLI_CONTRACT}`,
-                `  version: ${row.mainVersion}`,
-                expect.stringMatching(
-                  row.candidate === undefined
-                    ? /^ {2}reason: no commit on main's first-parent history writes /
-                    : new RegExp(`^ {2}reason: .*${VERSION_COMMIT}`),
-                ),
-                `  next: ${row.next}`,
-              ]),
+              expect(s.refusal).toEqual({
+                tag: row.tag,
+                rendered: [
+                  `error[CONTRACT-VERSION]: the released baseline of ${CLI_CONTRACT} is unavailable`,
+                  `  code: ${row.code}`,
+                  `  package: ${CLI_CONTRACT}`,
+                  `  version: ${row.mainVersion}`,
+                  expect.stringMatching(
+                    row.candidate === undefined
+                      ? /^ {2}reason: no commit on main's first-parent history sets /
+                      : new RegExp(`^ {2}reason: .*${VERSION_COMMIT}`),
+                  ),
+                  `  next: ${row.next}`,
+                ],
+              }),
           ),
         ),
     )
@@ -876,7 +929,7 @@ Feature('The released contract documents bound what the workspace may declare ne
                 package: CLI_CONTRACT,
                 manifest: CLI_CONTRACT_MANIFEST,
                 mainVersion: row.mainVersion,
-                candidate: { commit: VERSION_COMMIT, parent: row.parent },
+                candidate: { commit: VERSION_COMMIT, declares: row.mainVersion, parent: row.parent },
               }),
           ),
           When('the law picks the version commit')(
@@ -908,6 +961,91 @@ Feature('The released contract documents bound what the workspace may declare ne
         ),
         Then('it reads the fork point, neither the committed version nor the tip main moved to')(
           (s, expect) => expect(s.mainVersion).toEqual('1.2.0'),
+        ),
+      ),
+    )
+
+    scenario(
+      "The commit that added the manifest is never the baseline when it declares a version other than main's",
+      Gherkin.Do.pipe(
+        Given('the newest candidate added the manifest at 0.0.1 while main declares 0.5.0')(
+          'evidence',
+          () =>
+            Effect.succeed<VersionCommitEvidence>({
+              package: CLI_CONTRACT,
+              manifest: CLI_CONTRACT_MANIFEST,
+              mainVersion: '0.5.0',
+              candidate: { commit: VERSION_COMMIT, declares: '0.0.1', parent: { status: 'no-manifest' } },
+            }),
+        ),
+        When('the law picks the version commit')(
+          'picked',
+          (s) =>
+            Effect.succeed(Result.match(versionCommitOf(s.evidence), {
+              onFailure: (failure) => failure._tag,
+              onSuccess: (commit) => commit,
+            })),
+        ),
+        Then('it refuses with the no-version-commit variant instead of adopting that commit')((s, expect) =>
+          expect(s.picked).toEqual('NoVersionCommit')
+        ),
+      ),
+    )
+
+    scenarioOutline(
+      'A shallow checkout that cannot see the parent of the version commit refuses as truncated history',
+      [
+        { depth: 1, window: 'the clone starts after the version commit' },
+        { depth: 2, window: "the version commit is the clone's root commit" },
+      ],
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('a repository that released 1.3.0 over 1.2.0 and moved on by one commit, cloned shallow')(
+            'root',
+            () =>
+              Effect.flatMap(
+                releasedRepository(['1.2.0', '1.3.0']),
+                (source) => shallowCloneOf(source, row.depth).pipe(Effect.ensuring(removeRepository(source))),
+              ),
+          ),
+          When('the law picks the version commit in that clone')(
+            'picked',
+            (s) =>
+              Effect.map(pickVersionCommit(s.root), (picked) =>
+                Result.match(picked, {
+                  onFailure: (failure) => failure._tag,
+                  onSuccess: (commit) => commit,
+                })).pipe(Effect.ensuring(removeRepository(s.root))),
+          ),
+          Then('it refuses with the history-truncated variant and never adopts the boundary commit')((s, expect) =>
+            expect(s.picked).toEqual('HistoryTruncated')
+          ),
+        ),
+      { live: 'spawns real git in temporary repositories' },
+    )
+
+    scenario(
+      'A version commit that is the root of a full history is the released baseline',
+      { live: 'spawns real git in a temporary repository' },
+      Gherkin.Do.pipe(
+        Given('a full repository whose first commit set 1.2.0 and whose next commit left it there')(
+          'root',
+          () => releasedRepository(['1.2.0']),
+        ),
+        When('the law picks the version commit')(
+          'picked',
+          (s) =>
+            Effect.gen(function*() {
+              const picked = yield* pickVersionCommit(s.root)
+              const rootCommit = (yield* gitOutput(s.root, ['rev-list', '--max-parents=0', 'HEAD'])).trim()
+              return {
+                rootCommit,
+                baseline: Result.match(picked, { onFailure: (failure) => failure._tag, onSuccess: (commit) => commit }),
+              }
+            }).pipe(Effect.ensuring(removeRepository(s.root))),
+        ),
+        Then('the root commit is the baseline, since nothing before it declared a version')((s, expect) =>
+          expect(s.picked.baseline).toEqual(s.picked.rootCommit)
         ),
       ),
     )

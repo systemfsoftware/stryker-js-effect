@@ -32,25 +32,26 @@ The law used to read the released documents from the `stryker-published` flake p
 
 ## Guidance
 
-Read both sides of the comparison from git. The released baseline is the **version commit**: the newest commit on the first-parent history of the merge base that changes the manifest line `"version": "<main's version>"`, accepted only when its first parent holds no manifest or declares a lower version.
+Read both sides of the comparison from git. The released baseline is the **version commit**: the newest commit on the first-parent history of the merge base that changes the manifest line `"version": "<main's version>"`, accepted only when its own manifest declares main's version and its first parent holds no manifest or declares a lower version.
 
 ```text
 candidate = git log --first-parent -1 -S'"version": "<main>"' <merge-base> -- <manifest>
-no candidate                   -> refuse  no-version-commit
-parent outside the history     -> refuse  history-truncated   next: git fetch --unshallow origin main
-parent declares no manifest    -> baseline = candidate
-parent declares a lower version-> baseline = candidate
-parent declares main's version -> refuse  version-unchanged
-parent declares a higher one   -> refuse  version-rollback
+no candidate, or its manifest
+  declares another version       -> refuse  NoVersionCommit   (no-version-commit)
+parent outside the history       -> refuse  HistoryTruncated  (history-truncated)  next: git fetch --unshallow origin main
+parent declares no manifest      -> baseline = candidate
+parent declares a lower version  -> baseline = candidate
+parent declares main's version   -> refuse  VersionUnchanged  (version-unchanged)
+parent declares a higher one     -> refuse  VersionRollback   (version-rollback)
 ```
 
-Every refusal is `code: released-baseline-unavailable` with its `cause`, the package, the version sought and the next action. The released documents are `git show <version commit>:<package>/contract/*.json`.
+Each refusal is its own `Schema.TaggedError` variant (CONST-D2), and callers branch on `_tag`. Each renders its stable `code`, the package, the version sought, a reason and the next action. The released documents are `git show <version commit>:<package>/contract/*.json`.
 
 - **Main stays green after a release.** On the release commit the baseline is that commit, so the documents compare equal. No pin has to move first.
 - **The lagging-pin hole stays closed.** A narrowing that lands after the version commit, under the same version, is judged against that commit's documents and refused at the next version.
 - **A version PR is judged, not refused.** Its merge base still declares the released version, so the baseline is the last release. The bump is the declared version and must clear what narrowed: 0.4.0 → 0.5.0 clears a minor-level removal, 0.4.0 → 0.4.1 is refused at 0.5.0.
-- **The search string is exact.** `-S'"version":'` counts occurrences of the key, which a bump never changes, so it finds only the commit that added the manifest. `-G` walks every bump back to the previous release. Measured 2026-10-11 on main `ec9dcf63c`, cold clone in the shape CI `check` fetches (`--depth=1`, then `git fetch --no-tags --filter=tree:0 --unshallow`): the `-G` walk took 82.7 s; the exact `-S` lookup plus reading the contract documents took 1.4 s for both packages, whose version commit `9e81669b8` is one commit back. With the version commit about 100 commits back (`6cdb4e1d6`, 0.4.0) the `-S` lookup took 14.4 s, because `tree:0` fetches each tree lazily.
-- **A shallow checkout refuses instead of judging.** Its boundary commit looks like it adds every file, so a shallow history reads as `history-truncated`. The CI `check` job unshallows main before the tests run.
+- **The search string is exact, and the candidate is checked.** `-S'"version":'` counts occurrences of the key, which a bump never changes, so it finds only the commit that added the manifest. In full history that is `6f8a052b0` (cli-contract at 0.1.0) and `54e127298` (plugin-interface at 4.0.0); their parents hold no manifest, so without the check that a candidate's own manifest declares main's version, either would have been adopted as the baseline. `-G` walks every bump back to the previous release. Measured 2026-10-11 on main `ec9dcf63c`, cold clone in the shape CI `check` fetches (`--depth=1`, then `git fetch --no-tags --filter=tree:0 --unshallow`): the `-G` walk took 82.7 s; the exact `-S` lookup plus reading the contract documents took 1.4 s for both packages, whose version commit `9e81669b8` is one commit back. With the version commit about 100 commits back (`6cdb4e1d6`, 0.4.0) the `-S` lookup took 14.4 s, because `tree:0` fetches each tree lazily.
+- **A shallow checkout refuses, never passes.** Its boundary commit looks like it adds every file, so a version commit whose parent lies outside the clone is `HistoryTruncated`. CI `check` unshallows main before the tests run, so CI never reaches this refusal; a local shallow clone does.
 - **The weighed package set is checked, not trusted.** The packages the law reads must equal the workspace packages whose manifest `files` declares `contract`, found by expanding the `pnpm-workspace.yaml` `<dir>/*` globs.
 - **The law's verdict is never cached.** It reads git state and the root `.changeset/` directory, neither a turbo input of the package. The cli-contract `turbo.json` turns the `test` cache off. Gate: `turbo run test --dry=json` resolves `cache: false` for `@systemfsoftware/stryker-js-cli-contract#test`.
 - **The dogfood pin is a separate process.** `stryker-published` still drives the Mutation CLI. Nothing forces it forward after a release any more, and a lagging pin no longer turns main red. Moving it stays the Dogfood step in root `AGENTS.md`.
@@ -67,7 +68,8 @@ A comparison is only sound when both sides come from one source. Reading main's 
 ## Prevention
 
 - Gate: the scenario "A narrowing that lands after the version commit, under the version it set, is refused at the next version" in the cli-contract `contract-version-law.integration.test.ts`, run by `pnpm test` in CI `check`. Clearing narrowings by main's version again turns it red.
-- Gate: the outlines "A released baseline that cannot be established is refused with its cause and the action that restores it" and "The commit that moved the manifest up to main's version is the released baseline". Accepting a rollback or a truncated history turns a row red.
-- Gate: the live scenario "The committed contract documents keep every ground the released ones hold" runs the git lookup on the real repository and asserts the weighed packages equal the contract-shipping packages. A search that finds no version commit turns it red with the refusal.
+- Gate: the outlines "A released baseline that cannot be established is refused as its own variant with the action that restores it" and "The commit that moved the manifest up to main's version is the released baseline", and the scenario "The commit that added the manifest is never the baseline when it declares a version other than main's". Accepting a rollback, a truncated history or a candidate declaring another version turns a row red.
+- Gate: the live outline "A shallow checkout that cannot see the parent of the version commit refuses as truncated history" (depth 1 and 2 clones of a temporary repository) and the live scenario "A version commit that is the root of a full history is the released baseline".
+- Gate: the live scenario "The committed contract documents keep every ground the released ones hold" runs the git lookup on the real repository and asserts the weighed packages equal the contract-shipping packages. A search that finds no version commit turns it red with the refusal; searching for the bare key turns it red with `no-version-commit` for both packages.
 - Gate: the outlines "A version PR is judged by the version it declares over the release main still carries" and "A version PR whose bump does not clear a narrowing is refused at the version the release requires".
 - Smell: a check whose "required" side and "declared" side read their versions from different sources with no rule for when those sources disagree.

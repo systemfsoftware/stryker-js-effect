@@ -1,4 +1,5 @@
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 import type { Json } from 'effect/Schema'
 
 import {
@@ -58,20 +59,62 @@ export type StreamVersionFailure = {
   readonly declaredStreamVersion: string
 }
 
-export type ReleasedBaselineCause =
-  | 'no-version-commit'
-  | 'history-truncated'
-  | 'version-unchanged'
-  | 'version-rollback'
+const releaseNextOf = (pkg: string): string =>
+  `add a changeset for ${pkg} and merge the version PR, so a release writes a version its manifest has not declared before`
 
-export type ReleasedBaselineUnavailableFailure = {
-  readonly kind: 'released-baseline-unavailable'
-  readonly cause: ReleasedBaselineCause
-  readonly package: string
-  readonly version: string
-  readonly reason: string
-  readonly next: string
+const baselineFields = { package: S.String, manifest: S.String, version: S.String }
+
+export class NoVersionCommit extends S.TaggedError<NoVersionCommit>()('NoVersionCommit', baselineFields) {
+  readonly code = 'no-version-commit'
+  get reason(): string {
+    return `no commit on main's first-parent history sets "version": "${this.version}" in ${this.manifest}, so the commit that released ${this.version} cannot be found`
+  }
+  get next(): string {
+    return releaseNextOf(this.package)
+  }
 }
+
+export class HistoryTruncated extends S.TaggedError<HistoryTruncated>()('HistoryTruncated', {
+  ...baselineFields,
+  boundary: S.String,
+}) {
+  readonly code = 'history-truncated'
+  get reason(): string {
+    return `the history of this checkout ends at ${this.boundary}, so whether that commit set ${this.version} in ${this.manifest} cannot be read`
+  }
+  get next(): string {
+    return 'git fetch --unshallow origin main'
+  }
+}
+
+export class VersionUnchanged extends S.TaggedError<VersionUnchanged>()('VersionUnchanged', {
+  ...baselineFields,
+  commit: S.String,
+}) {
+  readonly code = 'version-unchanged'
+  get reason(): string {
+    return `${this.commit} rewrites the line declaring ${this.version} in ${this.manifest} while its parent already declares ${this.version}, so it cannot be told apart from the commit that released ${this.version}`
+  }
+  get next(): string {
+    return releaseNextOf(this.package)
+  }
+}
+
+export class VersionRollback extends S.TaggedError<VersionRollback>()('VersionRollback', {
+  ...baselineFields,
+  commit: S.String,
+  parentVersion: S.String,
+}) {
+  readonly code = 'version-rollback'
+  get reason(): string {
+    return `${this.commit} moves ${this.manifest} back from ${this.parentVersion} to ${this.version}, so its documents are not the ones ${this.version} shipped`
+  }
+  get next(): string {
+    return releaseNextOf(this.package)
+  }
+}
+
+export type ReleasedBaselineUnavailable = NoVersionCommit | HistoryTruncated | VersionUnchanged | VersionRollback
 
 export type VersionCommitParent =
   | { readonly status: 'outside-history' }
@@ -82,7 +125,9 @@ export type VersionCommitEvidence = {
   readonly package: string
   readonly manifest: string
   readonly mainVersion: string
-  readonly candidate: { readonly commit: string; readonly parent: VersionCommitParent } | undefined
+  readonly candidate:
+    | { readonly commit: string; readonly declares: string | undefined; readonly parent: VersionCommitParent }
+    | undefined
 }
 
 export type MainBaselineUnavailableFailure = {
@@ -95,7 +140,7 @@ export type MainBaselineUnavailableFailure = {
 export type ContractVersionFailure =
   | ContractChangeFailure
   | StreamVersionFailure
-  | ReleasedBaselineUnavailableFailure
+  | ReleasedBaselineUnavailable
   | MainBaselineUnavailableFailure
 
 const ABSENT_STREAM_VERSION = 'absent'
@@ -180,53 +225,23 @@ const changeFailuresOf = (context: {
     declaredVersion: context.declaredVersion,
   }))
 
-const releaseNextOf = (pkg: string): string =>
-  `add a changeset for ${pkg} and merge the version PR, so a release writes a version its manifest has not declared before`
-
 export const versionCommitOf = (
   evidence: VersionCommitEvidence,
-): Result.Result<string, ReleasedBaselineUnavailableFailure> => {
-  const { package: pkg, manifest, mainVersion: version } = evidence
-  const refuse = (cause: ReleasedBaselineCause, reason: string, next: string) =>
-    Result.fail<ReleasedBaselineUnavailableFailure>({
-      kind: 'released-baseline-unavailable',
-      cause,
-      package: pkg,
-      version,
-      reason,
-      next,
-    })
+): Result.Result<string, ReleasedBaselineUnavailable> => {
+  const fields = { package: evidence.package, manifest: evidence.manifest, version: evidence.mainVersion }
   const candidate = evidence.candidate
-  if (candidate === undefined) {
-    return refuse(
-      'no-version-commit',
-      `no commit on main's first-parent history writes "version": "${version}" into ${manifest}, so the commit that released ${version} cannot be found`,
-      releaseNextOf(pkg),
-    )
+  if (candidate === undefined || candidate.declares !== fields.version) {
+    return Result.fail(NoVersionCommit.make(fields))
   }
   const parent = candidate.parent
-  if (parent.status === 'no-manifest') return Result.succeed(candidate.commit)
   if (parent.status === 'outside-history') {
-    return refuse(
-      'history-truncated',
-      `the history of this checkout ends at ${candidate.commit}, so whether that commit set ${version} in ${manifest} cannot be read`,
-      'git fetch --unshallow origin main',
-    )
+    return Result.fail(HistoryTruncated.make({ ...fields, boundary: candidate.commit }))
   }
-  const order = compareVersions({ left: parent.version, right: version })
+  if (parent.status === 'no-manifest') return Result.succeed(candidate.commit)
+  const order = compareVersions({ left: parent.version, right: fields.version })
   if (order < 0) return Result.succeed(candidate.commit)
-  if (order === 0) {
-    return refuse(
-      'version-unchanged',
-      `${candidate.commit} rewrites the line declaring ${version} in ${manifest} while its parent already declares ${version}, so it cannot be told apart from the commit that released ${version}`,
-      releaseNextOf(pkg),
-    )
-  }
-  return refuse(
-    'version-rollback',
-    `${candidate.commit} moves ${manifest} back from ${parent.version} to ${version}, so its documents are not the ones ${version} shipped`,
-    releaseNextOf(pkg),
-  )
+  if (order === 0) return Result.fail(VersionUnchanged.make({ ...fields, commit: candidate.commit }))
+  return Result.fail(VersionRollback.make({ ...fields, commit: candidate.commit, parentVersion: parent.version }))
 }
 
 export const mainBaselineUnavailableOf = (context: {
@@ -304,22 +319,21 @@ export const evaluateContractLaw = (input: ContractLawInput): readonly ContractV
 const pointerLineOf = (pointer: string): string => (pointer === '' ? '/' : pointer)
 
 export const renderFailure = (failure: ContractVersionFailure): string => {
+  if ('_tag' in failure) {
+    return [
+      `error[CONTRACT-VERSION]: the released baseline of ${failure.package} is unavailable`,
+      `  code: ${failure.code}`,
+      `  package: ${failure.package}`,
+      `  version: ${failure.version}`,
+      `  reason: ${failure.reason}`,
+      `  next: ${failure.next}`,
+    ].join('\n')
+  }
   if (failure.kind === 'main-baseline-unavailable') {
     return [
       `error[CONTRACT-VERSION]: the version main declares is unavailable`,
       `  code: ${failure.kind}`,
       `  ref: ${failure.ref}`,
-      `  reason: ${failure.reason}`,
-      `  next: ${failure.next}`,
-    ].join('\n')
-  }
-  if (failure.kind === 'released-baseline-unavailable') {
-    return [
-      `error[CONTRACT-VERSION]: the released baseline of ${failure.package} is unavailable`,
-      `  code: ${failure.kind}`,
-      `  cause: ${failure.cause}`,
-      `  package: ${failure.package}`,
-      `  version: ${failure.version}`,
       `  reason: ${failure.reason}`,
       `  next: ${failure.next}`,
     ].join('\n')
