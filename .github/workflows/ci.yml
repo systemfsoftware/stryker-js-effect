@@ -15,6 +15,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PARITY_DEADLINE: "2160"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -376,3 +379,407 @@ jobs:
           path: e2e-telemetry.tar.gz
           retention-days: 7
           if-no-files-found: error
+
+  checker-parity-changes:
+    if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      run: ${{ steps.changes.outputs.run }}
+      mode: ${{ steps.changes.outputs.mode }}
+      base: ${{ steps.changes.outputs.base }}
+      legs: ${{ steps.plan.outputs.legs }}
+      shards: ${{ steps.plan.outputs.shards }}
+    permissions:
+      actions: read
+      contents: read
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: base
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            base="$BEFORE"
+            git cat-file -e "$base^{commit}" 2>/dev/null || base=$(git rev-parse HEAD^1)
+          else
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            base=$(git merge-base HEAD origin/main)
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: cachix/install-nix-action@v31
+      - uses: ./.github/actions/released-tarballs
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter @systemfsoftware/stryker-checker-parity
+      - id: changes
+        env:
+          BASE: ${{ steps.base.outputs.base }}
+        run: |
+          set -o pipefail
+          node test/checker-parity/dist/main.mjs trigger --base "$BASE" | tee -a "$GITHUB_OUTPUT"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+      - name: Restore the cost table
+        id: costs-restore
+        if: steps.changes.outputs.mode == 'full'
+        uses: actions/cache/restore@v6
+        with:
+          path: .checker-parity-costs
+          key: checker-parity-costs-v3-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: checker-parity-costs-v3-
+      - name: Fold every recent run's leg measurements into the cost table
+        if: steps.changes.outputs.mode == 'full'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          table=.checker-parity-costs/costs.json
+          work=.checker-parity-bootstrap
+          mkdir -p "$work" .checker-parity-costs
+          restored=""
+          if [ -f "$table" ]; then
+            restored=" $(jq -r '.runs | map(tostring) | join(" ")' "$table") "
+          fi
+          runs_api="repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?status=completed"
+          candidates=$(
+            {
+              gh api "$runs_api&event=workflow_dispatch&per_page=20" --jq '.workflow_runs[].id'
+              gh api "$runs_api&event=push&branch=main&per_page=10" --jq '.workflow_runs[].id'
+              gh api "$runs_api&branch=$BRANCH&per_page=20" --jq '.workflow_runs[].id'
+            } | sort -n -u
+          )
+          folded=""
+          skipped=""
+          for run in $candidates; do
+            if [ "$run" = "$GITHUB_RUN_ID" ]; then
+              continue
+            fi
+            case "$restored" in *" $run "*) continue ;; esac
+            artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" \
+              --jq "[.artifacts[] | select((.name | test(\"^checker-parity-$run-[0-9]+$\")) and (.expired | not)) | .id] | .[]")
+            if [ -z "$artifacts" ]; then
+              continue
+            fi
+            for artifact in $artifacts; do
+              mkdir -p "$work/$run/$artifact"
+              gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact/zip" > "$work/$run/$artifact.zip"
+              unzip -q -o "$work/$run/$artifact.zip" -d "$work/$run/$artifact"
+              rm "$work/$run/$artifact.zip"
+            done
+            base=()
+            if [ -f "$table" ]; then
+              base=(--base "$table")
+            fi
+            if node test/checker-parity/dist/main.mjs costs "${base[@]}" --run-id "$run" --out "$table.next" "$work/$run"; then
+              mv "$table.next" "$table"
+              folded="$folded $run"
+            else
+              skipped="$skipped $run"
+              echo "::warning title=checker-parity cost-run-skipped::The leg artifacts of run $run did not decode as checker-parity lines, so the cost table leaves that run out. Next action: none if the run predates the current line schema; otherwise inspect its shard files."
+            fi
+          done
+          {
+            echo "### checker-parity cost table"
+            echo
+            echo "Restored with runs:${restored:- none}"
+            echo
+            echo "Folded now (every attempt's legs, newest measurement per file wins):${folded:- none}"
+            echo
+            echo "Skipped:${skipped:- none}"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Plan the legs
+        id: plan
+        env:
+          MODE: ${{ steps.changes.outputs.mode }}
+        run: |
+          set -euo pipefail
+          if [ "$MODE" != "full" ]; then
+            echo "legs=[1,2,3,4,5,6]" >> "$GITHUB_OUTPUT"
+            echo "shards=6" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          costs=()
+          if [ -f .checker-parity-costs/costs.json ]; then
+            costs=(--costs .checker-parity-costs/costs.json)
+          fi
+          node test/checker-parity/dist/main.mjs plan \
+            --deadline "$PARITY_DEADLINE" \
+            --block-mutants 16 \
+            "${costs[@]}" \
+            --out checker-parity-plan.json | tee -a "$GITHUB_OUTPUT"
+      - name: Save the folded cost table
+        if: steps.changes.outputs.mode == 'full' && hashFiles('.checker-parity-costs/costs.json') != ''
+        uses: actions/cache/save@v6
+        with:
+          path: .checker-parity-costs
+          key: checker-parity-costs-v3-${{ github.run_id }}-${{ github.run_attempt }}-plan
+      - name: Upload the plan
+        if: steps.changes.outputs.mode == 'full'
+        uses: actions/upload-artifact@v7
+        with:
+          name: checker-parity-plan-${{ github.run_id }}
+          path: checker-parity-plan.json
+          retention-days: 14
+
+  checker-parity:
+    needs: checker-parity-changes
+    if: needs.checker-parity-changes.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.checker-parity-changes.outputs.legs) }}
+    name: checker-parity (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ needs.checker-parity-changes.outputs.mode == 'full' && 45 || 8 }}
+    env:
+      CI: "true"
+      SHARDS: ${{ needs.checker-parity-changes.outputs.shards }}
+      MODE: ${{ needs.checker-parity-changes.outputs.mode }}
+      BASE: ${{ needs.checker-parity-changes.outputs.base }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: cachix/install-nix-action@v31
+      - uses: ./.github/actions/released-tarballs
+      - run: pnpm install --frozen-lockfile
+      - name: Build the branch checker, instrumenter and driver
+        run: >-
+          pnpm turbo build
+          --filter @systemfsoftware/stryker-js-typescript-checker
+          --filter @systemfsoftware/stryker-checker-parity
+      - name: Build main's checker at the base commit
+        run: |
+          git worktree add "$RUNNER_TEMP/main-side" "$BASE"
+          cd "$RUNNER_TEMP/main-side"
+          if cmp -s flake.lock "$GITHUB_WORKSPACE/flake.lock"; then
+            cp -r "$GITHUB_WORKSPACE/.sfs-deps" .sfs-deps
+          else
+            mkdir .sfs-deps
+            cp "$(nix build --no-link --print-out-paths .#stryker-published)"/*.tgz .sfs-deps/
+            chmod u+w .sfs-deps/*.tgz
+          fi
+          pnpm install --frozen-lockfile
+          pnpm turbo build --filter @systemfsoftware/stryker-js-typescript-checker
+      - name: Restore verdict cache
+        id: restore
+        uses: actions/cache/restore@v6
+        with:
+          path: .checker-parity-cache
+          key: checker-parity-leg-${{ github.run_id }}-${{ matrix.shard }}-${{ github.run_attempt }}
+          restore-keys: |
+            checker-parity-leg-${{ github.run_id }}-${{ matrix.shard }}-
+            checker-parity-verdicts-
+      - name: Report a cold verdict cache
+        if: steps.restore.outputs.cache-matched-key == ''
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          echo "::warning title=checker-parity cache-miss (${SHARD})::No verdict cache matched prefix checker-parity-verdicts-, so every file in this leg is checked cold. Next action: none if this is the first run of the lane; otherwise check that the previous run's 'Save verdict cache' step ran."
+          echo "Verdict cache: miss (code \`cache-miss\`), leg $SHARD starts cold." >> "$GITHUB_STEP_SUMMARY"
+      - name: Download the plan
+        if: env.MODE == 'full'
+        uses: actions/download-artifact@v7
+        with:
+          name: checker-parity-plan-${{ github.run_id }}
+          path: checker-parity-plan
+      - name: Run both checkers over the shard
+        id: run
+        timeout-minutes: ${{ env.MODE == 'full' && 40 || 5 }}
+        env:
+          BUDGET: ${{ env.MODE == 'full' && 2340 || 270 }}
+          DEADLINE: ${{ env.MODE == 'full' && env.PARITY_DEADLINE || 210 }}
+        run: |
+          set +e
+          plan=()
+          if [ "$MODE" = "full" ]; then
+            plan=(--plan checker-parity-plan/checker-parity-plan.json)
+          fi
+          timeout --signal=TERM --kill-after=10s "$BUDGET" \
+            node test/checker-parity/dist/main.mjs run \
+            --scope "$MODE" \
+            --base "$BASE" \
+            --settings test/checker-parity/pr-scope.json \
+            "${plan[@]}" \
+            --deadline "$DEADLINE" \
+            --main-worker "$RUNNER_TEMP/main-side/packages/stryker-js-typescript-checker/dist/main.mjs" \
+            --branch-worker "$GITHUB_WORKSPACE/packages/stryker-js-typescript-checker/dist/main.mjs" \
+            --shard "${{ matrix.shard }}/$SHARDS" \
+            --cache .checker-parity-cache \
+            --out checker-parity-out
+          code=$?
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+      - name: Point a failed shard at its artifact
+        if: failure()
+        env:
+          SHARD: ${{ matrix.shard }}
+          EXIT: ${{ steps.run.outputs.exit }}
+          ARTIFACT: checker-parity-${{ github.run_id }}-${{ matrix.shard }}
+        run: |
+          if [ "$EXIT" = 2 ]; then
+            exit 0
+          elif [ "$EXIT" = 124 ] || [ "$EXIT" = 137 ] || [ -z "$EXIT" ]; then
+            code=shard-timeout
+            next="The driver's own deadline did not stop the leg before the step budget, which is a driver bug. Verdicts of every finished batch are in the saved cache; rerun the failed legs and they resume from it. The last 'checker-parity heartbeat' line in this step's log names the side, project, file and batch that was running; scope-$SHARD.json (LegStarted) lists the leg's projects."
+          else
+            code=shard-failed
+            next="Read lines with _tag ProjectBootFailed or TelemetryMissing in shard-$SHARD.ndjson; they name the project and the reason."
+          fi
+          echo "::error title=checker-parity shard $SHARD failed ($code)::Artifact $ARTIFACT, files shard-$SHARD.ndjson and scope-$SHARD.json. Next action: $next"
+          {
+            echo "### checker-parity shard $SHARD failed (\`$code\`)"
+            echo "Artifact \`$ARTIFACT\`, files \`shard-$SHARD.ndjson\` and \`scope-$SHARD.json\`. $next"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Save verdict cache
+        if: always() && steps.restore.outcome == 'success'
+        uses: actions/cache/save@v6
+        with:
+          path: .checker-parity-cache
+          key: checker-parity-leg-${{ github.run_id }}-${{ matrix.shard }}-${{ github.run_attempt }}
+      - name: Upload the verdict cache
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: checker-parity-verdicts-${{ github.run_id }}-${{ matrix.shard }}
+          path: .checker-parity-cache
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Upload shard results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: checker-parity-${{ github.run_id }}-${{ matrix.shard }}
+          path: checker-parity-out
+          retention-days: 14
+          if-no-files-found: error
+
+  checker-parity-report:
+    needs: [checker-parity-changes, checker-parity]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+    steps:
+      - name: Change detection finished
+        if: contains(fromJSON('["failure", "cancelled"]'), needs.checker-parity-changes.result)
+        env:
+          RESULT: ${{ needs.checker-parity-changes.result }}
+        run: |
+          echo "::error title=checker-parity change detection ${RESULT}::The checker-parity-changes job ended with ${RESULT}, so no shard ran (code shard-incomplete). Read that job's log, then rerun the workflow."
+          echo "### checker-parity: change detection ended with \`$RESULT\`" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+      - name: Not applicable
+        if: needs.checker-parity-changes.result == 'success' && needs.checker-parity-changes.outputs.run != 'true'
+        run: |
+          echo "checker-parity: not-applicable (no change reaches the checker, instrumenter, tsgo or driver inputs)."
+          echo "### checker-parity: pass (\`not-applicable\`): no change reaches the checker, instrumenter, tsgo or driver inputs." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v7
+        if: needs.checker-parity-changes.outputs.run == 'true'
+      - uses: pnpm/action-setup@v6
+        if: needs.checker-parity-changes.outputs.run == 'true'
+      - uses: actions/setup-node@v7
+        if: needs.checker-parity-changes.outputs.run == 'true'
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: cachix/install-nix-action@v31
+        if: needs.checker-parity-changes.outputs.run == 'true'
+      - uses: ./.github/actions/released-tarballs
+        if: needs.checker-parity-changes.outputs.run == 'true'
+      - if: needs.checker-parity-changes.outputs.run == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: needs.checker-parity-changes.outputs.run == 'true'
+        run: pnpm turbo build --filter @systemfsoftware/stryker-checker-parity
+      - name: Download every leg
+        if: needs.checker-parity-changes.outputs.run == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          pattern: checker-parity-${{ github.run_id }}-*
+          path: checker-parity-shards
+      - name: Restore the cost table
+        id: costs-restore
+        if: always() && needs.checker-parity-changes.outputs.run == 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: .checker-parity-costs
+          key: checker-parity-costs-v3-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            checker-parity-costs-v3-${{ github.run_id }}-
+            checker-parity-costs-v3-
+      - name: Merge this run's measurements into the cost table
+        if: always() && needs.checker-parity-changes.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p .checker-parity-costs .checker-parity-cache
+          base=()
+          if [ -f .checker-parity-costs/costs.json ]; then
+            base=(--base .checker-parity-costs/costs.json)
+          fi
+          node test/checker-parity/dist/main.mjs costs "${base[@]}" --out checker-parity-costs.json checker-parity-shards
+          cp checker-parity-costs.json .checker-parity-costs/costs.json
+      - name: Save the cost table
+        if: always() && needs.checker-parity-changes.outputs.run == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .checker-parity-costs
+          key: checker-parity-costs-v3-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Collect the verdict caches
+        if: always() && needs.checker-parity-changes.outputs.run == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          pattern: checker-parity-verdicts-${{ github.run_id }}-*
+          path: .checker-parity-cache
+          merge-multiple: true
+      - name: Save the merged verdict cache
+        if: always() && needs.checker-parity-changes.outputs.run == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .checker-parity-cache
+          key: checker-parity-verdicts-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Every shard finished
+        if: needs.checker-parity-changes.outputs.run == 'true' && needs.checker-parity.result != 'success'
+        env:
+          RESULT: ${{ needs.checker-parity.result }}
+          PATTERN: checker-parity-${{ github.run_id }}-*
+        run: |
+          echo "::error title=checker-parity shards ${RESULT}::A shard did not finish (code shard-incomplete). Read the failed checker-parity (k) leg's annotation (leg-deadline, shard-timeout or shard-failed), then artifact ${PATTERN}, files shard-<k>.ndjson and scope-<k>.json. Rerun failed jobs: checked batches resume from the verdict cache."
+          {
+            echo "### checker-parity: shards ended with \`$RESULT\`"
+            echo "Reason code \`shard-incomplete\`. Artifacts \`$PATTERN\`, files \`shard-<k>.ndjson\` and \`scope-<k>.json\` per shard."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+      - name: Compare main and branch verdicts
+        if: needs.checker-parity-changes.outputs.run == 'true'
+        run: >-
+          node test/checker-parity/dist/main.mjs compare
+          --shards ${{ needs.checker-parity-changes.outputs.shards }}
+          --summary checker-parity-summary.json
+          checker-parity-shards
+      - name: Upload summary
+        if: always() && needs.checker-parity-changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: checker-parity-summary-${{ github.run_id }}
+          path: |
+            checker-parity-summary.json
+            checker-parity-costs.json
+          retention-days: 14
+          if-no-files-found: warn
