@@ -20,9 +20,7 @@ export const PlainJsonKey = S.String.pipe(
 
 export type PlainJson = null | number | boolean | string | ReadonlyArray<PlainJson> | PlainJsonObject
 
-export interface PlainJsonObject {
-  readonly [key: string]: PlainJson
-}
+export type PlainJsonObject = { readonly [key: string]: PlainJson }
 
 export const PlainJsonObject: S.Codec<PlainJsonObject> = S.Record(
   PlainJsonKey,
