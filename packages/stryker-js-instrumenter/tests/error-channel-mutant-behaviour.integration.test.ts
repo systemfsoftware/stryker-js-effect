@@ -33,6 +33,15 @@ const SPECIFICATIONS = [
     pinning: { run: (module: LookupModule) => module.withFallback(false), holds: succeedsWith(0) },
     loose: { run: (module: LookupModule) => module.withFallback(true), holds: succeedsWith(42) },
   },
+  {
+    mutator: 'FailureToDefect',
+    pinning: {
+      run: (module: LookupModule) =>
+        module.lookup(false).pipe(Effect.catchTag('NotFound', () => Effect.succeed('recovered'))),
+      holds: succeedsWith('recovered'),
+    },
+    loose: { run: (module: LookupModule) => module.lookup(false), holds: Exit.isFailure },
+  },
 ] as const satisfies ReadonlyArray<Specification>
 
 interface Harness {

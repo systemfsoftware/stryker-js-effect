@@ -71,6 +71,7 @@ import {
   updateExpression,
 } from './Ast.handle.js'
 import { atomicUpdateSplitMutator } from './AtomicUpdateSplit.js'
+import { failureToDefectMutator } from './FailureToDefect.js'
 import { finalizerEscapeMutator } from './FinalizerEscape.js'
 import { recoveryRemovalMutator } from './RecoveryRemoval.js'
 import { synchronizationRemovalMutator } from './SynchronizationRemoval.js'
@@ -1420,6 +1421,7 @@ export const defaultMutators: Readonly<Record<StockCatalog.StockDefaultName, Mut
   SynchronizationRemoval: synchronizationRemovalMutator,
   FinalizerEscape: finalizerEscapeMutator,
   RecoveryRemoval: recoveryRemovalMutator,
+  FailureToDefect: failureToDefectMutator,
 })
 
 export type MutatorEntry = readonly [name: string, mutate: Mutator]

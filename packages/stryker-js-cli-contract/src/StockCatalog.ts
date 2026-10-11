@@ -124,6 +124,20 @@ const RECOVERY_LOCAL_HELPER =
 export const withFallback = (program: number) => catchTag(program, 'NotFound', () => 0)
 `
 
+const FAILURE_NAMESPACE = `import * as E from 'effect/Effect'
+
+class NotFound {
+  readonly _tag = 'NotFound'
+}
+
+export const lookup = (found: boolean) => (found ? E.succeed(1) : E.fail(new NotFound()))
+`
+
+const FAILURE_LOCAL_HELPER = `const fail = (reason: string) => ({ ok: false, reason })
+
+export const lookup = () => fail('missing')
+`
+
 const entries = [
   {
     id: 'arithmetic-operator',
@@ -363,6 +377,17 @@ const entries = [
         ],
       },
       { before: RECOVERY_LOCAL_HELPER, after: [] },
+    ],
+  },
+  {
+    id: 'failure-to-defect',
+    name: 'FailureToDefect',
+    tier: 'default',
+    definition:
+      "A typed failure is raised as a defect: `Effect.fail(e)` becomes `Effect.die(e)` through the file's own binding for the Effect module, so a test that recovers or inspects the typed error sees a defect instead.",
+    examples: [
+      { before: FAILURE_NAMESPACE, after: ['E.die(new NotFound())'] },
+      { before: FAILURE_LOCAL_HELPER, after: [] },
     ],
   },
 ] as const satisfies ReadonlyArray<StockCatalogEntry>

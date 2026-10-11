@@ -4,6 +4,7 @@ import { NotFound } from './not-found.schema.js'
 
 // @stryker-expect next-line KilledOrTimeout: ArrowFunction
 const lookup = (found: boolean): Effect.Effect<number, NotFound> =>
+  // @stryker-expect next-line KilledOrTimeout: FailureToDefect
   found ? Effect.succeed(1) : Effect.fail(new NotFound())
 
 // @stryker-expect next-line KilledOrTimeout: ArrowFunction, RecoveryRemoval, StringLiteral

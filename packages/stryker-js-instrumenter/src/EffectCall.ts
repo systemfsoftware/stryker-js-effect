@@ -129,6 +129,7 @@ const ARITIES: Readonly<Record<string, Arity>> = Object.freeze({
   'Effect.catchReason': { dataFirst: [4, 5], dataLast: [3, 4] },
   'Effect.catchReasons': { dataFirst: [3, 4], dataLast: [2, 3] },
   'Effect.orElseSucceed': { dataFirst: [2], dataLast: [1] },
+  'Effect.fail': { dataFirst: [1], dataLast: [] },
 })
 
 interface Arity {

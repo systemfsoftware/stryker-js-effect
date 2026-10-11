@@ -42,11 +42,12 @@ The replacements these mutators plant use Effect 4 APIs. `@systemfsoftware/stryk
 
 ## Effect error-channel mutators
 
-One default mutator plants Effect error-handling faults:
+Two default mutators plant Effect error-handling faults:
 
 - **RecoveryRemoval** drops one recovery: a `catch`, `catchTag`, `catchIf`, `catchFilter`, `catchReason`, or `orElseSucceed` call is removed, and a `catchTags` or `catchReasons` record loses one handler per mutant, so the typed failure the recovery handled propagates.
+- **FailureToDefect** turns `Effect.fail(e)` into `Effect.die(e)`, so a failure raised on the typed channel becomes a defect.
 
-A test that asserts the recovered value kills its mutants; a test that only checks the happy path does not.
+A test that asserts the recovered value, or recovers the typed error by its tag, kills these mutants; a test that only checks the happy path, or only that the program did not succeed, does not.
 
 ## License
 

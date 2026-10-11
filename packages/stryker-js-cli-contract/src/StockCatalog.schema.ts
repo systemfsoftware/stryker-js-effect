@@ -21,5 +21,6 @@ export const StockDefaultName = S.Literals([
   'SynchronizationRemoval',
   'FinalizerEscape',
   'RecoveryRemoval',
+  'FailureToDefect',
 ])
 export type StockDefaultName = typeof StockDefaultName.Type

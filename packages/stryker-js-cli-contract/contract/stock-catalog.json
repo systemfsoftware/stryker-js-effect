@@ -457,5 +457,23 @@
         "after": []
       }
     ]
+  },
+  {
+    "id": "failure-to-defect",
+    "name": "FailureToDefect",
+    "tier": "default",
+    "definition": "A typed failure is raised as a defect: `Effect.fail(e)` becomes `Effect.die(e)` through the file's own binding for the Effect module, so a test that recovers or inspects the typed error sees a defect instead.",
+    "examples": [
+      {
+        "before": "import * as E from 'effect/Effect'\n\nclass NotFound {\n  readonly _tag = 'NotFound'\n}\n\nexport const lookup = (found: boolean) => (found ? E.succeed(1) : E.fail(new NotFound()))\n",
+        "after": [
+          "E.die(new NotFound())"
+        ]
+      },
+      {
+        "before": "const fail = (reason: string) => ({ ok: false, reason })\n\nexport const lookup = () => fail('missing')\n",
+        "after": []
+      }
+    ]
   }
 ]
