@@ -17,7 +17,12 @@ import { admitImporterShortcut } from './admit-importer-shortcut.workflow.js'
 import { type ImporterCheck, TypescriptCheckerOptionsSchema } from './Checker.schema.js'
 import { DecideImporterShortcutCommand, PlanCheckRoundsCommand } from './CheckerCommands.schema.js'
 import type { CheckRound, CheckRounds } from './CheckRound.schema.js'
-import { type CompilerError, CompilerFailed } from './Compiler.schema.js'
+import {
+  type CompilerError,
+  type CompilerFailed,
+  DuplicateMutantIds,
+  InvalidCheckerOptions,
+} from './Compiler.schema.js'
 import { type EditSiteFacts, editSiteFactsOf, type Span } from './edit-site.schema.js'
 import { fallbackKeyOf, type ImporterShortcutDecision, takesShortcut } from './ImporterShortcut.schema.js'
 import { planCheckRounds } from './plan-check-rounds.workflow.js'
@@ -40,9 +45,9 @@ import type { ScriptFile } from './ts-files.handle.js'
 
 const decodeCheckerOptions = S.decodeUnknownEffect(TypescriptCheckerOptionsSchema)
 
-const importerCheckOf = (options: Options.StrykerOptions): Effect.Effect<ImporterCheck, CompilerFailed> =>
+const importerCheckOf = (options: Options.StrykerOptions): Effect.Effect<ImporterCheck, InvalidCheckerOptions> =>
   Effect.mapBoth(decodeCheckerOptions(options), {
-    onFailure: (issue) => CompilerFailed.make({ reason: 'invalid-checker-options', subject: issue.message }),
+    onFailure: (issue) => InvalidCheckerOptions.make({ detail: issue.message }),
     onSuccess: (decoded) =>
       Option.getOrElse(
         Option.flatMapNullishOr(Option.fromUndefinedOr(decoded.typescriptChecker), (options) => options.importerCheck),
@@ -357,7 +362,10 @@ const roundProgressOf = (
 
 const decodePlanCheckRoundsCommand = S.decodeEffect(PlanCheckRoundsCommand)
 
-const roundsOf = (ctx: CallContext, mutants: ReadonlyArray<Mutant>): Effect.Effect<CheckRounds, CompilerFailed> =>
+const roundsOf = (
+  ctx: CallContext,
+  mutants: ReadonlyArray<Mutant>,
+): Effect.Effect<CheckRounds, DuplicateMutantIds> =>
   Effect.mapBoth(
     decodePlanCheckRoundsCommand({
       _tag: 'PlanCheckRoundsCommand',
@@ -368,7 +376,7 @@ const roundsOf = (ctx: CallContext, mutants: ReadonlyArray<Mutant>): Effect.Effe
       })),
     }),
     {
-      onFailure: (issue) => CompilerFailed.make({ reason: 'duplicate-mutant-ids', subject: issue.message }),
+      onFailure: (issue) => DuplicateMutantIds.make({ detail: issue.message }),
       onSuccess: (command) => decided(planCheckRounds(command)),
     },
   )

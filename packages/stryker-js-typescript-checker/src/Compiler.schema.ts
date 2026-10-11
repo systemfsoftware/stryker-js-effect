@@ -57,8 +57,6 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
     'file-not-in-project',
     'mutant-outside-file',
     'program-digest-unavailable',
-    'invalid-checker-options',
-    'duplicate-mutant-ids',
   ]),
   subject: S.optional(S.String),
 }) {
@@ -82,19 +80,30 @@ export class CompilerFailed extends S.TaggedError<CompilerFailed>()('CompilerFai
         'program-digest-unavailable',
         () => `The loaded TypeScript program could not be identified: ${this.subject ?? 'unknown input'}`,
       ),
-      Match.when(
-        'invalid-checker-options',
-        () => `The typescriptChecker options are invalid: ${this.subject ?? 'unknown value'}`,
-      ),
-      Match.when(
-        'duplicate-mutant-ids',
-        () =>
-          `One check call named the same mutant more than once (${
-            this.subject ?? 'unknown id'
-          }); send each mutant id once per check call`,
-      ),
       Match.exhaustive,
     )
+  }
+}
+
+export class InvalidCheckerOptions extends S.TaggedError<InvalidCheckerOptions>()('InvalidCheckerOptions', {
+  detail: S.String,
+}) {
+  readonly code = 'invalid-checker-options' as const
+  readonly nextAction = "Set typescriptChecker.importerCheck to 'location-rule' or 'always', or remove it"
+
+  override get message(): string {
+    return `typescript checker (${this.code}): the typescriptChecker options are invalid: ${this.detail}. ${this.nextAction}`
+  }
+}
+
+export class DuplicateMutantIds extends S.TaggedError<DuplicateMutantIds>()('DuplicateMutantIds', {
+  detail: S.String,
+}) {
+  readonly code = 'duplicate-mutant-ids' as const
+  readonly nextAction = 'Send each mutant id once per check call'
+
+  override get message(): string {
+    return `typescript checker (${this.code}): one check call named the same mutant more than once: ${this.detail}. ${this.nextAction}`
   }
 }
 
@@ -108,6 +117,8 @@ export class DryRunCompileErrors extends S.TaggedError<DryRunCompileErrors>()('D
 
 export type CompilerError =
   | CompilerFailed
+  | InvalidCheckerOptions
+  | DuplicateMutantIds
   | UnsupportedTypeScriptVersionError
   | TsConfigNotFoundError
   | TsConfigParseError
