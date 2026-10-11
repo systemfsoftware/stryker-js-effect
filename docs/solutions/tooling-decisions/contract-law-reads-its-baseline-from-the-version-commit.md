@@ -28,7 +28,7 @@ where `main` is the version the package manifest declares at `merge-base(origin/
 The law used to read the released documents from the `stryker-published` flake pin, installed as `released-*` aliases. It then had two sources for one fact: main's version moved when the version PR merged, and the pin moved only when someone moved it. Each choice of what to do between those two events failed:
 
 - **Judging anyway lets a narrowing through.** Pin at 15.0.0, main at 16.0.0, no pending intent. A PR deletes a member: required 16.0.0, declared 16.0.0, so the law holds, and the next 16.x release breaks 16.0.0 consumers.
-- **Refusing turns main red after every release.** The law refused as `stale-baseline` while the pin lagged. Release #267 set cli-contract to 0.5.0, so main's next `check` (run 38091732019) failed until #300 moved the pin by hand.
+- **Refusing turns main red after every release.** The law refused to judge while the pin lagged. Release #267 set cli-contract to 0.5.0, so main's next `check` (run 38091732019) failed until #300 moved the pin by hand.
 
 ## Guidance
 
