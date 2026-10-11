@@ -15,7 +15,7 @@ const LOCATION = '"location":{"start":{"line":1,"column":1},"end":{"line":1,"col
 
 const COST = '{"fixedOverheadMs":1,"testBodyMs":2,"testsExecuted":1,"shared":false}'
 
-const WORKER = '{"_tag":"worker","schemaVersion":"8.0","role":"testRunner","index":0,"startupMs":12.5}'
+const WORKER = '{"_tag":"worker","schemaVersion":"9.0","role":"testRunner","index":0,"startupMs":12.5}'
 
 const READS_NOWHERE = '"subsumption":null'
 
@@ -101,7 +101,7 @@ const COUNTS =
 const PHASES = '"prepare":1,"instrument":2,"dry-run":3,"mutation-test":4'
 
 const verdictLine = (phaseDurations: string): string =>
-  `{"_tag":"verdict","schemaVersion":"8.0","runId":"01ARZ3NDEKTSV4RRFFQ69G5FAV","mode":"machine","signal":"flag","score":100,"thresholds":{"high":80,"low":60,"break":null},"reportFile":null,"counts":${COUNTS},"mutants":[],"scope":"full","mutantSetPolicy":"default","phaseDurations":${phaseDurations},"static":null,"budget":{"predictedSeconds":0,"actualSeconds":1}}`
+  `{"_tag":"verdict","schemaVersion":"9.0","runId":"01ARZ3NDEKTSV4RRFFQ69G5FAV","mode":"machine","signal":"flag","score":100,"thresholds":{"high":80,"low":60,"break":null},"reportFile":null,"counts":${COUNTS},"mutants":[],"scope":"full","mutantSetPolicy":"default","phaseDurations":${phaseDurations},"static":null,"budget":{"predictedSeconds":0,"actualSeconds":1}}`
 
 const durationOf = (line: string, phase: 'check' | 'reporting'): string =>
   Result.match(S.decodeResult(RunEvent.RunEventWireLine)(line), {
@@ -404,7 +404,7 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           () =>
             Effect.sync(() => ({
               declared: WORKER,
-              undeclared: '{"_tag":"worker","schemaVersion":"8.0","role":"testRunner","index":0}',
+              undeclared: '{"_tag":"worker","schemaVersion":"9.0","role":"testRunner","index":0}',
             })),
         ),
         When('each line is decoded through the wire codec')(
