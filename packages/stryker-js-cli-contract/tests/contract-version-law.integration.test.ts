@@ -28,6 +28,7 @@ import {
   evaluateContractLaw,
   mainBaselineUnavailableOf,
   type PackageContracts,
+  type ReleasedBaselineCause,
   renderFailure,
   type VersionCommitEvidence,
   versionCommitOf,
@@ -89,14 +90,19 @@ const readJsonDocuments = (directory: string) =>
     })
   })
 
+const versionFrom = (location: string, text: string) =>
+  Effect.gen(function*() {
+    const decoded = decodePackageVersion(text)
+    if (Result.isFailure(decoded)) {
+      return yield* Effect.die(new Error(`cannot read a version from ${location}: ${decoded.failure.message}`))
+    }
+    return decoded.success
+  })
+
 const readVersion = (manifestPath: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    const decoded = decodePackageVersion(yield* fs.readFileString(manifestPath))
-    if (Result.isFailure(decoded)) {
-      return yield* Effect.die(new Error(`cannot read a version from ${manifestPath}: ${decoded.failure.message}`))
-    }
-    return decoded.success
+    return yield* versionFrom(manifestPath, yield* fs.readFileString(manifestPath))
   })
 
 const runGit = (cwd: string, args: readonly string[]) =>
@@ -133,19 +139,14 @@ const readMainBase = (repositoryRoot: string) =>
 const readVersionAt = (repositoryRoot: string, commit: string, directory: string) =>
   Effect.gen(function*() {
     const manifest = `${commit}:${directory}/${MANIFEST_FILE}`
-    const decoded = decodePackageVersion(yield* gitOutput(repositoryRoot, ['show', manifest]))
-    if (Result.isFailure(decoded)) {
-      return yield* Effect.die(new Error(`cannot read a version from ${manifest}: ${decoded.failure.message}`))
-    }
-    return decoded.success
+    return yield* versionFrom(manifest, yield* gitOutput(repositoryRoot, ['show', manifest]))
   })
 
 const OUTSIDE_HISTORY: VersionCommitParent = { status: 'outside-history' }
 const NO_MANIFEST: VersionCommitParent = { status: 'no-manifest' }
 
-const readVersionCommitParent = (repositoryRoot: string, parents: readonly string[], directory: string) =>
+const readVersionCommitParent = (repositoryRoot: string, parent: string | undefined, directory: string) =>
   Effect.gen(function*() {
-    const parent = parents.at(0)
     if (parent === undefined) {
       const shallow = yield* gitOutput(repositoryRoot, ['rev-parse', '--is-shallow-repository'])
       return shallow.trim() === 'true' ? OUTSIDE_HISTORY : NO_MANIFEST
@@ -179,7 +180,7 @@ const readVersionCommitEvidence = (repositoryRoot: string, mainBase: string, ref
       mainVersion,
       candidate: commit === undefined
         ? undefined
-        : { commit, parent: yield* readVersionCommitParent(repositoryRoot, fields.slice(1), ref.directory) },
+        : { commit, parent: yield* readVersionCommitParent(repositoryRoot, fields.at(1), ref.directory) },
     }
     return evidence
   })
@@ -816,7 +817,7 @@ Feature('The released contract documents bound what the workspace may declare ne
           next: RELEASE_NEXT,
         },
       ] satisfies ReadonlyArray<
-        Pick<VersionCommitEvidence, 'mainVersion' | 'candidate'> & { cause: string; next: string }
+        Pick<VersionCommitEvidence, 'mainVersion' | 'candidate'> & { cause: ReleasedBaselineCause; next: string }
       >,
       (row) =>
         Gherkin.Do.pipe(
