@@ -1,6 +1,7 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
@@ -414,12 +415,23 @@ const planReuseRowOf = (entry: ProjectPlan): RunEvent.PlanProjectReuse =>
     }),
   })
 
+const distinctProjectsOf = (
+  path: Path.Path,
+  projects: ReadonlyArray<string> | undefined,
+): ReadonlyArray<string> | undefined =>
+  Option.getOrUndefined(
+    Option.map(
+      Option.fromUndefinedOr(projects),
+      Arr.dedupeWith((left: string, right: string) => path.resolve(left) === path.resolve(right)),
+    ),
+  )
+
 export const planRequest = ({ request, channel }: PlanRequestInput): Effect.Effect<void, never, EnginePorts> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const labelBase = labelBaseOf(path, channel.environment.basePath, request.out)
     const planned = yield* forEachProjectDirectory(
-      request.projects,
+      distinctProjectsOf(path, request.projects),
       (directory) => planProject(request, channel, labelBase, directory),
     )
     const scheduled = planned.flatMap((entry) => entry.mutants.map((mutant) => ({ project: entry.label, ...mutant })))

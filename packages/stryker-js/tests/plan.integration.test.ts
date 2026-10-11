@@ -73,6 +73,7 @@ const prepareFixture = (): Effect.Effect<string, never, FileSystem.FileSystem | 
 const runPlan = (
   root: string,
   out: string,
+  projects: string = PROJECT_NAMES.join(','),
 ): Effect.Effect<PlanRun, never, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.scoped(
     Effect.gen(function*() {
@@ -86,7 +87,7 @@ const runPlan = (
             '--target-seconds',
             '1',
             '--projects',
-            PROJECT_NAMES.join(','),
+            projects,
             '--out',
             out,
           ],
@@ -107,6 +108,16 @@ const runPlan = (
       return { exitCode: Number(exitCode), stdout: stdoutText, stderr: stderrText }
     }),
   ).pipe(Effect.orDie)
+
+const readPlanText = (
+  root: string,
+  out: string,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.flatMap(
+    Effect.all([FileSystem.FileSystem, Path.Path]),
+    ([fs, path]) => fs.readFileString(path.join(root, out)),
+  )
+    .pipe(Effect.orDie)
 
 const readPlan = (
   root: string,
@@ -190,6 +201,33 @@ Feature('Planning mutation shards across projects', { timeout: 180_000 })
               partitioned: true,
             })
           },
+        ),
+      ),
+    )
+    scenario(
+      'Naming one project twice plans it once, exactly as naming it once does',
+      Gherkin.Do.pipe(
+        Given('a fixture whose two projects each hold one mutable source file')(
+          'fixture',
+          () => prepareFixture(),
+        ),
+        When('stryker plans the projects once by name and once with proj-a also named by a second path')(
+          'ran',
+          (s) =>
+            Effect.gen(function*() {
+              const once = yield* runPlan(s.fixture, 'plan-once.json')
+              const twice = yield* runPlan(s.fixture, 'plan-twice.json', 'proj-a,./proj-a,proj-b')
+              const onceText = yield* readPlanText(s.fixture, 'plan-once.json')
+              const twiceText = yield* readPlanText(s.fixture, 'plan-twice.json')
+              return { once, twice, onceText, twiceText }
+            }),
+        ),
+        Then('both exit 0 and write the same plan bytes')(
+          (s, expect) =>
+            expect({
+              exitCodes: [s.ran.once.exitCode, s.ran.twice.exitCode],
+              samePlan: s.ran.onceText === s.ran.twiceText,
+            }).toStrictEqual({ exitCodes: [0, 0], samePlan: true }),
         ),
       ),
     )
