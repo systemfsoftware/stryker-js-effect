@@ -426,5 +426,67 @@
         "after": []
       }
     ]
+  },
+  {
+    "id": "refinement-boundary",
+    "name": "RefinementBoundary",
+    "tier": "default",
+    "definition": "A Schema bound moves by one inclusivity step: `isGreaterThan` and `isGreaterThanOrEqualTo` swap, as do `isLessThan` and `isLessThanOrEqualTo`; `isBetween` toggles one exclusivity flag per mutant; `isMinLength(n)` becomes `isMinLength(n + 1)` and `isMaxLength(n)` becomes `isMaxLength(n - 1)`. A swap needs the Schema module in scope, and a bound or flag the mutant could not change, a non-literal `isBetween` options object, and a local function sharing a check name are refused.",
+    "examples": [
+      {
+        "before": "import { Schema as S } from 'effect'\n\nexport const Positive = S.Number.check(S.isGreaterThan(0))\n",
+        "after": [
+          "S.isGreaterThanOrEqualTo(0)"
+        ]
+      },
+      {
+        "before": "import * as S from 'effect/Schema'\n\nexport const Digit = S.Int.check(S.isBetween({ minimum: 1, maximum: 9 }))\n",
+        "after": [
+          "S.isBetween({ minimum: 1, maximum: 9, exclusiveMinimum: true })",
+          "S.isBetween({ minimum: 1, maximum: 9, exclusiveMaximum: true })"
+        ]
+      },
+      {
+        "before": "import * as S from 'effect/Schema'\n\nexport const Pair = S.String.check(S.isMinLength(2))\n",
+        "after": [
+          "S.isMinLength(2 + 1)"
+        ]
+      },
+      {
+        "before": "const isGreaterThan = (n: number) => (x: number) => x > n\n\nexport const positive = isGreaterThan(0)\n",
+        "after": []
+      }
+    ]
+  },
+  {
+    "id": "refinement-removal",
+    "name": "RefinementRemoval",
+    "tier": "default",
+    "definition": "One Schema refinement is removed, so the schema accepts what it refused: a `.check(...)` or `S.check(...)` with several checks loses one per mutant; a method `.check(c)` with one check becomes its schema, and a piped `S.check(c)` becomes `self => self`. A `check` that does not resolve to the Schema module, and a lone `S.check(c)` outside a pipe, are refused.",
+    "examples": [
+      {
+        "before": "import * as S from 'effect/Schema'\n\nexport const Slug = S.String.check(S.isMinLength(1), S.isPattern(/^[a-z]+$/))\n",
+        "after": [
+          "S.String.check(S.isPattern(/^[a-z]+$/))",
+          "S.String.check(S.isMinLength(1))"
+        ]
+      },
+      {
+        "before": "import { Schema as S } from 'effect'\n\nexport const Positive = S.Number.check(S.isGreaterThan(0))\n",
+        "after": [
+          "S.Number"
+        ]
+      },
+      {
+        "before": "import * as S from 'effect/Schema'\n\nexport const Count = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(0)))\n",
+        "after": [
+          "self => self"
+        ]
+      },
+      {
+        "before": "const box = { check: (n: number) => n > 0 }\n\nexport const checked = box.check(1)\n",
+        "after": []
+      }
+    ]
   }
 ]

@@ -40,6 +40,15 @@ The replacements these mutators plant use Effect 4 APIs. `@systemfsoftware/stryk
 
 Every stock mutator is default-tier. `mutator.optInMutations` names opt-in entries from a plugin's mutator catalog; naming a stock mutator there, or a mutator no loaded catalog declares, fails the run before instrumentation as a config failure naming the entry.
 
+## Effect Schema refinement mutators
+
+Two default mutators plant faults in Schema refinements, reached through the file's own `effect` or `effect/Schema` import:
+
+- **RefinementBoundary** moves a bound by one inclusivity step: `isGreaterThan` and `isGreaterThanOrEqualTo` swap, as do `isLessThan` and `isLessThanOrEqualTo`; `isBetween` toggles one exclusivity flag per mutant; `isMinLength(n)` becomes `isMinLength(n + 1)` and `isMaxLength(n)` becomes `isMaxLength(n - 1)`.
+- **RefinementRemoval** drops one refinement from a `.check(...)` or `S.check(...)` call per mutant, or the whole call when it holds one refinement, so the schema accepts what it refused.
+
+A test that decodes a value at the bound, or a value only the removed refinement refuses, kills these mutants. A property that only checks that generated values decode does not.
+
 ## License
 
 Apache-2.0. Part of [systemfsoftware](https://github.com/systemfsoftware/stryker-js-effect/tree/main/packages/stryker-js-instrumenter#readme).
