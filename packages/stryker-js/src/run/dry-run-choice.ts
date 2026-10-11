@@ -97,12 +97,14 @@ const decisionOfCoverage = (
   Result.getOrElse(
     dryRunReuse(
       DryRunReuseCommand.make({
-        prior: Option.getOrUndefined(
-          Option.map(prior, (coverage) => ({
+        prior: Option.match(prior, {
+          onNone: () => ({ _tag: 'NoPriorCoverage' as const }),
+          onSome: (coverage) => ({
+            _tag: 'PriorUnderCurrentRoot' as const,
             testClosureDigest: coverage.testClosureDigest,
             runInputsDigest: coverage.runInputsDigest,
-          })),
-        ),
+          }),
+        }),
         currentTestClosureDigest: Option.getOrUndefined(currentTestClosureDigest),
         currentRunInputsDigest: runInputsDigest,
         force,
