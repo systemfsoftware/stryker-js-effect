@@ -71,7 +71,7 @@ describe('lockfilePins', () => {
   const nodeOf = (entry: Entry, dependencies?: Readonly<Record<string, PnpmNode>>): PnpmNode => ({
     from: entry.from,
     version: entry.version,
-    resolved: entry.resolved === 'absent' ? undefined : `${RESOLVED_PREFIX[entry.resolved]}${entry.key}`,
+    ...(entry.resolved === 'absent' ? {} : { resolved: `${RESOLVED_PREFIX[entry.resolved]}${entry.key}` }),
     ...(dependencies === undefined ? {} : { dependencies }),
   })
 

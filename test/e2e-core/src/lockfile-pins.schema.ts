@@ -21,22 +21,22 @@ export interface PnpmNode {
 export const PnpmNode = S.Struct({
   from: S.String,
   version: S.String,
-  resolved: S.optional(S.String),
-  path: S.optional(S.String),
-  deduped: S.optional(S.Boolean),
-  dedupedDependenciesCount: S.optional(S.Natural),
-  dependencies: S.optional(S.Record(S.String, S.suspend((): S.Codec<PnpmNode> => PnpmNode))),
-  optionalDependencies: S.optional(S.Record(S.String, S.suspend((): S.Codec<PnpmNode> => PnpmNode))),
+  resolved: S.optionalKey(S.String),
+  path: S.optionalKey(S.String),
+  deduped: S.optionalKey(S.Boolean),
+  dedupedDependenciesCount: S.optionalKey(S.Natural),
+  dependencies: S.optionalKey(S.Record(S.String, S.suspend((): S.Codec<PnpmNode> => PnpmNode))),
+  optionalDependencies: S.optionalKey(S.Record(S.String, S.suspend((): S.Codec<PnpmNode> => PnpmNode))),
 }).annotate({ identifier: 'PnpmNode' })
 
 export const PnpmProject = S.Struct({
   name: S.String,
   version: S.String,
   path: S.String,
-  private: S.optional(S.Boolean),
-  dependencies: S.optional(S.Record(S.String, PnpmNode)),
-  devDependencies: S.optional(S.Record(S.String, PnpmNode)),
-  optionalDependencies: S.optional(S.Record(S.String, PnpmNode)),
+  private: S.optionalKey(S.Boolean),
+  dependencies: S.optionalKey(S.Record(S.String, PnpmNode)),
+  devDependencies: S.optionalKey(S.Record(S.String, PnpmNode)),
+  optionalDependencies: S.optionalKey(S.Record(S.String, PnpmNode)),
 })
 export type PnpmProject = typeof PnpmProject.Type
 
