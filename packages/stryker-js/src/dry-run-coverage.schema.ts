@@ -24,11 +24,6 @@ export const CoverageRootSchema = S.Union([RecordedRootSchema, UnrecordedRootSch
 
 export type CoverageRoot = typeof CoverageRootSchema.Type
 
-export const DryRunCandidateRootsSchema = S.Struct({
-  recordRoot: CoverageRootSchema,
-  headerRoot: CoverageRootSchema,
-})
-
 export const PriorUnderCurrentRootSchema = S.TaggedStruct('PriorUnderCurrentRoot', {
   testClosureDigest: S.String,
   runInputsDigest: S.String,
@@ -65,7 +60,6 @@ export const DryRunPassSchema = S.Struct({
 export type DryRunPass = S.Schema.Type<typeof DryRunPassSchema>
 
 export const ReportedDryRunCoverageSchema = S.Struct({
-  projectRoot: S.optionalKey(S.String),
   dryRunCoverage: S.optionalKey(DryRunCoverageSchema),
 })
 

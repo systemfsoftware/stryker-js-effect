@@ -6,7 +6,7 @@ import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { type CoverageRoot, DryRunCandidateRootsSchema } from './dry-run-coverage.schema.js'
+import { type CoverageRoot, CoverageRootSchema } from './dry-run-coverage.schema.js'
 
 const DryRunCandidatesDecisionTypeId: unique symbol = Symbol.for(
   '@systemfsoftware/stryker-js/DryRunCandidatesDecision',
@@ -40,21 +40,12 @@ export type DryRunCandidatesDecision = CandidatesKept | CandidatesUnderOtherRoot
 
 export class DryRunCandidatesCommand extends S.TaggedClass<DryRunCandidatesCommand>()('DryRunCandidatesCommand', {
   currentRoot: S.String,
-  candidates: S.Array(DryRunCandidateRootsSchema),
+  candidates: S.Array(CoverageRootSchema),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {
     currentRoot: 'stryker.dry_run_candidates.current_root',
   } as const
 }
-
-type Candidate = DryRunCandidatesCommand['candidates'][number]
-
-const effectiveRootOf = (candidate: Candidate): CoverageRoot =>
-  Match.value(candidate.recordRoot).pipe(
-    Match.tag('RecordedRoot', (root): CoverageRoot => root),
-    Match.tag('UnrecordedRoot', () => candidate.headerRoot),
-    Match.exhaustive,
-  )
 
 const recordedPathsOf = (roots: readonly CoverageRoot[]): readonly string[] =>
   roots.flatMap((root) =>
@@ -76,7 +67,7 @@ const noneKept = (roots: readonly CoverageRoot[], recordedPaths: readonly string
   })
 
 const decideCandidates = (command: DryRunCandidatesCommand): DryRunCandidatesDecision => {
-  const roots = command.candidates.map(effectiveRootOf)
+  const roots = command.candidates
   const paths = recordedPathsOf(roots)
   const indices = roots.flatMap((root, index) =>
     Match.value(root).pipe(

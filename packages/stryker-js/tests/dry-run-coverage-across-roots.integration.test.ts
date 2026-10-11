@@ -175,15 +175,15 @@ const ZERO_REFUSALS = {
 const copyReport = (
   from: string,
   to: string,
+  file: string = INCREMENTAL_FILE,
 ): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    yield* fs.makeDirectory(path.join(to, 'reports'), { recursive: true })
-    yield* fs.writeFileString(
-      path.join(to, 'reports', 'main.json'),
-      yield* fs.readFileString(path.join(from, 'reports', 'main.json')),
-    )
+    const target = path.join(to, file)
+    const text = yield* fs.readFileString(path.join(from, INCREMENTAL_FILE))
+    yield* fs.makeDirectory(path.dirname(target), { recursive: true })
+    yield* fs.writeFileString(target, text)
   }).pipe(Effect.orDie)
 
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
@@ -365,29 +365,83 @@ const interruptAtFirstCheckpoint = (root: string): Effect.Effect<string, never, 
 
 type Json = S.Schema.Type<typeof S.Json>
 
-const withoutProjectRoot = (value: Json): Json =>
-  S.is(S.Record(S.String, S.Json))(value)
-    ? Object.fromEntries(
-      Object.entries(value)
-        .filter(([key]) => key !== 'projectRoot')
-        .map(([key, entry]) => [key, key === 'dryRunCoverage' ? withoutProjectRoot(entry) : entry]),
-    )
-    : value
+type JsonRecord = { readonly [key: string]: Json }
 
-const stripRecordedRoots = (root: string): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
+const isJsonRecord = (value: Json | undefined): value is JsonRecord => S.is(S.Record(S.String, S.Json))(value)
+
+const isJsonArray = (value: Json | undefined): value is readonly Json[] => S.is(S.Array(S.Json))(value)
+
+const merged = (record: JsonRecord, fields: JsonRecord): JsonRecord =>
+  Object.fromEntries([...Object.entries(record), ...Object.entries(fields)])
+
+const withCoverage = (change: (coverage: JsonRecord) => JsonRecord) => (report: Json): Json => {
+  const coverage = isJsonRecord(report) ? report['dryRunCoverage'] : undefined
+  return isJsonRecord(report) && isJsonRecord(coverage) ? merged(report, { dryRunCoverage: change(coverage) }) : report
+}
+
+const withoutKeys = (keys: readonly string[]) => (value: JsonRecord): JsonRecord =>
+  Object.fromEntries(Object.entries(value).filter(([key]) => !keys.includes(key)))
+
+const STALE_TEST_MILLIS = 600_000
+
+const staleCoverage = (coverage: JsonRecord): JsonRecord => {
+  const tests = coverage['tests']
+  return merged(coverage, {
+    runInputsDigest: 'stale',
+    tests: isJsonArray(tests)
+      ? tests.map((test) => isJsonRecord(test) ? merged(test, { timeSpentMs: STALE_TEST_MILLIS }) : test)
+      : [],
+  })
+}
+
+const withoutVerdicts = (report: Json): Json => isJsonRecord(report) ? merged(report, { files: {}, costs: {} }) : report
+
+const withGlobalTestInput = (file: string) => (coverage: JsonRecord): JsonRecord =>
+  merged(coverage, { globalTestInputs: [file] })
+
+const rewriteReport = (
+  root: string,
+  file: string,
+  change: (report: Json) => Json,
+): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const file = path.join(root, INCREMENTAL_FILE)
-    const report = yield* S.decodeEffect(S.fromJsonString(S.Json))(yield* fs.readFileString(file))
-    yield* fs.writeFileString(file, yield* S.encodeEffect(S.fromJsonString(S.Json))(withoutProjectRoot(report)))
+    const target = path.join(root, file)
+    const report = yield* S.decodeEffect(S.fromJsonString(S.Json))(yield* fs.readFileString(target))
+    yield* fs.writeFileString(target, yield* S.encodeEffect(S.fromJsonString(S.Json))(change(report)))
   }).pipe(Effect.orDie)
+
+const OTHER_ROOT_SOURCE = 'reports/other-root.json'
+
+const STALE_SOURCE = 'reports/stale.json'
+
+const OWN_SOURCE = 'reports/own.json'
+
+const PLAN_OUT = 'plan.json'
+
+const writeSourcesConfig = (
+  root: string,
+  sources: readonly string[],
+): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
+  writeFiles(root, [[
+    'stryker.config.mjs',
+    PER_TEST_CONFIG.replace(
+      '  incremental: true,',
+      `  incremental: true,\n  incrementalSources: ${JSON.stringify(sources)},\n  ignorePatterns: ${
+        JSON.stringify([...sources, PLAN_OUT])
+      },`,
+    ),
+  ]])
+
+const refusalNaming = (run: PerTestRun, fragment: string): boolean =>
+  run.logs.some((line) => line.includes('(rootChanged)') && line.includes(fragment))
 
 const PLAN_REQUEST = {
   targetSeconds: 1,
   maxShards: 4,
   projects: ['.'],
-  out: 'plan.json',
+  out: PLAN_OUT,
   full: false,
 } satisfies Engine.PlanRequestInput['request']
 
@@ -472,46 +526,60 @@ Feature('Reusing dry-run coverage of a project that was built elsewhere')
     scenario(
       "A project moved to another root does not score its mutants from the first root's coverage",
       Gherkin.Do.pipe(
-        Given("root A's report copied into root B after root A is deleted")(
+        Given('the reports of roots A and C copied into root B after A and C are deleted')(
           'observed',
           () =>
             Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
               const rootA = yield* writePerTestFixture
               const rootB = yield* writePerTestFixture
+              const rootC = yield* writePerTestFixture
               const realA = yield* fs.realPath(rootA)
               const realB = yield* fs.realPath(rootB)
+              const realC = yield* fs.realPath(rootC)
               return yield* Effect.ensuring(
                 Effect.gen(function*() {
                   const first = yield* runPerTest(rootA)
-                  yield* copyReport(rootA, rootB)
+                  yield* runPerTest(rootC)
+                  yield* copyReport(rootC, rootB)
+                  yield* copyReport(rootA, rootB, OTHER_ROOT_SOURCE)
                   yield* removeFixture(rootA)
-                  const second = yield* runPerTest(rootB)
-                  return { realA, realB, first, second }
+                  yield* removeFixture(rootC)
+                  const second = yield* runPerTest(rootB, { incrementalSources: [OTHER_ROOT_SOURCE] })
+                  return { recordedRoots: [realA, realC].sort().join(', '), realB, first, second }
                 }),
-                Effect.andThen(removeFixture(rootA), removeFixture(rootB)),
+                Effect.andThen(Effect.andThen(removeFixture(rootA), removeFixture(rootB)), removeFixture(rootC)),
               )
             }).pipe(Effect.orDie, Effect.provide(filePorts)),
         ),
-        Then('root B refuses the coverage, runs its own dry run, and scores its mutants as root A did')(
+        Then(
+          'root B refuses the coverage naming both recorded roots sorted, runs its own dry run, and scores its mutants as root A did',
+        )(
           (s, expect) =>
             expect({
               firstKilled: (s.observed.first.statuses['Killed'] ?? 0) > 0,
               firstNoCoverage: (s.observed.first.statuses['NoCoverage'] ?? 0) > 0,
               secondStatuses: s.observed.second.statuses,
               secondReusedCoverage: reusedCoverageIn(s.observed.second),
-              secondRootRefusal: s.observed.second.logs.some((line) =>
-                line.includes('(rootChanged)') &&
-                line.includes(s.observed.realA) &&
-                line.includes(s.observed.realB) &&
-                line.includes('records its coverage under')
+              namedCurrentRoot: refusalNaming(s.observed.second, `current project root:   ${s.observed.realB}`),
+              namedRecordedRoots: refusalNaming(
+                s.observed.second,
+                `recorded project roots: ${s.observed.recordedRoots}\n`,
+              ),
+              namedOwnRecording: refusalNaming(s.observed.second, `records its coverage under ${s.observed.realB}.`),
+              namedCrossMachineRule: refusalNaming(
+                s.observed.second,
+                'Coverage is shared across machines only when they run from the same absolute workspace path.',
               ),
             }).toEqual({
               firstKilled: true,
               firstNoCoverage: true,
               secondStatuses: s.observed.first.statuses,
               secondReusedCoverage: false,
-              secondRootRefusal: true,
+              namedCurrentRoot: true,
+              namedRecordedRoots: true,
+              namedOwnRecording: true,
+              namedCrossMachineRule: true,
             }),
         ),
       ),
@@ -549,6 +617,64 @@ Feature('Reusing dry-run coverage of a project that was built elsewhere')
           }).toEqual({
             planned: true,
             withReport: s.observed.withoutReport,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Among reports restored from several roots, the run and the plan both use the current-root coverage that still matches',
+      Gherkin.Do.pipe(
+        Given(
+          "root B holding, in order, root A's report naming a global test input under A, its own report made stale, and its own report, none carrying verdicts",
+        )(
+          'observed',
+          () =>
+            Effect.gen(function*() {
+              const rootA = yield* writePerTestFixture
+              const rootB = yield* writePerTestFixture
+              yield* writeSourcesConfig(rootB, [STALE_SOURCE, OWN_SOURCE])
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  yield* runPerTest(rootA)
+                  yield* runPerTest(rootB)
+                  yield* rewriteReport(
+                    rootA,
+                    INCREMENTAL_FILE,
+                    (report) =>
+                      withCoverage(withGlobalTestInput(`${rootA}/stryker.config.mjs`))(withoutVerdicts(report)),
+                  )
+                  yield* rewriteReport(rootB, INCREMENTAL_FILE, withoutVerdicts)
+                  const ownOnly = yield* shardPlanOf(rootB)
+                  yield* copyReport(rootB, rootB, OWN_SOURCE)
+                  yield* copyReport(rootB, rootB, STALE_SOURCE)
+                  yield* rewriteReport(rootB, STALE_SOURCE, withCoverage(staleCoverage))
+                  yield* copyReport(rootA, rootB)
+                  const restored = yield* shardPlanOf(rootB)
+                  const run = yield* runPerTest(rootB)
+                  return { ownOnly, restored, run }
+                }),
+                Effect.andThen(removeFixture(rootA), removeFixture(rootB)),
+              )
+            }).pipe(Effect.orDie, Effect.provide(filePorts)),
+        ),
+        Then(
+          "the run reuses B's matching coverage and counts A's report as skipped, and the plan prices from that same coverage",
+        )((s, expect) =>
+          expect({
+            reused: reusedCoverageIn(s.observed.run),
+            skippedOtherRoot: s.observed.run.logs.some((line) =>
+              line.includes(
+                'Skipped saved dry-run coverage: 1 recorded under another project root, 0 with no recorded root',
+              )
+            ),
+            planned: s.observed.ownOnly !== null,
+            restoredPlan: s.observed.restored,
+          }).toEqual({
+            reused: true,
+            skippedOtherRoot: true,
+            planned: true,
+            restoredPlan: s.observed.ownOnly,
           })
         ),
       ),
@@ -605,9 +731,9 @@ Feature('Reusing dry-run coverage of a project that was built elsewhere')
     )
 
     scenario(
-      'Coverage that records no root anywhere costs exactly one dry run',
+      'A legacy report whose coverage records no root costs exactly one dry run, even under the root its header names',
       Gherkin.Do.pipe(
-        Given("root A's report with the root removed from its coverage and its header, then two runs under A")(
+        Given("root A's report with the root removed from its coverage record only, then two runs under A")(
           'observed',
           () =>
             Effect.gen(function*() {
@@ -615,7 +741,7 @@ Feature('Reusing dry-run coverage of a project that was built elsewhere')
               return yield* Effect.ensuring(
                 Effect.gen(function*() {
                   yield* runPerTest(root)
-                  yield* stripRecordedRoots(root)
+                  yield* rewriteReport(root, INCREMENTAL_FILE, withCoverage(withoutKeys(['projectRoot'])))
                   const first = yield* runPerTest(root)
                   const second = yield* runPerTest(root)
                   return { first, second }

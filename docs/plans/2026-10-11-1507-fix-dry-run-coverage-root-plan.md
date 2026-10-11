@@ -2,6 +2,7 @@
 title: Dry-run coverage reuse across workspace roots - Plan
 type: fix
 date: 2026-10-11
+supersedes: docs/plans/2026-10-11-1209-fix-dry-run-coverage-root-plan.md
 topic: dry-run-coverage-root
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
@@ -55,7 +56,7 @@ Each premise was checked on `origin/main` 84052beb4, except P7 and P14, which ar
 ### Key Decisions
 
 - **1. Refuse coverage from another root; do not store coverage root-relative.** Relative paths alone leave the per-test map keyed by root-dependent mutant ids (P5), so a run under B would still plan NoCoverage (P6). Root-relative coverage only works once mutant identity is root-independent, and that change re-keys every mutant id: the verdict cache, survivor baselines (`packages/stryker-js/src/Baseline.schema.ts:8`), and rerun ids. Refusing gives up no reuse that works today, because cross-root verdict reuse is already zero (P8). (session-settled: user-approved — chosen over root-relative coverage storage: relative paths leave per-test coverage keyed by root-dependent mutant ids.) Governs R1-R4.
-- **2. The root travels with the coverage record.** The dry run records its project root (real path) inside the coverage it persists. Because the root lives in the record, every writer that persists coverage carries it: the end-of-run report, the checkpoint, and the dry-run-only report. The slim writer gets no `projectRoot` of its own. Coverage written before this change records no root. It falls back to its report's `projectRoot`, which only end-of-run reports have (P10). So a legacy end-of-run report under the same root keeps reusing. A legacy checkpoint or dry-run-only report has no root anywhere and pays one full dry run, once, after which its coverage records the root. Carrying the root in the record, not the report header, keeps it correct when a shard merge pairs one shard's header with another shard's coverage (P12), and keeps `plan` (which resolves real paths, `packages/stryker-js/src/plan-request.cell.ts:254`) and the run (which writes its base path unresolved, `packages/stryker-js/src/mutation-reporting.service.ts:730`) comparing the same form. (session-settled: user-directed — chosen over adding `projectRoot` to the slim writer: the root in the record reaches every writer, and legacy unrecorded coverage costs one dry run once.) Governs R1, R2, R4, R10, R14, R15.
+- **2. The root travels with the coverage record, and only the record counts.** The dry run records its project root (real path) inside the coverage it persists. Because the root lives in the record, every writer that persists coverage carries it: the end-of-run report, the checkpoint, and the dry-run-only report. The slim writer gets no `projectRoot` of its own. Coverage written before this change records no root and is `rootUnrecorded` whatever its report header says, so every legacy report (end-of-run, checkpoint or dry-run-only) pays one full dry run, once, after which its coverage records the root. The header `projectRoot` is never consulted: a shard merge pairs one shard's header with another shard's coverage (P12), so a header fallback would admit coverage recorded under another root. Carrying the root in the record keeps `plan` (which resolves real paths, `packages/stryker-js/src/plan-request.cell.ts:254`) and the run (which writes its base path unresolved, `packages/stryker-js/src/mutation-reporting.service.ts:730`) comparing the same form. (session-settled: user-directed — chosen over a header-root fallback for legacy end-of-run reports: the fallback reproduces the bug for merged shard reports.) Governs R1, R2, R4, R10, R14, R15.
 - **3. Patch changeset.** The new reason literals are internal (P11), so no contract version moves. (session-settled: user-approved — chosen over a minor bump: no contract or API surface changes.) Governs R9.
 - **4. The root check outranks force.** A prior recorded under another root is refused with `rootChanged`, and a prior with no root anywhere with `rootUnrecorded`, even on a forced run, so the log always says when coverage came from elsewhere or from an older version. (session-settled: user-directed — chosen over forced-first precedence: the root ruled that the root check outranks force, closure and inputs.) Governs R3.
 - **5. Unrecorded is its own reason.** Legacy coverage with no root anywhere refuses with `rootUnrecorded`, not `rootChanged` with an "unrecorded" placeholder. (session-settled: user-directed — chosen over `rootChanged` with a placeholder root: the cause is an older version, not a moved root.) Governs R2, R5.
@@ -67,10 +68,10 @@ Each premise was checked on `origin/main` 84052beb4, except P7 and P14, which ar
 **Reuse decision**
 
 - R1. Dry-run coverage is reused only when it was recorded under the current project root. A prior recorded under another root refuses with `rootChanged`.
-- R2. Coverage with no recorded root, and no `projectRoot` on its report to fall back to, refuses with `rootUnrecorded`.
+- R2. Coverage with no recorded root refuses with `rootUnrecorded`, whatever its report header records.
 - R3. Precedence: `rootChanged` and `rootUnrecorded` outrank `forced`, and `forced` outranks `noPriorCoverage`. With a prior under the current root, the digest reasons keep their order: `closureUnavailable`, `closureChanged`, `runInputsChanged`.
-- R4. A legacy end-of-run report under the current root is reused as today, through its report's `projectRoot`. A legacy checkpoint or dry-run-only report under the current root is refused once with `rootUnrecorded` (R15).
-- R10. With several prior candidates, the candidate filter keeps only those whose effective root is the current root. If any remain, reuse is judged on them alone, the first remaining candidate feeds the current closure digest (P13), and the log counts the dropped candidates, split into other-root and unrecorded. If none remain and at least one candidate records a root, the run refuses with `rootChanged`. If none remain and no candidate records a root, it refuses with `rootUnrecorded`.
+- R4. A legacy report of any kind (no root in its coverage) is refused once with `rootUnrecorded` (R15), even under the same root and even when its header records `projectRoot`.
+- R10. With several prior candidates, the candidate filter keeps only those whose coverage records the current root. If any remain, reuse is judged on them alone, the first remaining candidate feeds the current closure digest (P13), the prior is the first kept candidate that reuses, the planner prices from that same prior, and the log counts the dropped candidates, split into other-root and unrecorded. Flaky mutant ids come from kept candidates only. If none remain and at least one candidate records a root, the run refuses with `rootChanged`. If none remain and no candidate records a root, it refuses with `rootUnrecorded`.
 - R14. Coverage persisted by any writer after this change records its root: a checkpoint report and a `--dryRunOnly` report written after the change are reused by the next run under the same root.
 - R15. Legacy coverage with no root anywhere costs exactly one dry run: the run that refuses it with `rootUnrecorded` records the current root, and the next run under the same root reuses it.
 
@@ -90,8 +91,8 @@ Each premise was checked on `origin/main` 84052beb4, except P7 and P14, which ar
 - R7. A failing integration scenario lands first and is shown red on unchanged main code, with the failure quoted. Two real temp roots hold byte-identical files with per-test coverage and no `testFiles` option: root A runs, its report is copied into root B, A is deleted, and B runs. On main, B reuses the coverage and every mutant comes out NoCoverage. After the fix, B refuses with `rootChanged`, runs its own dry run, and its mutants show A's Killed/NoCoverage split. It replaces the cross-root scenario in P9.
 - R8. The `dryRunReuse` property law covers the root dimension: a prior under the current root keeps every existing outcome, a prior under other roots refuses with `rootChanged`, an unrecorded prior refuses with `rootUnrecorded`, no prior leaves the outcome unchanged, and the R3 precedence holds.
 - R9. A patch changeset for `@systemfsoftware/stryker-js` states the behaviour change and the two new reasons.
-- R11. A rebuild that only rewrites the turbo task log under the same root keeps reusing coverage and verdicts (the guarantee from commit 19043fdb3). The existing same-root scenario in `packages/stryker-js/tests/dry-run-coverage-across-roots.integration.test.ts:190-236` keeps proving it, unchanged.
-- R12. The candidate filter has its own property law. A coverage record's own root wins over its report's `projectRoot` (P12), and the report root counts only when the record has none. The R10 outcomes hold: kept candidates are exactly those whose effective root is the current root, in input order; the dropped counts add up; when none remain, the named roots are the distinct recorded roots, sorted, with no duplicates; and the choice between `rootChanged` and `rootUnrecorded` follows R10.
+- R11. A rebuild that only rewrites the turbo task log under the same root keeps reusing coverage and verdicts (the guarantee from commit 19043fdb3). The existing same-root scenario, 'A rebuild that only rewrites the task log keeps the dry-run digest and the reuse' in `packages/stryker-js/tests/dry-run-coverage-across-roots.integration.test.ts`, keeps proving it, unchanged.
+- R12. The candidate filter has its own property law over the roots recorded in the coverage records. The R10 outcomes hold: kept candidates are exactly those whose recorded root is the current root, in input order; the dropped counts add up; when none remain, the named roots are the distinct recorded roots, sorted, with no duplicates; and the choice between `rootChanged` and `rootUnrecorded` follows R10, including a list that mixes other-root and unrecorded candidates, which refuses with `rootChanged`.
 - R13. One integration scenario shows that `plan` under root B with A's copied report produces the same whole shard plan as `plan` under B once the report is removed (Key Decision 7). It is red on main, where the copied report prices B's dry run at 0 (P7).
 
 **Test admission** (test-layer-selection gate, default refuse): R7, R11, R13, R14 and R15 are in-process integration scenarios through the public engine entries (`Engine.mutationTestCell`, `Engine.planRequest`) over real temp directories, with no process spawn. R8 and R12 are colocated property laws, the only test kind a workflow admits. No behaviour this change ships is left to a throwaway smoke check.
@@ -105,22 +106,21 @@ Each premise was checked on `origin/main` 84052beb4, except P7 and P14, which ar
 - AE5. **Covers R2, R5.** **Given** a prior report with no `projectRoot` and coverage with no recorded root, **when** a run starts, **then** it refuses with `rootUnrecorded` and logs that the coverage came from an older version that recorded no root.
 - AE6. **Covers R6, R13.** **Given** A's report under B, **when** `plan` runs under B, **then** its shard plan equals the plan B gets with no report.
 - AE7. **Covers R10, R12.** **Given** two restored candidates, the first recorded under another root and the second under the current root with matching digests, **when** a run starts, **then** it reuses the second candidate and logs one dropped other-root candidate.
-- AE8. **Covers R12.** **Given** a merged report whose header `projectRoot` is the current root but whose coverage records another root, **then** that candidate is not under the current root. With the two roots swapped, it is.
+- AE8. **Covers R4, R12.** **Given** a legacy end-of-run report whose header `projectRoot` is the current root but whose coverage records no root, **then** the run refuses with `rootUnrecorded`, runs its dry run, and the next run reuses.
 - AE9. **Covers R11.** **Given** one root whose turbo task log is rewritten between two runs, **then** the second run reuses the coverage and spawns no runner.
 - AE10. **Covers R10, R12.** **Given** candidates recorded under roots C, A and C, none of them current, **then** the run refuses with `rootChanged` naming the current root and A, C, sorted and once each.
 - AE11. **Covers R14.** **Given** a run under A interrupted once its first checkpoint lands, **when** the next run starts under A, **then** it reuses the checkpoint's coverage.
 - AE12. **Covers R14.** **Given** a `--dryRunOnly` run under A, **when** the next run starts under A, **then** it reuses that coverage.
-- AE13. **Covers R4, R15.** **Given** A's report with the root removed from both the coverage and the header, **when** two runs start under A, **then** the first refuses with `rootUnrecorded` and runs its dry run, and the second reuses.
+- AE13. **Covers R4, R15, AE8.** **Given** A's own end-of-run report with the root removed from its coverage only, so the header still records A, **when** two runs start under A, **then** the first refuses with `rootUnrecorded` and runs its dry run, and the second reuses.
 
 ### Legacy and edge behaviour
 
-| Case                                                                                        | Outcome                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Legacy end-of-run report, same root                                                         | Reused as today (R4): its report's `projectRoot` matches, and absolute paths stay valid because the root did not move.                                                                                                    |
-| Legacy end-of-run report, different root                                                    | Refused with `rootChanged`; one full dry run; the new coverage records the new root (R1).                                                                                                                                 |
-| Legacy checkpoint or dry-run-only report (no root in the coverage or the header)            | Refused once with `rootUnrecorded`, under any root (R2, R15). Interrupted runs and `--dryRunOnly` runs on the old version leave these (P10). The dry run records the root, so the next run reuses.                        |
-| Paths outside the project (`node_modules/.pnpm` above the project root, global test inputs) | Unchanged. They are compared only when the roots match, and never re-resolved under another root.                                                                                                                         |
-| Restored shard reports (`incrementalSources`) and merged reports                            | Each candidate is judged on the root inside its coverage (R1, R10). A legacy merged report falls back to the first shard's `projectRoot` (P12); hosted CI runners share one workspace path, so main's CI keeps its reuse. |
+| Case                                                                                        | Outcome                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Legacy end-of-run report, any root                                                          | Refused once with `rootUnrecorded` (R4, R15): its coverage records no root, and the header `projectRoot` is not consulted. The dry run records the root, so the next run reuses.                                       |
+| Legacy checkpoint or dry-run-only report (no root in the coverage or the header)            | Refused once with `rootUnrecorded`, under any root (R2, R15). Interrupted runs and `--dryRunOnly` runs on the old version leave these (P10). The dry run records the root, so the next run reuses.                     |
+| Paths outside the project (`node_modules/.pnpm` above the project root, global test inputs) | Unchanged. They are compared only when the roots match, and never re-resolved under another root.                                                                                                                      |
+| Restored shard reports (`incrementalSources`) and merged reports                            | Each candidate is judged only on the root inside its coverage (R1, R10). A legacy merged report records no root in its coverage and is refused once with `rootUnrecorded`, whichever shard its header came from (P12). |
 
 ### Scope Boundaries
 
@@ -142,19 +142,19 @@ Each premise was checked on `origin/main` 84052beb4, except P7 and P14, which ar
 
 ### Key Technical Decisions
 
-- KTD1. Roots decode into a tagged union, recorded (with its path) or unrecorded. The wire keeps `projectRoot` as an optional key on the coverage record and on the report header so legacy reports decode. The decode boundary maps absence to unrecorded, and nothing downstream checks for presence (pack: schema-laws, tagged-unions-over-state-by-presence.md; pack: cell-architecture, decode-never-cast.md). Governs R2, R12.
-- KTD2. One pure workflow, the candidate filter, owns root resolution across candidates. Per candidate it takes the record's root and the report header's root. Its decision is a tagged union: candidates kept (their indices in order, plus dropped other-root and unrecorded counts), other roots only (the distinct recorded roots, sorted), unrecorded only, or no candidates. The run's choice (`packages/stryker-js/src/run/dry-run-choice.ts`) and the planner (`packages/stryker-js/src/plan-request.cell.ts`) both call it (pack: cell-architecture, pure-decision-workflows.md). Implements Key Decision 6. Governs R6, R10, R12.
+- KTD1. Roots decode into a tagged union, recorded (with its path) or unrecorded. The wire keeps `projectRoot` as an optional key on the coverage record so legacy reports decode; the report header's `projectRoot` is not part of the coverage decode. The decode boundary maps absence to unrecorded, and nothing downstream checks for presence (pack: schema-laws, tagged-unions-over-state-by-presence.md; pack: cell-architecture, decode-never-cast.md). Governs R2, R12.
+- KTD2. One pure workflow, the candidate filter, owns root resolution across candidates. Per candidate it takes the root recorded in the coverage record, and nothing else. Its decision is a tagged union: candidates kept (their indices in order, plus dropped other-root and unrecorded counts), other roots only (the distinct recorded roots, sorted), unrecorded only, or no candidates. The run's choice (`packages/stryker-js/src/run/dry-run-choice.ts`) and the planner (`packages/stryker-js/src/plan-request.cell.ts`) both use it, and the planner prices from the run's chosen prior (pack: cell-architecture, pure-decision-workflows.md). Implements Key Decision 6. Governs R6, R10, R12.
 - KTD3. `DryRunReuseCommand`'s optional prior becomes a tagged union: no prior, under the current root (with its digests), other roots, or unrecorded. The shell maps each filter outcome one to one onto it. `dryRunReuse` decides in R3's order with exhaustive dispatch, then keeps its existing digest logic (pack: cell-architecture, pure-decision-workflows.md; pack: schema-laws, tagged-unions-over-state-by-presence.md). Implements Key Decisions 4 and 5. Governs R1-R3, R8.
-- KTD4. The shell compares real paths. The current root is the real path of the base path, and the writer records a real path. A legacy header root resolves to its real path when it exists and is kept as written when it does not (AE3). Governs R4, R5.
+- KTD4. The shell compares real paths. The current root is the real path of the base path, and the writer records a real path. Governs R5.
 - KTD5. The root is a field of the coverage record, so the end-of-run, checkpoint and dry-run-only writers all persist it with no change to `slimIncrementalReport`. Fresh and reused coverage both record the current root, so legacy coverage reused under the same root carries its own root after its next write. Governs R1, R4, R14, R15.
-- KTD6. Scenario 2 of `packages/stryker-js/tests/dry-run-coverage-across-roots.integration.test.ts` is rewritten into R7, scenario 1 stays as R11's proof, and R13, R14 and R15 join the same file. R7, R13, R14 and R15 use a per-test-coverage fixture shaped like `packages/stryker-js/tests/incremental-reuse.integration.test.ts:180-225`, because the file's command-runner fixture runs with `coverageAnalysis: 'off'` and cannot produce NoCoverage. R15's legacy report is A's own report with the root removed from the coverage and the header through `S.Json`. Scenarios observe through `RunEvent` schemas and logs and declare no domain schema of their own (pack: boundary-testing, real-system-oracles.md; pack: schema-laws, tests-own-no-schemas.md).
-- KTD7. `INCREMENTAL_CACHE_VERSION` stays `'5'` (`packages/stryker-js/src/verdict-semantics.ts`). The new root key is optional and additive, so legacy reports still decode. A bump would make `admitReuseSource` discard every prior report and void R4, R11 and AE1. (session-settled: user-directed — chosen over a cache-layout bump: legacy reports must stay readable.)
+- KTD6. Scenario 2 of `packages/stryker-js/tests/dry-run-coverage-across-roots.integration.test.ts` is rewritten into R7, scenario 1 stays as R11's proof, and R13, R14 and R15 join the same file. R7, R13, R14 and R15 use a per-test-coverage fixture shaped like `packages/stryker-js/tests/incremental-reuse.integration.test.ts:180-225`, because the file's command-runner fixture runs with `coverageAnalysis: 'off'` and cannot produce NoCoverage. R15's legacy report is A's own report with the root removed from the coverage only through `S.Json`, so the header still records A (AE8). Scenarios observe through `RunEvent` schemas and logs and declare no domain schema of their own (pack: boundary-testing, real-system-oracles.md; pack: schema-laws, tests-own-no-schemas.md).
+- KTD7. `INCREMENTAL_CACHE_VERSION` stays `'5'` (`packages/stryker-js/src/verdict-semantics.ts`). The new root key is optional and additive, so legacy reports still decode. A bump would make `admitReuseSource` discard every prior report, verdicts included, and void R11 and AE1. (session-settled: user-directed — chosen over a cache-layout bump: legacy reports must stay readable.)
 
 ### High-Level Technical Design
 
 ```mermaid
 flowchart TD
-  T[restored report texts] --> D[decode: record root and header root per candidate]
+  T[restored report texts] --> D[decode: root recorded in each coverage record]
   D --> F[candidate filter workflow]
   F -->|kept: first kept candidate| G[closure digest from its inputs]
   F -->|other roots / unrecorded / none| N[no current digest]
@@ -175,7 +175,7 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 
 - A fleet whose machines run from different workspace paths never reuses dry-run coverage: each shard pays one full dry run. Accepted by Key Decision 1; R5's log line names the cause.
 - After upgrade, each workspace whose saved report is a legacy checkpoint or dry-run-only report pays one full dry run. Accepted by Key Decision 2.
-- Hosted CI runners share one workspace path, so main's CI keeps its coverage reuse. This rests on the merged-report header fallback (P12) for legacy end-of-run reports and is not separately tested.
+- Hosted CI runners share one workspace path, so main's CI keeps its coverage reuse after the one `rootUnrecorded` dry run that the first post-upgrade run pays per restored report.
 
 ### Deferred to Implementation
 
@@ -256,13 +256,13 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 
 **Test scenarios:**
 
-- A recorded record root is the effective root whatever the header root is.
-- An unrecorded record root makes the header root effective.
-- Kept candidates are exactly the indices whose effective root is the current root, in input order, and kept plus dropped counts equal the candidate count.
+- Kept candidates' recorded root is the current root; unrecorded candidates are never kept.
+- A list mixing other-root and unrecorded candidates with none kept refuses with other roots, naming only the recorded roots.
+- Kept candidates are exactly the indices whose recorded root is the current root, in input order, and kept plus dropped counts equal the candidate count.
 - When none are kept and some candidate records a root, the outcome is other roots, listing the distinct recorded roots sorted and once each.
 - When none are kept and no candidate records a root, the outcome is unrecorded.
 - An empty candidate list gives no candidates.
-- AE8: header root current and record root other is dropped; the swap is kept.
+- AE8 moves to the engine: a legacy end-of-run report under the same root is refused with `rootUnrecorded` (scenario in the cross-root file).
 - AE7: candidates `[other, current]` keep index 1 with one dropped other-root candidate.
 - AE10: roots `[C, A, C]` under current root B give other roots `[A, C]`.
 
@@ -280,7 +280,7 @@ U1 lands first and is shown red. U2 lands before U3, which uses U2's root union.
 
 **Approach:**
 
-1. `priorCoveragesOf` decodes each report's header root with its coverage and resolves legacy header roots to real paths (KTD4).
+1. `priorCoveragesOf` decodes each report's coverage record and its recorded root; the report header root is not read.
 2. `testClosureDigestOf` takes its inputs from the first kept candidate, not the first candidate (R10).
 3. `priorChoiceOf` judges only kept candidates; any other filter outcome maps to one `dryRunReuse` call with the matching prior variant (KTD3).
 4. Fresh and reused coverage both record the current real root (KTD5).

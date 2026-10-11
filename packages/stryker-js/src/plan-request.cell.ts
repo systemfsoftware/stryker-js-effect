@@ -250,7 +250,7 @@ const planProject = (
     const done: PlanInstrumentDone = yield* Cell.provideContext(planInstrumentCell, context).run(prepared)
     const texts = yield* incrementalReportTextsOf({ basePath: project, options: done.options })
     const dryRunChoice = yield* dryRunChoiceOf(done, project)
-    const coverage = Option.fromUndefinedOr(dryRunChoice.kept[0])
+    const coverage = dryRunChoice.prior
     const testCoverage = Option.match(coverage, { onNone: emptyTestCoverage, onSome: reusedTestCoverage })
     const reportCosts = reportCostsOf(texts)
     const label = labelOf(path, labelBase, project)
@@ -281,6 +281,7 @@ const planProject = (
           options: done.options,
           mutants: [...reuse.mutants, ...reuse.rememberedResults],
           texts,
+          kept: dryRunChoice.kept,
         }),
       ),
       (neverError) => neverError,

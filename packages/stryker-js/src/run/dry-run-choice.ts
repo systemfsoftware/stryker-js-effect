@@ -37,41 +37,30 @@ export type DryRunTarget = Pick<InstrumentDone, 'project' | 'options'>
 
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
-interface PriorCandidate {
-  readonly coverage: DryRunCoverage
-  readonly headerRoot: Option.Option<string>
-}
-
-const candidateOfReportText = (text: string): Option.Option<PriorCandidate> =>
+const coverageOfReportText = (text: string): Option.Option<DryRunCoverage> =>
   Option.flatMap(
     S.decodeOption(S.fromJsonString(ReportedDryRunCoverageSchema))(text),
-    (report) =>
-      Option.map(Option.fromNullishOr(report.dryRunCoverage), (coverage) => ({
-        coverage,
-        headerRoot: Option.fromUndefinedOr(report.projectRoot),
-      })),
+    (report) => Option.fromNullishOr(report.dryRunCoverage),
   )
 
-const priorCandidatesOf = (texts: readonly string[]): readonly PriorCandidate[] =>
-  Arr.getSomes(texts.map(candidateOfReportText))
-
-export const priorCoveragesOf = (texts: readonly string[]): readonly DryRunCoverage[] =>
-  priorCandidatesOf(texts).map((candidate) => candidate.coverage)
+const priorCoveragesOf = (texts: readonly string[]): readonly DryRunCoverage[] =>
+  Arr.getSomes(texts.map(coverageOfReportText))
 
 export interface RequireDryRunInput {
   readonly options: Options.StrykerOptions
   readonly mutants: readonly Pick<Mutant.Mutant, 'id' | 'static'>[]
   readonly texts: readonly string[]
+  readonly kept: readonly DryRunCoverage[]
 }
 
-export const requireDryRunCommandOf = ({ options, mutants, texts }: RequireDryRunInput): RequireDryRunCommand =>
+export const requireDryRunCommandOf = ({ options, mutants, texts, kept }: RequireDryRunInput): RequireDryRunCommand =>
   RequireDryRunCommand.make({
     dryRunOnly: options.dryRunOnly,
     ignoreStatic: options.ignoreStatic,
     hasCheckers: options.checkers.length > 0,
     mutants: mutants.map((mutant) => ({ id: mutant.id, static: mutant.static === true })),
     priorStatuses: priorStatusesOf(texts),
-    priorFlakyMutantIds: Arr.dedupe(priorCoveragesOf(texts).flatMap((coverage) => coverage.flakyMutantIds)),
+    priorFlakyMutantIds: Arr.dedupe(kept.flatMap((coverage) => coverage.flakyMutantIds)),
   })
 
 const closureDigestOf = (analysis: ImportClosureAnalysis): string =>
@@ -170,44 +159,27 @@ const priorChoiceOf = (
 const realRootOf = (fs: FileSystem.FileSystem, root: string): Effect.Effect<string> =>
   fs.realPath(root).pipe(Effect.orElseSucceed(() => root))
 
-const withRealHeaderRoot = (fs: FileSystem.FileSystem, candidate: PriorCandidate): Effect.Effect<PriorCandidate> =>
-  Option.match(candidate.headerRoot, {
-    onNone: () => Effect.succeed(candidate),
-    onSome: (root) => Effect.map(realRootOf(fs, root), (real) => ({ ...candidate, headerRoot: Option.some(real) })),
-  })
-
-const coverageRootOf = (root: Option.Option<string>): CoverageRoot =>
-  Option.match(root, {
+const coverageRootOf = (coverage: DryRunCoverage): CoverageRoot =>
+  Option.match(Option.fromUndefinedOr(coverage.projectRoot), {
     onNone: (): CoverageRoot => ({ _tag: 'UnrecordedRoot' }),
     onSome: (path): CoverageRoot => ({ _tag: 'RecordedRoot', path }),
   })
 
 const candidatesDecisionOf = (
   currentRoot: string,
-  candidates: readonly PriorCandidate[],
+  candidates: readonly DryRunCoverage[],
 ): DryRunCandidatesDecision =>
   Result.getOrElse(
-    dryRunCandidates(
-      DryRunCandidatesCommand.make({
-        currentRoot,
-        candidates: candidates.map((candidate) => ({
-          recordRoot: coverageRootOf(Option.fromUndefinedOr(candidate.coverage.projectRoot)),
-          headerRoot: coverageRootOf(candidate.headerRoot),
-        })),
-      }),
-    ),
+    dryRunCandidates(DryRunCandidatesCommand.make({ currentRoot, candidates: candidates.map(coverageRootOf) })),
     (never: never) => never,
   )
 
 const keptCoveragesOf = (
   decision: DryRunCandidatesDecision,
-  candidates: readonly PriorCandidate[],
+  candidates: readonly DryRunCoverage[],
 ): readonly DryRunCoverage[] =>
   Match.value(decision).pipe(
-    Match.tag('CandidatesKept', ({ indices }) =>
-      Arr.getSomes(indices.map((index) =>
-        Arr.get(candidates, index)
-      )).map((candidate) => candidate.coverage)),
+    Match.tag('CandidatesKept', ({ indices }) => Arr.getSomes(indices.map((index) => Arr.get(candidates, index)))),
     Match.orElse((): readonly DryRunCoverage[] => []),
   )
 
@@ -218,11 +190,27 @@ const fallbackPriorOf = (decision: DryRunCandidatesDecision): DryRunReusePrior =
     Match.orElse((): DryRunReusePrior => ({ _tag: 'NoPriorCoverage' })),
   )
 
-export interface DryRunChoice extends PriorChoice {
+export interface CurrentRootCoverages {
   readonly candidates: readonly DryRunCoverage[]
   readonly kept: readonly DryRunCoverage[]
   readonly candidatesDecision: DryRunCandidatesDecision
   readonly currentRoot: string
+}
+
+export const currentRootCoveragesOf = Effect.fnUntraced(function*(texts: readonly string[], basePath: string) {
+  const fs = yield* FileSystem.FileSystem
+  const currentRoot = yield* realRootOf(fs, basePath)
+  const candidates = priorCoveragesOf(texts)
+  const candidatesDecision = candidatesDecisionOf(currentRoot, candidates)
+  return {
+    candidates,
+    kept: keptCoveragesOf(candidatesDecision, candidates),
+    candidatesDecision,
+    currentRoot,
+  } satisfies CurrentRootCoverages
+})
+
+export interface DryRunChoice extends PriorChoice, CurrentRootCoverages {
   readonly currentTestClosureDigest: Option.Option<string>
   readonly runInputsDigest: string
 }
@@ -231,31 +219,20 @@ export const dryRunChoiceOf = Effect.fnUntraced(function*(target: DryRunTarget, 
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const texts = yield* incrementalReportTextsOf({ basePath, options: target.options })
-  const currentRoot = yield* realRootOf(fs, basePath)
-  const candidates = yield* Effect.forEach(priorCandidatesOf(texts), (candidate) => withRealHeaderRoot(fs, candidate))
-  const candidatesDecision = candidatesDecisionOf(currentRoot, candidates)
-  const kept = keptCoveragesOf(candidatesDecision, candidates)
+  const coverages = yield* currentRootCoveragesOf(texts, basePath)
   const runInputsDigest = yield* runInputsDigestOf(fs, path, basePath, target.options)
   const currentTestClosureDigest = yield* testClosureDigestOf(
     target,
     basePath,
-    globalInputsOfCoverage(Arr.head(kept)),
-    observedModulesOfCoverage(Arr.head(kept)),
+    globalInputsOfCoverage(Arr.head(coverages.kept)),
+    observedModulesOfCoverage(Arr.head(coverages.kept)),
   )
   const choice = priorChoiceOf(
-    kept,
-    fallbackPriorOf(candidatesDecision),
+    coverages.kept,
+    fallbackPriorOf(coverages.candidatesDecision),
     currentTestClosureDigest,
     runInputsDigest,
     target.options.force,
   )
-  return {
-    ...choice,
-    candidates: candidates.map((candidate) => candidate.coverage),
-    kept,
-    candidatesDecision,
-    currentRoot,
-    currentTestClosureDigest,
-    runInputsDigest,
-  } satisfies DryRunChoice
+  return { ...choice, ...coverages, currentTestClosureDigest, runInputsDigest } satisfies DryRunChoice
 })
