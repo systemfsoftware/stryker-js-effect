@@ -1,5 +1,5 @@
 import { MicroVM } from '@systemfsoftware/effect-microsandbox'
-import { overBudgetReason } from '@systemfsoftware/stryker-e2e-core'
+import { bootOverBudgetReason, overBudgetReason } from '@systemfsoftware/stryker-e2e-core'
 import type { MalformedFixtureManifest, UnresolvedCatalogSpec } from '@systemfsoftware/stryker-e2e-core'
 import { Match, Schema } from 'effect'
 import type { Config } from 'effect'
@@ -38,16 +38,6 @@ export class GuestJobFailure extends Schema.TaggedError<GuestJobFailure>()('Gues
   }
 }
 
-export class GuestSignaledFailure extends Schema.TaggedError<GuestSignaledFailure>()('GuestSignaledFailure', {
-  step: Schema.String,
-  memoryMiB: Schema.Number,
-  stderrTail: Schema.String,
-}) {
-  override get message(): string {
-    return `${this.step}: the guest workload was killed by a signal instead of exiting; check the ${this.memoryMiB} MiB guest memory limit first\n${this.stderrTail}`
-  }
-}
-
 export class ExitFailure extends Schema.TaggedError<ExitFailure>()('ExitFailure', {
   step: Schema.String,
   exitCode: Schema.Number,
@@ -58,10 +48,21 @@ export class ExitFailure extends Schema.TaggedError<ExitFailure>()('ExitFailure'
   }
 }
 
+export class BakeBootOverBudgetFailure extends Schema.TaggedError<BakeBootOverBudgetFailure>()(
+  'BakeBootOverBudgetFailure',
+  {
+    budgetSeconds: Schema.Number,
+  },
+) {
+  override get message(): string {
+    return bootOverBudgetReason(this).detail
+  }
+}
+
 export class BakeOverBudgetFailure extends Schema.TaggedError<BakeOverBudgetFailure>()('BakeOverBudgetFailure', {
   budgetSeconds: Schema.Number,
   fixtures: Schema.Array(Schema.String),
-  bootSeconds: Schema.NullOr(Schema.Number),
+  bootSeconds: Schema.Number,
 }) {
   override get message(): string {
     return overBudgetReason(this).detail
@@ -96,11 +97,11 @@ export class SandboxForkFailure extends Schema.TaggedError<SandboxForkFailure>()
 }
 
 export type HarnessFailure =
+  | BakeBootOverBudgetFailure
   | BakeOverBudgetFailure
   | ExitFailure
   | FixtureMissingFailure
   | GuestJobFailure
-  | GuestSignaledFailure
   | MalformedFixtureManifest
   | PackFailure
   | SandboxForkFailure

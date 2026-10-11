@@ -19,7 +19,7 @@ import {
   NpmLockfileJson,
   PinnedFixtureManifestJson,
 } from '@systemfsoftware/stryker-e2e-core'
-import { InstalledPackageJson } from './__fixtures__/installed-package.schema.js'
+import { InstalledPackageJson } from './__fixtures__/installed-package.fixture.js'
 import { type Registry, serveLateRegistry, serveRegistry } from './__fixtures__/local-registry.js'
 
 const Feature = makeFeature({ it })
@@ -70,6 +70,13 @@ const LEFT_PAD_LOCKED: Fixture = {
 const RUNNER_LOCKED: Fixture = {
   devDependencies: { '@scratch/runner': `file:../../packs/${RUNNER_TARBALL}` },
   locked: { 'node_modules/@scratch/runner': { resolved: `file:../../packs/${RUNNER_TARBALL}`, dev: true } },
+}
+
+const STRAY_TARBALL = 'stray-dependency.tgz'
+
+const STRAY_LOCKED: Fixture = {
+  devDependencies: { '@scratch/stray': `file:../../elsewhere/${STRAY_TARBALL}` },
+  locked: { 'node_modules/@scratch/stray': { resolved: `file:../../elsewhere/${STRAY_TARBALL}`, dev: true } },
 }
 
 const run = (argv: ReadonlyArray<string>, cwd: string, env: Specs) =>
@@ -196,7 +203,7 @@ Feature('Baking fixtures from their committed locks with bake-fixtures.sh')
       ),
     )
     scenario(
-      'An install that outlives its deadline is reported as stalled, and the report annotates it',
+      'An install that outlives its deadline is reported as an install stall, and the report annotates it',
       Gherkin.Do.pipe(
         Given('a registry that answers only after the install deadline has passed')(
           'registry',
@@ -210,19 +217,23 @@ Feature('Baking fixtures from their committed locks with bake-fixtures.sh')
           'report',
           (s) => Effect.succeed(bakeReportOf(BakeFailed.make({ reasons: s.outcome.reasons, seconds: 3 }))),
         ),
-        Then('the bake fails with E2E_BAKE_STALLED naming the fixture and its deadline, in summary and annotation')(
+        Then(
+          'the bake fails with E2E_BAKE_INSTALL_STALLED naming the fixture and its deadline, in summary and annotation',
+        )(
           (s, expect) =>
             expect({
               failed: s.outcome.exitCode !== 0,
               codes: s.outcome.codes,
               namesFixtureAndDeadline: s.outcome.stderr.includes(
-                `E2E_BAKE_STALLED: ${FIXTURE_ID}: npm ci did not finish within ${DEADLINE_SECONDS}s`,
+                `E2E_BAKE_INSTALL_STALLED: ${FIXTURE_ID}: npm ci did not finish within ${DEADLINE_SECONDS}s`,
               ),
-              summarized: s.report.summary.includes('`E2E_BAKE_STALLED`'),
-              annotated: s.report.annotations.map((line) => line.startsWith('::error title=E2E_BAKE_STALLED::')),
+              summarized: s.report.summary.includes('`E2E_BAKE_INSTALL_STALLED`'),
+              annotated: s.report.annotations.map((line) =>
+                line.startsWith('::error title=E2E_BAKE_INSTALL_STALLED::')
+              ),
             }).toStrictEqual({
               failed: true,
-              codes: ['E2E_BAKE_STALLED'],
+              codes: ['E2E_BAKE_INSTALL_STALLED'],
               namesFixtureAndDeadline: true,
               summarized: true,
               annotated: [true],
@@ -250,6 +261,23 @@ Feature('Baking fixtures from their committed locks with bake-fixtures.sh')
       ),
     )
     scenario(
+      'A tarball error outside the packed closure is reported as a failed bake, not a missing closure tarball',
+      Gherkin.Do.pipe(
+        Given('a registry serving left-pad')('registry', () => leftPadRegistry),
+        When('the bake installs a lock naming ../../elsewhere/stray-dependency.tgz, which is absent')(
+          'outcome',
+          (s) => runBake({ fixture: STRAY_LOCKED, registry: s.registry, argv: bakeArgv }),
+        ),
+        Then('the bake fails with E2E_BAKE_FAILED, not labelled E2E_BAKE_TARBALL_MISSING')((s, expect) =>
+          expect({
+            failed: s.outcome.exitCode !== 0,
+            codes: s.outcome.codes,
+            labelledTarballMissing: s.outcome.stderr.includes('E2E_BAKE_TARBALL_MISSING'),
+          }).toStrictEqual({ failed: true, codes: ['E2E_BAKE_FAILED'], labelledTarballMissing: false })
+        ),
+      ),
+    )
+    scenario(
       'A call without the install deadline is refused before any install',
       Gherkin.Do.pipe(
         Given('a registry serving left-pad')('registry', () => leftPadRegistry),
@@ -263,6 +291,50 @@ Feature('Baking fixtures from their committed locks with bake-fixtures.sh')
             }),
         ),
         Then('the bake exits 2 with E2E_BAKE_ARGV and installs nothing')((s, expect) =>
+          expect({
+            exitCode: s.outcome.exitCode,
+            codes: s.outcome.codes,
+            installed: s.outcome.stderr.includes('[bake]'),
+          }).toStrictEqual({ exitCode: 2, codes: ['E2E_BAKE_ARGV'], installed: false })
+        ),
+      ),
+    )
+    scenario(
+      'A call with zero lanes is refused before any install',
+      Gherkin.Do.pipe(
+        Given('a registry serving left-pad')('registry', () => leftPadRegistry),
+        When('the bake is called with --lanes=0')(
+          'outcome',
+          (s) =>
+            runBake({
+              fixture: LEFT_PAD_LOCKED,
+              registry: s.registry,
+              argv: (root) => [`--root=${root}`, `--deadline=${DEADLINE_SECONDS}`, '--lanes=0'],
+            }),
+        ),
+        Then('the bake exits 2 with E2E_BAKE_ARGV, having installed nothing')((s, expect) =>
+          expect({
+            exitCode: s.outcome.exitCode,
+            codes: s.outcome.codes,
+            installed: s.outcome.stderr.includes('[bake]'),
+          }).toStrictEqual({ exitCode: 2, codes: ['E2E_BAKE_ARGV'], installed: false })
+        ),
+      ),
+    )
+    scenario(
+      'A call with a zero deadline is refused before any install',
+      Gherkin.Do.pipe(
+        Given('a registry serving left-pad')('registry', () => leftPadRegistry),
+        When('the bake is called with --deadline=0')(
+          'outcome',
+          (s) =>
+            runBake({
+              fixture: LEFT_PAD_LOCKED,
+              registry: s.registry,
+              argv: (root) => [`--root=${root}`, '--deadline=0', '--lanes=4'],
+            }),
+        ),
+        Then('the bake exits 2 with E2E_BAKE_ARGV without installing anything')((s, expect) =>
           expect({
             exitCode: s.outcome.exitCode,
             codes: s.outcome.codes,

@@ -5,7 +5,7 @@ import type * as Crypto from 'effect/Crypto'
 import type * as FileSystem from 'effect/FileSystem'
 import type * as Scope from 'effect/Scope'
 
-import { ExitFailure, GuestJobFailure, GuestSignaledFailure } from './harness-failure.schema.js'
+import { ExitFailure, GuestJobFailure } from './harness-failure.schema.js'
 import { seamSpan, SpanNames } from './harness-telemetry.service.js'
 
 export interface GuestJobsShape {
@@ -25,10 +25,8 @@ export interface GuestJobsShape {
     step: string,
     vm: MicroVM.RunningVM,
     argv: readonly [string, ...Array<string>],
-  ) => Effect.Effect<void, ExitFailure | GuestJobFailure | GuestSignaledFailure>
+  ) => Effect.Effect<void, ExitFailure | GuestJobFailure>
 }
-
-const SIGNALED_EXIT_ABOVE = 128
 
 export class GuestJobs
   extends Context.Service<GuestJobs, GuestJobsShape>()('@systemfsoftware/stryker-e2e/Harness/GuestJobs')
@@ -68,14 +66,6 @@ export class GuestJobs
           Effect.flatMap((run) =>
             Match.value(run.code).pipe(
               Match.when(0, () => Effect.void),
-              Match.when((code) => code > SIGNALED_EXIT_ABOVE, () =>
-                Effect.fail(
-                  new GuestSignaledFailure({
-                    step,
-                    memoryMiB: GuestJobs.GUEST_MEMORY_MIB,
-                    stderrTail: stderrTailOf(run.stderr),
-                  }),
-                )),
               Match.orElse((code) =>
                 Effect.fail(new ExitFailure({ step, exitCode: code, stderrTail: stderrTailOf(run.stderr) }))
               ),

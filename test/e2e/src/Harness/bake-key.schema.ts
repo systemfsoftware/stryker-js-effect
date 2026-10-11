@@ -1,3 +1,4 @@
+import { BakePhases } from '@systemfsoftware/stryker-e2e-core'
 import { Schema } from 'effect'
 
 export const PackedPackage = Schema.Struct({
@@ -18,8 +19,7 @@ export const BakeOutcome = Schema.Struct({
   lease: Schema.String,
   baked: Schema.Number,
   locks: FixtureKeys,
-  bootSeconds: Schema.NullOr(Schema.Number),
-  installSeconds: Schema.NullOr(Schema.Number),
+  phases: BakePhases,
 })
 
 export type BakeOutcome = typeof BakeOutcome.Type

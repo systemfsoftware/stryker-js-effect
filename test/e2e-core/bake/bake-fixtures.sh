@@ -20,12 +20,21 @@ lanes="$(option lanes "${3-}")"
 case "$deadline$lanes" in
   *[!0-9]*) argv_error "got a non-numeric --deadline=$deadline or --lanes=$lanes" ;;
 esac
+[ "$deadline" -ge 1 ] || argv_error "got --deadline=$deadline where a deadline of at least 1 second belongs"
+[ "$lanes" -ge 1 ] || argv_error "got --lanes=$lanes where a lane count of at least 1 belongs"
 
 logs="$(mktemp -d)"
 : >"$logs/reasons"
 
 reason() {
   echo "$1: $2 Next: $3" >>"$logs/reasons"
+}
+
+packs_member() {
+  case "$1" in
+    /packs/* | */packs/*) return 0 ;;
+  esac
+  grep -qF "/packs/$(basename "$1")" package-lock.json 2>/dev/null || return 1
 }
 
 relock="pnpm --filter @systemfsoftware/stryker-e2e-core fixtures:lock"
@@ -47,9 +56,9 @@ install() {
   first="$(sed -n 's/^npm error //p' "$log" | head -n 1 | cut -c1-200)"
   mismatch="$(grep -E '^npm error (Missing|Invalid): ' "$log" | head -n 3 | sed 's/^npm error //' | tr '\n' ' ' | cut -c1-400)"
   if [ "$code" -eq 124 ] || [ "$elapsed" -ge "$deadline" ]; then
-    reason E2E_BAKE_STALLED "$id: npm ci did not finish within ${deadline}s (exit $code after ${elapsed}s)." "if the registry was slow, re-run the job; if it stalls again, run npm ci in test/e2e/testResources/$id on the host to find the request that hangs."
-  elif [ -n "$tarball" ]; then
-    reason E2E_BAKE_TARBALL_MISSING "$id: npm ci found no closure tarball $(basename "$tarball") at $tarball." "the lock names a closure member the harness did not pack; run $relock and commit test/e2e/testResources/$id/package-lock.json."
+    reason E2E_BAKE_INSTALL_STALLED "$id: npm ci did not finish within ${deadline}s (exit $code after ${elapsed}s)." "if the registry was slow, re-run the job; if it stalls again, reproduce it against a staged fixture: the packs come from packing the workspace closure (pnpm -r --filter=<name> pack --out <staging>/packs/%s.tgz) and the harness stages fixtures at <staging>/baked/<id>, so run npm ci in that staged directory on the host to find the request that hangs."
+  elif [ -n "$tarball" ] && packs_member "$tarball"; then
+    reason E2E_BAKE_TARBALL_MISSING "$id: npm ci found no closure tarball $(basename "$tarball") at $tarball: ${first:-no npm error line}." "the lock names a closure member the harness did not pack; run $relock and commit test/e2e/testResources/$id/package-lock.json."
   else
     reason E2E_BAKE_FAILED "$id: npm ci exited $code: ${first:-no npm error line}${mismatch:+ ($mismatch)}." "run $relock, commit test/e2e/testResources/$id/package-lock.json, and if it still fails run npm ci in that fixture on the host."
   fi

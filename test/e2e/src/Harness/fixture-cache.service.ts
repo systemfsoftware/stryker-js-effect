@@ -1,4 +1,4 @@
-import { MicroVM } from '@systemfsoftware/effect-microsandbox'
+import type { MicroVM } from '@systemfsoftware/effect-microsandbox'
 import type { Readiness } from '@systemfsoftware/effect-readiness'
 import {
   Array,
@@ -16,7 +16,6 @@ import {
   Match,
   Option,
   Path,
-  Ref,
   Schema,
   Scope,
   Stream,
@@ -26,21 +25,25 @@ import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 import {
+  BAKE_BOOT_BUDGET_SECONDS,
   BAKE_INSTALL_DEADLINE_SECONDS,
   BAKE_LANES,
   bakeBudgetSeconds,
+  Baked,
   BakeDone,
   BakeFailed,
   type BakeReason,
   bakeReasonsOf,
   BakeReportJson,
   bakeReportOf,
+  bootOverBudgetReason,
   closureMembersOf,
   type FileBytes,
   type FixtureInput,
   fixtureKeyBytes,
   missingFixtures as missingFixturesWorkflow,
   MissingFixturesCommand,
+  NothingBaked,
   NpmLockfileJson,
   overBudgetReason,
   overlayOf,
@@ -63,7 +66,13 @@ import {
 import type { BakeOutcome, PackedPackage } from './bake-key.schema.js'
 import { FixtureKeys } from './bake-key.schema.js'
 import { GuestJobs } from './guest-job.service.js'
-import { BakeOverBudgetFailure, ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
+import {
+  BakeBootOverBudgetFailure,
+  BakeOverBudgetFailure,
+  ExitFailure,
+  FixtureMissingFailure,
+  PackFailure,
+} from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
 import { seamSpan, SpanNames, withSeamSpan } from './harness-telemetry.service.js'
 import * as Warm from './warm-sandbox.handle.js'
@@ -580,29 +589,36 @@ const bakeArgv = [
   `--lanes=${BAKE_LANES}`,
 ]
 
-interface BakePhases {
-  readonly bootSeconds: number | null
-  readonly installSeconds: number | null
-}
-
-const NOTHING_BAKED: BakePhases = { bootSeconds: null, installSeconds: null }
-
 const secondsSince = (started: number) => Effect.map(Clock.currentTimeMillis, (now) => (now - started) / 1000)
+
+interface BakeBudget {
+  readonly budgetSeconds: number
+  readonly fixtures: ReadonlyArray<string>
+}
 
 const runBakeScript = (
   bakeScript: string,
   mounts: ReadonlyArray<MicroVM.Mount>,
-  booted: Ref.Ref<Option.Option<number>>,
+  budget: BakeBudget,
 ) =>
   Effect.scoped(Effect.gen(function*() {
     const jobs = yield* GuestJobs
     const started = yield* Clock.currentTimeMillis
-    const vm = yield* jobs.boot(STEP_BAKE_BOOT, mounts)
+    const vm = yield* jobs.boot(STEP_BAKE_BOOT, mounts).pipe(Effect.timeoutOrElse({
+      duration: `${BAKE_BOOT_BUDGET_SECONDS} seconds`,
+      orElse: () => Effect.fail(new BakeBootOverBudgetFailure({ budgetSeconds: BAKE_BOOT_BUDGET_SECONDS })),
+    }))
     const bootSeconds = yield* secondsSince(started)
-    yield* Ref.set(booted, Option.some(bootSeconds))
     const installing = yield* Clock.currentTimeMillis
-    yield* jobs.requireCleanExec(STEP_BAKE, vm, ['sh', '-c', bakeScript, 'bake-fixtures', ...bakeArgv])
-    return { bootSeconds, installSeconds: yield* secondsSince(installing) } satisfies BakePhases
+    const exec = jobs.requireCleanExec(STEP_BAKE, vm, ['sh', '-c', bakeScript, 'bake-fixtures', ...bakeArgv])
+    yield* exec.pipe(Effect.timeoutOrElse({
+      duration: `${budget.budgetSeconds - bootSeconds} seconds`,
+      orElse: () =>
+        Effect.fail(
+          new BakeOverBudgetFailure({ budgetSeconds: budget.budgetSeconds, fixtures: budget.fixtures, bootSeconds }),
+        ),
+    }))
+    return Baked.make({ bootSeconds, installSeconds: yield* secondsSince(installing) })
   }))
 
 const bakeMissing = (
@@ -628,26 +644,10 @@ const bakeMissing = (
         fixtureInputs.filter((input) => missingIds.includes(input.fixtureId)),
       )
       const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
-      const budgetSeconds = bakeBudgetSeconds({ fixtures: missing.length })
-      const booted = yield* Ref.make(Option.none<number>())
       const phases = yield* runBakeScript(bakeScript, [
         { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
         { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
-      ], booted).pipe(Effect.timeoutOrElse({
-        duration: `${budgetSeconds} seconds`,
-        orElse: () =>
-          Effect.flatMap(
-            Ref.get(booted),
-            (bootSeconds) =>
-              Effect.fail(
-                new BakeOverBudgetFailure({
-                  budgetSeconds,
-                  fixtures: missingIds,
-                  bootSeconds: Option.getOrNull(bootSeconds),
-                }),
-              ),
-          ),
-      }))
+      ], { budgetSeconds: bakeBudgetSeconds({ fixtures: missing.length }), fixtures: missingIds })
       yield* Effect.forEach(
         missing,
         (fixture) => publishFixture(stagingDir, fixture, path.join(root, entryNameOf(fixture))),
@@ -662,12 +662,22 @@ const bakeMissing = (
     }),
   )
 
-const lockDigestOf = (root: string, fixture: BakedFixture) =>
+const isNotFound = (error: PlatformError): boolean => error.reason._tag === 'NotFound'
+
+const lockDigestOf = (environment: BakeEnvironment, fixture: BakedFixture) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const crypto = yield* Crypto.Crypto
-    const bytes = yield* Effect.option(fs.readFile(path.join(root, entryNameOf(fixture), LOCKFILE_NAME)))
+    const committed = path.join(environment.resourcesDir, fixture.fixtureId, LOCKFILE_NAME)
+    const bytes = yield* fs.readFile(committed).pipe(
+      Effect.map(Option.some),
+      Effect.catchTag('PlatformError', (error) =>
+        Boolean.match(isNotFound(error), {
+          onTrue: () => Effect.succeed(Option.none<Uint8Array>()),
+          onFalse: () => Effect.fail(error),
+        })),
+    )
     const digest = yield* Option.match(bytes, {
       onNone: () => Effect.succeed('absent'),
       onSome: (present) => Effect.map(hashOf(crypto, present), (hex) => hex.slice(0, LOCK_DIGEST_CHARS)),
@@ -695,10 +705,10 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
       const lease = yield* leaseEntry(root)
       const missing = yield* missingFixtures(root, fixtures)
       const phases = yield* Boolean.match(missing.length === 0, {
-        onTrue: () => Effect.succeed(NOTHING_BAKED),
+        onTrue: () => Effect.succeed(NothingBaked.make({})),
         onFalse: () => bakeMissing(environment, packsDir, root, missing, fixtureInputs),
       })
-      const locks = yield* Effect.forEach(fixtures, (fixture) => lockDigestOf(root, fixture), {
+      const locks = yield* Effect.forEach(fixtures, (fixture) => lockDigestOf(environment, fixture), {
         concurrency: UNPACK_CONCURRENCY,
       })
       return {
@@ -707,7 +717,7 @@ const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessE
         lease,
         baked: missing.length,
         locks: Object.fromEntries(locks),
-        ...phases,
+        phases,
       }
     }).pipe(Effect.ensuring(fs.remove(scratch, { recursive: true, force: true }).pipe(Effect.orDie)))
   })
@@ -720,6 +730,9 @@ const bakeReasonsOfError = (error: HarnessError): Array.NonEmptyReadonlyArray<Ba
       { _tag: 'ExitFailure', step: STEP_BAKE },
       (failure): Array.NonEmptyReadonlyArray<BakeReason> => bakeReasonsOf(failure),
     ),
+    Match.when({ _tag: 'BakeBootOverBudgetFailure' }, (failure): Array.NonEmptyReadonlyArray<BakeReason> => [
+      bootOverBudgetReason(failure),
+    ]),
     Match.when({ _tag: 'BakeOverBudgetFailure' }, (failure): Array.NonEmptyReadonlyArray<BakeReason> => [
       overBudgetReason(failure),
     ]),
@@ -733,18 +746,17 @@ const bakeRecordOf = (
 ) =>
   Exit.match(exit, {
     onSuccess: (outcome) =>
-      new BakeDone({
+      BakeDone.make({
         packsKey: packsKeyOf(outcome.root),
         fixtures: Object.keys(outcome.keys).length,
         baked: outcome.baked,
         seconds,
-        bootSeconds: outcome.bootSeconds,
-        installSeconds: outcome.installSeconds,
+        phases: outcome.phases,
         locks: outcome.locks,
         entries: Object.entries(outcome.keys).map(([fixtureId, key]) => entryNameOf({ fixtureId, key })),
       }),
     onFailure: (cause) =>
-      new BakeFailed({
+      BakeFailed.make({
         reasons: Option.match(Cause.findErrorOption(cause), {
           onNone: (): Array.NonEmptyReadonlyArray<BakeReason> => [setupFailedReason(Cause.pretty(cause))],
           onSome: bakeReasonsOfError,

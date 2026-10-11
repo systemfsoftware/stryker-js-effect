@@ -51,17 +51,18 @@ pnpm --filter @systemfsoftware/stryker-e2e-core fixtures:lock
 
 The `@systemfsoftware/stryker-e2e-core` `test` task checks every lock offline against the staged manifest, the packed closure and the root pins, and prints one `E2E_PINS_DRIFT: <fixture>: <finding>. Next: …` line per problem, so a stale lock fails `check` before any e2e lane runs.
 
-Each `npm ci` runs under a 300 s `timeout`, with a KILL 10 s later, in four parallel lanes, and the whole bake has a budget of ⌈fixtures / 4⌉ × 310 s + 30 s. The guest's `timeout` is busybox, which exits with the killed command's status (143 or 137) rather than GNU's 124, so the script decides "ran over" from elapsed time. Each e2e leg's step summary reports the bake (`BAKE_HIT`, `BAKE_PARTIAL` or `BAKE_FULL`, with each lock's digest); a failed bake names its reason there and in a `::error` annotation:
+Each `npm ci` runs under a 320 s `timeout`, with a KILL 10 s later, in seven parallel lanes (all seven fixtures in one round). Pulling the guest image and booting the preparation microVM has its own 7.2 s budget, and the whole bake has a ceiling of 7.2 s + ⌈fixtures / 7⌉ × 330 s — 337.2 s for the seven fixtures — measured from the start of the bake, so it can only fire after the boot finished. The guest's `timeout` is busybox, which exits with the killed command's status (143 or 137) rather than GNU's 124, so the script decides "ran over" from elapsed time. Each e2e leg's step summary reports the bake (`BAKE_HIT`, `BAKE_PARTIAL` or `BAKE_FULL`, with each lock's digest); a failed bake names its reason there and in a `::error` annotation:
 
-| Code                       | Meaning                                                                                                                                             |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `E2E_BAKE_STALLED`         | An `npm ci` ran past its deadline. Names the fixture and the deadline.                                                                              |
-| `E2E_BAKE_TARBALL_MISSING` | A lock names a closure tarball the harness did not pack. Names the tarball.                                                                         |
-| `E2E_BAKE_FAILED`          | `npm ci` failed for another reason. Names the fixture and npm's first error line.                                                                   |
-| `E2E_BAKE_OVER_BUDGET`     | The whole bake ran past its budget. Names the phase it was in: pulling the guest image and booting the microVM, or installing (with the boot time). |
-| `E2E_BAKE_ARGV`            | The harness called the bake script with the wrong arguments.                                                                                        |
-| `E2E_SETUP_FAILED`         | Global setup failed before the bake finished.                                                                                                       |
-| `E2E_BAKE_NO_RECORD`       | Global setup wrote no bake record, so the leg reports no bake state.                                                                                |
+| Code                        | Meaning                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `E2E_BAKE_BOOT_OVER_BUDGET` | Pulling the guest image and booting the preparation microVM ran past its 7.2 s budget, before any `npm ci` started. Names the boot budget. |
+| `E2E_BAKE_INSTALL_STALLED`  | An `npm ci` ran past its 320 s deadline. Names the fixture and the deadline.                                                               |
+| `E2E_BAKE_OVER_BUDGET`      | The whole bake ran past its ceiling while installing, after boot finished. Names the boot time it spent.                                   |
+| `E2E_BAKE_TARBALL_MISSING`  | A lock names a closure tarball the harness did not pack. Names the tarball.                                                                |
+| `E2E_BAKE_FAILED`           | `npm ci` failed for another reason. Names the fixture and npm's first error line.                                                          |
+| `E2E_BAKE_ARGV`             | The harness called the bake script with the wrong arguments.                                                                               |
+| `E2E_SETUP_FAILED`          | Global setup failed before the bake finished.                                                                                              |
+| `E2E_BAKE_NO_RECORD`        | Global setup wrote no bake record, so the leg reports no bake state.                                                                       |
 
 ### Warm snapshots and forks
 

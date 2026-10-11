@@ -7,6 +7,7 @@ import * as S from 'effect/Schema'
 import {
   type BakeDone,
   type BakeFailed,
+  BakePhases,
   BakeReason,
   BakeReasonCode,
   type BakeRecord,
@@ -41,28 +42,26 @@ export const overBudgetReason = (
   failure: {
     readonly budgetSeconds: number
     readonly fixtures: ReadonlyArray<string>
-    readonly bootSeconds: number | null
+    readonly bootSeconds: number
   },
-): BakeReason =>
-  failure.bootSeconds === null
-    ? {
-      code: 'E2E_BAKE_OVER_BUDGET',
-      detail: `The bake of ${
-        failure.fixtures.join(', ')
-      } ran past its ${failure.budgetSeconds}s budget while pulling the guest image and booting the microVM, before any npm ci started.`,
-      next:
-        'if the image registry or the runner was slow, re-run the job; if it runs over again, compare the e2e.setup.bake span in the e2e-telemetry artifact with the last green run.',
-    }
-    : {
-      code: 'E2E_BAKE_OVER_BUDGET',
-      detail: `The bake of ${
-        failure.fixtures.join(', ')
-      } ran past its ${failure.budgetSeconds}s budget while installing; pulling the guest image and booting the microVM took ${
-        failure.bootSeconds.toFixed(1)
-      } s of it.`,
-      next:
-        'if the npm registry was slow, re-run the job; if it runs over again, compare the e2e.setup.bake span in the e2e-telemetry artifact with the last green run.',
-    }
+): BakeReason => ({
+  code: 'E2E_BAKE_OVER_BUDGET',
+  detail: `The bake of ${
+    failure.fixtures.join(', ')
+  } ran past its ${failure.budgetSeconds}s budget while installing; pulling the guest image and booting the microVM took ${
+    failure.bootSeconds.toFixed(1)
+  } s of it.`,
+  next:
+    'if the npm registry was slow, re-run the job; if it runs over again, compare the e2e.setup.bake span in the e2e-telemetry artifact with the last green run.',
+})
+
+export const bootOverBudgetReason = (failure: { readonly budgetSeconds: number }): BakeReason => ({
+  code: 'E2E_BAKE_BOOT_OVER_BUDGET',
+  detail:
+    `The bake ran past its ${failure.budgetSeconds}s budget while pulling the guest image and booting the preparation microVM, before any npm ci started.`,
+  next:
+    'if the image registry or the runner was slow, re-run the job; if it runs over again, compare the e2e.setup.bake span in the e2e-telemetry artifact with the last green run.',
+})
 
 export const setupFailedReason = (message: string): BakeReason => ({
   code: 'E2E_SETUP_FAILED',
@@ -88,11 +87,13 @@ const HEADING = '### Fixture bake'
 
 const lockRow = ([fixtureId, digest]: readonly [string, string]): string => `| ${fixtureId} | \`${digest}\` |`
 
-const phasesOf = (done: Pick<BakeDone, 'bootSeconds' | 'installSeconds'>): string =>
-  Option.match(Option.all([Option.fromNullOr(done.bootSeconds), Option.fromNullOr(done.installSeconds)]), {
-    onNone: () => '',
-    onSome: ([boot, install]) =>
-      ` Pulling the guest image and booting the microVM took ${boot.toFixed(1)} s, npm ci ${install.toFixed(1)} s.`,
+const phasesOf = (done: Pick<BakeDone, 'phases'>): string =>
+  Match.valueTags(done.phases, {
+    NothingBaked: () => '',
+    Baked: (phases) =>
+      ` Pulling the guest image and booting the microVM took ${phases.bootSeconds.toFixed(1)} s, npm ci ${
+        phases.installSeconds.toFixed(1)
+      } s.`,
   })
 
 const doneReport = (done: BakeDone): BakeReport => ({
@@ -108,7 +109,7 @@ const doneReport = (done: BakeDone): BakeReport => ({
       done.seconds.toFixed(1)
     } s.${phasesOf(done)}`,
     '',
-    '| Fixture | package-lock.json sha256 |',
+    '| Fixture | committed package-lock.json sha256 |',
     '| --- | --- |',
     ...Object.entries(done.locks).sort(([left], [right]) => left.localeCompare(right)).map(lockRow),
     '',
@@ -138,6 +139,7 @@ export const bakeReportOf = (record: BakeRecord): BakeReport =>
   Match.valueTags(record, { BakeDone: doneReport, BakeFailed: failedReport })
 
 if (import.meta.vitest !== void 0) {
+  // the fork's `it` must stay out of the built module graph, so it loads only under this guard
   const { it } = await import('@systemfsoftware/vitest')
 
   const unescapeData = (text: string): string =>
@@ -159,23 +161,115 @@ if (import.meta.vitest !== void 0) {
   )
 
   const OverBudget = S.Struct({
-    budgetSeconds: S.Int.check(S.isGreaterThan(0)),
+    budgetSeconds: S.Finite.check(S.isGreaterThan(0)),
     fixtures: S.NonEmptyArray(S.String),
-    bootSeconds: S.Finite.check(S.isGreaterThanOrEqualTo(0)),
+    bootSeconds: S.Finite.check(S.isGreaterThan(0)),
   })
 
+  const budgetReasons = (failure: typeof OverBudget.Type): ReadonlyArray<BakeReason> => [
+    overBudgetReason(failure),
+    bootOverBudgetReason({ budgetSeconds: failure.bootSeconds }),
+  ]
+
   it.prop(
-    '∀f_OverBudget_≡NamesBootPhaseOrInstallPhaseWithItsBootTime',
-    { of: [OverBudget], subject: overBudgetReason },
+    '∀f_OverBudget_≡OneReasonPerBudgetNamingItsCeilingAndTheBootSeconds',
+    { of: [OverBudget], subject: budgetReasons },
     (subject, [failure]) => {
-      const booting = subject({ ...failure, bootSeconds: null })
-      const installing = subject(failure)
-      const checks = [
-        booting.detail !== installing.detail,
-        !booting.detail.includes(' s of it'),
+      const [installing, booting] = subject(failure)
+      return [
+        installing.code === 'E2E_BAKE_OVER_BUDGET',
+        booting.code === 'E2E_BAKE_BOOT_OVER_BUDGET',
+        installing.code !== booting.code,
+        installing.detail.includes(`${failure.budgetSeconds}s`),
         installing.detail.includes(`took ${failure.bootSeconds.toFixed(1)} s of it`),
-      ]
-      return checks.every((check) => check)
+        booting.detail.includes(`${failure.bootSeconds}s`),
+      ].every((check) => check)
+    },
+  )
+
+  it.prop(
+    '∀p_BakePhases_≡PhasesOfNamesTheBakedTimesOrNothing',
+    { of: [BakePhases], subject: phasesOf },
+    (subject, [phases]) =>
+      Match.valueTags(phases, {
+        Baked: (baked) =>
+          [
+            subject({ phases }).includes(baked.bootSeconds.toFixed(1)),
+            subject({ phases }).includes(baked.installSeconds.toFixed(1)),
+          ].every((check) => check),
+        NothingBaked: () => subject({ phases }) === '',
+      }),
+  )
+
+  const outsideReasonCodes = [
+    'E2E_BAKE_UNNAMED',
+    'E2E_BAKE_NO_RECORD',
+    'E2E_BAKE_BOOT_STALLED',
+    'E2E_BAKE_OVER_BUDGET_SOON',
+  ] as const
+
+  const OutsideReasonLine = S.Struct({ code: S.Literals(outsideReasonCodes), exitCode: S.Int })
+
+  const outsideVerdict = (line: typeof OutsideReasonLine.Type) => {
+    const reasons = bakeReasonsOf({ stderrTail: `${line.code}: a detail Next: an action`, exitCode: line.exitCode })
+    return {
+      accepted: S.is(BakeReasonCode)(line.code),
+      codes: reasons.map((reason) => reason.code),
+      detail: reasons[0].detail,
+    }
+  }
+
+  it.prop(
+    '∀c_ReasonCodeOutsideTheClosedSet_⊥AcceptedAnd⊥NamedByBakeReasonsOf',
+    { of: [OutsideReasonLine], subject: outsideVerdict },
+    (subject, [line]) => {
+      const verdict = subject(line)
+      return [
+        !verdict.accepted,
+        verdict.codes.length === 1,
+        verdict.codes[0] === 'E2E_BAKE_FAILED',
+        verdict.detail.includes(String(line.exitCode)),
+      ].every((check) => check)
+    },
+  )
+
+  const HarnessReasonInput = S.Struct({
+    budgetSeconds: S.Finite.check(S.isGreaterThan(0)),
+    fixtures: S.NonEmptyArray(S.String),
+    bootSeconds: S.Finite.check(S.isGreaterThan(0)),
+    exitCode: S.Int.check(S.isGreaterThan(0)),
+    message: S.NonEmptyString,
+  })
+
+  const harnessReasons = (input: typeof HarnessReasonInput.Type): ReadonlyArray<BakeReason> => [
+    overBudgetReason(input),
+    bootOverBudgetReason({ budgetSeconds: input.bootSeconds }),
+    setupFailedReason(input.message),
+    ...bakeReasonsOf({ stderrTail: 'the bake named no reason', exitCode: input.exitCode }),
+  ]
+
+  it.prop(
+    '∀f_EveryHarnessReason_≡ACodeOfTheClosedSetNamingItsInputs',
+    { of: [HarnessReasonInput], subject: harnessReasons },
+    (subject, [input]) => {
+      const reasons = subject(input)
+      const detailOf = (code: BakeReasonCode): string =>
+        Arr.findFirst(reasons, (reason) => reason.code === code).pipe(
+          Option.map((reason) => reason.detail),
+          Option.getOrElse(() => ''),
+        )
+      const installing = detailOf('E2E_BAKE_OVER_BUDGET')
+      const booting = detailOf('E2E_BAKE_BOOT_OVER_BUDGET')
+      const setup = detailOf('E2E_SETUP_FAILED')
+      const unnamed = detailOf('E2E_BAKE_FAILED')
+      return [
+        reasons.every((reason) => S.is(BakeReasonCode)(reason.code)),
+        installing.includes(`${input.budgetSeconds}s`),
+        installing.includes(`took ${input.bootSeconds.toFixed(1)} s of it`),
+        booting.includes(`${input.bootSeconds}s`),
+        setup.includes(`Global setup failed before the bake finished: ${input.message.split('\n', 1)[0]}`),
+        unnamed.includes(String(input.exitCode)),
+      ].every((check) => check)
     },
   )
 }
