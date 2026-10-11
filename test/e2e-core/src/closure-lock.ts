@@ -1,14 +1,8 @@
 import { Array, Function, Option, Predicate, Record } from 'effect'
 import type { Json, JsonObject } from 'effect/Schema'
 
-const FILLED_FIELDS = [
-  'version',
-  'bin',
-  'dependencies',
-  'optionalDependencies',
-  'peerDependencies',
-  'peerDependenciesMeta',
-]
+const EDGE_FIELDS = ['dependencies', 'optionalDependencies', 'peerDependencies', 'peerDependenciesMeta']
+const FILLED_FIELDS = ['version', 'bin', ...EDGE_FIELDS]
 const UNPINNED_FIELDS = ['integrity', 'version']
 const CLOSURE_TARBALL = /^file:.*\/([^/]+\.tgz)$/
 
@@ -92,12 +86,7 @@ if (import.meta.vitest !== void 0) {
         version: `${version}-stale`,
         dependencies: { [`dep-${name}-stale`]: '1' },
       }
-      const manifest = {
-        version,
-        license: 'Apache-2.0',
-        bin: { [name]: `dist/${name}.mjs` },
-        dependencies: { [`dep-${name}`]: version },
-      }
+      const manifest = { version, license: 'MIT', bin: { [name]: name }, dependencies: { [`dep-${name}`]: version } }
       const filled = { resolved, dev: true, bin: manifest.bin, version, dependencies: manifest.dependencies }
       return Equal.equals(subject(lockOf(stale), { [tarball]: manifest }), lockOf(filled))
     },
