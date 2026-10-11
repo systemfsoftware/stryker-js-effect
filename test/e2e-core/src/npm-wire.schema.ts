@@ -1,8 +1,11 @@
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import { pipe } from 'effect/Function'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Rec from 'effect/Record'
 import * as S from 'effect/Schema'
+import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 import type { PackedMember } from './install-closure.schema.js'
 
@@ -72,21 +75,55 @@ export const PinnedFixtureManifestJson = S.fromJsonString(S.Struct({
   overrides: Specs,
 }))
 
-export const PackumentJson = S.fromJsonString(S.Struct({
-  name: S.String,
-  'dist-tags': S.Record(S.String, S.String),
-  versions: S.Record(
-    S.String,
-    S.Struct({
-      name: S.String,
-      version: S.String,
-      dependencies: Specs,
-      peerDependencies: Specs,
-      dist: S.Struct({ tarball: S.String }),
-    }),
-  ),
-  time: S.Record(S.String, S.String),
+/**
+ * `npm ls --json`'s report, byte for byte: an optional problem list and an optional
+ * error object. The producer's optionals stay on the Encoded side; {@link LockListingJson}
+ * decodes them into the union of cases this codebase distinguishes.
+ */
+const NpmLsReportJson = S.fromJsonString(S.Struct({
+  problems: S.String.pipe(S.Array, S.optionalKey),
+  error: S.optionalKey(S.Struct({ code: S.optionalKey(S.String), summary: S.optionalKey(S.String) })),
 }))
+
+type NpmLsReport = typeof NpmLsReportJson.Type
+
+const LockProblemReport = S.TaggedStruct('LockProblemReport', {
+  problems: S.NonEmptyArray(S.String),
+})
+
+const LockUnreadableReport = S.TaggedStruct('LockUnreadableReport', {
+  detail: S.String,
+})
+
+export const LockListing = S.Union([LockProblemReport, LockUnreadableReport])
+export type LockListing = typeof LockListing.Type
+
+const errorDetailOf = (report: NpmLsReport): string =>
+  Option.match(Option.fromUndefinedOr(report.error), {
+    onNone: () => '',
+    onSome: (error) => [error.code, error.summary].filter((part) => part !== undefined).join(': '),
+  })
+
+const lockListingOf = (report: NpmLsReport): LockListing =>
+  Option.fromUndefinedOr(report.problems).pipe(
+    Option.filter(Arr.isReadonlyArrayNonEmpty),
+    Option.match({
+      onSome: (problems): LockListing => ({ _tag: 'LockProblemReport', problems }),
+      onNone: (): LockListing => ({ _tag: 'LockUnreadableReport', detail: errorDetailOf(report) }),
+    }),
+  )
+
+const reportOf = (listing: LockListing): NpmLsReport =>
+  Match.value(listing).pipe(
+    Match.tag('LockProblemReport', ({ problems }): NpmLsReport => ({ problems })),
+    Match.tag('LockUnreadableReport', ({ detail }): NpmLsReport => ({ error: { summary: detail } })),
+    Match.exhaustive,
+  )
+
+export const LockListingJson = S.decodeTo<typeof LockListing, typeof NpmLsReportJson>(
+  LockListing,
+  SchemaTransformation.transform({ decode: lockListingOf, encode: reportOf }),
+)(NpmLsReportJson)
 
 const FILE_PROTOCOL = 'file:'
 const TARBALL_EXTENSION = '.tgz'

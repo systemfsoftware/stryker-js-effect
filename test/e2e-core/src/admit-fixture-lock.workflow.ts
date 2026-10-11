@@ -1,9 +1,12 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Boolean from 'effect/Boolean'
 import { pipe } from 'effect/Function'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+
+import { LockListingJson } from './npm-wire.schema.js'
 
 export class AdmitFixtureLockCommand extends S.TaggedClass<AdmitFixtureLockCommand>()('AdmitFixtureLockCommand', {
   fixtureId: S.String,
@@ -40,41 +43,34 @@ export class LockUnreadable extends S.TaggedClass<LockUnreadable>()('LockUnreada
 export const LockAdmission = S.Union([LockAdmitted, LockProblemsListed, LockUnreadable])
 export type LockAdmission = typeof LockAdmission.Type
 
-const NpmLsReportJson = S.fromJsonString(S.Struct({
-  problems: S.String.pipe(S.Array, S.optionalKey),
-  error: S.optionalKey(S.Struct({ code: S.optionalKey(S.String), summary: S.optionalKey(S.String) })),
-}))
-
-type NpmLsReport = typeof NpmLsReportJson.Type
-
-const decodeLsReport = S.decodeOption(NpmLsReportJson)
+const decodeListing = S.decodeOption(LockListingJson)
 
 const nonBlank = (text: string): boolean => text.length > 0
 
-const problemsOf = (report: NpmLsReport): Option.Option<ReadonlyArray<string>> =>
-  Option.filter(Option.fromUndefinedOr(report.problems), (problems) => problems.length > 0)
-
-const npmErrorOf = (report: NpmLsReport): Option.Option<string> =>
+const unreadableDetailOf = (command: AdmitFixtureLockCommand, detail: string): string =>
   pipe(
-    Option.fromUndefinedOr(report.error),
-    Option.map((error) => [error.code, error.summary].filter((part) => part !== undefined).join(': ')),
-    Option.filter(nonBlank),
-  )
-
-const detailOf = (command: AdmitFixtureLockCommand, report: Option.Option<NpmLsReport>): string =>
-  pipe(
-    Option.flatMap(report, npmErrorOf),
+    Option.filter(Option.some(detail), nonBlank),
     Option.orElse(() => Option.filter(Option.fromUndefinedOr(command.stderr.trim().split('\n')[0]), nonBlank)),
     Option.getOrElse(() => `npm ls exited ${command.exitCode} without a report`),
   )
 
-const failedListingOf = (command: AdmitFixtureLockCommand): LockAdmission => {
-  const report = decodeLsReport(command.stdout)
-  return Option.match(Option.flatMap(report, problemsOf), {
-    onSome: (problems) => LockProblemsListed.make({ fixtureId: command.fixtureId, problems }),
-    onNone: () => LockUnreadable.make({ fixtureId: command.fixtureId, detail: detailOf(command, report) }),
+const failedListingOf = (command: AdmitFixtureLockCommand): LockAdmission =>
+  Option.match(decodeListing(command.stdout), {
+    onSome: (listing) =>
+      Match.value(listing).pipe(
+        Match.tag(
+          'LockProblemReport',
+          ({ problems }): LockAdmission => LockProblemsListed.make({ fixtureId: command.fixtureId, problems }),
+        ),
+        Match.tag(
+          'LockUnreadableReport',
+          ({ detail }): LockAdmission =>
+            LockUnreadable.make({ fixtureId: command.fixtureId, detail: unreadableDetailOf(command, detail) }),
+        ),
+        Match.exhaustive,
+      ),
+    onNone: () => LockUnreadable.make({ fixtureId: command.fixtureId, detail: unreadableDetailOf(command, '') }),
   })
-}
 
 const decide = (command: AdmitFixtureLockCommand): Result.Result<LockAdmission, never> =>
   Result.succeed(Boolean.match(command.exitCode === 0, {

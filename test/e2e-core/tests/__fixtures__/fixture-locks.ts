@@ -1,4 +1,3 @@
-import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
@@ -265,18 +264,23 @@ export const checkFixtureLock = ({ context, fixture }: FixtureLockInput) =>
   Effect.gen(function*() {
     const staged = yield* stageFixture(context, fixture)
     const lock = yield* committedLockOf(fixture)
-    const findings = Arr.getSuccesses([
-      findLockDrift(FindLockDriftCommand.make({
-        fixtureId: fixture.fixtureId,
-        lock: Option.getOrNull(lock),
-        manifests: staged.manifests.map((manifest) => ({ lockKey: manifest.lockKey, manifest: manifest.document })),
-        closure: staged.closure,
-        pins: staged.pins,
-      })),
-    ]).flat()
+    const findings = yield* Match.value(findLockDrift(FindLockDriftCommand.make({
+      fixtureId: fixture.fixtureId,
+      lock: Option.getOrNull(lock),
+      manifests: staged.manifests.map((manifest) => ({ lockKey: manifest.lockKey, manifest: manifest.document })),
+      closure: staged.closure,
+      pins: staged.pins,
+    }))).pipe(
+      Match.tag('Success', (decided): Effect.Effect<ReadonlyArray<LockDrift>> => Effect.succeed(decided.success)),
+      Match.tag('Failure', (): Effect.Effect<ReadonlyArray<LockDrift>> =>
+        Effect.die(new Error(`findLockDrift did not decide for ${fixture.fixtureId}`))),
+      Match.exhaustive,
+    )
     const admission = yield* Option.match(lock, {
-      onNone: () => Effect.succeed(Option.none<LockAdmission>()),
-      onSome: (committed) => Effect.asSome(lockAdmissionOf(context, staged, fixture.fixtureId, committed)),
+      onNone: () =>
+        Effect.succeed(Option.none<LockAdmission>()),
+      onSome: (committed) =>
+        Effect.asSome(lockAdmissionOf(context, staged, fixture.fixtureId, committed)),
     })
     return { fixtureId: fixture.fixtureId, findings, admission } satisfies FixtureLockReport
   })

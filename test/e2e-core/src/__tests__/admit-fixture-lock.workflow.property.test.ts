@@ -35,4 +35,23 @@ describe('admitFixtureLock', () => {
           (S.is(LockUnreadable)(admission) && admission.detail.length > 0))
     },
   )
+
+  it.prop(
+    '∀c_ReportedProblemList_≡ListedExactlyWhenNonEmpty',
+    { of: [AdmitFixtureLockCommand, S.Array(S.String)], subject: admitFixtureLock },
+    (subject, [command, problems]) => {
+      const reported = AdmitFixtureLockCommand.make({
+        fixtureId: command.fixtureId,
+        exitCode: command.exitCode === 0 ? 1 : command.exitCode,
+        stdout: JSON.stringify({ problems }),
+        stderr: command.stderr,
+      })
+      const admission = Result.getOrThrow(subject(reported))
+      return admission.fixtureId === command.fixtureId &&
+        (problems.length > 0
+          ? S.is(LockProblemsListed)(admission) &&
+            JSON.stringify(admission.problems) === JSON.stringify(problems)
+          : S.is(LockUnreadable)(admission) && admission.detail.length > 0)
+    },
+  )
 })

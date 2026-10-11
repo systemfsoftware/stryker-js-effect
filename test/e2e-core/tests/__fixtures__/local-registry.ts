@@ -8,7 +8,23 @@ import * as Option from 'effect/Option'
 import * as Rec from 'effect/Record'
 import * as S from 'effect/Schema'
 
-import { PackumentJson } from '@systemfsoftware/stryker-e2e-core'
+const Specs = S.optionalKey(S.Record(S.String, S.String))
+
+const PackumentJson = S.fromJsonString(S.Struct({
+  name: S.String,
+  'dist-tags': S.Record(S.String, S.String),
+  versions: S.Record(
+    S.String,
+    S.Struct({
+      name: S.String,
+      version: S.String,
+      dependencies: Specs,
+      peerDependencies: Specs,
+      dist: S.Struct({ tarball: S.String }),
+    }),
+  ),
+  time: S.Record(S.String, S.String),
+}))
 
 export interface PublishedVersion {
   readonly version: string
