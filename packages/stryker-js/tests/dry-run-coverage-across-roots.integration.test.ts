@@ -5,6 +5,7 @@ import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Console from 'effect/Console'
+import * as Deferred from 'effect/Deferred'
 import * as Effect from 'effect/Effect'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
@@ -187,6 +188,8 @@ const copyReport = (
 
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
 
+const INCREMENTAL_FILE = 'reports/main.json'
+
 const PER_TEST_CONFIG = `export default {
   testRunner: 'vm',
   plugins: [],
@@ -196,7 +199,7 @@ const PER_TEST_CONFIG = `export default {
   coverageAnalysis: 'perTest',
   cleanTempDir: 'always',
   incremental: true,
-  incrementalFile: 'reports/main.json',
+  incrementalFile: '${INCREMENTAL_FILE}',
 }
 `
 
@@ -271,22 +274,21 @@ const statusCountsOf = (events: ReadonlyArray<RunEvent.RunEvent>): Readonly<Reco
     {},
   )
 
-const perTestLayerOf = (root: string, logs: string[]) =>
-  Effect.map(Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND), (queue) => {
-    const ports = Engine.nodePlatformLayer
-    return {
-      queue,
-      layer: Layer.mergeAll(
-        Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports),
-        ports,
-        Logger.layer([
-          Logger.make((entry) => {
-            logs.push([entry.message].flat().map(String).join(' '))
-          }),
-        ]),
-      ),
-    }
-  })
+type PlatformPorts = Layer.Layer<Layer.Success<typeof Engine.nodePlatformLayer>>
+
+const perTestLayerOf = (root: string, logs: string[], ports: PlatformPorts = Engine.nodePlatformLayer) =>
+  Effect.map(Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND), (queue) => ({
+    queue,
+    layer: Layer.mergeAll(
+      Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports),
+      ports,
+      Logger.layer([
+        Logger.make((entry) => {
+          logs.push([entry.message].flat().map(String).join(' '))
+        }),
+      ]),
+    ),
+  }))
 
 const runPerTest = (
   root: string,
@@ -314,39 +316,51 @@ const reusedCoverageIn = (run: PerTestRun): boolean =>
 const refusedCoverageIn = (run: PerTestRun, reason: string): boolean =>
   run.logs.some((line) => line.includes(`dry-run coverage reuse refused (${reason})`))
 
-const slimReportWithCoverage = (text: string): boolean =>
+const checkpointWithCoverage = (text: string): boolean =>
   Option.exists(
     S.decodeOption(S.fromJsonString(Engine.IncrementalReportSchema))(text),
-    (report) => report['framework'] === undefined && report.dryRunCoverage !== undefined,
+    (report) =>
+      report['framework'] === undefined &&
+      report.dryRunCoverage !== undefined &&
+      Object.values(report.files).some((file) => file.mutants.some((mutant) => mutant.status === 'Pending')),
   )
 
-const interruptAtFirstSlimReport = (root: string): Effect.Effect<string, never, never> =>
+const holdAfterFirstCheckpoint = (
+  base: FileSystem.FileSystem,
+  to: string,
+  landed: Deferred.Deferred<string>,
+) =>
+  base.readFileString(to).pipe(
+    Effect.flatMap((text) => checkpointWithCoverage(text) ? Deferred.succeed(landed, text) : Effect.succeed(false)),
+    Effect.flatMap((first) => first ? Effect.never : Effect.void),
+  )
+
+const holdingFileSystemLayer = (landed: Deferred.Deferred<string>): Layer.Layer<FileSystem.FileSystem> =>
+  Layer.effect(
+    FileSystem.FileSystem,
+    Effect.map(FileSystem.FileSystem, (base): FileSystem.FileSystem => ({
+      ...base,
+      rename: (from, to) =>
+        base.rename(from, to).pipe(
+          Effect.andThen(to === INCREMENTAL_FILE ? holdAfterFirstCheckpoint(base, to, landed) : Effect.void),
+        ),
+    })),
+  ).pipe(Layer.provide(NodeFileSystem.layer))
+
+const interruptAtFirstCheckpoint = (root: string): Effect.Effect<string, never, never> =>
   withChdir(
     root,
     Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
-      const path = yield* Path.Path
-      const file = path.join(root, 'reports', 'main.json')
-      const { layer } = yield* perTestLayerOf(root, [])
+      const landed = yield* Deferred.make<string>()
+      const ports = Layer.merge(Engine.nodePlatformLayer, holdingFileSystemLayer(landed))
+      const { layer } = yield* perTestLayerOf(root, [], ports)
       const fiber = yield* Engine.mutationTestCell
         .run({ cliOptions: {}, targetMutatePatterns: undefined })
         .pipe(Effect.provide(layer), Effect.scoped, Effect.exit, Effect.forkChild)
-      const waitForSlimReport = (attempts: number): Effect.Effect<string> =>
-        fs.readFileString(file).pipe(
-          Effect.orElseSucceed(() => ''),
-          Effect.flatMap((text) =>
-            slimReportWithCoverage(text)
-              ? Effect.succeed(text)
-              : attempts <= 0
-              ? Effect.succeed('')
-              : Effect.andThen(Effect.sleep(10), waitForSlimReport(attempts - 1))
-          ),
-        )
-      const slim = yield* waitForSlimReport(3000)
+      const checkpoint = yield* Effect.race(Deferred.await(landed), Effect.as(Fiber.await(fiber), ''))
       yield* Fiber.interrupt(fiber)
-      yield* fs.writeFileString(file, slim)
-      return slim
-    }).pipe(Effect.provide(filePorts), Effect.orDie),
+      return checkpoint
+    }).pipe(Effect.orDie),
   )
 
 type Json = S.Schema.Type<typeof S.Json>
@@ -545,16 +559,16 @@ Feature('Reusing dry-run coverage of a project that was built elsewhere')
     scenario(
       'A run interrupted after its first checkpoint leaves coverage the next run under the same root reuses',
       Gherkin.Do.pipe(
-        Given('a run under root A interrupted once its first slim report with coverage lands')(
+        Given('a run under root A held and interrupted once its first checkpoint with coverage lands')(
           'observed',
           () =>
             Effect.gen(function*() {
               const root = yield* writePerTestFixture
               return yield* Effect.ensuring(
                 Effect.gen(function*() {
-                  const slim = yield* interruptAtFirstSlimReport(root)
+                  const checkpoint = yield* interruptAtFirstCheckpoint(root)
                   const next = yield* runPerTest(root)
-                  return { slim, next }
+                  return { checkpoint, next }
                 }),
                 removeFixture(root),
               )
@@ -562,9 +576,9 @@ Feature('Reusing dry-run coverage of a project that was built elsewhere')
         ),
         Then("the next run under A reuses the interrupted run's coverage")((s, expect) =>
           expect({
-            interruptedAtSlimReport: s.observed.slim.length > 0,
+            interruptedAtCheckpoint: s.observed.checkpoint.length > 0,
             reused: reusedCoverageIn(s.observed.next),
-          }).toEqual({ interruptedAtSlimReport: true, reused: true })
+          }).toEqual({ interruptedAtCheckpoint: true, reused: true })
         ),
       ),
     )
