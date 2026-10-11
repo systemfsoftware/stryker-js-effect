@@ -4,7 +4,7 @@ import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gh
 import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import * as Effect from 'effect/Effect'
-import type * as FileSystem from 'effect/FileSystem'
+import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
 import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
@@ -30,6 +30,7 @@ interface Observation {
   readonly statuses: Readonly<Record<string, string>>
   readonly brokenBlamesTheImporter: boolean
   readonly brokenReason: string
+  readonly brokenLine: string
 }
 
 type WireInput = S.Codec.Encoded<typeof Checker.CheckerMutantWire>
@@ -46,27 +47,38 @@ interface Case {
 const statusOf = (results: HashMap.HashMap<string, Checker.CheckResult>, id: string): string =>
   Option.match(HashMap.get(results, id), { onNone: () => 'missing', onSome: (result) => result.status })
 
+const brokenReasonOf = (
+  testCase: Case,
+  results: HashMap.HashMap<string, Checker.CheckResult>,
+): string =>
+  Option.match(HashMap.get(results, testCase.brokenId), {
+    onNone: () => '',
+    onSome: (result) => (result.status === 'compileError' ? result.reason : ''),
+  })
+
+const reportingLineOf = (reason: string): string => {
+  const positioned = /\((\d+),\d+\): /u.exec(reason)
+  return positioned === null ? '' : positioned[1] ?? ''
+}
+
 const observedOf = (
   testCase: Case,
   batches: ReadonlyArray<ReadonlyArray<string>>,
   results: HashMap.HashMap<string, Checker.CheckResult>,
-): Observation => ({
-  batches,
-  statuses: Object.fromEntries(testCase.observedIds.map((id) => [id, statusOf(results, id)])),
-  brokenBlamesTheImporter: Option.match(HashMap.get(results, testCase.brokenId), {
-    onNone: () => false,
-    onSome: (result) =>
-      result.status === 'compileError' &&
-      result.reason.includes(testCase.importerFile) &&
-      !result.reason.includes(testCase.mutatedFile),
-  }),
-  brokenReason: Option.match(HashMap.get(results, testCase.brokenId), {
-    onNone: () => '',
-    onSome: (result) => (result.status === 'compileError' ? result.reason : ''),
-  }),
-})
+): Observation => {
+  const brokenReason = brokenReasonOf(testCase, results)
+  return {
+    batches,
+    statuses: Object.fromEntries(testCase.observedIds.map((id) => [id, statusOf(results, id)])),
+    brokenBlamesTheImporter: brokenReason.includes(testCase.importerFile) &&
+      !brokenReason.includes(testCase.mutatedFile),
+    brokenReason,
+    brokenLine: reportingLineOf(brokenReason),
+  }
+}
 
-const checkFixture = (
+const checkIn = (
+  directory: string,
   testCase: Case,
 ): Effect.Effect<
   Observation,
@@ -75,8 +87,6 @@ const checkFixture = (
 > =>
   Effect.gen(function*() {
     const pathService = yield* Path.Path
-    const here = yield* Effect.orDie(pathService.fromFileUrl(new URL(import.meta.url)))
-    const directory = pathService.join(pathService.dirname(here), '__fixtures__', testCase.fixture)
     const options = yield* S.decodeEffect(Options.StrykerOptionsSchema)({
       tsconfigFile: pathService.join(directory, 'tsconfig.json'),
     })
@@ -91,6 +101,19 @@ const checkFixture = (
       return observedOf(testCase, batches, results)
     }).pipe(Effect.provide(CheckerRuntime.layer(options)))
   }).pipe(Effect.orDie)
+
+const checkFixture = (
+  testCase: Case,
+): Effect.Effect<
+  Observation,
+  never,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> =>
+  Effect.gen(function*() {
+    const pathService = yield* Path.Path
+    const here = yield* Effect.orDie(pathService.fromFileUrl(new URL(import.meta.url)))
+    return yield* checkIn(pathService.join(pathService.dirname(here), '__fixtures__', testCase.fixture), testCase)
+  })
 
 const objectCase: Case = {
   fixture: 'per-mutant-check',
@@ -188,6 +211,33 @@ const statementCase: Case = {
   ],
 }
 
+const POSITION_BROKEN_ID = '0000000000000011'
+const POSITION_SHIFT_ID = '0000000000000012'
+
+const positionCase: Case = {
+  fixture: 'per-mutant-position',
+  brokenId: POSITION_BROKEN_ID,
+  observedIds: [POSITION_BROKEN_ID, POSITION_SHIFT_ID],
+  importerFile: 'dep.ts',
+  mutatedFile: 'dep.ts',
+  wires: (join) => [
+    {
+      id: POSITION_BROKEN_ID,
+      fileName: join('dep.ts'),
+      mutatorName: 'StringLiteral',
+      replacement: '"nope"',
+      location: { start: { line: 20, column: 31 }, end: { line: 20, column: 32 } },
+    },
+    {
+      id: POSITION_SHIFT_ID,
+      fileName: join('dep.ts'),
+      mutatorName: 'BlockStatement',
+      replacement: '{}',
+      location: { start: { line: 1, column: 38 }, end: { line: 6, column: 2 } },
+    },
+  ],
+}
+
 const IMPORT_ID = '0000000000000007'
 
 const importCase: Case = {
@@ -243,6 +293,63 @@ const tceCase: Case = {
     },
   ],
 }
+
+const TCE_PATHS_SITE = { start: { line: 2, column: 47 }, end: { line: 2, column: 52 } } as const
+
+const tcePathsCase: Case = {
+  ...tceCase,
+  wires: (join) => tceCase.wires(join).map((wire) => ({ ...wire, location: TCE_PATHS_SITE })),
+}
+
+const PATHS_PROJECT: Readonly<Record<string, string>> = {
+  'tsconfig.json': JSON.stringify({
+    compilerOptions: {
+      strict: true,
+      module: 'esnext',
+      moduleResolution: 'bundler',
+      target: 'es2022',
+      noEmit: true,
+      skipLibCheck: true,
+      types: [],
+      paths: { '@lib/*': ['./lib/*.ts'] },
+    },
+    include: ['*.ts', 'lib/*.ts'],
+  }),
+  'dep.ts': "import { base } from '@lib/shared'\nexport const compute = (a: number): number => a * 1 + base\n",
+  'lib/shared.ts': 'export const base = 2\n',
+}
+
+interface ProjectObservation extends Observation {
+  readonly files: ReadonlyArray<string>
+}
+
+const checkPathsProject = (
+  testCase: Case,
+): Effect.Effect<
+  ProjectObservation,
+  never,
+  FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+> =>
+  Effect.scoped(Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const pathService = yield* Path.Path
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-tce-paths-' })
+    yield* Effect.forEach(
+      Object.entries(PATHS_PROJECT),
+      ([name, text]) =>
+        fs.makeDirectory(pathService.dirname(pathService.join(directory, name)), { recursive: true }).pipe(
+          Effect.andThen(fs.writeFileString(pathService.join(directory, name), text)),
+        ),
+      { discard: true },
+    )
+    const observation = yield* checkIn(directory, testCase)
+    const files = yield* fs.readDirectory(directory, { recursive: true })
+    const regular = yield* Effect.filter(
+      files,
+      (name) => fs.stat(pathService.join(directory, name)).pipe(Effect.map((info) => info.type === 'File')),
+    )
+    return { ...observation, files: [...regular].sort() }
+  })).pipe(Effect.orDie)
 
 Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
   .withLayer(FILE_PORTS)
@@ -335,6 +442,26 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
     )
 
     scenario(
+      'An earlier mutant of one call reports the line its own text put it on',
+      Gherkin.Do.pipe(
+        When(
+          'a mutant erroring on line 20 and a later mutant that empties the multi-line block above it are handed to the checker runtime in that order',
+        )('seen', () => checkFixture(positionCase)),
+        Then('the earlier mutant names line 20 and the later one passes')((s, expect) =>
+          expect({
+            batches: s.seen.batches,
+            statuses: s.seen.statuses,
+            brokenLine: s.seen.brokenLine,
+          }).toEqual({
+            batches: [[POSITION_BROKEN_ID, POSITION_SHIFT_ID]],
+            statuses: { [POSITION_BROKEN_ID]: 'compileError', [POSITION_SHIFT_ID]: 'passed' },
+            brokenLine: '20',
+          })
+        ),
+      ),
+    )
+
+    scenario(
       'A mutant that empties a dynamic import specifier keeps the missing-module diagnostic',
       Gherkin.Do.pipe(
         When('the emptied specifier is handed to the checker runtime')('seen', () => checkFixture(importCase)),
@@ -364,6 +491,26 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
               [TCE_KEPT_ID]: 'passed',
               [TCE_DUPLICATE_ID]: 'ignored',
             },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'Deciding equivalence never writes JavaScript into the project it checks',
+      Gherkin.Do.pipe(
+        When('the same three mutants sit in a file that imports a module through a tsconfig path alias')(
+          'seen',
+          () => checkPathsProject(tcePathsCase),
+        ),
+        Then('the mutants are decided as before and the project holds only the files it started with')((s, expect) =>
+          expect({ statuses: s.seen.statuses, files: s.seen.files }).toEqual({
+            statuses: {
+              [TCE_EQUIVALENT_ID]: 'ignored',
+              [TCE_KEPT_ID]: 'passed',
+              [TCE_DUPLICATE_ID]: 'ignored',
+            },
+            files: ['dep.ts', 'lib/shared.ts', 'tsconfig.json'],
           })
         ),
       ),

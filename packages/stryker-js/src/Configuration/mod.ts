@@ -21,7 +21,6 @@ export {
   ConfigFileUnreadableError,
   ConfigFileUnsupportedError,
 } from '../ConfigError.schema.js'
-export { decideExtendsStep, importModule, initialExtendsStepState } from '../drivers/config.js'
 export { FileMatcher } from '../matching.schema.js'
 export {
   ExtendsStepDone,
@@ -33,4 +32,5 @@ export type { ExtendsStepDecision } from '../run/extends-step.workflow.js'
 export { loadConfigCell } from '../run/load-config.cell.js'
 export type { ConfigInvocation, ValidationSchemaDocument } from '../run/load-config.cell.js'
 export { describeErrors, forkCoreSchema, readConfig } from '../run/load-config.js'
+export { decideExtendsStep, importModule, initialExtendsStepState } from '../run/read-config-document.js'
 export { validateOptions } from '../run/validate-options.js'

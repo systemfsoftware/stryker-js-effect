@@ -49,6 +49,7 @@ const writeMutationTestNoTests = Effect.fn(SpanTaxonomy.Spans.mutationTestNoTest
   const elapsed = Duration.millis(now - env.runStartedAt)
   yield* Effect.logInfo(`Done in ${Duration.format(elapsed)}.`)
   yield* phaseEntered('mutation-test')
+  yield* phaseEntered('reporting')
   return { results: [], verdict: null }
 })
 
@@ -65,6 +66,7 @@ const writeMutationTestDryRunOnly = Effect.fn(SpanTaxonomy.Spans.mutationTestDry
   )
   yield* phaseEntered('mutation-test')
   yield* Effect.logInfo('The dry-run has been completed successfully. No mutations have been executed.')
+  yield* phaseEntered('reporting')
   return { results: [], verdict: null }
 })
 

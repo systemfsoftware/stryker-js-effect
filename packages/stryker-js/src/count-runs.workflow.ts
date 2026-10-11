@@ -62,7 +62,7 @@ const statusCountsOf = (mutants: ReadonlyArray<CountedMutant>): StatusCounts => 
 }
 
 const ignoreRuleOf = (mutant: CountedMutant): Option.Option<Mutant.IgnoreRuleIdValue> =>
-  Option.map(Option.flatMap(Option.fromUndefinedOr(mutant.statusReason), decodeIgnoreReason), (reason) => reason.ruleId)
+  Option.map(Option.flatMap(Option.fromUndefinedOr(mutant.statusReason), decodeIgnoreReason), (reason) => reason.code)
 
 const runCountsOf = (reports: ReadonlyArray<CountedReport>): RunCounts => {
   const counted = reports.flatMap(countedOf)

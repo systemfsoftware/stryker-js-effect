@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "seed": "checker-parity-pr-1",
+  "driftProjects": 6,
+  "perProject": 4,
+  "perChangedFile": 6
+}

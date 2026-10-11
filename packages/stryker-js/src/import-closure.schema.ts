@@ -37,3 +37,30 @@ export const PackageManifestSchema = S.Struct({
   module: S.optionalKey(S.String),
 })
 export type PackageManifest = typeof PackageManifestSchema.Type
+
+export const ScriptLanguageSchema = S.Literals(['js', 'jsx', 'ts', 'tsx'])
+export type ScriptLanguage = typeof ScriptLanguageSchema.Type
+
+const ModuleSpecifiersTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ModuleSpecifiers')
+type ModuleSpecifiersTypeId = typeof ModuleSpecifiersTypeId
+
+export class ExtractModuleSpecifiersCommand
+  extends S.TaggedClass<ExtractModuleSpecifiersCommand>()('ExtractModuleSpecifiersCommand', { program: S.Json })
+{
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export class ModuleSpecifiersClosed extends S.TaggedClass<ModuleSpecifiersClosed>()('ModuleSpecifiersClosed', {
+  specifiers: S.Array(S.String),
+}) {
+  readonly [ModuleSpecifiersTypeId] = ModuleSpecifiersTypeId
+}
+
+export class ModuleSpecifiersOpen extends S.TaggedClass<ModuleSpecifiersOpen>()('ModuleSpecifiersOpen', {
+  specifiers: S.Array(S.String),
+}) {
+  readonly [ModuleSpecifiersTypeId] = ModuleSpecifiersTypeId
+}
+
+export const ModuleSpecifiersSchema = S.Union([ModuleSpecifiersClosed, ModuleSpecifiersOpen])
+export type ModuleSpecifiers = typeof ModuleSpecifiersSchema.Type

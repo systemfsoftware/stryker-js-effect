@@ -1,4 +1,5 @@
 import { MicroVM } from '@systemfsoftware/effect-microsandbox'
+import type { MalformedFixtureManifest, UnresolvedCatalogSpec } from '@systemfsoftware/stryker-e2e-core'
 import { Match, Schema } from 'effect'
 import type { Config } from 'effect'
 import type { PlatformError } from 'effect/PlatformError'
@@ -80,28 +81,6 @@ export class SandboxForkFailure extends Schema.TaggedError<SandboxForkFailure>()
 }) {
   override get message(): string {
     return `${this.step} in fork ${this.sandboxName}: ${this.detail}`
-  }
-}
-
-export class MalformedFixtureManifest extends Schema.TaggedError<MalformedFixtureManifest>()(
-  'MalformedFixtureManifest',
-  {
-    manifest: Schema.String,
-    detail: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `${this.manifest}: ${this.detail}`
-  }
-}
-
-export class UnresolvedCatalogSpec extends Schema.TaggedError<UnresolvedCatalogSpec>()('UnresolvedCatalogSpec', {
-  manifest: Schema.String,
-  packageName: Schema.String,
-  catalog: Schema.String,
-}) {
-  override get message(): string {
-    return `${this.manifest}: "${this.packageName}" is missing from the ${this.catalog} catalog in pnpm-workspace.yaml`
   }
 }
 

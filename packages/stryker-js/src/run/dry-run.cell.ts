@@ -31,6 +31,7 @@ import { offerReporterEvent, withPhaseSpan } from '../reporter-stream.service.js
 import { type RunEvents, WorkerReports } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { originalFileFor, sandboxFileFor, type SandboxHandle } from '../Sandbox.handle.js'
+import type { SourceParser } from '../source-parser.service.js'
 import type { TestCoverage } from '../test-coverage.schema.js'
 import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.blueprint.js'
 import { testRunnerConfigOf } from '../vm-runner.js'
@@ -566,6 +567,7 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
   | ChildProcessSpawner.ChildProcessSpawner
   | FileSystem.FileSystem
   | Path.Path
+  | SourceParser
   | WorkerLauncher
   | RunEnvironment
   | RunEvents

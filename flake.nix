@@ -17,11 +17,12 @@
       url = "github:Scrumplex/importPnpmLock.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # gritlint, compiled from source at the locked commit, and `repo-checks`.
-    # Its nixpkgs is not followed: the crate vendor hash is fixed against
-    # upstream's own lock. Only the `gritlint` and `repo-checks` packages and
-    # the dev shell reference this input, so building any other package never
-    # fetches it.
+    # gritlint, built and gated by its own repository at the locked commit.
+    # Its nixpkgs is not followed: gritlint's CI proved the build against its
+    # own lock. Only the `gritlint` package and the dev shell reference it.
+    gritlint.url = "github:systemfsoftware/gritlint";
+    # `repo-checks`. Only that package references this input, so building
+    # any other package never fetches it.
     systemfsoftware.url = "github:systemfsoftware/systemfsoftware";
     # One `pnpm pack` tarball per workspace package, built offline from the
     # lockfile by the same builder systemfsoftware uses.
@@ -29,15 +30,15 @@
       url = "github:systemfsoftware/pnpm-release-management";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # This repository at the commit of its latest release, `@systemfsoftware/stryker-js@v18.1.0`.
+    # This repository at the commit of its latest release, `@systemfsoftware/stryker-js@v19.0.0`.
     # The packages the workspace dogfoods (the mutation CLI, its runner,
     # checker and ignorers) come from its tarballs, never from a registry.
     # Nothing follows: its own lock reproduces the released tarballs byte for
     # byte, the integrity each release tag records.
-    stryker-published.url = "github:systemfsoftware/stryker-js-effect/27b1075905a6c69e74eff163567ac25dd4839a1b";
+    stryker-published.url = "github:systemfsoftware/stryker-js-effect/9e81669b84711a9635eaa97b17dd13efea9f0c8c";
   };
 
-  outputs = { self, nixpkgs, comment-checker, importPnpmLock, systemfsoftware, pnpm-release-management, stryker-published }:
+  outputs = { self, nixpkgs, comment-checker, importPnpmLock, gritlint, systemfsoftware, pnpm-release-management, stryker-published }:
     let
       lib = nixpkgs.lib;
       systems = [ "x86_64-linux" "aarch64-linux" ];
@@ -84,7 +85,7 @@
             # The bwrap-sandboxed upstream `gritlint` needs unprivileged user
             # namespaces, which Ubuntu 24.04 runners refuse without a workflow
             # step this repo's read-only workflows cannot add.
-            gritlint = systemfsoftware.packages.${pkgs.stdenv.hostPlatform.system}.gritlint-unwrapped;
+            gritlint = gritlint.packages.${pkgs.stdenv.hostPlatform.system}.gritlint-unwrapped;
             # Repository invariants for any pnpm workspace; `pnpm gate:repo` and
             # `.husky/pre-push` run its `single-plan` check.
             repo-checks = systemfsoftware.packages.${pkgs.stdenv.hostPlatform.system}.repo-checks;

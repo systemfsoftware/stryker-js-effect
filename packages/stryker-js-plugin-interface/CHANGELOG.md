@@ -1,5 +1,26 @@
 # @systemfsoftware/stryker-js-plugin-interface
 
+## 16.0.0
+
+Every machine-stream mutant line now carries `statusReason`. An Ignored line names the rule that removed it as `<rule-id>: <detail>` (for example `arid-logging: Effect.logInfo`); other statuses carry their note or `null`. `stryker merge` keeps the reason in the JSON report.
+
+Breaking:
+
+- The stream `schemaVersion` is now `8.0`, which also adds the `subsumption` key. A mutant line without `statusReason`, or an Ignored line whose reason names no known rule, is refused. `stryker merge` refuses a shard stream of another major version, naming both versions.
+- `RunEvent.RunMutantTestedEvent` carries `statusReason`. Building or decoding an Ignored event whose reason names no ignore rule fails.
+- `RunEvent.RunEvent` is a tagged union keyed by `_tag`: use its `cases`, `guards` and `match` to handle each event kind. Plugins that ignore a mutant must now say why. Each ignore rule id (`Mutant.IgnoreRuleId`) is documented in the schema with what it means and the option that keeps its mutants; the ids are stable.
+
+Breaking:
+
+- A checker answering `ignored` must give a reason of the form `<rule-id>: <detail>`, or the run fails naming the checker and the mutant. A third-party checker with no rule of its own uses the new `checker` rule: `checker: <detail>`.
+- An ignorer whose `shouldIgnore` returns an empty or non-string reason now fails instrumentation, naming the ignorer, the mutant id, and the file. Return a non-empty string to ignore a mutant, or `undefined` to keep it. Every mutant status, run failure and tool refusal now has a stable reason code, documented in the schema with its meaning and next step. `Mutant.SettledReasonCode` covers mutants that were judged (`covered-not-killed`, `not-covered`, `timed-out`, `remembered` and more), `Mutant.RunFailureCode` covers failed or refused runs, and `Mutant.ToolRefusalCode` covers refused CLI and MCP queries. `Mutant.StatusReason` decodes `{ status, statusReason }` from `<code>: <detail>` and accepts only the codes of that status; a `Pending` mutant has no reason, and a reused `Ignored` mutant keeps its rule code.
+
+Breaking:
+
+- `Mutant.IgnoreStatusReason` decodes to `{ code, detail }` instead of `{ ruleId, detail }`; the text form is unchanged. Read `.code` where you read `.ruleId`. Under the default `mutator.mutantSetPolicy`, a relational comparison no longer runs its complement when the matching ordering mutant is kept: for `a < b`, `a >= b` is Ignored because every test that kills `a <= b` also kills it (likewise `>` for `<=`, `<=` for `>`, `<` for `>=`). This holds for every JavaScript operand, `NaN`, `BigInt`, strings, and `valueOf` side effects included. Its status reason reads `redundant-relational: subsumed by <dominator id> (complement): ...` and says what to do next.
+
+A plugin `Mutant` gains an optional `subsumption` field: `{ _tag: 'Subsumed', rule, dominators }` on an `Ignored` mutant, or `{ _tag: 'Readmitted', rule, causes }` on one that is not Ignored, because it is re-admitted to run. A `Mutant` whose `subsumption` disagrees with its status does not decode. Set `mutator: { mutantSetPolicy: 'full' }` to run every complement.
+
 ## 15.0.0
 
 A checker plugin must now report the program it loaded. `CheckerService` gains a

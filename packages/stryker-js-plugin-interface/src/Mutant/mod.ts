@@ -1,7 +1,19 @@
-export { IgnoreRuleId, IgnoreStatusReason, IgnoreStatusReasonText } from '../ignore-rule.schema.js'
+export {
+  IgnoreRuleId,
+  IgnoreStatusReason,
+  IgnoreStatusReasonText,
+  RunFailureCode,
+  SettledReasonCode,
+  StatusReason,
+  ToolRefusalCode,
+} from '../ignore-rule.schema.js'
 export type {
   IgnoreRuleId as IgnoreRuleIdValue,
   IgnoreStatusReason as IgnoreStatusReasonValue,
+  RunFailureCode as RunFailureCodeValue,
+  SettledReasonCode as SettledReasonCodeValue,
+  StatusReason as StatusReasonValue,
+  ToolRefusalCode as ToolRefusalCodeValue,
 } from '../ignore-rule.schema.js'
 export { inOrder, notReversed } from '../Location.schema.js'
 export type { Ends } from '../Location.schema.js'

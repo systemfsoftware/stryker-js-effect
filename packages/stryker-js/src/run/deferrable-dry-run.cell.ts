@@ -23,6 +23,7 @@ import { acquireCheckers, asMutationTestError, reuseAndPlan, settleMutants } fro
 import type { MutationTestPlan } from './mutation-test-plan.cell.js'
 import { partitionPlannable, reportDroppedMutants } from './mutation-test-plan.js'
 import { mutationTestCell, type MutationTestDone } from './mutation-test.cell.js'
+import type { PhaseClock } from './phase-clock.service.js'
 import { phaseEntered, RunEnvironment } from './RunEnvironment.service.js'
 import type { StageServices } from './StageServices.service.js'
 
@@ -44,7 +45,7 @@ const untestedBasisOf = (command: InstrumentDone): TestBasis => ({
 const settledWithoutTests = (
   checkerHandle: Option.Option<CheckerPoolHandle>,
   plan: MutationTestPlan,
-): Effect.Effect<Option.Option<CheckedPlans<never>>, StageError | CheckerCrash> =>
+): Effect.Effect<Option.Option<CheckedPlans<never>>, StageError | CheckerCrash, PhaseClock> =>
   Option.match(
     Option.filter(checkerHandle, () => plan.earlyResults.length === 0 && plan.heldSubsumed.length === 0),
     {

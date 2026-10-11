@@ -14,7 +14,6 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { importModule } from './drivers/config.js'
 import {
   planPluginLoad,
   type PluginDeclaration,
@@ -39,6 +38,7 @@ import {
 } from './Plugins.schema.js'
 import { PluginLoadRefusedError } from './PluginsError.schema.js'
 import { PackageManifestFields } from './run/package-manifest.schema.js'
+import { importModule } from './run/read-config-document.js'
 import { selectPackageEntry, SelectPackageEntryCommand } from './run/select-package-entry.workflow.js'
 import { isVmRunner, vmRunnerPluginUrl } from './vm-runner.js'
 

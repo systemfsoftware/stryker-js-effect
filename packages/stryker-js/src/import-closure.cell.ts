@@ -8,19 +8,25 @@ import * as MutableHashMap from 'effect/MutableHashMap'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { extractModuleSpecifiers } from './extract-module-specifiers.workflow.js'
 import { relativeNormalizedFileName } from './FileMatcher.js'
 import {
   type ExportEntry,
+  ExtractModuleSpecifiersCommand,
   ImportClosureCommand,
   type ImportClosureModule,
+  ModuleSpecifiersOpen,
   type PackageManifest,
   PackageManifestSchema,
+  type ScriptLanguage,
   type TestFileClosure,
 } from './import-closure.schema.js'
 import { importClosure } from './import-closure.workflow.js'
+import { SourceParser } from './source-parser.service.js'
 import { packageManifestInputOf } from './verdict-semantics.js'
 
 export interface ImportClosureInput {
@@ -42,10 +48,6 @@ export interface ImportClosureAnalysis {
   readonly closures: readonly TestFileClosureDigest[]
   readonly projectDigest: string
 }
-
-type AstValue = object | string | number | boolean | null | undefined | readonly AstValue[]
-type AstNode = { readonly type: string } & Readonly<Record<string, AstValue>>
-type ScriptLanguage = 'js' | 'jsx' | 'ts' | 'tsx'
 
 interface Roots {
   readonly rootDir: string
@@ -71,21 +73,6 @@ type OpenMode = 'Combined' | 'Structural'
 interface ObservedEvidence {
   readonly roots: readonly string[]
   readonly invalid: boolean
-}
-
-interface Extraction {
-  readonly specifier: string | undefined
-  readonly hidden: boolean
-}
-
-interface Scan {
-  readonly specifiers: readonly string[]
-  readonly dynamicOpen: boolean
-}
-
-interface ScanState {
-  readonly specifiers: HashSet.HashSet<string>
-  readonly hidden: boolean
 }
 
 interface Resolution {
@@ -160,145 +147,23 @@ const EXTENSION_SWAPS: Readonly<Record<string, readonly string[]>> = {
   '.mjs': ['.mts'],
 }
 
-const STATIC_SOURCE_TYPES: Readonly<Record<string, true>> = {
-  ExportAllDeclaration: true,
-  ExportNamedDeclaration: true,
-  ImportDeclaration: true,
-}
-
-const MOCK_METHODS: Readonly<Record<string, true>> = {
-  doMock: true,
-  importActual: true,
-  importMock: true,
-  mock: true,
-  unmock: true,
-}
-
-const LITERAL_TYPES: Readonly<Record<string, true>> = { Literal: true, StringLiteral: true }
-
-const NOTHING: Extraction = { specifier: undefined, hidden: false }
-const EMPTY_STATE: ScanState = { specifiers: HashSet.empty(), hidden: false }
 const EXTERNAL_RESOLUTION: Resolution = { kind: 'External', file: '' }
 const UNRESOLVED_RESOLUTION: Resolution = { kind: 'Unresolved', file: '' }
 
 const hashOf = (content: string): string => bytesToHex(sha256(utf8ToBytes(content)))
 
-const isObjectLike = (value: AstValue): value is object => typeof value === 'object' && value !== null
-
-const hasTextType = (value: object): boolean => typeof Reflect.get(value, 'type') === 'string'
-
-const isNode = (value: AstValue): value is AstNode => isObjectLike(value) && hasTextType(value)
-
-const nodeOf = (value: AstValue): AstNode | undefined => Option.getOrUndefined(Option.liftPredicate(value, isNode))
-
-const isArrayOfValues = (value: AstValue): value is readonly AstValue[] => Array.isArray(value)
-
-const valuesOf = (value: AstValue): readonly AstValue[] => (isArrayOfValues(value) ? value : [value])
-
-const nodeValuesOf = (node: AstNode): readonly AstValue[] => Object.values(node).flatMap(valuesOf)
-
-const isText = (value: AstValue): value is string => typeof value === 'string'
-
-const fieldOf = (node: AstNode | undefined, key: string): AstValue => node === undefined ? undefined : node[key]
-
-const textFieldOf = (node: AstNode | undefined, key: string): string | undefined =>
-  Option.getOrUndefined(Option.liftPredicate(fieldOf(node, key), isText))
-
-const identifierNameOf = (value: AstValue): string | undefined => textFieldOf(nodeOf(value), 'name')
-
-const memberFieldOf = (value: AstValue, key: string): AstValue => fieldOf(nodeOf(value), key)
-
-const isIdentifier = (value: AstValue, name: string): boolean => identifierNameOf(value) === name
-
-const isLiteral = (node: AstNode): boolean => LITERAL_TYPES[node['type']] === true
-
-const isQuotedText = (raw: AstValue): raw is string => isText(raw) && raw.length >= 2
-
-const unquotedOf = (raw: AstValue): string | undefined => (isQuotedText(raw) ? raw.slice(1, -1) : undefined)
-
-const textOrRawOf = (node: AstNode): string | undefined => {
-  const inner = node['value']
-  return isText(inner) ? inner : unquotedOf(node['raw'])
-}
-
-const literalTextOf = (node: AstNode): string | undefined => (isLiteral(node) ? textOrRawOf(node) : undefined)
-
-const extractionOfSource = (source: AstValue): Extraction => isNode(source) ? literalExtraction(source) : NOTHING
-
-const literalExtraction = (node: AstNode): Extraction =>
-  literalTextOf(node) === undefined
-    ? { specifier: undefined, hidden: true }
-    : { specifier: literalTextOf(node), hidden: false }
-
-const firstSpecifier = (left: Extraction, right: Extraction): string | undefined => left.specifier ?? right.specifier
-
-const eitherHidden = (left: Extraction, right: Extraction): boolean => left.hidden || right.hidden
-
-const mergeExtractions = (left: Extraction, right: Extraction): Extraction => ({
-  specifier: firstSpecifier(left, right),
-  hidden: eitherHidden(left, right),
-})
-
-const staticSourceExtraction = (node: AstNode): Extraction =>
-  STATIC_SOURCE_TYPES[node['type']] === true ? extractionOfSource(node['source']) : NOTHING
-
-const dynamicImportExtraction = (node: AstNode): Extraction =>
-  node['type'] === 'ImportExpression' ? extractionOfSource(node['source']) : NOTHING
-
-const callExtraction = (node: AstNode): Extraction =>
-  node['type'] === 'CallExpression' ? callSpecifierExtraction(node) : NOTHING
-
-const callSpecifierExtraction = (node: AstNode): Extraction =>
-  isSpecifierCall(node) ? extractionOfSource(firstArgumentOf(node)) : NOTHING
-
-const isSpecifierCall = (node: AstNode): boolean => isRequireCall(node) || isMockCall(node)
-
-const isRequireCall = (node: AstNode): boolean => isIdentifier(node['callee'], 'require')
-
-const isVitestCallee = (callee: AstValue): boolean =>
-  isIdentifier(memberFieldOf(callee, 'object'), 'vi') ||
-  isIdentifier(memberFieldOf(callee, 'object'), 'vitest')
-
-const isMockMethodName = (name: string | undefined): boolean => name === undefined ? false : MOCK_METHODS[name] === true
-
-const isMockMethod = (callee: AstValue): boolean =>
-  isMockMethodName(identifierNameOf(memberFieldOf(callee, 'property')))
-
-const isMockCall = (node: AstNode): boolean => isVitestCallee(node['callee']) && isMockMethod(node['callee'])
-
-const firstArgumentOf = (node: AstNode): AstValue => valuesOf(node['arguments'])[0]
-
-const extractionOf = (node: AstNode): Extraction =>
-  mergeExtractions(
-    staticSourceExtraction(node),
-    mergeExtractions(dynamicImportExtraction(node), callExtraction(node)),
-  )
-
-const mergeState = (state: ScanState, extraction: Extraction): ScanState => ({
-  specifiers: specifierState(state, extraction),
-  hidden: state.hidden || extraction.hidden,
-})
-
-const specifierState = (state: ScanState, extraction: Extraction): HashSet.HashSet<string> =>
-  extraction.specifier === undefined ? state.specifiers : HashSet.add(state.specifiers, extraction.specifier)
-
-const stepValue = (state: ScanState, value: AstValue): ScanState => (isNode(value) ? walk(state, value) : state)
-
-const walk = (state: ScanState, node: AstNode): ScanState =>
-  nodeValuesOf(node).reduce(stepValue, mergeState(state, extractionOf(node)))
-
-const scanProgram = (program: AstValue): Scan => {
-  const state = isNode(program) ? walk(EMPTY_STATE, program) : EMPTY_STATE
-  return { specifiers: [...state.specifiers], dynamicOpen: state.hidden }
-}
-
-const oxcModule = Effect.cached(Effect.promise(() => import('oxc-parser')))
-
 const scanSource = Effect.fnUntraced(function*(content: string, absolute: string, language: ScriptLanguage) {
-  const oxc = yield* Effect.flatMap(oxcModule, (load) => load)
-  const parsed = oxc.parseSync(absolute, content, { lang: language })
-  const scan = scanProgram(parsed.program)
-  return { specifiers: scan.specifiers, dynamicOpen: scan.dynamicOpen, parseFailed: parsed.errors.length > 0 }
+  const parser = yield* SourceParser
+  const parsed = yield* parser.parseSource(absolute, content, language)
+  const extracted = Result.getOrElse(
+    extractModuleSpecifiers(ExtractModuleSpecifiersCommand.make({ program: parsed.program })),
+    (unreachable: never) => unreachable,
+  )
+  return {
+    specifiers: extracted.specifiers,
+    dynamicOpen: S.is(ModuleSpecifiersOpen)(extracted),
+    parseFailed: parsed.parseFailed,
+  }
 })
 
 const extensionOf = (file: string): string => {
@@ -461,7 +326,7 @@ const conditionTargetOption = (conditions: Readonly<Record<string, string>>): Op
   )
 
 const exportEntryTargetOption = (entry: ExportEntry): Option.Option<string> =>
-  isText(entry) ? Option.some(entry) : conditionTargetOption(entry)
+  Predicate.isString(entry) ? Option.some(entry) : conditionTargetOption(entry)
 
 const entryTargetOption = (
   exportsMap: Readonly<Record<string, ExportEntry>>,
@@ -489,7 +354,8 @@ const rootTargetOption = (target: string, subpath: string): Option.Option<string
 const exportsTargetOption = (
   exports: string | Readonly<Record<string, ExportEntry>>,
   subpath: string,
-): Option.Option<string> => isText(exports) ? rootTargetOption(exports, subpath) : mapTargetOption(exports, subpath)
+): Option.Option<string> =>
+  Predicate.isString(exports) ? rootTargetOption(exports, subpath) : mapTargetOption(exports, subpath)
 
 const mainTargetOption = (manifest: PackageManifest): Option.Option<string> =>
   Option.orElse(Option.fromNullishOr(manifest.main), () => Option.fromNullishOr(manifest.module))
@@ -722,7 +588,7 @@ const scanPendingOf = Effect.fnUntraced(function*(
   memo: MutableHashMap.MutableHashMap<string, Resolution>,
   scanned: MutableHashMap.MutableHashMap<string, ModuleScan>,
   pending: readonly string[],
-): Effect.fn.Return<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path> {
+): Effect.fn.Return<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path | SourceParser> {
   const batch = Arr.dedupe(pending).filter((file) => !MutableHashMap.has(scanned, file))
   const results = yield* Effect.forEach(
     batch,
@@ -747,7 +613,7 @@ const scanReachable = (
   files: HashSet.HashSet<string>,
   memo: MutableHashMap.MutableHashMap<string, Resolution>,
   seeds: readonly string[],
-): Effect.Effect<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path> =>
+): Effect.Effect<readonly ModuleScan[], PlatformError, FileSystem.FileSystem | Path.Path | SourceParser> =>
   scanPendingOf(roots, files, memo, MutableHashMap.empty<string, ModuleScan>(), seeds)
 
 const leafScanOf = Effect.fnUntraced(function*(roots: Roots, file: string) {
@@ -868,7 +734,7 @@ const closuresOf = (command: ImportClosureCommand): readonly TestFileClosure[] =
 
 export const analyzeImportClosure = Effect.fnUntraced(function*(
   input: ImportClosureInput,
-): Effect.fn.Return<ImportClosureAnalysis, PlatformError, FileSystem.FileSystem | Path.Path> {
+): Effect.fn.Return<ImportClosureAnalysis, PlatformError, FileSystem.FileSystem | Path.Path | SourceParser> {
   const roots = yield* readRoots(input)
   const testKeys = sortedKeys(roots, input.testFiles)
   const seeds = [...HashSet.fromIterable(input.projectFiles.map((file) => keyOf(roots, file)))]

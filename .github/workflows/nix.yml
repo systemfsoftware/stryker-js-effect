@@ -13,7 +13,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      docs-only: ${{ steps.lane.outputs.docs-only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - id: lane
+        uses: ./.github/actions/change-lane
+
   build:
+    needs: lane
+    if: needs.lane.outputs.docs-only != 'true'
     name: flake outputs · ${{ matrix.system }}
     strategy:
       fail-fast: false

@@ -1,1 +1,1 @@
-export { run } from '../drivers/promise.js'
+export { run } from './run.js'

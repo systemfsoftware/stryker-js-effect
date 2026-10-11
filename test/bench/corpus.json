@@ -1,0 +1,28 @@
+{
+  "repo": [
+    {
+      "project": "packages/stryker-js-vitest-runner",
+      "mutate": ["src/interpret-vitest-mutant-run.workflow.ts:85-160"],
+      "testFiles": ["src/__tests__/interpret-vitest-mutant-run.workflow.property.test.ts"]
+    },
+    {
+      "project": "packages/stryker-js-typescript-checker",
+      "mutate": ["src/classify-tce.workflow.ts"],
+      "testFiles": ["src/__tests__/classify-tce.workflow.property.test.ts"]
+    },
+    {
+      "project": "test/e2e-core",
+      "mutate": ["src/placement-closure.workflow.ts"]
+    }
+  ],
+  "enterprise": {
+    "fixture": "test/e2e/testResources/enterprise-monorepo-fixture",
+    "config": "stryker.config.ts",
+    "mutate": [
+      "packages/core/src/pricing.ts",
+      "packages/services/src/health.ts",
+      "packages/api/src/report.ts",
+      "packages/analytics/src/index.ts"
+    ]
+  }
+}

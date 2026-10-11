@@ -31,7 +31,7 @@ import {
 } from './audit.schema.js'
 import { countRuns, CountRunsCommand } from './count-runs.workflow.js'
 import { type PlanChannel } from './plan-request.cell.js'
-import { forEachProjectDirectory, projectsOf } from './project-directory.adapter.js'
+import { forEachProjectDirectory, projectsOf } from './project-directory.js'
 import { readProjectCell } from './read-project.cell.js'
 import { instrumentSources } from './run/instrument.js'
 import { loadConfigCell } from './run/load-config.cell.js'

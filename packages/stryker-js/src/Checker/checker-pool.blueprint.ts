@@ -13,6 +13,7 @@ import type { LoadedPlugins } from '../Plugins.schema.js'
 import { PluginNotFoundError } from '../PluginsError.schema.js'
 import { WorkerReports } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
+import { PhaseClock } from '../run/phase-clock.service.js'
 import {
   ConfiguredPluginModulePath,
   resolveConfiguredPlugin,
@@ -53,27 +54,33 @@ const checkerWorkerSpawnOf = (
 
 const acquire = Effect.fnUntraced(function*(spec: CheckerPoolSpec) {
   const reports = yield* WorkerReports
+  const phaseClock = yield* PhaseClock
   return yield* Boolean.match(spec.options.checkers.length === 0, {
     onTrue: (): Effect.Effect<CheckerPool | undefined, never, Scope.Scope> => Effect.as(Effect.void, undefined),
     onFalse: () =>
-      Pool.make({
-        acquire: Effect.forEach(spec.options.checkers, (checker) =>
-          Effect.gen(function*() {
-            const resolved = yield* checkerWorkerSpawnOf(
-              spec.loadedPlugins,
-              ConfiguredPluginModulePath.make({ modulePath: checker.plugin }),
-            )
-            const startedAt = yield* Clock.currentTimeMillis
-            const service = yield* checkerScoped({
-              options: { ...spec.options, checkers: [checker] },
-              workerEntrypoint: resolved.entrypoint,
-              workingDirectory: spec.workingDirectory,
-            }).pipe(Effect.retry({ times: CHECKER_ACQUIRE_RETRIES, while: isCheckerCrash }))
-            yield* reports.report('checker', (yield* Clock.currentTimeMillis) - startedAt)
-            return { checkerName: resolved.name, checker: service }
-          })),
-        size: spec.size,
-      }),
+      Effect.andThen(
+        phaseClock.markCheckersConfigured,
+        Pool.make({
+          acquire: Effect.forEach(spec.options.checkers, (checker) =>
+            Effect.gen(function*() {
+              const resolved = yield* checkerWorkerSpawnOf(
+                spec.loadedPlugins,
+                ConfiguredPluginModulePath.make({ modulePath: checker.plugin }),
+              )
+              const startedAt = yield* Clock.currentTimeMillis
+              const service = yield* checkerScoped({
+                options: { ...spec.options, checkers: [checker] },
+                workerEntrypoint: resolved.entrypoint,
+                workingDirectory: spec.workingDirectory,
+              }).pipe(Effect.retry({ times: CHECKER_ACQUIRE_RETRIES, while: isCheckerCrash }))
+              const endedAt = yield* Clock.currentTimeMillis
+              yield* phaseClock.recordCheckerBusy({ startMs: startedAt, endMs: endedAt })
+              yield* reports.report('checker', endedAt - startedAt)
+              return { checkerName: resolved.name, checker: service }
+            })),
+          size: spec.size,
+        }),
+      ),
   })
 })
 
@@ -94,5 +101,6 @@ export const scoped = (
   | WorkerLauncher
   | FileSystem.FileSystem
   | Path.Path
+  | PhaseClock
   | WorkerReports
 > => CheckerPools.of(spec).scoped

@@ -68,22 +68,27 @@ const writeInputs = (
     return [originalName, ...names]
   }).pipe(Effect.orDie)
 
-const tsconfigTextOf = Effect.fnUntraced(function*(
-  request: TceEmitRequest,
-  directory: string,
-  files: ReadonlyArray<string>,
-) {
-  const path = yield* Path.Path
+interface EmitLayout {
+  readonly outDir: string
+  readonly filesystemRoot: string
+  readonly inputsOutDir: string
+}
+
+const everyEmitUnderOutDir = (path: Path.Path, directory: string): EmitLayout => {
   const outDir = path.join(directory, 'out')
-  return yield* S.encodeEffect(S.fromJsonString(S.Unknown))({
+  const filesystemRoot = path.parse(directory).root
+  return { outDir, filesystemRoot, inputsOutDir: path.join(outDir, path.relative(filesystemRoot, directory)) }
+}
+
+const tsconfigTextOf = (request: TceEmitRequest, layout: EmitLayout, files: ReadonlyArray<string>) =>
+  S.encodeEffect(S.fromJsonString(S.Unknown))({
     extends: request.tsconfigFile,
-    compilerOptions: compilerOptionsOf(outDir, directory),
+    compilerOptions: compilerOptionsOf(layout.outDir, layout.filesystemRoot),
     references: [],
     files,
     include: [],
     exclude: [],
   })
-})
 
 const runEmit = (
   request: TceEmitRequest,
@@ -98,8 +103,8 @@ const runEmit = (
     const path = yield* Path.Path
     const cli = yield* cliPathOf
     const files = yield* writeInputs(request, directory)
-    const outDir = path.join(directory, 'out')
-    yield* fs.writeFileString(path.join(directory, 'tsconfig.json'), yield* tsconfigTextOf(request, directory, files))
+    const layout = everyEmitUnderOutDir(path, directory)
+    yield* fs.writeFileString(path.join(directory, 'tsconfig.json'), yield* tsconfigTextOf(request, layout, files))
     yield* Effect.scoped(
       ChildProcess.make(cli, ['-p', path.join(directory, 'tsconfig.json')], {
         cwd: directory,
@@ -109,7 +114,9 @@ const runEmit = (
     )
     const readEmitted = (index: number) =>
       Effect.map(
-        fs.readFileString(path.join(outDir, `tce-input-${index}${emittedExtensionOf(request.sourceExtension)}`)),
+        fs.readFileString(
+          path.join(layout.inputsOutDir, `tce-input-${index}${emittedExtensionOf(request.sourceExtension)}`),
+        ),
         normalizeEmit,
       )
     const original = yield* readEmitted(0)

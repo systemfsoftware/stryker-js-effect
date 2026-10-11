@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-vitest-runner
 
+## 9.0.2
+
+The runner worker bundles the current `@systemfsoftware/stryker-js-plugin-interface` code, which now names the ignore rule on every Ignored mutant. The worker shares that vocabulary with a `@systemfsoftware/stryker-js` engine that reports ignore rules.
+
 ## 9.0.1
 
 Only the package manifest changes: the development dependencies on stryker-js, its runner, its checker and the two ignorers now name the released tarballs instead of the npm `latest` tag. Runtime code, dependencies and peer dependencies are unchanged.

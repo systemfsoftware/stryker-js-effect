@@ -10,6 +10,7 @@ import { MutationReporting } from '../mutation-reporting.service.js'
 import { ProjectFiles } from '../project-files.service.js'
 import { Reporter } from '../reporter.service.js'
 import { RunEvents, WorkerReports } from '../run-events.service.js'
+import { SourceParser } from '../source-parser.service.js'
 import { IdGenerator } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
 import { PhaseClock } from './phase-clock.service.js'
@@ -24,6 +25,7 @@ export type StageServices =
   | Path.Path
   | PhaseClock
   | ProjectFiles
+  | SourceParser
   | Reporter
   | RunEnvironment
   | RunEvents
@@ -37,6 +39,7 @@ export type EnginePorts =
   | FileSystem.FileSystem
   | GitDiff
   | Path.Path
+  | SourceParser
   | Stdio.Stdio
   | WorkerLauncher
 export type RunStageServices =
