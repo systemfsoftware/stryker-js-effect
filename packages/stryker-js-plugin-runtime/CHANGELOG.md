@@ -1,5 +1,9 @@
 # @systemfsoftware/stryker-js-plugin-runtime
 
+## 7.0.4
+
+Updated dependency @systemfsoftware/stryker-js-cli-contract to 0.5.0
+
 ## 7.0.3
 
 Effect moves to `4.0.0-rc.117`, together with the `@effect/*` packages these libraries use. Projects that install `effect` next to them need the same release.
