@@ -16,7 +16,7 @@ import {
   type BenchReportRun,
   type LegTime,
 } from './bench-report.schema.js'
-import { type BenchRunInvalid, type BenchSide, RunIdentity } from './bench-run.schema.js'
+import { type BenchRunInvalid, type BenchSide, type RunIdentity } from './bench-run.schema.js'
 import {
   type BenchPhaseRow,
   type BenchProjectSummary,
@@ -298,19 +298,17 @@ const identityKeysOf = (runs: ReadonlyArray<BenchReportRun>, side: BenchSide): R
 
 const sidesMatchedText = (runs: ReadonlyArray<BenchReportRun>): string => {
   const a = identityKeysOf(runs, 'A')
-  return Boolean.match(Boolean.and(a.length === 1, a.join() === identityKeysOf(runs, 'B').join()), {
+  const b = identityKeysOf(runs, 'B')
+  return Boolean.match(Boolean.and(Boolean.and(a.length === 1, b.length === 1), a[0] === b[0]), {
     onTrue: () => 'matched',
     onFalse: () => 'differed',
   })
 }
 
-const identityLine = (runs: ReadonlyArray<BenchReportRun>): string => {
-  const unread = Arr.filter(runs, (run) => S.is(RunIdentity.cases.unread)(run.identity)).length
-  return Boolean.match(unread === 0, {
-    onTrue: () => `**Run identity:** the sides' run inputs digests and mutant id sets ${sidesMatchedText(runs)}`,
-    onFalse: () => `**Run identity:** not compared; ${unread} of ${runs.length} runs carry no readable identity`,
-  })
-}
+const identityLine = (runs: ReadonlyArray<BenchReportRun>): string =>
+  `**Run identity:** the sides' run inputs digests and mutant id sets ${sidesMatchedText(runs)}`
+
+const firstLineOf = (text: string): string => text.split(/\r?\n/u)[0]
 
 const markdownOf = (report: BenchReport): string =>
   Match.valueTags(report.outcome, {
@@ -331,7 +329,10 @@ const markdownOf = (report: BenchReport): string =>
 const annotationOf = (report: BenchReport): Annotation =>
   Match.valueTags(report.outcome, {
     aborted: (aborted) =>
-      error('Bench aborted', `Bench aborted (${aborted.code}): ${aborted.reason} Next: ${aborted.nextAction}`),
+      error(
+        'Bench aborted',
+        `Bench aborted (${aborted.code}): ${firstLineOf(aborted.reason)} Next: ${aborted.nextAction}`,
+      ),
     failed: (failed) => invalidAnnotation(failed.invalid),
     summarized: (summarized) => summarizedAnnotation(report.ref, summarized),
   })

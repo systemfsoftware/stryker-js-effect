@@ -21,6 +21,7 @@ import {
   ProvisionalReportCommand,
   renderBenchReport,
   RenderBenchReportCommand,
+  type SetupPoint,
   type SetupStep,
   type WithheldPins,
 } from '@systemfsoftware/stryker-e2e-core'
@@ -40,7 +41,7 @@ import * as S from 'effect/Schema'
 
 import { BenchOrchestrationFailed } from './bench-failure.schema.js'
 import { BenchTarget } from './bench-target.schema.js'
-import { prepareSide } from './prepare-side.service.js'
+import { prepareSide, type SetupProgress } from './prepare-side.service.js'
 import { runBench } from './run-bench.service.js'
 
 const BENCH_WORK_DIR = 'bench-work'
@@ -167,12 +168,15 @@ const environmentIncompleteOf = (missing: ReadonlyArray<string>, reason: string)
   })
 
 interface Progress {
+  readonly setup: SetupPoint | null
   readonly finished: ReadonlyArray<BenchRun>
   readonly setupSteps: ReadonlyArray<SetupStep>
   readonly withheldPins: ReadonlyArray<WithheldPins>
 }
 
-const NO_PROGRESS: Progress = { finished: [], setupSteps: [], withheldPins: [] }
+const SETUP_START: SetupPoint = { _tag: 'start' }
+
+const NO_PROGRESS: Progress = { setup: SETUP_START, finished: [], setupSteps: [], withheldPins: [] }
 
 const reportAt = (
   env: Pick<BenchEnv, 'baseSha' | 'headSha' | 'ref'>,
@@ -191,6 +195,7 @@ const reportAt = (
         finished: [...progress.finished],
         setupSteps: [...progress.setupSteps],
         withheldPins: [...progress.withheldPins],
+        setup: progress.setup,
         abort,
       }),
     ),
@@ -236,6 +241,13 @@ const measure = (env: BenchEnv, progress: Ref.Ref<Progress>) =>
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
 
+    const record = (update: (before: Progress) => Progress) =>
+      Effect.gen(function*() {
+        const now = yield* Ref.updateAndGet(progress, update)
+        yield* writeReportFile(env.runnerTemp, reportAt(env, yield* legOf(env), now, null))
+      }).pipe(Effect.ignore)
+    yield* record((before) => before)
+
     const corpusPath = path.join(env.sideBRoot, ...CORPUS_FILE)
     const corpusText = yield* fs.readFileString(corpusPath).pipe(
       Effect.mapError((cause) =>
@@ -253,10 +265,18 @@ const measure = (env: BenchEnv, progress: Ref.Ref<Progress>) =>
       ),
     )
 
-    const setupSteps = yield* readSetupSteps(fs, env.setupTimingsFile)
+    const workflowSteps = yield* readSetupSteps(fs, env.setupTimingsFile)
+    yield* Ref.update(progress, (before) => ({ ...before, setupSteps: [...workflowSteps] }))
     const workRoot = path.join(env.runnerTemp, BENCH_WORK_DIR)
     const runsRoot = path.join(env.runnerTemp, BENCH_RUNS_DIR)
     const fixtureSource = path.join(env.sideBRoot, corpus.enterprise.fixture)
+
+    const setupProgress: SetupProgress = {
+      starting: (side, step) => record((before) => ({ ...before, setup: { _tag: 'step', side, step } })),
+      measured: (step) => Ref.update(progress, (before) => ({ ...before, setupSteps: [...before.setupSteps, step] })),
+      withheld: (pins) =>
+        Ref.update(progress, (before) => ({ ...before, withheldPins: [...before.withheldPins, pins] })),
+    }
 
     const prepareNamed = (side: BenchSide, root: string, workDir: string) =>
       prepareSide({
@@ -266,6 +286,7 @@ const measure = (env: BenchEnv, progress: Ref.Ref<Progress>) =>
         workDir: path.join(workRoot, workDir),
         target,
         turboCacheDir: env.turboCacheDir,
+        progress: setupProgress,
       }).pipe(
         Effect.mapError((failure) => orchestrationFailed('side-setup-failed', `side ${side}: ${failure.message}`)),
       )
@@ -273,16 +294,8 @@ const measure = (env: BenchEnv, progress: Ref.Ref<Progress>) =>
       sideA: prepareNamed('A', env.sideARoot, 'a'),
       sideB: prepareNamed('B', env.sideBRoot, 'b'),
     })
-    yield* Ref.set(progress, {
-      finished: [],
-      setupSteps: [...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps, ...setupSteps],
-      withheldPins: Arr.getSomes([prepared.sideA.withheldPins, prepared.sideB.withheldPins]),
-    })
     const writeProvisional = (finished: ReadonlyArray<BenchRun>) =>
-      Effect.gen(function*() {
-        const now = yield* Ref.updateAndGet(progress, (before) => ({ ...before, finished }))
-        yield* writeReportFile(env, reportAt(env, yield* legOf(env), now, null))
-      }).pipe(Effect.ignore)
+      record((before) => ({ ...before, setup: null, finished }))
     yield* writeProvisional([])
 
     const result = yield* runBench({
@@ -316,23 +329,23 @@ const bench = (env: BenchEnv) =>
     )
   })
 
-const reportPathOf = (env: BenchEnv) =>
-  Effect.map(Path.Path, (path) => path.join(env.runnerTemp, BENCH_REPORT_DIR, BENCH_REPORT_FILE))
+const reportPathOf = (runnerTemp: string) =>
+  Effect.map(Path.Path, (path) => path.join(runnerTemp, BENCH_REPORT_DIR, BENCH_REPORT_FILE))
 
-const writeReportFile = (env: BenchEnv, report: BenchReport) =>
+const writeReportFile = (runnerTemp: string, report: BenchReport) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const reportPath = yield* reportPathOf(env)
+    const reportPath = yield* reportPathOf(runnerTemp)
     yield* fs.makeDirectory(path.dirname(reportPath), { recursive: true })
     yield* fs.writeFileString(reportPath, yield* S.encodeEffect(BenchReportJson)(report))
   })
 
-const writeReport = (env: BenchEnv, report: BenchReport) =>
+const writeReport = (runnerTemp: string, report: BenchReport) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    yield* writeReportFile(env, report)
-    return yield* S.decodeEffect(BenchReportJson)(yield* fs.readFileString(yield* reportPathOf(env)))
+    yield* writeReportFile(runnerTemp, report)
+    return yield* S.decodeEffect(BenchReportJson)(yield* fs.readFileString(yield* reportPathOf(runnerTemp)))
   }).pipe(
     Effect.catch((failure) =>
       Effect.succeed(
@@ -375,14 +388,23 @@ const environmentIncomplete = (reason: string) =>
       withheldPins: [],
     }))
 
+const runnerTempOf = Effect.map(Effect.result(Config.String('RUNNER_TEMP')), Result.getSuccess)
+
 const program = Effect.gen(function*() {
   const env = yield* Effect.result(benchEnv)
   yield* Result.match(env, {
     onFailure: (error) =>
-      Effect.flatMap(environmentIncomplete(error.message), (report) => publish(report, Option.none())),
+      Effect.gen(function*() {
+        const report = yield* environmentIncomplete(error.message)
+        const written = yield* Option.match(yield* runnerTempOf, {
+          onNone: () => Effect.succeed(report),
+          onSome: (runnerTemp) => writeReport(runnerTemp, report),
+        })
+        yield* publish(written, Option.none())
+      }),
     onSuccess: (present) =>
       bench(present).pipe(
-        Effect.flatMap((report) => writeReport(present, report)),
+        Effect.flatMap((report) => writeReport(present.runnerTemp, report)),
         Effect.flatMap((report) => publish(report, Option.some(present.stepSummary))),
       ),
   })

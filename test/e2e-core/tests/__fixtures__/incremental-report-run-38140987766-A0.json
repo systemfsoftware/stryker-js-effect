@@ -1,0 +1,1019 @@
+{
+  "incrementalVersion": "5",
+  "engineDigest": "f9ead54128977717fafb5f2b03b16d14ddbdc6f18cb891883d1c7d07797cf52f",
+  "mutantSetPolicy": "default",
+  "runInputsDigest": "2b68781c3560bdd5020fded859db31a404bd4ae04370f09f60ee96b70896b2ad",
+  "schemaVersion": "1.0",
+  "projectRoot": "/home/runner/work/_temp/bench-run/test/e2e-core",
+  "files": {
+    "src/placement-closure.workflow.ts": {
+      "language": "typescript",
+      "mutants": [
+        {
+          "id": "df140fe01897db40",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "status": "Ignored",
+          "location": {
+            "start": {
+              "line": 11,
+              "column": 87
+            },
+            "end": {
+              "line": 11,
+              "column": 112
+            }
+          },
+          "statusReason": "ignorer: effect-schema-declarations/tagged-tag: TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour",
+          "static": false,
+          "closureDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "remembered": false
+        },
+        {
+          "id": "ec3221f4966600b4",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "status": "Ignored",
+          "location": {
+            "start": {
+              "line": 11,
+              "column": 114
+            },
+            "end": {
+              "line": 15,
+              "column": 2
+            }
+          },
+          "statusReason": "ignorer: effect-schema-declarations/tagged-fields: TaggedClass/TaggedError field schema is a declaration, not behaviour",
+          "static": false,
+          "closureDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "remembered": false
+        },
+        {
+          "id": "9ea19d0aad92facf",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "status": "Ignored",
+          "location": {
+            "start": {
+              "line": 19,
+              "column": 58
+            },
+            "end": {
+              "line": 19,
+              "column": 110
+            }
+          },
+          "statusReason": "ignorer: effect-schema-declarations/symbol-description: Symbol.for() brand description is identity-only data, not behaviour",
+          "static": false,
+          "closureDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "remembered": false
+        },
+        {
+          "id": "9d91375c4336b802",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "status": "Ignored",
+          "location": {
+            "start": {
+              "line": 22,
+              "column": 73
+            },
+            "end": {
+              "line": 22,
+              "column": 91
+            }
+          },
+          "statusReason": "ignorer: effect-schema-declarations/tagged-tag: TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour",
+          "static": false,
+          "closureDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "remembered": false
+        },
+        {
+          "id": "8dd4fa1922e7ed27",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "status": "Ignored",
+          "location": {
+            "start": {
+              "line": 22,
+              "column": 93
+            },
+            "end": {
+              "line": 24,
+              "column": 2
+            }
+          },
+          "statusReason": "ignorer: effect-schema-declarations/tagged-fields: TaggedClass/TaggedError field schema is a declaration, not behaviour",
+          "static": false,
+          "closureDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "remembered": false
+        },
+        {
+          "id": "10afdd801152cdd7",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "status": "Ignored",
+          "location": {
+            "start": {
+              "line": 28,
+              "column": 81
+            },
+            "end": {
+              "line": 28,
+              "column": 103
+            }
+          },
+          "statusReason": "ignorer: effect-schema-declarations/tagged-tag: TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour",
+          "static": false,
+          "closureDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "remembered": false
+        },
+        {
+          "id": "c678037010cbb697",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "status": "Ignored",
+          "location": {
+            "start": {
+              "line": 28,
+              "column": 105
+            },
+            "end": {
+              "line": 31,
+              "column": 2
+            }
+          },
+          "statusReason": "ignorer: effect-schema-declarations/tagged-fields: TaggedClass/TaggedError field schema is a declaration, not behaviour",
+          "static": false,
+          "closureDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "remembered": false
+        },
+        {
+          "id": "aeb1d855fa55de23",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "location": {
+            "start": {
+              "line": 32,
+              "column": 34
+            },
+            "end": {
+              "line": 34,
+              "column": 4
+            }
+          },
+          "testsCompleted": 6,
+          "static": false,
+          "coveredBy": [
+            "5"
+          ],
+          "closureDigest": "37db141cf5d3c41e90f5ccf838cfcbfb58deb8c1059d94797003552bdf12ee1e",
+          "remembered": false
+        },
+        {
+          "id": "7ba7abb7abec0678",
+          "mutatorName": "StringLiteral",
+          "replacement": "``",
+          "status": "Survived",
+          "location": {
+            "start": {
+              "line": 33,
+              "column": 12
+            },
+            "end": {
+              "line": 33,
+              "column": 111
+            }
+          },
+          "testsCompleted": 6,
+          "static": false,
+          "coveredBy": [
+            "5"
+          ],
+          "closureDigest": "37db141cf5d3c41e90f5ccf838cfcbfb58deb8c1059d94797003552bdf12ee1e",
+          "remembered": false
+        },
+        {
+          "id": "b86e1e755c79e51b",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "status": "Ignored",
+          "location": {
+            "start": {
+              "line": 37,
+              "column": 81
+            },
+            "end": {
+              "line": 37,
+              "column": 103
+            }
+          },
+          "statusReason": "ignorer: effect-schema-declarations/tagged-tag: TaggedClass/TaggedError _tag is a declaration discriminant, not behaviour",
+          "static": false,
+          "closureDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "remembered": false
+        },
+        {
+          "id": "8892cb74ec4510ae",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "status": "Ignored",
+          "location": {
+            "start": {
+              "line": 37,
+              "column": 105
+            },
+            "end": {
+              "line": 39,
+              "column": 2
+            }
+          },
+          "statusReason": "ignorer: effect-schema-declarations/tagged-fields: TaggedClass/TaggedError field schema is a declaration, not behaviour",
+          "static": false,
+          "closureDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "remembered": false
+        },
+        {
+          "id": "3009edefabb179bb",
+          "mutatorName": "BlockStatement",
+          "replacement": "{}",
+          "status": "Survived",
+          "location": {
+            "start": {
+              "line": 40,
+              "column": 34
+            },
+            "end": {
+              "line": 42,
+              "column": 4
+            }
+          },
+          "testsCompleted": 6,
+          "static": false,
+          "coveredBy": [
+            "5"
+          ],
+          "closureDigest": "37db141cf5d3c41e90f5ccf838cfcbfb58deb8c1059d94797003552bdf12ee1e",
+          "remembered": false
+        },
+        {
+          "id": "21daae8d935b5c66",
+          "mutatorName": "StringLiteral",
+          "replacement": "``",
+          "status": "Survived",
+          "location": {
+            "start": {
+              "line": 41,
+              "column": 12
+            },
+            "end": {
+              "line": 41,
+              "column": 111
+            }
+          },
+          "testsCompleted": 6,
+          "static": false,
+          "coveredBy": [
+            "5"
+          ],
+          "closureDigest": "37db141cf5d3c41e90f5ccf838cfcbfb58deb8c1059d94797003552bdf12ee1e",
+          "remembered": false
+        },
+        {
+          "id": "f8b6f748d4982b66",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 45,
+              "column": 48
+            },
+            "end": {
+              "line": 45,
+              "column": 92
+            }
+          },
+          "statusReason": "\u2717 refused a failure record: the record names no source location",
+          "testsCompleted": 10,
+          "static": true,
+          "killedBy": [
+            "4"
+          ],
+          "coveredBy": [],
+          "closureDigest": "77018b08e318744734ab8f0fe855dac8bb54a7bb1bc98fe83e604df8f9c5a2b6",
+          "remembered": false
+        },
+        {
+          "id": "583847fc3a29dd6b",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 48,
+              "column": 21
+            },
+            "end": {
+              "line": 49,
+              "column": 39
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 1,
+          "static": true,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [],
+          "closureDigest": "77018b08e318744734ab8f0fe855dac8bb54a7bb1bc98fe83e604df8f9c5a2b6",
+          "remembered": false
+        },
+        {
+          "id": "c1849f2cbc592282",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 49,
+              "column": 15
+            },
+            "end": {
+              "line": 49,
+              "column": 38
+            }
+          },
+          "statusReason": "\u2200e_WaivedCatalogEntry_\u2261ClosurePasses: the property was falsified within 30 run(s), and 3 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"default\"},\"\\u0000\"]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:60 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:60:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=1803237798;seed=756505163;runs=30;attempt=0;size=0;path=0,0,0;failure=ReturnedFalse\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WaivedCatalogEntry_\u2261ClosurePasses\"",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "8"
+          ],
+          "coveredBy": [
+            "6",
+            "7",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "201614a5ae5f0fa8",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 51,
+              "column": 19
+            },
+            "end": {
+              "line": 52,
+              "column": 92
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=ReturnedFalse\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 1,
+          "static": true,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [],
+          "closureDigest": "77018b08e318744734ab8f0fe855dac8bb54a7bb1bc98fe83e604df8f9c5a2b6",
+          "remembered": false
+        },
+        {
+          "id": "35b641afcf030500",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 54,
+              "column": 23
+            },
+            "end": {
+              "line": 55,
+              "column": 81
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 1,
+          "static": true,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [],
+          "closureDigest": "77018b08e318744734ab8f0fe855dac8bb54a7bb1bc98fe83e604df8f9c5a2b6",
+          "remembered": false
+        },
+        {
+          "id": "7b2538f3c36c4429",
+          "mutatorName": "MethodExpression",
+          "replacement": "command.entries()",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 55,
+              "column": 3
+            },
+            "end": {
+              "line": 55,
+              "column": 81
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "d1e199218fa7b692",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 55,
+              "column": 26
+            },
+            "end": {
+              "line": 55,
+              "column": 80
+            }
+          },
+          "statusReason": "\u2200e_UnwitnessedCatalogEntry_\u2261RefusedNamingTheEntry: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:45 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:45:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=2196646756;seed=3624876591;runs=30;attempt=0;size=0;path=0,0;failure=ReturnedFalse\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_UnwitnessedCatalogEntry_\u2261RefusedNamingTheEntry\"",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "7"
+          ],
+          "coveredBy": [
+            "6",
+            "7",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "6a02f98166eaf583",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 57,
+              "column": 22
+            },
+            "end": {
+              "line": 58,
+              "column": 45
+            }
+          },
+          "statusReason": "\u2200e_WaivedCatalogEntry_\u2261ClosurePasses: the property was falsified within 30 run(s), and 3 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"default\"},\"\\u0000\"]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:60 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:60:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=1803237798;seed=756505163;runs=30;attempt=0;size=0;path=0,0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WaivedCatalogEntry_\u2261ClosurePasses\"",
+          "testsCompleted": 3,
+          "static": true,
+          "killedBy": [
+            "8"
+          ],
+          "coveredBy": [],
+          "closureDigest": "77018b08e318744734ab8f0fe855dac8bb54a7bb1bc98fe83e604df8f9c5a2b6",
+          "remembered": false
+        },
+        {
+          "id": "5e1fe0285fbf95ed",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 58,
+              "column": 23
+            },
+            "end": {
+              "line": 58,
+              "column": 44
+            }
+          },
+          "statusReason": "\u2200e_WaivedCatalogEntry_\u2261ClosurePasses: the property was falsified within 30 run(s), and 3 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"default\"},\"\\u0000\"]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:60 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:60:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=1803237798;seed=756505163;runs=30;attempt=0;size=0;path=0,0,0;failure=ReturnedFalse\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WaivedCatalogEntry_\u2261ClosurePasses\"",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "8"
+          ],
+          "coveredBy": [
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "61a051f18317c6c0",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 60,
+              "column": 23
+            },
+            "end": {
+              "line": 61,
+              "column": 112
+            }
+          },
+          "statusReason": "\u2200e_WaivedCatalogEntry_\u2261ClosurePasses: the property was falsified within 30 run(s), and 3 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"default\"},\"\\u0000\"]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:60 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:60:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=1803237798;seed=756505163;runs=30;attempt=0;size=0;path=0,0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WaivedCatalogEntry_\u2261ClosurePasses\"",
+          "testsCompleted": 3,
+          "static": true,
+          "killedBy": [
+            "8"
+          ],
+          "coveredBy": [],
+          "closureDigest": "77018b08e318744734ab8f0fe855dac8bb54a7bb1bc98fe83e604df8f9c5a2b6",
+          "remembered": false
+        },
+        {
+          "id": "74626bfa0071e332",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 63,
+              "column": 28
+            },
+            "end": {
+              "line": 69,
+              "column": 5
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 7,
+          "static": true,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [],
+          "closureDigest": "77018b08e318744734ab8f0fe855dac8bb54a7bb1bc98fe83e604df8f9c5a2b6",
+          "remembered": false
+        },
+        {
+          "id": "396d1372dbb8fde6",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 66,
+              "column": 50
+            },
+            "end": {
+              "line": 69,
+              "column": 4
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "5931a2e4f9e16050",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 67,
+              "column": 13
+            },
+            "end": {
+              "line": 67,
+              "column": 44
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "0dba42d1e78d3be8",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 68,
+              "column": 13
+            },
+            "end": {
+              "line": 68,
+              "column": 102
+            }
+          },
+          "statusReason": "\u2200e_UnwitnessedCatalogEntry_\u2261RefusedNamingTheEntry: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:45 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:45:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=2196646756;seed=3624876591;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_UnwitnessedCatalogEntry_\u2261RefusedNamingTheEntry\"",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "7"
+          ],
+          "coveredBy": [
+            "6",
+            "7",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "ca6b9436d1915e53",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 68,
+              "column": 62
+            },
+            "end": {
+              "line": 68,
+              "column": 100
+            }
+          },
+          "statusReason": "\u2200e_UnwitnessedCatalogEntry_\u2261RefusedNamingTheEntry: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:45 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:45:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=2196646756;seed=3624876591;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_UnwitnessedCatalogEntry_\u2261RefusedNamingTheEntry\"",
+          "testsCompleted": 5,
+          "static": false,
+          "killedBy": [
+            "7"
+          ],
+          "coveredBy": [
+            "7"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "8b0738c557652a47",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 71,
+              "column": 28
+            },
+            "end": {
+              "line": 77,
+              "column": 5
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 1,
+          "static": true,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [],
+          "closureDigest": "77018b08e318744734ab8f0fe855dac8bb54a7bb1bc98fe83e604df8f9c5a2b6",
+          "remembered": false
+        },
+        {
+          "id": "24a2bc362916f2ca",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 74,
+              "column": 47
+            },
+            "end": {
+              "line": 74,
+              "column": 89
+            }
+          },
+          "statusReason": "\u2200e_WaivedCatalogEntry_\u2261ClosurePasses: the property was falsified within 30 run(s), and 3 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"default\"},\"\\u0000\"]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:60 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:60:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=1803237798;seed=756505163;runs=30;attempt=0;size=0;path=0,0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WaivedCatalogEntry_\u2261ClosurePasses\"",
+          "testsCompleted": 3,
+          "static": false,
+          "killedBy": [
+            "8"
+          ],
+          "coveredBy": [
+            "6",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "a64e77e7805ab0d9",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 74,
+              "column": 92
+            },
+            "end": {
+              "line": 77,
+              "column": 4
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "4c1a1c18cd580716",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 75,
+              "column": 13
+            },
+            "end": {
+              "line": 75,
+              "column": 91
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 2,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "019032c24b7d2be6",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 75,
+              "column": 56
+            },
+            "end": {
+              "line": 75,
+              "column": 89
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "8"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "980fff86941bfa1d",
+          "mutatorName": "ArrayDeclaration",
+          "replacement": "[]",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 75,
+              "column": 67
+            },
+            "end": {
+              "line": 75,
+              "column": 87
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=ReturnedFalse\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "8"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "14410ab9c044a1b3",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 76,
+              "column": 13
+            },
+            "end": {
+              "line": 76,
+              "column": 86
+            }
+          },
+          "statusReason": "\u2200e_WitnessedAndWaivedEntry_\u2261RefusedAsStale: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"},\"\\u0000\"]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:72 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:72:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=2277382235;seed=1236778598;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedAndWaivedEntry_\u2261RefusedAsStale\"",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "9"
+          ],
+          "coveredBy": [
+            "6",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "ec2c631242c27f05",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 76,
+              "column": 63
+            },
+            "end": {
+              "line": 76,
+              "column": 84
+            }
+          },
+          "statusReason": "\u2200e_WitnessedAndWaivedEntry_\u2261RefusedAsStale: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"},\"\\u0000\"]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:72 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:72:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=2277382235;seed=1236778598;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedAndWaivedEntry_\u2261RefusedAsStale\"",
+          "testsCompleted": 4,
+          "static": false,
+          "killedBy": [
+            "9"
+          ],
+          "coveredBy": [
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "34df2cc1fc9da25d",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 79,
+              "column": 16
+            },
+            "end": {
+              "line": 80,
+              "column": 81
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 1,
+          "static": true,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [],
+          "closureDigest": "77018b08e318744734ab8f0fe855dac8bb54a7bb1bc98fe83e604df8f9c5a2b6",
+          "remembered": false
+        },
+        {
+          "id": "defd4c55fabf6429",
+          "mutatorName": "ArrowFunction",
+          "replacement": "() => undefined",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 80,
+              "column": 47
+            },
+            "end": {
+              "line": 80,
+              "column": 80
+            }
+          },
+          "statusReason": "\u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier: the property was falsified within 30 run(s), and 2 shrink(s) settled on its input. Shrunk input: [{\"id\":\"a\",\"name\":\"A\",\"tier\":\"optIn\"}]\n  raised at /home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33 (/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts:33:)\nFailing step: no step ran\n\nRerun only this scenario:\n  CONFORMANCE_REPLAY=\"property=187255682;seed=906774195;runs=30;attempt=0;size=0;path=0,0;failure=PropertyError\" vitest run src/__tests__/placement-closure.workflow.property.test.ts -t \"placementClosure > \u2200e_WitnessedCatalogEntry_\u2261ClosurePassesOverItsTier\"",
+          "testsCompleted": 1,
+          "static": false,
+          "killedBy": [
+            "6"
+          ],
+          "coveredBy": [
+            "6",
+            "7",
+            "8",
+            "9",
+            "10"
+          ],
+          "closureDigest": "e9ba2b653d07c405c5c30daa4fd76824cdb44be813bf6fccdf106cc8844de639",
+          "remembered": false
+        },
+        {
+          "id": "4fd186b6ac13f714",
+          "mutatorName": "ObjectLiteral",
+          "replacement": "{}",
+          "status": "Killed",
+          "location": {
+            "start": {
+              "line": 82,
+              "column": 47
+            },
+            "end": {
+              "line": 87,
+              "column": 2
+            }
+          },
+          "statusReason": "Cannot convert undefined or null to object",
+          "testsCompleted": 2,
+          "static": true,
+          "killedBy": [
+            "src/__tests__/placement-closure.workflow.property.test.ts#/home/runner/work/_temp/bench-run/test/e2e-core/.stryker-tmp/sandbox-FbMn7i/src/__tests__/placement-closure.workflow.property.test.ts"
+          ],
+          "coveredBy": [],
+          "closureDigest": "77018b08e318744734ab8f0fe855dac8bb54a7bb1bc98fe83e604df8f9c5a2b6",
+          "remembered": false
+        }
+      ],
+      "formatIdentity": {
+        "formatId": "ts",
+        "ownerModule": "@systemfsoftware/stryker-js-instrumenter",
+        "ownerVersion": "builtin"
+      }
+    }
+  }
+}

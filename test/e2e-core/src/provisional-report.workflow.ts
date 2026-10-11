@@ -1,5 +1,6 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import * as Arr from 'effect/Array'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -14,7 +15,9 @@ import {
   ProvisionalAborted,
   ProvisionalReport,
   ProvisionalRunNext,
+  ProvisionalSetupNext,
   ProvisionalSummarizeNext,
+  SetupPoint,
   SetupStep,
 } from './bench-report.schema.js'
 import { BenchRun, BenchRunMeasured, BenchSide } from './bench-run.schema.js'
@@ -29,6 +32,7 @@ export class ProvisionalReportCommand extends S.TaggedClass<ProvisionalReportCom
   finished: S.Array(BenchRun),
   setupSteps: S.Array(SetupStep),
   withheldPins: S.Array(WithheldPins),
+  setup: S.NullOr(SetupPoint),
   abort: S.NullOr(S.Struct({ code: BenchAbortCode, reason: S.String })),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -63,7 +67,7 @@ const incompleteOf = (command: ProvisionalReportCommand, nextStep: string): Benc
     `${command.finished.length} of ${command.order.length} runs finished; next step: ${nextStep}`,
   )
 
-const inProgressOf = (command: ProvisionalReportCommand): ProvisionalReport => {
+const runsPhaseOf = (command: ProvisionalReportCommand): ProvisionalReport => {
   const position = command.finished.length
   return Option.match(Arr.get(command.order, position), {
     onNone: (): ProvisionalReport =>
@@ -81,6 +85,30 @@ const inProgressOf = (command: ProvisionalReportCommand): ProvisionalReport => {
       }),
   })
 }
+
+const setupStepText = (next: SetupPoint): string =>
+  Match.valueTags(next, {
+    start: () => 'setup',
+    step: (step) => `side ${step.side} ${step.step}`,
+  })
+
+const setupPhaseOf = (command: ProvisionalReportCommand, next: SetupPoint): ProvisionalReport =>
+  ProvisionalSetupNext.make({
+    report: reportOf(
+      command,
+      abortedOutcomeOf(
+        'leg-incomplete',
+        `${command.setupSteps.length} setup steps measured; next step: ${setupStepText(next)}`,
+      ),
+    ),
+    next,
+  })
+
+const inProgressOf = (command: ProvisionalReportCommand): ProvisionalReport =>
+  Option.match(Option.fromNullOr(command.setup), {
+    onNone: () => runsPhaseOf(command),
+    onSome: (next) => setupPhaseOf(command, next),
+  })
 
 const decide = (command: ProvisionalReportCommand): Result.Result<ProvisionalReport, never> =>
   Result.succeed(

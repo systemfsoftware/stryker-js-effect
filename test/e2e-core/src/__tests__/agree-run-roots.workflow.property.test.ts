@@ -4,8 +4,8 @@ import * as S from 'effect/Schema'
 
 import { agreeRunRoots, AgreeRunRootsCommand } from '../agree-run-roots.workflow.js'
 import { BENCH_ORDER } from '../bench-order.js'
-import { BenchRunKey, BenchRunMeasured, type RunIdentity } from '../bench-run.schema.js'
-import { RunRootsAgreed, RunRootsDiffer } from '../run-path.schema.js'
+import { BenchRunKey, BenchRunMeasured, RunIdentity } from '../bench-run.schema.js'
+import { RunIdentityUnreadable, RunRootsAgreed, RunRootsDiffer } from '../run-path.schema.js'
 
 interface Digests {
   readonly runInputsDigest: string
@@ -14,12 +14,13 @@ interface Digests {
 
 const SAME: Digests = { runInputsDigest: 'inputs', mutantIdsDigest: 'ids' }
 
-const identityOf = (projectRoot: string, unread: boolean, digests: Digests): RunIdentity =>
-  unread
-    ? { _tag: 'unread', reason: 'incremental report missing' }
-    : { _tag: 'read', projectRoot, ...digests }
+const readAt = (projectRoot: string, digests: Digests = SAME): RunIdentity => ({
+  _tag: 'read',
+  projectRoot,
+  ...digests,
+})
 
-const runAt = (position: number, projectRoot: string, unread: boolean, digests: Digests = SAME): BenchRunMeasured =>
+const runAt = (position: number, identity: RunIdentity): BenchRunMeasured =>
   BenchRunMeasured.make({
     key: BenchRunKey.make({ corpus: 'repo', entry: 'entry', side: BENCH_ORDER[position], position }),
     phaseDurations: {
@@ -33,31 +34,35 @@ const runAt = (position: number, projectRoot: string, unread: boolean, digests: 
     mutants: 10,
     testsExecuted: 2,
     workloadDigest: { _tag: 'verified', digest: 'digest-entry' },
-    identity: identityOf(projectRoot, unread, digests),
+    identity,
     wallMs: 1,
     exitCode: 0,
   })
 
 describe('agreeRunRoots', () => {
   it.prop(
-    '∀arr_AnyRootAtAnyPositionOfTheLeg_≡DifferIffAReadRootDisagreesNamingBoth',
+    '∀arr_AnyIdentityAtAnyPositionOfTheLeg_≡RefusedIffItIsUnreadOrItsRootDisagrees',
     {
-      of: [S.NonEmptyString, S.NonEmptyString, S.Int.check(S.isBetween({ minimum: 1, maximum: 7 })), S.Boolean],
+      of: [S.NonEmptyString, RunIdentity, S.Int.check(S.isBetween({ minimum: 1, maximum: 7 }))],
       subject: agreeRunRoots,
     },
-    (subject, [root, odd, oddPosition, oddUnread]) => {
-      const runs = BENCH_ORDER.map((_, position) =>
-        position === oddPosition ? runAt(position, odd, oddUnread) : runAt(position, root, false)
-      )
-      const disagrees = !oddUnread && odd !== root
+    (subject, [root, odd, oddPosition]) => {
+      const runs = BENCH_ORDER.map((_, position) => runAt(position, position === oddPosition ? odd : readAt(root)))
+      const unread = S.is(RunIdentity.cases.unread)(odd)
+      const disagrees = S.is(RunIdentity.cases.read)(odd) && odd.projectRoot !== root
       return Result.match(subject(AgreeRunRootsCommand.make({ runs })), {
-        onSuccess: (agreed) => !disagrees && S.is(RunRootsAgreed)(agreed) && agreed.projectRoot === root,
-        onFailure: (differ) =>
-          disagrees &&
-          S.is(RunRootsDiffer)(differ) &&
-          differ.first.projectRoot === root &&
-          differ.other.projectRoot === odd &&
-          differ.other.key.position === oddPosition,
+        onSuccess: (agreed) => !unread && !disagrees && S.is(RunRootsAgreed)(agreed) && agreed.projectRoot === root,
+        onFailure: (refused) =>
+          unread
+            ? S.is(RunIdentityUnreadable)(refused) &&
+              refused.key.position === oddPosition &&
+              refused.file === odd.file &&
+              refused.reason === odd.reason
+            : disagrees &&
+              S.is(RunRootsDiffer)(refused) &&
+              refused.first.projectRoot === root &&
+              refused.other.projectRoot === odd.projectRoot &&
+              refused.other.key.position === oddPosition,
       })
     },
   )
@@ -70,9 +75,7 @@ describe('agreeRunRoots', () => {
     },
     (subject, [root, runInputsDigest, mutantIdsDigest, oddPosition]) => {
       const runs = BENCH_ORDER.map((_, position) =>
-        position === oddPosition
-          ? runAt(position, root, false, { runInputsDigest, mutantIdsDigest })
-          : runAt(position, root, false)
+        runAt(position, position === oddPosition ? readAt(root, { runInputsDigest, mutantIdsDigest }) : readAt(root))
       )
       const agreed = subject(AgreeRunRootsCommand.make({ runs }))
       return Result.isSuccess(agreed) && agreed.success.projectRoot === root

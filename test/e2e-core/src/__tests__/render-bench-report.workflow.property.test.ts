@@ -14,7 +14,14 @@ import {
   LegMeasured,
   LegTime,
 } from '../bench-report.schema.js'
-import { BenchRun, BenchRunFailureCode, BenchRunInvalid, BenchRunKey, BenchRunMeasured } from '../bench-run.schema.js'
+import {
+  BenchRun,
+  BenchRunFailureCode,
+  BenchRunInvalid,
+  BenchRunKey,
+  BenchRunMeasured,
+  RunIdentity,
+} from '../bench-run.schema.js'
 import { type BenchSummary, PhaseVerdict } from '../bench-summary.schema.js'
 import { WithheldPins } from '../lockfile-pins.schema.js'
 import { renderBenchReport, RenderBenchReportCommand } from '../render-bench-report.workflow.js'
@@ -185,6 +192,22 @@ const abortedReportOf = (code: BenchAbortCode, reason: string): BenchReport =>
 
 const nextActionOf = (outcome: BenchReportOutcome): string =>
   S.is(BenchReportOutcome.cases.aborted)(outcome) ? outcome.nextAction : ''
+
+const withSideIdentities = (report: BenchReport, a: RunIdentity, b: RunIdentity): BenchReport =>
+  BenchReport.make({
+    schemaVersion: report.schemaVersion,
+    baseSha: report.baseSha,
+    headSha: report.headSha,
+    ref: report.ref,
+    leg: report.leg,
+    outcome: report.outcome,
+    runs: report.runs.map((run) => ({ ...run, identity: run.key.side === 'A' ? a : b })),
+    setupSteps: report.setupSteps,
+    withheldPins: report.withheldPins,
+  })
+
+const identityKeyOf = (identity: RunIdentity): string | null =>
+  S.is(RunIdentity.cases.read)(identity) ? `${identity.runInputsDigest}/${identity.mutantIdsDigest}` : null
 
 describe('renderBenchReport', () => {
   it.prop(
@@ -381,19 +404,38 @@ describe('renderBenchReport', () => {
   )
 
   it.prop(
-    '∀cr_AbortedOutcome_≡ErrorAnnotationNamingCodeAndNextActionWithAbortedMarkdown',
-    { of: [BenchAbortCode, S.NonEmptyString], subject: renderBenchReport },
-    (subject, [code, reason]) => {
+    '∀cr_AbortedOutcomeWithMultiLineReason_≡ErrorAnnotationOnOneLineWithFullReasonInMarkdown',
+    { of: [BenchAbortCode, S.NonEmptyString, S.NonEmptyString], subject: renderBenchReport },
+    (subject, [code, head, tail]) => {
+      const reason = `${head}\n${tail}`
       const report = abortedReportOf(code, reason)
       const rendered = renderedOf(subject, report)
       const next = nextActionOf(report.outcome)
+      const plainHead = /^[^%\r\n:,]+$/u.test(head)
       return S.is(BenchRenderedError)(rendered) &&
         rendered.annotationLine.startsWith('::error title=Bench aborted::') &&
         rendered.annotationLine.includes(code) &&
         rendered.annotationLine.includes(`Next: ${next}`) &&
         rendered.annotationLine.includes('\n') === false &&
+        rendered.annotationLine.includes('%0A') === false &&
+        (plainHead ? rendered.annotationLine.includes(head) : true) &&
         rendered.markdown.includes(`### Aborted: ${code}`) &&
+        rendered.markdown.includes(reason) &&
         rendered.markdown.includes(next)
+    },
+  )
+
+  it.prop(
+    '∀ris_AnyIdentityPerSide_≡IdentityLineMatchedIffBothSidesReadOneEqualKey',
+    { of: [RunIdentity, RunIdentity, S.Boolean], subject: renderBenchReport },
+    (subject, [a, drawnB, sameAsA]) => {
+      const b = sameAsA ? a : drawnB
+      const runs = runsOf([1, 2, 3, 4], [1, 2, 3, 4])
+      const report = withSideIdentities(reportOf(summaryOf(runs), runs, 'base', 'head'), a, b)
+      const keyA = identityKeyOf(a)
+      const expected = keyA !== null && keyA === identityKeyOf(b) ? 'matched' : 'differed'
+      return lineWith(markdownOf(subject, report), '**Run identity:**') ===
+        `**Run identity:** the sides' run inputs digests and mutant id sets ${expected}`
     },
   )
 

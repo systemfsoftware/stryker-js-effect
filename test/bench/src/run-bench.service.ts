@@ -291,7 +291,13 @@ const prepareTarget = (
 
 const agreedRoots = (runs: ReadonlyArray<BenchRun>): Effect.Effect<void, BenchOrchestrationFailed> =>
   Result.match(agreeRunRoots(AgreeRunRootsCommand.make({ runs: [...runs] })), {
-    onFailure: (differ) => Effect.fail(orchestrationFailed('run-path-mismatch', differ.message)),
+    onFailure: (refused) =>
+      Effect.fail(
+        Match.valueTags(refused, {
+          RunIdentityUnreadable: (unreadable) => orchestrationFailed('run-identity-unreadable', unreadable.message),
+          RunRootsDiffer: (differ) => orchestrationFailed('run-path-mismatch', differ.message),
+        }),
+      ),
     onSuccess: () => Effect.void,
   })
 

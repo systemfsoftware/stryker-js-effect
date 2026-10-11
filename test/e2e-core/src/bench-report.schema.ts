@@ -51,13 +51,14 @@ export const BenchAbortCode = S.Literals([
   'run-path-move-failed',
   'run-path-unrestored',
   'run-path-mismatch',
+  'run-identity-unreadable',
   'defect',
 ])
 export type BenchAbortCode = typeof BenchAbortCode.Type
 
 const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
   'environment-incomplete':
-    'set the missing variables in the Bench step env of bench.yml (JOB_STARTED_AT, the BENCH_* variables, RUNNER_TEMP, GITHUB_STEP_SUMMARY), then re-run the job',
+    'set the missing variables where bench.yml sets them (the Bench step env, or GITHUB_ENV for JOB_STARTED_AT; the runner sets RUNNER_TEMP and GITHUB_STEP_SUMMARY), then re-run the job',
   'corpus-unreadable':
     'fix test/bench/corpus.json so it decodes as BenchCorpusJson; the next main commit benches with the fix',
   'setup-timings-malformed': 'fix the step in bench.yml that appends tab-separated "name<TAB>ms" lines, then re-run',
@@ -76,6 +77,8 @@ const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
     "a side's tree could not be moved back from the run path to its home after a run: read the reason for both paths, the rename error and the run's own error, then re-run the job",
   'run-path-mismatch':
     'the runs of this leg did not all run from one projectRoot, so the sides are not comparable: read the two roots in the reason, fix the run-path move in test/bench/src/run-bench.service.ts, then re-run the job',
+  'run-identity-unreadable':
+    "a run's incremental report could not be read for its projectRoot, runInputsDigest and mutant ids, so the bench cannot show both sides ran from one root: read the run key, file and error in the reason, check that file and the run's stream in the bench-runs artifact, fix the CLI's incremental report or test/e2e-core/src/read-run-identity.workflow.ts, then re-run the job",
   'defect': 'a bench bug: open an issue with this job log, the stack above, and the base and head SHAs',
 }
 
@@ -137,7 +140,25 @@ export class ProvisionalAborted extends S.TaggedClass<ProvisionalAborted>()('Pro
   readonly [ProvisionalReportTypeId] = ProvisionalReportTypeId
 }
 
-export const ProvisionalReport = S.Union([ProvisionalRunNext, ProvisionalSummarizeNext, ProvisionalAborted])
+export const SetupPoint = S.TaggedUnion({
+  start: {},
+  step: { side: BenchSide, step: S.NonEmptyString },
+})
+export type SetupPoint = typeof SetupPoint.Type
+
+export class ProvisionalSetupNext extends S.TaggedClass<ProvisionalSetupNext>()('ProvisionalSetupNext', {
+  report: BenchReport,
+  next: SetupPoint,
+}) {
+  readonly [ProvisionalReportTypeId] = ProvisionalReportTypeId
+}
+
+export const ProvisionalReport = S.Union([
+  ProvisionalSetupNext,
+  ProvisionalRunNext,
+  ProvisionalSummarizeNext,
+  ProvisionalAborted,
+])
 export type ProvisionalReport = typeof ProvisionalReport.Type
 
 const BenchRenderedTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchRendered')

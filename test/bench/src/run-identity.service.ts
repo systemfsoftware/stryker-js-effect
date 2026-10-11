@@ -1,18 +1,8 @@
-import { type RunIdentity, RunIdentitySource } from '@systemfsoftware/stryker-e2e-core'
-import * as Arr from 'effect/Array'
+import { readRunIdentity, ReadRunIdentityCommand, type RunIdentity } from '@systemfsoftware/stryker-e2e-core'
 import * as Crypto from 'effect/Crypto'
 import * as Effect from 'effect/Effect'
 import { Hex } from 'effect/encoding'
 import * as FileSystem from 'effect/FileSystem'
-import * as Order from 'effect/Order'
-import * as Record from 'effect/Record'
-import * as S from 'effect/Schema'
-
-const mutantIdsOf = (source: RunIdentitySource): ReadonlyArray<string> =>
-  Arr.sort(
-    Arr.flatMap(Record.values(source.files), (file) => Arr.map(file.mutants, (mutant) => mutant.id)),
-    Order.String,
-  )
 
 export const runIdentity = (
   incrementalFile: string,
@@ -21,20 +11,20 @@ export const runIdentity = (
     const fs = yield* FileSystem.FileSystem
     const crypto = yield* Crypto.Crypto
     const text = yield* fs.readFileString(incrementalFile).pipe(
-      Effect.mapError((cause) => `incremental report unreadable (${incrementalFile}): ${cause.message}`),
+      Effect.mapError((cause) => `the incremental report could not be read: ${cause.message}`),
     )
-    const source = yield* S.decodeEffect(S.fromJsonString(RunIdentitySource))(text).pipe(
-      Effect.mapError((cause) => `incremental report has no identity fields (${incrementalFile}): ${cause.message}`),
-    )
-    const digest = yield* crypto.digest('SHA-256', new TextEncoder().encode(mutantIdsOf(source).join('\n'))).pipe(
-      Effect.mapError(() => 'sha256 digest of the mutant ids failed'),
+    const read = yield* Effect.fromResult(
+      readRunIdentity(ReadRunIdentityCommand.make({ file: incrementalFile, text })),
+    ).pipe(Effect.mapError((undecodable) => undecodable.reason))
+    const digest = yield* crypto.digest('SHA-256', new TextEncoder().encode(read.mutantIds.join('\n'))).pipe(
+      Effect.mapError(() => 'the sha256 digest of the mutant ids failed'),
     )
     return {
       _tag: 'read',
-      projectRoot: source.projectRoot,
-      runInputsDigest: source.runInputsDigest,
+      projectRoot: read.projectRoot,
+      runInputsDigest: read.runInputsDigest,
       mutantIdsDigest: Hex.encode(digest),
     } satisfies RunIdentity
   }).pipe(
-    Effect.catch((reason) => Effect.succeed<RunIdentity>({ _tag: 'unread', reason })),
+    Effect.catch((reason) => Effect.succeed<RunIdentity>({ _tag: 'unread', file: incrementalFile, reason })),
   )

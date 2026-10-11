@@ -11,9 +11,13 @@ import {
   LegMeasured,
   ProvisionalAborted,
   ProvisionalRunNext,
+  ProvisionalSetupNext,
   ProvisionalSummarizeNext,
+  SetupPoint,
+  SetupStep,
 } from '../bench-report.schema.js'
 import { type BenchRun, BenchRunInvalid, BenchRunKey, BenchRunMeasured } from '../bench-run.schema.js'
+import { WithheldPins } from '../lockfile-pins.schema.js'
 import { provisionalReport, ProvisionalReportCommand } from '../provisional-report.workflow.js'
 
 const keyAt = (position: number): BenchRunKey =>
@@ -56,9 +60,18 @@ const finishedOf = (
     invalidMask[position] === true ? invalidAt(position) : measuredAt(position, Math.abs(sample))
   )
 
+interface SetupState {
+  readonly setup: SetupPoint | null
+  readonly setupSteps: ReadonlyArray<SetupStep>
+  readonly withheldPins: ReadonlyArray<WithheldPins>
+}
+
+const NO_SETUP: SetupState = { setup: null, setupSteps: [], withheldPins: [] }
+
 const commandOf = (
   finished: ReadonlyArray<BenchRun>,
   abort: ProvisionalReportCommand['abort'] = null,
+  state: SetupState = NO_SETUP,
 ): ProvisionalReportCommand =>
   ProvisionalReportCommand.make({
     baseSha: 'base',
@@ -67,10 +80,18 @@ const commandOf = (
     leg: LegMeasured.make({ wallMs: 60_000, targetMs: 600_000 }),
     order: [...BENCH_ORDER],
     finished: [...finished],
-    setupSteps: [],
-    withheldPins: [],
+    setupSteps: [...state.setupSteps],
+    withheldPins: [...state.withheldPins],
+    setup: state.setup,
     abort,
   })
+
+const nextStepTextOf = (point: SetupPoint): string =>
+  S.is(SetupPoint.cases.step)(point) ? `side ${point.side} ${point.step}` : 'setup'
+
+const keepsSetup = (report: BenchReport, state: SetupState): boolean =>
+  JSON.stringify(report.setupSteps) === JSON.stringify(state.setupSteps) &&
+  JSON.stringify(report.withheldPins) === JSON.stringify(state.withheldPins)
 
 const labelsOf = (keys: ReadonlyArray<BenchRunKey>): string => keys.map((key) => key.label).join(',')
 
@@ -140,6 +161,38 @@ describe('provisionalReport', () => {
         aborted.report.outcome.reason === reason &&
         labelsOf(aborted.report.runs.map((run) => run.key)) ===
           labelsOf(provisional.report.runs.map((run) => run.key))
+    },
+  )
+
+  it.prop(
+    '∀psn_AnySetupPoint_≡LegIncompleteNamingTheNextSetupStepKeepingStepsAndPins',
+    { of: [SetupPoint, S.Array(SetupStep), S.Array(WithheldPins)], subject: provisionalReport },
+    (subject, [setup, setupSteps, withheldPins]) => {
+      const state = { setup, setupSteps, withheldPins }
+      const decision = Result.getOrThrow(subject(commandOf([], null, state)))
+      return S.is(ProvisionalSetupNext)(decision) &&
+        JSON.stringify(decision.next) === JSON.stringify(setup) &&
+        legIncompleteReasonOf(decision.report) ===
+          `${setupSteps.length} setup steps measured; next step: ${nextStepTextOf(setup)}` &&
+        decision.report.runs.length === 0 &&
+        keepsSetup(decision.report, state)
+    },
+  )
+
+  it.prop(
+    '∀psa_AbortAtAnySetupPoint_≡AbortedWithItsCodeKeepingTheMeasuredStepsAndPins',
+    {
+      of: [SetupPoint, S.Array(SetupStep), S.Array(WithheldPins), BenchAbortCode, S.String],
+      subject: provisionalReport,
+    },
+    (subject, [setup, setupSteps, withheldPins, code, reason]) => {
+      const state = { setup, setupSteps, withheldPins }
+      const aborted = Result.getOrThrow(subject(commandOf([], { code, reason }, state)))
+      return S.is(ProvisionalAborted)(aborted) &&
+        S.is(BenchReportOutcome.cases.aborted)(aborted.report.outcome) &&
+        aborted.report.outcome.code === code &&
+        aborted.report.outcome.reason === reason &&
+        keepsSetup(aborted.report, state)
     },
   )
 })

@@ -79,9 +79,42 @@ export class RunRootsDiffer extends S.TaggedError<RunRootsDiffer>()('RunRootsDif
   }
 }
 
+export class RunIdentityUnreadable extends S.TaggedError<RunIdentityUnreadable>()('RunIdentityUnreadable', {
+  key: BenchRunKey,
+  file: S.NonEmptyString,
+  reason: S.NonEmptyString,
+}) {
+  override get message(): string {
+    return `run ${this.key.label}: ${this.file} gave no run identity: ${this.reason}`
+  }
+}
+
+export const RunRootsRefused = S.Union([RunIdentityUnreadable, RunRootsDiffer])
+export type RunRootsRefused = typeof RunRootsRefused.Type
+
 export const RunIdentitySource = S.Struct({
   projectRoot: S.NonEmptyString,
   runInputsDigest: S.NonEmptyString,
-  files: S.Record(S.String, S.Struct({ mutants: S.Array(S.Struct({ id: S.String })) })),
+  files: S.Record(S.String, S.Struct({ mutants: S.Array(S.Struct({ id: S.NonEmptyString })) })),
 })
 export type RunIdentitySource = typeof RunIdentitySource.Type
+
+const RunIdentityReadTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/RunIdentityRead')
+type RunIdentityReadTypeId = typeof RunIdentityReadTypeId
+
+export class RunIdentityRead extends S.TaggedClass<RunIdentityRead>()('RunIdentityRead', {
+  projectRoot: S.NonEmptyString,
+  runInputsDigest: S.NonEmptyString,
+  mutantIds: S.Array(S.NonEmptyString),
+}) {
+  readonly [RunIdentityReadTypeId] = RunIdentityReadTypeId
+}
+
+export class RunIdentityUndecodable extends S.TaggedError<RunIdentityUndecodable>()('RunIdentityUndecodable', {
+  file: S.NonEmptyString,
+  reason: S.NonEmptyString,
+}) {
+  override get message(): string {
+    return `${this.file} does not decode as an incremental report with projectRoot, runInputsDigest and mutant ids: ${this.reason}`
+  }
+}

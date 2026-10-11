@@ -1,3 +1,4 @@
+import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import {
   BenchCorpusJson,
@@ -9,15 +10,41 @@ import {
   CoveringTestFilesCommand,
   readBenchRun,
   ReadBenchRunCommand,
+  readRunIdentity,
+  ReadRunIdentityCommand,
 } from '@systemfsoftware/stryker-e2e-core'
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Effect from 'effect/Effect'
+import { Hex } from 'effect/encoding'
+import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
+import * as Path from 'effect/Path'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 const Feature = makeFeature({ it })
+
+const REAL_INCREMENTAL_REPORT = new URL('./__fixtures__/incremental-report-run-38140987766-A0.json', import.meta.url)
+
+const realReportText = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  return yield* fs.readFileString(yield* path.fromFileUrl(REAL_INCREMENTAL_REPORT))
+}).pipe(Effect.orDie)
+
+const sha256Of = (text: string): Effect.Effect<string> =>
+  Effect.map(
+    Effect.promise(() => globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))),
+    (digest) => Hex.encode(new Uint8Array(digest)),
+  )
+
+interface IdentityShape {
+  readonly projectRoot: string
+  readonly runInputsDigest: string
+  readonly mutantIds: number
+  readonly mutantIdsDigest: string
+}
 
 const ENCODE = S.encodeResult(RunEvent.RunEventWireLine)
 
@@ -184,7 +211,8 @@ const invalidOf = (run: BenchRun): InvalidShape | null =>
 const coveringCommandOf = (report: string): CoveringTestFilesCommand => CoveringTestFilesCommand.make({ report })
 
 Feature('The bench lane reads runs and covering tests from their own stream and report')
-  .withLayer(Layer.empty)
+  .withLayer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))
+  .live('the identity scenario reads a real CLI incremental report fixture from disk')
   .body(({ scenario }) => {
     scenario(
       'The corpus JSON accepts a populated corpus and refuses an empty repo list',
@@ -415,6 +443,41 @@ Feature('The bench lane reads runs and covering tests from their own stream and 
         ),
         Then('both are refused')((s, expect) =>
           expect(s.outcomes).toStrictEqual({ undeclared: true, malformed: true })
+        ),
+      ),
+    )
+
+    scenario(
+      "A CLI incremental report from a CI bench run yields the identity that run's bench report recorded",
+      Gherkin.Do.pipe(
+        Given("run 38140987766's test/e2e-core A0 incremental report, trimmed to its identity-bearing fields")(
+          'text',
+          () => realReportText,
+        ),
+        When('the report is read as a run identity')(
+          'identity',
+          (s): Effect.Effect<IdentityShape | string> =>
+            Result.match(
+              readRunIdentity(ReadRunIdentityCommand.make({ file: 'repo-A-0-test-e2e-core.json', text: s.text })),
+              {
+                onFailure: (undecodable): Effect.Effect<IdentityShape | string> => Effect.succeed(undecodable.message),
+                onSuccess: (read) =>
+                  Effect.map(sha256Of(read.mutantIds.join('\n')), (mutantIdsDigest) => ({
+                    projectRoot: read.projectRoot,
+                    runInputsDigest: read.runInputsDigest,
+                    mutantIds: read.mutantIds.length,
+                    mutantIdsDigest,
+                  })),
+              },
+            ),
+        ),
+        Then("the root, inputs digest and mutant id digest equal the run's bench report")((s, expect) =>
+          expect(s.identity).toStrictEqual({
+            projectRoot: '/home/runner/work/_temp/bench-run/test/e2e-core',
+            runInputsDigest: '2b68781c3560bdd5020fded859db31a404bd4ae04370f09f60ee96b70896b2ad',
+            mutantIds: 39,
+            mutantIdsDigest: '85be64a8d160449277ad754f3cdb046e5f914806d66a397d92b42dd34548ce12',
+          })
         ),
       ),
     )

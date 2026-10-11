@@ -52,6 +52,14 @@ import {
 } from './prepare-side.schema.js'
 import type { PreparedSide } from './prepared-side.js'
 
+type ProgressPlatform = FileSystem.FileSystem | Path.Path
+
+export interface SetupProgress {
+  readonly starting: (side: BenchSide, step: string) => Effect.Effect<void, never, ProgressPlatform>
+  readonly measured: (step: SetupStep) => Effect.Effect<void>
+  readonly withheld: (pins: WithheldPins) => Effect.Effect<void>
+}
+
 export interface PrepareSideInput {
   readonly side: BenchSide
   readonly root: string
@@ -59,6 +67,7 @@ export interface PrepareSideInput {
   readonly workDir: string
   readonly target: BenchTarget
   readonly turboCacheDir: string
+  readonly progress: SetupProgress
 }
 
 type SetupCause = PlatformError | BadArgument | S.SchemaError
@@ -76,11 +85,6 @@ interface CommandOutcome {
 interface PackedTarball {
   readonly fileName: string
   readonly tarballPath: string
-}
-
-interface Timed<A> {
-  readonly value: A
-  readonly step: SetupStep
 }
 
 const BENCH_CONFIG_FILE = 'stryker.bench.config.ts'
@@ -165,14 +169,19 @@ const runChecked = (
   )
 
 const timed = <A, E, R>(
-  name: string,
+  input: PrepareSideInput,
+  step: string,
   effect: Effect.Effect<A, E, R>,
-): Effect.Effect<Timed<A>, E, R> =>
-  Console.log(`bench setup started: ${name}`).pipe(
+): Effect.Effect<A, E, R | ProgressPlatform> => {
+  const name = `${sideLabel(input.side)} ${step}`
+  return input.progress.starting(input.side, step).pipe(
+    Effect.andThen(Console.log(`bench setup started: ${name}`)),
     Effect.andThen(Effect.timed(effect)),
     Effect.tap(([elapsed]) => Console.log(`bench setup finished: ${name} in ${Duration.format(elapsed)}`)),
-    Effect.map(([elapsed, value]) => ({ step: { name, ms: Duration.toMillis(elapsed) }, value })),
+    Effect.tap(([elapsed]) => input.progress.measured({ name, ms: Duration.toMillis(elapsed) })),
+    Effect.map(([, value]) => value),
   )
+}
 
 const lastLockfileCommitTimeOf = (root: string): Effect.Effect<string, BenchSetupFailed, BenchPlatform> =>
   runChecked(STEP_ENTERPRISE_INSTALL, ['git', '-C', root, 'log', '-1', '--format=%cI', '--', LOCKFILE]).pipe(
@@ -516,12 +525,12 @@ const prepareEnterprise = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const label = sideLabel(input.side)
     const bundleRoot = path.join(input.workDir, 'enterprise')
     const packsDir = path.join(input.workDir, 'packs')
 
-    const manifests = yield* timed(
-      `${label} ${STEP_ENTERPRISE_MANIFESTS}`,
+    yield* timed(
+      input,
+      STEP_ENTERPRISE_MANIFESTS,
       Effect.gen(function*() {
         yield* fs.remove(bundleRoot, { recursive: true, force: true }).pipe(
           Effect.mapError((cause) => fail(STEP_ENTERPRISE_MANIFESTS, `${bundleRoot} could not be cleared`, cause)),
@@ -543,7 +552,8 @@ const prepareEnterprise = (
     )
 
     const closure = yield* timed(
-      `${label} ${STEP_ENTERPRISE_CLOSURE}`,
+      input,
+      STEP_ENTERPRISE_CLOSURE,
       Effect.gen(function*() {
         yield* fs.remove(packsDir, { recursive: true, force: true }).pipe(Effect.orDie)
         yield* fs.makeDirectory(packsDir, { recursive: true }).pipe(Effect.orDie)
@@ -551,20 +561,24 @@ const prepareEnterprise = (
       }),
     )
 
-    const install = yield* timed(
-      `${label} ${STEP_ENTERPRISE_INSTALL}`,
+    yield* timed(
+      input,
+      STEP_ENTERPRISE_INSTALL,
       Effect.gen(function*() {
         const workspace = yield* workspacePackages(input.root)
-        const specs = yield* enterpriseInstallSpecs(workspace, bundleRoot, closure.value)
+        const specs = yield* enterpriseInstallSpecs(workspace, bundleRoot, closure)
         const pins = yield* sideLockfilePins(input.root, workspace)
         const cutoff = yield* lastLockfileCommitTimeOf(input.root)
         const plan = Result.merge(
           planEnterpriseInstall(PlanEnterpriseInstallCommand.make({ side: input.side, pins, cutoff })),
         )
+        yield* Option.match(withheldOf(plan), {
+          onNone: () => Effect.void,
+          onSome: input.progress.withheld,
+        })
         yield* pinManifests(bundleRoot, pins)
         yield* runChecked(STEP_ENTERPRISE_INSTALL, plan.argv, bundleRoot)
         yield* runChecked(STEP_ENTERPRISE_INSTALL, [...plan.argv, ...specs], bundleRoot)
-        return withheldOf(plan)
       }),
     )
 
@@ -575,8 +589,6 @@ const prepareEnterprise = (
       cwd: bundleRoot,
       cli: path.join(bundleRoot, ...ENTERPRISE_CLI_RELATIVE),
       configFile: BENCH_CONFIG_FILE,
-      setupSteps: [manifests.step, closure.step, install.step],
-      withheldPins: install.value,
     } satisfies PreparedSide
   })
 
@@ -586,10 +598,10 @@ const prepareRepo = (
 ): Effect.Effect<PreparedSide, BenchSetupFailed, BenchPlatform> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const label = sideLabel(input.side)
 
-    const repoBuild = yield* timed(
-      `${label} ${STEP_REPO_BUILD}`,
+    yield* timed(
+      input,
+      STEP_REPO_BUILD,
       runChecked(
         STEP_REPO_BUILD,
         [
@@ -605,17 +617,15 @@ const prepareRepo = (
       ),
     )
 
-    const config = yield* timed(`${label} ${STEP_CONFIGS}`, writeRepoEntry(input, entry))
+    const cwd = yield* timed(input, STEP_CONFIGS, writeRepoEntry(input, entry))
 
     return {
       side: input.side,
       root: input.root,
       tree: input.root,
-      cwd: config.value,
+      cwd,
       cli: path.join(input.root, ...CLI_MAIN_RELATIVE),
       configFile: BENCH_CONFIG_FILE,
-      setupSteps: [repoBuild.step, config.step],
-      withheldPins: Option.none(),
     } satisfies PreparedSide
   })
 

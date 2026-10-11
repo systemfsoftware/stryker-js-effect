@@ -23,13 +23,18 @@ delta, and root's next action. A phase that regressed under an unchanged `total`
 stays a table verdict only.
 
 So that a job killed by that timeout or a cancel still leaves a report, the bench
-writes `bench-report.json` provisionally after setup and again after each
-finished run: an `aborted` outcome with code `leg-incomplete`, the finished
-runs, and the step it was about to start ("3 of 8 runs finished; next step:
-run 4 of 8 (side A)"). The final report replaces it. Both upload steps run on
-`always()`. A leg the bench itself aborts mid-way keeps the same finished runs,
-setup steps and withheld pins as the provisional report it replaces, with its
-own abort code and next action.
+writes `bench-report.json` provisionally: at leg start, before any setup, with
+next step "setup"; before each setup step, naming the side and the step that is
+next ("2 setup steps measured; next step: side B install the enterprise
+fixture"); after setup; and after each finished run ("3 of 8 runs finished; next
+step: run 4 of 8 (side A)"). Each is an `aborted` outcome with code
+`leg-incomplete`, and the leg's setup steps, withheld pins and finished runs
+accumulate from the first write. The final report replaces it. Both upload steps
+run on `always()`. A leg the bench itself aborts, a `side-setup-failed` included,
+keeps the setup steps, withheld pins and finished runs measured up to that point,
+with its own abort code and next action. The `::error` annotation carries the
+first line of the abort reason; the full reason is in the report JSON and the
+step summary.
 
 The `Bench` step reads these variables. Its own `env` in `bench.yml` sets
 `BENCH_SIDE_A`, `BENCH_SIDE_B`, `BENCH_TURBO_CACHE_DIR` (the checkout's
@@ -38,7 +43,8 @@ read), `BENCH_BASE_SHA`, `BENCH_HEAD_SHA`, `BENCH_REF`, `BENCH_ENTRY` and
 `BENCH_SETUP_TIMINGS`; the job's first step writes `JOB_STARTED_AT` to
 `GITHUB_ENV`; the runner sets `RUNNER_TEMP` and `GITHUB_STEP_SUMMARY`. When any
 is missing the leg aborts with `environment-incomplete`, and its next action
-names every missing variable.
+names every missing variable. That report is written to `bench-report.json` too
+whenever `RUNNER_TEMP` is set.
 
 The report heading and the verdict line name the ref (`BENCH_REF`). A manual
 `workflow_dispatch` may run on any ref; off `refs/heads/main` a regression's next
@@ -116,5 +122,8 @@ the engine spawns git only for `--since`, and the bench passes no `--since`.
 Each report run records the run's identity, read from its incremental report:
 the project root, the run inputs digest, and a SHA-256 of its sorted mutant
 ids. Only the project root is gated, because a real commit legitimately
-changes the digest and the ids. The step summary carries one line saying
-whether both sides' digests and id sets matched.
+changes the digest and the ids. A run whose incremental report cannot be read
+or decoded aborts the leg with `run-identity-unreadable`, naming the run and
+the file, since the bench can then no longer show both sides ran from one root.
+The step summary carries one line saying whether both sides' digests and id sets
+matched or differed.

@@ -30,7 +30,7 @@ export type WorkloadDigest = typeof WorkloadDigest.Type
 
 export const RunIdentity = S.TaggedUnion({
   read: { projectRoot: S.NonEmptyString, runInputsDigest: S.NonEmptyString, mutantIdsDigest: S.NonEmptyString },
-  unread: { reason: S.NonEmptyString },
+  unread: { file: S.NonEmptyString, reason: S.NonEmptyString },
 })
 export type RunIdentity = typeof RunIdentity.Type
 
