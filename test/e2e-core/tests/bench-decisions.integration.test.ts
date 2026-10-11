@@ -48,7 +48,7 @@ const runCommandOf = (lines: ReadonlyArray<string>): ReadBenchRunCommand =>
   ReadBenchRunCommand.make({
     key: BenchRunKey.make({ corpus: 'repo', entry: 'packages/a', side: 'A', position: 0 }),
     lines,
-    exit: { _tag: 'exited', code: 0 },
+    exitCode: 0,
     workloadDigest: { _tag: 'verified', digest: 'digest' },
     stderrTail: '',
     wallMs: 10,

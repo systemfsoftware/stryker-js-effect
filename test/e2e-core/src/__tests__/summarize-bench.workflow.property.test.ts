@@ -129,7 +129,7 @@ const positives = (values: ReadonlyArray<number>): ReadonlyArray<number> => valu
 type Subject = (command: SummarizeBenchCommand) => Result.Result<BenchSummary, BenchRunsInvalid>
 
 const summaryOf = (subject: Subject, runs: ReadonlyArray<BenchRun>): BenchSummary =>
-  Result.getOrThrow(subject(SummarizeBenchCommand.make({ runs })))
+  Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha: 'sha', parentSha: 'parent', runs })))
 
 const rowOf = (summary: BenchSummary, phase: string) => {
   const row = summary.projects[0].rows.find((candidate) => candidate.phase === phase)
@@ -325,7 +325,7 @@ describe('summarizeBench', () => {
     (subject, [rawA, rawB, reason, mask]) => {
       const runs = withInvalidA(positives(rawA), positives(rawB), mask, reason)
       const expected = labelsOf(runs.filter((run) => S.is(BenchRunInvalid)(run)))
-      return Result.match(subject(SummarizeBenchCommand.make({ runs })), {
+      return Result.match(subject(SummarizeBenchCommand.make({ sha: 'sha', parentSha: 'parent', runs })), {
         onFailure: (failure) => S.is(BenchRunsInvalid)(failure) && labelsOf(failure.runs) === expected,
         onSuccess: () => expected.length === 0,
       })
@@ -397,5 +397,34 @@ describe('summarizeBench', () => {
         summary.projects[0].entry === 'entry' &&
         phases === 'prepare,instrument,check,dry-run,mutation-test,reporting,total'
     },
+  )
+
+  it.prop(
+    '∀agps_SeparatedSlowdownOnB_≡RegressionNamingBothShasAndTheMetric',
+    {
+      of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int, S.NonEmptyString, S.NonEmptyString],
+      subject: summarizeBench,
+    },
+    (subject, [rawA, rawExtra, parentSha, sha]) => {
+      const a = positives(rawA)
+      const gap = Math.max(Math.max(...a) - Math.min(...a), Math.max(...a) * 0.1) + Math.abs(rawExtra) + 1
+      const runs = runsOf(a, a.map((sample) => sample + gap))
+      const summary = Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha, parentSha, runs })))
+      const delta = deltaOf(rowOf(summary, 'mutation-test').verdict)
+      const regression = summary.regression
+      return regression !== null &&
+        regression.sha === sha &&
+        regression.parentSha === parentSha &&
+        regression.metrics.some((metric) =>
+          metric.corpus === 'repo' && metric.entry === 'entry' && metric.phase === 'mutation-test' &&
+          metric.deltaMs === delta
+        )
+    },
+  )
+
+  it.prop(
+    '∀a_IdenticalSides_≡NoRegression',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int])], subject: summarizeBench },
+    (subject, [rawA]) => summaryOf(subject, runsOf(positives(rawA), positives(rawA))).regression === null,
   )
 })

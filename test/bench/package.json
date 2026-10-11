@@ -2,7 +2,7 @@
   "name": "@systemfsoftware/stryker-bench",
   "private": true,
   "version": "0.1.0",
-  "description": "Report-only A/B bench orchestrator: builds the PR's merge-base and head, runs both interleaved over two corpora, and reads each run's own NDJSON. The repo corpus is the pinned three-file slice in corpus.json.",
+  "description": "Report-only A/B bench orchestrator for main: on each push to main, benches the commit against its first parent, interleaved over two corpora, reading each run's own NDJSON. GitHub's 60-minute job timeout is the only kill; the leg's wall time is reported against its 10-minute target, never enforced.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {

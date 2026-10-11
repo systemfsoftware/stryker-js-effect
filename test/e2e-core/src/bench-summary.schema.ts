@@ -94,11 +94,32 @@ export class BenchProjectSummary extends S.Class<BenchProjectSummary>('BenchProj
   rows: S.Array(BenchPhaseRow),
 }) {}
 
+export const RegressedMetric = S.Struct({
+  corpus: BenchCorpusName,
+  entry: S.NonEmptyString,
+  phase: BenchPhase,
+  deltaMs: S.Finite,
+  deltaShareOfA: S.Finite,
+})
+export type RegressedMetric = typeof RegressedMetric.Type
+
+export const PhaseRegressedNextAction = S.Literal('root opens a revert PR of the culprit or a root-fix P0')
+
+export const PhaseRegression = S.Struct({
+  code: S.Literal('phase-regressed'),
+  sha: S.String,
+  parentSha: S.String,
+  metrics: S.NonEmptyArray(RegressedMetric),
+  nextAction: PhaseRegressedNextAction,
+})
+export type PhaseRegression = typeof PhaseRegression.Type
+
 const BenchSummaryTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchSummary')
 type BenchSummaryTypeId = typeof BenchSummaryTypeId
 
 export class BenchSummary extends S.TaggedClass<BenchSummary>()('BenchSummary', {
   projects: S.Array(BenchProjectSummary),
+  regression: S.NullOr(PhaseRegression),
 }) {
   readonly [BenchSummaryTypeId] = BenchSummaryTypeId
 }

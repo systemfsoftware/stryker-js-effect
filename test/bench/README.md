@@ -1,13 +1,23 @@
 # @systemfsoftware/stryker-bench
 
-The report-only A/B bench lane's orchestrator. The `bench` workflow runs one job
-per corpus entry (`BENCH_ENTRY`); each job builds the PR's merge-base with its
-base branch (side A) and the PR head (side B) on the same runner, runs both
-interleaved over that entry's workload, and reads every number from each run's
-own NDJSON. Nothing here compares statuses, stores a baseline, or fails a PR on
-a timing delta. When the job's `BENCH_DEADLINE_MS` stops or precedes a run, the
-report aborts with `budget-exceeded`; when it passes while setup is still
-running, the report aborts with `setup-timed-out` and no run starts.
+The report-only A/B bench lane's orchestrator. The `bench` workflow runs on
+every push to main (and on `workflow_dispatch`), never on a pull request. It
+runs one job per corpus entry (`BENCH_ENTRY`); each job builds the pushed
+commit's first parent (side A) and the commit itself (side B) on the same
+runner, runs both interleaved over that entry's workload, and reads every
+number from each run's own NDJSON.
+
+Time is measured, never enforced. The bench has no deadline of its own: GitHub's
+60-minute job timeout is the only thing that stops a hung setup or run. The
+job's first step records its start (`JOB_STARTED_AT`), and the report shows the
+leg's wall time from that mark to the report write next to the 10-minute
+target; running over the target never changes the exit code or the verdict
+line. A job exits non-zero only when the bench cannot produce a comparison: a
+run errors or its stream cannot be read (`failed`), or setup or the
+orchestration fails (`aborted`, with `side-setup-failed` naming the side and
+step). A regression is reported, not acted on: the verdict line, the step
+summary and the JSON report carry `phase-regressed`, the commit and its parent,
+each regressed project and phase with its delta, and root's next action.
 
 `pnpm --filter @systemfsoftware/stryker-bench bench` runs `src/main.ts` through
 `tsx` with the workspace source condition, so the orchestrator itself needs no
@@ -31,10 +41,10 @@ work on every run:
 and would dominate every repetition. Each entry, and the enterprise fixture, is
 its own project in the report; a repetition of a project is one CLI run.
 
-Each entry is bounded so its eight runs fit the job budget (10 minutes per
-job): a repo entry may pin `mutate` line ranges and `testFiles`, and the
-enterprise fixture pins `mutate` to four files, the same on both sides. The
-bound shapes timing only; it never feeds a verdict.
+Each entry is bounded so its eight runs stay near the 10-minute leg target: a
+repo entry may pin `mutate` line ranges and `testFiles`, and the enterprise
+fixture pins `mutate` to four files, the same on both sides. The bound shapes
+timing only; it never feeds a verdict.
 
 Every run starts from its side's tree exactly as setup left it. Before each
 run the bench restores the project directory to the snapshot it took after

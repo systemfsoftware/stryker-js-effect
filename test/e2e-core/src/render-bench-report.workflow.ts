@@ -12,14 +12,16 @@ import {
   BenchRenderedError,
   BenchRenderedNotice,
   BenchReport,
-  type BenchReportOutcome,
+  BenchReportOutcome,
   type BenchReportRun,
+  type LegTime,
 } from './bench-report.schema.js'
 import { type BenchRunInvalid } from './bench-run.schema.js'
 import {
   type BenchPhaseRow,
   type BenchProjectSummary,
-  PhaseVerdict,
+  type PhaseRegression,
+  type RegressedMetric,
   type SampleStatistics,
   type SideCell,
   type SideCounts,
@@ -32,6 +34,8 @@ export class RenderBenchReportCommand extends S.TaggedClass<RenderBenchReportCom
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
+
+type SummarizedOutcome = typeof BenchReportOutcome.cases.summarized.Type
 
 const round = Math.round
 const abs = Math.abs
@@ -68,33 +72,24 @@ const error = (title: string, message: string): Annotation => ({ level: 'error',
 const annotationLineOf = (annotation: Annotation): string =>
   `::${annotation.level} title=${escapeProperty(annotation.title)}::${escapeMessage(annotation.message)}`
 
-const itemText = (entry: string, row: BenchPhaseRow, deltaMs: number, deltaShareOfA: number): string =>
-  `${entry} ${row.phase} ${signedSeconds(deltaMs)} s (${signedPercent(deltaShareOfA)})`
+const changeText = (entry: string, phase: string, deltaMs: number, deltaShareOfA: number): string =>
+  `${entry} ${phase} ${signedSeconds(deltaMs)} s (${signedPercent(deltaShareOfA)})`
 
-const verdictItemText = (row: BenchPhaseRow, entry: string): string =>
-  Match.value(row.verdict).pipe(
-    Match.tag('improved', (verdict) => `improved ${itemText(entry, row, verdict.deltaMs, verdict.deltaShareOfA)}`),
-    Match.tag('regressed', (verdict) => `regressed ${itemText(entry, row, verdict.deltaMs, verdict.deltaShareOfA)}`),
-    Match.tag('no-signal', () => ''),
-    Match.tag('workload-unverified', () => ''),
-    Match.tag('not-measured', () => ''),
-    Match.exhaustive,
-  )
+const metricText = (metric: RegressedMetric): string =>
+  changeText(metric.entry, metric.phase, metric.deltaMs, metric.deltaShareOfA)
 
-const itemsOf = (
-  projects: ReadonlyArray<BenchProjectSummary>,
-  isWanted: (row: BenchPhaseRow) => boolean,
-): ReadonlyArray<string> =>
-  Arr.filter(
-    Arr.flatMap(projects, (project) =>
-      Arr.map(Arr.filter(project.rows, isWanted), (row) => verdictItemText(row, project.entry))),
-    (item) =>
-      item.length > 0,
-  )
-
-const isRegressed = (row: BenchPhaseRow): boolean => S.is(PhaseVerdict.cases.regressed)(row.verdict)
-
-const isImproved = (row: BenchPhaseRow): boolean => S.is(PhaseVerdict.cases.improved)(row.verdict)
+const improvedItemsOf = (projects: ReadonlyArray<BenchProjectSummary>): ReadonlyArray<string> =>
+  Arr.flatMap(projects, (project) =>
+    Arr.flatMap(project.rows, (row) =>
+      Match.valueTags(row.verdict, {
+        improved: (verdict): ReadonlyArray<string> => [
+          `improved ${changeText(project.entry, row.phase, verdict.deltaMs, verdict.deltaShareOfA)}`,
+        ],
+        regressed: (): ReadonlyArray<string> => [],
+        'no-signal': (): ReadonlyArray<string> => [],
+        'workload-unverified': (): ReadonlyArray<string> => [],
+        'not-measured': (): ReadonlyArray<string> => [],
+      })))
 
 const RULE = '(N=4 per side, non-overlap and >=3% rule)'
 
@@ -112,16 +107,26 @@ const sentenceOf = (items: ReadonlyArray<string>, projects: ReadonlyArray<BenchP
     onFalse: () => `Bench: ${items.join('; ')} ${RULE}.${unverifiedText(projects)}`,
   })
 
-const summarizedAnnotation = (projects: ReadonlyArray<BenchProjectSummary>): Annotation => {
-  const regressed = itemsOf(projects, isRegressed)
-  const improved = itemsOf(projects, isImproved)
-  const items = [...regressed, ...improved]
-  return Boolean.match(regressed.length > 0, {
-    onTrue: () => error('Bench regression', sentenceOf(items, projects)),
-    onFalse: () =>
+const regressionAnnotation = (
+  regression: PhaseRegression,
+  improved: ReadonlyArray<string>,
+  projects: ReadonlyArray<BenchProjectSummary>,
+): Annotation =>
+  error(
+    regression.code,
+    `Bench ${regression.sha} against parent ${regression.parentSha}: ${
+      [...Arr.map(regression.metrics, (metric) => `regressed ${metricText(metric)}`), ...improved].join('; ')
+    } ${RULE}.${unverifiedText(projects)} Next: ${regression.nextAction}`,
+  )
+
+const summarizedAnnotation = (summarized: SummarizedOutcome): Annotation => {
+  const improved = improvedItemsOf(summarized.projects)
+  return Option.match(Option.fromNullishOr(summarized.regression), {
+    onSome: (regression) => regressionAnnotation(regression, improved, summarized.projects),
+    onNone: () =>
       Boolean.match(improved.length > 0, {
-        onTrue: () => notice('Bench improvement', sentenceOf(items, projects)),
-        onFalse: () => notice('Bench no signal', sentenceOf([], projects)),
+        onTrue: () => notice('Bench improvement', sentenceOf(improved, summarized.projects)),
+        onFalse: () => notice('Bench no signal', sentenceOf([], summarized.projects)),
       }),
   })
 }
@@ -230,18 +235,49 @@ const detailsBlock = (report: BenchReport): string =>
 
 const headingOf = (report: BenchReport): string => `## Bench comparison: ${report.baseSha} → ${report.headSha}`
 
+const minutes = (ms: number): string => (ms / 60_000).toFixed(1)
+
+const overrunText = (wallMs: number, targetMs: number): string =>
+  Boolean.match(wallMs > targetMs, {
+    onTrue: () => `, ${minutes(wallMs - targetMs)} min over (reported, never enforced)`,
+    onFalse: () => '',
+  })
+
+const legText = (leg: LegTime): string =>
+  Option.match(Option.fromNullishOr(leg.wallMs), {
+    onNone: () => `**Leg wall time:** not measured; target ${minutes(leg.targetMs)} min`,
+    onSome: (wallMs) =>
+      `**Leg wall time:** ${minutes(wallMs)} min; target ${minutes(leg.targetMs)} min${
+        overrunText(wallMs, leg.targetMs)
+      }`,
+  })
+
+const headOf = (report: BenchReport): ReadonlyArray<string> => [headingOf(report), legText(report.leg)]
+
 const abortedBlock = (code: BenchAbortCode, reason: string, nextAction: string): string =>
   [`### Aborted: ${code}`, reason, `**Next action:** ${nextAction}`].join('\n\n')
+
+const regressionBlock = (regression: PhaseRegression): string =>
+  [
+    `### Regression: ${regression.code}`,
+    `Commit \`${regression.sha}\` against its parent \`${regression.parentSha}\`:`,
+    Arr.map(regression.metrics, (metric) => `- ${metric.corpus}/${metricText(metric)}`).join('\n'),
+    `**Next action:** ${regression.nextAction}`,
+  ].join('\n\n')
 
 const markdownOf = (report: BenchReport): string =>
   Match.valueTags(report.outcome, {
     aborted: (aborted) =>
-      [headingOf(report), abortedBlock(aborted.code, aborted.reason, aborted.nextAction)].join('\n\n'),
-    failed: (failed) => [headingOf(report), '### Failures', ...Arr.map(failed.invalid, failureLine)].join('\n\n'),
+      [...headOf(report), abortedBlock(aborted.code, aborted.reason, aborted.nextAction)].join('\n\n'),
+    failed: (failed) => [...headOf(report), '### Failures', ...Arr.map(failed.invalid, failureLine)].join('\n\n'),
     summarized: (summarized) =>
-      [headingOf(report), ...Arr.map(summarized.projects, projectBlock), SIGNAL_NOTE, detailsBlock(report)].join(
-        '\n\n',
-      ),
+      [
+        ...headOf(report),
+        ...Option.toArray(Option.map(Option.fromNullishOr(summarized.regression), regressionBlock)),
+        ...Arr.map(summarized.projects, projectBlock),
+        SIGNAL_NOTE,
+        detailsBlock(report),
+      ].join('\n\n'),
   })
 
 const annotationOf = (outcome: BenchReportOutcome): Annotation =>
@@ -249,7 +285,7 @@ const annotationOf = (outcome: BenchReportOutcome): Annotation =>
     aborted: (aborted) =>
       error('Bench aborted', `Bench aborted (${aborted.code}): ${aborted.reason} Next: ${aborted.nextAction}`),
     failed: (failed) => invalidAnnotation(failed.invalid),
-    summarized: (summarized) => summarizedAnnotation(summarized.projects),
+    summarized: summarizedAnnotation,
   })
 
 const renderedOf = (report: BenchReport): BenchRendered => {

@@ -8,8 +8,11 @@ import {
   type BenchCorpusName,
   BenchReport,
   BenchReportJson,
+  type BenchReportOutcome,
+  type BenchReportRun,
   type BenchRun,
   type BenchSide,
+  LegTargetMs,
   renderBenchReport,
   RenderBenchReportCommand,
   type SetupStep,
@@ -19,7 +22,6 @@ import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Config from 'effect/Config'
 import * as Console from 'effect/Console'
-import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
@@ -39,7 +41,6 @@ const BENCH_REPORT_DIR = 'bench-report'
 const BENCH_REPORT_FILE = 'bench-report.json'
 const CORPUS_FILE = ['test', 'bench', 'corpus.json'] as const
 const TURBO_CACHE_DIR = ['.turbo', 'cache'] as const
-const DEFAULT_RUN_TIMEOUT_MS = 10 * 60_000
 const UNKNOWN_SHA = 'unknown'
 
 const runLogLine = (run: BenchRun): string =>
@@ -102,11 +103,10 @@ interface BenchEnv {
   readonly baseSha: string
   readonly headSha: string
   readonly entry: string
-  readonly deadlineMs: number
+  readonly jobStartedAtSeconds: number
   readonly setupTimingsFile: string
   readonly runnerTemp: string
   readonly stepSummary: string
-  readonly runTimeoutMs: number
 }
 
 const benchEnv = Effect.all({
@@ -115,22 +115,37 @@ const benchEnv = Effect.all({
   baseSha: Config.String('BENCH_BASE_SHA'),
   headSha: Config.String('BENCH_HEAD_SHA'),
   entry: Config.String('BENCH_ENTRY'),
-  deadlineMs: Config.Number('BENCH_DEADLINE_MS'),
+  jobStartedAtSeconds: Config.Number('JOB_STARTED_AT'),
   setupTimingsFile: Config.String('BENCH_SETUP_TIMINGS'),
   runnerTemp: Config.String('RUNNER_TEMP'),
   stepSummary: Config.String('GITHUB_STEP_SUMMARY'),
-  runTimeoutMs: Config.Number('BENCH_RUN_TIMEOUT_MS').pipe(Config.withDefault(DEFAULT_RUN_TIMEOUT_MS)),
 })
 
-const abortedReport = (env: Pick<BenchEnv, 'baseSha' | 'headSha'>, code: BenchAbortCode, reason: string) =>
+interface ReportBody {
+  readonly outcome: BenchReportOutcome
+  readonly runs: ReadonlyArray<BenchReportRun>
+  readonly setupSteps: ReadonlyArray<SetupStep>
+}
+
+const abortedBody = (code: BenchAbortCode, reason: string): ReportBody => ({
+  outcome: abortedOutcomeOf(code, reason),
+  runs: [],
+  setupSteps: [],
+})
+
+const reportOf = (env: Pick<BenchEnv, 'baseSha' | 'headSha'>, wallMs: number | null, body: ReportBody) =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: '2.0',
     baseSha: env.baseSha,
     headSha: env.headSha,
-    outcome: abortedOutcomeOf(code, reason),
-    runs: [],
-    setupSteps: [],
+    leg: { wallMs, targetMs: LegTargetMs.literal },
+    outcome: body.outcome,
+    runs: [...body.runs],
+    setupSteps: [...body.setupSteps],
   })
+
+const legWallMs = (env: BenchEnv): Effect.Effect<number> =>
+  Effect.map(Clock.currentTimeMillis, (now) => Math.max(0, now - env.jobStartedAtSeconds * 1000))
 
 const targetOf = (corpus: BenchCorpus, entry: string): Option.Option<BenchTarget> =>
   Option.orElse(
@@ -180,23 +195,10 @@ const bench = (env: BenchEnv) =>
       prepareSide({ side, root, fixtureSource, workDir: path.join(workRoot, workDir), target, turboCacheDir }).pipe(
         Effect.mapError((failure) => orchestrationFailed('side-setup-failed', `side ${side}: ${failure.message}`)),
       )
-    const setupBudgetMs = Math.max(0, env.deadlineMs - (yield* Clock.currentTimeMillis))
     const prepared = yield* Effect.all({
       sideA: prepareNamed('A', env.sideARoot, 'a'),
       sideB: prepareNamed('B', env.sideBRoot, 'b'),
-    }).pipe(
-      Effect.timeoutOption(Duration.millis(setupBudgetMs)),
-      Effect.flatMap(Option.match({
-        onNone: () =>
-          Effect.fail(orchestrationFailed(
-            'setup-timed-out',
-            `setup of both sides did not finish before the job deadline (${
-              (setupBudgetMs / 1000).toFixed(1)
-            }s were left when it started); no run started`,
-          )),
-        onSome: Effect.succeed,
-      })),
-    )
+    })
 
     const result = yield* runBench({
       corpus: corpusNameOf(target),
@@ -204,20 +206,21 @@ const bench = (env: BenchEnv) =>
       sideA: prepared.sideA,
       sideB: prepared.sideB,
       runsRoot,
-      setupSteps: [...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps, ...setupSteps],
-      baseSha: env.baseSha,
-      headSha: env.headSha,
-      runTimeoutMs: env.runTimeoutMs,
-      deadlineMs: env.deadlineMs,
+      sha: env.headSha,
+      parentSha: env.baseSha,
     })
     yield* Effect.forEach(result.runs, (run) => Console.log(runLogLine(run)))
-    return result.report
+    return {
+      outcome: result.outcome,
+      runs: result.reportRuns,
+      setupSteps: [...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps, ...setupSteps],
+    } satisfies ReportBody
   }).pipe(
     Effect.catchTag(
       'BenchOrchestrationFailed',
-      (failure) => Effect.succeed(abortedReport(env, failure.code, failure.reason)),
+      (failure): Effect.Effect<ReportBody> => Effect.succeed(abortedBody(failure.code, failure.reason)),
     ),
-    Effect.catchDefect((defect) => Effect.succeed(abortedReport(env, 'defect', Cause.pretty(Cause.die(defect))))),
+    Effect.catchDefect((defect) => Effect.succeed(abortedBody('defect', Cause.pretty(Cause.die(defect))))),
   )
 
 const writeReport = (env: BenchEnv, report: BenchReport) =>
@@ -231,10 +234,10 @@ const writeReport = (env: BenchEnv, report: BenchReport) =>
   }).pipe(
     Effect.catch((failure) =>
       Effect.succeed(
-        abortedReport(
+        reportOf(
           env,
-          'report-unwritable',
-          `the bench report could not be written or read back: ${failure.message}`,
+          report.leg.wallMs,
+          abortedBody('report-unwritable', `the bench report could not be written or read back: ${failure.message}`),
         ),
       )
     ),
@@ -265,11 +268,16 @@ const program = Effect.gen(function*() {
   yield* Result.match(env, {
     onFailure: (error) =>
       publish(
-        abortedReport({ baseSha: UNKNOWN_SHA, headSha: UNKNOWN_SHA }, 'environment-incomplete', error.message),
+        reportOf(
+          { baseSha: UNKNOWN_SHA, headSha: UNKNOWN_SHA },
+          null,
+          abortedBody('environment-incomplete', error.message),
+        ),
         Option.none(),
       ),
     onSuccess: (present) =>
       bench(present).pipe(
+        Effect.flatMap((body) => Effect.map(legWallMs(present), (wallMs) => reportOf(present, wallMs, body))),
         Effect.flatMap((report) => writeReport(present, report)),
         Effect.flatMap((report) => publish(report, Option.some(present.stepSummary))),
       ),

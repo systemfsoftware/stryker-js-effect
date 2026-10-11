@@ -28,14 +28,8 @@ export const WorkloadDigest = S.TaggedUnion({
 })
 export type WorkloadDigest = typeof WorkloadDigest.Type
 
-export const BenchRunFailureCode = S.Literals(['stream-undecodable', 'stream-invalid', 'timeout'])
+export const BenchRunFailureCode = S.Literals(['stream-undecodable', 'stream-invalid'])
 export type BenchRunFailureCode = typeof BenchRunFailureCode.Type
-
-export const RunExit = S.TaggedUnion({
-  exited: { code: S.Int },
-  'timed-out': { afterMs: Report.NonNegativeFinite },
-})
-export type RunExit = typeof RunExit.Type
 
 export class BenchRunMeasured extends S.TaggedClass<BenchRunMeasured>()('measured', {
   key: BenchRunKey,

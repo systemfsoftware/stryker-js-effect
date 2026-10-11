@@ -11,6 +11,7 @@ import {
   BenchReportJson,
   BenchReportOutcome,
   type BenchReportRun,
+  LegTime,
 } from '../bench-report.schema.js'
 import { BenchRun, BenchRunFailureCode, BenchRunInvalid, BenchRunKey, BenchRunMeasured } from '../bench-run.schema.js'
 import { type BenchSummary, PhaseVerdict } from '../bench-summary.schema.js'
@@ -83,19 +84,23 @@ const reportRunsOf = (runs: ReadonlyArray<BenchRun>): ReadonlyArray<BenchReportR
   }))
 
 const summaryOf = (runs: ReadonlyArray<BenchRun>): BenchSummary =>
-  Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ runs })))
+  Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ sha: 'head', parentSha: 'base', runs })))
+
+const LEG: LegTime = { wallMs: 60_000, targetMs: 600_000 }
 
 const reportOf = (
   summary: BenchSummary,
   runs: ReadonlyArray<BenchRun>,
   baseSha: string,
   headSha: string,
+  leg: LegTime = LEG,
 ): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: '2.0',
     baseSha,
     headSha,
-    outcome: { _tag: 'summarized', projects: summary.projects },
+    leg,
+    outcome: { _tag: 'summarized', projects: summary.projects, regression: summary.regression },
     runs: reportRunsOf(runs),
     setupSteps: [],
   })
@@ -128,9 +133,10 @@ const medianOf = (values: ReadonlyArray<number>): number => {
 
 const failedReportOf = (invalid: ReadonlyArray<BenchRunInvalid>): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: '2.0',
     baseSha: 'base',
     headSha: 'head',
+    leg: LEG,
     outcome: { _tag: 'failed', invalid },
     runs: [],
     setupSteps: [],
@@ -154,9 +160,10 @@ const invalidOf = (
 
 const abortedReportOf = (code: BenchAbortCode, reason: string): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: '2.0',
     baseSha: 'base',
     headSha: 'head',
+    leg: LEG,
     outcome: abortedOutcomeOf(code, reason),
     runs: [],
     setupSteps: [],
@@ -262,7 +269,7 @@ describe('renderBenchReport', () => {
       const summary = summaryOf(runs)
       const line = annotationOf(subject, reportOf(summary, runs, 'base', 'head'))
       const regressed = rowCountOf(summary, 'regressed')
-      const level = regressed > 0 ? '::error title=Bench regression::' : '::notice title=Bench '
+      const level = regressed > 0 ? '::error title=phase-regressed::' : '::notice title=Bench '
       return line.startsWith(level) && line.includes('\n') === false
     },
   )
@@ -371,6 +378,47 @@ describe('renderBenchReport', () => {
         rendered.annotationLine.includes('\n') === false &&
         rendered.markdown.includes(`### Aborted: ${code}`) &&
         rendered.markdown.includes(next)
+    },
+  )
+
+  it.prop(
+    '∀ag_SeparatedSlowdownOnB_≡VerdictLineAndSummaryNameShasMetricAndNextAction',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int], subject: renderBenchReport },
+    (subject, [rawA, rawExtra]) => {
+      const a = positives(rawA)
+      const gap = Math.max(Math.max(...a) - Math.min(...a), Math.max(...a) * 0.1) + Math.abs(rawExtra) + 1
+      const runs = runsOf(a, a.map((sample) => sample + gap))
+      const rendered = renderedOf(subject, reportOf(summaryOf(runs), runs, 'base', 'head'))
+      const fields = [
+        'head',
+        'base',
+        `entry mutation-test +${(gap / 1000).toFixed(1)} s`,
+        'root opens a revert PR of the culprit or a root-fix P0',
+      ]
+      return S.is(BenchRenderedError)(rendered) &&
+        rendered.annotationLine.startsWith('::error title=phase-regressed::') &&
+        rendered.markdown.includes('### Regression: phase-regressed') &&
+        fields.every((field) => rendered.annotationLine.includes(field) && rendered.markdown.includes(field))
+    },
+  )
+
+  it.prop(
+    '∀abvw_LegWallTime_≡SameVerdictLineAndLevelWithTheWallTimeInTheSummary',
+    {
+      of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Tuple([S.Int, S.Int, S.Int, S.Int]), LegTime, LegTime],
+      subject: renderBenchReport,
+    },
+    (subject, [rawA, rawB, legV, legW]) => {
+      const runs = runsOf(positives(rawA), positives(rawB))
+      const summary = summaryOf(runs)
+      const v = renderedOf(subject, reportOf(summary, runs, 'base', 'head', legV))
+      const w = renderedOf(subject, reportOf(summary, runs, 'base', 'head', legW))
+      const wallText = legW.wallMs === null ? 'not measured' : `${(legW.wallMs / 60_000).toFixed(1)} min`
+      const over = legW.wallMs !== null && legW.wallMs > legW.targetMs
+      return S.is(BenchRenderedError)(v) === S.is(BenchRenderedError)(w) &&
+        v.annotationLine === w.annotationLine &&
+        w.markdown.includes(`**Leg wall time:** ${wallText}; target 10.0 min`) &&
+        w.markdown.includes('min over (reported, never enforced)') === over
     },
   )
 })
