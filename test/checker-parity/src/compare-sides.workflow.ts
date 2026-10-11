@@ -321,9 +321,6 @@ const phaseLinesOf = (
 const phaseMsOf = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): number =>
   phaseLinesOf(lines, project, side).reduce((total, line) => total + line.ms, 0)
 
-const measured = (lines: ReadonlyArray<ParityLine>, project: string, side: Side): boolean =>
-  phaseLinesOf(lines, project, side).length > 0
-
 const bootFailuresOf = (
   lines: ReadonlyArray<ParityLine>,
   project: string,
@@ -542,9 +539,6 @@ const shortcutViolationsFor = (command: CompareSidesCommand): ReadonlyArray<Zero
   ]
 }
 
-const measuredOnBoth = (lines: ReadonlyArray<ParityLine>, projects: ReadonlyArray<string>): ReadonlyArray<string> =>
-  projects.filter((project) => Boolean.every([measured(lines, project, 'main'), measured(lines, project, 'branch')]))
-
 const speedSum = (
   lines: ReadonlyArray<ParityLine>,
   projects: ReadonlyArray<string>,
@@ -649,7 +643,7 @@ const perMutant = (value: number, mutants: number): number =>
 const sideTotals = (
   lines: ReadonlyArray<ParityLine>,
   projects: ReadonlyArray<string>,
-  measuredProjects: ReadonlyArray<string>,
+  comparedProjects: ReadonlyArray<string>,
   side: Side,
 ): SideTotals => {
   const mutants = mutatedCount(lines, side)
@@ -667,7 +661,7 @@ const sideTotals = (
     side,
     mutants,
     checkCalls: checkCallCount(lines, side),
-    phaseMs: speedSum(lines, measuredProjects, side),
+    phaseMs: speedSum(lines, comparedProjects, side),
     snapshotUpdates,
     emitBuilds,
     snapshotUpdatesPerMutant: perMutant(snapshotUpdates, mutants),
@@ -715,15 +709,15 @@ const excludedCachedProjectCount = (lines: ReadonlyArray<ParityLine>, projects: 
 
 const summaryOf = (command: CompareSidesCommand): ComparisonSummary => {
   const projects = projectsOf(command.lines)
-  const measuredProjects = measuredOnBoth(command.lines, projects)
+  const comparedProjects = checkedOnBoth(command.lines, projects)
   return {
     schemaVersion: 1,
     projectCount: projects.length,
-    measuredProjectCount: measuredProjects.length,
+    measuredProjectCount: comparedProjects.length,
     excludedCachedProjectCount: excludedCachedProjectCount(command.lines, projects),
     skipped: skippedProjects(command.lines, projects),
-    main: sideTotals(command.lines, projects, measuredProjects, 'main'),
-    branch: sideTotals(command.lines, projects, measuredProjects, 'branch'),
+    main: sideTotals(command.lines, projects, comparedProjects, 'main'),
+    branch: sideTotals(command.lines, projects, comparedProjects, 'branch'),
     shortcutCount: {
       overall: sumCounts(command.lines, (counts) => counts.importerShortcuts),
       isolatedDeclarations: sumCounts(

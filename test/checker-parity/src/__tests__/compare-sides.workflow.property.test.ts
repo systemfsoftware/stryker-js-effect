@@ -463,6 +463,68 @@ describe('compareSides', () => {
   )
 
   it.prop(
+    '∀q_SummaryMeasuredCount_≡ProjectsComparedByTheSpeedGate',
+    {
+      of: [
+        S.NonEmptyString,
+        S.Literals(['fresh-check', 'group', 'digest', 'cached-check', 'none']),
+        S.Literals(['fresh-check', 'group', 'digest', 'cached-check', 'none']),
+        S.Literals(['group', 'digest']),
+        S.Literals(['group', 'digest']),
+        S.Int,
+        S.Int,
+        S.Int,
+        S.Int,
+      ],
+      subject: compareSides,
+    },
+    (
+      subject,
+      [
+        mutantId,
+        mainKind,
+        branchKind,
+        otherMainKind,
+        otherBranchKind,
+        drawnMainMs,
+        drawnBranchMs,
+        drawnOtherMainMs,
+        drawnOtherBranchMs,
+      ],
+    ) => {
+      const mainMs = digitsOf(drawnMainMs)
+      const branchMs = digitsOf(drawnBranchMs)
+      const otherMainMs = digitsOf(drawnOtherMainMs)
+      const otherBranchMs = digitsOf(drawnOtherBranchMs)
+      const phaseLineOrNone = (
+        side: Side,
+        project: string,
+        kind: PhaseKind | 'none',
+        ms: number,
+      ): ReadonlyArray<ParityLine> => kind === 'none' ? [] : [phaseLineOf(side, project, kind, ms)]
+      const lines = [
+        verdictOf('main', { mutantId, status: 'compileError' }),
+        verdictOf('branch', { mutantId, status: 'compileError' }),
+        typeAnswerLineOf(mutantId, notAssignableAnswer),
+        countsOf(PROJECT),
+        countsOf(OTHER_PROJECT),
+        ...phaseLineOrNone('main', PROJECT, mainKind, mainMs),
+        ...phaseLineOrNone('branch', PROJECT, branchKind, branchMs),
+        ...phaseLineOrNone('main', OTHER_PROJECT, otherMainKind, otherMainMs),
+        ...phaseLineOrNone('branch', OTHER_PROJECT, otherBranchKind, otherBranchMs),
+      ]
+      const decision = decisionOf(subject, commandOf(lines, { shortcutCount: false, speed: true }))
+      const compared = (kind: PhaseKind | 'none', other: PhaseKind | 'none'): boolean =>
+        kind === 'fresh-check' && other === 'fresh-check'
+      const projectCompared = compared(mainKind, branchKind)
+      const otherCompared = compared(otherMainKind, otherBranchKind)
+      return decision.summary.measuredProjectCount === (projectCompared ? 1 : 0) + (otherCompared ? 1 : 0) &&
+        decision.summary.main.phaseMs === (projectCompared ? mainMs : 0) + (otherCompared ? otherMainMs : 0) &&
+        decision.summary.branch.phaseMs === (projectCompared ? branchMs : 0) + (otherCompared ? otherBranchMs : 0)
+    },
+  )
+
+  it.prop(
     '∀t_OneSideWithoutFreshCheck_≡NeverSlowerThanMain',
     {
       of: [
