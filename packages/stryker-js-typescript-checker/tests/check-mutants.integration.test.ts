@@ -374,7 +374,7 @@ const collectionSizeCase: Case = {
     })),
 }
 
-const culledIdsOf = (reasons: Readonly<Record<string, string>>): Readonly<Record<string, string>> =>
+const culledReasonsOf = (reasons: Readonly<Record<string, string>>): Readonly<Record<string, string>> =>
   Object.fromEntries(Object.entries(reasons).filter(([, reason]) => reason !== ''))
 
 const PATHS_PROJECT: Readonly<Record<string, string>> = {
@@ -604,7 +604,7 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
         )((s, expect) =>
           expect({
             passed: Object.values(s.seen.statuses).filter((status) => status === 'passed').length,
-            culled: culledIdsOf(s.seen.ignoreReasons),
+            culled: culledReasonsOf(s.seen.ignoreReasons),
           }).toEqual({
             passed: SIZE_MUTANTS.length - 3,
             culled: {

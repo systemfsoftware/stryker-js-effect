@@ -833,13 +833,25 @@ const spanContainsOf = (node: Node, start: number, end: number): boolean => {
   return span.start <= start && end <= span.end
 }
 
-const hasSpanOf = (node: Node, start: number, end: number): boolean => {
-  if (spanEqualsOf(node, start, end)) return true
-  return Arr.some(
-    childrenOf(node),
-    (child) => Boolean.and(spanContainsOf(child, start, end), hasSpanOf(child, start, end)),
+const nodeWithSpanOf = <A extends Node>(
+  node: Node,
+  start: number,
+  end: number,
+  accept: (candidate: Node) => candidate is A,
+): Option.Option<A> =>
+  Option.orElse(
+    Option.filter(Option.liftPredicate(node, accept), (accepted) => spanEqualsOf(accepted, start, end)),
+    () =>
+      Arr.findFirst(
+        Arr.filter(childrenOf(node), (child) => spanContainsOf(child, start, end)),
+        (child) => nodeWithSpanOf(child, start, end, accept),
+      ),
   )
-}
+
+const isAnyNode = (_candidate: Node): _candidate is Node => true
+
+const hasSpanOf = (node: Node, start: number, end: number): boolean =>
+  Option.isSome(nodeWithSpanOf(node, start, end, isAnyNode))
 
 const parseHeldOf = (sourceFile: SourceFile, file: ScriptFile, mutant: Checker.CheckerMutantWire): boolean =>
   Option.match(offsetAt(file.lineStarts, mutant.location.start), {
@@ -1493,14 +1505,7 @@ interface LengthOperand {
 }
 
 const binaryWithSpanOf = (node: Node, start: number, end: number): Option.Option<BinaryExpression> =>
-  Option.orElse(
-    Option.filter(Option.liftPredicate(node, isBinaryExpression), (binary) => spanEqualsOf(binary, start, end)),
-    () =>
-      Arr.findFirst(
-        Arr.filter(childrenOf(node), (child) => spanContainsOf(child, start, end)),
-        (child) => binaryWithSpanOf(child, start, end),
-      ),
-  )
+  nodeWithSpanOf(node, start, end, isBinaryExpression)
 
 const lengthReceiverOf = (expression: Expression): Option.Option<Expression> =>
   Option.map(
@@ -1526,12 +1531,19 @@ const lengthOperandOf = (binary: BinaryExpression): Option.Option<LengthOperand>
   )
 
 const receiverKindOf = (checker: TypeChecker, type: Type): Effect.Effect<ReceiverKind> =>
-  (type.flags & TypeFlags.StringLike) !== 0
-    ? Effect.succeed('string')
-    : Effect.flatMap(Effect.promise(() => checker.isTupleType(type)), (tuple) =>
-      tuple
-        ? Effect.succeed('tuple')
-        : Effect.map(Effect.promise(() => checker.isArrayType(type)), (array) => (array ? 'array' : 'other')))
+  Boolean.match((type.flags & TypeFlags.StringLike) !== 0, {
+    onTrue: () => Effect.succeed<ReceiverKind>('string'),
+    onFalse: () =>
+      Effect.flatMap(Effect.promise(() => checker.isTupleType(type)), (tuple) =>
+        Boolean.match(tuple, {
+          onTrue: () => Effect.succeed<ReceiverKind>('tuple'),
+          onFalse: () =>
+            Effect.map(
+              Effect.promise(() => checker.isArrayType(type)),
+              (array): ReceiverKind => Boolean.match(array, { onTrue: () => 'array', onFalse: () => 'other' }),
+            ),
+        })),
+  })
 
 const receiverKindsOf = (checker: TypeChecker, type: Type): Effect.Effect<ReadonlyArray<ReceiverKind>> =>
   type.isUnionType()
@@ -1593,6 +1605,7 @@ const sizeComparisonOf = (
   )
 
 interface CheckedMutant {
+  readonly mutant: Checker.CheckerMutantWire
   readonly check: MutantCheck
   readonly comparison: Option.Option<SizeComparison>
 }
@@ -1631,7 +1644,7 @@ const checkOne = (
         onTrue: () => sizeComparisonOf(owned, file, mutant, held),
       },
     )
-    return { check: { mutantId: mutant.id, diagnostics: rendered }, comparison }
+    return { mutant, check: { mutantId: mutant.id, diagnostics: rendered }, comparison }
   })
 
 interface CheckAccumulator {
@@ -1780,30 +1793,27 @@ const classifyBatchTce = Effect.fnUntraced(function*(
   )
 })
 
+const BOOLEAN_LITERALS: ReadonlyArray<string> = ['true', 'false']
+
 const booleanLiteralOf = (replacement: string): Option.Option<boolean> =>
   Option.map(
-    Option.filter(Option.some(replacement.trim()), (text) => Arr.contains(['true', 'false'], text)),
+    Option.liftPredicate(replacement.trim(), (text) => Arr.contains(BOOLEAN_LITERALS, text)),
     (text) => text === 'true',
   )
 
-const classifyBatchCollectionSize = (
-  mutants: readonly Checker.CheckerMutantWire[],
+const collectionSizeChecked = (
   measured: ReadonlyArray<CheckedMutant>,
   checked: ReadonlyArray<MutantCheck>,
 ): ReadonlyArray<MutantCheck> => {
-  const candidates = Arr.zipWith(
-    Arr.zip(mutants, measured),
-    checked,
-    ([mutant, { comparison }], entry) => ({
-      site: siteKeyOf(mutant),
-      candidate: {
-        id: mutant.id,
-        kept: Boolean.and(entry.diagnostics.length === 0, entry.ignore === undefined),
-        literal: booleanLiteralOf(mutant.replacement),
-        comparison,
-      },
-    }),
-  )
+  const candidates = Arr.zipWith(measured, checked, ({ mutant, comparison }, entry) => ({
+    site: siteKeyOf(mutant),
+    candidate: {
+      id: mutant.id,
+      kept: Boolean.and(entry.diagnostics.length === 0, entry.ignore === undefined),
+      literal: booleanLiteralOf(mutant.replacement),
+      comparison,
+    },
+  }))
   const sites = Object.values(Arr.groupBy(candidates, (entry) => entry.site))
   const decisions = decided(classifyCollectionSize(ClassifyCollectionSizeCommand.make({
     sites: Arr.map(sites, (site) => ({ candidates: Arr.map(site, (entry) => entry.candidate) })),
@@ -1815,6 +1825,15 @@ const classifyBatchCollectionSize = (
       onSome: (constant): MutantCheck => ({ ...entry, ignore: constant ? 'always-true' : 'always-false' }),
     }))
 }
+
+const classifyBatchCollectionSize = (
+  measured: ReadonlyArray<CheckedMutant>,
+  checked: ReadonlyArray<MutantCheck>,
+): ReadonlyArray<MutantCheck> =>
+  Boolean.match(Arr.some(measured, (entry) => Option.isSome(entry.comparison)), {
+    onFalse: () => checked,
+    onTrue: () => collectionSizeChecked(measured, checked),
+  })
 
 export const check: {
   (
@@ -1856,7 +1875,7 @@ export const check: {
       mutants,
       Arr.map(measured, (entry) => entry.check),
     )
-    const checked = classifyBatchCollectionSize(mutants, measured, tceChecked)
+    const checked = classifyBatchCollectionSize(measured, tceChecked)
     yield* SynchronizedRef.update(rt.state, (prev) => ({
       ...prev,
       lastMutants: [...mutants],

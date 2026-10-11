@@ -102,10 +102,7 @@ const nestingDelta = (character: string): number =>
   )
 
 const depthsAfter = (code: string): readonly number[] =>
-  code.split('').reduce<readonly number[]>(
-    (depths, character) => [...depths, Option.getOrElse(Arr.last(depths), () => 0) + nestingDelta(character)],
-    [],
-  )
+  Arr.drop(Arr.scan(code.split(''), 0, (depth, character) => depth + nestingDelta(character)), 1)
 
 const isSequence = (code: string): boolean => {
   const depths = depthsAfter(code)
