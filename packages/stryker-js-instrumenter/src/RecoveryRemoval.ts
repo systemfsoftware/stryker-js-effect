@@ -30,10 +30,9 @@ import * as Bool from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
-import { arrowFunctionExpression, cloneNode, identifier } from './Ast.handle.js'
+import { cloneNode } from './Ast.handle.js'
 import {
-  freshIdentifier,
-  identifiersIn,
+  identityFunction,
   isDroppableArgument,
   onlyWhen,
   type ResolvedEffectCall,
@@ -164,11 +163,6 @@ const isFreeArray = (argument: Node): boolean =>
     Option.liftPredicate(argument, isArrayExpression),
     (array) => array.elements.every((element) => Option.exists(Option.fromNullishOr(element), isDroppableArgument)),
   )
-
-const identityFunction = (call: ResolvedEffectCall): Expression => {
-  const name = freshIdentifier('self', new Set(call.args.flatMap((argument) => identifiersIn(argument))))
-  return arrowFunctionExpression([identifier(name)], identifier(name))
-}
 
 const isCallExpression = (node: Node): node is CallExpression => node.type === 'CallExpression'
 
