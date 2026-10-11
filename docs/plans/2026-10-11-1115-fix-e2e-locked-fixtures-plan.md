@@ -14,8 +14,13 @@ execution: code
 
 - **Objective:** An upstream npm publish can no longer stall or change the e2e lane. Every run bakes the same fixture dependency trees until someone commits new locks, so main's e2e goes green and main merges can resume.
 - **Means:** each fixture installs with one `npm ci` from a committed `package-lock.json`, and one script regenerates those locks.
-- **Product authority:** the root P0 of 2026-10-11, which supplied done items (a)-(f) and the four questions answered in Appendix A. The branch is `fix/e2e-locked-fixtures`, cut from `main` at `84052beb4` and not based on `ci/e2e-postsubmit`.
+- **Product authority:** the root P0 of 2026-10-11, which supplied done items (a)-(f) and the four questions answered in Appendix A, then the root's eight rulings on the brainstorm. The branch is `fix/e2e-locked-fixtures`, cut from `main` at `84052beb4` and not based on `ci/e2e-postsubmit`.
+- **Stop conditions:** stop and report before opening the PR if the hand-written diff heads past R9's limit. Stop if a committed lock cannot pin R3's four packages at 4.0.0.
+- **Execution profile:** units U1-U4 in order, one commit per unit on this branch. Local checks only (Verification Contract). No local e2e run and no local mutation.
+- **Who ships:** the implementing agent opens the PR ready for review and watches its CI. The root merges.
 - **Open blockers:** none.
+
+---
 
 ## Product Contract
 
@@ -33,7 +38,7 @@ The packed `@systemfsoftware/stryker-js` depends on `@effect/platform-node: ^4.0
 
 - **The bake installs from committed locks with `npm ci`; it does not resolve.** (session-settled: user-directed, chosen over the age gate, `--before`, registry-snapshot pins, budgets, kill caps and retries, because each of those leaves resolution in the bake.) Governs R1, R2.
 - **Committed locks keep the closure entries but drop their integrity.** npm records a sha512 for each `file:` tarball. With an empty cache, which is the guest's state, any source change in a packed package then fails `npm ci` with `EINTEGRITY`. With a warm cache, `npm ci` silently installs the stale bytes instead (Appendix A, answer 2). Governs R4.
-- **At bake time the harness rewrites the closure entries' `version` and dependency fields from the freshly packed manifests.** Without that rewrite, a release that bumps versions makes `npm ci` fetch closure names from the registry, and a closure package that adds a dependency installs without it and fails only at run time. With the rewrite, version bumps install cleanly and a new dependency fails `npm ci` with its own "Missing: … from lock file" error (Appendix A, answer 2). This takes `overlayOf` and `committableLockOf` from closed #285. Governs R4, R6.
+- **At bake time the harness rewrites the closure entries' `version` and dependency fields from the freshly packed manifests.** Without that rewrite, a release that bumps versions makes `npm ci` fetch closure names from the registry, and a closure package that adds a dependency installs without it and fails only at run time. With the rewrite, version bumps install cleanly and a new dependency fails `npm ci` with its own "Missing: … from lock file" error (Appendix A, answer 2). It follows #285's `overlayOf` but reads the lock as plain JSON (KTD1). Governs R4, R6.
 - **Closure tarballs are packed under version-free file names.** The fixture's root manifest names each closure package as `file:../../packs/<name>.tgz`. With versioned file names, every release would change those specs and drift every lock. Governs R5.
 - **Regeneration starts from the committed lock.** `npm install --package-lock-only` keeps every locked version that still satisfies its range, so regeneration does not pull in releases. #285's seven locks (`@effect/*` all at 4.0.0) seed the first run, and npm keeps a locked version when the manifest's spec widens from `4.0.0` to `^4.0.0` (Appendix A, answer 2). Governs R3, R7.
 - **Locks are regenerated on the host and installed in the musl guest.** npm records every platform variant of a native optional dependency, so one lock serves both: #285's calc lock lists `@oxc-parser/binding-linux-x64-gnu` (`libc=glibc`) next to `-musl` (`libc=musl`), and the same for `@rolldown` and `lightningcss`. Governs R7.
@@ -48,7 +53,7 @@ The packed `@systemfsoftware/stryker-js` depends on `@effect/platform-node: ^4.0
 **Determinism**
 
 - R3. Every committed lock resolves `effect`, `@effect/platform-node`, `@effect/platform-node-shared` and `@effect/opentelemetry` to the versions `pnpm-lock.yaml` pins, which are 4.0.0 at `pnpm-lock.yaml:1989`, `:2021`, `:2027` and `:3861`. The PR shows this per lock with command output.
-- R4. Committed locks carry no `integrity` and no `version` on closure (`file:`) entries. The harness writes each closure entry's `version`, `dependencies`, `peerDependencies`, `peerDependenciesMeta` and `optionalDependencies` from the packed manifest before `npm ci`.
+- R4. Committed locks carry no `integrity` and no `version` on closure (`file:`) entries. Before `npm ci`, the harness copies onto each closure entry every field npm's lock takes from a package manifest, read from that entry's freshly packed manifest. It touches no other entry.
 - R5. The harness packs each closure package to `<packs>/<name>.tgz` with no version in the file name. The staged root manifest lists the whole closure, aliases included, as `file:../../packs/<name>.tgz` devDependencies, so the paths match in the guest (`/baked/<id>`, `/packs`) and in the regeneration staging.
 
 **Drift**
@@ -59,7 +64,7 @@ The packed `@systemfsoftware/stryker-js` depends on `@effect/platform-node: ^4.0
 **Proof and size**
 
 - R8. All five e2e legs pass on the PR head under main's PR CI, which still runs e2e from `ci.yml`.
-- R9. About 250 hand-written lines or fewer, excluding the generated lockfiles (Appendix B).
+- R9. About 250 hand-written lines or fewer, tests and docs included, the seven generated locks excluded (Appendix B).
 
 ### Acceptance Examples
 
@@ -75,14 +80,158 @@ The packed `@systemfsoftware/stryker-js` depends on `@effect/platform-node: ^4.0
 - Out, by contract: registry-snapshot pins, `--before`, npm wire schemas, bake reports, budgets, new or raised kill caps, retry loops, and any `ci.yml` change.
 - `ci/e2e-postsubmit` also edits `bake-fixtures.sh` (deleting the timeout) and `test/e2e/README.md:14`. When it resumes, it merges `main` and takes this branch's version of both.
 
-### Outstanding Questions
+---
 
-**Deferred to Planning**
+## Planning Contract
 
-- Tests: the test-layer gate admits one at most, a colocated property test of the pure overlay-and-strip decision in `test/e2e-core`, if R9's budget allows it. It refuses new e2e journeys and harness integration tests; AE1-AE5 are proven by runs and scratch probes.
-- How the script runs the harness's TypeScript: `node` type stripping, as `seed-status-fault` does, or `tsx --conditions=@systemfsoftware/source`, as #285's script did.
+**Product Contract preservation:** changed R4 and R9 under the root's rulings, scope unchanged. R4 now copies every manifest-sourced lock field, not the five named before (ruling 2). R9 now counts tests and docs (ruling 5). The two deferred questions are resolved by KTD5 and KTD6.
 
-### Appendix A. Answers to the four questions
+### Key Technical Decisions
+
+- KTD1. **The fill-in and strip are pure functions over plain JSON in `test/e2e-core`.** They narrow `unknown` with effect's `Predicate.isObject` (a non-null, non-array object, `repos/effect/packages/effect/src/Predicate.ts:1042`), so CONST-B5 holds without a cast, and no Schema describes npm's lock or manifest. (session-settled: user-directed — chosen over an Effect Schema of npm's lock and manifest formats: the root ruled out any wire schema.) Governs R4.
+- KTD2. **The copied fields are npm's own list.** `@npmcli/arborist/lib/shrinkwrap.js` `pkgMetaKeys` names what npm writes from a manifest: `version`, `dependencies`, `peerDependencies`, `peerDependenciesMeta`, `optionalDependencies`, `bundleDependencies`, `acceptDependencies`, `funding`, `engines`, `os`, `cpu`, `libc`, `license`, `bin`, `deprecated` and `workspaces`. Three more keys in that list come from the registry or are derived, and are left alone: `_integrity`, `_hasShrinkwrap` and `hasInstallScript`. A field the manifest lacks is removed from the entry, so a dropped dependency leaves the lock too. Governs R4, R6.
+- KTD3. **`installClosure` also returns the closure as a name-to-spec record.** `ClosureInstall` gains `dependencies` (each member's name, and each alias name, mapped to `file:<tarball path>`) next to `specs`, so the harness writes the staged root manifest from the same decision. Its refusals (`UnpackedWorkspaceDependency`, `ConflictingAliasTargets`, `FixtureNamesWorkspacePackage`) keep guarding it. The bench still reads `specs`. Governs R5.
+- KTD4. **The bake and the lock script stage fixtures through one harness path.** Staging copies the fixture, resolves `catalog:` specs, adds the closure devDependencies, and fills the committed lock when one exists. The bake mounts that staging at `/baked`. The script runs npm over the same staging on the host. A missing lock is staged without one, so the bake fails as AE5 says and the script writes a fresh lock. Governs R5, R6, R7.
+- KTD5. **The lock script runs under `tsx --conditions=@systemfsoftware/source`, declared as `"tsx": "catalog:"` in `test/e2e`.** Node type stripping cannot load the harness: its relative imports name `.ts` files with `.js` specifiers, and Node does not remap them. tsx 4.23.15 is already in `pnpm-lock.yaml`, and `test/bench` runs its Effect entry point the same way (`test/bench/package.json:15`), so no new package enters the lockfile. Governs R7.
+- KTD6. **One property test covers the fill-in.** It lives at `test/e2e-core/src/__tests__/closure-lock.property.test.ts`, the colocated property layer the repo uses for pure decisions. It covers AE3 and AE4's precondition. (session-settled: user-directed — chosen over a new e2e journey or a harness integration test: the root admitted one small test at the layer the test-admission gate allows.) Governs R4.
+- KTD7. **The first regeneration is seeded from #285's seven locks.** They already pin R3's four packages at 4.0.0 and `@opentelemetry/sdk-trace-base` at 2.11.0, as `pnpm-lock.yaml` does. `npm install --package-lock-only` keeps a locked version that still satisfies its widened `^` range (Appendix A, answer 2). Governs R3, R7.
+
+### Data flow
+
+```mermaid
+flowchart TB
+  P[pnpm pack --out packs/%s.tgz] --> M[packed manifests]
+  P --> C[installClosure: dependencies]
+  C --> S[staged root manifest: closure devDependencies]
+  L[committed package-lock.json] --> F[fill-in from packed manifests]
+  M --> F
+  S --> B{caller}
+  F --> B
+  B -->|bake| CI[guest: one npm ci per fixture]
+  B -->|lock script| R[host: npm install --package-lock-only]
+  R --> X[strip closure integrity and version]
+  X --> L
+```
+
+### Assumptions
+
+- The root pre-authorised this run end to end, so the scoping synthesis was announced, not confirmed.
+- A fixture's `node_modules/.bin/stryker` link comes from the closure entry's `bin`, which KTD2 copies, as #285's green runs show.
+
+---
+
+## Implementation Units
+
+### U1. Pure closure-lock fill-in, strip and closure record
+
+- **Goal:** pure functions that fill a lock's closure entries from packed manifests and strip them for commit, plus the closure as a name-to-spec record.
+- **Requirements:** R4, R5. KTD1, KTD2, KTD3, KTD6.
+- **Dependencies:** none.
+- **Files:**
+  - `test/e2e-core/src/closure-lock.ts` (new)
+  - `test/e2e-core/src/__tests__/closure-lock.property.test.ts` (new)
+  - `test/e2e-core/src/install-closure.workflow.ts`
+  - `test/e2e-core/src/mod.ts`
+- **Approach:**
+  1. A closure entry is any `packages` entry whose `resolved` is `file:<path>.tgz`. Its key is the tarball's file name.
+  2. Fill-in takes the lock and a record from tarball file name to raw manifest. It rewrites matching entries per KTD2 and returns every other entry unchanged.
+  3. Strip removes `integrity` and `version` from every closure entry.
+  4. A third helper adds the closure record to a root manifest's `devDependencies`.
+  5. `installOf` builds `dependencies` from the members and the alias edges it already resolves.
+- **Patterns to follow:** `it.prop` with `Arbitrary.schema` arbitraries, as in `test/e2e-core/src/__tests__/catalog-resolution.workflow.property.test.ts`. Plain helper modules sit beside workflows, as `catalog-resolution.ts` and `key-material.ts` do.
+- **Test scenarios:**
+  - Covers AE3. A lock with a closure entry at `../../packs/<t>.tgz` holding stale `version` and `dependencies` is filled from a manifest with an arbitrary new `version` and dependency map. The filled entry carries exactly the manifest's `version` and `dependencies`.
+  - Covers AE4's precondition. The manifest names a dependency the stale entry lacks. The filled entry lists it, so `npm ci` finds it missing from the lock.
+  - A registry entry (`resolved` on `https://registry.npmjs.org/`) passes through fill-in unchanged, `integrity` included.
+- **Verification:** the new test passes, and e2e-core typechecks and lints clean.
+
+### U2. Harness and bake script install from the lock
+
+- **Goal:** the bake stages each fixture with the closure devDependencies and a filled lock, then runs one `npm ci` per fixture.
+- **Requirements:** R1, R2, R4, R5, R6. KTD3, KTD4.
+- **Dependencies:** U1.
+- **Files:**
+  - `test/e2e/src/Harness/fixture-cache.service.ts`
+  - `test/e2e/src/Harness/bake-key.schema.ts`
+  - `test/e2e/tests/__fixtures__/bake-fixtures.sh`
+- **Approach:**
+  1. Pack with `pnpm -r pack --out <packs>/%s.tgz` and derive each tarball's name from the package name. Delete the versioned lookup: `packedFileNameOf`, `PACKED_VERSION`, `lookupOf`, `packedTarballOf`, `FoundPackage`, `MissingTarball`, `PackedPackageLookup` and `PackedPackage.version`.
+  2. Point closure members at `../../packs/<file>`, the path that resolves to `/packs` from `/baked/<id>` and to `<dir>/packs` from `<dir>/baked/<id>`.
+  3. `closureInstallOf` returns the closure record and the raw packed manifests. `stageFixtures` applies U1's helpers to the staged root manifest and the staged lock.
+  4. Export one staging entry point for U3. Its requirements are only the child-process spawner, file system and path services, so it runs without a guest.
+  5. The bake job passes no closure arguments. The script loops over `/baked/*/` and runs `npm ci --no-audit --no-fund --loglevel=error` in each. On failure it prints Appendix A answer 3's line and exits with npm's status.
+- **Test expectation:** none. The harness is proven by the five e2e legs (R8), and the root refused a harness integration test.
+- **Verification:** `test/e2e` typechecks and lints clean, `bake-fixtures.sh` passes `sh -n` and shellcheck, and nothing in committed code wraps npm in `timeout`, a retry or a budget.
+
+### U3. Lock regeneration script and the seven locks
+
+- **Goal:** one command regenerates every fixture lock, and the seven locks it writes are committed.
+- **Requirements:** R3, R7. KTD4, KTD5, KTD7.
+- **Dependencies:** U2.
+- **Files:**
+  - `test/e2e/scripts/lock-fixtures.ts` (new)
+  - `test/e2e/package.json`
+  - `pnpm-lock.yaml` (the `tsx` edge only)
+  - `test/e2e/testResources/*/package-lock.json` (seven, generated)
+- **Approach:**
+  1. The script stages every fixture into a scoped temp directory through U2's entry point.
+  2. For each fixture it runs `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` in the staged copy, with npm's output on the terminal.
+  3. It strips the result with U1's helper and writes it to `test/e2e/testResources/<id>/package-lock.json` with npm's two-space indent and trailing newline.
+  4. The first run starts from #285's seven locks checked out into `testResources` (KTD7).
+- **Test expectation:** none. The output is the seven locks, which R3's jq check and the e2e legs verify.
+- **Verification:**
+  - A jq query over the seven locks prints 4.0.0 for R3's four packages in every lock.
+  - A second jq query shows no `integrity` or `version` on any `file:` entry.
+  - A second script run leaves the tree unchanged.
+
+### U4. Docs and the stall lesson
+
+- **Goal:** the README and solutions docs describe one `npm ci` from committed locks, and the tarball-placement hang is recorded once.
+- **Requirements:** R2, R6, R7.
+- **Dependencies:** U2, U3.
+- **Files:**
+  - `test/e2e/README.md`
+  - `docs/solutions/build-errors/e2e-lane-packed-a-subset-of-its-workspace-closure.md`
+  - `docs/solutions/build-errors/e2e-bake-resolved-an-npm-alias-edge-from-the-registry.md`
+- **Approach:**
+  1. README line 14 becomes the lock rule: one `npm ci` per fixture, the regeneration command, and when to run it.
+  2. The closure lesson's install table and its "splitting the install" anti-pattern name the single `npm ci`. It gains the hang lesson, which no solutions doc records yet (README line 14 only names the age-gate workaround). The lesson: placing a tarball whose dependency admits a release with an unsatisfiable peer hangs npm silently and ignores SIGTERM, while the same edges at the root fail in 2 s with `ERESOLVE`.
+  3. The alias lesson's versioned tarball-name lookup becomes the version-free name.
+- **Test expectation:** none -- documentation.
+- **Verification:** `pnpm format:check` passes, and no doc names `--min-release-age`, the 300 s install timeout or the versioned tarball lookup.
+
+---
+
+## Verification Contract
+
+| Gate      | Command                                                                                                       | Proves                    |
+| --------- | ------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| New test  | `pnpm --filter @systemfsoftware/stryker-e2e-core exec vitest run src/__tests__/closure-lock.property.test.ts` | U1, AE3, AE4 precondition |
+| Typecheck | `pnpm --filter @systemfsoftware/stryker-e2e-core --filter @systemfsoftware/stryker-e2e typecheck`             | U1-U3                     |
+| Lint      | the same two filters with `lint` and `lint:tsgo`                                                              | U1-U3                     |
+| Format    | `pnpm format:check`                                                                                           | all                       |
+| Pins      | jq over `test/e2e/testResources/*/package-lock.json` next to `pnpm-lock.yaml:1989,2021,2027,3861`             | R3                        |
+| PR CI     | every check on the PR head, run_watch only                                                                    | R8                        |
+
+Never run locally: e2e (`pnpm test:e2e`) and mutation of any kind.
+
+---
+
+## Definition of Done
+
+- (a) Each fixture installs with exactly one `npm ci` from its committed lock, with no timeout or budget: R1, U2.
+- (b) The age gate and the second install are gone: R2, U2, U4.
+- (c) A new upstream publish cannot change what a fixture installs: R3, R4, U1-U3, shown with the jq output.
+- (d) A drifted or missing lock fails with npm ci's own error plus one line naming the regeneration command: R6, U2.
+- (e) One script regenerates the locks: R7, U3.
+- (f) All five e2e legs are green on the PR head: R8.
+- The hand-written diff stays within R9. Scratch probes and abandoned attempts are not in the diff.
+
+---
+
+## Appendix
+
+### A. Answers to the four questions
 
 1. **The edge that stalls.** It is the closure tarballs' `@effect/*` ranges, not a fixture manifest.
    - The packed `stryker-js` lists `"@effect/platform-node": "^4.0.0"` (and the same range for `platform-node-shared` and `opentelemetry`). Source: `packages/stryker-js/package.json:39-41`, where `catalog:` resolves through `pnpm-workspace.yaml:14,15,17`. The released 19.0.0 tarball's `package.json` shows the `^4.0.0` that pnpm pack writes.
@@ -126,16 +275,16 @@ The packed `@systemfsoftware/stryker-js` depends on `@effect/platform-node: ^4.0
    - `test/e2e/README.md:14`: the age-gate and timeout paragraph.
    - Docs that describe the two installs: `docs/solutions/build-errors/e2e-lane-packed-a-subset-of-its-workspace-closure.md:68-69` and `docs/solutions/build-errors/e2e-bake-resolved-an-npm-alias-edge-from-the-registry.md:60`.
 
-### Appendix B. Hand-written line budget
+### B. Hand-written line budget
 
-| Change                                                                                                                                                                  | Added (approx.)                  |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| `bake-fixtures.sh` (26 lines become about 12)                                                                                                                           | 8                                |
-| Pure lock overlay and strip, with a minimal lock-entry schema (`test/e2e-core`)                                                                                         | 45                               |
-| `ClosureInstall.dependencies` (name to `file:` spec) next to `specs`                                                                                                    | 10                               |
-| `fixture-cache.service.ts`: version-free packing, closure devDependencies in the staged root manifest, overlay on the staged lock, a staging entry point for the script | 60                               |
-| `test/e2e/scripts/lock-fixtures.ts` and its `package.json` script                                                                                                       | 75                               |
-| README and solutions docs                                                                                                                                               | 10                               |
-| **Total**                                                                                                                                                               | **about 210** (about 70 removed) |
+| Change                                                       | Added (approx.)                  |
+| ------------------------------------------------------------ | -------------------------------- |
+| U1 `closure-lock.ts` and the `dependencies` record           | 45                               |
+| U1 property test                                             | 45                               |
+| U2 `fixture-cache.service.ts`, net of about 60 removed lines | 55                               |
+| U2 `bake-fixtures.sh` (26 lines become about 12)             | 10                               |
+| U3 `lock-fixtures.ts`, its script line and the `tsx` edge    | 45                               |
+| U4 README and solutions docs                                 | 15                               |
+| **Total**                                                    | **about 215** (about 95 removed) |
 
 The seven regenerated `package-lock.json` files are generated and not counted.
