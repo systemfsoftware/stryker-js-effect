@@ -1,0 +1,8 @@
+{
+  "name": "oracle-root",
+  "private": true,
+  "packageManager": "pnpm@11.27.0",
+  "devDependencies": {
+    "is-number": "7.0.0"
+  }
+}

@@ -1,0 +1,6 @@
+packages:
+  - a
+  - b
+  - c
+patchedDependencies:
+  kleur@4.1.5: patches/kleur@4.1.5.patch
