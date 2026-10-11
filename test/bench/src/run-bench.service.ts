@@ -38,6 +38,7 @@ export interface RunBenchInput {
   readonly runsRoot: string
   readonly sha: string
   readonly parentSha: string
+  readonly ref: string
 }
 
 export interface RunBenchResult {
@@ -207,7 +208,7 @@ export const runBench = (
     )
 
     const summary = summarizeBench(
-      SummarizeBenchCommand.make({ sha: input.sha, parentSha: input.parentSha, runs: [...runs] }),
+      SummarizeBenchCommand.make({ sha: input.sha, parentSha: input.parentSha, ref: input.ref, runs: [...runs] }),
     )
     const outcome = Result.match(summary, {
       onFailure: (failure): BenchReportOutcome => ({

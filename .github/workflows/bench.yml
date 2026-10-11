@@ -119,6 +119,7 @@ jobs:
           BENCH_SIDE_B: ${{ github.workspace }}
           BENCH_BASE_SHA: ${{ steps.sides.outputs.parent }}
           BENCH_HEAD_SHA: ${{ github.sha }}
+          BENCH_REF: ${{ github.ref }}
           BENCH_SETUP_TIMINGS: ${{ runner.temp }}/bench-setup.tsv
         run: pnpm --filter @systemfsoftware/stryker-bench bench
 

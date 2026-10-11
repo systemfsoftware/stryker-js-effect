@@ -71,6 +71,7 @@ The enterprise leg also stalls on main as it stands. `prepare-side.service.ts:49
 **Regression report**
 
 - R10. When a leg's `total` regressed, the verdict line, the step summary and the JSON report all carry the same fields: reason code `phase-regressed`, this SHA, the parent SHA, and the regressed metrics with their delta in ms and in percent of side A's median: that `total` first, then every phase of the same leg that also regressed, as attribution. They also carry the next action verbatim: "root opens a revert PR of the culprit or a root-fix P0". A phase that regressed while its leg's `total` did not stays in the table as a diagnostic verdict only, with no regression block and no `::error` line. A verdict is decisive only when the four-run samples do not overlap and |Δ median| >= max(3% of A's median, 10 ms).
+- R10a. The report heading and the verdict line name the ref the run was triggered on (`github.ref`). `workflow_dispatch` stays allowed on any ref: it is manual only and never a PR check, and serves as pre-merge speed evidence. On a ref other than `refs/heads/main`, a regression's next action is "dispatched on <ref>: speed evidence only, no revert"; the revert next action appears only on main. No `if:` guard restricts the dispatch to main. (session-settled: user-directed, round-2 review R3 — chosen over an `if: github.ref == 'refs/heads/main'` guard, which would forbid the pre-merge proof run.)
 - R11. A computed regression is still a `summarized` outcome. The leg exits 0 and the verdict line stays `::error`, as `test/e2e-core/src/render-bench-report.workflow.ts:115-125` renders it today.
 
 **Enterprise install**
@@ -111,7 +112,6 @@ The enterprise leg also stalls on main as it stands. `prepare-side.service.ts:49
 
 - Where the 10-minute target is declared: `bench.yml` env or a report-schema constant. R9 requires exactly one place.
 - Whether the job-start mark reuses `ci.yml`'s `JOB_STARTED_AT` (Unix seconds, `ci.yml:69`) or records milliseconds.
-- How a `workflow_dispatch` on a non-main ref labels its report, since side A is still the dispatched head's first parent.
 - Turbo restore order on main. Side A's entry is main's previous commit, which `ci.yml`'s `check` saves and the sweep keeps (3 newest main entries, `ci.yml:267`). Side B's entry may not exist yet because CI runs concurrently. Also whether the bench saves entries at all, given the sweep.
 
 ### Sources

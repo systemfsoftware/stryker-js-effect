@@ -85,8 +85,10 @@ const reportRunsOf = (runs: ReadonlyArray<BenchRun>): ReadonlyArray<BenchReportR
     workloadDigest: { _tag: 'verified', digest: 'digest-entry' },
   }))
 
-const summaryOf = (runs: ReadonlyArray<BenchRun>): BenchSummary =>
-  Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ sha: 'head', parentSha: 'base', runs })))
+const MAIN_REF = 'refs/heads/main'
+
+const summaryOf = (runs: ReadonlyArray<BenchRun>, ref: string = MAIN_REF): BenchSummary =>
+  Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ sha: 'head', parentSha: 'base', ref, runs })))
 
 const LEG: LegTime = LegMeasured.make({ wallMs: 60_000, targetMs: 600_000 })
 
@@ -97,11 +99,13 @@ const reportOf = (
   headSha: string,
   leg: LegTime = LEG,
   withheldPins: ReadonlyArray<WithheldPins> = [],
+  ref: string = MAIN_REF,
 ): BenchReport =>
   BenchReport.make({
     schemaVersion: '2.0',
     baseSha,
     headSha,
+    ref,
     leg,
     outcome: { _tag: 'summarized', projects: summary.projects, regression: summary.regression },
     runs: reportRunsOf(runs),
@@ -140,6 +144,7 @@ const failedReportOf = (invalid: ReadonlyArray<BenchRunInvalid>): BenchReport =>
     schemaVersion: '2.0',
     baseSha: 'base',
     headSha: 'head',
+    ref: MAIN_REF,
     leg: LEG,
     outcome: { _tag: 'failed', invalid },
     runs: [],
@@ -168,6 +173,7 @@ const abortedReportOf = (code: BenchAbortCode, reason: string): BenchReport =>
     schemaVersion: '2.0',
     baseSha: 'base',
     headSha: 'head',
+    ref: MAIN_REF,
     leg: LEG,
     outcome: abortedOutcomeOf(code, reason),
     runs: [],
@@ -180,20 +186,23 @@ const nextActionOf = (outcome: BenchReportOutcome): string =>
 
 describe('renderBenchReport', () => {
   it.prop(
-    '∀absh_Summarized_≡HeadingNamesBothShasAndTheProject',
+    '∀abshr_Summarized_≡HeadingNamesTheRefBothShasAndTheProject',
     {
       of: [
         S.Tuple([S.Int, S.Int, S.Int, S.Int]),
         S.Tuple([S.Int, S.Int, S.Int, S.Int]),
         S.NonEmptyString,
         S.NonEmptyString,
+        S.NonEmptyString,
       ],
       subject: renderBenchReport,
     },
-    (subject, [rawA, rawB, baseSha, headSha]) => {
+    (subject, [rawA, rawB, baseSha, headSha, branch]) => {
+      const ref = `refs/heads/${branch}`
       const runs = runsOf(positives(rawA), positives(rawB))
-      const markdown = markdownOf(subject, reportOf(summaryOf(runs), runs, baseSha, headSha))
-      return markdown.includes(`## Bench comparison: ${baseSha} → ${headSha}`) && markdown.includes('### repo/entry')
+      const markdown = markdownOf(subject, reportOf(summaryOf(runs, ref), runs, baseSha, headSha, LEG, [], ref))
+      return markdown.includes(`## Bench comparison on ${ref}: ${baseSha} → ${headSha}`) &&
+        markdown.includes('### repo/entry')
     },
   )
 
@@ -387,7 +396,7 @@ describe('renderBenchReport', () => {
   )
 
   it.prop(
-    '∀ag_SeparatedSlowdownOnB_≡VerdictLineAndSummaryNameShasMetricAndNextAction',
+    '∀ag_SeparatedSlowdownOnMain_≡VerdictLineAndSummaryNameRefShasMetricAndTheRevert',
     { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int], subject: renderBenchReport },
     (subject, [rawA, rawExtra]) => {
       const a = positives(rawA)
@@ -395,6 +404,7 @@ describe('renderBenchReport', () => {
       const runs = runsOf(a, a.map((sample) => sample + gap))
       const rendered = renderedOf(subject, reportOf(summaryOf(runs), runs, 'base', 'head'))
       const fields = [
+        'on refs/heads/main',
         'head',
         'base',
         `entry mutation-test +${(gap / 1000).toFixed(1)} s`,
@@ -404,6 +414,23 @@ describe('renderBenchReport', () => {
         rendered.annotationLine.startsWith('::error title=phase-regressed::') &&
         rendered.markdown.includes('### Regression: phase-regressed') &&
         fields.every((field) => rendered.annotationLine.includes(field) && rendered.markdown.includes(field))
+    },
+  )
+
+  it.prop(
+    '∀agb_SeparatedSlowdownDispatchedOnABranch_≡VerdictLineAndSummaryNameTheRefAndNoRevert',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int, S.Int], subject: renderBenchReport },
+    (subject, [rawA, rawExtra, branch]) => {
+      const ref = `refs/heads/stryker/bench-${Math.abs(branch)}`
+      const a = positives(rawA)
+      const gap = Math.max(Math.max(...a) - Math.min(...a), Math.max(...a) * 0.1) + Math.abs(rawExtra) + 10
+      const runs = runsOf(a, a.map((sample) => sample + gap))
+      const rendered = renderedOf(subject, reportOf(summaryOf(runs, ref), runs, 'base', 'head', LEG, [], ref))
+      const next = `dispatched on ${ref}: speed evidence only, no revert`
+      return rendered.annotationLine.includes(`Next: ${next}`) &&
+        rendered.markdown.includes(`**Next action:** ${next}`) &&
+        rendered.markdown.includes(`## Bench comparison on ${ref}:`) &&
+        !rendered.markdown.includes('revert PR')
     },
   )
 

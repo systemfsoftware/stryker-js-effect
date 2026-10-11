@@ -103,14 +103,12 @@ export const RegressedMetric = S.Struct({
 })
 export type RegressedMetric = typeof RegressedMetric.Type
 
-export const PhaseRegressedNextAction = S.Literal('root opens a revert PR of the culprit or a root-fix P0')
-
 export const PhaseRegression = S.Struct({
   code: S.Literal('phase-regressed'),
   sha: S.String,
   parentSha: S.String,
   metrics: S.NonEmptyArray(RegressedMetric),
-  nextAction: PhaseRegressedNextAction,
+  nextAction: S.NonEmptyString,
 })
 export type PhaseRegression = typeof PhaseRegression.Type
 

@@ -102,32 +102,38 @@ const unverifiedText = (projects: ReadonlyArray<BenchProjectSummary>): string =>
   })
 }
 
-const sentenceOf = (items: ReadonlyArray<string>, projects: ReadonlyArray<BenchProjectSummary>): string =>
+const sentenceOf = (
+  ref: string,
+  items: ReadonlyArray<string>,
+  projects: ReadonlyArray<BenchProjectSummary>,
+): string =>
   Boolean.match(items.length === 0, {
-    onTrue: () => `Bench: no project/phase changed past the signal threshold ${RULE}.${unverifiedText(projects)}`,
-    onFalse: () => `Bench: ${items.join('; ')} ${RULE}.${unverifiedText(projects)}`,
+    onTrue: () =>
+      `Bench on ${ref}: no project/phase changed past the signal threshold ${RULE}.${unverifiedText(projects)}`,
+    onFalse: () => `Bench on ${ref}: ${items.join('; ')} ${RULE}.${unverifiedText(projects)}`,
   })
 
 const regressionAnnotation = (
+  ref: string,
   regression: PhaseRegression,
   improved: ReadonlyArray<string>,
   projects: ReadonlyArray<BenchProjectSummary>,
 ): Annotation =>
   error(
     regression.code,
-    `Bench ${regression.sha} against parent ${regression.parentSha}: ${
+    `Bench ${regression.sha} against parent ${regression.parentSha} on ${ref}: ${
       [...Arr.map(regression.metrics, (metric) => `regressed ${metricText(metric)}`), ...improved].join('; ')
     } ${RULE}.${unverifiedText(projects)} Next: ${regression.nextAction}`,
   )
 
-const summarizedAnnotation = (summarized: SummarizedOutcome): Annotation => {
+const summarizedAnnotation = (ref: string, summarized: SummarizedOutcome): Annotation => {
   const improved = improvedItemsOf(summarized.projects)
   return Option.match(Option.fromNullishOr(summarized.regression), {
-    onSome: (regression) => regressionAnnotation(regression, improved, summarized.projects),
+    onSome: (regression) => regressionAnnotation(ref, regression, improved, summarized.projects),
     onNone: () =>
       Boolean.match(improved.length > 0, {
-        onTrue: () => notice('Bench improvement', sentenceOf(improved, summarized.projects)),
-        onFalse: () => notice('Bench no signal', sentenceOf([], summarized.projects)),
+        onTrue: () => notice('Bench improvement', sentenceOf(ref, improved, summarized.projects)),
+        onFalse: () => notice('Bench no signal', sentenceOf(ref, [], summarized.projects)),
       }),
   })
 }
@@ -231,7 +237,8 @@ const detailsBlock = (report: BenchReport): string =>
     Arr.map(report.setupSteps, (step) => `${step.name} ${seconds(step.ms)}s`).join(', ')
   }; runs: ${Arr.map(report.runs, runText).join('; ')}\n\n</details>`
 
-const headingOf = (report: BenchReport): string => `## Bench comparison: ${report.baseSha} → ${report.headSha}`
+const headingOf = (report: BenchReport): string =>
+  `## Bench comparison on ${report.ref}: ${report.baseSha} → ${report.headSha}`
 
 const minutes = (ms: number): string => (ms / 60_000).toFixed(1)
 
@@ -293,12 +300,12 @@ const markdownOf = (report: BenchReport): string =>
       ].join('\n\n'),
   })
 
-const annotationOf = (outcome: BenchReportOutcome): Annotation =>
-  Match.valueTags(outcome, {
+const annotationOf = (report: BenchReport): Annotation =>
+  Match.valueTags(report.outcome, {
     aborted: (aborted) =>
       error('Bench aborted', `Bench aborted (${aborted.code}): ${aborted.reason} Next: ${aborted.nextAction}`),
     failed: (failed) => invalidAnnotation(failed.invalid),
-    summarized: summarizedAnnotation,
+    summarized: (summarized) => summarizedAnnotation(report.ref, summarized),
   })
 
 const exitCodeOf = (outcome: BenchReportOutcome): 0 | 1 =>
@@ -309,7 +316,7 @@ const exitCodeOf = (outcome: BenchReportOutcome): 0 | 1 =>
   })
 
 const renderedOf = (report: BenchReport): BenchRendered => {
-  const annotation = annotationOf(report.outcome)
+  const annotation = annotationOf(report)
   const fields = {
     annotationLine: annotationLineOf(annotation),
     markdown: markdownOf(report),

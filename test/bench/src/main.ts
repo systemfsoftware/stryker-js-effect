@@ -47,6 +47,7 @@ const BENCH_REPORT_FILE = 'bench-report.json'
 const CORPUS_FILE = ['test', 'bench', 'corpus.json'] as const
 const TURBO_CACHE_DIR = ['.turbo', 'cache'] as const
 const UNKNOWN_SHA = 'unknown'
+const UNKNOWN_REF = 'unknown'
 
 const runLogLine = (run: BenchRun): string =>
   Match.value(run).pipe(
@@ -107,6 +108,7 @@ interface BenchEnv {
   readonly sideBRoot: string
   readonly baseSha: string
   readonly headSha: string
+  readonly ref: string
   readonly entry: string
   readonly jobStartedAtSeconds: number
   readonly setupTimingsFile: string
@@ -119,6 +121,7 @@ const benchEnv = Effect.all({
   sideBRoot: Config.String('BENCH_SIDE_B'),
   baseSha: Config.String('BENCH_BASE_SHA'),
   headSha: Config.String('BENCH_HEAD_SHA'),
+  ref: Config.String('BENCH_REF'),
   entry: Config.String('BENCH_ENTRY'),
   jobStartedAtSeconds: Config.Number('JOB_STARTED_AT'),
   setupTimingsFile: Config.String('BENCH_SETUP_TIMINGS'),
@@ -140,11 +143,12 @@ const abortedBody = (code: BenchAbortCode, reason: string): ReportBody => ({
   withheldPins: [],
 })
 
-const reportOf = (env: Pick<BenchEnv, 'baseSha' | 'headSha'>, leg: LegTime, body: ReportBody) =>
+const reportOf = (env: Pick<BenchEnv, 'baseSha' | 'headSha' | 'ref'>, leg: LegTime, body: ReportBody) =>
   BenchReport.make({
     schemaVersion: '2.0',
     baseSha: env.baseSha,
     headSha: env.headSha,
+    ref: env.ref,
     leg,
     outcome: body.outcome,
     runs: [...body.runs],
@@ -219,6 +223,7 @@ const bench = (env: BenchEnv) =>
       runsRoot,
       sha: env.headSha,
       parentSha: env.baseSha,
+      ref: env.ref,
     })
     yield* Effect.forEach(result.runs, (run) => Console.log(runLogLine(run)))
     return {
@@ -275,7 +280,7 @@ const program = Effect.gen(function*() {
     onFailure: (error) =>
       publish(
         reportOf(
-          { baseSha: UNKNOWN_SHA, headSha: UNKNOWN_SHA },
+          { baseSha: UNKNOWN_SHA, headSha: UNKNOWN_SHA, ref: UNKNOWN_REF },
           LegNotMeasured.make({ targetMs: LegTargetMs.literal }),
           abortedBody('environment-incomplete', error.message),
         ),

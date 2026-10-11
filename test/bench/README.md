@@ -15,9 +15,17 @@ target; running over the target never changes the exit code or the verdict
 line. A job exits non-zero only when the bench cannot produce a comparison: a
 run errors or its stream cannot be read (`failed`), or setup or the
 orchestration fails (`aborted`, with `side-setup-failed` naming the side and
-step). A regression is reported, not acted on: the verdict line, the step
-summary and the JSON report carry `phase-regressed`, the commit and its parent,
-each regressed project and phase with its delta, and root's next action.
+step). A regression is reported, not acted on, and only a leg's `total` decides
+one: when it separates past max(3% of side A's median, 10 ms), the verdict line,
+the step summary and the JSON report carry `phase-regressed`, the commit and its
+parent, that `total` and then each other regressed phase of the leg with its
+delta, and root's next action. A phase that regressed under an unchanged `total`
+stays a table verdict only.
+
+The report heading and the verdict line name the ref (`BENCH_REF`). A manual
+`workflow_dispatch` may run on any ref; off `refs/heads/main` a regression's next
+action is "dispatched on <ref>: speed evidence only, no revert", and the revert
+next action appears only on main.
 
 `pnpm --filter @systemfsoftware/stryker-bench bench` runs `src/main.ts` through
 `tsx` with the workspace source condition, so the orchestrator itself needs no

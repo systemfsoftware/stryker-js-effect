@@ -141,8 +141,16 @@ const positives = (values: ReadonlyArray<number>): ReadonlyArray<number> => valu
 
 type Subject = (command: SummarizeBenchCommand) => Result.Result<BenchSummary, BenchRunsInvalid>
 
+const MAIN_REF = 'refs/heads/main'
+
+const slowedOnB = (rawA: ReadonlyArray<number>, rawExtra: number): ReadonlyArray<BenchRun> => {
+  const a = positives(rawA)
+  const gap = Math.max(Math.max(...a) - Math.min(...a), Math.max(...a) * 0.1) + Math.abs(rawExtra) + 10
+  return runsOf(a, a.map((sample) => sample + gap))
+}
+
 const summaryOf = (subject: Subject, runs: ReadonlyArray<BenchRun>): BenchSummary =>
-  Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha: 'sha', parentSha: 'parent', runs })))
+  Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha: 'sha', parentSha: 'parent', ref: MAIN_REF, runs })))
 
 const rowOf = (summary: BenchSummary, phase: string) => {
   const row = summary.projects[0].rows.find((candidate) => candidate.phase === phase)
@@ -338,7 +346,8 @@ describe('summarizeBench', () => {
     (subject, [rawA, rawB, reason, mask]) => {
       const runs = withInvalidA(positives(rawA), positives(rawB), mask, reason)
       const expected = labelsOf(runs.filter((run) => S.is(BenchRunInvalid)(run)))
-      return Result.match(subject(SummarizeBenchCommand.make({ sha: 'sha', parentSha: 'parent', runs })), {
+      const command = SummarizeBenchCommand.make({ sha: 'sha', parentSha: 'parent', ref: MAIN_REF, runs })
+      return Result.match(subject(command), {
         onFailure: (failure) => S.is(BenchRunsInvalid)(failure) && labelsOf(failure.runs) === expected,
         onSuccess: () => expected.length === 0,
       })
@@ -413,23 +422,38 @@ describe('summarizeBench', () => {
   )
 
   it.prop(
-    '∀agps_SeparatedSlowdownOnB_≡RegressionNamingBothShasWithTheTotalFirstThenThePhase',
+    '∀agps_SeparatedSlowdownOnMain_≡BothShasTheTotalFirstThenThePhaseAndTheRevertNextAction',
     {
       of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int, S.NonEmptyString, S.NonEmptyString],
       subject: summarizeBench,
     },
     (subject, [rawA, rawExtra, parentSha, sha]) => {
-      const a = positives(rawA)
-      const gap = Math.max(Math.max(...a) - Math.min(...a), Math.max(...a) * 0.1) + Math.abs(rawExtra) + 10
-      const runs = runsOf(a, a.map((sample) => sample + gap))
-      const summary = Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha, parentSha, runs })))
+      const runs = slowedOnB(rawA, rawExtra)
+      const summary = Result.getOrThrow(subject(SummarizeBenchCommand.make({ sha, parentSha, ref: MAIN_REF, runs })))
       const regression = summary.regression
       return regression !== null &&
         regression.sha === sha &&
         regression.parentSha === parentSha &&
         regression.metrics.map((metric) => `${metric.corpus}/${metric.entry}/${metric.phase}`).join(',') ===
           'repo/entry/total,repo/entry/mutation-test' &&
-        regression.metrics[1].deltaMs === deltaOf(rowOf(summary, 'mutation-test').verdict)
+        regression.metrics[1].deltaMs === deltaOf(rowOf(summary, 'mutation-test').verdict) &&
+        regression.nextAction === 'root opens a revert PR of the culprit or a root-fix P0'
+    },
+  )
+
+  it.prop(
+    '∀aeb_SeparatedSlowdownDispatchedOnABranch_≡SpeedEvidenceOnlyNextAction',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int, S.NonEmptyString], subject: summarizeBench },
+    (subject, [rawA, rawExtra, branch]) => {
+      const ref = `refs/heads/stryker/${branch}`
+      const command = SummarizeBenchCommand.make({
+        sha: 'sha',
+        parentSha: 'parent',
+        ref,
+        runs: slowedOnB(rawA, rawExtra),
+      })
+      const regression = Result.getOrThrow(subject(command)).regression
+      return regression !== null && regression.nextAction === `dispatched on ${ref}: speed evidence only, no revert`
     },
   )
 

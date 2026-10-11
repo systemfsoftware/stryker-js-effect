@@ -22,7 +22,6 @@ import {
   BenchProjectSummary,
   BenchSummary,
   type MeasuredSideCell,
-  PhaseRegressedNextAction,
   type PhaseRegression,
   PhaseVerdict,
   type RegressedMetric,
@@ -39,6 +38,7 @@ const abs = Math.abs
 export class SummarizeBenchCommand extends S.TaggedClass<SummarizeBenchCommand>()('SummarizeBenchCommand', {
   sha: S.String,
   parentSha: S.String,
+  ref: S.NonEmptyString,
   runs: S.Array(BenchRun),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -404,6 +404,14 @@ const legRegressionOf = (project: BenchProjectSummary): ReadonlyArray<RegressedM
   })
 }
 
+const MAIN_REF = 'refs/heads/main'
+
+const nextActionOf = (ref: string): string =>
+  Boolean.match(ref === MAIN_REF, {
+    onTrue: () => 'root opens a revert PR of the culprit or a root-fix P0',
+    onFalse: () => `dispatched on ${ref}: speed evidence only, no revert`,
+  })
+
 const regressionOf = (
   command: SummarizeBenchCommand,
   projects: ReadonlyArray<BenchProjectSummary>,
@@ -415,7 +423,7 @@ const regressionOf = (
       sha: command.sha,
       parentSha: command.parentSha,
       metrics,
-      nextAction: PhaseRegressedNextAction.literal,
+      nextAction: nextActionOf(command.ref),
     }),
   })
 
