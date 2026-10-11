@@ -1,7 +1,7 @@
 # AGENTS.md — `@systemfsoftware/stryker-e2e`
 
 Private E2E lane for the shipped `stryker` artifact: it packs the workspace closure, bakes every fixture's
-`npm install` in a preparation microVM into a content-addressed host cache, boots one warm
+`npm ci` from its committed lock in a preparation microVM into a content-addressed host cache, boots one warm
 `@systemfsoftware/effect-microsandbox` microVM per test file and fixture on the digest-pinned `node:24-alpine` image,
 copies the baked fixture onto its disk at `/work`, snapshots it, and runs each engine invocation in a fresh
 copy-on-write fork of that snapshot. Publishes no artifact. Parent: `test/AGENTS.md`.

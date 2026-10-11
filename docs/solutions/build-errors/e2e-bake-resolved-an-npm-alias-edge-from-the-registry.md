@@ -67,7 +67,7 @@ _A member's tarball is `<scope>-<name>.tgz`, packed by `pnpm pack --out`, not an
 
 ## Verification & Prevention
 
-- `install-closure.integration.test.ts` in `@systemfsoftware/stryker-e2e-core` runs under `pnpm test`. It packs a closure with the production alias shape and installs the plan with `npm install --package-lock-only --offline`, an empty cache and an unreachable registry. It then requires `file:` provenance for every workspace package in the lockfile. Any registry fallback for a closure member fails the install. Its other scenarios cover each I2 refusal and the optional-peer exemption.
+- `install-closure.integration.test.ts` in `@systemfsoftware/stryker-e2e-core` runs under `pnpm test`. It packs a closure with the production alias shape and installs the plan's positional specs (`ClosureInstall.specs`, which the bench lane still installs) with `npm install --package-lock-only --offline`, an empty cache and an unreachable registry. It then requires `file:` provenance for every workspace package in the lockfile. Its other scenarios cover each I2 refusal and the optional-peer exemption. The bake installs the same plan as staged devDependencies with `npm ci` from each fixture's committed lock; only the e2e legs exercise that path.
 - Two-sided check (scratch evidence, not a committed fixture): the same offline install given the tarball list alone exits `ENOTCACHED` for `@systemfsoftware/stryker-js-vitest-runner`, and given the plan it exits 0.
 
 ## Related
