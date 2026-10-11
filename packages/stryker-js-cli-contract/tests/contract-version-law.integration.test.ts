@@ -24,10 +24,14 @@ import { decodeJsonDocument } from './__fixtures__/contract-compat.fixture.js'
 import {
   type ContractDocument,
   type ContractLawInput,
+  type ContractVersionFailure,
   evaluateContractLaw,
   mainBaselineUnavailableOf,
   type PackageContracts,
   renderFailure,
+  type VersionCommitEvidence,
+  versionCommitOf,
+  type VersionCommitParent,
 } from './__fixtures__/contract-law.fixture.js'
 
 const Feature = makeFeature({ it })
@@ -37,10 +41,8 @@ const platformLayer = Layer.mergeAll(fsPathLayer, NodeChildProcessSpawner.layer.
 
 const CLI_CONTRACT = '@systemfsoftware/stryker-js-cli-contract'
 const CLI_CONTRACT_DIRECTORY = 'packages/stryker-js-cli-contract'
-const CLI_CONTRACT_RELEASE = 'released-stryker-js-cli-contract'
 const PLUGIN_INTERFACE = '@systemfsoftware/stryker-js-plugin-interface'
 const PLUGIN_INTERFACE_DIRECTORY = 'packages/stryker-js-plugin-interface'
-const PLUGIN_INTERFACE_RELEASE = 'released-stryker-js-plugin-interface'
 
 const CONTRACT_DIRECTORY = 'contract'
 const CHANGESET_DIRECTORY = '.changeset'
@@ -51,7 +53,6 @@ const MARKDOWN_EXTENSION = '.md'
 const MANIFEST_FILE = 'package.json'
 const WORKSPACE_MANIFEST = 'pnpm-workspace.yaml'
 const DIRECTORY_GLOB = '/*'
-const NODE_MODULES = 'node_modules'
 const MAIN_REF = 'origin/main'
 const STREAM_DOCUMENT = 'stream.schema.json'
 const REPORT_DOCUMENT = 'report.schema.json'
@@ -61,31 +62,31 @@ const SPAN_TAXONOMY_DOCUMENT = 'span-taxonomy.json'
 type PackageRef = {
   readonly name: string
   readonly directory: string
-  readonly releasedAlias: string
 }
 
 const PACKAGES: readonly PackageRef[] = [
-  { name: CLI_CONTRACT, directory: CLI_CONTRACT_DIRECTORY, releasedAlias: CLI_CONTRACT_RELEASE },
-  { name: PLUGIN_INTERFACE, directory: PLUGIN_INTERFACE_DIRECTORY, releasedAlias: PLUGIN_INTERFACE_RELEASE },
+  { name: CLI_CONTRACT, directory: CLI_CONTRACT_DIRECTORY },
+  { name: PLUGIN_INTERFACE, directory: PLUGIN_INTERFACE_DIRECTORY },
 ]
+
+const decodedDocumentOf = (name: string, location: string, text: string) => {
+  const decoded = decodeJsonDocument(text)
+  return Result.isFailure(decoded)
+    ? Effect.die(new Error(`cannot decode the contract document at ${location}: ${decoded.failure.message}`))
+    : Effect.succeed<ContractDocument>({ name, document: decoded.success })
+}
+
+const isJsonDocument = (name: string): boolean => name.endsWith(JSON_EXTENSION)
 
 const readJsonDocuments = (directory: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const names = (yield* fs.readDirectory(directory)).filter((name) => name.endsWith(JSON_EXTENSION)).sort()
-    const documents: ContractDocument[] = []
-    for (const name of names) {
+    const names = (yield* fs.readDirectory(directory)).filter(isJsonDocument).sort()
+    return yield* Effect.forEach(names, (name) => {
       const file = path.join(directory, name)
-      const decoded = decodeJsonDocument(yield* fs.readFileString(file))
-      if (Result.isFailure(decoded)) {
-        return yield* Effect.die(
-          new Error(`cannot decode the contract document at ${file}: ${decoded.failure.message}`),
-        )
-      }
-      documents.push({ name, document: decoded.success })
-    }
-    return documents
+      return Effect.flatMap(fs.readFileString(file), (text) => decodedDocumentOf(name, file, text))
+    })
   })
 
 const readVersion = (manifestPath: string) =>
@@ -129,14 +130,74 @@ const readMainBase = (repositoryRoot: string) =>
       ? Result.succeed(ran.stdout.trim())
       : Result.fail(mainBaselineUnavailableOf({ ref: MAIN_REF, detail: ran.stderr })))
 
-const readMainVersion = (repositoryRoot: string, mainBase: string, directory: string) =>
+const readVersionAt = (repositoryRoot: string, commit: string, directory: string) =>
   Effect.gen(function*() {
-    const manifest = `${mainBase}:${directory}/${MANIFEST_FILE}`
+    const manifest = `${commit}:${directory}/${MANIFEST_FILE}`
     const decoded = decodePackageVersion(yield* gitOutput(repositoryRoot, ['show', manifest]))
     if (Result.isFailure(decoded)) {
       return yield* Effect.die(new Error(`cannot read a version from ${manifest}: ${decoded.failure.message}`))
     }
     return decoded.success
+  })
+
+const OUTSIDE_HISTORY: VersionCommitParent = { status: 'outside-history' }
+const NO_MANIFEST: VersionCommitParent = { status: 'no-manifest' }
+
+const readVersionCommitParent = (repositoryRoot: string, parents: readonly string[], directory: string) =>
+  Effect.gen(function*() {
+    const parent = parents.at(0)
+    if (parent === undefined) {
+      const shallow = yield* gitOutput(repositoryRoot, ['rev-parse', '--is-shallow-repository'])
+      return shallow.trim() === 'true' ? OUTSIDE_HISTORY : NO_MANIFEST
+    }
+    const held = yield* runGit(repositoryRoot, ['cat-file', '-e', `${parent}:${directory}/${MANIFEST_FILE}`])
+    if (held.exitCode !== 0) return NO_MANIFEST
+    const declared: VersionCommitParent = {
+      status: 'declares',
+      version: yield* readVersionAt(repositoryRoot, parent, directory),
+    }
+    return declared
+  })
+
+const readVersionCommitEvidence = (repositoryRoot: string, mainBase: string, ref: PackageRef, mainVersion: string) =>
+  Effect.gen(function*() {
+    const manifest = `${ref.directory}/${MANIFEST_FILE}`
+    const fields = (yield* gitOutput(repositoryRoot, [
+      'log',
+      '--first-parent',
+      '-1',
+      '--format=%H %P',
+      `-S"version": "${mainVersion}"`,
+      mainBase,
+      '--',
+      manifest,
+    ])).trim().split(' ').filter((field) => field !== '')
+    const commit = fields.at(0)
+    const evidence: VersionCommitEvidence = {
+      package: ref.name,
+      manifest,
+      mainVersion,
+      candidate: commit === undefined
+        ? undefined
+        : { commit, parent: yield* readVersionCommitParent(repositoryRoot, fields.slice(1), ref.directory) },
+    }
+    return evidence
+  })
+
+const readJsonDocumentsAt = (repositoryRoot: string, commit: string, directory: string) =>
+  Effect.gen(function*() {
+    const contract = `${commit}:${directory}/${CONTRACT_DIRECTORY}`
+    const names = (yield* gitOutput(repositoryRoot, ['ls-tree', '--name-only', contract]))
+      .split('\n')
+      .filter(isJsonDocument)
+      .sort()
+    return yield* Effect.forEach(names, (name) => {
+      const location = `${contract}/${name}`
+      return Effect.flatMap(
+        gitOutput(repositoryRoot, ['show', location]),
+        (text) => decodedDocumentOf(name, location, text),
+      )
+    })
   })
 
 const readPendingIntents = (changesetDirectory: string) =>
@@ -166,23 +227,30 @@ const repositoryRootOf = () =>
 const readWorkspace = (repositoryRoot: string) =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const releasedRoot = path.join(repositoryRoot, CLI_CONTRACT_DIRECTORY, NODE_MODULES)
     const mainBase = yield* readMainBase(repositoryRoot)
-    if (Result.isFailure(mainBase)) return Result.fail(mainBase.failure)
+    if (Result.isFailure(mainBase)) return Result.fail<readonly ContractVersionFailure[]>([mainBase.failure])
     const packages: PackageContracts[] = []
+    const refusals: ContractVersionFailure[] = []
     for (const ref of PACKAGES) {
       const packageDirectory = path.join(repositoryRoot, ref.directory)
-      const releasedDirectory = path.join(releasedRoot, ref.releasedAlias)
+      const mainVersion = yield* readVersionAt(repositoryRoot, mainBase.success, ref.directory)
+      const versionCommit = versionCommitOf(
+        yield* readVersionCommitEvidence(repositoryRoot, mainBase.success, ref, mainVersion),
+      )
+      if (Result.isFailure(versionCommit)) {
+        refusals.push(versionCommit.failure)
+        continue
+      }
       packages.push({
         name: ref.name,
         directory: ref.directory,
-        releasedVersion: yield* readVersion(path.join(releasedDirectory, MANIFEST_FILE)),
-        mainVersion: yield* readMainVersion(repositoryRoot, mainBase.success, ref.directory),
+        mainVersion,
         committedVersion: yield* readVersion(path.join(packageDirectory, MANIFEST_FILE)),
-        releasedDocuments: yield* readJsonDocuments(path.join(releasedDirectory, CONTRACT_DIRECTORY)),
+        releasedDocuments: yield* readJsonDocumentsAt(repositoryRoot, versionCommit.success, ref.directory),
         committedDocuments: yield* readJsonDocuments(path.join(packageDirectory, CONTRACT_DIRECTORY)),
       })
     }
+    if (refusals.length > 0) return Result.fail<readonly ContractVersionFailure[]>(refusals)
     const pendingIntents = yield* readPendingIntents(path.join(repositoryRoot, CHANGESET_DIRECTORY))
     return Result.succeed<ContractLawInput>({ packages, pendingIntents })
   })
@@ -273,7 +341,6 @@ const streamDocument = (options: { readonly schemaVersion: string; readonly pid:
 type LawScenario = {
   readonly package: string
   readonly directory: string
-  readonly releasedVersion: string
   readonly mainVersion: string
   readonly committedVersion: string
   readonly releasedDocuments: readonly ContractDocument[]
@@ -285,7 +352,6 @@ const lawInputOf = (request: LawScenario): ContractLawInput => ({
   packages: [{
     name: request.package,
     directory: request.directory,
-    releasedVersion: request.releasedVersion,
     mainVersion: request.mainVersion,
     committedVersion: request.committedVersion,
     releasedDocuments: request.releasedDocuments,
@@ -293,11 +359,6 @@ const lawInputOf = (request: LawScenario): ContractLawInput => ({
   }],
   pendingIntents: request.pendingIntents,
 })
-
-const reportDocument: ContractDocument = {
-  name: REPORT_DOCUMENT,
-  document: { $schema: 'https://json-schema.org/draft/2020-12/schema', title: 'report' },
-}
 
 const releasedDocumentOf = (name: string): ContractDocument => ({
   name,
@@ -352,7 +413,6 @@ const spanTaxonomy = (attributes: readonly string[]): Json => [{
 const unchangedStream: LawScenario = {
   package: CLI_CONTRACT,
   directory: CLI_CONTRACT_DIRECTORY,
-  releasedVersion: '0.4.0',
   mainVersion: '0.4.0',
   committedVersion: '0.4.0',
   releasedDocuments: [{ name: STREAM_DOCUMENT, document: streamDocument({ schemaVersion: '6.0', pid: true }) }],
@@ -365,7 +425,6 @@ const raisedStream: LawScenario = { ...unchangedStream, committedDocuments: stre
 const unclassifiableDocument: LawScenario = {
   package: PLUGIN_INTERFACE,
   directory: PLUGIN_INTERFACE_DIRECTORY,
-  releasedVersion: '15.0.0',
   mainVersion: '15.0.0',
   committedVersion: '15.0.0',
   releasedDocuments: [{ name: REPORT_DOCUMENT, document: { released: true } }],
@@ -373,21 +432,9 @@ const unclassifiableDocument: LawScenario = {
   pendingIntents: [{ package: PLUGIN_INTERFACE, bump: 'major' }],
 }
 
-const staleBaseline: LawScenario = {
+const narrowingAfterVersionCommit: LawScenario = {
   package: PLUGIN_INTERFACE,
   directory: PLUGIN_INTERFACE_DIRECTORY,
-  releasedVersion: '15.0.0',
-  mainVersion: '15.1.0',
-  committedVersion: '15.1.0',
-  releasedDocuments: [reportDocument],
-  committedDocuments: [reportDocument],
-  pendingIntents: [{ package: PLUGIN_INTERFACE, bump: 'patch' }],
-}
-
-const laggingPinNarrowing: LawScenario = {
-  package: PLUGIN_INTERFACE,
-  directory: PLUGIN_INTERFACE_DIRECTORY,
-  releasedVersion: '15.0.0',
   mainVersion: '16.0.0',
   committedVersion: '16.0.0',
   releasedDocuments: [{ name: REPORT_DOCUMENT, document: schemaDocument({ testFiles: true, wideLevel: true }) }],
@@ -395,12 +442,17 @@ const laggingPinNarrowing: LawScenario = {
   pendingIntents: [],
 }
 
+const VERSION_COMMIT = '9e81669b84711a9635eaa97b17dd13efea9f0c8c'
+const CLI_CONTRACT_MANIFEST = `${CLI_CONTRACT_DIRECTORY}/${MANIFEST_FILE}`
+const RELEASE_NEXT =
+  `add a changeset for ${CLI_CONTRACT} and merge the version PR, so a release writes a version its manifest has not declared before`
+
 Feature('The released contract documents bound what the workspace may declare next')
   .withLayer(platformLayer)
   .body(({ scenario, scenarioOutline }) => {
     scenario(
       'The committed contract documents keep every ground the released ones hold',
-      { live: 'reads the released tarballs, the committed documents and the changeset ledger from disk' },
+      { live: 'reads the version commit with git, the committed documents and the changeset ledger from disk' },
       Gherkin.Do.pipe(
         Given('the released documents the workspace consumes and the committed ones it ships')(
           'workspace',
@@ -414,7 +466,7 @@ Feature('The released contract documents bound what the workspace may declare ne
           'verdict',
           (s) =>
             Effect.succeed(Result.match(s.workspace, {
-              onFailure: (failure) => ({ weighed: [], failures: [renderFailure(failure)] }),
+              onFailure: (failures) => ({ weighed: [], failures: failures.map(renderFailure) }),
               onSuccess: (law) => ({
                 weighed: law.packages.map((pkg) => pkg.name).sort(),
                 failures: evaluateContractLaw(law).map(renderFailure),
@@ -434,7 +486,7 @@ Feature('The released contract documents bound what the workspace may declare ne
           package: PLUGIN_INTERFACE,
           directory: PLUGIN_INTERFACE_DIRECTORY,
           document: REPORT_DOCUMENT,
-          releasedVersion: '15.0.0',
+          mainVersion: '15.0.0',
           requiredLevel: 'major',
           requiredVersion: '16.0.0',
           declaredVersion: '15.0.1',
@@ -443,7 +495,7 @@ Feature('The released contract documents bound what the workspace may declare ne
           package: CLI_CONTRACT,
           directory: CLI_CONTRACT_DIRECTORY,
           document: STREAM_DOCUMENT,
-          releasedVersion: '0.4.0',
+          mainVersion: '0.4.0',
           requiredLevel: 'minor',
           requiredVersion: '0.5.0',
           declaredVersion: '0.4.1',
@@ -458,9 +510,8 @@ Feature('The released contract documents bound what the workspace may declare ne
                 lawInputOf({
                   package: row.package,
                   directory: row.directory,
-                  releasedVersion: row.releasedVersion,
-                  mainVersion: row.releasedVersion,
-                  committedVersion: row.releasedVersion,
+                  mainVersion: row.mainVersion,
+                  committedVersion: row.mainVersion,
                   releasedDocuments: [releasedDocumentOf(row.document)],
                   committedDocuments: [],
                   pendingIntents: [{ package: row.package, bump: 'patch' }],
@@ -528,7 +579,6 @@ Feature('The released contract documents bound what the workspace may declare ne
                 lawInputOf({
                   package: CLI_CONTRACT,
                   directory: CLI_CONTRACT_DIRECTORY,
-                  releasedVersion: '0.4.0',
                   mainVersion: '0.4.0',
                   committedVersion: '0.4.0',
                   releasedDocuments: [{ name: row.document, document: row.released }],
@@ -576,7 +626,6 @@ Feature('The released contract documents bound what the workspace may declare ne
                 lawInputOf({
                   package: CLI_CONTRACT,
                   directory: CLI_CONTRACT_DIRECTORY,
-                  releasedVersion: '0.4.0',
                   mainVersion: '0.4.0',
                   committedVersion: '0.4.0',
                   releasedDocuments: [{
@@ -622,7 +671,6 @@ Feature('The released contract documents bound what the workspace may declare ne
               lawInputOf({
                 package: CLI_CONTRACT,
                 directory: CLI_CONTRACT_DIRECTORY,
-                releasedVersion: '0.4.0',
                 mainVersion: '0.4.0',
                 committedVersion: '0.4.0',
                 releasedDocuments: [{
@@ -720,54 +768,124 @@ Feature('The released contract documents bound what the workspace may declare ne
     )
 
     scenario(
-      'A released baseline behind the version main declares refuses to compare while a changeset is pending',
+      'A narrowing that lands after the version commit, under the version it set, is refused at the next version',
       Gherkin.Do.pipe(
-        Given('main one minor ahead of the released documents, with a pending patch intent')(
+        Given('main at 16.0.0 since its version commit, a member dropped after that commit, and no pending intent')(
           'law',
-          () => Effect.succeed(lawInputOf(staleBaseline)),
+          () => Effect.succeed(lawInputOf(narrowingAfterVersionCommit)),
         ),
-        When('the law weighs the committed documents against the stale released ones and renders what it refuses')(
-          'rendered',
-          (s) => Effect.succeed(evaluateContractLaw(s.law).map((failure) => renderFailure(failure).split('\n'))),
+        When('the law weighs the committed documents against the documents of the version commit')(
+          'failures',
+          (s) => Effect.succeed(evaluateContractLaw(s.law)),
         ),
-        Then('the stale baseline is named with its code, both versions, and the flake move that fixes it')(
-          (s, expect) =>
-            expect(s.rendered).toEqual([[
-              `error[CONTRACT-VERSION]: the released baseline of ${PLUGIN_INTERFACE} is stale`,
-              '  code: stale-baseline',
-              `  package: ${PLUGIN_INTERFACE}`,
-              '  released: 15.0.0',
-              '  main: 15.1.0',
-              `  reason: main declares 15.1.0 while the released documents come from 15.0.0, so they cannot bound what the next release of ${PLUGIN_INTERFACE} may change`,
-              '  next: move the stryker-published flake input to the latest release tag and reinstall',
-            ]]),
+        Then('the dropped member is named with the major the next release requires')((s, expect) =>
+          expect(s.failures).toEqual([{
+            kind: 'contract-change',
+            package: PLUGIN_INTERFACE,
+            document: `${PLUGIN_INTERFACE_DIRECTORY}/${CONTRACT_DIRECTORY}/${REPORT_DOCUMENT}`,
+            pointer: '/properties/testFiles',
+            reason: 'property removed: testFiles',
+            requiredLevel: 'major',
+            requiredVersion: '17.0.0',
+            declaredVersion: '16.0.0',
+          }])
         ),
       ),
     )
 
-    scenario(
-      'A released baseline behind the version main declares refuses a narrowing no changeset declares',
-      Gherkin.Do.pipe(
-        Given('main a major ahead of the released documents, a dropped member, and no pending intent')(
-          'law',
-          () => Effect.succeed(lawInputOf(laggingPinNarrowing)),
+    scenarioOutline(
+      'A released baseline that cannot be established is refused with its cause and the action that restores it',
+      [
+        { mainVersion: '0.5.0', candidate: undefined, cause: 'no-version-commit', next: RELEASE_NEXT },
+        {
+          mainVersion: '0.5.0',
+          candidate: { commit: VERSION_COMMIT, parent: { status: 'outside-history' } },
+          cause: 'history-truncated',
+          next: 'git fetch --unshallow origin main',
+        },
+        {
+          mainVersion: '0.5.0',
+          candidate: { commit: VERSION_COMMIT, parent: { status: 'declares', version: '0.5.0' } },
+          cause: 'version-unchanged',
+          next: RELEASE_NEXT,
+        },
+        {
+          mainVersion: '0.4.0',
+          candidate: { commit: VERSION_COMMIT, parent: { status: 'declares', version: '0.5.0' } },
+          cause: 'version-rollback',
+          next: RELEASE_NEXT,
+        },
+      ] satisfies ReadonlyArray<
+        Pick<VersionCommitEvidence, 'mainVersion' | 'candidate'> & { cause: string; next: string }
+      >,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given("the last commit that changed the line declaring main's version, and what its parent declares")(
+            'evidence',
+            () =>
+              Effect.succeed<VersionCommitEvidence>({
+                package: CLI_CONTRACT,
+                manifest: CLI_CONTRACT_MANIFEST,
+                mainVersion: row.mainVersion,
+                candidate: row.candidate,
+              }),
+          ),
+          When('the law picks the version commit and renders what it refuses')(
+            'rendered',
+            (s) =>
+              Effect.succeed(Result.match(versionCommitOf(s.evidence), {
+                onFailure: (failure) => renderFailure(failure).split('\n'),
+                onSuccess: (commit) => [commit],
+              })),
+          ),
+          Then('the refusal names its code, its cause, the package, the version sought and the next action')(
+            (s, expect) =>
+              expect(s.rendered).toEqual([
+                `error[CONTRACT-VERSION]: the released baseline of ${CLI_CONTRACT} is unavailable`,
+                '  code: released-baseline-unavailable',
+                `  cause: ${row.cause}`,
+                `  package: ${CLI_CONTRACT}`,
+                `  version: ${row.mainVersion}`,
+                expect.stringMatching(
+                  row.candidate === undefined
+                    ? /^ {2}reason: no commit on main's first-parent history writes /
+                    : new RegExp(`^ {2}reason: .*${VERSION_COMMIT}`),
+                ),
+                `  next: ${row.next}`,
+              ]),
+          ),
         ),
-        When('the law weighs the committed documents against the stale released ones')(
-          'failures',
-          (s) => Effect.succeed(evaluateContractLaw(s.law)),
+    )
+
+    scenarioOutline(
+      "The commit that moved the manifest up to main's version is the released baseline",
+      [
+        { mainVersion: '0.5.0', parent: { status: 'declares', version: '0.4.0' } },
+        { mainVersion: '16.0.0', parent: { status: 'declares', version: '15.0.0' } },
+        { mainVersion: '0.0.1', parent: { status: 'no-manifest' } },
+      ] satisfies ReadonlyArray<{ mainVersion: string; parent: VersionCommitParent }>,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given(
+            "the last commit that changed the line declaring main's version, whose parent declares less or nothing",
+          )(
+            'evidence',
+            () =>
+              Effect.succeed<VersionCommitEvidence>({
+                package: CLI_CONTRACT,
+                manifest: CLI_CONTRACT_MANIFEST,
+                mainVersion: row.mainVersion,
+                candidate: { commit: VERSION_COMMIT, parent: row.parent },
+              }),
+          ),
+          When('the law picks the version commit')(
+            'picked',
+            (s) => Effect.succeed(versionCommitOf(s.evidence).pipe(Result.getOrUndefined)),
+          ),
+          Then('that commit is the baseline the released documents are read from')(
+            (s, expect) => expect(s.picked).toEqual(VERSION_COMMIT),
+          ),
         ),
-        Then('the stale baseline is named instead of the workspace version clearing the narrowing')(
-          (s, expect) =>
-            expect(s.failures).toEqual([{
-              kind: 'stale-baseline',
-              package: PLUGIN_INTERFACE,
-              reason: expect.stringContaining('main declares 16.0.0 while the released documents come from 15.0.0'),
-              next: 'move the stryker-published flake input to the latest release tag and reinstall',
-              releasedVersion: '15.0.0',
-              mainVersion: '16.0.0',
-            }]),
-        ),
-      ),
     )
 
     scenario(
@@ -784,7 +902,7 @@ Feature('The released contract documents bound what the workspace may declare ne
             Effect.gen(function*() {
               const mainBase = yield* readMainBase(s.root)
               if (Result.isFailure(mainBase)) return mainBase.failure
-              return yield* readMainVersion(s.root, mainBase.success, SCRATCH_PACKAGE)
+              return yield* readVersionAt(s.root, mainBase.success, SCRATCH_PACKAGE)
             }).pipe(Effect.ensuring(removeRepository(s.root))),
         ),
         Then('it reads the fork point, neither the committed version nor the tip main moved to')(
@@ -803,7 +921,7 @@ Feature('The released contract documents bound what the workspace may declare ne
           (s) =>
             Effect.map(readWorkspace(s.root), (workspace) =>
               Result.match(workspace, {
-                onFailure: (failure) => renderFailure(failure).split('\n'),
+                onFailure: (failures) => failures.flatMap((failure) => renderFailure(failure).split('\n')),
                 onSuccess: () => [],
               })).pipe(Effect.ensuring(removeRepository(s.root))),
         ),
@@ -827,7 +945,7 @@ Feature('The released contract documents bound what the workspace may declare ne
         {
           package: CLI_CONTRACT,
           directory: CLI_CONTRACT_DIRECTORY,
-          releasedVersion: '0.4.0',
+          mainVersion: '0.4.0',
           committedVersion: '0.5.0',
           released: schemaDocument({ testFiles: false, wideLevel: false }),
           committed: schemaDocument({ testFiles: true, wideLevel: true }),
@@ -835,7 +953,7 @@ Feature('The released contract documents bound what the workspace may declare ne
         {
           package: CLI_CONTRACT,
           directory: CLI_CONTRACT_DIRECTORY,
-          releasedVersion: '0.4.0',
+          mainVersion: '0.4.0',
           committedVersion: '0.5.0',
           released: schemaDocument({ testFiles: true, wideLevel: true }),
           committed: schemaDocument({ testFiles: false, wideLevel: true }),
@@ -843,7 +961,7 @@ Feature('The released contract documents bound what the workspace may declare ne
         {
           package: PLUGIN_INTERFACE,
           directory: PLUGIN_INTERFACE_DIRECTORY,
-          releasedVersion: '15.0.0',
+          mainVersion: '15.0.0',
           committedVersion: '16.0.0',
           released: schemaDocument({ testFiles: true, wideLevel: true }),
           committed: schemaDocument({ testFiles: true, wideLevel: false }),
@@ -858,8 +976,7 @@ Feature('The released contract documents bound what the workspace may declare ne
                 lawInputOf({
                   package: row.package,
                   directory: row.directory,
-                  releasedVersion: row.releasedVersion,
-                  mainVersion: row.releasedVersion,
+                  mainVersion: row.mainVersion,
                   committedVersion: row.committedVersion,
                   releasedDocuments: [{ name: REPORT_DOCUMENT, document: row.released }],
                   committedDocuments: [{ name: REPORT_DOCUMENT, document: row.committed }],
@@ -871,7 +988,7 @@ Feature('The released contract documents bound what the workspace may declare ne
             'failures',
             (s) => Effect.succeed(evaluateContractLaw(s.law)),
           ),
-          Then('the bump clears the change instead of the baseline being called stale')(
+          Then('the bump clears the change')(
             (s, expect) => expect(s.failures).toEqual([]),
           ),
         ),
@@ -883,7 +1000,7 @@ Feature('The released contract documents bound what the workspace may declare ne
         {
           package: CLI_CONTRACT,
           directory: CLI_CONTRACT_DIRECTORY,
-          releasedVersion: '0.4.0',
+          mainVersion: '0.4.0',
           committedVersion: '0.4.1',
           requiredLevel: 'minor',
           requiredVersion: '0.5.0',
@@ -891,7 +1008,7 @@ Feature('The released contract documents bound what the workspace may declare ne
         {
           package: PLUGIN_INTERFACE,
           directory: PLUGIN_INTERFACE_DIRECTORY,
-          releasedVersion: '15.0.0',
+          mainVersion: '15.0.0',
           committedVersion: '15.1.0',
           requiredLevel: 'major',
           requiredVersion: '16.0.0',
@@ -908,8 +1025,7 @@ Feature('The released contract documents bound what the workspace may declare ne
                 lawInputOf({
                   package: row.package,
                   directory: row.directory,
-                  releasedVersion: row.releasedVersion,
-                  mainVersion: row.releasedVersion,
+                  mainVersion: row.mainVersion,
                   committedVersion: row.committedVersion,
                   releasedDocuments: [{
                     name: REPORT_DOCUMENT,
