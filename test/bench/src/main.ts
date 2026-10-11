@@ -2,6 +2,7 @@ import * as NodeRuntime from '@effect/platform-node/NodeRuntime'
 import { layer as nodeServicesLayer } from '@effect/platform-node/NodeServices'
 import {
   abortedOutcomeOf,
+  BENCH_ORDER,
   type BenchAbortCode,
   type BenchCorpus,
   BenchCorpusJson,
@@ -17,6 +18,8 @@ import {
   type LegTime,
   measureLeg,
   MeasureLegCommand,
+  provisionalReport,
+  ProvisionalReportCommand,
   renderBenchReport,
   RenderBenchReportCommand,
   type SetupStep,
@@ -214,6 +217,28 @@ const bench = (env: BenchEnv) =>
       sideA: prepareNamed('A', env.sideARoot, 'a'),
       sideB: prepareNamed('B', env.sideBRoot, 'b'),
     })
+    const allSetupSteps = [...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps, ...setupSteps]
+    const withheldPins = Arr.getSomes([prepared.sideA.withheldPins, prepared.sideB.withheldPins])
+    const writeProvisional = (finished: ReadonlyArray<BenchRun>) =>
+      Effect.flatMap(legOf(env), (leg) =>
+        writeReportFile(
+          env,
+          Result.merge(
+            provisionalReport(
+              ProvisionalReportCommand.make({
+                baseSha: env.baseSha,
+                headSha: env.headSha,
+                ref: env.ref,
+                leg,
+                order: [...BENCH_ORDER],
+                finished: [...finished],
+                setupSteps: allSetupSteps,
+                withheldPins,
+              }),
+            ),
+          ).report,
+        ).pipe(Effect.ignore))
+    yield* writeProvisional([])
 
     const result = yield* runBench({
       corpus: corpusNameOf(target),
@@ -224,13 +249,14 @@ const bench = (env: BenchEnv) =>
       sha: env.headSha,
       parentSha: env.baseSha,
       ref: env.ref,
+      onRunFinished: writeProvisional,
     })
     yield* Effect.forEach(result.runs, (run) => Console.log(runLogLine(run)))
     return {
       outcome: result.outcome,
       runs: result.reportRuns,
-      setupSteps: [...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps, ...setupSteps],
-      withheldPins: Arr.getSomes([prepared.sideA.withheldPins, prepared.sideB.withheldPins]),
+      setupSteps: allSetupSteps,
+      withheldPins,
     } satisfies ReportBody
   }).pipe(
     Effect.catchTag(
@@ -240,14 +266,23 @@ const bench = (env: BenchEnv) =>
     Effect.catchDefect((defect) => Effect.succeed(abortedBody('defect', Cause.pretty(Cause.die(defect))))),
   )
 
-const writeReport = (env: BenchEnv, report: BenchReport) =>
+const reportPathOf = (env: BenchEnv) =>
+  Effect.map(Path.Path, (path) => path.join(env.runnerTemp, BENCH_REPORT_DIR, BENCH_REPORT_FILE))
+
+const writeReportFile = (env: BenchEnv, report: BenchReport) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const reportPath = path.join(env.runnerTemp, BENCH_REPORT_DIR, BENCH_REPORT_FILE)
+    const reportPath = yield* reportPathOf(env)
     yield* fs.makeDirectory(path.dirname(reportPath), { recursive: true })
     yield* fs.writeFileString(reportPath, yield* S.encodeEffect(BenchReportJson)(report))
-    return yield* S.decodeEffect(BenchReportJson)(yield* fs.readFileString(reportPath))
+  })
+
+const writeReport = (env: BenchEnv, report: BenchReport) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    yield* writeReportFile(env, report)
+    return yield* S.decodeEffect(BenchReportJson)(yield* fs.readFileString(yield* reportPathOf(env)))
   }).pipe(
     Effect.catch((failure) =>
       Effect.succeed(

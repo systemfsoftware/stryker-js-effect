@@ -22,6 +22,13 @@ parent, that `total` and then each other regressed phase of the leg with its
 delta, and root's next action. A phase that regressed under an unchanged `total`
 stays a table verdict only.
 
+So that a job killed by that timeout or a cancel still leaves a report, the bench
+writes `bench-report.json` provisionally after setup and again after each
+finished run: an `aborted` outcome with code `leg-incomplete`, the finished
+runs, and the step it was about to start ("3 of 8 runs finished; next step:
+run 4 of 8 (side A)"). The final report replaces it. Both upload steps run on
+`always()`.
+
 The report heading and the verdict line name the ref (`BENCH_REF`). A manual
 `workflow_dispatch` may run on any ref; off `refs/heads/main` a regression's next
 action is "dispatched on <ref>: speed evidence only, no revert", and the revert

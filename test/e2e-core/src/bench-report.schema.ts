@@ -2,7 +2,7 @@ import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Function from 'effect/Function'
 import * as S from 'effect/Schema'
 
-import { BenchRunInvalid, BenchRunKey, WorkloadDigest } from './bench-run.schema.js'
+import { BenchRunInvalid, BenchRunKey, BenchSide, WorkloadDigest } from './bench-run.schema.js'
 import { BenchProjectSummary, PhaseRegression } from './bench-summary.schema.js'
 import { WithheldPins } from './lockfile-pins.schema.js'
 
@@ -45,6 +45,7 @@ export const BenchAbortCode = S.Literals([
   'entry-unknown',
   'side-setup-failed',
   'report-unwritable',
+  'leg-incomplete',
   'defect',
 ])
 export type BenchAbortCode = typeof BenchAbortCode.Type
@@ -60,6 +61,8 @@ const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
   'side-setup-failed':
     'read the failing step and output tail in the reason; rerun that step command in the named side checkout',
   'report-unwritable': 'check free space and permissions under RUNNER_TEMP on the runner, then re-run the job',
+  'leg-incomplete':
+    "the job stopped before its final report (GitHub's 60-minute job timeout or a cancel): find the named step in the job log and the finished runs' streams in the bench-runs artifact, then fix what hung",
   'defect': 'a bench bug: open an issue with this job log, the stack above, and the base and head SHAs',
 }
 
@@ -97,6 +100,26 @@ export class BenchReport extends S.Class<BenchReport>('BenchReport')({
 }
 
 export const BenchReportJson = S.fromJsonString(BenchReport)
+
+const ProvisionalReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/ProvisionalReport')
+type ProvisionalReportTypeId = typeof ProvisionalReportTypeId
+
+export class ProvisionalRunNext extends S.TaggedClass<ProvisionalRunNext>()('ProvisionalRunNext', {
+  report: BenchReport,
+  position: S.Int,
+  side: BenchSide,
+}) {
+  readonly [ProvisionalReportTypeId] = ProvisionalReportTypeId
+}
+
+export class ProvisionalSummarizeNext extends S.TaggedClass<ProvisionalSummarizeNext>()('ProvisionalSummarizeNext', {
+  report: BenchReport,
+}) {
+  readonly [ProvisionalReportTypeId] = ProvisionalReportTypeId
+}
+
+export const ProvisionalReport = S.Union([ProvisionalRunNext, ProvisionalSummarizeNext])
+export type ProvisionalReport = typeof ProvisionalReport.Type
 
 const BenchRenderedTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchRendered')
 type BenchRenderedTypeId = typeof BenchRenderedTypeId

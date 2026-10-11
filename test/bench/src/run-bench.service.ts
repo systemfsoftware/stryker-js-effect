@@ -39,6 +39,7 @@ export interface RunBenchInput {
   readonly sha: string
   readonly parentSha: string
   readonly ref: string
+  readonly onRunFinished: (finished: ReadonlyArray<BenchRun>) => Effect.Effect<void, never, BenchPlatform>
 }
 
 export interface RunBenchResult {
@@ -202,9 +203,14 @@ export const runBench = (
 ): Effect.Effect<RunBenchResult, BenchOrchestrationFailed, BenchPlatform> =>
   Effect.gen(function*() {
     const targets = { A: yield* prepareTarget(input.sideA), B: yield* prepareTarget(input.sideB) }
-    const runs = yield* Effect.forEach(
+    const runs = yield* Effect.reduce(
       BENCH_ORDER,
-      (side, position) => runOne(input, targets[side].prepared, targets[side].pristine, position),
+      (): ReadonlyArray<BenchRun> => [],
+      (finished, side, position) =>
+        runOne(input, targets[side].prepared, targets[side].pristine, position).pipe(
+          Effect.map((run): ReadonlyArray<BenchRun> => [...finished, run]),
+          Effect.tap(input.onRunFinished),
+        ),
     )
 
     const summary = summarizeBench(

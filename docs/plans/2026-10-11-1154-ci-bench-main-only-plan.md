@@ -6,7 +6,7 @@ topic: bench-main-only
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-11-0909-ci-bench-main-only-plan.md
+supersedes: docs/plans/2026-10-11-1138-ci-bench-main-only-plan.md
 ---
 
 # Bench On Main Only - Plan
@@ -63,6 +63,7 @@ The enterprise leg also stalls on main as it stands. `prepare-side.service.ts:49
 **Failure and time**
 
 - R5. Every `timeout-minutes` in `bench.yml` is 60. That job timeout is the lane's only kill.
+- R5a. A leg the job timeout or a cancel stops still leaves a report. After setup and after each finished run, the bench writes `bench-report.json` provisionally: an `aborted` outcome with code `leg-incomplete`, the finished runs, and the step it was about to start. The final report replaces it. Both upload steps run on `always()`. Whether GitHub runs `always()` steps after a timeout is unverified; no run is forced past the timeout to prove it. (session-settled: user-directed, round-2 review R2, chosen over an in-process deadline, which R6 removes.)
 - R6. The bench has no in-process deadline. `BENCH_DEADLINE_MS`, the setup budget, the run deadline and the per-run CLI timeout are removed, together with the report shapes only they produced: abort codes `setup-timed-out` and `budget-exceeded`, run exit `timed-out`, and run failure code `timeout`.
 - R7. A leg exits non-zero only when the bench itself fails: a run errors or its stream cannot be read (`failed`), or the comparison cannot be computed (`aborted`). A setup failure on either side aborts with `side-setup-failed`.
 - R8. The leg's first step records the job start as a mark, never a deadline. The leg's wall time, from that mark to report write, appears in both the step summary and the JSON report, rendered from the one report object (#274's single-source invariant, guarded by `test/e2e-core/src/__tests__/render-bench-report.workflow.property.test.ts`).
