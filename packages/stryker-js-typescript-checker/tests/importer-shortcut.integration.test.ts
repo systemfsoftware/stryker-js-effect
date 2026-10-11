@@ -312,8 +312,8 @@ type OptionOutcome =
   | { readonly refused: { readonly mutantIds: ReadonlyArray<string>; readonly invalidOptions: boolean } }
   | { readonly status: string; readonly shortcuts: number }
 
-const refusedWith = (cause: string, code: string, nextAction: string): boolean =>
-  cause.includes(`typescript checker (${code})`) && cause.includes(nextAction)
+const refusedWith = (cause: string, tag: string, code: string, nextAction: string): boolean =>
+  cause.startsWith(`${tag}: typescript checker (${code}): `) && cause.includes(`. ${nextAction}\n`)
 
 const INVALID_OPTIONS_NEXT_ACTION = "Set typescriptChecker.importerCheck to 'location-rule' or 'always', or remove it"
 const DUPLICATE_IDS_NEXT_ACTION = 'Send each mutant id once per check call'
@@ -329,7 +329,12 @@ const duplicateOutcomeOf = (
     Effect.match({
       onFailure: (failed) => ({
         mutantIds: [...failed.mutantIds],
-        duplicateIds: refusedWith(failed.cause, 'duplicate-mutant-ids', DUPLICATE_IDS_NEXT_ACTION),
+        duplicateIds: refusedWith(
+          failed.cause,
+          'DuplicateMutantIds',
+          'duplicate-mutant-ids',
+          DUPLICATE_IDS_NEXT_ACTION,
+        ),
       }),
       onSuccess: () => 'checked' as const,
     }),
@@ -343,7 +348,12 @@ const optionOutcomeOf = (
       onFailure: (failed): OptionOutcome => ({
         refused: {
           mutantIds: [...failed.mutantIds],
-          invalidOptions: refusedWith(failed.cause, 'invalid-checker-options', INVALID_OPTIONS_NEXT_ACTION),
+          invalidOptions: refusedWith(
+            failed.cause,
+            'InvalidCheckerOptions',
+            'invalid-checker-options',
+            INVALID_OPTIONS_NEXT_ACTION,
+          ),
         },
       }),
       onSuccess: ({ results, attributes }): OptionOutcome => ({
