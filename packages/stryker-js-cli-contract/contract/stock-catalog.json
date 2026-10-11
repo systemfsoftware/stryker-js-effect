@@ -426,5 +426,36 @@
         "after": []
       }
     ]
+  },
+  {
+    "id": "recovery-removal",
+    "name": "RecoveryRemoval",
+    "tier": "default",
+    "definition": "One Effect recovery is dropped, so the typed failure it handled propagates: a data-first `catch`, `catchTag`, `catchIf`, `catchFilter`, `catchReason`, or `orElseSucceed` call becomes the effect it recovered, and its data-last form in a pipe becomes `(self) => self`. A `catchTags` or `catchReasons` record loses one handler per mutant. A handler built by a call is refused.",
+    "examples": [
+      {
+        "before": "import { Effect } from 'effect'\n\nexport const withFallback = (program: Effect.Effect<number, { readonly _tag: 'NotFound' }>) =>\n  program.pipe(Effect.catchTag('NotFound', () => Effect.succeed(0)))\n",
+        "after": [
+          "self => self"
+        ]
+      },
+      {
+        "before": "import { Effect } from 'effect'\n\nexport const withFallback = (program: Effect.Effect<number, { readonly _tag: 'NotFound' }>) =>\n  Effect.catchTag(program, 'NotFound', () => Effect.succeed(0))\n",
+        "after": [
+          "program"
+        ]
+      },
+      {
+        "before": "import { Effect } from 'effect'\n\ntype Missing = { readonly _tag: 'NotFound' } | { readonly _tag: 'Gone' }\n\nexport const withFallbacks = (program: Effect.Effect<number, Missing>) =>\n  Effect.catchTags(program, { NotFound: () => Effect.succeed(0), Gone: () => Effect.succeed(1) })\n",
+        "after": [
+          "Effect.catchTags(program, { Gone: () => Effect.succeed(1) })",
+          "Effect.catchTags(program, { NotFound: () => Effect.succeed(0) })"
+        ]
+      },
+      {
+        "before": "const catchTag = (program: number, _tag: string, recover: () => number) => program || recover()\n\nexport const withFallback = (program: number) => catchTag(program, 'NotFound', () => 0)\n",
+        "after": []
+      }
+    ]
   }
 ]

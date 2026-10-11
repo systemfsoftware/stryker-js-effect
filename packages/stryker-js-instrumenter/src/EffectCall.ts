@@ -1,11 +1,15 @@
 /**
- * EffectCall — the resolution front half the opt-in concurrency mutators share.
+ * EffectCall — the resolution front half the Effect-aware mutators share.
  *
  * Given a visited node it answers: is this a covered Effect call (R1); through
  * which module and export did its callee resolve; which call form does its
  * argument count select (KTD10); does a data-last form sit where the replacement
  * function is contextually typed (R4); and how can each `effect` module the
- * replacement needs be reached from the file's own imports (KTD3). It decides
+ * replacement needs be reached from the file's own imports (KTD3). An argument
+ * count both forms accept (`catchTag` with an `orElse`) is data-last where a
+ * pipe or an immediate call takes the result, and data-first elsewhere: a
+ * piped or immediately called value has to be a function, which a data-first
+ * call never returns. It decides
  * nothing about a replacement: a mutator asks for module access through the
  * description's `moduleAccess`, and gets none when the file has no unshadowed
  * binding for that module (R2).
@@ -95,33 +99,41 @@ const PIPED_REFERENCE: EffectCallForm = 'piped-reference'
 const NO_ARGUMENTS: readonly Expression[] = Object.freeze([])
 
 const ARITIES: Readonly<Record<string, Arity>> = Object.freeze({
-  'Ref.modify': { dataFirst: [2], dataLast: 1 },
-  'Ref.modifySome': { dataFirst: [2], dataLast: 1 },
-  'Ref.update': { dataFirst: [2], dataLast: 1 },
-  'Ref.updateSome': { dataFirst: [2], dataLast: 1 },
-  'Ref.updateAndGet': { dataFirst: [2], dataLast: 1 },
-  'Ref.getAndUpdate': { dataFirst: [2], dataLast: 1 },
-  'SynchronizedRef.modify': { dataFirst: [2], dataLast: 1 },
-  'SynchronizedRef.modifySome': { dataFirst: [2], dataLast: 1 },
-  'SynchronizedRef.update': { dataFirst: [2], dataLast: 1 },
-  'SynchronizedRef.updateSome': { dataFirst: [2], dataLast: 1 },
-  'SynchronizedRef.updateAndGet': { dataFirst: [2], dataLast: 1 },
-  'SynchronizedRef.getAndUpdate': { dataFirst: [2], dataLast: 1 },
-  'Semaphore.withPermits': { dataFirst: [3], dataLast: 2 },
-  'Semaphore.withPermit': { dataFirst: [2], dataLast: 1 },
-  'Effect.ensuring': { dataFirst: [2], dataLast: 1 },
-  'Effect.onExit': { dataFirst: [2], dataLast: 1 },
-  'Effect.onError': { dataFirst: [2], dataLast: 1 },
-  'Effect.onInterrupt': { dataFirst: [2], dataLast: 1 },
-  'Effect.uninterruptible': { dataFirst: [1] },
-  'Effect.uninterruptibleMask': { dataFirst: [1] },
-  'Effect.acquireRelease': { dataFirst: [2, 3] },
-  'Effect.acquireUseRelease': { dataFirst: [3] },
+  'Ref.modify': { dataFirst: [2], dataLast: [1] },
+  'Ref.modifySome': { dataFirst: [2], dataLast: [1] },
+  'Ref.update': { dataFirst: [2], dataLast: [1] },
+  'Ref.updateSome': { dataFirst: [2], dataLast: [1] },
+  'Ref.updateAndGet': { dataFirst: [2], dataLast: [1] },
+  'Ref.getAndUpdate': { dataFirst: [2], dataLast: [1] },
+  'SynchronizedRef.modify': { dataFirst: [2], dataLast: [1] },
+  'SynchronizedRef.modifySome': { dataFirst: [2], dataLast: [1] },
+  'SynchronizedRef.update': { dataFirst: [2], dataLast: [1] },
+  'SynchronizedRef.updateSome': { dataFirst: [2], dataLast: [1] },
+  'SynchronizedRef.updateAndGet': { dataFirst: [2], dataLast: [1] },
+  'SynchronizedRef.getAndUpdate': { dataFirst: [2], dataLast: [1] },
+  'Semaphore.withPermits': { dataFirst: [3], dataLast: [2] },
+  'Semaphore.withPermit': { dataFirst: [2], dataLast: [1] },
+  'Effect.ensuring': { dataFirst: [2], dataLast: [1] },
+  'Effect.onExit': { dataFirst: [2], dataLast: [1] },
+  'Effect.onError': { dataFirst: [2], dataLast: [1] },
+  'Effect.onInterrupt': { dataFirst: [2], dataLast: [1] },
+  'Effect.uninterruptible': { dataFirst: [1], dataLast: [] },
+  'Effect.uninterruptibleMask': { dataFirst: [1], dataLast: [] },
+  'Effect.acquireRelease': { dataFirst: [2, 3], dataLast: [] },
+  'Effect.acquireUseRelease': { dataFirst: [3], dataLast: [] },
+  'Effect.catch': { dataFirst: [2], dataLast: [1] },
+  'Effect.catchTag': { dataFirst: [3, 4], dataLast: [2, 3] },
+  'Effect.catchTags': { dataFirst: [2, 3], dataLast: [1, 2] },
+  'Effect.catchIf': { dataFirst: [3, 4], dataLast: [2, 3] },
+  'Effect.catchFilter': { dataFirst: [3, 4], dataLast: [2, 3] },
+  'Effect.catchReason': { dataFirst: [4, 5], dataLast: [3, 4] },
+  'Effect.catchReasons': { dataFirst: [3, 4], dataLast: [2, 3] },
+  'Effect.orElseSucceed': { dataFirst: [2], dataLast: [1] },
 })
 
 interface Arity {
   readonly dataFirst: readonly number[]
-  readonly dataLast?: number
+  readonly dataLast: readonly number[]
 }
 
 type ImportSpecifierUnion = ImportDeclaration['specifiers'][number]
@@ -510,10 +522,9 @@ const callForm = (
   table: ImportTable,
 ): Option.Option<EffectCallForm> =>
   Option.flatMap(arityOf(callee), (arity) =>
-    Match.value(args.length).pipe(
-      Match.when((count) => arity.dataFirst.includes(count), () => Option.some(DATA_FIRST)),
-      Match.when((count) => arity.dataLast === count, () => dataLastForm(call, context, table)),
-      Match.orElse(() => Option.none()),
+    Option.orElse(
+      Option.flatMap(onlyWhen(arity.dataLast.includes(args.length), call), () => dataLastForm(call, context, table)),
+      () => onlyWhen(arity.dataFirst.includes(args.length), DATA_FIRST),
     ))
 
 const arityOf = (callee: Callee): Option.Option<Arity> =>

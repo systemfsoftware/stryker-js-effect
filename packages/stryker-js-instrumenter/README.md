@@ -20,6 +20,8 @@ File formats resolve through a format registry: `coreFormatRegistry` carries the
 
 `options.mutantSetPolicy` states which mutant set the run wants and is required: `'default'` is the product default, and `'full'` turns off the mutant-set pruning the instrumenter would otherwise apply, so the run keeps every mutation the selected mutators can plant.
 
+Every stock mutator is default-tier. `mutator.optInMutations` names opt-in entries from a plugin's mutator catalog; naming a stock mutator there, or a mutator no loaded catalog declares, fails the run before instrumentation as a config failure naming the entry.
+
 ## Effect concurrency mutators
 
 Three default mutators plant Effect concurrency faults:
@@ -38,7 +40,13 @@ The replacements these mutators plant use Effect 4 APIs. `@systemfsoftware/stryk
 }
 ```
 
-Every stock mutator is default-tier. `mutator.optInMutations` names opt-in entries from a plugin's mutator catalog; naming a stock mutator there, or a mutator no loaded catalog declares, fails the run before instrumentation as a config failure naming the entry.
+## Effect error-channel mutators
+
+One default mutator plants Effect error-handling faults:
+
+- **RecoveryRemoval** drops one recovery: a `catch`, `catchTag`, `catchIf`, `catchFilter`, `catchReason`, or `orElseSucceed` call is removed, and a `catchTags` or `catchReasons` record loses one handler per mutant, so the typed failure the recovery handled propagates.
+
+A test that asserts the recovered value kills its mutants; a test that only checks the happy path does not.
 
 ## License
 

@@ -72,6 +72,7 @@ import {
 } from './Ast.handle.js'
 import { atomicUpdateSplitMutator } from './AtomicUpdateSplit.js'
 import { finalizerEscapeMutator } from './FinalizerEscape.js'
+import { recoveryRemovalMutator } from './RecoveryRemoval.js'
 import { synchronizationRemovalMutator } from './SynchronizationRemoval.js'
 
 export type { Node }
@@ -1418,6 +1419,7 @@ export const defaultMutators: Readonly<Record<StockCatalog.StockDefaultName, Mut
   AtomicUpdateSplit: atomicUpdateSplitMutator,
   SynchronizationRemoval: synchronizationRemovalMutator,
   FinalizerEscape: finalizerEscapeMutator,
+  RecoveryRemoval: recoveryRemovalMutator,
 })
 
 export type MutatorEntry = readonly [name: string, mutate: Mutator]

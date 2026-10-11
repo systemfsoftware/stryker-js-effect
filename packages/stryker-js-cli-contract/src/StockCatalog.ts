@@ -98,6 +98,32 @@ export const localEnsuringRefusal = (effect: Effect.Effect<number>, closed: Ref.
   ensuring(effect, Ref.set(closed, true))
 `
 
+const RECOVERY_CATCH_TAG_PIPED = `import { Effect } from 'effect'
+
+export const withFallback = (program: Effect.Effect<number, { readonly _tag: 'NotFound' }>) =>
+  program.pipe(Effect.catchTag('NotFound', () => Effect.succeed(0)))
+`
+
+const RECOVERY_CATCH_TAG_DATA_FIRST = `import { Effect } from 'effect'
+
+export const withFallback = (program: Effect.Effect<number, { readonly _tag: 'NotFound' }>) =>
+  Effect.catchTag(program, 'NotFound', () => Effect.succeed(0))
+`
+
+const RECOVERY_CATCH_TAGS = `import { Effect } from 'effect'
+
+type Missing = { readonly _tag: 'NotFound' } | { readonly _tag: 'Gone' }
+
+export const withFallbacks = (program: Effect.Effect<number, Missing>) =>
+  Effect.catchTags(program, { NotFound: () => Effect.succeed(0), Gone: () => Effect.succeed(1) })
+`
+
+const RECOVERY_LOCAL_HELPER =
+  `const catchTag = (program: number, _tag: string, recover: () => number) => program || recover()
+
+export const withFallback = (program: number) => catchTag(program, 'NotFound', () => 0)
+`
+
 const entries = [
   {
     id: 'arithmetic-operator',
@@ -318,6 +344,25 @@ const entries = [
       { before: FINALIZER_ACQUIRE_RELEASE, after: [FINALIZER_ACQUIRE_RELEASE_REPLACEMENT] },
       { before: FINALIZER_ACQUIRE_USE_RELEASE, after: [FINALIZER_ACQUIRE_USE_RELEASE_REPLACEMENT] },
       { before: FINALIZER_LOCAL_HELPER, after: [] },
+    ],
+  },
+  {
+    id: 'recovery-removal',
+    name: 'RecoveryRemoval',
+    tier: 'default',
+    definition:
+      'One Effect recovery is dropped, so the typed failure it handled propagates: a data-first `catch`, `catchTag`, `catchIf`, `catchFilter`, `catchReason`, or `orElseSucceed` call becomes the effect it recovered, and its data-last form in a pipe becomes `(self) => self`. A `catchTags` or `catchReasons` record loses one handler per mutant. A handler built by a call is refused.',
+    examples: [
+      { before: RECOVERY_CATCH_TAG_PIPED, after: ['self => self'] },
+      { before: RECOVERY_CATCH_TAG_DATA_FIRST, after: ['program'] },
+      {
+        before: RECOVERY_CATCH_TAGS,
+        after: [
+          'Effect.catchTags(program, { Gone: () => Effect.succeed(1) })',
+          'Effect.catchTags(program, { NotFound: () => Effect.succeed(0) })',
+        ],
+      },
+      { before: RECOVERY_LOCAL_HELPER, after: [] },
     ],
   },
 ] as const satisfies ReadonlyArray<StockCatalogEntry>

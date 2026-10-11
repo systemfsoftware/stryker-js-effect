@@ -3,7 +3,7 @@ import type { PlacementSliceEncoded } from '../placement-slice.schema.js'
 export const annotatedSampleSlice: PlacementSliceEncoded = {
   id: 'annotated-sample',
   fixtureDir: 'test/e2e-core/tests/__fixtures__/annotated',
-  mutateFiles: ['src/arithmetic.ts', 'src/effect-concurrency.ts'],
+  mutateFiles: ['src/arithmetic.ts', 'src/effect-concurrency.ts', 'src/effect-error-channel.ts'],
   packageGlobs: ['.'],
   excludedMutations: ['UpdateOperator'],
   optInMutations: ['acme/FlipSide'],
