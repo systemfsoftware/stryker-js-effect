@@ -28,7 +28,7 @@ Three default mutators plant Effect concurrency faults:
 - **SynchronizationRemoval** drops the guarding effect of `Semaphore.withPermits`/`withPermit` and `Effect.uninterruptible`, letting code that assumed exclusivity or uninterruptibility run without it.
 - **FinalizerEscape** weakens `Effect.ensuring`, `Effect.onExit`, `Effect.onError`, and `Effect.onInterrupt` so their cleanup no longer runs on interruption.
 
-The replacements these mutators plant use Effect 4 APIs, so a repository on Effect 3.x excludes them:
+The replacements these mutators plant use Effect 4 APIs. `@systemfsoftware/stryker-js` declares `effect` `^4.0.0` as a peer dependency, so Effect 3 is outside the supported range; a repository on Effect 3 must list the three in `mutator.excludedMutations`:
 
 ```json
 {
