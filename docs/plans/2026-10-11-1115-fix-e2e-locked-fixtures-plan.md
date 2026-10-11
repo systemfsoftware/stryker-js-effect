@@ -93,15 +93,15 @@ The packed `@systemfsoftware/stryker-js` depends on `@effect/platform-node: ^4.0
    - The 09:34Z run passed because 4.0.3 was 23 h 30 m old, inside the one-day gate.
 2. **Closure tarballs.** #285 stripped `integrity` and `version` from `file:` entries when committing (`committableLockOf`, `test/e2e-core/src/npm-wire.schema.ts:167-168` on `origin/fix/hermetic-e2e-bake`). At bake time it restored `version` and the dependency fields from the packed manifests (`overlayOf`, `:223-230`; commit 486536723 "bake installs the lock check validated, closure versions restored"). It packed to `packs/%s.tgz`. Scratch probes with npm 11.19.0, two packed packages `a` → `b`:
 
-   | Committed lock | Change since the lock was written | `npm ci` |
-   |---|---|---|
-   | as npm wrote it (with integrity) | source change, empty cache | `EINTEGRITY`, exit 1 |
-   | as npm wrote it | source change, warm cache | exit 0, but installs the stale cached bytes (`index.js` v1, version 1.0.0) |
-   | integrity stripped, versions kept | version bump plus a new registry dependency | exit 0; the new dependency is silently absent |
-   | integrity and version stripped, no overlay | version bump | `ENOTCACHED`: it fetches closure names from the registry |
-   | stripped, overlay applied | version bump | exit 0 |
-   | stripped, overlay applied | member adds a registry dependency | `EUSAGE … Missing: left-pad@1.3.0 from lock file` |
-   | none | lock missing | `EUSAGE` |
+   | Committed lock                             | Change since the lock was written           | `npm ci`                                                                   |
+   | ------------------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------- |
+   | as npm wrote it (with integrity)           | source change, empty cache                  | `EINTEGRITY`, exit 1                                                       |
+   | as npm wrote it                            | source change, warm cache                   | exit 0, but installs the stale cached bytes (`index.js` v1, version 1.0.0) |
+   | integrity stripped, versions kept          | version bump plus a new registry dependency | exit 0; the new dependency is silently absent                              |
+   | integrity and version stripped, no overlay | version bump                                | `ENOTCACHED`: it fetches closure names from the registry                   |
+   | stripped, overlay applied                  | version bump                                | exit 0                                                                     |
+   | stripped, overlay applied                  | member adds a registry dependency           | `EUSAGE … Missing: left-pad@1.3.0 from lock file`                          |
+   | none                                       | lock missing                                | `EUSAGE`                                                                   |
 
    Committed full locks fit the budget once R4 and R5 hold. They pin the whole tree, closure members' third-party dependencies included. They leave open only what a regeneration resolves for an edge the committed lock does not already satisfy. #285 ran this design (one `npm ci` per fixture plus the overlay, commits 43cc5a498 and 486536723) with all five e2e legs green in CI: run 38089587997 at 542e353ff, and again in run 38124123027 at 630413948.
    - **Rejected: third-party-only locks with the tarballs installed by path.** This needs a second `npm install <tarballs>` after `npm ci`. That install resolves again, and that resolution is today's stall; it also breaks (b). It pins the third-party tree only until the tarball install and leaves every edge the closure adds open.
@@ -128,14 +128,14 @@ The packed `@systemfsoftware/stryker-js` depends on `@effect/platform-node: ^4.0
 
 ### Appendix B. Hand-written line budget
 
-| Change | Added (approx.) |
-|---|---|
-| `bake-fixtures.sh` (26 lines become about 12) | 8 |
-| Pure lock overlay and strip, with a minimal lock-entry schema (`test/e2e-core`) | 45 |
-| `ClosureInstall.dependencies` (name to `file:` spec) next to `specs` | 10 |
-| `fixture-cache.service.ts`: version-free packing, closure devDependencies in the staged root manifest, overlay on the staged lock, a staging entry point for the script | 60 |
-| `test/e2e/scripts/lock-fixtures.ts` and its `package.json` script | 75 |
-| README and solutions docs | 10 |
-| **Total** | **about 210** (about 70 removed) |
+| Change                                                                                                                                                                  | Added (approx.)                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `bake-fixtures.sh` (26 lines become about 12)                                                                                                                           | 8                                |
+| Pure lock overlay and strip, with a minimal lock-entry schema (`test/e2e-core`)                                                                                         | 45                               |
+| `ClosureInstall.dependencies` (name to `file:` spec) next to `specs`                                                                                                    | 10                               |
+| `fixture-cache.service.ts`: version-free packing, closure devDependencies in the staged root manifest, overlay on the staged lock, a staging entry point for the script | 60                               |
+| `test/e2e/scripts/lock-fixtures.ts` and its `package.json` script                                                                                                       | 75                               |
+| README and solutions docs                                                                                                                                               | 10                               |
+| **Total**                                                                                                                                                               | **about 210** (about 70 removed) |
 
 The seven regenerated `package-lock.json` files are generated and not counted.
