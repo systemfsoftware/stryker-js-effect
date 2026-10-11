@@ -66,7 +66,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "runId": {
@@ -388,7 +388,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "role": {
@@ -1204,7 +1204,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "runId": {
@@ -1605,7 +1605,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "code": {
@@ -1750,7 +1750,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "code": {
@@ -1787,7 +1787,7 @@
         "schemaVersion": {
           "type": "string",
           "enum": [
-            "8.0"
+            "9.0"
           ]
         },
         "rule": {
