@@ -58,6 +58,7 @@ const TERMINATOR_EDIT_ID = '00000000000000b5'
 const SYNTAX_EDIT_ID = '00000000000000b6'
 const UNHELD_EDIT_ID = '00000000000000b7'
 const CONSTRUCTOR_EDIT_ID = '00000000000000b8'
+const EXCLUDED_EDIT_ID = '0000000000000b11'
 const IMPLICIT_RETURN_EDIT_ID = '00000000000000b9'
 const INDEXED_ACCESS_EDIT_ID = '0000000000000b10'
 
@@ -76,6 +77,7 @@ const SINGLE_PROJECT: Fixture = {
     'consumer.ts',
     'contextual.ts',
     'defaults.ts',
+    'excluded.ts',
     'global.ts',
     'imported-type.ts',
     'inferred.ts',
@@ -150,6 +152,8 @@ const GUARD_ROWS: Readonly<Record<string, GuardRow>> = {
     fallback: 'mutated.syntax-error',
   },
 }
+
+const EXCLUDED_EDIT: Edit = { id: EXCLUDED_EDIT_ID, file: 'excluded.ts', target: 'x * 3', replacement: 'x / 3' }
 
 const UNHELD_EDIT: Edit = { id: UNHELD_EDIT_ID, file: 'annotated.ts', target: '1', replacement: '1 ? 2 : 3' }
 
@@ -441,6 +445,27 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
               { [IMPLICIT_RETURN_EDIT_ID]: ['shared/total.ts'], [INDEXED_ACCESS_EDIT_ID]: ['shared/total.ts'] },
             ],
             counts: [{ count: 0, 'fallback.original.shared-file.count': 2 }, { count: 0 }],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A body edit in a file no project includes is counted as unread and checked by no project',
+      Gherkin.Do.pipe(
+        When('a body edit in a file the tsconfig excludes is checked once per importerCheck value')(
+          'seen',
+          () => bothModes([EXCLUDED_EDIT]),
+        ),
+        Then('both runs pass it with nothing blamed, and only the rule run counts it as unread')((s, expect) =>
+          expect({
+            statuses: [s.seen.rule.statuses, s.seen.always.statuses],
+            blamed: [s.seen.rule.blamed, s.seen.always.blamed],
+            counts: [s.seen.rule.shortcutCounts, s.seen.always.shortcutCounts],
+          }).toEqual({
+            statuses: [{ [EXCLUDED_EDIT_ID]: 'passed' }, { [EXCLUDED_EDIT_ID]: 'passed' }],
+            blamed: [{ [EXCLUDED_EDIT_ID]: [] }, { [EXCLUDED_EDIT_ID]: [] }],
+            counts: [{ count: 0, 'fallback.unread.count': 1 }, { count: 0 }],
           })
         ),
       ),
