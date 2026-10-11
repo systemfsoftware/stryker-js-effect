@@ -47,7 +47,7 @@ Options go in a `typescriptChecker` block of the Stryker config.
 When a mutant compiles in its own file, the checker normally re-checks every file that imports that file, and every file of the program when the mutated file is a script or declares `declare global`. Under `'location-rule'` it skips that re-check when the edit cannot change any type another file sees:
 
 - the edit sits inside the body of one function, method, constructor, accessor or arrow function;
-- that function has an explicit return type annotation, or is a constructor or a `set` accessor;
+- that function has an explicit return type annotation, or is a `set` accessor (a constructor never qualifies: an unannotated class property takes its type from the constructor's assignments, so a constructor body edit can change what importers see);
 - the file is a TypeScript module with no `declare global`;
 - the edit holds no `import()`, `require()` or `import("…")` type.
 

@@ -76,7 +76,7 @@ const FUNCTION_LIKE_KINDS: ReadonlyArray<SyntaxKind> = [
   SET_ACCESSOR,
 ]
 
-const SIGNATURE_FREE_KINDS: ReadonlyArray<SyntaxKind> = [CONSTRUCTOR, SET_ACCESSOR]
+const SIGNATURE_FREE_KINDS: ReadonlyArray<SyntaxKind> = [SET_ACCESSOR]
 
 const isFunctionLikeWithBody = (node: Node): node is FunctionLikeWithBodyBase =>
   Arr.contains(FUNCTION_LIKE_KINDS, node.kind)

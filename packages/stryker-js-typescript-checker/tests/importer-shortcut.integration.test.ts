@@ -57,6 +57,7 @@ const SCRIPT_EDIT_ID = '00000000000000b4'
 const TERMINATOR_EDIT_ID = '00000000000000b5'
 const SYNTAX_EDIT_ID = '00000000000000b6'
 const UNHELD_EDIT_ID = '00000000000000b7'
+const CONSTRUCTOR_EDIT_ID = '00000000000000b8'
 
 interface Fixture {
   readonly directory: string
@@ -69,6 +70,7 @@ const SINGLE_PROJECT: Fixture = {
     'annotated.ts',
     'box.ts',
     'closer.ts',
+    'constructed.ts',
     'consumer.ts',
     'contextual.ts',
     'defaults.ts',
@@ -137,6 +139,7 @@ const RULE_EDITS: ReadonlyArray<Edit> = [
   AE7_EDIT,
   { id: AE8, file: 'contextual.ts', target: 'x + 1', replacement: 'String(x)' },
   { id: AE9, file: 'box.ts', target: 'this.items.length', replacement: '""' },
+  { id: CONSTRUCTOR_EDIT_ID, file: 'constructed.ts', target: '1', replacement: "'one'" },
 ]
 
 const positionOf = (text: string, offset: number): Checker.CheckerMutantWire['location']['start'] => {
@@ -302,7 +305,7 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
   .live('real tsgo checks fixture files on disk with the importer shortcut on and off')
   .body(({ scenario }) => {
     scenario(
-      'Every Soundness Rule case gets the same verdicts with the shortcut on and off',
+      'Every Soundness Rule case gets the same verdicts with the shortcut on and off, and a constructor body never takes it',
       Gherkin.Do.pipe(
         When('one mutant per rule case is checked once per importerCheck value')('seen', () => bothModes(RULE_EDITS)),
         Then(
@@ -324,6 +327,7 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
               [AE7]: 'passed',
               [AE8]: 'compileError',
               [AE9]: 'compileError',
+              [CONSTRUCTOR_EDIT_ID]: 'compileError',
             },
             always: s.seen.rule.statuses,
             blamed: {
@@ -334,11 +338,12 @@ Feature('Skipping importer re-checks for edits inside a function body', { timeou
               [AE7]: [],
               [AE8]: ['contextual.ts'],
               [AE9]: ['consumer.ts'],
+              [CONSTRUCTOR_EDIT_ID]: ['consumer.ts'],
             },
             blamedAlways: s.seen.rule.blamed,
             ruleCounts: {
               'count': 1,
-              'fallback.original.body-dependent-signature.count': 3,
+              'fallback.original.body-dependent-signature.count': 4,
               'fallback.original.outside-function-body.count': 1,
               'fallback.original.module-reference.count': 1,
               'fallback.mutated.syntax-error.count': 1,
