@@ -1,6 +1,8 @@
 import * as S from 'effect/Schema'
 
-export const ManifestDocument = S.fromJsonString(S.JsonObject)
+import { PlainJsonObject } from './plain-json.schema.js'
+
+export const ManifestDocument = S.fromJsonString(PlainJsonObject)
 
 export const DependencyRecord = S.Record(S.String, S.String)
 
