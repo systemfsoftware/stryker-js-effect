@@ -16,7 +16,7 @@ import {
   type BenchReportRun,
   type LegTime,
 } from './bench-report.schema.js'
-import { type BenchRunInvalid } from './bench-run.schema.js'
+import { type BenchRunInvalid, type BenchSide, RunIdentity } from './bench-run.schema.js'
 import {
   type BenchPhaseRow,
   type BenchProjectSummary,
@@ -285,6 +285,33 @@ const regressionBlock = (regression: PhaseRegression): string =>
     `**Next action:** ${regression.nextAction}`,
   ].join('\n\n')
 
+const identityKeyOf = (identity: RunIdentity): Option.Option<string> =>
+  Match.valueTags(identity, {
+    read: (read) => Option.some(`${read.runInputsDigest}/${read.mutantIdsDigest}`),
+    unread: () => Option.none<string>(),
+  })
+
+const identityKeysOf = (runs: ReadonlyArray<BenchReportRun>, side: BenchSide): ReadonlyArray<string> =>
+  Arr.dedupe(
+    Arr.getSomes(Arr.map(Arr.filter(runs, (run) => run.key.side === side), (run) => identityKeyOf(run.identity))),
+  )
+
+const sidesMatchedText = (runs: ReadonlyArray<BenchReportRun>): string => {
+  const a = identityKeysOf(runs, 'A')
+  return Boolean.match(Boolean.and(a.length === 1, a.join() === identityKeysOf(runs, 'B').join()), {
+    onTrue: () => 'matched',
+    onFalse: () => 'differed',
+  })
+}
+
+const identityLine = (runs: ReadonlyArray<BenchReportRun>): string => {
+  const unread = Arr.filter(runs, (run) => S.is(RunIdentity.cases.unread)(run.identity)).length
+  return Boolean.match(unread === 0, {
+    onTrue: () => `**Run identity:** the sides' run inputs digests and mutant id sets ${sidesMatchedText(runs)}`,
+    onFalse: () => `**Run identity:** not compared; ${unread} of ${runs.length} runs carry no readable identity`,
+  })
+}
+
 const markdownOf = (report: BenchReport): string =>
   Match.valueTags(report.outcome, {
     aborted: (aborted) =>
@@ -295,6 +322,7 @@ const markdownOf = (report: BenchReport): string =>
         ...headOf(report),
         ...Option.toArray(Option.map(Option.fromNullishOr(summarized.regression), regressionBlock)),
         ...Arr.map(summarized.projects, projectBlock),
+        identityLine(report.runs),
         SIGNAL_NOTE,
         detailsBlock(report),
       ].join('\n\n'),

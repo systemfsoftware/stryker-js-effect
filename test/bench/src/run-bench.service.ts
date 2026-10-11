@@ -1,25 +1,29 @@
 import {
+  agreeRunRoots,
+  AgreeRunRootsCommand,
   BENCH_ORDER,
   type BenchCorpusName,
   type BenchReportOutcome,
-  type BenchReportRun,
   type BenchRun,
   BenchRunInvalid,
   BenchRunKey,
-  BenchRunMeasured,
   planRunPath,
   PlanRunPathCommand,
   readBenchRun,
   ReadBenchRunCommand,
   type RunPathMoveIn,
+  settleRunPath,
+  SettleRunPathCommand,
   summarizeBench,
   SummarizeBenchCommand,
 } from '@systemfsoftware/stryker-e2e-core'
 import * as Arr from 'effect/Array'
+import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Crypto from 'effect/Crypto'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
@@ -32,6 +36,7 @@ import * as Stream from 'effect/Stream'
 import { BenchOrchestrationFailed } from './bench-failure.schema.js'
 import type { PreparedSide } from './prepared-side.js'
 import { type PristineTree, restoreTree, snapshotTree } from './pristine-tree.service.js'
+import { runIdentity } from './run-identity.service.js'
 import { workloadDigest } from './workload-digest.service.js'
 
 export interface RunBenchInput {
@@ -49,7 +54,6 @@ export interface RunBenchInput {
 
 export interface RunBenchResult {
   readonly outcome: BenchReportOutcome
-  readonly reportRuns: ReadonlyArray<BenchReportRun>
   readonly runs: ReadonlyArray<BenchRun>
 }
 
@@ -132,7 +136,7 @@ const planned = (
     const entries = yield* fs.readDirectory(input.runnerTemp).pipe(
       Effect.mapError((cause) =>
         orchestrationFailed(
-          'run-path-occupied',
+          'run-path-move-failed',
           `side ${prepared.side}: ${input.runnerTemp} could not be listed to check the run path is absent: ${cause.message}`,
         )
       ),
@@ -165,6 +169,9 @@ const planned = (
     })
   })
 
+const errorText = <A, E>(outcome: Exit.Exit<A, E>): string | null =>
+  Exit.match(outcome, { onFailure: (cause) => Cause.pretty(cause), onSuccess: () => null })
+
 const atRunPath = <A, R>(
   moveIn: RunPathMoveIn,
   use: Effect.Effect<A, BenchOrchestrationFailed, R>,
@@ -175,19 +182,27 @@ const atRunPath = <A, R>(
       yield* fs.rename(moveIn.tree, moveIn.runPath).pipe(
         Effect.mapError((cause) =>
           orchestrationFailed(
-            'run-path-occupied',
+            'run-path-move-failed',
             `side ${moveIn.side}: ${moveIn.tree} could not be moved to the run path ${moveIn.runPath}: ${cause.message}`,
           )
         ),
       )
       const exit = yield* Effect.exit(restore(use))
-      yield* fs.rename(moveIn.runPath, moveIn.tree).pipe(
-        Effect.mapError((cause) =>
-          orchestrationFailed(
-            'run-path-unrestored',
-            `side ${moveIn.side}: ${moveIn.runPath} could not be moved back to ${moveIn.tree}: ${cause.message}`,
-          )
+      const restored = yield* Effect.exit(fs.rename(moveIn.runPath, moveIn.tree))
+      yield* Result.match(
+        settleRunPath(
+          SettleRunPathCommand.make({
+            side: moveIn.side,
+            tree: moveIn.tree,
+            runPath: moveIn.runPath,
+            restoreError: errorText(restored),
+            runFailure: errorText(exit),
+          }),
         ),
+        {
+          onFailure: (unrestored) => Effect.fail(orchestrationFailed('run-path-unrestored', unrestored.message)),
+          onSuccess: () => Effect.void,
+        },
       )
       return yield* exit
     })
@@ -237,6 +252,7 @@ const runOne = (
       sideRoot: prepared.root,
       incrementalFile,
     })
+    const identity = yield* runIdentity(incrementalFile)
     const key = BenchRunKey.make({ corpus: input.corpus, entry: input.entry, side: prepared.side, position })
     return Result.merge(
       readBenchRun(
@@ -245,6 +261,7 @@ const runOne = (
           lines,
           exitCode: cliExit.exitCode,
           workloadDigest: digest,
+          identity,
           stderrTail: cliExit.stderrTail,
           wallMs,
         }),
@@ -272,13 +289,11 @@ const prepareTarget = (
     (pristine) => ({ prepared, pristine }),
   )
 
-const reportRunOf = (run: BenchRunMeasured): BenchReportRun => ({
-  key: run.key,
-  wallMs: run.wallMs,
-  exitCode: run.exitCode,
-  testsExecuted: run.testsExecuted,
-  workloadDigest: run.workloadDigest,
-})
+const agreedRoots = (runs: ReadonlyArray<BenchRun>): Effect.Effect<void, BenchOrchestrationFailed> =>
+  Result.match(agreeRunRoots(AgreeRunRootsCommand.make({ runs: [...runs] })), {
+    onFailure: (differ) => Effect.fail(orchestrationFailed('run-path-mismatch', differ.message)),
+    onSuccess: () => Effect.void,
+  })
 
 export const runBench = (
   input: RunBenchInput,
@@ -294,6 +309,7 @@ export const runBench = (
           Effect.tap(input.onRunFinished),
         ),
     )
+    yield* agreedRoots(runs)
 
     const summary = summarizeBench(
       SummarizeBenchCommand.make({ sha: input.sha, parentSha: input.parentSha, ref: input.ref, runs: [...runs] }),
@@ -309,5 +325,5 @@ export const runBench = (
         regression: decision.regression,
       }),
     })
-    return { outcome, reportRuns: Arr.map(Arr.filter(runs, S.is(BenchRunMeasured)), reportRunOf), runs }
+    return { outcome, runs }
   })

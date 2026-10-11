@@ -2,7 +2,7 @@ import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Function from 'effect/Function'
 import * as S from 'effect/Schema'
 
-import { BenchRunInvalid, BenchRunKey, BenchSide, WorkloadDigest } from './bench-run.schema.js'
+import { BenchRunInvalid, BenchRunKey, BenchSide, RunIdentity, WorkloadDigest } from './bench-run.schema.js'
 import { BenchProjectSummary, PhaseRegression } from './bench-summary.schema.js'
 import { WithheldPins } from './lockfile-pins.schema.js'
 
@@ -15,6 +15,7 @@ export const BenchReportRun = S.Struct({
   exitCode: S.Int,
   testsExecuted: Report.NonNegativeInt,
   workloadDigest: WorkloadDigest,
+  identity: RunIdentity,
 })
 export type BenchReportRun = typeof BenchReportRun.Type
 
@@ -47,14 +48,16 @@ export const BenchAbortCode = S.Literals([
   'report-unwritable',
   'leg-incomplete',
   'run-path-occupied',
+  'run-path-move-failed',
   'run-path-unrestored',
+  'run-path-mismatch',
   'defect',
 ])
 export type BenchAbortCode = typeof BenchAbortCode.Type
 
 const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
   'environment-incomplete':
-    'set JOB_STARTED_AT, the BENCH_* variables, RUNNER_TEMP and GITHUB_STEP_SUMMARY the bench workflow exports, then re-run the job',
+    'set the missing variables in the Bench step env of bench.yml (JOB_STARTED_AT, the BENCH_* variables, RUNNER_TEMP, GITHUB_STEP_SUMMARY), then re-run the job',
   'corpus-unreadable':
     'fix test/bench/corpus.json so it decodes as BenchCorpusJson; the next main commit benches with the fix',
   'setup-timings-malformed': 'fix the step in bench.yml that appends tab-separated "name<TAB>ms" lines, then re-run',
@@ -67,8 +70,12 @@ const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
     "the job stopped before its final report (GitHub's 60-minute job timeout or a cancel): find the named step in the job log and the finished runs' streams in the bench-runs artifact, then fix what hung",
   'run-path-occupied':
     'something already sits at the run path under RUNNER_TEMP before a side moved in (a stray tree or a run that never moved back): read the reason for the path and the side, find what left it in the job log, then re-run the job',
+  'run-path-move-failed':
+    "RUNNER_TEMP could not be listed, or a side's tree could not be renamed to the run path: read the OS error in the reason (permissions, no space, a rename across filesystems), fix the runner, then re-run the job",
   'run-path-unrestored':
-    "a side's tree could not be moved back from the run path to its home after a run: read the reason for both paths and the rename error, then re-run the job",
+    "a side's tree could not be moved back from the run path to its home after a run: read the reason for both paths, the rename error and the run's own error, then re-run the job",
+  'run-path-mismatch':
+    'the runs of this leg did not all run from one projectRoot, so the sides are not comparable: read the two roots in the reason, fix the run-path move in test/bench/src/run-bench.service.ts, then re-run the job',
   'defect': 'a bench bug: open an issue with this job log, the stack above, and the base and head SHAs',
 }
 
@@ -124,7 +131,13 @@ export class ProvisionalSummarizeNext extends S.TaggedClass<ProvisionalSummarize
   readonly [ProvisionalReportTypeId] = ProvisionalReportTypeId
 }
 
-export const ProvisionalReport = S.Union([ProvisionalRunNext, ProvisionalSummarizeNext])
+export class ProvisionalAborted extends S.TaggedClass<ProvisionalAborted>()('ProvisionalAborted', {
+  report: BenchReport,
+}) {
+  readonly [ProvisionalReportTypeId] = ProvisionalReportTypeId
+}
+
+export const ProvisionalReport = S.Union([ProvisionalRunNext, ProvisionalSummarizeNext, ProvisionalAborted])
 export type ProvisionalReport = typeof ProvisionalReport.Type
 
 const BenchRenderedTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchRendered')

@@ -28,6 +28,12 @@ export const WorkloadDigest = S.TaggedUnion({
 })
 export type WorkloadDigest = typeof WorkloadDigest.Type
 
+export const RunIdentity = S.TaggedUnion({
+  read: { projectRoot: S.NonEmptyString, runInputsDigest: S.NonEmptyString, mutantIdsDigest: S.NonEmptyString },
+  unread: { reason: S.NonEmptyString },
+})
+export type RunIdentity = typeof RunIdentity.Type
+
 export const BenchRunFailureCode = S.Literals(['stream-undecodable', 'stream-invalid'])
 export type BenchRunFailureCode = typeof BenchRunFailureCode.Type
 
@@ -37,6 +43,7 @@ export class BenchRunMeasured extends S.TaggedClass<BenchRunMeasured>()('measure
   mutants: Report.NonNegativeInt,
   testsExecuted: Report.NonNegativeInt,
   workloadDigest: WorkloadDigest,
+  identity: RunIdentity,
   wallMs: Report.NonNegativeFinite,
   exitCode: S.Int,
 }) {

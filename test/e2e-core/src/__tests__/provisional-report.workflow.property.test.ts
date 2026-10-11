@@ -5,9 +5,11 @@ import * as S from 'effect/Schema'
 
 import { BENCH_ORDER } from '../bench-order.js'
 import {
+  BenchAbortCode,
   type BenchReport,
   BenchReportOutcome,
   LegMeasured,
+  ProvisionalAborted,
   ProvisionalRunNext,
   ProvisionalSummarizeNext,
 } from '../bench-report.schema.js'
@@ -31,6 +33,7 @@ const measuredAt = (position: number, wallMs: number): BenchRunMeasured =>
     mutants: 10,
     testsExecuted: 2,
     workloadDigest: { _tag: 'verified', digest: 'digest-entry' },
+    identity: { _tag: 'read', projectRoot: '/run', runInputsDigest: 'inputs', mutantIdsDigest: 'ids' },
     wallMs,
     exitCode: 0,
   })
@@ -53,7 +56,10 @@ const finishedOf = (
     invalidMask[position] === true ? invalidAt(position) : measuredAt(position, Math.abs(sample))
   )
 
-const commandOf = (finished: ReadonlyArray<BenchRun>): ProvisionalReportCommand =>
+const commandOf = (
+  finished: ReadonlyArray<BenchRun>,
+  abort: ProvisionalReportCommand['abort'] = null,
+): ProvisionalReportCommand =>
   ProvisionalReportCommand.make({
     baseSha: 'base',
     headSha: 'head',
@@ -63,6 +69,7 @@ const commandOf = (finished: ReadonlyArray<BenchRun>): ProvisionalReportCommand 
     finished: [...finished],
     setupSteps: [],
     withheldPins: [],
+    abort,
   })
 
 const labelsOf = (keys: ReadonlyArray<BenchRunKey>): string => keys.map((key) => key.label).join(',')
@@ -109,6 +116,30 @@ describe('provisionalReport', () => {
         legIncompleteReasonOf(decision.report) ===
           '8 of 8 runs finished; next step: summarizing the runs and writing the final report' &&
         labelsOf(decision.report.runs.map((run) => run.key)) === labelsOf(measured.map((run) => run.key))
+    },
+  )
+
+  it.prop(
+    '∀pra_AnyFinishedRunsAndAbortCode_≡AbortedWithItsCodeKeepingTheProvisionalRuns',
+    {
+      of: [
+        Arbitrary.array(Arbitrary.schema(S.Int), { maxLength: BENCH_ORDER.length }),
+        Arbitrary.array(Arbitrary.schema(S.Boolean), { maxLength: BENCH_ORDER.length }),
+        BenchAbortCode,
+        S.String,
+      ],
+      subject: provisionalReport,
+    },
+    (subject, [samples, invalidMask, code, reason]) => {
+      const finished = finishedOf(samples, invalidMask)
+      const provisional = Result.getOrThrow(subject(commandOf(finished)))
+      const aborted = Result.getOrThrow(subject(commandOf(finished, { code, reason })))
+      return S.is(ProvisionalAborted)(aborted) &&
+        S.is(BenchReportOutcome.cases.aborted)(aborted.report.outcome) &&
+        aborted.report.outcome.code === code &&
+        aborted.report.outcome.reason === reason &&
+        labelsOf(aborted.report.runs.map((run) => run.key)) ===
+          labelsOf(provisional.report.runs.map((run) => run.key))
     },
   )
 })

@@ -9,8 +9,7 @@ import {
   type BenchCorpusName,
   BenchReport,
   BenchReportJson,
-  type BenchReportOutcome,
-  type BenchReportRun,
+  BenchReportOutcome,
   type BenchRun,
   type BenchSide,
   LegNotMeasured,
@@ -35,6 +34,7 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
@@ -133,31 +133,80 @@ const benchEnv = Effect.all({
   stepSummary: Config.String('GITHUB_STEP_SUMMARY'),
 })
 
-interface ReportBody {
-  readonly outcome: BenchReportOutcome
-  readonly runs: ReadonlyArray<BenchReportRun>
+const REQUIRED_VARIABLES = [
+  'BENCH_SIDE_A',
+  'BENCH_SIDE_B',
+  'BENCH_TURBO_CACHE_DIR',
+  'BENCH_BASE_SHA',
+  'BENCH_HEAD_SHA',
+  'BENCH_REF',
+  'BENCH_ENTRY',
+  'JOB_STARTED_AT',
+  'BENCH_SETUP_TIMINGS',
+  'RUNNER_TEMP',
+  'GITHUB_STEP_SUMMARY',
+] as const
+
+const missingVariables = Effect.filter(
+  REQUIRED_VARIABLES,
+  (name) => Effect.map(Effect.result(Config.String(name)), Result.isFailure),
+)
+
+const environmentIncompleteOf = (missing: ReadonlyArray<string>, reason: string): BenchReportOutcome =>
+  BenchReportOutcome.cases.aborted.make({
+    code: 'environment-incomplete',
+    reason,
+    nextAction: Arr.match(missing, {
+      onEmpty: () =>
+        'fix the variable the reason names as invalid where bench.yml sets it (the Bench step env, or GITHUB_ENV for JOB_STARTED_AT), then re-run the job',
+      onNonEmpty: (names) =>
+        `the Bench step ran without ${
+          names.join(', ')
+        }: set them where bench.yml sets them (the Bench step env, or GITHUB_ENV for JOB_STARTED_AT; the runner sets RUNNER_TEMP and GITHUB_STEP_SUMMARY), then re-run the job`,
+    }),
+  })
+
+interface Progress {
+  readonly finished: ReadonlyArray<BenchRun>
   readonly setupSteps: ReadonlyArray<SetupStep>
   readonly withheldPins: ReadonlyArray<WithheldPins>
 }
 
-const abortedBody = (code: BenchAbortCode, reason: string): ReportBody => ({
-  outcome: abortedOutcomeOf(code, reason),
-  runs: [],
-  setupSteps: [],
-  withheldPins: [],
-})
+const NO_PROGRESS: Progress = { finished: [], setupSteps: [], withheldPins: [] }
 
-const reportOf = (env: Pick<BenchEnv, 'baseSha' | 'headSha' | 'ref'>, leg: LegTime, body: ReportBody) =>
+const reportAt = (
+  env: Pick<BenchEnv, 'baseSha' | 'headSha' | 'ref'>,
+  leg: LegTime,
+  progress: Progress,
+  abort: { readonly code: BenchAbortCode; readonly reason: string } | null,
+): BenchReport =>
+  Result.merge(
+    provisionalReport(
+      ProvisionalReportCommand.make({
+        baseSha: env.baseSha,
+        headSha: env.headSha,
+        ref: env.ref,
+        leg,
+        order: [...BENCH_ORDER],
+        finished: [...progress.finished],
+        setupSteps: [...progress.setupSteps],
+        withheldPins: [...progress.withheldPins],
+        abort,
+      }),
+    ),
+  ).report
+
+const withOutcome = (report: BenchReport, outcome: BenchReportOutcome): BenchReport =>
   BenchReport.make({
-    schemaVersion: '2.0',
-    baseSha: env.baseSha,
-    headSha: env.headSha,
-    ref: env.ref,
-    leg,
-    outcome: body.outcome,
-    runs: [...body.runs],
-    setupSteps: [...body.setupSteps],
-    withheldPins: [...body.withheldPins],
+    schemaVersion: report.schemaVersion,
+    baseSha: report.baseSha,
+    headSha: report.headSha,
+    ref: report.ref,
+    leg: report.leg,
+    outcome,
+    runs: report.runs,
+    setupSteps: report.setupSteps,
+    withheldPins: report.withheldPins,
   })
 
 const legOf = (env: BenchEnv): Effect.Effect<LegTime> =>
@@ -182,7 +231,7 @@ const targetOf = (corpus: BenchCorpus, entry: string): Option.Option<BenchTarget
 const corpusNameOf = (target: BenchTarget): BenchCorpusName =>
   Match.valueTags(target, { repo: (): BenchCorpusName => 'repo', enterprise: (): BenchCorpusName => 'enterprise' })
 
-const bench = (env: BenchEnv) =>
+const measure = (env: BenchEnv, progress: Ref.Ref<Progress>) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -224,27 +273,16 @@ const bench = (env: BenchEnv) =>
       sideA: prepareNamed('A', env.sideARoot, 'a'),
       sideB: prepareNamed('B', env.sideBRoot, 'b'),
     })
-    const allSetupSteps = [...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps, ...setupSteps]
-    const withheldPins = Arr.getSomes([prepared.sideA.withheldPins, prepared.sideB.withheldPins])
+    yield* Ref.set(progress, {
+      finished: [],
+      setupSteps: [...prepared.sideA.setupSteps, ...prepared.sideB.setupSteps, ...setupSteps],
+      withheldPins: Arr.getSomes([prepared.sideA.withheldPins, prepared.sideB.withheldPins]),
+    })
     const writeProvisional = (finished: ReadonlyArray<BenchRun>) =>
-      Effect.flatMap(legOf(env), (leg) =>
-        writeReportFile(
-          env,
-          Result.merge(
-            provisionalReport(
-              ProvisionalReportCommand.make({
-                baseSha: env.baseSha,
-                headSha: env.headSha,
-                ref: env.ref,
-                leg,
-                order: [...BENCH_ORDER],
-                finished: [...finished],
-                setupSteps: allSetupSteps,
-                withheldPins,
-              }),
-            ),
-          ).report,
-        ).pipe(Effect.ignore))
+      Effect.gen(function*() {
+        const now = yield* Ref.updateAndGet(progress, (before) => ({ ...before, finished }))
+        yield* writeReportFile(env, reportAt(env, yield* legOf(env), now, null))
+      }).pipe(Effect.ignore)
     yield* writeProvisional([])
 
     const result = yield* runBench({
@@ -260,19 +298,23 @@ const bench = (env: BenchEnv) =>
       onRunFinished: writeProvisional,
     })
     yield* Effect.forEach(result.runs, (run) => Console.log(runLogLine(run)))
-    return {
-      outcome: result.outcome,
-      runs: result.reportRuns,
-      setupSteps: allSetupSteps,
-      withheldPins,
-    } satisfies ReportBody
-  }).pipe(
-    Effect.catchTag(
-      'BenchOrchestrationFailed',
-      (failure): Effect.Effect<ReportBody> => Effect.succeed(abortedBody(failure.code, failure.reason)),
-    ),
-    Effect.catchDefect((defect) => Effect.succeed(abortedBody('defect', Cause.pretty(Cause.die(defect))))),
-  )
+    const final = reportAt(env, yield* legOf(env), yield* Ref.get(progress), null)
+    return withOutcome(final, result.outcome)
+  })
+
+const abortedAt = (env: BenchEnv, progress: Ref.Ref<Progress>, code: BenchAbortCode, reason: string) =>
+  Effect.gen(function*() {
+    return reportAt(env, yield* legOf(env), yield* Ref.get(progress), { code, reason })
+  })
+
+const bench = (env: BenchEnv) =>
+  Effect.gen(function*() {
+    const progress = yield* Ref.make(NO_PROGRESS)
+    return yield* measure(env, progress).pipe(
+      Effect.catchTag('BenchOrchestrationFailed', (failure) => abortedAt(env, progress, failure.code, failure.reason)),
+      Effect.catchDefect((defect) => abortedAt(env, progress, 'defect', Cause.pretty(Cause.die(defect)))),
+    )
+  })
 
 const reportPathOf = (env: BenchEnv) =>
   Effect.map(Path.Path, (path) => path.join(env.runnerTemp, BENCH_REPORT_DIR, BENCH_REPORT_FILE))
@@ -294,10 +336,12 @@ const writeReport = (env: BenchEnv, report: BenchReport) =>
   }).pipe(
     Effect.catch((failure) =>
       Effect.succeed(
-        reportOf(
-          env,
-          report.leg,
-          abortedBody('report-unwritable', `the bench report could not be written or read back: ${failure.message}`),
+        withOutcome(
+          report,
+          abortedOutcomeOf(
+            'report-unwritable',
+            `the bench report could not be written or read back: ${failure.message}`,
+          ),
         ),
       )
     ),
@@ -317,21 +361,27 @@ const publish = (report: BenchReport, stepSummary: Option.Option<string>) =>
     })
   })
 
+const environmentIncomplete = (reason: string) =>
+  Effect.map(missingVariables, (missing) =>
+    BenchReport.make({
+      schemaVersion: '2.0',
+      baseSha: UNKNOWN_SHA,
+      headSha: UNKNOWN_SHA,
+      ref: UNKNOWN_REF,
+      leg: LegNotMeasured.make({ targetMs: LegTargetMs.literal }),
+      outcome: environmentIncompleteOf(missing, reason),
+      runs: [],
+      setupSteps: [],
+      withheldPins: [],
+    }))
+
 const program = Effect.gen(function*() {
   const env = yield* Effect.result(benchEnv)
   yield* Result.match(env, {
     onFailure: (error) =>
-      publish(
-        reportOf(
-          { baseSha: UNKNOWN_SHA, headSha: UNKNOWN_SHA, ref: UNKNOWN_REF },
-          LegNotMeasured.make({ targetMs: LegTargetMs.literal }),
-          abortedBody('environment-incomplete', error.message),
-        ),
-        Option.none(),
-      ),
+      Effect.flatMap(environmentIncomplete(error.message), (report) => publish(report, Option.none())),
     onSuccess: (present) =>
       bench(present).pipe(
-        Effect.flatMap((body) => Effect.map(legOf(present), (leg) => reportOf(present, leg, body))),
         Effect.flatMap((report) => writeReport(present, report)),
         Effect.flatMap((report) => publish(report, Option.some(present.stepSummary))),
       ),

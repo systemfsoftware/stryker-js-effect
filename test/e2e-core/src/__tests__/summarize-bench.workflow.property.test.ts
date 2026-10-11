@@ -48,6 +48,7 @@ const runFrom = (
     workloadDigest: options.unverifiedReason !== undefined
       ? { _tag: 'unverified', reason: options.unverifiedReason }
       : { _tag: 'verified', digest: options.digest ?? 'digest-entry' },
+    identity: { _tag: 'read', projectRoot: '/run', runInputsDigest: 'inputs', mutantIdsDigest: 'ids' },
     wallMs: mutationTest,
     exitCode: 0,
   })

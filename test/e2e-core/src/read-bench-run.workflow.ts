@@ -7,7 +7,14 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { BenchRun, BenchRunInvalid, BenchRunKey, BenchRunMeasured, WorkloadDigest } from './bench-run.schema.js'
+import {
+  BenchRun,
+  BenchRunInvalid,
+  BenchRunKey,
+  BenchRunMeasured,
+  RunIdentity,
+  WorkloadDigest,
+} from './bench-run.schema.js'
 
 const DecodeWireLine = S.decodeResult(RunEvent.RunEventWireLine)
 
@@ -16,6 +23,7 @@ export class ReadBenchRunCommand extends S.TaggedClass<ReadBenchRunCommand>()('R
   lines: S.Array(S.String),
   exitCode: S.Int,
   workloadDigest: WorkloadDigest,
+  identity: RunIdentity,
   stderrTail: S.String,
   wallMs: Report.NonNegativeFinite,
 }) {
@@ -90,6 +98,7 @@ const measuredOrInvalid = (command: ReadBenchRunCommand, events: ReadonlyArray<R
             ),
             testsExecuted: testsExecutedOf(events),
             workloadDigest: command.workloadDigest,
+            identity: command.identity,
             wallMs: command.wallMs,
             exitCode: command.exitCode,
           }),

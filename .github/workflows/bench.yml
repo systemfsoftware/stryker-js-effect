@@ -112,7 +112,12 @@ jobs:
           install B "$SIDE_B"
 
       - name: Install the bench harness in the checkout
-        run: pnpm install --frozen-lockfile
+        env:
+          TIMINGS: ${{ runner.temp }}/bench-setup.tsv
+        run: |
+          started=$(date +%s%3N)
+          pnpm install --frozen-lockfile
+          printf 'checkout: harness pnpm install\t%s\n' "$(($(date +%s%3N) - started))" >> "$TIMINGS"
 
       - name: Turbo cache
         uses: actions/cache@v6

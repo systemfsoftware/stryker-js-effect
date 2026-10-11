@@ -6,9 +6,12 @@ import * as S from 'effect/Schema'
 
 import {
   abortedOutcomeOf,
+  BenchAbortCode,
   BenchReport,
+  type BenchReportOutcome,
   type BenchReportRun,
   LegTime,
+  ProvisionalAborted,
   ProvisionalReport,
   ProvisionalRunNext,
   ProvisionalSummarizeNext,
@@ -26,44 +29,53 @@ export class ProvisionalReportCommand extends S.TaggedClass<ProvisionalReportCom
   finished: S.Array(BenchRun),
   setupSteps: S.Array(SetupStep),
   withheldPins: S.Array(WithheldPins),
+  abort: S.NullOr(S.Struct({ code: BenchAbortCode, reason: S.String })),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
 
-const reportRunOf = (run: BenchRunMeasured): BenchReportRun => ({
-  key: run.key,
-  wallMs: run.wallMs,
-  exitCode: run.exitCode,
-  testsExecuted: run.testsExecuted,
-  workloadDigest: run.workloadDigest,
-})
+const reportRunsOf = (finished: ReadonlyArray<BenchRun>): Array<BenchReportRun> =>
+  Arr.map(Arr.filter(finished, S.is(BenchRunMeasured)), (run) => ({
+    key: run.key,
+    wallMs: run.wallMs,
+    exitCode: run.exitCode,
+    testsExecuted: run.testsExecuted,
+    workloadDigest: run.workloadDigest,
+    identity: run.identity,
+  }))
 
-const reportOf = (command: ProvisionalReportCommand, nextStep: string): BenchReport =>
+const reportOf = (command: ProvisionalReportCommand, outcome: BenchReportOutcome): BenchReport =>
   BenchReport.make({
     schemaVersion: '2.0',
     baseSha: command.baseSha,
     headSha: command.headSha,
     ref: command.ref,
     leg: command.leg,
-    outcome: abortedOutcomeOf(
-      'leg-incomplete',
-      `${command.finished.length} of ${command.order.length} runs finished; next step: ${nextStep}`,
-    ),
-    runs: Arr.map(Arr.filter(command.finished, S.is(BenchRunMeasured)), reportRunOf),
+    outcome,
+    runs: reportRunsOf(command.finished),
     setupSteps: [...command.setupSteps],
     withheldPins: [...command.withheldPins],
   })
 
-const provisionalOf = (command: ProvisionalReportCommand): ProvisionalReport => {
+const incompleteOf = (command: ProvisionalReportCommand, nextStep: string): BenchReportOutcome =>
+  abortedOutcomeOf(
+    'leg-incomplete',
+    `${command.finished.length} of ${command.order.length} runs finished; next step: ${nextStep}`,
+  )
+
+const inProgressOf = (command: ProvisionalReportCommand): ProvisionalReport => {
   const position = command.finished.length
   return Option.match(Arr.get(command.order, position), {
     onNone: (): ProvisionalReport =>
       ProvisionalSummarizeNext.make({
-        report: reportOf(command, 'summarizing the runs and writing the final report'),
+        report: reportOf(command, incompleteOf(command, 'summarizing the runs and writing the final report')),
       }),
     onSome: (side): ProvisionalReport =>
       ProvisionalRunNext.make({
-        report: reportOf(command, `run ${position + 1} of ${command.order.length} (side ${side})`),
+        report: reportOf(
+          command,
+          incompleteOf(command, `run ${position + 1} of ${command.order.length} (side ${side})`),
+        ),
         position,
         side,
       }),
@@ -71,7 +83,13 @@ const provisionalOf = (command: ProvisionalReportCommand): ProvisionalReport => 
 }
 
 const decide = (command: ProvisionalReportCommand): Result.Result<ProvisionalReport, never> =>
-  Result.succeed(provisionalOf(command))
+  Result.succeed(
+    Option.match(Option.fromNullOr(command.abort), {
+      onNone: () => inProgressOf(command),
+      onSome: (abort): ProvisionalReport =>
+        ProvisionalAborted.make({ report: reportOf(command, abortedOutcomeOf(abort.code, abort.reason)) }),
+    }),
+  )
 
 export const provisionalReport = Workflow.make({
   command: ProvisionalReportCommand,

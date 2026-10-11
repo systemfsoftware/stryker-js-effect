@@ -48,6 +48,7 @@ const runFrom = (
     mutants: 10,
     testsExecuted: 2,
     workloadDigest: { _tag: 'verified', digest: options.digest ?? 'digest-entry' },
+    identity: { _tag: 'read', projectRoot: '/run', runInputsDigest: 'inputs', mutantIdsDigest: 'ids' },
     wallMs: mutationTest,
     exitCode: 0,
   })
@@ -83,6 +84,7 @@ const reportRunsOf = (runs: ReadonlyArray<BenchRun>): ReadonlyArray<BenchReportR
     exitCode: 0,
     testsExecuted: 2,
     workloadDigest: { _tag: 'verified', digest: 'digest-entry' },
+    identity: { _tag: 'read', projectRoot: '/run', runInputsDigest: 'inputs', mutantIdsDigest: 'ids' },
   }))
 
 const MAIN_REF = 'refs/heads/main'

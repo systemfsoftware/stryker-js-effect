@@ -28,6 +28,7 @@ const commandOf = (lines: ReadonlyArray<string>, options: CommandOptions = {}): 
     lines,
     exitCode: options.exitCode ?? 0,
     workloadDigest: options.workloadDigest ?? { _tag: 'verified', digest: 'digest' },
+    identity: { _tag: 'read', projectRoot: '/run', runInputsDigest: 'inputs', mutantIdsDigest: 'ids' },
     stderrTail: options.stderrTail ?? '',
     wallMs: 10,
   })

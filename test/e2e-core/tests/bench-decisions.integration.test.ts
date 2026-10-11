@@ -50,6 +50,7 @@ const runCommandOf = (lines: ReadonlyArray<string>): ReadBenchRunCommand =>
     lines,
     exitCode: 0,
     workloadDigest: { _tag: 'verified', digest: 'digest' },
+    identity: { _tag: 'read', projectRoot: '/run', runInputsDigest: 'inputs', mutantIdsDigest: 'ids' },
     stderrTail: '',
     wallMs: 10,
   })
