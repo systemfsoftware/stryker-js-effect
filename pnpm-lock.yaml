@@ -209,7 +209,7 @@ overrides:
   '@systemfsoftware/stryker-js-svelte@*': file:.sfs-deps/stryker-js-svelte.tgz
   '@systemfsoftware/stryker-js-typescript-checker@*': file:.sfs-deps/stryker-js-typescript-checker.tgz
   '@systemfsoftware/stryker-js-vitest-runner@*': file:.sfs-deps/stryker-js-vitest-runner.tgz
-  '@systemfsoftware/stryker-js-vm-runner@npm:@systemfsoftware/stryker-js-vitest-runner@^9.0.1': file:.sfs-deps/stryker-js-vitest-runner.tgz
+  '@systemfsoftware/stryker-js-vm-runner@npm:@systemfsoftware/stryker-js-vitest-runner@^9.0.2': file:.sfs-deps/stryker-js-vitest-runner.tgz
 
 patchedDependencies:
   '@systemfsoftware/differential-spec@1.0.1': e976436ae352fe9fcf978ef1d4dabae26df9728372562b28e5ca60d7cde9f9ee
@@ -3190,8 +3190,8 @@ packages:
     version: 0.0.1
 
   '@systemfsoftware/stryker-ignorer-effect-schema-declarations@file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz':
-    resolution: {integrity: sha512-5NIzS3PK361vXAevHLPcKrkwze597VbLsrC0utH/6VdWD9Y1/m53z9dpwp1hSe9ZRIJ3HKW7/PKTSXzemn7q3Q==, tarball: file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz}
-    version: 0.2.1
+    resolution: {integrity: sha512-5QEfkMBS3CNX/+UpURHlhKIpLPKpAG62HYMrgeJPmbAGXNjzaaaluecuRfWZLfIcbuL6yYCZjGBAfeOFO7vgPA==, tarball: file:.sfs-deps/stryker-ignorer-effect-schema-declarations.tgz}
+    version: 0.3.0
 
   '@systemfsoftware/stryker-ignorer-in-source-vitest-block@file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz':
     resolution: {integrity: sha512-sESsrNlXfdav+of+yBaOH/fE8I0jASa0paIvc/6lasId0heWRVlaSTAlaFLTlXX6vSgxAgjaOTT3OFERPnY6Dw==, tarball: file:.sfs-deps/stryker-ignorer-in-source-vitest-block.tgz}
@@ -3206,39 +3206,39 @@ packages:
     version: 0.1.2
 
   '@systemfsoftware/stryker-js-cli-contract@file:.sfs-deps/stryker-js-cli-contract.tgz':
-    resolution: {integrity: sha512-Al6/xLfkql9rhXDAPkleSD69Q+iqRxyK2+ZlYPmJo21JI8hFApX3abL4h6w1fFhZ+vNF8/9dZbDr1MIQRzjn+w==, tarball: file:.sfs-deps/stryker-js-cli-contract.tgz}
-    version: 0.4.0
+    resolution: {integrity: sha512-P8SWK3EN6Uj4basgc6K49k7w9gUXGprVcMuncGHBjMvD8tWQd4Ncj+qTUzGf7U5FiTtOKHXCflFZUhdCjl9LHg==, tarball: file:.sfs-deps/stryker-js-cli-contract.tgz}
+    version: 0.5.0
     engines: {node: '>=20.0.0'}
 
   '@systemfsoftware/stryker-js-instrumenter@file:.sfs-deps/stryker-js-instrumenter.tgz':
-    resolution: {integrity: sha512-+9atN/9bLwoGIYtacpk+DUZpWa/Onpy3DfQqKGKXcds73/ki1BeXi29Y/PpXBdPStLbqtWsoHTT88i4agwBqWQ==, tarball: file:.sfs-deps/stryker-js-instrumenter.tgz}
-    version: 12.1.2
+    resolution: {integrity: sha512-Q5B6DYUHcGPt7nlSTFy4rHd90qalywyPge2YPSlT7RipZFHIZUYrcXunfkwDIHKqvTQ69r6Lg07+mIxazov6vg==, tarball: file:.sfs-deps/stryker-js-instrumenter.tgz}
+    version: 13.0.0
     engines: {node: '>=20.0.0'}
 
   '@systemfsoftware/stryker-js-plugin-interface@file:.sfs-deps/stryker-js-plugin-interface.tgz':
-    resolution: {integrity: sha512-DOJ2Ed4I2KpwnkkHjk3KY+LcA8DKXr6e9hsVPK4+j7kXKbH6nGVJwVP3uC/EWJL3ihbH1Mwmr3j6kn63LibKzA==, tarball: file:.sfs-deps/stryker-js-plugin-interface.tgz}
-    version: 15.0.0
+    resolution: {integrity: sha512-MgNILzdCo9pyBFdWl+p24UJQ+xxJCPPQe0wCFOJ5cGwZ1hKoZ4esOSyS/xKVvb0n1JZyQgnhZM7pbIo0a32zNQ==, tarball: file:.sfs-deps/stryker-js-plugin-interface.tgz}
+    version: 16.0.0
     engines: {node: '>=20.0.0'}
 
   '@systemfsoftware/stryker-js-plugin-runtime@file:.sfs-deps/stryker-js-plugin-runtime.tgz':
-    resolution: {integrity: sha512-wQ1YXpe2Jnj49WikhigGk6TI+IHMLAkmGT+mvGZK6PDKls4fZax1RSVv/0ZpoACB4c0L/Rtme+Tl2Rh/inAwrQ==, tarball: file:.sfs-deps/stryker-js-plugin-runtime.tgz}
-    version: 7.0.3
+    resolution: {integrity: sha512-A7G00zFj+5fADVN+24QMNrdRZ6fQWMtptZ3NMhim4SrYHRl01vO4hZ4Dxx0CbF8Sitvjzo9WXieD5Qguh+p+nA==, tarball: file:.sfs-deps/stryker-js-plugin-runtime.tgz}
+    version: 7.0.4
     engines: {node: '>=22.18.0'}
 
   '@systemfsoftware/stryker-js-typescript-checker@file:.sfs-deps/stryker-js-typescript-checker.tgz':
-    resolution: {integrity: sha512-SM3mFEyj3q3/3CgJs+1WXLBpBtfVKmN4ADLNxVIER57AbIdMAbBr/bU0kVhvJmUcxMEqQYy+8fiA/tgmgOsWdA==, tarball: file:.sfs-deps/stryker-js-typescript-checker.tgz}
-    version: 8.3.1
+    resolution: {integrity: sha512-gDNwIti807JuH72C9O11Me7OxKI1sA8seeZlo1j6CedZBvpSuST4Iagc9U2jkMtTcbNChMHLqEQNtYm2E+2dGQ==, tarball: file:.sfs-deps/stryker-js-typescript-checker.tgz}
+    version: 8.3.2
 
   '@systemfsoftware/stryker-js-vitest-runner@file:.sfs-deps/stryker-js-vitest-runner.tgz':
-    resolution: {integrity: sha512-a0yptek9pPAQwLf2rnCy67ZSy8geb2+/A+Gh99PJxyyr2h5FEucARZIYHBV6H65OctJF40CZpshcJo6WnfKyXA==, tarball: file:.sfs-deps/stryker-js-vitest-runner.tgz}
-    version: 9.0.1
+    resolution: {integrity: sha512-JuxiL90UVEBBTP8SjvSG1l3ZdXCWZn9T1agKydgp2HefQZzP01qV1oidBwht609WqKXlkHBfCmHg1hIuF2M1FQ==, tarball: file:.sfs-deps/stryker-js-vitest-runner.tgz}
+    version: 9.0.2
     engines: {node: '>=22.18.0'}
     peerDependencies:
       vitest: ^5
 
   '@systemfsoftware/stryker-js@file:.sfs-deps/stryker-js.tgz':
-    resolution: {integrity: sha512-1jS8pzkgkhUXVvK8N4QKDEXyZhlEEnPuYXFRAJ7f38rToHq2k8fu0OZsccLSOM8lbVofpReM86RwidNVtrYWSw==, tarball: file:.sfs-deps/stryker-js.tgz}
-    version: 18.1.0
+    resolution: {integrity: sha512-AeV1mfskws8Nx/o5YDd2XABlFX7OLVfxAaDJuYT+bJaWXaMFu9WfTwNV4fC0PPP85q5nLViA0GKOAkFDgnuAZw==, tarball: file:.sfs-deps/stryker-js.tgz}
+    version: 19.0.0
     engines: {node: '>=24.13.1'}
     hasBin: true
     peerDependencies:
