@@ -13,9 +13,10 @@ import {
   type ResolveFailure,
   type WorkspaceCatalogs,
 } from './catalog-resolution.js'
-import { type FixtureManifestDocument, MalformedFixtureManifest } from './catalog-resolution.schema.js'
+import { MalformedFixtureManifest } from './catalog-resolution.schema.js'
 import { FixtureManifest, type PackedManifest, type PackedMember } from './install-closure.schema.js'
 import { installClosure, InstallClosureCommand, type InstallClosureFailure } from './install-closure.workflow.js'
+import type { PlainJsonObject } from './plain-json.schema.js'
 import { pinnedFieldsOf, registryPinsOf } from './registry-pins.js'
 import { PinnableFields, type RegistryPins } from './registry-pins.schema.js'
 
@@ -30,7 +31,7 @@ export const packedMemberOf = (manifest: PackedManifest): PackedMember => ({
 
 export interface StagedManifestInput {
   readonly manifestPath: string
-  readonly document: FixtureManifestDocument
+  readonly document: PlainJsonObject
   readonly catalogs: WorkspaceCatalogs
   readonly pins: RegistryPins
   readonly root: boolean
@@ -45,14 +46,14 @@ const closureFieldsOf = (input: StagedManifestInput, fields: PinnableFields): Pi
 
 const pinnableFieldsOf = (
   manifestPath: string,
-  document: FixtureManifestDocument,
+  document: PlainJsonObject,
 ): Result.Result<PinnableFields, MalformedFixtureManifest> =>
   Result.mapError(
     S.decodeResult(PinnableFields)(document),
     () => MalformedFixtureManifest.make({ manifest: manifestPath, detail: 'overrides is not a map of version ranges' }),
   )
 
-export const stagedManifestOf = (input: StagedManifestInput): Result.Result<FixtureManifestDocument, ResolveFailure> =>
+export const stagedManifestOf = (input: StagedManifestInput): Result.Result<PlainJsonObject, ResolveFailure> =>
   Result.flatMap(
     resolveCatalogSpecs(input.manifestPath, input.document, input.catalogs),
     (resolved) =>
@@ -80,7 +81,7 @@ export interface FixtureStagingInput {
 
 export interface StagedFixtureFile {
   readonly relativePath: string
-  readonly document: FixtureManifestDocument
+  readonly document: PlainJsonObject
 }
 
 export interface StagedFixture {

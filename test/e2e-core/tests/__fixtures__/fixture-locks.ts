@@ -14,7 +14,6 @@ import {
   committableLockOf,
   findLockDrift,
   FindLockDriftCommand,
-  type FixtureManifestDocument,
   type LockAdmission,
   type LockDrift,
   NpmLockfile,
@@ -23,6 +22,7 @@ import {
   PackedManifest,
   type PackedMember,
   packedMemberOf,
+  type PlainJsonObject,
   stagedFixtureOf,
   tarballFileOf,
   WorkspaceListingJson,
@@ -150,7 +150,7 @@ export const fixturesOf = (resourcesDir: string) =>
 interface StagedManifest {
   readonly relativePath: string
   readonly lockKey: string
-  readonly document: FixtureManifestDocument
+  readonly document: PlainJsonObject
 }
 
 interface StagedFixture {

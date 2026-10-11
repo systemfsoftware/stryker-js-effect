@@ -9,13 +9,13 @@ import { parse } from 'yaml'
 
 import {
   DependencySpecs,
-  type FixtureManifestDocument,
   FixtureManifestJson,
   LockedCatalogsYaml,
   MalformedFixtureManifest,
   UnresolvedCatalogSpec,
   WorkspaceCatalogsYaml,
 } from './catalog-resolution.schema.js'
+import type { PlainJsonObject } from './plain-json.schema.js'
 
 export interface WorkspaceCatalogs {
   readonly default: Readonly<Record<string, string>>
@@ -119,7 +119,7 @@ const resolveSpecs = (
 
 const fieldSpecsOf = (
   manifest: string,
-  document: FixtureManifestDocument,
+  document: PlainJsonObject,
   field: DependencyField,
 ): Result.Result<Option.Option<DependencySpecs>, MalformedFixtureManifest> =>
   Option.match(Rec.get(document, field), {
@@ -136,7 +136,7 @@ const fieldSpecsOf = (
 
 const resolvedFieldOf = (
   manifest: string,
-  document: FixtureManifestDocument,
+  document: PlainJsonObject,
   catalogs: WorkspaceCatalogs,
   field: DependencyField,
 ): Result.Result<ReadonlyArray<readonly [DependencyField, DependencySpecs]>, ResolveFailure> =>
@@ -148,21 +148,21 @@ const resolvedFieldOf = (
 
 export const resolveCatalogSpecs: {
   (
-    document: FixtureManifestDocument,
+    document: PlainJsonObject,
     catalogs: WorkspaceCatalogs,
-  ): (manifest: string) => Result.Result<FixtureManifestDocument, ResolveFailure>
+  ): (manifest: string) => Result.Result<PlainJsonObject, ResolveFailure>
   (
     manifest: string,
-    document: FixtureManifestDocument,
+    document: PlainJsonObject,
     catalogs: WorkspaceCatalogs,
-  ): Result.Result<FixtureManifestDocument, ResolveFailure>
+  ): Result.Result<PlainJsonObject, ResolveFailure>
 } = dual(
   3,
   (
     manifest: string,
-    document: FixtureManifestDocument,
+    document: PlainJsonObject,
     catalogs: WorkspaceCatalogs,
-  ): Result.Result<FixtureManifestDocument, ResolveFailure> =>
+  ): Result.Result<PlainJsonObject, ResolveFailure> =>
     Result.map(
       Result.all(DEPENDENCY_FIELDS.map((field) => resolvedFieldOf(manifest, document, catalogs, field))),
       (fields) => ({ ...document, ...Object.fromEntries(fields.flat()) }),
@@ -170,14 +170,14 @@ export const resolveCatalogSpecs: {
 )
 
 export const parseFixtureManifest: {
-  (bytes: Uint8Array): (manifest: string) => Result.Result<FixtureManifestDocument, MalformedFixtureManifest>
-  (manifest: string, bytes: Uint8Array): Result.Result<FixtureManifestDocument, MalformedFixtureManifest>
+  (bytes: Uint8Array): (manifest: string) => Result.Result<PlainJsonObject, MalformedFixtureManifest>
+  (manifest: string, bytes: Uint8Array): Result.Result<PlainJsonObject, MalformedFixtureManifest>
 } = dual(
   2,
-  (manifest: string, bytes: Uint8Array): Result.Result<FixtureManifestDocument, MalformedFixtureManifest> =>
+  (manifest: string, bytes: Uint8Array): Result.Result<PlainJsonObject, MalformedFixtureManifest> =>
     Result.mapError(
       S.decodeResult(FixtureManifestJson)(new TextDecoder().decode(bytes)),
-      () => MalformedFixtureManifest.make({ manifest, detail: 'the manifest is not a JSON object' }),
+      (error) => MalformedFixtureManifest.make({ manifest, detail: error.message }),
     ),
 )
 

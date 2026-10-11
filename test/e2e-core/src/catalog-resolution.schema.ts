@@ -1,5 +1,7 @@
 import * as S from 'effect/Schema'
 
+import { PlainJsonObject } from './plain-json.schema.js'
+
 export class MalformedFixtureManifest extends S.TaggedError<MalformedFixtureManifest>()('MalformedFixtureManifest', {
   manifest: S.String,
   detail: S.String,
@@ -22,10 +24,7 @@ export class UnresolvedCatalogSpec extends S.TaggedError<UnresolvedCatalogSpec>(
 export const DependencySpecs = S.Record(S.String, S.String)
 export type DependencySpecs = typeof DependencySpecs.Type
 
-export const FixtureManifestDocument = S.Record(S.String, S.Json)
-export type FixtureManifestDocument = typeof FixtureManifestDocument.Type
-
-export const FixtureManifestJson = S.fromJsonString(FixtureManifestDocument)
+export const FixtureManifestJson = S.fromJsonString(PlainJsonObject)
 
 export const ManifestDependencies = S.Struct({
   dependencies: S.optionalKey(DependencySpecs),
