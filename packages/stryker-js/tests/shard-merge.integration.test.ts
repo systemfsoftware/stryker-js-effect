@@ -435,7 +435,7 @@ Feature('Sharded runs merge to the unsharded statuses', { timeout: 180_000 })
           expect({
             exitCode: s.outcome.exitCode === 0 ? 0 : 1,
             namesWrittenVersion: s.outcome.output.includes('6.0'),
-            namesExpectedVersion: s.outcome.output.includes('8.0'),
+            namesExpectedVersion: s.outcome.output.includes('9.0'),
           }).toEqual({ exitCode: 1, namesWrittenVersion: true, namesExpectedVersion: true })
         ),
       ),

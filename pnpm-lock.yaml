@@ -917,12 +917,6 @@ importers:
       oxlint-tsgolint:
         specifier: 'catalog:'
         version: 7.0.2001
-      released-stryker-js-cli-contract:
-        specifier: file:../../.sfs-deps/stryker-js-cli-contract.tgz
-        version: '@systemfsoftware/stryker-js-cli-contract@file:.sfs-deps/stryker-js-cli-contract.tgz'
-      released-stryker-js-plugin-interface:
-        specifier: file:../../.sfs-deps/stryker-js-plugin-interface.tgz
-        version: '@systemfsoftware/stryker-js-plugin-interface@file:.sfs-deps/stryker-js-plugin-interface.tgz'
       rimraf:
         specifier: 'catalog:'
         version: 6.1.3
