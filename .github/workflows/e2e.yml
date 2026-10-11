@@ -139,9 +139,10 @@ jobs:
           # The previous run is the newest completed e2e run on this ref, other than this one, whose
           # legs ran (success or failure) and whose commit is a strict ancestor of this one, so a
           # dispatch of an older commit never takes a newer one as its previous run.
-          prev_sha="" prev_conclusion="" prev_url=""
+          prev_sha="" prev_conclusion="" prev_url="" compare_error=""
+          compare_stderr=$(mktemp)
           page=1
-          while [ -z "$prev_sha" ]; do
+          while [ -z "$prev_sha" ] && [ -z "$compare_error" ]; do
             page_json=$(gh api -X GET "repos/$repo/actions/workflows/e2e.yml/runs" \
               -f branch="$REF_NAME" -f status=completed -F per_page=100 -F page="$page")
             runs=$(jq -r --argjson self "$GITHUB_RUN_ID" '.workflow_runs[]
@@ -151,7 +152,10 @@ jobs:
             while read -r id sha conclusion url; do
               [ -n "$id" ] || continue
               # `ahead` means this commit is ahead of the candidate: the candidate is a strict ancestor.
-              relation=$(gh api "repos/$repo/compare/$sha...$THIS_SHA" --jq .status 2>/dev/null) || continue
+              if ! relation=$(gh api "repos/$repo/compare/$sha...$THIS_SHA" --jq .status 2>"$compare_stderr"); then
+                compare_error="GET compare/${sha:0:12}...${THIS_SHA:0:12} failed: $(paste -sd ' ' "$compare_stderr")"
+                break
+              fi
               [ "$relation" = ahead ] || continue
               ran=$(gh api "repos/$repo/actions/runs/$id/jobs?filter=latest&per_page=100" \
                 --jq '[.jobs[] | select(.name | startswith("e2e (")) | select(.conclusion == "success" or .conclusion == "failure")] | length')
@@ -163,12 +167,23 @@ jobs:
             page=$(( page + 1 ))
           done
 
-          if [ -n "$prev_sha" ]; then
+          next=$NEXT_ACTION
+          prev_note="${prev_sha:-none}${prev_conclusion:+ ($prev_conclusion)}"
+          if [ -n "$compare_error" ]; then
+            listed=0 count=0
+            candidates="  - (not determined)"
+            previous="unknown: $compare_error"
+            prev_note="unknown ($compare_error)"
+            span="unknown"
+            code=E2E_RED_PREVIOUS_UNKNOWN
+            why="the compare API failed while looking for the previous run, so the range is unknown"
+            next="rerun this report job; if the compare call fails again, find the previous e2e run on \`$REF_NAME\` by hand before choosing a culprit, then $NEXT_ACTION"
+          elif [ -n "$prev_sha" ]; then
             compare=$(gh api "repos/$repo/compare/$prev_sha...$THIS_SHA")
             count=$(jq '.total_commits' <<< "$compare")
             listed=$(jq '.commits | length' <<< "$compare")
             candidates=$(jq -r ".commits | $as_candidates" <<< "$compare")
-            range="$server/compare/$prev_sha...$THIS_SHA"
+            span="$server/compare/$prev_sha...$THIS_SHA, $count commit(s)"
             previous="\`${prev_sha:0:12}\` concluded \`$prev_conclusion\` ($prev_url)"
             if [ "$prev_conclusion" = success ]; then
               code=E2E_RED_AFTER_GREEN
@@ -180,7 +195,7 @@ jobs:
           else
             count=1 listed=1
             candidates=$(gh api "repos/$repo/commits/$THIS_SHA" | jq -r "[.] | $as_candidates")
-            range="$server/commit/$THIS_SHA (this commit alone)"
+            span="$server/commit/$THIS_SHA (this commit alone), 1 commit(s)"
             previous="none: no earlier e2e run on \`$REF_NAME\` ran its legs on an ancestor of this commit"
             code=E2E_RED_NO_PREVIOUS
             why="there is no previous e2e run to compare with"
@@ -191,13 +206,13 @@ jobs:
             echo
             echo "- This commit: \`$THIS_SHA\`"
             echo "- Previous e2e run on \`$REF_NAME\`: $previous"
-            echo "- Range: $range, $count commit(s); $why"
+            echo "- Range: $span; $why"
             echo "- Legs not green:"
             printf '%s\n' "$legs" | sed 's/^/  - /'
             echo "- Culprit candidates:"
             printf '%s\n' "$candidates"
             if [ "$listed" -lt "$count" ]; then echo "  - (the compare API lists the first $listed of $count)"; fi
-            echo "- Next: $NEXT_ACTION"
+            echo "- Next: $next"
           } >> "$GITHUB_STEP_SUMMARY"
-          message="This commit $THIS_SHA. Previous e2e run on $REF_NAME: ${prev_sha:-none}${prev_conclusion:+ ($prev_conclusion)}. Range: $range, $count commit(s); $why. Legs not green: $(printf '%s' "$legs" | paste -sd ';' -). Next action: $NEXT_ACTION."
+          message="This commit $THIS_SHA. Previous e2e run on $REF_NAME: $prev_note. Range: $span; $why. Legs not green: $(printf '%s' "$legs" | paste -sd ';' -). Next action: $next."
           echo "::error title=$code::$(escape "$message")"
