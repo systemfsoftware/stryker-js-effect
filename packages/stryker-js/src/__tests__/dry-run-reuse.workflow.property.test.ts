@@ -2,7 +2,7 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import type { PriorUnderCurrentRoot } from '../dry-run-coverage.schema.js'
+import { type PriorUnderCurrentRoot, PriorUnderCurrentRootSchema } from '../dry-run-coverage.schema.js'
 import {
   DryRunCoverageReused,
   DryRunCoverageStale,
@@ -37,7 +37,7 @@ const staleReasonOf = (result: ReuseResult): string | undefined =>
 const distinguishing = (value: string): string => `${value}-distinguishing`
 
 const currentRootPriorOf = (command: DryRunReuseCommand): PriorUnderCurrentRoot =>
-  command.prior._tag === 'PriorUnderCurrentRoot'
+  S.is(PriorUnderCurrentRootSchema)(command.prior)
     ? command.prior
     : {
       _tag: 'PriorUnderCurrentRoot',
