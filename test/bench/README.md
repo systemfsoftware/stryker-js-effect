@@ -29,7 +29,10 @@ next ("2 setup steps measured; next step: side B install the enterprise
 fixture"); after setup; and after each finished run ("3 of 8 runs finished; next
 step: run 4 of 8 (side A)"). Each is an `aborted` outcome with code
 `leg-incomplete`, and the leg's setup steps, withheld pins and finished runs
-accumulate from the first write. The final report replaces it. Both upload steps
+accumulate from the first write. A provisional write that fails prints one
+`::warning` line naming the file and the error, and the leg carries on; only the
+final report's write can fail the leg (`report-unwritable`). The final report
+replaces the provisional one. Both upload steps
 run on `always()`. A leg the bench itself aborts, a `side-setup-failed` included,
 keeps the setup steps, withheld pins and finished runs measured up to that point,
 with its own abort code and next action. The `::error` annotation carries the

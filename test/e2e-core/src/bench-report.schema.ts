@@ -78,7 +78,7 @@ const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
   'run-path-mismatch':
     'the runs of this leg did not all run from one projectRoot, so the sides are not comparable: read the two roots in the reason, fix the run-path move in test/bench/src/run-bench.service.ts, then re-run the job',
   'run-identity-unreadable':
-    "a run's incremental report could not be read for its projectRoot, runInputsDigest and mutant ids, so the bench cannot show both sides ran from one root: read the run key, file and error in the reason, check that file and the run's stream in the bench-runs artifact, fix the CLI's incremental report or test/e2e-core/src/read-run-identity.workflow.ts, then re-run the job",
+    "a run's incremental report could not be read for its projectRoot, runInputsDigest and mutant ids, so the bench cannot show both sides ran from one root: read the run key, file and error in the reason and that file in the bench-runs artifact, then look in both places: the CLI's incremental report shape (Engine.IncrementalReportSchema in packages/stryker-js/src/IncrementalReport.schema.ts) and the bench's reader (RunIdentitySource and readRunIdentity in test/e2e-core/src); fix whichever drifted, then re-run the job",
   'defect': 'a bench bug: open an issue with this job log, the stack above, and the base and head SHAs',
 }
 

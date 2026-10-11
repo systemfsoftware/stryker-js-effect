@@ -236,6 +236,16 @@ const targetOf = (corpus: BenchCorpus, entry: string): Option.Option<BenchTarget
 const corpusNameOf = (target: BenchTarget): BenchCorpusName =>
   Match.valueTags(target, { repo: (): BenchCorpusName => 'repo', enterprise: (): BenchCorpusName => 'enterprise' })
 
+const annotationMessageOf = (text: string): string => text.split(/\r?\n/u)[0].replaceAll('%', '%25')
+
+const provisionalUnwritten = (runnerTemp: string, error: string) =>
+  Effect.flatMap(reportPathOf(runnerTemp), (file) =>
+    Console.log(
+      `::warning title=Bench provisional report::${
+        annotationMessageOf(`${file} could not be written: ${error}`)
+      } (the leg carries on; the final report write still decides the outcome)`,
+    ))
+
 const measure = (env: BenchEnv, progress: Ref.Ref<Progress>) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -245,7 +255,7 @@ const measure = (env: BenchEnv, progress: Ref.Ref<Progress>) =>
       Effect.gen(function*() {
         const now = yield* Ref.updateAndGet(progress, update)
         yield* writeReportFile(env.runnerTemp, reportAt(env, yield* legOf(env), now, null))
-      }).pipe(Effect.ignore)
+      }).pipe(Effect.catch((cause) => provisionalUnwritten(env.runnerTemp, cause.message)))
     yield* record((before) => before)
 
     const corpusPath = path.join(env.sideBRoot, ...CORPUS_FILE)
