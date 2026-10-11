@@ -9,10 +9,9 @@
  * count both forms accept (`catchTag` with an `orElse`) is data-last where a
  * pipe or an immediate call takes the result, and data-first elsewhere: a
  * piped or immediately called value has to be a function, which a data-first
- * call never returns. It decides
- * nothing about a replacement: a mutator asks for module access through the
- * description's `moduleAccess`, and gets none when the file has no unshadowed
- * binding for that module (R2).
+ * call never returns. It decides nothing about a replacement: a mutator asks
+ * for module access through the description's `moduleAccess`, and gets none
+ * when the file has no unshadowed binding for that module (R2).
  *
  * Pure. One expression per decision, no I/O, no throwing. The import table is
  * rebuilt from the Program's import declarations on demand, so no parsed file
