@@ -1,0 +1,5 @@
+{
+  "name": "isolated-declarations-fixture",
+  "private": true,
+  "type": "module"
+}
