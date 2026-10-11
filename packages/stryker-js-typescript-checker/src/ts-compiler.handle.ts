@@ -2051,6 +2051,20 @@ const renderedOf = (
     decision,
   }))
 
+const decidedOutcomeOf = (
+  ctx: CallContext,
+  mutant: Mutant,
+  fileName: string,
+  decision: Option.Option<ImporterShortcutDecision>,
+): Effect.Effect<Outcome, CompilerFailed> =>
+  Effect.flatMap(
+    Boolean.match(Option.exists(decision, takesShortcut), {
+      onTrue: () => ctx.steps.ownErrorsIn(fileName),
+      onFalse: () => ctx.steps.allErrorsIn(ctx.state, fileName),
+    }),
+    (diagnostics) => renderedOf(ctx, mutant, diagnostics, decision),
+  )
+
 const soloOutcomeOf = (ctx: CallContext, mutant: Mutant, previous: ReadonlyArray<Mutant>) =>
   Effect.gen(function*() {
     yield* ctx.steps.resetMutatedFiles(previous)
@@ -2065,11 +2079,7 @@ const soloOutcomeOf = (ctx: CallContext, mutant: Mutant, previous: ReadonlyArray
       onFalse: () => ctx.steps.parenthesizedSplice(mutant, fileName, changedFiles),
     })
     const decision = yield* decisionAfterApplyOf(ctx, mutant, fileName, appliedOf(mutant, held))
-    const diagnostics = yield* Boolean.match(Option.exists(decision, takesShortcut), {
-      onTrue: () => ctx.steps.ownErrorsIn(fileName),
-      onFalse: () => ctx.steps.allErrorsIn(ctx.state, fileName),
-    })
-    return yield* renderedOf(ctx, mutant, diagnostics, decision)
+    return yield* decidedOutcomeOf(ctx, mutant, fileName, decision)
   })
 
 const respliceAll = (
@@ -2108,15 +2118,11 @@ const memberOf = (steps: CheckSteps, mutant: Mutant): Effect.Effect<Member> => {
   return Effect.map(steps.fileOf(fileName), (file) => ({ mutant, fileName, file }))
 }
 
-const ownOutcomesOf = (
+const decidedOutcomesOf = (
   ctx: CallContext,
   members: ReadonlyArray<DecidedMember>,
 ): Effect.Effect<ReadonlyArray<Outcome>, CompilerFailed> =>
-  Effect.forEach(members, (member) =>
-    Effect.flatMap(
-      ctx.steps.ownErrorsIn(member.fileName),
-      (diagnostics) => renderedOf(ctx, member.mutant, diagnostics, member.decision),
-    ))
+  Effect.forEach(members, (member) => decidedOutcomeOf(ctx, member.mutant, member.fileName, member.decision))
 
 const sharedOutcomesOf = (
   ctx: CallContext,
@@ -2156,7 +2162,7 @@ const sharedOutcomesOf = (
       {
         SharedRoundRedone: () =>
           Effect.succeedNone,
-        SharedRoundKept: () => Effect.asSome(ownOutcomesOf(ctx, decidedMembers)),
+        SharedRoundKept: () => Effect.asSome(decidedOutcomesOf(ctx, decidedMembers)),
       },
     )
   })
