@@ -6,7 +6,7 @@ topic: bench-main-only
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-11-1138-ci-bench-main-only-plan.md
+supersedes: docs/plans/2026-10-11-1154-ci-bench-main-only-plan.md
 ---
 
 # Bench On Main Only - Plan
@@ -14,7 +14,7 @@ supersedes: docs/plans/2026-10-11-1138-ci-bench-main-only-plan.md
 ## Goal Capsule
 
 - **Objective:** Each commit that lands on main gets a bench report. Per phase, it shows what the commit made faster or slower than its first parent, the job's wall time against its target, and, for a regression, the culprit SHA and what root does next. No pull request waits on the bench, and a bench timing never turns a job red.
-- **Means:** `.github/workflows/bench.yml` moves from `pull_request` to push on main plus `workflow_dispatch`. One uniform 60-minute job timeout replaces every bench deadline. The lockfile-pinned enterprise install is carried over from `stryker/bench-lane-fit`.
+- **Means:** `.github/workflows/bench.yml` moves from `pull_request` to push on main plus `workflow_dispatch`. One uniform 60-minute job timeout replaces every bench deadline. The lockfile-pinned enterprise install is carried over from `stryker/bench-lane-fit`: names the side's `pnpm-lock.yaml` locks at one version are pinned through the fixture root's `overrides`, and only when some eligible name is withheld does the install add `--before=<that lockfile's last commit time>`.
 - **Product authority:** Ryan (root), ruling of 2026-10-11, relayed by the sub-conductor. This plan replaces the bench-lane-fit unit. That branch and its worktree stay untouched. For the bench lane only, it reverses R1, R11, R12, KTD1 and the merge-base half of KTD2 in `docs/plans/2026-10-10-1719-perf-execution-engine-bench-lane-plan.md`. The rest of that plan stands.
 - **Edit scope:** `.github/workflows/bench.yml` is the only workflow this unit may edit (approved for this file only). `ci.yml`, `mutation.yml` and every other workflow belong to Stream K.
 - **Stop conditions:** no local bench, mutation or e2e runs. No new dependency or executable. Stop and ask before any probe or planted bug in `src`.
@@ -77,7 +77,7 @@ The enterprise leg also stalls on main as it stands. `prepare-side.service.ts:49
 
 **Enterprise install**
 
-- R12. The enterprise fixture installs each registry package at exactly the version the side's own `pnpm-lock.yaml` locks, replacing `--before`. This lands as its own commit.
+- R12. The enterprise fixture installs each registry package the side's own `pnpm-lock.yaml` locks at exactly one version at that version, pinned through the fixture root manifest's `overrides`. A name the lockfile holds at more than one version is withheld from the pins. When none is withheld, the install runs with no `--before`. When any is withheld, the install adds `--before=<the side's last pnpm-lock commit time>`, which bounds the withheld names to releases that existed when the lockfile last changed, and the report's `withheldPins` lists them per side with that cutoff, counted in one step-summary line. This lands as its own commit. (session-settled: user-directed, review round 1 F2 ruling (c), chosen over (a) aborting on partial pins, which fails the enterprise leg on every main push, and (b) only recording them, which leaves the `--before` hole open.)
 
 **Docs**
 
@@ -90,7 +90,8 @@ The enterprise leg also stalls on main as it stands. `prepare-side.service.ts:49
 - AE3. **Covers R8, R9.** **Given** a leg whose wall time is 14 minutes, **when** it reports, **then** the summary shows 14 minutes against the 10-minute target. Its exit code and verdict level are what a 6-minute leg with the same cells would get.
 - AE4. **Covers R5, R6.** **Given** a run or setup command that never returns, **when** it hangs, **then** no bench code stops it and GitHub cancels the job at 60 minutes.
 - AE5. **Covers R7.** **Given** side A's closure build exits non-zero and side B is ready, **when** setup ends, **then** the report aborts with `side-setup-failed` naming side A and the step, and the job exits 1.
-- AE6. **Covers R12.** **Given** the registry holds a release newer than the side's locked version, with a peer on an unpublished version (as `@effect/opentelemetry@4.0.3` does today), **when** the fixture installs, **then** the locked version (4.0.0) is installed and the install completes.
+- AE6. **Covers R12.** **Given** the registry holds a release newer than the side's locked version, with a peer on an unpublished version (as `@effect/opentelemetry@4.0.3` does today), **when** the fixture installs, **then** the locked version (4.0.0) is installed through the root `overrides` and the install completes.
+- AE6a. **Covers R12.** **Given** the side's lockfile holds `typescript` at two versions, **when** the fixture installs, **then** `typescript` is absent from the `overrides`, the npm argv carries `--before=<the lockfile's last commit time>`, and the report's `withheldPins` and step summary name the side, the cutoff and the withheld count. **Given** every eligible name is pinned, **then** the argv carries no `--before` and `withheldPins` is empty.
 
 ### Scope Boundaries
 
