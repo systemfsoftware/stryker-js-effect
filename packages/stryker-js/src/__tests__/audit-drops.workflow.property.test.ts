@@ -189,32 +189,46 @@ const dropsArb: Arbitrary.Arbitrary<ReadonlyArray<AuditedDrop>> = Arbitrary.arra
 )
 
 const UNKILLED_DOMINATOR = Mutant.MutantStatusSchema.pick(['Survived', 'CompileError', 'RuntimeError', 'Ignored'])
-const isUnkilledDominator = S.is(UNKILLED_DOMINATOR)
+const SETTLED = Mutant.MutantStatusSchema.pick([
+  'Killed',
+  'Survived',
+  'NoCoverage',
+  'CompileError',
+  'RuntimeError',
+  'Timeout',
+  'Ignored',
+])
 
-const joinDominatorStatusArb: Arbitrary.Arbitrary<Mutant.MutantStatus> = Arbitrary.schema(S.Boolean).pipe(
-  Arbitrary.flatMap((focused): Arbitrary.Arbitrary<Mutant.MutantStatus> =>
-    focused ? Arbitrary.schema(UNKILLED_DOMINATOR) : Arbitrary.schema(Mutant.MutantStatusSchema)
-  ),
-)
-
-const joinMutantStatusArb: Arbitrary.Arbitrary<Mutant.MutantStatus> = Arbitrary.schema(S.Boolean).pipe(
-  Arbitrary.flatMap((pending): Arbitrary.Arbitrary<Mutant.MutantStatus> =>
-    pending ? Arbitrary.Constant('Pending') : Arbitrary.schema(Mutant.MutantStatusSchema)
-  ),
-)
-
-const joinScenarioArb: Arbitrary.Arbitrary<PairScenario> = Arbitrary.all({
-  mutantStatus: joinMutantStatusArb,
-  dominatorStatus: joinDominatorStatusArb,
-  mutantKillers: killersArb,
-  dominatorKillers: killersArb,
-}).pipe(Arbitrary.map(({ mutantStatus, dominatorStatus, mutantKillers, dominatorKillers }) => ({
-  mutant: { id: MUTANT, status: mutantStatus, killedBy: mutantKillers },
-  dominator: { id: DOMINATOR, status: dominatorStatus, killedBy: dominatorKillers },
+const bothPresentOf = (mutant: MatrixMutant, dominator: MatrixMutant): PairScenario => ({
+  mutant,
+  dominator,
   mutantPresent: true,
   dominatorPresent: true,
   tests: NAMED_TESTS,
-})))
+})
+
+const underUnkilledDominatorArb = (
+  mutantStatus: Arbitrary.Arbitrary<Mutant.MutantStatus>,
+): Arbitrary.Arbitrary<PairScenario> =>
+  Arbitrary.all({
+    mutantStatus,
+    dominatorStatus: Arbitrary.schema(UNKILLED_DOMINATOR),
+    mutantKillers: killersArb,
+    dominatorKillers: killersArb,
+  }).pipe(Arbitrary.map(({ mutantStatus, dominatorStatus, mutantKillers, dominatorKillers }) =>
+    bothPresentOf(
+      { id: MUTANT, status: mutantStatus, killedBy: mutantKillers },
+      { id: DOMINATOR, status: dominatorStatus, killedBy: dominatorKillers },
+    )
+  ))
+
+const joinDrawArb = Arbitrary.all({
+  pending: underUnkilledDominatorArb(Arbitrary.Constant('Pending')),
+  settled: SETTLED.pipe(Arbitrary.schema, underUnkilledDominatorArb),
+  free: Arbitrary.all({ mutant: recordArb(MUTANT), dominator: recordArb(DOMINATOR) }).pipe(
+    Arbitrary.map(({ mutant, dominator }) => bothPresentOf(mutant, dominator)),
+  ),
+})
 
 const isJoined = (pair: AuditedPair): boolean =>
   Match.valueTags(pair, { JoinedPair: () => true, UnjoinablePair: () => false })
@@ -225,7 +239,6 @@ const isUnsettled = (pair: AuditedPair): boolean =>
     UnjoinablePair: (unjoinable) => unjoinable.reason === 'status-unsettled',
   })
 
-const REGIONS = ['clean', 'unattested', 'orphaned', 'free'] as const
 const namedKillerArb = Arbitrary.schema(S.Literals(NAMED_TESTS))
 
 const namedProjectOf = (mutants: ReadonlyArray<MatrixMutant>): MatrixProject => ({
@@ -234,50 +247,50 @@ const namedProjectOf = (mutants: ReadonlyArray<MatrixMutant>): MatrixProject => 
   tests: NAMED_TESTS,
 })
 
-const auditProjectArb: Arbitrary.Arbitrary<MatrixProject> = Arbitrary.schema(S.Literals(REGIONS)).pipe(
-  Arbitrary.flatMap((region) =>
-    Match.value(region).pipe(
-      Match.when('clean', () =>
-        namedKillerArb.pipe(Arbitrary.map((killer) =>
-          namedProjectOf([
-            { id: MUTANT, status: 'Killed', killedBy: [killer] },
-            { id: DOMINATOR, status: 'Killed', killedBy: [killer] },
-          ])
-        ))),
-      Match.when('unattested', () =>
-        statusArb.pipe(Arbitrary.map((status) => namedProjectOf([{ id: MUTANT, status, killedBy: [] }])))),
-      Match.when('orphaned', () =>
-        namedKillerArb.pipe(Arbitrary.map((killer) =>
-          namedProjectOf([{ id: MUTANT, status: 'Killed', killedBy: [killer] }])
-        ))),
-      Match.when('free', () =>
-        pairScenarioArb.pipe(Arbitrary.map(pairProjectOf))),
-      Match.exhaustive,
-    )
+const auditDrawArb = Arbitrary.all({
+  clean: namedKillerArb.pipe(Arbitrary.map((killer) =>
+    namedProjectOf([
+      { id: MUTANT, status: 'Killed', killedBy: [killer] },
+      { id: DOMINATOR, status: 'Killed', killedBy: [killer] },
+    ])
+  )),
+  unattested: statusArb.pipe(Arbitrary.map((status) => namedProjectOf([{ id: MUTANT, status, killedBy: [] }]))),
+  orphaned: namedKillerArb.pipe(
+    Arbitrary.map((killer) => namedProjectOf([{ id: MUTANT, status: 'Killed', killedBy: [killer] }])),
   ),
-)
+  failing: Arbitrary.all({ status: Arbitrary.schema(Mutant.SurvivorStatusSchema), killer: namedKillerArb }).pipe(
+    Arbitrary.map(({ status, killer }) =>
+      namedProjectOf([
+        { id: MUTANT, status, killedBy: [] },
+        { id: DOMINATOR, status: 'Killed', killedBy: [killer] },
+      ])
+    ),
+  ),
+  free: pairScenarioArb.pipe(Arbitrary.map(pairProjectOf)),
+})
 
-const recordOf = (project: MatrixProject, id: Mutant.MutantId): Option.Option<MatrixMutant> =>
-  Arr.findFirst(project.mutants, (record) => record.id === id)
-
-const killedByANamedTest = (project: MatrixProject, record: MatrixMutant): boolean =>
-  record.status === 'Killed' && record.killedBy.some((killer) => project.tests.includes(killer))
-
-const killedTogether = (project: MatrixProject): boolean =>
-  Option.match(Option.all([recordOf(project, MUTANT), recordOf(project, DOMINATOR)]), {
+const joinsExactlyWhenSettled = (subject: typeof auditDrops, scenario: PairScenario): boolean => {
+  const settled = scenario.mutant.status !== 'Pending' && scenario.dominator.status !== 'Pending'
+  return Option.match(Arr.head(reportOf(subject, pairCommandOf(scenario)).pairs), {
     onNone: () => false,
-    onSome: ([mutant, dominator]) =>
-      mutant.status === 'Killed' && dominator.status === 'Killed' && mutant.killedBy.length > 0 &&
-      mutant.killedBy.every((killer) => dominator.killedBy.includes(killer)) &&
-      dominator.killedBy.every((killer) => mutant.killedBy.includes(killer)),
+    onSome: (pair) => (settled ? isJoined(pair) : isUnsettled(pair)),
   })
+}
 
-const unattestedWith = (orphaned: boolean) => (project: MatrixProject): boolean =>
-  Option.isNone(recordOf(project, DOMINATOR)) &&
-  Option.match(recordOf(project, MUTANT), {
+const auditOf = (subject: typeof auditDrops, project: MatrixProject): DropAuditReport =>
+  reportOf(subject, commandOf(project, [dropOf(MUTANT, DOMINATOR)]))
+
+const passes = (report: DropAuditReport): boolean =>
+  Match.valueTags(report, { DropAuditPassed: () => true, DropAuditFailed: () => false })
+
+const tagMatchesFailures = (report: DropAuditReport): boolean => {
+  const ruleUnattested = Option.match(Arr.head(report.rules), {
     onNone: () => false,
-    onSome: (mutant) => killedByANamedTest(project, mutant) === orphaned,
+    onSome: (rule) => Match.valueTags(rule, { Attested: () => false, Unattested: () => true }),
   })
+  const failing = isFail(onlyVerdictOf(report)) || ruleUnattested || report.orphanedTests.length > 0
+  return passes(report) === !failing
+}
 
 describe('auditDrops', () => {
   it.prop(
@@ -355,48 +368,18 @@ describe('auditDrops', () => {
 
   it.prop(
     '∀s_DroppedPair_≡ShouldJoinExactlyWhenNeitherStatusIsPending',
-    {
-      of: [joinScenarioArb],
-      subject: auditDrops,
-      cover: {
-        'unkilled dominator with a pending mutant': [
-          (scenario) => isUnkilledDominator(scenario.dominator.status) && scenario.mutant.status === 'Pending',
-          0.1,
-        ],
-        'unkilled dominator with a settled mutant': [
-          (scenario) => isUnkilledDominator(scenario.dominator.status) && scenario.mutant.status !== 'Pending',
-          0.1,
-        ],
-      },
-    },
-    (subject, [scenario]) => {
-      const settled = scenario.mutant.status !== 'Pending' && scenario.dominator.status !== 'Pending'
-      return Option.match(Arr.head(reportOf(subject, pairCommandOf(scenario)).pairs), {
-        onNone: () => false,
-        onSome: (pair) => (settled ? isJoined(pair) : isUnsettled(pair)),
-      })
-    },
+    { of: [joinDrawArb], subject: auditDrops },
+    (subject, [draw]) =>
+      joinsExactlyWhenSettled(subject, draw.pending) && joinsExactlyWhenSettled(subject, draw.settled) &&
+      joinsExactlyWhenSettled(subject, draw.free),
   )
 
   it.prop(
     '∀p_KillMatrix_≡ShouldFailTheAuditExactlyWhenAPairFailsARuleIsUnattestedOrATestIsOrphaned',
-    {
-      of: [auditProjectArb],
-      subject: auditDrops,
-      cover: {
-        'clean audit': [killedTogether, 0.1],
-        'unattested rule with no orphan': [unattestedWith(false), 0.1],
-        'unattested rule with an orphan': [unattestedWith(true), 0.1],
-      },
-    },
-    (subject, [project]) => {
-      const report = reportOf(subject, commandOf(project, [dropOf(MUTANT, DOMINATOR)]))
-      const ruleUnattested = Option.match(Arr.head(report.rules), {
-        onNone: () => false,
-        onSome: (rule) => Match.valueTags(rule, { Attested: () => false, Unattested: () => true }),
-      })
-      const failing = isFail(onlyVerdictOf(report)) || ruleUnattested || report.orphanedTests.length > 0
-      return Match.valueTags(report, { DropAuditPassed: () => !failing, DropAuditFailed: () => failing })
-    },
+    { of: [auditDrawArb], subject: auditDrops },
+    (subject, [draw]) =>
+      passes(auditOf(subject, draw.clean)) && !passes(auditOf(subject, draw.unattested)) &&
+      !passes(auditOf(subject, draw.orphaned)) && !passes(auditOf(subject, draw.failing)) &&
+      tagMatchesFailures(auditOf(subject, draw.free)),
   )
 })
