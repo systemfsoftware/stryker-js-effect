@@ -106,6 +106,14 @@ const checkIsMeasuredAt = (check: RunEvent.CheckDuration, ms: number): boolean =
 
 const nonNegativeIntArb = Arbitrary.schema(Report.NonNegativeInt)
 
+const VALID_VERDICT = lineOf(verdictOf(metricsOf(0, 1), phasesOf(1, 2)))
+
+const verdictLinesOf = (counts: Report.Metrics | null): ReadonlyArray<string> =>
+  counts === null ? [] : [lineOf(verdictOf(counts, phasesOf(1, 2)))]
+
+const prefixLineOf = (slot: boolean | null): ReadonlyArray<string> =>
+  slot === null ? [] : slot ? ['  '] : [lineOf(mutantOf(null))]
+
 describe('readBenchRun', () => {
   it.prop(
     '∀t_MutantTestCost_≡RecordedAsItsTestsExecutedAndTheVerdictsMutantCount',
@@ -141,5 +149,71 @@ describe('readBenchRun', () => {
           run.stderrTail === stderrTail,
       })
     },
+  )
+
+  it.prop(
+    '∀ts_TestedEventCosts_≡SummedIntoTestsExecutedWithAMissingCostCountingZero',
+    {
+      of: [S.NullOr(RunEvent.MutantCost), S.NullOr(RunEvent.MutantCost), S.NullOr(RunEvent.MutantCost)],
+      subject: readBenchRun,
+    },
+    (subject, [first, second, third]) => {
+      const lines = [lineOf(mutantOf(first)), VALID_VERDICT, lineOf(mutantOf(second)), lineOf(mutantOf(third))]
+      const expected = (first?.testsExecuted ?? 0) + (second?.testsExecuted ?? 0) + (third?.testsExecuted ?? 0)
+      return Result.match(subject(commandOf(lines)), {
+        onFailure: () => false,
+        onSuccess: (run) => S.is(BenchRunMeasured)(run) && run.testsExecuted === expected,
+      })
+    },
+  )
+
+  it.prop(
+    '∀ln_UndecodableLineAmongBlankAndDecodableLines_≡InvalidNamingItsOneBasedLineNumber',
+    { of: [S.NullOr(S.Boolean), S.NullOr(S.Boolean), S.NullOr(S.Boolean)], subject: readBenchRun },
+    (subject, [first, second, third]) => {
+      const prefix = [...prefixLineOf(first), ...prefixLineOf(second), ...prefixLineOf(third)]
+      const lineNumber = prefix.length + 1
+      return Result.match(subject(commandOf([...prefix, 'not a stream line', 'also not a stream line'])), {
+        onFailure: () => false,
+        onSuccess: (run) =>
+          S.is(BenchRunInvalid)(run) &&
+          run.code === 'stream-undecodable' &&
+          run.lineNumber === lineNumber &&
+          run.reason.startsWith(`stdout line ${lineNumber} `),
+      })
+    },
+  )
+
+  it.prop(
+    '∀vc_VerdictLines_≡MeasuredWithItsMutantCountIffExactlyOneElseInvalidNamingTheCount',
+    { of: [S.NullOr(Report.Metrics), S.NullOr(Report.Metrics), S.NullOr(Report.Metrics)], subject: readBenchRun },
+    (subject, [first, second, third]) => {
+      const verdicts = [...verdictLinesOf(first), ...verdictLinesOf(second), ...verdictLinesOf(third)]
+      const only = first ?? second ?? third
+      return Result.match(subject(commandOf([lineOf(mutantOf(null)), ...verdicts])), {
+        onFailure: () => false,
+        onSuccess: (run) =>
+          verdicts.length === 1
+            ? S.is(BenchRunMeasured)(run) && run.mutants === only?.totalMutants
+            : S.is(BenchRunInvalid)(run) &&
+              run.code === 'stream-invalid' &&
+              run.lineNumber === null &&
+              run.reason.endsWith(`found ${verdicts.length}`),
+      })
+    },
+  )
+
+  it.prop(
+    '∀pd_VerdictPhaseDurations_≡CarriedAsReportedOrStreamInvalidWhenAbsent',
+    { of: [Report.Metrics, S.NullOr(RunEvent.PhaseDurations)], subject: readBenchRun },
+    (subject, [counts, phaseDurations]) =>
+      Result.match(subject(commandOf([lineOf(verdictOf(counts, phaseDurations))])), {
+        onFailure: () => false,
+        onSuccess: (run) =>
+          phaseDurations === null
+            ? S.is(BenchRunInvalid)(run) && run.code === 'stream-invalid' && run.lineNumber === null
+            : S.is(BenchRunMeasured)(run) &&
+              S.toEquivalence(RunEvent.PhaseDurations)(run.phaseDurations, phaseDurations),
+      }),
   )
 })
