@@ -302,7 +302,6 @@ jobs:
           started-at: ${{ env.JOB_STARTED_AT }}
           details: ${{ steps.sweep.outputs.details }}
 
-
   checker-parity-changes:
     if: github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]'
     runs-on: ubuntu-latest
