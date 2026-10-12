@@ -1,4 +1,5 @@
 import { Array, Boolean, Function, Match, Option, Result, Schema } from 'effect'
+import type { Json, JsonObject } from 'effect/Schema'
 
 import {
   CatalogMode,
@@ -7,7 +8,6 @@ import {
   ManifestDocument,
   UnresolvedCatalogSpec,
 } from './catalog-resolution.schema.js'
-import type { PlainJson, PlainJsonObject } from './plain-json.schema.js'
 
 export interface WorkspaceCatalogs {
   readonly default: Readonly<Record<string, string>>
@@ -184,7 +184,7 @@ const resolveField = (
   manifest: string,
   catalogs: WorkspaceCatalogs,
   field: string,
-  value: PlainJson | undefined,
+  value: Json | undefined,
 ): Result.Result<Option.Option<Record<string, string>>, ResolveFailure> =>
   Option.match(Option.fromNullishOr(value), {
     onNone: () => Result.succeed(Option.none<Record<string, string>>()),
@@ -198,25 +198,17 @@ const resolveField = (
 
 export const resolveCatalogSpecs: {
   (
-    packageJson: PlainJsonObject,
+    packageJson: JsonObject,
     catalogs: WorkspaceCatalogs,
-  ): (manifest: string) => Result.Result<PlainJsonObject, ResolveFailure>
-  (
-    manifest: string,
-    packageJson: PlainJsonObject,
-    catalogs: WorkspaceCatalogs,
-  ): Result.Result<PlainJsonObject, ResolveFailure>
+  ): (manifest: string) => Result.Result<JsonObject, ResolveFailure>
+  (manifest: string, packageJson: JsonObject, catalogs: WorkspaceCatalogs): Result.Result<JsonObject, ResolveFailure>
 } = Function.dual(
   3,
-  (
-    manifest: string,
-    packageJson: PlainJsonObject,
-    catalogs: WorkspaceCatalogs,
-  ): Result.Result<PlainJsonObject, ResolveFailure> =>
+  (manifest: string, packageJson: JsonObject, catalogs: WorkspaceCatalogs): Result.Result<JsonObject, ResolveFailure> =>
     Result.map(
       collect(DEPENDENCY_FIELDS.map((field) => resolveField(manifest, catalogs, field, packageJson[field]))),
       (fields) =>
-        Array.zip(DEPENDENCY_FIELDS, fields).reduce<PlainJsonObject>(
+        Array.zip(DEPENDENCY_FIELDS, fields).reduce<JsonObject>(
           (resolved, [field, value]) =>
             Option.match(value, {
               onNone: () => resolved,
@@ -228,14 +220,14 @@ export const resolveCatalogSpecs: {
 )
 
 export const parseFixtureManifest: {
-  (bytes: Uint8Array): (manifest: string) => Result.Result<PlainJsonObject, MalformedFixtureManifest>
-  (manifest: string, bytes: Uint8Array): Result.Result<PlainJsonObject, MalformedFixtureManifest>
+  (bytes: Uint8Array): (manifest: string) => Result.Result<JsonObject, MalformedFixtureManifest>
+  (manifest: string, bytes: Uint8Array): Result.Result<JsonObject, MalformedFixtureManifest>
 } = Function.dual(
   2,
-  (manifest: string, bytes: Uint8Array): Result.Result<PlainJsonObject, MalformedFixtureManifest> =>
+  (manifest: string, bytes: Uint8Array): Result.Result<JsonObject, MalformedFixtureManifest> =>
     Result.mapError(
       Schema.decodeResult(ManifestDocument)(new TextDecoder().decode(bytes)),
-      (error) => MalformedFixtureManifest.make({ manifest, detail: error.message }),
+      () => MalformedFixtureManifest.make({ manifest, detail: 'the manifest is not a JSON object' }),
     ),
 )
 

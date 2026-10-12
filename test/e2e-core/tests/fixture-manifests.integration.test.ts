@@ -42,10 +42,14 @@ const resolveEveryFixtureManifest = Effect.gen(function*() {
   }
 })
 
-const refusalOf = (text: string): string =>
-  Result.match(parseFixtureManifest('fixture/package.json', new TextEncoder().encode(text)), {
+type FixtureDocument = Readonly<Record<string, string | Readonly<Record<string, string>>>>
+
+const manifestBytesOf = (document: FixtureDocument): Uint8Array => new TextEncoder().encode(JSON.stringify(document))
+
+const readBackOf = (document: FixtureDocument): string =>
+  Result.match(parseFixtureManifest('fixture/package.json', manifestBytesOf(document)), {
     onFailure: (failure) => failure.message,
-    onSuccess: () => 'decoded',
+    onSuccess: (manifest) => JSON.stringify(manifest),
   })
 
 Feature('Reading e2e fixture manifests')
@@ -70,22 +74,34 @@ Feature('Reading e2e fixture manifests')
     )
 
     scenarioOutline(
-      'A manifest whose key must be escaped in JSON is refused and the refusal names that key',
+      'A manifest keeps a key that needs a JSON escape after a manifest with a key ending in a backslash was read',
       [
-        { key: 'a lone surrogate', text: '{"name":"fixture","\\ud800":"1"}', at: 'at ["\\ud800"]' },
-        { key: 'NUL', text: '{"name":"fixture","\\u0000":"1"}', at: 'at ["\\u0000"]' },
-        { key: 'a trailing backslash', text: '{"name":"fixture","x\\\\":"1"}', at: 'at ["x\\\\"]' },
-        {
-          key: 'a trailing backslash inside dependencies',
-          text: '{"name":"fixture","dependencies":{"x\\\\":"1"}}',
-          at: 'at ["dependencies"]["x\\\\"]',
-        },
+        { key: 'a lone surrogate', lead: 'nodejs-63785-surrogate', escaped: '\ud800', nested: false },
+        { key: 'NUL', lead: 'nodejs-63785-nul', escaped: '\u0000', nested: false },
+        { key: 'a tab', lead: 'nodejs-63785-tab', escaped: '\t', nested: false },
+        { key: 'a quote', lead: 'nodejs-63785-quote', escaped: '"', nested: false },
+        { key: 'a lone surrogate inside dependencies', lead: 'nodejs-63785-nested', escaped: '\ud800', nested: true },
       ],
-      ({ key, text, at }) =>
+      ({ key, lead, escaped, nested }) =>
         Gherkin.Do.pipe(
-          Given(`a fixture manifest with a key holding ${key}`)('text', () => Effect.succeed(text)),
-          When('the manifest is read')('refusal', (s) => Effect.succeed(refusalOf(s.text))),
-          Then('the manifest is refused at that key')((s, expect) => expect(s.refusal).toContain(at)),
+          Given(`a manifest with the key "${lead}" followed by a key ending in a backslash has been read`)(
+            'primed',
+            () =>
+              Effect.succeed(
+                readBackOf(nested ? { dependencies: { [lead]: '0', '\\': '0' } } : { [lead]: '0', '\\': '0' }),
+              ),
+          ),
+          Given(`a manifest with the key "${lead}" followed by a key holding ${key}`)(
+            'document',
+            () =>
+              Effect.succeed(
+                nested ? { dependencies: { [lead]: '0', [escaped]: '1' } } : { [lead]: '0', [escaped]: '1' },
+              ),
+          ),
+          When('the manifest is read')('read', (s) => Effect.succeed(readBackOf(s.document))),
+          Then('it decodes to the document that was written, key for key')((s, expect) =>
+            expect(s.read).toStrictEqual(JSON.stringify(s.document))
+          ),
         ),
     )
   })

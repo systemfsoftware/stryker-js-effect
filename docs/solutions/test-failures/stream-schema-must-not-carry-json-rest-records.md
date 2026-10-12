@@ -1,7 +1,7 @@
 ---
 title: Keep JSON rest records out of the machine-stream schema
 date: 2026-09-27
-last_updated: 2026-10-11
+last_updated: 2026-10-12
 category: test-failures
 problem_type: flaky codec round-trip law caused by a V8 JSON.parse defect
 input_shape: solution
@@ -77,56 +77,57 @@ returned the right keys, so the fault depends on what the parser read before.
 
 The defect does not need a rest record: any record keyed by `Schema.String` lets
 the generator draw the same keys. `∀x_ManifestDocument_=x` in the e2e-core package
-(`Schema.fromJsonString(Schema.JsonObject)`) failed `check` on unrelated PRs, and
-`∀x_NpmLockfileJson_=x` (a `packages` record keyed by `Schema.String`) shrank to a
-`"\u0000"` key on #285. On Node 24.21 the law file failed 3 of 200 unpinned runs
-while 20 runs of the whole e2e-core suite all passed (measured for #306, see its
-description). Measure the law file on its own; suite runs hide the rate.
+(`Schema.fromJsonString(Schema.JsonObject)`) failed `check` on unrelated PRs.
 
-Every real key has a shape that needs no JSON escape, so the key schema refuses
-the rest:
+The fault is in the parse, not in the keys, so fix the parse and keep every key
+the schema admits. Refusing keys that need a JSON escape narrows the law's domain
+to what the buggy parser reads correctly, so the round-trip law no longer covers
+them.
 
-- Where the domain names its keys, use its pattern. Pending in #285: npm lock and
-  manifest maps are keyed by npm package names, and `packages` by `""`,
-  `node_modules/<name>` at any depth, or a workspace path, the shapes the seven
-  committed fixture `package-lock.json` files hold.
-- Where the record is a genuine pass-through (a fixture manifest that catalog
-  resolution writes back), key it by the `PlainJsonKey` schema (#306). Remove it
-  once CI's Node ships the V8 fix for nodejs/node#63785; the schema's comment
-  names the commit.
-- Check the key on the decoded side:
-  `Schema.String.pipe(Schema.decodeTo(Schema.String.check(Schema.isPattern(re))))`.
-  Gate: the refusal scenarios below, which fail when a bad key is skipped
-  instead of refused at its path.
-  - wrong: `Schema.Record(Schema.String.check(Schema.isPattern(re)), value)`
-  - right: `Schema.Record(Schema.String.pipe(Schema.decodeTo(Schema.String.check(Schema.isPattern(re)))), value)`
-- Write the escape class as `\p{Cc}\p{Cs}`. Gate: oxlint `no-control-regex`
-  refuses a `\u0000-\u001F` range.
-- In a recursive JSON union, define the object member once with its value
-  behind `Schema.suspend`. Gate: the generated `∀s_<Name>Variants_⊇Declared`
-  law fails on a record whose value is the bare union.
-- Declare the object type as a type alias. Gate: `tsc` refuses an interface in
-  `Record.get` (no `symbol` index), and oxlint `no-misused-spread` refuses its
-  spread.
+The V8 fault sits on one path. When an object has a single outgoing map
+transition for a key that ends in a backslash, the parser's fast path reads a
+later escaped key on that map as the backslash key. Bare strings and objects built
+with `Object.fromEntries` never take that path, and neither do index-like keys.
+On Node 24.21 a probe that primed a fresh map with a backslash key, then decoded a
+second key on it, misread 250 of 400 decodes with plain `JSON.parse` and the same
+250 with a reviver, all of them keys that need an escape (#306's description).
 
-### Refusal tests replace seed replays
+`ManifestDocument` (#306) therefore decodes JSON text in three steps:
 
-The regression is a refusal, not a round-trip. A document whose key is `\ud800`,
-`\u0000`, or ends in an escaped backslash fails to decode, and the message names
-the key path, such as `at ["packages"]["\u0000"]`. These are example rows, so
-they go in a Gherkin `scenarioOutline` in the feature that already reads the
-committed documents, next to one positive decode of every committed file:
-the feature "Reading e2e fixture manifests" (#306), plus "Committed fixture
-locks agree with the repository" (pending in #285). Keep them
-out of `*.property.test.ts` files. Add no seed pin, reduced run budget or
-arbitrary override; the generator follows the schema.
+1. It decodes the text once, unchanged, so malformed text fails as it did before.
+2. It swaps every key token for its offset in the text, which needs no escape,
+   and parses that.
+3. It decodes each original key token as a bare JSON string and rebuilds every
+   object with `Object.fromEntries`.
 
-To compare a CI failure before and after a schema change, replay the short token
-`CONFORMANCE_REPLAY='property=<p>;seed=<s>;runs=<n>'`. The full token also carries
-a shrink `path` into the old generator's tree. After the schema changes, that
-path reports `Shrunk input: undefined` and fails whatever the fix. #306's
-replay of `property=2276007449;seed=880152087` is red before the fix and green
-after it.
+Duplicate keys keep `JSON.parse` semantics: the last value wins, at the first
+key's position. The encoded side stays an annotated `Schema.String` (what
+`Schema.fromJsonString` uses), so the generated `∀x_ManifestDocument_=x` and
+`∀x_ManifestDocumentEnc_=x` laws keep drawing every key.
 
-Code smell: `Schema.Record(Schema.String, …)` or `Schema.JsonObject` inside a
-`Schema.fromJsonString` codec whose keys come from outside the repository.
+Start the exported schema's initializer from `Schema.`. Gate: schema discovery
+generates no law for an export written as `localSchema.pipe(...)`;
+`vitest --reporter=verbose` lists one `∀x_<Name>_=x` per export.
+
+### Regression rows and the seed replay
+
+The failure depends on what the worker parsed before, so a row must create that
+state itself. Each row of "A manifest keeps a key that needs a JSON escape after
+a manifest with a key ending in a backslash was read" (feature "Reading e2e
+fixture manifests") first reads a manifest whose key is new to the process,
+followed by a backslash key. It then reads one with the same first key followed by
+the escaped key, and expects the document back key for key. On main's
+`Schema.fromJsonString` decode, every row whose key needs an escape fails. A row
+whose second key only ends in a backslash passes even on main, so it is no
+regression row.
+
+Replay a CI failure with the short token
+`CONFORMANCE_REPLAY='property=<p>;seed=<s>;runs=<n>'` and `-t '<law name>'`, so
+that only that law runs. In a full-file run, the laws that run first change the
+parser's transition state, and the token can pass on the faulty decode. #306's
+`property=2276007449;seed=880152087;runs=100` with `-t 'ManifestDocument_'` is
+refuted on main (attempt 63) and passes on the fix.
+
+Code smell: `Schema.fromJsonString` over `Schema.Record(Schema.String, …)` or
+`Schema.JsonObject` whose keys come from outside the repository, on a Node
+without the V8 fix 93cd21e (nodejs/node#66542).
