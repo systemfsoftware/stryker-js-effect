@@ -26,6 +26,7 @@ import {
   TestRunnerMutantRunRequest,
 } from './Plugin.schema.js'
 import { TraceContextMiddleware, type TracedRpc } from './TraceContextRpc.service.js'
+import { CheckerCapabilities, TypeQueryRefused, TypeQueryRequest, TypeQueryResponse } from './TypeQuery.schema.js'
 
 const capabilities: TracedRpc<
   'capabilities',
@@ -74,6 +75,18 @@ const digest: TracedRpc<'digest', typeof CheckerDigestRequest, typeof ProgramDig
 )
   .middleware(TraceContextMiddleware)
 
+const checkerCapabilities: TracedRpc<
+  'capabilities',
+  typeof CheckerDigestRequest,
+  typeof CheckerCapabilities,
+  typeof CheckerFailed
+> = Rpc.make('capabilities', { payload: CheckerDigestRequest, success: CheckerCapabilities, error: CheckerFailed })
+  .middleware(TraceContextMiddleware)
+
+const typeQuery: TracedRpc<'typeQuery', typeof TypeQueryRequest, typeof TypeQueryResponse, typeof TypeQueryRefused> =
+  Rpc.make('typeQuery', { payload: TypeQueryRequest, success: TypeQueryResponse, error: TypeQueryRefused })
+    .middleware(TraceContextMiddleware)
+
 const init: TracedRpc<'init', typeof ReporterInitOptions, typeof ReporterAck, typeof ReporterFailed> = Rpc.make(
   'init',
   { payload: ReporterInitOptions, success: ReporterAck, error: ReporterFailed },
@@ -96,11 +109,9 @@ export const TestRunnerRpcs: RpcGroup.RpcGroup<typeof capabilities | typeof dryR
   mutantRun,
 )
 
-export const CheckerRpcs: RpcGroup.RpcGroup<typeof check | typeof group | typeof digest> = RpcGroup.make(
-  check,
-  group,
-  digest,
-)
+export const CheckerRpcs: RpcGroup.RpcGroup<
+  typeof check | typeof group | typeof digest | typeof checkerCapabilities | typeof typeQuery
+> = RpcGroup.make(check, group, digest, checkerCapabilities, typeQuery)
 
 export const ReporterRpcs: RpcGroup.RpcGroup<typeof init | typeof onEventBatch | typeof flush> = RpcGroup.make(
   init,

@@ -68,18 +68,17 @@ const pairScenarioArb: Arbitrary.Arbitrary<PairScenario> = Arbitrary.all({
 
 const present = (record: MatrixMutant, isPresent: boolean): ReadonlyArray<MatrixMutant> => isPresent ? [record] : []
 
+const pairProjectOf = (scenario: PairScenario): MatrixProject => ({
+  project: 'p',
+  mutants: [
+    ...present(scenario.mutant, scenario.mutantPresent),
+    ...present(scenario.dominator, scenario.dominatorPresent),
+  ],
+  tests: scenario.tests,
+})
+
 const pairCommandOf = (scenario: PairScenario): AuditDropsCommand =>
-  commandOf(
-    {
-      project: 'p',
-      mutants: [
-        ...present(scenario.mutant, scenario.mutantPresent),
-        ...present(scenario.dominator, scenario.dominatorPresent),
-      ],
-      tests: scenario.tests,
-    },
-    [dropOf(MUTANT, DOMINATOR)],
-  )
+  commandOf(pairProjectOf(scenario), [dropOf(MUTANT, DOMINATOR)])
 
 const reportOf = (subject: typeof auditDrops, command: AuditDropsCommand): DropAuditReport =>
   Result.getOrThrow(subject(command))
@@ -189,6 +188,110 @@ const dropsArb: Arbitrary.Arbitrary<ReadonlyArray<AuditedDrop>> = Arbitrary.arra
   { maxLength: 4 },
 )
 
+const UNKILLED_DOMINATOR = Mutant.MutantStatusSchema.pick(['Survived', 'CompileError', 'RuntimeError', 'Ignored'])
+const SETTLED = Mutant.MutantStatusSchema.pick([
+  'Killed',
+  'Survived',
+  'NoCoverage',
+  'CompileError',
+  'RuntimeError',
+  'Timeout',
+  'Ignored',
+])
+
+const bothPresentOf = (mutant: MatrixMutant, dominator: MatrixMutant): PairScenario => ({
+  mutant,
+  dominator,
+  mutantPresent: true,
+  dominatorPresent: true,
+  tests: NAMED_TESTS,
+})
+
+const underUnkilledDominatorArb = (
+  mutantStatus: Arbitrary.Arbitrary<Mutant.MutantStatus>,
+): Arbitrary.Arbitrary<PairScenario> =>
+  Arbitrary.all({
+    mutantStatus,
+    dominatorStatus: Arbitrary.schema(UNKILLED_DOMINATOR),
+    mutantKillers: killersArb,
+    dominatorKillers: killersArb,
+  }).pipe(Arbitrary.map(({ mutantStatus, dominatorStatus, mutantKillers, dominatorKillers }) =>
+    bothPresentOf(
+      { id: MUTANT, status: mutantStatus, killedBy: mutantKillers },
+      { id: DOMINATOR, status: dominatorStatus, killedBy: dominatorKillers },
+    )
+  ))
+
+const joinDrawArb = Arbitrary.all({
+  pending: underUnkilledDominatorArb(Arbitrary.Constant('Pending')),
+  settled: SETTLED.pipe(Arbitrary.schema, underUnkilledDominatorArb),
+  free: Arbitrary.all({ mutant: recordArb(MUTANT), dominator: recordArb(DOMINATOR) }).pipe(
+    Arbitrary.map(({ mutant, dominator }) => bothPresentOf(mutant, dominator)),
+  ),
+})
+
+const isJoined = (pair: AuditedPair): boolean =>
+  Match.valueTags(pair, { JoinedPair: () => true, UnjoinablePair: () => false })
+
+const isUnsettled = (pair: AuditedPair): boolean =>
+  Match.valueTags(pair, {
+    JoinedPair: () => false,
+    UnjoinablePair: (unjoinable) => unjoinable.reason === 'status-unsettled',
+  })
+
+const namedKillerArb = Arbitrary.schema(S.Literals(NAMED_TESTS))
+
+const namedProjectOf = (mutants: ReadonlyArray<MatrixMutant>): MatrixProject => ({
+  project: 'p',
+  mutants,
+  tests: NAMED_TESTS,
+})
+
+const auditDrawArb = Arbitrary.all({
+  clean: namedKillerArb.pipe(Arbitrary.map((killer) =>
+    namedProjectOf([
+      { id: MUTANT, status: 'Killed', killedBy: [killer] },
+      { id: DOMINATOR, status: 'Killed', killedBy: [killer] },
+    ])
+  )),
+  unattested: statusArb.pipe(Arbitrary.map((status) => namedProjectOf([{ id: MUTANT, status, killedBy: [] }]))),
+  orphaned: namedKillerArb.pipe(
+    Arbitrary.map((killer) => namedProjectOf([{ id: MUTANT, status: 'Killed', killedBy: [killer] }])),
+  ),
+  failing: Arbitrary.all({ status: Arbitrary.schema(Mutant.SurvivorStatusSchema), killer: namedKillerArb }).pipe(
+    Arbitrary.map(({ status, killer }) =>
+      namedProjectOf([
+        { id: MUTANT, status, killedBy: [] },
+        { id: DOMINATOR, status: 'Killed', killedBy: [killer] },
+      ])
+    ),
+  ),
+  free: pairScenarioArb.pipe(Arbitrary.map(pairProjectOf)),
+})
+
+const joinsExactlyWhenSettled = (subject: typeof auditDrops, scenario: PairScenario): boolean => {
+  const settled = scenario.mutant.status !== 'Pending' && scenario.dominator.status !== 'Pending'
+  return Option.match(Arr.head(reportOf(subject, pairCommandOf(scenario)).pairs), {
+    onNone: () => false,
+    onSome: (pair) => (settled ? isJoined(pair) : isUnsettled(pair)),
+  })
+}
+
+const auditOf = (subject: typeof auditDrops, project: MatrixProject): DropAuditReport =>
+  reportOf(subject, commandOf(project, [dropOf(MUTANT, DOMINATOR)]))
+
+const passes = (report: DropAuditReport): boolean =>
+  Match.valueTags(report, { DropAuditPassed: () => true, DropAuditFailed: () => false })
+
+const tagMatchesFailures = (report: DropAuditReport): boolean => {
+  const ruleUnattested = Option.match(Arr.head(report.rules), {
+    onNone: () => false,
+    onSome: (rule) => Match.valueTags(rule, { Attested: () => false, Unattested: () => true }),
+  })
+  const failing = isFail(onlyVerdictOf(report)) || ruleUnattested || report.orphanedTests.length > 0
+  return passes(report) === !failing
+}
+
 describe('auditDrops', () => {
   it.prop(
     '∀d_Drops_≡ShouldAuditOnePairWhenADropNamesADominator',
@@ -261,5 +364,22 @@ describe('auditDrops', () => {
     (subject, [scenario]) =>
       reportOf(subject, orphanCommandOf(scenario)).orphanedTests.some((orphan) => orphan.test === 't1') ===
         t1OrphanedOf(scenario),
+  )
+
+  it.prop(
+    '∀s_DroppedPair_≡ShouldJoinExactlyWhenNeitherStatusIsPending',
+    { of: [joinDrawArb], subject: auditDrops },
+    (subject, [draw]) =>
+      joinsExactlyWhenSettled(subject, draw.pending) && joinsExactlyWhenSettled(subject, draw.settled) &&
+      joinsExactlyWhenSettled(subject, draw.free),
+  )
+
+  it.prop(
+    '∀p_KillMatrix_≡ShouldFailTheAuditExactlyWhenAPairFailsARuleIsUnattestedOrATestIsOrphaned',
+    { of: [auditDrawArb], subject: auditDrops },
+    (subject, [draw]) =>
+      passes(auditOf(subject, draw.clean)) && !passes(auditOf(subject, draw.unattested)) &&
+      !passes(auditOf(subject, draw.orphaned)) && !passes(auditOf(subject, draw.failing)) &&
+      tagMatchesFailures(auditOf(subject, draw.free)),
   )
 })
