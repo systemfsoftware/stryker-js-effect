@@ -1,0 +1,7 @@
+{
+  "name": "oracle-c",
+  "private": true,
+  "devDependencies": {
+    "picocolors": "1.0.0"
+  }
+}

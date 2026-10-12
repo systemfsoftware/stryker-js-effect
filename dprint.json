@@ -23,6 +23,7 @@
     "**/snapshots/*.md",
     "repos/**",
     "packages/stryker-js-typescript-checker/tests/__fixtures__/**",
+    "packages/stryker-js/tests/__fixtures__/lockfile-closure/**",
     "packages/toolchain/oxlint-ignorer-config/lib/base.d.ts"
   ],
   "plugins": [

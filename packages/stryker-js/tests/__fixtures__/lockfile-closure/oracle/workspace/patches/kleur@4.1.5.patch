@@ -1,0 +1,7 @@
+diff --git a/oracle.txt b/oracle.txt
+new file mode 100644
+index 0000000..d00491f
+--- /dev/null
++++ b/oracle.txt
+@@ -0,0 +1 @@
++patched by the lockfile-closure oracle
