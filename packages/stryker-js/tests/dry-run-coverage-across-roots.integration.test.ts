@@ -399,6 +399,8 @@ const withoutVerdicts = (report: Json): Json => isJsonRecord(report) ? merged(re
 const withGlobalTestInput = (file: string) => (coverage: JsonRecord): JsonRecord =>
   merged(coverage, { globalTestInputs: [file] })
 
+const withProjectRoot = (root: string) => (coverage: JsonRecord): JsonRecord => merged(coverage, { projectRoot: root })
+
 const rewriteReport = (
   root: string,
   file: string,
@@ -526,22 +528,22 @@ Feature('Reusing dry-run coverage of a project that was built elsewhere')
     scenario(
       "A project moved to another root does not score its mutants from the first root's coverage",
       Gherkin.Do.pipe(
-        Given('the reports of roots A and C copied into root B after A and C are deleted')(
+        Given("root A's report and a copy re-rooted under C, both copied into root B after A and C are deleted")(
           'observed',
           () =>
             Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
               const rootA = yield* writePerTestFixture
               const rootB = yield* writePerTestFixture
-              const rootC = yield* writePerTestFixture
+              const rootC = yield* fs.makeTempDirectory()
               const realA = yield* fs.realPath(rootA)
               const realB = yield* fs.realPath(rootB)
               const realC = yield* fs.realPath(rootC)
               return yield* Effect.ensuring(
                 Effect.gen(function*() {
                   const first = yield* runPerTest(rootA)
-                  yield* runPerTest(rootC)
-                  yield* copyReport(rootC, rootB)
+                  yield* copyReport(rootA, rootB)
+                  yield* rewriteReport(rootB, INCREMENTAL_FILE, withCoverage(withProjectRoot(realC)))
                   yield* copyReport(rootA, rootB, OTHER_ROOT_SOURCE)
                   yield* removeFixture(rootA)
                   yield* removeFixture(rootC)
