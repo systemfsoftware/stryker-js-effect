@@ -24,6 +24,7 @@
     "build": "pnpm run typecheck && tsdown",
     "typecheck": "tsc -b",
     "test": "vitest run",
+    "fixtures:lockfile-oracle": "./scripts/lockfile-oracle.sh",
     "mutation": "stryker run",
     "attw": "attw --pack .",
     "lint": "f=${OXLINT_FORMAT:-${AGENT:+agent}}; oxlint . --format=${f:-default}",
@@ -46,7 +47,8 @@
     "@opentelemetry/sdk-metrics": "catalog:",
     "@opentelemetry/sdk-trace-base": "catalog:",
     "@systemfsoftware/effect-cell-types": "catalog:",
-    "@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^"
+    "@systemfsoftware/stryker-js-vm-runner": "workspace:@systemfsoftware/stryker-js-vitest-runner@^",
+    "yaml": "catalog:"
   },
   "peerDependencies": {
     "effect": "catalog:"
