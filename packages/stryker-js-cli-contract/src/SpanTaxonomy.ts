@@ -202,6 +202,7 @@ export const Spans = {
   sandboxMoveDirectory: { name: 'stryker.sandbox.move_directory', attributes: {} },
   sandboxMoveDirectoryContents: { name: 'stryker.sandbox.move_directory.contents', attributes: {} },
   sandboxMoveEntry: { name: 'stryker.sandbox.move_entry', attributes: {} },
+  sandboxPrepare: { name: 'stryker.sandbox.prepare', attributes: {} },
   sandboxPreprocessDisableTypeChecks: { name: 'stryker.sandbox.preprocess.disable_type_checks', attributes: {} },
   sandboxRemoveEmptyParent: { name: 'stryker.sandbox.remove_empty_parent', attributes: {} },
   sandboxRemoveTempDir: { name: 'stryker.sandbox.remove_temp_dir', attributes: {} },
