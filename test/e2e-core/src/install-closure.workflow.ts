@@ -21,7 +21,11 @@ export class InstallClosureCommand extends S.TaggedClass<InstallClosureCommand>(
 const ClosureInstallTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/ClosureInstall')
 type ClosureInstallTypeId = typeof ClosureInstallTypeId
 
-const FixtureInstall = S.Struct({ fixture: S.String, specs: S.Array(S.String) })
+const FixtureInstall = S.Struct({
+  fixture: S.String,
+  specs: S.Array(S.String),
+  dependencies: S.Record(S.String, S.String),
+})
 
 export class ClosureInstall extends S.TaggedClass<ClosureInstall>()('ClosureInstall', {
   fixtures: S.Array(FixtureInstall),
@@ -195,8 +199,8 @@ const conflictRefusal = (
     },
   )
 
-const aliasSpecOf = (command: InstallClosureCommand, edge: ClosureEdge): ReadonlyArray<string> =>
-  Option.toArray(Option.map(tarballOf(command, edge.target), (path) => `${edge.dependency}@file:${path}`))
+const aliasTargetOf = (command: InstallClosureCommand, edge: ClosureEdge): ReadonlyArray<readonly [string, string]> =>
+  Option.toArray(Option.map(tarballOf(command, edge.target), (path) => [edge.dependency, path] as const))
 
 const onRequest = (command: InstallClosureCommand, name: string): boolean => command.onRequest.includes(name)
 
@@ -230,25 +234,35 @@ const requestedNamesOf = (command: InstallClosureCommand, fixture: string): Read
     .map((edge) => edge.target)
     .filter((target) => onRequest(command, target))
 
-const installOf = (command: InstallClosureCommand, names: ReadonlyArray<string>): ReadonlyArray<string> => {
+const installOf = (command: InstallClosureCommand, fixture: string, names: ReadonlyArray<string>) => {
   const members = membersNamed(command, names)
-  const aliases = members.flatMap((member) => memberEdgesOf(member.manifest)).filter(isAlias)
-  return [
-    ...members.map((member) => member.tarballPath),
-    ...Arr.dedupe(aliases.flatMap((edge) => aliasSpecOf(command, edge))).sort(),
-  ]
+  const aliasTargets = members
+    .flatMap((member) => memberEdgesOf(member.manifest))
+    .filter(isAlias)
+    .flatMap((edge) => aliasTargetOf(command, edge))
+  return {
+    fixture,
+    specs: [
+      ...members.map((member) => member.tarballPath),
+      ...Arr.dedupe(aliasTargets.map(([dependency, path]) => `${dependency}@file:${path}`)).sort(),
+    ],
+    dependencies: Object.fromEntries(
+      [...members.map((member) => [member.manifest.name, member.tarballPath] as const), ...aliasTargets]
+        .map(([name, path]) => [name, `file:${path}`]),
+    ),
+  }
 }
 
 const closureInstallOf = (command: InstallClosureCommand): ClosureInstall => {
   const shared = sharedNamesOf(command)
   return ClosureInstall.make({
-    fixtures: Arr.dedupe(command.fixtures.map((manifest) => manifest.fixture)).map((fixture) => ({
-      fixture,
-      specs: installOf(
+    fixtures: Arr.dedupe(command.fixtures.map((manifest) => manifest.fixture)).map((fixture) =>
+      installOf(
         command,
+        fixture,
         withReachedOnRequest(command, Arr.dedupe([...shared, ...requestedNamesOf(command, fixture)])),
-      ),
-    })),
+      )
+    ),
   })
 }
 

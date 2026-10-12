@@ -13,7 +13,7 @@ An entry's name is a digest of every input that can change its verdict:
 - for a tested verdict: the covering tests' ids, the import-closure digest of their files, and the checker configuration digest
 - for a CompileError verdict: the checker's program digest
 
-Nothing in the name refers to a shard, branch, report path or machine. Two runs whose inputs are identical compute the same name, so parallel shards, later runs and other pull requests that share a store reuse each other's verdicts. An entry whose inputs differ has a different name and is never read as a match. Entries written under another key scheme sit in another directory and are invisible.
+Nothing in the name refers to a shard, branch, report path or the store's location. It does carry the project's absolute path: the mutant id and the file-name component both hash the absolute path of the mutated file. Two runs whose inputs are identical and that check the project out at the same absolute path compute the same name, so parallel shards, later runs and other pull requests that share a store reuse each other's verdicts; GitHub-hosted runners all use one workspace path. A checkout at another absolute path computes other names, finds no entries, and tests every mutant again, counted as `noPriorRecord`. Copying the store to another location keeps every verdict reusable; moving the workspace does not. An entry whose inputs differ has a different name and is never read as a match. Entries written under another key scheme sit in another directory and are invisible.
 
 ## Writes and readers
 
