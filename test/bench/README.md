@@ -20,7 +20,8 @@ one: when it separates past max(3% of side A's median, 10 ms), the verdict line,
 the step summary and the JSON report carry `phase-regressed`, the commit and its
 parent, that `total` and then each other regressed phase of the leg with its
 delta, and root's next action. A phase that regressed under an unchanged `total`
-stays a table verdict only.
+is no regression: the verdict line is a `Bench phase-only slowdown` notice that
+says no leg total crossed the regression threshold and names the slower cells.
 
 Both upload steps run on `always()`, so an aborted or failed leg still uploads
 its report and run streams. A job GitHub kills at 60 minutes may leave no

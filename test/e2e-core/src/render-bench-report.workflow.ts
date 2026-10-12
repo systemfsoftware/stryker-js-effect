@@ -91,6 +91,21 @@ const improvedItemsOf = (projects: ReadonlyArray<BenchProjectSummary>): Readonly
         'not-measured': (): ReadonlyArray<string> => [],
       })))
 
+const phaseOnlyRegressedItemsOf = (projects: ReadonlyArray<BenchProjectSummary>): ReadonlyArray<string> =>
+  Arr.flatMap(projects, (project) =>
+    Arr.flatMap(project.rows, (row) =>
+      Match.valueTags(row.verdict, {
+        regressed: (verdict): ReadonlyArray<string> => [
+          `slower ${
+            changeText(project.entry, row.phase, verdict.deltaMs, verdict.deltaShareOfA)
+          } (phase only, not a regression)`,
+        ],
+        improved: (): ReadonlyArray<string> => [],
+        'no-signal': (): ReadonlyArray<string> => [],
+        'workload-unverified': (): ReadonlyArray<string> => [],
+        'not-measured': (): ReadonlyArray<string> => [],
+      })))
+
 const RULE = '(N=4 per side, non-overlap and >= max(3%, 10 ms) rule; only a leg total decides a regression)'
 
 const unverifiedText = (projects: ReadonlyArray<BenchProjectSummary>): string => {
@@ -108,8 +123,13 @@ const sentenceOf = (
 ): string =>
   Boolean.match(items.length === 0, {
     onTrue: () =>
-      `Bench on ${ref}: no project/phase changed past the signal threshold ${RULE}.${unverifiedText(projects)}`,
-    onFalse: () => `Bench on ${ref}: ${items.join('; ')} ${RULE}.${unverifiedText(projects)}`,
+      `Bench on ${ref}: no leg total crossed the regression threshold and no phase changed past the signal threshold ${RULE}.${
+        unverifiedText(projects)
+      }`,
+    onFalse: () =>
+      `Bench on ${ref}: no leg total crossed the regression threshold; ${items.join('; ')} ${RULE}.${
+        unverifiedText(projects)
+      }`,
   })
 
 const regressionAnnotation = (
@@ -129,11 +149,15 @@ const summarizedAnnotation = (ref: string, summarized: SummarizedOutcome): Annot
   const improved = improvedItemsOf(summarized.projects)
   return Option.match(Option.fromNullishOr(summarized.regression), {
     onSome: (regression) => regressionAnnotation(ref, regression, improved, summarized.projects),
-    onNone: () =>
-      Boolean.match(improved.length > 0, {
-        onTrue: () => notice('Bench improvement', sentenceOf(ref, improved, summarized.projects)),
-        onFalse: () => notice('Bench no signal', sentenceOf(ref, [], summarized.projects)),
-      }),
+    onNone: () => {
+      const phaseOnly = phaseOnlyRegressedItemsOf(summarized.projects)
+      const title = Boolean.match(phaseOnly.length > 0, {
+        onTrue: () => 'Bench phase-only slowdown',
+        onFalse: () =>
+          Boolean.match(improved.length > 0, { onTrue: () => 'Bench improvement', onFalse: () => 'Bench no signal' }),
+      })
+      return notice(title, sentenceOf(ref, [...phaseOnly, ...improved], summarized.projects))
+    },
   })
 }
 

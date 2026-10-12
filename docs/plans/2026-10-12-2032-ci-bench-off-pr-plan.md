@@ -6,7 +6,7 @@ topic: bench-off-pr
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-12-1854-ci-bench-off-pr-plan.md
+supersedes: docs/plans/2026-10-12-1926-ci-bench-off-pr-plan.md
 ---
 
 # Bench Off The PR Path - Plan
@@ -17,6 +17,7 @@ supersedes: docs/plans/2026-10-12-1854-ci-bench-off-pr-plan.md
 - **Means:** `.github/workflows/bench.yml` moves from `pull_request` to push on main plus `workflow_dispatch`, with no path filter: every push to main benches every leg. Every in-process deadline is deleted; GitHub's 60-minute job timeout is the only kill. Every measured run executes from one fixed path so the two sides test the same mutant ids.
 - **Product authority:** Ryan (root), intent of 2026-10-12: remove the bench from the PR path today. Amended 2026-10-12: never roll your own caching or change classification where Turbo can do the job; bespoke caching survives only with a written rule-4 reason. This plan is layer 1 of a split. Layer 2 (the enterprise install, judged separately) is out of this plan. Branch `stryker/bench-main-only` (#312) stays intact and is the source most hunks are ported from.
 - **Edit scope:** `.github/workflows/bench.yml` is the only workflow touched. `test/bench/**` and `test/e2e-core/src/**` bench files. No change to the e2e fixture bake, any fixture lock, `ci.yml`, `mutation.yml`, or product packages.
+- **CONST-W3 declaration:** `AGENTS.md:7` lists `.github/workflows/` as Read-only, and this layer edits `.github/workflows/bench.yml`. The edits are its trigger (push to `main` plus `workflow_dispatch`, `pull_request` removed), concurrency and job caps (`bench-${{ github.sha }}`, no cancel, 60 minutes), the sides (side A is `HEAD^1` with its own released tarballs and install, side B the checkout), and the report steps (`BENCH_REF`, report and run-stream uploads on `always()`). The grant is Ryan's (root) intent of 2026-10-12 to take the bench off the PR path. CONST-E9 does not apply: Bench grades main's commits, not this change. The waiver covers only `bench.yml`; no other workflow file is touched.
 - **Stop conditions:** no local bench, mutation or full e2e runs; no new dependency or executable.
 - **Open blockers:** none.
 
@@ -34,7 +35,7 @@ Today every PR pays for the bench and the bench turns PRs red on its own clock:
 
 - `bench.yml:3-7` triggers on `pull_request`; `bench.yml:12-14` cancels in progress per ref; `bench.yml:20,39` cap the jobs at 1 and 9 minutes; `bench.yml:47-48` sets `BENCH_DEADLINE_MS` to job start + 450 000 ms.
 - `test/bench/src/main.ts:118,183-197` aborts setup with `setup-timed-out`; `test/bench/src/run-bench.service.ts:212-251` aborts runs with `budget-exceeded`; `main.ts:42,122` and `run-bench.service.ts:113-115` turn a slow run into a `timed-out` invalid sample.
-- Five of the last ten PR Bench runs failed (`gh api .../workflows/bench.yml/runs`, 2026-10-12 17:31-17:53Z), e.g. 38284821646 and 38280183277 with `Bench invalid ... stream-undecodable, exit 0` on all four legs.
+- Five of the last ten PR Bench runs failed (`gh api .../workflows/bench.yml/runs`, 2026-10-12 17:31-17:53Z), e.g. 38284821646 and 38280183277 with `Bench invalid ... stream-undecodable, exit 0` on all four legs. The deadlines did not cause these. 38284821646 ran on `stryker/agent-surfaces-u3` (#298), which changes the stream contract (`packages/stryker-js-cli-contract/src/run-event.schema.ts`, `stream-version.schema.ts`); the harness decodes both sides' streams with the checkout's `RunEvent` (`test/e2e-core/src/read-bench-run.workflow.ts:2`), so the side that runs the other contract is undecodable. 38280183277's cause was not traced. This layer does not change that; see Risks.
 
 Side A today is a worktree at `RUNNER_TEMP/bench-a` and side B is the job checkout (`bench.yml:60-74,116-124`). Mutant ids and `runInputsDigest` hash absolute paths, so the sides test the same mutants under different ids in a different order. A/A run 38135504932 on that layout recorded different project roots, inputs digests and mutant-id digests per side and emitted a false `phase-regressed` on the typescript-checker leg (`total` +1311.5 ms, 3.5%). Three A/A runs that executed every run from one fixed path (38140987766, 38143012318, 38279943505) recorded identical inputs and id digests across sides and no regression. A postsubmit lane that names culprits from the old layout would send root false revert verdicts, so the fixed run path is part of this layer.
 
@@ -88,7 +89,7 @@ Main's regression rule today flags any phase whose samples separate by 3% of A's
 ### Acceptance Examples
 
 - AE1. Covers R1, R3. Given this PR, when its checks are listed, then no Bench check appears, and `bench.yml` on its head has no `pull_request` key.
-- AE2. Covers R9, R10. Given a project whose `total` and `mutation-test` both separate past the rule, the report is `summarized`, exit 0, verdict `::error` with `phase-regressed`, both SHAs, `total` then `mutation-test` with Δ s and %, and the main next action. Given only `check` separates, the table reads `regressed` on `check`, `regression` is null, and the line is `::notice`.
+- AE2. Covers R9, R10. Given a project whose `total` and `mutation-test` both separate past the rule, the report is `summarized`, exit 0, verdict `::error` with `phase-regressed`, both SHAs, `total` then `mutation-test` with Δ s and %, and the main next action. Given only `check` separates, the table reads `regressed` on `check`, `regression` is null, and the line is `::notice` titled `Bench phase-only slowdown`; it says no leg total crossed the regression threshold and names the `check` cell as a phase-only slowdown, never as regressed.
 - AE3. Covers KD5. Given A's `instrument` median is 0 ms and B's samples are all 1 ms, the cell is `no-signal`.
 - AE4. Covers R8. A leg reported at 14 minutes shows 14 min against the 10-minute target; exit code and verdict level equal those of the same cells at 6 minutes.
 - AE5. Covers R5, R6. A run or setup command that never returns is stopped by nothing in bench code; GitHub ends the job at 60 minutes.
@@ -197,3 +198,4 @@ Gate: `test-layer-selection` permission matrix, default refuse. Schema codec law
 - **Job killed at 60 minutes leaves no `bench-report.json`.** The job's timeout conclusion is the only signal (KTD5).
 - **`workflow_dispatch` on an old ref runs that ref's `bench.yml`.** Dispatch is meaningful only on refs containing this layer.
 - **One comparison per commit is noisy.** Postsubmit benchmarking elsewhere leans on history across commits (conbench benches main commits plus on-request PR runs, https://conbench.github.io/conbench/pages/benchmarking_and_the_dev_process.html; MongoDB uses change-point detection over history, https://arxiv.org/abs/2003.00584). This lane compares one commit to one parent; KD5's non-overlap plus floor is the false-positive control, and the lane is report-only.
+- **A commit that changes the stream contract gets no comparison (known limit).** Both sides' NDJSON is decoded with the checkout's `RunEvent` (`read-bench-run.workflow.ts:2`). When a main commit changes the wire format, as #298 does, side A's stream is `stream-undecodable`, the leg is `failed` (exit 1, `::error Bench invalid`) and that SHA has no comparison. Accepted for this layer by the sub-conductor ruling of 2026-10-12. The follow-up boundary is decoding each side with its own side's contract; it is a separate unit, not part of layer 1 or layer 2.

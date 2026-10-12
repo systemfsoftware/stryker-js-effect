@@ -61,6 +61,17 @@ const fourRuns = (
   runFrom(side, 3, samples[3], options),
 ]
 
+const fourRunsWithChecks = (
+  side: 'A' | 'B',
+  mutationSamples: ReadonlyArray<number>,
+  checkSamples: ReadonlyArray<number>,
+): ReadonlyArray<BenchRunMeasured> => [
+  runFrom(side, 0, mutationSamples[0], { check: { _tag: 'measured', ms: checkSamples[0] } }),
+  runFrom(side, 1, mutationSamples[1], { check: { _tag: 'measured', ms: checkSamples[1] } }),
+  runFrom(side, 2, mutationSamples[2], { check: { _tag: 'measured', ms: checkSamples[2] } }),
+  runFrom(side, 3, mutationSamples[3], { check: { _tag: 'measured', ms: checkSamples[3] } }),
+]
+
 const runsOf = (aSamples: ReadonlyArray<number>, bSamples: ReadonlyArray<number>): ReadonlyArray<BenchRun> => [
   ...fourRuns('A', aSamples),
   ...fourRuns('B', bSamples),
@@ -442,5 +453,27 @@ describe('renderBenchReport', () => {
     { of: [BenchReport], subject: renderBenchReport },
     (subject, [report]) =>
       renderedOf(subject, report).exitCode === (S.is(BenchReportOutcome.cases.summarized)(report.outcome) ? 0 : 1),
+  )
+
+  it.prop(
+    '∀acg_CheckOnlySlowdownWithAnUnchangedTotal_≡NoticeSaysNoLegTotalRegressedAndNamesTheCheckCell',
+    {
+      of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int],
+      subject: renderBenchReport,
+    },
+    (subject, [rawMutation, rawCheck, rawExtra]) => {
+      const mutation = positives(rawMutation)
+      const check = positives(rawCheck)
+      const gap = Math.max(Math.max(...check) - Math.min(...check), Math.max(...check) * 0.1) + Math.abs(rawExtra) + 10
+      const runs: ReadonlyArray<BenchRun> = [
+        ...fourRunsWithChecks('A', mutation, check),
+        ...fourRunsWithChecks('B', mutation, check.map((sample) => sample + gap)),
+      ]
+      const line = annotationOf(subject, reportOf(summaryOf(runs), runs, 'base', 'head'))
+      return line.startsWith('::notice title=Bench phase-only slowdown::') &&
+        line.includes(`Bench on ${MAIN_REF}: no leg total crossed the regression threshold; slower entry check +`) &&
+        line.includes('(phase only, not a regression)') &&
+        countOf(line, 'regressed') === 0
+    },
   )
 })
