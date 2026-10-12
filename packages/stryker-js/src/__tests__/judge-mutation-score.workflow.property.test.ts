@@ -3,7 +3,7 @@ import { describe, it } from '@systemfsoftware/vitest'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { judgeMutationScore, JudgeMutationScoreCommand } from '../judge-mutation-score.workflow.js'
+import { judgeMutationScore, JudgeMutationScoreCommand, ScoreJudgement } from '../judge-mutation-score.workflow.js'
 
 const thresholdExceeds = (percentage: number, threshold: number): boolean => Math.sign(threshold - percentage) === 1
 
@@ -21,8 +21,7 @@ const expectedJudgement = (score: Report.MutationScore, threshold: number | null
         : { _tag: 'UnscoredAgainstThreshold', threshold, exitClass: null },
   })
 
-const fieldsOf = (value: object): string =>
-  JSON.stringify(Object.entries(value).sort(([left], [right]) => left.localeCompare(right)))
+const decodeJudgement = S.decodeUnknownResult(ScoreJudgement)
 
 const judgedAs = (
   subject: typeof judgeMutationScore,
@@ -30,10 +29,13 @@ const judgedAs = (
   breakingThreshold: number | null,
   expected: object,
 ): boolean =>
-  Result.match(subject(JudgeMutationScoreCommand.make({ score, breakingThreshold })), {
-    onFailure: () => false,
-    onSuccess: (decision) => fieldsOf(decision) === fieldsOf(expected),
-  })
+  Result.match(
+    Result.all([subject(JudgeMutationScoreCommand.make({ score, breakingThreshold })), decodeJudgement(expected)]),
+    {
+      onFailure: () => false,
+      onSuccess: ([decision, judgement]) => S.toEquivalence(ScoreJudgement)(decision, judgement),
+    },
+  )
 
 describe('judgeMutationScore', () => {
   it.prop(

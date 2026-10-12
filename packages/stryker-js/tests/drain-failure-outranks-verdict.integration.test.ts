@@ -1,7 +1,9 @@
+import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
+import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
@@ -20,10 +22,13 @@ const SOURCE_FILE = 'src/add.ts'
 const SOURCE_CONTENT = 'export const add = (left: number, right: number): number => left + right\n'
 const PACKAGE_SOURCE = '{ "type": "commonjs" }\n'
 const REPORTER_NAME = 'refusing-reporter'
+const REPORT_ALL = SpanTaxonomy.Spans.mutationReportingReportAll.name
+const JUDGE_SCORE = SpanTaxonomy.Spans.mutationReportingJudgeScore.name
 
 interface ObservedRun {
   readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
   readonly report: Option.Option<Report.MutationTestResult>
+  readonly judgeScoreParents: ReadonlyArray<string>
 }
 
 const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
@@ -86,20 +91,35 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   allowConsoleColors: false,
 })
 
-const executeRun = (directory: string): Effect.Effect<ObservedRun, never, FileSystem.FileSystem> =>
+const judgeScoreParentsOf = (spans: ReadonlyArray<ReadableSpan>): ReadonlyArray<string> => {
+  const byId = new Map(spans.map((span) => [span.spanContext().spanId, span] as const))
+  return spans
+    .filter((span) => span.name === JUDGE_SCORE)
+    .map((span) => byId.get(span.parentSpanContext?.spanId ?? '')?.name ?? 'nothing')
+}
+
+const executeRun = (
+  directory: string,
+  reporters: ReadonlyArray<string>,
+): Effect.Effect<ObservedRun, never, FileSystem.FileSystem> =>
   Effect.gen(function*() {
+    const exporter = new InMemorySpanExporter()
+    const telemetry = NodeSdk.layer(() => ({
+      resource: { serviceName: 'mutation-verdict-test' },
+      spanProcessor: new SimpleSpanProcessor(exporter),
+    }))
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(8192)
     const runLayer = Layer.merge(
       Layer.provide(Engine.RunEnvironment.stage(environmentFor(directory), queue), Engine.nodePlatformLayer),
       Engine.nodePlatformLayer,
     )
-    const exit = yield* Engine.mutationTestCell
+    const { exit, spans } = yield* Engine.mutationTestCell
       .run({
         cliOptions: {
           testRunner: 'command',
           commandRunner: { command: 'true' },
           coverageAnalysis: 'off',
-          reporters: ['json', REPORTER_NAME],
+          reporters: [...reporters],
           jsonReporter: { fileName: reportFileOf(directory) },
           thresholds: { high: 100, low: 100, break: 100 },
           checkers: [],
@@ -111,16 +131,28 @@ const executeRun = (directory: string): Effect.Effect<ObservedRun, never, FileSy
         },
         targetMutatePatterns: undefined,
       })
-      .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit)
+      .pipe(
+        Effect.provide(runLayer),
+        Effect.scoped,
+        Effect.exit,
+        Effect.map((exit) => ({ exit, spans: exporter.getFinishedSpans() })),
+        Effect.provide(telemetry),
+      )
     const report = yield* readReport(directory).pipe(Effect.option)
-    return { exit, report }
+    return { exit, report, judgeScoreParents: judgeScoreParentsOf(spans) }
   })
 
-const runAndClean = (directory: string): Effect.Effect<ObservedRun, never, never> =>
-  executeRun(directory).pipe(Effect.ensuring(removeWorkspace(directory)), Effect.provide(filePorts))
+const runAndClean = (directory: string, reporters: ReadonlyArray<string>): Effect.Effect<ObservedRun, never, never> =>
+  executeRun(directory, reporters).pipe(Effect.ensuring(removeWorkspace(directory)), Effect.provide(filePorts))
 
 const survivorCountOf = (report: Report.MutationTestResult): number =>
   Object.values(report.files).flatMap((file) => file.mutants).filter((mutant) => mutant.status === 'Survived').length
+
+const verdictOf = (exit: ObservedRun['exit']): string | null =>
+  Exit.match(exit, {
+    onFailure: () => 'the run failed',
+    onSuccess: (done) => done.verdict,
+  })
 
 Feature('Deciding how a finished mutation run ends')
   .withLayer(Layer.empty)
@@ -135,21 +167,44 @@ Feature('Deciding how a finished mutation run ends')
         ),
         When('a mutation run with a break threshold of 100 finishes over that project')(
           'observation',
-          (s) => runAndClean(s.directory),
+          (s) => runAndClean(s.directory, ['json', REPORTER_NAME]),
         ),
         Then('the run ends with the reporter failure, not the broken score')((s, expect) => {
           const report = Option.getOrThrowWith(s.observation.report, () => new Error('the run wrote no JSON report'))
           return expect({
             survivorsLeftTheScoreUnderTheThreshold: survivorCountOf(report) > 0,
-            verdict: Exit.match(s.observation.exit, {
-              onFailure: () => 'the run failed',
-              onSuccess: (done) => done.verdict,
-            }),
+            verdict: verdictOf(s.observation.exit),
           }).toEqual({
             survivorsLeftTheScoreUnderTheThreshold: true,
             verdict: 'RuntimeError',
           })
         }),
+      ),
+    )
+
+    scenario(
+      'A score under the break threshold is judged in its own span inside the report stage',
+      Gherkin.Do.pipe(
+        Given('a project whose every mutant survives, reported only to the JSON reporter')(
+          'directory',
+          () => writeWorkspace().pipe(Effect.provide(filePorts)),
+        ),
+        When('a traced mutation run with a break threshold of 100 finishes over that project')(
+          'observation',
+          (s) => runAndClean(s.directory, ['json']),
+        ),
+        Then('the run fails its verdict, and the score was judged once in a span opened by the report stage')((
+          s,
+          expect,
+        ) =>
+          expect({
+            verdict: verdictOf(s.observation.exit),
+            judgeScoreParents: s.observation.judgeScoreParents,
+          }).toEqual({
+            verdict: 'VerdictFail',
+            judgeScoreParents: [REPORT_ALL],
+          })
+        ),
       ),
     )
   })
