@@ -164,6 +164,17 @@ const rootTurboJson = (
 }
 `
 
+const shippedRootTurboJson = `{
+  "$schema": "${SCHEMA}",
+  "futureFlags": { "affectedUsingTaskInputs": true, "githubActionsRemoteBaseRefFallback": true },
+  "tasks": {
+    "//#root": {},
+    "build": { "inputs": ["src/**"], "outputs": [] },
+    "test": { "inputs": ["$TURBO_DEFAULT$", "!**/README.md"], "env": ["NODE_ENV"], "outputs": [] }
+  }
+}
+`
+
 const packageJson = (name: string): string =>
   `{
   "name": "${name}",
@@ -195,20 +206,24 @@ interface FixtureOptions {
   readonly branch?: string
 }
 
+const seedFixture = async (dir: string, options: FixtureOptions): Promise<void> => {
+  await write(dir, 'package.json', options.rootPackageJson ?? rootPackageJson)
+  await write(dir, 'pnpm-workspace.yaml', pnpmWorkspace)
+  await write(dir, 'pnpm-lock.yaml', lockfile)
+  await write(dir, 'turbo.json', options.rootTurboJson ?? rootTurboJson())
+  await write(dir, 'packages/a/package.json', packageJson('@probe/a'))
+  await write(dir, 'packages/a/src/index.js', 'export const a = 1\n')
+  await write(dir, 'packages/b/package.json', packageJson('@probe/b'))
+  await write(dir, 'packages/b/src/index.js', 'export const b = 1\n')
+  await write(dir, 'shared.txt', 'shared\n')
+  if (options.bTurboJson !== undefined) await write(dir, 'packages/b/turbo.json', options.bTurboJson)
+}
+
 const withRepo = async (options: FixtureOptions, body: (dir: string) => Promise<void>): Promise<void> => {
   const dir = await Deno.makeTempDir({ prefix: 'turbo-semantics-' })
   try {
     await git(dir, ['init', '-q', '-b', options.branch ?? 'trunk', '.'])
-    await write(dir, 'package.json', options.rootPackageJson ?? rootPackageJson)
-    await write(dir, 'pnpm-workspace.yaml', pnpmWorkspace)
-    await write(dir, 'pnpm-lock.yaml', lockfile)
-    await write(dir, 'turbo.json', options.rootTurboJson ?? rootTurboJson())
-    await write(dir, 'packages/a/package.json', packageJson('@probe/a'))
-    await write(dir, 'packages/a/src/index.js', 'export const a = 1\n')
-    await write(dir, 'packages/b/package.json', packageJson('@probe/b'))
-    await write(dir, 'packages/b/src/index.js', 'export const b = 1\n')
-    await write(dir, 'shared.txt', 'shared\n')
-    if (options.bTurboJson !== undefined) await write(dir, 'packages/b/turbo.json', options.bTurboJson)
+    await seedFixture(dir, options)
     await commit(dir, 'fixture')
     await body(dir)
   } finally {
@@ -304,13 +319,14 @@ Deno.test("a change to a file excluded from every input selects none of a packag
   })
 })
 
-Deno.test("a $TURBO_ROOT$ input changes the reader's hash and selects the reader", async () => {
+Deno.test("a $TURBO_ROOT$ input selects the reader while $TURBO_EXTENDS$ keeps the parent's inputs and negations", async () => {
   const bTurboJson = `{
   "extends": ["//"],
   "tasks": { "test": { "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/shared.txt"] } }
 }
 `
-  await withRepo({ bTurboJson }, async (dir) => {
+  const fixture = { rootTurboJson: shippedRootTurboJson, bTurboJson }
+  await withRepo(fixture, async (dir) => {
     const base = await head(dir)
     const hashBefore = await hashOf(dir, '@probe/b#test')
     await write(dir, 'shared.txt', 'shared\nmore\n')
@@ -318,6 +334,19 @@ Deno.test("a $TURBO_ROOT$ input changes the reader's hash and selects the reader
     assert(hashBefore !== hashAfter, "editing a $TURBO_ROOT$ input changes the reader's hash")
     await commit(dir, 'root input edit')
     assertEqual(await selectedTasks(dir, { base }), ['@probe/b#test'], 'the reader is selected')
+  })
+  await withRepo(fixture, async (dir) => {
+    const base = await head(dir)
+    await write(dir, 'packages/b/src/index.js', 'export const b = 2\n')
+    await commit(dir, 'child source edit')
+    const selected = await selectedTasks(dir, { base })
+    assert(selected.includes('@probe/b#test'), "$TURBO_EXTENDS$ keeps the parent's $TURBO_DEFAULT$")
+  })
+  await withRepo(fixture, async (dir) => {
+    const base = await head(dir)
+    await write(dir, 'packages/b/README.md', 'readme\n')
+    await commit(dir, 'child readme edit')
+    assertEqual(await selectedTasks(dir, { base }), [], "the parent's README negation still applies under extension")
   })
 })
 
@@ -339,31 +368,49 @@ Deno.test('an empty selection exits 0 and writes a run summary with no tasks', a
   })
 })
 
-Deno.test('GitHub pull_request inference falls back to origin/main and matches the first parent', async () => {
-  await withRepo({}, async (dir) => {
-    await write(dir, 'packages/b/src/index.js', 'export const b = 2\n')
-    await commit(dir, 'main advance')
-    const firstParent = await head(dir)
-    await git(dir, ['checkout', '-q', '-b', 'feature', 'HEAD~1'])
-    await write(dir, 'packages/a/src/index.js', 'export const a = 2\n')
-    await commit(dir, 'pull request change')
-    await git(dir, ['checkout', '-q', 'trunk'])
-    await git(dir, ['merge', '-q', '--no-ff', '-m', 'merge', 'feature'])
-    const merge = await head(dir)
-    await git(dir, ['checkout', '-q', '--detach', merge])
-    await git(dir, ['branch', '-q', '-D', 'trunk'])
-    await git(dir, ['branch', '-q', '-D', 'feature'])
-    const localMain = await run('git', ['rev-parse', '--verify', 'main'], dir, cleanEnv())
-    assert(localMain.code !== 0, 'no local main branch exists for the fallback to be exercised')
-    const remoteTip = (await git(dir, ['commit-tree', '-p', firstParent, '-m', 'later', `${firstParent}^{tree}`]))
-      .stdout.trim()
-    await git(dir, ['update-ref', 'refs/remotes/origin/main', remoteTip])
+Deno.test('GitHub pull_request inference resolves origin/main on a treeless clone and matches the first parent', async () => {
+  const remote = await Deno.makeTempDir({ prefix: 'turbo-semantics-remote-' })
+  const builder = await Deno.makeTempDir({ prefix: 'turbo-semantics-builder-' })
+  const checkout = await Deno.makeTempDir({ prefix: 'turbo-semantics-checkout-' })
+  try {
+    await git(remote, ['init', '-q', '--bare', '.'])
+    await git(remote, ['config', 'uploadpack.allowFilter', 'true'])
+    await git(remote, ['config', 'uploadpack.allowAnySHA1InWant', 'true'])
 
-    const inferred = await selectedTasks(dir, { env: { GITHUB_ACTIONS: 'true', GITHUB_BASE_REF: 'main' } })
-    const explicit = await selectedTasks(dir, { base: firstParent })
+    await git(builder, ['init', '-q', '-b', 'trunk', '.'])
+    await seedFixture(builder, {})
+    const trunk = await commit(builder, 'fixture')
+    await write(builder, 'packages/b/src/index.js', 'export const b = 2\n')
+    await commit(builder, 'main advance')
+    const firstParent = await head(builder)
+    await git(builder, ['checkout', '-q', '-b', 'remote-main', firstParent])
+    await write(builder, 'packages/b/src/index.js', 'export const b = 2\nexport const b3 = 3\n')
+    await commit(builder, 'main later')
+    const remoteMain = await head(builder)
+    await git(builder, ['checkout', '-q', '-b', 'feature', trunk])
+    await write(builder, 'packages/a/src/index.js', 'export const a = 2\n')
+    await commit(builder, 'pull request change')
+    await git(builder, ['checkout', '-q', 'trunk'])
+    await git(builder, ['merge', '-q', '--no-ff', '-m', 'merge', 'feature'])
+    const merge = await head(builder)
+    const remoteUrl = `file://${remote}`
+    await git(builder, ['push', '-q', remoteUrl, `${remoteMain}:refs/heads/main`, `${merge}:refs/heads/pr1`])
+
+    await git(checkout, ['clone', '-q', '--no-local', '--filter=tree:0', remoteUrl, '.'])
+    await git(checkout, ['checkout', '-q', '--detach', merge])
+    const missing = (await git(checkout, ['rev-list', '--objects', '--missing=print', '--all']))
+      .stdout.split('\n')
+      .filter((line) => line.startsWith('?')).length
+    assert(missing > 0, 'the treeless filter must still apply to the clone')
+
+    const inferred = await selectedTasks(checkout, { env: { GITHUB_ACTIONS: 'true', GITHUB_BASE_REF: 'main' } })
+    const explicit = await selectedTasks(checkout, { base: firstParent })
     assertEqual(inferred, explicit, "GitHub inference matches the merge's first parent")
-    assert(inferred.length > 0, 'the scenario selects at least one task')
-  })
+    assertEqual(inferred, ['@probe/a#build', '@probe/a#test'], 'the pull request change selects exactly its own tasks')
+    assert(!inferred.includes('@probe/b#build'), "main's later change is not attributed to the pull request")
+  } finally {
+    await Promise.all([remote, builder, checkout].map((dir) => Deno.remove(dir, { recursive: true })))
+  }
 })
 
 Deno.test('a push event payload before base selects what the explicit base selects', async () => {

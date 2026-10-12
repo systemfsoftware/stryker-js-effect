@@ -6,6 +6,7 @@
       "inputs": [
         "$TURBO_EXTENDS$",
         "$TURBO_ROOT$/test/e2e/tests/**/*.e2e.test.ts",
+        "$TURBO_ROOT$/test/e2e/testResources/**",
         "$TURBO_ROOT$/packages/stryker-js-instrumenter/testResources/effect-concurrency/**"
       ]
     }

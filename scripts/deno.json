@@ -5,8 +5,13 @@
   },
   "permissions": {
     "default": {
-      "read": true,
-      "write": true,
+      "read": [
+        "..",
+        "/tmp"
+      ],
+      "write": [
+        "/tmp"
+      ],
       "env": true,
       "run": [
         "git",
