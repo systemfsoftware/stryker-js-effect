@@ -35,7 +35,7 @@ jobs:
   plan:
     name: kill-matrix · plan
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       count: ${{ steps.plan.outputs.count }}
@@ -70,7 +70,7 @@ jobs:
   build:
     name: kill-matrix · build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     outputs:
       key: ${{ steps.key.outputs.key }}
     steps:
@@ -108,7 +108,7 @@ jobs:
     needs: [plan, build]
     if: ${{ needs.plan.result == 'success' && needs.build.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -180,7 +180,7 @@ jobs:
     needs: [plan, mutation]
     if: ${{ needs.mutation.result == 'success' && needs.plan.result == 'success' && needs.plan.outputs.count != '0' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
