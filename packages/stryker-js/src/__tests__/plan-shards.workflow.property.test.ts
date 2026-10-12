@@ -1,4 +1,6 @@
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arr from 'effect/Array'
 import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
 
@@ -132,6 +134,21 @@ const reproducesPureLptShards = (command: PlanShardsCommand, shards: ReadonlyArr
   )
 }
 
+const pureLptCounterexampleTyingAcrossANulProjectName = PlanShardsCommand.make({
+  targetSeconds: 5e-324,
+  mutants: [
+    { project: '\u0000', id: Mutant.MutantId.make('0000000000000000'), costMs: 5e-324, dependsOnDryRun: false },
+    { project: '', id: Mutant.MutantId.make('0000000000000000'), costMs: 5e-324, dependsOnDryRun: false },
+    {
+      project: '',
+      id: Mutant.MutantId.make('0e8aa2c46e16d177'),
+      costMs: 1.2399973784708121e-164,
+      dependsOnDryRun: false,
+    },
+  ],
+  dryRunCosts: {},
+})
+
 describe('planShards', () => {
   it.prop(
     '∀c_Mutants_≡EveryScheduledMutantLandsInExactlyOneShard',
@@ -198,8 +215,10 @@ describe('planShards', () => {
         })),
         dryRunCosts: {},
       })
-      const shards = shardsOf(subject, flat)
-      return shards !== undefined && reproducesPureLptShards(flat, shards)
+      return Arr.every([pureLptCounterexampleTyingAcrossANulProjectName, flat], (planned) => {
+        const shards = shardsOf(subject, planned)
+        return shards !== undefined && reproducesPureLptShards(planned, shards)
+      })
     },
   )
 

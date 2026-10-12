@@ -4,7 +4,7 @@ date: 2026-09-28
 category: tooling-decisions
 problem_type: stale and false-miss verdict reuse from incidental cache-key inputs
 input_shape: solution
-subject: A mutation verdict is reusable exactly when the mutant's content, its covering tests' closure, the run inputs that change behavior, the checker configuration, the engine that produced it, and the mutant-set policy are identical - so the key names none of the things that vary between shards, branches, paths, and machines, and each verdict is stored as its own entry named by that key
+subject: A mutation verdict is reusable exactly when the mutant's content, its covering tests' closure, the run inputs that change behavior, the checker configuration, the engine that produced it, and the mutant-set policy are identical - so the key names no shard, branch, report path, or store location, and each verdict is stored as its own entry named by that key; it does carry the workspace root, because mutant identity hashes the absolute file path, so verdicts meet only between checkouts at the same absolute path
 applies_when:
   - changing what enters the verdict key or the run-inputs fingerprint
   - sharing, relocating, or sharding a verdict store, or adding a store driver
@@ -72,8 +72,11 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   mutant id, the covering tests' closure digest and ids, the run-inputs digest,
   the checkers' configuration digest, the engine digest, and the mutant-set
   policy; a CompileError verdict substitutes the checker's program digest for
-  the closure. Nothing in it names a shard, a branch, a report path, or a
-  machine, so verdicts computed anywhere meet by key in one store.
+  the closure. Nothing in it names a shard, a branch, a report path, or the
+  store's location. It does carry the workspace root: `mutantIdOf` and the
+  key's file-name component hash the absolute file path, so verdicts meet by
+  key in one store only between checkouts at the same absolute path, and a
+  checkout elsewhere finds no entries and counts every mutant `noPriorRecord`.
   `encodeVerdictKey` derives it. Gate:
   `pnpm --filter @systemfsoftware/stryker-js exec vitest run encode-verdict-key.workflow.property`
   fails when a component change keeps the key or equal components split it.
@@ -151,9 +154,12 @@ reuse(mutant) = newest readable entry with the same key, else refuse(named reaso
 - Run an unchanged project twice: the second run reuses every verdict and
   reports zero refusals. A refusal count above zero on an unchanged tree is the
   false-miss signature.
-- Point a second machine, shard, or pull request at the same store, or copy
-  the store directory elsewhere and point `verdictStore` at the copy: the
-  verdicts are still reused, proving the key does not name a path or shard.
+- Point a second machine, shard, or pull request that checks the project out
+  at the same absolute path at the same store, or copy the store directory
+  elsewhere and point `verdictStore` at the copy: the verdicts are still
+  reused, proving the key names no store location or shard. A checkout at
+  another absolute path reuses nothing, because the key carries the absolute
+  file path.
   The e2e journeys `verdict-store-reuse` (an unchanged re-run on a fresh
   machine against a shared S3 bucket reuses at least 95%, read from the run's
   own `reuse` line) and `verdict-store-concurrency` (a shard SIGKILLed

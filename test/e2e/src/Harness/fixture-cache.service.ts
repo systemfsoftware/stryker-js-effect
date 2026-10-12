@@ -12,6 +12,7 @@ import {
   Match,
   Option,
   Path,
+  Record,
   Result,
   Schema,
   Scope,
@@ -22,8 +23,9 @@ import type { PlatformError } from 'effect/PlatformError'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 import {
-  type ClosureInstall,
+  committableLockOf,
   type FileBytes,
+  filledLockOf,
   type FixtureInput,
   fixtureKeyBytes,
   FixtureManifest,
@@ -41,18 +43,12 @@ import {
   PruneStaleEntriesCommand,
   resolvedManifestText,
   type StagedFixtureManifest,
+  withClosureDevDependencies,
   type WorkspaceCatalogs,
 } from '@systemfsoftware/stryker-e2e-core'
 
-import type { BakeOutcome, PackedPackage, PackedPackageLookup, TurboDryClosure } from './bake-key.schema.js'
-import {
-  FixtureKeys,
-  FoundPackage,
-  MalformedClosure,
-  MissingTarball,
-  TurboClosure,
-  TurboDryRun,
-} from './bake-key.schema.js'
+import type { BakeOutcome, PackedPackage, TurboDryClosure } from './bake-key.schema.js'
+import { FixtureKeys, MalformedClosure, TurboClosure, TurboDryRun } from './bake-key.schema.js'
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
@@ -66,6 +62,13 @@ export type BakePlatform =
   | FileSystem.FileSystem
   | Path.Path
   | Readiness.HostProber
+
+type StagePlatform = ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+
+interface StagedClosure {
+  readonly fixtures: Readonly<Record<string, Readonly<Record<string, string>>>>
+  readonly manifests: Readonly<Record<string, Schema.Json>>
+}
 
 interface BakedFixture {
   readonly fixtureId: string
@@ -94,6 +97,7 @@ const STEP_CLOSURE = 'build the packed workspace closure'
 const STEP_TARBALLS = 'read the packed tarballs'
 const STEP_KEY = 'derive the bake cache key'
 const STEP_INSTALL_PLAN = 'plan the workspace closure install'
+const STEP_LOCK = 'regenerate a fixture lock'
 
 const TREE_CONCURRENCY = 16
 const UNPACK_CONCURRENCY = 4
@@ -109,16 +113,21 @@ const ENTRY_PACKAGES = [
   ...ON_REQUEST_PACKAGES,
 ]
 
-const SPECS_SUFFIX = '.specs'
-
 type Argv = readonly [string, ...Array<string>]
 
-const PACKED_VERSION = String.raw`\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`
+const LOCK_ONLY_INSTALL: Argv = ['npm', 'install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund']
 
-const REGEXP_SPECIAL = /[.*+?^${}()|[\]\\]/g
+const PACKS_DIR = 'packs'
+const STAGED_FIXTURES_DIR = 'baked'
+const PACKS_FROM_FIXTURE = `../../${PACKS_DIR}`
+const LOCKFILE_NAME = 'package-lock.json'
+const JSON_INDENT = 2
 
-const packedFileNameOf = (prefix: string): RegExp =>
-  new RegExp(`^${prefix.replace(REGEXP_SPECIAL, String.raw`\$&`)}(${PACKED_VERSION})\\.tgz$`)
+const JsonText = Schema.fromJsonString(Schema.Json)
+
+const jsonTextOf = (json: Schema.Json): string => `${JSON.stringify(json, null, JSON_INDENT)}\n`
+
+const tarballFileOf = (packageName: string): string => `${packageName.replace(/^@/, '').replace('/', '-')}.tgz`
 
 const PACKED_MANIFEST_PATH = 'package/package.json'
 
@@ -264,11 +273,37 @@ const listFixtureIds = (environment: BakeEnvironment) =>
     return kept.flat().sort()
   })
 
+const plannedDependenciesOf = (closure: StagedClosure, fixtureId: string) =>
+  Option.match(Record.get(closure.fixtures, fixtureId), {
+    onNone: () =>
+      Effect.fail(
+        new PackFailure({ step: STEP_INSTALL_PLAN, detail: `no closure install was planned for ${fixtureId}` }),
+      ),
+    onSome: (dependencies) => Effect.succeed(dependencies),
+  })
+
+const stageClosure = (destination: string, fixtureId: string, closure: StagedClosure) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const dependencies = yield* plannedDependenciesOf(closure, fixtureId)
+    const manifestPath = path.join(destination, MANIFEST_FILE_NAME)
+    const manifest = yield* Effect.orDie(Schema.decodeEffect(JsonText)(yield* fs.readFileString(manifestPath)))
+    yield* fs.writeFileString(manifestPath, jsonTextOf(withClosureDevDependencies(manifest, dependencies)))
+    const lockPath = path.join(destination, LOCKFILE_NAME)
+    const lock = yield* Effect.option(Effect.flatMap(fs.readFileString(lockPath), Schema.decodeEffect(JsonText)))
+    yield* Option.match(lock, {
+      onNone: () => Effect.void,
+      onSome: (committed) => fs.writeFileString(lockPath, jsonTextOf(filledLockOf(committed, closure.manifests))),
+    })
+  })
+
 const stageFixtures = (
   environment: BakeEnvironment,
   stagingDir: string,
   fixtureIds: ReadonlyArray<string>,
   catalogs: WorkspaceCatalogs,
+  closure: StagedClosure,
 ) =>
   Effect.forEach(
     fixtureIds,
@@ -280,6 +315,7 @@ const stageFixtures = (
         yield* fs.copy(path.join(environment.resourcesDir, fixtureId), destination)
         yield* fs.remove(path.join(destination, 'node_modules'), { recursive: true, force: true })
         yield* rewriteStagedManifests(fixtureId, destination, catalogs)
+        yield* stageClosure(destination, fixtureId, closure)
       }),
     { discard: true, concurrency: STAGE_CONCURRENCY },
   )
@@ -419,44 +455,16 @@ const resolveTurboDryClosure = (stdout: string): TurboDryClosure => {
       }),
   })
 }
-const lookupOf = (
-  fileNames: ReadonlyArray<string>,
-  packageName: string,
-  directory: string,
-): PackedPackageLookup => {
-  const prefix = `${packageName.slice(1).replace('/', '-')}-`
-  const packedFileName = packedFileNameOf(prefix)
-  return Option.match(
-    Array.findFirst(
-      fileNames,
-      (candidate) =>
-        Option.map(Option.fromNullishOr(packedFileName.exec(candidate)?.[1]), (version) => ({
-          fileName: candidate,
-          version,
-        })),
-    ),
-    {
-      onNone: (): PackedPackageLookup => MissingTarball.make({ prefix, directory }),
-      onSome: ({ fileName, version }): PackedPackageLookup =>
-        FoundPackage.make({
-          pack: { name: packageName, version, fileName, tarballPath: `${directory}/${fileName}` },
-        }),
-    },
-  )
-}
 
-const packedTarballOf = (fileNames: ReadonlyArray<string>, packageName: string, directory: string) =>
-  Match.value(lookupOf(fileNames, packageName, directory)).pipe(
-    Match.tag('Found', (lookup) => Effect.succeed(lookup.pack)),
-    Match.tag('MissingTarball', (lookup) =>
-      Effect.fail(
-        new PackFailure({
-          step: STEP_TARBALLS,
-          detail: `pnpm pack wrote no ${lookup.prefix}<version>.tgz into ${lookup.directory}`,
-        }),
-      )),
-    Match.exhaustive,
-  )
+const packedTarballOf = (fileNames: ReadonlyArray<string>, packageName: string, directory: string) => {
+  const fileName = tarballFileOf(packageName)
+  return Boolean.match(fileNames.includes(fileName), {
+    onTrue: () =>
+      Effect.succeed<PackedPackage>({ name: packageName, fileName, tarballPath: `${directory}/${fileName}` }),
+    onFalse: () =>
+      Effect.fail(new PackFailure({ step: STEP_TARBALLS, detail: `pnpm pack wrote no ${fileName} into ${directory}` })),
+  })
+}
 
 const packWorkspaceClosure = (environment: BakeEnvironment, directory: string) =>
   Effect.gen(function*() {
@@ -507,8 +515,8 @@ const packWorkspaceClosure = (environment: BakeEnvironment, directory: string) =
                 '-r',
                 ...closure.packages.map((packageName) => `--filter=${packageName}`),
                 'pack',
-                '--pack-destination',
-                directory,
+                '--out',
+                `${directory}/%s.tgz`,
               ],
               environment.repoRoot,
             ),
@@ -527,7 +535,7 @@ const packsInputOf = (
   environment: BakeEnvironment,
   packs: ReadonlyArray<PackedPackage>,
   scratch: string,
-): Effect.Effect<PackInput, ExitFailure | PlatformError | HarnessError, BakePlatform> =>
+): Effect.Effect<PackInput, ExitFailure | PlatformError | HarnessError, StagePlatform> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -579,10 +587,12 @@ const packedMemberOf = (tree: PackedTree) =>
         onSome: (found) => Effect.succeed(found),
       },
     )
-    const manifest = yield* Schema.decodeEffect(Schema.fromJsonString(PackedManifest))(
-      new TextDecoder().decode(manifestFile.bytes),
-    ).pipe(Effect.mapError(() => unreadable))
-    return { tarballPath: `${GuestJobs.GUEST_PACKS_ROOT}/${tree.fileName}`, manifest } satisfies PackedMember
+    const json = yield* Schema.decodeEffect(JsonText)(new TextDecoder().decode(manifestFile.bytes)).pipe(
+      Effect.mapError(() => unreadable),
+    )
+    const manifest = yield* Schema.decodeUnknownEffect(PackedManifest)(json).pipe(Effect.mapError(() => unreadable))
+    const member: PackedMember = { tarballPath: `${PACKS_FROM_FIXTURE}/${tree.fileName}`, manifest }
+    return { member, fileName: tree.fileName, json }
   })
 
 const stagedManifestsOf = (input: FixtureInput) =>
@@ -611,35 +621,31 @@ const closureInstallOf = (
 ) =>
   Effect.gen(function*() {
     const workspace = yield* workspacePackagesOf(environment)
-    const members = yield* Effect.forEach(packsInput.packs, packedMemberOf)
+    const packed = yield* Effect.forEach(packsInput.packs, packedMemberOf)
     const fixtures = (yield* Effect.forEach(fixtureInputs, stagedManifestsOf)).flat()
     const install = yield* Effect.fromResult(
-      installClosure(InstallClosureCommand.make({ members, fixtures, workspace, onRequest: ON_REQUEST_PACKAGES })),
+      installClosure(
+        InstallClosureCommand.make({
+          members: packed.map(({ member }) => member),
+          fixtures,
+          workspace,
+          onRequest: ON_REQUEST_PACKAGES,
+        }),
+      ),
     ).pipe(
       Effect.mapError((failure) => new PackFailure({ step: STEP_INSTALL_PLAN, detail: failure.message })),
     )
-    return install
-  })
-
-const writeFixtureSpecs = (stagingDir: string, install: ClosureInstall, fixtureId: string) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    const planned = yield* Option.match(Array.findFirst(install.fixtures, (entry) => entry.fixture === fixtureId), {
-      onNone: () =>
-        Effect.fail(
-          new PackFailure({ step: STEP_INSTALL_PLAN, detail: `no closure install was planned for ${fixtureId}` }),
-        ),
-      onSome: (entry) => Effect.succeed(entry),
-    })
-    yield* fs.writeFileString(path.join(stagingDir, `${fixtureId}${SPECS_SUFFIX}`), planned.specs.join('\n'))
+    return {
+      fixtures: Object.fromEntries(install.fixtures.map((planned) => [planned.fixture, planned.dependencies])),
+      manifests: Object.fromEntries(packed.map(({ fileName, json }) => [fileName, json])),
+    } satisfies StagedClosure
   })
 
 const fixtureInputsOf = (
   environment: BakeEnvironment,
   fixtureIds: ReadonlyArray<string>,
   catalogs: WorkspaceCatalogs,
-): Effect.Effect<ReadonlyArray<FixtureInput>, ExitFailure | PlatformError | HarnessError, BakePlatform> =>
+): Effect.Effect<ReadonlyArray<FixtureInput>, ExitFailure | PlatformError | HarnessError, StagePlatform> =>
   Effect.forEach(
     fixtureIds,
     (fixtureId) =>
@@ -702,7 +708,7 @@ const bakeMissing = (
   fixtureInputs: ReadonlyArray<FixtureInput>,
 ) =>
   Effect.gen(function*() {
-    const install = yield* closureInstallOf(environment, packsInput, fixtureInputs)
+    const closure = yield* closureInstallOf(environment, packsInput, fixtureInputs)
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const crypto = yield* Crypto.Crypto
@@ -712,10 +718,7 @@ const bakeMissing = (
       yield* fs.remove(stagingDir, { recursive: true, force: true })
       yield* fs.makeDirectory(stagingDir, { recursive: true })
       yield* leaseEntry(stagingDir)
-      yield* stageFixtures(environment, stagingDir, missing.map((fixture) => fixture.fixtureId), catalogs)
-      yield* Effect.forEach(missing, (fixture) => writeFixtureSpecs(stagingDir, install, fixture.fixtureId), {
-        discard: true,
-      })
+      yield* stageFixtures(environment, stagingDir, missing.map((fixture) => fixture.fixtureId), catalogs, closure)
       const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
       yield* jobs.requireCleanExit(
         STEP_BAKE,
@@ -736,6 +739,34 @@ const bakeMissing = (
       'e2e.fixture.ids': missing.map((fixture) => fixture.fixtureId).sort().join(','),
     }),
   )
+
+const lockFixtures = (environment: BakeEnvironment) =>
+  Effect.scoped(Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const scratch = yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-e2e-fixture-locks-' })
+    const packsDir = path.join(scratch, PACKS_DIR)
+    const stagedDir = path.join(scratch, STAGED_FIXTURES_DIR)
+    yield* fs.makeDirectory(packsDir)
+    const packs = yield* packWorkspaceClosure(environment, packsDir)
+    const fixtureIds = yield* listFixtureIds(environment)
+    const catalogs = yield* loadWorkspaceCatalogs(environment)
+    const packsInput = yield* packsInputOf(environment, packs, scratch)
+    const fixtureInputs = yield* fixtureInputsOf(environment, fixtureIds, catalogs)
+    const closure = yield* closureInstallOf(environment, packsInput, fixtureInputs)
+    yield* stageFixtures(environment, stagedDir, fixtureIds, catalogs, closure)
+    yield* Effect.forEach(fixtureIds, (fixtureId) =>
+      Effect.gen(function*() {
+        yield* runChecked(STEP_LOCK, LOCK_ONLY_INSTALL, path.join(stagedDir, fixtureId))
+        const lock = yield* fs.readFileString(path.join(stagedDir, fixtureId, LOCKFILE_NAME))
+        const committable = committableLockOf(yield* Effect.orDie(Schema.decodeEffect(JsonText)(lock)))
+        yield* fs.writeFileString(
+          path.join(environment.resourcesDir, fixtureId, LOCKFILE_NAME),
+          jsonTextOf(committable),
+        )
+        yield* Effect.log(`locked ${fixtureId}`)
+      }), { discard: true })
+  }))
 
 const bake = (environment: BakeEnvironment): Effect.Effect<BakeOutcome, HarnessError, BakePlatform> =>
   Effect.gen(function*() {
@@ -820,6 +851,8 @@ export class BakedFixtureCache extends Context.Service<BakedFixtureCache, BakedF
     {},
     Effect.flatMap(bakeEnvironment, bake),
   )
+
+  static readonly lockProgram = Effect.flatMap(bakeEnvironment, lockFixtures)
 
   static readonly teardownProgram = (outcome: BakeOutcome): Effect.Effect<void, HarnessError, BakePlatform> =>
     Effect.gen(function*() {
