@@ -29,6 +29,8 @@ pnpm test:e2e
 
 Without usable virtualization the lane stops in global setup with a `VirtualizationUnsupportedError` naming the fix.
 
+CI runs the lane postsubmit: `.github/workflows/e2e.yml` runs its five legs on every push to `main` (except a release commit pushed by `github-actions[bot]`) and on `workflow_dispatch`, and no pull-request workflow runs it.
+
 Run a specific test:
 
 ```bash
