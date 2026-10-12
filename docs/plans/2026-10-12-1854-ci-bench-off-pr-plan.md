@@ -6,15 +6,16 @@ topic: bench-off-pr
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
+supersedes: docs/plans/2026-10-12-1800-ci-bench-off-pr-plan.md
 ---
 
 # Bench Off The PR Path - Plan
 
 ## Goal Capsule
 
-- **Objective:** No pull request runs the bench. Each main commit that is not docs-only is benched against its first parent and gets a report-only result: per-phase deltas, the leg's wall time against a 10-minute target, and, when the leg's `total` regressed, a verdict naming both SHAs, the metrics, a reason code and root's next action.
-- **Means:** `.github/workflows/bench.yml` moves from `pull_request` to push on main plus `workflow_dispatch`. Every in-process deadline is deleted; GitHub's 60-minute job timeout is the only kill. Every measured run executes from one fixed path so the two sides test the same mutant ids.
-- **Product authority:** Ryan (root), intent of 2026-10-12: remove the bench from the PR path today. This plan is layer 1 of a split. Layer 2 (the enterprise install, judged separately) is out of this plan. Branch `stryker/bench-main-only` (#312) stays intact and is the source most hunks are ported from.
+- **Objective:** No pull request runs the bench. Each main commit whose bench legs Turbo reports as affected is benched against its first parent and gets a report-only result: per-phase deltas, the leg's wall time against a 10-minute target, and, when the leg's `total` regressed, a verdict naming both SHAs, the metrics, a reason code and root's next action.
+- **Means:** `.github/workflows/bench.yml` moves from `pull_request` to push on main plus `workflow_dispatch`, with no path filter; which legs run is Turbo's `turbo query affected` answer (layer 1b). Every in-process deadline is deleted; GitHub's 60-minute job timeout is the only kill. Every measured run executes from one fixed path so the two sides test the same mutant ids.
+- **Product authority:** Ryan (root), intent of 2026-10-12: remove the bench from the PR path today. Amended 2026-10-12: never roll your own caching or change classification where Turbo can do the job; bespoke caching survives only with a written rule-4 reason. This plan is layer 1 of a split. Layer 2 (the enterprise install, judged separately) is out of this plan. Branch `stryker/bench-main-only` (#312) stays intact and is the source most hunks are ported from.
 - **Edit scope:** `.github/workflows/bench.yml` is the only workflow touched. `test/bench/**` and `test/e2e-core/src/**` bench files. No change to the e2e fixture bake, any fixture lock, `ci.yml`, `mutation.yml`, or product packages.
 - **Stop conditions:** no local bench, mutation or full e2e runs; no new dependency or executable.
 - **Open blockers:** none.
@@ -25,7 +26,7 @@ execution: code
 
 ### Summary
 
-The bench leaves the pull-request path and runs once per main commit that is not docs-only, comparing it with its first parent through the existing interleaved A/B protocol. Time is measured and reported, never enforced. A leg fails only when the bench cannot produce a comparison. A regression is reported with its culprit and next action, as the leg's `::error` annotation and step summary on that commit's Bench run; the lane never acts on it.
+The bench leaves the pull-request path and runs once per main commit whose legs Turbo reports as affected, comparing it with its first parent through the existing interleaved A/B protocol. Time is measured and reported, never enforced. A leg fails only when the bench cannot produce a comparison. A regression is reported with its culprit and next action, as the leg's `::error` annotation and step summary on that commit's Bench run; the lane never acts on it.
 
 ### Problem Frame
 
@@ -51,11 +52,14 @@ Main's regression rule today flags any phase whose samples separate by 3% of A's
 - KD8. **Two layers, not three.** A trigger-and-caps-only first layer was considered: it would stop PRs paying with less code, but main would then publish verdicts from the two-root layout, which A/A run 38135504932 shows produces a false `::error` regression on a product-identical commit, and those verdicts name no parent, metric or next action. Root would read false culprits. The run path and the regression block land with the trigger.
 - KD9. **Must-not-lose status of this layer.** "Every PR stops paying for the bench" holds on merge (R1). "No bench path hangs on a bad upstream publish" does not hold on this layer alone: the enterprise leg still resolves from the registry (Risks). Layer 2 is stacked on this layer and owns that property; whether layer 1 merges before layer 2 is root's call.
 
+- KD10. **Turbo decides leg scope; the bench owns no hash cache or change classifier.** (session-settled: user-directed, root amendment 2026-10-12, chosen over keeping GitHub `paths-ignore`, a hand-written change classifier.) Evidence under Turbo Compliance. `paths-ignore` is removed in layer 1 (every push benches every leg until layer 1b lands) and replaced in layer 1b by `turbo query affected`, as Turbo's own "Skipping tasks" guide prescribes (https://turborepo.dev/docs/guides/skipping-tasks).
+
 ### Requirements
 
 **Trigger**
 
-- R1. `bench.yml` has no `pull_request` trigger. It runs on push to `main` with today's `paths-ignore` (`**/*.md`, `docs/**`) and on `workflow_dispatch`.
+- R1. `bench.yml` has no `pull_request` trigger and no path filter. It runs on push to `main` and on `workflow_dispatch`.
+- R1a. (Layer 1b.) On push, the plan job keeps a leg only when `turbo query affected --packages <the leg's packages> --base <first parent> --head <sha> --exit-code` exits 1; exit 2 fails the plan job. A leg's packages are the engine packages the bench builds plus the package that owns the corpus entry, read from `test/bench/corpus.json`, the one list `prepare-side.service.ts` also builds from. `workflow_dispatch` runs every leg. When no leg is affected, the plan job's step summary says so, with Turbo's JSON per leg.
 - R2. Side B is `github.sha`; side A is its first parent. Both are detached worktrees under `RUNNER_TEMP` (`bench-a`, `bench-b`). Each side gets its own `.sfs-deps` (side B copies the checkout's released tarballs; side A copies them when its `stryker-published` pin matches, else builds its own from its pin, as today) and its own `pnpm install --frozen-lockfile`, each timed into `bench-setup.tsv`. The job checkout holds only the harness and its timed install.
 - R3. Concurrency group `bench-${{ github.sha }}` with `cancel-in-progress: false`: a later push never cancels an earlier commit's bench.
 - R4. Permissions stay `contents: read`. The lane writes only its step summary, annotations and artifacts.
@@ -95,6 +99,7 @@ Main's regression rule today flags any phase whose samples separate by 3% of A's
 
 - Out (layer 2 or later): run identity gate (`run-path-mismatch`, `run-identity-unreadable`), provisional `leg-incomplete` reports, lockfile pins, `withheldPins`, deleting or consuming the fixture's committed `package-lock.json`, any change to the enterprise `npm install --before` step.
 - Out: automatic revert, issue, PR comment, nightly cron, a raised in-process cap or deadline (KD2's rejected option), a PR-side bench copy, Turbo restore-from-base, corpus narrowing.
+- Out (Stream K): enabling a Turbo remote cache and the repo-wide `actions/cache` transport of `.turbo/cache` (`ci.yml`, `mutation.yml`, `kill-matrix.yml`, `bench.yml`); the `test/bench/oxlint.config.ts` boundary diagnostic.
 - Out: Stream G execution-engine optimisations.
 
 ### Dependencies / Assumptions
@@ -123,6 +128,26 @@ Main's regression rule today flags any phase whose samples separate by 3% of A's
 - KTD4. Side A is resolved with `git rev-parse --verify HEAD^1` in the checkout (`fetch-depth: 0` kept: the enterprise `--before` cutoff reads `pnpm-lock.yaml` history). A missing parent fails that step with `::error` naming the SHA.
 - KTD5. Both upload steps run on `always()`, so a bench abort or a failed step still uploads what exists. A job killed by the 60-minute timeout may leave no report; that gap is layer 2's provisional report or later.
 
+### Turbo Compliance
+
+Run with `skill://turbo-query-optimization` on `stryker/bench-off-pr` at `e684c838`, turbo 2.10.12. Raw outputs: `/tmp/compound-engineering-0/turbo-evidence/` (session scratch).
+
+- **Graph.** `packages`: 25, 24 graph nodes, 104 edges, no circular-dependency warning on stderr. `boundaries`: 20 diagnostics; the only bench one is `test/bench/oxlint.config.ts` importing `../e2e-core/oxlint.config.ts` (pre-existing, not caching; Stream K).
+- **Leg closures are Turbo's.** Each repo leg's `turbo run build --dry=json` closure is 17-18 `#build` tasks; the enterprise closure is also derived from `turbo run build --dry=json` inside `prepare-side.service.ts` (`STEP_ENTERPRISE_CLOSURE`).
+- **Shared cache dir is sound.** `turbo run build --dry=json --filter=@systemfsoftware/stryker-js` gives identical hashes for all 15 tasks in the checkout and in a worktree at another path, so both side worktrees hit one `--cache-dir` by content only.
+- **`paths-ignore` loses to Turbo.** Over 11 sampled main commits (`38924e53` back to `3cb13423`), `paths-ignore` (`**/*.md`, `docs/**`) skips none. `turbo query affected --packages ... --exit-code` per leg skips all four legs on `61d40db4` (CI files), `ee2c4cfb` (CI and docs) and `3495e21d` (flake inputs only), runs only `e2e-core` and enterprise on `ddeb67ab` (#311), and only enterprise on `3cb13423`, matching `affectedPackages` reasons (`FileChanged`, `DependencyChanged`, `LockfileChanged`, `ConservativeRootLockfileChanged`).
+- **Signal choice.** `affectedTasks(tasks: ["build"])` is not a changed set: it includes upstream tasks with reason `TaskAllChanged: required by an affected task`, and its `build` inputs miss the enterprise fixture, which is not a build input (`ddeb67ab`). `affected --packages` is the signal.
+- **Limitations.** A shallow checkout makes every package affected (Turbo docs), so the plan job checks out full history. A change Turbo cannot see as a package change (for example `bench.yml` itself) benches nothing on push; `workflow_dispatch` is the route for harness proof.
+
+Bespoke caching left in this unit, each with its rule-4 reason:
+
+| Mechanism                                                                  | Where                                                                     | Rule-4 reason                                                                                                                                                                                                                             |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.sfs-deps` released tarballs, cached on the `stryker-published` flake pin | `.github/actions/released-tarballs/action.yml`, `bench.yml` same-pin step | Nix store paths: the tarballs are a Nix flake output; Turbo neither builds nor hashes flake inputs. A pin change that matters also changes `pnpm-lock.yaml` (`LockfileChanged`, `6c6eaaa9`).                                              |
+| `actions/cache` transport of `.turbo/cache`                                | `bench.yml` "Turbo cache" step                                            | Content is Turbo's own task cache. The repo has no Turbo remote cache (no `TURBO_TOKEN`/`TURBO_TEAM`/`TURBO_API` in any workflow, no `remoteCache` in `turbo.json`); enabling one needs a credential and is Stream K's repo-wide finding. |
+
+Not caches: `workload-digest.service.ts` (proves both sides ran one workload; skips no work), `pristine-tree.service.ts` (restores the tree between runs). Stryker's incremental reuse is product, and the bench passes `--full` (`run-bench.service.ts`).
+
 ### Open Questions
 
 **Resolved during planning**
@@ -141,20 +166,23 @@ Main's regression rule today flags any phase whose samples separate by 3% of A's
 - U3. **Regression block.** Files: `bench-summary.schema.ts`, `summarize-bench.workflow.ts`, `render-bench-report.workflow.ts` and their laws. Covers R9, R10, KD5. Tests: `total`-decides, phase-only regression is notice, 10 ms floor (AE3), main vs non-main next action, wall time line independent of exit (AE4).
 - U4. **Fixed run path.** Files: `run-path.schema.ts`, `plan-run-path.workflow.ts`, `settle-run-path.workflow.ts` (new), `test/bench/src/run-bench.service.ts`, `prepare-side.service.ts` (relative plugin URLs), `prepared-side.ts`, `bench-report.schema.ts` abort codes, `mod.ts`. Covers R11, R12. Tests: `plan-run-path` and `settle-run-path` laws (occupied, move failed, unrestored with and without a run failure).
 - U5. **Docs.** `test/bench/README.md`, `test/bench/package.json` description. Covers R13.
+- U6. **Layer 1b: Turbo leg scope (stacked on layer 1).** Files: `test/bench/corpus.json` and `test/e2e-core/src/bench-corpus.schema.ts` (an `engine` list of package dirs), `test/bench/src/prepare-side.service.ts` (builds from that list instead of `ENGINE_BUILD_DIRS`), `.github/workflows/bench.yml` plan job (full-history checkout, root install for the lockfile's turbo, one `turbo query affected --exit-code` per leg). No bench-owned decision code: Turbo's exit code decides. Covers R1a.
 
 ### Test Admission
 
 Gate: `test-layer-selection` permission matrix, default refuse. Schema codec laws for every new `*.schema.ts` are generated in-source by `inSourceSchemaLaws()` (`test/e2e-core/vitest.config.ts:2,8`), so no hand-written schema test is admitted.
 
-| Proposed test                                                                                                          | Cell             | Verdict                                    | Plausible bug it catches                                                                           |
-| ---------------------------------------------------------------------------------------------------------------------- | ---------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `measure-leg.workflow.property.test.ts`                                                                                | workflow         | admit                                      | wall time computed from the wrong unit (seconds vs ms), or a negative elapsed reported as measured |
-| `summarize-bench` laws: `total` decides, phase-only regression yields no block, 10 ms floor, block lists `total` first | workflow         | admit                                      | a 1 ms `instrument` separation or a phase-only separation emitting a culprit verdict               |
-| `render-bench-report` laws: next action by ref, verdict level and exit independent of wall time                        | workflow         | admit                                      | a dispatched branch run telling root to revert; an overrun changing the exit                       |
-| `plan-run-path` / `settle-run-path` laws                                                                               | workflow         | admit                                      | a run starting on an occupied path; a failed restore swallowed when the run also failed            |
-| `read-bench-run` law changes                                                                                           | workflow         | edit: delete `timed-out` cases             | n/a (removed shape)                                                                                |
-| `run-bench.service.ts` rename sequence, `prepare-side.service.ts` relative URLs                                        | executor/service | refuse; evidence is the A/A dispatch (AE7) | spawning the CLI from a test is a process spawn, which the in-process gate forbids                 |
-| new `bench-decisions.integration.test.ts` scenario                                                                     | integration      | refuse                                     | nothing this layer adds crosses a boundary the workflow laws miss                                  |
+| Proposed test                                                                                                          | Cell                     | Verdict                                    | Plausible bug it catches                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measure-leg.workflow.property.test.ts`                                                                                | workflow                 | admit                                      | wall time computed from the wrong unit (seconds vs ms), or a negative elapsed reported as measured                                                  |
+| `summarize-bench` laws: `total` decides, phase-only regression yields no block, 10 ms floor, block lists `total` first | workflow                 | admit                                      | a 1 ms `instrument` separation or a phase-only separation emitting a culprit verdict                                                                |
+| `render-bench-report` laws: next action by ref, verdict level and exit independent of wall time                        | workflow                 | admit                                      | a dispatched branch run telling root to revert; an overrun changing the exit                                                                        |
+| `plan-run-path` / `settle-run-path` laws                                                                               | workflow                 | admit                                      | a run starting on an occupied path; a failed restore swallowed when the run also failed                                                             |
+| `read-bench-run` law changes                                                                                           | workflow                 | edit: delete `timed-out` cases             | n/a (removed shape)                                                                                                                                 |
+| `run-bench.service.ts` rename sequence, `prepare-side.service.ts` relative URLs                                        | executor/service         | refuse; evidence is the A/A dispatch (AE7) | spawning the CLI from a test is a process spawn, which the in-process gate forbids                                                                  |
+| new `bench-decisions.integration.test.ts` scenario                                                                     | integration              | refuse                                     | nothing this layer adds crosses a boundary the workflow laws miss                                                                                   |
+| layer 1b leg selection                                                                                                 | none (Turbo's exit code) | refuse                                     | no bench decision code exists to test; evidence is the per-leg `turbo query affected` table above and the plan job's summary on the first main push |
+| layer 1b `engine` corpus field                                                                                         | schema                   | generated in-source law only               | n/a                                                                                                                                                 |
 
 ### Verification
 
