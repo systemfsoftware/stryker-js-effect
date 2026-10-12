@@ -1,13 +1,13 @@
 ---
 title: VerdictStore port with content-addressed verdict keys - Plan
 type: feat
-date: 2026-10-10
+date: 2026-10-12
 topic: verdict-store
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
 origin: docs/brainstorms/2026-10-09-1842-feat-verdict-store-requirements.md
-supersedes: docs/plans/2026-10-10-1354-feat-verdict-store-plan.md
+supersedes: docs/plans/2026-10-10-1733-feat-verdict-store-plan.md
 ---
 
 # VerdictStore port with content-addressed verdict keys - Plan
@@ -131,6 +131,7 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 
 - A real shared S3 bucket for main's mutation shards (IaC, credentials, workflow wiring). The stacked layer's fs store through artifacts and `actions/cache` covers main until then.
 - `dryRunCoverage` and `budget` as a later store candidate under their own suite-input and run-policy keys. Until then they stay in the incremental file, which mutation.yml keeps caching and re-seeding (KTD8).
+- Replacing the `.turbo/cache` that `actions/cache` carries (keyed by `hashFiles` in `mutation.yml` and `kill-matrix.yml` and by commit SHA in `ci.yml` and `bench.yml`, with a hand-written prune in `mutation.yml` and `ci.yml`) with turbo's remote cache, and replacing the hand-written `hashFiles` key on `mutation.yml`'s incremental-report cache. Both are on `main` and outside this stack's diff. They go to Stream K's repo-wide audit as small follow-up PRs (KTD17).
 
 ### Sources / Research
 
@@ -139,6 +140,7 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 - `docs/plans/2026-09-29-0427-feat-state-of-the-art-mutation-testing-plan.md` R5, R8-R10, R38, KTD1-KTD2.
 - `docs/solutions/build-errors/e2e-lane-packed-a-subset-of-its-workspace-closure.md` (I1 closure completeness, I2 derived packaging set).
 - emulate 0.12.1 S3 routes: `packages/@emulators/aws/src/routes/s3.ts:300-393` (PutObject upserts unconditionally). S3 never stores partial objects ([PutObject](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html)) and is strongly read-after-write consistent ([consistency](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html#ConsistencyModel)).
+- Turborepo caching: a task restores outputs only when both the global and the task hash match, and turbo assumes the task is deterministic ([Caching](https://turborepo.dev/docs/crafting-your-repository/caching)). `turbo query` results in KTD17.
 
 ---
 
@@ -162,6 +164,12 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 - KTD14. **The cache key is the merged store's content digest.** `mutation-verdicts-<sha256 over sorted (relative path, sha256 of bytes)>`, computed by the merge script and saved only when a lookup-only restore misses. Restores use that prefix and get the newest cache. An unchanged re-run saves nothing new, so cache churn tracks real change. The store only grows (no pruning), so the newest cache always contains every older one's entries, except a timeout-upgrade overwrite, which is the newer verdict anyway.
 - KTD15. **One Node-runnable TypeScript script, `scripts/verdict-store-parts.ts`, with `stage` and `merge` subcommands.** Its decisions are pure exported functions (which files a shard stages, which part wins per name, collisions, skips, the content key, the summary text, reason codes); `main` does the I/O. Node 24 runs it as `node scripts/verdict-store-parts.ts` in mutation jobs with no Deno or Nix install; `ci.yml`'s `Repo scripts tests` step runs its Deno property tests (`./bin/deno test --config=scripts/deno.json scripts/`). Same shape as `scripts/change-lane.ts`.
 - KTD16. **Trust (R21).** `mutation.yml` runs on `push` to `main`, `schedule` and `workflow_dispatch`, all trusted cache writers; it never runs on `pull_request`. A dispatch on a branch saves to that branch's scope only, so the proof runs cannot write the store `main` restores.
+- KTD17. **Turborepo first (house rule, 2026-10-12). The store's CI wiring keeps `actions/cache` under a rule-4 reason (the house rule's exception: bespoke caching survives only where turbo cannot do the job). This layer adds no task cache, hash cache, change classifier or affected gate.** Evidence from `turbo query` (turbo 2.10.12) on this branch:
+  - `mutation` is `"cache": false` with default inputs (`turbo.json`). Turbo invalidates it per package, never per mutant. #293 changed one package file, `packages/stryker-js/src/__tests__/plan-mutant-tests.workflow.property.test.ts`, plus a changeset. Three runs of `affectedTasks(base: "ce66cd7a7", head: "cc7fcefe", tasks: ["mutation"])` each list `@systemfsoftware/stryker-js#mutation` as `TaskFileChanged` on that file. So a one-file test change marks the package's whole mutation task changed.
+  - Turbo restores no outputs for `mutation` at all, because it is `cache: false`. Even a cacheable `mutation` with `reports/stryker-verdicts/**` as outputs would restore the store only under an identical global and task hash, which is the unchanged run where reuse is trivial. The changed runs that R20/R26 measure would start from an empty store.
+  - **Rule-4 reason:** turbo replays a task's outputs only under an identical hash, and it has no mechanism to carry a mutable product data set across differing hashes for per-entry reuse. The verdict store is that data set, so it keeps `actions/cache` with KTD14's content-digest key. Check: the query above lists `stryker-js#mutation` for a one-file change, and `turbo.json` shows `mutation` with `"cache": false`.
+  - Turbo's own mechanism where it applies: `GITHUB_STEP_SUMMARY` reaches the `test:e2e` task through `passThroughEnv` (`turbo.json`). `test:e2e` is `cache: false` and `passThroughEnv` is unhashed, so no task hash moves. This layer's diff over #271 marks one turbo task changed: `affectedTasks(base: "stryker/verdict-store", head: "HEAD")` returns 1 task, `//#typecheck:node` (`TaskAllChanged`).
+  - Out of this layer, handed to Stream K's repo-wide audit and not changed here: turbo's local `.turbo/cache` travels through `actions/cache` instead of a turbo remote cache. `mutation.yml` and `kill-matrix.yml` key it with `hashFiles`, `ci.yml` and `bench.yml` key it by commit SHA, and `mutation.yml` and `ci.yml` add a hand-written prune of unused entries. No `TURBO_TOKEN`, `TURBO_TEAM` or `--affected` appears in `.github` or `turbo.json`. All of these lines are on `main`, outside this stack's diff.
 
 ### High-Level Technical Design
 
@@ -628,7 +636,7 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 
 **Goal:** Main's shards share one fs store with no AWS of any kind, and today's runs are unchanged under 18.1.0.
 
-**Requirements:** R17, R21-R25; KTD14, KTD16.
+**Requirements:** R17, R21-R25; KTD14, KTD16, KTD17.
 
 **Dependencies:** U12.
 
