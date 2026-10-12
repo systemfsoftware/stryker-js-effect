@@ -98,7 +98,7 @@ Verdict identity is already content-derived (`packages/stryker-js/src/incrementa
 
   The fs suite also plants a leftover temp file and a truncated entry. (pack: boundary-testing, fake-and-real-store-laws.md)
 - R19. An e2e journey runs real CLI processes concurrently against one store, SIGKILLs one mid-run, and shows that a following run decodes every entry (`entryUnreadable` is 0) and reuses every entry the killed process put (counted from the store, which holds only remembered statuses).
-- R20. An e2e journey in the ci.yml e2e lane runs the packed CLI twice on an unchanged fixture against the S3 driver pointed at emulate on the host. It passes only when the second run's own `reuse` event shows `reused / (reused + ran) >= 0.95`.
+- R20. An e2e journey in `e2e.yml`'s `verdict-store` leg runs the packed CLI twice on an unchanged fixture against the S3 driver pointed at emulate on the host. It passes only when the second run's own `reuse` event shows `reused / (reused + ran) >= 0.95`. Since #314, `e2e.yml` runs on every `main` push and on `workflow_dispatch`, not on pull requests, so the PR-head run is a dispatch of `e2e.yml` on the PR branch.
 
 ### Acceptance Examples
 
@@ -553,7 +553,7 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 
 ### U10. e2e journeys
 
-**Goal:** Real packed CLI processes prove R19 and R20 in the ci.yml e2e lane.
+**Goal:** Real packed CLI processes prove R19 and R20 in `e2e.yml`'s `verdict-store` leg.
 
 **Requirements:** R15, R19, R20; AE4; KTD10.
 
@@ -570,7 +570,7 @@ test/e2e/tests/verdict-store-concurrency.e2e.test.ts         # U10
 
 - The reuse journey runs the fixture twice in two fresh forks against one bucket and decodes the second run's NDJSON stream with the existing `machine-stream.fixture.ts`. It asserts R20's ratio from the `reuse` event and that the first run reused nothing.
 - The concurrency journey starts two CLI processes against one store. It SIGKILLs one mid-run while it is still putting and lets the other finish. A third run then asserts `entryUnreadable` is 0 and that every entry the killed process put (listed from the store) is reused.
-- New files run in the `rest-1`/`rest-2` legs without a workflow edit (`.github/workflows/ci.yml:79-82,120`).
+- The two journeys run in their own `verdict-store` leg of `e2e.yml`'s matrix, and the `rest-1`/`rest-2` legs exclude them.
 
 **Execution note:** Start with a spike journey that (a) reaches emulate from a fork through `host.microsandbox.internal` and (b) runs two `execStreaming` calls in one fork and delivers signal 9. UNVERIFIED today: loopback reachability (emulate binds `127.0.0.1` unless `hostname` is set), two live execs per fork, and `handle.signal(9)` (only `INTERRUPT_SIGNAL = 2` is used, `test/e2e/src/Harness/warm-sandbox.handle.ts:183,213`). If one fork cannot host two processes, use two forks against the shared S3 store; that changes R19's topology, not its claim.
 
