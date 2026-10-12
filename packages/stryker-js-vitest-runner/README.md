@@ -7,7 +7,7 @@ Vitest test-runner plugin for Stryker mutation testing. Provides fast in-process
 
 ## Prerequisites
 
-- Node.js `>=22.18.0`
+- Node.js `>=24.13.1`
 - Vitest `>=2.0.0`
 - `@systemfsoftware/stryker-js` `>=5.0.0`
 

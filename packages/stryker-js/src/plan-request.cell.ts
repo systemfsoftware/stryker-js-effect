@@ -1,6 +1,7 @@
 import { Cell } from '@systemfsoftware/effect-cell-types'
 import { RunEvent, ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant, type Options } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Console from 'effect/Console'
 import * as Context from 'effect/Context'
@@ -24,8 +25,8 @@ import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.h
 import { type DryRunCoverage, ReportedDryRunCoverageSchema } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
 import { Anchored, placementAnchors, PlacementAnchorsCommand } from './placement-anchors.workflow.js'
-import { CompileErrorProbeSchema, CostsFieldSchema } from './plan-request.schema.js'
-import { type PlannedMutant, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
+import { CompileErrorProbeSchema, CostsFieldSchema, PlanShardsRefused } from './plan-request.schema.js'
+import { type PlannedMutant, type PlannedShard, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
 import { forEachProjectDirectory } from './project-directory.js'
 import { readProjectCell } from './read-project.cell.js'
@@ -324,35 +325,33 @@ const assemblePlan = (
   request: PlanShardsRequest,
   planned: ReadonlyArray<PlannedMutant>,
   dryRunCosts: Record<string, number>,
-): ShardPlan => {
-  const shards = Result.getOrElse(
-    planShards(
-      PlanShardsCommand.make({
-        targetSeconds: request.targetSeconds,
-        maxShards: request.maxShards,
-        mutants: planned.map((mutant) => ({ ...mutant })),
-        dryRunCosts,
-      }),
-    ),
-    (neverError) => neverError,
+): Effect.Effect<ShardPlan, PlanShardsRefused> =>
+  Effect.map(
+    PlanShardsCommand.makeEffect({
+      targetSeconds: request.targetSeconds,
+      maxShards: request.maxShards,
+      mutants: planned.map((mutant) => ({ ...mutant })),
+      dryRunCosts,
+    }).pipe(Effect.mapError((issue) => PlanShardsRefused.make({ detail: new S.SchemaError(issue).message }))),
+    (command) => shardPlanOf(request, Result.getOrElse(planShards(command), (neverError) => neverError)),
   )
-  return {
-    version: 1,
-    targetSeconds: request.targetSeconds,
-    shards: shards.map((shard) => ({
-      index: shard.index,
-      count: shard.count,
+
+const shardPlanOf = (request: PlanShardsRequest, shards: ReadonlyArray<PlannedShard>): ShardPlan => ({
+  version: 1,
+  targetSeconds: request.targetSeconds,
+  shards: shards.map((shard) => ({
+    index: shard.index,
+    count: shard.count,
+    predictedSeconds: shard.predictedSeconds,
+    projects: shard.projects.map((entry) => ({ project: entry.project, mutants: [...entry.mutants] })),
+  })),
+  matrix: {
+    include: shards.map((shard) => ({
+      shard: `${shard.index}/${shard.count}`,
       predictedSeconds: shard.predictedSeconds,
-      projects: shard.projects.map((entry) => ({ project: entry.project, mutants: [...entry.mutants] })),
     })),
-    matrix: {
-      include: shards.map((shard) => ({
-        shard: `${shard.index}/${shard.count}`,
-        predictedSeconds: shard.predictedSeconds,
-      })),
-    },
-  }
-}
+  },
+})
 
 const writePlan = (
   request: PlanShardsRequest,
@@ -401,19 +400,45 @@ const planReuseRowOf = (entry: ProjectPlan): RunEvent.PlanProjectReuse =>
     }),
   })
 
-export const planRequest = ({ request, channel }: PlanRequestInput): Effect.Effect<void, never, EnginePorts> =>
+const realProjectOf = (
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  basePath: string,
+  directory: string,
+): Effect.Effect<string> => {
+  const resolved = path.resolve(basePath, directory)
+  return fs.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved))
+}
+
+const distinctProjectsOf = (
+  basePath: string,
+  projects: ReadonlyArray<string> | undefined,
+): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const keyed = yield* Effect.forEach(
+      Option.getOrElse(Option.fromUndefinedOr(projects), (): ReadonlyArray<string> => []),
+      (directory) => Effect.map(realProjectOf(fs, path, basePath, directory), (real) => ({ directory, real })),
+    )
+    return Arr.dedupeWith(keyed, (left, right) => left.real === right.real).map((entry) => entry.directory)
+  })
+
+export const planRequest = (
+  { request, channel }: PlanRequestInput,
+): Effect.Effect<void, PlanShardsRefused, EnginePorts> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     const labelBase = labelBaseOf(path, channel.environment.basePath, request.out)
     const planned = yield* forEachProjectDirectory(
-      request.projects,
+      yield* distinctProjectsOf(channel.environment.basePath, request.projects),
       (directory) => planProject(request, channel, labelBase, directory),
     )
     const scheduled = planned.flatMap((entry) => entry.mutants.map((mutant) => ({ project: entry.label, ...mutant })))
     const dryRunCosts: Record<string, number> = Object.fromEntries(
       planned.map((entry) => [entry.label, entry.dryRunCostMs]),
     )
-    const plan = assemblePlan(request, scheduled, dryRunCosts)
+    const plan = yield* assemblePlan(request, scheduled, dryRunCosts)
     yield* Queue.offer(
       channel.environment.host.events,
       RunEvent.PlanKnown.make({

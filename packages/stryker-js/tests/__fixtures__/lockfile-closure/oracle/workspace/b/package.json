@@ -1,0 +1,9 @@
+{
+  "name": "oracle-b",
+  "private": true,
+  "dependencies": {
+    "kleur": "4.1.5",
+    "local-tgz": "file:../vendor/local-tgz.tgz",
+    "oracle-c": "workspace:*"
+  }
+}
