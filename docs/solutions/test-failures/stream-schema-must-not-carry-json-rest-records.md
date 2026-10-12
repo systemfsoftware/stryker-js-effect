@@ -88,26 +88,31 @@ The V8 fault sits on one path. When an object has a single outgoing map
 transition for a key that ends in a backslash, the parser's fast path reads a
 later escaped key on that map as the backslash key. Bare strings and objects built
 with `Object.fromEntries` never take that path, and neither do index-like keys.
-On Node 24.21 a probe that primed a fresh map with a backslash key, then decoded a
-second key on it, misread 250 of 400 decodes with plain `JSON.parse` and the same
-250 with a reviver, all of them keys that need an escape (#306's description).
+On Node 24.21 a probe primed a fresh map with a backslash key, then decoded a
+second key after the same first key. It misread every one of the 250 decodes
+whose second key needs an escape and none of the 150 whose key needs none, both
+with plain `JSON.parse` and with a reviver (#306's description).
 
 `ManifestDocument` (#306) therefore decodes JSON text in three steps:
 
-1. It decodes the text once, unchanged, so malformed text fails as it did before.
+1. It decodes the text once, unchanged, with `Schema.fromJsonString(Schema.JsonObject)`,
+   and fails with that decode's own issue, so malformed and non-object text
+   report what they did before.
 2. It swaps every key token for its offset in the text, which needs no escape,
    and parses that.
 3. It decodes each original key token as a bare JSON string and rebuilds every
-   object with `Object.fromEntries`.
+   object through `Effect.forEach`, which keeps nesting depth off the JS call
+   stack.
 
 Duplicate keys keep `JSON.parse` semantics: the last value wins, at the first
 key's position. The encoded side stays an annotated `Schema.String` (what
 `Schema.fromJsonString` uses), so the generated `∀x_ManifestDocument_=x` and
 `∀x_ManifestDocumentEnc_=x` laws keep drawing every key.
 
-Start the exported schema's initializer from `Schema.`. Gate: schema discovery
-generates no law for an export written as `localSchema.pipe(...)`;
-`vitest --reporter=verbose` lists one `∀x_<Name>_=x` per export.
+Write the exported schema as an `S.`/`Schema.` member chain, or as a `pipe(...)`
+call that takes one as an argument. Schema discovery generates no laws for an
+export written as `localSchema.pipe(...)`. Gate: `vitest --reporter=verbose`
+lists the pair `∀x_<Name>_=x` and `∀x_<Name>Enc_=x` for every export.
 
 ### Regression rows and the seed replay
 

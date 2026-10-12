@@ -5,7 +5,6 @@ import * as Option from 'effect/Option'
 import * as Record from 'effect/Record'
 import * as S from 'effect/Schema'
 import * as SchemaGetter from 'effect/SchemaGetter'
-import * as SchemaIssue from 'effect/SchemaIssue'
 import * as SchemaTransformation from 'effect/SchemaTransformation'
 
 const STRING_TOKEN = /("(?:[^"\\]|\\[\s\S])*")(\s*:)?/g
@@ -19,18 +18,20 @@ const isJsonArray = (value: S.Json): value is ReadonlyArray<S.Json> => Arr.isArr
 const isJsonObject = (value: S.Json): value is S.JsonObject => Match.record(value)
 
 const rekeyedBy = (keyAt: Record.ReadonlyRecord<string, string>) => {
-  const rekeyedObject = (object: S.JsonObject): S.JsonObject =>
-    Object.fromEntries(
-      Object.entries(object).map(([offset, member]) => [
-        Option.getOrElse(Record.get(keyAt, offset), () => offset),
-        rekeyed(member),
-      ]),
+  const rekeyedObject = (object: S.JsonObject): Effect.Effect<S.JsonObject> =>
+    Effect.map(
+      Effect.forEach(Object.entries(object), ([offset, member]) =>
+        Effect.map(
+          rekeyed(member),
+          (value) => [Option.getOrElse(Record.get(keyAt, offset), () => offset), value] as const,
+        )),
+      Record.fromEntries,
     )
-  const rekeyed = (value: S.Json): S.Json =>
+  const rekeyed = (value: S.Json): Effect.Effect<S.Json> =>
     Match.value(value).pipe(
-      Match.when(isJsonArray, (items) => items.map(rekeyed)),
+      Match.when(isJsonArray, (items) => Effect.forEach(items, rekeyed)),
       Match.when(isJsonObject, rekeyedObject),
-      Match.orElse((leaf) => leaf),
+      Match.orElse((leaf) => Effect.succeed(leaf)),
     )
   return rekeyedObject
 }
@@ -60,7 +61,7 @@ const decodeJsonWithExactKeys = (text: string) =>
     const tokens = keyTokensOf(text)
     const keys = yield* Effect.forEach(tokens, (token) => decodeJsonString(token[1]))
     const keyAt = Record.fromEntries(Arr.zip(tokens.map((token) => `${token.index}`), keys))
-    return rekeyedBy(keyAt)(yield* decodeJsonObject(placeheld(text)))
+    return yield* rekeyedBy(keyAt)(yield* decodeJsonObject(placeheld(text)))
   })
 
 export const ManifestDocument = S.String.annotate({
@@ -70,11 +71,8 @@ export const ManifestDocument = S.String.annotate({
   S.decodeTo(
     S.JsonObject,
     SchemaTransformation.makeTransformation({
-      decode: SchemaGetter.transformEffect((text: string, options) =>
-        Effect.mapError(
-          decodeJsonWithExactKeys(text),
-          () => new SchemaIssue.InvalidValue({ expected: 'a valid JSON string' }, text, options),
-        )
+      decode: SchemaGetter.transformEffect((text: string) =>
+        Effect.mapError(decodeJsonWithExactKeys(text), (error) => error.issue)
       ),
       encode: SchemaGetter.stringifyJson(),
     }),
