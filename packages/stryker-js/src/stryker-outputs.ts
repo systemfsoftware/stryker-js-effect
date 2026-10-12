@@ -10,25 +10,20 @@ type OutputOptions = Pick<
   'tempDirName' | 'incrementalFile' | 'progressStreamFile' | 'htmlReporter' | 'jsonReporter'
 >
 
-interface StrykerOutput {
-  readonly source: string
-  readonly fileOf: (options: OutputOptions) => string
-}
+const OPTION_OUTPUTS = ['tempDirName', 'incrementalFile', 'progressStreamFile'] as const
 
-const STRYKER_OUTPUTS: readonly StrykerOutput[] = [
-  { source: '`tempDirName`', fileOf: (options) => options.tempDirName },
-  { source: '`incrementalFile`', fileOf: (options) => options.incrementalFile },
-  { source: '`progressStreamFile`', fileOf: (options) => options.progressStreamFile },
-  { source: '`htmlReporter.fileName`', fileOf: (options) => options.htmlReporter.fileName },
-  { source: '`jsonReporter.fileName`', fileOf: (options) => options.jsonReporter.fileName },
-  {
-    source: 'the SARIF file beside the JSON report',
-    fileOf: (options) => sarifFileNameOf(options.jsonReporter.fileName),
-  },
-  { source: `\`${REPRODUCERS_FILE}\``, fileOf: () => REPRODUCERS_FILE },
+const REPORTER_OUTPUTS = ['htmlReporter', 'jsonReporter'] as const
+
+export const strykerOutputFilesOf = (options: OutputOptions): readonly string[] => [
+  ...OPTION_OUTPUTS.map((option) => options[option]),
+  ...REPORTER_OUTPUTS.map((reporter) => options[reporter].fileName),
+  sarifFileNameOf(options.jsonReporter.fileName),
+  REPRODUCERS_FILE,
 ]
 
-export const strykerOutputFilesOf = (options: OutputOptions): readonly string[] =>
-  STRYKER_OUTPUTS.map((output) => output.fileOf(options))
-
-export const strykerOutputSources: readonly string[] = STRYKER_OUTPUTS.map((output) => output.source)
+export const strykerOutputSources: readonly string[] = [
+  ...OPTION_OUTPUTS.map((option) => `\`${option}\``),
+  ...REPORTER_OUTPUTS.map((reporter) => `\`${reporter}.fileName\``),
+  'the SARIF file beside `jsonReporter.fileName`',
+  `\`${REPRODUCERS_FILE}\``,
+]

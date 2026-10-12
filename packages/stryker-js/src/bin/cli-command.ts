@@ -11,8 +11,9 @@ import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 import { CliRouteCommand } from '../Cli.schema.js'
-import { alwaysIgnoredDescription } from '../project-ignores.js'
+import { ALWAYS_IGNORE } from '../project-ignores.js'
 import { type CliAnswer, type CliEnvironment, runRequestCell } from '../run-request.cell.js'
+import { strykerOutputSources } from '../stryker-outputs.js'
 
 const createSplitter = (separator: string) => (value: string) => value.split(separator).filter(Boolean)
 
@@ -20,6 +21,13 @@ const splitOnComma = createSplitter(',')
 const splitOnSpace = createSplitter(' ')
 
 const decodePluginFileUrl = S.decodeOption(Options.PluginFileUrl)
+
+const alwaysIgnoredDescription = [
+  `These patterns are always ignored: [${ALWAYS_IGNORE.map((pattern) => `\`${pattern}\``).join(', ')}].`,
+  'Because Stryker always ignores these, you should rarely have to adjust the `ignorePatterns` setting at all.',
+  `Stryker's own output files are always excluded too: ${strykerOutputSources.join(', ')}.`,
+  'Other files under `reports/` are not ignored.',
+].join(' ')
 
 const CLEAN_TEMP_DIR_DISABLED = ['false', '0'] as const
 
@@ -59,7 +67,7 @@ const runOptions = {
   ignorePatterns: Flag.String('ignorePatterns')
     .pipe(
       Flag.withDescription(
-        `A comma separated list of patterns used for specifying which files need to be ignored. This should only be used in cases where you experience a slow Stryker startup, because too many (or too large) files are copied to the sandbox that are not needed to run the tests. For example, image or movie directories. Note: This option will have NO effect when using the \`--inPlace\` option. Example: \`--ignorePatterns dist\`. ${alwaysIgnoredDescription} Because Stryker always ignores these, you should rarely have to adjust the \`ignorePatterns\` setting at all. This is useful to speed up Stryker by reducing the size of the sandbox directory which has a positive effect on performance.`,
+        `A comma separated list of patterns used for specifying which files need to be ignored. This should only be used in cases where you experience a slow Stryker startup, because too many (or too large) files are copied to the sandbox that are not needed to run the tests. For example, image or movie directories. Note: This option will have NO effect when using the \`--inPlace\` option. Example: \`--ignorePatterns dist\`. ${alwaysIgnoredDescription} This is useful to speed up Stryker by reducing the size of the sandbox directory which has a positive effect on performance.`,
       ),
       Flag.map(splitOnComma),
       optional,

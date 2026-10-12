@@ -5,6 +5,7 @@ import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
@@ -33,19 +34,32 @@ const ALWAYS_IGNORED: ReadonlyArray<readonly [pattern: string, sample: string]> 
   ['.turbo', '.turbo/cache.json'],
 ]
 
-const OUTPUT_OPTIONS = [
-  'tempDirName',
-  'incrementalFile',
-  'progressStreamFile',
-  'htmlReporter.fileName',
-  'jsonReporter.fileName',
+const OUTPUT_FILES = [
+  '.stryker-scratch/leftover.txt',
+  'out/stream.jsonl',
+  'out/report.html',
+  'out/report.json',
+  'out/report.sarif',
+  'reports/mutation/reproducers.json',
+]
+
+const NAMED_OUTPUTS = [
+  '`tempDirName`',
+  '`incrementalFile`',
+  '`progressStreamFile`',
+  '`htmlReporter.fileName`',
+  '`jsonReporter.fileName`',
+  'the SARIF file beside `jsonReporter.fileName`',
+  '`reports/mutation/reproducers.json`',
 ]
 
 const FOREIGN_REPORT = 'reports/coverage/lcov.info'
 
 const SOURCE = 'export const add = (left: number, right: number): number => left + right\n'
 
-const ALWAYS_IGNORED_LIST = /always ignored, whatever `ignorePatterns` holds: \[([^\]]*)\]/
+const ALWAYS_IGNORED_LIST = /always ignored: \[([^\]]*)\]/
+
+const OUTPUT_LIST = /own output files are always excluded too: (.*?)\. Other files under `reports\/` are not ignored\./
 
 const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
   runId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
@@ -66,15 +80,24 @@ const optionsOf = (root: string): Options.PartialStrykerOptions => ({
   cleanTempDir: 'always',
   incremental: true,
   incrementalFile: `${root}/reports/main.json`,
+  tempDirName: '.stryker-scratch',
+  progressStreamFile: 'out/stream.jsonl',
+  htmlReporter: { fileName: 'out/report.html' },
+  jsonReporter: { fileName: 'out/report.json' },
   ignorePatterns: [],
 })
 
-const reuseOf = (root: string): Effect.Effect<RunEvent.ReuseReported | undefined> =>
+interface ReuseRun {
+  readonly succeeded: boolean
+  readonly reuse: RunEvent.ReuseReported | undefined
+}
+
+const reuseOf = (root: string): Effect.Effect<ReuseRun> =>
   Effect.gen(function*() {
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const ports = Engine.nodePlatformLayer
     const runLayer = Layer.merge(Layer.provide(Engine.RunEnvironment.stage(environmentFor(root), queue), ports), ports)
-    yield* Engine.mutationTestCell
+    const exit = yield* Engine.mutationTestCell
       .run({ cliOptions: optionsOf(root), targetMutatePatterns: undefined })
       .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit)
     const events = [
@@ -83,7 +106,10 @@ const reuseOf = (root: string): Effect.Effect<RunEvent.ReuseReported | undefined
         Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
       )),
     ]
-    return events.find((event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event))
+    return {
+      succeeded: Exit.isSuccess(exit),
+      reuse: events.find((event): event is RunEvent.ReuseReported => S.is(RunEvent.ReuseReported)(event)),
+    }
   })
 
 const writeFiles = (root: string, files: ReadonlyArray<string>) =>
@@ -104,6 +130,12 @@ const writeFiles = (root: string, files: ReadonlyArray<string>) =>
 
 const renderedHelp = Effect.scoped(
   Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const binaryPresent = yield* fs.exists(STRYKER_BIN)
+    yield* Effect.when(
+      Effect.die(new Error('dist/main.mjs is missing — build the package first')),
+      Effect.succeed(!binaryPresent),
+    )
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const handle = yield* spawner.spawn(
       ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, 'run', '--help'], {
@@ -114,13 +146,14 @@ const renderedHelp = Effect.scoped(
         extendEnv: true,
       }),
     )
-    const printed = yield* Effect.forkScoped(handle.stdout.pipe(Stream.decodeText, Stream.mkString))
-    yield* handle.exitCode
-    const lines = (yield* Fiber.join(printed)).split('\n')
-    const help = lines.flatMap((line) =>
+    const printedOut = yield* Effect.forkScoped(handle.stdout.pipe(Stream.decodeText, Stream.mkString))
+    const printedErr = yield* Effect.forkScoped(handle.stderr.pipe(Stream.decodeText, Stream.mkString))
+    const exitCode = Number(yield* handle.exitCode)
+    const [out] = yield* Effect.all([Fiber.join(printedOut), Fiber.join(printedErr)])
+    const help = out.split('\n').flatMap((line) =>
       Option.toArray(S.decodeOption(S.fromJsonString(RunEvent.HelpRendered))(line.trim()))
     )
-    return help.map((event) => event.help).join('\n')
+    return { exitCode, text: help.map((event) => event.help).join('\n') }
   }),
 ).pipe(Effect.orDie)
 
@@ -131,7 +164,9 @@ Feature('What Stryker always leaves out of a project', { timeout: 180_000 })
     scenario(
       'Every always-ignored pattern stays out of the project while other files under reports/ do not',
       Gherkin.Do.pipe(
-        Given('a workspace with no ignore patterns of its own, run once, then given files under each pattern')(
+        Given(
+          'a workspace with no ignore patterns of its own and its outputs moved, run once, then given files under each pattern and at each output',
+        )(
           'runs',
           () =>
             Effect.gen(function*() {
@@ -141,31 +176,38 @@ Feature('What Stryker always leaves out of a project', { timeout: 180_000 })
                 Effect.gen(function*() {
                   yield* writeFiles(root, ['src/math.ts'])
                   yield* fs.writeFileString(`${root}/src/math.ts`, SOURCE)
-                  yield* reuseOf(root)
-                  yield* writeFiles(root, ALWAYS_IGNORED.map(([, sample]) => sample))
+                  const first = yield* reuseOf(root)
+                  yield* writeFiles(root, [
+                    ...ALWAYS_IGNORED.map(([, sample]) => sample),
+                    ...OUTPUT_FILES,
+                  ])
                   const afterIgnored = yield* reuseOf(root)
                   yield* writeFiles(root, [FOREIGN_REPORT])
                   const afterForeignReport = yield* reuseOf(root)
-                  return { afterIgnored, afterForeignReport }
+                  return { first, afterIgnored, afterForeignReport }
                 }),
                 fs.remove(root, { recursive: true, force: true }).pipe(Effect.orDie),
               )
             }).pipe(Effect.orDie, Effect.provide(filePorts)),
         ),
-        Then('files under the always-ignored patterns keep every verdict, and a foreign report refuses them')(
+        Then(
+          'files under the always-ignored patterns and at every output keep every verdict, and a foreign report refuses them',
+        )(
           (s, expect) => {
-            const planned = s.runs.afterIgnored?.reused ?? 0
+            const planned = s.runs.afterIgnored.reuse?.reused ?? 0
             return expect({
+              runsSucceeded: [s.runs.first, s.runs.afterIgnored, s.runs.afterForeignReport].map((run) => run.succeeded),
               plannedNonZero: planned > 0,
               afterIgnored: {
-                ran: s.runs.afterIgnored?.ran,
-                closureChanged: s.runs.afterIgnored?.refused.closureChanged,
+                ran: s.runs.afterIgnored.reuse?.ran,
+                closureChanged: s.runs.afterIgnored.reuse?.refused.closureChanged,
               },
               afterForeignReport: {
-                reused: s.runs.afterForeignReport?.reused,
-                closureChanged: s.runs.afterForeignReport?.refused.closureChanged,
+                reused: s.runs.afterForeignReport.reuse?.reused,
+                closureChanged: s.runs.afterForeignReport.reuse?.refused.closureChanged,
               },
             }).toEqual({
+              runsSucceeded: [true, true, true],
               plannedNonZero: true,
               afterIgnored: { ran: 0, closureChanged: 0 },
               afterForeignReport: { reused: 0, closureChanged: planned },
@@ -179,22 +221,17 @@ Feature('What Stryker always leaves out of a project', { timeout: 180_000 })
       'The --ignorePatterns help lists exactly what Stryker always ignores',
       Gherkin.Do.pipe(
         Given('the help the built binary renders for stryker run')('help', () => renderedHelp),
-        Then('it lists the always-ignored patterns, names every output option, and promises nothing for reports/')(
+        Then('it lists the always-ignored patterns and every output by its option, and promises nothing for reports/')(
           (s, expect) =>
             expect({
-              listed: Option.getOrUndefined(
-                Option.map(Option.fromNullishOr(ALWAYS_IGNORED_LIST.exec(s.help)?.[1]), (list) =>
-                  list.split(', ').map((item) => item.replaceAll('`', ''))),
-              ),
-              namesEveryOutputOption: OUTPUT_OPTIONS.every((option) =>
-                s.help.includes(`\`${option}\``)
-              ),
-              saysOtherReportsAreNotIgnored: s.help.includes('Other files under `reports/` are not ignored.'),
-              claimsReportsIgnored: s.help.includes('`/reports`'),
+              exitCode: s.help.exitCode,
+              listed: ALWAYS_IGNORED_LIST.exec(s.help.text)?.[1]?.split(', ').map((item) => item.replaceAll('`', '')),
+              outputs: OUTPUT_LIST.exec(s.help.text)?.[1]?.split(', '),
+              claimsReportsIgnored: s.help.text.includes('`/reports`'),
             }).toEqual({
+              exitCode: 0,
               listed: ALWAYS_IGNORED.map(([pattern]) => pattern),
-              namesEveryOutputOption: true,
-              saysOtherReportsAreNotIgnored: true,
+              outputs: NAMED_OUTPUTS,
               claimsReportsIgnored: false,
             }),
         ),
