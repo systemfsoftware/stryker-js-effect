@@ -3,12 +3,15 @@ import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as HashMap from 'effect/HashMap'
+import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { SurvivorRef } from './surfacing.schema.js'
+import { SurvivorRef } from '../surfacing.schema.js'
+
+export const SarifReporterName = S.Literal('sarif')
 
 const SARIF_SCHEMA_URI = 'https://json.schemastore.org/sarif-2.1.0.json'
 const MUTANT_STATUSES = S.Literals([
@@ -99,12 +102,22 @@ export class SarifReportTruncated extends S.TaggedClass<SarifReportTruncated>()(
   readonly [SarifReportTypeId] = SarifReportTypeId
 }
 
-export const SarifReportDecision = S.Union([SarifReportRendered, SarifReportTruncated])
+export class SarifReportSuppressed extends S.TaggedClass<SarifReportSuppressed>()('SarifReportSuppressed', {}) {
+  readonly [SarifReportTypeId] = SarifReportTypeId
+}
+
+export const SarifReportDecision = S.Union([SarifReportRendered, SarifReportTruncated, SarifReportSuppressed])
 export type SarifReportDecision = typeof SarifReportDecision.Type
 
-export class SarifReportCommand extends S.TaggedClass<SarifReportCommand>()('SarifReportCommand', {
+export class SarifReported extends S.TaggedClass<SarifReported>()('SarifReported', {
   report: Report.MutationTestResult,
   survivors: S.Array(SurvivorRef),
+}) {}
+
+export class SarifNotReported extends S.TaggedClass<SarifNotReported>()('SarifNotReported', {}) {}
+
+export class SarifReportCommand extends S.TaggedClass<SarifReportCommand>()('SarifReportCommand', {
+  reported: S.Union([SarifReported, SarifNotReported]),
   tool: SarifToolSchema,
   maxResults: S.Natural,
 }) {
@@ -150,10 +163,10 @@ interface Surfaced {
   readonly entry: SurvivorEntry
 }
 
-const surfacedOf = (command: SarifReportCommand): ReadonlyArray<Surfaced> => {
-  const byId = entriesByIdOf(command.report)
+const surfacedOf = (reported: SarifReported): ReadonlyArray<Surfaced> => {
+  const byId = entriesByIdOf(reported.report)
   return Arr.flatMap(
-    command.survivors,
+    reported.survivors,
     (ref) => Option.toArray(Option.map(HashMap.get(byId, ref.id), (entry): Surfaced => ({ ref, entry }))),
   )
 }
@@ -207,8 +220,8 @@ const logOf = (command: SarifReportCommand, results: ReadonlyArray<Surfaced>): S
   }
 }
 
-const decide = (command: SarifReportCommand): SarifReportDecision => {
-  const surfaced = surfacedOf(command)
+const reportedOf = (command: SarifReportCommand, reported: SarifReported): SarifReportDecision => {
+  const surfaced = surfacedOf(reported)
   const results = Arr.take(surfaced, command.maxResults)
   const log = logOf(command, results)
   return Boolean.match(Arr.length(results) === Arr.length(surfaced), {
@@ -221,5 +234,12 @@ export const sarifReport = Workflow.make({
   command: SarifReportCommand,
   decision: SarifReportDecision,
   error: S.Never,
-  decide: (command): Result.Result<SarifReportDecision, never> => Result.succeed(decide(command)),
+  decide: (command): Result.Result<SarifReportDecision, never> =>
+    Result.succeed(
+      Match.value(command.reported).pipe(
+        Match.tag('SarifReported', (reported) => reportedOf(command, reported)),
+        Match.tag('SarifNotReported', (): SarifReportDecision => SarifReportSuppressed.make({})),
+        Match.exhaustive,
+      ),
+    ),
 })

@@ -8,6 +8,8 @@ import * as Record from 'effect/Record'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+export const ProgressReporterName = S.Literal('progress')
+
 const ProgressReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ProgressReport')
 type ProgressReportTypeId = typeof ProgressReportTypeId
 

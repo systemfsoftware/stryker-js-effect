@@ -7,7 +7,15 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { sarifReport, SarifReportCommand, SarifReportRendered } from '../sarif-report.workflow.js'
+import {
+  SarifNotReported,
+  sarifReport,
+  SarifReportCommand,
+  SarifReported,
+  SarifReportRendered,
+  SarifReportSuppressed,
+  SarifReportTruncated,
+} from '../Reporter/sarif-report.workflow.js'
 import type { SurvivorRef } from '../surfacing.schema.js'
 
 const GENEROUS_BUDGET = Number.MAX_SAFE_INTEGER
@@ -83,30 +91,38 @@ const commandArb: Arbitrary.Arbitrary<SarifReportCommand> = Arbitrary.all({
   }),
   maxResults: Arbitrary.schema(S.Natural),
 }).pipe(
-  Arbitrary.map(({ report, ...rest }) => SarifReportCommand.make({ report, survivors: refsOf(report), ...rest })),
+  Arbitrary.map(({ report, ...rest }) =>
+    SarifReportCommand.make({ reported: SarifReported.make({ report, survivors: refsOf(report) }), ...rest })
+  ),
 )
 
-const withBudget = (
-  command: SarifReportCommand,
-  survivors: ReadonlyArray<SurvivorRef>,
-  maxResults: number,
-): SarifReportCommand => SarifReportCommand.make({ report: command.report, survivors, tool: command.tool, maxResults })
+const survivorsIn = (command: SarifReportCommand): ReadonlyArray<SurvivorRef> =>
+  Option.getOrThrow(Option.liftPredicate(command.reported, S.is(SarifReported))).survivors
+
+const withBudget = (command: SarifReportCommand, maxResults: number): SarifReportCommand =>
+  SarifReportCommand.make({ reported: command.reported, tool: command.tool, maxResults })
 
 const decisionOf = (subject: Subject, command: SarifReportCommand) => subject(command).pipe(Result.getOrThrow)
 
+const loggedOf = (subject: Subject, command: SarifReportCommand) =>
+  Option.getOrThrow(
+    Option.liftPredicate(decisionOf(subject, command), S.is(S.Union([SarifReportRendered, SarifReportTruncated]))),
+  )
+
 const runOf = (subject: Subject, command: SarifReportCommand) =>
-  Option.getOrThrow(Arr.head(decisionOf(subject, command).log.runs))
+  Option.getOrThrow(Arr.head(loggedOf(subject, command).log.runs))
 
 describe('sarifReport', () => {
   it.prop(
     '∀c_SarifReportCommand_≡AGenerousBudgetEmitsOneResultPerCommandedSurvivor',
     { of: [commandArb], subject: sarifReport },
     (subject, [command]) => {
-      const results = runOf(subject, withBudget(command, command.survivors, GENEROUS_BUDGET)).results
+      const survivors = survivorsIn(command)
+      const results = runOf(subject, withBudget(command, GENEROUS_BUDGET)).results
       const fingerprints = Arr.map(results, (result) => result.partialFingerprints.primaryLocationLineHash)
-      return results.length === command.survivors.length &&
+      return results.length === survivors.length &&
         new Set(fingerprints).size === results.length &&
-        fingerprints.every((id) => command.survivors.some((ref) => ref.id === id))
+        fingerprints.every((id) => survivors.some((ref) => ref.id === id))
     },
   )
 
@@ -122,21 +138,33 @@ describe('sarifReport', () => {
   it.prop(
     '∀c_SarifReportCommand_≡AGenerousBudgetNeverTruncates',
     { of: [commandArb], subject: sarifReport },
-    (subject, [command]) =>
-      S.is(SarifReportRendered)(decisionOf(subject, withBudget(command, command.survivors, GENEROUS_BUDGET))),
+    (subject, [command]) => S.is(SarifReportRendered)(decisionOf(subject, withBudget(command, GENEROUS_BUDGET))),
   )
 
   it.prop(
     '∀c_SarifReportCommand_≡AZeroResultBudgetEmitsNoResultAndDeclaresTheOmission',
     { of: [commandArb], subject: sarifReport },
     (subject, [command]) => {
-      const decision = decisionOf(subject, withBudget(command, command.survivors, 0))
+      const decision = loggedOf(subject, withBudget(command, 0))
       const results = Option.getOrThrow(Arr.head(decision.log.runs)).results
       return Match.value(decision).pipe(
-        Match.tag('SarifReportRendered', () => results.length === 0 && command.survivors.length === 0),
+        Match.tag('SarifReportRendered', () => results.length === 0 && survivorsIn(command).length === 0),
         Match.tag('SarifReportTruncated', (truncated) => results.length === 0 && truncated.omitted > 0),
         Match.exhaustive,
       )
+    },
+  )
+
+  it.prop(
+    '∀c_SarifReportCommand_≡SuppressedIffNotReported',
+    { of: [commandArb, S.Boolean], subject: sarifReport },
+    (subject, [command, reported]) => {
+      const drawn = SarifReportCommand.make({
+        reported: reported ? command.reported : SarifNotReported.make({}),
+        tool: command.tool,
+        maxResults: command.maxResults,
+      })
+      return S.is(SarifReportSuppressed)(decisionOf(subject, drawn)) === !reported
     },
   )
 })

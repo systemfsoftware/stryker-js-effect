@@ -141,6 +141,7 @@ export const Spans = {
   reportProgress: { name: 'stryker.report.progress', attributes: {} },
   reportProgressConsume: { name: 'stryker.report.progress.consume', attributes: {} },
   reportProgressConsumeEvent: { name: 'stryker.report.progress.consumeEvent', attributes: {} },
+  reportSarif: { name: 'stryker.report.sarif', attributes: {} },
   reporterStreamAttach: { name: 'stryker.reporterStream.attach', attributes: {} },
   reporterStreamCloseStage: { name: 'stryker.reporterStream.closeStage', attributes: {} },
   reporterStreamCurrentReporterInit: { name: 'stryker.reporterStream.currentReporterInit', attributes: {} },
