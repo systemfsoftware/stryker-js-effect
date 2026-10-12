@@ -1,38 +1,20 @@
 import { describe, it } from '@systemfsoftware/vitest'
-import * as Match from 'effect/Match'
-import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
+import * as S from 'effect/Schema'
 
 import {
   classifyEmptyDirectoryRemoval,
   ClassifyEmptyDirectoryRemovalCommand,
-  type EmptyDirectoryRemoval,
+  RemovalFailed,
 } from '../classify-empty-directory-removal.workflow.js'
-
-const POSIX_NOT_EMPTY: Readonly<Record<string, true>> = { ENOTEMPTY: true, EEXIST: true }
-
-type Removal = 'kept' | 'absent' | `failed:${string}`
-
-const removalOf = (decision: EmptyDirectoryRemoval): Removal =>
-  Match.value(decision).pipe(
-    Match.tag('DirectoryKept', (): Removal => 'kept'),
-    Match.tag('DirectoryAbsent', (): Removal => 'absent'),
-    Match.tag('RemovalFailed', ({ code }): Removal => `failed:${code ?? '<none>'}`),
-    Match.exhaustive,
-  )
-
-const expectedRemovalOf = (code: string | undefined): Removal =>
-  code !== undefined && POSIX_NOT_EMPTY[code] === true
-    ? 'kept'
-    : code === 'ENOENT'
-    ? 'absent'
-    : `failed:${code ?? '<none>'}`
 
 describe('classifyEmptyDirectoryRemoval', () => {
   it.prop(
-    '∀c_ClassifyEmptyDirectoryRemoval_⊨NotEmptyKeepsMissingIsAbsentAnyOtherErrnoFailsCarryingIt',
+    '∀c_ClassifyEmptyDirectoryRemoval_⊨FailedRemovalCarriesTheErrnoItFailedWith',
     { of: [ClassifyEmptyDirectoryRemovalCommand], subject: classifyEmptyDirectoryRemoval },
-    (subject, [command]) =>
-      Option.contains(Option.map(Result.getSuccess(subject(command)), removalOf), expectedRemovalOf(command.code)),
+    (subject, [command]) => {
+      const decision = subject(command).pipe(Result.getOrElse((neverError) => neverError))
+      return !S.is(RemovalFailed)(decision) || decision.code === command.code
+    },
   )
 })

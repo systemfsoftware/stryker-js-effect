@@ -134,30 +134,20 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
 const hasErrnoCode = (cause: unknown): cause is { readonly code: string } =>
   Predicate.hasProperty(cause, 'code') && Predicate.isString(cause.code)
 
-const settleRemoval = (
-  path: string,
-  rejected: ClassifyEmptyDirectoryRemovalCommand,
-): Effect.Effect<void, PlatformError.PlatformError> =>
-  Result.match(classifyEmptyDirectoryRemoval(rejected), {
-    onFailure: (impossible) => Effect.fail(impossible),
-    onSuccess: (removal) =>
-      Match.value(removal).pipe(
-        Match.tag('DirectoryKept', () => Effect.void),
-        Match.tag('DirectoryAbsent', () => Effect.void),
-        Match.tag('RemovalFailed', ({ code }) =>
-          Effect.fail(
-            PlatformError.systemError({
-              _tag: 'Unknown',
-              module: 'EmptyDirectory',
-              method: 'removeIfEmpty',
-              syscall: 'rmdir',
-              pathOrDescriptor: path,
-              description: code,
-            }),
-          )),
-        Match.exhaustive,
-      ),
-  })
+const settleRemoval = (rejected: PlatformError.PlatformError): Effect.Effect<void, PlatformError.PlatformError> =>
+  Result.match(
+    classifyEmptyDirectoryRemoval(ClassifyEmptyDirectoryRemovalCommand.make({ code: rejected.reason.description })),
+    {
+      onFailure: (impossible) => Effect.fail(impossible),
+      onSuccess: (removal) =>
+        Match.value(removal).pipe(
+          Match.tag('DirectoryKept', () => Effect.void),
+          Match.tag('DirectoryAbsent', () => Effect.void),
+          Match.tag('RemovalFailed', () => Effect.fail(rejected)),
+          Match.exhaustive,
+        ),
+    },
+  )
 
 const nodeEmptyDirectoryLayer = Layer.succeed(
   EmptyDirectory,
@@ -166,8 +156,16 @@ const nodeEmptyDirectoryLayer = Layer.succeed(
       Effect.tryPromise({
         try: () => globalThis.process.getBuiltinModule('node:fs/promises').rmdir(path),
         catch: (cause) =>
-          ClassifyEmptyDirectoryRemovalCommand.make({ code: hasErrnoCode(cause) ? cause.code : undefined }),
-      }).pipe(Effect.catch((rejected) => settleRemoval(path, rejected))),
+          PlatformError.systemError({
+            _tag: 'Unknown',
+            module: 'EmptyDirectory',
+            method: 'removeIfEmpty',
+            syscall: 'rmdir',
+            pathOrDescriptor: path,
+            description: hasErrnoCode(cause) ? cause.code : undefined,
+            cause,
+          }),
+      }).pipe(Effect.catch(settleRemoval)),
   }),
 )
 

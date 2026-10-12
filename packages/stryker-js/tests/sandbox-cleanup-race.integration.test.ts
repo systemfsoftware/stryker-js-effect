@@ -109,6 +109,8 @@ const interposedFileSystem = (real: FileSystem.FileSystem, parent: string, run: 
         yield* stepWhen(run, 'cleanup', own || path === parent)
         return yield* real.remove(path, options)
       }),
+    // The released service reaches the parent only through EmptyDirectory. These two steps exist so this feature
+    // still schedules a release that reads the parent before removing it, the shape that deleted rivals' sandboxes.
     exists: (path) => stepWhen(run, 'cleanup', path === parent).pipe(Effect.andThen(real.exists(path))),
     readDirectory: (path, options) =>
       stepWhen(run, 'cleanup', path === parent).pipe(Effect.andThen(real.readDirectory(path, options))),
