@@ -51,6 +51,30 @@ jobs:
       - uses: cachix/install-nix-action@v31
       - uses: ./.github/actions/released-tarballs
       - run: pnpm install --frozen-lockfile
+      - id: base
+        name: Base commit (first parent of the checked-out commit)
+        # Legs read the parent's `check` entry (this push's own `check` saves only at its end); a `workflow_dispatch` on an arbitrary branch may hit only the prefix fallback below.
+        run: |
+          base=$(git cat-file -p HEAD | awk '$1 == "parent" { print $2; exit }')
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+      # The base commit's entry is restored on its own, with no restore-keys: `actions/cache` searches
+      # this ref before main, so one step with a prefix fallback would return this ref's newest (stale)
+      # entry ahead of main's exact base entry. The prefix fallback runs only when the base has none.
+      - id: restore-base
+        name: Restore the Turbo cache of the base commit
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ steps.base.outputs.sha }}
+      - id: restore-newest
+        name: Restore the newest Turbo cache this ref can read
+        if: steps.restore-base.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-dist-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-dist-
       - name: deno from the flake
         run: echo "$(nix build --no-link --print-out-paths .#deno)/bin" >> "$GITHUB_PATH"
       - name: Install process-compose (pinned)
