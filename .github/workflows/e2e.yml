@@ -97,12 +97,13 @@ jobs:
         run: |
           elapsed=$(( $(date +%s) - LEG_STARTED_AT ))
           wall="$(( elapsed / 60 ))m $(( elapsed % 60 ))s"
-          echo "### e2e ($SHARD): wall time $wall, target 10m 0s" >> "$GITHUB_STEP_SUMMARY"
+          target="$(( TARGET_SECONDS / 60 ))m $(( TARGET_SECONDS % 60 ))s"
+          echo "### e2e ($SHARD): wall time $wall, target $target" >> "$GITHUB_STEP_SUMMARY"
           if [ "$elapsed" -gt "$TARGET_SECONDS" ]; then
             over=$(( elapsed - TARGET_SECONDS ))
             by="$(( over / 60 ))m $(( over % 60 ))s"
             echo "Over the target by $by (code \`E2E_LEG_OVER_TARGET\`); the leg's outcome is unchanged." >> "$GITHUB_STEP_SUMMARY"
-            echo "::warning title=E2E_LEG_OVER_TARGET (${SHARD})::Leg ${SHARD} took ${wall}, ${by} over the 10m target; its outcome is unchanged. Next action: if the leg stays over, move one of its files to another leg."
+            echo "::warning title=E2E_LEG_OVER_TARGET (${SHARD})::Leg ${SHARD} took ${wall}, ${by} over the ${target} target; its outcome is unchanged. Next action: if the leg stays over, move one of its files to another leg."
           fi
 
   report:
@@ -121,6 +122,8 @@ jobs:
           NEXT_ACTION: root opens a revert PR of the culprit squash commit or a root-fix P0
         run: |
           set -euo pipefail
+          # Any API read that still fails aborts the step; the trap names it so the red run keeps a code.
+          trap 'echo "::error title=E2E_REPORT_FAILED::The e2e report stopped at line $LINENO on a failed GitHub API read, so the range and culprit candidates are unknown. Next action: rerun this report job; if it fails again, read the leg jobs of this run and find the previous e2e run on ${REF_NAME} by hand, then ${NEXT_ACTION}."' ERR
           # Workflow-command data escaping: a raw newline or `%` would cut the annotation short.
           escape() { local s=${1//'%'/'%25'}; s=${s//$'\r'/'%0D'}; printf '%s' "${s//$'\n'/'%0A'}"; }
           repo="$GITHUB_REPOSITORY"
