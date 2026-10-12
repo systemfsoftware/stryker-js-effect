@@ -3,7 +3,7 @@ import * as Function from 'effect/Function'
 import * as S from 'effect/Schema'
 
 import { BenchRunInvalid, BenchRunKey, WorkloadDigest } from './bench-run.schema.js'
-import { BenchProjectSummary } from './bench-summary.schema.js'
+import { BenchProjectSummary, PhaseRegression } from './bench-summary.schema.js'
 
 export const SetupStep = S.Struct({ name: S.String, ms: Report.NonNegativeFinite })
 export type SetupStep = typeof SetupStep.Type
@@ -17,38 +17,62 @@ export const BenchReportRun = S.Struct({
 })
 export type BenchReportRun = typeof BenchReportRun.Type
 
+// Source: R3 of docs/plans/2026-10-10-0702-perf-ci-wall-clock-plan.md (10-minute job ceiling); no compound pack names a per-job budget.
+export const LegTargetMs = S.Literal(600_000)
+
+const LegTimeTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/LegTime')
+type LegTimeTypeId = typeof LegTimeTypeId
+
+export class LegMeasured extends S.TaggedClass<LegMeasured>()('LegMeasured', {
+  wallMs: Report.NonNegativeFinite,
+  targetMs: LegTargetMs,
+}) {
+  readonly [LegTimeTypeId] = LegTimeTypeId
+}
+
+export class LegNotMeasured extends S.TaggedClass<LegNotMeasured>()('LegNotMeasured', { targetMs: LegTargetMs }) {
+  readonly [LegTimeTypeId] = LegTimeTypeId
+}
+
+export const LegTime = S.Union([LegMeasured, LegNotMeasured])
+export type LegTime = typeof LegTime.Type
+
 export const BenchAbortCode = S.Literals([
   'environment-incomplete',
   'corpus-unreadable',
   'setup-timings-malformed',
   'entry-unknown',
   'side-setup-failed',
-  'setup-timed-out',
-  'budget-exceeded',
   'report-unwritable',
+  'run-path-occupied',
+  'run-path-move-failed',
+  'run-path-unrestored',
   'defect',
 ])
 export type BenchAbortCode = typeof BenchAbortCode.Type
 
 const NEXT_ACTION: { readonly [C in BenchAbortCode]: string } = {
   'environment-incomplete':
-    'set the BENCH_* variables, RUNNER_TEMP and GITHUB_STEP_SUMMARY the bench workflow exports, then re-run the job',
-  'corpus-unreadable': 'fix test/bench/corpus.json on the PR head so it decodes as BenchCorpusJson, then push',
+    'set the missing variables where bench.yml sets them (the Bench step env, or GITHUB_ENV for JOB_STARTED_AT; the runner sets RUNNER_TEMP and GITHUB_STEP_SUMMARY), then re-run the job',
+  'corpus-unreadable':
+    'fix test/bench/corpus.json so it decodes as BenchCorpusJson; the next main commit benches with the fix',
   'setup-timings-malformed': 'fix the step in bench.yml that appends tab-separated "name<TAB>ms" lines, then re-run',
   'entry-unknown':
     'name a repo project or the enterprise fixture listed in test/bench/corpus.json in BENCH_ENTRY; the plan job derives the matrix from that file, so re-run the whole workflow',
   'side-setup-failed':
     'read the failing step and output tail in the reason; rerun that step command in the named side checkout',
-  'setup-timed-out':
-    'a setup command (closure build, pack or install) was still running at the job deadline, so no run started; re-run the job, and if the same entry stalls again, compare its setup timings with the last green bench-report artifact',
-  'budget-exceeded':
-    "the eight runs did not fit the job budget: shrink this entry's mutate ranges or testFiles in test/bench/corpus.json until a run takes well under a minute, then push",
   'report-unwritable': 'check free space and permissions under RUNNER_TEMP on the runner, then re-run the job',
+  'run-path-occupied':
+    'something already sits at the run path under RUNNER_TEMP before a side moved in (a stray tree or a run that never moved back): read the reason for the path and the side, find what left it in the job log, then re-run the job',
+  'run-path-move-failed':
+    "RUNNER_TEMP could not be listed, or a side's tree could not be renamed to the run path: read the OS error in the reason (permissions, no space, a rename across filesystems), fix the runner, then re-run the job",
+  'run-path-unrestored':
+    "a side's tree could not be moved back from the run path to its home after a run: read the reason for both paths, the rename error and the run's own error, then re-run the job",
   'defect': 'a bench bug: open an issue with this job log, the stack above, and the base and head SHAs',
 }
 
 export const BenchReportOutcome = S.TaggedUnion({
-  summarized: { projects: S.Array(BenchProjectSummary) },
+  summarized: { projects: S.Array(BenchProjectSummary), regression: S.NullOr(PhaseRegression) },
   failed: { invalid: S.Array(BenchRunInvalid) },
   aborted: { code: BenchAbortCode, reason: S.String, nextAction: S.NonEmptyString },
 })
@@ -67,9 +91,11 @@ const BenchReportTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2
 type BenchReportTypeId = typeof BenchReportTypeId
 
 export class BenchReport extends S.Class<BenchReport>('BenchReport')({
-  schemaVersion: S.Literal('1.1'),
+  schemaVersion: S.Literal('2.0'),
   baseSha: S.String,
   headSha: S.String,
+  ref: S.String,
+  leg: LegTime,
   outcome: BenchReportOutcome,
   runs: S.Array(BenchReportRun),
   setupSteps: S.Array(SetupStep),
@@ -82,7 +108,11 @@ export const BenchReportJson = S.fromJsonString(BenchReport)
 const BenchRenderedTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-e2e-core/BenchRendered')
 type BenchRenderedTypeId = typeof BenchRenderedTypeId
 
-const RenderedFields = { annotationLine: S.NonEmptyString, markdown: S.NonEmptyString }
+const RenderedFields = {
+  annotationLine: S.NonEmptyString,
+  markdown: S.NonEmptyString,
+  exitCode: S.Literals([0, 1]),
+}
 
 export class BenchRenderedNotice extends S.TaggedClass<BenchRenderedNotice>()('notice', RenderedFields) {
   readonly [BenchRenderedTypeId] = BenchRenderedTypeId

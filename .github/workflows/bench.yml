@@ -1,29 +1,31 @@
 name: Bench
 
 on:
-  pull_request:
+  push:
+    branches: [main]
     paths-ignore:
       - "**/*.md"
       - "docs/**"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: bench-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   plan:
     name: bench · one job per corpus entry
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 60
     outputs:
       targets: ${{ steps.targets.outputs.targets }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           sparse-checkout: test/bench/corpus.json
           sparse-checkout-cone-mode: false
       - id: targets
@@ -36,7 +38,7 @@ jobs:
     name: bench · ${{ matrix.target.entry }}
     needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -44,12 +46,12 @@ jobs:
     env:
       CI: "true"
     steps:
-      - name: Bench deadline, 7.5 minutes after the job starts
-        run: echo "BENCH_DEADLINE_MS=$(($(date +%s%3N) + 450000))" >> "$GITHUB_ENV"
+      - name: Record the job start
+        run: echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -58,18 +60,21 @@ jobs:
           cache: pnpm
 
       - id: sides
-        name: Side A at the merge-base with the base branch
-        env:
-          BASE_REF: ${{ github.base_ref }}
+        name: Both sides as sibling worktrees
         run: |
-          git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
-          base=$(git merge-base HEAD "origin/$BASE_REF")
+          parent=$(git rev-parse --verify --quiet 'HEAD^1') || {
+            echo "::error title=Bench no parent::$(git rev-parse HEAD) has no first parent to bench against"
+            exit 1
+          }
           side_a="$RUNNER_TEMP/bench-a"
-          git worktree add --detach "$side_a" "$base"
+          side_b="$RUNNER_TEMP/bench-b"
+          git worktree add --detach "$side_a" "$parent"
+          git worktree add --detach "$side_b" HEAD
           pin() { jq -c '.nodes["stryker-published"].locked' "$1/flake.lock"; }
           {
-            echo "base=$base"
+            echo "parent=$parent"
             echo "a=$side_a"
+            echo "b=$side_b"
             echo "same-pin=$([ "$(pin "$side_a")" = "$(pin .)" ] && echo true || echo false)"
           } >> "$GITHUB_OUTPUT"
 
@@ -81,6 +86,7 @@ jobs:
       - name: Tarballs and install, both sides by one mechanism
         env:
           SIDE_A: ${{ steps.sides.outputs.a }}
+          SIDE_B: ${{ steps.sides.outputs.b }}
           SAME_PIN: ${{ steps.sides.outputs.same-pin }}
           TIMINGS: ${{ runner.temp }}/bench-setup.tsv
         run: |
@@ -95,6 +101,10 @@ jobs:
             chmod u+w "$SIDE_A"/.sfs-deps/*.tgz
           fi
           printf 'side A: released tarballs\t%s\n' "$(($(date +%s%3N) - started))" >> "$TIMINGS"
+          started=$(date +%s%3N)
+          rm -rf "$SIDE_B/.sfs-deps"
+          cp -r .sfs-deps "$SIDE_B/.sfs-deps"
+          printf 'side B: released tarballs\t%s\n' "$(($(date +%s%3N) - started))" >> "$TIMINGS"
           install() {
             local name=$1 root=$2 started
             started=$(date +%s%3N)
@@ -102,13 +112,21 @@ jobs:
             printf 'side %s: pnpm install\t%s\n' "$name" "$(($(date +%s%3N) - started))" >> "$TIMINGS"
           }
           install A "$SIDE_A"
-          install B "$GITHUB_WORKSPACE"
+          install B "$SIDE_B"
+
+      - name: Install the bench harness in the checkout
+        env:
+          TIMINGS: ${{ runner.temp }}/bench-setup.tsv
+        run: |
+          started=$(date +%s%3N)
+          pnpm install --frozen-lockfile
+          printf 'checkout: harness pnpm install\t%s\n' "$(($(date +%s%3N) - started))" >> "$TIMINGS"
 
       - name: Turbo cache
         uses: actions/cache@v6
         with:
           path: .turbo/cache
-          key: turbo-${{ runner.os }}-bench-${{ matrix.target.slug }}-${{ github.event.pull_request.head.sha }}
+          key: turbo-${{ runner.os }}-bench-${{ matrix.target.slug }}-${{ github.sha }}
           restore-keys: |
             turbo-${{ runner.os }}-bench-${{ matrix.target.slug }}-
             turbo-${{ runner.os }}-dist-
@@ -117,14 +135,16 @@ jobs:
         env:
           BENCH_ENTRY: ${{ matrix.target.entry }}
           BENCH_SIDE_A: ${{ steps.sides.outputs.a }}
-          BENCH_SIDE_B: ${{ github.workspace }}
-          BENCH_BASE_SHA: ${{ steps.sides.outputs.base }}
-          BENCH_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BENCH_SIDE_B: ${{ steps.sides.outputs.b }}
+          BENCH_TURBO_CACHE_DIR: ${{ github.workspace }}/.turbo/cache
+          BENCH_BASE_SHA: ${{ steps.sides.outputs.parent }}
+          BENCH_HEAD_SHA: ${{ github.sha }}
+          BENCH_REF: ${{ github.ref }}
           BENCH_SETUP_TIMINGS: ${{ runner.temp }}/bench-setup.tsv
         run: pnpm --filter @systemfsoftware/stryker-bench bench
 
       - name: Bench report artifact
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: bench-report-${{ matrix.target.slug }}
@@ -133,7 +153,7 @@ jobs:
           retention-days: 30
 
       - name: Bench run streams artifact
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: bench-runs-${{ matrix.target.slug }}

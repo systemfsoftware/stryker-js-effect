@@ -8,9 +8,10 @@ import {
   BenchAbortCode,
   BenchRenderedError,
   BenchReport,
-  BenchReportJson,
   BenchReportOutcome,
   type BenchReportRun,
+  LegMeasured,
+  LegTime,
 } from '../bench-report.schema.js'
 import { BenchRun, BenchRunFailureCode, BenchRunInvalid, BenchRunKey, BenchRunMeasured } from '../bench-run.schema.js'
 import { type BenchSummary, PhaseVerdict } from '../bench-summary.schema.js'
@@ -82,20 +83,28 @@ const reportRunsOf = (runs: ReadonlyArray<BenchRun>): ReadonlyArray<BenchReportR
     workloadDigest: { _tag: 'verified', digest: 'digest-entry' },
   }))
 
-const summaryOf = (runs: ReadonlyArray<BenchRun>): BenchSummary =>
-  Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ runs })))
+const MAIN_REF = 'refs/heads/main'
+
+const summaryOf = (runs: ReadonlyArray<BenchRun>, ref: string = MAIN_REF): BenchSummary =>
+  Result.getOrThrow(summarizeBench(SummarizeBenchCommand.make({ sha: 'head', parentSha: 'base', ref, runs })))
+
+const LEG: LegTime = LegMeasured.make({ wallMs: 60_000, targetMs: 600_000 })
 
 const reportOf = (
   summary: BenchSummary,
   runs: ReadonlyArray<BenchRun>,
   baseSha: string,
   headSha: string,
+  leg: LegTime = LEG,
+  ref: string = MAIN_REF,
 ): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: '2.0',
     baseSha,
     headSha,
-    outcome: { _tag: 'summarized', projects: summary.projects },
+    ref,
+    leg,
+    outcome: { _tag: 'summarized', projects: summary.projects, regression: summary.regression },
     runs: reportRunsOf(runs),
     setupSteps: [],
   })
@@ -128,9 +137,11 @@ const medianOf = (values: ReadonlyArray<number>): number => {
 
 const failedReportOf = (invalid: ReadonlyArray<BenchRunInvalid>): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: '2.0',
     baseSha: 'base',
     headSha: 'head',
+    ref: MAIN_REF,
+    leg: LEG,
     outcome: { _tag: 'failed', invalid },
     runs: [],
     setupSteps: [],
@@ -140,7 +151,7 @@ const invalidOf = (
   code: BenchRunFailureCode,
   reason: string,
   lineNumber: number | null,
-  exitCode: number | null,
+  exitCode: number,
   stderrTail: string,
 ): BenchRunInvalid =>
   BenchRunInvalid.make({
@@ -154,9 +165,11 @@ const invalidOf = (
 
 const abortedReportOf = (code: BenchAbortCode, reason: string): BenchReport =>
   BenchReport.make({
-    schemaVersion: '1.1',
+    schemaVersion: '2.0',
     baseSha: 'base',
     headSha: 'head',
+    ref: MAIN_REF,
+    leg: LEG,
     outcome: abortedOutcomeOf(code, reason),
     runs: [],
     setupSteps: [],
@@ -167,20 +180,23 @@ const nextActionOf = (outcome: BenchReportOutcome): string =>
 
 describe('renderBenchReport', () => {
   it.prop(
-    '∀absh_Summarized_≡HeadingNamesBothShasAndTheProject',
+    '∀abshr_Summarized_≡HeadingNamesTheRefBothShasAndTheProject',
     {
       of: [
         S.Tuple([S.Int, S.Int, S.Int, S.Int]),
         S.Tuple([S.Int, S.Int, S.Int, S.Int]),
         S.NonEmptyString,
         S.NonEmptyString,
+        S.NonEmptyString,
       ],
       subject: renderBenchReport,
     },
-    (subject, [rawA, rawB, baseSha, headSha]) => {
+    (subject, [rawA, rawB, baseSha, headSha, branch]) => {
+      const ref = `refs/heads/${branch}`
       const runs = runsOf(positives(rawA), positives(rawB))
-      const markdown = markdownOf(subject, reportOf(summaryOf(runs), runs, baseSha, headSha))
-      return markdown.includes(`## Bench comparison: ${baseSha} → ${headSha}`) && markdown.includes('### repo/entry')
+      const markdown = markdownOf(subject, reportOf(summaryOf(runs, ref), runs, baseSha, headSha, LEG, ref))
+      return markdown.includes(`## Bench comparison on ${ref}: ${baseSha} → ${headSha}`) &&
+        markdown.includes('### repo/entry')
     },
   )
 
@@ -227,7 +243,7 @@ describe('renderBenchReport', () => {
     (subject, [rawB, rawExtra]) => {
       const b = positives(rawB)
       const spread = Math.max(...b) - Math.min(...b)
-      const gap = Math.max(spread, medianOf(b) * 0.1) + Math.abs(rawExtra) + 1
+      const gap = Math.max(spread, medianOf(b) * 0.1) + Math.abs(rawExtra) + 10
       const a = b.map((sample) => sample + gap)
       const runs = runsOf(a, b)
       const markdown = markdownOf(subject, reportOf(summaryOf(runs), runs, 'base', 'head'))
@@ -252,7 +268,7 @@ describe('renderBenchReport', () => {
   )
 
   it.prop(
-    '∀ab_Annotation_≡ErrorIffRegressedElseNoticeAndOneLine',
+    '∀ab_Annotation_≡ErrorIffARegressionElseNoticeAndOneLine',
     {
       of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Tuple([S.Int, S.Int, S.Int, S.Int])],
       subject: renderBenchReport,
@@ -261,8 +277,7 @@ describe('renderBenchReport', () => {
       const runs = runsOf(positives(rawA), positives(rawB))
       const summary = summaryOf(runs)
       const line = annotationOf(subject, reportOf(summary, runs, 'base', 'head'))
-      const regressed = rowCountOf(summary, 'regressed')
-      const level = regressed > 0 ? '::error title=Bench regression::' : '::notice title=Bench '
+      const level = summary.regression !== null ? '::error title=phase-regressed::' : '::notice title=Bench '
       return line.startsWith(level) && line.includes('\n') === false
     },
   )
@@ -278,7 +293,7 @@ describe('renderBenchReport', () => {
       const summary = summaryOf(runs)
       const line = annotationOf(subject, reportOf(summary, runs, 'base', 'head'))
       return countOf(line, 'improved') === rowCountOf(summary, 'improved') &&
-        countOf(line, 'regressed') === rowCountOf(summary, 'regressed')
+        countOf(line, 'regressed') === (summary.regression?.metrics.length ?? 0)
     },
   )
 
@@ -305,26 +320,10 @@ describe('renderBenchReport', () => {
   )
 
   it.prop(
-    '∀ab_ReportRoundTrip_≡Identity',
-    {
-      of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Tuple([S.Int, S.Int, S.Int, S.Int])],
-      subject: renderBenchReport,
-    },
-    (subject, [rawA, rawB]) => {
-      const runs = runsOf(positives(rawA), positives(rawB))
-      const report = reportOf(summaryOf(runs), runs, 'base', 'head')
-      const encoded = Result.getOrThrow(S.encodeResult(BenchReportJson)(report))
-      const decoded = Result.getOrThrow(S.decodeResult(BenchReportJson)(encoded))
-      return JSON.stringify(decoded) === JSON.stringify(report) &&
-        annotationOf(subject, decoded) === annotationOf(subject, report)
-    },
-  )
-
-  it.prop(
     '∀rl_FailedOutcome_≡FailureSectionNamesTheRun',
     { of: [S.NonEmptyString, S.NullOr(S.Int)], subject: renderBenchReport },
     (subject, [reason, lineNumber]) => {
-      const report = failedReportOf([invalidOf('stream-undecodable', reason, lineNumber, null, '')])
+      const report = failedReportOf([invalidOf('stream-undecodable', reason, lineNumber, 0, '')])
       const markdown = markdownOf(subject, report)
       const line = lineNumber === null ? '' : ` (line ${lineNumber})`
       return markdown.includes('### Failures') &&
@@ -343,11 +342,11 @@ describe('renderBenchReport', () => {
 
   it.prop(
     '∀rlce_FailedOutcomeMarkdown_≡NamesEachRunsCodeExitAndStderrTail',
-    { of: [BenchRunFailureCode, S.NonEmptyString, S.Boolean, S.Int, S.String], subject: renderBenchReport },
-    (subject, [code, reason, hasExit, exitCode, stderrTail]) => {
-      const report = failedReportOf([invalidOf(code, reason, null, hasExit ? exitCode : null, stderrTail)])
+    { of: [BenchRunFailureCode, S.NonEmptyString, S.Int, S.String], subject: renderBenchReport },
+    (subject, [code, reason, exitCode, stderrTail]) => {
+      const report = failedReportOf([invalidOf(code, reason, null, exitCode, stderrTail)])
       const markdown = markdownOf(subject, report)
-      const exitText = hasExit ? markdown.includes(`(exit ${exitCode})`) : true
+      const exitText = markdown.includes(`(exit ${exitCode})`)
       const stderrText = stderrTail.length === 0 ? true : markdown.includes(stderrTail)
       return markdown.includes('### Failures') &&
         markdown.includes(`— ${code}:`) &&
@@ -358,19 +357,90 @@ describe('renderBenchReport', () => {
   )
 
   it.prop(
-    '∀cr_AbortedOutcome_≡ErrorAnnotationNamingCodeAndNextActionWithAbortedMarkdown',
-    { of: [BenchAbortCode, S.NonEmptyString], subject: renderBenchReport },
-    (subject, [code, reason]) => {
+    '∀cr_AbortedOutcomeWithMultiLineReason_≡ErrorAnnotationOnOneLineWithFullReasonInMarkdown',
+    { of: [BenchAbortCode, S.NonEmptyString, S.NonEmptyString], subject: renderBenchReport },
+    (subject, [code, head, tail]) => {
+      const reason = `${head}\n${tail}`
       const report = abortedReportOf(code, reason)
       const rendered = renderedOf(subject, report)
       const next = nextActionOf(report.outcome)
+      const plainHead = /^[^%\r\n:,]+$/u.test(head)
       return S.is(BenchRenderedError)(rendered) &&
         rendered.annotationLine.startsWith('::error title=Bench aborted::') &&
         rendered.annotationLine.includes(code) &&
         rendered.annotationLine.includes(`Next: ${next}`) &&
         rendered.annotationLine.includes('\n') === false &&
+        rendered.annotationLine.includes('%0A') === false &&
+        (plainHead ? rendered.annotationLine.includes(head) : true) &&
         rendered.markdown.includes(`### Aborted: ${code}`) &&
+        rendered.markdown.includes(reason) &&
         rendered.markdown.includes(next)
     },
+  )
+
+  it.prop(
+    '∀ag_SeparatedSlowdownOnMain_≡VerdictLineAndSummaryNameRefShasMetricAndTheRevert',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int], subject: renderBenchReport },
+    (subject, [rawA, rawExtra]) => {
+      const a = positives(rawA)
+      const gap = Math.max(Math.max(...a) - Math.min(...a), Math.max(...a) * 0.1) + Math.abs(rawExtra) + 10
+      const runs = runsOf(a, a.map((sample) => sample + gap))
+      const rendered = renderedOf(subject, reportOf(summaryOf(runs), runs, 'base', 'head'))
+      const fields = [
+        'on refs/heads/main',
+        'head',
+        'base',
+        `entry mutation-test +${(gap / 1000).toFixed(1)} s`,
+        'root opens a revert PR of the culprit or a root-fix P0',
+      ]
+      return S.is(BenchRenderedError)(rendered) &&
+        rendered.annotationLine.startsWith('::error title=phase-regressed::') &&
+        rendered.markdown.includes('### Regression: phase-regressed') &&
+        fields.every((field) => rendered.annotationLine.includes(field) && rendered.markdown.includes(field))
+    },
+  )
+
+  it.prop(
+    '∀agb_SeparatedSlowdownDispatchedOnABranch_≡VerdictLineAndSummaryNameTheRefAndNoRevert',
+    { of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Int, S.Int], subject: renderBenchReport },
+    (subject, [rawA, rawExtra, branch]) => {
+      const ref = `refs/heads/stryker/bench-${Math.abs(branch)}`
+      const a = positives(rawA)
+      const gap = Math.max(Math.max(...a) - Math.min(...a), Math.max(...a) * 0.1) + Math.abs(rawExtra) + 10
+      const runs = runsOf(a, a.map((sample) => sample + gap))
+      const rendered = renderedOf(subject, reportOf(summaryOf(runs, ref), runs, 'base', 'head', LEG, ref))
+      const next = `dispatched on ${ref}: speed evidence only, no revert`
+      return rendered.annotationLine.includes(`Next: ${next}`) &&
+        rendered.markdown.includes(`**Next action:** ${next}`) &&
+        rendered.markdown.includes(`## Bench comparison on ${ref}:`) &&
+        !rendered.markdown.includes('revert PR')
+    },
+  )
+
+  it.prop(
+    '∀abvw_LegWallTime_≡SameVerdictLineAndLevelWithTheWallTimeInTheSummary',
+    {
+      of: [S.Tuple([S.Int, S.Int, S.Int, S.Int]), S.Tuple([S.Int, S.Int, S.Int, S.Int]), LegTime, LegTime],
+      subject: renderBenchReport,
+    },
+    (subject, [rawA, rawB, legV, legW]) => {
+      const runs = runsOf(positives(rawA), positives(rawB))
+      const summary = summaryOf(runs)
+      const v = renderedOf(subject, reportOf(summary, runs, 'base', 'head', legV))
+      const w = renderedOf(subject, reportOf(summary, runs, 'base', 'head', legW))
+      const wallText = S.is(LegMeasured)(legW) ? `${(legW.wallMs / 60_000).toFixed(1)} min` : 'not measured'
+      const over = S.is(LegMeasured)(legW) && legW.wallMs > legW.targetMs
+      return S.is(BenchRenderedError)(v) === S.is(BenchRenderedError)(w) &&
+        v.annotationLine === w.annotationLine &&
+        w.markdown.includes(`**Leg wall time:** ${wallText}; target 10.0 min`) &&
+        w.markdown.includes('min over (reported, never enforced)') === over
+    },
+  )
+
+  it.prop(
+    '∀r_Report_≡ExitZeroIffSummarizedWithOrWithoutARegression',
+    { of: [BenchReport], subject: renderBenchReport },
+    (subject, [report]) =>
+      renderedOf(subject, report).exitCode === (S.is(BenchReportOutcome.cases.summarized)(report.outcome) ? 0 : 1),
   )
 })

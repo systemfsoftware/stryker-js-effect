@@ -22,7 +22,9 @@ import {
   BenchProjectSummary,
   BenchSummary,
   type MeasuredSideCell,
+  type PhaseRegression,
   PhaseVerdict,
+  type RegressedMetric,
   SideCell,
   SideCounts,
   statisticsOf,
@@ -34,6 +36,9 @@ const max = Math.max
 const abs = Math.abs
 
 export class SummarizeBenchCommand extends S.TaggedClass<SummarizeBenchCommand>()('SummarizeBenchCommand', {
+  sha: S.String,
+  parentSha: S.String,
+  ref: S.NonEmptyString,
   runs: S.Array(BenchRun),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -189,12 +194,17 @@ const cellGapOf = (cell: SideCell, side: BenchSide, phase: BenchPhase): Readonly
 
 const SUPPRESSED_REASON = "mutation-test includes reporting and a side's reporting was not recorded"
 
+const MIN_SIGNAL_MS = 10
+
 const decisiveVerdict = (a: MeasuredSideCell, b: MeasuredSideCell, workloadSame: boolean): PhaseVerdict => {
   const statsA = statisticsOf(a)
   const statsB = statisticsOf(b)
   const deltaMs = statsB.medianMs - statsA.medianMs
   const separated = Boolean.or(statsB.maxMs < statsA.minMs, statsB.minMs > statsA.maxMs)
-  const decisive = Boolean.and(separated, Boolean.and(abs(deltaMs) >= 0.03 * statsA.medianMs, workloadSame))
+  const decisive = Boolean.and(
+    separated,
+    Boolean.and(abs(deltaMs) >= max(0.03 * statsA.medianMs, MIN_SIGNAL_MS), workloadSame),
+  )
   const deltaShareOfA = shareOf(deltaMs, statsA.medianMs)
   return Boolean.match(decisive, {
     onTrue: () =>
@@ -368,13 +378,61 @@ const projectGroupsOf = (runs: ReadonlyArray<BenchRunMeasured>): ReadonlyArray<P
     [],
   )
 
-const summaryOf = (runs: ReadonlyArray<BenchRun>): BenchSummary => {
-  const measured = Arr.filter(runs, S.is(BenchRunMeasured))
+const regressedMetricsOf = (project: BenchProjectSummary): ReadonlyArray<RegressedMetric> =>
+  Arr.flatMap(project.rows, (row) =>
+    Match.valueTags(row.verdict, {
+      regressed: (verdict): ReadonlyArray<RegressedMetric> => [{
+        corpus: project.corpus,
+        entry: project.entry,
+        phase: row.phase,
+        deltaMs: verdict.deltaMs,
+        deltaShareOfA: verdict.deltaShareOfA,
+      }],
+      improved: (): ReadonlyArray<RegressedMetric> => [],
+      'no-signal': (): ReadonlyArray<RegressedMetric> => [],
+      'workload-unverified': (): ReadonlyArray<RegressedMetric> => [],
+      'not-measured': (): ReadonlyArray<RegressedMetric> => [],
+    }))
+
+const isTotal = (metric: RegressedMetric): boolean => metric.phase === 'total'
+
+const legRegressionOf = (project: BenchProjectSummary): ReadonlyArray<RegressedMetric> => {
+  const regressed = regressedMetricsOf(project)
+  return Arr.match(Arr.filter(regressed, isTotal), {
+    onEmpty: (): ReadonlyArray<RegressedMetric> => [],
+    onNonEmpty: (totals) => [...totals, ...Arr.filter(regressed, (metric) => !isTotal(metric))],
+  })
+}
+
+const MAIN_REF = 'refs/heads/main'
+
+const nextActionOf = (ref: string): string =>
+  Boolean.match(ref === MAIN_REF, {
+    onTrue: () => 'root opens a revert PR of the culprit or a root-fix P0',
+    onFalse: () => `dispatched on ${ref}: speed evidence only, no revert`,
+  })
+
+const regressionOf = (
+  command: SummarizeBenchCommand,
+  projects: ReadonlyArray<BenchProjectSummary>,
+): PhaseRegression | null =>
+  Arr.match(Arr.flatMap(projects, legRegressionOf), {
+    onEmpty: () => null,
+    onNonEmpty: (metrics): PhaseRegression => ({
+      code: 'phase-regressed',
+      sha: command.sha,
+      parentSha: command.parentSha,
+      metrics,
+      nextAction: nextActionOf(command.ref),
+    }),
+  })
+
+const summaryOf = (command: SummarizeBenchCommand): BenchSummary => {
+  const measured = Arr.filter(command.runs, S.is(BenchRunMeasured))
   const groups = projectGroupsOf(measured)
   const ordered = Arr.flatMap(CORPORA, (corpus) => Arr.filter(groups, (group) => group.corpus === corpus))
-  return BenchSummary.make({
-    projects: Arr.map(ordered, (group) => projectSummaryOf(group.corpus, group.entry, group.runs)),
-  })
+  const projects = Arr.map(ordered, (group) => projectSummaryOf(group.corpus, group.entry, group.runs))
+  return BenchSummary.make({ projects, regression: regressionOf(command, projects) })
 }
 
 const refusalOf = (runs: ReadonlyArray<BenchRun>): Result.Result<void, BenchRunsInvalid> => {
@@ -386,7 +444,7 @@ const refusalOf = (runs: ReadonlyArray<BenchRun>): Result.Result<void, BenchRuns
 }
 
 const decide = (command: SummarizeBenchCommand): Result.Result<BenchSummary, BenchRunsInvalid> =>
-  Result.map(refusalOf(command.runs), () => summaryOf(command.runs))
+  Result.map(refusalOf(command.runs), () => summaryOf(command))
 
 export const summarizeBench = Workflow.make({
   command: SummarizeBenchCommand,

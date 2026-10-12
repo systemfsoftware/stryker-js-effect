@@ -6,13 +6,7 @@ import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import {
-  BenchRunInvalid,
-  BenchRunKey,
-  BenchRunMeasured,
-  type RunExit,
-  type WorkloadDigest,
-} from '../bench-run.schema.js'
+import { BenchRunInvalid, BenchRunKey, BenchRunMeasured, type WorkloadDigest } from '../bench-run.schema.js'
 import { readBenchRun, ReadBenchRunCommand } from '../read-bench-run.workflow.js'
 
 const ENCODE = S.encodeResult(RunEvent.RunEventWireLine)
@@ -23,7 +17,7 @@ const MUTANT_FILE = Result.getOrThrow(S.decodeResult(Mutant.CanonicalFileName)('
 const MUTATOR_NAME = Result.getOrThrow(S.decodeResult(Mutant.MutatorName)('ArithmeticOperator'))
 
 interface CommandOptions {
-  readonly exit?: RunExit
+  readonly exitCode?: number
   readonly workloadDigest?: WorkloadDigest
   readonly stderrTail?: string
 }
@@ -32,7 +26,7 @@ const commandOf = (lines: ReadonlyArray<string>, options: CommandOptions = {}): 
   ReadBenchRunCommand.make({
     key: BenchRunKey.make({ corpus: 'repo', entry: 'packages/a', side: 'A', position: 0 }),
     lines,
-    exit: options.exit ?? { _tag: 'exited', code: 0 },
+    exitCode: options.exitCode ?? 0,
     workloadDigest: options.workloadDigest ?? { _tag: 'verified', digest: 'digest' },
     stderrTail: options.stderrTail ?? '',
     wallMs: 10,
@@ -134,29 +128,10 @@ describe('readBenchRun', () => {
   )
 
   it.prop(
-    '∀s_TimedOutExit_≡InvalidTimeoutCarryingNullExitCodeAndTheStderrTail',
-    { of: [S.String], subject: readBenchRun },
-    (subject, [stderrTail]) => {
-      const command = commandOf([], { exit: { _tag: 'timed-out', afterMs: 60_000 }, stderrTail })
-      return Result.match(subject(command), {
-        onFailure: () => false,
-        onSuccess: (run) =>
-          S.is(BenchRunInvalid)(run) &&
-          run.code === 'timeout' &&
-          run.exitCode === null &&
-          run.stderrTail === stderrTail,
-      })
-    },
-  )
-
-  it.prop(
     '∀sn_ExitedUndecodableStream_≡InvalidCarryingThatExitCodeAndStderrTail',
     { of: [S.Int, S.String], subject: readBenchRun },
     (subject, [exitCode, stderrTail]) => {
-      const command = commandOf(['not a stream line'], {
-        exit: { _tag: 'exited', code: exitCode },
-        stderrTail,
-      })
+      const command = commandOf(['not a stream line'], { exitCode, stderrTail })
       return Result.match(subject(command), {
         onFailure: () => false,
         onSuccess: (run) =>

@@ -1,0 +1,170 @@
+---
+title: Bench Off The PR Path - Plan
+type: ci
+date: 2026-10-12
+topic: bench-off-pr
+artifact_contract: ce-unified-plan/v1
+product_contract_source: ce-brainstorm
+execution: code
+---
+
+# Bench Off The PR Path - Plan
+
+## Goal Capsule
+
+- **Objective:** No pull request runs the bench. Each main commit that is not docs-only is benched against its first parent and gets a report-only result: per-phase deltas, the leg's wall time against a 10-minute target, and, when the leg's `total` regressed, a verdict naming both SHAs, the metrics, a reason code and root's next action.
+- **Means:** `.github/workflows/bench.yml` moves from `pull_request` to push on main plus `workflow_dispatch`. Every in-process deadline is deleted; GitHub's 60-minute job timeout is the only kill. Every measured run executes from one fixed path so the two sides test the same mutant ids.
+- **Product authority:** Ryan (root), intent of 2026-10-12: remove the bench from the PR path today. This plan is layer 1 of a split. Layer 2 (the enterprise install, judged separately) is out of this plan. Branch `stryker/bench-main-only` (#312) stays intact and is the source most hunks are ported from.
+- **Edit scope:** `.github/workflows/bench.yml` is the only workflow touched. `test/bench/**` and `test/e2e-core/src/**` bench files. No change to the e2e fixture bake, any fixture lock, `ci.yml`, `mutation.yml`, or product packages.
+- **Stop conditions:** no local bench, mutation or full e2e runs; no new dependency or executable.
+- **Open blockers:** none.
+
+---
+
+## Product Contract
+
+### Summary
+
+The bench leaves the pull-request path and runs once per main commit that is not docs-only, comparing it with its first parent through the existing interleaved A/B protocol. Time is measured and reported, never enforced. A leg fails only when the bench cannot produce a comparison. A regression is reported with its culprit and next action, as the leg's `::error` annotation and step summary on that commit's Bench run; the lane never acts on it.
+
+### Problem Frame
+
+Today every PR pays for the bench and the bench turns PRs red on its own clock:
+
+- `bench.yml:3-7` triggers on `pull_request`; `bench.yml:12-14` cancels in progress per ref; `bench.yml:20,39` cap the jobs at 1 and 9 minutes; `bench.yml:47-48` sets `BENCH_DEADLINE_MS` to job start + 450 000 ms.
+- `test/bench/src/main.ts:118,183-197` aborts setup with `setup-timed-out`; `test/bench/src/run-bench.service.ts:212-251` aborts runs with `budget-exceeded`; `main.ts:42,122` and `run-bench.service.ts:113-115` turn a slow run into a `timed-out` invalid sample.
+- Five of the last ten PR Bench runs failed (`gh api .../workflows/bench.yml/runs`, 2026-10-12 17:31-17:53Z), e.g. 38284821646 and 38280183277 with `Bench invalid ... stream-undecodable, exit 0` on all four legs.
+
+Side A today is a worktree at `RUNNER_TEMP/bench-a` and side B is the job checkout (`bench.yml:60-74,116-124`). Mutant ids and `runInputsDigest` hash absolute paths, so the sides test the same mutants under different ids in a different order. A/A run 38135504932 on that layout recorded different project roots, inputs digests and mutant-id digests per side and emitted a false `phase-regressed` on the typescript-checker leg (`total` +1311.5 ms, 3.5%). Three A/A runs that executed every run from one fixed path (38140987766, 38143012318, 38279943505) recorded identical inputs and id digests across sides and no regression. A postsubmit lane that names culprits from the old layout would send root false revert verdicts, so the fixed run path is part of this layer.
+
+Main's regression rule today flags any phase whose samples separate by 3% of A's median (`test/e2e-core/src/summarize-bench.workflow.ts:196-197`), and `render-bench-report.workflow.ts:116-120` turns any regressed phase into `::error Bench regression`. `instrument` medians are 0-1 ms, so a 1 ms separation is a regression. The regression carries no parent SHA, metric list or next action.
+
+### Key Decisions
+
+- KD1. **Postsubmit on main plus manual dispatch.** (session-settled: user-directed, root intent 2026-10-12, chosen over keeping a PR trigger with a fixed deadline: scripted end-to-end runs leave the PR path.) Governs R1-R3.
+- KD2. **One 60-minute job timeout is the only kill.** (session-settled: user-directed, chosen over a raised in-process cap, which is the same enforcement with a bigger number.) Governs R5, R6.
+- KD3. **Report-only verdicts.** (session-settled: user-directed, chosen over automatic revert or issue creation: root picks between a revert PR and a root-fix P0.) Governs R9, R10.
+- KD4. **Split: this layer carries trigger, caps, report-only verdict and the fixed run path; the install change is layer 2.** The root recommended the split; this plan keeps it and adds the fixed run path to layer 1, because without it the layer's culprit-naming verdicts are wrong on product-identical commits (Problem Frame). Run identity gating, provisional reports, lockfile pins, withheld pins and any enterprise-install change stay out: none is needed for trigger, caps, wall time or a correct verdict, and the provisional report in #312 depends on `WithheldPins` (`origin/stryker/bench-main-only:test/e2e-core/src/provisional-report.workflow.ts:24,34`).
+- KD5. **Only a leg's `total` decides a regression; every phase that also regressed attributes it.** A decisive verdict needs non-overlapping four-run samples and |Δ median| >= max(3% of A's median, 10 ms). (session-settled: user-directed, #312 round-2 review R1 ruling, chosen over one-phase-is-enough: phases correlate with `total`, and a 0-1 ms phase makes the 3% bar a 1 ms bar.)
+- KD6. **The report schema moves to `2.0` and the PR title carries `!`.** Removing decodable abort codes and the `timed-out` run exit breaks readers of `1.1` reports; #274 and #262 marked their breaks with `!`.
+- KD7. **Leg target is 10 minutes, declared once as a report-schema literal.** Source: R3 of `docs/plans/2026-10-10-0702-perf-ci-wall-clock-plan.md` (10-minute PR-job ceiling); no compound pack names a per-job budget. The job-start mark reuses `ci.yml:68-69`'s `JOB_STARTED_AT` (Unix seconds).
+- KD8. **Two layers, not three.** A trigger-and-caps-only first layer was considered: it would stop PRs paying with less code, but main would then publish verdicts from the two-root layout, which A/A run 38135504932 shows produces a false `::error` regression on a product-identical commit, and those verdicts name no parent, metric or next action. Root would read false culprits. The run path and the regression block land with the trigger.
+- KD9. **Must-not-lose status of this layer.** "Every PR stops paying for the bench" holds on merge (R1). "No bench path hangs on a bad upstream publish" does not hold on this layer alone: the enterprise leg still resolves from the registry (Risks). Layer 2 is stacked on this layer and owns that property; whether layer 1 merges before layer 2 is root's call.
+
+### Requirements
+
+**Trigger**
+
+- R1. `bench.yml` has no `pull_request` trigger. It runs on push to `main` with today's `paths-ignore` (`**/*.md`, `docs/**`) and on `workflow_dispatch`.
+- R2. Side B is `github.sha`; side A is its first parent. Both are detached worktrees under `RUNNER_TEMP` (`bench-a`, `bench-b`). Each side gets its own `.sfs-deps` (side B copies the checkout's released tarballs; side A copies them when its `stryker-published` pin matches, else builds its own from its pin, as today) and its own `pnpm install --frozen-lockfile`, each timed into `bench-setup.tsv`. The job checkout holds only the harness and its timed install.
+- R3. Concurrency group `bench-${{ github.sha }}` with `cancel-in-progress: false`: a later push never cancels an earlier commit's bench.
+- R4. Permissions stay `contents: read`. The lane writes only its step summary, annotations and artifacts.
+
+**Time and failure**
+
+- R5. Every `timeout-minutes` in `bench.yml` is 60.
+- R6. The bench has no in-process deadline: `BENCH_DEADLINE_MS`, `BENCH_RUN_TIMEOUT_MS`, the setup budget, the run deadline and the per-run timeout are removed, with the shapes only they produce: abort codes `setup-timed-out` and `budget-exceeded`, run exit `timed-out`, run failure code `timeout`.
+- R7. A leg exits non-zero only when the bench itself fails: a run errors or its stream is unreadable (`failed`) or the comparison cannot be computed (`aborted`). A computed regression is `summarized` and exits 0.
+- R8. The leg's wall time (from `JOB_STARTED_AT` to report write) and the 10-minute target appear in the JSON report and the step summary, rendered from one report object. An overrun changes neither exit code nor verdict level.
+
+**Fixed run path**
+
+- R11. Every measured run, both sides and every leg, executes from `RUNNER_TEMP/bench-run`: the side's tree is renamed there before the run and back after, also when the run fails. The run path existing before a move-in aborts with `run-path-occupied`; a failed listing or move-in rename aborts with `run-path-move-failed` carrying the OS error; a failed move back aborts with `run-path-unrestored` carrying the rename error and the run's own failure if any. Each abort carries a next action.
+- R12. The bench config written into a side's tree references its plugins relative to the config file, so it resolves after the tree moves. The Turbo cache directory the bench passes to builds is the checkout's `.turbo/cache`, the path `bench.yml`'s cache step restores, not a path inside a side tree.
+
+**Regression report**
+
+- R9. When a leg's `total` regressed (KD5), the verdict line, step summary and JSON carry one regression block: reason code `phase-regressed`, SHA, parent SHA, ref, the regressed metrics (`total` first, then every regressed phase of that leg) with Δ in ms and percent of A's median, and the next action. On `refs/heads/main` the next action is verbatim "root opens a revert PR of the culprit or a root-fix P0"; on any other ref it is "dispatched on <ref>: speed evidence only, no revert". A phase that regressed while `total` did not stays a table verdict only: no regression block, `::notice` level.
+- R10. The verdict line is `::error` for a regression and for `failed`/`aborted`, `::notice` otherwise; only `failed`/`aborted` set exit 1.
+
+**Docs**
+
+- R13. `test/bench/README.md` and the `@systemfsoftware/stryker-bench` package description state the main-only trigger, first-parent side A, fixed run path, 60-minute backstop and report-only wall time; no deadline text remains.
+
+### Acceptance Examples
+
+- AE1. Covers R1, R3. Given this PR, when its checks are listed, then no Bench check appears, and `bench.yml` on its head has no `pull_request` key.
+- AE2. Covers R9, R10. Given a project whose `total` and `mutation-test` both separate past the rule, the report is `summarized`, exit 0, verdict `::error` with `phase-regressed`, both SHAs, `total` then `mutation-test` with Δ s and %, and the main next action. Given only `check` separates, the table reads `regressed` on `check`, `regression` is null, and the line is `::notice`.
+- AE3. Covers KD5. Given A's `instrument` median is 0 ms and B's samples are all 1 ms, the cell is `no-signal`.
+- AE4. Covers R8. A leg reported at 14 minutes shows 14 min against the 10-minute target; exit code and verdict level equal those of the same cells at 6 minutes.
+- AE5. Covers R5, R6. A run or setup command that never returns is stopped by nothing in bench code; GitHub ends the job at 60 minutes.
+- AE6. Covers R11. Given anything at `RUNNER_TEMP/bench-run` before a move-in, the leg aborts `run-path-occupied` naming side and path. Given the move-back fails after a failed run, `run-path-unrestored` carries both errors.
+- AE7. Covers R2, R11, R12. A `workflow_dispatch` on this PR's head (a product-identical commit and parent): every leg's runs on both sides record one project root and identical inputs and mutant-id digests in their uploaded incremental reports, and no leg's `total` regresses.
+
+### Scope Boundaries
+
+- Out (layer 2 or later): run identity gate (`run-path-mismatch`, `run-identity-unreadable`), provisional `leg-incomplete` reports, lockfile pins, `withheldPins`, deleting or consuming the fixture's committed `package-lock.json`, any change to the enterprise `npm install --before` step.
+- Out: automatic revert, issue, PR comment, nightly cron, a raised in-process cap or deadline (KD2's rejected option), a PR-side bench copy, Turbo restore-from-base, corpus narrowing.
+- Out: Stream G execution-engine optimisations.
+
+### Dependencies / Assumptions
+
+- **No required status checks on main.** The `main` branch rules are `deletion`, `non_fast_forward`, `pull_request` (`gh api repos/.../rules/branches/main`, 2026-10-12); dropping the PR trigger leaves nothing pending. Per `docs/solutions/workflow-issues/matrix-legs-rename-the-required-status-check.md`, recheck at PR time.
+- **Squash merges.** One PR is one main commit benched against the state it landed on; a multi-commit direct push benches only its head against that head's first parent.
+- **Packages are private.** `@systemfsoftware/stryker-bench` and `@systemfsoftware/stryker-e2e-core` are `"private": true`; no changeset.
+
+---
+
+## Planning
+
+### Context and Research
+
+- Main's bench today: `.github/workflows/bench.yml` (142 lines), `test/bench/src/main.ts`, `run-bench.service.ts`, `prepare-side.service.ts:187-233` (absolute plugin URLs via `path.toFileUrl`), `main.ts:41,176` (Turbo cache dir under side B's root).
+- Report and verdict types: `test/e2e-core/src/bench-report.schema.ts:20-29` (abort codes, `schemaVersion: '1.1'` at `main.ts:127`, `run-bench.service.ts:271`), `bench-run.schema.ts` (`RunExit`, `BenchRunFailureCode`), `bench-summary.schema.ts`, `summarize-bench.workflow.ts:196-197`, `render-bench-report.workflow.ts:95-125`, `main.ts:243-261` (exit 1 only for `failed`/`aborted`).
+- Port source: `origin/stryker/bench-main-only` (#312). Its files for this layer: `test/e2e-core/src/run-path.schema.ts` (minus the run-identity classes), `plan-run-path.workflow.ts`, `settle-run-path.workflow.ts`, `measure-leg.workflow.ts`, the `LegTime`/`LegTargetMs` part of `bench-report.schema.ts`, the regression block of `bench-summary.schema.ts` and `summarize-bench.workflow.ts`, `render-bench-report.workflow.ts`, `read-bench-run.workflow.ts`, `bench-run.schema.ts`, and `test/bench/src/{main,run-bench.service,prepare-side.service,prepared-side}.ts` with the identity, provisional and pins hunks dropped.
+- Learnings applied: `docs/solutions/workflow-issues/mutation-lane-green-while-every-job-failed.md` (the result gate keys on the run's own verdict line; removing aborts must not weaken `readBenchRun`); `docs/solutions/tooling-decisions/do-not-sleep-to-prove-a-mutation-timeout.md` (laws assert the reported wall time, never elapsed time); `docs/solutions/performance-issues/checker-equivalence-emit-left-js-beside-project-sources.md` (repeated runs start from a restored tree; leftovers are inputs); `docs/solutions/workflow-issues/shared-deno-import-map-feeds-the-e2e-trace-scripts.md` (find every consumer of a removed name before deleting it).
+- Packs: schema-laws (property laws over production schemas), boundary-testing (no mocks; real inputs through real workflows), cell-architecture (decisions in `*.workflow.ts`, I/O in `*.service.ts`/bench drivers).
+
+### Key Technical Decisions
+
+- KTD1. Port by hand from `origin/stryker/bench-main-only` onto a branch cut from `origin/main`, not a cherry-pick: #312's commits interleave this layer's hunks with identity, provisional and pins work.
+- KTD2. Run-path planning and settling are pure workflows (`planRunPath`, `settleRunPath`) over a directory listing and rename outcomes; the renames live in `run-bench.service.ts`. This keeps the abort decisions under property laws.
+- KTD3. Abort-code set after this layer: `environment-incomplete`, `corpus-unreadable`, `setup-timings-malformed`, `entry-unknown`, `side-setup-failed`, `report-unwritable`, `run-path-occupied`, `run-path-move-failed`, `run-path-unrestored`, `defect`. `RunPathOutsideTree` maps to `run-path-move-failed`, not `defect` (spec-flow finding: #312 mislabels it).
+- KTD4. Side A is resolved with `git rev-parse --verify HEAD^1` in the checkout (`fetch-depth: 0` kept: the enterprise `--before` cutoff reads `pnpm-lock.yaml` history). A missing parent fails that step with `::error` naming the SHA.
+- KTD5. Both upload steps run on `always()`, so a bench abort or a failed step still uploads what exists. A job killed by the 60-minute timeout may leave no report; that gap is layer 2's provisional report or later.
+
+### Open Questions
+
+**Resolved during planning**
+
+- Target location: a report-schema literal (`LegTargetMs`), KD7.
+- Job-start mark: `JOB_STARTED_AT` seconds, KD7.
+
+**Deferred to implementation**
+
+- Whether `bench.yml`'s Turbo cache key on push uses `github.sha` or the parent; the save/restore names must keep today's `turbo-<os>-bench-<slug>-` prefix.
+
+### Implementation Units
+
+- U1. **Workflow trigger, sides and caps.** Files: `.github/workflows/bench.yml`. Push-main + dispatch trigger, `bench-${{ github.sha }}` concurrency without cancel, every `timeout-minutes: 60`, `JOB_STARTED_AT` first step, deadline step deleted, side A = first parent and side B = `github.sha` as worktrees, harness installed and timed in the checkout, `BENCH_TURBO_CACHE_DIR` and `BENCH_REF` passed, uploads on `always()`. Covers R1-R5, R8, R12. Verification: AE1 by reading the head's `bench.yml`; AE7 by dispatch.
+- U2. **Report schema and deadline removal.** Files: `test/e2e-core/src/bench-report.schema.ts`, `bench-run.schema.ts`, `read-bench-run.workflow.ts`, `measure-leg.workflow.ts` (new), `test/bench/src/main.ts`, `run-bench.service.ts`, matching `__tests__` laws. Remove R6 shapes; schema `2.0`; `LegTime` in the report. Covers R6-R8. Tests: `measure-leg` law (elapsed vs negative clock skew -> `LegNotMeasured`); `read-bench-run` laws lose the `timed-out` cases.
+- U3. **Regression block.** Files: `bench-summary.schema.ts`, `summarize-bench.workflow.ts`, `render-bench-report.workflow.ts` and their laws. Covers R9, R10, KD5. Tests: `total`-decides, phase-only regression is notice, 10 ms floor (AE3), main vs non-main next action, wall time line independent of exit (AE4).
+- U4. **Fixed run path.** Files: `run-path.schema.ts`, `plan-run-path.workflow.ts`, `settle-run-path.workflow.ts` (new), `test/bench/src/run-bench.service.ts`, `prepare-side.service.ts` (relative plugin URLs), `prepared-side.ts`, `bench-report.schema.ts` abort codes, `mod.ts`. Covers R11, R12. Tests: `plan-run-path` and `settle-run-path` laws (occupied, move failed, unrestored with and without a run failure).
+- U5. **Docs.** `test/bench/README.md`, `test/bench/package.json` description. Covers R13.
+
+### Test Admission
+
+Gate: `test-layer-selection` permission matrix, default refuse. Schema codec laws for every new `*.schema.ts` are generated in-source by `inSourceSchemaLaws()` (`test/e2e-core/vitest.config.ts:2,8`), so no hand-written schema test is admitted.
+
+| Proposed test                                                                                                          | Cell             | Verdict                                    | Plausible bug it catches                                                                           |
+| ---------------------------------------------------------------------------------------------------------------------- | ---------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `measure-leg.workflow.property.test.ts`                                                                                | workflow         | admit                                      | wall time computed from the wrong unit (seconds vs ms), or a negative elapsed reported as measured |
+| `summarize-bench` laws: `total` decides, phase-only regression yields no block, 10 ms floor, block lists `total` first | workflow         | admit                                      | a 1 ms `instrument` separation or a phase-only separation emitting a culprit verdict               |
+| `render-bench-report` laws: next action by ref, verdict level and exit independent of wall time                        | workflow         | admit                                      | a dispatched branch run telling root to revert; an overrun changing the exit                       |
+| `plan-run-path` / `settle-run-path` laws                                                                               | workflow         | admit                                      | a run starting on an occupied path; a failed restore swallowed when the run also failed            |
+| `read-bench-run` law changes                                                                                           | workflow         | edit: delete `timed-out` cases             | n/a (removed shape)                                                                                |
+| `run-bench.service.ts` rename sequence, `prepare-side.service.ts` relative URLs                                        | executor/service | refuse; evidence is the A/A dispatch (AE7) | spawning the CLI from a test is a process spawn, which the in-process gate forbids                 |
+| new `bench-decisions.integration.test.ts` scenario                                                                     | integration      | refuse                                     | nothing this layer adds crosses a boundary the workflow laws miss                                  |
+
+### Verification
+
+- Local: `dprint check`, `tsc -b` in `test/e2e-core` and `test/bench`, `oxlint` and `lint:tsgo` on changed packages, `vitest run` in `test/e2e-core` (full suite: it is the e2e-core package's own unit suite, not the e2e lane).
+- CI: the PR's own checks on the exact head, with no Bench check (AE1).
+- A/A: one `workflow_dispatch` of `bench.yml` on the PR head; from its artifacts, every leg `summarized`, one project root per leg, equal inputs and mutant-id digests across sides, no `total` regression (AE7).
+
+### Risks
+
+- **Registry-resolving enterprise install without a deadline.** `test/bench/src/prepare-side.service.ts:490-506` still runs `npm install --before=<lock time>`. With the 7.5-minute deadline gone, a bad upstream publish that makes npm loop (the `@effect/opentelemetry@4.0.3` peer on then-unpublished `effect@4.0.3`; `effect@4.0.3` is published as of 2026-10-12, `npm view effect@4 version`) would run the enterprise leg on main to the 60-minute backstop instead of aborting at 7.5 minutes on every PR. Postsubmit-only and bounded; owned by layer 2 (KD9).
+- **Job killed at 60 minutes leaves no `bench-report.json`.** The job's timeout conclusion is the only signal (KTD5).
+- **`workflow_dispatch` on an old ref runs that ref's `bench.yml`.** Dispatch is meaningful only on refs containing this layer.
+- **One comparison per commit is noisy.** Postsubmit benchmarking elsewhere leans on history across commits (conbench benches main commits plus on-request PR runs, https://conbench.github.io/conbench/pages/benchmarking_and_the_dev_process.html; MongoDB uses change-point detection over history, https://arxiv.org/abs/2003.00584). This lane compares one commit to one parent; KD5's non-overlap plus floor is the false-positive control, and the lane is report-only.

@@ -184,7 +184,11 @@ const readCatalogs = (root: string): Effect.Effect<WorkspaceCatalogs, BenchSetup
     return parseWorkspaceCatalogs(text)
   })
 
-const entryUrlOf = (root: string, project: string): Effect.Effect<string, BenchSetupFailed, BenchPlatform> =>
+const entryPathFrom = (
+  cwd: string,
+  root: string,
+  project: string,
+): Effect.Effect<string, BenchSetupFailed, BenchPlatform> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
@@ -197,12 +201,10 @@ const entryUrlOf = (root: string, project: string): Effect.Effect<string, BenchS
         fail(STEP_CONFIGS, `${manifestPath} has no exports["."].default build target to point the bench at`, cause)
       ),
     )
-    const target = manifest.exports['.'].default
-    const url = yield* path.toFileUrl(path.join(root, project, target)).pipe(
-      Effect.mapError((cause) => fail(STEP_CONFIGS, `${target} could not be turned into a file URL`, cause)),
-    )
-    return url.href
+    return path.relative(cwd, path.join(root, project, manifest.exports['.'].default))
   })
+
+const urlFromConfig = (relativePath: string): string => `new URL(${JSON.stringify(relativePath)}, import.meta.url).href`
 
 const testFilesLine = (testFiles: ReadonlyArray<string> | undefined): string =>
   Option.match(Option.fromUndefinedOr(testFiles), {
@@ -211,20 +213,20 @@ const testFilesLine = (testFiles: ReadonlyArray<string> | undefined): string =>
   })
 
 const benchConfigSource = (input: {
-  readonly vitestRunnerUrl: string
-  readonly typescriptCheckerUrl: string
-  readonly ignorerUrls: ReadonlyArray<string>
+  readonly vitestRunnerPath: string
+  readonly typescriptCheckerPath: string
+  readonly ignorerPaths: ReadonlyArray<string>
   readonly entry: BenchRepoEntry
 }): string =>
   `import base from './stryker.config.ts'
 
 const config = {
   ...base,
-  testRunner: { ...base.testRunner, plugin: ${JSON.stringify(input.vitestRunnerUrl)} },
+  testRunner: { ...base.testRunner, plugin: ${urlFromConfig(input.vitestRunnerPath)} },
   checkers: (base.checkers ?? []).map((checker) => ({ ...checker, plugin: ${
-    JSON.stringify(input.typescriptCheckerUrl)
+    urlFromConfig(input.typescriptCheckerPath)
   } })),
-  ignorers: ${JSON.stringify(input.ignorerUrls)},
+  ignorers: [${input.ignorerPaths.map(urlFromConfig).join(', ')}],
   mutate: ${JSON.stringify(input.entry.mutate)},
 ${testFilesLine(input.entry.testFiles)}  thresholds: { ...base.thresholds, break: null },
 }
@@ -245,11 +247,11 @@ const writeRepoEntry = (
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const vitestRunnerUrl = yield* entryUrlOf(input.root, VITEST_RUNNER_DIR)
-    const typescriptCheckerUrl = yield* entryUrlOf(input.root, TYPESCRIPT_CHECKER_DIR)
-    const ignorerUrls = yield* Effect.forEach(IGNORER_DIRS, (project) => entryUrlOf(input.root, project))
     const cwd = path.join(input.root, entry.project)
-    const source = benchConfigSource({ vitestRunnerUrl, typescriptCheckerUrl, ignorerUrls, entry })
+    const vitestRunnerPath = yield* entryPathFrom(cwd, input.root, VITEST_RUNNER_DIR)
+    const typescriptCheckerPath = yield* entryPathFrom(cwd, input.root, TYPESCRIPT_CHECKER_DIR)
+    const ignorerPaths = yield* Effect.forEach(IGNORER_DIRS, (project) => entryPathFrom(cwd, input.root, project))
+    const source = benchConfigSource({ vitestRunnerPath, typescriptCheckerPath, ignorerPaths, entry })
     yield* fs.writeFileString(path.join(cwd, BENCH_CONFIG_FILE), source).pipe(
       Effect.mapError((cause) =>
         fail(STEP_CONFIGS, `${entry.project}/${BENCH_CONFIG_FILE} could not be written`, cause)
@@ -508,6 +510,7 @@ const prepareEnterprise = (
     return {
       side: input.side,
       root: input.root,
+      tree: bundleRoot,
       cwd: bundleRoot,
       cli: path.join(bundleRoot, ...ENTERPRISE_CLI_RELATIVE),
       configFile: BENCH_CONFIG_FILE,
@@ -545,6 +548,7 @@ const prepareRepo = (
     return {
       side: input.side,
       root: input.root,
+      tree: input.root,
       cwd: config.value,
       cli: path.join(input.root, ...CLI_MAIN_RELATIVE),
       configFile: BENCH_CONFIG_FILE,
