@@ -88,7 +88,10 @@ lockfile holds at several versions cannot be pinned that way; when any exist,
 both `npm install` calls also take `--before=<that side's last pnpm-lock.yaml
 commit time>`, so those packages resolve only to releases that existed when the
 lockfile last changed. The report's `withheldPins` lists them per side, and the
-step summary counts them with the cutoff.
+step summary counts them with the cutoff. The bench removes the fixture's
+committed `package-lock.json` (the e2e bake's lock, keyed to the bake's
+`../../packs` layout) from its copy before installing, so no version comes from
+it and `withheldPins` stays true.
 
 Every run starts from its side's tree exactly as setup left it. Before each
 run the bench restores the project directory to the snapshot it took after

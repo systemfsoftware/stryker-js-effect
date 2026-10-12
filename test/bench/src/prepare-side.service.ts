@@ -91,6 +91,7 @@ const BENCH_CONFIG_FILE = 'stryker.bench.config.ts'
 const MANIFEST_FILE_NAME = 'package.json'
 const WORKSPACE_CATALOGS_FILE = 'pnpm-workspace.yaml'
 const LOCKFILE = 'pnpm-lock.yaml'
+const E2E_BAKE_FIXTURE_LOCKFILE = 'package-lock.json'
 const STDERR_TAIL_CHARS = 4000
 const PACKED_MANIFEST_PATH = 'package/package.json'
 const CLI_BUILD_FILTER = '@systemfsoftware/stryker-js'
@@ -541,6 +542,11 @@ const prepareEnterprise = (
           ),
         )
         yield* fs.remove(path.join(bundleRoot, 'node_modules'), { recursive: true, force: true }).pipe(Effect.orDie)
+        yield* fs.remove(path.join(bundleRoot, E2E_BAKE_FIXTURE_LOCKFILE), { force: true }).pipe(
+          Effect.mapError((cause) =>
+            fail(STEP_ENTERPRISE_MANIFESTS, `${bundleRoot}/${E2E_BAKE_FIXTURE_LOCKFILE} could not be removed`, cause)
+          ),
+        )
         const catalogs = yield* readCatalogs(input.root)
         yield* rewriteManifests(bundleRoot, catalogs)
         yield* fs.writeFileString(path.join(bundleRoot, BENCH_CONFIG_FILE), enterpriseConfigSource(corpus)).pipe(
