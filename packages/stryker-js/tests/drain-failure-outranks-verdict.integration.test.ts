@@ -1,210 +1,128 @@
-import * as NodeSdk from '@effect/opentelemetry/NodeSdk'
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base'
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
-import { RunEvent, SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
-import { Report, Reporter } from '@systemfsoftware/stryker-js-plugin-interface'
-import type * as Cause from 'effect/Cause'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
-import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as Queue from 'effect/Queue'
+import * as ChildProcess from 'effect/process/ChildProcess'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
+import * as Scope from 'effect/Scope'
 import * as Stream from 'effect/Stream'
 
 const Feature = makeFeature({ it })
 
-const SOURCE_FILE = 'src/add.ts'
-const SOURCE_CONTENT = 'export const add = (left: number, right: number): number => left + right\n'
-const PACKAGE_SOURCE = '{ "type": "commonjs" }\n'
-const REPORTER_NAME = 'refusing-reporter'
-const REPORT_ALL = SpanTaxonomy.Spans.mutationReportingReportAll.name
-const JUDGE_SCORE = SpanTaxonomy.Spans.mutationReportingJudgeScore.name
+const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname)
+const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.url).pathname)
+const REFUSING_REPORTER_PLUGIN = new URL('./__fixtures__/refusing-reporter/index.mjs', import.meta.url).href
 
-interface ObservedRun {
-  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
-  readonly report: Option.Option<Report.MutationTestResult>
-  readonly judgeScoreParents: ReadonlyArray<string>
+const SOURCE = `export const add = (a, b) => a + b
+export const isPositive = (n) => n > 0
+`
+
+const CONSUMER_PACKAGE = '{ "name": "drain-failure-consumer", "type": "module", "private": true }\n'
+
+const BREAK_THRESHOLD = 100
+
+const configReportingTo = (reporters: ReadonlyArray<string>) =>
+  `export default {
+  testRunner: 'command',
+  commandRunner: { command: 'true' },
+  mutate: ['src/**/*.js'],
+  coverageAnalysis: 'off',
+  concurrency: 1,
+  plugins: [${JSON.stringify(REFUSING_REPORTER_PLUGIN)}],
+  reporters: ${JSON.stringify(reporters)},
+  thresholds: { high: 80, low: 60, break: ${String(BREAK_THRESHOLD)} },
+}
+`
+
+const decodeVerdict = S.decodeUnknownOption(S.fromJsonString(RunEvent.VerdictReached))
+
+interface RunOutcome {
+  readonly exitCode: number
+  readonly verdict: Option.Option<RunEvent.VerdictReached>
 }
 
-const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-
-const reportFileOf = (directory: string): string => `${directory}/reports/mutation/mutation.json`
-
-const refuseFinishedReport = (event: Reporter.ReporterEvent): Effect.Effect<void, Reporter.ReporterFailed> =>
-  S.is(Reporter.MutationTestReportReady)(event)
-    ? Effect.fail(
-      Reporter.ReporterFailed.make({
-        reporterName: REPORTER_NAME,
-        event: 'mutationTestReportReady',
-        cause: 'the reporter refuses the finished report',
-      }),
-    )
-    : Effect.void
-
-const refusingReporter: Reporter.ReporterFactory = () => (events) =>
-  Stream.fromAsyncIterable(
-    events,
-    () =>
-      Reporter.ReporterFailed.make({
-        reporterName: REPORTER_NAME,
-        event: 'mutationTestReportReady',
-        cause: 'the run stopped delivering events',
-      }),
-  ).pipe(Stream.runForEach(refuseFinishedReport))
-
-const writeWorkspace = (): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+const prepareProject = (
+  reporters: ReadonlyArray<string>,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const directory = yield* fs.makeTempDirectory()
-    yield* fs.makeDirectory(path.join(directory, 'src'), { recursive: true })
-    yield* fs.writeFileString(path.join(directory, SOURCE_FILE), SOURCE_CONTENT)
-    yield* fs.writeFileString(path.join(directory, 'package.json'), PACKAGE_SOURCE)
-    return directory
-  }).pipe(Effect.orDie)
-
-const removeWorkspace = (directory: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
-  Effect.orDie(
-    Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true })),
-  )
-
-const readReport = (
-  directory: string,
-): Effect.Effect<Report.MutationTestResult, never, FileSystem.FileSystem> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const text = yield* fs.readFileString(reportFileOf(directory))
-    return yield* S.decodeEffect(S.fromJsonString(Report.MutationTestResult))(text)
-  }).pipe(Effect.orDie)
-
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
-  runId: '01ARZ3NDEKTSV4RRFFQ69G5FAX',
-  resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
-  runStartedAt: 0,
-  basePath: directory,
-  builtinReporters: { [REPORTER_NAME]: refusingReporter },
-  allowConsoleColors: false,
-})
-
-const judgeScoreParentsOf = (spans: ReadonlyArray<ReadableSpan>): ReadonlyArray<string> => {
-  const byId = new Map(spans.map((span) => [span.spanContext().spanId, span] as const))
-  return spans
-    .filter((span) => span.name === JUDGE_SCORE)
-    .map((span) => byId.get(span.parentSpanContext?.spanId ?? '')?.name ?? 'nothing')
-}
-
-const executeRun = (
-  directory: string,
-  reporters: ReadonlyArray<string>,
-): Effect.Effect<ObservedRun, never, FileSystem.FileSystem> =>
-  Effect.gen(function*() {
-    const exporter = new InMemorySpanExporter()
-    const telemetry = NodeSdk.layer(() => ({
-      resource: { serviceName: 'mutation-verdict-test' },
-      spanProcessor: new SimpleSpanProcessor(exporter),
-    }))
-    const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(8192)
-    const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(directory), queue), Engine.nodePlatformLayer),
-      Engine.nodePlatformLayer,
+    const binaryPresent = yield* fs.exists(STRYKER_BIN)
+    yield* Effect.when(
+      Effect.die(new Error('dist/main.mjs is missing — build the package first')),
+      Effect.succeed(!binaryPresent),
     )
-    const { exit, spans } = yield* Engine.mutationTestCell
-      .run({
-        cliOptions: {
-          testRunner: 'command',
-          commandRunner: { command: 'true' },
-          coverageAnalysis: 'off',
-          reporters: [...reporters],
-          jsonReporter: { fileName: reportFileOf(directory) },
-          thresholds: { high: 100, low: 100, break: 100 },
-          checkers: [],
-          mutate: ['src/**/*.ts'],
-          symlinkNodeModules: false,
-          incremental: false,
-          incrementalFile: `${directory}/reports/stryker-incremental.json`,
-          cleanTempDir: 'always',
-        },
-        targetMutatePatterns: undefined,
-      })
-      .pipe(
-        Effect.provide(runLayer),
-        Effect.scoped,
-        Effect.exit,
-        Effect.map((exit) => ({ exit, spans: exporter.getFinishedSpans() })),
-        Effect.provide(telemetry),
-      )
-    const report = yield* readReport(directory).pipe(Effect.option)
-    return { exit, report, judgeScoreParents: judgeScoreParentsOf(spans) }
-  })
+    const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-drain-failure-' }))
+    yield* fs.makeDirectory(path.join(root, 'node_modules', '@systemfsoftware'), { recursive: true })
+    yield* fs.symlink(PACKAGE_ROOT, path.join(root, 'node_modules', '@systemfsoftware', 'stryker-js'))
+    yield* fs.makeDirectory(path.join(root, 'src'))
+    yield* fs.writeFileString(path.join(root, 'package.json'), CONSUMER_PACKAGE)
+    yield* fs.writeFileString(path.join(root, 'src', 'add.js'), SOURCE)
+    yield* fs.writeFileString(path.join(root, 'stryker.config.mjs'), configReportingTo(reporters))
+    return root
+  }).pipe(Effect.orDie)
 
-const runAndClean = (directory: string, reporters: ReadonlyArray<string>): Effect.Effect<ObservedRun, never, never> =>
-  executeRun(directory, reporters).pipe(Effect.ensuring(removeWorkspace(directory)), Effect.provide(filePorts))
-
-const survivorCountOf = (report: Report.MutationTestResult): number =>
-  Object.values(report.files).flatMap((file) => file.mutants).filter((mutant) => mutant.status === 'Survived').length
-
-const verdictOf = (exit: ObservedRun['exit']): string | null =>
-  Exit.match(exit, {
-    onFailure: () => 'the run failed',
-    onSuccess: (done) => done.verdict,
-  })
-
-Feature('Deciding how a finished mutation run ends')
-  .withLayer(Layer.empty)
-  .live('the run is real: it mutates a project on disk, spawns the command runner and drains real reporters')
-  .body(({ scenario }) => {
-    scenario(
-      'A reporter that fails on the finished report outranks a score under the break threshold',
-      Gherkin.Do.pipe(
-        Given('a project whose every mutant survives, and a reporter that refuses the finished report')(
-          'directory',
-          () => writeWorkspace().pipe(Effect.provide(filePorts)),
-        ),
-        When('a mutation run with a break threshold of 100 finishes over that project')(
-          'observation',
-          (s) => runAndClean(s.directory, ['json', REPORTER_NAME]),
-        ),
-        Then('the run ends with the reporter failure, not the broken score')((s, expect) => {
-          const report = Option.getOrThrowWith(s.observation.report, () => new Error('the run wrote no JSON report'))
-          return expect({
-            survivorsLeftTheScoreUnderTheThreshold: survivorCountOf(report) > 0,
-            verdict: verdictOf(s.observation.exit),
-          }).toEqual({
-            survivorsLeftTheScoreUnderTheThreshold: true,
-            verdict: 'RuntimeError',
-          })
+const runStryker = (root: string): Effect.Effect<RunOutcome, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      const handle = yield* spawner.spawn(
+        ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, 'run'], {
+          cwd: root,
+          stdin: 'ignore',
+          stdout: 'pipe',
+          stderr: 'pipe',
+          env: { STRYKER_MODE: 'machine', NO_COLOR: '1' },
+          extendEnv: true,
         }),
-      ),
-    )
+      )
+      const printed = yield* Effect.forkScoped(handle.stdout.pipe(Stream.decodeText, Stream.mkString))
+      const exitCode = yield* handle.exitCode
+      const output = yield* Fiber.join(printed)
+      const records = output.trim().split('\n')
+      return { exitCode: Number(exitCode), verdict: Option.firstSomeOf(records.map((record) => decodeVerdict(record))) }
+    }),
+  ).pipe(Effect.orDie)
 
-    scenario(
-      'A score under the break threshold is judged in its own span inside the report stage',
-      Gherkin.Do.pipe(
-        Given('a project whose every mutant survives, reported only to the JSON reporter')(
-          'directory',
-          () => writeWorkspace().pipe(Effect.provide(filePorts)),
+const scoreUnderTheBreakThreshold = (verdict: Option.Option<RunEvent.VerdictReached>): boolean =>
+  Option.exists(verdict, (reached) => reached.score !== null && reached.score < BREAK_THRESHOLD)
+
+Feature('Failing the build when a reporter cannot take the finished report', { timeout: 180_000 })
+  .withLayer(Engine.nodePlatformLayer)
+  .live('the built stryker binary runs a consumer project and loads a reporter plugin from disk')
+  .body(({ scenarioOutline }) => {
+    scenarioOutline(
+      'A project scored under its break threshold, reporting <reporting>, exits <exitCode> for <reason>',
+      [
+        {
+          reporting: 'also to a reporter that refuses the finished report',
+          reporters: ['json', 'refusing'],
+          exitCode: 3,
+          reason: 'the reporter failure',
+        },
+        { reporting: 'only to the JSON reporter', reporters: ['json'], exitCode: 1, reason: 'its score' },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given(`a project whose tests kill no mutant, with a break threshold of 100, reporting ${row.reporting}`)(
+            'root',
+            () => prepareProject(row.reporters),
+          ),
+          When('stryker runs it')('ran', (s) => runStryker(s.root)),
+          Then(`the verdict scores the run under the threshold and the process exits ${String(row.exitCode)}`)((
+            s,
+            expect,
+          ) =>
+            expect({
+              scoreUnderTheBreakThreshold: scoreUnderTheBreakThreshold(s.ran.verdict),
+              exitCode: s.ran.exitCode,
+            }).toEqual({ scoreUnderTheBreakThreshold: true, exitCode: row.exitCode })
+          ),
         ),
-        When('a traced mutation run with a break threshold of 100 finishes over that project')(
-          'observation',
-          (s) => runAndClean(s.directory, ['json']),
-        ),
-        Then('the run fails its verdict, and the score was judged once in a span opened by the report stage')((
-          s,
-          expect,
-        ) =>
-          expect({
-            verdict: verdictOf(s.observation.exit),
-            judgeScoreParents: s.observation.judgeScoreParents,
-          }).toEqual({
-            verdict: 'VerdictFail',
-            judgeScoreParents: [REPORT_ALL],
-          })
-        ),
-      ),
     )
   })
