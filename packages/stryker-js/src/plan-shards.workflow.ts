@@ -24,10 +24,23 @@ export const PlannedMutant = S.Struct({
 })
 export type PlannedMutant = typeof PlannedMutant.Type
 
+const mutantKeyOf = (mutant: PlannedMutant): string => `\u0000${mutant.project}\u0000${mutant.id}`
+
+const plannedMutantsAreDistinct = S.makeFilter(
+  (mutants: ReadonlyArray<PlannedMutant>): string | undefined =>
+    Boolean.match(new Set(mutants.map(mutantKeyOf)).size === mutants.length, {
+      onTrue: () => undefined,
+      onFalse: () => 'two planned mutants share a project and a mutant id',
+    }),
+  { arbitraryConstraint: { uniqueBy: mutantKeyOf } },
+)
+
+const PlannedMutants = S.Array(PlannedMutant).check(plannedMutantsAreDistinct)
+
 export class PlanShardsCommand extends S.TaggedClass<PlanShardsCommand>()('PlanShardsCommand', {
   targetSeconds: PositiveSeconds,
   maxShards: S.optional(PositiveInt),
-  mutants: S.Array(PlannedMutant),
+  mutants: PlannedMutants,
   dryRunCosts: S.Record(S.String, CostMs),
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -173,7 +186,7 @@ interface PlacementGroup {
 }
 
 const placementKeyOf = (mutant: PlannedMutant): string =>
-  Option.getOrElse(Option.fromUndefinedOr(mutant.placementKey), () => `\u0000${mutant.project}\u0000${mutant.id}`)
+  Option.getOrElse(Option.fromUndefinedOr(mutant.placementKey), () => mutantKeyOf(mutant))
 
 const projectOfGroup = (members: ReadonlyArray<PlannedMutant>): string =>
   Option.match(Arr.head(members), { onNone: () => '', onSome: (head) => head.project })
@@ -192,7 +205,11 @@ const placementGroupsOf = (mutants: ReadonlyArray<PlannedMutant>): ReadonlyArray
 
 const compareGroupsCostliestFirst = (left: PlacementGroup, right: PlacementGroup): number =>
   Boolean.match(left.costMs === right.costMs, {
-    onTrue: () => compareText(left.key, right.key),
+    onTrue: () =>
+      Boolean.match(compareText(left.project, right.project) === 0, {
+        onTrue: () => compareText(left.key, right.key),
+        onFalse: () => compareText(left.project, right.project),
+      }),
     onFalse: () => sign(right.costMs - left.costMs),
   })
 
@@ -289,6 +306,7 @@ export const planShards = Workflow.make({
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
   const Arr = await import('effect/Array')
+  const Equal = await import('effect/Equal')
 
   const isRepresentableCostMs = (costMs: number): boolean =>
     costMs === Math.min(Math.max(costMs, 0), Number.MAX_SAFE_INTEGER)
@@ -306,5 +324,30 @@ if (import.meta.vitest !== void 0) {
     { of: [S.Finite], subject: (costMs: number) => S.is(CostMs)(costMs) },
     (subject, [drawn]) =>
       Arr.every(Arr.append(unrepresentableCosts, drawn), (costMs) => subject(costMs) === isRepresentableCostMs(costMs)),
+  )
+
+  const sharesProjectAndId = (mutants: ReadonlyArray<PlannedMutant>): boolean =>
+    mutants.some((left, at) =>
+      mutants.slice(at + 1).some((right) => Equal.equals([left.project, left.id], [right.project, right.id]))
+    )
+
+  const pureLptCounterexampleListingOneMutantTwice: ReadonlyArray<PlannedMutant> = [
+    {
+      project: '',
+      id: Mutant.MutantId.make('0000000000000000'),
+      costMs: 4.1583512893691603e-308,
+      dependsOnDryRun: false,
+    },
+    { project: '', id: Mutant.MutantId.make('0000000000000000'), costMs: 0, dependsOnDryRun: false },
+  ]
+
+  it.prop(
+    '∀c_RepeatedMutantRefusal_≡NoTwoPlannedMutantsShareProjectAndId',
+    { of: [S.Array(PlannedMutant)], subject: S.is(PlannedMutants) },
+    (subject, [drawn]) =>
+      Arr.every(
+        [pureLptCounterexampleListingOneMutantTwice, drawn],
+        (mutants) => subject(mutants) === !sharesProjectAndId(mutants),
+      ),
   )
 }
