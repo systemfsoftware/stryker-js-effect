@@ -8,6 +8,8 @@ const UNKNOWN_SHA = '0'.repeat(40)
 
 const SCHEMA = 'https://v2-10-1.turborepo.dev/schema.json'
 
+const PERMITTED_SCRATCH_DIR = '/tmp'
+
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 
 const assertEqual = (actual: unknown, expected: unknown, label: string): void => {
@@ -220,7 +222,7 @@ const seedFixture = async (dir: string, options: FixtureOptions): Promise<void> 
 }
 
 const withRepo = async (options: FixtureOptions, body: (dir: string) => Promise<void>): Promise<void> => {
-  const dir = await Deno.makeTempDir({ prefix: 'turbo-semantics-' })
+  const dir = await Deno.makeTempDir({ dir: PERMITTED_SCRATCH_DIR, prefix: 'turbo-semantics-' })
   try {
     await git(dir, ['init', '-q', '-b', options.branch ?? 'trunk', '.'])
     await seedFixture(dir, options)
@@ -369,9 +371,9 @@ Deno.test('an empty selection exits 0 and writes a run summary with no tasks', a
 })
 
 Deno.test('GitHub pull_request inference resolves origin/main on a treeless clone and matches the first parent', async () => {
-  const remote = await Deno.makeTempDir({ prefix: 'turbo-semantics-remote-' })
-  const builder = await Deno.makeTempDir({ prefix: 'turbo-semantics-builder-' })
-  const checkout = await Deno.makeTempDir({ prefix: 'turbo-semantics-checkout-' })
+  const remote = await Deno.makeTempDir({ dir: PERMITTED_SCRATCH_DIR, prefix: 'turbo-semantics-remote-' })
+  const builder = await Deno.makeTempDir({ dir: PERMITTED_SCRATCH_DIR, prefix: 'turbo-semantics-builder-' })
+  const checkout = await Deno.makeTempDir({ dir: PERMITTED_SCRATCH_DIR, prefix: 'turbo-semantics-checkout-' })
   try {
     await git(remote, ['init', '-q', '--bare', '.'])
     await git(remote, ['config', 'uploadpack.allowFilter', 'true'])
