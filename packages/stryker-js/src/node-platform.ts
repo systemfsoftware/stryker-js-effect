@@ -9,12 +9,19 @@ import * as FileSystem from 'effect/FileSystem'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Path from 'effect/Path'
+import * as PlatformError from 'effect/PlatformError'
+import * as Predicate from 'effect/Predicate'
 import * as ChildProcess from 'effect/process/ChildProcess'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import {
+  classifyEmptyDirectoryRemoval,
+  ClassifyEmptyDirectoryRemovalCommand,
+} from './classify-empty-directory-removal.workflow.js'
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from './classify-worker-exit.workflow.js'
+import { EmptyDirectory } from './empty-directory.service.js'
 import { GitDiff } from './git-diff.service.js'
 import { layer as oxcSourceParserLayer } from './oxc-source-parser.js'
 import type { EnginePorts } from './run/StageServices.service.js'
@@ -124,6 +131,46 @@ const nodeWorkerLauncherLayer = (childEnv: Readonly<Record<string, string>>) =>
     }),
   )
 
+const hasErrnoCode = (cause: unknown): cause is { readonly code: string } =>
+  Predicate.hasProperty(cause, 'code') && Predicate.isString(cause.code)
+
+const settleRemoval = (
+  path: string,
+  rejected: ClassifyEmptyDirectoryRemovalCommand,
+): Effect.Effect<void, PlatformError.PlatformError> =>
+  Result.match(classifyEmptyDirectoryRemoval(rejected), {
+    onFailure: (impossible) => Effect.fail(impossible),
+    onSuccess: (removal) =>
+      Match.value(removal).pipe(
+        Match.tag('DirectoryKept', () => Effect.void),
+        Match.tag('DirectoryAbsent', () => Effect.void),
+        Match.tag('RemovalFailed', ({ code }) =>
+          Effect.fail(
+            PlatformError.systemError({
+              _tag: 'Unknown',
+              module: 'EmptyDirectory',
+              method: 'removeIfEmpty',
+              syscall: 'rmdir',
+              pathOrDescriptor: path,
+              description: code,
+            }),
+          )),
+        Match.exhaustive,
+      ),
+  })
+
+const nodeEmptyDirectoryLayer = Layer.succeed(
+  EmptyDirectory,
+  EmptyDirectory.of({
+    removeIfEmpty: (path) =>
+      Effect.tryPromise({
+        try: () => globalThis.process.getBuiltinModule('node:fs/promises').rmdir(path),
+        catch: (cause) =>
+          ClassifyEmptyDirectoryRemovalCommand.make({ code: hasErrnoCode(cause) ? cause.code : undefined }),
+      }).pipe(Effect.catch((rejected) => settleRemoval(path, rejected))),
+  }),
+)
+
 const nodeFsPathLayer = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 
 const nodeSpawnerLayer = NodeChildProcessSpawner.layer.pipe(Layer.provide(nodeFsPathLayer))
@@ -138,6 +185,7 @@ export const makeNodePlatformLayer = (options: {
     nodeBase,
     GitDiff.layer,
     oxcSourceParserLayer,
+    nodeEmptyDirectoryLayer,
   )
 
 export const nodePlatformLayer: Layer.Layer<EnginePorts> = makeNodePlatformLayer({ childEnv: {} })

@@ -1,3 +1,5 @@
+export type { EmptyDirectoryShape } from '../empty-directory.service.js'
+export { EmptyDirectory } from '../empty-directory.service.js'
 export { IncrementalReportSchema } from '../IncrementalReport.schema.js'
 export { nodePlatformLayer } from '../node-platform.js'
 export { planRequest } from '../plan-request.cell.js'

@@ -5,6 +5,7 @@ import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as Scope from 'effect/Scope'
 import * as Stdio from 'effect/Stdio'
 
+import { EmptyDirectory } from '../empty-directory.service.js'
 import { GitDiff } from '../git-diff.service.js'
 import { MutationReporting } from '../mutation-reporting.service.js'
 import { ProjectFiles } from '../project-files.service.js'
@@ -18,6 +19,7 @@ import { RunEnvironment } from './RunEnvironment.service.js'
 
 export type StageServices =
   | ChildProcessSpawner.ChildProcessSpawner
+  | EmptyDirectory
   | FileSystem.FileSystem
   | GitDiff
   | IdGenerator
@@ -36,6 +38,7 @@ export type StageServices =
 
 export type EnginePorts =
   | ChildProcessSpawner.ChildProcessSpawner
+  | EmptyDirectory
   | FileSystem.FileSystem
   | GitDiff
   | Path.Path
