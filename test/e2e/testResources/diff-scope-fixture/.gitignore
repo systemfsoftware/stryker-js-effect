@@ -1,5 +1,4 @@
 node_modules/
-package-lock.json
 reports/
 .stryker-tmp/
 stryker.log
