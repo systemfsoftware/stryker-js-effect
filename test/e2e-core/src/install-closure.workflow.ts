@@ -22,6 +22,7 @@ type ClosureInstallTypeId = typeof ClosureInstallTypeId
 
 export class ClosureInstall extends S.TaggedClass<ClosureInstall>()('ClosureInstall', {
   specs: S.Array(S.String),
+  dependencies: S.Record(S.String, S.String),
 }) {
   readonly [ClosureInstallTypeId] = ClosureInstallTypeId
 }
@@ -186,16 +187,22 @@ const conflictRefusal = (
     },
   )
 
-const aliasSpecOf = (command: InstallClosureCommand, edge: ClosureEdge): ReadonlyArray<string> =>
-  Option.toArray(Option.map(tarballOf(command, edge.target), (path) => `${edge.dependency}@file:${path}`))
+const aliasTargetOf = (command: InstallClosureCommand, edge: ClosureEdge): ReadonlyArray<readonly [string, string]> =>
+  Option.toArray(Option.map(tarballOf(command, edge.target), (path) => [edge.dependency, path] as const))
 
-const installOf = (command: InstallClosureCommand, aliases: ReadonlyArray<ClosureEdge>): ClosureInstall =>
-  ClosureInstall.make({
+const installOf = (command: InstallClosureCommand, aliases: ReadonlyArray<ClosureEdge>): ClosureInstall => {
+  const aliasTargets = aliases.flatMap((edge) => aliasTargetOf(command, edge))
+  return ClosureInstall.make({
     specs: [
       ...command.members.map((member) => member.tarballPath),
-      ...Arr.dedupe(aliases.flatMap((edge) => aliasSpecOf(command, edge))).sort(),
+      ...Arr.dedupe(aliasTargets.map(([dependency, path]) => `${dependency}@file:${path}`)).sort(),
     ],
+    dependencies: Object.fromEntries(
+      [...command.members.map((member) => [member.manifest.name, member.tarballPath] as const), ...aliasTargets]
+        .map(([name, path]) => [name, `file:${path}`]),
+    ),
   })
+}
 
 const decide = (command: InstallClosureCommand): Result.Result<ClosureInstall, InstallClosureFailure> => {
   const edges = command.members.flatMap((member) => memberEdgesOf(member.manifest))
