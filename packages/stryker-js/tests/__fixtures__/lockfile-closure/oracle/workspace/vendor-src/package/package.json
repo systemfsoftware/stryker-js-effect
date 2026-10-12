@@ -1,0 +1,7 @@
+{
+  "name": "local-tgz",
+  "version": "1.0.0",
+  "files": [
+    "data.txt"
+  ]
+}

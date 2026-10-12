@@ -948,7 +948,7 @@ Feature('Content-keyed reuse across incremental reports')
                 ran: s.fixture.second.reuse?.ran,
               },
               discardLineCount: discardLines.length,
-              namesTheReason: discardLines.some((text) => text.includes('has cache layout version 4, expected 5')),
+              namesTheReason: discardLines.some((text) => text.includes('has cache layout version 4, expected 6')),
             }).toEqual({
               runSucceeded: true,
               firstRanEverything: true,
