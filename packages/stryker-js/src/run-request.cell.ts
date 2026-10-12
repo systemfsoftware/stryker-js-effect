@@ -51,6 +51,7 @@ import {
 import { mcpServerLayer } from './Mcp/mod.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { planRequest } from './plan-request.cell.js'
+import type { PlanShardsRefused } from './plan-request.schema.js'
 import { AnnotationsUnusable, renderAnnotations, RenderAnnotationsCommand } from './render-annotations.workflow.js'
 import {
   mutantRerunAdmissionCell,
@@ -123,6 +124,7 @@ export type CliFailure =
   | NothingCounted
   | ShardPlanInvalid
   | ShardUnknown
+  | PlanShardsRefused
   | ShardChildFailed
   | ShardMergeFailed
   | FeedbackUnusable
