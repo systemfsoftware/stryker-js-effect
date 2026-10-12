@@ -5,6 +5,7 @@ import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
+import { packageSpecifierOf } from '../import-closure.schema.js'
 import { type PackageExportValue, PackageManifestFields } from './package-manifest.schema.js'
 
 export class SelectPackageEntryCommand extends S.TaggedClass<SelectPackageEntryCommand>()(
@@ -54,15 +55,6 @@ const isString = (value: PackageExportValue): value is string => typeof value ==
 const isArray = (value: PackageExportValue): value is readonly PackageExportValue[] => Array.isArray(value)
 const isMapRecord = (value: PackageExportValue): value is { readonly [key: string]: PackageExportValue } =>
   Predicate.isObject(value)
-
-const subpathOf = (specifier: string): string => {
-  const segments = specifier.split('/')
-  const nameSegments = Match.value(specifier.startsWith('@')).pipe(
-    Match.when(true, () => 2),
-    Match.orElse(() => 1),
-  )
-  return segments.slice(nameSegments).join('/')
-}
 
 const exportKeyOf = (subpath: string): string =>
   Match.value(subpath.length === 0).pipe(
@@ -176,7 +168,7 @@ const declaredEntryOf = (manifest: S.Schema.Type<typeof PackageManifestFields>):
 
 const selectionOf = (command: SelectPackageEntryCommand): Selection =>
   Option.match(Option.fromUndefinedOr(command.manifest.exports), {
-    onSome: (exports) => declaredTargetOf(exports, exportKeyOf(subpathOf(command.specifier))),
+    onSome: (exports) => declaredTargetOf(exports, exportKeyOf(packageSpecifierOf(command.specifier).subpath)),
     onNone: () => declaredEntryOf(command.manifest),
   })
 
