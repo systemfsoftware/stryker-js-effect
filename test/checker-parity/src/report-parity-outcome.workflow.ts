@@ -12,6 +12,9 @@ import {
   type ObservedVerdict,
   type ParityBroken,
   type SideTotals,
+  type TypeQueryAnswerCounts,
+  type TypeQueryProjectShare,
+  type TypeQuerySummary,
   type Violation,
 } from './compare-sides.workflow.js'
 import { DriverFailure } from './DriverFailure.schema.js'
@@ -96,6 +99,11 @@ const describeViolation = (violation: Violation): string =>
     SlowerThanMain: (slower) => `${slower.code} branch ${slower.branchMs} ms, main ${slower.mainMs} ms`,
     NothingCompared: (nothing) =>
       `${nothing.code} 0 mutants compared across ${nothing.projectCount} project(s), ${nothing.skippedCount} skipped`,
+    WrongNotAssignable: (wrong) =>
+      `${wrong.code} ${wrong.project} ${wrong.mutantId} ${wrong.fileName}:${wrong.line} candidate ${
+        JSON.stringify(wrong.candidate)
+      } (${wrong.candidateType}) not assignable to ${wrong.contextualType} but verdict ${wrong.verdict}`,
+    ZeroNotAssignable: (zero) => zero.code,
     UnitOverBudgetViolation: (over) =>
       `${over.code} ${over.side} ${over.project} ${over.fileName} mutants ${over.mutantIds.join(',')}`,
   })
@@ -109,6 +117,8 @@ const projectOf = (violation: Violation): Option.Option<string> =>
     ZeroShortcuts: () => Option.none(),
     SlowerThanMain: () => Option.none(),
     NothingCompared: () => Option.none(),
+    WrongNotAssignable: (wrong) => Option.some(wrong.project),
+    ZeroNotAssignable: () => Option.none(),
     UnitOverBudgetViolation: (over) => Option.some(over.project),
   })
 
@@ -121,6 +131,8 @@ const locationOf = (violation: Violation): string =>
     ZeroShortcuts: () => '',
     SlowerThanMain: () => '',
     NothingCompared: () => '',
+    WrongNotAssignable: (wrong) => `file=${escapeProperty(wrong.fileName)},line=${wrong.line},`,
+    ZeroNotAssignable: () => '',
     UnitOverBudgetViolation: (over) => `file=${escapeProperty(over.fileName)},`,
   })
 
@@ -210,6 +222,32 @@ const scopeLinesOf = (legs: ReadonlyArray<LegScope>, first: LegScope): ReadonlyA
 const scopeLines = (legs: ReadonlyArray<LegScope>): ReadonlyArray<string> =>
   Option.match(Arr.head(legs), { onNone: () => [], onSome: (first) => scopeLinesOf(legs, first) })
 
+const unknownReasonsText = (share: TypeQueryProjectShare): string =>
+  Arr.match(Object.entries(share.unknownReasons).filter(([, count]) => count > 0), {
+    onEmpty: () => '',
+    onNonEmpty: (reasons) => ` (${reasons.map(([reason, count]) => `${reason} ${count}`).join(', ')})`,
+  })
+
+const typeQueryProjectLine = (share: TypeQueryProjectShare): string =>
+  `  - ${share.project}: ${share.queried} answered, ${share.notAssignable} NotAssignable, ${share.unknown} Unknown${
+    unknownReasonsText(share)
+  }, ${share.refusedFiles} file(s) refused (${share.refusedMutants} mutants)${
+    Boolean.match(share.queried === 0, { onTrue: () => ' - no answers', onFalse: () => '' })
+  }`
+
+const answerCountsText = (counts: TypeQueryAnswerCounts): string =>
+  `${counts.assignable} Assignable, ${counts.notAssignable} NotAssignable, ${counts.unknown} Unknown`
+
+const typeQueryLines = (typeQuery: TypeQuerySummary): ReadonlyArray<string> => [
+  `- type query: ${typeQuery.queried} answered (${
+    answerCountsText(typeQuery.answers)
+  }), ${typeQuery.refusedFiles} file(s) refused, peak ${typeQuery.peakServers} server(s)`,
+  `- type query by site kind: expression ${answerCountsText(typeQuery.answersBySiteKind.expression)}; function-body ${
+    answerCountsText(typeQuery.answersBySiteKind['function-body'])
+  }`,
+  ...typeQuery.projects.map(typeQueryProjectLine),
+]
+
 const summaryMarkdown = (
   verdict: 'FAIL' | 'pass',
   finished: CompareFinished,
@@ -225,6 +263,7 @@ const summaryMarkdown = (
     `- main: ${ratiosOf(summary.main)}`,
     `- branch: ${ratiosOf(summary.branch)}`,
     `- shortcuts: ${summary.shortcutCount.overall} overall, ${summary.shortcutCount.isolatedDeclarations} on the isolatedDeclarations fixture`,
+    ...typeQueryLines(summary.typeQuery),
     '',
   ].join('\n')
 }
