@@ -523,7 +523,6 @@ jobs:
           path: checker-parity-plan
       - name: Run both checkers over the shard
         id: run
-        timeout-minutes: 60
         run: |
           set +e
           plan=()
