@@ -1,7 +1,7 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Checker as CheckerCapability, Worker } from '@systemfsoftware/stryker-js'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Checker, Options, Plugin } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, Options, Plugin, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Trace } from '@systemfsoftware/stryker-js-plugin-runtime'
 import * as Effect from 'effect/Effect'
 import * as Exit from 'effect/Exit'
@@ -49,6 +49,16 @@ const makeCheckerServer = (
           ),
         group: ({ mutants }) => Effect.succeed([mutants.map((m) => m.id)]),
         digest: () => Effect.succeed(FAKE_DIGEST),
+        capabilities: () => Effect.succeed({ typeQuery: [] }),
+        typeQuery: () =>
+          Effect.fail(
+            TypeQuery.TypeQueryRefused.make({
+              version: 2,
+              reason: 'unsupported-version',
+              nextAction:
+                'This checker declares no type-query versions; send type queries to one whose capabilities list the version.',
+            }),
+          ),
       }),
     ),
     Layer.provide(RpcServer.layerProtocolSocketServer),
