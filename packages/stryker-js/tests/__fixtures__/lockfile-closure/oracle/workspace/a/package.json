@@ -1,0 +1,12 @@
+{
+  "name": "oracle-a",
+  "private": true,
+  "dependencies": {
+    "@oracle/scoped-alias": "npm:@types/ms@0.7.34",
+    "@std/jsonc": "jsr:1.0.2",
+    "ms": "2.1.2",
+    "plain-alias": "npm:is-odd@3.0.1",
+    "react": "18.2.0",
+    "use-sync-external-store": "1.2.0"
+  }
+}
