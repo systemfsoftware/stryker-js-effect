@@ -63,10 +63,10 @@ _What the lane packs and installs is computed from the manifests, never enumerat
 
 _Each step of a multi-phase install owns exactly one failure class, and its message names it._ The step boundary is what makes a red lane self-diagnosing:
 
-| Step                                                      | Signature                                                                                          | Owner                                                                                                                                             |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm install the <fixture> registry dependencies`         | `ERESOLVE` on the fixture's own pinned dev/runtime deps                                            | the fixture's dependency pins — a test-matrix decision, e.g. a `^N` range whose publisher later peers a newer exact version than the fixture pins |
-| `npm install the workspace closure tarballs in <fixture>` | `ETARGET` naming a `@systemfsoftware/stryker-*` package, or any failure resolving a closure member | this defect class (I1)                                                                                                                            |
+| Step                                       | Signature                                                                                            | Owner                                                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `plan the workspace closure install`       | `UnpackedWorkspaceDependency` naming a `@systemfsoftware/stryker-*` package the closure did not pack | this defect class (I1)                                                                            |
+| `[bake] <fixture>: npm ci exited <status>` | npm ci's own `Missing: <name>@<version> from lock file`, `Invalid: …` or `EUSAGE`                    | a committed fixture lock that drifted from the closure: run `fixtures:lock` and commit the result |
 
 ## Anti-Pattern Code Smells
 
