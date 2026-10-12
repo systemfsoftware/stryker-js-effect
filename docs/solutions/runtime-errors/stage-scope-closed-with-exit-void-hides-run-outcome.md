@@ -63,7 +63,7 @@ Effect.gen(function*() {
 
 Invariant: **a child scope closed from a parent finalizer inherits the parent's exit.** A finalizer's `exit` is whatever its owning scope was closed with. Hard-coding `Exit.void` at the stage boundary turned every failed or interrupted run into a success for every stage-scoped finalizer. Forwarding the parent's exit restores the real outcome, and only finalizers that read `exit` change behavior. In this codebase that is only the `TemporaryDirectory` finalizer.
 
-A threshold break is not a failure here. `determineExitCode` returns the exit class as a value, so the scope exits successfully and `cleanTempDir: true` removes the sandbox. That matches "the run completed".
+A threshold break is not a failure here. The mutation verdict cell (`mutationVerdictCell`) returns the exit class as a value, so the scope exits successfully and `cleanTempDir: true` removes the sandbox. That matches "the run completed".
 
 ## Prevention
 
