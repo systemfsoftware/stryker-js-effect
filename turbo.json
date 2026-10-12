@@ -1,5 +1,9 @@
 {
   "$schema": "https://v2-10-1.turborepo.dev/schema.json",
+  "futureFlags": {
+    "affectedUsingTaskInputs": true,
+    "githubActionsRemoteBaseRefFallback": true
+  },
   "globalPassThroughEnv": [
     "XDG_CACHE_HOME"
   ],

@@ -3,6 +3,17 @@
     "strict": true,
     "noImplicitOverride": true
   },
+  "permissions": {
+    "default": {
+      "read": true,
+      "write": true,
+      "env": true,
+      "run": [
+        "git",
+        "../node_modules/.bin/turbo"
+      ]
+    }
+  },
   "minimumDependencyAge": {
     "age": "P1D"
   },

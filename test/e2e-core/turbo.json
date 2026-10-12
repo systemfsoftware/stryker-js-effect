@@ -1,0 +1,13 @@
+{
+  "$schema": "https://v2-10-1.turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/test/e2e/tests/**/*.e2e.test.ts",
+        "$TURBO_ROOT$/packages/stryker-js-instrumenter/testResources/effect-concurrency/**"
+      ]
+    }
+  }
+}
