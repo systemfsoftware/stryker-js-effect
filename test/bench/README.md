@@ -34,7 +34,9 @@ The `Bench` step reads these variables. Its own `env` in `bench.yml` sets
 read), `BENCH_BASE_SHA`, `BENCH_HEAD_SHA`, `BENCH_REF`, `BENCH_ENTRY` and
 `BENCH_SETUP_TIMINGS`; the job's first step writes `JOB_STARTED_AT` to
 `GITHUB_ENV`; the runner sets `RUNNER_TEMP` and `GITHUB_STEP_SUMMARY`. When any
-is missing the leg aborts with `environment-incomplete`.
+is missing the leg aborts with `environment-incomplete`. That abort writes no
+`bench-report.json` and no step summary; its `::error` annotation is the only
+signal.
 
 The report heading and the verdict line name the ref (`BENCH_REF`). A manual
 `workflow_dispatch` may run on any ref; off `refs/heads/main` a regression's next
