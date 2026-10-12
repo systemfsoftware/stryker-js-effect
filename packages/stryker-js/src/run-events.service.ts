@@ -27,29 +27,28 @@ export interface WorkerReportsShape {
 export class WorkerReports extends Context.Service<WorkerReports, WorkerReportsShape>()(
   '@systemfsoftware/stryker-js/run-events.service/WorkerReports',
 ) {
-  static readonly layer: Layer.Layer<WorkerReports, never, RunEvents> = Layer.effect(
-    WorkerReports,
-    Effect.gen(function*() {
-      const queue = yield* RunEvents
-      const counters: Record<RunEvent.WorkerRole, Ref.Ref<number>> = {
-        testRunner: yield* Ref.make(0),
-        checker: yield* Ref.make(0),
-      }
-      return WorkerReports.of({
-        report: (role, startupMs) =>
-          Effect.gen(function*() {
-            const index = yield* Ref.getAndUpdate(counters[role], (current) => current + 1)
-            yield* Queue.offer(
-              queue,
-              RunEvent.WorkerReported.make({
-                schemaVersion: RunEvent.StreamSchemaVersion.literal,
-                role,
-                index,
-                startupMs,
-              }),
-            )
-          }),
-      })
-    }),
-  )
+  static readonly make: Effect.Effect<WorkerReportsShape, never, RunEvents> = Effect.gen(function*() {
+    const queue = yield* RunEvents
+    const counters: Record<RunEvent.WorkerRole, Ref.Ref<number>> = {
+      testRunner: yield* Ref.make(0),
+      checker: yield* Ref.make(0),
+    }
+    return WorkerReports.of({
+      report: (role, startupMs) =>
+        Effect.gen(function*() {
+          const index = yield* Ref.getAndUpdate(counters[role], (current) => current + 1)
+          yield* Queue.offer(
+            queue,
+            RunEvent.WorkerReported.make({
+              schemaVersion: RunEvent.StreamSchemaVersion.literal,
+              role,
+              index,
+              startupMs,
+            }),
+          )
+        }),
+    })
+  })
+
+  static readonly layer: Layer.Layer<WorkerReports, never, RunEvents> = Layer.effect(this, this.make)
 }
