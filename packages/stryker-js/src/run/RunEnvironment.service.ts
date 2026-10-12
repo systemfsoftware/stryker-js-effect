@@ -21,7 +21,7 @@ import { ProjectFiles } from '../project-files.service.js'
 import { ReporterOutput } from '../reporter-output.service.js'
 import { Reporter } from '../reporter.service.js'
 import type { RunEventStream } from '../run-event-stream.service.js'
-import { RunEvents, WorkerReportsLive } from '../run-events.service.js'
+import { RunEvents, WorkerReports } from '../run-events.service.js'
 import { IdGenerator } from '../Worker.service.js'
 import { PhaseClock } from './phase-clock.service.js'
 import type { EnginePorts, RunStageServices } from './StageServices.service.js'
@@ -38,7 +38,7 @@ export interface RunEnvironmentShape {
 export class RunEnvironment extends Context.Service<RunEnvironment, RunEnvironmentShape>()(
   '@systemfsoftware/stryker-js/run/RunEnvironment.service/RunEnvironment',
 ) {
-  static readonly stage: {
+  static readonly layerStage: {
     (
       env: RunEnvironmentShape,
       events?: Queue.Queue<RunEvent.RunEvent, Cause.Done>,
@@ -109,7 +109,7 @@ const stageLayerOf = (
   const stageLayer = Layer.mergeAll(
     Layer.succeed(RunEnvironment, env),
     eventsLayer,
-    WorkerReportsLive.pipe(Layer.provide(eventsLayer)),
+    WorkerReports.layer.pipe(Layer.provide(eventsLayer)),
     PhaseClock.layer(env.runStartedAt),
     IdGenerator.layer,
     ProjectFiles.layer,
