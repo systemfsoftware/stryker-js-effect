@@ -775,6 +775,15 @@
     "attributes": {}
   },
   {
+    "id": "rpc.typeQuery",
+    "name": "rpc.typeQuery",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
     "id": "stryker.run.conclude",
     "name": "stryker.run.conclude",
     "attributes": {}
@@ -887,6 +896,11 @@
   {
     "id": "stryker.sandbox.move_entry",
     "name": "stryker.sandbox.move_entry",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.prepare",
+    "name": "stryker.sandbox.prepare",
     "attributes": {}
   },
   {
