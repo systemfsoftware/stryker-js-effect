@@ -344,7 +344,7 @@ const executePlan = (workspace: Workspace): Effect.Effect<PlanObservation, never
             console: consoleService,
           },
         },
-      }).pipe(Effect.provide(Engine.nodePlatformLayer))
+      }).pipe(Effect.provide(Engine.nodePlatformLayer), Effect.orDie)
       const events = [
         ...(yield* Queue.takeAll(queue).pipe(
           Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
