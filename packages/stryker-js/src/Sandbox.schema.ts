@@ -1,8 +1,21 @@
+import type { Format } from '@systemfsoftware/stryker-js-instrumenter'
+import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Predicate from 'effect/Predicate'
 import * as S from 'effect/Schema'
+
+import type { Project } from './Project.schema.js'
+
+export interface SandboxSpec {
+  readonly options: Options.StrykerOptions
+  readonly project: Project
+  readonly workingDirectory: string
+  readonly backupDirectory: string
+  readonly basePath: string
+  readonly formatRegistry: Format.FormatRegistry
+}
 
 const JsonRecord = S.Record(S.String, S.Unknown)
 
