@@ -4,13 +4,30 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
+import * as SchemaGetter from 'effect/SchemaGetter'
 
 const ScoreJudgementTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js/ScoreJudgement')
 type ScoreJudgementTypeId = typeof ScoreJudgementTypeId
 
+const NoBreakThreshold = S.TaggedStruct('NoBreakThreshold', {})
+
+const BreakAt = S.TaggedStruct('BreakAt', { threshold: Report.Percentage })
+
+const BreakThresholdFromOption = S.NullOr(Report.Percentage).pipe(
+  S.decodeTo(S.Union([NoBreakThreshold, BreakAt]), {
+    decode: SchemaGetter.transform((threshold: number | null) =>
+      Option.match(Option.fromNullOr(threshold), {
+        onNone: () => NoBreakThreshold.make({}),
+        onSome: (present) => BreakAt.make({ threshold: present }),
+      })
+    ),
+    encode: SchemaGetter.forbidden(() => 'a break threshold is read from options, never written back'),
+  }),
+)
+
 export class JudgeMutationScoreCommand extends S.TaggedClass<JudgeMutationScoreCommand>()('JudgeMutationScoreCommand', {
   score: Report.MutationScore,
-  breakingThreshold: S.NullOr(Report.Percentage),
+  breakingThreshold: BreakThresholdFromOption,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -67,23 +84,19 @@ const scoredAgainst = (percentage: number) => (threshold: number): ScoreJudgemen
     Match.exhaustive,
   )
 
-const scored = (breakingThreshold: number | null) => ({ percentage }: { readonly percentage: number }) =>
-  Option.match(Option.fromNullishOr(breakingThreshold), {
-    onNone: (): ScoreJudgement => ScoredWithoutThreshold.make({ percentage, exitClass: null }),
-    onSome: scoredAgainst(percentage),
-  })
-
-const unscored = (breakingThreshold: number | null) => () =>
-  Option.match(Option.fromNullishOr(breakingThreshold), {
-    onNone: (): ScoreJudgement => UnscoredWithoutThreshold.make({ exitClass: null }),
-    onSome: (threshold): ScoreJudgement => UnscoredAgainstThreshold.make({ threshold, exitClass: null }),
-  })
-
 const decide = (command: JudgeMutationScoreCommand): Result.Result<ScoreJudgement, never> =>
   Result.succeed(
     Match.valueTags(command.score, {
-      Scored: scored(command.breakingThreshold),
-      Unscored: unscored(command.breakingThreshold),
+      Scored: ({ percentage }) =>
+        Match.valueTags(command.breakingThreshold, {
+          NoBreakThreshold: (): ScoreJudgement => ScoredWithoutThreshold.make({ percentage, exitClass: null }),
+          BreakAt: ({ threshold }) => scoredAgainst(percentage)(threshold),
+        }),
+      Unscored: () =>
+        Match.valueTags(command.breakingThreshold, {
+          NoBreakThreshold: (): ScoreJudgement => UnscoredWithoutThreshold.make({ exitClass: null }),
+          BreakAt: ({ threshold }): ScoreJudgement => UnscoredAgainstThreshold.make({ threshold, exitClass: null }),
+        }),
     }),
   )
 
