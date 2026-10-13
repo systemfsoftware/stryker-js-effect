@@ -78,33 +78,30 @@ const changeText = (entry: string, phase: string, deltaMs: number, deltaShareOfA
 const metricText = (metric: RegressedMetric): string =>
   changeText(metric.entry, metric.phase, metric.deltaMs, metric.deltaShareOfA)
 
-const improvedItemsOf = (projects: ReadonlyArray<BenchProjectSummary>): ReadonlyArray<string> =>
-  Arr.flatMap(projects, (project) =>
-    Arr.flatMap(project.rows, (row) =>
-      Match.valueTags(row.verdict, {
-        improved: (verdict): ReadonlyArray<string> => [
-          `improved ${changeText(project.entry, row.phase, verdict.deltaMs, verdict.deltaShareOfA)}`,
-        ],
-        regressed: (): ReadonlyArray<string> => [],
-        'no-signal': (): ReadonlyArray<string> => [],
-        'workload-unverified': (): ReadonlyArray<string> => [],
-        'not-measured': (): ReadonlyArray<string> => [],
-      })))
+interface PhaseChange {
+  readonly direction: 'improved' | 'slower'
+  readonly text: string
+}
 
-const phaseOnlyRegressedItemsOf = (projects: ReadonlyArray<BenchProjectSummary>): ReadonlyArray<string> =>
+const phaseChangesOf = (projects: ReadonlyArray<BenchProjectSummary>): ReadonlyArray<PhaseChange> =>
   Arr.flatMap(projects, (project) =>
-    Arr.flatMap(project.rows, (row) =>
-      Match.valueTags(row.verdict, {
-        regressed: (verdict): ReadonlyArray<string> => [
-          `slower ${
-            changeText(project.entry, row.phase, verdict.deltaMs, verdict.deltaShareOfA)
-          } (phase only, not a regression)`,
-        ],
-        improved: (): ReadonlyArray<string> => [],
-        'no-signal': (): ReadonlyArray<string> => [],
-        'workload-unverified': (): ReadonlyArray<string> => [],
-        'not-measured': (): ReadonlyArray<string> => [],
-      })))
+    Arr.flatMap(project.rows, (row) => {
+      const changeOf =
+        (direction: PhaseChange['direction']) =>
+        (verdict: { readonly deltaMs: number; readonly deltaShareOfA: number }): ReadonlyArray<PhaseChange> => [
+          { direction, text: changeText(project.entry, row.phase, verdict.deltaMs, verdict.deltaShareOfA) },
+        ]
+      return Match.valueTags(row.verdict, {
+        improved: changeOf('improved'),
+        regressed: changeOf('slower'),
+        'no-signal': (): ReadonlyArray<PhaseChange> => [],
+        'workload-unverified': (): ReadonlyArray<PhaseChange> => [],
+        'not-measured': (): ReadonlyArray<PhaseChange> => [],
+      })
+    }))
+
+const itemsOf = (changes: ReadonlyArray<PhaseChange>, direction: PhaseChange['direction']): ReadonlyArray<string> =>
+  Arr.map(Arr.filter(changes, (change) => change.direction === direction), (change) => change.text)
 
 const RULE = '(N=4 per side, non-overlap and >= max(3%, 10 ms) rule; only a leg total decides a regression)'
 
@@ -146,11 +143,12 @@ const regressionAnnotation = (
   )
 
 const summarizedAnnotation = (ref: string, summarized: SummarizedOutcome): Annotation => {
-  const improved = improvedItemsOf(summarized.projects)
+  const changes = phaseChangesOf(summarized.projects)
+  const improved = Arr.map(itemsOf(changes, 'improved'), (text) => `improved ${text}`)
   return Option.match(Option.fromNullishOr(summarized.regression), {
     onSome: (regression) => regressionAnnotation(ref, regression, improved, summarized.projects),
     onNone: () => {
-      const phaseOnly = phaseOnlyRegressedItemsOf(summarized.projects)
+      const phaseOnly = Arr.map(itemsOf(changes, 'slower'), (text) => `slower ${text} (phase only, not a regression)`)
       const title = Boolean.match(phaseOnly.length > 0, {
         onTrue: () => 'Bench phase-only slowdown',
         onFalse: () =>
