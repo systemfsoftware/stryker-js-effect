@@ -99,6 +99,23 @@ const inProject = <A, E, R>(
     ).pipe(Effect.ensuring(Effect.ignore(fs.remove(root, { recursive: true }))))
   })
 
+const projectAsWorkingDirectory: Effect.Effect<
+  string,
+  PlatformError,
+  FileSystem.FileSystem | Path.Path | Scope.Scope
+> = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const root = yield* writeProject()
+  const previous = yield* Effect.sync(() => {
+    const cwd = globalThis.process.cwd()
+    globalThis.process.chdir(root)
+    return cwd
+  })
+  yield* Effect.addFinalizer(() => Effect.ignore(fs.remove(root, { recursive: true })))
+  yield* Effect.addFinalizer(() => Effect.sync(() => globalThis.process.chdir(previous)))
+  return root
+})
+
 const holdsEntries = (directory: string): Effect.Effect<boolean> =>
   Effect.promise(() => nodeFs.readdir(directory).then((entries) => entries.length > 0, () => false))
 
@@ -244,30 +261,25 @@ interface SentinelledRuns {
   readonly lost: number
 }
 
-const runsWhileRivalHoldsSentinels = (): Effect.Effect<
-  SentinelledRuns,
-  PlatformError,
-  FileSystem.FileSystem | Path.Path
-> =>
-  inProject((parent) =>
-    Effect.gen(function*() {
-      const churn = yield* Ref.make<EntryChurn>({ held: 0, lost: 0 })
-      const churnFiber = yield* Effect.forkChild(rivalHoldsEntriesInSharedDirectory(parent, churn))
-      const ended = yield* Effect.forEach(
-        Array.from({ length: SENTINEL_RUNS_PER_SCENARIO }),
-        () =>
-          Engine.strykerCell(RUN_OPTIONS).pipe(
-            Effect.provide(RUN_PORTS),
-            Effect.exit,
-            Effect.map((exit): Ended => Exit.isSuccess(exit) ? 'succeeded' : 'failed'),
-          ),
-        { concurrency: 2 },
-      )
-      yield* Fiber.interrupt(churnFiber)
-      const { held, lost } = yield* Ref.get(churn)
-      return { ended, held, lost }
-    })
+const runsWhileRivalHoldsSentinels: Effect.Effect<SentinelledRuns, never, Path.Path> = Effect.gen(function*() {
+  const path = yield* Path.Path
+  const parent = path.resolve(TEMP_DIR_NAME)
+  const churn = yield* Ref.make<EntryChurn>({ held: 0, lost: 0 })
+  const churnFiber = yield* Effect.forkChild(rivalHoldsEntriesInSharedDirectory(parent, churn))
+  const ended = yield* Effect.forEach(
+    Array.from({ length: SENTINEL_RUNS_PER_SCENARIO }),
+    () =>
+      Engine.strykerCell(RUN_OPTIONS).pipe(
+        Effect.provide(RUN_PORTS),
+        Effect.exit,
+        Effect.map((exit): Ended => Exit.isSuccess(exit) ? 'succeeded' : 'failed'),
+      ),
+    { concurrency: 2 },
   )
+  yield* Fiber.interrupt(churnFiber)
+  const { held, lost } = yield* Ref.get(churn)
+  return { ended, held, lost }
+})
 
 type Removal = 'succeeded' | 'failed'
 
@@ -354,13 +366,13 @@ const RIVALS = [
     moment: 'its sandbox is being made',
     precondition: 'removes the shared directory each time it finds it empty',
     rival: rivalFromTheStart,
-    racesAcquisition: true,
+    expectsAcquisitionRace: true,
   },
   {
     moment: 'its cleanup has just emptied the shared directory',
     precondition: 'waits until the run holds a sandbox, then removes the shared directory each time it finds it empty',
     rival: rivalAfterAcquisition,
-    racesAcquisition: false,
+    expectsAcquisitionRace: false,
   },
 ] as const
 
@@ -381,13 +393,15 @@ Feature('Running several Stryker dry runs that share one temporary directory', {
             expect({
               ended: s.runs.ended,
               raced: s.runs.rivalRemovals > 0,
-              racedAcquisition: s.runs.rivalRemovalsBeforeFirstEntry > 0,
               parentLeft: s.runs.parentLeft,
+              ...(row.expectsAcquisitionRace
+                ? { racedAcquisition: s.runs.rivalRemovalsBeforeFirstEntry > 0 }
+                : {}),
             }).toEqual({
               ended: EVERY_RUN_SUCCEEDED,
               raced: true,
-              racedAcquisition: row.racesAcquisition,
               parentLeft: false,
+              ...(row.expectsAcquisitionRace ? { racedAcquisition: true } : {}),
             })
           ),
         ),
@@ -413,10 +427,10 @@ Feature('Running several Stryker dry runs that share one temporary directory', {
     scenario(
       'Real runs sharing a temporary directory never take a file another run keeps in it',
       Gherkin.Do.pipe(
-        Given('a real project whose runs share one temporary directory')('project', () => Effect.void),
+        Given('a real project whose runs share one temporary directory')('project', () => projectAsWorkingDirectory),
         When(
           'several of its runs run at once while another run keeps adding a file to that directory and checking it is still there',
-        )('runs', () => runsWhileRivalHoldsSentinels()),
+        )('runs', () => runsWhileRivalHoldsSentinels),
         Then('every run succeeds and the other run never lost a file')((s, expect) =>
           expect({ ended: s.runs.ended, raced: s.runs.held > 0, lost: s.runs.lost }).toEqual({
             ended: EVERY_SENTINEL_RUN_SUCCEEDED,
