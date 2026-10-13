@@ -574,29 +574,35 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
         Then('both the single project run and the orchestrated run exit two naming the plan and the missing ids')((
           s,
           expect,
-        ) =>
-          expect({
+        ) => {
+          const missingIds = [...new Set(s.ran.plannedIds)]
+          const namedIds = missingIds.slice(0, 5)
+          return expect({
             leafExitCode: s.ran.leaf.exitCode,
             leafNamesThePlan: s.ran.leaf.stderr.includes(CURRENT_FILE),
+            missesAtLeastSix: missingIds.length >= 6,
             leafNamesTheCount: s.ran.leaf.stderr.includes(
-              `schedules ${new Set(s.ran.plannedIds).size} mutant(s) this run does not discover`,
+              `schedules ${missingIds.length} mutant(s) this run does not discover`,
             ),
-            leafNamesAMissingId: s.ran.plannedIds.some((id) => s.ran.leaf.stderr.includes(id)),
-            leafNamesTheNext: s.ran.leaf.stderr.includes('re-run stryker plan'),
+            leafNamesTheMissingIds: s.ran.leaf.stderr.includes(
+              `schedules ${missingIds.length} mutant(s) this run does not discover: ${namedIds.join(', ')}, +${
+                missingIds.length - namedIds.length
+              } more; re-run stryker plan`,
+            ),
             leafShardDir: s.ran.shardDir,
             orchestratedExitCode: s.ran.orchestrated.exitCode,
             orchestratedNamesTheRefusal: s.ran.orchestrated.stderr.includes('the shard plan at'),
           }).toEqual({
             leafExitCode: 2,
             leafNamesThePlan: true,
+            missesAtLeastSix: true,
             leafNamesTheCount: true,
-            leafNamesAMissingId: true,
-            leafNamesTheNext: true,
+            leafNamesTheMissingIds: true,
             leafShardDir: false,
             orchestratedExitCode: 2,
             orchestratedNamesTheRefusal: true,
           })
-        ),
+        }),
       ),
     )
 
