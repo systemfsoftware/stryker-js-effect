@@ -185,12 +185,23 @@ Feature('Running one shard of a shard plan', { timeout: 180_000 })
           'ran',
           (s) => spawnCli(s.root, ['run', '--plan', 'missing-plan.json', '--shard', '1/1'], 'human'),
         ),
-        Then('the run fails with the configuration class and names the reason')((s, expect) =>
+        Then('the run fails with the configuration class and names the reason, its code and the next step')((
+          s,
+          expect,
+        ) =>
           expect({
             exitCode: s.ran.exitCode,
             namesTheReason: s.ran.stderr.includes('cannot read the plan file'),
+            namesTheCode: s.ran.stderr.includes('plan-unreadable'),
+            namesTheNext: s.ran.stderr.includes('next: check the --plan path'),
             namesTheClass: s.ran.stderr.includes('exit 2 (ConfigError)'),
-          }).toStrictEqual({ exitCode: 2, namesTheReason: true, namesTheClass: true })
+          }).toStrictEqual({
+            exitCode: 2,
+            namesTheReason: true,
+            namesTheCode: true,
+            namesTheNext: true,
+            namesTheClass: true,
+          })
         ),
       ),
     )
