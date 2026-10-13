@@ -8,7 +8,7 @@ export default defineConfig({
   format: 'esm',
   dts: true,
   tsconfig: './tsconfig.build.json',
-  exports: sourceExports({ dtsExt: '.d.mts', documents: ['./oxlint.config.ts'] }),
+  exports: sourceExports({ dtsExt: '.d.mts' }),
 
   clean: true,
   define: { 'import.meta.vitest': 'undefined' },
