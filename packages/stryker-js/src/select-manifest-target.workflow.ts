@@ -46,7 +46,7 @@ const ownValueOf = (record: S.JsonObject, key: string): Option.Option<S.Json> =>
     onFalse: () => Option.none(),
   })
 
-const stringOf = (value: S.Json): Option.Option<string> => Option.liftPredicate(value, Predicate.isString)
+const stringOf = (value: S.Json | undefined): Option.Option<string> => Option.liftPredicate(value, Predicate.isString)
 
 const isEntryList = (value: S.Json): value is ReadonlyArray<S.Json> => Array.isArray(value)
 
@@ -55,14 +55,17 @@ const conditionValueOption = (conditions: S.JsonObject): Option.Option<S.Json> =
 
 const entryTargetOfEntry = (entry: S.Json): Option.Option<string> =>
   Match.value(entry).pipe(
-    Match.when(Predicate.isString, (target) => Option.some(target)),
+    Match.when(Predicate.isString, stringOf),
     Match.when(isEntryList, (fallbacks) => Option.flatMap(Arr.head(fallbacks), entryTargetOfEntry)),
     Match.when(isEntryMap, (conditions) => Option.flatMap(conditionValueOption(conditions), entryTargetOfEntry)),
     Match.orElse(() => Option.none()),
   )
 
+const exactEntryOption = (entries: S.JsonObject, key: string): Option.Option<Option.Option<string>> =>
+  Option.map(ownValueOf(entries, key), entryTargetOfEntry)
+
 const entryTargetOption = (entries: S.JsonObject, key: string): Option.Option<string> =>
-  Option.flatMap(ownValueOf(entries, key), entryTargetOfEntry)
+  Option.flatten(exactEntryOption(entries, key))
 
 const patternMatchOf = (matchKey: string) => (key: string): Option.Option<PatternMatch> => {
   const star = key.indexOf(PATTERN_WILDCARD)
@@ -87,9 +90,6 @@ const PATTERN_PRECEDENCE: Order.Order<PatternMatch> = Order.combine(
   Order.mapInput(Order.flip(Order.Number), (match: PatternMatch) => match.key.length),
 )
 
-const exactEntryOption = (entries: S.JsonObject, key: string): Option.Option<Option.Option<string>> =>
-  Option.map(ownValueOf(entries, key), entryTargetOfEntry)
-
 const patternEntryOption = (entries: S.JsonObject, matchKey: string): Option.Option<Option.Option<string>> =>
   Option.map(
     Arr.head(Arr.sort(Arr.getSomes(Object.keys(entries).map(patternMatchOf(matchKey))), PATTERN_PRECEDENCE)),
@@ -112,7 +112,10 @@ const entryKeyOf = (subpath: string): string =>
   })
 
 const rootEntryOption = (root: S.Json, subpath: string): Option.Option<Option.Option<string>> =>
-  Option.liftPredicate(entryTargetOfEntry(root), () => isRootSubpath(subpath))
+  Boolean.match(isRootSubpath(subpath), {
+    onTrue: () => Option.some(entryTargetOfEntry(root)),
+    onFalse: () => Option.none(),
+  })
 
 const exportsEntryOption = (exports: S.Json, subpath: string): Option.Option<Option.Option<string>> =>
   Match.value(exports).pipe(
@@ -139,10 +142,7 @@ const mapPathTargetOf = (target: string): ManifestTarget =>
   })
 
 const mainTargetOption = (manifest: PackageManifest): Option.Option<string> =>
-  Option.orElse(
-    Option.flatMap(Option.fromUndefinedOr(manifest.main), stringOf),
-    () => Option.flatMap(Option.fromUndefinedOr(manifest.module), stringOf),
-  )
+  Option.orElse(stringOf(manifest.main), () => stringOf(manifest.module))
 
 const rootFallbackOption = (manifest: PackageManifest, subpath: string): Option.Option<string> =>
   Option.flatMap(Option.liftPredicate(subpath, isRootSubpath), () => mainTargetOption(manifest))

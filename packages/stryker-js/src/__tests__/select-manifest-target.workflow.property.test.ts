@@ -64,7 +64,7 @@ const targetOf = (command: ManifestTargetCommand): string => `./${oneSegmentOf(c
 
 const keysOf = (command: ManifestTargetCommand): ReadonlyArray<string> => ['outer', ...textOf(command).split('/')]
 
-const drawnEntryOf = (command: ManifestTargetCommand): S.Json => command.manifest.exports ?? null
+const manifestExportsOf = (command: ManifestTargetCommand): S.Json => command.manifest.exports ?? null
 
 const imported = (subject: SelectSubject, command: ManifestTargetCommand, imports: S.Json, specifier: string) =>
   selected(subject, { ...command.manifest, imports }, PackageImportRequest.make({ specifier }))
@@ -238,16 +238,16 @@ describe('selectManifestTarget', () => {
     '∀c_Fallbacks_≡TheFirstElementDecidesWhateverFollows',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
-      const drawn = drawnEntryOf(command)
+      const entry = manifestExportsOf(command)
       const later = targetOf(command)
       const subpath = `x${oneSegmentOf(command)}`
       const key = exportKeyOf(subpath)
       const specifier = `#${subpath}`
       return [
-        exported(subject, command, { [key]: [drawn, later] }, subpath) ===
-          exported(subject, command, { [key]: drawn }, subpath),
-        imported(subject, command, { [specifier]: [drawn, later] }, specifier) ===
-          imported(subject, command, { [specifier]: drawn }, specifier),
+        exported(subject, command, { [key]: [entry, later] }, subpath) ===
+          exported(subject, command, { [key]: entry }, subpath),
+        imported(subject, command, { [specifier]: [entry, later] }, specifier) ===
+          imported(subject, command, { [specifier]: entry }, specifier),
       ].every((holds) => holds)
     },
   )
@@ -256,13 +256,13 @@ describe('selectManifestTarget', () => {
     '∀c_RootEntry_≡MainDecidesTheRootOnlyWhenExportsDeclaresNone',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
-      const drawn = drawnEntryOf(command)
+      const entry = manifestExportsOf(command)
       const main = targetOf(command)
       const rootOf = (manifest: PackageManifest) => selected(subject, manifest, ROOT_REQUEST)
-      const declared = { imports: command.manifest.imports ?? null, exports: { '.': drawn } }
+      const declared = { imports: command.manifest.imports ?? null, exports: { '.': entry } }
       return [
         rootOf({ ...declared, main }) === rootOf(declared),
-        rootOf({ ...declared, exports: { './feature': drawn }, main }) === `path:${main}`,
+        rootOf({ ...declared, exports: { './feature': entry }, main }) === `path:${main}`,
       ].every((holds) => holds)
     },
   )
@@ -281,14 +281,14 @@ describe('selectManifestTarget', () => {
     '∀c_ExactEntry_≡DecidesAloneWhateverPatternSitsBesideIt',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
-      const drawn = drawnEntryOf(command)
+      const entry = manifestExportsOf(command)
       const subpath = `x${oneSegmentOf(command)}`
       const specifier = `#${subpath}`
       return [
-        exported(subject, command, { './*': './wild/*', [`./${subpath}`]: drawn }, subpath) ===
-          exported(subject, command, { [`./${subpath}`]: drawn }, subpath),
-        imported(subject, command, { '#*': './any/*', [specifier]: drawn }, specifier) ===
-          imported(subject, command, { [specifier]: drawn }, specifier),
+        exported(subject, command, { './*': './wild/*', [`./${subpath}`]: entry }, subpath) ===
+          exported(subject, command, { [`./${subpath}`]: entry }, subpath),
+        imported(subject, command, { '#*': './any/*', [specifier]: entry }, specifier) ===
+          imported(subject, command, { [specifier]: entry }, specifier),
       ].every((holds) => holds)
     },
   )
