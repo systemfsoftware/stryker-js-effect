@@ -4,4 +4,4 @@
 "@systemfsoftware/stryker-js-typescript-checker": none
 ---
 
-Mutation: the repository's own mutation run now mutates `*.workflow.ts` files only and no longer `*.schema.ts` files (ADR-0004). No published file changes.
+No change to the published packages. The repository's own mutation run of these three packages now grades workflow files only, not schema files.

@@ -11,14 +11,14 @@ supersedes: ["ADR-0002 (mutation selection)"]
 
 This record supersedes ADR-0002 in part only: its statements that the mutation run grades `src/**/*.schema.ts` (line 16), that a schema file is "mutated" (lines 38, 46 and 69), and that "schema files are mutated against a break threshold of 100" (line 42). ADR-0002's decision on where pure operations over a schema's data live stays in force, as do its in-source laws.
 
-ADR-0001 (line 25) recorded that each package's mutation config grades only `src/**/*.workflow.ts`. ADR-0002 widened the graded population to schema files so that the operations it moved there would be mutated. The dogfood configs in `packages/stryker-js`, `packages/stryker-js-vitest-runner` and `packages/stryker-js-typescript-checker` then read `mutate: ['src/**/*.workflow.ts', 'src/**/*.schema.ts', …]`. On main at `25120175` those globs select 62 schema files and 101 workflow files. Main's Mutation run on that commit (run 38338484710, artifact `mutation-report-459`) scored 2,213 mutants in 60 of the schema files, beside 7,675 in the workflow files. The mutate set is a judgment surface: it decides which code the other streams' tests are graded against.
+ADR-0001 (line 25) states that each package's mutation config grades only `src/**/*.workflow.ts`, but the configs never matched it. The cell-architecture rewrite (`1cf39f2b`, 2026-09-26), the commit that added ADR-0001, gave the dogfood configs in `packages/stryker-js`, `packages/stryker-js-vitest-runner` and `packages/stryker-js-typescript-checker` `mutate: ['src/**/*.workflow.ts', 'src/**/*.schema.ts', …]`, and no later commit changed those globs. ADR-0002 changed no config. It took the schema glob as a given (its line 16) and placed pure operations in schema files partly because those files were already mutated (its line 38). On main at `25120175` those globs select 62 schema files and 101 workflow files. Main's Mutation run on that commit (run 38338484710, artifact `mutation-report-459`) scored 2,213 mutants in 60 of the schema files, beside 7,675 in the workflow files. The mutate set is a judgment surface: it decides which code the other streams' tests are graded against.
 
 On 2026-10-12 at 22:47 EDT Ryan ruled that mutation selects `*.workflow.ts` only, and that `*.schema.ts` is never in a mutate set.
 
 ## Decision Drivers
 
 - The mutate set grades decisions, and decisions live in `*.workflow.ts` files (ADR-0001, line 44).
-- One rule for every dogfood project, so a schema file is never graded in one package and skipped in another.
+- One rule for the dogfood projects this record covers, so a schema file is never graded in one of them and skipped in another.
 - A project with nothing to mutate has no config. The fork scores an empty mutate set as Unscored and exits 0, which would look like a pass.
 
 ## Considered Options
@@ -28,11 +28,11 @@ On 2026-10-12 at 22:47 EDT Ryan ruled that mutation selects `*.workflow.ts` only
 
 ## Decision Outcome
 
-Chosen option: "Workflow files only", because Ryan ruled on 2026-10-12 that a mutate set selects `*.workflow.ts` files and never `*.schema.ts`, and that restores ADR-0001's graded population of decisions.
+Chosen option: "Workflow files only", because Ryan ruled on 2026-10-12 that a mutate set selects `*.workflow.ts` files and never `*.schema.ts`. That also brings the configs in line with the rule ADR-0001 (line 25) states.
 
-Every dogfood `stryker.config.ts` selects `src/**/*.workflow.ts` and no `*.schema.ts` glob. A project with no workflow file deletes its config instead of keeping a mutate set that selects nothing. The project's ignorers stay, because they act on the mutants that the selected files contain. `@systemfsoftware/stryker-ignorer-effect-schema-declarations` still matched 744 of those mutants in workflow files on `25120175`: tagged-class tags and fields, symbol descriptions, tagged-struct tags, class identities, and generation and check annotations.
+The three dogfood `stryker.config.ts` files this record covers, in `packages/stryker-js`, `packages/stryker-js-vitest-runner` and `packages/stryker-js-typescript-checker`, select `src/**/*.workflow.ts` and no `*.schema.ts` glob. A project with no workflow file deletes its config instead of keeping a mutate set that selects nothing. The project's ignorers stay, because they act on the mutants that the selected files contain. `@systemfsoftware/stryker-ignorer-effect-schema-declarations` still matched 744 of those mutants in workflow files on `25120175`: tagged-class tags and fields, symbol descriptions, tagged-struct tags, class identities, and generation and check annotations.
 
-`test/e2e-core/stryker.config.ts` is not covered by this record. Stream D's dissolution of `test/e2e-core` removes that test tooling from Mutation.
+`test/e2e-core/stryker.config.ts` is not covered by this record and still names `src/**/*.schema.ts`, so Mutation's fourth project, `test/e2e-core`, keeps grading schema files until Stream D's dissolution of `test/e2e-core` removes that test tooling from Mutation.
 
 ### Consequences
 
@@ -43,7 +43,7 @@ Every dogfood `stryker.config.ts` selects `src/**/*.workflow.ts` and no `*.schem
 
 ### Confirmation
 
-- Review: no dogfood `stryker.config.ts` names a `*.schema.ts` glob in `mutate`.
+- Review: none of the three covered `stryker.config.ts` files names a `*.schema.ts` glob in `mutate`. `test/e2e-core/stryker.config.ts` keeps its glob until Stream D removes it.
 - Mutation's merged report on the next main run lists no `*.schema.ts` file for these three projects.
 
 ## Pros and Cons of the Options
