@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0547-fix-stryker-stream-files-out-of-project-inputs-plan.md
+supersedes: docs/plans/2026-10-13-0601-fix-stryker-stream-files-out-of-project-inputs-plan.md
 ---
 
 # No stream file Stryker writes enters the next run's inputs - Plan
@@ -14,9 +14,9 @@ supersedes: docs/plans/2026-10-13-0547-fix-stryker-stream-files-out-of-project-i
 
 - **Objective:** a project re-run through the `stryker` CLI with nothing changed reuses every verdict, whatever its `ignorePatterns` (including `[]`) and whether `stryker run` or `stryker --help` ran in it before (shard outputs are OQ6). A `progressStreamFile` set in the config file is where `stryker run` writes its stream, and a stream file that cannot be opened or written never silences the run's `stdout` records.
 - **Authority:** `CONSTITUTION.md`, then root `AGENTS.md`, then this plan. Stream J owns the CLI surface. This PR (#329) lands before PR #320 (the `--ignorePatterns` help text), which waits on it.
-- **Supersedes:** the 0547 plan, executed in `014b542a`; its full review found no P0 or P1, but AE8 graded only that the file failure was logged, not that it was logged once, and the write leg's recovery also caught interruptions and defects, logging them as file failures. This plan carries the corrected contract and 0547 is removed in the same PR (REPO-D2). 0547 superseded 0527 (`751a12cc`, merged with `main` in `bfad43ca`), 0505 (`25a46beb`), 0453 (`7a3af040`), 0421 (`39c401e4`, `1059dc39`), 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
+- **Supersedes:** the 0601 plan, executed in `54aeca2b`; its full review found no P0 or P1, but the drain's whole-run backstop still logged defects and interruptions as `stryker.output.drain_file_failed`, so R9's typed-only clause was false, and Assumptions said output entries no longer match as globs when they still do. This plan carries the corrected contract and 0601 is removed in the same PR (REPO-D2). 0601 superseded 0547 (`014b542a`), 0527 (`751a12cc`, merged with `main` in `bfad43ca`), 0505 (`25a46beb`), 0453 (`7a3af040`), 0421 (`39c401e4`, `1059dc39`), 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
 - **Citations:** line numbers name `main` at `ec1769de`, the base this branch was cut from, unless they name a file this PR changes.
-- **Open blockers:** none. OQ1, OQ2, OQ4, OQ5 and OQ6 go to the root and OQ3 to PR #320; none gates this unit.
+- **Open blockers:** none. OQ1, OQ2, OQ4, OQ5, OQ6 and OQ7 go to the root and OQ3 to PR #320; none gates this unit.
 
 ---
 
@@ -64,7 +64,7 @@ Cause in code:
 - R6. An empty `progressStreamFile`, from the config or the flag, keeps today's behaviour: the stream goes to the default path.
 - R7. A configured or flagged output path inside the project is left out of the inputs however it is spelled (`out/stream.jsonl`, `./out/stream.jsonl`, `out//stream.jsonl`, `out/stream.jsonl/`, nested) on every platform: the rule is the entry path the crawl gives that file. Containment is lexical: an absolute path counts only when it names the project through the path the crawl starts from.
 - R8. The path a run streams to is the path its own inputs leave out, even when a config function answers differently each time it is read.
-- R9. Under `--json`, a stream file that cannot be opened, or that refuses a write or a sync, from the config or the flag, is logged once as the drain's file failure on `stderr`; the file gets no further lines and every record still reaches `stdout`, as `tee` keeps writing standard output when a file operand fails ([tee(1p)](https://www.man7.org/linux/man-pages/man1/tee.1p.html)). Only typed file errors count; an interruption or a defect is not logged as a file failure. In human mode `stdout` never carried the records, so only the log applies.
+- R9. Under `--json`, a stream file that cannot be opened, or that refuses a write or a sync, from the config or the flag, is logged once as the drain's file failure (`stryker.output.drain_file_failed`) on `stderr`; the file gets no further lines and every record still reaches `stdout`, as `tee` keeps writing standard output when a file operand fails ([tee(1p)](https://www.man7.org/linux/man-pages/man1/tee.1p.html)). Only typed file errors count: a defect or an interruption anywhere in the drain is logged as `stryker.output.drain_failed`, the name the plain drain already uses, and is not recovered, because Effect treats a defect as a bug. In human mode `stdout` never carried the records, so only the log applies.
 
 ### Acceptance Examples
 
@@ -110,8 +110,9 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - OQ2 (for the root, outside this PR). A non-`run` command given a non-default `--progressStreamFile` writes a stream the next plain `stryker run` does not exclude, and a stream left at a previously configured path stays an input after the config moves it. Should non-`run` commands stop writing a stream file?
 - OQ3 (for PR #320, after this lands). #320 rebuilds `strykerOutputFilesOf` from option names for its help text and says "Other files under `reports/` are not ignored". After merging `main` it must keep `DEFAULT_PROGRESS_STREAM_FILE` in the list and name it in the help.
 - OQ4 (for the root, outside this PR). The default stream path is spelled in two packages: `DEFAULT_PROGRESS_STREAM_FILE` here and the option default in `packages/stryker-js-plugin-interface/src/stryker-options.schema.ts:252`. Should the plugin interface export it?
-- OQ5 (for the root, outside this PR). A config whose default export is a function is now called twice per `stryker run`, so one that throws or changes state on a later call fails a run `main` completed (measured below), and a shadowed legacy config warns twice. Should the config loader settle the export once per process and reuse that snapshot for every read, as `--survivors` and `--mutant` would also want?
+- OQ5 (for the root, outside this PR). A config whose default export is a function is now called twice per `stryker run`, so one that throws or changes state on a later call fails a run `main` completed (measured below), and a shadowed legacy config warns twice. A `--plan --shard` parent and each of its children are `run` invocations, so one sharded run evaluates the config once more per child (adversarial lens, round 12; not measured here). Should the config loader settle the export once per process and reuse that snapshot for every read, as `--survivors` and `--mutant` would also want?
 - OQ6 (for the root, outside this PR). `stryker run --plan --shard` children stream to `<outDir>/<project>/mutation-stream.jsonl` (`packages/stryker-js/src/shard/shard-run.ts:34-48`), and `outDir` defaults to `<planDirectory>/reports/shards/<index>` under the base path (`:93-96`). When the plan's directory is a project's own root, a later plain run of that project includes the file and re-runs every mutant, as on `main` (adversarial lens, round 9; not measured here). A shard child whose stream file cannot be written also leaves the previous run's file in place, which `stryker merge` accepts when the mutant ids match (adversarial lens, round 10; as on `main`, where the child's file was not written either). Should shard outputs join `strykerOutputFilesOf`, should the default `outDir` leave the project, and should a shard child clear its stream file before it runs?
+- OQ7 (for the root, outside this PR). Output entries are normalized, then compiled as ignore globs like every user pattern (`compileIgnoreRule` in `admit-discovered-entry.workflow.ts`), as on `main`. A configured path containing glob syntax keeps its glob meaning: `out/stream?.jsonl` also leaves out `out/stream1.jsonl`, and a leading `!` negates the rule (adversarial lens, round 12; not measured here). Should Stryker's own output entries be matched as literal paths?
 
 ### Sources
 
@@ -138,7 +139,7 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - "A drain whose file fails stops the run's output." On `main`, `--progressStreamFile` naming a directory exited 0 with no `stdout` record at all, and naming `/dev/full` exited 0 with no record and no log. The drain now logs the first failure and still writes every record to `stdout`. The exit code stays 0, unlike `tee`'s non-zero status: the run's own outcome decides it, and the file failure is logged as `stryker.output.drain_file_failed`.
 - "A failed write or sync can be retried." After the first failure the file gets no further lines, even if a later write would succeed. After a failed `fsync` the kernel may already have dropped the dirty pages and marked them clean, so a later sync can report success for data that never reached disk ([LWN, PostgreSQL's fsync() surprise](https://lwn.net/Articles/752063/)); a file whose contents are unknown is not extended. The file may end in a torn line; stream readers already skip undecodable lines.
 - "Only the configured stream path is excluded." The default path is excluded too; a project file of its own at `reports/mutation-stream.jsonl` is no longer an input and is not copied into the sandbox.
-- "An output entry is matched as written." Output entries are now named as the crawl names files before matching; a relative output name that relied on glob syntax (none of Stryker's do) is now matched as a path.
+- "An output entry is matched as written." Output entries are now named as the crawl names files before they compile as ignore globs. Glob syntax in an entry keeps its glob meaning, as on `main` (OQ7).
 
 ### Implementation Units
 
@@ -350,6 +351,17 @@ Round 11, full-path report-only review of `014b542a` (0 P0, 0 P1, 2 P2, 7 P3):
 | A short write leaves a torn last line                                                   | P3  | adversarial                         | Accepted: as on `main`; Assumptions names it                                                                                               |
 | The learning cites `StrykerOptions` where the schema constant is `StrykerOptionsSchema` | P3  | learnings                           | Fixed                                                                                                                                      |
 | `packages/stryker-js/README.md:200` says Stryker "never" counts the file                | P3  | learnings                           | Fixed: the sentence names the run's own resolved and default paths and re-runs with the same settings; it also states the file-failure log |
+
+Round 12, full-path report-only review of `54aeca2b` (0 P0, 0 P1, 1 P2, 6 P3):
+
+| Finding                                                                              | Sev | Lens                                                      | Disposition                                                                                                              |
+| ------------------------------------------------------------------------------------ | --- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| A defect in a write now ends `stdout` instead of being latched                       | P2  | adversarial                                               | Accepted, stated in R9: a defect is a bug by Effect's contract; recovering would hide it. It is logged as `drain_failed` |
+| The drain backstop logs defects and interruptions as `drain_file_failed`, against R9 | P3  | correctness, testing, standards, learnings, boundary pack | Fixed: the backstop logs under `stryker.output.drain_failed`                                                             |
+| A sharded run evaluates the config once more per child                               | P3  | adversarial                                               | Accepted: OQ5 names it                                                                                                   |
+| A configured path's glob syntax still compiles as a glob; Assumptions said otherwise | P3  | adversarial                                               | Fixed: Assumptions corrected; OQ7 asks whether output entries should match literally                                     |
+| The learning's "the CLI hands its resolved name" names no call site                  | P3  | learnings                                                 | Fixed: names `pinnedRequestOf` and the config merge it wins                                                              |
+| The `/dev/full` row dies rather than skips off Linux                                 | -   | testing, adversarial (residual)                           | Accepted: a skip reads as green; CI is `ubuntu-latest` only                                                              |
 
 ### Verification Contract
 

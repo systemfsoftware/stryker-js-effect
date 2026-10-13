@@ -207,7 +207,7 @@ const drainFileOf = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainFile.name)(f
   return RunEventDrain.of({
     drainFramed: (framed, toStdout) =>
       drainStoredFile(fs, path, stdio, fileNameRef, toStdout, framed).pipe(
-        Effect.tapCause((cause) => Effect.logError(DRAIN_FILE_FAILED, cause)),
+        Effect.tapCause((cause) => Effect.logError('stryker.output.drain_failed', cause)),
         Effect.ignoreCause,
       ),
     setProgressStreamFile: (fileName: string) => Ref.set(fileNameRef, fileName),
