@@ -1,10 +1,10 @@
 import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Reporter, TestRunner } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Arr from 'effect/Array'
 import type * as Cause from 'effect/Cause'
 import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
-import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import type * as Path from 'effect/Path'
 import * as Pool from 'effect/Pool'
@@ -16,10 +16,12 @@ import { MutantRunObservation } from '../interpret-mutant-run.workflow.js'
 import { mutantCostOf, testBodyMsOf } from '../mutant-cost.js'
 import { type MutationReportingInput, type MutationReportingService } from '../mutation-reporting.service.js'
 import { type PooledTestRunner } from '../pooled-test-runner.handle.js'
+import { ProjectFiles } from '../project-files.service.js'
 import { offerReporterEvent } from '../reporter-stream.service.js'
 import { StageError } from '../Run.schema.js'
 import type { PooledTestRunnerError } from '../TestRunner.schema.js'
 import type { TestBasis } from './dry-run.cell.js'
+import { mutantFactsOf, type SourceText, sourceTextOf } from './mutant-facts.js'
 import { isMutantStatus, toReportedMutant, type ValidMutantStatus } from './mutation-test-plan.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 
@@ -39,6 +41,7 @@ export interface RunContext {
   readonly plannedMutants: readonly Mutant.Mutant[]
   readonly rememberedMutantIds: ReadonlyArray<string>
   readonly pathService: Path.Path
+  readonly originalSources: ReadonlyMap<string, SourceText>
 }
 
 export interface ReportingInputArgs {
@@ -79,46 +82,38 @@ const preparedStreamableOf = Effect.fnUntraced(function*(context: RunContext, re
   })
 })
 
-const costLineOf = (result: Mutant.RunMutantResult): RunEvent.MutantCost | null =>
-  Option.getOrNull(Option.map(Option.fromUndefinedOr(result.cost), (cost) => RunEvent.MutantCost.make(cost)))
+const SOURCE_READ_CONCURRENCY = 24
 
-const subsumptionLineOf = (result: Mutant.RunMutantResult): Mutant.Subsumption | null =>
-  Option.getOrNull(Option.fromUndefinedOr(result.subsumption))
-
-const requiredReasonOf = (result: Mutant.RunMutantResult): string =>
-  Option.getOrThrowWith(
-    Option.fromUndefinedOr(result.statusReason),
-    () => new Error(`Ignored mutant ${result.id} reached the stream without the rule that ignored it`),
+export const sourceTextsOf = Effect.fnUntraced(function*(basis: TestBasis) {
+  const projectFiles = yield* ProjectFiles
+  const originals = yield* Effect.forEach(
+    basis.project.filesToMutate.values(),
+    (file) =>
+      Effect.map(
+        Effect.option(projectFiles.readOriginal(file)),
+        Option.map((text) => [file.name, sourceTextOf(text)] as const),
+      ),
+    { concurrency: SOURCE_READ_CONCURRENCY },
   )
+  return new Map(Arr.getSomes(originals))
+})
 
-const statusReasonOf = (result: Mutant.RunMutantResult, status: Mutant.MutantStatus): string | null =>
-  Match.value(status).pipe(
-    Match.when('Ignored', () => requiredReasonOf(result)),
-    Match.orElse(() => Option.getOrNull(Option.fromUndefinedOr(result.statusReason))),
-  )
+const sourceOf = (context: RunContext, result: Mutant.RunMutantResult): Option.Option<SourceText> =>
+  Option.fromUndefinedOr(context.originalSources.get(result.fileName))
 
-const mutantLineOf = (
+const streamFactsOf = (
+  context: RunContext,
   result: Mutant.RunMutantResult,
   streamable: PreparedStreamableMutant,
-  progress: { readonly completed: number; readonly total: number },
-): RunEvent.RunMutantTested => {
-  const fields = {
-    id: result.id,
-    fileName: streamable.file,
-    location: streamable.location,
-    mutatorName: result.mutatorName,
-    replacement: result.replacement,
-    ...progress,
-    static: Option.getOrElse(Option.fromUndefinedOr(result.static), () => false),
-    cost: costLineOf(result),
-    subsumption: subsumptionLineOf(result),
-  }
-  return RunEvent.RunMutantTestedEvent.make({
-    ...fields,
-    status: streamable.status,
-    statusReason: statusReasonOf(result, streamable.status),
-  })
-}
+): Effect.Effect<RunEvent.MutantFacts, StageError> =>
+  mutantFactsOf({ result, file: streamable.file, source: sourceOf(context, result) }).pipe(
+    Effect.mapError((invalid) => StageError.make({ stage: 'mutationTest', reason: invalid.message, cause: invalid })),
+  )
+
+export const mutantFactsIn = Effect.fnUntraced(function*(context: RunContext, result: Mutant.RunMutantResult) {
+  const prepared = yield* preparedStreamableOf(context, result)
+  return yield* Effect.transposeOption(Option.map(prepared, (streamable) => streamFactsOf(context, result, streamable)))
+})
 
 const offerFinished = Effect.fnUntraced(function*(
   context: RunContext,
@@ -129,10 +124,16 @@ const offerFinished = Effect.fnUntraced(function*(
     onNone: () => Effect.succeed(Option.none<number>()),
     onSome: (streamable) =>
       Effect.gen(function*() {
+        const facts = yield* streamFactsOf(context, result, streamable)
         const completed = yield* Ref.updateAndGet(context.completedRef, (n) => n + 1)
         yield* Queue.offer(
           context.progressQueue,
-          mutantLineOf(result, streamable, { completed, total: context.plannedTotal }),
+          {
+            ...facts,
+            _tag: 'mutantTested',
+            completed,
+            total: context.plannedTotal,
+          } satisfies RunEvent.RunMutantTested,
         )
         return Option.some(completed)
       }),

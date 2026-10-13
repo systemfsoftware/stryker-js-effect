@@ -81,6 +81,27 @@ const withInstrumentedFiles = (
       ),
   )
 
+const withOriginalContents = (
+  project: Project,
+  originals: Iterable<{ readonly name: string; readonly content: string }>,
+): Project =>
+  Array.reduce(
+    [...originals],
+    project,
+    (current, { name, content }) =>
+      Option.getOrElse(
+        Option.map(
+          Option.fromUndefinedOr(current.files.get(name)),
+          (existing) =>
+            mergeInstrumentedFile({
+              project: current,
+              file: { ...existing, originalContent: existing.originalContent ?? content },
+            }),
+        ),
+        () => current,
+      ),
+  )
+
 const instrumentWith = (
   command: PrepareForInstrument,
   filesToMutate: ReadonlyArray<Instrument.File>,
@@ -135,7 +156,10 @@ export const instrumentFiles = Effect.fnUntraced(function*(
   return {
     filesToMutate,
     instrumentResult,
-    instrumentedProject: withInstrumentedFiles(command.project, instrumentResult.files),
+    instrumentedProject: withInstrumentedFiles(
+      withOriginalContents(command.project, filesToMutate),
+      instrumentResult.files,
+    ),
   }
 })
 
