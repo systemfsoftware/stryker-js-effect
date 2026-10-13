@@ -96,7 +96,8 @@
         "!**/etc/*.api.md",
         "$TURBO_ROOT$/test/e2e/tests/**/*.e2e.test.ts",
         "$TURBO_ROOT$/test/e2e/testResources/**",
-        "$TURBO_ROOT$/packages/stryker-js-instrumenter/testResources/effect-concurrency/**"
+        "$TURBO_ROOT$/packages/stryker-js-instrumenter/testResources/effect-concurrency/**",
+        "$TURBO_ROOT$/pnpm-workspace.yaml"
       ],
       "outputLogs": "errors-only",
       "dependsOn": [

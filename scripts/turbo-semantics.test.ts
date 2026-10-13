@@ -149,15 +149,10 @@ const editedRootPackageJson = `{
 }
 `
 
-const rootTurboJson = (
-  futureFlags: Readonly<Record<string, boolean>> = {
-    affectedUsingTaskInputs: true,
-    githubActionsRemoteBaseRefFallback: true,
-  },
-): string =>
+const rootTurboJson = (): string =>
   `{
   "$schema": "${SCHEMA}",
-  "futureFlags": ${JSON.stringify(futureFlags)},
+  "futureFlags": { "affectedUsingTaskInputs": true, "githubActionsRemoteBaseRefFallback": true },
   "tasks": {
     "//#root": {},
     "build": { "inputs": ["src/**"], "outputs": [] },

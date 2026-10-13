@@ -134,7 +134,7 @@ jobs:
           pnpm gate:repo --head "$planted" || status=$?
           test "$status" -eq 1 || { echo "::error::pnpm gate:repo must exit 1 on two planted plans, got $status" >&2; exit 1; }
       - name: Repo scripts tests
-        run: ./bin/deno test --config=scripts/deno.json -P scripts/
+        run: ./bin/deno test --config=scripts/deno.json scripts/
       # Root package.json `check:ci` is the one definition. Never re-enumerate its steps here.
       - id: gate
         name: Gate

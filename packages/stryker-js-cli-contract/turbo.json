@@ -3,6 +3,10 @@
   "extends": ["//"],
   "tasks": {
     "test": {
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/pnpm-workspace.yaml"
+      ],
       "cache": false
     }
   }
