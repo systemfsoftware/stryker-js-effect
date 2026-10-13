@@ -1,10 +1,10 @@
 import { describe, it } from '@systemfsoftware/vitest'
 import * as Match from 'effect/Match'
+import * as Predicate from 'effect/Predicate'
 import * as Result from 'effect/Result'
 import type * as S from 'effect/Schema'
 
 import {
-  type ExportEntry,
   type ManifestTarget,
   ManifestTargetCommand,
   PackageExportRequest,
@@ -14,8 +14,6 @@ import {
 import { selectManifestTarget } from '../select-manifest-target.workflow.js'
 
 type SelectSubject = (command: ManifestTargetCommand) => Result.Result<ManifestTarget, never>
-
-type EntryMap = Readonly<Record<string, ExportEntry>>
 
 const INVALID_SEGMENTS: readonly string[] = ['.', '..', 'node_modules', 'Node_Modules']
 
@@ -53,9 +51,20 @@ const selected = (
 const exported = (
   subject: SelectSubject,
   command: ManifestTargetCommand,
-  exports: string | EntryMap,
+  exports: S.Json,
   subpath: string,
 ) => selected(subject, { ...command.manifest, exports }, PackageExportRequest.make({ subpath }))
+
+const ROOT_REQUEST = PackageExportRequest.make({ subpath: '' })
+
+const nestedUnder = (keys: ReadonlyArray<string>, innermost: S.Json): S.Json =>
+  keys.reduceRight<S.Json>((inner, key) => ({ [key]: inner, [`${key}#later`]: './later.ts' }), innermost)
+
+const targetOf = (command: ManifestTargetCommand): string => `./${oneSegmentOf(command)}x.ts`
+
+const keysOf = (command: ManifestTargetCommand): ReadonlyArray<string> => ['outer', ...textOf(command).split('/')]
+
+const drawnEntryOf = (command: ManifestTargetCommand): S.Json => command.manifest.exports ?? null
 
 const imported = (subject: SelectSubject, command: ManifestTargetCommand, imports: S.Json, specifier: string) =>
   selected(subject, { ...command.manifest, imports }, PackageImportRequest.make({ specifier }))
@@ -191,6 +200,110 @@ describe('selectManifestTarget', () => {
       const { imports: _dropped, ...withoutImports } = command.manifest
       return selected(subject, withoutImports, PackageImportRequest.make({ specifier: `#${textOf(command)}` })) ===
         'missing'
+    },
+  )
+
+  it.prop(
+    '∀c_ConditionChain_≡FirstValueAtEveryDepthForExportsAndImports',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const target = targetOf(command)
+      const subpath = `x${oneSegmentOf(command)}`
+      const specifier = `#${subpath}`
+      const nested = nestedUnder(keysOf(command), target)
+      return [
+        exported(subject, command, { [exportKeyOf(subpath)]: nested }, subpath),
+        imported(subject, command, { [specifier]: nested }, specifier),
+      ].every((outcome) => outcome === `path:${target}`)
+    },
+  )
+
+  it.prop(
+    '∀c_ConditionChain_≡SourceConditionBeforeEarlierKeysAtItsOwnDepth',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const subpath = `x${oneSegmentOf(command)}`
+      const conditions = { default: './default.js', [SOURCE_CONDITION]: './source.ts' }
+      return exported(
+        subject,
+        command,
+        { [exportKeyOf(subpath)]: nestedUnder(keysOf(command), conditions) },
+        subpath,
+      ) ===
+        'path:./source.ts'
+    },
+  )
+
+  it.prop(
+    '∀c_Fallbacks_≡TheFirstElementDecidesWhateverFollows',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const drawn = drawnEntryOf(command)
+      const later = targetOf(command)
+      const subpath = `x${oneSegmentOf(command)}`
+      const key = exportKeyOf(subpath)
+      const specifier = `#${subpath}`
+      return [
+        exported(subject, command, { [key]: [drawn, later] }, subpath) ===
+          exported(subject, command, { [key]: drawn }, subpath),
+        imported(subject, command, { [specifier]: [drawn, later] }, specifier) ===
+          imported(subject, command, { [specifier]: drawn }, specifier),
+      ].every((holds) => holds)
+    },
+  )
+
+  it.prop(
+    '∀c_RootEntry_≡MainDecidesTheRootOnlyWhenExportsDeclaresNone',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const drawn = drawnEntryOf(command)
+      const main = targetOf(command)
+      const rootOf = (manifest: PackageManifest) => selected(subject, manifest, ROOT_REQUEST)
+      const declared = { imports: command.manifest.imports ?? null, exports: { '.': drawn } }
+      return [
+        rootOf({ ...declared, main }) === rootOf(declared),
+        rootOf({ ...declared, exports: { './feature': drawn }, main }) === `path:${main}`,
+      ].every((holds) => holds)
+    },
+  )
+
+  it.prop(
+    '∀c_NullExports_≡ReadAsIfExportsWereAbsent',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const { exports: _dropped, ...withoutExports } = command.manifest
+      return selected(subject, { ...withoutExports, exports: null }, command.request) ===
+        selected(subject, withoutExports, command.request)
+    },
+  )
+
+  it.prop(
+    '∀c_ExactEntry_≡DecidesAloneWhateverPatternSitsBesideIt',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const drawn = drawnEntryOf(command)
+      const subpath = `x${oneSegmentOf(command)}`
+      const specifier = `#${subpath}`
+      return [
+        exported(subject, command, { './*': './wild/*', [`./${subpath}`]: drawn }, subpath) ===
+          exported(subject, command, { [`./${subpath}`]: drawn }, subpath),
+        imported(subject, command, { '#*': './any/*', [specifier]: drawn }, specifier) ===
+          imported(subject, command, { [specifier]: drawn }, specifier),
+      ].every((holds) => holds)
+    },
+  )
+
+  it.prop(
+    '∀c_NonStringMainOrModule_≡ReadAsIfTheKeyWereAbsent',
+    { of: [ManifestTargetCommand], subject: selectManifestTarget },
+    (subject, [command]) => {
+      const { main, module, ...rest } = command.manifest
+      const stringsOnly = {
+        ...rest,
+        ...(Predicate.isString(main) ? { main } : {}),
+        ...(Predicate.isString(module) ? { module } : {}),
+      }
+      return selected(subject, command.manifest, command.request) === selected(subject, stringsOnly, command.request)
     },
   )
 })

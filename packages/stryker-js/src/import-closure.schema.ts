@@ -29,14 +29,11 @@ export class TestFileClosure extends S.TaggedClass<TestFileClosure>()('TestFileC
   readonly [ImportClosureTypeId] = ImportClosureTypeId
 }
 
-export const ExportEntrySchema = S.Union([S.String, S.Record(S.String, S.String)])
-export type ExportEntry = typeof ExportEntrySchema.Type
-
 export const PackageManifestSchema = S.Struct({
-  exports: S.optionalKey(S.Union([S.String, S.Record(S.String, ExportEntrySchema)])),
+  exports: S.optionalKey(S.Json),
   imports: S.optionalKey(S.Json),
-  main: S.optionalKey(S.String),
-  module: S.optionalKey(S.String),
+  main: S.optionalKey(S.Json),
+  module: S.optionalKey(S.Json),
 })
 export type PackageManifest = typeof PackageManifestSchema.Type
 
