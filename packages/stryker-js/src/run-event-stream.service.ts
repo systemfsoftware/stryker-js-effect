@@ -145,6 +145,8 @@ const runToSink = <E>(stdio: Stdio.Stdio, lines: Stream.Stream<string, E>, toStd
 
 const DRAIN_FILE_FAILED = 'stryker.output.drain_file_failed'
 
+const DRAIN_FAILED = 'stryker.output.drain_failed'
+
 const logFileFailure = <E>(error: E) => Effect.logError(DRAIN_FILE_FAILED, error)
 
 const writeLineOf = (handle: FileSystem.File, fileFailed: Ref.Ref<boolean>) => (line: string) =>
@@ -207,7 +209,7 @@ const drainFileOf = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainFile.name)(f
   return RunEventDrain.of({
     drainFramed: (framed, toStdout) =>
       drainStoredFile(fs, path, stdio, fileNameRef, toStdout, framed).pipe(
-        Effect.tapCause((cause) => Effect.logError('stryker.output.drain_failed', cause)),
+        Effect.tapCause((cause) => Effect.logError(DRAIN_FAILED, cause)),
         Effect.ignoreCause,
       ),
     setProgressStreamFile: (fileName: string) => Ref.set(fileNameRef, fileName),
@@ -217,7 +219,7 @@ const drainFileOf = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainFile.name)(f
 const drainOf = (stdio: Stdio.Stdio, framed: Stream.Stream<string>, toStdout: boolean) =>
   runToSink(stdio, framed, toStdout).pipe(
     Effect.withSpan(SpanTaxonomy.Spans.outputDrain.name),
-    Effect.tapCause((cause) => Effect.logError('stryker.output.drain_failed', cause)),
+    Effect.tapCause((cause) => Effect.logError(DRAIN_FAILED, cause)),
     Effect.ignoreCause,
   )
 

@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0601-fix-stryker-stream-files-out-of-project-inputs-plan.md
+supersedes: docs/plans/2026-10-13-0641-fix-stryker-stream-files-out-of-project-inputs-plan.md
 ---
 
 # No stream file Stryker writes enters the next run's inputs - Plan
@@ -14,7 +14,7 @@ supersedes: docs/plans/2026-10-13-0601-fix-stryker-stream-files-out-of-project-i
 
 - **Objective:** a project re-run through the `stryker` CLI with nothing changed reuses every verdict, whatever its `ignorePatterns` (including `[]`) and whether `stryker run` or `stryker --help` ran in it before (shard outputs are OQ6). A `progressStreamFile` set in the config file is where `stryker run` writes its stream, and a stream file that cannot be opened or written never silences the run's `stdout` records.
 - **Authority:** `CONSTITUTION.md`, then root `AGENTS.md`, then this plan. Stream J owns the CLI surface. This PR (#329) lands before PR #320 (the `--ignorePatterns` help text), which waits on it.
-- **Supersedes:** the 0601 plan, executed in `54aeca2b`; its full review found no P0 or P1, but the drain's whole-run backstop still logged defects and interruptions as `stryker.output.drain_file_failed`, so R9's typed-only clause was false, and Assumptions said output entries no longer match as globs when they still do. This plan carries the corrected contract and 0601 is removed in the same PR (REPO-D2). 0601 superseded 0547 (`014b542a`), 0527 (`751a12cc`, merged with `main` in `bfad43ca`), 0505 (`25a46beb`), 0453 (`7a3af040`), 0421 (`39c401e4`, `1059dc39`), 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
+- **Supersedes:** the 0641 plan, executed in `2838944a`; its full review found no P0, P1 or P2, but R9 said a drain defect "is not recovered" when the backstop ignores it, R7 and the package README claimed any spelling where glob syntax still compiles as a glob, and the drain-level log name was a literal spelled twice. This plan carries the corrected contract and 0641 is removed in the same PR (REPO-D2). 0641 superseded 0601 (`54aeca2b`), 0547 (`014b542a`), 0527 (`751a12cc`, merged with `main` in `bfad43ca`), 0505 (`25a46beb`), 0453 (`7a3af040`), 0421 (`39c401e4`, `1059dc39`), 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
 - **Citations:** line numbers name `main` at `ec1769de`, the base this branch was cut from, unless they name a file this PR changes.
 - **Open blockers:** none. OQ1, OQ2, OQ4, OQ5, OQ6 and OQ7 go to the root and OQ3 to PR #320; none gates this unit.
 
@@ -62,9 +62,9 @@ Cause in code:
 - R4. A config file that cannot be read or is invalid, including an invalid `progressStreamFile`, is reported exactly as today. The stream still opens, at the flag or default path.
 - R5. A stream file written at the default path by any `stryker` command never changes the next run's inputs.
 - R6. An empty `progressStreamFile`, from the config or the flag, keeps today's behaviour: the stream goes to the default path.
-- R7. A configured or flagged output path inside the project is left out of the inputs however it is spelled (`out/stream.jsonl`, `./out/stream.jsonl`, `out//stream.jsonl`, `out/stream.jsonl/`, nested) on every platform: the rule is the entry path the crawl gives that file. Containment is lexical: an absolute path counts only when it names the project through the path the crawl starts from.
+- R7. A configured or flagged output path inside the project is left out of the inputs however its separators are spelled (`out/stream.jsonl`, `./out/stream.jsonl`, `out//stream.jsonl`, `out/stream.jsonl/`, nested) on every platform: the rule is the entry path the crawl gives that file. Containment is lexical: an absolute path counts only when it names the project through the path the crawl starts from. The rule compiles as an ignore glob, so a path holding glob syntax (`!`, `*`, `?`, `[`) keeps its glob meaning (OQ7); the package README tells users to keep those characters out.
 - R8. The path a run streams to is the path its own inputs leave out, even when a config function answers differently each time it is read.
-- R9. Under `--json`, a stream file that cannot be opened, or that refuses a write or a sync, from the config or the flag, is logged once as the drain's file failure (`stryker.output.drain_file_failed`) on `stderr`; the file gets no further lines and every record still reaches `stdout`, as `tee` keeps writing standard output when a file operand fails ([tee(1p)](https://www.man7.org/linux/man-pages/man1/tee.1p.html)). Only typed file errors count: a defect or an interruption anywhere in the drain is logged as `stryker.output.drain_failed`, the name the plain drain already uses, and is not recovered, because Effect treats a defect as a bug. In human mode `stdout` never carried the records, so only the log applies.
+- R9. Under `--json`, a stream file that cannot be opened, or that refuses a write or a sync, from the config or the flag, is logged once as the drain's file failure (`stryker.output.drain_file_failed`) on `stderr`; the file gets no further lines and every record still reaches `stdout`, as `tee` keeps writing standard output when a file operand fails ([tee(1p)](https://www.man7.org/linux/man-pages/man1/tee.1p.html)). Only typed open, write and sync errors count. Anything else that ends the drain (a defect, an interruption, a failure closing the file) is logged as `stryker.output.drain_failed`, the name the plain drain already uses; the drain stops there, its remaining records are lost, and the run's exit code is unchanged, as on `main`. In human mode `stdout` never carried the records, so only the log applies.
 
 ### Acceptance Examples
 
@@ -363,6 +363,17 @@ Round 12, full-path report-only review of `54aeca2b` (0 P0, 0 P1, 1 P2, 6 P3):
 | The learning's "the CLI hands its resolved name" names no call site                  | P3  | learnings                                                 | Fixed: names `pinnedRequestOf` and the config merge it wins                                                              |
 | The `/dev/full` row dies rather than skips off Linux                                 | -   | testing, adversarial (residual)                           | Accepted: a skip reads as green; CI is `ubuntu-latest` only                                                              |
 
+Round 13, full-path report-only review of `2838944a` (0 P0, 0 P1, 0 P2, 6 P3):
+
+| Finding                                                                                     | Sev | Lens                            | Disposition                                                                                                                               |
+| ------------------------------------------------------------------------------------------- | --- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| The Definition of Done lists OQ1-OQ6 while OQ7 exists                                       | P3  | learnings, testing, adversarial | Fixed                                                                                                                                     |
+| `stryker.output.drain_failed` is a literal spelled twice                                    | P3  | standards, boundary pack        | Fixed: one `DRAIN_FAILED` constant at both sites                                                                                          |
+| R9 says a drain defect "is not recovered" while the backstop ignores it                     | P3  | adversarial                     | Fixed: R9 says the drain stops, its remaining records are lost and the exit code is unchanged, as on `main`                               |
+| A failure closing the file reaches the backstop and is logged as `drain_failed`             | P3  | correctness                     | Accepted, stated in R9                                                                                                                    |
+| R7 and the package README claim any spelling; `!` or `[` in a path still compiles as a glob | P3  | correctness                     | Fixed: R7 names separators and points glob syntax at OQ7; the README tells users to keep glob characters out of the path                  |
+| The backstop's log name has no test                                                         | P3  | testing, adversarial            | Not admitted: the built CLI reaches the backstop only through a defect or an interruption, which no test can stage without editing source |
+
 ### Verification Contract
 
 | Check           | Command                                                                                                                                                                                                                                                                 | Pass                                                                                          |
@@ -382,4 +393,4 @@ No mutation run, local or dispatched: mutation evidence for this change comes fr
 ## Definition of Done
 
 - U1-U7 have landed in one PR off `main`, and every Verification Contract row holds on its head.
-- The PR body carries the failing-first evidence, the review lenses, the models that actually served them, every pack ruling, and OQ1-OQ6.
+- The PR body carries the failing-first evidence, the review lenses, the models that actually served them, every pack ruling, and OQ1-OQ7.
