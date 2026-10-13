@@ -33,7 +33,7 @@ const RULE_IDS = [
 const KEEP_ALL = "To keep these mutants, set `mutator.mutantSetPolicy: 'full'`."
 
 const ARID_CALLEE =
-  'The callee must come from an `effect` import under any local name, or be `console` when nothing in scope rebinds or imports it. A mutant inside a function is never covered, even when the function is an argument of the call. The detail names the canonical callee, such as `Effect.logInfo`.'
+  'The callee must come from an `effect` import under any local name, or be `console` when nothing in scope rebinds or imports it. A call around a function never covers a mutant inside it; a call inside that function still does. The detail names the canonical callee, such as `Effect.logInfo`.'
 
 const RULE_DOCUMENTATION: SlashFreeCodeDocumentation<(typeof RULE_IDS)[number]> = {
   'arid-logging': `The mutant sits in a logging call (console.*, Logger, Effect.log*). ${ARID_CALLEE} ${KEEP_ALL}`,
