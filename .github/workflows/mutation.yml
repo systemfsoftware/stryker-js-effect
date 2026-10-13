@@ -1,12 +1,25 @@
+# Cost: about 256 runner-min/day (231-459) for the nightly scheduled Mutation run, on the
+# three-project corpus. The instrumenter and the HTML reporter add a share the first
+# nightly run measures.
+# Run shape: one scheduled run a day (17 3 * * *) plus any manual dispatch, never a push
+# or a pull request. A full run holds the scoring lane, the kill-matrix lane and the drop
+# audit; `lane: kill-matrix` holds the last two.
+# Per lane, job-minutes read from the jobs API on 2026-10-13. Scoring lane, scheduled
+# `--full`: runs 38384850859 (47.7), 38239240750 (43.5), 38130563737 (44.5) and
+# 38042987222 (161.5), median 46.1 (43.5-161.5). Kill-matrix lane over 15 completed main
+# push runs 38290483095 (2026-10-12T18:22Z) through 38456457178 (2026-10-13T19:38Z):
+# median 209.0 job-min (187.2-297.0), wall time median 34.7 min. Drop audit: 0.97 job-min
+# (run 38344422811) and 0.67 (run 38366579884), with the Mutation build cache restored.
+# Rejected counterfactual, the push trigger this change removes: on main 115
+# first-parent commits from 2026-10-06T20:00Z to 2026-10-13T20:00Z (16.4 a day), and the
+# 12 completed push runs of 2026-10-13 took 4,006 job-min; push runs per day 2026-10-06 to
+# 2026-10-12 were 19, 14, 11, 14, 20, 2 and 11.
+# Reason: the #333 review run 20261013-170535-66c6722d, finding #6 "Mutation heavy lane's
+# cost changed with no runner-minutes header" (pack rule ci-wall-clock/heavy-lanes-state-their-daily-minutes),
+# was rejected only because mutation.yml was outside #333's diff.
 name: Mutation
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - ".changeset/**"
-      - "docs/**"
   workflow_dispatch:
     inputs:
       full:
@@ -14,7 +27,7 @@ on:
         type: boolean
         default: false
       lane:
-        description: Which lane to run. `kill-matrix` runs only the full kill-matrix lane.
+        description: Which lane to run. `kill-matrix` runs the full kill-matrix lane and the drop audit of its matrix; `all` also runs the scoring lane.
         type: choice
         options:
           - all
@@ -23,29 +36,22 @@ on:
   schedule:
     - cron: "17 3 * * *"
 
-concurrency:
-  group: ${{ github.event.head_commit.author.username == 'github-actions[bot]' && format('mutation-release-{0}', github.run_id) || format('mutation-{0}', github.ref) }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 permissions:
   contents: read
 
 env:
   TARGET_SECONDS: 200
   MAX_SHARDS: 20
-  PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner
+  PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,packages/stryker-js-instrumenter,packages/stryker-js-html-reporter
   PUBLISHED_CLI: ${{ github.workspace }}/packages/stryker-js/node_modules/.bin/stryker
   PLAN: plan.json
-  INCREMENTAL_REPORTS: |
-    packages/stryker-js/reports/stryker-incremental.json
-    packages/stryker-js-typescript-checker/reports/stryker-incremental.json
-    packages/stryker-js-vitest-runner/reports/stryker-incremental.json
+  INCREMENTAL_REPORTS: packages/**/reports/stryker-incremental.json
   BUDGET_BASELINE: .stryker/budget-baseline.json
 
 jobs:
   plan:
     name: plan · shards from the incremental cost record
-    if: ${{ github.event.inputs.lane != 'kill-matrix' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]') }}
+    if: ${{ github.event.inputs.lane != 'kill-matrix' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -101,7 +107,7 @@ jobs:
 
   build:
     name: build · once for every shard
-    if: ${{ github.event.inputs.lane != 'kill-matrix' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]') }}
+    if: ${{ github.event.inputs.lane != 'kill-matrix' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
@@ -109,13 +115,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Hashed before install, so node_modules and dist never enter the key. Turbo re-hashes
-      # every task's inputs on restore, so a stale or partial cache only costs a rebuild.
       - id: key
-        name: Content key of the build
-        env:
-          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**') }}
-        run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/mutation-build-key
 
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -132,7 +133,7 @@ jobs:
           path: .turbo/cache
           key: ${{ steps.key.outputs.key }}
           restore-keys: |
-            mutation-build-${{ runner.os }}-
+            ${{ steps.key.outputs.prefix }}
 
       - name: Build every mutated project
         run: |
@@ -378,7 +379,134 @@ jobs:
 
   kill-matrix:
     name: Kill matrix
-    if: ${{ (github.event_name == 'push' && github.event.head_commit.author.username != 'github-actions[bot]') || github.event.inputs.lane == 'kill-matrix' }}
     permissions:
       contents: read
     uses: ./.github/workflows/kill-matrix.yml
+
+  drop-audit:
+    name: drop-audit · audit this run's kill matrix
+    needs: [kill-matrix]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      MATRIX_DIR: kill-matrix
+      MATRIX_ARTIFACT: kill-matrix-${{ github.run_number }}
+      AUDIT_OUT: reports/audit.json
+    steps:
+      - id: start
+        name: Record the start time
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - id: checkout
+        uses: actions/checkout@v7
+
+      - id: build-key
+        uses: ./.github/actions/mutation-build-key
+
+      - id: pnpm
+        uses: pnpm/action-setup@v6
+      - id: node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - id: tarballs
+        uses: ./.github/actions/released-tarballs
+      - id: install
+        run: pnpm install --frozen-lockfile
+
+      - id: restore
+        name: Restore the build the build job cached
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: ${{ steps.build-key.outputs.key }}
+          restore-keys: |
+            ${{ steps.build-key.outputs.prefix }}
+
+      - id: download
+        name: Download this run's kill matrix (not a verdict; matrix-check judges its outcome)
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.MATRIX_ARTIFACT }}
+          path: ${{ env.MATRIX_DIR }}
+
+      - id: matrix-check
+        name: Check the kill matrix covers the corpus
+        env:
+          KILL_MATRIX: ${{ needs.kill-matrix.result }}
+          DOWNLOAD: ${{ steps.download.outcome }}
+        run: node scripts/drop-audit-verdict.ts matrix-check
+
+      - id: build
+        name: Build the CLI and the audited projects
+        run: |
+          mapfile -t filters < <(tr ',' '\n' <<< "packages/stryker-js,$PROJECTS" | sort -u | sed 's|^|--filter=./|')
+          pnpm exec turbo run build --output-logs=errors-only --log-order=stream "${filters[@]}"
+
+      - id: audit
+        name: stryker audit
+        shell: bash
+        env:
+          NO_COLOR: "1"
+        run: |
+          set +e
+          node packages/stryker-js/dist/main.mjs audit --matrix "$MATRIX_DIR" --projects "$PROJECTS" --out "$AUDIT_OUT" 2>&1 | tee audit.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - id: judged
+        name: Check the audit judged at least one dropped mutant
+        run: node scripts/drop-audit-verdict.ts judged
+
+      - id: audit-summary
+        name: Copy the audit's output to the summary (report only)
+        if: ${{ !cancelled() && steps.audit.outcome != 'skipped' && hashFiles('audit.txt') != '' }}
+        run: |
+          {
+            echo "#### stryker audit against \`$MATRIX_ARTIFACT\` of this run"
+            echo
+            echo '```text'
+            cat audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - id: upload
+        uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && hashFiles(env.AUDIT_OUT) != '' }}
+        with:
+          name: drop-audit-${{ github.run_number }}
+          path: ${{ env.AUDIT_OUT }}
+          retention-days: 14
+          overwrite: true
+
+      - id: verdict
+        name: Verdict of the drop audit
+        if: always()
+        shell: bash
+        env:
+          STEPS: ${{ toJSON(steps) }}
+          KILL_MATRIX: ${{ needs.kill-matrix.result }}
+        run: |
+          if ! node scripts/drop-audit-verdict.ts verdict; then
+            {
+              echo 'reason=DROP_AUDIT_UNCLASSIFIED'
+              echo 'next=The verdict script could not run (no checkout or no Node). Next action: open the first failed step of this job.'
+            } >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      - name: Report the drop audit
+        if: always()
+        uses: ./.github/actions/job-report
+        with:
+          status: ${{ job.status }}
+          reason: ${{ steps.verdict.outputs.reason }}
+          next-action: ${{ steps.verdict.outputs.next }}
+          started-at: ${{ steps.start.outputs.at }}
