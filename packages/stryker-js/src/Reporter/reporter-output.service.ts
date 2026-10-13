@@ -28,7 +28,7 @@ export interface ReporterOutputShape {
 }
 
 export class ReporterOutput extends Context.Service<ReporterOutput, ReporterOutputShape>()(
-  '@systemfsoftware/stryker-js/reporter-output.service/ReporterOutput',
+  '@systemfsoftware/stryker-js/Reporter/reporter-output.service/ReporterOutput',
 ) {
   static readonly layer: Layer.Layer<ReporterOutput, never, Stdio.Stdio> = Layer.effect(
     ReporterOutput,
