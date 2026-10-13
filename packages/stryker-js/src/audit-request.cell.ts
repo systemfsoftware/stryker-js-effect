@@ -197,7 +197,7 @@ const auditProject = (
     const drops = yield* Effect.scoped(Effect.gen(function*() {
       const project = yield* fs.realPath(path.resolve(basePath, directory))
       const env = { ...channel.environment.host.env, basePath: project }
-      const context = yield* Layer.build(RunEnvironment.stage(env, channel.environment.host.events))
+      const context = yield* Layer.build(RunEnvironment.layerStage(env, channel.environment.host.events))
       const prepared = yield* Cell.provideContext(prepareStageCell, context).run({
         cliOptions: {},
         targetMutatePatterns: undefined,

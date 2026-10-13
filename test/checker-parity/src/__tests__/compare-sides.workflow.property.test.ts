@@ -22,6 +22,7 @@ import {
 import {
   CheckCall,
   Counts,
+  Deferred,
   DigestCall,
   Gates,
   GroupCall,
@@ -32,6 +33,7 @@ import {
   TelemetryMissing,
   TypeAnswerLine,
   TypeQueryFileRefused,
+  TypeQueryServers,
   Verdict,
   VerdictStatus,
 } from '../Parity.schema.js'
@@ -193,6 +195,10 @@ const decisionOf = (subject: typeof compareSides, command: CompareSidesCommand):
 
 const violationsOf = (decision: ComparisonDecision): ReadonlyArray<{ code: string; nextAction: string }> =>
   S.is(ParityBroken)(decision) ? decision.violations : []
+
+const namesRouteCases = (violation: { readonly nextAction: string } | undefined): boolean =>
+  violation !== undefined &&
+  ['ProjectBootFailed', 'Deferred', 'TypeQueryFileRefused'].every((name) => violation.nextAction.includes(name))
 
 describe('compareSides', () => {
   it.prop(
@@ -695,6 +701,7 @@ describe('compareSides', () => {
       const lines = [
         verdictOf('main', { project: PROJECT, mutantId }),
         verdictOf('branch', { project: PROJECT, mutantId, status: 'compileError' }),
+        typeAnswerLineOf(mutantId, assignableAnswer),
         bootOf('main', OTHER_PROJECT, 'dry run failed'),
         countsOf(PROJECT, { importerShortcuts: 0, snapshotUpdates: 0 }),
         TelemetryMissing.make({
@@ -874,6 +881,70 @@ describe('compareSides', () => {
       const decision = decisionOf(subject, commandOf(lines))
       return S.is(ParityHolds)(decision) &&
         decision.summary.typeQuery.projects.some((entry) => entry.project === OTHER_PROJECT && entry.queried === 0)
+    },
+  )
+
+  it.prop(
+    '∀z_ZeroNotAssignable_≡FiresOnlyWhenTheShardAnsweredItsScope',
+    {
+      of: [
+        S.NonEmptyString,
+        S.NullOr(TypeQuery.UnknownReason),
+        S.NullOr(S.Union([TypeQueryFileRefused, Deferred, ProjectBootFailed])),
+      ],
+      subject: compareSides,
+    },
+    (subject, [mutantId, reason, routeRow]) => {
+      const lines = [
+        verdictOf('main', { mutantId, status: 'compileError' }),
+        verdictOf('branch', { mutantId, status: 'compileError' }),
+        ...(reason === null ? [] : [typeAnswerLineOf(mutantId, TypeQuery.Unknown.make({ reason }))]),
+        countsOf(PROJECT),
+        ...(routeRow === null ? [] : [routeRow]),
+      ]
+      const zero = violationsOf(decisionOf(subject, commandOf(lines))).filter((violation) =>
+        violation.code === 'zero-not-assignable'
+      )
+      const [first] = zero
+      return reason === null ? zero.length === 0 : [zero.length === 1, namesRouteCases(first)].every((holds) => holds)
+    },
+  )
+
+  it.prop(
+    '∀s_LegacyTypeQueryServers_≡ContributesNothingToTheComparison',
+    { of: [S.NonEmptyString, TypeQueryServers], subject: compareSides },
+    (subject, [mutantId, legacy]) => {
+      const base = [
+        verdictOf('main', { project: PROJECT, mutantId, status: 'compileError' }),
+        verdictOf('branch', { project: PROJECT, mutantId, status: 'compileError' }),
+        typeAnswerLineOf(mutantId, notAssignableAnswer, { project: PROJECT }),
+        countsOf(PROJECT),
+      ]
+      const without = decisionOf(subject, commandOf(base))
+      const withLegacy = decisionOf(subject, commandOf([...base, legacy]))
+      const skipped = [...base, skippedOf(OTHER_PROJECT, 'no tsconfig')]
+      const withoutOnSkipped = decisionOf(subject, commandOf(skipped))
+      const withLegacyOnSkipped = decisionOf(
+        subject,
+        commandOf([
+          ...skipped,
+          TypeQueryServers.make({
+            schemaVersion: legacy.schemaVersion,
+            side: legacy.side,
+            project: OTHER_PROJECT,
+            peakLiveServers: legacy.peakLiveServers,
+          }),
+        ]),
+      )
+      const withBoot = decisionOf(subject, commandOf([...base, bootOf('main', OTHER_PROJECT, 'dry run failed')]))
+      return [
+        S.is(ParityHolds)(without),
+        S.is(ParityHolds)(withLegacy),
+        JSON.stringify(without) === JSON.stringify(withLegacy),
+        JSON.stringify(withoutOnSkipped) === JSON.stringify(withLegacyOnSkipped),
+        withLegacyOnSkipped.summary.skipped.some((entry) => entry.project === OTHER_PROJECT),
+        S.is(ParityBroken)(withBoot),
+      ].every((holds) => holds)
     },
   )
 

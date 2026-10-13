@@ -4,7 +4,6 @@ import * as Boolean from 'effect/Boolean'
 import * as HashMap from 'effect/HashMap'
 import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
-import * as Num from 'effect/Number'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -211,7 +210,6 @@ export const TypeQuerySummary = S.Struct({
   compileErrorTotal: NonNegativeInt,
   projects: S.Array(TypeQueryProjectShare),
   refusedFiles: NonNegativeInt,
-  peakServers: NonNegativeInt,
 })
 export type TypeQuerySummary = typeof TypeQuerySummary.Type
 
@@ -286,11 +284,19 @@ const when = <A>(condition: boolean, value: A): ReadonlyArray<A> =>
     Match.exhaustive,
   )
 
+const isTypeQueryServers = S.is(TypeQueryServers)
+
+/**
+ * Every line except the decode-only legacy {@link TypeQueryServers} row: no current producer emits it, so a
+ * stale one must neither invent a project nor change what a project's own lines say.
+ */
+const isCurrentLine = (line: ParityLine): boolean => !isTypeQueryServers(line)
+
 const projectsOf = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<string> =>
-  Arr.dedupe(lines.map((line) => line.project))
+  Arr.dedupe(lines.filter(isCurrentLine).map((line) => line.project))
 
 const linesOf = (lines: ReadonlyArray<ParityLine>, project: string): ReadonlyArray<ParityLine> =>
-  lines.filter((line) => line.project === project)
+  lines.filter((line) => Boolean.every([line.project === project, isCurrentLine(line)]))
 
 const verdictsIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<Verdict> =>
   lines.filter((line): line is Verdict => isVerdict(line))
@@ -762,7 +768,6 @@ const nothingComparedViolations = (
 
 const isTypeAnswerLine = S.is(TypeAnswerLine)
 const isTypeQueryFileRefused = S.is(TypeQueryFileRefused)
-const isTypeQueryServers = S.is(TypeQueryServers)
 const isAssignable = S.is(TypeQuery.Assignable)
 const isNotAssignable = S.is(TypeQuery.NotAssignable)
 const isUnknown = S.is(TypeQuery.Unknown)
@@ -863,10 +868,6 @@ const typeQuerySummaryOf = (
     compileErrorTotal: compileErrors.length,
     projects: projectSharesOf(lines, projects),
     refusedFiles: refusedLinesIn(lines).length,
-    peakServers: lines
-      .filter((line): line is TypeQueryServers => isTypeQueryServers(line))
-      .map((line) => line.peakLiveServers)
-      .reduce((max, peak) => Num.max(max, peak), 0),
   }
 }
 
@@ -908,16 +909,21 @@ const wrongNotAssignableViolations = (lines: ReadonlyArray<ParityLine>): Readonl
   )
 }
 
-const zeroNotAssignableViolation = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<ZeroNotAssignable> =>
-  when(
-    typeAnswerLinesIn(lines).filter((line) => isNotAssignable(line.answer)).length === 0,
+const zeroNotAssignableViolation = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<ZeroNotAssignable> => {
+  const answers = typeAnswerLinesIn(lines)
+  return when(
+    Boolean.every([
+      answers.filter((line) => isNotAssignable(line.answer)).length === 0,
+      answers.length > 0,
+    ]),
     ZeroNotAssignable.make({
       schemaVersion: 1,
       code: 'zero-not-assignable',
       nextAction:
-        'The run answered no mutant TypeQuery.NotAssignable, so the gate is vacuous: read the TypeAnswerLine rows and the summary typeQuery counts and confirm the corpus has context-free replacements, then rerun the shard.',
+        'The run answered mutants but no mutant TypeQuery.NotAssignable, so the gate is vacuous: read the TypeAnswerLine rows and the summary typeQuery counts and confirm the corpus has context-free replacements, then rerun the shard. A shard that produced no answers at all suppresses this gate — a branch worker that failed to boot (ProjectBootFailed), a deferred leg (Deferred) or a refused file (TypeQueryFileRefused) names why.',
     }),
   )
+}
 
 const violationsOf = (command: CompareSidesCommand): ReadonlyArray<Violation> => {
   const projects = projectsOf(command.lines)

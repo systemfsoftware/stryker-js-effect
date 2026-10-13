@@ -2,8 +2,8 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { Differential, Metamorphic } from '@systemfsoftware/differential-spec'
 import { Checker, Options, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
-import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
-import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
+import { CheckerRuntime, TypeScriptCheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import * as TypeQueryTsgo from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -89,7 +89,7 @@ const verdictsOf = (rows: ReadonlyArray<Row>): Effect.Effect<Readonly<Record<str
       const runtime = yield* CheckerRuntime
       const checker = yield* runtime.checker
       return yield* checker.check([...wires])
-    }).pipe(Effect.provide(CheckerRuntime.layer(options)))
+    }).pipe(Effect.provide(TypeScriptCheckerRuntime.layer(options)))
     return Object.fromEntries(
       rows.map((row) => [
         row.id,
@@ -141,7 +141,7 @@ const answersOf = (rows: ReadonlyArray<Row>): Effect.Effect<Readonly<Record<stri
     const typeQuery = yield* TypeQuery.TypeQuery
     const response = yield* typeQuery.query(requestOf(content, sitesOf(content, rows)))
     return Object.fromEntries(answerEntriesOf(rows, response))
-  }).pipe(Effect.provide(TypeQueryLive), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
+  }).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
 
 const HOST_BOUND = {
   timeout: 120_000,
@@ -176,7 +176,7 @@ const perSiteAnswersOf = ({ rows, concurrency }: PerSiteQueries) =>
       { concurrency },
     )
     return Object.fromEntries(responses.flatMap((response) => answerEntriesOf(rows, response)))
-  }).pipe(Effect.provide(TypeQueryLive), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
+  }).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
 
 const SITE_ROWS: ReadonlyArray<ReadonlyArray<Row>> = Object.values(Arr.groupBy(ROWS, (row) => row.site.siteId))
 
@@ -200,6 +200,80 @@ Metamorphic.on({
     runBudget: 6,
     hostBound: HOST_BOUND,
   })
+
+interface LinkCase extends Row {
+  readonly answer: string
+  readonly verdict: string
+}
+
+const ENFORCED = { answer: 'NotAssignable', verdict: 'compileError' } as const
+const NOT_ENFORCED = { answer: 'Unknown context-not-enforced', verdict: 'passed' } as const
+const SPREAD_ELEMENT_OPERAND = { answer: 'Unknown no-contextual-type', verdict: 'passed' } as const
+const SHORTHAND_NAME = { answer: 'Unknown site-not-expression', verdict: 'compileError' } as const
+const DESTRUCTURING_SHORTHAND = { answer: 'Unknown no-contextual-type', verdict: 'compileError' } as const
+
+type Expected =
+  | typeof ENFORCED
+  | typeof NOT_ENFORCED
+  | typeof SPREAD_ELEMENT_OPERAND
+  | typeof SHORTHAND_NAME
+  | typeof DESTRUCTURING_SHORTHAND
+
+const LINK_SITES: ReadonlyArray<readonly [Site, string, Expected]> = [
+  [{ siteId: 'non-null', line: 16, text: 'maybe' }, 'null', NOT_ENFORCED],
+  [{ siteId: 'parenthesized', line: 17, text: '21' }, '""', ENFORCED],
+  [{ siteId: 'array-element', line: 18, text: '22' }, '""', ENFORCED],
+  [{ siteId: 'property-value', line: 19, text: '23' }, '""', ENFORCED],
+  [{ siteId: 'shorthand-name', line: 21, text: 'w' }, '""', SHORTHAND_NAME],
+  [{ siteId: 'conditional-branch', line: 23, text: '26' }, '""', ENFORCED],
+  [{ siteId: 'as-const-element', line: 24, text: '27' }, '28', ENFORCED],
+  [{ siteId: 'satisfies-value', line: 25, text: '29' }, '""', ENFORCED],
+  [{ siteId: 'assignment-right', line: 27, text: '30' }, '""', ENFORCED],
+  [{ siteId: 'annotated-return', line: 28, text: '31' }, '""', ENFORCED],
+  [{ siteId: 'arrow-body', line: 29, text: '32' }, '""', ENFORCED],
+  [{ siteId: 'property-initializer', line: 30, text: '33' }, '""', ENFORCED],
+  [{ siteId: 'parameter-initializer', line: 31, text: '34' }, '""', ENFORCED],
+  [{ siteId: 'call-argument', line: 33, text: '35' }, '""', ENFORCED],
+  [{ siteId: 'array-spread', line: 34, text: '[36]' }, '""', SPREAD_ELEMENT_OPERAND],
+  [{ siteId: 'object-spread', line: 35, text: '{ b: 37 }' }, '{}', NOT_ENFORCED],
+  [{ siteId: 'call-spread', line: 37, text: '[38]' }, '""', SPREAD_ELEMENT_OPERAND],
+  [{ siteId: 'nullish-never-nullish', line: 39, text: `'r'` }, '0', NOT_ENFORCED],
+  [{ siteId: 'nullish-maybe-nullish', line: 40, text: `'m'` }, '0', ENFORCED],
+  [{ siteId: 'or-never-falsy', line: 42, text: '{}' }, '0', NOT_ENFORCED],
+  [{ siteId: 'or-maybe-falsy', line: 43, text: `'o'` }, '0', ENFORCED],
+  [{ siteId: 'and-never-truthy', line: 45, text: 'true' }, '0', NOT_ENFORCED],
+  [{ siteId: 'and-maybe-truthy', line: 47, text: 'true' }, '0', ENFORCED],
+  [{ siteId: 'any-or', line: 49, text: "'a'" }, '0', NOT_ENFORCED],
+  [{ siteId: 'any-nullish', line: 50, text: "'b'" }, '0', NOT_ENFORCED],
+  [{ siteId: 'any-and', line: 51, text: "'c'" }, '0', NOT_ENFORCED],
+  [{ siteId: 'async-return', line: 53, text: '41' }, '""', ENFORCED],
+  [{ siteId: 'generator-return', line: 54, text: '42' }, '""', ENFORCED],
+  [{ siteId: 'predicate-return', line: 55, text: "typeof x === 'string'" }, '""', ENFORCED],
+  [{ siteId: 'spread-sibling', line: 56, text: '44' }, '""', ENFORCED],
+  [{ siteId: 'new-argument', line: 58, text: '45' }, '""', ENFORCED],
+  [{ siteId: 'destructuring-shorthand', line: 60, text: 'w' }, '""', DESTRUCTURING_SHORTHAND],
+]
+
+const LINK_CASES: ReadonlyArray<LinkCase> = LINK_SITES.map(([site, candidate, expected], index) => ({
+  id: (0x100 + index).toString(16).padStart(16, '0'),
+  site,
+  candidate,
+  ...expected,
+}))
+
+const pairsAsExpected = (verdicts: Readonly<Record<string, string>>, answers: Readonly<Record<string, string>>) =>
+  LINK_CASES.every((linkCase) => answers[linkCase.id] === linkCase.answer && verdicts[linkCase.id] === linkCase.verdict)
+
+Differential.compare({
+  name: 'type query: a site passes its context through exactly the parent shapes the checker enforces',
+  reference: verdictsOf,
+  candidate: answersOf,
+})
+  .on(fc.shuffledSubarray([...LINK_CASES], { minLength: LINK_CASES.length }), { runBudget: 2, hostBound: HOST_BOUND })
+  .assert((verdicts, answers) =>
+    Object.entries(answers).every(([id, answer]) => answer !== 'NotAssignable' || verdicts[id] === 'compileError') &&
+    pairsAsExpected(verdicts, answers)
+  )
 
 const BODIES_FIXTURE = decodeURIComponent(new URL('__fixtures__/type-query-bodies/', import.meta.url).pathname)
 const BODIES_FILE = `${BODIES_FIXTURE}bodies.ts`
@@ -437,7 +511,7 @@ const bodyVerdictsOf = (rows: ReadonlyArray<BodyCase>): Effect.Effect<Readonly<R
       const runtime = yield* CheckerRuntime
       const checker = yield* runtime.checker
       return yield* checker.check([...wires])
-    }).pipe(Effect.provide(CheckerRuntime.layer(options)))
+    }).pipe(Effect.provide(TypeScriptCheckerRuntime.layer(options)))
     return Object.fromEntries(
       rows.map((row) => [
         row.id,
@@ -475,7 +549,7 @@ const bodyAnswersOf = (rows: ReadonlyArray<BodyCase>): Effect.Effect<Readonly<Re
         })
       ),
     )
-  }).pipe(Effect.provide(TypeQueryLive), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
+  }).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped, Effect.provide(FILE_PORTS), Effect.orDie)
 
 const expectedOf = (id: string): string => BODY_CASES.find((row) => row.id === id)?.expected ?? 'no-case'
 

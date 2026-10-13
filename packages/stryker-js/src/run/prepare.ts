@@ -39,7 +39,8 @@ import type { Project } from '../Project.schema.js'
 import type { ReadProjectDone } from '../read-project.cell.js'
 import { validateReporterNames } from '../reporter-stream.service.js'
 import { type ReporterChoice } from '../reporter-wiring.service.js'
-import { Reporter } from '../reporter.service.js'
+import { planReporters, ReporterPlanCommand } from '../Reporter/plan-reporters.workflow.js'
+import { Reporter } from '../Reporter/reporter.service.js'
 import { AnsiCode } from '../reporting/ansi.schema.js'
 import { RunEvents } from '../run-events.service.js'
 import { PrepareError, StageError } from '../Run.schema.js'
@@ -49,7 +50,6 @@ import type { FrameworkClaimant } from './explain-file-skip.workflow.js'
 import type { ValidationSchemaDocument } from './load-config.cell.js'
 import { forkCoreSchema } from './load-config.js'
 import { PrepareDecoded } from './plan-prepare.workflow.js'
-import { planReporters, ReporterPlanCommand } from './plan-reporters.workflow.js'
 import { RunEnvironment } from './RunEnvironment.service.js'
 import type { RunEnvironmentShape } from './RunEnvironment.service.js'
 import { validateOptions } from './validate-options.js'
@@ -123,10 +123,15 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
   yield* Scope.Scope
   const env = yield* RunEnvironment
   const queue = yield* RunEvents
+  const reporter = yield* Reporter
   const coreSchema: ValidationSchemaDocument = forkCoreSchema
   const configured = command.options
   const plannedReporters = planReporters(
-    ReporterPlanCommand.make({ configured: [...configured.reporters], mode: env.resolvedMode.mode }),
+    ReporterPlanCommand.make({
+      configured: [...configured.reporters],
+      stdout: reporter.builtin.filter((entry) => entry.stdout).map((entry) => entry.name),
+      mode: env.resolvedMode.mode,
+    }),
   )
   const resolvedReporters = Option.getOrElse(
     Option.map(Result.getSuccess(plannedReporters), (decision) => [...decision.reporters]),
@@ -202,7 +207,7 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
   const ignorers: readonly Ignorer[] = loaded.ignorers
 
   const builtinReporterFactories: Record<string, InterfaceReporter.ReporterFactory> = {
-    ...(yield* Reporter).builtin,
+    ...Object.fromEntries(reporter.builtin.map((entry) => [entry.name, entry.factory])),
     ...env.builtinReporters,
   }
   const pluginReporterDescriptors = Option.getOrElse(

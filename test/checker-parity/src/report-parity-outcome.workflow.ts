@@ -255,7 +255,7 @@ const answerCountsText = (counts: TypeQueryAnswerCounts): string =>
 const typeQueryLines = (typeQuery: TypeQuerySummary): ReadonlyArray<string> => [
   `- type query: ${typeQuery.queried} answered (${
     answerCountsText(typeQuery.answers)
-  }), ${typeQuery.refusedFiles} file(s) refused, peak ${typeQuery.peakServers} server(s)`,
+  }), ${typeQuery.refusedFiles} file(s) refused, every answer taken over the branch worker's type-query RPC`,
   `- type query by site kind: expression ${answerCountsText(typeQuery.answersBySiteKind.expression)}; function-body ${
     answerCountsText(typeQuery.answersBySiteKind['function-body'])
   }`,

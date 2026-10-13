@@ -6,7 +6,7 @@ import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gh
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Instrument, Mutator } from '@systemfsoftware/stryker-js-instrumenter'
 import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import { CheckerRuntime, TypeScriptCheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
@@ -90,7 +90,7 @@ const runOf = (fixture: Fixture, importerCheck: ImporterCheck): Effect.Effect<Ru
         statuses: Object.fromEntries(HashMap.toEntries(HashMap.map(results, (result) => result.status))),
         shortcuts: Number(span?.attributes['typescript.importer_shortcut.count'] ?? 0),
       }
-    }).pipe(Effect.provide(CheckerRuntime.layer(options).pipe(Layer.provideMerge(telemetry))))
+    }).pipe(Effect.provide(TypeScriptCheckerRuntime.layer(options).pipe(Layer.provideMerge(telemetry))))
   }).pipe(Effect.orDie)
 
 Feature('The shortcut gate fixture exercises the importer shortcut', { timeout: 240_000 })

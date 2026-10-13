@@ -2,11 +2,12 @@ import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeChildProcessSpawner from '@effect/platform-node-shared/NodeChildProcessSpawner'
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Checker, Options, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
-import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
-import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
+import { CheckerRuntime, TypeScriptCheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import * as TypeQueryTsgo from '@systemfsoftware/stryker-js-typescript-checker/type-query'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as HashMap from 'effect/HashMap'
+import * as HashSet from 'effect/HashSet'
 import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
@@ -107,7 +108,7 @@ const query = (
   Effect.gen(function*() {
     const typeQuery = yield* TypeQuery.TypeQuery
     return yield* typeQuery.query(request)
-  }).pipe(Effect.provide(TypeQueryLive), Effect.scoped)
+  }).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped)
 
 const requestOf = (fixture: Fixture, files: TypeQuery.TypeQueryRequest['files']): TypeQuery.TypeQueryRequest => ({
   version: 1,
@@ -199,7 +200,7 @@ const checkPlain = (fixture: Fixture, content: string) =>
           Option.match(HashMap.get(results, id), { onNone: () => 'missing', onSome: (result) => result.status }),
         ]),
       )
-    }).pipe(Effect.provide(CheckerRuntime.layer(options)))
+    }).pipe(Effect.provide(TypeScriptCheckerRuntime.layer(options)))
   }).pipe(Effect.orDie)
 
 const panicBesideACheck: Effect.Effect<
@@ -221,6 +222,164 @@ const panicBesideACheck: Effect.Effect<
   return { answers: response.files.map(outcomeText), statuses }
 })
 
+const ownPidOf: Effect.Effect<number, never, FileSystem.FileSystem> = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const target = yield* fs.readLink('/proc/self')
+  const parts = target.split('/')
+  return Number(parts[parts.length - 1])
+}).pipe(Effect.orDie)
+
+const parentPidOf = (pid: number): Effect.Effect<number | undefined, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const stat = yield* fs.readFileString(`/proc/${pid}/stat`).pipe(Effect.orElseSucceed(() => ''))
+    const closing = stat.lastIndexOf(')')
+    return closing === -1 ? undefined : Number(stat.slice(closing + 2).split(' ')[1])
+  }).pipe(Effect.orDie)
+
+const descendantPidsOf = (root: number): Effect.Effect<ReadonlyArray<number>, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const names = yield* fs.readDirectory('/proc')
+    const pairs = yield* Effect.forEach(
+      names.filter((name) => /^\d+$/u.test(name)),
+      (name) => Effect.map(parentPidOf(Number(name)), (parent) => ({ pid: Number(name), parent })),
+      { concurrency: 'unbounded' },
+    )
+    const collected: Array<number> = []
+    const frontier: Array<number> = [root]
+    for (const parent of frontier) {
+      for (const pair of pairs) {
+        if (pair.parent === parent && !collected.includes(pair.pid)) {
+          collected.push(pair.pid)
+          frontier.push(pair.pid)
+        }
+      }
+    }
+    return collected
+  }).pipe(Effect.orDie)
+
+const tsgoServerPids: Effect.Effect<ReadonlyArray<number>, never, FileSystem.FileSystem> = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const servers: Array<number> = []
+  for (const pid of yield* descendantPidsOf(yield* ownPidOf)) {
+    const cmdline = yield* fs.readFileString(`/proc/${pid}/cmdline`).pipe(Effect.orElseSucceed(() => ''))
+    if (cmdline.includes('--api')) servers.push(pid)
+  }
+  return servers
+}).pipe(Effect.orDie)
+
+const signalPid = (pid: number, signal: 'SIGSTOP' | 'SIGKILL'): Effect.Effect<void> =>
+  Effect.sync(() => {
+    globalThis.process.kill(pid, signal)
+  })
+
+const freezeNewServers = (
+  baseline: HashSet.HashSet<number>,
+  attemptsLeft = 2000,
+): Effect.Effect<ReadonlyArray<number>, never, HostPorts> =>
+  Effect.gen(function*() {
+    const fresh = (yield* tsgoServerPids).filter((pid) => !HashSet.has(baseline, pid))
+    if (fresh.length > 0) {
+      yield* Effect.forEach(fresh, (pid) => signalPid(pid, 'SIGSTOP'), { discard: true })
+      return fresh
+    }
+    if (attemptsLeft <= 0) return yield* Effect.die(new Error('no tsgo server was spawned to freeze'))
+    yield* Effect.sleep('5 millis')
+    return yield* freezeNewServers(baseline, attemptsLeft - 1)
+  })
+
+const killNewServers = (baseline: HashSet.HashSet<number>): Effect.Effect<void, never, HostPorts> =>
+  Effect.gen(function*() {
+    const fresh = (yield* tsgoServerPids).filter((pid) => !HashSet.has(baseline, pid))
+    yield* Effect.forEach(fresh, (pid) => signalPid(pid, 'SIGKILL'), { discard: true })
+  })
+
+const frozenServer: Effect.Effect<
+  {
+    readonly answers: ReadonlyArray<Readonly<Record<string, string>>>
+    readonly refusals: ReadonlyArray<{ readonly reason: string; readonly namesTheTimeout: boolean }>
+  },
+  never,
+  HostPorts
+> = Effect.gen(function*() {
+  const fixture = yield* fixtureOf('type-query-reasons')
+  const typeQuery = yield* TypeQuery.TypeQuery
+  const warmed = yield* readQueryFile(fixture, 'second.ts', [])
+  yield* Effect.orDie(typeQuery.query(requestOf(fixture, [warmed])))
+  const frozen = yield* tsgoServerPids
+  yield* Effect.forEach(frozen, (pid) => signalPid(pid, 'SIGSTOP'), { discard: true })
+  const response = yield* Effect.ensuring(
+    Effect.gen(function*() {
+      const victim = yield* readQueryFile(fixture, 'second.ts', [
+        { siteId: 'letter', line: 1, text: `'a'`, candidates: ['""'] },
+      ])
+      const next = yield* readQueryFile(fixture, 'reasons.ts', [
+        { siteId: 'unannotated', line: 1, text: '1', candidates: ['""'] },
+      ])
+      return yield* Effect.orDie(typeQuery.query(requestOf(fixture, [victim, next])))
+    }),
+    Effect.forEach(frozen, (pid) => signalPid(pid, 'SIGKILL'), { discard: true }),
+  )
+  return {
+    answers: response.files.map((outcome) =>
+      Match.valueTags(outcome, {
+        FileAnswered: (answered) => Object.fromEntries(answered.sites.flatMap(siteAnswersOf)),
+        FileRefused: () => ({}),
+      })
+    ),
+    refusals: response.files.flatMap((outcome) =>
+      Match.valueTags(
+        outcome,
+        {
+          FileAnswered: (): ReadonlyArray<{ readonly reason: string; readonly namesTheTimeout: boolean }> => [],
+          FileRefused: (refused) => [{
+            reason: refused.reason,
+            namesTheTimeout: refused.nextAction.includes('timed out'),
+          }],
+        },
+      )
+    ),
+  }
+}).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped)
+
+const wedgedOpen: Effect.Effect<
+  {
+    readonly warm: ReadonlyArray<Readonly<Record<string, string>>>
+    readonly opened: { readonly reason: string; readonly version: number }
+  },
+  never,
+  HostPorts
+> = Effect.gen(function*() {
+  const warmFixture = yield* fixtureOf('type-query')
+  const coldFixture = yield* fixtureOf('type-query-reasons')
+  const typeQuery = yield* TypeQuery.TypeQuery
+  const warmFile = yield* readQueryFile(warmFixture, 'sites.ts', [
+    { siteId: 'union', line: 1, text: `'a'`, candidates: ['""'] },
+  ])
+  yield* Effect.orDie(typeQuery.query(requestOf(warmFixture, [warmFile])))
+  const baseline = HashSet.fromIterable(yield* tsgoServerPids)
+  const coldFile = yield* readQueryFile(coldFixture, 'second.ts', [
+    { siteId: 'letter', line: 1, text: `'a'`, candidates: ['""'] },
+  ])
+  return yield* Effect.ensuring(
+    Effect.map(
+      Effect.all([
+        Effect.flatMap(
+          freezeNewServers(baseline),
+          () => Effect.orDie(typeQuery.query(requestOf(warmFixture, [warmFile]))),
+        ),
+        typeQuery.query(requestOf(coldFixture, [coldFile])).pipe(Effect.flip, Effect.orDie),
+      ], { concurrency: 'unbounded' }),
+      ([warm, opened]) => ({
+        warm: warm.files.map(outcomeText),
+        opened: { reason: opened.reason, version: opened.version },
+      }),
+    ),
+    killNewServers(baseline),
+  )
+}).pipe(Effect.provide(TypeQueryTsgo.layer), Effect.scoped)
+
 const refusals = Effect.gen(function*() {
   const fixture = yield* fixtureOf('type-query')
   const file = yield* readQueryFile(fixture, 'sites.ts', SITES)
@@ -236,8 +395,12 @@ const refusals = Effect.gen(function*() {
     query(requestOf(fixture, [{ ...file, fileName: fixture.file('../per-mutant-check/dep.ts') }])),
   )
   return {
-    unsupported: unsupported.reason,
-    unknownVersion: `${unknownVersion.reason}: ${unknownVersion.nextAction}`,
+    functionBodyRefusal: { reason: unsupported.reason, version: unsupported.version },
+    unknownVersionRefusal: {
+      reason: unknownVersion.reason,
+      nextAction: unknownVersion.nextAction,
+      version: unknownVersion.version,
+    },
     outside: outside.files.flatMap((outcome) => Object.values(outcomeText(outcome))),
   }
 })
@@ -274,7 +437,7 @@ const unopenable = Effect.gen(function*() {
   const refused = yield* Effect.flip(
     query({ ...requestOf(fixture, [second]), tsconfigFile: fixture.file('no-such-tsconfig.json') }),
   )
-  return refused.reason
+  return { reason: refused.reason, version: refused.version }
 })
 
 Feature('Answering type queries on a tsgo server of their own', { timeout: 120_000 })
@@ -357,6 +520,37 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
     )
 
     scenario(
+      'A file on a wedged tsgo server is refused on the query grace and the next file is answered on a fresh server',
+      Gherkin.Do.pipe(
+        When('a file is answered, its server wedges mid-query, and that file and the next are queried')(
+          'seen',
+          () => frozenServer,
+        ),
+        Then('the wedged file is refused naming the timeout and the next file is answered')((s, expect) =>
+          expect(s.seen).toEqual({
+            answers: [{}, { 'unannotated ""': 'Unknown no-contextual-type' }],
+            refusals: [{ reason: 'query-timed-out', namesTheTimeout: true }],
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A project whose TypeScript server stalls as it loads is refused within the query grace, and another project is answered after it',
+      Gherkin.Do.pipe(
+        When(
+          "one project is answered, a second project's server is stopped as it opens, and both projects are queried",
+        )('seen', () => wedgedOpen),
+        Then('the stalled project is refused and the first project is still answered')((s, expect) =>
+          expect(s.seen).toEqual({
+            warm: [{ 'union ""': 'NotAssignable "" to "a" | "b"' }],
+            opened: { reason: 'project-open-failed', version: 1 },
+          })
+        ),
+      ),
+    )
+
+    scenario(
       'A version 1 request carrying a function-body site and a version 3 request are refused, and a file outside the project is refused on its own',
       Gherkin.Do.pipe(
         When(
@@ -365,14 +559,19 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
           'seen',
           () => refusals,
         ),
-        Then('both are refused unsupported-version naming versions 1 or 2, and the outside file not-in-project')((
+        Then(
+          'both are refused carrying the version they refused, and the file outside the project is refused on its own',
+        )((
           s,
           expect,
         ) =>
           expect(s.seen).toEqual({
-            unsupported: 'unsupported-version',
-            unknownVersion:
-              'unsupported-version: Send a TypeQuery.TypeQueryRequest with version 1 or 2; this server received version 3.',
+            functionBodyRefusal: { reason: 'unsupported-version', version: 1 },
+            unknownVersionRefusal: {
+              reason: 'unsupported-version',
+              nextAction: 'Send a TypeQuery.TypeQueryRequest with version 1 or 2; this server received version 3.',
+              version: 3,
+            },
             outside: ['FileRefused not-in-project'],
           })
         ),
@@ -406,8 +605,10 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
     scenario(
       'A project tsgo cannot open refuses the request',
       Gherkin.Do.pipe(
-        When('a request names a tsconfig that does not exist')('reason', () => unopenable),
-        Then('the request is refused project-open-failed')((s, expect) => expect(s.reason).toBe('project-open-failed')),
+        When('a request names a project file that does not exist')('refusal', () => unopenable),
+        Then('the request is refused with the version it asked for')((s, expect) =>
+          expect(s.refusal).toEqual({ reason: 'project-open-failed', version: 1 })
+        ),
       ),
     )
   })

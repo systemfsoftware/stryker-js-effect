@@ -19,39 +19,18 @@ import {
   type NewExpression,
   type Node,
   type SourceFile,
-  SyntaxKind,
   type TypeNode,
 } from 'typescript/unstable/ast'
 import {
-  isArrayLiteralExpression,
-  isArrowFunction,
-  isAsExpression,
-  isBinaryExpression,
   isBlock,
-  isCallExpression,
-  isConditionalExpression,
   isConstructorDeclaration,
   isExpression,
-  isFunctionExpression,
   isFunctionLikeDeclaration,
   isGetAccessorDeclaration,
   isIdentifier,
   isNewExpression,
-  isNonNullExpression,
-  isObjectLiteralExpression,
-  isParameterDeclaration,
-  isParenthesizedExpression,
-  isPropertyAssignment,
-  isPropertyDeclaration,
-  isReturnStatement,
-  isSatisfiesExpression,
   isSetAccessorDeclaration,
-  isShorthandPropertyAssignment,
-  isSpreadAssignment,
-  isSpreadElement,
-  isTypeAssertion,
   isTypeReferenceNode,
-  isVariableDeclaration,
 } from 'typescript/unstable/ast/is'
 import {
   API,
@@ -79,13 +58,29 @@ import {
   type SiteFunctionBody,
 } from './CheckerCommands.schema.js'
 import { classifyCandidate } from './classify-candidate.workflow.js'
+import {
+  classifyContextLink,
+  ClassifyContextLinkCommand,
+  type ContextLink,
+  type ContextSlot,
+  type LeftOperandMember,
+} from './classify-context-link.workflow.js'
+import {
+  annotatedOf,
+  constAssertionOf,
+  enclosingFunctionOf,
+  isCallLike,
+  leftOperandMemberOf,
+  operatorOf,
+  returnTargetOf,
+  shortCircuitParentOf,
+  slotOf,
+} from './context-link-facts.js'
 import { decided } from './ts-compiler.handle.js'
 import type { ServerCrash } from './type-query.schema.js'
 
 export const TypeId = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/TypeQuery')
 export type TypeId = typeof TypeId
-
-const REFUSAL_VERSION: TypeQuery.TypeQueryVersion = 2
 
 const servedVersionOf = (version: number): Option.Option<TypeQuery.TypeQueryVersion> =>
   Arr.findFirst(TypeQuery.TypeQueryVersion.literals, (served) => served === version)
@@ -105,16 +100,16 @@ const isContextFree = (text: string): boolean => {
 
 const unsupportedVersion = (version: number): TypeQuery.TypeQueryRefused =>
   TypeQuery.TypeQueryRefused.make({
-    version: REFUSAL_VERSION,
+    version,
     reason: 'unsupported-version',
     nextAction: `Send a TypeQuery.TypeQueryRequest with version ${
       TypeQuery.TypeQueryVersion.literals.join(' or ')
     }; this server received version ${version}.`,
   })
 
-const functionBodyNeedsVersionTwo = (): TypeQuery.TypeQueryRefused =>
+const functionBodyNeedsVersionTwo = (version: number): TypeQuery.TypeQueryRefused =>
   TypeQuery.TypeQueryRefused.make({
-    version: REFUSAL_VERSION,
+    version,
     reason: 'unsupported-version',
     nextAction:
       'Send a version 2 TypeQuery.TypeQueryRequest for function-body sites; version 1 answers expression sites only.',
@@ -123,9 +118,9 @@ const functionBodyNeedsVersionTwo = (): TypeQuery.TypeQueryRefused =>
 const hasFunctionBodySite = (request: TypeQuery.TypeQueryRequest): boolean =>
   Arr.some(request.files, (file) => Arr.some(file.sites, (site) => site.kind === 'function-body'))
 
-const projectOpenFailed = (tsconfigFile: string, detail: string): TypeQuery.TypeQueryRefused =>
+const projectOpenFailed = (tsconfigFile: string, detail: string, version: number): TypeQuery.TypeQueryRefused =>
   TypeQuery.TypeQueryRefused.make({
-    version: REFUSAL_VERSION,
+    version,
     reason: 'project-open-failed',
     nextAction: `Open '${tsconfigFile}' with a valid TypeScript project and retry; opening it failed with: ${detail}`,
   })
@@ -172,26 +167,35 @@ interface Server {
 }
 
 const CLOSE_GRACE = '1 second'
+const QUERY_GRACE = '30 seconds'
+const QUERY_TIMED_OUT_NEXT_ACTION =
+  `The query timed out after ${QUERY_GRACE} and its tsgo server was discarded. Retry the file; the next file is answered on a fresh tsgo server.`
 
 const closeApi = (api: API): Effect.Effect<void> =>
   Effect.tryPromise(() => api.close()).pipe(Effect.timeoutOption(CLOSE_GRACE), Effect.ignore)
 
 const closeServer = (server: Server): Effect.Effect<void> => closeApi(server.api)
 
-const openServer = (tsconfigFile: string): Effect.Effect<Server, TypeQuery.TypeQueryRefused> =>
+const openServer = (tsconfigFile: string, version: number): Effect.Effect<Server, TypeQuery.TypeQueryRefused> =>
   Effect.gen(function*() {
     const overlay = makeOverlay()
     const api = yield* Effect.try({
       try: () => new API({ fs: overlay.fs }),
-      catch: (cause) => projectOpenFailed(tsconfigFile, crash(cause).detail),
+      catch: (cause) => projectOpenFailed(tsconfigFile, crash(cause).detail, version),
     })
     const snapshot = yield* Effect.tryPromise({
       try: () => api.updateSnapshot({ openProjects: [tsconfigFile] }),
-      catch: (cause) => projectOpenFailed(tsconfigFile, crash(cause).detail),
+      catch: (cause) => projectOpenFailed(tsconfigFile, crash(cause).detail, version),
     }).pipe(
+      // A project load that never answers must not hold the servers ref: bound it like a query.
+      Effect.timeoutOrElse({
+        duration: QUERY_GRACE,
+        orElse: () =>
+          Effect.fail(projectOpenFailed(tsconfigFile, `tsgo gave no answer within ${QUERY_GRACE}`, version)),
+      }),
       Effect.filterOrFail(
         (opened) => opened.getProject(tsconfigFile) !== undefined,
-        () => projectOpenFailed(tsconfigFile, 'tsgo opened no project for this tsconfig'),
+        () => projectOpenFailed(tsconfigFile, 'tsgo opened no project for this tsconfig', version),
       ),
       Effect.tapError(() => closeApi(api)),
     )
@@ -208,12 +212,19 @@ export type TypeQueryServers = Handle.Of<typeof TypeQueryServers>
 
 export const isTypeQueryServers = TypeQueryServers.is
 
-const getOrOpen = (servers: Servers, tsconfigFile: string): Effect.Effect<Server, TypeQuery.TypeQueryRefused> =>
+const getOrOpen = (
+  servers: Servers,
+  tsconfigFile: string,
+  version: number,
+): Effect.Effect<Server, TypeQuery.TypeQueryRefused> =>
   SynchronizedRef.modifyEffect(servers, (map) =>
     Option.match(HashMap.get(map, tsconfigFile), {
       onSome: (server) => Effect.succeed([server, map] as const),
       onNone: () =>
-        Effect.map(openServer(tsconfigFile), (server) => [server, HashMap.set(map, tsconfigFile, server)] as const),
+        Effect.map(
+          openServer(tsconfigFile, version),
+          (server) => [server, HashMap.set(map, tsconfigFile, server)] as const,
+        ),
     }))
 
 const discardServer = (servers: Servers, server: Server): Effect.Effect<void> =>
@@ -228,6 +239,12 @@ const discardServer = (servers: Servers, server: Server): Effect.Effect<void> =>
       )),
     (removed) => Boolean.match(removed, { onFalse: () => Effect.void, onTrue: () => closeServer(server) }),
   )
+
+const discardAndAnswer = (
+  servers: Servers,
+  server: Server,
+  outcome: TypeQuery.FileOutcome,
+): Effect.Effect<TypeQuery.FileOutcome> => Effect.as(discardServer(servers, server), outcome)
 
 const isCurrent = (servers: Servers, server: Server): Effect.Effect<boolean> =>
   Effect.map(
@@ -393,14 +410,7 @@ const contextualFactsOf = (checker: Checker, type: Type): Effect.Effect<Contextu
     return { text, isError: type.isErrorType(), instantiable }
   })
 
-const isCallLike = (parent: Node): parent is CallExpression | NewExpression =>
-  isCallExpression(parent) || isNewExpression(parent)
-
-const isArgumentOf = (parent: CallExpression | NewExpression, node: Node): boolean =>
-  Arr.some(parent.arguments ?? [], (argument) => argument === node)
-
 type Origin = Effect.Effect<ContextOrigin, ServerCrash>
-type Link = (checker: Checker, parent: Node, node: Node) => Option.Option<Origin>
 
 const DECLARED_CONTEXT: ContextOrigin = { _tag: 'DeclaredContext' }
 const UNENFORCED_CONTEXT: ContextOrigin = { _tag: 'UnenforcedContext' }
@@ -408,107 +418,75 @@ const UNENFORCED_CONTEXT: ContextOrigin = { _tag: 'UnenforcedContext' }
 const declared = (): Origin => Effect.succeed(DECLARED_CONTEXT)
 const unenforced = (): Origin => Effect.succeed(UNENFORCED_CONTEXT)
 
-const linkOf = <N extends Node>(
-  guard: (parent: Node) => parent is N,
-  resolve: (checker: Checker, parent: N, node: Node) => Origin,
-): Link =>
-(checker, parent, node) => guard(parent) ? Option.some(resolve(checker, parent, node)) : Option.none()
+const unionMembersOf = (type: Type): Effect.Effect<ReadonlyArray<Type>, ServerCrash> =>
+  Option.match(unionTypesOf(type), {
+    onSome: (evaluate) => tryPromise(evaluate),
+    onNone: () => Effect.succeed([type]),
+  })
 
-const climb = (checker: Checker, parent: Node): Origin => originOf(checker, parent)
+const leftMembersOf = (
+  checker: Checker,
+  binary: BinaryExpression,
+): Effect.Effect<ReadonlyArray<LeftOperandMember>, ServerCrash> =>
+  Effect.flatMap(typeAt(checker, binary.left), (type) =>
+    Option.match(type, {
+      onNone: () => Effect.succeed(Arr.empty<LeftOperandMember>()),
+      onSome: (left) => Effect.map(unionMembersOf(left), Arr.map(leftOperandMemberOf)),
+    }))
 
-const whenSlot = (filled: boolean, origin: () => Origin): Origin => filled ? origin() : unenforced()
+const leftOperandOf = (
+  checker: Checker,
+  parent: Node,
+  slot: ContextSlot,
+): Effect.Effect<ReadonlyArray<LeftOperandMember>, ServerCrash> =>
+  Option.match(Option.filter(shortCircuitParentOf(parent), () => slot === 'right'), {
+    onNone: () => Effect.succeed(Arr.empty<LeftOperandMember>()),
+    onSome: (binary) => leftMembersOf(checker, binary),
+  })
 
-const SHORT_CIRCUIT_OPERATORS: ReadonlyArray<SyntaxKind> = [
-  SyntaxKind.QuestionQuestionToken,
-  SyntaxKind.BarBarToken,
-  SyntaxKind.AmpersandAmpersandToken,
-]
+const linkCommandOf = (
+  checker: Checker,
+  parent: Node,
+  node: Node,
+): Effect.Effect<ClassifyContextLinkCommand, ServerCrash> => {
+  const slot = slotOf(node)
+  return Effect.map(leftOperandOf(checker, parent, slot), (leftOperand) =>
+    ClassifyContextLinkCommand.make({
+      parentKind: parent.kind,
+      slot,
+      operator: operatorOf(parent),
+      constAssertion: constAssertionOf(parent),
+      annotated: annotatedOf(parent),
+      returnTarget: returnTargetOf(parent),
+      leftOperand,
+    }))
+}
 
-const isConstName = (name: Node): boolean => isIdentifier(name) && name.text === 'const'
-
-const isConstAssertion = (type: TypeNode): boolean => isTypeReferenceNode(type) && isConstName(type.typeName)
-
-const annotatedOrigin = (declaration: { readonly type?: TypeNode | undefined }): Origin =>
-  declaration.type === undefined ? unenforced() : declared()
-
-const enclosingFunctionOf = (node: Node): Option.Option<FunctionLikeDeclaration> =>
-  Option.flatMap(
-    Option.fromUndefinedOr(node.parent),
-    (parent) => isFunctionLikeDeclaration(parent) ? Option.some(parent) : enclosingFunctionOf(parent),
+const followLink = (checker: Checker, parent: Node, link: ContextLink): Origin =>
+  Match.value(link).pipe(
+    Match.tag('LinkClimb', (): Origin => originOf(checker, parent)),
+    Match.tag('LinkClimbFunction', (): Origin =>
+      Option.match(enclosingFunctionOf(parent), {
+        onNone: unenforced,
+        onSome: (fn) => originOf(checker, fn),
+      })),
+    Match.tag('LinkDeclared', declared),
+    Match.tag(
+      'LinkCallArgument',
+      (): Origin => isCallLike(parent) ? callArgumentFactsOf(checker, parent) : unenforced(),
+    ),
+    Match.tag('LinkUnenforced', unenforced),
+    Match.exhaustive,
   )
-
-const isExpressionFunction = (fn: FunctionLikeDeclaration): boolean => isArrowFunction(fn) || isFunctionExpression(fn)
-
-const unannotatedReturnOrigin = (checker: Checker, fn: FunctionLikeDeclaration): Origin =>
-  whenSlot(isExpressionFunction(fn), () => climb(checker, fn))
-
-const returnOrigin = (checker: Checker, fn: FunctionLikeDeclaration): Origin =>
-  fn.type === undefined ? unannotatedReturnOrigin(checker, fn) : declared()
-
-const shortCircuitOrigin = (checker: Checker, binary: BinaryExpression): Origin =>
-  whenSlot(Arr.contains(SHORT_CIRCUIT_OPERATORS, binary.operatorToken.kind), () => climb(checker, binary))
-
-const operatorOrigin = (checker: Checker, binary: BinaryExpression): Origin =>
-  binary.operatorToken.kind === SyntaxKind.EqualsToken ? declared() : shortCircuitOrigin(checker, binary)
-
-const initializerLinkOf = <
-  N extends Node & { readonly initializer?: Node | undefined; readonly type?: TypeNode | undefined },
->(
-  guard: (parent: Node) => parent is N,
-): Link =>
-  linkOf(
-    guard,
-    (_, declaration, node) => whenSlot(declaration.initializer === node, () => annotatedOrigin(declaration)),
-  )
-
-const LINKS: ReadonlyArray<Link> = [
-  linkOf(isParenthesizedExpression, climb),
-  linkOf(isArrayLiteralExpression, climb),
-  linkOf(isObjectLiteralExpression, climb),
-  linkOf(isSpreadElement, climb),
-  linkOf(isSpreadAssignment, climb),
-  linkOf(isShorthandPropertyAssignment, climb),
-  linkOf(isNonNullExpression, climb),
-  linkOf(
-    isPropertyAssignment,
-    (checker, property, node) => whenSlot(property.initializer === node, () => climb(checker, property)),
-  ),
-  linkOf(
-    isConditionalExpression,
-    (checker, conditional, node) => whenSlot(conditional.condition !== node, () => climb(checker, conditional)),
-  ),
-  linkOf(
-    isBinaryExpression,
-    (checker, binary, node) => whenSlot(binary.right === node, () => operatorOrigin(checker, binary)),
-  ),
-  linkOf(
-    isAsExpression,
-    (checker, assertion) => whenSlot(isConstAssertion(assertion.type), () => climb(checker, assertion)),
-  ),
-  linkOf(isTypeAssertion, unenforced),
-  linkOf(isSatisfiesExpression, declared),
-  linkOf(
-    isCallLike,
-    (checker, call, node) => whenSlot(isArgumentOf(call, node), () => callArgumentFactsOf(checker, call)),
-  ),
-  linkOf(isArrowFunction, (checker, fn, node) => whenSlot(fn.body === node, () => returnOrigin(checker, fn))),
-  linkOf(isReturnStatement, (checker, statement) =>
-    Option.match(enclosingFunctionOf(statement), {
-      onNone: unenforced,
-      onSome: (fn) => returnOrigin(checker, fn),
-    })),
-  initializerLinkOf(isVariableDeclaration),
-  initializerLinkOf(isPropertyDeclaration),
-  initializerLinkOf(isParameterDeclaration),
-]
-
-const originFromParent = (checker: Checker, parent: Node, node: Node): Origin =>
-  Option.getOrElse(Arr.findFirst(LINKS, (link) => link(checker, parent, node)), unenforced)
 
 function originOf(checker: Checker, node: Node): Origin {
   return Option.match(Option.fromUndefinedOr(node.parent), {
     onNone: unenforced,
-    onSome: (parent) => originFromParent(checker, parent, node),
+    onSome: (parent) =>
+      Effect.flatMap(
+        linkCommandOf(checker, parent, node),
+        (command) => followLink(checker, parent, decided(classifyContextLink(command))),
+      ),
   })
 }
 
@@ -847,6 +825,20 @@ const notInProject = (fileName: string): TypeQuery.FileOutcome => ({
   nextAction: NOT_IN_PROJECT_NEXT_ACTION,
 })
 
+const serverCrashed = (fileName: string): TypeQuery.FileOutcome => ({
+  _tag: 'FileRefused',
+  fileName,
+  reason: 'server-crashed',
+  nextAction: SERVER_CRASHED_NEXT_ACTION,
+})
+
+const queryTimedOut = (fileName: string): TypeQuery.FileOutcome => ({
+  _tag: 'FileRefused',
+  fileName,
+  reason: 'query-timed-out',
+  nextAction: QUERY_TIMED_OUT_NEXT_ACTION,
+})
+
 const projectAndFile = (
   server: Server,
   file: TypeQuery.TypeQueryFile,
@@ -910,25 +902,24 @@ const serveFile = (
   servers: Servers,
   tsconfigFile: string,
   file: TypeQuery.TypeQueryFile,
+  version: number,
 ): Effect.Effect<TypeQuery.FileOutcome, TypeQuery.TypeQueryRefused> =>
-  Effect.flatMap(getOrOpen(servers, tsconfigFile), (server) =>
+  Effect.flatMap(getOrOpen(servers, tsconfigFile, version), (server) =>
     Semaphore.withPermit(
       server.lock,
       Effect.flatMap(isCurrent(servers, server), (current) =>
         Boolean.match(current, {
-          onFalse: () => Effect.suspend(() => serveFile(servers, tsconfigFile, file)),
+          onFalse: () => Effect.suspend(() => serveFile(servers, tsconfigFile, file, version)),
           onTrue: () =>
-            processFile(server, file).pipe(
-              Effect.catchTag('ServerCrash', () =>
-                Effect.as(
-                  discardServer(servers, server),
-                  {
-                    _tag: 'FileRefused',
-                    fileName: file.fileName,
-                    reason: 'server-crashed',
-                    nextAction: SERVER_CRASHED_NEXT_ACTION,
-                  } satisfies TypeQuery.FileOutcome,
-                )),
+            Effect.timeoutOption(processFile(server, file), QUERY_GRACE).pipe(
+              Effect.matchEffect({
+                onFailure: () => discardAndAnswer(servers, server, serverCrashed(file.fileName)),
+                onSuccess: (settled) =>
+                  Option.match(settled, {
+                    onNone: () => discardAndAnswer(servers, server, queryTimedOut(file.fileName)),
+                    onSome: (outcome) => Effect.succeed(outcome),
+                  }),
+              }),
             ),
         })),
     ))
@@ -943,15 +934,17 @@ const makeShape = (servers: Servers): TypeQuery.TypeQueryShape => ({
       const tsconfigFile = normalizeFileName(request.tsconfigFile)
       const files = yield* Boolean.match(Boolean.and(version === 1, hasFunctionBodySite(request)), {
         onTrue: () =>
-          Effect.fail(functionBodyNeedsVersionTwo()),
+          Effect.fail(functionBodyNeedsVersionTwo(request.version)),
         onFalse: () =>
-          Effect.forEach(request.files, (file) => serveFile(servers, tsconfigFile, file), { concurrency: 1 }),
+          Effect.forEach(request.files, (file) => serveFile(servers, tsconfigFile, file, request.version), {
+            concurrency: 1,
+          }),
       })
       return { version, files }
     }),
 })
 
-export const TypeQueryLive: Layer.Layer<TypeQuery.TypeQuery> = Layer.effect(
+export const layer: Layer.Layer<TypeQuery.TypeQuery> = Layer.effect(
   TypeQuery.TypeQuery,
   Effect.map(
     Effect.acquireRelease(

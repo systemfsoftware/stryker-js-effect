@@ -18,7 +18,6 @@ import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as Predicate from 'effect/Predicate'
 import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
-import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
 import type * as RpcClient from 'effect/rpc/RpcClient'
 import type { RpcClientError } from 'effect/rpc/RpcClientError'
@@ -40,6 +39,7 @@ import {
 import { DriverFailure } from './DriverFailure.schema.js'
 import { execText } from './exec-text.js'
 import { changedFiles } from './lane-trigger.js'
+import { isPastDeadline, type LegDeadline, remainingOf } from './leg-deadline.js'
 import { type OtlpReceiver, startOtlpReceiver } from './otlp-receiver.js'
 import {
   CacheEntry,
@@ -85,7 +85,7 @@ import {
   projectCheckSpans,
   type SpanRecord,
 } from './span-counts.js'
-import { branchTypeQueryLines, type FileContent, type ServerTally } from './type-query-side.js'
+import { branchTypeQueryLines, BranchWorkerRpcs, type FileContent, type TypeQueryInput } from './type-query-side.js'
 
 const decodeParityLine = S.decodeResult(S.fromJsonString(ParityLine))
 const encodeParityLine = S.encodeResult(S.fromJsonString(ParityLine))
@@ -257,20 +257,16 @@ export const decodeLines: {
 )
 
 const fileContentsOf = (
-  input: ProjectInput,
+  repoRoot: string,
   wires: ReadonlyArray<Checker.CheckerMutantWire>,
-): Effect.Effect<ReadonlyArray<FileContent>, DriverFailure, DriverServices> =>
+): Effect.Effect<ReadonlyArray<FileContent>, DriverFailure, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
     return yield* Effect.forEach(
       Arr.dedupe(wires.map((wire) => wire.fileName)),
-      (name) => Effect.map(readText(path.resolve(input.repoRoot, name)), (content) => ({ name, content })),
+      (name) => Effect.map(readText(path.resolve(repoRoot, name)), (content) => ({ name, content })),
     )
   })
-export interface LegDeadline {
-  readonly startedAt: number
-  readonly deadlineAt: Option.Option<number>
-}
 
 interface SideInput {
   readonly side: Side
@@ -497,11 +493,6 @@ interface BatchRun {
   readonly freshCheckCalls: number
   readonly outcome: BatchOutcome
 }
-
-const remainingOf = (deadline: LegDeadline): Effect.Effect<Option.Option<number>> =>
-  Effect.map(Clock.currentTimeMillis, (now) => Option.map(deadline.deadlineAt, (at) => at - now))
-
-const isPastDeadline = (remaining: Option.Option<number>): boolean => Option.exists(remaining, (ms) => ms <= 0)
 
 const heartbeat = (input: SideInput, detail: string): Effect.Effect<void> =>
   Effect.flatMap(Clock.currentTimeMillis, (now) =>
@@ -782,8 +773,17 @@ const bootFailedRun = (input: SideInput, error: Worker.WorkerBootError): Effect.
     freshFiles: 0,
   })
 
+const typeQueryInputOf = (input: SideInput): TypeQueryInput => ({
+  project: input.project,
+  tsconfigFile: input.tsconfigFile,
+  repoRoot: input.repoRoot,
+  checkerName: CHECKER_NAME,
+  deadline: input.deadline,
+})
+
 const runSide = (
   input: SideInput,
+  typeQuery: boolean,
 ): Effect.Effect<SideRun, DriverFailure, Worker.WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
   Effect.scoped(
     Effect.gen(function*() {
@@ -804,7 +804,21 @@ const runSide = (
           OTEL_SERVICE_NAME: input.serviceName,
         },
       })
-      return yield* sideBody(client, input)
+      const [run, typeQueryLines] = yield* Effect.all([
+        sideBody(client, input),
+        Boolean.match(typeQuery, {
+          onFalse: () => Effect.succeed(Arr.empty<ParityLine>()),
+          onTrue: () =>
+            Effect.flatMap(
+              fileContentsOf(input.repoRoot, input.wires),
+              (contents) =>
+                branchTypeQueryLines(typeQueryInputOf(input), { contents, wires: input.wires }).pipe(
+                  Effect.provideService(BranchWorkerRpcs, client),
+                ),
+            ),
+        }),
+      ], { concurrency: 'unbounded' })
+      return { ...run, lines: [...run.lines, ...typeQueryLines] }
     }),
   ).pipe(
     Effect.catchTags({
@@ -835,7 +849,6 @@ interface ProjectInput {
   readonly branchWorker: string
   readonly mainBundleHash: string
   readonly branchBundleHash: string
-  readonly servers: Ref.Ref<ServerTally>
   readonly receiver: OtlpReceiver
   readonly deadline: LegDeadline
 }
@@ -1131,21 +1144,19 @@ const checkBothSides = (
 > =>
   Effect.gen(function*() {
     const sideInputs = Side.literals.map(sideInputOf(input, wires))
-    const [runs, typeQueryLines] = yield* Effect.all([
-      Effect.forEach(
-        sideInputs,
-        (sideInput) => Effect.map(runSide(sideInput), (run) => ({ ...run, side: sideInput.side })),
-        { concurrency: 'unbounded' },
-      ),
-      Effect.flatMap(fileContentsOf(input, wires), (contents) => branchTypeQueryLines(input, contents, wires)),
-    ], { concurrency: 'unbounded' })
+    const runs = yield* Effect.forEach(
+      sideInputs,
+      (sideInput) =>
+        Effect.map(runSide(sideInput, sideInput.side === 'branch'), (run) => ({ ...run, side: sideInput.side })),
+      { concurrency: 'unbounded' },
+    )
     const mutantIds = HashSet.fromIterable(wires.map((wire) => wire.id))
     const telemetry = yield* Effect.forEach(
       runs.filter((run) => !run.bootFailed),
       (run) => telemetryLineOf(input, run, mutantIds),
     )
     return {
-      lines: [...runs.flatMap((run) => run.lines), ...telemetry.flat(), ...typeQueryLines],
+      lines: [...runs.flatMap((run) => run.lines), ...telemetry.flat()],
       status: runs.some((run) => run.bootFailed) ? 'boot-failed' : 'ran',
       cachedFiles: runs.reduce((total, run) => total + run.cachedFiles, 0),
       freshFiles: runs.reduce((total, run) => total + run.freshFiles, 0),
@@ -1540,7 +1551,7 @@ const legDeadlineFailure = (
       Option.getOrElse(command.deadline, () => 0)
     } s deadline: ${freshBatches} batch(es) were checked and cached this attempt; ${
       deferred.filter((line) => line.fileName !== null).length
-    } file run(s) (${deferred.reduce((total, line) => total + line.mutants, 0)} mutant(s)) and ${
+    } file or query run(s) (${deferred.reduce((total, line) => total + line.mutants, 0)} mutant(s)) and ${
       deferred.filter((line) => line.fileName === null).length
     } project(s) are deferred (${
       deferred.filter((line) => line.reason === 'interrupted-at-deadline').length
@@ -1605,7 +1616,6 @@ export const runShard: {
           corpusDiscoveryMs: Duration.toMillis(discovery),
         }),
       )
-      const servers = yield* Ref.make<ServerTally>({ live: 0, peak: 0 })
       const results = yield* Effect.forEach(projects, (project) => {
         const tsconfigFile = path.resolve(repoRoot, project)
         return Effect.flatMap(exists(tsconfigFile), (present) =>
@@ -1627,7 +1637,6 @@ export const runShard: {
                 branchWorker: command.branchWorker,
                 mainBundleHash,
                 branchBundleHash,
-                servers,
                 receiver,
                 deadline,
               }),

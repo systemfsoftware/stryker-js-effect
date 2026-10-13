@@ -50,10 +50,10 @@ const makeCheckerServer = (
         group: ({ mutants }) => Effect.succeed([mutants.map((m) => m.id)]),
         digest: () => Effect.succeed(FAKE_DIGEST),
         capabilities: () => Effect.succeed({ typeQuery: [] }),
-        typeQuery: () =>
+        typeQuery: ({ version }) =>
           Effect.fail(
             TypeQuery.TypeQueryRefused.make({
-              version: 2,
+              version,
               reason: 'unsupported-version',
               nextAction:
                 'This checker declares no type-query versions; send type queries to one whose capabilities list the version.',

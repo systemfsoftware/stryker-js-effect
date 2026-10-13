@@ -5,7 +5,7 @@ import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from '@o
 import { Gherkin, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import { Checker, Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { CheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
+import { CheckerRuntime, TypeScriptCheckerRuntime } from '@systemfsoftware/stryker-js-typescript-checker/runtime'
 import * as Arr from 'effect/Array'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
@@ -273,7 +273,7 @@ const checkedWith = (
         (merged, call) => HashMap.union(merged, call),
       )
       return { results, attributes: checkSpanAttributesOf(exporter) }
-    }).pipe(Effect.provide(CheckerRuntime.layer(options).pipe(Layer.provideMerge(telemetry))))
+    }).pipe(Effect.provide(TypeScriptCheckerRuntime.layer(options).pipe(Layer.provideMerge(telemetry))))
   })
 
 const shortcutCountsOf = (attributes: SpanAttributes): Readonly<Record<string, number>> =>
