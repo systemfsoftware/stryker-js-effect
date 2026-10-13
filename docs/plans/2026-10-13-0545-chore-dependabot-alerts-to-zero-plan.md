@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0534-chore-dependabot-alerts-to-zero-plan.md
+supersedes: docs/plans/2026-10-13-0539-chore-dependabot-alerts-to-zero-plan.md as of c44eaec2 (each earlier revision of this plan was renamed to the next dated file on this branch; `git show c44eaec2:docs/plans/2026-10-13-0539-chore-dependabot-alerts-to-zero-plan.md` reads it)
 ---
 
 # Bring main to zero Dependabot alerts by removing what does not belong and bumping what does - Plan
@@ -43,7 +43,7 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 **Reference material**
 
 - R1. The `effect` subtree and its `subtrees.toml` entry are gone from main, so no future subtree pull re-adds it.
-- R2. Every docs citation that resolved only through the subtree resolves to an upstream commit permalink at the release it was verified against, or to the installed package where the citation is about current behavior.
+- R2. Every docs citation that resolved only through the subtree resolves to an upstream commit permalink at the release it was verified against, or, where the citation is about current behavior, to an upstream permalink at the `effect` version `pnpm-lock.yaml` locks.
 - R3. No committed file, lockfiles and fixture snapshots included, names the removed subtree path afterwards (DEL1).
 
 **Root lockfile**
@@ -61,7 +61,7 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 ### Key Decisions
 
 - **Permalinks over the installed package for historical citations.** A plan's line numbers were verified against the subtree at that commit; a permalink at that release keeps them true, while `effect@4.0.0` moves them and `@effect/vitest` is not installed. Governs R2.
-- **Delete the subtree rather than resync it.** A resync to `effect@4.0.0` keeps upstream's own lockfile alerts and goes stale on the next release. Deleting only its lockfile leaves a tree that no longer matches upstream. The local Effect reference becomes the installed package, which ships `src/` and `ai-docs/` at the version the workspace runs. Governs R1.
+- **Delete the subtree rather than resync it.** A resync to `effect@4.0.0` keeps upstream's own lockfile alerts and goes stale on the next release. Deleting only its lockfile leaves a tree that no longer matches upstream. The local Effect reference becomes the locked `effect` package, which ships `src/` and `ai-docs/` under `node_modules`, and committed citations link upstream at the locked tag. Governs R1.
 - **The subtree's `subtrees.toml` entry goes with it.** `AGENTS.md` lists `subtrees.toml` and `repos/**` as read-only. The operator ordered the subtree removed, and an entry left behind would re-add the subtree on the next pull. The PR declares this edit. Governs R1.
 
 ### Scope Boundaries
@@ -76,7 +76,7 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 ### Key Technical Decisions
 
 - KTD1. **The alert count is reconstructed from lockfiles and advisories.** Parse each Dependabot-scanned npm lockfile, query `GET /advisories?ecosystem=npm&affects=<names>` for reviewed, non-withdrawn advisories, and match versions with semver. `GET /repos/{repo}/dependency-graph/compare/{base}...{head}` reads manifests only: for U1 it lists the removed subtree `package.json` entries with no vulnerabilities, because the subtree lockfile is not one of its inputs, so it corroborates the removal, not the alert count. A token with Dependabot read access is the only reader of the alerts list itself. Governs R8.
-- KTD2. **Each citation is anchored by blame.** The release a citation was verified against is the subtree version in the tree of the commit that wrote the line: `effect@4.0.0-rc.116` (`d62dd0d65252e5d3635538f0e41adc7c08aa9beb`) for the plans of 2026-09-21 and 2026-09-23, `effect@4.0.0-rc.117` (`14a3f140095fdebbff9162944fe7d4ea83e054e6`) for the later four. Both SHAs equal the upstream tags and the `git-subtree-split` trailers of the squash commits `6315eb9e` and `a07187c6`, the second parents of the subtree merges `57044e93` and `9a16f8ec`. Bare file names in the same sentences (`Cause.ts:77`, `Effect.ts:13535`) are citations into the subtree too. Prose that pointed at the vendored source as the live reference (the mutant-quality plan's KTD11) points at the installed package instead. Governs R2.
+- KTD2. **Each citation is anchored by blame.** The release a citation was verified against is the subtree version in the tree of the commit that wrote the line: `effect@4.0.0-rc.116` (`d62dd0d65252e5d3635538f0e41adc7c08aa9beb`) for the plans of 2026-09-21 and 2026-09-23, `effect@4.0.0-rc.117` (`14a3f140095fdebbff9162944fe7d4ea83e054e6`) for the later four. Both SHAs equal the upstream tags and the `git-subtree-split` trailers of the squash commits `6315eb9e` and `a07187c6`, the second parents of the subtree merges `57044e93` and `9a16f8ec`. Bare file names in the same sentences (`Cause.ts:77`, `Effect.ts:13535`) are citations into the subtree too. Prose that pointed at the vendored source as the live reference (the mutant-quality plan's KTD11) now names the version `pnpm-lock.yaml` locks and links the `effect` sources upstream at the `effect@4.0.0` tag (`67ba4e46a11ccda0b6761578bfd22c04ae00167d`). Governs R2.
 - KTD3. **U1 changes the tree in two commits.** The docs repoint lands first and the subtree deletion with its `subtrees.toml` entry second, so no commit on the branch deletes the subtree while a plan still cites it, and on the branch all 28 subtree alerts map to the deletion commit. Later commits on the branch edit plan text only, and the Removal is total gate holds on each of them. The repository allows merge commits, squash, and rebase. A merge commit or rebase keeps the deletion commit on main, and it closes the 28; a squash folds the branch into one commit that closes the 28. Governs R1, R8.
 - KTD4. **U2's removals are proven dead before deletion.** `@opentelemetry/sdk-node` is declared by `stryker-js-typescript-checker` and `stryker-js-vitest-runner` and imported by neither (the only `NodeSDK` import is `packages/toolchain/vitest-config/lib/otel.js:3`); both bundles set `deps.alwaysBundle: [/./]`, and neither `inlinedDependencies` lists it. `concurrently` is declared by `stryker-js` and `stryker-js-vitest-runner` and invoked by neither. Governs R4.
 - KTD5. **U2 bumps `concurrently` to 10.0.6.** 10.0.5 pins `shell-quote` 1.9.0 exactly; 10.0.6 pins 1.12.0. It stays a dependency: root `prepare` and `packages/ignorers/kit` `api:check` run it. Governs R5.
@@ -134,18 +134,23 @@ The U1 commands, kept out of the table so that no pipe is escaped:
 git ls-files repos | grep -c '^repos/effec[t]/'; git grep -n 'effect' -- subtrees.toml
 # 1. Removal is total: the literal path, every file, no exclusions
 git grep -nI -e 'repos/effec[t]'
-# 2. Removal is total: subtree-relative paths outside Effect-TS permalinks, every file
-git grep -nIE 'packages/(effect|vitest)(/|\b)' \
+# 2. Removal is total: paths relative to the subtree outside Effect-TS permalinks, every file.
+#    ai, atom, effect, opentelemetry, platform, sql, tools, vitest are every top-level
+#    directory under packages/ in the deleted subtree; none is a package directory here.
+git grep -nIE 'packages/(ai|atom|effect|opentelemetry|platform|sql|tools|vitest)(/|\b)' \
   | sed -E 's#\[[^]]*\]\(https://github\.com/Effect-TS/effect/(blob|tree)/[0-9a-f]{40}/[^)]*\)##g' \
-  | grep -E 'packages/(effect|vitest)(/|[^-[:alnum:]])'
+  | grep -E 'packages/(ai|atom|effect|opentelemetry|platform|sql|tools|vitest)(/|[^-[:alnum:]])'
 # 3. Prose references, whole tree
 git grep -nIiE 'vendored[^.]{0,60}effec[t]|subtree[^.]{0,30}effec[t]|effect[^.]{0,20}subtree'
-# 4. Citations resolve: the URL set the branch adds over its merge base
-#    (after merge, replace "$(git merge-base origin/main HEAD)" with "<merge commit>^1")
-git diff "$(git merge-base origin/main HEAD)" HEAD -- docs | grep '^+' \
+# 4. Citations resolve: the URL set the branch adds; expect exactly 17 lines.
+#    BASE is the main commit the branch last merged (the merge base before landing). After
+#    landing, BASE is the main commit before the first commit the PR added, whatever the
+#    merge method.
+BASE="$(git merge-base origin/main HEAD)"
+git diff "$BASE" HEAD -- docs | grep '^+' \
   | grep -oE 'https://github.com/Effect-TS/effect/(blob|tree)/[0-9a-f]{40}/[^) `]+' | sort -u
-# 5. Citations resolve: the SHAs those URLs use
-git diff "$(git merge-base origin/main HEAD)" HEAD -- docs | grep '^+' \
+# 5. Citations resolve: the SHAs those URLs use; expect exactly the 3 lines command 6 prints
+git diff "$BASE" HEAD -- docs | grep '^+' \
   | grep -oE 'https://github.com/Effect-TS/effect/(blob|tree)/[0-9a-f]{40}' | grep -oE '[0-9a-f]{40}' | sort -u
 # 6. Citations resolve: the tag commits
 git ls-remote https://github.com/Effect-TS/effect 'refs/tags/effect@4.0.0-rc.116*' 'refs/tags/effect@4.0.0-rc.117*' 'refs/tags/effect@4.0.0' 'refs/tags/effect@4.0.0^{}'
