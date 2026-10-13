@@ -139,10 +139,10 @@ Feature('The machine-stream wire codec refuses lines the contract does not decla
           'outcomes',
           (s) => Effect.sync(() => refusalsOf(s.probes)),
         ),
-        Then('every declared scope is accepted and the scope without sources is refused')((s, expect) =>
+        Then('every declared scope is accepted and the scope without sources is refused naming sources')((s, expect) =>
           expect(s.outcomes).toEqual({
             diffScoped: 'accepted: plan',
-            withoutSources: expect.stringMatching(/^refused:/),
+            withoutSources: expect.stringMatching(/^refused:[\s\S]*\bsources\b/),
             fullScope: 'accepted: plan',
             unscoped: 'accepted: plan',
           })
