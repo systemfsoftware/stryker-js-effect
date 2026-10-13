@@ -6,6 +6,7 @@ import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as SchemaIssue from 'effect/SchemaIssue'
 
+import { admitMutantReason, MutantReasonCommand, type ReasonAdmitted } from '../admit-mutant-reason.workflow.js'
 import { MutantFactsInvalid } from '../Run.schema.js'
 
 export interface SourceText {
@@ -31,13 +32,20 @@ const originalTextOf = (source: Option.Option<SourceText>, location: Mutant.Loca
       )),
   )
 
-const invalidFacts = (result: Mutant.RunMutantResult, detail: string): MutantFactsInvalid =>
-  MutantFactsInvalid.make({ code: 'mutant-facts-invalid', mutantId: result.id, detail })
-
-const statusReasonOf = (result: Mutant.RunMutantResult): Effect.Effect<string, MutantFactsInvalid> =>
-  Effect.fromOption(
-    Option.fromUndefinedOr(result.statusReason),
-    () => invalidFacts(result, `the ${result.status} mutant carries no status reason`),
+const admittedReasonOf = (result: Mutant.RunMutantResult): Effect.Effect<ReasonAdmitted, MutantFactsInvalid> =>
+  Effect.fromResult(
+    admitMutantReason(MutantReasonCommand.make({ status: result.status, statusReason: result.statusReason })),
+  ).pipe(
+    Effect.flatMap((decision) =>
+      Match.value(decision).pipe(
+        Match.tag('ReasonAdmitted', (admitted) => Effect.succeed(admitted)),
+        Match.tag('ReasonRefused', (refused) =>
+          Effect.fail(
+            MutantFactsInvalid.make({ code: 'mutant-facts-invalid', mutantId: result.id, detail: refused.detail }),
+          )),
+        Match.exhaustive,
+      )
+    ),
   )
 
 const formatIssue = SchemaIssue.makeFormatterDefault()
@@ -48,7 +56,13 @@ const madeFor = <A>(
 ): Effect.Effect<A, MutantFactsInvalid> =>
   Effect.mapError(
     made,
-    (issue) => invalidFacts(result, `the ${result.status} facts are refused: ${formatIssue(issue)}`),
+    (issue) =>
+      MutantFactsInvalid.make({
+        code: 'mutant-facts-invalid',
+        mutantId: result.id,
+        detail: `the ${result.status} facts are refused: ${formatIssue(issue)}`,
+        cause: issue,
+      }),
   )
 
 const sharedFactsOf = ({ result, file }: MutantFactsInput, statusReason: string) => ({
@@ -80,9 +94,10 @@ const actionableFactsOf = <Status extends Mutant.ActionableStatus>(
 
 export const mutantFactsOf = Effect.fnUntraced(function*(input: MutantFactsInput) {
   const { result } = input
-  const shared = sharedFactsOf(input, yield* statusReasonOf(result))
+  const admitted = yield* admittedReasonOf(result)
+  const shared = sharedFactsOf(input, admitted.statusReason)
   const { cases } = RunEvent.MutantFacts
-  return yield* Match.value(result.status).pipe(
+  return yield* Match.value(admitted.status).pipe(
     Match.when('Killed', () =>
       madeFor(
         result,
@@ -120,10 +135,6 @@ export const mutantFactsOf = Effect.fnUntraced(function*(input: MutantFactsInput
       () => madeFor(result, cases.CompileError.makeEffect({ ...shared, status: 'CompileError' })),
     ),
     Match.when('Ignored', () => madeFor(result, cases.Ignored.makeEffect({ ...shared, status: 'Ignored' }))),
-    Match.when(
-      'Pending',
-      () => Effect.fail(invalidFacts(result, 'a Pending mutant reached the stream before it settled')),
-    ),
     Match.exhaustive,
   )
 })
