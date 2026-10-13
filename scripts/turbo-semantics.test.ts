@@ -383,24 +383,67 @@ Deno.test("a $TURBO_ROOT$ input selects the reader while $TURBO_EXTENDS$ keeps t
   })
 })
 
+const rootReadTurboJson = (reads: ReadonlyArray<string>): string =>
+  `{ "extends": ["//"], "tasks": { "test": { "inputs": ${JSON.stringify(['$TURBO_EXTENDS$', ...reads])} } } }\n`
+
 Deno.test('a declared $TURBO_ROOT$ read of the lockfile or the workspace file moves only its reader, and an undeclared one moves nothing', async () => {
   for (const file of ['pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
     for (const declared of [true, false]) {
-      const inputs = declared ? `["$TURBO_EXTENDS$", "$TURBO_ROOT$/${file}"]` : '["$TURBO_EXTENDS$"]'
-      const bTurboJson = `{ "extends": ["//"], "tasks": { "test": { "inputs": ${inputs} } } }\n`
-      const label = `${file} ${declared ? 'declared' : 'undeclared'}`
+      const bTurboJson = rootReadTurboJson(declared ? [`$TURBO_ROOT$/${file}`] : [])
       await withRepo({ bTurboJson }, async (dir) => {
-        const base = await head(dir)
         const moved = await tasksMovedBy(dir, async () => {
           await write(dir, file, `${await Deno.readTextFile(`${dir}/${file}`)}# probe\n`)
         })
-        assertEqual(moved, declared ? ['@probe/b#test'] : [], `${label}: tasks whose hash moves`)
-        if (file !== 'pnpm-workspace.yaml') return
-        await commit(dir, 'workspace comment')
-        assertEqual(await selectedTasks(dir, { base }), declared ? ['@probe/b#test'] : [], `${label}: selection`)
+        assertEqual(moved, declared ? ['@probe/b#test'] : [], `${file} ${declared ? 'declared' : 'undeclared'}`)
       })
     }
   }
+})
+
+Deno.test('a workspace-file edit that leaves the lockfile alone selects only the task that declares it', async () => {
+  for (const declared of [true, false]) {
+    const bTurboJson = rootReadTurboJson(declared ? ['$TURBO_ROOT$/pnpm-workspace.yaml'] : [])
+    await withRepo({ bTurboJson }, async (dir) => {
+      const base = await head(dir)
+      await write(dir, 'pnpm-workspace.yaml', `${pnpmWorkspace}# probe\n`)
+      await commit(dir, 'workspace comment')
+      assertEqual(
+        await selectedTasks(dir, { base }),
+        declared ? ['@probe/b#test'] : [],
+        `workspace ${declared ? 'declared' : 'undeclared'}`,
+      )
+    })
+  }
+})
+
+Deno.test('$TURBO_ROOT$ glob reads match ** at any depth including zero and * as one segment', async () => {
+  const bTurboJson = rootReadTurboJson([
+    '$TURBO_ROOT$/fixtures/**',
+    '$TURBO_ROOT$/journeys/**/*.e2e.ts',
+    '$TURBO_ROOT$/group/*/package.json',
+  ])
+  const cases: ReadonlyArray<readonly [string, boolean]> = [
+    ['fixtures/top.txt', true],
+    ['fixtures/deep/nested.txt', true],
+    ['journeys/top.e2e.ts', true],
+    ['journeys/deep/nested.e2e.ts', true],
+    ['journeys/top.ts', false],
+    ['group/one/package.json', true],
+    ['group/one/deep/package.json', false],
+    ['outside.txt', false],
+  ]
+  for (const [file, read] of cases) {
+    await withRepo({ bTurboJson }, async (dir) => {
+      const moved = await tasksMovedBy(dir, () => write(dir, file, 'probe\n'))
+      assertEqual(moved, read ? ['@probe/b#test'] : [], `${file} ${read ? 'is' : 'is not'} read`)
+    })
+  }
+  await withRepo({ bTurboJson }, async (dir) => {
+    const base = await head(dir)
+    await write(dir, 'fixtures/deep/nested.txt', 'probe\n')
+    await commit(dir, 'glob read edit')
+    assertEqual(await selectedTasks(dir, { base }), ['@probe/b#test'], 'a glob read selects its reader')
+  })
 })
 
 Deno.test('a declared $TURBO_ROOT$ read on a cache: false task moves its hash and selects it', async () => {
