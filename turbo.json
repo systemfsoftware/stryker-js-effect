@@ -54,6 +54,19 @@
       "outputs": [],
       "cache": true
     },
+    "//#test:scripts": {
+      "outputLogs": "errors-only",
+      "inputs": [
+        "scripts/**",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "bin/deno",
+        "flake.nix",
+        "flake.lock"
+      ],
+      "outputs": [],
+      "cache": true
+    },
     "test": {
       "inputs": [
         "$TURBO_DEFAULT$",
