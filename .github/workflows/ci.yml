@@ -712,6 +712,8 @@ jobs:
       MATRIX_DIR: kill-matrix
       AUDIT_OUT: reports/audit.json
     steps:
+      - id: start
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
       - id: build-key
         name: Key of the Mutation lane's build cache, hashed before install as that lane hashes it
@@ -811,3 +813,8 @@ jobs:
           path: ${{ env.AUDIT_OUT }}
           retention-days: 14
           overwrite: true
+      - if: always()
+        env:
+          STARTED: ${{ steps.start.outputs.at }}
+        run: |
+          echo "wall time: $(( $(date +%s) - STARTED )) s" >> "$GITHUB_STEP_SUMMARY"
