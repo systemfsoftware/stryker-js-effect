@@ -48,7 +48,7 @@ import {
   GateNewSurvivorsCommand,
   GateRejected,
 } from './gate-new-survivors.workflow.js'
-import type { GitDiffError } from './git-diff.schema.js'
+import { type GitDiffError, type PlannedDiff, WholeProject } from './git-diff.schema.js'
 import { mcpServerLayer } from './Mcp/mod.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { planRequest } from './plan-request.cell.js'
@@ -159,12 +159,13 @@ const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(funct
   }
 })
 
-const runStage = (channel: CliRead) =>
+const runStage = (channel: CliRead, plannedDiff?: PlannedDiff) =>
   Layer.build(RunEnvironment.layerStage(channel.environment.host.env, channel.environment.host.events)).pipe(
     Effect.flatMap((context) =>
       Cell.provideContext(mutationTestCell, context).run({
         cliOptions: channel.options,
         targetMutatePatterns: undefined,
+        plannedDiff,
       })
     ),
     Effect.orDie,
@@ -656,8 +657,9 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
             })
           ),
         )
-        const options = { ...channel.options, mutantIds: [...project.mutants] }
-        return yield* runStage({ ...channel, options })
+        const { since: _since, ...withoutSince } = channel.options
+        const options = { ...withoutSince, mutantIds: [...project.mutants] }
+        return yield* runStage({ ...channel, options }, WholeProject.make({}))
       }),
     CliCompareRequested: (compare) => compareReports(compare),
     CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(remediateGateRefusal)),

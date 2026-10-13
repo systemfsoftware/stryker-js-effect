@@ -12,6 +12,7 @@ import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
 
 import type { MutatorSelectionDecoded } from '../decode-mutator-selection.workflow.js'
+import type { PlannedDiff } from '../git-diff.schema.js'
 import type { MergedCatalog } from '../plan-mutator-catalogs.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import type { Project } from '../Project.schema.js'
@@ -50,6 +51,7 @@ export interface PrepareDone {
 export interface PrepareExecutorArgs {
   cliOptions: Options.PartialStrykerOptions
   targetMutatePatterns: string[] | undefined
+  plannedDiff?: PlannedDiff | undefined
 }
 
 const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(

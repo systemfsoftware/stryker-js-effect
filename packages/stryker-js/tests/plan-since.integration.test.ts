@@ -1,12 +1,13 @@
 import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
-import type { ShardPlan, ShardPlanScope } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent, type ShardPlan, type ShardPlanScope } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
 import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import * as S from 'effect/Schema'
 import type * as Scope from 'effect/Scope'
 import { removeWorkspace } from './__fixtures__/check-cost-workspace.fixture.js'
 import { committerArgs, execGit, gitOutput, writeFile } from './__fixtures__/git-repo.fixture.js'
@@ -21,6 +22,8 @@ const CONFIG_FILE = 'stryker.config.mjs'
 const MANIFEST_FILE = 'package.json'
 const PLAN_FILE = 'plan.json'
 const UNRESOLVED_REF = 'no-such-ref'
+const BRANCH = 'scope-base'
+const STREAM_FILE = 'mutation-stream.jsonl'
 
 const TARGET_SOURCE = [
   'export const target = (value: number): number => {',
@@ -31,6 +34,10 @@ const TARGET_SOURCE = [
 ].join('\n')
 
 const CHANGED_TARGET_SOURCE = TARGET_SOURCE.replace('return doubled + 1', 'return doubled + 2')
+
+const FIRST_LINE_TARGET_SOURCE = TARGET_SOURCE.replace('const doubled = value * 2', 'const doubled = value * 3')
+
+const SECOND_LINE_TARGET_SOURCE = FIRST_LINE_TARGET_SOURCE.replace('return doubled + 1', 'return doubled + 2')
 
 const OTHER_SOURCE = [
   'export const other = (value: number): number => {',
@@ -189,6 +196,20 @@ const runShardIn = (
 
 const scheduledIds = (plan: ShardPlan): ReadonlyArray<string> =>
   plan.shards.flatMap((shard) => shard.projects.flatMap((entry) => entry.mutants))
+
+const reportedIdsOf = (
+  root: string,
+): Effect.Effect<ReadonlyArray<string>, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const text = yield* fs
+      .readFileString(path.join(root, 'reports', 'shard-1', STREAM_FILE))
+      .pipe(Effect.orElseSucceed(() => ''))
+    return text.split('\n').flatMap((line) =>
+      Option.toArray(S.decodeOption(S.fromJsonString(RunEvent.RunMutantTested))(line.trim())).map((tested) => tested.id)
+    )
+  }).pipe(Effect.orDie)
 
 const projectMutants = (plan: ShardPlan, project: string): ReadonlyArray<string> =>
   plan.shards.flatMap((shard) =>
@@ -663,6 +684,54 @@ Feature('Planning mutation shards since a git ref', { timeout: 180_000 })
             scheduled: projectMutants(s.planned.plan, PROJECT_A).length > 0,
           }).toEqual({ exit: 0, scopeTag: 'Unscoped', scheduled: true })
         ),
+      ),
+    )
+
+    scenario(
+      'A branch that moves between planning and the shard leaves every planned mutant in the shard report',
+      Gherkin.Do.pipe(
+        Given(
+          'a repository whose config declares a since branch at the base, with two changed source lines after it',
+        )(
+          'planned',
+          () =>
+            Effect.gen(function*() {
+              const root = yield* gitWorkspace(workspaceFilesOf(FULL_MUTATE, BRANCH))
+              yield* execGit(root, ['branch', BRANCH])
+              yield* writeFile(root, TARGET_FILE, FIRST_LINE_TARGET_SOURCE)
+              yield* commitAll(root, 'change the first target line')
+              const firstChange = yield* headOf(root)
+              yield* writeFile(root, TARGET_FILE, SECOND_LINE_TARGET_SOURCE)
+              yield* commitAll(root, 'change the second target line')
+              return yield* Effect.ensuring(
+                Effect.gen(function*() {
+                  const planned = yield* planTo(root, PLAN_FILE, ['--max-shards', '1'])
+                  yield* execGit(root, ['branch', '-f', BRANCH, firstChange])
+                  const ran = yield* runShardIn(root, PLAN_FILE)
+                  const reportedIds = yield* reportedIdsOf(root)
+                  return { planned, ran, reportedIds }
+                }),
+                removeWorkspace(root),
+              )
+            }),
+        ),
+        Then('the plan scopes to the diff and the shard reports every mutant the plan scheduled')((s, expect) => {
+          const plannedIds = scheduledIds(s.planned.planned.plan)
+          const reported = s.planned.reportedIds
+          return expect({
+            planExit: s.planned.planned.ran.exitCode,
+            runExit: s.planned.ran.exitCode,
+            scopeTag: scopeTagOf(s.planned.planned.plan.scope),
+            plannedNonEmpty: plannedIds.length > 0,
+            everyPlannedIdReported: plannedIds.every((id) => reported.includes(id)),
+          }).toEqual({
+            planExit: 0,
+            runExit: 0,
+            scopeTag: 'DiffScoped',
+            plannedNonEmpty: true,
+            everyPlannedIdReported: true,
+          })
+        }),
       ),
     )
   })
