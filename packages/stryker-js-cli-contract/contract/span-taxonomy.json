@@ -327,6 +327,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.mutationReporting.judgeScore",
+    "name": "stryker.mutationReporting.judgeScore",
+    "attributes": {}
+  },
+  {
     "id": "stryker.mutationReporting.manifestVersion",
     "name": "stryker.mutationReporting.manifestVersion",
     "attributes": {}
@@ -564,6 +569,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.report.sarif",
+    "name": "stryker.report.sarif",
+    "attributes": {}
+  },
+  {
     "id": "stryker.reporterStream.attach",
     "name": "stryker.reporterStream.attach",
     "attributes": {}
@@ -775,6 +785,15 @@
     "attributes": {}
   },
   {
+    "id": "rpc.typeQuery",
+    "name": "rpc.typeQuery",
+    "attributes": {
+      "rpc.method": {
+        "type": "string"
+      }
+    }
+  },
+  {
     "id": "stryker.run.conclude",
     "name": "stryker.run.conclude",
     "attributes": {}
@@ -887,6 +906,11 @@
   {
     "id": "stryker.sandbox.move_entry",
     "name": "stryker.sandbox.move_entry",
+    "attributes": {}
+  },
+  {
+    "id": "stryker.sandbox.prepare",
+    "name": "stryker.sandbox.prepare",
     "attributes": {}
   },
   {

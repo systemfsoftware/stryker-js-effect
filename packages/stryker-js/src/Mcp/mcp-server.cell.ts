@@ -137,8 +137,8 @@ const runRestricted = (
       allowConsoleColors: false,
     }
     const runLayer = Layer.merge(
-      RunEnvironment.stage(environment, queue),
-      MachineConsole.captureLayer.pipe(Layer.provide(MachineConsole.layer)),
+      RunEnvironment.layerStage(environment, queue),
+      MachineConsole.layerCapture.pipe(Layer.provide(MachineConsole.layer)),
     )
     return yield* mutationTestCell
       .run({ cliOptions: options, targetMutatePatterns: undefined })

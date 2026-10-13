@@ -22,6 +22,13 @@ export const VitestRunnerOptionsSchema = S.Struct({
 
 export type VitestRunnerOptions = S.Schema.Type<typeof VitestRunnerOptionsSchema>
 
+export interface RunFilter {
+  testIds?: string[]
+  relatedFiles?: string[]
+  testFiles?: string[]
+  priorKillerTestIds?: string[]
+}
+
 export class CoverageDecodeFailed extends S.TaggedError<CoverageDecodeFailed>()('CoverageDecodeFailed', {
   cause: S.Unknown,
 }) {

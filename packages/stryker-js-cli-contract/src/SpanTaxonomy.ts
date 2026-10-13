@@ -87,6 +87,7 @@ export const Spans = {
   mutationReportingCheckpoint: { name: 'stryker.mutationReporting.checkpoint', attributes: {} },
   mutationReportingDiscoverDependencies: { name: 'stryker.mutationReporting.discoverDependencies', attributes: {} },
   mutationReportingEmitVerdict: { name: 'stryker.mutationReporting.emitVerdict', attributes: {} },
+  mutationReportingJudgeScore: { name: 'stryker.mutationReporting.judgeScore', attributes: {} },
   mutationReportingManifestVersion: { name: 'stryker.mutationReporting.manifestVersion', attributes: {} },
   mutationReportingMutationTestReport: { name: 'stryker.mutationReporting.mutationTestReport', attributes: {} },
   mutationReportingReadMutatedSources: { name: 'stryker.mutationReporting.readMutatedSources', attributes: {} },
@@ -141,6 +142,7 @@ export const Spans = {
   reportProgress: { name: 'stryker.report.progress', attributes: {} },
   reportProgressConsume: { name: 'stryker.report.progress.consume', attributes: {} },
   reportProgressConsumeEvent: { name: 'stryker.report.progress.consumeEvent', attributes: {} },
+  reportSarif: { name: 'stryker.report.sarif', attributes: {} },
   reporterStreamAttach: { name: 'stryker.reporterStream.attach', attributes: {} },
   reporterStreamCloseStage: { name: 'stryker.reporterStream.closeStage', attributes: {} },
   reporterStreamCurrentReporterInit: { name: 'stryker.reporterStream.currentReporterInit', attributes: {} },
@@ -179,6 +181,7 @@ export const Spans = {
   rpcServerInit: { name: 'RpcServer.init', attributes: {} },
   rpcServerMutantRun: { name: 'RpcServer.mutantRun', attributes: {} },
   rpcServerOnEventBatch: { name: 'RpcServer.onEventBatch', attributes: {} },
+  rpcTypeQuery: { name: 'rpc.typeQuery', attributes: { 'rpc.method': SpanAttributeText } },
   runConclude: { name: 'stryker.run.conclude', attributes: {} },
   runConclusionRead: { name: 'stryker.run_conclusion.read', attributes: {} },
   runEventStreamCloseAndDrain: { name: 'stryker.runEventStream.closeAndDrain', attributes: {} },
@@ -202,6 +205,7 @@ export const Spans = {
   sandboxMoveDirectory: { name: 'stryker.sandbox.move_directory', attributes: {} },
   sandboxMoveDirectoryContents: { name: 'stryker.sandbox.move_directory.contents', attributes: {} },
   sandboxMoveEntry: { name: 'stryker.sandbox.move_entry', attributes: {} },
+  sandboxPrepare: { name: 'stryker.sandbox.prepare', attributes: {} },
   sandboxPreprocessDisableTypeChecks: { name: 'stryker.sandbox.preprocess.disable_type_checks', attributes: {} },
   sandboxRemoveEmptyParent: { name: 'stryker.sandbox.remove_empty_parent', attributes: {} },
   sandboxRemoveTempDir: { name: 'stryker.sandbox.remove_temp_dir', attributes: {} },
@@ -291,6 +295,7 @@ const rpcServedSpans: ReadonlyMap<string, SpanMember> = new Map<string, SpanMemb
   ['init', Spans.rpcInit],
   ['mutantRun', Spans.rpcMutantRun],
   ['onEventBatch', Spans.rpcOnEventBatch],
+  ['typeQuery', Spans.rpcTypeQuery],
 ])
 
 export const rpcServedSpanOf = (method: string): SpanMember | undefined => rpcServedSpans.get(method)
