@@ -17,12 +17,12 @@ import * as S from 'effect/Schema'
 import * as Stream from 'effect/Stream'
 import type { RunnerTask, RunnerTestCase, RunnerTestFile, RunnerTestSuite } from 'vitest'
 
-import { testRecordOf } from './drivers/vitest-node.js'
 import { interpretVitestDryRun } from './interpret-vitest-dry-run.workflow.js'
 import { makeMutantRunCell } from './MutantRun.cell.js'
+import { testRecordOf } from './vitest-node.js'
 import { VitestDryRunCommand } from './vitest-run-command.schema.js'
 import { interpretVitestTestRun } from './vitest-test-run.js'
-import { CoverageDecodeFailed, type TestRunnerPhase } from './VitestRunner.schema.js'
+import { CoverageDecodeFailed, type RunFilter, type TestRunnerPhase } from './VitestRunner.schema.js'
 import { testFileOrder } from './VitestRuntime.blueprint.js'
 import {
   applyRunFilter,
@@ -130,13 +130,6 @@ const VITEST_ERROR_CODES = Object.freeze({
   FILES_NOT_FOUND: 'VITEST_FILES_NOT_FOUND',
 })
 
-export interface RunFilter {
-  testIds?: string[]
-  relatedFiles?: string[]
-  testFiles?: string[]
-  priorKillerTestIds?: string[]
-}
-
 /** Vitest matches related files against absolute module ids, and only resolves them when the config is first built. */
 const relatedFilesOf = <A>(
   relatedValue: A,
@@ -190,13 +183,12 @@ const mergeHitCount = (to: Mutant.CoverageData, mutantId: string, hitCount: numb
 const mergeCoverage = (to: Mutant.CoverageData, from: Mutant.CoverageData): Mutant.CoverageData =>
   Object.entries(from).reduce((merged, [mutantId, hitCount]) => mergeHitCount(merged, mutantId, hitCount), to)
 
-/** The TestRunner this package serves: vitest in a sandbox, one session per worker. */
 export const layer = (
   input: VitestSessionInput,
-): Layer.Layer<TestRunner.TestRunner, never, Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
-  Layer.effect(TestRunner.TestRunner, makeRunner(input)).pipe(Layer.provide(VitestSession.layer(input)))
+): Layer.Layer<TestRunner.TestRunner, never, VitestSession | Crypto.Crypto | FileSystem.FileSystem | Path.Path> =>
+  Layer.effect(TestRunner.TestRunner, make(input))
 
-const makeRunner = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*(input: VitestSessionInput) {
+export const make = Effect.fn(SpanTaxonomy.Spans.vitestRunnerMake.name)(function*(input: VitestSessionInput) {
   const session = yield* VitestSession
   const pathService = yield* Path.Path
   const projectRoot = input.sandboxDirectory
