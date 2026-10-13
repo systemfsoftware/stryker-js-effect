@@ -11,7 +11,6 @@ import {
   SummarizeBenchCommand,
 } from '@systemfsoftware/stryker-e2e-core'
 import * as Arr from 'effect/Array'
-import * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Crypto from 'effect/Crypto'
 import * as Duration from 'effect/Duration'
@@ -30,7 +29,7 @@ import { BenchOrchestrationFailed } from './bench-failure.schema.js'
 import { planRunPath, PlanRunPathCommand } from './plan-run-path.workflow.js'
 import type { PreparedSide } from './prepared-side.js'
 import { type PristineTree, restoreTree, snapshotTree } from './pristine-tree.service.js'
-import type { RunPathMoveIn } from './run-path.schema.js'
+import { RunPathMoveBack, type RunPathMoveIn, RunPathRunEnd } from './run-path.schema.js'
 import { settleRunPath, SettleRunPathCommand } from './settle-run-path.workflow.js'
 import { workloadDigest } from './workload-digest.service.js'
 
@@ -163,8 +162,17 @@ const planned = (
     })
   })
 
-const errorText = <A, E>(outcome: Exit.Exit<A, E>): string | null =>
-  Exit.match(outcome, { onFailure: (cause) => Cause.pretty(cause), onSuccess: () => null })
+const moveBackOf = <E>(outcome: Exit.Exit<void, E>): RunPathMoveBack =>
+  Exit.match(outcome, {
+    onFailure: (cause) => RunPathMoveBack.cases.MoveBackFailed.make({ cause }),
+    onSuccess: () => RunPathMoveBack.cases.MovedBack.make({}),
+  })
+
+const runEndOf = <A, E>(outcome: Exit.Exit<A, E>): RunPathRunEnd =>
+  Exit.match(outcome, {
+    onFailure: (cause) => RunPathRunEnd.cases.RunFailed.make({ cause }),
+    onSuccess: () => RunPathRunEnd.cases.RunSucceeded.make({}),
+  })
 
 const atRunPath = <A, R>(
   moveIn: RunPathMoveIn,
@@ -189,8 +197,8 @@ const atRunPath = <A, R>(
             side: moveIn.side,
             tree: moveIn.tree,
             runPath: moveIn.runPath,
-            restoreError: errorText(restored),
-            runFailure: errorText(exit),
+            moveBack: moveBackOf(restored),
+            run: runEndOf(exit),
           }),
         ),
         {
