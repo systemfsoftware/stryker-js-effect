@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
@@ -30,7 +31,7 @@ export const SizeComparison = S.Struct({
 export type SizeComparison = typeof SizeComparison.Type
 
 export const SiteCandidate = S.Struct({
-  id: S.String,
+  id: Mutant.MutantId,
   kept: S.Boolean,
   literal: S.Option(S.Boolean),
   comparison: S.Option(SizeComparison),
@@ -41,7 +42,7 @@ export const MutantSite = S.Struct({ candidates: S.Array(SiteCandidate) })
 export type MutantSite = typeof MutantSite.Type
 
 export class CollectionSizeDecision extends S.TaggedClass<CollectionSizeDecision>()('CollectionSizeDecision', {
-  id: S.String,
+  id: Mutant.MutantId,
   always: S.Boolean,
 }) {
   readonly [CollectionSizeDecisionTypeId] = CollectionSizeDecisionTypeId
