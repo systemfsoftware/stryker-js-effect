@@ -70,8 +70,12 @@ const publishSelection = (env: PlanEnv, selection: LegSelection) =>
     yield* Console.log(`bench plan: side A ${selection.base}; legs ${legs}`)
   })
 
+const escapeData = (text: string): string => text.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')
+
+const escapeProperty = (text: string): string => escapeData(text).replaceAll(':', '%3A').replaceAll(',', '%2C')
+
 const failWith = (title: string, message: string) =>
-  Console.log(`::error title=${title}::${message}`).pipe(
+  Console.log(`::error title=${escapeProperty(title)}::${escapeData(message)}`).pipe(
     Effect.andThen(Effect.sync(() => {
       globalThis.process.exitCode = 1
     })),
