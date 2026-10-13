@@ -8,3 +8,4 @@ export const textOrList = (xs: string[] | string): boolean => xs.length > 0
 export const listOrBox = (xs: string[] | { length: number }): boolean => xs.length > 0
 export const getterSized = (box: { get items(): string[] }): boolean => box.items.length > 0
 export const mirroredAtMost = (s: string): boolean => 0 < s.length
+export const pairSized = (pair: [string, ...string[]]): boolean => pair.length > 0

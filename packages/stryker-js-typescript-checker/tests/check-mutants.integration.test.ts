@@ -335,6 +335,7 @@ const COLLECTION_UNION_SITE = [7, 63, 76] as const
 const MIXED_UNION_SITE = [8, 74, 87] as const
 const ACCESSOR_SITE = [9, 73, 93] as const
 const MIRRORED_SITE = [10, 55, 67] as const
+const TUPLE_SITE = [11, 68, 83] as const
 
 const RECEIVER_SOURCE = [
   'export const chained = (box: { items: string[] }): boolean => box.items.length > 0',
@@ -406,6 +407,11 @@ const MIRRORED_MUTANTS: ReadonlyArray<SizeMutant> = [
   sizeMutant('0000000000000073', MIRRORED_SITE, 'ConditionalExpression', 'false'),
 ]
 
+const TUPLE_MUTANTS: ReadonlyArray<SizeMutant> = [
+  sizeMutant('0000000000000080', TUPLE_SITE, 'EqualityOperator', 'pair.length >= 0'),
+  sizeMutant('0000000000000081', TUPLE_SITE, 'ConditionalExpression', 'true'),
+]
+
 const sizeCaseOf = (fixture: string, mutants: ReadonlyArray<SizeMutant>): Case => ({
   fixture,
   brokenId: '',
@@ -434,6 +440,8 @@ const looseCollectionSizeCase = sizeCaseOf('loose-project', LOOSE_SIZE_MUTANTS)
 const accessorReceiverCase = sizeCaseOf('per-mutant-collection-size', ACCESSOR_MUTANTS)
 
 const mirroredReceiverCase = sizeCaseOf('per-mutant-collection-size', MIRRORED_MUTANTS)
+
+const tupleReceiverCase = sizeCaseOf('per-mutant-collection-size', TUPLE_MUTANTS)
 
 const sizeProjectOf = (strictNullChecks: boolean, source: string): Readonly<Record<string, string>> => ({
   'tsconfig.json': JSON.stringify({
@@ -759,6 +767,27 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
             culled: {
               '0000000000000070': 'constant-collection-size: 0 <= s.length is always true',
               '0000000000000072': 'constant-collection-size: 0 > s.length is always false',
+            },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A comparison on a tuple receiver is culled when its type makes the length constant',
+      Gherkin.Do.pipe(
+        When('a tuple length comparison and its true sibling are handed to the checker')(
+          'seen',
+          () => checkFixture(tupleReceiverCase),
+        ),
+        Then('the tuple comparison is ignored and its true sibling passes')((s, expect) =>
+          expect({ statuses: s.seen.statuses, culled: culledReasonsOf(s.seen.ignoreReasons) }).toEqual({
+            statuses: {
+              '0000000000000080': 'ignored',
+              '0000000000000081': 'passed',
+            },
+            culled: {
+              '0000000000000080': 'constant-collection-size: pair.length >= 0 is always true',
             },
           })
         ),
