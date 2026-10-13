@@ -109,12 +109,14 @@ export class SarifReportSuppressed extends S.TaggedClass<SarifReportSuppressed>(
 export const SarifReportDecision = S.Union([SarifReportRendered, SarifReportTruncated, SarifReportSuppressed])
 export type SarifReportDecision = typeof SarifReportDecision.Type
 
-export class SarifReported extends S.TaggedClass<SarifReported>()('SarifReported', {
+export const SarifReported = S.TaggedStruct('SarifReported', {
   report: Report.MutationTestResult,
   survivors: S.Array(SurvivorRef),
-}) {}
+})
+export type SarifReported = typeof SarifReported.Type
 
-export class SarifNotReported extends S.TaggedClass<SarifNotReported>()('SarifNotReported', {}) {}
+export const SarifNotReported = S.TaggedStruct('SarifNotReported', {})
+export type SarifNotReported = typeof SarifNotReported.Type
 
 export class SarifReportCommand extends S.TaggedClass<SarifReportCommand>()('SarifReportCommand', {
   reported: S.Union([SarifReported, SarifNotReported]),

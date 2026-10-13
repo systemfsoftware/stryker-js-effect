@@ -11,8 +11,8 @@ import {
 } from '../Reporter/plan-reporters.workflow.js'
 import { HumanStreamRole, MachineStreamRole } from '../Reporter/reporter-role.schema.js'
 
-const STREAM = MachineStreamRole.literal
-const HUMAN = HumanStreamRole.literal
+const STREAM = 'progress-stream'
+const HUMAN = 'clear-text'
 
 const expectedHuman = (configured: readonly string[]): readonly string[] => {
   const planned: string[] = []

@@ -8,7 +8,6 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
 import {
-  SarifNotReported,
   sarifReport,
   SarifReportCommand,
   SarifReported,
@@ -92,7 +91,7 @@ const commandArb: Arbitrary.Arbitrary<SarifReportCommand> = Arbitrary.all({
   maxResults: Arbitrary.schema(S.Natural),
 }).pipe(
   Arbitrary.map(({ report, ...rest }) =>
-    SarifReportCommand.make({ reported: SarifReported.make({ report, survivors: refsOf(report) }), ...rest })
+    SarifReportCommand.make({ reported: { _tag: 'SarifReported', report, survivors: refsOf(report) }, ...rest })
   ),
 )
 
@@ -160,7 +159,7 @@ describe('sarifReport', () => {
     { of: [commandArb, S.Boolean], subject: sarifReport },
     (subject, [command, reported]) => {
       const drawn = SarifReportCommand.make({
-        reported: reported ? command.reported : SarifNotReported.make({}),
+        reported: reported ? command.reported : { _tag: 'SarifNotReported' },
         tool: command.tool,
         maxResults: command.maxResults,
       })
