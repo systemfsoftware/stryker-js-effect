@@ -1,12 +1,25 @@
+# Cost: about 256 runner-min/day (231-459) for the nightly scheduled Mutation run, on the
+# three-project corpus. The instrumenter and the HTML reporter add a share the first
+# nightly run measures.
+# Run shape: one scheduled run a day (17 3 * * *) plus any manual dispatch, never a push
+# or a pull request. A full run holds the scoring lane, the kill-matrix lane and the drop
+# audit; `lane: kill-matrix` holds the last two.
+# Per lane, job-minutes read from the jobs API on 2026-10-13. Scoring lane, scheduled
+# `--full`: runs 38384850859 (47.7), 38239240750 (43.5), 38130563737 (44.5) and
+# 38042987222 (161.5), median 46.1 (43.5-161.5). Kill-matrix lane over 15 completed main
+# push runs 38290483095 (2026-10-12T18:22Z) through 38456457178 (2026-10-13T19:38Z):
+# median 209.0 job-min (187.2-297.0), wall time median 34.7 min. Drop audit: 0.97 job-min
+# (run 38344422811) and 0.67 (run 38366579884), with the Mutation build cache restored.
+# Rejected counterfactual, the push trigger this change removes: on main 115
+# first-parent commits from 2026-10-06T20:00Z to 2026-10-13T20:00Z (16.4 a day), and the
+# 12 completed push runs of 2026-10-13 took 4,006 job-min; push runs per day 2026-10-06 to
+# 2026-10-12 were 19, 14, 11, 14, 20, 2 and 11.
+# Reason: the #333 review run 20261013-170535-66c6722d, finding #6 "Mutation heavy lane's
+# cost changed with no runner-minutes header" (pack rule ci-wall-clock/heavy-lanes-state-their-daily-minutes),
+# was rejected only because mutation.yml was outside #333's diff.
 name: Mutation
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - ".changeset/**"
-      - "docs/**"
   workflow_dispatch:
     inputs:
       full:
@@ -24,7 +37,7 @@ on:
     - cron: "17 3 * * *"
 
 concurrency:
-  group: ${{ github.event.head_commit.author.username == 'github-actions[bot]' && format('mutation-release-{0}', github.run_id) || format('mutation-{0}', github.ref) }}
+  group: mutation-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -33,19 +46,21 @@ permissions:
 env:
   TARGET_SECONDS: 200
   MAX_SHARDS: 20
-  PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner
+  PROJECTS: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,packages/stryker-js-instrumenter,packages/stryker-js-html-reporter
   PUBLISHED_CLI: ${{ github.workspace }}/packages/stryker-js/node_modules/.bin/stryker
   PLAN: plan.json
   INCREMENTAL_REPORTS: |
     packages/stryker-js/reports/stryker-incremental.json
     packages/stryker-js-typescript-checker/reports/stryker-incremental.json
     packages/stryker-js-vitest-runner/reports/stryker-incremental.json
+    packages/stryker-js-instrumenter/reports/stryker-incremental.json
+    packages/stryker-js-html-reporter/reports/stryker-incremental.json
   BUDGET_BASELINE: .stryker/budget-baseline.json
 
 jobs:
   plan:
     name: plan · shards from the incremental cost record
-    if: ${{ github.event.inputs.lane != 'kill-matrix' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]') }}
+    if: ${{ github.event.inputs.lane != 'kill-matrix' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -101,7 +116,7 @@ jobs:
 
   build:
     name: build · once for every shard
-    if: ${{ github.event.inputs.lane != 'kill-matrix' && (github.event_name != 'push' || github.event.head_commit.author.username != 'github-actions[bot]') }}
+    if: ${{ github.event.inputs.lane != 'kill-matrix' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
@@ -378,7 +393,131 @@ jobs:
 
   kill-matrix:
     name: Kill matrix
-    if: ${{ (github.event_name == 'push' && github.event.head_commit.author.username != 'github-actions[bot]') || github.event.inputs.lane == 'kill-matrix' }}
     permissions:
       contents: read
     uses: ./.github/workflows/kill-matrix.yml
+
+  drop-audit:
+    name: drop-audit · audit this run's kill matrix
+    needs: [kill-matrix]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      MATRIX_DIR: kill-matrix
+      MATRIX_ARTIFACT: kill-matrix-${{ github.run_number }}
+      AUDIT_OUT: reports/audit.json
+    steps:
+      - id: start
+        name: Record the start time
+        run: echo "at=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+
+      - id: build-key
+        name: Key of the build cache, hashed before install as the build job hashes it
+        env:
+          KEY: mutation-build-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json', 'packages/**') }}
+        run: echo "key=$KEY" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: ./.github/actions/released-tarballs
+      - run: pnpm install --frozen-lockfile
+
+      - name: Restore the build the build job cached
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: ${{ steps.build-key.outputs.key }}
+          restore-keys: |
+            mutation-build-${{ runner.os }}-
+
+      - id: download
+        name: Download this run's kill matrix
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.MATRIX_ARTIFACT }}
+          path: ${{ env.MATRIX_DIR }}
+
+      - name: Check the kill matrix covers the corpus
+        shell: bash
+        env:
+          DOWNLOAD: ${{ steps.download.outcome }}
+        run: |
+          set -euo pipefail
+          dispatch='dispatch the kill-matrix lane (gh workflow run mutation.yml --ref main -f lane=kill-matrix)'
+          next="read the failed kill-matrix job of this run, fix its cause, then $dispatch"
+          if [ ! -d "$MATRIX_DIR" ] || [ "${DOWNLOAD:-success}" != 'success' ]; then
+            echo "::error title=MATRIX_MISSING::Artifact $MATRIX_ARTIFACT is not on this run, so the drop audit has no kill matrix. Next action: $next."
+            printf '## Drop audit\n\n**Failed: `MATRIX_MISSING`.** This run published no `%s`. Next action: %s.\n' "$MATRIX_ARTIFACT" "$next" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          absent=''
+          while read -r project; do
+            [ -n "$project" ] || continue
+            [ -f "$MATRIX_DIR/$project/stryker-incremental.json" ] || absent="${absent:+$absent,}$project"
+          done < <(tr ',' '\n' <<< "$PROJECTS")
+          if [ -n "$absent" ]; then
+            fix="make both projects defaults in kill-matrix.yml equal mutation.yml's PROJECTS, then $dispatch"
+            echo "::error title=MATRIX_INCOMPLETE::$MATRIX_ARTIFACT has no kill matrix for $absent, so it does not cover the corpus. Next action: $fix."
+            printf '## Drop audit\n\n**Failed: `MATRIX_INCOMPLETE`.** `%s` has no kill matrix for %s, so it does not cover the corpus. Next action: %s.\n' "$MATRIX_ARTIFACT" "$absent" "$fix" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Build the CLI and the audited projects
+        run: |
+          mapfile -t filters < <(tr ',' '\n' <<< "packages/stryker-js,$PROJECTS" | sort -u | sed 's|^|--filter=./|')
+          pnpm exec turbo run build --output-logs=errors-only --log-order=stream "${filters[@]}"
+
+      - id: audit
+        name: stryker audit
+        shell: bash
+        env:
+          NO_COLOR: "1"
+        run: |
+          set -euo pipefail
+          set +e
+          node packages/stryker-js/dist/main.mjs audit --matrix "$MATRIX_DIR" --projects "$PROJECTS" --out "$AUDIT_OUT" | tee audit.txt
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            echo "::error title=DROP_AUDIT_FAILED::stryker audit exited $status (1: a drop failed the audit; 2: the audit refused its input). Next action: read the audit's lines in this run's summary and artifact drop-audit-${{ github.run_number }}; a Fail names a dropped mutant whose dominator has a killer the dropped mutant lacks."
+            exit "$status"
+          fi
+
+      - name: Copy the audit's output to the summary
+        if: ${{ !cancelled() && steps.audit.outcome != 'skipped' && hashFiles('audit.txt') != '' }}
+        env:
+          RESULT: "${{ steps.audit.outcome == 'success' && 'Passed.' || '**Failed: `DROP_AUDIT_FAILED`.**' }}"
+        run: |
+          {
+            echo '## Drop audit'
+            echo
+            echo "$RESULT Against \`$MATRIX_ARTIFACT\` of this run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
+            echo
+            echo '```text'
+            cat audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() && hashFiles(env.AUDIT_OUT) != '' }}
+        with:
+          name: drop-audit-${{ github.run_number }}
+          path: ${{ env.AUDIT_OUT }}
+          retention-days: 14
+          overwrite: true
+
+      - name: Record the drop audit's wall time
+        if: always()
+        env:
+          STARTED: ${{ steps.start.outputs.at }}
+        run: |
+          echo "wall time: $(( $(date +%s) - STARTED )) s" >> "$GITHUB_STEP_SUMMARY"

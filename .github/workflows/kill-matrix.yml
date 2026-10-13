@@ -6,13 +6,13 @@ on:
       projects:
         description: Comma-separated projects to mutate, the dogfood corpus.
         type: string
-        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner
+        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,packages/stryker-js-instrumenter,packages/stryker-js-html-reporter
   workflow_dispatch:
     inputs:
       projects:
         description: Comma-separated projects to mutate, the dogfood corpus.
         type: string
-        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner
+        default: packages/stryker-js,packages/stryker-js-typescript-checker,packages/stryker-js-vitest-runner,packages/stryker-js-instrumenter,packages/stryker-js-html-reporter
 
 concurrency:
   group: kill-matrix-${{ github.ref }}
