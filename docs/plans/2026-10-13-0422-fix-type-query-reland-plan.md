@@ -6,7 +6,7 @@ topic: type-query-reland
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0114-fix-type-query-reland-plan.md
+supersedes: docs/plans/2026-10-13-0241-fix-type-query-reland-plan.md
 ---
 
 # Type-query re-land without false NotAssignable - Plan
@@ -23,7 +23,7 @@ supersedes: docs/plans/2026-10-13-0114-fix-type-query-reland-plan.md
 
 ## Product Contract
 
-Product Contract preservation: changed: R3, R4 (short-circuit right operands whose left type cannot reach the right operand are not enforcing; tsgo evidence in Sources), R6 (the regression drives the built checker worker over the published plugin protocol, per root's directive that `CheckerRuntime` is not a failing-first proof), R9 and its Key Decision (#325 merged, so the re-land is based on main, not stacked).
+Product Contract preservation: unchanged since the 0241 plan except R10 and the Definition of Done, which now require a fixing commit on the reported head for every validator-confirmed review finding and contradicted pack rule (root merge bar, 2026-10-13 04:09). Earlier changes: R3, R4 (short-circuit right operands whose left type cannot reach the right operand are not enforcing; tsgo evidence in Sources), R6 (the regression drives the built checker worker over the published plugin protocol, per root's directive that `CheckerRuntime` is not a failing-first proof), R9 and its Key Decision (#325 merged, so the re-land is based on main, not stacked).
 
 ### Summary
 
@@ -115,6 +115,8 @@ The tests #277 shipped could not see this. The decision laws take the context or
 - KTD4. **The short-circuit fact comes from tsgo's type of the left operand and is read conservatively.** The handle reports whether the left type can be nullish (for `??`), falsy (for `||`) or truthy (for `&&`) only when it recognises that from the type's flags and union members: `any`, `unknown`, `undefined`, `null`, `void`, `boolean` and the primitive kinds whose empty value is falsy. Anything it cannot classify reports "cannot tell", which decides not enforced. Governs R3, R4.
 - KTD5. **The regression test is a new file beside #277's worker test, reusing its harness shape.** `tests/type-query-unenforced-context.integration.test.ts` and fixture `tests/__fixtures__/worker-type-query-spread/` sit outside every file #277 restores, so the revert in U2 applies without conflict on top of U1. It spawns the built worker, which the in-process admission gate of the test-layer rules refuses; root's directive (a built or published surface, with `CheckerRuntime` barred as proof) overrides it, and #277's worker test is the precedent. Because it grades `dist/main.mjs`, it is trusted only after a fresh build. Governs R6.
 - KTD6. **The fix amends #277's restored checker changeset instead of adding a patch changeset.** #277 was never released (no CHANGELOG entry), so the intent consumers will read is the one feature with its narrowed answers. Governs R9.
+- KTD7. **Every validator-confirmed finding of the 5c147334e review, and the contradicted pack rule, is fixed on #328, not deferred.** The root merge bar of 2026-10-13 04:09 makes a confirmed finding without a fixing commit on the reported head a blocker, including findings in code #277 shipped. Fixes land as U7-U12, each a commit named in the review receipt; any commit after a review round gets a delta review.
+- KTD8. **A left `unknown` keeps reaching, for the right reason.** For `??` and `||`, a left `unknown` contributes `{}` to the result and the operand's nullish part still reaches it, so per-operand assignability equals the checker's own check (tsgo 7.0.2: `const x: {} = u || null` is TS2322 `{} | null`). For `&&`, a left `unknown` makes the result `unknown`, which compiles only under an `unknown` or `any` context, where every candidate is Assignable. Narrowing `unknown` further would lose answers without a soundness gain. This corrects the rationale in `69d5ffbf4`'s message (delta review, P3).
 
 ### High-Level Technical Design
 
@@ -227,6 +229,38 @@ Spread elements, spread assignments and non-null expressions are not on the allo
 
 ---
 
+### U7. Refusals carry the refused version
+
+- **Goal:** review finding #2. `TypeQueryRefused.version` is the version of the request it refuses (`S.Int`, as `TypeQueryRequest.version`); `REFUSAL_VERSION` goes.
+- **Files:** `packages/stryker-js-plugin-interface/src/TypeQuery.schema.ts`, its API report, README and a changeset; `packages/stryker-js-typescript-checker/src/type-query.handle.ts`.
+- **Test:** an unsupported version 3 is refused with `version: 3` and reason `unsupported-version` through the checker's published surface; red on `d80f922b9`.
+
+### U8. A query never holds a server lock unbounded
+
+- **Goal:** review finding #3. The per-file query under the server lock is bounded by a grace constant beside `CLOSE_GRACE`; a timed-out file takes the crash path (server discarded, file refused, next file gets a fresh server).
+- **Files:** `packages/stryker-js-typescript-checker/src/type-query.handle.ts` (plus a workflow if the outcome decision branches).
+- **Test:** a durable test if an honest seam exists, otherwise a scratch probe recorded in the PR body.
+
+### U9. One taxonomy of context parents
+
+- **Goal:** review finding #4. The slot readers are a map keyed by the parent kinds the allow-list covers, so a listed kind without a reader fails `tsc -b`.
+- **Files:** `src/classify-context-link.workflow.ts`, `src/context-link-facts.ts`.
+
+### U10. Laws pin outcomes per fact
+
+- **Goal:** review finding #5 and delta P3 on the shorthand entry. Property laws pin the exact outcome for each operator and left-operand fact and for annotated and unannotated return targets, from a fixture table; `({ w = 5 } = obj)` gets a differential row that records the answer tsgo gives.
+- **Files:** `src/__tests__/classify-context-link.workflow.property.test.ts`, `tests/__fixtures__/classify-context-link-law.fixture.ts`, `tests/type-query.differential.test.ts`, `tests/__fixtures__/type-query/sites.ts`.
+
+### U11. The parity lane's type-query leg uses the worker and the leg deadline
+
+- **Goal:** review findings #6 and #7. The type-query leg is bounded by the leg deadline the check path uses, and the branch side's type queries go through the branch worker bundle's `Plugin.CheckerRpcs` (`capabilities`, then `typeQuery`), so the gate grades the RPC the PR ships. Lane limits and CI files are unchanged.
+- **Files:** `test/checker-parity/src/run-side.ts`, `test/checker-parity/src/type-query-side.ts` and their tests.
+
+### U12. No `*Live` singleton in the library
+
+- **Goal:** contradicted pack rule (pack: cell-architecture, `service-and-layer-boundaries.md` §2 tier table and §4.4). The `./type-query` entry is an adapter module that exports `layer`; consumers write `import * as TypeQueryTsgo from '@systemfsoftware/stryker-js-typescript-checker/type-query'` and provide `TypeQueryTsgo.layer`.
+- **Files:** `src/type-query.handle.ts`, `src/type-query/mod.ts`, `src/CheckerRuntime.service.ts`, the three checker tests and `test/checker-parity/src/type-query-side.ts` that import it, both READMEs, the checker changeset, the API report.
+
 ## Verification Contract
 
 | Check                                                | Command                                                                                                                 | Applies to                    |
@@ -246,5 +280,6 @@ No mutation run of any kind is part of verification.
 
 - U1 was shown red on `0aebc83e6` and on #277's tree before U3, and is green on the PR head.
 - R1-R10 hold, with AE1-AE5 each exercised by a test.
+- U7-U12 are on the reported head, each named as the fixing commit of its finding in a review receipt whose delta review covers every commit after the reviewed head, and CI is green on that exact head.
 - The parity lane, `mutation.yml`, `kill-matrix.yml`, the e2e fixture, thresholds and CI limits are unchanged in the PR diff.
 - The PR diff against main is #277 plus the units above; no scratch tests, probes or abandoned code remain.
