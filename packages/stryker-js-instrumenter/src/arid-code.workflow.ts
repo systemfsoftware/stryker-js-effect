@@ -38,16 +38,21 @@ type AridGlobalCallee = typeof AridGlobalCallee.Type
 export const AridCalleeSchema = S.Union([AridEffectExportCallee, AridGlobalCallee])
 export type AridCallee = typeof AridCalleeSchema.Type
 
-const AridCallFrame = S.TaggedStruct('CallFrame', {
+const AridArgumentFrame = S.TaggedStruct('ArgumentFrame', {
   callee: S.Option(AridCalleeSchema),
-  childIsArgument: S.Boolean,
 })
-type AridCallFrame = typeof AridCallFrame.Type
+type AridArgumentFrame = typeof AridArgumentFrame.Type
+
+const AridThroughFrame = S.TaggedStruct('ThroughFrame', {})
+type AridThroughFrame = typeof AridThroughFrame.Type
 
 const AridFunctionBoundary = S.TaggedStruct('FunctionBoundary', {})
 
-export const AridFrameSchema = S.Union([AridCallFrame, AridFunctionBoundary])
+export const AridFrameSchema = S.Union([AridArgumentFrame, AridThroughFrame, AridFunctionBoundary])
 export type AridFrame = typeof AridFrameSchema.Type
+
+const isCallFrame = (frame: AridFrame): frame is AridArgumentFrame | AridThroughFrame =>
+  frame._tag === 'ArgumentFrame' || frame._tag === 'ThroughFrame'
 
 interface AridRule {
   readonly ruleId: AridRuleId
@@ -149,18 +154,22 @@ interface AridMatch {
   readonly callee: AridCallee
 }
 
-const matchOfFrame = (frame: AridCallFrame): Option.Option<AridMatch> =>
-  Option.flatMap(
-    Option.filter(frame.callee, () => frame.childIsArgument),
-    (callee) =>
-      Option.map(
-        ruleFor(callee),
-        (ruleId): AridMatch => ({ ruleId, callee }),
-      ),
+const matchOfFrame = (frame: AridFrame): Option.Option<AridMatch> =>
+  Match.value(frame).pipe(
+    Match.tagsExhaustive({
+      ArgumentFrame: (argument) =>
+        Option.flatMap(argument.callee, (callee) =>
+          Option.map(
+            ruleFor(callee),
+            (ruleId): AridMatch => ({ ruleId, callee }),
+          )),
+      ThroughFrame: (): Option.Option<AridMatch> => Option.none(),
+      FunctionBoundary: (): Option.Option<AridMatch> => Option.none(),
+    }),
   )
 
 const firstMatch = (frames: readonly AridFrame[]): Option.Option<AridMatch> =>
-  Option.firstSomeOf(Arr.takeWhile(frames, S.is(AridCallFrame)).map(matchOfFrame))
+  Option.firstSomeOf(Arr.takeWhile(frames, isCallFrame).map(matchOfFrame))
 
 const defaultPolicyDecision = (frames: readonly AridFrame[]): AridCodeDecision =>
   Match.value(firstMatch(frames)).pipe(

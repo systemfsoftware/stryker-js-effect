@@ -36,18 +36,20 @@ const sameDecision = (
 ): boolean => Result.isSuccess(left) && Result.isSuccess(right) && Equal.equals(left.success, right.success)
 
 const argumentFrame = (callee: AridCallee): AridFrame => ({
-  _tag: 'CallFrame',
+  _tag: 'ArgumentFrame',
   callee: Option.some(callee),
-  childIsArgument: true,
 })
+
+const THROUGH_FRAME: AridFrame = { _tag: 'ThroughFrame' }
 
 const FUNCTION_BOUNDARY: AridFrame = { _tag: 'FunctionBoundary' }
 
-const throughCallees = (frames: readonly AridFrame[]): readonly AridFrame[] =>
+const throughFrames = (frames: readonly AridFrame[]): readonly AridFrame[] =>
   frames.flatMap((frame) =>
     Match.value(frame).pipe(
       Match.tagsExhaustive({
-        CallFrame: (callFrame): readonly AridFrame[] => [{ ...callFrame, childIsArgument: false }],
+        ArgumentFrame: (): readonly AridFrame[] => [THROUGH_FRAME],
+        ThroughFrame: (): readonly AridFrame[] => [THROUGH_FRAME],
         FunctionBoundary: (): readonly AridFrame[] => [],
       }),
     )
@@ -57,7 +59,8 @@ const withoutCallees = (frames: readonly AridFrame[]): readonly AridFrame[] =>
   frames.flatMap((frame) =>
     Match.value(frame).pipe(
       Match.tagsExhaustive({
-        CallFrame: (callFrame): readonly AridFrame[] => [{ ...callFrame, callee: Option.none<AridCallee>() }],
+        ArgumentFrame: (): readonly AridFrame[] => [{ _tag: 'ArgumentFrame', callee: Option.none<AridCallee>() }],
+        ThroughFrame: (): readonly AridFrame[] => [THROUGH_FRAME],
         FunctionBoundary: (): readonly AridFrame[] => [],
       }),
     )
@@ -101,9 +104,9 @@ describe('aridCode', () => {
   )
 
   it.prop(
-    '∀c_Command_≡FramesWhoseChildIsNotAnArgumentNeverSuppress',
+    '∀c_Command_≡AThroughFrameNeverSuppresses',
     { of: [AridCodeCommand], subject: aridCode },
-    (subject, [command]) => isKept(subject(decided(throughCallees(command.frames)))),
+    (subject, [command]) => isKept(subject(decided(throughFrames(command.frames)))),
   )
 
   it.prop(

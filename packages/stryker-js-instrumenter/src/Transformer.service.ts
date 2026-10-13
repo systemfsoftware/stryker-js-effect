@@ -937,14 +937,6 @@ const aridCalleeOf = (
   )
 }
 
-const aridCalleeWhen = (
-  childIsArgument: boolean,
-  ancestor: CallExpression,
-  ancestorFrame: NodeFrame,
-  policy: Options.MutantSetPolicyType,
-  table: ImportTable<AridEffectModule>,
-): Option.Option<AridCallee> => childIsArgument ? aridCalleeOf(ancestor, ancestorFrame, policy, table) : Option.none()
-
 const aridCallFrameFor = (
   current: NodeFrame,
   ancestorFrame: NodeFrame,
@@ -953,12 +945,9 @@ const aridCallFrameFor = (
 ): readonly AridFrame[] => {
   const ancestor = ancestorFrame.node
   if (ancestor.type !== 'CallExpression') return []
-  const childIsArgument = ancestor.arguments.some((argument) => argument === current.node)
-  return [{
-    _tag: 'CallFrame',
-    callee: aridCalleeWhen(childIsArgument, ancestor, ancestorFrame, policy, table),
-    childIsArgument,
-  }]
+  return ancestor.arguments.some((argument) => argument === current.node)
+    ? [{ _tag: 'ArgumentFrame', callee: aridCalleeOf(ancestor, ancestorFrame, policy, table) }]
+    : [{ _tag: 'ThroughFrame' }]
 }
 
 const functionBoundaryOf = (current: NodeFrame): readonly AridFrame[] =>
