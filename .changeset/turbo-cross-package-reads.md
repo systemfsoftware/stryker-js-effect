@@ -3,4 +3,4 @@
 "@systemfsoftware/stryker-js-cli-contract": none
 ---
 
-Build: each package's `turbo.json` declares the root files its tests read (`pnpm-lock.yaml`, `pnpm-workspace.yaml`), so Turbo re-runs those tests when the files change. No published file changes.
+No change to the published packages. Their test runs now repeat whenever a repository file they read changes, instead of reusing an earlier result.

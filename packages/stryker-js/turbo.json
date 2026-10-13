@@ -5,7 +5,8 @@
     "test": {
       "inputs": [
         "$TURBO_EXTENDS$",
-        "$TURBO_ROOT$/pnpm-lock.yaml"
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/.github/workflows/mutation.yml"
       ]
     }
   }
