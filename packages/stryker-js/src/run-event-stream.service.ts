@@ -143,6 +143,19 @@ const runToSink = <E>(stdio: Stdio.Stdio, lines: Stream.Stream<string, E>, toStd
     onFalse: () => Stream.runDrain(lines),
   })
 
+const logFileFailure = <E>(cause: Cause.Cause<E>) => Effect.logError('stryker.output.drain_file_failed', cause)
+
+const writeLineOf = (handle: FileSystem.File, fileFailed: Ref.Ref<boolean>) => (line: string) =>
+  Effect.flatMap(Ref.get(fileFailed), (failed) =>
+    Boolean.match(failed, {
+      onTrue: () => Effect.void,
+      onFalse: () =>
+        handle.writeAll(encodeUtf8(line)).pipe(
+          Effect.andThen(handle.sync),
+          Effect.catchCause((cause) => Effect.andThen(logFileFailure(cause), Ref.set(fileFailed, true))),
+        ),
+    }))
+
 const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.name)(function*(
   fs: FileSystem.FileSystem,
   path: Path.Path,
@@ -155,15 +168,13 @@ const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.nam
     Effect.gen(function*() {
       const opened = yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(
         Effect.andThen(fs.open(fileName, { flag: 'w' })),
-        Effect.tapCause((cause) => Effect.logError('stryker.output.drain_file_failed', cause)),
+        Effect.tapCause(logFileFailure),
         Effect.option,
       )
+      const fileFailed = yield* Ref.make(false)
       const lines = Option.match(opened, {
         onNone: () => framed,
-        onSome: (handle) =>
-          framed.pipe(
-            Stream.tap((line) => handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync))),
-          ),
+        onSome: (handle) => framed.pipe(Stream.tap(writeLineOf(handle, fileFailed))),
       })
       yield* runToSink(stdio, lines, toStdout).pipe(Effect.ignore)
     }),

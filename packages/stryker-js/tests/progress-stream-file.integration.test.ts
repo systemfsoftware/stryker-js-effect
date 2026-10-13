@@ -23,6 +23,8 @@ const NESTED_STREAM = 'out/nested/stream.jsonl'
 
 const STREAM_DIRECTORY = 'out/stream'
 
+const DRAIN_FILE_FAILED = 'stryker.output.drain_file_failed'
+
 const DEFAULT_STREAM = 'reports/mutation-stream.jsonl'
 
 const JSON_REPORT = 'out/report.json'
@@ -93,6 +95,7 @@ const prepareProject = (
 interface Invocation {
   readonly exitCode: number
   readonly stdout: string
+  readonly stderr: string
   readonly defaultStreamPresent: boolean
 }
 
@@ -116,11 +119,12 @@ const invoke = (
         }),
       )
       const stdout = yield* handle.stdout.pipe(Stream.decodeText, Stream.mkString, Effect.forkScoped)
-      yield* handle.stderr.pipe(Stream.runDrain, Effect.forkScoped)
+      const stderr = yield* handle.stderr.pipe(Stream.decodeText, Stream.mkString, Effect.forkScoped)
       const exitCode = Number(yield* handle.exitCode)
       const printed = yield* Fiber.join(stdout)
+      const logged = yield* Fiber.join(stderr)
       const defaultStreamPresent = yield* fs.exists(path.join(root, DEFAULT_STREAM))
-      const invocation: Invocation = { exitCode, stdout: printed, defaultStreamPresent }
+      const invocation: Invocation = { exitCode, stdout: printed, stderr: logged, defaultStreamPresent }
       return invocation
     }),
   ).pipe(Effect.orDie)
@@ -321,29 +325,40 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
         ),
     )
 
-    scenario(
-      'A config whose stream file names a directory still streams every record on stdout',
-      Gherkin.Do.pipe(
-        Given('a project whose config names an existing empty directory as the stream file')(
-          'project',
-          () =>
-            Effect.gen(function*() {
-              const fs = yield* FileSystem.FileSystem
-              const path = yield* Path.Path
-              const root = yield* prepareProject(configNaming(STREAM_DIRECTORY))
-              yield* fs.makeDirectory(path.join(root, STREAM_DIRECTORY), { recursive: true }).pipe(Effect.orDie)
-              return root
-            }),
+    scenarioOutline(
+      'A stream file that <failure> is reported, and the run still streams its records on stdout',
+      [
+        { failure: 'cannot be opened', streamDirectory: true, args: RUN },
+        { failure: 'refuses every write', streamDirectory: false, args: [...RUN, '--progressStreamFile', '/dev/full'] },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('a project whose stream file is an existing directory, or is named by the flag as /dev/full')(
+            'project',
+            () =>
+              Effect.gen(function*() {
+                const fs = yield* FileSystem.FileSystem
+                const path = yield* Path.Path
+                const root = yield* prepareProject(configNaming(STREAM_DIRECTORY))
+                yield* Effect.when(
+                  fs.makeDirectory(path.join(root, STREAM_DIRECTORY), { recursive: true }).pipe(Effect.orDie),
+                  Effect.succeed(row.streamDirectory),
+                )
+                return root
+              }),
+          ),
+          When('the project is run')('run', (s) => invoke(s.project, row.args)),
+          Then('the run succeeds, stdout carries its mutants and its verdict, and stderr names the file failure')(
+            (s, expect) => {
+              const events = eventsOf(s.run.stdout)
+              return expect({
+                exitCode: s.run.exitCode,
+                mutantsTested: events.some((event) => S.is(RunEvent.RunMutantTested)(event)),
+                endsWithVerdict: S.is(RunEvent.VerdictReached)(events.at(-1)),
+                namesTheFailure: s.run.stderr.includes(DRAIN_FILE_FAILED),
+              }).toEqual({ exitCode: 0, mutantsTested: true, endsWithVerdict: true, namesTheFailure: true })
+            },
+          ),
         ),
-        When('the project is run')('run', (s) => invoke(s.project, RUN)),
-        Then('the run succeeds and stdout carries its mutants and its verdict')((s, expect) => {
-          const events = eventsOf(s.run.stdout)
-          return expect({
-            exitCode: s.run.exitCode,
-            mutantsTested: events.some((event) => S.is(RunEvent.RunMutantTested)(event)),
-            endsWithVerdict: S.is(RunEvent.VerdictReached)(events.at(-1)),
-          }).toEqual({ exitCode: 0, mutantsTested: true, endsWithVerdict: true })
-        }),
-      ),
     )
   })
