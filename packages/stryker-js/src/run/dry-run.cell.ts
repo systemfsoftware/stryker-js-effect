@@ -38,7 +38,7 @@ import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.bluep
 import { testRunnerConfigOf } from '../vm-runner.js'
 import { IdGenerator, type IdGeneratorShape } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
-import { dryRunChoiceOf, testClosureDigestOf } from './dry-run-choice.js'
+import { type DryRunChoice, dryRunChoiceOf, testClosureDigestOf } from './dry-run-choice.js'
 import { testCoverageOf, testFileModulesFieldOf } from './dry-run-coverage.js'
 import type { InstrumentDone } from './instrument.cell.js'
 import type { PhaseClock } from './phase-clock.service.js'
@@ -587,15 +587,7 @@ const logDroppedCandidates = (decision: DryRunCandidatesDecision): Effect.Effect
     ),
   )
 
-interface StaleLogInput {
-  readonly reason: DryRunRunReason
-  readonly candidates: readonly DryRunCoverage[]
-  readonly candidatesDecision: DryRunCandidatesDecision
-  readonly currentRoot: string
-  readonly prior: Option.Option<DryRunCoverage>
-  readonly currentTestClosureDigest: Option.Option<string>
-  readonly runInputsDigest: string
-}
+type StaleLogInput = DryRunChoice & { readonly reason: DryRunRunReason }
 
 const refusalHeadOf = (reason: DryRunRunReason): string =>
   `Running the initial test run: dry-run coverage reuse refused (${reason})`
