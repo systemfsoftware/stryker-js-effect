@@ -164,14 +164,13 @@ const writeLineOf = (handle: FileSystem.File, fileFailed: Ref.Ref<boolean>) => (
         ),
     }))
 
-const LEADING_BYTES = 4096
-
-const leadingTextOf = (fs: FileSystem.FileSystem, fileName: string) =>
-  Effect.scoped(
-    fs.open(fileName, { flag: 'r' }).pipe(
-      Effect.flatMap((handle) => handle.readAlloc(LEADING_BYTES)),
-      Effect.map(Option.match({ onNone: () => '', onSome: (bytes) => new TextDecoder().decode(bytes) })),
-    ),
+const firstLineOf = (fs: FileSystem.FileSystem, fileName: string) =>
+  fs.stream(fileName).pipe(
+    Stream.decodeText,
+    Stream.splitLines,
+    Stream.take(1),
+    Stream.runHead,
+    Effect.map(Option.getOrElse(() => '')),
   )
 
 const overwriteCommandOf = (fs: FileSystem.FileSystem, fileName: string) =>
@@ -180,7 +179,7 @@ const overwriteCommandOf = (fs: FileSystem.FileSystem, fileName: string) =>
     Effect.map(Option.exists((info) => info.type === 'File')),
     Effect.flatMap((regularFile) =>
       Boolean.match(regularFile, {
-        onTrue: () => leadingTextOf(fs, fileName),
+        onTrue: () => firstLineOf(fs, fileName),
         onFalse: () => Effect.succeed(''),
       }).pipe(
         Effect.map((leadingText) => StreamOverwriteCommand.make({ file: fileName, regularFile, leadingText })),

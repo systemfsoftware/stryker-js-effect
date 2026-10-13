@@ -2,12 +2,13 @@ import { Sandwich } from '@systemfsoftware/effect-cell-types'
 import { SpanTaxonomy } from '@systemfsoftware/stryker-js-cli-contract'
 import type { Instrument } from '@systemfsoftware/stryker-js-instrumenter'
 import { type Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import { Boolean, Schema as S } from 'effect'
+import { Array as Arr, Boolean, Schema as S } from 'effect'
 import * as Effect from 'effect/Effect'
 import * as Equivalence from 'effect/Equivalence'
 import * as FileSystem from 'effect/FileSystem'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
+import * as Order from 'effect/Order'
 import * as Path from 'effect/Path'
 import type { PlatformError } from 'effect/PlatformError'
 import { badArgument } from 'effect/PlatformError'
@@ -138,13 +139,29 @@ const swapCase = (name: string) =>
     })
   ).join('')
 
+const swapsCaseCleanly = (name: string) => Boolean.every([swapCase(name) !== name, swapCase(swapCase(name)) === name])
+
+const distinctFiles = (one: FileSystem.File.Info, other: FileSystem.File.Info) =>
+  Boolean.some([
+    one.dev !== other.dev,
+    Option.getOrElse(Option.zipWith(one.ino, other.ino, (a, b) => a !== b), () => false),
+  ])
+
+const caseTellsApart = (fs: FileSystem.FileSystem, file: string, swapped: string) =>
+  Effect.all([fs.stat(file), fs.stat(swapped).pipe(Effect.option)]).pipe(
+    Effect.map(([info, other]) => Option.match(other, { onNone: () => true, onSome: (o) => distinctFiles(info, o) })),
+  )
+
 const caseSensitiveAt = (fs: FileSystem.FileSystem, pathService: Path.Path, basePath: string) => {
   const root = pathService.resolve(basePath)
-  const swapped = pathService.join(pathService.dirname(root), swapCase(pathService.basename(root)))
-  return Boolean.match(swapped === root, {
-    onTrue: () => Effect.succeed(false),
-    onFalse: () => fs.exists(swapped).pipe(Effect.map((aliased) => !aliased), Effect.orElseSucceed(() => false)),
-  })
+  return fs.readDirectory(root).pipe(
+    Effect.map((names) => Arr.findFirst(Arr.sort(names, Order.String), swapsCaseCleanly)),
+    Effect.flatMap(Option.match({
+      onNone: () => Effect.succeed(false),
+      onSome: (name) => caseTellsApart(fs, pathService.join(root, name), pathService.join(root, swapCase(name))),
+    })),
+    Effect.orElseSucceed(() => false),
+  )
 }
 
 const entryRulesOf = (

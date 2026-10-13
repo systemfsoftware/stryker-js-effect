@@ -64,6 +64,11 @@ const CASED_DEFAULT_STREAM = 'Reports/Mutation-Stream.jsonl'
 
 const CASED_DEFAULT_CONFIG = `export default ${settingsOf(CONFIGURED_STREAM, `test -f ${CASED_DEFAULT_STREAM}`)}\n`
 
+const LONG_STREAM_RECORD = `${JSON.stringify({ _tag: 'stream', schemaVersion: '9.0', note: 'x'.repeat(5000) })}\n`
+
+const caseSwapped = (name: string) =>
+  name.split('').map((char) => char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase()).join('')
+
 const FIRST_ANSWER = 'out/first.jsonl'
 
 const FACTORY_CONFIG = `let calls = 0
@@ -432,27 +437,75 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
       ),
     )
 
+    scenarioOutline(
+      'A project file whose path differs from the default stream path only by case stays a project input, with <beside> beside the project',
+      [
+        { beside: 'nothing', siblingCased: false },
+        { beside: "a directory named the project's case-swapped name", siblingCased: true },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('a project holding Reports/Mutation-Stream.jsonl whose tests need that file')(
+            'project',
+            () =>
+              Effect.gen(function*() {
+                const fs = yield* FileSystem.FileSystem
+                const path = yield* Path.Path
+                const root = yield* prepareProject(CASED_DEFAULT_CONFIG)
+                yield* fs.makeDirectory(path.join(root, 'Reports'), { recursive: true }).pipe(Effect.orDie)
+                yield* fs.writeFileString(path.join(root, CASED_DEFAULT_STREAM), '{}\n').pipe(Effect.orDie)
+                const sibling = path.join(path.dirname(root), caseSwapped(path.basename(root)))
+                yield* Effect.when(
+                  Effect.acquireRelease(
+                    fs.makeDirectory(sibling).pipe(Effect.orDie),
+                    () => fs.remove(sibling, { recursive: true }).pipe(Effect.ignore),
+                  ),
+                  Effect.succeed(row.siblingCased),
+                )
+                return root
+              }),
+          ),
+          When('the project is run')('run', (s) => invoke(s.project, RUN)),
+          Then('the tests find the file and the run tests its mutants')((s, expect) =>
+            expect({
+              exitCode: s.run.exitCode,
+              mutantsTested: eventsOf(s.run.stdout).some((event) => S.is(RunEvent.RunMutantTested)(event)),
+            }).toEqual({ exitCode: 0, mutantsTested: true })
+          ),
+        ),
+    )
+
     scenario(
-      'A project file whose path differs from the default stream path only by case stays a project input',
+      'A stream file whose first record is longer than 4096 bytes is rewritten by the next run',
       Gherkin.Do.pipe(
-        Given('a project holding Reports/Mutation-Stream.jsonl whose tests need that file')(
+        Given('a project whose configured stream file starts with a stream record longer than 4096 bytes')(
           'project',
           () =>
             Effect.gen(function*() {
               const fs = yield* FileSystem.FileSystem
               const path = yield* Path.Path
-              const root = yield* prepareProject(CASED_DEFAULT_CONFIG)
-              yield* fs.makeDirectory(path.join(root, 'Reports'), { recursive: true }).pipe(Effect.orDie)
-              yield* fs.writeFileString(path.join(root, CASED_DEFAULT_STREAM), '{}\n').pipe(Effect.orDie)
+              const root = yield* prepareProject(configNaming(CONFIGURED_STREAM))
+              yield* fs.makeDirectory(path.join(root, path.dirname(CONFIGURED_STREAM)), { recursive: true }).pipe(
+                Effect.orDie,
+              )
+              yield* fs.writeFileString(path.join(root, CONFIGURED_STREAM), LONG_STREAM_RECORD).pipe(Effect.orDie)
               return root
             }),
         ),
         When('the project is run')('run', (s) => invoke(s.project, RUN)),
-        Then('the tests find the file and the run tests its mutants')((s, expect) =>
+        When('the stream file is read')(
+          'stream',
+          (s) => Effect.flatMap(Path.Path, (path) => readOptional(path.join(s.project, CONFIGURED_STREAM))),
+        ),
+        Then('the run logged no file failure and the stream file holds its verdict')((s, expect) =>
           expect({
             exitCode: s.run.exitCode,
-            mutantsTested: eventsOf(s.run.stdout).some((event) => S.is(RunEvent.RunMutantTested)(event)),
-          }).toEqual({ exitCode: 0, mutantsTested: true })
+            fileFailuresLogged: s.run.stderr.split(DRAIN_FILE_FAILED).length - 1,
+            streamEndsWithVerdict: Option.exists(
+              s.stream,
+              (text) => S.is(RunEvent.VerdictReached)(eventsOf(text).at(-1)),
+            ),
+          }).toEqual({ exitCode: 0, fileFailuresLogged: 0, streamEndsWithVerdict: true })
         ),
       ),
     )
