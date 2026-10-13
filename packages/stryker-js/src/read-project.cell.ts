@@ -23,16 +23,9 @@ import {
   IncrementalReportDiscard,
 } from './admit-incremental-report.workflow.js'
 import { defaultOptions } from './config/default-options.js'
-import {
-  DiffScopeCommand,
-  type DiffScopeDecision,
-  FullScope,
-  type GitDiffError,
-  type GitDiffResult,
-  type StageInput,
-} from './git-diff.schema.js'
+import { diffScopeDecisionOf } from './git-diff.js'
+import { type DiffScopeDecision, type GitDiffError, type StageInput } from './git-diff.schema.js'
 import { GitDiff } from './git-diff.service.js'
-import { gitDiff } from './git-diff.workflow.js'
 import { type IncrementalReport, IncrementalReportSchema } from './IncrementalReport.schema.js'
 import type { Project, ProjectFile } from './Project.schema.js'
 import { ProjectFilesDiscovered, ProjectSelectionCommand, selectProjectFiles } from './select-project-files.workflow.js'
@@ -373,12 +366,8 @@ interface DiffScope {
 
 const FULL_SCOPE: DiffScope = { scope: 'full', diffRanges: undefined }
 
-const diffScopeDecisionOf = (result: Pick<GitDiffResult, 'hunks' | 'untrackedFiles'>): Effect.Effect<DiffScope> => {
-  const decision: DiffScopeDecision = Result.match(
-    gitDiff(DiffScopeCommand.make({ hunks: [...result.hunks], untrackedFiles: [...result.untrackedFiles] })),
-    { onFailure: () => FullScope.make({ reason: 'the diff could not be computed' }), onSuccess: (value) => value },
-  )
-  return Match.value(decision).pipe(
+const scopeOfDecision = (decision: DiffScopeDecision): Effect.Effect<DiffScope> =>
+  Match.value(decision).pipe(
     Match.tag(
       'DiffScoped',
       (scoped): Effect.Effect<DiffScope> => Effect.succeed({ scope: 'diff', diffRanges: [...scoped.ranges] }),
@@ -390,11 +379,10 @@ const diffScopeDecisionOf = (result: Pick<GitDiffResult, 'hunks' | 'untrackedFil
     ),
     Match.exhaustive,
   )
-}
 
 const diffScopeOf = Effect.fnUntraced(function*(ref: string, basePath: string) {
   const git = yield* GitDiff
-  return yield* diffScopeDecisionOf(yield* git.changedSince({ cwd: basePath, ref }))
+  return yield* scopeOfDecision(diffScopeDecisionOf(yield* git.changedSince({ cwd: basePath, ref })))
 })
 
 const plannedDiffScopeOf = (input: ReadProjectInput): Effect.Effect<DiffScope, GitDiffError, GitDiff> =>
@@ -407,7 +395,7 @@ const plannedDiffScopeOf = (input: ReadProjectInput): Effect.Effect<DiffScope, G
     onSome: (planned) =>
       Match.value(planned).pipe(
         Match.tag('WholeProject', () => Effect.succeed(FULL_SCOPE)),
-        Match.tag('ChangedSince', (changed) => diffScopeDecisionOf(changed.diff)),
+        Match.tag('ChangedSince', (changed) => scopeOfDecision(diffScopeDecisionOf(changed.diff))),
         Match.exhaustive,
       ),
   })

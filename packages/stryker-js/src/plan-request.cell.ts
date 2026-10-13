@@ -24,16 +24,15 @@ import { scoped as checkerPoolsScoped } from './Checker/checker-pool.blueprint.j
 import { makeCheckerPoolHandle, programDigestOf } from './Checker/checker-pool.handle.js'
 import type { DryRunCoverage } from './dry-run-coverage.schema.js'
 import { DryRunCoverageReused } from './dry-run-reuse.workflow.js'
+import { diffScopeDecisionOf } from './git-diff.js'
 import {
   ChangedSince,
-  DiffScopeCommand,
   type GitDiffError,
   type GitDiffResult,
   type PlannedDiff,
   WholeProject,
 } from './git-diff.schema.js'
 import { GitDiff } from './git-diff.service.js'
-import { gitDiff } from './git-diff.workflow.js'
 import { CompileErrorProbeSchema, CostsFieldSchema, PlanShardsRefused } from './plan-request.schema.js'
 import { type PlannedMutant, type PlannedShard, planShards, PlanShardsCommand } from './plan-shards.workflow.js'
 import type { LoadedPlugins } from './Plugins.schema.js'
@@ -395,12 +394,7 @@ const planScopeOf = (
           ),
         ].sort()
         const sources = yield* git.sourceDigest({ cwd: basePath, paths: files })
-        return Match.value(
-          Result.getOrElse(
-            gitDiff(DiffScopeCommand.make({ hunks: present.hunks, untrackedFiles: present.untrackedFiles })),
-            (neverError) => neverError,
-          ),
-        ).pipe(
+        return Match.value(diffScopeDecisionOf(present)).pipe(
           Match.tag(
             'DiffScoped',
             (): ShardPlanScope => ({
