@@ -20,6 +20,7 @@ import * as S from 'effect/Schema'
 import {
   classifyEmptyDirectoryRemoval,
   ClassifyEmptyDirectoryRemovalCommand,
+  EmptyDirectoryRemovalRejected,
 } from './classify-empty-directory-removal.workflow.js'
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from './classify-worker-exit.workflow.js'
 import { EmptyDirectory } from './empty-directory.service.js'
@@ -136,12 +137,9 @@ const hasErrnoCode = (cause: unknown): cause is { readonly code: string } =>
   Predicate.hasProperty(cause, 'code') && Predicate.isString(cause.code)
 
 const removalErrorTagByCode: Readonly<Record<string, PlatformError.SystemErrorTag>> = {
-  ENOENT: 'NotFound',
   EACCES: 'PermissionDenied',
   EPERM: 'PermissionDenied',
-  EEXIST: 'AlreadyExists',
   EISDIR: 'BadResource',
-  ENOTDIR: 'BadResource',
   EBUSY: 'Busy',
   ELOOP: 'BadResource',
 }
@@ -152,9 +150,12 @@ const removalErrorTag = (code: string | undefined): PlatformError.SystemErrorTag
     (): PlatformError.SystemErrorTag => 'Unknown',
   )
 
-const settleRemoval = (code: string | undefined, path: string): Effect.Effect<void, PlatformError.PlatformError> =>
+const settleRemoval = (
+  rejection: EmptyDirectoryRemovalRejected,
+  path: string,
+): Effect.Effect<void, PlatformError.PlatformError> =>
   Result.match(
-    classifyEmptyDirectoryRemoval(ClassifyEmptyDirectoryRemovalCommand.make({ code })),
+    classifyEmptyDirectoryRemoval(ClassifyEmptyDirectoryRemovalCommand.make({ code: rejection.code })),
     {
       onFailure: (impossible) => Effect.fail(impossible),
       onSuccess: (removal) =>
@@ -170,6 +171,7 @@ const settleRemoval = (code: string | undefined, path: string): Effect.Effect<vo
                 syscall: 'rmdir',
                 pathOrDescriptor: path,
                 description: failed.code,
+                cause: rejection.cause,
               }),
             )),
           Match.exhaustive,
@@ -183,8 +185,12 @@ export const nodeEmptyDirectoryLayer = Layer.succeed(
     removeIfEmpty: (path) =>
       Effect.tryPromise({
         try: () => globalThis.process.getBuiltinModule('node:fs/promises').rmdir(path),
-        catch: (cause) => hasErrnoCode(cause) ? cause.code : undefined,
-      }).pipe(Effect.catch((code) => settleRemoval(code, path))),
+        catch: (cause) =>
+          EmptyDirectoryRemovalRejected.make({
+            code: hasErrnoCode(cause) ? cause.code : undefined,
+            cause,
+          }),
+      }).pipe(Effect.catch((rejection) => settleRemoval(rejection, path))),
   }),
 )
 
