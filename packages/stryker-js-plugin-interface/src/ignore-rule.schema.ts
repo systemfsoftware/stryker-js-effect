@@ -71,7 +71,7 @@ const SETTLED_CODES = Arr.dedupe(Object.values(SETTLED_CODES_BY_STATUS).flat())
 
 const SETTLED_DOCUMENTATION: SlashFreeCodeDocumentation<(typeof SETTLED_CODES)[number]> = {
   'covered-not-killed':
-    'Survived: coverage was measured and the tests that ran with the mutant active passed. Strengthen an assertion in one of its covering tests, or, when it names none (a static mutant, or coverage not measured per test), in a test that loads its module.',
+    'Survived: the run reported coverage for the mutant and the tests that ran with it active passed. Strengthen an assertion in one of its covering tests, or, when that coverage names none, in a test that loads its module.',
   'coverage-not-measured':
     'Survived: coverage analysis was off, so every test ran, none failed, and the run cannot name the covering tests. Set `coverageAnalysis: perTest` to learn them.',
   'not-covered': "NoCoverage: no test executes the mutant's location. Add a test that reaches it.",
