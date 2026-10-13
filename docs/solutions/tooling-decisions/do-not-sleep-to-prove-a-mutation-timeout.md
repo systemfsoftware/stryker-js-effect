@@ -25,7 +25,7 @@ Do not add a covering test that calls `setTimeout` or otherwise sleeps so a wall
 
 A sleep long enough to beat overhead on a fast box can finish inside the overhead on a slow box. That is the machine-dependent pass the design rejected.
 
-The named trap is a finite loop in the dry run and a loop that cannot finish when mutated. Its covering test declares no timeout of its own. The runner names the trap file. The classifier reports Timeout when the hit bound fires on that trap, and also when the wall-clock backstop clips a mutant that never settles. A clipped mutant is recycled into a fresh worker and the run continues; the clipped mutant still counts as detected in the score.
+The named trap is a finite loop in the dry run and a loop that cannot finish when mutated. Its covering test declares no timeout of its own. The runner names the trap file. The classifier reports Timeout when the hit bound fires on that trap, and also when the wall-clock backstop clips a mutant that never settles twice. A first clip recycles the worker and runs the mutant once more, in the same run, on a fresh worker under twice the deadline. Only a confirmation that started and expired too is a Timeout, recorded as reproduced; a confirmation that finishes is classified by its tests, so a slow mutant that would survive is not counted as detected. A confirmation whose fresh worker never starts the run is a RuntimeError, which the score does not count.
 
 ## Why This Matters
 
@@ -37,15 +37,17 @@ Let `B` be the mutant budget (`timeoutFactor * netTime + timeoutMS + overhead`) 
 
 - If `S > B` on machine A and `S < B` on machine B, the clip fires on A and not on B. The journey is not a predicate.
   Gate: review — the reviewer confirms no committed journey or fixture classifies a mutant by sleeping.
-- Timeout is legal from the named trap's hit bound, and from the wall-clock backstop clipping a mutant whose covering test never finishes. Both are mutant statuses.
+- Timeout is legal from the named trap's hit bound, and from the wall-clock backstop clipping a mutant twice in one run: once under its deadline and once, on a fresh worker, under twice that deadline. Both are mutant statuses.
   Gate: `pnpm --filter @systemfsoftware/stryker-js --filter @systemfsoftware/stryker-js-vitest-runner test` — `wall-clock-timeout.integration.test.ts` (stryker-js) and the `interpret-vitest-mutant-run` property tests (vitest runner) fail when either source stops reporting `Timeout`.
 - The wall-clock backstop kills and replaces the hung worker (`Pool.invalidate`) and the run continues; it does not fail the stage, and it never produces exit code 4.
-  Gate: `pnpm --filter @systemfsoftware/stryker-js test` — `wall-clock-timeout.integration.test.ts` asserts the run completes, the clipped mutant is a wall-clock `Timeout`, and the verdict is not `InternalError`.
+  Gate: `pnpm --filter @systemfsoftware/stryker-js test` — `wall-clock-timeout.integration.test.ts` asserts the run completes, the twice-clipped mutant is a wall-clock `Timeout` the next run reuses, a mutant whose confirmation finishes is not a `Timeout`, and the verdict is not `InternalError`.
 
 ```text
 if reason is hit-limit prefix and mutant is the named trap -> Timeout
 if reason is hit-limit prefix and mutant is not the trap -> Killed
-if status is timeout and reason is wall-clock -> Timeout, recycle the worker, continue the run
+if status is timeout and reason is wall-clock, first attempt -> recycle the worker, run again under twice the deadline
+if status is timeout and reason is wall-clock, confirmation -> Timeout (reproduced), recycle the worker, continue the run
+if status is timeout and reason is worker-never-started, confirmation -> RuntimeError, recycle the worker, continue the run
 else -> classify from covering-test pass or fail
 ```
 
@@ -55,6 +57,6 @@ Apply when a journey or fixture is about to wait on the wall clock to classify a
 
 ## Examples
 
-A mutant whose covering test awaits a promise that never settles is reported `Timeout` with reason `wall-clock-timeout`. `interpretMutantRun` decides `MutantRunPoolInvalidated` for that result, and the `stryker.mutant_run` cell's write invalidates the pool slot so the hung worker is killed and replaced. It then records the mutant through the same reporting path as any settled mutant, and the run carries on with the remaining mutants.
+A mutant whose covering test awaits a promise that never settles expires its deadline. `interpretMutantRun` decides `MutantRunConfirm`, and the `stryker.mutant_run` cell's write invalidates the pool slot, so the hung worker is killed and replaced, and runs the mutant again under twice the deadline. The confirmation expires too, `interpretMutantRun` decides `MutantRunTimeoutConfirmed`, and the mutant is reported `Timeout` with reason `wall-clock-timeout` and recorded as reproduced. The run carries on with the remaining mutants.
 
 The trap function `accrue` finishes for a finite count. Its covering test calls that count and sets no test timeout. The resilience config names that file as `timeoutTrapFile`.

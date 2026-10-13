@@ -1,4 +1,5 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
+import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Boolean from 'effect/Boolean'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
@@ -9,16 +10,16 @@ type MutantRunOutcomeTypeId = typeof MutantRunOutcomeTypeId
 
 export const NoCoveringTestExecutedReason = S.Literal('no covering test executed')
 
-const CONFIRMATION_DEADLINE_FACTOR = 2
+export const NeverStartedReason = S.Literal('a fresh test runner did not start the mutant run within its boot window')
 
-const Deadline = S.Finite.pipe(S.check(S.isGreaterThanOrEqualTo(0)))
+const CONFIRMATION_DEADLINE_FACTOR = 2
 
 export class MutantRunSettled extends S.TaggedClass<MutantRunSettled>()('MutantRunSettled', {}) {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
 export class MutantRunConfirm extends S.TaggedClass<MutantRunConfirm>()('MutantRunConfirm', {
-  timeoutMs: Deadline,
+  timeoutMs: Mutant.RunOptionsFields.timeout,
 }) {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
@@ -26,6 +27,10 @@ export class MutantRunConfirm extends S.TaggedClass<MutantRunConfirm>()('MutantR
 export class MutantRunTimeoutConfirmed
   extends S.TaggedClass<MutantRunTimeoutConfirmed>()('MutantRunTimeoutConfirmed', {})
 {
+  readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
+}
+
+export class MutantRunNeverStarted extends S.TaggedClass<MutantRunNeverStarted>()('MutantRunNeverStarted', {}) {
   readonly [MutantRunOutcomeTypeId] = MutantRunOutcomeTypeId
 }
 
@@ -41,13 +46,15 @@ export type MutantRunOutcome =
   | MutantRunSettled
   | MutantRunConfirm
   | MutantRunTimeoutConfirmed
+  | MutantRunNeverStarted
   | MutantRunRetry
   | MutantRunRetryExhausted
 
 export class MutantRunObservation extends S.Class<MutantRunObservation>('MutantRunObservation')({
   wallClockTimeout: S.Boolean,
+  neverStarted: S.Boolean,
   confirming: S.Boolean,
-  timeoutMs: Deadline,
+  timeoutMs: Mutant.RunOptionsFields.timeout,
   coveringTests: S.String.pipe(S.Array),
   executedTests: S.String.pipe(S.Array, S.optionalKey),
   attempt: S.Natural,
@@ -86,9 +93,15 @@ const confirmationDeadlineOf = (timeoutMs: number): number =>
     onFalse: () => Number.MAX_VALUE,
   })
 
+const decideConfirmation = (command: MutantRunObservation): Result.Result<MutantRunOutcome, never> =>
+  Boolean.match(command.neverStarted, {
+    onTrue: () => Result.succeed(MutantRunNeverStarted.make({})),
+    onFalse: () => Result.succeed(MutantRunTimeoutConfirmed.make({})),
+  })
+
 const decideExpiry = (command: MutantRunObservation): Result.Result<MutantRunOutcome, never> =>
   Boolean.match(command.confirming, {
-    onTrue: () => Result.succeed(MutantRunTimeoutConfirmed.make({})),
+    onTrue: () => decideConfirmation(command),
     onFalse: () => Result.succeed(MutantRunConfirm.make({ timeoutMs: confirmationDeadlineOf(command.timeoutMs) })),
   })
 
@@ -104,6 +117,7 @@ export const interpretMutantRun = Workflow.make({
     MutantRunSettled,
     MutantRunConfirm,
     MutantRunTimeoutConfirmed,
+    MutantRunNeverStarted,
     MutantRunRetry,
     MutantRunRetryExhausted,
   ]),

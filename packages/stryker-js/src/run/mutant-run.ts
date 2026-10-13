@@ -40,7 +40,7 @@ export interface RunContext {
   readonly plannedMutants: readonly Mutant.Mutant[]
   readonly rememberedMutantIds: ReadonlyArray<string>
   readonly pathService: Path.Path
-  readonly confirmedTimeouts: Ref.Ref<Readonly<Record<string, TimeoutEvidence>>>
+  readonly timeoutEvidence: Ref.Ref<Readonly<Record<string, TimeoutEvidence>>>
 }
 
 export interface ReportingInputArgs {
@@ -187,8 +187,8 @@ export const announceSettledMutant = Effect.fnUntraced(function*(
 })
 
 const writeCheckpoint = (context: RunContext, results: readonly Mutant.RunMutantResult[]) =>
-  Ref.get(context.confirmedTimeouts).pipe(
-    Effect.flatMap((confirmed) =>
+  Ref.get(context.timeoutEvidence).pipe(
+    Effect.flatMap((evidence) =>
       context.reporting.checkpoint(
         {
           ...reportingInputOf({
@@ -197,7 +197,7 @@ const writeCheckpoint = (context: RunContext, results: readonly Mutant.RunMutant
             results,
             rememberedMutantIds: context.rememberedMutantIds,
           }),
-          timeoutEvidenceByMutantId: confirmed,
+          timeoutEvidenceByMutantId: evidence,
         },
         context.plannedMutants,
       )
@@ -286,8 +286,8 @@ export const settleMutantRun = Effect.fnUntraced(function*(raw: MutantRunRaw) {
 const FIRST_EXPIRY: TimeoutEvidence = { timeoutKind: 'wallClock', reproductions: 0 }
 
 export const recycleAndSettleConfirmedTimeout = Effect.fnUntraced(function*(raw: MutantRunRaw) {
-  yield* Ref.update(raw.args.context.confirmedTimeouts, (confirmed) => ({
-    ...confirmed,
+  yield* Ref.update(raw.args.context.timeoutEvidence, (evidence) => ({
+    ...evidence,
     [raw.args.plan.mutant.id]: FIRST_EXPIRY,
   }))
   yield* Pool.invalidate(raw.args.testRunnerPool, raw.runner)

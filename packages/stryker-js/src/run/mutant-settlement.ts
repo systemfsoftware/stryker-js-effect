@@ -345,7 +345,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
     plannedMutants: [...rememberedResults, ...reuse.mutants],
     rememberedMutantIds: rememberedResults.map((result) => result.id),
     pathService: yield* Path.Path,
-    confirmedTimeouts: yield* Ref.make<Readonly<Record<string, TimeoutEvidence>>>({}),
+    timeoutEvidence: yield* Ref.make<Readonly<Record<string, TimeoutEvidence>>>(reuse.timeoutEvidenceByMutantId),
   }
   const settledResults = [
     ...rememberedResults,
@@ -428,7 +428,7 @@ export const settleMutants = Effect.fnUntraced(function*<Passed extends Mutant.M
   const outcomeResult = yield* reporting.reportAll({
     ...reportingInputOf({ prev: basis, env, results: allResults, rememberedMutantIds: context.rememberedMutantIds }),
     closureDigestsByMutantId: settlement.closureDigestsByMutantId,
-    timeoutEvidenceByMutantId: { ...reuse.timeoutEvidenceByMutantId, ...(yield* Ref.get(context.confirmedTimeouts)) },
+    timeoutEvidenceByMutantId: yield* Ref.get(context.timeoutEvidence),
     ...optionalField('programDigest', reuse.programDigest),
   })
   yield* Fiber.await(checkerRelease)

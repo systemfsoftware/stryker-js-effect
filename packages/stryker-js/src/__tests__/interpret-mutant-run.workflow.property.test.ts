@@ -6,6 +6,7 @@ import * as S from 'effect/Schema'
 import {
   interpretMutantRun,
   MutantRunConfirm,
+  MutantRunNeverStarted,
   MutantRunObservation,
   MutantRunRetry,
   MutantRunRetryExhausted,
@@ -38,13 +39,26 @@ it.prop(
 )
 
 it.prop(
-  '∀c_Observation_≡OnlyAnExpiredConfirmationSettlesAsATimeout',
+  '∀c_Observation_≡OnlyAConfirmationThatRanAndExpiredSettlesAsATimeout',
   { of: [MutantRunObservation], subject: interpretMutantRun },
   (subject, [command]) =>
     Result.match(subject(command), {
       onFailure: () => false,
       onSuccess: (decision) =>
-        S.is(MutantRunTimeoutConfirmed)(decision) === (command.wallClockTimeout && command.confirming),
+        S.is(MutantRunTimeoutConfirmed)(decision) ===
+          (command.wallClockTimeout && command.confirming && !command.neverStarted),
+    }),
+)
+
+it.prop(
+  '∀c_Observation_≡AConfirmationWhoseRunnerNeverStartedIsNoTimeout',
+  { of: [MutantRunObservation], subject: interpretMutantRun },
+  (subject, [command]) =>
+    Result.match(subject(command), {
+      onFailure: () => false,
+      onSuccess: (decision) =>
+        S.is(MutantRunNeverStarted)(decision) ===
+          (command.wallClockTimeout && command.confirming && command.neverStarted),
     }),
 )
 

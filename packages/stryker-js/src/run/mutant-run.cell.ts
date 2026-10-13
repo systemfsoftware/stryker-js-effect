@@ -9,11 +9,15 @@ import * as Option from 'effect/Option'
 import * as Pool from 'effect/Pool'
 import type * as Scope from 'effect/Scope'
 
-import { interpretMutantRun, NoCoveringTestExecutedReason } from '../interpret-mutant-run.workflow.js'
+import {
+  interpretMutantRun,
+  NeverStartedReason,
+  NoCoveringTestExecutedReason,
+} from '../interpret-mutant-run.workflow.js'
 import { cicdAttributesOf, spanRunStatusOf, testSuiteNameOf } from '../mutant-run-span.js'
 import { invalidatesRunnerPool } from '../pooled-test-runner.handle.js'
 import { StageError } from '../Run.schema.js'
-import type { PooledTestRunnerError } from '../TestRunner.schema.js'
+import { type PooledTestRunnerError, WorkerNeverStartedReason } from '../TestRunner.schema.js'
 import { recycleAndSettleConfirmedTimeout, type RunOnePlanArgs, settleMutantRun } from './mutant-run.js'
 
 const reasonOf = (result: { readonly status: string; readonly reason?: string }): string | undefined =>
@@ -104,6 +108,7 @@ const readMutantRunAttempt = Effect.fnUntraced(function*(input: MutantRunAttempt
   )
   return {
     wallClockTimeout: invalidatesRunnerPool(result.status, reasonOf(result)),
+    neverStarted: reasonOf(result) === WorkerNeverStartedReason.literal,
     confirming: input.confirming,
     timeoutMs: plan.runOptions.timeout,
     coveringTests: coveringTestsOf(plan),
@@ -138,6 +143,11 @@ const attemptCell: Cell.Cell<
             }),
         ),
       MutantRunTimeoutConfirmed: (_decision, raw) => recycleAndSettleConfirmedTimeout(raw),
+      MutantRunNeverStarted: (_decision, raw) =>
+        Effect.flatMap(
+          Pool.invalidate(raw.args.testRunnerPool, raw.runner),
+          () => settleMutantRun({ ...raw, result: { status: 'error', errorMessage: NeverStartedReason.literal } }),
+        ),
       MutantRunRetry: (_decision, raw) =>
         Effect.flatMap(
           Pool.invalidate(raw.args.testRunnerPool, raw.runner),

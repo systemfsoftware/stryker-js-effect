@@ -135,6 +135,7 @@ const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
 })
 
 interface MutantRow {
+  readonly id: string
   readonly status: Mutant.MutantStatus
   readonly statusReason?: string | undefined
 }
@@ -143,6 +144,7 @@ interface ObservedRun {
   readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
   readonly events: ReadonlyArray<RunEvent.RunEvent>
   readonly daemonMutants: ReadonlyArray<MutantRow>
+  readonly recordedCostMs: Readonly<Record<string, number | null>>
 }
 
 const readDaemonMutants = (
@@ -156,11 +158,22 @@ const readDaemonMutants = (
       .filter(([file]) => file === DAEMON_FILE)
       .flatMap(([, fileResult]) =>
         fileResult.mutants.map((mutant): MutantRow => ({
+          id: mutant.id,
           status: mutant.status,
           statusReason: mutant.statusReason,
         }))
       )
   }).pipe(Effect.orElseSucceed(() => []))
+
+const readRecordedCosts = (
+  directory: string,
+): Effect.Effect<Readonly<Record<string, number | null>>, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const text = yield* fs.readFileString(incrementalFileOf(directory))
+    const record = yield* S.decodeEffect(S.fromJsonString(Engine.IncrementalReportSchema))(text)
+    return Object.fromEntries(Object.entries(record.costs).map(([id, cost]) => [id, cost.actualMs]))
+  }).pipe(Effect.orElseSucceed(() => ({})))
 
 const executeRun = (workspace: Workspace): Effect.Effect<ObservedRun, never, FileSystem.FileSystem> =>
   Effect.gen(function*() {
@@ -195,7 +208,8 @@ const executeRun = (workspace: Workspace): Effect.Effect<ObservedRun, never, Fil
       .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit)
     const events = yield* Queue.takeAll(queue).pipe(Effect.orElseSucceed(() => []))
     const daemonMutants = yield* readDaemonMutants(workspace.directory)
-    return { exit, events: [...events], daemonMutants }
+    const recordedCostMs = yield* readRecordedCosts(workspace.directory)
+    return { exit, events: [...events], daemonMutants, recordedCostMs }
   })
 
 interface ObservedRuns {
@@ -241,6 +255,9 @@ const timeoutStreamed = (events: ReadonlyArray<RunEvent.RunEvent>): boolean =>
 const wallClockTimeoutsOf = (run: ObservedRun): ReadonlyArray<MutantRow> =>
   run.daemonMutants.filter((mutant) => mutant.status === 'Timeout' && mutant.statusReason === 'wall-clock-timeout')
 
+const coversBothAttempts = (run: ObservedRun): boolean =>
+  wallClockTimeoutsOf(run).every((mutant) => (run.recordedCostMs[mutant.id] ?? 0) >= 3 * MUTANT_BUDGET_MS)
+
 const verdictClassOf = (run: ObservedRun) => Exit.isSuccess(run.exit) ? run.exit.value.verdict : undefined
 
 Feature('Scoring a wall-clock expiry only when a confirmation expires too')
@@ -270,8 +287,10 @@ Feature('Scoring a wall-clock expiry only when a confirmation expires too')
             firstTimeoutStreamed: timeoutStreamed(first.events),
             firstVerdictCountsTimeout: (verdictOf(first.events)?.counts.timeout ?? 0) >= 1,
             siblingsStillClassified: first.daemonMutants.some((mutant) => mutant.status === 'Killed'),
+            firstCostCoversBothAttempts: coversBothAttempts(first),
             secondRunCompleted: Exit.isSuccess(second.exit),
             secondRefusesUnreproducedTimeouts: reuseOf(second.events)?.refused.timeoutUnreproduced,
+            secondRanNoMutant: reuseOf(second.events)?.ran,
             secondStillReportsTheTimeout: wallClockTimeoutsOf(second).length === wallClockTimeoutsOf(first).length,
           }).toEqual({
             firstRunCompleted: true,
@@ -281,8 +300,10 @@ Feature('Scoring a wall-clock expiry only when a confirmation expires too')
             firstTimeoutStreamed: true,
             firstVerdictCountsTimeout: true,
             siblingsStillClassified: true,
+            firstCostCoversBothAttempts: true,
             secondRunCompleted: true,
             secondRefusesUnreproducedTimeouts: 0,
+            secondRanNoMutant: 0,
             secondStillReportsTheTimeout: true,
           })
         }),
