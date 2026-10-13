@@ -27,6 +27,8 @@ const COMMITTED_C = '3c3c3c3c3c3c3c3c'
 const NEW_SURVIVOR = '4d4d4d4d4d4d4d4d'
 const PENDING_ONE = '5e5e5e5e5e5e5e5e'
 const PENDING_TWO = '6f6f6f6f6f6f6f6f'
+const KILLED_ONE = '7a7a7a7a7a7a7a7a'
+const SURVIVED_ONE = '8b8b8b8b8b8b8b8b'
 
 const CONSUMER_PACKAGE = '{ "name": "gate-consumer", "type": "module", "private": true }\n'
 
@@ -43,29 +45,94 @@ const CONFIG = `export default {
 const mutantLine = (id: string, line: number, status: string): string =>
   `    { "id": "${id}", "mutatorName": "ArithmeticOperator", "replacement": "-", "status": "${status}", "location": { "start": { "line": ${line}, "column": 26 }, "end": { "line": ${line}, "column": 27 } } }`
 
-const REPORT_JSON = `{
+const reportJsonOf = (breakThreshold: string): string =>
+  `{
   "schemaVersion": "1.0",
-  "thresholds": { "high": 80, "low": 60, "break": null },
+  "thresholds": { "high": 80, "low": 60, "break": ${breakThreshold} },
   "budget": { "predictedSeconds": 1, "actualSeconds": 4 },
   "files": {
     "src/sum.js": {
       "source": "export const sum = (a, b) => a + b\\n",
       "mutants": [
 ${
-  [
-    mutantLine(COMMITTED_A, 1, 'Survived'),
-    mutantLine(COMMITTED_B, 2, 'Survived'),
-    mutantLine(COMMITTED_C, 3, 'NoCoverage'),
-    mutantLine(NEW_SURVIVOR, 4, 'Survived'),
-    mutantLine(PENDING_ONE, 5, 'Pending'),
-    mutantLine(PENDING_TWO, 6, 'Pending'),
-  ].join(',\n')
-}
+    [
+      mutantLine(COMMITTED_A, 1, 'Survived'),
+      mutantLine(COMMITTED_B, 2, 'Survived'),
+      mutantLine(COMMITTED_C, 3, 'NoCoverage'),
+      mutantLine(NEW_SURVIVOR, 4, 'Survived'),
+      mutantLine(PENDING_ONE, 5, 'Pending'),
+      mutantLine(PENDING_TWO, 6, 'Pending'),
+    ].join(',\n')
+  }
       ]
     }
   }
 }
 `
+
+const reportWithoutThresholdsJson = (): string =>
+  reportJsonOf('null').replace('  "thresholds": { "high": 80, "low": 60, "break": null },\n', '')
+
+const BELOW_BREAK = '50'
+
+const scoredReportJsonOf = (breakThreshold: string): string =>
+  `{
+  "schemaVersion": "1.0",
+  "thresholds": { "high": 80, "low": 60, "break": ${breakThreshold} },
+  "budget": { "predictedSeconds": 1, "actualSeconds": 4 },
+  "files": {
+    "src/sum.js": {
+      "source": "export const sum = (a, b) => a + b\\n",
+      "mutants": [
+${
+    [
+      mutantLine(KILLED_ONE, 1, 'Killed'),
+      mutantLine(SURVIVED_ONE, 2, 'Survived'),
+    ].join(',\n')
+  }
+      ]
+    }
+  }
+}
+`
+
+const breakLineOf = (project: string): string => `score-below-break: ${project} scored 0.00 < break ${BELOW_BREAK}`
+
+const occurrencesOf = (haystack: string, needle: string): number => haystack.split(needle).length - 1
+
+const MERGED_BREACH_PROJECTS: ReadonlyArray<string> = Array.from({ length: 32 }, (_, index) => `p${index}`)
+
+const BREAK_REMEDIATION_LINE =
+  'kill the survivors the report lists, or lower `thresholds.break` (null turns this verdict off)'
+
+const SURVIVOR_REMEDIATION_LINE =
+  'accept the new survivors with `stryker gate --update-baseline`, or kill them before the next run'
+
+const mergedBreachReportJsonOf = (projects: ReadonlyArray<string>): string => {
+  const hexId = (value: number): string => value.toString(16).padStart(16, '0')
+  const fileOf = (project: string, index: number): string =>
+    `    "${project}/src/sum.js": {
+      "source": "export const sum = (a, b) => a + b\\n",
+      "mutants": [
+        ${mutantLine(hexId(index * 2), 1, 'Killed')},
+        ${mutantLine(hexId(index * 2 + 1), 2, 'Survived')}
+      ]
+    }`
+  const mergedProjectOf = (project: string): string =>
+    `    { "project": "${project}", "thresholds": { "_tag": "Recorded", "high": 80, "low": 60, "break": 60 }, "files": ["${project}/src/sum.js"] }`
+  return `{
+  "schemaVersion": "1.0",
+  "thresholds": { "high": 80, "low": 60, "break": 60 },
+  "budget": { "predictedSeconds": 1, "actualSeconds": 4 },
+  "files": {
+${projects.map((project, index) => fileOf(project, index)).join(',\n')}
+  },
+  "projects": [
+${projects.map(mergedProjectOf).join(',\n')}
+  ]
+}
+`
+}
 
 const baselineJson = (survivorIds: ReadonlyArray<string>): string =>
   `{ "schemaVersion": 1, "survivors": [${survivorIds.map((id) => `"${id}"`).join(', ')}] }\n`
@@ -91,6 +158,7 @@ interface GateProject {
 const prepareProject = (
   baseline: string | null,
   budgetBaseline: string | null = null,
+  report = reportJsonOf('null'),
 ): Effect.Effect<GateProject, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -109,7 +177,7 @@ const prepareProject = (
     yield* fs.writeFileString(path.join(root, 'src', 'sum.js'), 'export const sum = (a, b) => a + b\n')
     const reportPath = path.join(root, REPORT_FILE)
     yield* fs.makeDirectory(path.dirname(reportPath), { recursive: true })
-    yield* fs.writeFileString(reportPath, REPORT_JSON)
+    yield* fs.writeFileString(reportPath, report)
     yield* Effect.when(
       fs.writeFileString(path.join(root, COMMITTED_BASELINE), baseline ?? ''),
       Effect.succeed(baseline !== null),
@@ -177,7 +245,9 @@ const readWrittenBudgetBaseline = (
     return (yield* decodeBudgetBaselineFile(text)).actualSeconds
   }).pipe(Effect.orDie)
 
-Feature('Gating a pull request on the committed survivor and time-budget baselines', { timeout: 180_000 })
+Feature('Gating a pull request on the committed survivor and time-budget baselines and the score break', {
+  timeout: 180_000,
+})
   .withLayer(Engine.nodePlatformLayer)
   .live('the built stryker binary reads the finished report and the committed baseline in a real Node process')
   .body(({ scenario }) => {
@@ -289,6 +359,41 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
     )
 
     scenario(
+      'A run that is over the committed budget baseline and below its break fails on the budget before the break',
+      Gherkin.Do.pipe(
+        Given(
+          'a project whose survivors are all committed, whose committed budget baseline is 3 seconds and whose report scores 0 under a break of 50',
+        )(
+          'project',
+          () =>
+            prepareProject(
+              baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR]),
+              budgetBaselineJson(3),
+              reportJsonOf(BELOW_BREAK),
+            ),
+        ),
+        When('stryker gates against both baselines')(
+          'ran',
+          (s) =>
+            runGate(s.project.root, 'human', [
+              '--baseline',
+              COMMITTED_BASELINE,
+              '--budget-baseline',
+              COMMITTED_BUDGET_BASELINE,
+            ]),
+        ),
+        Then('the process exits 1 naming the budget and no break verdict')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesBaseline: s.ran.stderr.includes('3.00'),
+            namesActual: s.ran.stderr.includes('4.00'),
+            emitsBreakVerdict: s.ran.stderr.includes('score-below-break'),
+          }).toStrictEqual({ exitCode: 1, namesBaseline: true, namesActual: true, emitsBreakVerdict: false })
+        ),
+      ),
+    )
+
+    scenario(
       'A run within the committed budget baseline plus tolerance exits 0',
       Gherkin.Do.pipe(
         Given('a project whose survivors are all committed and whose committed budget baseline is 4 seconds')(
@@ -351,6 +456,137 @@ Feature('Gating a pull request on the committed survivor and time-budget baselin
           (s) => runGate(s.project.root, 'human', ['--budget-baseline', COMMITTED_BUDGET_BASELINE]),
         ),
         Then('the process exits 0')((s, expect) => expect({ exitCode: s.ran.exitCode }).toStrictEqual({ exitCode: 0 })),
+      ),
+    )
+
+    scenario(
+      'An unsharded report below its break still gets its updated baseline written, then fails the gate',
+      Gherkin.Do.pipe(
+        Given('a project whose report scores 0 under a break of 50, with no committed baseline file')(
+          'project',
+          () => prepareProject(null, null, reportJsonOf(BELOW_BREAK)),
+        ),
+        When('stryker gates with --update-baseline')(
+          'ran',
+          (s) => runGate(s.project.root, 'human', ['--baseline', WRITTEN_BASELINE, '--update-baseline']),
+        ),
+        When('the written baseline is read back')('written', (s) => readBaselineSurvivors(s.project.reportPath)),
+        Then('the baseline holds this run’s survivors and the process exits 1 naming the break once')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            written: [...s.written],
+            breakLineAppearances: occurrencesOf(s.ran.stderr, breakLineOf('.')),
+            remediationAppearances: occurrencesOf(s.ran.stderr, BREAK_REMEDIATION_LINE),
+            survivorRemediationAppearances: occurrencesOf(s.ran.stderr, SURVIVOR_REMEDIATION_LINE),
+            summaryNamesCount: s.ran.stderr.includes('stryker gate: 1 of 1 project(s) scored below thresholds.break'),
+          }).toStrictEqual({
+            exitCode: 1,
+            written: [COMMITTED_A, COMMITTED_B, COMMITTED_C, NEW_SURVIVOR],
+            breakLineAppearances: 1,
+            remediationAppearances: 1,
+            survivorRemediationAppearances: 0,
+            summaryNamesCount: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A report scoring 50 under a break of 60 exits 1 naming the score and the break',
+      Gherkin.Do.pipe(
+        Given('a project whose report kills one mutant and leaves one alive under a break of 60')(
+          'project',
+          () => prepareProject(null, null, scoredReportJsonOf('60')),
+        ),
+        When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
+        Then('the process exits 1 naming 50.00 against break 60')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesTheBreak: s.ran.stderr.includes('score-below-break: . scored 50.00 < break 60'),
+            survivorRemediationAppearances: occurrencesOf(s.ran.stderr, SURVIVOR_REMEDIATION_LINE),
+          }).toStrictEqual({ exitCode: 1, namesTheBreak: true, survivorRemediationAppearances: 0 })
+        ),
+      ),
+    )
+
+    scenario(
+      'The same report scoring 50 under a break of 50 exits 0 because an equal score passes',
+      Gherkin.Do.pipe(
+        Given('a project whose report scores 50 under a break of 50')(
+          'project',
+          () => prepareProject(null, null, scoredReportJsonOf('50')),
+        ),
+        When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
+        Then('the process exits 0 with no break verdict')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            emitsBreakVerdict: s.ran.stderr.includes('score-below-break'),
+          }).toStrictEqual({ exitCode: 0, emitsBreakVerdict: false })
+        ),
+      ),
+    )
+
+    scenario(
+      'A report with no thresholds is refused as an unusable input, not passed',
+      Gherkin.Do.pipe(
+        Given('a project whose finished report carries no thresholds')(
+          'project',
+          () => prepareProject(null, null, reportWithoutThresholdsJson()),
+        ),
+        When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
+        Then('the process exits with the input failure code and stderr names the undecodable report')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesUndecodableReport: s.ran.stderr.includes('cannot decode the finished mutation report'),
+          }).toStrictEqual({ exitCode: 2, namesUndecodableReport: true })
+        ),
+      ),
+    )
+
+    scenario(
+      'A new survivor fails on the baseline verdict before the break is judged',
+      Gherkin.Do.pipe(
+        Given('a project whose report scores 0 under a break of 50 and whose baseline misses one survivor')(
+          'project',
+          () => prepareProject(baselineJson([COMMITTED_A, COMMITTED_B, COMMITTED_C]), null, reportJsonOf(BELOW_BREAK)),
+        ),
+        When('stryker gates against that baseline')(
+          'ran',
+          (s) => runGate(s.project.root, 'human', ['--baseline', COMMITTED_BASELINE]),
+        ),
+        Then('the process exits 1 naming the new survivor and no break verdict')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesOnlyTheNewSurvivor: namesOnlyTheNewSurvivor(s.ran.stderr),
+            emitsBreakVerdict: s.ran.stderr.includes('score-below-break'),
+          }).toStrictEqual({ exitCode: 1, namesOnlyTheNewSurvivor: true, emitsBreakVerdict: false })
+        ),
+      ),
+    )
+
+    scenario(
+      'A merged report with many projects below their break reports every one of them and the next action',
+      Gherkin.Do.pipe(
+        Given('a merged report of 32 projects each scoring 50 under a break of 60')(
+          'project',
+          () => prepareProject(null, null, mergedBreachReportJsonOf(MERGED_BREACH_PROJECTS)),
+        ),
+        When('stryker gates the finished report')('ran', (s) => runGate(s.project.root, 'human', [])),
+        Then('the process exits 1 and stderr carries every breach line and the remediation uncut')((s, expect) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            missingBreaches: MERGED_BREACH_PROJECTS.filter((project) =>
+              !s.ran.stderr.includes(`score-below-break: ${project} scored 50.00 < break 60`)
+            ),
+            namesRemediation: s.ran.stderr.includes(BREAK_REMEDIATION_LINE),
+            survivorRemediationAppearances: occurrencesOf(s.ran.stderr, SURVIVOR_REMEDIATION_LINE),
+          }).toStrictEqual({
+            exitCode: 1,
+            missingBreaches: [],
+            namesRemediation: true,
+            survivorRemediationAppearances: 0,
+          })
+        ),
       ),
     )
   })

@@ -51,7 +51,7 @@ import { FixtureKeys, MalformedClosure, TurboClosure, TurboDryRun } from './bake
 import { GuestJobs } from './guest-job.service.js'
 import { ExitFailure, FixtureMissingFailure, PackFailure } from './harness-failure.schema.js'
 import type { HarnessError } from './harness-failure.schema.js'
-import { seamSpan, SpanNames, withSeamSpan } from './harness-telemetry.service.js'
+import { seamSpan, SpanNames, withSeamSpan } from './harness-telemetry.js'
 import * as Warm from './warm-sandbox.handle.js'
 
 export type BakePlatform =
@@ -698,13 +698,10 @@ const bakeMissing = (
       yield* leaseEntry(stagingDir)
       yield* stageFixtures(environment, stagingDir, missing.map((fixture) => fixture.fixtureId), catalogs, closure)
       const bakeScript = yield* fs.readFileString(environment.bakeScriptPath)
-      yield* jobs.requireCleanExit(
-        STEP_BAKE,
-        jobs.job(['sh', '-c', bakeScript, 'bake-fixtures'], [
-          { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
-          { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
-        ]),
-      )
+      yield* jobs.requireCleanExit(STEP_BAKE, ['sh', '-c', bakeScript, 'bake-fixtures'], [
+        { host: stagingDir, guest: GuestJobs.GUEST_BAKED_ROOT },
+        { host: packsDir, guest: GuestJobs.GUEST_PACKS_ROOT },
+      ])
       yield* Effect.forEach(
         missing,
         (fixture) => publishFixture(stagingDir, fixture, path.join(root, entryNameOf(fixture))),
