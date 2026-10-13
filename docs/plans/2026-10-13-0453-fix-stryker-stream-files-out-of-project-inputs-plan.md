@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0409-fix-stryker-stream-files-out-of-project-inputs-plan.md
+supersedes: docs/plans/2026-10-13-0421-fix-stryker-stream-files-out-of-project-inputs-plan.md
 ---
 
 # No stream file Stryker writes enters the next run's inputs - Plan
@@ -14,7 +14,7 @@ supersedes: docs/plans/2026-10-13-0409-fix-stryker-stream-files-out-of-project-i
 
 - **Objective:** a project re-run through the `stryker` CLI with nothing changed reuses every verdict, whatever its `ignorePatterns` (including `[]`) and whichever `stryker` commands ran in it before. A `progressStreamFile` set in the config file is where `stryker run` writes its stream.
 - **Authority:** `CONSTITUTION.md`, then root `AGENTS.md`, then this plan. Stream J owns the CLI surface. This PR (#329) lands before PR #320 (the `--ignorePatterns` help text), which waits on it.
-- **Supersedes:** the 0409 plan, executed in `bd72466b`; its full review found no P0 or P1 but a BREAK-1 violation (a duplicate published name kept for compatibility), a stale unit (U4's patch changeset), a false KTD5 and over-promising release wording, so this plan carries the corrected contract and 0409 is removed in the same PR (REPO-D2). 0409 superseded 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
+- **Supersedes:** the 0421 plan, executed in `39c401e4` and `1059dc39`; their full reviews found no P0 or P1, but the changeset's config-function bullet stayed inaccurate and the output rule still missed nested paths on Windows (as `main` does), so this plan carries the corrected contract and 0421 is removed in the same PR (REPO-D2). 0421 superseded 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
 - **Citations:** line numbers name `main` at `ec1769de`, the base this branch was cut from, unless they name a file this PR changes.
 - **Open blockers:** none. OQ1, OQ2, OQ4 and OQ5 go to the root and OQ3 to PR #320; none gates this unit.
 
@@ -62,7 +62,7 @@ Cause in code:
 - R4. A config file that cannot be read or is invalid, including an invalid `progressStreamFile`, is reported exactly as today. The stream still opens, at the flag or default path.
 - R5. A stream file written at the default path by any `stryker` command never changes the next run's inputs.
 - R6. An empty `progressStreamFile`, from the config or the flag, keeps today's behaviour: the stream goes to the default path.
-- R7. A configured or flagged output path is left out of the inputs however it is spelled (`out/stream.jsonl`, `./out/stream.jsonl`, `out//stream.jsonl`, `out/stream.jsonl/`): the rule is the path Stryker writes.
+- R7. A configured or flagged output path is left out of the inputs however it is spelled (`out/stream.jsonl`, `./out/stream.jsonl`, `out//stream.jsonl`, `out/stream.jsonl/`, nested or absolute) on every platform: the rule is the entry path the crawl gives that file.
 - R8. The path a run streams to is the path its own inputs leave out, even when a config function answers differently each time it is read.
 
 ### Acceptance Examples
@@ -83,7 +83,7 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - Which commands write a stream is unchanged.
 - The README sentences that stated the stream always lands at `reports/mutation-stream.jsonl` (`README.md:303`, `:378`, `packages/stryker-js/README.md:200`) and the learning at `docs/solutions/workflow-issues/mutation-lane-green-while-every-job-failed.md:31` name the resolved `progressStreamFile`. The learning `docs/solutions/tooling-decisions/verdict-cache-content-keyed-reuse.md` states the matching rule.
 - No CI, Turbo, cache, workflow, e2e, fixture or timeout change. No mutation run of any kind.
-- The changeset is `major` (package-topology `surface-changes-are-versioned`: consumers observe the change): a run whose config names `progressStreamFile` no longer streams to `reports/mutation-stream.jsonl`, a config function is called once more per run, a project's own `reports/mutation-stream.jsonl` leaves the project, and `RunEvent.RunEventDrain.DefaultProgressStreamFile` is removed (BREAK-1). Each is listed under Breaking. Its spelling claim names only the spellings AE3 proves.
+- The changeset is `major` (package-topology `surface-changes-are-versioned`: consumers observe the change): a mutation run whose config names a non-empty `progressStreamFile` no longer streams to `reports/mutation-stream.jsonl`, a config function is called once more per run (stream path from its first answer, every other option from its second), a project's own `reports/mutation-stream.jsonl` leaves the project, and `RunEvent.RunEventDrain.DefaultProgressStreamFile` is removed (BREAK-1; the `Configuration.defaultOptions` effect yields the default). Each is listed under Breaking.
 
 ### Key Decisions
 
@@ -95,10 +95,10 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - **The default stream path is always left out of a project's inputs, next to the configured one.** Covers R5, and makes R4's fallback harmless. One constant in `stryker-outputs.ts` is what the drain falls back to and what the exclusion list always holds.
   - Rejected: exclusion only, without the `run` path fix. R1 would not hold.
 - **The empty-path guard applies to the resolved value too.** Covers R6. The flag path already decoded `S.NonEmptyString` and fell back to the default (`run-request.cell.ts:132-136`); the same helper reads the resolved options.
-- **Output entries are matched by the path Stryker writes.** Covers R7. Each entry becomes the path of `resolve(basePath, entry)` relative to the project, joined with `/`; `resolve` drops a trailing `/`, as the writers do. An entry outside the project keeps its original form.
+- **Output entries are matched by the entry path the crawl gives the file.** Covers R7. Each entry inside the project is resolved and named as the crawl names an entry: the parent directory's project-relative path, `/`, the file name. That holds for every spelling, depth and platform, including nested paths on Windows, which `main` missed. An entry outside the project keeps its original form.
 - **CONST-W3 declaration, waiving CONST-T4 ("Behavior Lives Where the Mutator Sees It") for two cases.** `packages/stryker-js/stryker.config.ts:15-19` mutates only `src/**/*.workflow.ts` and `src/**/*.schema.ts`, so two behaviours this PR adds go ungraded:
   1. the route match, config read and fallback that choose the run's stream path (`streamedRequestOf`, `packages/stryker-js/src/run-request.cell.ts`);
-  2. the output-entry normalization (`slashedRuleOf`, `projectRelativeRuleOf`, `packages/stryker-js/src/read-project.cell.ts`).
+  2. the output-entry derivation (`isInsideProject`, `crawlEntryPathOf`, `projectRelativeRuleOf`, `packages/stryker-js/src/read-project.cell.ts`).
      Both have one outcome, a path, and `Workflow.make` refuses a single-variant decision, telling the author to fold the function into its owning module (`@systemfsoftware/effect-cell-types` `SingleVariantDecision`, met on PR #320). AE1-AE7 grade both through the built binary instead.
 
 ### Outstanding Questions
@@ -124,15 +124,15 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - KTD1. `stryker-outputs.ts` owns `DEFAULT_PROGRESS_STREAM_FILE`. `RunEventDrain` imports it for its initial path; its published `DefaultProgressStreamFile` static is removed, one name per value (BREAK-1). `strykerOutputFilesOf` returns it next to `options.progressStreamFile`.
 - KTD2. `readRunRequest` resolves a `StreamedRequest` with `streamedRequestOf`. For route tag `run` it maps `readConfig(...)`'s resolved options through `progressStreamFileName`, the non-empty-or-default helper, and pins the name into the run's options. On any `ConfigReadError` it pins nothing: the stream opens at the flag or default path and the engine's own read refuses the config as today. Other routes use the command-line options and keep them unchanged.
 - KTD3. The test drives the built `stryker` binary. `test-layer-selection` refuses process spawning in an integration test; the root's rule for this unit requires the built CLI, and the defects live only in the CLI's request read, which `Engine.strykerCell` and `./promises` `run()` never call. Siblings do the same (`tests/rerun-by-id.integration.test.ts`, `tests/plan-stream-location.integration.test.ts`).
-- KTD4. `projectRelativeRuleOf` turns every Stryker-output entry into the project-relative path of `resolve(basePath, entry)`, and `slashedRuleOf` joins it with `/`. An entry outside the project keeps its old form, as absolute entries did. The crawl still builds nested entry paths with the platform separator (pre-existing on `main`), so nested outputs match on POSIX only.
+- KTD4. `projectRelativeRuleOf` resolves each Stryker-output entry against the project; when `isInsideProject` holds (non-empty, not `..` or a `..` segment, not absolute), `crawlEntryPathOf` names it as `crawlDirectory` names an entry (`directoryPrefixOf` of the parent's relative path, then the base name). Otherwise the entry keeps its spelling. A throwaway probe over `path.posix` and `path.win32` showed the rule equal to the crawl's entry path for every spelling, nested and absolute entries and a `..foo` directory, where `main` and `1059dc39` missed nested paths on win32.
 - KTD5. For route tag `run`, the `CliRead` options carry `progressStreamFile` set to the resolved name, so every later config read in the run resolves the same path: the run stage, `--survivors`, `--mutant` and the shard leaf are all `run` invocations (`Cli.schema.ts` `RunRequestSchema`) and pass the pinned `channel.options` on (`run-request.cell.ts:193`, `:216`, `:249`, `:685`). `progressStreamFile` is one of the unfingerprinted `presentationOptionKeys` (`verdict-semantics.ts:99-111`), so reuse keys do not change.
 
 ### Assumptions This Breaks
 
-- "The config file is read once per `stryker run`." It is now read twice, as `--survivors` and `--mutant` already do. The module is evaluated once; a config whose default export is a function is called twice, and a shadowed legacy config warns twice. The stream path comes from the first answer. Measured: a config function that throws on its second call completes on `main` (exit 0) and fails on the branch (exit 2, `Invalid config file`). OQ5.
+- "The config file is read once per `stryker run`." It is now read twice, as `--survivors` and `--mutant` already do (they now read it three times). The module is evaluated once; a config whose default export is a function is called twice, and a shadowed legacy config warns twice. The stream path comes from the first answer, every other option from the second. Measured: a config function that throws on its second call completes on `main` (exit 0) and fails on the branch (exit 2, `Invalid config file`). OQ5.
 - "The stream header is written before any config work." The first `stdout` line now waits for the config import. A config import that hangs now hangs before the header instead of after it.
 - "Only the configured stream path is excluded." The default path is excluded too; a project file of its own at `reports/mutation-stream.jsonl` is no longer an input and is not copied into the sandbox.
-- "An output entry is matched as written." Output entries are now normalized before matching; a relative output name that relied on glob syntax (none of Stryker's do) is now matched as a path.
+- "An output entry is matched as written." Output entries are now named as the crawl names files before matching; a relative output name that relied on glob syntax (none of Stryker's do) is now matched as a path.
 
 ### Implementation Units
 
@@ -266,6 +266,31 @@ Round 5, full-path report-only review of `bd72466b` (findings: 0 P0, 0 P1, 4 P2,
 | R7's flagged spelling has no row                                                             | P3  | testing                | Not admitted: flag and config values reach the drain and the exclusion through the same merged option, so a flag row repeats AE3's path                                                                                                                    |
 | The extra config evaluation (`--survivors`, `--mutant` now three)                            | -   | adversarial (residual) | OQ5                                                                                                                                                                                                                                                        |
 
+Round 6, full-path report-only review of `39c401e4` (0 P0, 0 P1, 1 P2, 6 P3):
+
+| Finding                                                                       | Sev | Lens                           | Disposition                                                                                                    |
+| ----------------------------------------------------------------------------- | --- | ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| The Breaking bullet "must answer the same options" misses the throwing case   | P2  | adversarial                    | Fixed in `1059dc39`; restated in round 7 below                                                                 |
+| The removed-static bullet has no migration step                               | P3  | project-standards, adversarial | Fixed: points at the `Configuration.defaultOptions` effect                                                     |
+| The learning states an identity that fails outside the project and on Windows | P3  | adversarial, learnings         | Fixed: states the derivation, the outside-project case and its gate                                            |
+| The spelling claim implies Windows nesting                                    | P3  | adversarial                    | Fixed in round 7: KTD4 now matches nested paths on Windows                                                     |
+| The `run --plan --shard` parent now reads the config once                     | P3  | correctness                    | Accepted: the parent is a `run` invocation; its own stream follows the config; children keep the explicit flag |
+| AE7 is not a refusing endpoint (boundary-testing `real-system-oracles`)       | P3  | boundary-testing pack          | Disputed, as round 5; round 7's pack lens rules it comply                                                      |
+
+Round 7, full-path report-only review of `1059dc39` (0 P0, 0 P1, 1 P2, 7 P3):
+
+| Finding                                                                             | Sev | Lens        | Disposition                                                                                                           |
+| ----------------------------------------------------------------------------------- | --- | ----------- | --------------------------------------------------------------------------------------------------------------------- |
+| Every option but the stream path now comes from the config function's second answer | P2  | adversarial | Fixed: the Breaking bullet says so and requires the same answer each time; Assumptions records it                     |
+| Nested absolute outputs miss on Windows                                             | P3  | correctness | Fixed: KTD4. The finding's premise that `main` matched is false; the probe shows `main` missed them too               |
+| A `..foo` directory is judged outside the project                                   | P3  | correctness | Fixed: `isInsideProject` tests a `..` segment, not a prefix                                                           |
+| Bullet 1 is false for an empty `progressStreamFile`                                 | P3  | adversarial | Fixed: "a non-empty `progressStreamFile`"                                                                             |
+| Bullet 1 reads as every command                                                     | P3  | learnings   | Fixed: "a mutation run's stream"                                                                                      |
+| The migration pointer is an Effect, not a string                                    | P3  | adversarial | Fixed: "the `Configuration.defaultOptions` effect yields `progressStreamFile`"                                        |
+| `test/e2e/AGENTS.md:37` states the default unconditionally                          | P3  | learnings   | Deferred to Stream K, which owns `test/e2e`; true for its fixtures                                                    |
+| The "must not fail on a later call" break has no test                               | P3  | testing     | Not admitted: it pins a double evaluation OQ5 may remove; the Config failures smoke row measures it                   |
+| The learning's outside-project clause has no gate                                   | P3  | testing     | Not admitted: the branch keeps the spelling, which the crawl never reaches, so no observable behaviour exists to test |
+
 ### Verification Contract
 
 | Check           | Command                                                                                                                                                                                                                      | Pass                                                                                          |
@@ -274,6 +299,7 @@ Round 5, full-path report-only review of `bd72466b` (findings: 0 P0, 0 P1, 4 P2,
 | Behaviour       | `vitest run tests/progress-stream-file.integration.test.ts` after building `dist`                                                                                                                                            | passes                                                                                        |
 | Neighbours      | `vitest run tests/plan-stream-location.integration.test.ts tests/rerun-by-id.integration.test.ts tests/incremental-reuse.integration.test.ts tests/clean-temp-dir.integration.test.ts tests/shard-merge.integration.test.ts` | pass                                                                                          |
 | Config failures | a throwaway CLI run on `main`'s binary and the branch's: a config that throws, a missing `--configFile`, an invalid option, a `null` `progressStreamFile`, a function that throws on its second call                         | first four identical (exit, records, error, stream location); the fifth as Assumptions states |
+| Output rules    | a throwaway probe applying the rule derivation and `crawlDirectory`'s entry naming under `path.posix` and `path.win32` to every AE3 spelling, nested, absolute and `..foo` entries                                           | rule equals the crawl's entry path in every case                                              |
 | Types and lint  | `tsc -b`, `pnpm run lint:tsgo`, oxlint on the touched files, `dprint check`                                                                                                                                                  | clean                                                                                         |
 | Changeset       | the `author-changesets` validator; bump `major`                                                                                                                                                                              | OK                                                                                            |
 | Review          | full-path `ce-code-review`, report-only, on the final head                                                                                                                                                                   | every finding has a disposition                                                               |

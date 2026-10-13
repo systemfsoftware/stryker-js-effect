@@ -2,11 +2,11 @@
 "@systemfsoftware/stryker-js": major
 ---
 
-A mutation run now writes its event stream to the `progressStreamFile` set in the Stryker config file, and the `--progressStreamFile` flag still wins. Stream files at that path or at `reports/mutation-stream.jsonl` no longer make the next run re-run every mutant, and an output path spelled with `./`, a doubled slash or a trailing slash is left out of the project.
+A mutation run now writes its event stream to the `progressStreamFile` set in the Stryker config file; the flag still wins. Stream files at that path or at `reports/mutation-stream.jsonl`, and Stryker's output files however their paths are spelled, no longer make the next run re-run every mutant.
 
 Breaking:
 
-- With `progressStreamFile` in your config, the stream is no longer at `reports/mutation-stream.jsonl`; read the configured path.
-- A config that exports a function has it called once more per run; it must not fail on a later call.
+- With a non-empty `progressStreamFile` in your config, a mutation run's stream is no longer at `reports/mutation-stream.jsonl`; read the configured path.
+- A config function is called once more per run: the stream path comes from its first answer, every other option from its second, so it must answer the same each time and not fail.
 - Your own `reports/mutation-stream.jsonl` is no longer part of the project Stryker copies and hashes.
-- `RunEvent.RunEventDrain.DefaultProgressStreamFile` is removed; read `progressStreamFile` from `Configuration.defaultOptions`.
+- `RunEvent.RunEventDrain.DefaultProgressStreamFile` is removed; the `Configuration.defaultOptions` effect yields `progressStreamFile`.

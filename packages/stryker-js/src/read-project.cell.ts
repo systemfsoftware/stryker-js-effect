@@ -101,22 +101,28 @@ type ReadProjectInput = {
   readonly basePath: string
 }
 
-const insideProjectOnlyRuleOf = (relative: string, absoluteFallback: string): string =>
-  Option.getOrElse(
-    Option.liftPredicate(relative, (value) => value.length > 0 && !value.startsWith('..')),
-    () => absoluteFallback,
-  )
+const directoryPrefixOf = (relativeName: string) =>
+  Boolean.match(relativeName.length > 0, { onTrue: () => `${relativeName}/`, onFalse: () => '' })
 
-const slashedRuleOf = (pathService: Path.Path, relative: string): string => relative.split(pathService.sep).join('/')
+const isInsideProject = (pathService: Path.Path, relative: string): boolean =>
+  Boolean.every([
+    relative.length > 0,
+    relative !== '..',
+    !relative.startsWith(`..${pathService.sep}`),
+    !pathService.isAbsolute(relative),
+  ])
 
-const projectRelativeRuleOf = (basePath: string, pathService: Path.Path, rule: string): string =>
-  insideProjectOnlyRuleOf(
-    slashedRuleOf(
-      pathService,
-      pathService.relative(pathService.resolve(basePath), pathService.resolve(basePath, rule)),
-    ),
-    rule,
-  )
+const crawlEntryPathOf = (pathService: Path.Path, root: string, file: string): string =>
+  `${directoryPrefixOf(pathService.relative(root, pathService.dirname(file)))}${pathService.basename(file)}`
+
+const projectRelativeRuleOf = (basePath: string, pathService: Path.Path, rule: string): string => {
+  const root = pathService.resolve(basePath)
+  const file = pathService.resolve(basePath, rule)
+  return Boolean.match(isInsideProject(pathService, pathService.relative(root, file)), {
+    onTrue: () => crawlEntryPathOf(pathService, root, file),
+    onFalse: () => rule,
+  })
+}
 
 const ignoreRulesOf = (
   options: Options.StrykerOptions,
@@ -127,9 +133,6 @@ const ignoreRulesOf = (
   ...strykerOutputFilesOf(options).map((file) => projectRelativeRuleOf(basePath, pathService, file)),
   ...options.ignorePatterns,
 ]
-
-const directoryPrefixOf = (relativeName: string) =>
-  Boolean.match(relativeName.length > 0, { onTrue: () => `${relativeName}/`, onFalse: () => '' })
 
 type DirectoryEntry = {
   readonly name: string
