@@ -15,7 +15,6 @@ export interface ForkedStreamedRun {
   readonly fork: Warm.SandboxFork
 }
 
-
 export interface StrykerCliRunnerShape {
   readonly run: (
     args: ReadonlyArray<string>,
