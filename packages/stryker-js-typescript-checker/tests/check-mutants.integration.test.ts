@@ -336,6 +336,7 @@ const MIXED_UNION_SITE = [8, 74, 87] as const
 const ACCESSOR_SITE = [9, 73, 93] as const
 const MIRRORED_SITE = [10, 55, 67] as const
 const TUPLE_SITE = [11, 68, 83] as const
+const THIS_SITE = [12, 70, 91] as const
 
 const RECEIVER_SOURCE = [
   'export const chained = (box: { items: string[] }): boolean => box.items.length > 0',
@@ -373,6 +374,8 @@ const SIZE_MUTANTS: ReadonlyArray<SizeMutant> = [
   sizeMutant('0000000000000035', COLLECTION_UNION_SITE, 'ConditionalExpression', 'true'),
   sizeMutant('0000000000000036', MIXED_UNION_SITE, 'EqualityOperator', 'xs.length >= 0'),
   sizeMutant('0000000000000037', MIXED_UNION_SITE, 'ConditionalExpression', 'true'),
+  sizeMutant('0000000000000038', THIS_SITE, 'EqualityOperator', 'this.items.length >= 0'),
+  sizeMutant('0000000000000039', THIS_SITE, 'ConditionalExpression', 'true'),
 ]
 
 const RECEIVER_MUTANTS: ReadonlyArray<SizeMutant> = [
@@ -693,11 +696,12 @@ Feature('Deciding every TypeScript mutant on its own', { timeout: 120_000 })
             passed: Object.values(s.seen.statuses).filter((status) => status === 'passed').length,
             culled: culledReasonsOf(s.seen.ignoreReasons),
           }).toEqual({
-            passed: SIZE_MUTANTS.length - 3,
+            passed: SIZE_MUTANTS.length - 4,
             culled: {
               '0000000000000020': 'constant-collection-size: xs.length >= 0 is always true',
               '0000000000000022': 'constant-collection-size: xs.length < 0 is always false',
               '0000000000000034': 'constant-collection-size: xs.length >= 0 is always true',
+              '0000000000000038': 'constant-collection-size: this.items.length >= 0 is always true',
             },
           })
         ),
