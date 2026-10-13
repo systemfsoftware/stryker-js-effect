@@ -1,3 +1,5 @@
+import { assert, assertEqual } from './assert.ts'
+
 const REPO_ROOT = new URL('../', import.meta.url)
 
 const TURBO_PROGRAM = 'node_modules/.bin/turbo'
@@ -11,17 +13,6 @@ const SCHEMA = 'https://v2-10-1.turborepo.dev/schema.json'
 const PERMITTED_SCRATCH_DIR = '/tmp'
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
-
-const assertEqual = (actual: unknown, expected: unknown, label: string): void => {
-  const serialize = (value: unknown): string => JSON.stringify(value)
-  if (serialize(actual) !== serialize(expected)) {
-    throw new Error(`${label}: expected ${serialize(expected)}, got ${serialize(actual)}`)
-  }
-}
-
-const assert = (condition: boolean, label: string): void => {
-  if (!condition) throw new Error(label)
-}
 
 const cleanEnv = (overrides: Readonly<Record<string, string>> = {}): Record<string, string> => {
   const env: Record<string, string> = {}
@@ -161,7 +152,7 @@ const rootTurboJson = (): string =>
 }
 `
 
-const shippedRootTurboJson = `{
+const standInParentTurboJson = `{
   "$schema": "${SCHEMA}",
   "futureFlags": { "affectedUsingTaskInputs": true, "githubActionsRemoteBaseRefFallback": true },
   "tasks": {
@@ -262,6 +253,16 @@ const hashOf = async (dir: string, taskId: string): Promise<string> => {
   return task.hash
 }
 
+const tasksMovedBy = async (dir: string, edit: () => Promise<void>): Promise<Array<string>> => {
+  const before = await dryRun(dir, { affected: false })
+  await edit()
+  const after = await dryRun(dir, { affected: false })
+  return after
+    .filter((task) => before.find((prior) => prior.taskId === task.taskId)?.hash !== task.hash)
+    .map((task) => task.taskId)
+    .sort()
+}
+
 interface ResolvedDefinition {
   readonly dependsOn: ReadonlyArray<string>
   readonly env: ReadonlyArray<string>
@@ -358,7 +359,7 @@ Deno.test("a $TURBO_ROOT$ input selects the reader while $TURBO_EXTENDS$ keeps t
   "tasks": { "test": { "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/shared.txt"] } }
 }
 `
-  const fixture = { rootTurboJson: shippedRootTurboJson, bTurboJson }
+  const fixture = { rootTurboJson: standInParentTurboJson, bTurboJson }
   await withRepo(fixture, async (dir) => {
     const base = await head(dir)
     const hashBefore = await hashOf(dir, '@probe/b#test')
@@ -381,6 +382,26 @@ Deno.test("a $TURBO_ROOT$ input selects the reader while $TURBO_EXTENDS$ keeps t
     await commit(dir, 'child readme edit')
     assertEqual(await selectedTasks(dir, { base }), [], "the parent's README negation still applies under extension")
   })
+})
+
+Deno.test('a declared $TURBO_ROOT$ read of the lockfile or the workspace file moves only its reader, and an undeclared one moves nothing', async () => {
+  for (const file of ['pnpm-lock.yaml', 'pnpm-workspace.yaml']) {
+    for (const declared of [true, false]) {
+      const inputs = declared ? `["$TURBO_EXTENDS$", "$TURBO_ROOT$/${file}"]` : '["$TURBO_EXTENDS$"]'
+      const bTurboJson = `{ "extends": ["//"], "tasks": { "test": { "inputs": ${inputs} } } }\n`
+      const label = `${file} ${declared ? 'declared' : 'undeclared'}`
+      await withRepo({ bTurboJson }, async (dir) => {
+        const base = await head(dir)
+        const moved = await tasksMovedBy(dir, async () => {
+          await write(dir, file, `${await Deno.readTextFile(`${dir}/${file}`)}# probe\n`)
+        })
+        assertEqual(moved, declared ? ['@probe/b#test'] : [], `${label}: tasks whose hash moves`)
+        if (file !== 'pnpm-workspace.yaml') return
+        await commit(dir, 'workspace comment')
+        assertEqual(await selectedTasks(dir, { base }), declared ? ['@probe/b#test'] : [], `${label}: selection`)
+      })
+    }
+  }
 })
 
 const rootEntryTurboJson = (entry: string): string =>
@@ -419,12 +440,7 @@ Deno.test('a $TURBO_ROOT$ read in a complete root package-task entry moves only 
     const base = await head(dir)
     const entry = await resolvedDefinitionOf(dir, '@probe/b#test')
     assertEqual([entry.dependsOn, entry.env], [['build'], ['NODE_ENV']], 'a complete entry keeps what it declares')
-    const before = await dryRun(dir, { affected: false })
-    await write(dir, 'shared.txt', 'shared\nmore\n')
-    const after = await dryRun(dir, { affected: false })
-    const moved = after
-      .filter((task) => before.find((prior) => prior.taskId === task.taskId)?.hash !== task.hash)
-      .map((task) => task.taskId)
+    const moved = await tasksMovedBy(dir, () => write(dir, 'shared.txt', 'shared\nmore\n'))
     assertEqual(moved, ['@probe/b#test'], 'only the reader of the root file changes hash')
     await commit(dir, 'root input edit')
     assertEqual(
