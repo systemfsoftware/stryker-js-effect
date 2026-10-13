@@ -6,8 +6,6 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { classifyExit, ClassifyExitCommand, ExitVerdictFailed } from './classify-exit.workflow.js'
-
 const SCORE_BREAK_CODE = 'score-below-break' satisfies Mutant.RunFailureCode
 const SCORE_BREAK_EXIT_CLASS = 'VerdictFail' satisfies Plugin.ExitClass
 const SCORE_BREAK_REMEDIATION =
@@ -94,21 +92,11 @@ export class ScoreBelowBreak extends S.TaggedError<ScoreBelowBreak>()('ScoreBelo
   }
 }
 
-const exitOf = classifyExit
-const exitCommand = ClassifyExitCommand
-const isVerdictFailed = S.is(ExitVerdictFailed)
-
 const breakOf = (entry: ProjectScore): number | null =>
   Match.valueTags(entry.thresholds, {
     Recorded: ({ break: threshold }) => threshold,
     Unrecorded: () => null,
   })
-
-const failsBreak = (entry: ProjectScore): boolean =>
-  Result.match(
-    exitOf(exitCommand.make({ pending: [], score: entry.score, breakingThreshold: breakOf(entry) })),
-    { onFailure: (neverError) => neverError, onSuccess: isVerdictFailed },
-  )
 
 const breachOf = (entry: ProjectScore): Option.Option<BreakBreach> =>
   Match.valueTags(entry.score, {
@@ -120,8 +108,10 @@ const breachOf = (entry: ProjectScore): Option.Option<BreakBreach> =>
       ),
   })
 
+const isBelowItsBreak = (breach: BreakBreach): boolean => breach.percentage < breach.threshold
+
 const breachesOf = (projects: ReadonlyArray<ProjectScore>): ReadonlyArray<BreakBreach> =>
-  Arr.flatMap(projects, (entry) => Option.toArray(Option.filter(breachOf(entry), () => failsBreak(entry))))
+  Arr.flatMap(projects, (entry) => Option.toArray(Option.filter(breachOf(entry), isBelowItsBreak)))
 
 const isUnscoredWithBreak = (entry: ProjectScore): boolean =>
   Match.valueTags(entry.score, { Unscored: () => breakOf(entry) !== null, Scored: () => false })
