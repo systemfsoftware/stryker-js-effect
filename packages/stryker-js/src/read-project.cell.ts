@@ -29,7 +29,7 @@ import {
   FullScope,
   type GitDiffError,
   type GitDiffResult,
-  type PlannedDiff,
+  type StageInput,
 } from './git-diff.schema.js'
 import { GitDiff } from './git-diff.service.js'
 import { gitDiff } from './git-diff.workflow.js'
@@ -104,11 +104,9 @@ const discardLogOf: (input: {
     () => Effect.void,
   )
 
-type ReadProjectInput = {
+type ReadProjectInput = StageInput & {
   readonly options: Options.StrykerOptions
-  readonly targetMutatePatterns: readonly string[] | undefined
   readonly basePath: string
-  readonly plannedDiff?: PlannedDiff | undefined
 }
 
 const directoryPrefixOf = (relativeName: string) =>

@@ -13,7 +13,7 @@ import * as Scope from 'effect/Scope'
 
 import type { MutatorSelectionDecoded } from '../decode-mutator-selection.workflow.js'
 import type { EmptyDirectory } from '../empty-directory.service.js'
-import type { PlannedDiff } from '../git-diff.schema.js'
+import type { StageInput } from '../git-diff.schema.js'
 import type { MergedCatalog } from '../plan-mutator-catalogs.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
 import type { Project } from '../Project.schema.js'
@@ -49,10 +49,8 @@ export interface PrepareDone {
   readonly frameworkClaimants: readonly FrameworkClaimant[]
 }
 
-export interface PrepareExecutorArgs {
+export interface PrepareExecutorArgs extends StageInput {
   cliOptions: Options.PartialStrykerOptions
-  targetMutatePatterns: string[] | undefined
-  plannedDiff?: PlannedDiff | undefined
 }
 
 const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(

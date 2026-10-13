@@ -77,3 +77,8 @@ export const ChangedSince = S.TaggedStruct('ChangedSince', { diff: GitDiffResult
 
 export const PlannedDiff = S.Union([WholeProject, ChangedSince])
 export type PlannedDiff = typeof PlannedDiff.Type
+
+export interface StageInput {
+  readonly targetMutatePatterns: readonly string[] | undefined
+  readonly plannedDiff?: PlannedDiff | undefined
+}
