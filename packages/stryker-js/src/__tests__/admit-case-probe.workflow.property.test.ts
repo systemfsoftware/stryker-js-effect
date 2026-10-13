@@ -19,7 +19,7 @@ describe('admitCaseProbe', () => {
     '∀c_RootOfDistinctLetterNames_≡AtMostSixteenProbedAndNoneSkippedBeforeThem',
     { of: [commandArb], subject: admitCaseProbe },
     (subject, [command]) => {
-      const names = command.names.map((_, index) => `n${index}`)
+      const names = Array.from({ length: command.names.length * 4 }, (_, index) => `n${index}`)
       const probed = pairsOf(subject, names).map((pair) => pair.name)
       const skipped = names.filter((name) => !probed.includes(name))
       return probed.length === Math.min(16, names.length) &&

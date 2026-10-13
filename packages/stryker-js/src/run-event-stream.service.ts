@@ -1,5 +1,4 @@
 import * as Boolean from 'effect/Boolean'
-import * as ByteSize from 'effect/ByteSize'
 import type * as Cause from 'effect/Cause'
 import * as Clock from 'effect/Clock'
 import * as Context from 'effect/Context'
@@ -11,6 +10,7 @@ import * as Layer from 'effect/Layer'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
+import type * as PlatformError from 'effect/PlatformError'
 import * as Queue from 'effect/Queue'
 import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
@@ -165,46 +165,73 @@ const writeLineOf = (handle: FileSystem.File, fileFailed: Ref.Ref<boolean>) => (
         ),
     }))
 
-const LEADING_TEXT_LIMIT = ByteSize.mebibytes(1)
+const LEADING_BYTES_LIMIT = 1_048_576
 
-const leadingTextOf = (fs: FileSystem.FileSystem, fileName: string) =>
-  fs.stream(fileName, { bytesToRead: LEADING_TEXT_LIMIT }).pipe(
-    Stream.decodeText,
-    Stream.takeUntil((text) => text.includes('\n')),
-    Stream.runFold(() => '', (leading, text) => `${leading}${text}`),
-  )
+const decodeLeading = (bytes: Uint8Array) => new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes)
 
-const overwriteCommandOf = (fs: FileSystem.FileSystem, fileName: string) =>
-  fs.stat(fileName).pipe(
-    Effect.option,
-    Effect.map(Option.filter((info) => info.type === 'File')),
-    Effect.flatMap(Option.match({
-      onNone: () =>
-        Effect.succeed(
-          StreamOverwriteCommand.make({ file: fileName, regularFile: false, empty: true, leadingText: '' }),
-        ),
-      onSome: (info) =>
-        Effect.map(leadingTextOf(fs, fileName), (leadingText) =>
-          StreamOverwriteCommand.make({
-            file: fileName,
-            regularFile: true,
-            empty: ByteSize.isZero(info.size),
-            leadingText,
-          })),
-    })),
-  )
-
-const admitOverwrite = (fs: FileSystem.FileSystem, fileName: string) =>
-  overwriteCommandOf(fs, fileName).pipe(
-    Effect.flatMap((command) => Effect.fromResult(admitStreamOverwrite(command))),
-    Effect.flatMap((decision) =>
-      Match.value(decision).pipe(
-        Match.tag('OverwriteAllowed', () => Effect.void),
-        Match.tag('OverwriteRefused', (refused) => Effect.fail(refused)),
-        Match.exhaustive,
-      )
+const regularCommandOf = (handle: FileSystem.File, fileName: string, info: FileSystem.File.Info) =>
+  handle.readAlloc(LEADING_BYTES_LIMIT).pipe(
+    Effect.map(Option.getOrElse(() => new Uint8Array(0))),
+    Effect.map((bytes) =>
+      StreamOverwriteCommand.make({
+        file: fileName,
+        regularFile: true,
+        empty: bytes.length === 0,
+        wholeFileRead: BigInt(bytes.length) === info.size,
+        leadingText: decodeLeading(bytes),
+      })
     ),
   )
+
+const overwriteCommandOf = (handle: FileSystem.File, fileName: string) =>
+  Effect.flatMap(handle.stat, (info) =>
+    Boolean.match(info.type === 'File', {
+      onTrue: () => regularCommandOf(handle, fileName, info),
+      onFalse: () =>
+        Effect.succeed(
+          StreamOverwriteCommand.make({
+            file: fileName,
+            regularFile: false,
+            empty: true,
+            wholeFileRead: true,
+            leadingText: '',
+          }),
+        ),
+    }))
+
+const claimHandle = (handle: FileSystem.File, fileName: string) =>
+  overwriteCommandOf(handle, fileName).pipe(
+    Effect.flatMap((command) =>
+      Effect.fromResult(admitStreamOverwrite(command)).pipe(
+        Effect.flatMap((decision) =>
+          Match.value(decision).pipe(
+            Match.tag('OverwriteAllowed', () =>
+              Boolean.match(command.regularFile, {
+                onTrue: () => handle.truncate(0),
+                onFalse: () => Effect.void,
+              })),
+            Match.tag('OverwriteRefused', (refused) => Effect.fail(refused)),
+            Match.exhaustive,
+          )
+        ),
+      )
+    ),
+    Effect.as(handle),
+  )
+
+const isNotFound = (error: PlatformError.PlatformError) =>
+  Match.value(error.reason).pipe(
+    Match.tag('NotFound', () => true),
+    Match.orElse(() => false),
+  )
+
+const openStreamFile = (fs: FileSystem.FileSystem, fileName: string) =>
+  fs.open(fileName, { flag: 'r+' }).pipe(
+    Effect.map((handle) => claimHandle(handle, fileName)),
+    Effect.catchIf(isNotFound, () => Effect.succeed(fs.open(fileName, { flag: 'wx' }))),
+    Effect.flatten,
+  )
+
 const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.name)(function*(
   fs: FileSystem.FileSystem,
   path: Path.Path,
@@ -216,8 +243,7 @@ const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.nam
   yield* Effect.scoped(
     Effect.gen(function*() {
       const opened = yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(
-        Effect.andThen(admitOverwrite(fs, fileName)),
-        Effect.andThen(fs.open(fileName, { flag: 'w' })),
+        Effect.andThen(openStreamFile(fs, fileName)),
         Effect.tapError(logFileFailure),
         Effect.option,
       )

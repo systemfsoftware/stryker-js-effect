@@ -3,7 +3,7 @@ import { Array as Arr, Boolean, String as Str } from 'effect'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
-import { StreamFileFirstLine } from './stream-file-head.schema.js'
+import { RunEventRecordOpening, StreamFileFirstLine } from './stream-file-head.schema.js'
 
 const StreamOverwriteTypeId = Symbol.for('@systemfsoftware/stryker-js/StreamOverwriteDecision')
 type StreamOverwriteTypeId = typeof StreamOverwriteTypeId
@@ -11,10 +11,22 @@ type StreamOverwriteTypeId = typeof StreamOverwriteTypeId
 const startsWithRunEvent = (text: string) =>
   Option.isSome(S.decodeOption(StreamFileFirstLine)(Arr.headNonEmpty(Str.split(text, '\n')).trim()))
 
+const sharesAPrefix = (text: string) => (opening: string) =>
+  Boolean.some([opening.startsWith(text), text.startsWith(opening)])
+
+const isTornRecord = (command: StreamOverwriteCommand) =>
+  Boolean.every([
+    command.wholeFileRead,
+    command.leadingText.length > 0,
+    !command.leadingText.includes('\n'),
+    RunEventRecordOpening.literals.some(sharesAPrefix(command.leadingText)),
+  ])
+
 export class StreamOverwriteCommand extends S.TaggedClass<StreamOverwriteCommand>()('StreamOverwriteCommand', {
   file: S.String,
   regularFile: S.Boolean,
   empty: S.Boolean,
+  wholeFileRead: S.Boolean,
   leadingText: S.String,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
@@ -39,7 +51,12 @@ export type StreamOverwriteDecision = typeof StreamOverwriteDecision.Type
 const REFUSAL = 'the file exists and does not start with a Stryker run event record, so the run will not overwrite it'
 
 const overwritable = (command: StreamOverwriteCommand) =>
-  [!command.regularFile, command.empty, startsWithRunEvent(command.leadingText)].some(
+  [
+    !command.regularFile,
+    command.empty,
+    startsWithRunEvent(command.leadingText),
+    isTornRecord(command),
+  ].some(
     (allowed) => allowed,
   )
 

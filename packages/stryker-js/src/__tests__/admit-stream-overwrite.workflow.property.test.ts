@@ -43,6 +43,7 @@ describe('admitStreamOverwrite', () => {
               file: draw.command.file,
               regularFile: true,
               empty: false,
+              wholeFileRead: false,
               leadingText: `${line}\n${draw.command.leadingText}`,
             }),
           ),
@@ -59,9 +60,48 @@ describe('admitStreamOverwrite', () => {
           file: command.file,
           regularFile: true,
           empty: false,
+          wholeFileRead: false,
           leadingText: `${
-            JSON.stringify({ _tag: 'stream', schemaVersion: command.leadingText })
+            JSON.stringify({ _tag: 'stream', schemaVersion: command.leadingText, runId: command.file })
           }\n${command.leadingText}`,
+        }),
+      ),
+  )
+
+  it.prop(
+    '∀ec_WholeFileHoldingATornRunEventRecord_≡Allowed',
+    { of: [Arbitrary.all({ event: eventArb, command: commandArb })], subject: admitStreamOverwrite },
+    (subject, [draw]) =>
+      Option.match(encodeLine(draw.event), {
+        onNone: () => false,
+        onSome: (line) =>
+          Array.from({ length: line.length - 1 }, (_, index) => line.slice(0, index + 1)).every((torn) =>
+            allowed(
+              subject,
+              StreamOverwriteCommand.make({
+                file: draw.command.file,
+                regularFile: true,
+                empty: false,
+                wholeFileRead: true,
+                leadingText: torn,
+              }),
+            )
+          ),
+      }),
+  )
+
+  it.prop(
+    '∀c_RegularFileStartingWithABareStreamObject_≡Refused',
+    { of: [commandArb], subject: admitStreamOverwrite },
+    (subject, [command]) =>
+      refused(
+        subject,
+        StreamOverwriteCommand.make({
+          file: command.file,
+          regularFile: true,
+          empty: false,
+          wholeFileRead: command.wholeFileRead,
+          leadingText: `${JSON.stringify({ _tag: 'stream', tool: command.file })}\n${command.leadingText}`,
         }),
       ),
   )
@@ -76,6 +116,7 @@ describe('admitStreamOverwrite', () => {
           file: command.file,
           regularFile: true,
           empty: false,
+          wholeFileRead: false,
           leadingText: `x${command.leadingText}`,
         }),
       ),
@@ -91,6 +132,7 @@ describe('admitStreamOverwrite', () => {
           file: command.file,
           regularFile: true,
           empty: false,
+          wholeFileRead: false,
           leadingText: `${JSON.stringify({ _tag: `note:${command.leadingText}` })}\n${command.leadingText}`,
         }),
       ),
@@ -106,6 +148,7 @@ describe('admitStreamOverwrite', () => {
           file: command.file,
           regularFile: true,
           empty: true,
+          wholeFileRead: command.wholeFileRead,
           leadingText: command.leadingText,
         }),
       ),
@@ -117,7 +160,13 @@ describe('admitStreamOverwrite', () => {
     (subject, [command]) =>
       refused(
         subject,
-        StreamOverwriteCommand.make({ file: command.file, regularFile: true, empty: false, leadingText: '' }),
+        StreamOverwriteCommand.make({
+          file: command.file,
+          regularFile: true,
+          empty: false,
+          wholeFileRead: command.wholeFileRead,
+          leadingText: '',
+        }),
       ),
   )
 
@@ -131,6 +180,7 @@ describe('admitStreamOverwrite', () => {
           file: command.file,
           regularFile: true,
           empty: false,
+          wholeFileRead: false,
           leadingText: `\n${command.leadingText}`,
         }),
       ),
@@ -146,6 +196,7 @@ describe('admitStreamOverwrite', () => {
           file: command.file,
           regularFile: false,
           empty: command.empty,
+          wholeFileRead: command.wholeFileRead,
           leadingText: command.leadingText,
         }),
       ),

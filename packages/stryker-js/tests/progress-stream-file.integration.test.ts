@@ -66,11 +66,15 @@ const CASED_DEFAULT_STREAM = 'Reports/Mutation-Stream.jsonl'
 
 const CASED_DEFAULT_CONFIG = `export default ${settingsOf(CONFIGURED_STREAM, `test -f ${CASED_DEFAULT_STREAM}`)}\n`
 
-const LONG_STREAM_RECORD = `${JSON.stringify({ _tag: 'stream', schemaVersion: '9.0', note: 'x'.repeat(5000) })}\n`
+const LONG_STREAM_RECORD = `${
+  JSON.stringify({ _tag: 'stream', schemaVersion: '9.0', runId: 'r', note: 'x'.repeat(5000) })
+}\n`
 
 const OVERSIZED_STREAM_RECORD = `${
-  JSON.stringify({ _tag: 'stream', schemaVersion: '9.0', note: 'x'.repeat(1_100_000) })
+  JSON.stringify({ _tag: 'stream', schemaVersion: '9.0', runId: 'r', note: 'x'.repeat(1_100_000) })
 }\n`
+
+const TORN_RECORD = '{"_tag":"verdict","schemaVersion":"8.0","runId":"06GK'
 
 const caseSwapped = (name: string) =>
   name.split('').map((char) => char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase()).join('')
@@ -416,6 +420,7 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
         { starting: 'with text', bytes: Array.from(UTF8.encode(NOTES)) },
         { starting: 'with a blank line', bytes: Array.from(UTF8.encode(`\n${NOTES}`)) },
         { starting: 'with an incomplete UTF-8 character', bytes: [0xc3] },
+        { starting: 'with a bare stream object', bytes: Array.from(UTF8.encode(`{"_tag":"stream"}\n${NOTES}`)) },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
@@ -550,39 +555,44 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
       ),
     )
 
-    scenario(
-      'A stream file whose first record is longer than 4096 bytes is rewritten by the next run',
-      Gherkin.Do.pipe(
-        Given('a project whose configured stream file starts with a stream record longer than 4096 bytes')(
-          'project',
-          () =>
-            Effect.gen(function*() {
-              const fs = yield* FileSystem.FileSystem
-              const path = yield* Path.Path
-              const root = yield* prepareProject(configNaming(CONFIGURED_STREAM))
-              yield* fs.makeDirectory(path.join(root, path.dirname(CONFIGURED_STREAM)), { recursive: true }).pipe(
-                Effect.orDie,
-              )
-              yield* fs.writeFileString(path.join(root, CONFIGURED_STREAM), LONG_STREAM_RECORD).pipe(Effect.orDie)
-              return root
-            }),
+    scenarioOutline(
+      'A stream file whose first record is <shape> is rewritten by the next run',
+      [
+        { shape: 'longer than 4096 bytes', record: LONG_STREAM_RECORD },
+        { shape: 'torn by a run that died mid-write', record: TORN_RECORD },
+      ] as const,
+      (row) =>
+        Gherkin.Do.pipe(
+          Given('a project whose configured stream file holds that record')(
+            'project',
+            () =>
+              Effect.gen(function*() {
+                const fs = yield* FileSystem.FileSystem
+                const path = yield* Path.Path
+                const root = yield* prepareProject(configNaming(CONFIGURED_STREAM))
+                yield* fs.makeDirectory(path.join(root, path.dirname(CONFIGURED_STREAM)), { recursive: true }).pipe(
+                  Effect.orDie,
+                )
+                yield* fs.writeFileString(path.join(root, CONFIGURED_STREAM), row.record).pipe(Effect.orDie)
+                return root
+              }),
+          ),
+          When('the project is run')('run', (s) => invoke(s.project, RUN)),
+          When('the stream file is read')(
+            'stream',
+            (s) => Effect.flatMap(Path.Path, (path) => readOptional(path.join(s.project, CONFIGURED_STREAM))),
+          ),
+          Then('the run logged no file failure and the stream file holds its verdict')((s, expect) =>
+            expect({
+              exitCode: s.run.exitCode,
+              fileFailuresLogged: s.run.stderr.split(DRAIN_FILE_FAILED).length - 1,
+              streamEndsWithVerdict: Option.exists(
+                s.stream,
+                (text) => S.is(RunEvent.VerdictReached)(eventsOf(text).at(-1)),
+              ),
+            }).toEqual({ exitCode: 0, fileFailuresLogged: 0, streamEndsWithVerdict: true })
+          ),
         ),
-        When('the project is run')('run', (s) => invoke(s.project, RUN)),
-        When('the stream file is read')(
-          'stream',
-          (s) => Effect.flatMap(Path.Path, (path) => readOptional(path.join(s.project, CONFIGURED_STREAM))),
-        ),
-        Then('the run logged no file failure and the stream file holds its verdict')((s, expect) =>
-          expect({
-            exitCode: s.run.exitCode,
-            fileFailuresLogged: s.run.stderr.split(DRAIN_FILE_FAILED).length - 1,
-            streamEndsWithVerdict: Option.exists(
-              s.stream,
-              (text) => S.is(RunEvent.VerdictReached)(eventsOf(text).at(-1)),
-            ),
-          }).toEqual({ exitCode: 0, fileFailuresLogged: 0, streamEndsWithVerdict: true })
-        ),
-      ),
     )
 
     scenario(
