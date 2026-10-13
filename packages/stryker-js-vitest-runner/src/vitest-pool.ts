@@ -6,7 +6,7 @@ import * as Predicate from 'effect/Predicate'
 import type { PoolOptions, PoolRunnerInitializer, PoolWorker } from 'vitest/node'
 import { ThreadsPoolWorker } from 'vitest/node'
 
-import { StandbyThreadDied, StandbyThreadStopFailed } from '../StandbyThreadsPool.schema.js'
+import { StandbyThreadDied, StandbyThreadStopFailed } from './StandbyThreadsPool.schema.js'
 
 export type StandbyThreadStage = 'spare' | 'claimed'
 
