@@ -5,20 +5,20 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-plan-bootstrap
 execution: code
-supersedes: docs/plans/2026-10-12-1932-refactor-turbo-native-caching-plan.md (U11 and Q3 only)
+supersedes: docs/plans/2026-10-13-0108-refactor-turbo-boundaries-clean-tree-plan.md
 ---
 
 # Turbo Boundaries Clean Tree - Plan
 
 ## Goal Capsule
 
-- **Objective:** Clear 19 of today's 20 `turbo boundaries` diagnostics without touching any judgment surface. Each is either fixed at its source or declared at its own import line with a reason that names a file. The twentieth is in bench's lint configuration, which this work may not edit, so it goes to that file's owner as a proposal. The graded work lands without the gate that will grade it.
-- **Means:** Fix the 12 imports in the concurrency fixture project (KTD2). Declare the 7 imports that Turbo misreads as undeclared (KTD4). Send the bench lint-config fix and the gate enrollment to their owners as requests, not changes (KTD1, KTD3).
+- **Objective:** Clear 19 of today's 20 `turbo boundaries` diagnostics without touching any judgment surface or adding anything to `test/e2e-core`. Each is either fixed at its source or declared at its own import line with a reason that names a file. The twentieth is bench's import of `test/e2e-core`'s lint config. Stream D's dissolution of `test/e2e-core` decides where that config goes, and bench's lint configuration may not be edited by this work. So the fix is left to those two owners. The graded work lands without the gate that will grade it.
+- **Means:** Fix the 12 imports in the concurrency fixture project (KTD2). Declare the 7 imports that Turbo misreads as undeclared (KTD4). Hand the bench diagnostic to Stream D's dissolution and bench's config owner (KTD3), and send the gate enrollment to its owner as a request (KTD1).
 - **Product authority:** The root's Stream K follow-up of 2026-10-13 corrects the earlier Q3 intent under CONST-E7 (handle EVIDENCE-NOT-SELF-GRADING), which absorbs CONST-E9 (`systemfsoftware/systemfsoftware` 763fd663, `repos/constitution/ENFORCEMENT.md:261-271`). The law's second check (`:267-268`) makes "lint configs, rule lists, thresholds, baselines, CI checks, validator scripts" read-only to the work they grade, "whether or not the maker believes they grade this task". This plan owns the graded work. A different session owns the `turbo boundaries` gate and authors it after U1 of the superseded plan (#319) merges, with the root as owner. Enrollment rules for that owner are at `ENFORCEMENT.md:27-32`: enroll over a clean tree, at error, with no baseline. The same follow-up says to derive the smallest compliant unit and report any diagnostic outside it, which is what happens to the bench diagnostic.
-- **Supersession:** This plan replaces U11 and Q3 of `docs/plans/2026-10-12-1932-refactor-turbo-native-caching-plan.md`. That plan is carried by the open #319, which the root holds frozen at `08e6b4eb`, so its text is corrected here rather than in place. Its U11 put the diagnostic fixes and the `check:ci` enrollment in one unit. That is the E7 breach the root's correction names. Every other unit of that plan stands unchanged.
+- **Supersession:** This plan replaces `docs/plans/2026-10-13-0108-refactor-turbo-boundaries-clean-tree-plan.md`, whose U1 and U2 are implemented. One decision changes. That plan's KTD3 proposed a new `./oxlint.config.ts` export from `test/e2e-core` so bench could import the shared config. The house intent of 2026-10-13 bars new material in `test/e2e-core` and gives its dissolution to Stream D, so the proposal is withdrawn (KTD3). The 0108 plan in turn replaced U11 and Q3 of `docs/plans/2026-10-12-1932-refactor-turbo-native-caching-plan.md`, since superseded by `docs/plans/2026-10-13-0326-refactor-turbo-native-caching-plan.md` (#319). That plan's U11 put the diagnostic fixes and the `check:ci` enrollment in one unit, which is the E7 breach the root's correction names.
 - **Execution profile:** One PR off `main` with no file in common with #319. KTD2 keeps a data read that #319 declares as a Turbo input. Until #319 merges, `stryker-e2e-core#test` misses those files in its hash, as it does on `main` today. Local verification is `turbo boundaries`, `turbo query`, `deno check` and the touched package's own test. There are no local e2e or mutation runs, and no CI wiring changes.
 - **Stop conditions:** Stop and report if a fix changes what a test checks, if a fix needs a judgment-surface edit, or if the diagnostic set on `main` moves away from the 20 listed below before the PR is ready.
-- **Who finishes:** CE `ce-work` implements, `ce-code-review` reviews, and the conductor opens the PR and reports its head and CI. The root merges. The bench config's owner and the gate owner act on the requests in the PR body.
+- **Who finishes:** CE `ce-work` implements, `ce-code-review` reviews, and the conductor opens the PR and reports its head and CI. The root merges. Stream D and bench's config owner resolve the bench diagnostic, and the gate owner acts on the enrollment request.
 
 ---
 
@@ -26,7 +26,7 @@ supersedes: docs/plans/2026-10-12-1932-refactor-turbo-native-caching-plan.md (U1
 
 ### Summary
 
-Today `turbo boundaries` reports 20 diagnostics on `main` (`ec1769de`). Twelve are imports from a fixture file into another package's resources, and they are removed. Seven are imports Turbo misreads, and each is declared on its own line. The last is in bench's lint configuration. That file is a judgment surface under CONST-E7, so its fix is proposed to its owner. Once the owner applies it, the tree is clean and the gate owner can enroll the gate at error without a baseline.
+Today `turbo boundaries` reports 20 diagnostics on `main` (`ec1769de`). Twelve are imports from a fixture file into another package's resources, and they are removed. Seven are imports Turbo misreads, and each is declared on its own line. The last is bench's import of `test/e2e-core`'s lint config. That import changes when Stream D moves the config out of `test/e2e-core`, and bench's config is a judgment surface under CONST-E7, so this work leaves it. Once it is resolved, the tree is clean and the gate owner can enroll the gate at error without a baseline.
 
 ### Problem Frame
 
@@ -60,7 +60,7 @@ The other seven are false reports:
 
 **Ownership (CONST-E7)**
 
-- R5. The PR changes no judgment surface: not `check:ci`, `package.json` scripts, any workflow, any `turbo.json`, any lint or gritlint configuration (`test/bench/oxlint.config.ts` included), or any threshold. Its body carries two requests: the bench fix to that config's owner, and the gate enrollment to the gate owner. Both quote `ENFORCEMENT.md:261-271` and name the root as owner.
+- R5. The PR changes no judgment surface: not `check:ci`, `package.json` scripts, any workflow, any `turbo.json`, any lint or gritlint configuration (`test/bench/oxlint.config.ts` included), or any threshold. It adds nothing to `test/e2e-core`; it only edits and deletes files already there. Its body carries the gate enrollment request to the gate owner, quoting `ENFORCEMENT.md:261-271` and naming the root as owner, and a note on the bench diagnostic for Stream D and bench's config owner.
 
 ### Key Decisions
 
@@ -80,9 +80,9 @@ The other seven are false reports:
 
 ### Key Technical Decisions
 
-- KTD1. **The gate request is written for its owner.** The PR body has a "Gate enrollment request" section with the measured diagnostic count before and after, the planted-import check the owner should see fail, the seven declarations with their reasons, and the enrollment constraints of `ENFORCEMENT.md:27-32`. It records that `@boundaries-ignore` accepts any non-empty reason: a comment with a false reason silences a real undeclared import (adversarial review, measured with `ts-morph` in a trace script). It asks the owner to decide whether such comments count as evidence (`ENFORCEMENT.md:17`: "never on a field the graded work's author supplied") or to require other routes for the seven. It also states that the tree is clean only after the bench request (KTD3) is applied.
-- KTD2. **The concurrency fixture project names its files in `tsconfig.json`.** `include` lists `../../../../../packages/stryker-js-instrumenter/testResources/effect-concurrency/*.ts`, and `fixture-project.js` is deleted. The re-export file was a way of putting files into a TypeScript program; the include states that directly. `tsc --listFiles` gives the same program apart from the deleted file. The cross-package read stays a data read, the same one the test already makes through the file system. #319 declares those resources as a `$TURBO_ROOT$` input of `stryker-e2e-core#test`. `allowJs` stays, because removing it is unrelated to this change. Rejected: twelve `@boundaries-ignore` comments, which would declare imports that exist only because `include` was missing.
-- KTD3. **The bench fix is a proposal to the owner of `test/bench/oxlint.config.ts`.** The route that was built, measured and then reverted: `test/e2e-core/tsdown.config.ts` passes `documents: ['./oxlint.config.ts']` to `sourceExports`, so tsdown writes an `./oxlint.config.ts` export into both export maps. Bench re-exports `@systemfsoftware/stryker-e2e-core/oxlint.config.ts`, and `test/bench/tsconfig.node.json` drops its `../e2e-core/oxlint.config.ts` include. Measured before the revert: bench lint ran the same rules over the same files, and a planted `process` global failed it with `no-restricted-globals` both before and after. `turbo boundaries` reported nothing. The owner decides whether to apply it.
+- KTD1. **The gate request is written for its owner.** The PR body has a "Gate enrollment request" section with the measured diagnostic count before and after, the planted-import check the owner should see fail, the seven declarations with their reasons, and the enrollment constraints of `ENFORCEMENT.md:27-32`. It records that `@boundaries-ignore` accepts any non-empty reason: a comment with a false reason silences a real undeclared import (adversarial review, measured with `ts-morph` in a trace script). It asks the owner to decide whether such comments count as evidence (`ENFORCEMENT.md:17`: "never on a field the graded work's author supplied") or to require other routes for the seven. It also states that the tree is clean only once the bench diagnostic is resolved (KTD3).
+- KTD2. **The concurrency fixture project names its files in `tsconfig.json`.** `include` lists `../../../../../packages/stryker-js-instrumenter/testResources/effect-concurrency/*.ts`, and `fixture-project.js` is deleted. The re-export file was a way of putting files into a TypeScript program; the include states that directly. `tsc --listFiles` gives the same program apart from the deleted file. The cross-package read stays a data read, the same one the test already makes through the file system. #319 declares those resources as inputs of `stryker-e2e-core#test` in root `turbo.json`. `allowJs` stays, because removing it is unrelated to this change. Both files already exist in `test/e2e-core`, so editing them there fits the house intent; moving the fixture is Stream D's dissolution. Rejected: twelve `@boundaries-ignore` comments, which would declare imports that exist only because `include` was missing.
+- KTD3. **The bench diagnostic goes to Stream D's dissolution and bench's config owner.** Bench imports `../e2e-core/oxlint.config.ts`. A route through the package graph was built, measured and reverted before the PR opened. In it, `test/e2e-core` exported the config through tsdown `documents` and bench imported it by package name: the same rules ran and `turbo boundaries` reported nothing. That route adds an export to `test/e2e-core`, which the house intent of 2026-10-13 bars. The config is existing `test/e2e-core` material, so Stream D's dissolution decides where it lives. It has to be a package bench declares, and no new core, common or shared package may be created for it. Bench's import then changes, by its config owner under CONST-E7. Rejected: copying the config into bench, which this work may not edit and which would let two copies drift.
 - KTD4. **Seven declarations, each naming its evidence.** The vm-runner reason names `packages/stryker-js/package.json` and the alias it declares. The Deno reason names `scripts/deno.json`, the import map the script's shebang loads. Each comment sits directly above its import, which is the only placement Turbo reads (`crates/turborepo-boundaries/src/lib.rs:415-445`). Turbo refuses a comment with no reason (`imports.rs:184-192`).
 
 ### Assumptions
@@ -100,7 +100,7 @@ The other seven are false reports:
 ### Assumptions This Plan Could Break
 
 - The gate owner may refuse author-supplied `@boundaries-ignore` comments as evidence. Then the seven need other routes: the trace scripts move to root `scripts/`, and the vm-runner alias waits on Turbo. KTD1 asks the owner to decide.
-- The bench config's owner may refuse KTD3. Then the gate cannot enroll over a clean tree until that owner chooses another route.
+- Stream D's dissolution may not move the lint config soon. Until it does, the gate cannot enroll over a clean tree unless its owner accepts one declared exception for this import.
 - An `include` that points outside the tsconfig's directory changes the checker's `rootDir` inference. That matters only for emit, and the project sets `noEmit`.
 
 ---
@@ -139,6 +139,6 @@ The other seven are false reports:
 
 ## Definition of Done
 
-- R1-R5 hold on the PR head. The PR body carries the bench request (KTD3), the gate enrollment request (KTD1) and the CONST-E7 ownership statement.
+- R1-R5 hold on the PR head. The PR body carries the gate enrollment request (KTD1), the bench note (KTD3) and the CONST-E7 ownership statement.
 - No judgment-surface file appears in the diff (R5): `git diff --name-only origin/main...HEAD` lists only U1's and U2's files and this plan.
 - No scratch probe remains in the diff.
