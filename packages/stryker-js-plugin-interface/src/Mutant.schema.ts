@@ -432,4 +432,27 @@ if (import.meta.vitest !== void 0) {
     (subject, [subsumption, status]) =>
       subject(subsumption, status) === ACCEPTED_BY_TAG[subsumption._tag].includes(status),
   )
+
+  const Struct = await import('effect/Struct')
+  const eligibilityWhenAbsent = (mutant: Mutant) => ({
+    decoded: Option.map(
+      Option.flatMap(
+        S.encodeOption(Mutant)(mutant),
+        (encoded) => S.decodeOption(Mutant)(Struct.omit(encoded, ['probeEligibility'])),
+      ),
+      (decoded) => decoded.probeEligibility,
+    ),
+    constructed: Mutant.make(Struct.omit(mutant, ['probeEligibility'])).probeEligibility,
+  })
+  const isNotDecided = (eligibility: ProbeEligibility): boolean =>
+    S.is(Unprobed)(eligibility) && eligibility.reason === 'not-decided'
+
+  it.prop(
+    '∀m_MutantWithoutEligibility_≡UnprobedNotDecided',
+    { of: [Mutant], subject: eligibilityWhenAbsent },
+    (subject, [mutant]) => {
+      const { decoded, constructed } = subject(mutant)
+      return Option.exists(decoded, isNotDecided) && isNotDecided(constructed)
+    },
+  )
 }

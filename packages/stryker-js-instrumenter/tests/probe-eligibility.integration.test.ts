@@ -85,6 +85,24 @@ Feature('Marking which mutants a dry run can probe')
           expected: [['true', probed('constant')], ['false', probed('constant')]],
         },
         {
+          site: 'a unary plus',
+          source: 'export const f = (a: number): number => +a\n',
+          mutator: 'UnaryOperator',
+          expected: [['-a', probed('unary')]],
+        },
+        {
+          site: 'a condition over a regular expression literal',
+          source: IN_CONDITION("/a/ < 'b'", ''),
+          mutator: 'ConditionalExpression',
+          expected: [['true', unprobed('operand-not-proven-local')], ['false', unprobed('operand-not-proven-local')]],
+        },
+        {
+          site: 'a condition joining two tests',
+          source: IN_CONDITION('a && b', 'a: boolean, b: boolean'),
+          mutator: 'ConditionalExpression',
+          expected: [['true', unprobed('not-a-comparison')], ['false', unprobed('not-a-comparison')]],
+        },
+        {
           site: 'a conjunction',
           source: 'export const f = (a: boolean, b: boolean): boolean => a && b\n',
           mutator: 'LogicalOperator',
