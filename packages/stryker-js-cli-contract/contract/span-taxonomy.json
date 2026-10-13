@@ -327,6 +327,11 @@
     "attributes": {}
   },
   {
+    "id": "stryker.mutationReporting.judgeScore",
+    "name": "stryker.mutationReporting.judgeScore",
+    "attributes": {}
+  },
+  {
     "id": "stryker.mutationReporting.manifestVersion",
     "name": "stryker.mutationReporting.manifestVersion",
     "attributes": {}
