@@ -221,6 +221,11 @@ const subsumptionRulingsOf = (
 const blockSettlementsOf = (results: readonly Mutant.RunMutantResult[]): BlockSettlement[] =>
   results.map((result) => BlockSettlement.make({ id: result.id, status: result.status }))
 
+const rememberedStatusesOf = (
+  results: readonly Mutant.RunMutantResult[],
+): Record<string, Mutant.MutantStatus> =>
+  Object.fromEntries(results.map((result) => [result.id, result.status] as const))
+
 const uncoveredBlockRulingsOf = (
   plan: MutationTestPlan,
   settlements: BlockSettlement[],
@@ -309,6 +314,7 @@ export const reuseAndPlan = Effect.fnUntraced(function*(input: ReuseAndPlanInput
     },
     timeOverheadMS: Duration.toMillis(basis.timeOverhead),
     priorKilledByByMutantId: reuse.priorKilledByByMutantId,
+    rememberedStatusByMutantId: rememberedStatusesOf(reuse.rememberedResults),
     sandbox: basis.sandbox,
     project: basis.project,
     rememberedCount: reuse.rememberedResults.length,

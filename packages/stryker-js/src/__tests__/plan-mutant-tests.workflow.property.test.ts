@@ -229,6 +229,7 @@ const guardCommandArb = Arbitrary.all([
   Arbitrary.schema(S.Boolean),
   Arbitrary.schema(S.Boolean),
   Arbitrary.schema(S.Boolean),
+  Arbitrary.schema(S.Literals(['present', 'absent-no-coverage', 'absent-ignored'])),
 ]).pipe(
   Arbitrary.map(
     ([
@@ -248,7 +249,12 @@ const guardCommandArb = Arbitrary.all([
       alternateCovered,
       alternateStatic,
       alternateClosed,
+      blockVisibility,
     ]) => {
+      const blockPresent = blockVisibility === 'present'
+      const blockRememberedStatus: Mutant.RememberedStatus = blockVisibility === 'absent-no-coverage'
+        ? 'NoCoverage'
+        : 'Ignored'
       const guard = Mutant.Guard.make({
         block: GUARD_BLOCK_ID,
         inside: insidePresent ? [GUARD_INSIDE_ID] : [],
@@ -265,14 +271,18 @@ const guardCommandArb = Arbitrary.all([
             subsumption: undefined,
             guard: carriesGuard ? guard : undefined,
           }),
-          Mutant.Mutant.make({
-            ...baseMutant,
-            id: GUARD_BLOCK_ID,
-            status: blockClosed ? 'Ignored' : undefined,
-            statusReason: undefined,
-            subsumption: undefined,
-            guard: undefined,
-          }),
+          ...(blockPresent
+            ? [
+              Mutant.Mutant.make({
+                ...baseMutant,
+                id: GUARD_BLOCK_ID,
+                status: blockClosed ? 'Ignored' : undefined,
+                statusReason: undefined,
+                subsumption: undefined,
+                guard: undefined,
+              }),
+            ]
+            : []),
           Mutant.Mutant.make({
             ...baseMutant,
             id: GUARD_ALTERNATE_ID,
@@ -287,7 +297,7 @@ const guardCommandArb = Arbitrary.all([
         hitsByMutantId: { [GUARD_CONDITION_ID]: 1, [GUARD_BLOCK_ID]: 1, [GUARD_ALTERNATE_ID]: 1 },
         testsByMutantId: {
           [GUARD_CONDITION_ID]: conditionCovered ? [GUARD_COVERING_TEST_ID] : [],
-          ...(blockClosed ? {} : { [GUARD_BLOCK_ID]: blockCovered ? [GUARD_COVERING_TEST_ID] : [] }),
+          ...(blockPresent && !blockClosed ? { [GUARD_BLOCK_ID]: blockCovered ? [GUARD_COVERING_TEST_ID] : [] } : {}),
           ...(alternateClosed ? {} : { [GUARD_ALTERNATE_ID]: alternateCovered ? [GUARD_COVERING_TEST_ID] : [] }),
         },
         testTimeById: { [GUARD_COVERING_TEST_ID]: 1 },
@@ -295,11 +305,12 @@ const guardCommandArb = Arbitrary.all([
           ? {
             staticCoverage: {
               [GUARD_CONDITION_ID]: conditionStatic ? 1 : 0,
-              ...(blockClosed ? {} : { [GUARD_BLOCK_ID]: blockStatic ? 1 : 0 }),
+              ...(blockPresent && !blockClosed ? { [GUARD_BLOCK_ID]: blockStatic ? 1 : 0 } : {}),
               ...(alternateClosed ? {} : { [GUARD_ALTERNATE_ID]: alternateStatic ? 1 : 0 }),
             },
           }
           : {}),
+        ...(blockPresent ? {} : { rememberedStatusByMutantId: { [GUARD_BLOCK_ID]: blockRememberedStatus } }),
         options: { coverageAnalysis, disableBail: false, timeoutMS: 0, timeoutFactor: 0, ignoreStatic },
         sandboxFileByName: {},
       })
@@ -316,9 +327,22 @@ const blockIsStatic = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId
 const alternateIsCovered = (command: MutantTestPlanCommand, guard: Mutant.Guard): boolean =>
   guard.alternate !== undefined && blockIsCovered(command, guard.alternate)
 
+const rememberedStatusOf = (
+  command: MutantTestPlanCommand,
+  mutantId: Mutant.MutantId,
+): Option.Option<Mutant.MutantStatus> =>
+  Option.flatMap(
+    Option.fromUndefinedOr(command.rememberedStatusByMutantId),
+    (byMutantId) => Record.get(byMutantId, mutantId),
+  )
+
 const witnessIsUncovered = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
   Option.match(Arr.findFirst(command.mutants, (mutant) => mutant.id === mutantId), {
-    onNone: () => !blockIsCovered(command, mutantId),
+    onNone: () =>
+      Option.match(rememberedStatusOf(command, mutantId), {
+        onNone: () => false,
+        onSome: (status) => status === 'NoCoverage',
+      }) && !blockIsCovered(command, mutantId),
     onSome: (mutant) => mutant.status === undefined && !blockIsCovered(command, mutantId),
   })
 

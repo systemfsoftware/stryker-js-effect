@@ -25,6 +25,7 @@ const REPORT_FILE = 'reports/mutation/mutation.json'
 const CONFIG_FILE = 'stryker.config.mjs'
 
 const WORK_FILE = 'src/lib/work.ts'
+const TEST_FILE = 'test/sample.test.mjs'
 
 const WORK_SOURCE = [
   'export const compute = (value: number): number => value',
@@ -97,7 +98,7 @@ const workspaceFilesOf = (
   ['package.json', '{ "type": "commonjs" }\n'],
   ['vitest.config.ts', VITEST_CONFIG_SOURCE],
   [WORK_FILE, workSource],
-  ['test/sample.test.mjs', testSource],
+  [TEST_FILE, testSource],
 ]
 
 interface RunOptions {
@@ -105,6 +106,7 @@ interface RunOptions {
   readonly coverageAnalysis?: 'perTest' | 'all'
   readonly mutantSetPolicy?: 'full'
   readonly excludedMutations?: ReadonlyArray<string>
+  readonly incremental?: boolean
 }
 
 const configSourceOf = (options: RunOptions): string =>
@@ -120,6 +122,7 @@ const configSourceOf = (options: RunOptions): string =>
         concurrency: 1,
         reporters: ['json'],
         cleanTempDir: 'always',
+        incremental: options.incremental ?? true,
         ...(options.mutantSetPolicy === undefined && options.excludedMutations === undefined
           ? {}
           : {
@@ -249,6 +252,18 @@ const refusalShapeOf = (ran: StrykerRun, rows: readonly ReportRow[]) => {
     everyConditionRan: conditions.length > 0 && conditions.every((row) => ranStatus(row.status)),
   }
 }
+
+const appendToTestSource = (root: string): Effect.Effect<void, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const target = path.join(root, TEST_FILE)
+    const current = yield* fs.readFileString(target)
+    yield* fs.writeFileString(
+      target,
+      `${current}// an unrelated test edit invalidates the covered condition mutants and forces them to re-decide\n`,
+    )
+  }).pipe(Effect.orDie)
 
 Feature('Holding a condition mutant whose guarded block no test runs', { timeout: 180_000 })
   .withLayer(Engine.nodePlatformLayer)
@@ -455,6 +470,46 @@ Feature('Holding a condition mutant whose guarded block no test runs', { timeout
             everyConditionRan: true,
           })
         ),
+      ),
+    )
+
+    scenario(
+      'An excluded BlockStatement whose block no test runs is reused while a test edit re-decides the condition mutants, and they still run',
+      Gherkin.Do.pipe(
+        Given(
+          'a project whose only test leaves the guarded block unvisited, under an excluded BlockStatement mutator',
+        )(
+          'project',
+          () => prepareProject(UNVISITED_TEST_SOURCE, { excludedMutations: ['BlockStatement'] }),
+        ),
+        When('stryker runs it')('first', (s) => runStryker(s.project.root)),
+        When('the report of the first run is read back')('firstRows', (s) => readReport(s.project.root, s.first)),
+        When('an unrelated test edit invalidates the covered condition mutants while the block mutant stays reusable')(
+          'edited',
+          (s) => Effect.as(appendToTestSource(s.project.root), s.project.root),
+        ),
+        When('stryker runs it again incrementally')('second', (s) => runStryker(s.project.root)),
+        When('the report of the second run is read back')('secondRows', (s) => readReport(s.project.root, s.second)),
+        Then('both runs ran the condition mutants with no arid ruling')((s, expect) => {
+          const first = refusalShapeOf(s.first, s.firstRows)
+          const second = refusalShapeOf(s.second, s.secondRows)
+          return expect({
+            first: {
+              aridReasons: first.aridReasons,
+              conditionCount: first.conditionCount,
+              everyConditionRan: first.everyConditionRan,
+            },
+            second: {
+              exitCode: second.exitCode,
+              aridReasons: second.aridReasons,
+              conditionCount: second.conditionCount,
+              everyConditionRan: second.everyConditionRan,
+            },
+          }).toEqual({
+            first: { aridReasons: 0, conditionCount: 2, everyConditionRan: true },
+            second: { exitCode: 0, aridReasons: 0, conditionCount: 2, everyConditionRan: true },
+          })
+        }),
       ),
     )
   })

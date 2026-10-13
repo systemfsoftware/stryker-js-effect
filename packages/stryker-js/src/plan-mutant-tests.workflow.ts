@@ -363,9 +363,22 @@ const mutantIsOpen = (mutant: Mutant.Mutant): boolean => Option.isNone(Option.fr
 const mutantById = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): Option.Option<Mutant.Mutant> =>
   Arr.findFirst(command.mutants, (mutant) => mutant.id === mutantId)
 
+const rememberedStatusOf = (
+  command: MutantTestPlanCommand,
+  mutantId: Mutant.MutantId,
+): Option.Option<Mutant.MutantStatus> =>
+  Option.flatMap(
+    Option.fromUndefinedOr(command.rememberedStatusByMutantId),
+    (byMutantId) => Record.get(byMutantId, mutantId),
+  )
+
 const mutantCanWitnessCoverage = (command: MutantTestPlanCommand, mutantId: Mutant.MutantId): boolean =>
   Option.match(mutantById(command, mutantId), {
-    onNone: () => true,
+    onNone: () =>
+      Option.match(rememberedStatusOf(command, mutantId), {
+        onNone: () => false,
+        onSome: (status) => status === 'NoCoverage',
+      }),
     onSome: mutantIsOpen,
   })
 

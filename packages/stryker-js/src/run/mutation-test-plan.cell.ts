@@ -58,6 +58,7 @@ const planCommandOf = (
   timeOverheadMS: number,
   globalTestFilter: string[] | undefined,
   priorKilledByByMutantId: Record<string, readonly string[]> | undefined,
+  rememberedStatusByMutantId: Record<string, Mutant.MutantStatus> | undefined,
   sandboxFileByName: Record<string, string>,
 ): typeof MutantTestPlanCommand.Encoded => ({
   _tag: 'MutantTestPlanCommand',
@@ -80,6 +81,10 @@ const planCommandOf = (
   ...Option.match(Option.fromUndefinedOr(priorKilledByByMutantId), {
     onNone: () => ({}),
     onSome: (byMutantId) => ({ priorKilledByByMutantId: byMutantId }),
+  }),
+  ...Option.match(Option.fromUndefinedOr(rememberedStatusByMutantId), {
+    onNone: () => ({}),
+    onSome: (byMutantId) => ({ rememberedStatusByMutantId: byMutantId }),
   }),
 })
 
@@ -127,6 +132,7 @@ const readPlanCommand = Effect.fn(SpanTaxonomy.Spans.mutationTestPlanRead.name)(
       input.timeOverheadMS,
       undefined,
       input.priorKilledByByMutantId,
+      input.rememberedStatusByMutantId,
       sandboxFileByName,
     )
     return { ...command, mutantsById: mutantsByIdOf(planningMutants) }
@@ -248,6 +254,7 @@ export interface MutationTestPlanInput {
   }
   readonly timeOverheadMS: number
   readonly priorKilledByByMutantId?: Record<string, readonly string[]> | undefined
+  readonly rememberedStatusByMutantId?: Record<string, Mutant.MutantStatus> | undefined
   readonly sandbox: SandboxHandle
   readonly project: Project
   readonly rememberedCount: number
