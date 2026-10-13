@@ -4,7 +4,6 @@ import * as Boolean from 'effect/Boolean'
 import * as HashMap from 'effect/HashMap'
 import * as HashSet from 'effect/HashSet'
 import * as Match from 'effect/Match'
-import * as Num from 'effect/Number'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
@@ -23,7 +22,6 @@ import {
   TelemetryMissing,
   TypeAnswerLine,
   TypeQueryFileRefused,
-  TypeQueryServers,
   UnitOverBudget,
   Verdict,
   VerdictStatus,
@@ -203,7 +201,6 @@ export const TypeQuerySummary = S.Struct({
   compileErrorTotal: NonNegativeInt,
   projects: S.Array(TypeQueryProjectShare),
   refusedFiles: NonNegativeInt,
-  peakServers: NonNegativeInt,
 })
 export type TypeQuerySummary = typeof TypeQuerySummary.Type
 
@@ -734,7 +731,6 @@ const nothingComparedViolations = (
 
 const isTypeAnswerLine = S.is(TypeAnswerLine)
 const isTypeQueryFileRefused = S.is(TypeQueryFileRefused)
-const isTypeQueryServers = S.is(TypeQueryServers)
 const isAssignable = S.is(TypeQuery.Assignable)
 const isNotAssignable = S.is(TypeQuery.NotAssignable)
 const isUnknown = S.is(TypeQuery.Unknown)
@@ -835,10 +831,6 @@ const typeQuerySummaryOf = (
     compileErrorTotal: compileErrors.length,
     projects: projectSharesOf(lines, projects),
     refusedFiles: refusedLinesIn(lines).length,
-    peakServers: lines
-      .filter((line): line is TypeQueryServers => isTypeQueryServers(line))
-      .map((line) => line.peakLiveServers)
-      .reduce((max, peak) => Num.max(max, peak), 0),
   }
 }
 

@@ -1,32 +1,33 @@
 import type { Mutator } from '@systemfsoftware/stryker-js-instrumenter'
-import { type Checker, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
-import { TypeQueryLive } from '@systemfsoftware/stryker-js-typescript-checker/type-query'
+import { type Checker, type Plugin, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
+import * as Context from 'effect/Context'
+import * as Duration from 'effect/Duration'
 import * as Effect from 'effect/Effect'
-import type * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
 import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import type * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
-import * as Ref from 'effect/Ref'
 import * as Result from 'effect/Result'
+import type { RpcClientError } from 'effect/rpc/RpcClientError'
 
+import { isPastDeadline, type LegDeadline, remainingOf } from './leg-deadline.js'
 import {
+  Deferred,
   type ParityLine,
   TypeAnswerLine,
   TypeQueryFileRefused,
   type TypeQueryRefusalReason,
-  TypeQueryServers,
 } from './Parity.schema.js'
 
 export interface TypeQueryInput {
   readonly project: string
   readonly tsconfigFile: string
   readonly repoRoot: string
-  readonly servers: Ref.Ref<ServerTally>
+  readonly checkerName: string
+  readonly deadline: LegDeadline
 }
 
 export interface FileContent {
@@ -34,19 +35,18 @@ export interface FileContent {
   readonly content: string
 }
 
-export interface ServerTally {
-  readonly live: number
-  readonly peak: number
+export interface BranchWorkerRpcsShape {
+  readonly capabilities: (
+    request: Plugin.CheckerDigestRequest,
+  ) => Effect.Effect<TypeQuery.CheckerCapabilities, Checker.CheckerFailed | RpcClientError>
+  readonly typeQuery: (
+    request: TypeQuery.TypeQueryRequest,
+  ) => Effect.Effect<TypeQuery.TypeQueryResponse, TypeQuery.TypeQueryRefused | RpcClientError>
 }
 
-const tallyProvision = (tally: Ref.Ref<ServerTally>): Effect.Effect<void> =>
-  Ref.update(tally, (current) => {
-    const live = current.live + 1
-    return { live, peak: Math.max(current.peak, live) }
-  })
-
-const tallyRelease = (tally: Ref.Ref<ServerTally>): Effect.Effect<void> =>
-  Ref.update(tally, (current) => ({ ...current, live: current.live - 1 }))
+export class BranchWorkerRpcs extends Context.Service<BranchWorkerRpcs, BranchWorkerRpcsShape>()(
+  '@systemfsoftware/stryker-checker-parity/type-query-side/BranchWorkerRpcs',
+) {}
 
 interface QueryCandidateDraft {
   readonly candidateId: string
@@ -83,6 +83,7 @@ const siteDraftsOf = (wires: ReadonlyArray<Checker.CheckerMutantWire>): Readonly
 
 const BLOCK_STATEMENT_MUTATOR: keyof typeof Mutator.defaultMutators = 'BlockStatement'
 const EMPTY_BLOCK = '{}'
+const QUERY_VERSION = 2
 
 const siteKindOf = (site: QuerySiteDraft): TypeQuery.TypeQuerySiteKind =>
   Boolean.match(
@@ -93,6 +94,9 @@ const siteKindOf = (site: QuerySiteDraft): TypeQuery.TypeQuerySiteKind =>
       ])),
     { onTrue: () => 'function-body', onFalse: () => 'expression' },
   )
+
+const candidateCountOf = (draft: QueryFileDraft): number =>
+  draft.sites.reduce((total, site) => total + site.candidates.length, 0)
 
 const fileDraftsOf = (
   contents: ReadonlyArray<FileContent>,
@@ -123,7 +127,33 @@ const refusedLineOf = (
     fileName: draft.fileName,
     reason,
     nextAction,
-    mutantCount: draft.sites.reduce((total, site) => total + site.candidates.length, 0),
+    mutantCount: candidateCountOf(draft),
+  })
+
+const deferredLineOf = (input: TypeQueryInput, draft: QueryFileDraft, reason: Deferred['reason']): Deferred =>
+  Deferred.make({
+    schemaVersion: 1,
+    side: 'branch',
+    project: input.project,
+    fileName: draft.fileName,
+    mutants: candidateCountOf(draft),
+    reason,
+  })
+
+const failedLineOf = (
+  input: TypeQueryInput,
+  draft: QueryFileDraft,
+  failure: TypeQuery.TypeQueryRefused | RpcClientError,
+): TypeQueryFileRefused =>
+  Match.valueTags(failure, {
+    TypeQueryRefused: (refused) => refusedLineOf(input, draft, refused.reason, refused.nextAction),
+    RpcClientError: (failed) =>
+      refusedLineOf(
+        input,
+        draft,
+        'server-crashed',
+        `The branch worker's typeQuery RPC failed: ${failed.message}`,
+      ),
   })
 
 const typesOf = (
@@ -183,89 +213,327 @@ const fileOutcomeLines = (
     FileAnswered: (answered) => answered.sites.flatMap((siteAnswer) => answerLinesOf(input, draft, siteAnswer)),
   })
 
-const queryFileLines = (
-  input: TypeQueryInput,
-  draft: QueryFileDraft,
-  absoluteFile: string,
-): Effect.Effect<ReadonlyArray<ParityLine>, never, TypeQuery.TypeQuery> =>
-  Effect.gen(function*() {
-    const typeQuery = yield* TypeQuery.TypeQuery
-    const request = TypeQuery.TypeQueryRequest.make({
-      version: 2,
-      tsconfigFile: input.tsconfigFile,
-      files: [
-        TypeQuery.TypeQueryFile.make({
-          fileName: absoluteFile,
-          content: draft.content,
-          sites: draft.sites.map((site) =>
-            TypeQuery.TypeQuerySite.make({
-              siteId: site.siteId,
-              kind: siteKindOf(site),
-              location: site.location,
-              candidates: site.candidates.map((candidate) => ({
-                candidateId: candidate.candidateId,
-                text: candidate.text,
-              })),
-            })
-          ),
-        }),
-      ],
-    })
-    return Result.match(yield* typeQuery.query(request).pipe(Effect.result), {
-      onFailure: (refused) => [refusedLineOf(input, draft, refused.reason, refused.nextAction)],
-      onSuccess: (response) => response.files.flatMap((file) => fileOutcomeLines(input, draft, file)),
-    })
+const requestOf = (input: TypeQueryInput, draft: QueryFileDraft, absoluteFile: string): TypeQuery.TypeQueryRequest =>
+  TypeQuery.TypeQueryRequest.make({
+    version: QUERY_VERSION,
+    tsconfigFile: input.tsconfigFile,
+    files: [
+      TypeQuery.TypeQueryFile.make({
+        fileName: absoluteFile,
+        content: draft.content,
+        sites: draft.sites.map((site) =>
+          TypeQuery.TypeQuerySite.make({
+            siteId: site.siteId,
+            kind: siteKindOf(site),
+            location: site.location,
+            candidates: site.candidates.map((candidate) => ({
+              candidateId: candidate.candidateId,
+              text: candidate.text,
+            })),
+          })
+        ),
+      }),
+    ],
   })
 
-const queryProjectLines = (
+const bounded = <A, E>(
+  call: Effect.Effect<A, E>,
+  remaining: Option.Option<number>,
+): Effect.Effect<Option.Option<A>, E> =>
+  Option.match(remaining, {
+    onNone: () => Effect.asSome(call),
+    onSome: (ms) => Effect.timeoutOption(call, Duration.millis(ms)),
+  })
+
+const deferredLines = (
   input: TypeQueryInput,
   drafts: ReadonlyArray<QueryFileDraft>,
-): Effect.Effect<ReadonlyArray<ParityLine>, never, TypeQuery.TypeQuery | Path.Path> =>
+  reason: Deferred['reason'],
+): ReadonlyArray<ParityLine> => drafts.map((draft) => deferredLineOf(input, draft, reason))
+
+const queryFileLines = (
+  client: BranchWorkerRpcsShape,
+  input: TypeQueryInput,
+  draft: QueryFileDraft,
+): Effect.Effect<ReadonlyArray<ParityLine>, never, Path.Path> =>
   Effect.gen(function*() {
     const path = yield* Path.Path
-    const lines = yield* Effect.forEach(
-      drafts,
-      (draft) => queryFileLines(input, draft, path.resolve(input.repoRoot, draft.fileName)),
-    )
-    return lines.flat()
+    const remaining = yield* remainingOf(input.deadline)
+    return yield* Boolean.match(isPastDeadline(remaining), {
+      onTrue: () => Effect.succeed([deferredLineOf(input, draft, 'deadline-passed')]),
+      onFalse: () =>
+        Effect.map(
+          bounded(
+            client.typeQuery(requestOf(input, draft, path.resolve(input.repoRoot, draft.fileName))).pipe(Effect.result),
+            remaining,
+          ),
+          Option.match({
+            onNone: () => [deferredLineOf(input, draft, 'interrupted-at-deadline')],
+            onSome: (outcome) =>
+              Result.match(outcome, {
+                onFailure: (failure) => [failedLineOf(input, draft, failure)],
+                onSuccess: (response) => response.files.flatMap((file) => fileOutcomeLines(input, draft, file)),
+              }),
+          }),
+        ),
+    })
   })
 
-type QueryServices = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner
+interface Refusal {
+  readonly reason: TypeQueryRefusalReason
+  readonly nextAction: string
+}
+
+const handshakeRefusalOf = (
+  outcome: Result.Result<TypeQuery.CheckerCapabilities, Checker.CheckerFailed | RpcClientError>,
+): Option.Option<Refusal> =>
+  Result.match(outcome, {
+    onFailure: (failure) =>
+      Option.some({
+        reason: 'server-crashed',
+        nextAction: `The branch worker's capabilities RPC failed: ${failure.message}`,
+      }),
+    onSuccess: (capabilities) =>
+      Match.valueTags(TypeQuery.typeQueryServingOf(capabilities, QUERY_VERSION), {
+        TypeQueryServed: (): Option.Option<Refusal> => Option.none(),
+        TypeQueryNotServed: (notServed): Option.Option<Refusal> =>
+          Option.some({ reason: 'unsupported-version', nextAction: notServed.nextAction }),
+      }),
+  })
+
+const projectLines = (
+  input: TypeQueryInput,
+  drafts: Arr.NonEmptyReadonlyArray<QueryFileDraft>,
+): Effect.Effect<ReadonlyArray<ParityLine>, never, Path.Path | BranchWorkerRpcs> =>
+  Effect.gen(function*() {
+    const client = yield* BranchWorkerRpcs
+    const remaining = yield* remainingOf(input.deadline)
+    return yield* Boolean.match(isPastDeadline(remaining), {
+      onTrue: () => Effect.succeed(deferredLines(input, drafts, 'deadline-passed')),
+      onFalse: () =>
+        Effect.gen(function*() {
+          const handshake = yield* bounded(
+            client.capabilities({ checkerName: input.checkerName }).pipe(Effect.result),
+            remaining,
+          )
+          return yield* Option.match(handshake, {
+            onNone: () => Effect.succeed(deferredLines(input, drafts, 'interrupted-at-deadline')),
+            onSome: (outcome) =>
+              Option.match(handshakeRefusalOf(outcome), {
+                onSome: (refusal) =>
+                  Effect.succeed(
+                    drafts.map((draft) => refusedLineOf(input, draft, refusal.reason, refusal.nextAction)),
+                  ),
+                onNone: () =>
+                  Effect.map(
+                    Effect.forEach(drafts, (draft) => queryFileLines(client, input, draft)),
+                    (lines) => lines.flat(),
+                  ),
+              }),
+          })
+        }),
+    })
+  })
+
+export interface TypeQueryLegOptions {
+  readonly contents: ReadonlyArray<FileContent>
+  readonly wires: ReadonlyArray<Checker.CheckerMutantWire>
+}
 
 export const branchTypeQueryLines: {
   (
-    contents: ReadonlyArray<FileContent>,
-    wires: ReadonlyArray<Checker.CheckerMutantWire>,
-  ): (input: TypeQueryInput) => Effect.Effect<ReadonlyArray<ParityLine>, never, QueryServices>
+    options: TypeQueryLegOptions,
+  ): (input: TypeQueryInput) => Effect.Effect<ReadonlyArray<ParityLine>, never, Path.Path | BranchWorkerRpcs>
   (
     input: TypeQueryInput,
-    contents: ReadonlyArray<FileContent>,
-    wires: ReadonlyArray<Checker.CheckerMutantWire>,
-  ): Effect.Effect<ReadonlyArray<ParityLine>, never, QueryServices>
-} = dual(3, (
+    options: TypeQueryLegOptions,
+  ): Effect.Effect<ReadonlyArray<ParityLine>, never, Path.Path | BranchWorkerRpcs>
+} = dual(2, (
   input: TypeQueryInput,
-  contents: ReadonlyArray<FileContent>,
-  wires: ReadonlyArray<Checker.CheckerMutantWire>,
-): Effect.Effect<ReadonlyArray<ParityLine>, never, QueryServices> =>
-  Effect.gen(function*() {
-    const drafts = fileDraftsOf(contents, wires)
-    return yield* Boolean.match(Arr.isReadonlyArrayNonEmpty(drafts), {
-      onFalse: () => Effect.succeed(Arr.empty<ParityLine>()),
-      onTrue: () =>
-        Effect.gen(function*() {
-          yield* tallyProvision(input.servers)
-          const lines = yield* Effect.scoped(Effect.provide(queryProjectLines(input, drafts), TypeQueryLive))
-          const peak = (yield* Ref.get(input.servers)).peak
-          yield* tallyRelease(input.servers)
-          return [
-            ...lines,
-            TypeQueryServers.make({
-              schemaVersion: 1,
-              side: 'branch',
-              project: input.project,
-              peakLiveServers: peak,
+  options: TypeQueryLegOptions,
+): Effect.Effect<ReadonlyArray<ParityLine>, never, Path.Path | BranchWorkerRpcs> => {
+  const drafts = fileDraftsOf(options.contents, options.wires)
+  return Arr.match(drafts, {
+    onEmpty: () => Effect.succeed(Arr.empty<ParityLine>()),
+    onNonEmpty: (nonEmpty) => projectLines(input, nonEmpty),
+  })
+})
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const { Instrument, Mutator } = await import('@systemfsoftware/stryker-js-instrumenter')
+  const Clock = await import('effect/Clock')
+  const Exit = await import('effect/Exit')
+  const Layer = await import('effect/Layer')
+  const S = await import('effect/Schema')
+
+  const SOURCE = `export const answer = 'a'\n`
+  const SOURCE_FILE = 'subject.ts'
+  const NOT_SERVED = 1
+  const BEHAVIOURS = ['answers', 'refuses', 'does-not-serve'] as const
+
+  type Behaviour = typeof BEHAVIOURS[number] | 'hangs'
+
+  const drafts: Arr.NonEmptyReadonlyArray<QueryFileDraft> = await Effect.runPromise(
+    Effect.gen(function*() {
+      const instrumented = yield* Instrument.instrument(
+        [{ name: SOURCE_FILE, content: SOURCE, mutate: true }],
+        {
+          excludedMutations: [],
+          ignorers: [],
+          mutantSetPolicy: 'default',
+          mutators: Mutator.selectMutators(Mutator.stockRegistry, []),
+        },
+      )
+      const wires = instrumented.mutants.map((mutant) => ({
+        id: mutant.id,
+        fileName: mutant.fileName,
+        mutatorName: mutant.mutatorName,
+        replacement: mutant.replacement,
+        location: mutant.location,
+      }))
+      return yield* Arr.match(fileDraftsOf([{ name: SOURCE_FILE, content: SOURCE }], wires), {
+        onEmpty: () => Effect.die(new Error(`${SOURCE_FILE} produced no drafts`)),
+        onNonEmpty: (nonEmpty) => Effect.succeed(nonEmpty),
+      })
+    }).pipe(Effect.orDie),
+  )
+
+  const candidates = drafts.reduce((total, draft) => total + candidateCountOf(draft), 0)
+  const files = drafts.length
+
+  const inputOf = (deadline: LegDeadline): TypeQueryInput => ({
+    project: 'tsconfig.json',
+    tsconfigFile: 'tsconfig.json',
+    repoRoot: '/repo',
+    checkerName: 'typescript',
+    deadline,
+  })
+
+  const budgetOf = (ms: number): Effect.Effect<LegDeadline> =>
+    Effect.map(Clock.currentTimeMillis, (now) => ({ startedAt: now, deadlineAt: Option.some(now + ms) }))
+
+  const workerOf = (behaviour: Behaviour, answer: string): BranchWorkerRpcsShape =>
+    Match.value(behaviour).pipe(
+      Match.when('answers', (): BranchWorkerRpcsShape => ({
+        capabilities: () => Effect.succeed({ typeQuery: [1, 2] }),
+        typeQuery: (request) =>
+          Effect.succeed(
+            TypeQuery.TypeQueryResponse.make({
+              version: 2,
+              files: request.files.map((file) =>
+                TypeQuery.FileAnswered.make({
+                  fileName: file.fileName,
+                  sites: file.sites.map((site) =>
+                    TypeQuery.SiteAnswer.make({
+                      siteId: site.siteId,
+                      siteType: Option.none(),
+                      contextualType: Option.none(),
+                      candidates: site.candidates.map((candidate) =>
+                        TypeQuery.CandidateAnswer.make({
+                          candidateId: candidate.candidateId,
+                          answer: TypeQuery.Assignable.make({ candidateType: answer }),
+                        })
+                      ),
+                    })
+                  ),
+                })
+              ),
             }),
-          ]
-        }),
+          ),
+      })),
+      Match.when('refuses', (): BranchWorkerRpcsShape => ({
+        capabilities: () => Effect.succeed({ typeQuery: [1, 2] }),
+        typeQuery: () =>
+          Effect.fail(
+            TypeQuery.TypeQueryRefused.make({
+              version: 2,
+              reason: 'project-open-failed',
+              nextAction: 'Fix the project the query names.',
+            }),
+          ),
+      })),
+      Match.when('does-not-serve', (): BranchWorkerRpcsShape => ({
+        capabilities: () => Effect.succeed({ typeQuery: [NOT_SERVED] }),
+        typeQuery: () => Effect.die(new Error('a query was sent to a worker that does not serve it')),
+      })),
+      Match.when('hangs', (): BranchWorkerRpcsShape => ({
+        capabilities: () => Effect.succeed({ typeQuery: [1, 2] }),
+        typeQuery: () => Effect.never,
+      })),
+      Match.exhaustive,
+    )
+
+  const layerOf = (behaviour: Behaviour, answer: string) =>
+    Layer.merge(Path.layer, Layer.succeed(BranchWorkerRpcs, workerOf(behaviour, answer)))
+
+  const answerTextOf = (answer: TypeQuery.TypeAnswer): string =>
+    Match.valueTags(answer, {
+      Assignable: (assignable) => `Assignable ${assignable.candidateType}`,
+      NotAssignable: (notAssignable) => `NotAssignable ${notAssignable.candidateType}`,
+      Unknown: (unknown) => `Unknown ${unknown.reason}`,
     })
-  }))
+
+  interface Recorded {
+    readonly answers: ReadonlyArray<string>
+    readonly refusals: ReadonlyArray<{ readonly reason: string; readonly mutantCount: number }>
+    readonly deferred: ReadonlyArray<Deferred['reason']>
+  }
+
+  const recordsOf = (lines: ReadonlyArray<ParityLine>): Recorded => ({
+    answers: lines.filter((line): line is TypeAnswerLine => S.is(TypeAnswerLine)(line)).map((line) =>
+      answerTextOf(line.answer)
+    ),
+    refusals: lines.filter((line): line is TypeQueryFileRefused => S.is(TypeQueryFileRefused)(line)).map((line) => ({
+      reason: line.reason,
+      mutantCount: line.mutantCount,
+    })),
+    deferred: lines.filter((line): line is Deferred => S.is(Deferred)(line)).map((line) => line.reason),
+  })
+
+  const answersRecorded = (recorded: Recorded, answer: string): boolean =>
+    Boolean.every([
+      recorded.answers.length === candidates,
+      recorded.answers.every((entry) => entry === `Assignable ${answer}`),
+      recorded.refusals.length === 0,
+      recorded.deferred.length === 0,
+    ])
+
+  const deferredEveryFileAs = (recorded: Recorded, reason: Deferred['reason']): boolean =>
+    Boolean.every([
+      recorded.deferred.length === files,
+      recorded.answers.length === 0,
+      recorded.deferred.every((entry) => entry === reason),
+    ])
+
+  it.effect.prop(
+    '∀b_LegUnderABudget_≡DefersASpentBudgetAndAQueryThatCannotFinish',
+    {
+      of: [S.Int.check(S.isBetween({ minimum: 0, maximum: 400 })), S.Literals(['answers', 'hangs'])],
+      subject: projectLines,
+    },
+    (subject, [budgetMs, behaviour]) =>
+      Effect.gen(function*() {
+        const budget = yield* budgetOf(budgetMs)
+        const outcome = yield* Effect.exit(
+          Effect.suspend(() =>
+            Effect.provide(subject(inputOf(budget), drafts), layerOf(behaviour, 'the-budget-answer'))
+          ),
+        )
+        return Exit.match(outcome, {
+          onFailure: () => false,
+          onSuccess: (lines) => {
+            const recorded = recordsOf(lines)
+            return Boolean.match(budgetMs === 0, {
+              onTrue: () => deferredEveryFileAs(recorded, 'deadline-passed'),
+              onFalse: () =>
+                Boolean.match(behaviour === 'hangs', {
+                  onTrue: () => deferredEveryFileAs(recorded, 'interrupted-at-deadline'),
+                  onFalse: () => answersRecorded(recorded, 'the-budget-answer'),
+                }),
+            })
+          },
+        })
+      }),
+  )
+}

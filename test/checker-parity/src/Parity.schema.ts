@@ -140,13 +140,6 @@ export class TypeQueryFileRefused extends S.TaggedClass<TypeQueryFileRefused>()(
   mutantCount: NonNegativeInt,
 }) {}
 
-export class TypeQueryServers extends S.TaggedClass<TypeQueryServers>()('TypeQueryServers', {
-  schemaVersion: SCHEMA_VERSION,
-  side: S.Literal('branch'),
-  project: S.String,
-  peakLiveServers: NonNegativeInt,
-}) {}
-
 export class Deferred extends S.TaggedClass<Deferred>()('Deferred', {
   schemaVersion: SCHEMA_VERSION,
   side: S.NullOr(Side),
@@ -181,7 +174,6 @@ export const ParityLine = S.Union([
   TelemetryMissing,
   TypeAnswerLine,
   TypeQueryFileRefused,
-  TypeQueryServers,
   Deferred,
   UnitOverBudget,
 ])
