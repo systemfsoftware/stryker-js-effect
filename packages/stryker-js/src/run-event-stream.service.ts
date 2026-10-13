@@ -143,7 +143,9 @@ const runToSink = <E>(stdio: Stdio.Stdio, lines: Stream.Stream<string, E>, toStd
     onFalse: () => Stream.runDrain(lines),
   })
 
-const logFileFailure = <E>(cause: Cause.Cause<E>) => Effect.logError('stryker.output.drain_file_failed', cause)
+const DRAIN_FILE_FAILED = 'stryker.output.drain_file_failed'
+
+const logFileFailure = <E>(error: E) => Effect.logError(DRAIN_FILE_FAILED, error)
 
 const writeLineOf = (handle: FileSystem.File, fileFailed: Ref.Ref<boolean>) => (line: string) =>
   Effect.flatMap(Ref.get(fileFailed), (failed) =>
@@ -152,7 +154,10 @@ const writeLineOf = (handle: FileSystem.File, fileFailed: Ref.Ref<boolean>) => (
       onFalse: () =>
         handle.writeAll(encodeUtf8(line)).pipe(
           Effect.andThen(handle.sync),
-          Effect.catchCause((cause) => Effect.andThen(logFileFailure(cause), Ref.set(fileFailed, true))),
+          Effect.tapError(logFileFailure),
+          Effect.as(false),
+          Effect.orElseSucceed(() => true),
+          Effect.flatMap((failedNow) => Ref.set(fileFailed, failedNow)),
         ),
     }))
 
@@ -168,7 +173,7 @@ const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.nam
     Effect.gen(function*() {
       const opened = yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(
         Effect.andThen(fs.open(fileName, { flag: 'w' })),
-        Effect.tapCause(logFileFailure),
+        Effect.tapError(logFileFailure),
         Effect.option,
       )
       const fileFailed = yield* Ref.make(false)
@@ -202,7 +207,7 @@ const drainFileOf = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainFile.name)(f
   return RunEventDrain.of({
     drainFramed: (framed, toStdout) =>
       drainStoredFile(fs, path, stdio, fileNameRef, toStdout, framed).pipe(
-        Effect.tapCause((cause) => Effect.logError('stryker.output.drain_file_failed', cause)),
+        Effect.tapCause((cause) => Effect.logError(DRAIN_FILE_FAILED, cause)),
         Effect.ignoreCause,
       ),
     setProgressStreamFile: (fileName: string) => Ref.set(fileNameRef, fileName),

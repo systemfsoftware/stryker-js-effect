@@ -28,7 +28,7 @@ Every Mutation job in run 36160660790 on `main` showed green. In fact the `stryk
 ## Failure mechanisms
 
 1. **The exit code was discarded.** The Mutation step ran with `continue-on-error: true`, so a non-zero Stryker exit never reached the job's conclusion.
-2. **The report gate accepted a file that every run writes.** The "require a mutation part" step accepted `mutation-stream.jsonl` (the `progressStreamFile` default in the plugin interface's `StrykerOptions` schema) in place of `mutation-report.json`. The run-event stream sink opens that file on the first event, so a run that dies in `prepare` still leaves it behind. The gate could therefore fail only for a run that never started.
+2. **The report gate accepted a file that every run writes.** The "require a mutation part" step accepted `mutation-stream.jsonl` (the `progressStreamFile` default in the plugin interface's `StrykerOptionsSchema`) in place of `mutation-report.json`. The run-event stream sink opens that file on the first event, so a run that dies in `prepare` still leaves it behind. The gate could therefore fail only for a run that never started.
 3. **The merger treated absence as success.** `stryker merge-reports` fails on unreadable or duplicate parts but exits 0 when 0 of N packages have a report.
 4. **The config resolved its own package.** A package's Stryker config called `import.meta.resolve` with that package's own name. Node answers a package's own name through its `exports` map (self-reference), so the config loaded the package's own unbuilt build output instead of the installed copy. The mutation job never builds that output, and the dogfood rule requires the published `catalog:stryker` copy anyway.
 

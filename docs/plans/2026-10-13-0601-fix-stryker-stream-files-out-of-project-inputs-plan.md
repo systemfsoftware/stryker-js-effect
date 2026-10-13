@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0527-fix-stryker-stream-files-out-of-project-inputs-plan.md
+supersedes: docs/plans/2026-10-13-0547-fix-stryker-stream-files-out-of-project-inputs-plan.md
 ---
 
 # No stream file Stryker writes enters the next run's inputs - Plan
@@ -14,7 +14,7 @@ supersedes: docs/plans/2026-10-13-0527-fix-stryker-stream-files-out-of-project-i
 
 - **Objective:** a project re-run through the `stryker` CLI with nothing changed reuses every verdict, whatever its `ignorePatterns` (including `[]`) and whether `stryker run` or `stryker --help` ran in it before (shard outputs are OQ6). A `progressStreamFile` set in the config file is where `stryker run` writes its stream, and a stream file that cannot be opened or written never silences the run's `stdout` records.
 - **Authority:** `CONSTITUTION.md`, then root `AGENTS.md`, then this plan. Stream J owns the CLI surface. This PR (#329) lands before PR #320 (the `--ignorePatterns` help text), which waits on it.
-- **Supersedes:** the 0527 plan, executed in `751a12cc` (merged with `main` in `bfad43ca`); its full review found no P0 or P1, but U7 covered only the open: a stream file that opens and then refuses writes still ended the drain, so `stdout` stopped with no log and exit 0, as on `main`. This plan carries the corrected contract and 0527 is removed in the same PR (REPO-D2). 0527 superseded 0505 (`25a46beb`), 0453 (`7a3af040`), 0421 (`39c401e4`, `1059dc39`), 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
+- **Supersedes:** the 0547 plan, executed in `014b542a`; its full review found no P0 or P1, but AE8 graded only that the file failure was logged, not that it was logged once, and the write leg's recovery also caught interruptions and defects, logging them as file failures. This plan carries the corrected contract and 0547 is removed in the same PR (REPO-D2). 0547 superseded 0527 (`751a12cc`, merged with `main` in `bfad43ca`), 0505 (`25a46beb`), 0453 (`7a3af040`), 0421 (`39c401e4`, `1059dc39`), 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
 - **Citations:** line numbers name `main` at `ec1769de`, the base this branch was cut from, unless they name a file this PR changes.
 - **Open blockers:** none. OQ1, OQ2, OQ4, OQ5 and OQ6 go to the root and OQ3 to PR #320; none gates this unit.
 
@@ -64,7 +64,7 @@ Cause in code:
 - R6. An empty `progressStreamFile`, from the config or the flag, keeps today's behaviour: the stream goes to the default path.
 - R7. A configured or flagged output path inside the project is left out of the inputs however it is spelled (`out/stream.jsonl`, `./out/stream.jsonl`, `out//stream.jsonl`, `out/stream.jsonl/`, nested) on every platform: the rule is the entry path the crawl gives that file. Containment is lexical: an absolute path counts only when it names the project through the path the crawl starts from.
 - R8. The path a run streams to is the path its own inputs leave out, even when a config function answers differently each time it is read.
-- R9. A stream file that cannot be opened, or that refuses a write, from the config or the flag, is logged once as the drain's file failure on `stderr`; the file gets no further lines and every record still reaches `stdout`, as `tee` keeps writing standard output when a file operand fails ([tee(1p)](https://www.man7.org/linux/man-pages/man1/tee.1p.html)).
+- R9. Under `--json`, a stream file that cannot be opened, or that refuses a write or a sync, from the config or the flag, is logged once as the drain's file failure on `stderr`; the file gets no further lines and every record still reaches `stdout`, as `tee` keeps writing standard output when a file operand fails ([tee(1p)](https://www.man7.org/linux/man-pages/man1/tee.1p.html)). Only typed file errors count; an interruption or a defect is not logged as a file failure. In human mode `stdout` never carried the records, so only the log applies.
 
 ### Acceptance Examples
 
@@ -77,7 +77,7 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - AE5. Covers R8. The config's default export is a function answering `out/first.jsonl` on its first call and `out/later.jsonl` after. The second run's stream is in `out/first.jsonl` and reuses every mutant.
 - AE6. Covers R6. Config sets `progressStreamFile: ''`. Both runs stream records on `stdout`; the second run's `reuse` record is in `reports/mutation-stream.jsonl` and reuses every mutant.
 - AE7. Covers R4. A config that throws while loading, and a config whose `progressStreamFile` is `null`: each run exits 2, its error record names `stryker.config.mjs` or `progressStreamFile` respectively, and the stream is at `reports/mutation-stream.jsonl`.
-- AE8. Covers R9. Config sets `progressStreamFile: 'out/stream'`, an existing empty directory; and, separately, the flag names `/dev/full`, which opens and refuses every write. Each run exits 0, its `stdout` carries `mutantTested` records and ends with the verdict, and its `stderr` names `stryker.output.drain_file_failed`.
+- AE8. Covers R9. Config sets `progressStreamFile: 'out/stream'`, an existing empty directory; and, separately, the flag names `/dev/full`, which opens and refuses every write (the row refuses to run where `/dev/full` is missing instead of degrading into an open failure). Each run exits 0, its `stdout` carries `mutantTested` records and ends with the verdict, and its `stderr` names `stryker.output.drain_file_failed` exactly once.
 
 ### Scope Boundaries
 
@@ -101,7 +101,7 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - **CONST-W3 declaration, waiving CONST-T4 ("Behavior Lives Where the Mutator Sees It") for three cases.** `packages/stryker-js/stryker.config.ts:15-19` mutates only `src/**/*.workflow.ts` and `src/**/*.schema.ts`, so three behaviours this PR adds go ungraded:
   1. the route match, config read and fallback that choose the run's stream path (`streamedRequestOf`, `flaggedRequestOf`, `pinnedRequestOf`, `packages/stryker-js/src/run-request.cell.ts`);
   2. the output-entry derivation (`isInsideProject`, `crawlEntryPathOf`, `projectRelativeRuleOf`, `packages/stryker-js/src/read-project.cell.ts`);
-  3. the drain's fallback to `stdout` alone when the stream file cannot be opened or written (`drainToSinks`, `writeLineOf`, `packages/stryker-js/src/run-event-stream.service.ts`).
+  3. the drain's fallback to `stdout` alone when the stream file cannot be opened or written (`drainToSinks`, `writeLineOf`, `logFileFailure`, `packages/stryker-js/src/run-event-stream.service.ts`).
      The first two have one outcome, a path, and `Workflow.make` refuses a single-variant decision, telling the author to fold the function into its owning module (`@systemfsoftware/effect-cell-types` `SingleVariantDecision`, met on PR #320). The third is I/O inside a service's sink, with no decision to extract. AE1-AE8 grade all three through the built binary instead.
 
 ### Outstanding Questions
@@ -136,6 +136,7 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - "The config file is read once per `stryker run`." It is now read twice, as `--survivors` and `--mutant` already do (they now read it three times). The module is evaluated once; a config whose default export is a function is called twice, and a shadowed legacy config warns twice. The stream path comes from the first answer, every other option from the second. Measured: a config function that throws on its second call completes on `main` (exit 0) and fails on the branch (exit 2, `Invalid config file`). OQ5.
 - "The stream header is written before any config work." The first `stdout` line now waits for the config import. A config import that hangs now hangs before the header instead of after it.
 - "A drain whose file fails stops the run's output." On `main`, `--progressStreamFile` naming a directory exited 0 with no `stdout` record at all, and naming `/dev/full` exited 0 with no record and no log. The drain now logs the first failure and still writes every record to `stdout`. The exit code stays 0, unlike `tee`'s non-zero status: the run's own outcome decides it, and the file failure is logged as `stryker.output.drain_file_failed`.
+- "A failed write or sync can be retried." After the first failure the file gets no further lines, even if a later write would succeed. After a failed `fsync` the kernel may already have dropped the dirty pages and marked them clean, so a later sync can report success for data that never reached disk ([LWN, PostgreSQL's fsync() surprise](https://lwn.net/Articles/752063/)); a file whose contents are unknown is not extended. The file may end in a torn line; stream readers already skip undecodable lines.
 - "Only the configured stream path is excluded." The default path is excluded too; a project file of its own at `reports/mutation-stream.jsonl` is no longer an input and is not copied into the sandbox.
 - "An output entry is matched as written." Output entries are now named as the crawl names files before matching; a relative output name that relied on glob syntax (none of Stryker's do) is now matched as a path.
 
@@ -146,7 +147,7 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - **Goal:** AE1-AE8.
 - **Files:** `packages/stryker-js/tests/progress-stream-file.integration.test.ts`.
 - **Test scenarios:** one feature. A Given prepares the project; When steps run the binary and read the files; a Then asserts. One outline (AE1, AE3), one refusal outline (AE7), one file-failure outline (AE8) and four scenarios (AE2, AE4-AE6).
-- **Verification:** each scenario failed first against a binary that lacked its fix: AE1 and AE2 on `main`, AE2 on `65953faa`, AE3 (`./` and `//`) on `3cb10de5`, AE3 (trailing `/`) and AE7 (invalid `progressStreamFile`, exit 0) on `b6c0eb00`, AE3 (nested `./`) on `main`, AE5 on `80f3959a`, AE6 on `65953faa` (no records, no file), AE8 (directory) on `25a46beb` (no `mutantTested`, no verdict), AE8 (`/dev/full`) on `bfad43ca` (no `mutantTested`, no verdict, no log). AE4 and AE7's throwing config pin behaviour `main` already had. No production source is edited to stage a failure.
+- **Verification:** each scenario failed first against a binary that lacked its fix: AE1 and AE2 on `main`, AE2 on `65953faa`, AE3 (`./` and `//`) on `3cb10de5`, AE3 (trailing `/`) and AE7 (invalid `progressStreamFile`, exit 0) on `b6c0eb00`, AE3 (nested `./`) on `main`, AE5 on `80f3959a`, AE6 on `65953faa` (no records, no file), AE8 (directory) on `25a46beb` (no `mutantTested`, no verdict), AE8 (`/dev/full`) on `bfad43ca` (no `mutantTested`, no verdict, no log). AE8's exactly-once count guards the latch `writeLineOf` holds and passes on this head; without the latch every later line would log again (reasoned from the code, not run: no failure is staged by editing source). AE4 and AE7's throwing config pin behaviour `main` already had. No production source is edited to stage a failure.
 
 #### U2. Resolve the run stream path through the config
 
@@ -335,6 +336,20 @@ Round 10, full-path report-only review of `bfad43ca` (0 P0, 0 P1, 1 P2, 6 P3):
 | The waiver's case 1 names one of three ungraded functions                                | P3  | project-standards        | Fixed: case 1 names `streamedRequestOf`, `flaggedRequestOf`, `pinnedRequestOf`                                                |
 | The verdict-cache learning's gate names a bare file, unlike its siblings                 | P3  | learnings                | Fixed: the gate is a runnable command                                                                                         |
 | `first-publish-under-oidc-trusted-publishing.md` cites a release flow `release.yml` lost | P3  | learnings                | Deferred: pre-existing, outside this diff; a `ce-compound-refresh` of the release learnings owns it                           |
+
+Round 11, full-path report-only review of `014b542a` (0 P0, 0 P1, 2 P2, 7 P3):
+
+| Finding                                                                                 | Sev | Lens                                | Disposition                                                                                                                                |
+| --------------------------------------------------------------------------------------- | --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| AE8 grades that the failure is logged, not that it is logged once                       | P2  | testing, adversarial                | Fixed: AE8 counts `stryker.output.drain_file_failed` on `stderr` and expects exactly 1                                                     |
+| A failed sync latches the file, so a transient failure never recovers                   | P2  | adversarial                         | Accepted, stated: R9 names the sync; Assumptions explains why a file after a failed `fsync` is not extended                                |
+| The write leg's `catchCause` logs interruptions and defects as file failures            | P3  | correctness                         | Fixed: `tapError` and `orElseSucceed` handle typed failures only, on both the open and the write leg                                       |
+| R9's "every record reaches `stdout`" overreaches in human mode                          | P3  | correctness                         | Fixed: R9 is stated for `--json`; human mode keeps only the log                                                                            |
+| `/dev/full` degrades into an open-failure row where the device is missing               | P3  | testing, adversarial, boundary pack | Fixed: the Given refuses to run without `/dev/full`; CI runs `ubuntu-latest` only                                                          |
+| Two spellings of the file-failure log name                                              | P3  | cell pack, boundary pack            | Fixed: one `DRAIN_FILE_FAILED` constant in the service                                                                                     |
+| A short write leaves a torn last line                                                   | P3  | adversarial                         | Accepted: as on `main`; Assumptions names it                                                                                               |
+| The learning cites `StrykerOptions` where the schema constant is `StrykerOptionsSchema` | P3  | learnings                           | Fixed                                                                                                                                      |
+| `packages/stryker-js/README.md:200` says Stryker "never" counts the file                | P3  | learnings                           | Fixed: the sentence names the run's own resolved and default paths and re-runs with the same settings; it also states the file-failure log |
 
 ### Verification Contract
 

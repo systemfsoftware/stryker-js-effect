@@ -197,7 +197,7 @@ pnpm exec stryker run --json                # wire records on stdout, diagnostic
 STRYKER_MODE=machine pnpm exec stryker run  # the same, named by environment
 ```
 
-`--format text` names the human format explicitly; `--json` together with `--format text` is a usage error (exit 2). Under `--json`, `stdout` carries wire records and nothing else — progress lines and log output stay on `stderr`. Every run also writes the same records to the `progressStreamFile` (`--progressStreamFile`, or for `stryker run` also the config file, default `reports/mutation-stream.jsonl`) in both modes, which is the artifact `stryker merge` rebuilds a shard's partial report from. Stryker never counts that file, at the path `stryker run` resolved or at the default path, as part of the project, so it never makes the next run re-run a mutant.
+`--format text` names the human format explicitly; `--json` together with `--format text` is a usage error (exit 2). Under `--json`, `stdout` carries wire records and nothing else — progress lines and log output stay on `stderr`. Every run also writes the same records to the `progressStreamFile` (`--progressStreamFile`, or for `stryker run` also the config file, default `reports/mutation-stream.jsonl`) in both modes, which is the artifact `stryker merge` rebuilds a shard's partial report from. A run never counts its own stream file, at the path it resolved or at the default path, as part of the project, so re-running with the same settings never re-runs a mutant because of it. A stream file that cannot be opened or written is logged as `stryker.output.drain_file_failed`, and the `--json` records still reach `stdout`.
 
 ## Reporters, Sidecars, and Verdict Reuse
 

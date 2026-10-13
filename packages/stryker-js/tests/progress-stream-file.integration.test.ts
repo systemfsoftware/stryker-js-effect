@@ -25,6 +25,8 @@ const STREAM_DIRECTORY = 'out/stream'
 
 const DRAIN_FILE_FAILED = 'stryker.output.drain_file_failed'
 
+const DEV_FULL = '/dev/full'
+
 const DEFAULT_STREAM = 'reports/mutation-stream.jsonl'
 
 const JSON_REPORT = 'out/report.json'
@@ -326,10 +328,10 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
     )
 
     scenarioOutline(
-      'A stream file that <failure> is reported, and the run still streams its records on stdout',
+      'A stream file that <failure> is reported once, and the run still streams its records on stdout',
       [
         { failure: 'cannot be opened', streamDirectory: true, args: RUN },
-        { failure: 'refuses every write', streamDirectory: false, args: [...RUN, '--progressStreamFile', '/dev/full'] },
+        { failure: 'refuses every write', streamDirectory: false, args: [...RUN, '--progressStreamFile', DEV_FULL] },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
@@ -339,6 +341,14 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
               Effect.gen(function*() {
                 const fs = yield* FileSystem.FileSystem
                 const path = yield* Path.Path
+                const deviceMissing = yield* fs.exists(DEV_FULL).pipe(
+                  Effect.map((present) => !row.streamDirectory && !present),
+                  Effect.orDie,
+                )
+                yield* Effect.when(
+                  Effect.die(new Error(`${DEV_FULL} is missing — this row needs the Linux device that refuses writes`)),
+                  Effect.succeed(deviceMissing),
+                )
                 const root = yield* prepareProject(configNaming(STREAM_DIRECTORY))
                 yield* Effect.when(
                   fs.makeDirectory(path.join(root, STREAM_DIRECTORY), { recursive: true }).pipe(Effect.orDie),
@@ -348,15 +358,15 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
               }),
           ),
           When('the project is run')('run', (s) => invoke(s.project, row.args)),
-          Then('the run succeeds, stdout carries its mutants and its verdict, and stderr names the file failure')(
+          Then('the run succeeds, stdout carries its mutants and its verdict, and stderr names the file failure once')(
             (s, expect) => {
               const events = eventsOf(s.run.stdout)
               return expect({
                 exitCode: s.run.exitCode,
                 mutantsTested: events.some((event) => S.is(RunEvent.RunMutantTested)(event)),
                 endsWithVerdict: S.is(RunEvent.VerdictReached)(events.at(-1)),
-                namesTheFailure: s.run.stderr.includes(DRAIN_FILE_FAILED),
-              }).toEqual({ exitCode: 0, mutantsTested: true, endsWithVerdict: true, namesTheFailure: true })
+                fileFailuresLogged: s.run.stderr.split(DRAIN_FILE_FAILED).length - 1,
+              }).toEqual({ exitCode: 0, mutantsTested: true, endsWithVerdict: true, fileFailuresLogged: 1 })
             },
           ),
         ),
