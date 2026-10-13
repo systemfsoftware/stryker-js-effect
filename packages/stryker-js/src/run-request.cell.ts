@@ -164,7 +164,7 @@ const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(funct
 })
 
 const runStage = (channel: CliRead) =>
-  Layer.build(RunEnvironment.stage(channel.environment.host.env, channel.environment.host.events)).pipe(
+  Layer.build(RunEnvironment.layerStage(channel.environment.host.env, channel.environment.host.events)).pipe(
     Effect.flatMap((context) =>
       Cell.provideContext(mutationTestCell, context).run({
         cliOptions: channel.options,
