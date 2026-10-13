@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0357-chore-dependabot-alerts-to-zero-plan.md
+supersedes: docs/plans/2026-10-13-0423-chore-dependabot-alerts-to-zero-plan.md
 ---
 
 # Bring main to zero Dependabot alerts by removing what does not belong and bumping what does - Plan
@@ -75,9 +75,9 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 
 ### Key Technical Decisions
 
-- KTD1. **The alert count is reconstructed, then cross-checked by the dependency graph.** Parse each Dependabot-scanned npm lockfile, query `GET /advisories?ecosystem=npm&affects=<names>` for reviewed, non-withdrawn advisories, and match versions with semver. `GET /repos/{repo}/dependency-graph/compare/{base}...{head}` lists the vulnerabilities each PR removes, and the SBOM (`dependency-graph/sbom`) shows the package set before and after. A token with Dependabot read access is the only reader of the alerts list itself. Governs R8.
+- KTD1. **The alert count is reconstructed from lockfiles and advisories.** Parse each Dependabot-scanned npm lockfile, query `GET /advisories?ecosystem=npm&affects=<names>` for reviewed, non-withdrawn advisories, and match versions with semver. `GET /repos/{repo}/dependency-graph/compare/{base}...{head}` reads manifests only: for U1 it lists the removed subtree `package.json` entries with no vulnerabilities, because the subtree lockfile is not one of its inputs, so it corroborates the removal, not the alert count. A token with Dependabot read access is the only reader of the alerts list itself. Governs R8.
 - KTD2. **Each citation is anchored by blame.** The release a citation was verified against is the subtree version in the tree of the commit that wrote the line: `effect@4.0.0-rc.116` (`d62dd0d65252e5d3635538f0e41adc7c08aa9beb`) for the plans of 2026-09-21 and 2026-09-23, `effect@4.0.0-rc.117` (`14a3f140095fdebbff9162944fe7d4ea83e054e6`) for the later four. Both SHAs equal the upstream tags and the `git-subtree-split` trailers of the squash commits `6315eb9e` and `a07187c6`, the second parents of the subtree merges `57044e93` and `9a16f8ec`. Bare file names in the same sentences (`Cause.ts:77`, `Effect.ts:13535`) are citations into the subtree too. Prose that pointed at the vendored source as the live reference (`2026-10-09-1850` KTD11) points at the installed package instead. Governs R2.
-- KTD3. **U1 is two commits.** The docs repoint lands first; the subtree deletion and its `subtrees.toml` entry land second, so all 28 subtree alerts map to one commit. Governs R1, R8.
+- KTD3. **U1 is two commits.** The docs repoint lands first; the subtree deletion and its `subtrees.toml` entry land second, so on the PR branch all 28 subtree alerts map to the deletion commit. A squash merge folds both into the PR's merge commit on main, which then closes all 28. Governs R1, R8.
 - KTD4. **U2's removals are proven dead before deletion.** `@opentelemetry/sdk-node` is declared by `stryker-js-typescript-checker` and `stryker-js-vitest-runner` and imported by neither (the only `NodeSDK` import is `packages/toolchain/vitest-config/lib/otel.js:3`); both bundles set `deps.alwaysBundle: [/./]`, and neither `inlinedDependencies` lists it. `concurrently` is declared by `stryker-js` and `stryker-js-vitest-runner` and invoked by neither. Governs R4.
 - KTD5. **U2 bumps `concurrently` to 10.0.6.** 10.0.5 pins `shell-quote` 1.9.0 exactly; 10.0.6 pins 1.12.0. It stays a dependency: root `prepare` and `packages/ignorers/kit` `api:check` run it. Governs R5.
 - KTD6. **U2's refresh is `pnpm update` over exact names.** brace-expansion (minimatch `^5.0.2`), fast-uri (ajv `^3.0.1`), devalue (svelte `^5.8.1`), source-map-js, and @grpc/grpc-js (otlp-grpc-exporter-base `^1.14.3`) all reach patched releases inside their parents' ranges. The diff may touch only `pnpm-lock.yaml` plus the four manifest edits of KTD4 and KTD5. Governs R6, R7.
@@ -94,7 +94,7 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 - **Requirements:** R1, R2, R3, R8.
 - **Files:** the six plans `docs/plans/2026-09-21-0025-feat-v8-vm-vitest-runner-compatibility-plan.md`, `docs/plans/2026-09-23-1903-feat-effect-concurrency-mutators-plan.md`, `docs/plans/2026-09-26-0550-refactor-idiomatic-effect-rewrite-plan.md`, `docs/plans/2026-10-09-1850-feat-mutant-quality-plan.md`, `docs/plans/2026-10-10-1719-perf-execution-engine-bench-lane-plan.md`, `docs/plans/2026-10-11-1203-fix-e2e-locked-fixtures-plan.md`; `subtrees.toml`; the subtree directory; this plan.
 - **Approach:** repoint per KTD2 in one commit; `git rm -r` the subtree and delete its `subtrees.toml` entry in a second (KTD3).
-- **Verification:** `git grep -nI -e 'repos/effec[t]' -- . ':!*.lock'` exits 1; every permalink's cited line holds the cited symbol at its release; `pnpm install --frozen-lockfile` and `pnpm check:ci` pass; the dependency-graph compare for the PR lists the 28 subtree alerts as removed.
+- **Verification:** `git grep -nI -e 'repos/effec[t]' -- . ':!*.lock' ':!*lock.yaml' ':!*lock.json'` exits 1; every permalink's cited line holds the cited symbol at its release; `pnpm install --frozen-lockfile` and `pnpm check:ci` pass; the dependency-graph compare for the PR lists the subtree manifests as removed.
 
 ### U2. Clear the root-lock alerts that have a patched release
 
@@ -116,11 +116,11 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 
 ## Verification Contract
 
-| Gate                                 | Command                                                                                | Units      |
-| ------------------------------------ | -------------------------------------------------------------------------------------- | ---------- |
-| Formatting                           | `pnpm format:check`                                                                    | U1, U2     |
-| Typecheck, tests, build, api reports | `pnpm check:ci`                                                                        | U1, U2     |
-| Changeset intent                     | the `Changeset Check` workflow (`.github/workflows/changeset-check.yml`) on the PR     | U1, U2     |
-| Dogfood install                      | `nix build .#stryker-published --out-link .sfs-deps && pnpm install --frozen-lockfile` | U1, U2     |
-| Removal is total                     | `git grep -nI -e '<removed identifier>' -- . ':!*.lock'` exits 1                       | U1, U2     |
-| Alerts closed                        | dependency-graph compare for the PR, then the alert count on main after merge          | U1, U2, U3 |
+| Gate                                 | Command                                                                                        | Units      |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------- | ---------- |
+| Formatting                           | `pnpm format:check`                                                                            | U1, U2     |
+| Typecheck, tests, build, api reports | `pnpm check:ci`                                                                                | U1, U2     |
+| Changeset intent                     | the `Changeset Check` workflow (`.github/workflows/changeset-check.yml`) on the PR             | U1, U2     |
+| Dogfood install                      | `nix build .#stryker-published --out-link .sfs-deps && pnpm install --frozen-lockfile`         | U1, U2     |
+| Removal is total                     | `git grep -nI -e '<removed identifier>' -- . ':!*.lock' ':!*lock.yaml' ':!*lock.json'` exits 1 | U1, U2     |
+| Alerts closed                        | the alert count on main after merge, read with Dependabot access (KTD1)                        | U1, U2, U3 |
