@@ -11,16 +11,34 @@ export const DryRunCoverageSchema = S.Struct({
   flakyMutantIds: S.Array(S.String),
   testClosureDigest: S.String,
   runInputsDigest: S.String,
+  projectRoot: S.optionalKey(S.String),
 })
 
 export type DryRunCoverage = S.Schema.Type<typeof DryRunCoverageSchema>
 
-export const DryRunReusePriorSchema = S.Struct({
+export const RecordedRootSchema = S.TaggedStruct('RecordedRoot', { path: S.String })
+
+export const UnrecordedRootSchema = S.TaggedStruct('UnrecordedRoot', {})
+
+export const CoverageRootSchema = S.Union([RecordedRootSchema, UnrecordedRootSchema])
+
+export type CoverageRoot = typeof CoverageRootSchema.Type
+
+export const PriorUnderCurrentRootSchema = S.TaggedStruct('PriorUnderCurrentRoot', {
   testClosureDigest: S.String,
   runInputsDigest: S.String,
 })
 
-export type DryRunReusePrior = S.Schema.Type<typeof DryRunReusePriorSchema>
+export type PriorUnderCurrentRoot = typeof PriorUnderCurrentRootSchema.Type
+
+export const DryRunReusePriorSchema = S.Union([
+  S.TaggedStruct('NoPriorCoverage', {}),
+  PriorUnderCurrentRootSchema,
+  S.TaggedStruct('PriorUnderOtherRoots', {}),
+  S.TaggedStruct('PriorRootUnrecorded', {}),
+])
+
+export type DryRunReusePrior = typeof DryRunReusePriorSchema.Type
 
 export const DryRunRunReasonSchema = S.Literals([
   'noPriorCoverage',
@@ -28,6 +46,8 @@ export const DryRunRunReasonSchema = S.Literals([
   'closureChanged',
   'runInputsChanged',
   'forced',
+  'rootChanged',
+  'rootUnrecorded',
 ])
 
 export type DryRunRunReason = typeof DryRunRunReasonSchema.Type
@@ -39,6 +59,8 @@ export const DryRunPassSchema = S.Struct({
 
 export type DryRunPass = S.Schema.Type<typeof DryRunPassSchema>
 
-export const ReportedDryRunCoverageSchema = S.Struct({ dryRunCoverage: S.optionalKey(DryRunCoverageSchema) })
+export const ReportedDryRunCoverageSchema = S.Struct({
+  dryRunCoverage: S.optionalKey(DryRunCoverageSchema),
+})
 
 export type ReportedDryRunCoverage = S.Schema.Type<typeof ReportedDryRunCoverageSchema>
