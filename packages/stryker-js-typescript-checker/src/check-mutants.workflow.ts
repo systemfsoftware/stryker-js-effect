@@ -1,14 +1,13 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { type Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
 import * as HashMap from 'effect/HashMap'
 import * as Match from 'effect/Match'
 import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { type CheckIgnore, CheckMutantsInput, type DiagnosticDecoded } from './CheckMutants.schema.js'
+import { type CheckIgnore, CheckMutantsInput, type MutantVerdict, VerdictPassed } from './CheckMutants.schema.js'
 
 const CheckTypeId: unique symbol = Symbol.for('@systemfsoftware/stryker-js-typescript-checker/CheckOutcome')
 type CheckTypeId = typeof CheckTypeId
@@ -48,32 +47,25 @@ const ignoreReasonOf = (ignore: CheckIgnore, replacement: string): string =>
     Match.exhaustive,
   )
 
-const outcomeOf = (
-  mutant: Checker.CheckerMutantWire,
-  diagnostics: readonly DiagnosticDecoded[],
-  ignore: CheckIgnore | undefined,
-): CheckOutcome =>
-  Boolean.match(diagnostics.length === 0, {
-    onFalse: () =>
+const outcomeOf = (mutant: Checker.CheckerMutantWire, verdict: Option.Option<MutantVerdict>): CheckOutcome =>
+  Match.value(Option.getOrElse(verdict, () => VerdictPassed.make({ id: mutant.id }))).pipe(
+    Match.tag('VerdictPassed', () => MutantPassed.make({ id: mutant.id })),
+    Match.tag('VerdictFailed', (failed) =>
       MutantFailed.make({
         id: mutant.id,
-        reason: Arr.map(diagnostics, (diagnostic) => diagnostic.rendered).join('\n'),
-      }),
-    onTrue: () =>
-      Option.match(Option.fromUndefinedOr(ignore), {
-        onNone: () => MutantPassed.make({ id: mutant.id }),
-        onSome: (present) => MutantIgnored.make({ id: mutant.id, reason: ignoreReasonOf(present, mutant.replacement) }),
-      }),
-  })
+        reason: Arr.map(failed.diagnostics, (diagnostic) => diagnostic.rendered).join('\n'),
+      })),
+    Match.tag(
+      'VerdictIgnored',
+      (ignored) => MutantIgnored.make({ id: mutant.id, reason: ignoreReasonOf(ignored.ignore, mutant.replacement) }),
+    ),
+    Match.exhaustive,
+  )
 
 const decide = (input: CheckMutantsInput): Result.Result<CheckOutcomes, never> => {
   const verdicts = HashMap.fromIterable(Arr.map(input.verdicts, (verdict) => [verdict.id, verdict] as const))
   return Result.succeed(
-    Arr.map(input.mutants, (mutant) =>
-      Option.match(HashMap.get(verdicts, mutant.id), {
-        onNone: () => outcomeOf(mutant, [], undefined),
-        onSome: (verdict) => outcomeOf(mutant, verdict.diagnostics, verdict.ignore),
-      })),
+    Arr.map(input.mutants, (mutant) => outcomeOf(mutant, HashMap.get(verdicts, mutant.id))),
   )
 }
 

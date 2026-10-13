@@ -1,17 +1,10 @@
 /// <reference types="vitest/importMeta" />
 import { Workflow } from '@systemfsoftware/effect-cell-types'
 import { Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
 export const CheckIgnore = S.Literals(['original', 'sibling', 'always-true', 'always-false'])
 export type CheckIgnore = typeof CheckIgnore.Type
-
-export const ignoreFieldOf = (ignore: CheckIgnore | undefined): { readonly ignore?: CheckIgnore } =>
-  Option.match(Option.fromUndefinedOr(ignore), {
-    onNone: () => ({}),
-    onSome: (present) => ({ ignore: present }),
-  })
 
 export const SourceFileSchema = S.NonEmptyString.pipe(S.check(S.isPattern(/\.[^./\\]+$/u)))
 
@@ -36,11 +29,26 @@ export interface NodeDecodedShape {
   readonly children: readonly NodeDecodedShape[]
 }
 
-export class MutantVerdict extends S.Class<MutantVerdict>('MutantVerdict')({
+export class VerdictPassed extends S.TaggedClass<VerdictPassed>()('VerdictPassed', {
+  id: Mutant.MutantId,
+}) {}
+
+export class VerdictFailed extends S.TaggedClass<VerdictFailed>()('VerdictFailed', {
   id: Mutant.MutantId,
   diagnostics: S.Array(DiagnosticLine),
-  ignore: S.optional(CheckIgnore),
 }) {}
+
+export class VerdictIgnored extends S.TaggedClass<VerdictIgnored>()('VerdictIgnored', {
+  id: Mutant.MutantId,
+  ignore: CheckIgnore,
+}) {}
+
+export const MutantVerdict = S.Union([VerdictPassed, VerdictFailed, VerdictIgnored])
+export type MutantVerdict = typeof MutantVerdict.Type
+
+export const isVerdictPassed = S.is(VerdictPassed)
+export const isVerdictFailed = S.is(VerdictFailed)
+export const isVerdictIgnored = S.is(VerdictIgnored)
 
 export class CheckMutantsInput extends S.TaggedClass<CheckMutantsInput>()(
   'CheckMutantsInput',

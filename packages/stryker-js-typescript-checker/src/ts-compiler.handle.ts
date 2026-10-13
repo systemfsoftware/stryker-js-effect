@@ -62,11 +62,17 @@ import {
   TraceAffectedFilesCommand,
 } from './CheckerCommands.schema.js'
 import {
-  type CheckIgnore,
   type DiagnosticDecoded,
   DiagnosticLine,
   type DiagnosticSeverity,
+  isVerdictFailed,
+  isVerdictIgnored,
+  isVerdictPassed,
+  type MutantVerdict,
   type NodeDecodedShape,
+  VerdictFailed,
+  VerdictIgnored,
+  VerdictPassed,
 } from './CheckMutants.schema.js'
 import type { CheckRound, CheckRounds } from './CheckRound.schema.js'
 import {
@@ -1443,12 +1449,6 @@ interface OwnedSourceFile {
   readonly sourceFile: SourceFile
 }
 
-export interface MutantCheck {
-  readonly mutantId: Checker.CheckerMutantWire['id']
-  readonly diagnostics: ReadonlyArray<DiagnosticDecoded>
-  readonly ignore?: CheckIgnore
-}
-
 const firstHolderOf = (
   projects: ReadonlyArray<Project>,
   fileName: string,
@@ -1696,7 +1696,7 @@ const sizeComparisonOf = (
 
 interface CheckedMutant {
   readonly mutant: Checker.CheckerMutantWire
-  readonly check: MutantCheck
+  readonly check: MutantVerdict
   readonly comparison: Option.Option<SizeComparison>
 }
 
@@ -1907,11 +1907,9 @@ const classifyBatchTce = Effect.fnUntraced(function*(
   rt: TSCompilerRuntime,
   tsconfigFile: string,
   mutants: readonly Checker.CheckerMutantWire[],
-  checked: ReadonlyArray<MutantCheck>,
-): Effect.fn.Return<ReadonlyArray<MutantCheck>, CompilerFailed> {
-  const passedIds = HashSet.fromIterable(
-    Arr.map(Arr.filter(checked, (entry) => entry.diagnostics.length === 0), (entry) => entry.mutantId),
-  )
+  checked: ReadonlyArray<MutantVerdict>,
+): Effect.fn.Return<ReadonlyArray<MutantVerdict>, CompilerFailed> {
+  const passedIds = HashSet.fromIterable(Arr.map(Arr.filter(checked, isVerdictPassed), (entry) => entry.id))
   const passedMutants = Arr.filter(mutants, (mutant) => HashSet.has(passedIds, mutant.id))
   const fileNames = Arr.dedupe(Arr.map(passedMutants, (mutant) => resolveFileName(rt, mutant.fileName)))
   const perFile = yield* Effect.forEach(
@@ -1928,9 +1926,9 @@ const classifyBatchTce = Effect.fnUntraced(function*(
   return Arr.map(
     checked,
     (entry) =>
-      Option.match(Arr.findFirst(decisions, (decision) => decision.id === entry.mutantId), {
+      Option.match(Arr.findFirst(decisions, (decision) => decision.id === entry.id), {
         onNone: () => entry,
-        onSome: (decision) => ({ ...entry, ignore: decision.classification }),
+        onSome: (decision) => VerdictIgnored.make({ id: entry.id, ignore: decision.classification }),
       }),
   )
 })
@@ -1945,13 +1943,13 @@ const booleanLiteralOf = (replacement: string): Option.Option<boolean> =>
 
 const collectionSizeChecked = (
   measured: ReadonlyArray<CheckedMutant>,
-  checked: ReadonlyArray<MutantCheck>,
-): ReadonlyArray<MutantCheck> => {
+  checked: ReadonlyArray<MutantVerdict>,
+): ReadonlyArray<MutantVerdict> => {
   const candidates = Arr.zipWith(measured, checked, ({ mutant, comparison }, entry) => ({
     site: siteKeyOf(mutant),
     candidate: {
       id: mutant.id,
-      kept: Boolean.and(entry.diagnostics.length === 0, entry.ignore === undefined),
+      kept: isVerdictPassed(entry),
       literal: booleanLiteralOf(mutant.replacement),
       comparison,
     },
@@ -1962,16 +1960,17 @@ const collectionSizeChecked = (
   })))
   const always = HashMap.fromIterable(Arr.map(decisions, (decision) => [decision.id, decision.always] as const))
   return Arr.map(checked, (entry) =>
-    Option.match(HashMap.get(always, entry.mutantId), {
+    Option.match(HashMap.get(always, entry.id), {
       onNone: () => entry,
-      onSome: (constant): MutantCheck => ({ ...entry, ignore: constant ? 'always-true' : 'always-false' }),
+      onSome: (constant): MutantVerdict =>
+        VerdictIgnored.make({ id: entry.id, ignore: constant ? 'always-true' : 'always-false' }),
     }))
 }
 
 const classifyBatchCollectionSize = (
   measured: ReadonlyArray<CheckedMutant>,
-  checked: ReadonlyArray<MutantCheck>,
-): ReadonlyArray<MutantCheck> =>
+  checked: ReadonlyArray<MutantVerdict>,
+): ReadonlyArray<MutantVerdict> =>
   Boolean.match(Arr.some(measured, (entry) => Option.isSome(entry.comparison)), {
     onFalse: () => checked,
     onTrue: () => collectionSizeChecked(measured, checked),
@@ -2127,7 +2126,7 @@ type Mutant = Checker.CheckerMutantWire
 
 interface Outcome {
   readonly mutant: Mutant
-  readonly check: MutantCheck
+  readonly check: MutantVerdict
   readonly decision: Option.Option<ImporterShortcutDecision>
   readonly comparison: Option.Option<SizeComparison>
 }
@@ -2268,9 +2267,12 @@ const renderedOf = (
   decision: Option.Option<ImporterShortcutDecision>,
   comparison: Option.Option<SizeComparison>,
 ): Effect.Effect<Outcome> =>
-  Effect.map(describeDiagnostics(ctx.self, diagnostics), (rendered) => ({
+  Effect.map(describeDiagnostics(ctx.self, diagnostics), (rendered): Outcome => ({
     mutant,
-    check: { mutantId: mutant.id, diagnostics: rendered },
+    check: Boolean.match(rendered.length === 0, {
+      onTrue: () => VerdictPassed.make({ id: mutant.id }),
+      onFalse: () => VerdictFailed.make({ id: mutant.id, diagnostics: [...rendered] }),
+    }),
     decision,
     comparison,
   }))
@@ -2475,24 +2477,24 @@ const roundsOf = (
   )
 
 const inInputOrder = (mutants: ReadonlyArray<Mutant>, outcomes: ReadonlyArray<Outcome>): ReadonlyArray<Outcome> => {
-  const byId = HashMap.fromIterable(Arr.map(outcomes, (outcome) => [outcome.check.mutantId, outcome] as const))
+  const byId = HashMap.fromIterable(Arr.map(outcomes, (outcome) => [outcome.check.id, outcome] as const))
   return Arr.getSomes(Arr.map(mutants, (mutant) => HashMap.get(byId, mutant.id)))
 }
 
 export const check: {
   (
     mutants: readonly Checker.CheckerMutantWire[],
-  ): (self: TSCompiler) => Effect.Effect<ReadonlyArray<MutantCheck>, CompilerError>
+  ): (self: TSCompiler) => Effect.Effect<ReadonlyArray<MutantVerdict>, CompilerError>
   (
     self: TSCompiler,
     mutants: readonly Checker.CheckerMutantWire[],
-  ): Effect.Effect<ReadonlyArray<MutantCheck>, CompilerError>
+  ): Effect.Effect<ReadonlyArray<MutantVerdict>, CompilerError>
 } = dual(
   2,
   Effect.fn(SpanTaxonomy.Spans.typescriptCheckerCompilerCheck.name)(function*(
     self: TSCompiler,
     mutants: readonly Checker.CheckerMutantWire[],
-  ): Effect.fn.Return<ReadonlyArray<MutantCheck>, CompilerError> {
+  ): Effect.fn.Return<ReadonlyArray<MutantVerdict>, CompilerError> {
     const rt = runtimeOf(self)
     const steps = checkStepsOf(rt)
     yield* Effect.annotateCurrentSpan({
@@ -2531,12 +2533,13 @@ export const check: {
       lastMutants: [...progress.previous],
       lastMutatedFileNames: fileNamesOf(steps, progress.previous),
     }))
-    const failed = Arr.filter(checked, (entry) => entry.diagnostics.length > 0)
-    const equivalentToOriginal = Arr.filter(checked, (entry) => entry.ignore === 'original').length
-    const duplicateAtSite = Arr.filter(checked, (entry) => entry.ignore === 'sibling').length
+    const failed = Arr.filter(checked, isVerdictFailed)
+    const equivalentToOriginal = Arr.filter(checked, (entry) =>
+      isVerdictIgnored(entry) && entry.ignore === 'original').length
+    const duplicateAtSite = Arr.filter(checked, (entry) => isVerdictIgnored(entry) && entry.ignore === 'sibling').length
     const tally = yield* Ref.get(rt.tally)
     yield* Effect.annotateCurrentSpan({
-      'typescript.diagnostics.count': Arr.reduce(checked, 0, (total, entry) => total + entry.diagnostics.length),
+      'typescript.diagnostics.count': Arr.reduce(failed, 0, (total, entry) => total + entry.diagnostics.length),
       'typescript.compile_errors.count': failed.length,
       'typescript.tce.equivalent_to_original.count': equivalentToOriginal,
       'typescript.tce.duplicate_at_site.count': duplicateAtSite,
@@ -2547,7 +2550,7 @@ export const check: {
       'typescript.tce.ms': tally.tceMs,
       ...shortcutCountsOf({ importerCheck: mode, decisions: Arr.map(outcomes, (outcome) => outcome.decision) }),
     })
-    yield* annotateDiagnosticSample(Arr.flatten(Arr.map(failed, (entry) => entry.diagnostics)))
+    yield* annotateDiagnosticSample(Arr.flatMap(failed, (entry) => entry.diagnostics))
     return checked
   }),
 )

@@ -7,7 +7,7 @@ import * as Option from 'effect/Option'
 import * as Result from 'effect/Result'
 
 import { checkMutants, type CheckOutcome } from '../check-mutants.workflow.js'
-import { CheckMutantsInput, type DiagnosticDecoded, MutantVerdict } from '../CheckMutants.schema.js'
+import { CheckMutantsInput, type DiagnosticDecoded, type MutantVerdict, VerdictPassed } from '../CheckMutants.schema.js'
 
 type Status = 'passed' | 'compileError' | 'ignored'
 
@@ -25,25 +25,32 @@ const expectedOutcomes = (input: CheckMutantsInput): ReadonlyArray<Expected> => 
   return Arr.map(input.mutants, (mutant) => {
     const verdict: MutantVerdict = Option.getOrElse(
       HashMap.get(verdicts, mutant.id),
-      () => MutantVerdict.make({ id: mutant.id, diagnostics: [] }),
+      () => VerdictPassed.make({ id: mutant.id }),
     )
-    const reason = Arr.map(verdict.diagnostics, renderedLine).join('\n')
-    if (reason !== '') return { id: mutant.id, status: 'compileError' as const, reason }
-    if (verdict.ignore === 'original') {
-      return { id: mutant.id, status: 'ignored' as const, reason: 'equivalent-to-original: tce' }
-    }
-    if (verdict.ignore === 'sibling') {
-      return { id: mutant.id, status: 'ignored' as const, reason: 'duplicate-at-site: tce' }
-    }
-    if (verdict.ignore === 'always-true' || verdict.ignore === 'always-false') {
-      const constant = verdict.ignore === 'always-true' ? 'true' : 'false'
-      return {
+    return Match.value(verdict).pipe(
+      Match.tag('VerdictFailed', (failed): Expected => ({
         id: mutant.id,
-        status: 'ignored' as const,
-        reason: `constant-collection-size: ${mutant.replacement} is always ${constant}`,
-      }
-    }
-    return { id: mutant.id, status: 'passed' as const, reason: '' }
+        status: 'compileError' as const,
+        reason: Arr.map(failed.diagnostics, renderedLine).join('\n'),
+      })),
+      Match.tag('VerdictIgnored', (ignored): Expected => {
+        const ignore = ignored.ignore
+        if (ignore === 'original') {
+          return { id: mutant.id, status: 'ignored' as const, reason: 'equivalent-to-original: tce' }
+        }
+        if (ignore === 'sibling') {
+          return { id: mutant.id, status: 'ignored' as const, reason: 'duplicate-at-site: tce' }
+        }
+        const constant = ignore === 'always-true' ? 'true' : 'false'
+        return {
+          id: mutant.id,
+          status: 'ignored' as const,
+          reason: `constant-collection-size: ${mutant.replacement} is always ${constant}`,
+        }
+      }),
+      Match.tag('VerdictPassed', (): Expected => ({ id: mutant.id, status: 'passed' as const, reason: '' })),
+      Match.exhaustive,
+    )
   })
 }
 
