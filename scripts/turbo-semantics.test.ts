@@ -262,6 +262,42 @@ const hashOf = async (dir: string, taskId: string): Promise<string> => {
   return task.hash
 }
 
+interface ResolvedDefinition {
+  readonly dependsOn: ReadonlyArray<string>
+  readonly env: ReadonlyArray<string>
+  readonly inputs: ReadonlyArray<string>
+}
+
+const stringsOf = (value: unknown, label: string): ReadonlyArray<string> => {
+  if (!Array.isArray(value) || !value.every((item): item is string => typeof item === 'string')) {
+    throw new Error(`unexpected ${label}: ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
+const resolvedDefinitionOf = async (dir: string, taskId: string): Promise<ResolvedDefinition> => {
+  const ran = await turboRun(dir, { affected: false })
+  if (ran.code !== 0) throw new Error(`turbo run failed: ${ran.stderr}`)
+  const parsed: unknown = JSON.parse(ran.stdout)
+  if (typeof parsed !== 'object' || parsed === null || !('tasks' in parsed) || !Array.isArray(parsed.tasks)) {
+    throw new Error(`unexpected dry-run output: ${ran.stdout.slice(0, 200)}`)
+  }
+  const task: unknown = parsed.tasks.find((raw: unknown) => taskEntryOf(raw)?.taskId === taskId)
+  if (typeof task !== 'object' || task === null || !('resolvedTaskDefinition' in task)) {
+    throw new Error(`task ${taskId} has no resolved definition`)
+  }
+  const definition = task.resolvedTaskDefinition
+  if (typeof definition !== 'object' || definition === null) {
+    throw new Error(`task ${taskId} definition is not an object`)
+  }
+  const field = (name: string): unknown => (name in definition ? Reflect.get(definition, name) : undefined)
+  return {
+    dependsOn: stringsOf(field('dependsOn'), `${taskId} dependsOn`),
+    env: stringsOf(field('env'), `${taskId} env`),
+    inputs: stringsOf(field('inputs'), `${taskId} inputs`),
+  }
+}
+
 const queryAffectedTaskCount = async (dir: string, base: string, headRef: string): Promise<number> => {
   const query = `query { affectedTasks(base: "${base}", head: "${headRef}", tasks: ${
     JSON.stringify(TASKS)
@@ -344,6 +380,58 @@ Deno.test("a $TURBO_ROOT$ input selects the reader while $TURBO_EXTENDS$ keeps t
     await write(dir, 'packages/b/README.md', 'readme\n')
     await commit(dir, 'child readme edit')
     assertEqual(await selectedTasks(dir, { base }), [], "the parent's README negation still applies under extension")
+  })
+})
+
+const rootEntryTurboJson = (entry: string): string =>
+  `{
+  "$schema": "${SCHEMA}",
+  "futureFlags": { "affectedUsingTaskInputs": true, "githubActionsRemoteBaseRefFallback": true },
+  "tasks": {
+    "//#root": {},
+    "build": { "inputs": ["src/**"], "outputs": [] },
+    "test": { "inputs": ["src/**"], "outputs": [], "dependsOn": ["build"], "env": ["NODE_ENV"] },
+    "@probe/b#test": ${entry}
+  }
+}
+`
+
+Deno.test("$TURBO_EXTENDS$ in a root package-task entry keeps none of the generic task's dependsOn, env or inputs", async () => {
+  const extending = rootEntryTurboJson('{ "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/shared.txt"] }')
+  await withRepo({ rootTurboJson: extending }, async (dir) => {
+    const generic = await resolvedDefinitionOf(dir, '@probe/a#test')
+    assertEqual(generic, { dependsOn: ['build'], env: ['NODE_ENV'], inputs: ['src/**'] }, 'the generic task resolves')
+    const entry = await resolvedDefinitionOf(dir, '@probe/b#test')
+    assertEqual(entry.dependsOn, [], 'the root entry drops the generic dependsOn')
+    assertEqual(entry.env, [], 'the root entry drops the generic env')
+    assert(
+      !entry.inputs.includes('src/**'),
+      `the root entry drops the generic inputs, got ${JSON.stringify(entry.inputs)}`,
+    )
+  })
+})
+
+Deno.test('a $TURBO_ROOT$ read in a complete root package-task entry moves only that reader and selects it with its dependencies', async () => {
+  const complete = rootEntryTurboJson(
+    '{ "inputs": ["src/**", "$TURBO_ROOT$/shared.txt"], "outputs": [], "dependsOn": ["build"], "env": ["NODE_ENV"] }',
+  )
+  await withRepo({ rootTurboJson: complete }, async (dir) => {
+    const base = await head(dir)
+    const entry = await resolvedDefinitionOf(dir, '@probe/b#test')
+    assertEqual([entry.dependsOn, entry.env], [['build'], ['NODE_ENV']], 'a complete entry keeps what it declares')
+    const before = await dryRun(dir, { affected: false })
+    await write(dir, 'shared.txt', 'shared\nmore\n')
+    const after = await dryRun(dir, { affected: false })
+    const moved = after
+      .filter((task) => before.find((prior) => prior.taskId === task.taskId)?.hash !== task.hash)
+      .map((task) => task.taskId)
+    assertEqual(moved, ['@probe/b#test'], 'only the reader of the root file changes hash')
+    await commit(dir, 'root input edit')
+    assertEqual(
+      await selectedTasks(dir, { base }),
+      ['@probe/b#build', '@probe/b#test'],
+      'the reader is selected with the build it depends on',
+    )
   })
 })
 
