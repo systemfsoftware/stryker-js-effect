@@ -1,25 +1,28 @@
-import { NodeFileSystem, NodePath } from '@effect/platform-node'
-import { Gherkin, Given, it, makeFeature, Then } from '@systemfsoftware/effect-gherkin-spec'
+import { Gherkin, Given, it, makeFeature, Then, When } from '@systemfsoftware/effect-gherkin-spec'
 import { Engine } from '@systemfsoftware/stryker-js'
-import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
-import type { Options } from '@systemfsoftware/stryker-js-plugin-interface'
-import type * as Cause from 'effect/Cause'
 import * as Effect from 'effect/Effect'
-import * as Exit from 'effect/Exit'
+import * as Fiber from 'effect/Fiber'
 import * as FileSystem from 'effect/FileSystem'
-import * as Layer from 'effect/Layer'
+import * as Option from 'effect/Option'
 import * as Path from 'effect/Path'
-import * as Queue from 'effect/Queue'
+import * as ChildProcess from 'effect/process/ChildProcess'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
 import * as S from 'effect/Schema'
+import * as Scope from 'effect/Scope'
+import * as Stream from 'effect/Stream'
+
+import { MutationReport, type ReportRow } from './__fixtures__/uncovered-block-report.schema.js'
 
 const Feature = makeFeature({ it })
 
-const filePorts = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-
 const PACKAGE_ROOT = decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/\/$/, '')
+const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.url).pathname)
 
 const BLOCK_CHECKER_PLUGIN = new URL('./__fixtures__/guarded-block-checker/index.mjs', import.meta.url).href
+
+const REPORT_FILE = 'reports/mutation/mutation.json'
+const CONFIG_FILE = 'stryker.config.mjs'
 
 const WORK_FILE = 'src/lib/work.ts'
 
@@ -91,181 +94,188 @@ const workspaceFilesOf = (
   testSource: string,
   workSource: string = WORK_SOURCE,
 ): ReadonlyArray<readonly [string, string]> => [
+  ['package.json', '{ "type": "commonjs" }\n'],
   ['vitest.config.ts', VITEST_CONFIG_SOURCE],
   [WORK_FILE, workSource],
   ['test/sample.test.mjs', testSource],
 ]
 
-interface Workspace {
-  readonly directory: string
+interface RunOptions {
+  readonly checkers?: ReadonlyArray<{ readonly plugin: string }>
+  readonly coverageAnalysis?: 'perTest' | 'all'
+  readonly mutantSetPolicy?: 'full'
 }
 
-const environmentFor = (directory: string): Engine.RunEnvironmentShape => ({
-  runId: '01ARZ3NDEKTSV4RRFFQ69G5FAX',
-  resolvedMode: { mode: 'machine', signal: 'flag', stdoutIsTTY: false },
-  runStartedAt: 0,
-  basePath: directory,
-  builtinReporters: {},
-  allowConsoleColors: false,
-})
+const configSourceOf = (options: RunOptions): string =>
+  `export default ${
+    JSON.stringify(
+      {
+        testRunner: 'vm',
+        plugins: [],
+        checkers: options.checkers ?? [],
+        testFiles: ['test/**/*.mjs'],
+        mutate: ['src/**/*.ts'],
+        coverageAnalysis: options.coverageAnalysis ?? 'perTest',
+        concurrency: 1,
+        reporters: ['json'],
+        cleanTempDir: 'always',
+        ...(options.mutantSetPolicy === undefined ? {} : { mutator: { mutantSetPolicy: options.mutantSetPolicy } }),
+      },
+      null,
+      2,
+    )
+  }\n`
 
-const writeWorkspace = (
-  files: ReadonlyArray<readonly [string, string]>,
-): Effect.Effect<Workspace, never, FileSystem.FileSystem | Path.Path> =>
+const decodeReport = S.decodeUnknownOption(S.fromJsonString(MutationReport))
+
+interface Project {
+  readonly root: string
+}
+
+interface StrykerRun {
+  readonly exitCode: number
+  readonly stderr: string
+}
+
+const requireBinary = (): Effect.Effect<void, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const binaryPresent = yield* fs.exists(STRYKER_BIN)
+    yield* Effect.when(
+      Effect.die(new Error('dist/main.mjs is missing — build the package first')),
+      Effect.succeed(!binaryPresent),
+    )
+  }).pipe(Effect.orDie)
+
+const prepareProject = (
+  testSource: string,
+  options: RunOptions = {},
+  workSource: string = WORK_SOURCE,
+): Effect.Effect<Project, never, FileSystem.FileSystem | Path.Path | Scope.Scope> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const directory = yield* fs.realPath(yield* fs.makeTempDirectory({ prefix: 'stryker-uncovered-block-' }))
-    yield* fs.writeFileString(path.join(directory, 'package.json'), '{ "type": "commonjs" }\n')
+    yield* requireBinary()
+    const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-uncovered-block-' }))
     yield* Effect.forEach(
-      files,
+      workspaceFilesOf(testSource, workSource),
       ([name, content]) =>
         Effect.gen(function*() {
-          const target = path.join(directory, name)
+          const target = path.join(root, name)
           yield* fs.makeDirectory(path.dirname(target), { recursive: true })
           yield* fs.writeFileString(target, content)
         }),
       { discard: true },
     )
-    yield* fs.symlink(path.join(PACKAGE_ROOT, 'node_modules'), path.join(directory, 'node_modules'))
-    return { directory }
+    yield* fs.writeFileString(path.join(root, CONFIG_FILE), configSourceOf(options))
+    yield* fs.symlink(path.join(PACKAGE_ROOT, 'node_modules'), path.join(root, 'node_modules'))
+    return { root }
   }).pipe(Effect.orDie)
 
-const removeWorkspace = (directory: string): Effect.Effect<void, never, never> =>
-  Effect.provide(
-    Effect.orDie(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(directory, { recursive: true, force: true }))),
-    filePorts,
+const runStryker = (root: string): Effect.Effect<StrykerRun, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+      const handle = yield* spawner.spawn(
+        ChildProcess.make(globalThis.process.execPath, [STRYKER_BIN, 'run'], {
+          cwd: root,
+          stdin: 'ignore',
+          stdout: 'pipe',
+          stderr: 'pipe',
+          env: { STRYKER_MODE: 'machine', NO_COLOR: '1', GITHUB_ACTIONS: '', ALLOW_LOCAL_MUTATION: '1' },
+          extendEnv: true,
+        }),
+      )
+      const drained = yield* Effect.forkScoped(handle.stdout.pipe(Stream.decodeText, Stream.runDrain))
+      const printedErr = yield* Effect.forkScoped(handle.stderr.pipe(Stream.decodeText, Stream.mkString))
+      const exitCode = yield* handle.exitCode
+      yield* Fiber.join(drained)
+      return { exitCode: Number(exitCode), stderr: yield* Fiber.join(printedErr) }
+    }),
+  ).pipe(Effect.orDie)
+
+const readReport = (
+  root: string,
+  ran: StrykerRun,
+): Effect.Effect<readonly ReportRow[], never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const text = yield* fs.readFileString(path.join(root, REPORT_FILE)).pipe(
+      Effect.catch(() =>
+        Effect.die(new Error(`the run wrote no ${REPORT_FILE} (exit ${ran.exitCode})\n${ran.stderr}`))
+      ),
+    )
+    const report = Option.getOrThrowWith(
+      decodeReport(text),
+      () => new Error(`the run wrote an unreadable ${REPORT_FILE}: ${text.slice(0, 200)}`),
+    )
+    return Object.values(report.files).flatMap((file) => file.mutants)
+  }).pipe(Effect.orDie)
+
+const onConditionLine = (row: ReportRow): boolean =>
+  row.location.start.line === CONDITION_LINE && row.location.end.line === CONDITION_LINE
+
+const inBlockBody = (row: ReportRow): boolean => row.location.start.line === BLOCK_BODY_LINE
+
+const consequentBlockMutantsOf = (rows: readonly ReportRow[]): readonly ReportRow[] =>
+  rows.filter((row) =>
+    row.mutatorName === 'BlockStatement' &&
+    row.location.start.line === CONDITION_LINE &&
+    row.location.end.line === BLOCK_END_LINE
   )
 
-type CheckerSpec = NonNullable<Options.PartialStrykerOptions['checkers']>[number]
-
-const cliOptionsOf = (
-  directory: string,
-  checkers: readonly CheckerSpec[],
-  extras: Options.PartialStrykerOptions,
-): Options.PartialStrykerOptions => ({
-  testRunner: 'vm',
-  plugins: [],
-  reporters: [],
-  checkers,
-  testFiles: ['test/**/*.mjs'],
-  mutate: ['src/**/*.ts'],
-  coverageAnalysis: 'perTest',
-  concurrency: 1,
-  tempDirName: `.stryker-tmp-${directory.slice(directory.lastIndexOf('/') + 1)}`,
-  cleanTempDir: 'always',
-  incremental: false,
-  ...extras,
-})
-
-interface RunObservation {
-  readonly exit: Exit.Exit<Engine.MutationTestDone, Engine.StageError>
-  readonly results: readonly Mutant.RunMutantResult[]
-}
-
-const runEngine = (
-  directory: string,
-  checkers: readonly CheckerSpec[],
-  extras: Options.PartialStrykerOptions,
-): Effect.Effect<RunObservation, never, never> =>
-  Effect.gen(function*() {
-    const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
-    const ports = Engine.nodePlatformLayer
-    const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.layerStage(environmentFor(directory), queue), ports),
-      ports,
-    )
-    const exit = yield* Engine.mutationTestCell
-      .run({ cliOptions: cliOptionsOf(directory, checkers, extras), targetMutatePatterns: undefined })
-      .pipe(Effect.provide(runLayer), Effect.scoped, Effect.exit)
-    if (Exit.isFailure(exit)) {
-      return yield* Effect.die(exit.cause)
-    }
-    yield* Queue.end(queue).pipe(
-      Effect.andThen(Queue.takeAll(queue)),
-      Effect.orElseSucceed((): ReadonlyArray<RunEvent.RunEvent> => []),
-    )
-    return { exit, results: exit.value.results }
-  }).pipe(Effect.orDie, Effect.provide(filePorts))
-
-const runWorkspace = (
-  files: ReadonlyArray<readonly [string, string]>,
-  checkers: readonly CheckerSpec[],
-  extras: Options.PartialStrykerOptions = {},
-): Effect.Effect<RunObservation, never, never> =>
-  Effect.gen(function*() {
-    const workspace = yield* writeWorkspace(files)
-    return yield* Effect.ensuring(
-      runEngine(workspace.directory, checkers, extras),
-      removeWorkspace(workspace.directory),
-    )
-  }).pipe(Effect.orDie, Effect.provide(filePorts))
-
-const onConditionLine = (result: Mutant.RunMutantResult): boolean =>
-  result.location.start.line === CONDITION_LINE && result.location.end.line === CONDITION_LINE
-
-const inBlockBody = (result: Mutant.RunMutantResult): boolean => result.location.start.line === BLOCK_BODY_LINE
-
-const consequentBlockMutantsOf = (results: readonly Mutant.RunMutantResult[]): readonly Mutant.RunMutantResult[] =>
-  results.filter((result) =>
-    result.mutatorName === 'BlockStatement' &&
-    result.location.start.line === CONDITION_LINE &&
-    result.location.end.line === BLOCK_END_LINE
-  )
-
-const aridIgnoredOf = (results: readonly Mutant.RunMutantResult[]): readonly Mutant.RunMutantResult[] =>
-  results.filter((result) => result.status === 'Ignored' && (result.statusReason ?? '').startsWith(ARID_PREFIX))
+const aridIgnoredOf = (rows: readonly ReportRow[]): readonly ReportRow[] =>
+  rows.filter((row) => row.status === 'Ignored' && (row.statusReason ?? '').startsWith(ARID_PREFIX))
 
 const idsInReason = (reason: string | undefined): readonly string[] => reason?.match(/[0-9a-f]{16}/gu) ?? []
 
 const ranStatus = (status: Mutant.MutantStatus): boolean => status === 'Killed' || status === 'Survived'
 
-const refusalShapeOf = (observation: RunObservation) => {
-  const conditions = observation.results.filter(onConditionLine)
+const refusalShapeOf = (ran: StrykerRun, rows: readonly ReportRow[]) => {
+  const conditions = rows.filter(onConditionLine)
   return {
-    runSucceeded: Exit.isSuccess(observation.exit),
-    aridReasons: aridIgnoredOf(observation.results).length,
+    exitCode: ran.exitCode,
+    aridReasons: aridIgnoredOf(rows).length,
     conditionCount: conditions.length,
-    everyConditionRan: conditions.length > 0 && conditions.every((result) => ranStatus(result.status)),
+    everyConditionRan: conditions.length > 0 && conditions.every((row) => ranStatus(row.status)),
   }
 }
 
-Feature('Holding a condition mutant whose guarded block no test runs')
-  .withLayer(Layer.empty)
-  .live('each scenario drives the real engine in-process over a workspace and the vm test runner')
+Feature('Holding a condition mutant whose guarded block no test runs', { timeout: 180_000 })
+  .withLayer(Engine.nodePlatformLayer)
+  .live('the built stryker binary runs each fixture project in a real Node process and the report on disk is read back')
   .body(({ scenario }) => {
     scenario(
       'A perTest run whose test never enters the block ignores the condition mutants as arid-uncovered-block and leaves the block mutants NoCoverage',
       Gherkin.Do.pipe(
         Given('a project whose only test calls the guarded function with the flag false')(
-          'observation',
-          () => runWorkspace(workspaceFilesOf(UNVISITED_TEST_SOURCE), []),
+          'project',
+          () => prepareProject(UNVISITED_TEST_SOURCE),
         ),
+        When('stryker runs it')('ran', (s) => runStryker(s.project.root)),
+        When('the written mutation report is read back')('rows', (s) => readReport(s.project.root, s.ran)),
         Then('every condition mutant is Ignored arid and every block member is NoCoverage')((s, expect) => {
-          const conditions = s.observation.results.filter(onConditionLine)
-          const inside = s.observation.results.filter(inBlockBody)
-          const blocks = consequentBlockMutantsOf(s.observation.results)
-          const arid = aridIgnoredOf(s.observation.results)
-          const namedIds = [...new Set(arid.flatMap((result) => idsInReason(result.statusReason)))]
-          const statusById = new Map<string, Mutant.MutantStatus>(
-            s.observation.results.map((result) => [result.id, result.status]),
-          )
+          const conditions = s.rows.filter(onConditionLine)
+          const inside = s.rows.filter(inBlockBody)
+          const blocks = consequentBlockMutantsOf(s.rows)
+          const arid = aridIgnoredOf(s.rows)
+          const namedIds = [...new Set(arid.flatMap((row) => idsInReason(row.statusReason)))]
+          const statusById = new Map<string, Mutant.MutantStatus>(s.rows.map((row) => [row.id, row.status]))
           return expect({
-            runSucceeded: Exit.isSuccess(s.observation.exit),
+            exitCode: s.ran.exitCode,
             conditionCount: conditions.length,
             everyConditionIsArid: conditions.length > 0 &&
-              conditions.every((result) =>
-                result.status === 'Ignored' && (result.statusReason ?? '').startsWith(ARID_PREFIX)
-              ),
+              conditions.every((row) => row.status === 'Ignored' && (row.statusReason ?? '').startsWith(ARID_PREFIX)),
             aridIsOnlyConditions: arid.length === conditions.length,
             insideCountPositive: inside.length > 0,
-            everyInsideIsNoCoverage: inside.length > 0 && inside.every((result) => result.status === 'NoCoverage'),
+            everyInsideIsNoCoverage: inside.length > 0 && inside.every((row) => row.status === 'NoCoverage'),
             consequentBlockCount: blocks.length,
             consequentBlockNoCoverage: blocks.length === 1 && blocks[0]?.status === 'NoCoverage',
             namedMembersNoCoverage: namedIds.length > 0 &&
               namedIds.every((id) => statusById.get(id) === 'NoCoverage'),
           }).toEqual({
-            runSucceeded: true,
+            exitCode: 0,
             conditionCount: 2,
             everyConditionIsArid: true,
             aridIsOnlyConditions: true,
@@ -285,19 +295,21 @@ Feature('Holding a condition mutant whose guarded block no test runs')
         Given(
           'a project whose only test calls the guarded function with the flag false, under a checker that rejects the block mutants',
         )(
-          'observation',
-          () => runWorkspace(workspaceFilesOf(UNVISITED_TEST_SOURCE), [{ plugin: BLOCK_CHECKER_PLUGIN }]),
+          'project',
+          () => prepareProject(UNVISITED_TEST_SOURCE, { checkers: [{ plugin: BLOCK_CHECKER_PLUGIN }] }),
         ),
+        When('stryker runs it')('ran', (s) => runStryker(s.project.root)),
+        When('the written mutation report is read back')('rows', (s) => readReport(s.project.root, s.ran)),
         Then('the block mutants are CompileError and the condition mutants ran')((s, expect) => {
-          const blocks = s.observation.results.filter((result) => result.mutatorName === 'BlockStatement')
-          const inside = s.observation.results.filter(inBlockBody)
+          const blocks = s.rows.filter((row) => row.mutatorName === 'BlockStatement')
+          const inside = s.rows.filter(inBlockBody)
           return expect({
-            ...refusalShapeOf(s.observation),
+            ...refusalShapeOf(s.ran, s.rows),
             everyBlockIsCompileError: blocks.length > 0 &&
-              blocks.every((result) => result.status === 'CompileError'),
-            everyInsideIsCompileError: inside.length > 0 && inside.every((result) => result.status === 'CompileError'),
+              blocks.every((row) => row.status === 'CompileError'),
+            everyInsideIsCompileError: inside.length > 0 && inside.every((row) => row.status === 'CompileError'),
           }).toEqual({
-            runSucceeded: true,
+            exitCode: 0,
             aridReasons: 0,
             conditionCount: 2,
             everyConditionRan: true,
@@ -312,12 +324,14 @@ Feature('Holding a condition mutant whose guarded block no test runs')
       'A test that enters the guarded block keeps the condition mutants out of the arid ruling',
       Gherkin.Do.pipe(
         Given('a project whose tests call the guarded function with both flag values')(
-          'observation',
-          () => runWorkspace(workspaceFilesOf(VISITED_TEST_SOURCE), []),
+          'project',
+          () => prepareProject(VISITED_TEST_SOURCE),
         ),
+        When('stryker runs it')('ran', (s) => runStryker(s.project.root)),
+        When('the written mutation report is read back')('rows', (s) => readReport(s.project.root, s.ran)),
         Then('no mutant is ignored arid and the condition mutants ran')((s, expect) =>
-          expect(refusalShapeOf(s.observation)).toEqual({
-            runSucceeded: true,
+          expect(refusalShapeOf(s.ran, s.rows)).toEqual({
+            exitCode: 0,
             aridReasons: 0,
             conditionCount: 2,
             everyConditionRan: true,
@@ -330,12 +344,14 @@ Feature('Holding a condition mutant whose guarded block no test runs')
       'A test that runs the else block keeps the condition mutants out of the arid ruling',
       Gherkin.Do.pipe(
         Given('a project whose only test calls the function with the flag false, so its else block runs')(
-          'observation',
-          () => runWorkspace(workspaceFilesOf(UNVISITED_TEST_SOURCE, ELSE_WORK_SOURCE), []),
+          'project',
+          () => prepareProject(UNVISITED_TEST_SOURCE, {}, ELSE_WORK_SOURCE),
         ),
+        When('stryker runs it')('ran', (s) => runStryker(s.project.root)),
+        When('the written mutation report is read back')('rows', (s) => readReport(s.project.root, s.ran)),
         Then('no mutant is ignored arid and the condition mutants ran')((s, expect) =>
-          expect(refusalShapeOf(s.observation)).toEqual({
-            runSucceeded: true,
+          expect(refusalShapeOf(s.ran, s.rows)).toEqual({
+            exitCode: 0,
             aridReasons: 0,
             conditionCount: 2,
             everyConditionRan: true,
@@ -348,19 +364,21 @@ Feature('Holding a condition mutant whose guarded block no test runs')
       'A subsumed condition mutant whose dominators are held arid is readmitted and settles exactly once',
       Gherkin.Do.pipe(
         Given('a project whose guarded if tests a relational condition no test makes true')(
-          'observation',
-          () => runWorkspace(workspaceFilesOf(UNVISITED_TEST_SOURCE, RELATIONAL_WORK_SOURCE), []),
+          'project',
+          () => prepareProject(UNVISITED_TEST_SOURCE, {}, RELATIONAL_WORK_SOURCE),
         ),
+        When('stryker runs it')('ran', (s) => runStryker(s.project.root)),
+        When('the written mutation report is read back')('rows', (s) => readReport(s.project.root, s.ran)),
         Then('every mutant id has one result, and a readmitted condition mutant ran')((s, expect) => {
-          const ids = s.observation.results.map((result) => result.id)
+          const ids = s.rows.map((row) => row.id)
           return expect({
-            runSucceeded: Exit.isSuccess(s.observation.exit),
+            exitCode: s.ran.exitCode,
             resultCount: ids.length,
-            readmittedConditionRan: s.observation.results.filter(onConditionLine).some((result) =>
-              S.is(Mutant.Readmitted)(result.subsumption) && ranStatus(result.status)
+            readmittedConditionRan: s.rows.filter(onConditionLine).some((row) =>
+              S.is(Mutant.Readmitted)(row.subsumption) && ranStatus(row.status)
             ),
           }).toEqual({
-            runSucceeded: true,
+            exitCode: 0,
             resultCount: new Set(ids).size,
             readmittedConditionRan: true,
           })
@@ -372,12 +390,14 @@ Feature('Holding a condition mutant whose guarded block no test runs')
       'coverageAnalysis all leaves no mutant ignored arid',
       Gherkin.Do.pipe(
         Given('a project whose only test calls the guarded function with the flag false, under coverageAnalysis all')(
-          'observation',
-          () => runWorkspace(workspaceFilesOf(UNVISITED_TEST_SOURCE), [], { coverageAnalysis: 'all' }),
+          'project',
+          () => prepareProject(UNVISITED_TEST_SOURCE, { coverageAnalysis: 'all' }),
         ),
+        When('stryker runs it')('ran', (s) => runStryker(s.project.root)),
+        When('the written mutation report is read back')('rows', (s) => readReport(s.project.root, s.ran)),
         Then('no mutant is ignored arid and the condition mutants ran')((s, expect) =>
-          expect(refusalShapeOf(s.observation)).toEqual({
-            runSucceeded: true,
+          expect(refusalShapeOf(s.ran, s.rows)).toEqual({
+            exitCode: 0,
             aridReasons: 0,
             conditionCount: 2,
             everyConditionRan: true,
@@ -392,15 +412,14 @@ Feature('Holding a condition mutant whose guarded block no test runs')
         Given(
           'a project whose only test calls the guarded function with the flag false, under the full mutant set policy',
         )(
-          'observation',
-          () =>
-            runWorkspace(workspaceFilesOf(UNVISITED_TEST_SOURCE), [], {
-              mutator: { mutantSetPolicy: 'full' },
-            }),
+          'project',
+          () => prepareProject(UNVISITED_TEST_SOURCE, { mutantSetPolicy: 'full' }),
         ),
+        When('stryker runs it')('ran', (s) => runStryker(s.project.root)),
+        When('the written mutation report is read back')('rows', (s) => readReport(s.project.root, s.ran)),
         Then('no mutant is ignored arid and the condition mutants ran')((s, expect) =>
-          expect(refusalShapeOf(s.observation)).toEqual({
-            runSucceeded: true,
+          expect(refusalShapeOf(s.ran, s.rows)).toEqual({
+            exitCode: 0,
             aridReasons: 0,
             conditionCount: 2,
             everyConditionRan: true,
