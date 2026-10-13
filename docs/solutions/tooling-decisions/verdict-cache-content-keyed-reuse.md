@@ -108,7 +108,10 @@ Both hide behind a green run. A cache keyed on anything a run happens to carry
   a header fallback admits another root's coverage. Among several restored
   reports, the `dryRunCandidates` workflow keeps only those whose recorded
   root is the current root, and the closure inputs, the reused prior, the
-  planner's prices, and the flaky mutant ids all come from the kept ones.
+  planner's dry-run cost, and the flaky mutant ids all come from the kept ones.
+  Mutant costs (`reportCostsOf`) are read from every admitted report, but they
+  are keyed by the mutant id, and `mutantIdOf` hashes the absolute file path, so
+  another root's entries never match a current mutant.
 - **The fingerprint carries only behavior-affecting inputs.** Exclude
   scope-only options (the `mutate` patterns, `since`, explicit mutant ids) and
   every environment-derived or presentation option (reporters, console colors,
