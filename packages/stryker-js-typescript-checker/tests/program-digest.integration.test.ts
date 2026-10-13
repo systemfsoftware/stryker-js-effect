@@ -879,4 +879,28 @@ Feature('Identifying the TypeScript program and configuration a checker resolves
         ),
       ),
     )
+
+    scenario(
+      'changing the importerCheck option moves the digest while repeating one value keeps it',
+      Gherkin.Do.pipe(
+        Given('one program digested under both importerCheck values and under one of them twice')(
+          'observed',
+          () =>
+            withWorkspace((workspace) =>
+              Effect.gen(function*() {
+                const always = yield* digestOf(workspace.directory, { importerCheck: 'always' })
+                const locationRule = yield* digestOf(workspace.directory, { importerCheck: 'location-rule' })
+                const alwaysAgain = yield* digestOf(workspace.directory, { importerCheck: 'always' })
+                return { always, locationRule, alwaysAgain }
+              })
+            ),
+        ),
+        Then('the two values differ and the repeated value agrees with itself')((s, expect) =>
+          expect({
+            moved: s.observed.always !== s.observed.locationRule,
+            stable: s.observed.always === s.observed.alwaysAgain,
+          }).toEqual({ moved: true, stable: true })
+        ),
+      ),
+    )
   })

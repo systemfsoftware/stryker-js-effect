@@ -1,6 +1,6 @@
 import { Config, Effect, Layer, Option } from 'effect'
 
-import { seamSpan, SpanNames } from './harness-telemetry.service.js'
+import { seamSpan, SpanNames } from './harness-telemetry.js'
 import {
   type ForkedRun,
   type ForkedStreamedRun,

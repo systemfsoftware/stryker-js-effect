@@ -1,9 +1,8 @@
-import { decodeStream as decodeStreamWorkflow, DecodeStreamCommand } from '@systemfsoftware/stryker-e2e-core'
-import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Stimulus } from '@systemfsoftware/trace-spec'
 import { VitestTestContext } from '@systemfsoftware/vitest'
-import { Effect, Layer, Option, Result, Schema as S } from 'effect'
+import { Effect, Layer, Option, Result, Schema } from 'effect'
 import type { Config, Scope } from 'effect'
 
 import { BakedFixtureCache } from '../../src/Harness/fixture-cache.service.js'
@@ -56,13 +55,12 @@ const isMutantEvent = (
   event: RunEvent.RunEvent,
 ): event is Extract<RunEvent.RunEvent, { readonly _tag: 'mutantTested' }> => event._tag === 'mutantTested'
 
-const isRemembered = S.is(Mutant.RememberedStatusSchema)
+const decodeStreamText = Schema.decodeResult(RunEvent.RunEventWireText)
+
+const isRemembered = Schema.is(Mutant.RememberedStatusSchema)
 
 const streamEventsOf = (line: string): ReadonlyArray<RunEvent.RunEvent> =>
-  Result.match(decodeStreamWorkflow(DecodeStreamCommand.make({ lines: [line] })), {
-    onFailure: (): ReadonlyArray<RunEvent.RunEvent> => [],
-    onSuccess: (decoded) => decoded.events,
-  })
+  Result.getOrElse(decodeStreamText(line), (): ReadonlyArray<RunEvent.RunEvent> => [])
 
 const isEntryFileName = (name: string): boolean => !name.startsWith('.') && name.endsWith('.json')
 

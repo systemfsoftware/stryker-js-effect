@@ -26,4 +26,4 @@ export const programKeyOf = (input: ProgramIdentityInput): string =>
 
 export type CheckerConfigKeyInput = Omit<ProgramIdentityInput, 'sourceFiles'>
 
-export const configKeyOf = (input: CheckerConfigKeyInput): string => programKeyOf({ ...input, sourceFiles: [] })
+export const checkerConfigKeyOf = (input: CheckerConfigKeyInput): string => programKeyOf({ ...input, sourceFiles: [] })

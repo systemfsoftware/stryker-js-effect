@@ -43,7 +43,7 @@ import type { HostServices } from './run/host.service.js'
 import { readIncrementalReuse } from './run/incremental-reuse.cell.js'
 import { incrementalReportTextOf, optionalField } from './run/incremental-reuse.js'
 import { loadConfigCell } from './run/load-config.cell.js'
-import { planInstrumentCell, type PlanInstrumentDone } from './run/plan-instrument.cell.js'
+import { planInstrumentCell } from './run/plan-instrument.cell.js'
 import { prepareForInstrumentCell } from './run/plan-prepare.cell.js'
 import { newestCostsOf } from './run/prior-entries.js'
 import { RunEnvironment } from './run/RunEnvironment.service.js'
@@ -76,6 +76,10 @@ const DEFAULT_MUTANT_COST_MS = 1_000
 
 const prepareStageCell = Cell.andThen(Cell.andThen(loadConfigCell, readProjectCell), prepareForInstrumentCell)
 
+const planStageCell = Cell.andThen(
+  prepareStageCell,
+  (prepared) => Cell.map(planInstrumentCell, (done) => ({ prepared, done })),
+)
 const testsTimeOf = (tests: ReadonlyArray<{ readonly timeSpentMs: number }>): number =>
   tests.reduce((total, test) => total + test.timeSpentMs, 0)
 
@@ -232,8 +236,7 @@ const planProject = (
     const env = { ...channel.environment.host.env, basePath: project }
     const context = yield* Layer.build(RunEnvironment.layerStage(env, channel.environment.host.events))
     const stageInput = { cliOptions: { force: request.full }, targetMutatePatterns: undefined }
-    const prepared = yield* Cell.provideContext(prepareStageCell, context).run(stageInput)
-    const done: PlanInstrumentDone = yield* Cell.provideContext(planInstrumentCell, context).run(prepared)
+    const { prepared, done } = yield* Cell.provideContext(planStageCell, context).run(stageInput)
     const text = yield* incrementalReportTextOf({ basePath: project, options: done.options })
     const dryRunChoice = yield* dryRunChoiceOf(done, project, [text])
     const coverage = dryRunChoice.prior
