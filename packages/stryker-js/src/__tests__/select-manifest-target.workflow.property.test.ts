@@ -360,7 +360,7 @@ describe('selectManifestTarget', () => {
   )
 
   it.prop(
-    '∀c_Fallbacks_≡TheFirstElementThatDecidesWinsAndOneNoConditionMatchesYields',
+    '∀c_Fallbacks_≡FirstElementYieldingAFileWinsAndOnlyAllUnmatchedElementsFallThrough',
     { of: [ManifestTargetCommand], subject: selectManifestTarget },
     (subject, [command]) => {
       const later = targetOf(command)
@@ -370,15 +370,25 @@ describe('selectManifestTarget', () => {
       const specifier = `#${subpath}`
       const unmatchedHead = { [unmatchedConditionOf(command)]: head }
       const scalarHead = textOf(command).length
+      const allUnmatched = { node: [unmatchedHead], default: later }
+      const blockedBeforeUnmatched = { node: [null, unmatchedHead], default: later }
       return [
         exported(subject, command, { [key]: [head, later] }, subpath) === `path:${head}`,
         imported(subject, command, { [specifier]: [head, later] }, specifier) === `path:${head}`,
-        exported(subject, command, { [key]: [null, later] }, subpath) === 'missing',
-        imported(subject, command, { [specifier]: [null, later] }, specifier) === 'missing',
+        exported(subject, command, { [key]: [null, later] }, subpath) === `path:${later}`,
+        imported(subject, command, { [specifier]: [null, later] }, specifier) === `path:${later}`,
         exported(subject, command, { [key]: [unmatchedHead, later] }, subpath) === `path:${later}`,
         imported(subject, command, { [specifier]: [unmatchedHead, later] }, specifier) === `path:${later}`,
         exported(subject, command, { [key]: [scalarHead, later] }, subpath) === `path:${later}`,
         imported(subject, command, { [specifier]: [scalarHead, later] }, specifier) === `path:${later}`,
+        exported(subject, command, { [key]: [] }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: [] }, specifier) === 'missing',
+        exported(subject, command, { [key]: [null] }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: [null] }, specifier) === 'missing',
+        exported(subject, command, { [key]: allUnmatched }, subpath) === `path:${later}`,
+        imported(subject, command, { [specifier]: allUnmatched }, specifier) === `path:${later}`,
+        exported(subject, command, { [key]: blockedBeforeUnmatched }, subpath) === 'missing',
+        imported(subject, command, { [specifier]: blockedBeforeUnmatched }, specifier) === 'missing',
       ].every((holds) => holds)
     },
   )

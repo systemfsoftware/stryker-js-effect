@@ -1,0 +1,209 @@
+import { NodeServices } from '@effect/platform-node'
+import { Differential } from '@systemfsoftware/differential-spec'
+import { Engine, ImportClosure } from '@systemfsoftware/stryker-js'
+import * as Arr from 'effect/Array'
+import * as Effect from 'effect/Effect'
+import * as Fiber from 'effect/Fiber'
+import * as FileSystem from 'effect/FileSystem'
+import * as Option from 'effect/Option'
+import * as Path from 'effect/Path'
+import * as ChildProcess from 'effect/process/ChildProcess'
+import * as ChildProcessSpawner from 'effect/process/ChildProcessSpawner'
+import * as S from 'effect/Schema'
+import * as Stream from 'effect/Stream'
+import * as fc from 'fast-check'
+
+import { type NodeResolution, NodeResolutions } from './__fixtures__/node-resolution.schema.js'
+
+const TARGET_FILES: ReadonlyArray<string> = ['a.js', 'b.js', 'c.cjs']
+
+const TARGETS: ReadonlyArray<S.Json> = TARGET_FILES.map((file) => `./${file}`)
+
+const CONDITION_KEYS: ReadonlyArray<string> = [
+  'types',
+  'import',
+  'require',
+  'node',
+  'module-sync',
+  'default',
+  'browser',
+  'module',
+  'development',
+]
+
+const { entry } = fc.letrec<{ entry: S.Json }>((tie) => ({
+  entry: fc.oneof(
+    { depthSize: 'small', withCrossShrink: true },
+    fc.constantFrom<S.Json>(...TARGETS, null, 0, true),
+    fc.array(tie('entry'), { maxLength: 3 }),
+    fc.uniqueArray(fc.tuple(fc.constantFrom(...CONDITION_KEYS), tie('entry')), {
+      selector: ([key]) => key,
+      minLength: 1,
+      maxLength: 4,
+    }).map((pairs): S.Json => Object.fromEntries(pairs)),
+  ),
+}))
+
+interface ManifestEntries {
+  readonly exportsEntry: S.Json
+  readonly importsEntry: S.Json
+}
+
+const manifestEntries: fc.Arbitrary<ManifestEntries> = fc.record({ exportsEntry: entry, importsEntry: entry })
+
+const IMPORTS_TEST = 'test/imports.test.js'
+
+const EXPORTS_TEST = 'test/exports.test.js'
+
+const PROBE = 'probe.mjs'
+
+const APP_DIRECTORY = ''
+
+const LIB_DIRECTORY = 'pkgs/lib/'
+
+const targetFilesUnder = (directory: string): ReadonlyArray<readonly [string, string]> =>
+  TARGET_FILES.map((file) => [
+    `${directory}${file}`,
+    file.endsWith('.cjs') ? 'module.exports = { value: 1 }\n' : 'export const value = 1\n',
+  ])
+
+const projectFilesOf = (input: ManifestEntries): ReadonlyArray<readonly [string, string]> => [
+  [
+    `${APP_DIRECTORY}package.json`,
+    JSON.stringify({ name: '@fx/app', type: 'module', imports: { '#x': input.importsEntry } }),
+  ],
+  [
+    `${LIB_DIRECTORY}package.json`,
+    JSON.stringify({ name: '@fx/lib', type: 'module', exports: { './x': input.exportsEntry } }),
+  ],
+  ...targetFilesUnder(APP_DIRECTORY),
+  ...targetFilesUnder(LIB_DIRECTORY),
+  [IMPORTS_TEST, "import '#x'\n"],
+  [EXPORTS_TEST, "import '@fx/lib/x'\n"],
+]
+
+const PROBE_SOURCE = [
+  "import { createRequire } from 'node:module'",
+  "import { basename } from 'node:path'",
+  "import { fileURLToPath } from 'node:url'",
+  'const require = createRequire(import.meta.url)',
+  'const attempt = (resolve) => { try { return basename(resolve()) } catch { return null } }',
+  'const of = (specifier) => ({',
+  '  esm: attempt(() => fileURLToPath(import.meta.resolve(specifier))),',
+  '  cjs: attempt(() => require.resolve(specifier)),',
+  '})',
+  "process.stdout.write(JSON.stringify({ imports: of('#x'), exports: of('@fx/lib/x') }))",
+  '',
+].join('\n')
+
+const writeProject = (
+  files: ReadonlyArray<readonly [string, string]>,
+): Effect.Effect<string, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const root = yield* fs.makeTempDirectory({ prefix: 'stryker-manifest-target-' })
+    yield* Effect.forEach(
+      files,
+      ([relative, content]) =>
+        fs.makeDirectory(path.dirname(path.join(root, relative)), { recursive: true }).pipe(
+          Effect.andThen(fs.writeFileString(path.join(root, relative), content)),
+        ),
+      { discard: true },
+    )
+    yield* fs.makeDirectory(path.join(root, 'node_modules', '@fx'), { recursive: true })
+    yield* fs.symlink(path.join(root, 'pkgs', 'lib'), path.join(root, 'node_modules', '@fx', 'lib'))
+    return root
+  }).pipe(Effect.orDie)
+
+const removeProject = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
+  Effect.ignore(FileSystem.FileSystem.pipe(Effect.flatMap((fs) => fs.remove(root, { recursive: true }))))
+
+const inProject = <A, R>(
+  files: ReadonlyArray<readonly [string, string]>,
+  use: (root: string) => Effect.Effect<A, never, R>,
+): Effect.Effect<A, never, R | FileSystem.FileSystem | Path.Path> =>
+  Effect.acquireUseRelease(writeProject(files), use, removeProject)
+
+const decodeResolutions = S.decodeUnknownEffect(S.fromJsonString(NodeResolutions))
+
+const nodeResolutions = (input: ManifestEntries): Effect.Effect<NodeResolutions> =>
+  inProject([...projectFilesOf(input), [PROBE, PROBE_SOURCE]], (root) =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+        const handle = yield* spawner.spawn(
+          ChildProcess.make(globalThis.process.execPath, [PROBE], {
+            cwd: root,
+            stdin: 'ignore',
+            stdout: 'pipe',
+            stderr: 'pipe',
+          }),
+        )
+        const stdout = yield* Effect.forkScoped(handle.stdout.pipe(Stream.decodeText, Stream.mkString))
+        yield* Effect.forkScoped(handle.stderr.pipe(Stream.runDrain))
+        yield* handle.exitCode
+        return yield* decodeResolutions(yield* Fiber.join(stdout))
+      }),
+    ).pipe(Effect.orDie)).pipe(Effect.provide(NodeServices.layer))
+
+const OPEN = 'open'
+
+const CLOSED_WITHOUT_TARGET = 'closed without a target file'
+
+interface ClosureOutcomes {
+  readonly imports: string
+  readonly exports: string
+}
+
+const NO_CLOSURE = 'no closure for the test file'
+
+const outcomeOf = (analysis: ImportClosure.ImportClosureAnalysis, testFile: string, targetDirectory: string): string =>
+  Option.match(Arr.findFirst(analysis.closures, (closure) => closure.testFile === testFile), {
+    onNone: () => NO_CLOSURE,
+    onSome: (closure) =>
+      closure.open
+        ? OPEN
+        : Option.getOrElse(
+          Arr.findFirst(TARGET_FILES, (file) => closure.files.includes(`${targetDirectory}${file}`)),
+          () => CLOSED_WITHOUT_TARGET,
+        ),
+  })
+
+const closureOutcomes = (input: ManifestEntries): Effect.Effect<ClosureOutcomes> => {
+  const files = projectFilesOf(input)
+  return inProject(files, (root) =>
+    Effect.gen(function*() {
+      const path = yield* Path.Path
+      const analysis = yield* ImportClosure.analyzeImportClosure({
+        rootDir: root,
+        projectFiles: files.map(([relative]) => relative),
+        testFiles: [path.join(root, IMPORTS_TEST), path.join(root, EXPORTS_TEST)],
+      })
+      return {
+        imports: outcomeOf(analysis, IMPORTS_TEST, APP_DIRECTORY),
+        exports: outcomeOf(analysis, EXPORTS_TEST, LIB_DIRECTORY),
+      }
+    }).pipe(Effect.orDie)).pipe(Effect.provide(Engine.nodePlatformLayer))
+}
+
+const fileEsmAndCommonJsImportersAgreeOn = ({ esm, cjs }: NodeResolution): string =>
+  esm === null ? (cjs ?? OPEN) : cjs === null || cjs === esm ? esm : OPEN
+
+const closuresFollowNode = (node: NodeResolutions, closure: ClosureOutcomes): boolean =>
+  fileEsmAndCommonJsImportersAgreeOn(node.imports) === closure.imports &&
+  fileEsmAndCommonJsImportersAgreeOn(node.exports) === closure.exports
+
+Differential.compare({
+  name: 'import closures contain the file Node loads for an exports or imports entry, or stay open',
+  reference: nodeResolutions,
+  candidate: closureOutcomes,
+})
+  .on(manifestEntries, {
+    runBudget: 100,
+    hostBound: {
+      timeout: 240_000,
+      reason: 'each side writes a package to a temp directory; the reference spawns node to resolve it',
+    },
+  })
+  .assert(closuresFollowNode)

@@ -54,10 +54,22 @@ const ownValueOf = (record: EntryTable, key: string): Option.Option<PackageEntry
 
 type Resolution = Option.Option<Option.Option<string>>
 
-const unmatched: Resolution = Option.none()
+const blocked: Resolution = Option.some(Option.none())
 
 const firstDecided = (outcomes: ReadonlyArray<Resolution>): Resolution =>
   Option.flatten(Arr.findFirst(outcomes, Option.isSome))
+
+const yieldsTarget = (outcome: Resolution): boolean => outcome.pipe(Option.flatten, Option.isSome)
+
+const fallbacksResolution = (outcomes: ReadonlyArray<Resolution>): Resolution =>
+  Arr.match(outcomes, {
+    onEmpty: () => blocked,
+    onNonEmpty: (present) =>
+      Option.getOrElse(
+        Arr.findFirst(present, yieldsTarget),
+        () => Option.as(Arr.findFirst(present, Option.isSome), Option.none<string>()),
+      ),
+  })
 
 const matchedEntries = (entries: EntryTable, conditions: ReadonlyArray<string>): ReadonlyArray<PackageEntry> =>
   Arr.getSomes(Object.keys(entries).filter((key) => conditions.includes(key)).map((key) => ownValueOf(entries, key)))
@@ -66,21 +78,15 @@ const resolutionIn = (conditions: ReadonlyArray<string>) => (entry: PackageEntry
   Match.value(entry).pipe(
     Match.tagsExhaustive({
       EntryPath: ({ path }): Resolution => Option.some(Option.some(path)),
-      EntryNull: (): Resolution => Option.some(Option.none()),
-      EntryScalar: (): Resolution => Option.some(Option.none()),
-      EntryFallbacks: ({ fallbacks }): Resolution => firstDecided(fallbacks.map(fallbackResolutionIn(conditions))),
+      EntryNull: (): Resolution => blocked,
+      EntryScalar: (): Resolution => blocked,
+      EntryFallbacks: ({ fallbacks }): Resolution => fallbacksResolution(fallbacks.map(resolutionIn(conditions))),
       EntryMap: ({ entries }): Resolution =>
         Option.match(ownValueOf(entries, PACKAGE_SOURCE_CONDITION), {
           onSome: resolutionIn(conditions),
           onNone: () => firstDecided(matchedEntries(entries, conditions).map(resolutionIn(conditions))),
         }),
     }),
-  )
-
-const fallbackResolutionIn = (conditions: ReadonlyArray<string>) => (entry: PackageEntry): Resolution =>
-  Match.value(entry).pipe(
-    Match.tag('EntryScalar', (): Resolution => unmatched),
-    Match.orElse(resolutionIn(conditions)),
   )
 
 const loadedTargetOf = (esm: Option.Option<string>, commonJs: Option.Option<string>): Option.Option<string> =>
