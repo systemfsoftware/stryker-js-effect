@@ -27,7 +27,6 @@ export class MissingShardMutantsTruncated extends S.TaggedClass<MissingShardMuta
   'MissingShardMutantsTruncated',
   {
     text: S.String,
-    rest: S.Int,
   },
 ) {
   readonly [MissingShardMutantsTypeId] = MissingShardMutantsTypeId
@@ -45,7 +44,6 @@ const describedOf = (missingIds: ReadonlyArray<string>): DescribeMissingShardMut
     onTrue: () =>
       MissingShardMutantsTruncated.make({
         text: `${namedIds(missingIds)}, +${unnamedCount(missingIds)} more`,
-        rest: unnamedCount(missingIds),
       }),
     onFalse: () => MissingShardMutantsNamed.make({ text: namedIds(missingIds) }),
   })
