@@ -83,7 +83,7 @@ export class BenchReport extends S.Class<BenchReport>('BenchReport')({
   schemaVersion: S.Literal('2.0'),
   baseSha: S.String,
   headSha: S.String,
-  ref: S.String,
+  ref: S.NonEmptyString,
   leg: LegTime,
   outcome: BenchReportOutcome,
   runs: S.Array(BenchReportRun),

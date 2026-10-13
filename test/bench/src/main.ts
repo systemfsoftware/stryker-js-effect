@@ -121,7 +121,7 @@ const benchEnv = Effect.all({
   turboCacheDir: Config.String('BENCH_TURBO_CACHE_DIR'),
   baseSha: Config.String('BENCH_BASE_SHA'),
   headSha: Config.String('BENCH_HEAD_SHA'),
-  ref: Config.String('BENCH_REF'),
+  ref: Config.NonEmptyString('BENCH_REF'),
   entry: Config.String('BENCH_ENTRY'),
   jobStartedAtSeconds: Config.Number('JOB_STARTED_AT'),
   setupTimingsFile: Config.String('BENCH_SETUP_TIMINGS'),
