@@ -139,7 +139,7 @@ const runEngine = (
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const ports = Engine.nodePlatformLayer
     const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(directory), queue), ports),
+      Layer.provide(Engine.RunEnvironment.layerStage(environmentFor(directory), queue), ports),
       ports,
     )
     const exit = yield* Engine.mutationTestCell

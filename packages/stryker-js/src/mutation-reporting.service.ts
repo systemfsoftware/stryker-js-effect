@@ -47,6 +47,7 @@ import { mutantCostsOf } from './mutant-cost-model.js'
 import { costTotalMsOf } from './mutant-cost.js'
 import type { MutantCost, MutantCostModel } from './MutantCost.schema.js'
 import { IncrementalReportObjectSchema, ManifestSchema, ManifestUnreadable } from './mutation-reporting.schema.js'
+import { mutationVerdictCell } from './mutation-verdict.cell.js'
 import type { ResolvedMode } from './output-mode.schema.js'
 import { ProjectFiles, type ProjectFilesShape } from './project-files.service.js'
 import type { Project, ProjectFile } from './Project.schema.js'
@@ -736,71 +737,6 @@ const mutationTestReport = Effect.fn(SpanTaxonomy.Spans.mutationReportingMutatio
   }
 })
 
-const determineExitCode = (input: MutationReportingInput) => (metrics: Report.MetricsResult) => {
-  const breaking = input.options.thresholds.break
-  const score = metrics.metrics.mutationScore
-  const failure = Option.fromNullishOr(
-    Result.match(
-      classifyExit(ClassifyExitCommand.make({ pending: [], score, breakingThreshold: breaking })),
-      {
-        onFailure: (refused) => refused,
-        onSuccess: (decision) =>
-          Match.value(decision).pipe(
-            Match.tag('ExitVerdictFailed', (): Plugin.ExitClass => 'VerdictFail'),
-            Match.orElse((): Plugin.ExitClass | null => null),
-          ),
-      },
-    ),
-  )
-  return Report.MutationScore.match(score, {
-    Scored: ({ percentage }) =>
-      Option.match(failure, {
-        onNone: () => Effect.as(logScoredPass(breaking, percentage), null),
-        onSome: (exitClass) => Effect.as(logBroken(breaking, percentage), exitClass),
-      }),
-    Unscored: () => Effect.as(logUnscored(breaking), Option.getOrNull(failure)),
-  })
-}
-
-const logScoredPass = (breaking: number | null, percentage: number) =>
-  Match.value(breaking).pipe(
-    Match.when(null, () =>
-      Effect.logDebug(
-        "No breaking threshold configured. Won't fail the build no matter how low your mutation score is. Set `thresholds.break` to change this behavior.",
-      )),
-    Match.orElse((threshold) =>
-      Effect.logInfo(
-        `Final mutation score of ${percentage.toFixed(2)} is greater than or equal to break threshold ${
-          String(threshold)
-        }`,
-      )
-    ),
-  )
-
-const logUnscored = (breaking: number | null) =>
-  Match.value(breaking).pipe(
-    Match.when(null, () => Effect.void),
-    Match.orElse((threshold) =>
-      Effect.logInfo(
-        `No valid mutant was tested, so there is no mutation score to hold against break threshold ${
-          String(threshold)
-        }`,
-      )
-    ),
-  )
-
-const logBroken = (breaking: number | null, percentage: number) =>
-  Effect.andThen(
-    Effect.logError(
-      `Final mutation score ${percentage.toFixed(2)} under breaking threshold ${
-        String(breaking)
-      }, setting exit code to 1 (failure).`,
-    ),
-    Effect.logInfo(
-      '(improve mutation score or set `thresholds.break = null` to prevent this error in the future)',
-    ),
-  )
-
 const emitVerdict = Effect.fn(SpanTaxonomy.Spans.mutationReportingEmitVerdict.name)(function*(
   deps: MutationReportingDeps,
   input: MutationReportingInput,
@@ -943,25 +879,16 @@ const reportAll = Effect.fn(SpanTaxonomy.Spans.mutationReportingReportAll.name)(
     staticVerdict ?? undefined,
   )
   const terminalDrain = terminalDrainClass(yield* closeReporterStage(input.reporterStage))
-  const verdict = yield* determineExitCode(input)(metrics)
+  const verdict = yield* mutationVerdictCell.run({ metrics, breakingThreshold: input.options.thresholds.break })
   const finalVerdict = Result.match(
     classifyExit(
       ClassifyExitCommand.make({
         pending: [verdict, terminalDrain].filter((candidate): candidate is Plugin.ExitClass => candidate !== null),
-        score: Report.MutationScore.cases.Unscored.make({}),
-        breakingThreshold: null,
       }),
     ),
     {
       onFailure: (refused) => refused,
-      onSuccess: (decision) =>
-        Match.value(decision).pipe(
-          Match.tag('ExitVerdictFailed', (): Plugin.ExitClass => 'VerdictFail'),
-          Match.tag('ExitConfigErrored', (): Plugin.ExitClass => 'ConfigError'),
-          Match.tag('ExitRuntimeErrored', (): Plugin.ExitClass => 'RuntimeError'),
-          Match.tag('ExitInternalErrored', (): Plugin.ExitClass => 'InternalError'),
-          Match.orElse((): Plugin.ExitClass | null => null),
-        ),
+      onSuccess: (decision) => decision.exitClass,
     },
   )
   yield* emitVerdict(deps, input, report)
