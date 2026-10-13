@@ -18,7 +18,8 @@ import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
 import { detectDryRunFlakes, DetectDryRunFlakesCommand } from '../detect-dry-run-flakes.workflow.js'
-import { type DryRunCoverage, type DryRunPass } from '../dry-run-coverage.schema.js'
+import type { DryRunCandidatesDecision } from '../dry-run-candidates.workflow.js'
+import { type DryRunCoverage, type DryRunPass, type DryRunRunReason } from '../dry-run-coverage.schema.js'
 import { dryRun, DryRunCommand, DryRunError, DryRunFailed, FailedTestSummary } from '../dry-run.workflow.js'
 import {
   DryRunObservation,
@@ -37,8 +38,9 @@ import { buildTestRunner, makeChildProcessTestRunner } from '../TestRunner.bluep
 import { testRunnerConfigOf } from '../vm-runner.js'
 import { IdGenerator, type IdGeneratorShape } from '../Worker.service.js'
 import { WorkerLauncher } from '../WorkerLauncher.service.js'
-import { dryRunChoiceOf, testClosureDigestOf } from './dry-run-choice.js'
+import { type DryRunChoice, dryRunChoiceOf, testClosureDigestOf } from './dry-run-choice.js'
 import { testCoverageOf, testFileModulesFieldOf } from './dry-run-coverage.js'
+import { incrementalReportTextsOf } from './incremental-reuse.js'
 import type { InstrumentDone } from './instrument.cell.js'
 import type { PhaseClock } from './phase-clock.service.js'
 import {
@@ -68,6 +70,7 @@ interface DryRunExtras {
   readonly flakyMutantIds: readonly string[]
   readonly testClosureDigest: string
   readonly runInputsDigest: string
+  readonly projectRoot: string
 }
 
 export type DryRunRaw = typeof DryRunCommand.Encoded & {
@@ -221,7 +224,7 @@ const rawOf = (
   }
 }
 
-const reusedRawOf = (command: InstrumentDone, coverage: DryRunCoverage): DryRunRaw =>
+const reusedRawOf = (command: InstrumentDone, coverage: DryRunCoverage, projectRoot: string): DryRunRaw =>
   rawOf(
     command,
     {
@@ -241,6 +244,7 @@ const reusedRawOf = (command: InstrumentDone, coverage: DryRunCoverage): DryRunR
       flakyMutantIds: [...coverage.flakyMutantIds],
       testClosureDigest: coverage.testClosureDigest,
       runInputsDigest: coverage.runInputsDigest,
+      projectRoot,
     },
   )
 
@@ -405,6 +409,7 @@ const freshCoverageOf = (
   flakyMutantIds: [...raw.flakyMutantIds],
   testClosureDigest: raw.testClosureDigest,
   runInputsDigest: raw.runInputsDigest,
+  projectRoot: raw.projectRoot,
 })
 
 const dryRunDoneOf = (
@@ -444,7 +449,7 @@ const completeDryRunResultOf = Effect.fn(SpanTaxonomy.Spans.dryRunComplete.name)
     onSome: (coverage) =>
       Effect.as(
         Effect.logDebug('Reusing the dry-run coverage from the incremental report; skipping the initial test run.'),
-        dryRunDoneOf(raw, dryRunResult, coverage),
+        dryRunDoneOf(raw, dryRunResult, { ...coverage, projectRoot: raw.projectRoot }),
       ),
   })
 })
@@ -464,6 +469,7 @@ const runFreshDryRun = Effect.fnUntraced(function*(
   idGenerator: IdGeneratorShape,
   currentTestClosureDigest: Option.Option<string>,
   runInputsDigest: string,
+  projectRoot: string,
 ) {
   const env = yield* RunEnvironment
   const reports = yield* WorkerReports
@@ -556,8 +562,68 @@ const runFreshDryRun = Effect.fnUntraced(function*(
     flakyMutantIds: flakes.flakyMutantIds,
     testClosureDigest,
     runInputsDigest,
+    projectRoot,
   })
 })
+
+const recordedRootsOf = (decision: DryRunCandidatesDecision): readonly string[] =>
+  Match.value(decision).pipe(
+    Match.tag('CandidatesUnderOtherRoots', ({ roots }) => roots),
+    Match.orElse((): readonly string[] => []),
+  )
+
+const logDroppedCandidates = (decision: DryRunCandidatesDecision): Effect.Effect<void> =>
+  Match.value(decision).pipe(
+    Match.tag('CandidatesKept', ({ droppedOtherRoot, droppedUnrecorded }) =>
+      Boolean.match(droppedOtherRoot + droppedUnrecorded > 0, {
+        onTrue: () =>
+          Effect.logInfo(
+            `Skipped saved dry-run coverage: ${droppedOtherRoot} recorded under another project root, ${droppedUnrecorded} with no recorded root`,
+          ),
+        onFalse: () =>
+          Effect.void,
+      })),
+    Match.orElse(() =>
+      Effect.void
+    ),
+  )
+
+const refusalHeadOf = (reason: DryRunRunReason): string =>
+  `Running the initial test run: dry-run coverage reuse refused (${reason})`
+
+const staleLinesOf = (choice: DryRunChoice, reason: DryRunRunReason): readonly string[] =>
+  Match.value(reason).pipe(
+    Match.when('rootChanged', () => [
+      refusalHeadOf(reason),
+      `  current project root:   ${choice.currentRoot}`,
+      `  recorded project roots: ${recordedRootsOf(choice.candidatesDecision).join(', ')}`,
+      `  This run performs its own dry run and records its coverage under ${choice.currentRoot}.`,
+      '  Coverage is shared across machines only when they run from the same absolute workspace path.',
+    ]),
+    Match.when('rootUnrecorded', () => [
+      refusalHeadOf(reason),
+      '  The saved coverage came from an older version that recorded no project root.',
+      `  This full dry run records its coverage under ${choice.currentRoot}.`,
+    ]),
+    Match.orElse(() => [
+      refusalHeadOf(reason),
+      `  prior closure digest:     ${
+        Option.getOrElse(
+          Option.map(choice.prior, (coverage) => coverage.testClosureDigest),
+          () => '(no prior coverage)',
+        )
+      }`,
+      `  current closure digest:   ${Option.getOrElse(choice.currentTestClosureDigest, () => '(unavailable)')}`,
+      `  prior run-inputs digest:  ${
+        Option.getOrElse(
+          Option.map(choice.prior, (coverage) => coverage.runInputsDigest),
+          () => '(no prior coverage)',
+        )
+      }`,
+      `  prior coverage records:   ${choice.candidates.length}`,
+      `  current run-inputs digest: ${choice.runInputsDigest}`,
+    ]),
+  )
 
 const readDryRun: (command: InstrumentDone) => Effect.Effect<
   DryRunRaw,
@@ -578,53 +644,30 @@ const readDryRun: (command: InstrumentDone) => Effect.Effect<
   const idGenerator = yield* IdGenerator
   const env = yield* RunEnvironment
 
-  const { candidates, prior, decision, currentTestClosureDigest, runInputsDigest } = yield* dryRunChoiceOf(
-    command,
-    env.basePath,
-  )
+  const texts = yield* incrementalReportTextsOf({ basePath: env.basePath, options: command.options })
+  const choice = yield* dryRunChoiceOf(command, env.basePath, texts)
+  const { prior, decision, currentRoot, currentTestClosureDigest, runInputsDigest } = choice
 
   yield* Match.value(decision).pipe(
     Match.tag(
       'DryRunCoverageReused',
       () => Effect.logInfo('Reusing the persisted dry-run coverage; skipping the initial test run'),
     ),
-    Match.tag(
-      'DryRunCoverageStale',
-      ({ reason }) =>
-        Effect.logInfo(
-          [
-            `Running the initial test run: dry-run coverage reuse refused (${reason})`,
-            `  prior closure digest:     ${
-              Option.getOrElse(
-                Option.map(prior, (coverage) => coverage.testClosureDigest),
-                () => '(no prior coverage)',
-              )
-            }`,
-            `  current closure digest:   ${Option.getOrElse(currentTestClosureDigest, () => '(unavailable)')}`,
-            `  prior run-inputs digest:  ${
-              Option.getOrElse(
-                Option.map(prior, (coverage) => coverage.runInputsDigest),
-                () => '(no prior coverage)',
-              )
-            }`,
-            `  prior coverage records:   ${candidates.length}`,
-            `  current run-inputs digest: ${runInputsDigest}`,
-          ].join('\n'),
-        ),
-    ),
+    Match.tag('DryRunCoverageStale', ({ reason }) => Effect.logInfo(staleLinesOf(choice, reason).join('\n'))),
     Match.exhaustive,
   )
+  yield* logDroppedCandidates(choice.candidatesDecision)
 
   return yield* Match.value(decision).pipe(
     Match.tag('DryRunCoverageReused', () =>
       Option.match(prior, {
         onNone: () =>
           Effect.die(StageError.make({ stage: 'dryRun', reason: 'Coverage reuse decided without prior coverage' })),
-        onSome: (coverage) => Effect.succeed(reusedRawOf(command, coverage)),
+        onSome: (coverage) => Effect.succeed(reusedRawOf(command, coverage, currentRoot)),
       })),
     Match.tag(
       'DryRunCoverageStale',
-      () => runFreshDryRun(command, idGenerator, currentTestClosureDigest, runInputsDigest),
+      () => runFreshDryRun(command, idGenerator, currentTestClosureDigest, runInputsDigest, currentRoot),
     ),
     Match.exhaustive,
   )
