@@ -40,10 +40,12 @@ Feature('Re-running mutation testing on a project after an unfinished run')
               const dryRun = yield* freshRun(['run', '--dryRunOnly'])
               const log = yield* logFile
               const hold = { release: `${log}.release`, afterExecutions: dryRun.executions }
+              const release = writeFiles(path.dirname(hold.release), [[path.basename(hold.release), '']])
+              yield* Effect.addFinalizer(() => release)
               const root = yield* writeProject(jsProjectFiles({ log, hold }))
               const killedAtMutant = yield* runCliKilledAtFirstMutant({ root, args: ['run'] })
               const finishedBeforeKill = yield* fs.exists(path.join(root, REPORT_FILE))
-              yield* writeFiles(path.dirname(hold.release), [[path.basename(hold.release), '']])
+              yield* release
               const next = yield* runCounted({ root, log, args: ['run'] })
               return { reference, dryRun, killedAtMutant, finishedBeforeKill, next }
             })),

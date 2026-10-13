@@ -105,23 +105,29 @@ Feature('Running mutation testing on a project that was run under another root')
           'observed',
           () =>
             Effect.scoped(Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
               const log = yield* logFile
               const rootA = yield* writeProject(jsProjectFiles({ log }))
               const first = yield* runCounted({ root: rootA, log, args: ['run'] })
               const rootB = yield* copyProject(rootA)
               const second = yield* runCounted({ root: rootB, log, args: ['run'] })
-              return { first, second }
+              const roots = yield* Effect.orDie(Effect.all([fs.realPath(rootA), fs.realPath(rootB)]))
+              return { first, second, roots }
             })),
         ),
-        Then('root B scores every mutant as root A did')((s, expect) =>
+        Then('root B scores every mutant as root A did, and its output names the refusal and both roots')((s, expect) =>
           expect({
             exits: [exitOf(s.observed.first), exitOf(s.observed.second)],
             firstStatuses: statusesOf(s.observed.first.scored),
             secondScored: s.observed.second.scored,
+            namesRefusal: s.observed.second.output.includes('dry-run coverage reuse refused (rootChanged)'),
+            namesBothRoots: s.observed.roots.map((root) => s.observed.second.output.includes(root)),
           }).toEqual({
             exits: [0, 0],
             firstStatuses: ['Killed', 'NoCoverage'],
             secondScored: s.observed.first.scored,
+            namesRefusal: true,
+            namesBothRoots: [true, true],
           })
         ),
       ),
@@ -192,13 +198,13 @@ Feature('Running mutation testing on a project that was run under another root')
                 s.observed.restoredPlan,
                 s.observed.rerun,
               ].map(exitOf),
-              ownRunExecuted: s.observed.ownRun.executions > 0,
+              ownRunStatuses: statusesOf(s.observed.ownRun.scored),
               rerunExecutions: s.observed.rerun.executions,
               rerunScored: s.observed.rerun.scored,
               restoredPlan: s.observed.restoredPlan.plan,
             }).toEqual({
               exits: [0, 0, 0, 0, 0],
-              ownRunExecuted: true,
+              ownRunStatuses: ['Killed', 'NoCoverage'],
               rerunExecutions: 0,
               rerunScored: s.observed.ownRun.scored,
               restoredPlan: s.observed.ownPlan.plan,
@@ -208,7 +214,7 @@ Feature('Running mutation testing on a project that was run under another root')
     )
 
     scenario(
-      'A report written by the released version is re-run once after the upgrade and then executes nothing',
+      'A report written by the released version scores alike after the upgrade, and the run after that executes nothing',
       Gherkin.Do.pipe(
         Given('a project run by the released stryker, then twice by the built one')(
           'observed',
@@ -222,19 +228,18 @@ Feature('Running mutation testing on a project that was run under another root')
               return { released, first, second }
             })),
         ),
-        Then('the first upgraded run executes as much as the released run, the second none, and all score alike')(
-          (s, expect) =>
-            expect({
-              exits: [exitOf(s.observed.released), exitOf(s.observed.first), exitOf(s.observed.second)],
-              releasedStatuses: statusesOf(s.observed.released.scored),
-              executions: [s.observed.first.executions, s.observed.second.executions],
-              scored: [s.observed.first.scored, s.observed.second.scored],
-            }).toEqual({
-              exits: [0, 0, 0],
-              releasedStatuses: ['Killed', 'NoCoverage'],
-              executions: [s.observed.released.executions, 0],
-              scored: [s.observed.released.scored, s.observed.released.scored],
-            }),
+        Then('every run scores alike and the second upgraded run executes no test')((s, expect) =>
+          expect({
+            exits: [exitOf(s.observed.released), exitOf(s.observed.first), exitOf(s.observed.second)],
+            releasedStatuses: statusesOf(s.observed.released.scored),
+            scored: [s.observed.first.scored, s.observed.second.scored],
+            secondExecutions: s.observed.second.executions,
+          }).toEqual({
+            exits: [0, 0, 0],
+            releasedStatuses: ['Killed', 'NoCoverage'],
+            scored: [s.observed.released.scored, s.observed.released.scored],
+            secondExecutions: 0,
+          })
         ),
       ),
     )
@@ -260,10 +265,15 @@ Feature('Running mutation testing on a project that was run under another root')
         Then('the second run executes no test and scores as the first')((s, expect) =>
           expect({
             exits: [exitOf(s.observed.first), exitOf(s.observed.second)],
-            firstExecuted: s.observed.first.executions > 0,
+            firstStatuses: statusesOf(s.observed.first.scored),
             secondExecutions: s.observed.second.executions,
             secondScored: s.observed.second.scored,
-          }).toEqual({ exits: [0, 0], firstExecuted: true, secondExecutions: 0, secondScored: s.observed.first.scored })
+          }).toEqual({
+            exits: [0, 0],
+            firstStatuses: ['Killed', 'NoCoverage'],
+            secondExecutions: 0,
+            secondScored: s.observed.first.scored,
+          })
         ),
       ),
     )

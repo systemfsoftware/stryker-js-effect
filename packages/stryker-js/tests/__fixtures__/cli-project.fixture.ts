@@ -162,7 +162,7 @@ const decodeEvent = S.decodeOption(S.fromJsonString(RunEvent.RunEvent))
 
 const isMutantEvent = (line: string): boolean => Option.exists(decodeEvent(line), S.is(RunEvent.RunMutantTested))
 
-export const runCliKilledAtFirstMutant = ({ root, args }: CliRun): Effect.Effect<
+export const runCliKilledAtFirstMutant = ({ root, args }: Omit<CliRun, 'cli'>): Effect.Effect<
   boolean,
   never,
   ChildProcessSpawner.ChildProcessSpawner
