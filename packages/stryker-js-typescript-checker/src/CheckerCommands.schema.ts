@@ -1,11 +1,18 @@
 import { Workflow } from '@systemfsoftware/effect-cell-types'
-import { Checker } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
+import * as Option from 'effect/Option'
 import * as S from 'effect/Schema'
 
+import { EditSiteFacts } from './edit-site.schema.js'
+import { ImporterShortcutDecision } from './ImporterShortcut.schema.js'
 import { TsConfigDocumentSchema } from './Tsconfig.schema.js'
+
+const MutantBound = S.Int.pipe(S.check(S.isGreaterThanOrEqualTo(1)))
+export type MutantBoundType = typeof MutantBound.Type
 
 export class GroupMutantsCommand extends S.TaggedClass<GroupMutantsCommand>()('GroupMutantsCommand', {
   mutants: S.Array(Checker.CheckerMutantWire),
+  bound: MutantBound,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -188,4 +195,81 @@ export class AnswerTypeQueryCommand extends S.TaggedClass<AnswerTypeQueryCommand
   },
 ) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export class DecideImporterShortcutCommand extends S.TaggedClass<DecideImporterShortcutCommand>()(
+  'DecideImporterShortcutCommand',
+  {
+    original: EditSiteFacts,
+    mutated: EditSiteFacts,
+    compiledElsewhere: S.Boolean,
+  },
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export class ConcludeSharedRoundCommand extends S.TaggedClass<ConcludeSharedRoundCommand>()(
+  'ConcludeSharedRoundCommand',
+  {
+    decisions: ImporterShortcutDecision.pipe(S.Option, S.Array),
+  },
+) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export const RoundCandidate = S.Struct({
+  id: Mutant.MutantId,
+  fileName: S.String,
+  eligible: S.Boolean,
+})
+export type RoundCandidate = typeof RoundCandidate.Type
+
+const roundCandidateIdsAreDistinct = S.makeFilter(
+  (candidates: ReadonlyArray<RoundCandidate>): string | undefined =>
+    Option.getOrUndefined(
+      Option.map(
+        Option.fromUndefinedOr(Mutant.duplicatedValue(candidates.map((candidate) => candidate.id))),
+        (duplicated) => `round candidate ids must identify distinct mutants, got "${duplicated}"`,
+      ),
+    ),
+  { arbitraryConstraint: { uniqueBy: (candidate: RoundCandidate) => candidate.id } },
+)
+
+export class PlanCheckRoundsCommand extends S.TaggedClass<PlanCheckRoundsCommand>()('PlanCheckRoundsCommand', {
+  candidates: S.Array(RoundCandidate).check(roundCandidateIdsAreDistinct),
+}) {
+  static readonly [Workflow.InstrumentationBrand] = {} as const
+}
+
+export const GROUP_MUTANT_BOUND: MutantBoundType = 256
+
+const accepts = {
+  mutantBound: S.is(MutantBound),
+  roundCandidates: S.is(PlanCheckRoundsCommand.fields.candidates),
+}
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+
+  const isPositiveBound = (bound: number): boolean => bound >= 1
+  const namesEachIdOnce = (candidates: ReadonlyArray<RoundCandidate>): boolean =>
+    new Set(Arr.map(candidates, (candidate) => candidate.id)).size === candidates.length
+
+  it.prop(
+    '∀n_MutantBoundRefusal_≡BelowOne',
+    { of: [S.Int], subject: accepts },
+    (subject, [drawn]) =>
+      Arr.every([-1, 0, 1, drawn], (bound) => subject.mutantBound(bound) === isPositiveBound(bound)),
+  )
+
+  it.prop(
+    '∀c_RoundCandidatesRefusal_≡AnIdNamedTwice',
+    { of: [S.Array(RoundCandidate)], subject: accepts },
+    (subject, [drawn]) =>
+      Arr.every(
+        [drawn, Arr.appendAll(drawn, Arr.take(drawn, 1))],
+        (candidates) => subject.roundCandidates(candidates) === namesEachIdOnce(candidates),
+      ),
+  )
 }

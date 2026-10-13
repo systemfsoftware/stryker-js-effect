@@ -1,5 +1,10 @@
 /// <reference types="vitest/importMeta" />
 import { Schema as S } from 'effect'
+import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
+import * as HashSet from 'effect/HashSet'
+import * as Option from 'effect/Option'
+import * as Rec from 'effect/Record'
 
 export class TsConfigParseError extends S.TaggedError<TsConfigParseError>()('TsConfigParseError', {
   file: S.String,
@@ -44,13 +49,85 @@ export const TsConfigDocumentSchema = S.StructWithRest(
 
 export type TsConfigDocument = S.Schema.Type<typeof TsConfigDocumentSchema>
 
+export const ReferenceGraph = S.Record(S.String, S.Array(S.String))
+export type ReferenceGraph = typeof ReferenceGraph.Type
+
+export const FileHolders = S.Struct({
+  references: ReferenceGraph,
+  owner: S.String,
+  holders: S.Array(S.String),
+})
+export type FileHolders = typeof FileHolders.Type
+
+const referencesOf = (graph: ReferenceGraph, config: string): ReadonlyArray<string> =>
+  Option.getOrElse(Rec.get(graph, config), (): ReadonlyArray<string> => [])
+
+const reachedFrom = (
+  graph: ReferenceGraph,
+  pending: ReadonlyArray<string>,
+  seen: HashSet.HashSet<string>,
+): HashSet.HashSet<string> =>
+  Option.match(Arr.head(pending), {
+    onNone: () => seen,
+    onSome: (config) =>
+      Boolean.match(HashSet.has(seen, config), {
+        onTrue: () => reachedFrom(graph, Arr.drop(pending, 1), seen),
+        onFalse: () =>
+          reachedFrom(graph, [...Arr.drop(pending, 1), ...referencesOf(graph, config)], HashSet.add(seen, config)),
+      }),
+  })
+
+const reachesOwner = (holders: FileHolders, holder: string): boolean =>
+  HashSet.has(reachedFrom(holders.references, referencesOf(holders.references, holder), HashSet.empty()), holders.owner)
+
+export const otherCompilersOf = (holders: FileHolders): ReadonlyArray<string> =>
+  Arr.filter(
+    Arr.dedupe(holders.holders),
+    (holder) => Boolean.and(holder !== holders.owner, Boolean.not(reachesOwner(holders, holder))),
+  )
+
 const accepts = {
   tsConfigDocument: S.is(TsConfigDocumentSchema),
 }
 
 if (import.meta.vitest !== void 0) {
   const { it } = await import('@systemfsoftware/vitest')
-  const Arr = await import('effect/Array')
+  const NODES = ['p0', 'p1', 'p2', 'p3', 'p4'] as const
+  const Node = S.Literals(NODES)
+  type Edge = readonly [string, string]
+
+  const graphOf = (edges: ReadonlyArray<Edge>): ReferenceGraph =>
+    Object.fromEntries(
+      NODES.map((node) => [node, edges.filter(([from]) => from === node).map(([, to]) => to)] as const)
+        .filter(([, targets]) => targets.length > 0),
+    )
+
+  const closureOf = (edges: ReadonlyArray<Edge>): ReadonlyArray<string> =>
+    Arr.reduce(
+      NODES,
+      edges.map(([from, to]) => `${from}>${to}`),
+      (reach) => [
+        ...new Set([
+          ...reach,
+          ...reach.flatMap((pair) => {
+            const [start, end] = pair.split('>')
+            return edges.filter(([from]) => from === end).map(([, to]) => `${start}>${to}`)
+          }),
+        ]),
+      ],
+    )
+
+  it.prop(
+    '∀h_OtherCompilersOf_≡HoldersBesidesTheOwnerThatNoReferencePathLeadsFromToTheOwner',
+    { of: [S.Array(S.Tuple([Node, Node])), Node, S.Array(Node)], subject: otherCompilersOf },
+    (subject, [edges, owner, holders]) => {
+      const reach = closureOf(edges)
+      const expected = [...new Set(holders)].filter((holder) =>
+        holder !== owner && !reach.includes(`${holder}>${owner}`)
+      )
+      return JSON.stringify(subject({ references: graphOf(edges), owner, holders })) === JSON.stringify(expected)
+    },
+  )
 
   type JsonValue = S.Schema.Type<typeof S.Json>
 
