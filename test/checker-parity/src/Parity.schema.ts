@@ -5,12 +5,15 @@
  *
  * The driver writes these lines; `compare` decodes every `*.ndjson` under its input directories
  * through `S.fromJsonString(ParityLine)` and hands the lines to the pure `compare-sides` workflow. Every
- * line carries the repo-relative `project` (a tsconfig path, stable across sides and shards) and,
- * except {@link ProjectSkipped}, the `side` that wrote it.
+ * line carries the repo-relative `project` (a tsconfig path, stable across sides and shards); the kinds
+ * that record a side write it.
  */
+import { TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
+import * as Boolean from 'effect/Boolean'
 import { dual } from 'effect/Function'
 import * as Hash from 'effect/Hash'
+import * as Option from 'effect/Option'
 import * as Order from 'effect/Order'
 import * as S from 'effect/Schema'
 import * as Str from 'effect/String'
@@ -21,7 +24,7 @@ export type Side = typeof Side.Type
 export const VerdictStatus = S.Literals(['passed', 'compileError', 'ignored'])
 export type VerdictStatus = typeof VerdictStatus.Type
 
-const NonNegativeInt = S.Int.check(S.isGreaterThanOrEqualTo(0))
+export const NonNegativeInt = S.Int.check(S.isGreaterThanOrEqualTo(0))
 const PositiveInt = S.Int.check(S.isGreaterThanOrEqualTo(1))
 const NonNegativeFinite = S.Finite.check(S.isGreaterThanOrEqualTo(0))
 
@@ -112,6 +115,49 @@ export class TelemetryMissing extends S.TaggedClass<TelemetryMissing>()('Telemet
   receivedSpans: NonNegativeInt,
 }) {}
 
+export class TypeAnswerLine extends S.TaggedClass<TypeAnswerLine>()('TypeAnswerLine', {
+  schemaVersion: SCHEMA_VERSION,
+  side: S.Literal('branch'),
+  project: S.String,
+  mutantId: S.String,
+  fileName: S.String,
+  line: PositiveInt,
+  column: PositiveInt,
+  candidate: S.String,
+  siteKind: TypeQuery.TypeQuerySiteKind,
+  siteType: S.optional(S.String),
+  contextualType: S.optional(S.String),
+  answer: TypeQuery.TypeAnswer,
+}) {}
+
+export const TypeQueryRefusalReason = S.Union([TypeQuery.FileRefusedReason, TypeQuery.TypeQueryRefusedReason])
+export type TypeQueryRefusalReason = typeof TypeQueryRefusalReason.Type
+
+export class TypeQueryFileRefused extends S.TaggedClass<TypeQueryFileRefused>()('TypeQueryFileRefused', {
+  schemaVersion: SCHEMA_VERSION,
+  project: S.String,
+  fileName: S.String,
+  reason: TypeQueryRefusalReason,
+  nextAction: S.String,
+  mutantCount: NonNegativeInt,
+}) {}
+
+/**
+ * Legacy, decode-only: an earlier driver wrote one `TypeQueryServers` line per branch project recording the
+ * peak live tsgo query servers it held. Queries now run inside the branch worker, so the driver can no
+ * longer observe them and nothing produces this line; it stays in {@link ParityLine} so a shard artifact
+ * written by that driver still decodes (and the CI cost fold skips it). No consumer reads its payload: the
+ * comparison excludes it from the project set and from each project's own lines, so a stale line can neither
+ * add a project to `projectCount` or `typeQuery.projects` nor drop a skipped project from `summary.skipped`,
+ * and the report's shard hints ignore it.
+ */
+export class TypeQueryServers extends S.TaggedClass<TypeQueryServers>()('TypeQueryServers', {
+  schemaVersion: SCHEMA_VERSION,
+  side: S.Literal('branch'),
+  project: S.String,
+  peakLiveServers: NonNegativeInt,
+}) {}
+
 export class Deferred extends S.TaggedClass<Deferred>()('Deferred', {
   schemaVersion: SCHEMA_VERSION,
   side: S.NullOr(Side),
@@ -144,6 +190,9 @@ export const ParityLine = S.Union([
   ProjectSkipped,
   CacheEntry,
   TelemetryMissing,
+  TypeAnswerLine,
+  TypeQueryFileRefused,
+  TypeQueryServers,
   Deferred,
   UnitOverBudget,
 ])
@@ -313,5 +362,29 @@ if (import.meta.vitest !== void 0) {
         Arr.every(ordered, (value, index) => value === reversed[index]),
       ], (holds) => holds)
     },
+  )
+
+  const staleServersLine = (project: string, peakLiveServers: number) => ({
+    _tag: 'TypeQueryServers' as const,
+    schemaVersion: 1 as const,
+    side: 'branch' as const,
+    project,
+    peakLiveServers,
+  })
+
+  const decodeStaleServersLine = (project: string, peakLiveServers: number): Option.Option<ParityLine> =>
+    S.decodeOption(ParityLine)(staleServersLine(project, peakLiveServers))
+
+  const carriesStaleServers = (line: TypeQueryServers, project: string, peakLiveServers: number): boolean =>
+    Boolean.every([line.project === project, line.peakLiveServers === peakLiveServers])
+
+  it.prop(
+    '∀s_LegacyTypeQueryServersLine_≡DecodesFromAStaleShard',
+    { of: [S.String, NonNegativeInt], subject: decodeStaleServersLine },
+    (subject, [project, peakLiveServers]) =>
+      Option.match(subject(project, peakLiveServers), {
+        onNone: () => false,
+        onSome: (line) => S.is(TypeQueryServers)(line) && carriesStaleServers(line, project, peakLiveServers),
+      }),
   )
 }
