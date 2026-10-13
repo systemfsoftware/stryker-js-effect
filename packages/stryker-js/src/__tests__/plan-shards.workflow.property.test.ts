@@ -1,5 +1,6 @@
 import { Mutant } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Arbitrary from 'effect/Arbitrary'
 import * as Arr from 'effect/Array'
 import * as Equal from 'effect/Equal'
 import * as Result from 'effect/Result'
@@ -243,6 +244,56 @@ const pureLptCounterexampleTyingAcrossANulProjectName = PlanShardsCommand.make({
   dryRunCosts: {},
 })
 
+const withAnchors = (
+  mutants: ReadonlyArray<PlannedMutant>,
+  picks: ReadonlyArray<boolean>,
+): ReadonlyArray<PlannedMutant> =>
+  mutants.map((mutant, holder) => {
+    const siblings = mutants.filter((other, at) => at !== holder && other.project === mutant.project)
+    const anchored = siblings
+      .filter((_, at) => picks[(holder * mutants.length + at) % Math.max(1, picks.length)] === true)
+      .map((sibling) => sibling.id)
+    const unique = [...new Set(anchored)]
+    const [first, ...rest] = unique
+    return first === undefined ? mutant : { ...mutant, anchors: [first, ...rest] }
+  })
+
+const anchoredCommandArb = Arbitrary.all([
+  Arbitrary.schema(PlanShardsCommand),
+  S.Boolean.pipe(S.Array, Arbitrary.schema),
+]).pipe(
+  Arbitrary.map(([command, picks]) =>
+    PlanShardsCommand.make({
+      targetSeconds: command.targetSeconds,
+      maxShards: command.maxShards,
+      mutants: withAnchors(command.mutants, picks),
+      dryRunCosts: command.dryRunCosts,
+    })
+  ),
+)
+
+const chainedAnchorCommand = PlanShardsCommand.make({
+  targetSeconds: 0.001,
+  mutants: [
+    {
+      project: 'chain',
+      id: Mutant.MutantId.make('aaaaaaaaaaaaaaaa'),
+      costMs: 1,
+      dependsOnDryRun: false,
+      anchors: [Mutant.MutantId.make('bbbbbbbbbbbbbbbb')],
+    },
+    {
+      project: 'chain',
+      id: Mutant.MutantId.make('bbbbbbbbbbbbbbbb'),
+      costMs: 1,
+      dependsOnDryRun: false,
+      anchors: [Mutant.MutantId.make('cccccccccccccccc')],
+    },
+    { project: 'chain', id: Mutant.MutantId.make('cccccccccccccccc'), costMs: 1, dependsOnDryRun: false },
+  ],
+  dryRunCosts: {},
+})
+
 describe('planShards', () => {
   it.prop(
     '∀c_Mutants_≡EveryScheduledMutantLandsInExactlyOneShard',
@@ -335,20 +386,22 @@ describe('planShards', () => {
 
   it.prop(
     '∀c_Mutants_≡EveryAnchorComponentLandsInExactlyOneShard',
-    { of: [PlanShardsCommand], subject: planShards },
-    (subject, [command]) => {
-      const shards = shardsOf(subject, command)
-      return shards !== undefined && everyAnchorComponentLandsInOneShard(command, shards)
-    },
+    { of: [anchoredCommandArb], subject: planShards },
+    (subject, [command]) =>
+      Arr.every([chainedAnchorCommand, command], (probe) => {
+        const shards = shardsOf(subject, probe)
+        return shards !== undefined && everyAnchorComponentLandsInOneShard(probe, shards)
+      }),
   )
 
   it.prop(
     '∀m_AnchoredMutant_≡IsNeverSplitFromTheMutantItAnchorsTo',
-    { of: [PlanShardsCommand], subject: planShards },
-    (subject, [command]) => {
-      const shards = shardsOf(subject, command)
-      return shards !== undefined && everyAnchoredMutantSharesAShardWithItsAnchor(command, shards)
-    },
+    { of: [anchoredCommandArb], subject: planShards },
+    (subject, [command]) =>
+      Arr.every([chainedAnchorCommand, command], (probe) => {
+        const shards = shardsOf(subject, probe)
+        return shards !== undefined && everyAnchoredMutantSharesAShardWithItsAnchor(probe, shards)
+      }),
   )
 
   it.prop(
