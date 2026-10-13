@@ -188,6 +188,7 @@ interface ProjectPlan {
     readonly dependsOnDryRun: boolean
     readonly placementKey?: Mutant.MutantId | undefined
   }>
+  readonly files: ReadonlyArray<string>
   readonly dryRunCostMs: number
   readonly reuse: ReuseObservation
 }
@@ -365,6 +366,11 @@ const planProject = (
     return {
       label,
       mutants,
+      files: [
+        ...HashSet.fromIterable(
+          [...reuse.mutants, ...reuse.rememberedResults].map((mutant) => path.resolve(project, mutant.fileName)),
+        ),
+      ].sort(),
       dryRunCostMs,
       reuse: {
         reused: reuse.rememberedResults.length,
@@ -377,37 +383,54 @@ const planProject = (
     }
   }).pipe(Effect.orDie)
 
-const planScopeOf = (diff: Option.Option<GitDiffResult>): ShardPlanScope =>
+const planScopeOf = (
+  diff: Option.Option<GitDiffResult>,
+  planned: ReadonlyArray<ProjectPlan>,
+  basePath: string,
+): Effect.Effect<ShardPlanScope, GitDiffError, EnginePorts> =>
   Option.match(diff, {
-    onNone: (): ShardPlanScope => ({ _tag: 'Unscoped' }),
+    onNone: (): Effect.Effect<ShardPlanScope, GitDiffError, EnginePorts> => Effect.succeed({ _tag: 'Unscoped' }),
     onSome: (present) =>
-      Match.value(
-        Result.getOrElse(
-          gitDiff(DiffScopeCommand.make({ hunks: present.hunks, untrackedFiles: present.untrackedFiles })),
-          (neverError) => neverError,
-        ),
-      ).pipe(
-        Match.tag(
-          'DiffScoped',
-          (): ShardPlanScope => ({
-            _tag: 'DiffScoped',
-            base: present.base,
-            head: present.head,
-            worktree: present.worktree,
-          }),
-        ),
-        Match.tag(
-          'FullScope',
-          (full): ShardPlanScope => ({
-            _tag: 'FullScope',
-            base: present.base,
-            head: present.head,
-            worktree: present.worktree,
-            reason: full.reason,
-          }),
-        ),
-        Match.exhaustive,
-      ),
+      Effect.gen(function*() {
+        const path = yield* Path.Path
+        const git = yield* GitDiff
+        const root = yield* git.toplevel(basePath)
+        const files = [
+          ...HashSet.fromIterable(
+            planned.flatMap((entry) => entry.files.map((file) => path.relative(root, file).replace(/\\/g, '/'))),
+          ),
+        ].sort()
+        const sources = yield* git.sourceDigest({ cwd: basePath, paths: files })
+        return Match.value(
+          Result.getOrElse(
+            gitDiff(DiffScopeCommand.make({ hunks: present.hunks, untrackedFiles: present.untrackedFiles })),
+            (neverError) => neverError,
+          ),
+        ).pipe(
+          Match.tag(
+            'DiffScoped',
+            (): ShardPlanScope => ({
+              _tag: 'DiffScoped',
+              base: present.base,
+              head: present.head,
+              sources,
+              files,
+            }),
+          ),
+          Match.tag(
+            'FullScope',
+            (full): ShardPlanScope => ({
+              _tag: 'FullScope',
+              base: present.base,
+              head: present.head,
+              sources,
+              files,
+              reason: full.reason,
+            }),
+          ),
+          Match.exhaustive,
+        )
+      }),
   })
 
 const assemblePlan = (
@@ -566,7 +589,8 @@ export const planRequest = (
     const dryRunCosts: Record<string, number> = Object.fromEntries(
       planned.map((entry) => [entry.label, entry.dryRunCostMs]),
     )
-    const plan = yield* assemblePlan(request, planScopeOf(planDiff.diff), scheduled, dryRunCosts)
+    const scope = yield* planScopeOf(planDiff.diff, planned, channel.environment.basePath)
+    const plan = yield* assemblePlan(request, scope, scheduled, dryRunCosts)
     yield* Queue.offer(
       channel.environment.host.events,
       RunEvent.PlanKnown.make({

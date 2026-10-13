@@ -8,13 +8,15 @@ export const ShardPlanUnscoped = S.TaggedStruct('Unscoped', {})
 export const ShardPlanDiffScoped = S.TaggedStruct('DiffScoped', {
   base: S.NonEmptyString,
   head: S.NonEmptyString,
-  worktree: S.String,
+  sources: S.String,
+  files: S.Array(S.String),
 })
 
 export const ShardPlanFullScope = S.TaggedStruct('FullScope', {
   base: S.NonEmptyString,
   head: S.NonEmptyString,
-  worktree: S.String,
+  sources: S.String,
+  files: S.Array(S.String),
   reason: S.NonEmptyString,
 })
 

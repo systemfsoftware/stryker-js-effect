@@ -189,15 +189,22 @@
                           "type": "string",
                           "minLength": 1
                         },
-                        "worktree": {
+                        "sources": {
                           "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [
                         "_tag",
                         "base",
                         "head",
-                        "worktree"
+                        "sources",
+                        "files"
                       ],
                       "additionalProperties": true
                     },
@@ -218,8 +225,14 @@
                           "type": "string",
                           "minLength": 1
                         },
-                        "worktree": {
+                        "sources": {
                           "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         },
                         "reason": {
                           "type": "string",
@@ -230,7 +243,8 @@
                         "_tag",
                         "base",
                         "head",
-                        "worktree",
+                        "sources",
+                        "files",
                         "reason"
                       ],
                       "additionalProperties": true

@@ -21,7 +21,7 @@ export namespace Engine {
 
 // @public (undocumented)
 export namespace GitDiff {
-    export { GitDiff, GitDiffInput, GitDiffShape };
+    export { GitDiff, GitDiffInput, GitDiffShape, GitSourceDigestInput };
 }
 
 // @public (undocumented)

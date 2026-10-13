@@ -100,7 +100,8 @@ const runProject = (
               return yield* gitOutcome(input.ref)
             }),
           head: () => Effect.succeed('head-sha'),
-          worktreeDigest: () => Effect.succeed(''),
+          toplevel: () => Effect.succeed(''),
+          sourceDigest: () => Effect.succeed(''),
         })
         const ports = Layer.mergeAll(Engine.nodePlatformLayer, fakeGit)
         const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
@@ -163,7 +164,6 @@ const diffHunk = (file: string): GitDiffSchema.GitDiffResult => ({
   ref: 'HEAD~1',
   base: 'base-sha',
   head: 'head-sha',
-  worktree: '',
   hunks: [{ file, startLine: 3, lineCount: 1 }],
   untrackedFiles: [],
 })

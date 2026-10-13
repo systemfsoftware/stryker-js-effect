@@ -30,7 +30,13 @@ export interface GitDiffInput {
 export interface GitDiffShape {
   readonly changedSince: (input: GitDiffInput) => Effect.Effect<GitDiffResult, GitDiffError>
   readonly head: (cwd: string) => Effect.Effect<string, GitCommandFailed>
-  readonly worktreeDigest: (cwd: string) => Effect.Effect<string, GitCommandFailed>
+  readonly toplevel: (cwd: string) => Effect.Effect<string, GitCommandFailed>
+  readonly sourceDigest: (input: GitSourceDigestInput) => Effect.Effect<string, GitCommandFailed>
+}
+
+export interface GitSourceDigestInput {
+  readonly cwd: string
+  readonly paths: ReadonlyArray<string>
 }
 
 interface GitRun {
@@ -120,12 +126,16 @@ const parseHunks = (output: string): ReadonlyArray<DiffHunk> =>
 const runGit = (
   cwd: string,
   args: ReadonlyArray<string>,
+  stdin?: string,
 ): Effect.Effect<GitRun, GitCommandFailed, GitEnv> =>
   Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const handle = yield* ChildProcess.make('git', ['-c', 'core.quotepath=false', ...args], {
       cwd,
-      stdin: 'ignore',
+      stdin: Option.match(Option.fromUndefinedOr(stdin), {
+        onNone: () => 'ignore' as const,
+        onSome: (text) => Stream.encodeText(Stream.make(text)),
+      }),
       stdout: 'pipe',
       stderr: 'pipe',
     }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
@@ -190,101 +200,50 @@ const readUntracked = (cwd: string): Effect.Effect<ReadonlyArray<string>, GitDif
     (stdout) => stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0),
   )
 
-const HASH_OBJECT_BATCH = 256
+const digestOfEntries = (entries: ReadonlyArray<readonly [string, string]>): string =>
+  bytesToHex(sha256(utf8ToBytes(entries.map(([path, digest]) => `${path}\u0000${digest}`).sort().join('\n'))))
 
-interface WorktreeEntry {
-  readonly path: string
-  readonly deleted: boolean
-}
+const toplevelOf = (cwd: string): Effect.Effect<string, GitCommandFailed, GitEnv> =>
+  Effect.map(readOutput(cwd, ['rev-parse', '--show-toplevel']), (stdout) => stdout.trim())
 
-const PORCELAIN_STATUS_WIDTH = 2
-
-const PORCELAIN_PATH_OFFSET = 3
-
-const STATUS_WITH_TWO_PATHS: Record<string, true> = { R: true, C: true }
-
-const statusOf = (record: string): string => record.slice(0, PORCELAIN_STATUS_WIDTH)
-
-const entryOf = (record: string): Option.Option<WorktreeEntry> =>
-  Option.map(
-    Option.liftPredicate(record, (value) => value.length >= PORCELAIN_PATH_OFFSET),
-    (value) => ({ path: value.slice(PORCELAIN_PATH_OFFSET), deleted: statusOf(value).includes('D') }),
-  )
-
-const skippedFieldsOf = (record: string): number => Number(STATUS_WITH_TWO_PATHS[statusOf(record).charAt(0)] === true)
-
-interface PorcelainScan {
-  readonly entries: ReadonlyArray<WorktreeEntry>
-  readonly skipping: number
-}
-
-const INITIAL_PORCELAIN_SCAN: PorcelainScan = { entries: [], skipping: 0 }
-
-const scanRecord = (scan: PorcelainScan, record: string): PorcelainScan =>
-  Boolean.match(scan.skipping > 0, {
-    onTrue: () => ({ ...scan, skipping: scan.skipping - 1 }),
-    onFalse: () => ({
-      entries: [...scan.entries, ...Option.toArray(entryOf(record))],
-      skipping: skippedFieldsOf(record),
-    }),
-  })
-
-const porcelainEntriesOf = (stdout: string): ReadonlyArray<WorktreeEntry> =>
-  stdout.split('\0').reduce(scanRecord, INITIAL_PORCELAIN_SCAN).entries
-
-const batchesOf = <A>(items: ReadonlyArray<A>, size: number): ReadonlyArray<ReadonlyArray<A>> => {
-  const batches: Array<ReadonlyArray<A>> = []
-  let index = 0
-  while (index < items.length) {
-    batches.push(items.slice(index, index + size))
-    index += size
-  }
-  return batches
-}
-
-const hashObjectOf = (root: string, path: string): Effect.Effect<string, GitCommandFailed, GitEnv> =>
+const hashPathOf = (root: string, path: string): Effect.Effect<string, GitCommandFailed, GitEnv> =>
   Effect.map(
     runGit(root, ['hash-object', '--no-filters', '--', path]),
     (ran) => Boolean.match(ran.exitCode === 0, { onTrue: () => ran.stdout.trim(), onFalse: () => '' }),
   )
 
-const hashObjectsOf = (
+const hashPathsOf = (
   root: string,
   paths: ReadonlyArray<string>,
 ): Effect.Effect<ReadonlyArray<string>, GitCommandFailed, GitEnv> =>
-  Effect.forEach(batchesOf(paths, HASH_OBJECT_BATCH), (batch) =>
-    Effect.gen(function*() {
-      const ran = yield* runGit(root, ['hash-object', '--no-filters', '--', ...batch])
-      return yield* Boolean.match(ran.exitCode === 0, {
-        onTrue: () =>
-          Effect.succeed(ran.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0)),
-        onFalse: () => Effect.forEach(batch, (path) => hashObjectOf(root, path)),
-      })
-    })).pipe(Effect.map(Arr.flatten))
-
-const digestOfEntries = (entries: ReadonlyArray<readonly [string, string]>): string =>
-  bytesToHex(sha256(utf8ToBytes(entries.map(([path, digest]) => `${path}\u0000${digest}`).sort().join('\n'))))
-
-const worktreeDigestOf = (cwd: string): Effect.Effect<string, GitCommandFailed, GitEnv> =>
   Effect.gen(function*() {
-    const entries = porcelainEntriesOf(yield* readOutput(cwd, ['status', '--porcelain=v1', '-z', '-uall']))
-    if (entries.length === 0) return ''
-    const root = (yield* readOutput(cwd, ['rev-parse', '--show-toplevel'])).trim()
-    const present = entries.filter((entry) => !entry.deleted)
-    const digests = yield* hashObjectsOf(root, present.map((entry) => entry.path))
-    const held = Arr.zip(present, digests).map(([entry, digest]) => [entry.path, digest] as const)
-    const missing = entries.filter((entry) => entry.deleted).map((entry) => [entry.path, ''] as const)
-    return digestOfEntries([...held, ...missing])
+    if (paths.length === 0) return []
+    const ran = yield* runGit(root, ['hash-object', '--no-filters', '--stdin-paths'], `${paths.join('\n')}\n`)
+    const lines = ran.stdout.split('\n').map((line) => line.trim()).filter((line) => line.length > 0)
+    const fallback = (): Effect.Effect<ReadonlyArray<string>, GitCommandFailed, GitEnv> =>
+      Effect.forEach(paths, (path) => hashPathOf(root, path))
+    return yield* Boolean.match(ran.exitCode === 0, {
+      onTrue: () =>
+        Boolean.match(lines.length === paths.length, { onTrue: () => Effect.succeed(lines), onFalse: fallback }),
+      onFalse: fallback,
+    })
+  })
+
+const sourceDigestOf = (input: GitSourceDigestInput): Effect.Effect<string, GitCommandFailed, GitEnv> =>
+  Effect.gen(function*() {
+    const root = yield* toplevelOf(input.cwd)
+    const ordered = [...input.paths].sort()
+    const digests = yield* hashPathsOf(root, ordered)
+    return digestOfEntries(Arr.zip(ordered, digests).map(([path, digest]) => [path, digest] as const))
   })
 
 const changedSince = (input: GitDiffInput): Effect.Effect<GitDiffResult, GitDiffError, GitEnv> =>
   Effect.gen(function*() {
     const base = yield* resolveBase(input)
     const position = yield* readPosition(input.cwd)
-    const worktree = yield* worktreeDigestOf(input.cwd)
     const hunks = yield* readHunks(input.cwd, base, position.cwdFromRoot)
     const untrackedFiles = yield* readUntracked(input.cwd)
-    return { ref: input.ref, base, head: position.head, worktree, hunks, untrackedFiles }
+    return { ref: input.ref, base, head: position.head, hunks, untrackedFiles }
   })
 
 export class GitDiff extends Context.Service<GitDiff, GitDiffShape>()(
@@ -306,7 +265,8 @@ export class GitDiff extends Context.Service<GitDiff, GitDiffShape>()(
         return {
           changedSince: (input: GitDiffInput) => spawning(changedSince(input)),
           head: (cwd: string) => spawning(readHead(cwd)),
-          worktreeDigest: (cwd: string) => spawning(worktreeDigestOf(cwd)),
+          toplevel: (cwd: string) => spawning(toplevelOf(cwd)),
+          sourceDigest: (input: GitSourceDigestInput) => spawning(sourceDigestOf(input)),
         }
       }),
     )

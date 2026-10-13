@@ -12,26 +12,26 @@ const commandCase = Arbitrary.map(
   Arbitrary.all({
     command: Arbitrary.schema(AdmitPlanHeadCommand),
     sameHead: Arbitrary.schema(S.Boolean),
-    sameWorktree: Arbitrary.schema(S.Boolean),
+    sameSources: Arbitrary.schema(S.Boolean),
   }),
-  ({ command, sameHead, sameWorktree }) =>
+  ({ command, sameHead, sameSources }) =>
     AdmitPlanHeadCommand.make({
       scope: command.scope,
       head: sameHead ? command.scope.head : differing(command.scope.head, command.head),
-      worktree: sameWorktree ? command.scope.worktree : differing(command.scope.worktree, command.worktree),
+      sources: sameSources ? command.scope.sources : differing(command.scope.sources, command.sources),
     }),
 )
 
 describe('admitPlanHead', () => {
   it.prop(
-    '∀scope-head-worktree_AdmitPlanHead_≡AdmittedExactlyWhereTheCheckoutIsWhatThePlanWasScopedFrom',
+    '∀scope-head-sources_AdmitPlanHead_≡AdmittedExactlyWhereTheCheckoutIsWhatThePlanWasScopedFrom',
     { of: [commandCase], subject: admitPlanHead },
     (subject, [command]) => {
       const headMatches = command.scope.head === command.head
-      const worktreeMatches = command.scope.worktree === command.worktree
+      const sourcesMatch = command.scope.sources === command.sources
       return Result.match(subject(command), {
         onFailure: (refusal) =>
-          !(headMatches && worktreeMatches) &&
+          !(headMatches && sourcesMatch) &&
           Match.value(refusal).pipe(
             Match.tag(
               'ShardPlanStale',
@@ -41,14 +41,14 @@ describe('admitPlanHead', () => {
               'ShardPlanWorktreeStale',
               (stale) =>
                 headMatches &&
-                !worktreeMatches &&
+                !sourcesMatch &&
                 stale.planBase === command.scope.base &&
-                stale.planWorktree === command.scope.worktree &&
-                stale.worktree === command.worktree,
+                stale.planSources === command.scope.sources &&
+                stale.sources === command.sources,
             ),
             Match.exhaustive,
           ),
-        onSuccess: (current) => headMatches && worktreeMatches && current.head === command.head,
+        onSuccess: (current) => headMatches && sourcesMatch && current.head === command.head,
       })
     },
   )

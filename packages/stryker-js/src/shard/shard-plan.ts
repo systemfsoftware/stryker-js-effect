@@ -81,8 +81,8 @@ export const admitLoadedPlan: {
       Effect.gen(function*() {
         const git = yield* GitDiff
         const head = yield* git.head(basePath)
-        const worktree = yield* git.worktreeDigest(basePath)
-        yield* Effect.fromResult(admitPlanHead(AdmitPlanHeadCommand.make({ scope, head, worktree })))
+        const sources = yield* git.sourceDigest({ cwd: basePath, paths: scope.files })
+        yield* Effect.fromResult(admitPlanHead(AdmitPlanHeadCommand.make({ scope, head, sources })))
         return loaded
       })),
     Match.exhaustive,

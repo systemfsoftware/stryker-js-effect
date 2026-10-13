@@ -49,6 +49,15 @@ const changedSince = (
   ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | GitDiff.GitDiff
 > => Effect.flatMap(GitDiff.GitDiff, (git) => git.changedSince({ cwd: root, ref }))
 
+const sourceDigest = (
+  root: string,
+  paths: ReadonlyArray<string>,
+): Effect.Effect<
+  string,
+  GitDiffSchema.GitCommandFailed,
+  ChildProcessSpawner.ChildProcessSpawner | Scope.Scope | GitDiff.GitDiff
+> => Effect.flatMap(GitDiff.GitDiff, (git) => git.sourceDigest({ cwd: root, paths }))
+
 const removeRepo = (root: string): Effect.Effect<void, never, FileSystem.FileSystem> =>
   Effect.ignore(Effect.flatMap(FileSystem.FileSystem, (fs) => fs.remove(root, { recursive: true, force: true })))
 
@@ -74,14 +83,13 @@ Feature('Reading a repository diff since a git ref')
             }).pipe(Effect.ensuring(removeRepo(s.repo))),
         ),
         Then(
-          'hunks, untracked files and the worktree digest read the same from the root and from src/, at the commit HEAD names',
+          'hunks and untracked files read the same from the root and from src/, at the commit HEAD names',
         )((s, expect) =>
           expect({ real: s.observation.real, fromSrc: s.observation.fromSrc }).toEqual({
             real: {
               ref: 'HEAD',
               base: s.observation.real.head,
               head: expect.stringMatching(/^[0-9a-f]{40}$/),
-              worktree: expect.stringMatching(/^[0-9a-f]{64}$/),
               hunks: [
                 { file: 'src/gone.ts', startLine: 0, lineCount: 0 },
                 { file: 'src/kept.ts', startLine: 4, lineCount: 2 },
@@ -92,7 +100,6 @@ Feature('Reading a repository diff since a git ref')
               ref: 'HEAD',
               base: s.observation.real.base,
               head: s.observation.real.head,
-              worktree: s.observation.real.worktree,
               hunks: [
                 { file: 'gone.ts', startLine: 0, lineCount: 0 },
                 { file: 'kept.ts', startLine: 4, lineCount: 2 },
@@ -105,34 +112,42 @@ Feature('Reading a repository diff since a git ref')
     )
 
     scenario(
-      'The worktree digest covers the uncommitted content and is empty for a clean tree',
+      'The source digest follows exactly the files it names',
       Gherkin.Do.pipe(
-        Given('a temporary repository whose changes are committed')('repo', () =>
-          Effect.gen(function*() {
-            const root = yield* buildRepo()
-            yield* execGit(root, [...COMMITTER, 'add', '-A'])
-            yield* execGit(root, [...COMMITTER, 'commit', '-q', '-m', 'commit everything'])
-            return root
-          })),
-        When('the service reads the diff since HEAD before and after an uncommitted edit')(
+        Given('a temporary repository')('repo', () => buildRepo()),
+        When(
+          'the service digests the named file, after an unrelated edit, after a named edit, an absent path, and from src/',
+        )(
           'observation',
           (s) =>
             Effect.gen(function*() {
               const path = yield* Path.Path
-              const clean = yield* changedSince(s.repo, 'HEAD')
-              const fromSrc = yield* changedSince(path.join(s.repo, 'src'), 'HEAD')
+              const named = yield* sourceDigest(s.repo, ['src/kept.ts'])
+              yield* writeFile(s.repo, 'src/new.ts', 'const unrelated = 2\n')
+              const afterUnrelated = yield* sourceDigest(s.repo, ['src/kept.ts'])
               yield* writeFile(s.repo, 'src/kept.ts', 'const a = 1\n')
-              const dirty = yield* changedSince(s.repo, 'HEAD')
-              return { clean, dirty, fromSrc }
+              const afterNamed = yield* sourceDigest(s.repo, ['src/kept.ts'])
+              const absent = yield* sourceDigest(s.repo, ['src/absent.ts'])
+              const fromSrc = yield* sourceDigest(path.join(s.repo, 'src'), ['src/kept.ts'])
+              return { named, afterUnrelated, afterNamed, absent, fromSrc }
             }).pipe(Effect.ensuring(removeRepo(s.repo))),
         ),
-        Then('the clean tree digests to nothing and the edited tree digests to another sha256')((s, expect) =>
+        Then(
+          'the digest is a sha256 that ignores the unrelated file, moves with the named file and reads the same from either directory',
+        )((s, expect) =>
           expect({
-            clean: s.observation.clean.worktree,
-            dirtyIsSha256: /^[0-9a-f]{64}$/.test(s.observation.dirty.worktree),
-            digestMoved: s.observation.clean.worktree !== s.observation.dirty.worktree,
-            sameFromEitherDirectory: s.observation.clean.worktree === s.observation.fromSrc.worktree,
-          }).toEqual({ clean: '', dirtyIsSha256: true, digestMoved: true, sameFromEitherDirectory: true })
+            isSha256: /^[0-9a-f]{64}$/.test(s.observation.named),
+            unrelatedEditLeavesDigest: s.observation.afterUnrelated === s.observation.named,
+            namedEditMovesDigest: s.observation.afterNamed !== s.observation.named,
+            absentDiffersFromNamed: s.observation.absent !== s.observation.named,
+            sameFromEitherDirectory: s.observation.fromSrc === s.observation.afterNamed,
+          }).toEqual({
+            isSha256: true,
+            unrelatedEditLeavesDigest: true,
+            namedEditMovesDigest: true,
+            absentDiffersFromNamed: true,
+            sameFromEitherDirectory: true,
+          })
         ),
       ),
     )

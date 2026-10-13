@@ -11,7 +11,7 @@ type AdmitPlanHeadTypeId = typeof AdmitPlanHeadTypeId
 export class AdmitPlanHeadCommand extends S.Class<AdmitPlanHeadCommand>('AdmitPlanHeadCommand')({
   scope: S.Union([ShardPlanDiffScoped, ShardPlanFullScope]),
   head: S.NonEmptyString,
-  worktree: S.String,
+  sources: S.String,
 }) {
   static readonly [Workflow.InstrumentationBrand] = {} as const
 }
@@ -36,38 +36,30 @@ export class ShardPlanStale extends S.TaggedError<ShardPlanStale>()('ShardPlanSt
 
 export class ShardPlanWorktreeStale extends S.TaggedError<ShardPlanWorktreeStale>()('ShardPlanWorktreeStale', {
   planBase: S.String,
-  planWorktree: S.String,
-  worktree: S.String,
+  planSources: S.String,
+  sources: S.String,
 }) {
   readonly [AdmitPlanHeadTypeId] = AdmitPlanHeadTypeId
   readonly exitClass = 'ConfigError' as const
 
   override get message(): string {
-    return `the shard plan was scoped from ${this.planBase} with ${
-      treeOf(this.planWorktree)
-    }, but the working tree now holds ${treeOf(this.worktree)}; next: stryker plan --since ${this.planBase}`
+    return `the shard plan was scoped from ${this.planBase} with source digest ${this.planSources}, but the files it schedules now digest ${this.sources}; next: stryker plan --since ${this.planBase}`
   }
 }
 
 export type AdmitPlanHeadError = ShardPlanStale | ShardPlanWorktreeStale
 
-const treeOf = (digest: string): string =>
-  Option.match(Option.liftPredicate(digest, (value) => value.length > 0), {
-    onNone: () => 'a clean tree',
-    onSome: (value) => `the worktree ${value}`,
-  })
-
 const refusalOf = (command: AdmitPlanHeadCommand): Option.Option<AdmitPlanHeadError> =>
   Boolean.match(command.scope.head === command.head, {
     onTrue: () =>
-      Boolean.match(command.scope.worktree === command.worktree, {
+      Boolean.match(command.scope.sources === command.sources, {
         onTrue: () => Option.none(),
         onFalse: () =>
           Option.some(
             ShardPlanWorktreeStale.make({
               planBase: command.scope.base,
-              planWorktree: command.scope.worktree,
-              worktree: command.worktree,
+              planSources: command.scope.sources,
+              sources: command.sources,
             }),
           ),
       }),
