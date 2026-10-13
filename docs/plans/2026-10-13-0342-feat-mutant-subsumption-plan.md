@@ -1,8 +1,9 @@
 ---
 title: Mutant Subsumption and Type-Guided Generation - Plan
 type: feat
-date: 2026-10-09
+date: 2026-10-13
 topic: mutant-subsumption
+supersedes: docs/plans/2026-10-09-2024-feat-mutant-subsumption-plan.md
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
@@ -15,13 +16,13 @@ execution: code
 - **Objective:** A stryker-js-effect run executes fewer mutants that carry no new signal. A mutant that a kept mutant dominates is not run, and its record names that dominator. A mutant that the TypeScript checker's type facts show cannot compile is never compiled or run. CI shows on the dogfood corpus that no test loses a kill and that no mutant which compiles on main is lost.
 - **Means:** static subsumption decided in the instrumenter (KTD1), with a check-time re-admission step in the engine (KTD13); type facts read from the TS 7 checker over the unmutated program, with a pure decision in the engine (KTD14, KTD15); a kill-matrix lane and a `stryker audit` command (KTD6, KTD7).
 - **Product authority:** `.omp-brief/unit-i-contract.md` (Unit I), the supervisor's and the root's 2026-10-09 rulings recorded under Outstanding Questions, then `CONSTITUTION.md`, which outranks both. Stream C (`origin/stryker/mutant-quality`, plan `docs/plans/2026-10-09-1850-feat-mutant-quality-plan.md`) owns `arid-uncovered-block` and `constant-collection-size`. Stream H owns the TS checker package. Stream F owns native generation later.
-- **Execution profile:** one `gh stack` on `main` with four PRs: PR-A, PR-B, PR-W, and PR-C, in that order. Each PR is shippable and tested end to end. Local verification is targeted: typecheck and the affected package's tests, at most one build at a time, no e2e, no microVM, no mutation runs. Close every long-lived `tsc`, `--lsp`, or watch process as soon as it is done.
+- **Execution profile:** one open PR per stream, stacked on `main`. PR-A (#273) and PR-B (#263, #276) are merged; PR-W (#288) and PR-C remain, in that order. Each PR is shippable and tested end to end. Local verification is targeted: typecheck and the affected package's tests, at most one build at a time, no e2e, no microVM, no mutation runs. Close every long-lived `tsc`, `--lsp`, or watch process as soon as it is done.
 - **Stop conditions:**
-  - PR-W, and PR-C's one-job change to `drop-audit`, edit `.github/workflows/`, which is Read-only for this unit. The root owns and reviews both.
+  - PR-W and PR-C's one-job change to `drop-audit` edit `.github/workflows/ci.yml`, a judgment surface (CONST-E9) that `AGENTS.md` makes Read-only. The root owns it: on 2026-10-13 the root conductor ruled that #288 "stays open and is driven to merge" (https://github.com/systemfsoftware/stryker-js-effect/pull/288#issuecomment-6137453174), the escalation CONST-G5 requires. The root reviews the job and decides whether `drop-audit` becomes a required check; this unit does not tune the audit's predicates to its own drops. `mutation.yml` and `kill-matrix.yml` belong to Stream K and stay untouched.
   - PR-C's checker-side unit (U15) needs a Stream H ruling (Q15). If that ruling is pending when U14 is done, push U14 and stop with U15 unstarted.
   - U11 (S3) is deferred until PR-W's `drop-audit` exists.
-- **Who finishes:** `ce-work` builds PR-A, PR-B, and PR-C; the root reviews and owns PR-W; the supervisor merges every layer.
-- **Open blockers:** Q14 (PR-W bootstrap, the root) and Q15 (checker-side gatherer, Stream H). Q16-Q19 go to the supervisor.
+- **Who finishes:** PR-A and PR-B are merged on `main`; `ce-work` builds PR-W (#288) and PR-C; the root reviews PR-W's job; the supervisor merges every layer.
+- **Open blockers:** Q15 (checker-side gatherer, Stream H). Q16-Q20 go to the supervisor.
 - **Applicable packs** (`.compound-engineering/config.yaml`):
   - cell-architecture: pure-decision-workflows, ports-separate-from-layers, sandwich-phase-order, scoped-lifecycle-boundaries
   - schema-laws: tagged-unions-over-state-by-presence, refusals-beside-generated-laws, arbitrary-filter-floors
@@ -233,7 +234,7 @@ Retired with the SMT layer: R13, R19-R30, AE7-AE10, KTD8-KTD12, U3, U7, U8, and 
   - from the audit (not `--counts-only`, which reads only reports): Layer 2 facts per variant (`NotAssignable`, `MissingReturn`, `Fits`, `NoAnchor` by reason, `Unavailable` by reason), so a low N can be traced to the anchors or probes that did not fire, and the time spent gathering facts;
   - the list of dropped ids.
 
-  The counts ship as a CI artifact that a bench lane can ingest. Publishing them to the lane is a follow-up (Q3).
+  The counts ship as a CI artifact that a bench lane can ingest. Publishing them to the lane is a follow-up (Q3). The step that writes them in each Mutation run belongs to Stream K, which owns `mutation.yml` (Q20).
 
 ```mermaid
 flowchart TB
@@ -277,15 +278,15 @@ flowchart TB
 
 ### Delivery order
 
-Four stacked PRs. Each is shippable alone and tested end to end. The ruling's PR shape (2026-10-09):
+Four PRs in this order, the ruling's PR shape (2026-10-09). PR-A and PR-B are merged on `main`; PR-W and PR-C remain, stacked on `main`:
 
-| PR                          | Base       | Units                        | What ships                                                                                        |
-| --------------------------- | ---------- | ---------------------------- | ------------------------------------------------------------------------------------------------- |
-| PR-A Layer 1                | `main`     | U12 (first), U2, U4, U5, U13 | the R4 repair; S1 on by default; the dominator reference on every record; check-time re-admission |
-| PR-B Evidence tooling       | PR-A       | U1, U6                       | the kill-matrix switch; `stryker audit` with the R17 and R40 predicates and the R18 counts        |
-| PR-W Workflow wiring        | PR-B       | U9                           | the kill-matrix workflow, the `drop-audit` job, and the counts step. The root owns and reviews it |
-| PR-C Type-guided generation | PR-W       | U14, U15                     | type facts, `type-invalid`, and the audit's Layer 2 drop list                                     |
-| Follow-up                   | after PR-W | U11                          | S3 under class P, gated by its own `drop-audit` run                                               |
+| PR                          | Base                              | Units                        | What ships                                                                                        |
+| --------------------------- | --------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------- |
+| PR-A Layer 1                | merged (#273)                     | U12 (first), U2, U4, U5, U13 | the R4 repair; S1 on by default; the dominator reference on every record; check-time re-admission |
+| PR-B Evidence tooling       | merged (#263 for U1, #276 for U6) | U1, U6                       | the kill-matrix switch; `stryker audit` with the R17 and R40 predicates and the R18 counts        |
+| PR-W Workflow wiring (#288) | `main`                            | U9                           | the `drop-audit` job in `ci.yml`                                                                  |
+| PR-C Type-guided generation | PR-W                              | U14, U15                     | type facts, `type-invalid`, and the audit's Layer 2 drop list                                     |
+| Follow-up                   | after PR-W                        | U11                          | S3 under class P, gated by its own `drop-audit` run                                               |
 
 ### Verification
 
@@ -312,7 +313,7 @@ Four stacked PRs. Each is shippable alone and tested end to end. The ruling's PR
 
 **Rulings (2026-10-09)**
 
-- Q1. Accepted by the root. This unit builds the kill-matrix lane as an evidence producer (U1) and the no-signal-loss predicate as a pure, tested workflow (U6). The root owns and reviews the `.github/workflows/` wiring that makes it a gate (PR-W, U9).
+- Q1. Accepted by the root. This unit builds the kill-matrix lane as an evidence producer (U1) and the no-signal-loss predicate as a pure, tested workflow (U6). The root owns and reviews the `.github/workflows/` wiring that makes it a gate (PR-W, U9); on 2026-10-13 it ruled that #288 is driven to merge, and it decides whether `drop-audit` becomes a required check.
 - Q2. Moot: SMT is rejected, so neither `z3-solver` nor `async-mutex` is added.
 - Q3. No bench lane exists on main. R18 counts ship as a CI artifact that a bench lane can ingest. Publishing them to the lane is a follow-up through the supervisor.
 - Q4. The R4 repair is in scope and breaking. It lands first in PR-A, and the PR body flags it for Stream C.
@@ -325,11 +326,12 @@ Four stacked PRs. Each is shippable alone and tested end to end. The ruling's PR
 
 ### Open questions for the supervisor
 
-- Q14 (the root). **PR-W bootstrap.** The `drop-audit` job needs one kill-matrix artifact, and a new workflow file cannot be dispatched until it exists on `main`. So on PR-W's own head the job can only fail with `NoMatrix`. Option (a): the root lands `kill-matrix.yml` on `main` alone first, dispatches it once, and PR-W then carries only the `drop-audit` job and the counts step, green on its head. Option (b): PR-W merges with `drop-audit` red as `NoMatrix`, not yet required, and the first green run is cited on PR-C. Recommended: (a), because every PR in the stack then meets "green on its head". A drop audit that passes without a matrix would be vacuous, so it does not pass.
+- Q14 (the root). **Resolved: option (a).** `kill-matrix.yml` is on `main` and called from the Mutation workflow; `kill-matrix-457` (run 38335732420, main `0aebc83e6`, kept 90 days) is the newest artifact. Original question: **PR-W bootstrap.** The `drop-audit` job needs one kill-matrix artifact, and a new workflow file cannot be dispatched until it exists on `main`. So on PR-W's own head the job can only fail with `NoMatrix`. Option (a): the root lands `kill-matrix.yml` on `main` alone first, dispatches it once, and PR-W then carries only the `drop-audit` job and the counts step, green on its head. Option (b): PR-W merges with `drop-audit` red as `NoMatrix`, not yet required, and the first green run is cited on PR-C. Recommended: (a), because every PR in the stack then meets "green on its head". A drop audit that passes without a matrix would be vacuous, so it does not pass.
 - Q15 (Stream H). **The checker-side gatherer.** U15 adds a `type-facts` module beside `ts-compiler.handle.ts`, reads `CompilerState.api`/`snapshot` (`:120-130`), and serves the `facts` capability (`CheckerRuntime.service.ts`, `CheckerWorker.service.ts`). All of these are Stream H's files. Option (a): this unit writes U15 under Stream H's review. Option (b): Stream H builds the gatherer to R34, R35, and R38's fact contract, and this unit supplies U14 and the R42 spec. U14 needs neither.
 - Q16. **"Never generated."** The instrumenter still produces a `type-invalid` mutant: it gets an id and a place in the mutant switch, and the report lists it as Ignored. It is never compiled, tested, or counted as CompileError. Keeping the record gives the audit an id to join (R39). Dropping it before placement would need type facts before instrumentation, so the checker would have to start before `instrumentCell` (`run/run-stages.cell.ts:18-35`), and the audit would lose its id. Is an Ignored `type-invalid` record acceptable as "not generated"?
 - Q17. **The audit starts the checker.** For Layer 2 drops, `stryker audit` asks the checker for facts over the unmutated corpus programs. That type-checks the original program and compiles no mutant. Please confirm that this stays within Q12.
 - Q18. **Alignment with Stream C U9.** Stream C U9 reads a receiver kind in `ts-compiler.handle.ts` during `check`. This plan proposes one gatherer module and one `TypeFact` union that both use: U9 calls the gatherer at check time, and Layer 2 calls it through `facts`. Whichever of U9 and U15 lands second adapts to the first. Neither depends on the other.
+- Q20 (Stream K). **The R18 counts step.** It belongs in `mutation.yml`'s `report` job, which Stream K owns. This unit supplies `stryker audit --counts-only` (U6); Stream K wires it.
 - Q19. **Shard co-location.** U13 places each subsumed mutant in the same shard as its dominators (`plan-shards.workflow.ts`). Stream C U7 adds guard-group placement to the same workflow. Whichever lands second merges both constraints into one grouping key.
 
 ### Sources / Research
@@ -384,6 +386,7 @@ Four stacked PRs. Each is shippable alone and tested end to end. The ruling's PR
   A shard run sees its dominators' verdicts only if they run in the same process, so the shard plan places each subsumed mutant with its first dominator (Q19). S1 and S3 each name exactly one dominator, so co-locating the first one makes every outcome the step needs local. A placement group is placed as one item and never raises the shard count above `maxShards`. Subsumed records are never served from remembered results (R9), so a remembered drop cannot outlive a dominator that has stopped running. Governs R5, R31.
 - KTD14. **Layer 2 facts are gathered in the checker; the decision runs in the engine.** Only the checker holds a type checker (`ts-compiler.handle.ts:120-130`), and the engine is where every plan path converges (R37). The checker exposes facts as data through a new optional `facts` capability on `CheckerService` and a `facts` RPC (`packages/stryker-js-plugin-interface/src/Checker.service.ts:8-17`, `PluginRpcs.service.ts:59-74`). The decision workflow lives in the engine. This keeps the fact contract serializable for Stream F. It also keeps checker-specific code inside the checker. Rejected: deciding inside `check`, the Stream C U9 pattern. The audit would then have to run `check`, which compiles mutants, to learn the drop list, and the plan path would price `type-invalid` mutants as compiled. Governs R32, R37, R38.
 - KTD15. **Each fact is read on the unmutated program, at an anchor the mutation leaves in place.** That is what separates this from Stream C's refuted KD3. A mutant replaces only its own range, so any type outside that range is identical in the mutated program, unless TS infers it from the replaced range. R34's anchor list excludes exactly those inferred types. Each probe is the narrowest type TypeScript gives that replacement: the fresh `""` literal, the empty object literal, and an arrow whose return type is `undefined`. So when the probe is not assignable at the anchor, TypeScript reports an assignability error there in the mutated program. R42 makes that argument executable against the pinned compiler. Governs R34, R35.
+- KTD17. **`drop-audit` audits the whole corpus on every run; it has no scope step.** The audit instruments the source text the matrix recorded (`audit-request.cell.ts:194`), not the PR's files, so a PR changes the result only through the audit command, the plugins it loads, or a project's config. A trigger for that is 68% of main commits (110 of 162, `1f553da50`..`251201755`, as `@systemfsoftware/stryker-js` in `turbo query affectedPackages` or a corpus `stryker.config.*` change). The remaining runs would save about 15 runner-seconds each (42 s against 27 s on #288's runs) in a job that runs beside `check`, and a scope step can miss a judge change, as #288's hand list did, and would grade its own PR. Rejected: #288's files mode and `nothing-to-audit`, which audit main's recorded sources and so carry no PR signal; a `tsc --listFilesOnly` closure; turbo's `file.dependencies` trace, which stops at every workspace import because it ignores the `@systemfsoftware/source` condition (233 unresolved imports from `audit-request.cell.ts`). Governs R16.
 - KTD16. **The new rule id is `type-invalid`.** It joins `RULE_IDS` (`ignore-rule.schema.ts:6-19`) in U14, the layer that first emits it. The SOTA plan's `type-invalid-return` and `type-invalid-object` were never added. One id with the probe in its detail covers all four shapes. Governs R8, R36.
 
 ### High-Level Technical Design
@@ -420,7 +423,7 @@ flowchart TB
     U1[U1 kill-matrix switch]
     U6[U6 stryker audit]
   end
-  subgraph W [PR-W, root-owned]
+  subgraph W [PR-W]
     U9[U9 CI wiring]
   end
   subgraph C [PR-C]
@@ -437,7 +440,8 @@ flowchart TB
 
 ### Assumptions
 
-- [INFERENCE] The merged incremental reports of a kill-matrix run carry every killer for each mutant. The vitest runner reports all killers under `disableBail` (`interpret-vitest-mutant-run.workflow.ts:94-110`), and `shard/incremental-union.ts` keeps arbitrary fields. U9's first artifact confirms this when it shows `killedBy` lengths above 1.
+- The root's 2026-10-13 ruling on #288 ("stays open and is driven to merge") makes #288 PR-W, under the root's ownership of `.github/workflows/`. Whether `drop-audit` becomes a required status check stays the root's call.
+- Verified 2026-10-13: the merged incremental reports of a kill-matrix run carry every killer for each mutant. In `kill-matrix-457` (run 38335732420), 1651 of 2677 Killed mutants have more than one `killedBy`, up to 59.
 - [INFERENCE] The TS 7 `TypeObject` and symbol responses expose what R35 needs: literal values, the optional flag on property symbols, and whether a property is declared or produced by a mapped type. If any of these is missing from `typescript` 7.0.2, R34 and R35 narrow to the facts that are available, the mutants they cannot decide are kept, and the gap goes to Stream H (Q15).
 
 ### Risks
@@ -464,7 +468,7 @@ flowchart TB
 
 Units are grouped by PR. Within a PR, the order shown is the commit order. Mutant ids come from #416 (run 37960922409), or from #406 (run 37918729445) where #416 lacks diagnostics. They name the corpus mutants whose CI outcome each unit is expected to change. Tests use their own fixtures, because ids are derived from file content.
 
-### PR-A: Layer 1 (base `main`)
+### PR-A: Layer 1 (merged, #273)
 
 #### U12. Condition-position repair (lands first)
 
@@ -578,7 +582,7 @@ Units are grouped by PR. Within a PR, the order shown is the commit order. Mutan
 - The PR body lists the R4 break first and names the files shared with Stream C.
 - After the release that carries PR-A, the first main Mutation run shows the 76 S1 complements Ignored as `redundant-relational`, each naming its dominator, cited by run id.
 
-### PR-B: Evidence tooling (base PR-A)
+### PR-B: Evidence tooling (merged, #263 and #276)
 
 #### U1. Kill-matrix switch in the shared Stryker config
 
@@ -586,9 +590,9 @@ Units are grouped by PR. Within a PR, the order shown is the commit order. Mutan
 - **Requirements:** R14, R15.
 - **Dependencies:** none.
 - **Files:** `packages/toolchain/stryker-config/lib/base.js`.
-- **Approach:** when `STRYKER_KILL_MATRIX=1`, `sharedConfig` adds `disableBail: true` and `mutator: { mutantSetPolicy: 'full' }`. `coverageAnalysis: 'perTest'` is already set (`base.js:17`). With the variable unset, the object is unchanged. A cold start (no cache restore, `plan --full`) is U9's job (KTD7).
+- **Approach:** when `STRYKER_KILL_MATRIX=1`, `sharedConfig` adds `disableBail: true` and `mutator: { mutantSetPolicy: 'full' }`. `coverageAnalysis: 'perTest'` is already set (`base.js:17`). With the variable unset, the object is unchanged. A cold start (no cache restore, `plan --full`) is the job of `kill-matrix.yml`, on `main` since #263 (KTD7).
 - **Patterns:** the environment reads at `base.js:4-8`.
-- **Test expectation:** none. This is a config switch; its proof is U9's first artifact showing Killed mutants with more than one `killedBy`.
+- **Test expectation:** none. This is a config switch; its proof is `kill-matrix-457`, where 1651 of 2677 Killed mutants have more than one `killedBy`.
 - **Verification:** `pnpm format:check`; `pnpm --filter @systemfsoftware/stryker-js typecheck`.
 
 #### U6. `stryker audit`: drop list, predicates, and counts
@@ -624,34 +628,29 @@ Units are grouped by PR. Within a PR, the order shown is the commit order. Mutan
 - U6's scenarios pass; with `STRYKER_KILL_MATRIX` unset, `sharedConfig` is unchanged.
 - `node packages/stryker-js/dist/main.mjs audit --counts-only` over the downloaded `mutation-report-416` artifact gives 8626 planned and 4136 CompileError, output quoted in the PR body. It reads JSON only and instruments nothing.
 
-### PR-W: Workflow wiring (base PR-B, owned by the root)
+### PR-W: Workflow wiring (#288, base `main`)
 
 #### U9. CI wiring
 
-- **Goal:**
-  - Main produces a kill matrix on a schedule and on dispatch.
-  - Every PR runs the drop audit against main's latest matrix and latest Mutation report.
-  - Every Mutation run publishes R18 counts.
-- **Requirements:** R15, R16, R18.
-- **Dependencies:** U1, U6, and Q14's bootstrap choice. The root owns and reviews this unit (`.github/workflows/` is Read-only).
-- **Files:**
-  - New `.github/workflows/kill-matrix.yml` (under Q14 option (a), landed by the root before PR-W).
-  - `.github/workflows/ci.yml`: a new non-matrix `drop-audit` job.
-  - `.github/workflows/mutation.yml`: one counts step in the `report` job.
+- **Goal:** every PR and every push to `main` runs the drop audit over the whole corpus against `main`'s newest kill matrix, and the job fails when the audit fails or no matrix exists.
+- **Requirements:** R16 (KTD17).
+- **Dependencies:** U6; `kill-matrix.yml` on `main` (Q14). The R18 counts step is Stream K's (Q20).
+- **Files:** `.github/workflows/ci.yml`: a new non-matrix `drop-audit` job.
 - **Approach:**
-  - **Kill-matrix workflow** (schedule and dispatch, on `main`): it mirrors the `plan`, `build`, `mutation`, and `report` jobs of `mutation.yml` with `STRYKER_KILL_MATRIX=1` and `plan --full`. It restores and saves no incremental cache, and it uses its own artifact names: `kill-matrix-shard-*`, and `kill-matrix-<run_number>` holding `reports/mutation/**/stryker-incremental.json`. The report job succeeds only if every merged incremental report exists, with no budget gate. A separate file keeps the Mutation workflow's contexts unchanged (`docs/solutions/workflow-issues/matrix-legs-rename-the-required-status-check.md`).
-  - **`drop-audit` job:** it builds the workspace `stryker-js` and downloads, through REST, the latest successful kill-matrix artifact. It then runs `node packages/stryker-js/dist/main.mjs audit --matrix <dir> --out audit.json` and uploads `audit.json`. If the artifact is missing, the job fails with `::error` and does not skip. Its context name `drop-audit` goes to the root, who decides whether to require it.
-  - **Counts step:** after `merge`, the workspace-built `audit --counts-only` writes `reports/mutation/mutation-counts.json` into the existing report artifact.
-- **Patterns:** `mutation.yml:39-352`; `.github/actions/released-tarballs`; `docs/solutions/workflow-issues/mutation-lane-green-while-every-job-failed.md`.
-- **Test expectation:** none. This is workflow wiring; its evidence is the artifacts and runs below.
+  - `needs: lane`, skipped for docs-only changes and bot pushes, like `check`; 60-minute timeout; `contents: read`, `actions: read`.
+  - Find the matrix by run, not in the repository-wide artifact list: walk the newest 100 completed `main` runs of this repository (fork runs excluded) of each workflow that publishes `kill-matrix-<n>` (`mutation.yml` through its `kill-matrix` job, `kill-matrix.yml` on dispatch), newest first, and take the first run whose own artifacts (`actions/runs/<id>/artifacts`) hold an unexpired one; download it. The repository-wide list grows by 1200 to 2300 artifacts a day (`kill-matrix-455` was on page 6 five hours after upload), so a fixed page scan reports a false `matrix-missing`. 100 Mutation runs cover about a week, and every non-bot push to `main` publishes a matrix, so a miss means the lane is broken; the walk then costs at most 202 API calls. If no run in that window has a matrix, or the artifact holds no `<project>/stryker-incremental.json`, fail with `::error` code `matrix-missing` and the dispatch command as next action.
+  - Build `packages/stryker-js` and the matrix's projects through turbo, restoring the Mutation lane's turbo cache by its existing key, hashed right after checkout as that lane hashes it (after install, `packages/**` also matches the installer's shims and the key can never match). `GH_TOKEN` is scoped to the lookup step; the lookup step runs under `bash -eo pipefail`, so a failed API read fails the step rather than reporting `matrix-missing`.
+  - Run `node packages/stryker-js/dist/main.mjs audit --matrix <dir> --projects <every matrix project> --out reports/audit.json`, copy its output to the step summary, and upload `audit.json` (14 days, overwrite on re-run) whenever the audit wrote it. The audit's exit code is the job's verdict.
+  - No logic in YAML beyond artifact lookup: the verdict, counts, and next actions come from `stryker audit` (U6).
+- **Patterns:** `.github/actions/released-tarballs`; #288's rulings (fork filter, overwrite, `matrix-missing`), but not its five-page artifact scan; `docs/solutions/workflow-issues/mutation-lane-green-while-every-job-failed.md` (the verdict comes from the command's exit, no `continue-on-error`).
+- **Test expectation:** none. This is workflow wiring; its evidence is the run below.
 - **Verification:** on GitHub only, observed with `xd://github run_watch` (OP13), with run ids cited.
 
 **PR-W Definition of Done:**
 
-- The root has approved the workflow diff.
-- The first kill-matrix artifact is cited by run id and shows Killed mutants with more than one `killedBy`.
-- `drop-audit` on PR-W's head reports the 76 S1 pairs joined, 0 failures, 0 orphaned tests, and no `Unattested` rule, cited by run id (under Q14 option (a)).
-- The counts step's artifact is cited from the first Mutation run that carries it.
+- `drop-audit` on PR-W's head audits the whole corpus against the newest `kill-matrix-<n>`, reports 0 `Fail`, 0 orphaned tests and no `Unattested` rule, and exits 0, cited by run id. (Main's build against `kill-matrix-457` gives 99 `complement` pairs: 35 `Pass`, 61 `Vacuous`, 3 `AttributionUnverified`, 0 `Fail`.)
+- `check`, `Changeset Check` and every other required check are green on PR-W's head.
+- #288's description states the root's ownership of the job (CONST-E9, CONST-G5) and the code-review receipt.
 
 ### PR-C: Type-guided generation (base PR-W)
 
@@ -665,7 +664,7 @@ Units are grouped by PR. Within a PR, the order shown is the commit order. Mutan
   - `packages/stryker-js-plugin-interface/src/Checker.service.ts` (optional `facts`), `PluginRpcs.service.ts` (the `facts` RPC), and `ignore-rule.schema.ts` (`type-invalid`, KTD16).
   - New `packages/stryker-js/src/decide-type-invalid.workflow.ts` and `src/__tests__/decide-type-invalid.workflow.property.test.ts`.
   - `packages/stryker-js/src/audit-drops.workflow.ts` and its property test: the R40 branch and `NotCompiledOnMain`. `audit-request.cell.ts`, `Cli.schema.ts`, and `bin/cli-command.ts`: `--statuses <dir>`, which reads `<dir>/<project>/stryker-incremental.json` from main's latest Mutation artifact.
-  - `.github/workflows/ci.yml` (root-owned, as in U9): `drop-audit` also downloads main's latest successful Mutation artifact and passes `--statuses`.
+  - `.github/workflows/ci.yml`, as in U9: `drop-audit` also downloads main's latest successful Mutation artifact and passes `--statuses`.
   - `packages/stryker-js-plugin-interface/src/Mutant.schema.ts`, `packages/stryker-js-cli-contract/src/run-event.schema.ts`, `stream-version.schema.ts`, and `packages/stryker-js/src/IncrementalReport.schema.ts`: the `TypeInvalid` variant of the drop reference (KTD5). A new wire variant takes the next `StreamSchemaVersion` major and a `major` changeset for `@systemfsoftware/stryker-js-cli-contract` (Q13).
   - New `packages/stryker-js/src/run/type-facts.cell.ts`, called from `run/mutation-test.cell.ts:91`, `run/deferrable-dry-run.cell.ts:64-65`, `plan-request.cell.ts:201-214`, and `audit-request.cell.ts`.
   - `packages/stryker-js-instrumenter/src/Transformer.service.ts`: each candidate of an R33 shape records its shape on the mutant.
@@ -715,7 +714,7 @@ Units are grouped by PR. Within a PR, the order shown is the commit order. Mutan
 
 **PR-C Definition of Done:**
 
-- The root has approved the `drop-audit` change. `check`, every `e2e (…)` leg, `Changeset Check`, and `drop-audit` are green on PR-C's head, cited by run id. `drop-audit` reports N > 0 `type-invalid` drops joined to main's statuses, 0 compiling mutants lost, and no `Unattested` rule.
+- `check`, every `e2e (…)` leg, `Changeset Check`, and `drop-audit` are green on PR-C's head, cited by run id. `drop-audit` reports N > 0 `type-invalid` drops joined to main's statuses, 0 compiling mutants lost, and no `Unattested` rule.
 - The PR body states, from the audit's counts, the baseline (the R18 count of the last main Mutation run before PR-C, which includes PR-A; #416's 4136 CompileError, 47.9%, and 3921 s are the pre-PR-A reference) and the predicted after figure (baseline CompileError − N, with the baseline checker time of those N removed). It also states the fact-gathering time.
 - After the release that carries PR-C, the first main Mutation run's counts artifact shows CompileError and checker time falling by the predicted amounts, cited by run id.
 - If Q15 is pending when U14 is done, PR-C is pushed with U14 only and stops there. Its Definition of Done then covers U14's scenarios, and the corpus figures wait for U15.
@@ -743,7 +742,7 @@ Units are grouped by PR. Within a PR, the order shown is the commit order. Mutan
 | Single plan (REPO-D2)   | `pnpm gate:repo`                                                                                 | the PR that carries this plan         |
 | CI (START-4, START-5)   | `check`, `e2e (…)`, and `Changeset Check` on each PR head, observed with `xd://github run_watch` | every PR                              |
 | Kill matrix             | the `kill-matrix` workflow on `main`, cited by run id and artifact                               | from PR-W                             |
-| No signal loss          | `drop-audit` reports 0 failures, 0 orphaned tests, 0 compiling mutants lost                      | every PR from PR-W                    |
+| No signal loss          | `drop-audit` audits the whole corpus: 0 failures, 0 orphaned tests, 0 compiling mutants lost     | every PR from PR-W                    |
 
 Locally: one build at a time, no e2e, no full-workspace test, no mutation run, and no long-lived `tsc`/watch process left running. A unit's tests count as passing only when the parent session ran them (VER1).
 
