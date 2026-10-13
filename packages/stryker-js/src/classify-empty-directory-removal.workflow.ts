@@ -29,18 +29,6 @@ export class RemovalFailed extends S.TaggedClass<RemovalFailed>()('RemovalFailed
   readonly [EmptyDirectoryRemovalTypeId] = EmptyDirectoryRemovalTypeId
 }
 
-export class EmptyDirectoryRemovalRejected extends S.TaggedError<EmptyDirectoryRemovalRejected>()(
-  'EmptyDirectoryRemovalRejected',
-  {
-    code: S.UndefinedOr(S.String),
-    cause: S.Unknown,
-  },
-) {
-  override get message(): string {
-    return `Removing the directory failed (errno: ${String(this.code)})`
-  }
-}
-
 export const EmptyDirectoryRemoval = S.Union([DirectoryKept, DirectoryAbsent, RemovalFailed])
 export type EmptyDirectoryRemoval = typeof EmptyDirectoryRemoval.Type
 

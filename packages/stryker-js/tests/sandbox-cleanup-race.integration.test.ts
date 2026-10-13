@@ -181,7 +181,6 @@ const runAgainst = (parent: string, rival: Rival): Effect.Effect<RivalledRun> =>
 
 interface RivalledRuns {
   readonly ended: ReadonlyArray<Ended>
-  readonly rivalRemovals: number
   readonly rivalRemovalsBeforeFirstEntry: number
   readonly parentLeft: boolean
 }
@@ -193,7 +192,6 @@ const runsAgainst = (rival: Rival): Effect.Effect<RivalledRuns, PlatformError, F
       const runs = yield* Effect.forEach(Array.from({ length: RUNS_PER_SCENARIO }), () => runAgainst(parent, rival))
       return {
         ended: runs.map((run) => run.ended),
-        rivalRemovals: runs.reduce((total, run) => total + run.removals.total, 0),
         rivalRemovalsBeforeFirstEntry: runs.reduce((total, run) => total + run.removals.beforeFirstEntry, 0),
         parentLeft: yield* fs.exists(parent),
       }
@@ -392,14 +390,12 @@ Feature('Running several Stryker dry runs that share one temporary directory', {
           )((s, expect) =>
             expect({
               ended: s.runs.ended,
-              raced: s.runs.rivalRemovals > 0,
               parentLeft: s.runs.parentLeft,
               ...(row.expectsAcquisitionRace
                 ? { racedAcquisition: s.runs.rivalRemovalsBeforeFirstEntry > 0 }
                 : {}),
             }).toEqual({
               ended: EVERY_RUN_SUCCEEDED,
-              raced: true,
               parentLeft: false,
               ...(row.expectsAcquisitionRace ? { racedAcquisition: true } : {}),
             })

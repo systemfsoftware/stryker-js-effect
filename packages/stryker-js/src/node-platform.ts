@@ -20,9 +20,9 @@ import * as S from 'effect/Schema'
 import {
   classifyEmptyDirectoryRemoval,
   ClassifyEmptyDirectoryRemovalCommand,
-  EmptyDirectoryRemovalRejected,
 } from './classify-empty-directory-removal.workflow.js'
 import { classifyWorkerExit, ClassifyWorkerExitCommand } from './classify-worker-exit.workflow.js'
+import { EmptyDirectoryRemovalRejected } from './empty-directory.schema.js'
 import { EmptyDirectory } from './empty-directory.service.js'
 import { GitDiff } from './git-diff.service.js'
 import { layer as oxcSourceParserLayer } from './oxc-source-parser.js'
