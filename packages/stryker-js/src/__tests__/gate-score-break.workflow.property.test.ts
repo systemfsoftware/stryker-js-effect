@@ -1,10 +1,15 @@
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 
 import { gateScoreBreak, GateScoreBreakCommand, ProjectScore } from '../gate-score-break.workflow.js'
 
-const breakOf = (entry: ProjectScore): number | null => entry.thresholds === null ? null : entry.thresholds.break
+const breakOf = (entry: ProjectScore): number | null =>
+  Match.valueTags(entry.thresholds, {
+    Recorded: ({ break: threshold }) => threshold,
+    Unrecorded: () => null,
+  })
 
 const breaksOwnThreshold = (entry: ProjectScore): boolean =>
   Report.MutationScore.match(entry.score, {
@@ -23,11 +28,12 @@ const expectedNotesOf = (entry: ProjectScore): ReadonlyArray<string> => [
         `stryker gate: ${entry.project} tested no valid mutant, so there is no mutation score to hold against thresholds.break`,
       ],
   }),
-  ...(entry.thresholds === null
-    ? [
+  ...Match.valueTags(entry.thresholds, {
+    Recorded: (): ReadonlyArray<string> => [],
+    Unrecorded: (): ReadonlyArray<string> => [
       `stryker gate: ${entry.project}: no thresholds recorded for this project; re-run its shards with the project's config`,
-    ]
-    : []),
+    ],
+  }),
 ]
 
 const breachedProjectsOf = (subject: typeof gateScoreBreak, projects: ReadonlyArray<ProjectScore>) =>

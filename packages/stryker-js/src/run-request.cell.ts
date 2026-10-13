@@ -471,7 +471,7 @@ const projectScoresOf = (report: GateReportDocument): ReadonlyArray<ProjectScore
     ...[ungrouped].filter((files) => files.length > 0).map((files) => ({
       project: UNSHARDED_PROJECT,
       score: scoreOfFiles(report, files),
-      thresholds: report.thresholds,
+      thresholds: { _tag: 'Recorded' as const, break: report.thresholds.break },
     })),
   ]
 }

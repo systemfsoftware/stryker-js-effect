@@ -25,7 +25,7 @@ import {
   type ShardReportGap,
   type ShardReportOverlap,
 } from './merge-shard-reports.workflow.js'
-import { type MergedProject, ShardMergeFailed } from './shard-merge.schema.js'
+import { type MergedProject, type MergedProjectThresholds, ShardMergeFailed } from './shard-merge.schema.js'
 
 const STREAM_FILE = 'mutation-stream.jsonl'
 const REPORT_FILE = 'mutation.json'
@@ -161,8 +161,11 @@ const schemaVersionOf = (reports: readonly ProjectReport[]): string =>
 const thresholdsOf = (reports: readonly ProjectReport[]): Report.Thresholds =>
   Option.getOrElse(Option.map(headReportOf(reports), (first) => first.report.thresholds), () => DEFAULT_THRESHOLDS)
 
-const thresholdsOfProject = (reports: readonly ProjectReport[]): RunEvent.VerdictThresholds | null =>
-  Option.getOrNull(Arr.findFirst(reports, (entry) => entry.thresholds))
+const thresholdsOfProject = (reports: readonly ProjectReport[]): MergedProjectThresholds =>
+  Option.match(Arr.findFirst(reports, (entry) => entry.thresholds), {
+    onNone: () => ({ _tag: 'Unrecorded' }),
+    onSome: (thresholds) => ({ _tag: 'Recorded', ...thresholds }),
+  })
 
 const mergedProjectsOf = (reports: readonly ProjectReport[]): readonly MergedProject[] =>
   Arr.dedupe(reports.map((entry) => entry.project)).map((project) => {

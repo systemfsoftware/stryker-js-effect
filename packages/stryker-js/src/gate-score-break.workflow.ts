@@ -13,13 +13,16 @@ const SCORE_BREAK_EXIT_CLASS = 'VerdictFail' satisfies Plugin.ExitClass
 const SCORE_BREAK_REMEDIATION =
   'kill the survivors the report lists, or lower `thresholds.break` (null turns this verdict off)'
 
-export const ProjectThresholds = S.Struct({ break: S.NullOr(Report.Percentage) })
+export const ProjectThresholds = S.Union([
+  S.TaggedStruct('Recorded', { break: S.NullOr(Report.Percentage) }),
+  S.TaggedStruct('Unrecorded', {}),
+])
 export type ProjectThresholds = typeof ProjectThresholds.Type
 
 export const ProjectScore = S.Struct({
   project: S.String,
   score: Report.MutationScore,
-  thresholds: S.NullOr(ProjectThresholds),
+  thresholds: ProjectThresholds,
 })
 export type ProjectScore = typeof ProjectScore.Type
 
@@ -90,7 +93,10 @@ const exitCommand = ClassifyExitCommand
 const isVerdictFailed = S.is(ExitVerdictFailed)
 
 const breakOf = (entry: ProjectScore): number | null =>
-  Option.getOrNull(Option.flatMapNullishOr(Option.fromNullishOr(entry.thresholds), (thresholds) => thresholds.break))
+  Match.valueTags(entry.thresholds, {
+    Recorded: ({ break: threshold }) => threshold,
+    Unrecorded: () => null,
+  })
 
 const failsBreak = (entry: ProjectScore): boolean =>
   Result.match(
@@ -114,6 +120,9 @@ const breachesOf = (projects: ReadonlyArray<ProjectScore>): ReadonlyArray<BreakB
 const isUnscoredWithBreak = (entry: ProjectScore): boolean =>
   Match.valueTags(entry.score, { Unscored: () => breakOf(entry) !== null, Scored: () => false })
 
+const isUnrecorded = (entry: ProjectScore): boolean =>
+  Match.valueTags(entry.thresholds, { Recorded: () => false, Unrecorded: () => true })
+
 const projectsWhere = (
   projects: ReadonlyArray<ProjectScore>,
   predicate: (entry: ProjectScore) => boolean,
@@ -121,7 +130,7 @@ const projectsWhere = (
 
 const decide = (command: GateScoreBreakCommand): Result.Result<GateScoreBreakDecision, ScoreBelowBreak> => {
   const unscored = projectsWhere(command.projects, isUnscoredWithBreak)
-  const unrecorded = projectsWhere(command.projects, (entry) => entry.thresholds === null)
+  const unrecorded = projectsWhere(command.projects, isUnrecorded)
   return Option.match(Arr.match(breachesOf(command.projects), { onEmpty: Option.none, onNonEmpty: Option.some }), {
     onNone: () => Result.succeed(ScoreAtOrAboveBreak.make({ unscored, unrecorded })),
     onSome: (breaches) =>
