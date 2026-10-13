@@ -153,14 +153,21 @@ const drainToSinks = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainToSinks.nam
   toStdout: boolean,
   framed: Stream.Stream<string>,
 ) {
-  yield* fs.makeDirectory(path.dirname(fileName), { recursive: true })
   yield* Effect.scoped(
     Effect.gen(function*() {
-      const handle = yield* fs.open(fileName, { flag: 'w' })
-      const withFile = framed.pipe(
-        Stream.tap((line) => handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync))),
+      const opened = yield* fs.makeDirectory(path.dirname(fileName), { recursive: true }).pipe(
+        Effect.andThen(fs.open(fileName, { flag: 'w' })),
+        Effect.tapCause((cause) => Effect.logError('stryker.output.drain_file_failed', cause)),
+        Effect.option,
       )
-      yield* runToSink(stdio, withFile, toStdout).pipe(Effect.ignore)
+      const lines = Option.match(opened, {
+        onNone: () => framed,
+        onSome: (handle) =>
+          framed.pipe(
+            Stream.tap((line) => handle.writeAll(encodeUtf8(line)).pipe(Effect.flatMap(() => handle.sync))),
+          ),
+      })
+      yield* runToSink(stdio, lines, toStdout).pipe(Effect.ignore)
     }),
   )
 })
@@ -174,7 +181,7 @@ const drainStoredFile = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainStoredFi
   framed: Stream.Stream<string>,
 ) {
   const fileName = yield* Ref.get(fileNameRef)
-  yield* drainToSinks(fs, path, stdio, fileName, toStdout, framed).pipe(Effect.orDie)
+  yield* drainToSinks(fs, path, stdio, fileName, toStdout, framed)
 })
 
 const drainFileOf = Effect.fn(SpanTaxonomy.Spans.runEventStreamDrainFile.name)(function*(

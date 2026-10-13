@@ -5,18 +5,18 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0453-fix-stryker-stream-files-out-of-project-inputs-plan.md
+supersedes: docs/plans/2026-10-13-0505-fix-stryker-stream-files-out-of-project-inputs-plan.md
 ---
 
 # No stream file Stryker writes enters the next run's inputs - Plan
 
 ## Goal Capsule
 
-- **Objective:** a project re-run through the `stryker` CLI with nothing changed reuses every verdict, whatever its `ignorePatterns` (including `[]`) and whichever `stryker` commands ran in it before. A `progressStreamFile` set in the config file is where `stryker run` writes its stream.
+- **Objective:** a project re-run through the `stryker` CLI with nothing changed reuses every verdict, whatever its `ignorePatterns` (including `[]`) and whether `stryker run` or `stryker --help` ran in it before (shard outputs are OQ6). A `progressStreamFile` set in the config file is where `stryker run` writes its stream, and a stream path that cannot be opened never silences the run's `stdout` records.
 - **Authority:** `CONSTITUTION.md`, then root `AGENTS.md`, then this plan. Stream J owns the CLI surface. This PR (#329) lands before PR #320 (the `--ignorePatterns` help text), which waits on it.
-- **Supersedes:** the 0453 plan, executed in `7a3af040`; its full review found no P0 or P1, but R7 claimed absolute paths through any spelling of the project root and the READMEs credited the config file for every command, so this plan carries the corrected contract and 0453 is removed in the same PR (REPO-D2). 0453 superseded 0421 (`39c401e4`, `1059dc39`), 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
+- **Supersedes:** the 0505 plan, executed in `25a46beb`; its full review found no P0 or P1, but a stream path naming a directory, now reachable from the config, dropped every `stdout` record (the 0505 disposition said they were unaffected), and the nested `./` spelling had no row although it fails on `main`. This plan carries the corrected contract and 0505 is removed in the same PR (REPO-D2). 0505 superseded 0453 (`7a3af040`), 0421 (`39c401e4`, `1059dc39`), 0409 (`bd72466b`), 0342 (`b6c0eb00`), 0337 (never committed), 0248 (`46abe7d2`), 0216 (`3cb10de5`) and 0107 (`65953faa`).
 - **Citations:** line numbers name `main` at `ec1769de`, the base this branch was cut from, unless they name a file this PR changes.
-- **Open blockers:** none. OQ1, OQ2, OQ4 and OQ5 go to the root and OQ3 to PR #320; none gates this unit.
+- **Open blockers:** none. OQ1, OQ2, OQ4, OQ5 and OQ6 go to the root and OQ3 to PR #320; none gates this unit.
 
 ---
 
@@ -64,6 +64,7 @@ Cause in code:
 - R6. An empty `progressStreamFile`, from the config or the flag, keeps today's behaviour: the stream goes to the default path.
 - R7. A configured or flagged output path inside the project is left out of the inputs however it is spelled (`out/stream.jsonl`, `./out/stream.jsonl`, `out//stream.jsonl`, `out/stream.jsonl/`, nested) on every platform: the rule is the entry path the crawl gives that file. Containment is lexical: an absolute path counts only when it names the project through the path the crawl starts from.
 - R8. The path a run streams to is the path its own inputs leave out, even when a config function answers differently each time it is read.
+- R9. A stream path that cannot be opened, from the config or the flag, is logged as the drain's file failure and the run's records still reach `stdout`, as `tee` keeps writing standard output when a file operand fails ([tee(1p)](https://www.man7.org/linux/man-pages/man1/tee.1p.html)).
 
 ### Acceptance Examples
 
@@ -71,11 +72,12 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 
 - AE1. Covers R1, R3. Config sets `progressStreamFile: 'out/stream.jsonl'`. After the second run, `out/stream.jsonl` holds a `reuse` record with `ran: 0` and `reused` equal to the mutants in `out/report.json`, and `reports/mutation-stream.jsonl` does not exist.
 - AE2. Covers R5. The same project is run, then asked for `stryker --help --json`, then run again. `reports/mutation-stream.jsonl` is absent after the first run and present after the help, and the last run reuses every reported mutant.
-- AE3. Covers R7. AE1 with `./out/stream.jsonl`, `out//stream.jsonl` and `out/stream.jsonl/`.
+- AE3. Covers R7. AE1 with `./out/stream.jsonl`, `out//stream.jsonl`, `out/stream.jsonl/`, and `./out/nested/stream.jsonl` read at `out/nested/stream.jsonl`.
 - AE4. Covers R2. Config names `out/stream.jsonl`; both runs pass `--progressStreamFile out/flag.jsonl`. The second run's `reuse` record is in `out/flag.jsonl` and reuses every mutant; `out/stream.jsonl` is never written.
 - AE5. Covers R8. The config's default export is a function answering `out/first.jsonl` on its first call and `out/later.jsonl` after. The second run's stream is in `out/first.jsonl` and reuses every mutant.
 - AE6. Covers R6. Config sets `progressStreamFile: ''`. Both runs stream records on `stdout`; the second run's `reuse` record is in `reports/mutation-stream.jsonl` and reuses every mutant.
 - AE7. Covers R4. A config that throws while loading, and a config whose `progressStreamFile` is `null`: each run exits 2, its error record names `stryker.config.mjs` or `progressStreamFile` respectively, and the stream is at `reports/mutation-stream.jsonl`.
+- AE8. Covers R9. Config sets `progressStreamFile: 'out/stream'`, an existing empty directory. One run exits 0 and its `stdout` carries `mutantTested` records and ends with the verdict.
 
 ### Scope Boundaries
 
@@ -96,10 +98,11 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
   - Rejected: exclusion only, without the `run` path fix. R1 would not hold.
 - **The empty-path guard applies to the resolved value too.** Covers R6. The flag path already decoded `S.NonEmptyString` and fell back to the default (`run-request.cell.ts:132-136`); the same helper reads the resolved options.
 - **Output entries are matched by the entry path the crawl gives the file.** Covers R7. Each entry inside the project is resolved and named as the crawl names an entry: the parent directory's project-relative path, `/`, the file name. That holds for every spelling, depth and platform, including nested paths on Windows, which `main` missed. An entry outside the project keeps its original form. Containment is lexical; resolving symlinks would need file-system reads in the rule derivation for an absolute spelling through another root, which `main` did not handle either.
-- **CONST-W3 declaration, waiving CONST-T4 ("Behavior Lives Where the Mutator Sees It") for two cases.** `packages/stryker-js/stryker.config.ts:15-19` mutates only `src/**/*.workflow.ts` and `src/**/*.schema.ts`, so two behaviours this PR adds go ungraded:
+- **CONST-W3 declaration, waiving CONST-T4 ("Behavior Lives Where the Mutator Sees It") for three cases.** `packages/stryker-js/stryker.config.ts:15-19` mutates only `src/**/*.workflow.ts` and `src/**/*.schema.ts`, so three behaviours this PR adds go ungraded:
   1. the route match, config read and fallback that choose the run's stream path (`streamedRequestOf`, `packages/stryker-js/src/run-request.cell.ts`);
-  2. the output-entry derivation (`isInsideProject`, `crawlEntryPathOf`, `projectRelativeRuleOf`, `packages/stryker-js/src/read-project.cell.ts`).
-     Both have one outcome, a path, and `Workflow.make` refuses a single-variant decision, telling the author to fold the function into its owning module (`@systemfsoftware/effect-cell-types` `SingleVariantDecision`, met on PR #320). AE1-AE7 grade both through the built binary instead.
+  2. the output-entry derivation (`isInsideProject`, `crawlEntryPathOf`, `projectRelativeRuleOf`, `packages/stryker-js/src/read-project.cell.ts`);
+  3. the drain's fallback to `stdout` alone when the stream file cannot be opened (`drainToSinks`, `packages/stryker-js/src/run-event-stream.service.ts`).
+     The first two have one outcome, a path, and `Workflow.make` refuses a single-variant decision, telling the author to fold the function into its owning module (`@systemfsoftware/effect-cell-types` `SingleVariantDecision`, met on PR #320). The third is I/O inside a service's sink, with no decision to extract. AE1-AE8 grade all three through the built binary instead.
 
 ### Outstanding Questions
 
@@ -107,7 +110,8 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 - OQ2 (for the root, outside this PR). A non-`run` command given a non-default `--progressStreamFile` writes a stream the next plain `stryker run` does not exclude, and a stream left at a previously configured path stays an input after the config moves it. Should non-`run` commands stop writing a stream file?
 - OQ3 (for PR #320, after this lands). #320 rebuilds `strykerOutputFilesOf` from option names for its help text and says "Other files under `reports/` are not ignored". After merging `main` it must keep `DEFAULT_PROGRESS_STREAM_FILE` in the list and name it in the help.
 - OQ4 (for the root, outside this PR). The default stream path is spelled in two packages: `DEFAULT_PROGRESS_STREAM_FILE` here and the option default in `packages/stryker-js-plugin-interface/src/stryker-options.schema.ts:252`. Should the plugin interface export it?
-- OQ5 (for the root, outside this PR). A config whose default export is a function is now called twice per `stryker run`, so one that throws or changes state on a later call fails a run `main` completed (measured below). Should the config loader settle the export once per process and reuse that snapshot for every read, as `--survivors` and `--mutant` would also want?
+- OQ5 (for the root, outside this PR). A config whose default export is a function is now called twice per `stryker run`, so one that throws or changes state on a later call fails a run `main` completed (measured below), and a shadowed legacy config warns twice. Should the config loader settle the export once per process and reuse that snapshot for every read, as `--survivors` and `--mutant` would also want?
+- OQ6 (for the root, outside this PR). `stryker run --plan --shard` children stream to `<outDir>/<project>/mutation-stream.jsonl` (`packages/stryker-js/src/shard/shard-run.ts:34-48`), and `outDir` defaults to `<planDirectory>/reports/shards/<index>` under the base path (`:93-96`). When the plan's directory is a project's own root, a later plain run of that project includes the file and re-runs every mutant, as on `main` (adversarial lens, round 9; not measured here). Should shard outputs join `strykerOutputFilesOf`, or should the default `outDir` leave the project?
 
 ### Sources
 
@@ -131,6 +135,7 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 
 - "The config file is read once per `stryker run`." It is now read twice, as `--survivors` and `--mutant` already do (they now read it three times). The module is evaluated once; a config whose default export is a function is called twice, and a shadowed legacy config warns twice. The stream path comes from the first answer, every other option from the second. Measured: a config function that throws on its second call completes on `main` (exit 0) and fails on the branch (exit 2, `Invalid config file`). OQ5.
 - "The stream header is written before any config work." The first `stdout` line now waits for the config import. A config import that hangs now hangs before the header instead of after it.
+- "A drain that cannot open its file stops the run's output." On `main`, `--progressStreamFile` naming a directory exited 0 with no `stdout` record at all. The drain now logs the failure and still writes every record to `stdout`. The exit code stays 0, unlike `tee`'s non-zero status: the run's own outcome decides it, and the file failure is logged as `stryker.output.drain_file_failed`.
 - "Only the configured stream path is excluded." The default path is excluded too; a project file of its own at `reports/mutation-stream.jsonl` is no longer an input and is not copied into the sandbox.
 - "An output entry is matched as written." Output entries are now named as the crawl names files before matching; a relative output name that relied on glob syntax (none of Stryker's do) is now matched as a path.
 
@@ -138,10 +143,10 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 
 #### U1. Behaviour test, failing first
 
-- **Goal:** AE1-AE7.
+- **Goal:** AE1-AE8.
 - **Files:** `packages/stryker-js/tests/progress-stream-file.integration.test.ts`.
-- **Test scenarios:** one feature. A Given prepares the project; When steps run the binary and read the files; a Then asserts. One outline (AE1, AE3) and five scenarios (AE2, AE4-AE7).
-- **Verification:** each scenario failed first against a binary that lacked its fix: AE1 and AE2 on `main`, AE2 on `65953faa`, AE3 (`./` and `//`) on `3cb10de5`, AE3 (trailing `/`) and AE7 (invalid `progressStreamFile`, exit 0) on `b6c0eb00`, AE5 on `80f3959a`, AE6 on `65953faa` (no records, no file). AE4 and AE7's throwing config pin behaviour `main` already had. No production source is edited to stage a failure.
+- **Test scenarios:** one feature. A Given prepares the project; When steps run the binary and read the files; a Then asserts. One outline (AE1, AE3), one refusal outline (AE7) and five scenarios (AE2, AE4-AE6, AE8).
+- **Verification:** each scenario failed first against a binary that lacked its fix: AE1 and AE2 on `main`, AE2 on `65953faa`, AE3 (`./` and `//`) on `3cb10de5`, AE3 (trailing `/`) and AE7 (invalid `progressStreamFile`, exit 0) on `b6c0eb00`, AE3 (nested `./`) on `main`, AE5 on `80f3959a`, AE6 on `65953faa` (no records, no file), AE8 on `25a46beb` (no `mutantTested`, no verdict). AE4 and AE7's throwing config pin behaviour `main` already had. No production source is edited to stage a failure.
 
 #### U2. Resolve the run stream path through the config
 
@@ -166,6 +171,11 @@ All run the built `stryker` binary twice (or as stated) on a real temporary proj
 
 - **Goal:** R8, AE5.
 - **Files:** `packages/stryker-js/src/run-request.cell.ts`.
+
+#### U7. The drain writes `stdout` when its file cannot be opened
+
+- **Goal:** R9, AE8.
+- **Files:** `packages/stryker-js/src/run-event-stream.service.ts`.
 
 ### Review Dispositions
 
@@ -296,28 +306,41 @@ Round 8, full-path report-only review of `7a3af040` (0 P0, 0 P1, 1 P2, 4 P3):
 | Finding                                                                                 | Sev | Lens        | Disposition                                                                                                                                                                                                                                                              |
 | --------------------------------------------------------------------------------------- | --- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | An absolute output spelled through a symlinked or differently cased root stays an input | P2  | adversarial | Accepted, narrowed: R7, Key Decisions and the learning state that containment is lexical; the changeset names only the proven spellings. Not a regression: on `main` the default stream was not excluded, so any configured path already re-ran every mutant (variant A) |
-| A `progressStreamFile` naming the project root makes the drain's file write fail        | P3  | adversarial | Accepted: `--progressStreamFile .` fails the same way on `main`; the config value now behaves as the flag. `stdout` records are unaffected                                                                                                                               |
+| A `progressStreamFile` naming the project root makes the drain's file write fail        | P3  | adversarial | Superseded by round 9: the `stdout` clause was false; U7 fixes it                                                                                                                                                                                                        |
 | READMEs credit the config file for every command                                        | P3  | learnings   | Fixed: "or for `stryker run` also the config file"                                                                                                                                                                                                                       |
-| No nested or absolute AE3 row                                                           | P3  | testing     | Not admitted: on Linux both match on `main` and the branch alike, so a row cannot fail on a regression CI can observe; the cross-platform probe is the Output rules verification row                                                                                     |
+| No nested or absolute AE3 row                                                           | P3  | testing     | Superseded by round 9: the nested `./` row fails on `main`, so AE3 gains it; the absolute row stays out (lexical containment, probe below)                                                                                                                               |
 | The win32 guarantee rests on a probe, not a committed `Path` win32 test                 | P3  | correctness | Not admitted: the derivation is module-private in a cell; a test would need a new export only to test it. The Output rules probe is recorded                                                                                                                             |
+
+Round 9, full-path report-only review of `25a46beb` (0 P0, 0 P1, 1 P2, 6 P3):
+
+| Finding                                                                                     | Sev | Lens        | Disposition                                                                                                                                     |
+| ------------------------------------------------------------------------------------------- | --- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| A stream path naming a directory drops every `stdout` record, now reachable from the config | P2  | correctness | Fixed: U7, R9, AE8. Measured on `main`: the flag already dropped them (exit 0, no records); the config value did not, because `main` ignored it |
+| The nested `./` spelling has no row although it fails on `main`                             | P3  | correctness | Fixed: AE3 row, failing first on `main`                                                                                                         |
+| Shard children's streams stay inputs of a later plain run                                   | P3  | adversarial | Accepted, narrowed: the Objective no longer claims every command; OQ6. Same on `main`                                                           |
+| The config is read twice, so a shadowed legacy config warns twice                           | P3  | adversarial | Accepted: already in Assumptions; OQ5 now names it                                                                                              |
+| README and changeset state the exclusion without the lexical caveat                         | P3  | adversarial | Accepted: both state it for paths as users write them; the lexical edge is in R7 and the learning                                               |
+| R4's flag arm on a refused config has no row                                                | P3  | testing     | Not admitted: the arm reuses `flaggedRequestOf`, the flag path AE4 grades; a row adds a CLI spawn to the PR gate for one `orElseSucceed`        |
+| The changeset had 8 bytes left under the 900-byte ceiling                                   | P3  | standards   | Fixed: rewritten for U7 with the validator passing                                                                                              |
+| `mutation-lane-green-while-every-job-failed.md` names symbols #191 removed                  | P3  | learnings   | Deferred: pre-existing; this PR edits one parenthetical. A `ce-compound-refresh` of that learning owns it                                       |
 
 ### Verification Contract
 
-| Check           | Command                                                                                                                                                                                                                      | Pass                                                                                          |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Failing before  | U1's scenarios against the binaries named in U1                                                                                                                                                                              | fail as U1 states                                                                             |
-| Behaviour       | `vitest run tests/progress-stream-file.integration.test.ts` after building `dist`                                                                                                                                            | passes                                                                                        |
-| Neighbours      | `vitest run tests/plan-stream-location.integration.test.ts tests/rerun-by-id.integration.test.ts tests/incremental-reuse.integration.test.ts tests/clean-temp-dir.integration.test.ts tests/shard-merge.integration.test.ts` | pass                                                                                          |
-| Config failures | a throwaway CLI run on `main`'s binary and the branch's: a config that throws, a missing `--configFile`, an invalid option, a `null` `progressStreamFile`, a function that throws on its second call                         | first four identical (exit, records, error, stream location); the fifth as Assumptions states |
-| Output rules    | a throwaway probe applying the rule derivation and `crawlDirectory`'s entry naming under `path.posix` and `path.win32` to every AE3 spelling, nested, absolute and `..foo` entries                                           | rule equals the crawl's entry path in every case                                              |
-| Types and lint  | `tsc -b`, `pnpm run lint:tsgo`, oxlint on the touched files, `dprint check`                                                                                                                                                  | clean                                                                                         |
-| Changeset       | the `author-changesets` validator; bump `major`                                                                                                                                                                              | OK                                                                                            |
-| Review          | full-path `ce-code-review`, report-only, on the final head                                                                                                                                                                   | every finding has a disposition                                                               |
-| CI              | the PR head's check suites                                                                                                                                                                                                   | every required check green; Bench reported, not chased                                        |
+| Check           | Command                                                                                                                                                                                                                                                                 | Pass                                                                                          |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Failing before  | U1's scenarios against the binaries named in U1                                                                                                                                                                                                                         | fail as U1 states                                                                             |
+| Behaviour       | `vitest run tests/progress-stream-file.integration.test.ts` after building `dist`                                                                                                                                                                                       | passes                                                                                        |
+| Neighbours      | `vitest run tests/plan-stream-location.integration.test.ts tests/rerun-by-id.integration.test.ts tests/incremental-reuse.integration.test.ts tests/clean-temp-dir.integration.test.ts tests/shard-merge.integration.test.ts tests/run-event-stream.integration.test.ts` | pass                                                                                          |
+| Config failures | a throwaway CLI run on `main`'s binary and the branch's: a config that throws, a missing `--configFile`, an invalid option, a `null` `progressStreamFile`, a function that throws on its second call                                                                    | first four identical (exit, records, error, stream location); the fifth as Assumptions states |
+| Output rules    | a throwaway probe applying the rule derivation and `crawlDirectory`'s entry naming under `path.posix` and `path.win32` to every AE3 spelling, nested, absolute and `..foo` entries                                                                                      | rule equals the crawl's entry path in every case                                              |
+| Types and lint  | `tsc -b`, `pnpm run lint:tsgo`, oxlint on the touched files, `dprint check`                                                                                                                                                                                             | clean                                                                                         |
+| Changeset       | the `author-changesets` validator; bump `major`                                                                                                                                                                                                                         | OK                                                                                            |
+| Review          | full-path `ce-code-review`, report-only, on the final head                                                                                                                                                                                                              | every finding has a disposition                                                               |
+| CI              | the PR head's check suites                                                                                                                                                                                                                                              | every required check green; Bench reported, not chased                                        |
 
 No mutation run, local or dispatched: mutation evidence for this change comes from the next nightly on `main`.
 
 ## Definition of Done
 
-- U1-U6 have landed in one PR off `main`, and every Verification Contract row holds on its head.
-- The PR body carries the failing-first evidence, the review lenses, the models that actually served them, every pack ruling, and OQ1-OQ5.
+- U1-U7 have landed in one PR off `main`, and every Verification Contract row holds on its head.
+- The PR body carries the failing-first evidence, the review lenses, the models that actually served them, every pack ruling, and OQ1-OQ6.

@@ -19,6 +19,10 @@ const STRYKER_BIN = decodeURIComponent(new URL('../dist/main.mjs', import.meta.u
 
 const CONFIGURED_STREAM = 'out/stream.jsonl'
 
+const NESTED_STREAM = 'out/nested/stream.jsonl'
+
+const STREAM_DIRECTORY = 'out/stream'
+
 const DEFAULT_STREAM = 'reports/mutation-stream.jsonl'
 
 const JSON_REPORT = 'out/report.json'
@@ -168,10 +172,11 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
     scenarioOutline(
       'An unchanged project whose config names its stream file as <spelling> re-runs no mutant the second time',
       [
-        { spelling: 'a plain relative path', streamFile: CONFIGURED_STREAM },
-        { spelling: 'a ./-prefixed path', streamFile: `./${CONFIGURED_STREAM}` },
-        { spelling: 'a path with a doubled slash', streamFile: 'out//stream.jsonl' },
-        { spelling: 'a path with a trailing slash', streamFile: `${CONFIGURED_STREAM}/` },
+        { spelling: 'a plain relative path', streamFile: CONFIGURED_STREAM, streamAt: CONFIGURED_STREAM },
+        { spelling: 'a ./-prefixed path', streamFile: `./${CONFIGURED_STREAM}`, streamAt: CONFIGURED_STREAM },
+        { spelling: 'a path with a doubled slash', streamFile: 'out//stream.jsonl', streamAt: CONFIGURED_STREAM },
+        { spelling: 'a path with a trailing slash', streamFile: `${CONFIGURED_STREAM}/`, streamAt: CONFIGURED_STREAM },
+        { spelling: 'a ./-prefixed nested path', streamFile: `./${NESTED_STREAM}`, streamAt: NESTED_STREAM },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
@@ -181,7 +186,7 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
           ),
           When('the project is run')('first', (s) => invoke(s.project, RUN)),
           When('the project is run again with nothing changed')('second', (s) => invoke(s.project, RUN)),
-          When('the files the second run left are read')('left', (s) => leftBehind(s.project, CONFIGURED_STREAM)),
+          When('the files the second run left are read')('left', (s) => leftBehind(s.project, row.streamAt)),
           Then('the stream is at the configured path, every reported mutant is reused, and no default stream exists')(
             (s, expect) =>
               expect({
@@ -314,5 +319,31 @@ Feature('A stream file Stryker writes stays out of the next run', { timeout: 180
             },
           ),
         ),
+    )
+
+    scenario(
+      'A config whose stream file names a directory still streams every record on stdout',
+      Gherkin.Do.pipe(
+        Given('a project whose config names an existing empty directory as the stream file')(
+          'project',
+          () =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              const root = yield* prepareProject(configNaming(STREAM_DIRECTORY))
+              yield* fs.makeDirectory(path.join(root, STREAM_DIRECTORY), { recursive: true }).pipe(Effect.orDie)
+              return root
+            }),
+        ),
+        When('the project is run')('run', (s) => invoke(s.project, RUN)),
+        Then('the run succeeds and stdout carries its mutants and its verdict')((s, expect) => {
+          const events = eventsOf(s.run.stdout)
+          return expect({
+            exitCode: s.run.exitCode,
+            mutantsTested: events.some((event) => S.is(RunEvent.RunMutantTested)(event)),
+            endsWithVerdict: S.is(RunEvent.VerdictReached)(events.at(-1)),
+          }).toEqual({ exitCode: 0, mutantsTested: true, endsWithVerdict: true })
+        }),
+      ),
     )
   })
