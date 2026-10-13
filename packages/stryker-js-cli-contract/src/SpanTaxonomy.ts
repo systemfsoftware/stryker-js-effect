@@ -87,6 +87,7 @@ export const Spans = {
   mutationReportingCheckpoint: { name: 'stryker.mutationReporting.checkpoint', attributes: {} },
   mutationReportingDiscoverDependencies: { name: 'stryker.mutationReporting.discoverDependencies', attributes: {} },
   mutationReportingEmitVerdict: { name: 'stryker.mutationReporting.emitVerdict', attributes: {} },
+  mutationReportingJudgeScore: { name: 'stryker.mutationReporting.judgeScore', attributes: {} },
   mutationReportingManifestVersion: { name: 'stryker.mutationReporting.manifestVersion', attributes: {} },
   mutationReportingMutationTestReport: { name: 'stryker.mutationReporting.mutationTestReport', attributes: {} },
   mutationReportingReadMutatedSources: { name: 'stryker.mutationReporting.readMutatedSources', attributes: {} },

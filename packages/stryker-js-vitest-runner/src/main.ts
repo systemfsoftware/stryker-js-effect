@@ -13,7 +13,7 @@ import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 
 import { testRunnerHandlers } from './TestRunnerWorker.service.js'
-import { layer as vitestRunner } from './VitestRunner.service.js'
+import { layer as vitestRunner } from './vitest-test-runner.js'
 
 const workerPlatformLayer = Layer.unwrap(
   Effect.gen(function*() {

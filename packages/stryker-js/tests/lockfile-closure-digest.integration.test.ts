@@ -198,7 +198,7 @@ const runOf = (project: string): Effect.Effect<RunOutcome, never, never> =>
     const queue = yield* Queue.bounded<RunEvent.RunEvent, Cause.Done>(RunEvent.RunEvent.QUEUE_BOUND)
     const ports = Engine.nodePlatformLayer
     const runLayer = Layer.merge(
-      Layer.provide(Engine.RunEnvironment.stage(environmentFor(project), queue), ports),
+      Layer.provide(Engine.RunEnvironment.layerStage(environmentFor(project), queue), ports),
       ports,
     )
     const exit = yield* Engine.mutationTestCell
