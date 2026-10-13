@@ -490,6 +490,44 @@ const onLineOf = (rows: readonly MutantRow[], line: number): readonly string[] =
 const everyStatusOf = (ids: readonly string[], status: string): Readonly<Record<string, string>> =>
   Object.fromEntries(ids.map((id) => [id, status]))
 
+type Json = S.Schema.Type<typeof S.Json>
+
+type JsonRecord = { readonly [key: string]: Json }
+
+const isJsonRecord = (value: Json | undefined): value is JsonRecord => S.is(S.Record(S.String, S.Json))(value)
+
+const ELSEWHERE_REPORT = 'reports/elsewhere.json'
+
+const HERE_REPORT = 'reports/here.json'
+
+const merged = (record: JsonRecord, fields: JsonRecord): JsonRecord =>
+  Object.fromEntries([...Object.entries(record), ...Object.entries(fields)])
+
+const withFlakyCoverageUnder = (root: string, flakyMutantId: string) => (report: Json): Json => {
+  const coverage = isJsonRecord(report) ? report['dryRunCoverage'] : undefined
+  return isJsonRecord(report) && isJsonRecord(coverage)
+    ? merged(report, { dryRunCoverage: merged(coverage, { projectRoot: root, flakyMutantIds: [flakyMutantId] }) })
+    : report
+}
+
+const saveReportCopy = (
+  workspace: Workspace,
+  file: string,
+  text: string,
+  change: (report: Json) => Json,
+): Effect.Effect<void, never, never> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const report = yield* S.decodeEffect(S.fromJsonString(S.Json))(text)
+    yield* fs.writeFileString(
+      `${workspace.directory}/${file}`,
+      yield* S.encodeEffect(S.fromJsonString(S.Json))(change(report)),
+    )
+  }).pipe(Effect.orDie, Effect.provide(filePorts))
+
+const realPathOf = (directory: string): Effect.Effect<string, never, never> =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) => fs.realPath(directory)).pipe(Effect.orDie, Effect.provide(filePorts))
+
 Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_000 })
   .withLayer(Layer.empty)
   .live('the run keys every CompileError verdict by the program the checker loaded')
@@ -874,6 +912,66 @@ Feature('Reusing CompileError verdicts across incremental runs', { timeout: 240_
               disabledStatuses: everyStatusOf(s.runs.disabledIds, 'Ignored'),
               deferredVerdicts: verdictsOf(s.runs.forced.mutants, s.runs.compileErrorIds),
             }),
+        ),
+      ),
+    )
+
+    scenario(
+      'a flaky mutant saved under another root does not force the initial test run of a checker-only leaf',
+      Gherkin.Do.pipe(
+        Given(
+          'a configured project whose checker rejected a module, with its report saved once under another root and once under its own, each marking a CompileError mutant flaky',
+        )(
+          'runs',
+          () =>
+            withConfiguredWorkspace((workspace) =>
+              Effect.gen(function*() {
+                const first = yield* executeConfiguredRun(workspace)
+                const compileErrorIds = idsOf(compileErrorRows(first.mutants))
+                const flakyId = compileErrorIds[0] ?? ''
+                const root = yield* realPathOf(workspace.directory)
+                yield* saveReportCopy(
+                  workspace,
+                  ELSEWHERE_REPORT,
+                  first.incrementalText,
+                  withFlakyCoverageUnder(`${root}-elsewhere`, flakyId),
+                )
+                yield* saveReportCopy(
+                  workspace,
+                  HERE_REPORT,
+                  first.incrementalText,
+                  withFlakyCoverageUnder(root, flakyId),
+                )
+                yield* appendComment(workspace.directory, CHAIN_FILE)
+                const elsewhere = yield* executeConfiguredRunWith(workspace, {
+                  mutantIds: compileErrorIds,
+                  incrementalSources: [ELSEWHERE_REPORT],
+                })
+                yield* appendComment(workspace.directory, CHAIN_FILE)
+                const here = yield* executeConfiguredRunWith(workspace, {
+                  mutantIds: compileErrorIds,
+                  incrementalSources: [HERE_REPORT],
+                })
+                return { compileErrorIds, elsewhere, here }
+              })
+            ),
+        ),
+        Then(
+          'the leaf ignores the flaky mark saved under the other root and starts no test runner, and honours the same mark saved under its own root',
+        )((s, expect) =>
+          expect({
+            hadCompileErrors: s.runs.compileErrorIds.length > 0,
+            elsewhereSucceeded: Exit.isSuccess(s.runs.elsewhere.exit),
+            elsewhereTestRunners: s.runs.elsewhere.testRunnerStartups,
+            hereSucceeded: Exit.isSuccess(s.runs.here.exit),
+            hereRanTheDryRun: s.runs.here.dryRunTestRunners > 0,
+          }).toEqual({
+            hadCompileErrors: true,
+            elsewhereSucceeded: true,
+            elsewhereTestRunners: 0,
+            hereSucceeded: true,
+            hereRanTheDryRun: true,
+          })
         ),
       ),
     )

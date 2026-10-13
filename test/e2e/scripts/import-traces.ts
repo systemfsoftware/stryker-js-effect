@@ -1,7 +1,10 @@
 #!/usr/bin/env -S deno run --config=scripts/deno.json --allow-env --allow-net --allow-read --allow-import
 
+// @boundaries-ignore Deno resolves @std/* through the scripts/deno.json import map named in this file's shebang; Turbo reads only package.json
 import { decodeBase64 } from '@std/encoding/base64'
+// @boundaries-ignore Deno resolves @std/* through the scripts/deno.json import map named in this file's shebang; Turbo reads only package.json
 import { encodeHex } from '@std/encoding/hex'
+// @boundaries-ignore Deno resolves @std/* through the scripts/deno.json import map named in this file's shebang; Turbo reads only package.json
 import { join, resolve } from '@std/path'
 
 const ID_BYTE_LENGTH: Record<string, number> = { traceId: 16, spanId: 8, parentSpanId: 8 }

@@ -16,7 +16,6 @@ import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 import * as Scope from 'effect/Scope'
 
-import { onClose } from './drivers/vitest-node.js'
 import { SortTestFiles, sortTestFiles } from './sort-test-files.workflow.js'
 import {
   dispose as disposeStandbyThreads,
@@ -24,6 +23,7 @@ import {
   make as makeStandbyThreadsPool,
   type StandbyThreadsPool,
 } from './StandbyThreadsPool.handle.js'
+import { onClose } from './vitest-node.js'
 import {
   type ExportEntry,
   PackageManifest,
