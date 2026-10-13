@@ -1,3 +1,4 @@
+import { assertEqual } from './assert.ts'
 import { readSummaries } from './turbo-summary.ts'
 
 const cached = {
@@ -17,12 +18,6 @@ const failing = {
 const neverRan = { taskId: 'd#build', command: 'tsdown', hash: 'h4', cache: { status: 'MISS' }, execution: null }
 const placeholder = { taskId: 'c#lint', command: '<NONEXISTENT>', hash: 'h3', cache: { status: 'MISS' } }
 const wellFormed = { tasks: [cached, failing, neverRan, placeholder] }
-
-const assertEqual = (actual: unknown, expected: unknown): void => {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`)
-  }
-}
 
 Deno.test('a well-formed summary counts missed tasks and names failed ones, skipping placeholders', () => {
   assertEqual(readSummaries([wellFormed]), { kind: 'read', missed: 2, failed: ['b#test'] })
