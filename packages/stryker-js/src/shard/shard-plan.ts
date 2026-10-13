@@ -1,6 +1,5 @@
 import { ShardPlan } from '@systemfsoftware/stryker-js-cli-contract'
 import * as Arr from 'effect/Array'
-import * as Boolean from 'effect/Boolean'
 import * as Effect from 'effect/Effect'
 import * as FileSystem from 'effect/FileSystem'
 import { dual } from 'effect/Function'
@@ -127,24 +126,3 @@ export const loadAdmittedPlan: {
     FileSystem.FileSystem | Path.Path | GitDiff
   > => loadShardPlan(basePath, file).pipe(Effect.flatMap((loaded) => admitLoadedPlan(basePath, loaded))),
 )
-
-export const planVerifiedAt: {
-  (basePath: string, loaded: LoadedShardPlan): Effect.Effect<boolean, AdmitPlanHeadError, GitDiff>
-  (loaded: LoadedShardPlan): (basePath: string) => Effect.Effect<boolean, AdmitPlanHeadError, GitDiff>
-} = dual(
-  2,
-  (basePath: string, loaded: LoadedShardPlan): Effect.Effect<boolean, AdmitPlanHeadError, GitDiff> =>
-    admitLoadedPlan(basePath, loaded).pipe(
-      Effect.as(true),
-      Effect.catchTag('GitCommandFailed', () => Effect.succeed(false)),
-    ),
-)
-
-export const plannedRunMarkerOf = ({ verified, file }: {
-  readonly verified: boolean
-  readonly file: string
-}): { readonly plannedMutantsFile?: string } =>
-  Boolean.match(verified, {
-    onTrue: () => ({ plannedMutantsFile: file }),
-    onFalse: () => ({}),
-  })

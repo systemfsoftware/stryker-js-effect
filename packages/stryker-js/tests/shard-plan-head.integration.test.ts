@@ -275,6 +275,8 @@ interface GitFailureObservation {
   readonly namesTheCommand: boolean
   readonly doublesTheBinary: boolean
   readonly shardDir: boolean
+  readonly leafExitCode: number
+  readonly leafNamesTheCommand: boolean
 }
 
 const observeGitFailure = (root: string): Effect.Effect<
@@ -284,12 +286,16 @@ const observeGitFailure = (root: string): Effect.Effect<
 > =>
   Effect.gen(function*() {
     const ran = yield* runShard(root, CURRENT_FILE, 'human')
+    const shardDir = yield* shardDirExists(root)
+    const leaf = yield* runLeaf(root, CURRENT_FILE, '.', 'human')
     return {
       exitCode: ran.exitCode,
       stderr: ran.stderr,
       namesTheCommand: ran.stderr.includes('git rev-parse HEAD failed'),
       doublesTheBinary: ran.stderr.includes('git git'),
-      shardDir: yield* shardDirExists(root),
+      shardDir,
+      leafExitCode: leaf.exitCode,
+      leafNamesTheCommand: leaf.stderr.includes('git rev-parse HEAD failed'),
     }
   })
 
@@ -322,10 +328,18 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
   .live('the built stryker binary reads the real HEAD of a temporary git repository before spawning a shard')
   .body(({ scenario, scenarioOutline }) => {
     scenarioOutline(
-      'A scoped plan written inside its own checkout runs the shard <where> even though the plan file is untracked',
+      'A scoped plan runs the shard <where> only while its checkout can read the repository',
       [
-        { where: 'inside the checkout', outside: false },
-        { where: 'from outside the checkout', outside: true },
+        {
+          where: 'from inside its checkout',
+          outside: false,
+          expected: { reachesAVerdict: true, refusedOnGit: false, shardDir: true },
+        },
+        {
+          where: 'from a tree that cannot see the repository',
+          outside: true,
+          expected: { reachesAVerdict: false, refusedOnGit: true, shardDir: true },
+        },
       ] as const,
       (row) =>
         Gherkin.Do.pipe(
@@ -337,13 +351,18 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
             'ran',
             (s) => observePlanAt(s.fixture, CURRENT_FILE, row.outside, 'human'),
           ),
-          Then('the run is admitted, reaches a verdict and leaves the shard output directory')((s, expect) =>
+          Then('the run reaches a verdict from the checkout and is refused where it cannot read git')((s, expect) =>
             expect({
               reachedAVerdict: s.ran.exitCode === 0 || s.ran.exitCode === 1,
+              refusedOnGit: s.ran.stderr.includes('git rev-parse HEAD failed'),
               namedStalePlan: s.ran.stderr.includes('the shard plan was made at commit'),
-              refusedOnSources: s.ran.namedSourceDigest,
               shardDir: s.ran.shardDir,
-            }).toEqual({ reachedAVerdict: true, namedStalePlan: false, refusedOnSources: false, shardDir: true })
+            }).toEqual({
+              reachedAVerdict: row.expected.reachesAVerdict,
+              refusedOnGit: row.expected.refusedOnGit,
+              namedStalePlan: false,
+              shardDir: row.expected.shardDir,
+            })
           ),
         ),
     )
@@ -458,7 +477,16 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
             namesTheCommand: s.ran.namesTheCommand,
             doublesTheBinary: s.ran.doublesTheBinary,
             shardDir: s.ran.shardDir,
-          }).toEqual({ exitCode: 2, namesTheCommand: true, doublesTheBinary: false, shardDir: false })
+            leafExitCode: s.ran.leafExitCode,
+            leafNamesTheCommand: s.ran.leafNamesTheCommand,
+          }).toEqual({
+            exitCode: 2,
+            namesTheCommand: true,
+            doublesTheBinary: false,
+            shardDir: false,
+            leafExitCode: 2,
+            leafNamesTheCommand: true,
+          })
         ),
       ),
     )
@@ -568,6 +596,27 @@ Feature('Guarding a shard run against a plan this engine cannot use', { timeout:
             namesTheNext: true,
             shardDir: false,
           })
+        ),
+      ),
+    )
+
+    scenario(
+      'A leaf run of a plan it can still use reports no unknown configuration option',
+      Gherkin.Do.pipe(
+        Given('a repository planned at HEAD from an uncommitted edit into the untracked plan.json')(
+          'fixture',
+          () => prepareFixture(),
+        ),
+        When('the one planned project runs as a leaf')('ran', (s) =>
+          Effect.gen(function*() {
+            const ran = yield* runLeaf(s.fixture.root, CURRENT_FILE, '.', 'human')
+            return { ran }
+          })),
+        Then('the run reaches a verdict without reporting an unknown configuration option')((s, expect) =>
+          expect({
+            reachedAVerdict: s.ran.ran.exitCode === 0 || s.ran.ran.exitCode === 1,
+            unknownOption: s.ran.ran.stderr.includes('Unknown stryker config option'),
+          }).toEqual({ reachedAVerdict: true, unknownOption: false })
         ),
       ),
     )

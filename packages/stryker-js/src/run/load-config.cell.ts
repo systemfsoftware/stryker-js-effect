@@ -24,6 +24,7 @@ const readRunConfig = Effect.fn(SpanTaxonomy.Spans.configReadRun.name)(function*
     ...raw,
     targetMutatePatterns: input.targetMutatePatterns,
     plannedDiff: input.plannedDiff,
+    plannedMutantsFile: input.plannedMutantsFile,
     basePath: env.basePath,
   }
 })
@@ -36,6 +37,7 @@ export const loadConfigCell = Sandwich.named(SpanTaxonomy.Spans.loadConfig.name)
         options,
         targetMutatePatterns: raw.targetMutatePatterns,
         plannedDiff: raw.plannedDiff,
+        plannedMutantsFile: raw.plannedMutantsFile,
         basePath: raw.basePath,
       }),
     ConfigFromDefaults: ({ options }, raw) =>
@@ -43,6 +45,7 @@ export const loadConfigCell = Sandwich.named(SpanTaxonomy.Spans.loadConfig.name)
         options,
         targetMutatePatterns: raw.targetMutatePatterns,
         plannedDiff: raw.plannedDiff,
+        plannedMutantsFile: raw.plannedMutantsFile,
         basePath: raw.basePath,
       }),
     ConfigOptionsRefused: ({ message }) => failConfigWith(describedConfigErrorOf({ message }).text),

@@ -411,6 +411,7 @@ const effectiveOptions = (scope: DiffScope, options: Options.StrykerOptions): Op
 type ReadProjectCommand = (typeof AdmitIncrementalReportCommand)['Encoded'] & {
   readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
+  readonly plannedMutantsFile: string | undefined
   readonly basePath: string
   readonly incremental: boolean
   readonly incrementalFile: string
@@ -471,6 +472,7 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
     runInputsDigest,
     options,
     targetMutatePatterns: input.targetMutatePatterns,
+    plannedMutantsFile: input.plannedMutantsFile,
     basePath: input.basePath,
     incremental: options.incremental,
     incrementalFile: options.incrementalFile,
@@ -485,6 +487,7 @@ const readProject = Effect.fn(SpanTaxonomy.Spans.projectReadFromDisk.name)(funct
 export interface ReadProjectDone {
   readonly options: Options.StrykerOptions
   readonly targetMutatePatterns: readonly string[] | undefined
+  readonly plannedMutantsFile: string | undefined
   readonly basePath: string
   readonly project: Project
   readonly incrementalReportDiscard?: IncrementalReportDiscard | undefined
@@ -523,6 +526,7 @@ const projectOf = ({
 }): ReadProjectDone => ({
   options: command.options,
   targetMutatePatterns: command.targetMutatePatterns,
+  plannedMutantsFile: command.plannedMutantsFile,
   basePath: command.basePath,
   project: makeProject(command.fileDescriptions, report, command.testFiles),
   incrementalReportDiscard: discard,

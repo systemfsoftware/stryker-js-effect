@@ -73,7 +73,7 @@ import type { AdmitPlanHeadError } from './shard/admit-plan-head.workflow.js'
 import { selectShard, SelectShardCommand, ShardUnknown } from './shard/select-shard.workflow.js'
 import { mergeShards } from './shard/shard-merge.js'
 import type { ShardMergeFailed } from './shard/shard-merge.schema.js'
-import { loadAdmittedPlan, loadShardPlan, plannedRunMarkerOf, planVerifiedAt } from './shard/shard-plan.js'
+import { loadAdmittedPlan, loadShardPlan } from './shard/shard-plan.js'
 import type { ShardPlanInvalid } from './shard/shard-plan.schema.js'
 import { runShard } from './shard/shard-run.js'
 import type { ShardChildFailed } from './shard/shard-run.schema.js'
@@ -189,13 +189,14 @@ const readRunRequest = Effect.fn(SpanTaxonomy.Spans.runRequestGather.name)(funct
   }
 })
 
-const runStage = (channel: CliRead, plannedDiff?: PlannedDiff) =>
+const runStage = (channel: CliRead, plannedDiff?: PlannedDiff, plannedMutantsFile?: string) =>
   Layer.build(RunEnvironment.layerStage(channel.environment.host.env, channel.environment.host.events)).pipe(
     Effect.flatMap((context) =>
       Cell.provideContext(mutationTestCell, context).run({
         cliOptions: channel.options,
         targetMutatePatterns: undefined,
         plannedDiff,
+        plannedMutantsFile,
       })
     ),
     Effect.orDie,
@@ -672,8 +673,7 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
       ),
     CliShardLeafRequested: (leaf, channel) =>
       Effect.gen(function*() {
-        const loaded = yield* loadShardPlan(channel.environment.basePath, leaf.plan)
-        const verified = yield* planVerifiedAt(channel.environment.basePath, loaded)
+        const loaded = yield* loadAdmittedPlan(channel.environment.basePath, leaf.plan)
         const selected = yield* Effect.fromResult(
           selectShard(SelectShardCommand.make({ plan: loaded.plan, shard: leaf.shard })),
         )
@@ -687,12 +687,8 @@ export const runRequestCell = Sandwich.named(SpanTaxonomy.Spans.runRequest.name)
             })
           ),
         )
-        const options = {
-          ...channel.options,
-          mutantIds: [...project.mutants],
-          ...plannedRunMarkerOf({ verified, file: loaded.file }),
-        }
-        return yield* runStage({ ...channel, options }, WholeProject.make({}))
+        const options = { ...channel.options, mutantIds: [...project.mutants] }
+        return yield* runStage({ ...channel, options }, WholeProject.make({}), loaded.file)
       }),
     CliCompareRequested: (compare) => compareReports(compare),
     CliGateRequested: (gate, channel) => gateReport(gate, channel).pipe(Effect.tapError(remediateGateRefusal)),

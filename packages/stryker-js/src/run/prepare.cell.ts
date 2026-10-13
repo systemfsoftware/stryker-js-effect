@@ -38,6 +38,7 @@ import { RunEnvironment } from './RunEnvironment.service.js'
 
 export interface PrepareDone {
   readonly project: Project
+  readonly plannedMutantsFile: string | undefined
   readonly loadedPlugins: LoadedPlugins
   readonly ignorers: readonly Ignorer[]
   readonly mutatorCatalogs: readonly MergedCatalog[]
@@ -84,6 +85,7 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
   yield* Queue.offer(raw.queue, RunEvent.PhaseEntered.make({ phase: 'prepare', elapsedMs: now - raw.env.runStartedAt }))
   return {
     project: raw.project,
+    plannedMutantsFile: raw.plannedMutantsFile,
     loadedPlugins: raw.loaded,
     ignorers: raw.ignorers,
     mutatorCatalogs: raw.mutatorCatalogs,

@@ -86,6 +86,7 @@ export type PrepareRaw = typeof PrepareDecoded.Encoded & {
   readonly options: Options.StrykerOptions
   readonly loaded: LoadedPlugins
   readonly project: Project
+  readonly plannedMutantsFile: string | undefined
   readonly ignorers: readonly Ignorer[]
   readonly mutatorCatalogs: readonly MergedCatalog[]
   readonly mutatorSelection: MutatorSelectionDecoded
@@ -238,6 +239,7 @@ export const readPrepare = Effect.fn(SpanTaxonomy.Spans.prepareGather.name)(func
     options,
     loaded,
     project: command.project,
+    plannedMutantsFile: command.plannedMutantsFile,
     ignorers,
     mutatorCatalogs,
     mutatorSelection,

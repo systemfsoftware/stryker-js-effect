@@ -81,4 +81,5 @@ export type PlannedDiff = typeof PlannedDiff.Type
 export interface StageInput {
   readonly targetMutatePatterns: readonly string[] | undefined
   readonly plannedDiff?: PlannedDiff | undefined
+  readonly plannedMutantsFile?: string | undefined
 }
