@@ -1,64 +1,62 @@
 import { describe, it } from '@systemfsoftware/vitest'
+import * as Match from 'effect/Match'
 import * as Result from 'effect/Result'
 import * as S from 'effect/Schema'
 
-import { HumanReporters, MachineReporters, planReporters, ReporterPlanCommand } from '../run/plan-reporters.workflow.js'
+import {
+  HumanReporters,
+  MachineReporters,
+  planReporters,
+  ReporterPlanCommand,
+} from '../Reporter/plan-reporters.workflow.js'
+import { HumanStreamRole, MachineStreamRole } from '../Reporter/reporter-role.schema.js'
 
 const STREAM = 'progress-stream'
-const STDOUT_NAMES = ['clear-text', 'progress']
+const HUMAN = 'clear-text'
 
-const decisionOf = (
-  plan: typeof planReporters,
-  command: ReporterPlanCommand,
-): HumanReporters | MachineReporters | undefined =>
-  Result.match(plan(command), {
-    onFailure: () => undefined,
-    onSuccess: (decision) => decision,
-  })
-
-const reportersOf = (plan: typeof planReporters, command: ReporterPlanCommand): readonly string[] | undefined => {
-  const decision = decisionOf(plan, command)
-  return decision === undefined ? undefined : [...decision.reporters]
+const expectedHuman = (configured: readonly string[]): readonly string[] => {
+  const planned: string[] = []
+  for (const name of configured) {
+    const mapped = name === STREAM ? HUMAN : name
+    if (!planned.includes(mapped)) planned.push(mapped)
+  }
+  return planned
 }
 
-const replannedHuman = (plan: typeof planReporters, reporters: readonly string[]) =>
-  reportersOf(plan, ReporterPlanCommand.make({ configured: [...reporters], mode: 'human' }))
+const expectedMachine = (configured: readonly string[], stdout: readonly string[]): readonly string[] => {
+  const planned: string[] = []
+  for (const name of configured) {
+    if (!stdout.includes(name)) planned.push(name)
+  }
+  if (!planned.includes(STREAM)) planned.push(STREAM)
+  return planned
+}
 
-const replannedMachine = (plan: typeof planReporters, reporters: readonly string[]) =>
-  reportersOf(plan, ReporterPlanCommand.make({ configured: [...reporters], mode: 'machine' }))
-
-const deduped = (reporters: readonly string[]): boolean => new Set(reporters).size === reporters.length
+const expectedFor = (command: ReporterPlanCommand) =>
+  Match.value(command.mode).pipe(
+    Match.when('human', () => ({ human: true, reporters: expectedHuman(command.configured) })),
+    Match.when('machine', () => ({ human: false, reporters: expectedMachine(command.configured, command.stdout) })),
+    Match.exhaustive,
+  )
 
 describe('planReporters', () => {
   it.prop(
-    '∀c_Human_≡NoStreamNameClosureAndIdempotent',
-    { of: [ReporterPlanCommand], subject: planReporters },
-    (subject, [command]) => {
-      const decision = decisionOf(subject, command)
-      if (decision === undefined) return false
-      if (command.mode === 'machine') return S.is(MachineReporters)(decision)
-      const reporters = [...decision.reporters]
-      return S.is(HumanReporters)(decision) &&
-        !reporters.includes(STREAM) &&
-        deduped(reporters) &&
-        reporters.every((name) => name === 'clear-text' || command.configured.includes(name)) &&
-        JSON.stringify(replannedHuman(subject, reporters)) === JSON.stringify(reporters)
-    },
-  )
-
-  it.prop(
-    '∀c_Machine_≡StreamPresentStdoutAbsentAndIdempotent',
-    { of: [ReporterPlanCommand], subject: planReporters },
-    (subject, [command]) => {
-      const decision = decisionOf(subject, command)
-      if (decision === undefined) return false
-      if (command.mode === 'human') return S.is(HumanReporters)(decision)
-      const reporters = [...decision.reporters]
-      return S.is(MachineReporters)(decision) &&
-        reporters.includes(STREAM) &&
-        STDOUT_NAMES.every((name) => !reporters.includes(name)) &&
-        reporters.every((name) => name === STREAM || command.configured.includes(name)) &&
-        JSON.stringify(replannedMachine(subject, reporters)) === JSON.stringify(reporters)
+    '∀c_RolesAndStdoutConfigured_≡ReferencePlanForMode',
+    { of: [ReporterPlanCommand, S.Array(S.Union([MachineStreamRole, HumanStreamRole]))], subject: planReporters },
+    (subject, [drawn, roles]) => {
+      const command = ReporterPlanCommand.make({
+        configured: [...drawn.configured, ...roles, ...drawn.stdout],
+        stdout: drawn.stdout,
+        mode: drawn.mode,
+      })
+      const expected = expectedFor(command)
+      return Result.match(subject(command), {
+        onFailure: () => false,
+        onSuccess: (decision) =>
+          S.is(HumanReporters)(decision) === expected.human &&
+          S.is(MachineReporters)(decision) !== expected.human &&
+          JSON.stringify(decision.reporters) === JSON.stringify(expected.reporters),
+      })
     },
   )
 })

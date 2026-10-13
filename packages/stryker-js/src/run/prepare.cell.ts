@@ -24,7 +24,7 @@ import {
   withPhaseSpan,
 } from '../reporter-stream.service.js'
 import { reporterInputsOf } from '../reporter-wiring.service.js'
-import { Reporter } from '../reporter.service.js'
+import { Reporter } from '../Reporter/reporter.service.js'
 import { RunEvents } from '../run-events.service.js'
 import { StageError } from '../Run.schema.js'
 import { TemporaryDirectory } from '../Sandbox.service.js'
