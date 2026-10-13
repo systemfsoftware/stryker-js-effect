@@ -456,27 +456,33 @@ Feature('Streaming a run to machine readers')
             }),
         ),
         When('the run opens, reports a failure, and closes')(
-          'logged',
+          'result',
           (s) =>
             Effect.scoped(
               Effect.gen(function*() {
                 const fs = yield* FileSystem.FileSystem
                 const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'stryker-drain-' })
+                const streamFile = pathService.join(directory, 'stream.jsonl')
                 const drain = yield* RunEvent.RunEventDrain
-                yield* drain.setProgressStreamFile(pathService.join(directory, 'stream.jsonl'))
+                yield* drain.setProgressStreamFile(streamFile)
                 const stream = yield* RunEvent.makeRunEventStream({ mode: 'machine', signal: 'tty' })
                 yield* stream.open
                 yield* offerAll(stream, [RUN_FAILED])
                 yield* stream.closeAndDrain
-                return s.fixture.messages.join('\n')
+                const opened = yield* fs.exists(streamFile)
+                return { logged: s.fixture.messages.join('\n'), opened }
               }),
-            ).pipe(Effect.provide(s.fixture.services)),
+            ).pipe(Effect.orDie, Effect.provide(s.fixture.services)),
         ),
-        Then('the defect is logged as a drain failure and never as a file failure')((s, expect) =>
+        Then('the drain opened the file, and the defect is logged as a drain failure, never as a file failure')((
+          s,
+          expect,
+        ) =>
           expect({
-            drainFailed: s.logged.includes('stryker.output.drain_failed'),
-            fileFailed: s.logged.includes('stryker.output.drain_file_failed'),
-          }).toEqual({ drainFailed: true, fileFailed: false })
+            fileOpened: s.result.opened,
+            drainFailed: s.result.logged.includes('stryker.output.drain_failed'),
+            fileFailed: s.result.logged.includes('stryker.output.drain_file_failed'),
+          }).toEqual({ fileOpened: true, drainFailed: true, fileFailed: false })
         ),
       ),
     )
