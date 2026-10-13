@@ -251,11 +251,18 @@ describe('selectManifestTarget', () => {
       const target = targetOf(command)
       const subpath = `x${oneSegmentOf(command)}`
       const specifier = `#${subpath}`
-      const undecided = { types: './index.d.ts', [nonRuntimeConditionOf(command)]: target, default: target }
-      const nested = nestedUnder(keysOf(command), undecided)
+      const keys = keysOf(command)
+      const undecided = nestedUnder(keys, {
+        types: './index.d.ts',
+        [nonRuntimeConditionOf(command)]: target,
+        default: target,
+      })
+      const typesOnly = nestedUnder(keys, { types: target, [`types@>=${textOf(command).length}`]: target })
       return [
-        exported(subject, command, { [exportKeyOf(subpath)]: nested }, subpath),
-        imported(subject, command, { [specifier]: nested }, specifier),
+        exported(subject, command, { [exportKeyOf(subpath)]: undecided }, subpath),
+        imported(subject, command, { [specifier]: undecided }, specifier),
+        exported(subject, command, { [exportKeyOf(subpath)]: typesOnly }, subpath),
+        imported(subject, command, { [specifier]: typesOnly }, specifier),
       ].every((outcome) => outcome === 'missing')
     },
   )
