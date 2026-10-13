@@ -1,13 +1,13 @@
 # @systemfsoftware/stryker-checker-parity
 
-The checker-parity lane's driver, private to this repository. It runs one checker side over a corpus shard, records one NDJSON observation per mutant, and compares the two sides so a checker whose verdict or type-query answer drifts from `main` fails the lane.
+The checker-parity lane's driver, private to this repository. It drives both checker sides over one corpus shard, records one NDJSON observation per mutant, and compares the two sides so a checker whose verdict or type-query answer drifts from `main` fails the lane.
 
 ## Driver
 
 `src/main.ts` publishes the `checker-parity` CLI:
 
 - `plan --deadline <seconds>` — slices the corpus into shards sized to the leg budget.
-- `run` — drives one side of one shard over the corpus and writes `shard-<k>.ndjson` plus `scope-<k>.json`.
+- `run` — drives both checker sides over one corpus shard (its `--main-worker` and `--branch-worker` are both required) and writes `shard-<k>.ndjson` plus `scope-<k>.json`.
 - `compare` — decodes every `*.ndjson` under its inputs and decides parity.
 - `report` — renders the decision for the lane's checks.
 - `costs` — folds recent runs' leg measurements into the cost table.

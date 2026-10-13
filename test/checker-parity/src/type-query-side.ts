@@ -1,5 +1,5 @@
 import type { Mutator } from '@systemfsoftware/stryker-js-instrumenter'
-import { type Checker, type Plugin, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
+import { Checker, type Plugin, TypeQuery } from '@systemfsoftware/stryker-js-plugin-interface'
 import * as Arr from 'effect/Array'
 import * as Boolean from 'effect/Boolean'
 import * as Context from 'effect/Context'
@@ -378,7 +378,11 @@ if (import.meta.vitest !== void 0) {
   const NOT_SERVED = 1
   const BEHAVIOURS = ['answers', 'refuses', 'does-not-serve'] as const
 
-  type Behaviour = typeof BEHAVIOURS[number] | 'hangs'
+  type Behaviour =
+    | typeof BEHAVIOURS[number]
+    | 'hangs'
+    | 'hangs-capabilities'
+    | 'fails-capabilities'
 
   const drafts: Arr.NonEmptyReadonlyArray<QueryFileDraft> = await Effect.runPromise(
     Effect.gen(function*() {
@@ -401,13 +405,14 @@ if (import.meta.vitest !== void 0) {
       const byFile = HashMap.fromIterable(
         fileDraftsOf(CONTENTS, wires).map((draft) => [draft.fileName, draft] as const),
       )
-      return yield* Arr.match(
-        Arr.getSomes(CONTENTS.map((file) => HashMap.get(byFile, file.name))),
-        {
-          onEmpty: () => Effect.die(new Error('the fixture produced no drafts')),
-          onNonEmpty: (nonEmpty) => Effect.succeed(nonEmpty),
-        },
-      )
+      const present = Arr.getSomes(CONTENTS.map((file) => HashMap.get(byFile, file.name)))
+      return yield* Arr.match(present, {
+        onEmpty: () => Effect.die(new Error('the fixture produced no drafts')),
+        onNonEmpty: (nonEmpty) =>
+          nonEmpty.length === CONTENTS.length
+            ? Effect.succeed(nonEmpty)
+            : Effect.die(new Error('the fixture dropped a file that produced no drafts')),
+      })
     }).pipe(Effect.orDie),
   )
 
@@ -474,6 +479,21 @@ if (import.meta.vitest !== void 0) {
         capabilities: () => Effect.succeed({ typeQuery: [1, 2] }),
         typeQuery: () => Effect.never,
       })),
+      Match.when('hangs-capabilities', (): BranchWorkerRpcsShape => ({
+        capabilities: () => Effect.never,
+        typeQuery: () => Effect.die(new Error('a query was sent after a handshake that never finished')),
+      })),
+      Match.when('fails-capabilities', (): BranchWorkerRpcsShape => ({
+        capabilities: () =>
+          Effect.fail(
+            Checker.CheckerFailed.make({
+              cause: 'the branch worker exited',
+              checkerName: 'typescript',
+              mutantIds: [],
+            }),
+          ),
+        typeQuery: () => Effect.die(new Error('a query was sent after a handshake that failed')),
+      })),
       Match.exhaustive,
     )
 
@@ -536,7 +556,7 @@ if (import.meta.vitest !== void 0) {
     {
       of: [
         S.Int.check(S.isBetween({ minimum: 0, maximum: 400 })),
-        S.Literals(['answers', 'refuses', 'does-not-serve', 'hangs']),
+        S.Literals(['answers', 'refuses', 'does-not-serve', 'hangs', 'hangs-capabilities', 'fails-capabilities']),
       ],
       subject: projectLines,
     },
@@ -562,6 +582,8 @@ if (import.meta.vitest !== void 0) {
                       recorded,
                       drafts.map((_, index) => index === 0 ? 'interrupted-at-deadline' : 'deadline-passed'),
                     )),
+                  Match.when('hangs-capabilities', () => deferredEveryFileAs(recorded, 'interrupted-at-deadline')),
+                  Match.when('fails-capabilities', () => refusedEveryFileAs(recorded, 'server-crashed')),
                   Match.when('refuses', () => refusedEveryFileAs(recorded, 'project-open-failed')),
                   Match.when('does-not-serve', () => refusedEveryFileAs(recorded, 'unsupported-version')),
                   Match.exhaustive,

@@ -22,6 +22,7 @@ import {
   TelemetryMissing,
   TypeAnswerLine,
   TypeQueryFileRefused,
+  TypeQueryServers,
   UnitOverBudget,
   Verdict,
   VerdictStatus,
@@ -273,8 +274,14 @@ const when = <A>(condition: boolean, value: A): ReadonlyArray<A> =>
     Match.exhaustive,
   )
 
+const isTypeQueryServers = S.is(TypeQueryServers)
+
+/**
+ * Every line's project, except the decode-only legacy {@link TypeQueryServers} row: it is the one line no
+ * current producer emits, so counting a stale one would invent a project the shard never observed.
+ */
 const projectsOf = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<string> =>
-  Arr.dedupe(lines.map((line) => line.project))
+  Arr.dedupe(lines.filter((line) => !isTypeQueryServers(line)).map((line) => line.project))
 
 const linesOf = (lines: ReadonlyArray<ParityLine>, project: string): ReadonlyArray<ParityLine> =>
   lines.filter((line) => line.project === project)

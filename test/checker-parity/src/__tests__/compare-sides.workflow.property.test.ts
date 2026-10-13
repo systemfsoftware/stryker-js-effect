@@ -731,10 +731,10 @@ describe('compareSides', () => {
     { of: [S.NonEmptyString, TypeQueryServers], subject: compareSides },
     (subject, [mutantId, legacy]) => {
       const base = [
-        verdictOf('main', { project: legacy.project, mutantId, status: 'compileError' }),
-        verdictOf('branch', { project: legacy.project, mutantId, status: 'compileError' }),
-        typeAnswerLineOf(mutantId, notAssignableAnswer, { project: legacy.project }),
-        countsOf(legacy.project),
+        verdictOf('main', { project: PROJECT, mutantId, status: 'compileError' }),
+        verdictOf('branch', { project: PROJECT, mutantId, status: 'compileError' }),
+        typeAnswerLineOf(mutantId, notAssignableAnswer, { project: PROJECT }),
+        countsOf(PROJECT),
       ]
       const without = decisionOf(subject, commandOf(base))
       const withLegacy = decisionOf(subject, commandOf([...base, legacy]))
