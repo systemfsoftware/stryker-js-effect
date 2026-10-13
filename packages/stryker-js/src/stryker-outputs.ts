@@ -4,6 +4,8 @@ import { tempSiblingRuleOf } from './replace-file-atomically.js'
 
 export const REPRODUCERS_FILE = 'reports/mutation/reproducers.json'
 
+export const DEFAULT_PROGRESS_STREAM_FILE = 'reports/mutation-stream.jsonl'
+
 export const sarifFileNameOf = (jsonReportFileName: string): string =>
   `${jsonReportFileName.replace(/\.[^./\\]*$/, '')}.sarif`
 
@@ -20,6 +22,7 @@ export const strykerOutputFilesOf = (
   options.incrementalFile,
   tempSiblingRuleOf(options.incrementalFile),
   options.progressStreamFile,
+  DEFAULT_PROGRESS_STREAM_FILE,
   options.htmlReporter.fileName,
   options.jsonReporter.fileName,
   sarifFileNameOf(options.jsonReporter.fileName),
