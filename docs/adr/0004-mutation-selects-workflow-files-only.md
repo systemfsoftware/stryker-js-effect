@@ -40,6 +40,7 @@ The three dogfood `stryker.config.ts` files this record covers, in `packages/str
 - Good, because the main run carries 2,213 fewer mutants across the three projects, measured on `25120175`.
 - Bad, because the pure operations ADR-0002 places in schema files are no longer graded by mutation. ADR-0002 chose schema files because they were both mutated and importable from a workflow (its line 38). This record removes the first half of that reason and keeps the placement. Whether those operations should move into workflow files is a separate decision, not made here. Their in-source laws still run in every test run.
 - Neutral: baselines taken from main's mutant set shift once. That covers the kill matrix and the default-policy drop audit that reads it.
+- Neutral: two dated plans state the old two-glob set as a premise. `docs/plans/2026-10-13-0410-feat-mutant-quality-plan-v3.md:45` counts mutated files under it, and `docs/plans/2026-10-13-1453-fix-stryker-stream-files-out-of-project-inputs-plan.md:110` grounds a waiver on it. Their owners re-derive those rows against this record; this change does not edit another stream's plan.
 
 ### Confirmation
 
