@@ -24,11 +24,20 @@ export const ProjectScore = S.Struct({
 })
 export type ProjectScore = typeof ProjectScore.Type
 
-export const BreakBreach = S.Struct({
+const percentageIsBelowThreshold = (breach: {
+  readonly percentage: number
+  readonly threshold: number
+}): boolean => breach.percentage < breach.threshold
+
+const BreakBreach = S.Struct({
   project: S.String,
   percentage: Report.Percentage,
   threshold: Report.Percentage,
-})
+}).check(
+  S.makeFilter(percentageIsBelowThreshold, {
+    expected: 'a breach whose percentage is below its threshold',
+  }),
+)
 export type BreakBreach = typeof BreakBreach.Type
 
 export class GateScoreBreakCommand extends S.TaggedClass<GateScoreBreakCommand>()('GateScoreBreakCommand', {
@@ -102,16 +111,17 @@ const breachOf = (entry: ProjectScore): Option.Option<BreakBreach> =>
   Match.valueTags(entry.score, {
     Unscored: () => Option.none(),
     Scored: ({ percentage }) =>
-      Option.map(
-        Option.fromNullishOr(breakOf(entry)),
-        (threshold): BreakBreach => ({ project: entry.project, percentage, threshold }),
+      Option.filter(
+        Option.map(
+          Option.fromNullishOr(breakOf(entry)),
+          (threshold): BreakBreach => ({ project: entry.project, percentage, threshold }),
+        ),
+        percentageIsBelowThreshold,
       ),
   })
 
-const isBelowItsBreak = (breach: BreakBreach): boolean => breach.percentage < breach.threshold
-
 const breachesOf = (projects: ReadonlyArray<ProjectScore>): ReadonlyArray<BreakBreach> =>
-  Arr.flatMap(projects, (entry) => Option.toArray(Option.filter(breachOf(entry), isBelowItsBreak)))
+  Arr.flatMap(projects, (entry) => Option.toArray(breachOf(entry)))
 
 const isUnscoredWithBreak = (entry: ProjectScore): boolean =>
   Match.valueTags(entry.score, { Unscored: () => breakOf(entry) !== null, Scored: () => false })
@@ -140,3 +150,30 @@ export const gateScoreBreak = Workflow.make({
   error: ScoreBelowBreak,
   decide,
 })
+
+if (import.meta.vitest !== void 0) {
+  const { it } = await import('@systemfsoftware/vitest')
+  const Arr = await import('effect/Array')
+
+  const PERCENTAGES = [-1, 0, 1, 99, 100, 101, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]
+  const withPercentageBoundaries = (drawn: number): ReadonlyArray<number> => [...PERCENTAGES, drawn]
+
+  const holds = (conditions: ReadonlyArray<boolean>): boolean => conditions.every((condition) => condition)
+  const isPercentage = (value: number): boolean => holds([Number.isFinite(value), value >= 0, value <= 100])
+  const isRealBreach = (percentage: number, threshold: number): boolean =>
+    holds([isPercentage(percentage), isPercentage(threshold), percentage < threshold])
+
+  it.prop(
+    '∀b_BreakBreach_≡AcceptedExactlyWhenPercentageIsBelowItsThreshold',
+    { of: [S.Tuple([S.Finite, S.Finite])], subject: S.is(BreakBreach) },
+    (subject, [[drawnPercentage, drawnThreshold]]) =>
+      Arr.every(
+        withPercentageBoundaries(drawnPercentage),
+        (percentage) =>
+          Arr.every(
+            withPercentageBoundaries(drawnThreshold),
+            (threshold) => subject({ project: 'p', percentage, threshold }) === isRealBreach(percentage, threshold),
+          ),
+      ),
+  )
+}
