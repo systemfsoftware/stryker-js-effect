@@ -1,14 +1,8 @@
-import {
-  decodeReport,
-  DecodeReportCommand,
-  decodeStream as decodeStreamWorkflow,
-  DecodeStreamCommand,
-} from '@systemfsoftware/stryker-e2e-core'
-import type { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
+import { RunEvent } from '@systemfsoftware/stryker-js-cli-contract'
 import { Report } from '@systemfsoftware/stryker-js-plugin-interface'
 import { Stimulus } from '@systemfsoftware/trace-spec'
 import { VitestTestContext } from '@systemfsoftware/vitest'
-import { Effect, Layer, Option, Result } from 'effect'
+import { Effect, Layer, Option, Result, Schema } from 'effect'
 import type { Scope } from 'effect'
 
 import { BakedFixtureCache } from '../../src/Harness/fixture-cache.service.js'
@@ -48,11 +42,12 @@ const isMutantEvent = (
   event: RunEvent.RunEvent,
 ): event is Extract<RunEvent.RunEvent, { readonly _tag: 'mutantTested' }> => event._tag === 'mutantTested'
 
+const decodeStreamText = Schema.decodeResult(RunEvent.RunEventWireText)
+
+const decodeReport = Schema.decodeResult(Schema.fromJsonString(Report.MutationTestResult))
+
 const streamEventsOf = (line: string): ReadonlyArray<RunEvent.RunEvent> =>
-  Result.match(decodeStreamWorkflow(DecodeStreamCommand.make({ lines: [line] })), {
-    onFailure: (): ReadonlyArray<RunEvent.RunEvent> => [],
-    onSuccess: (decoded) => decoded.events,
-  })
+  Result.getOrElse(decodeStreamText(line), (): ReadonlyArray<RunEvent.RunEvent> => [])
 
 const settledIdsOf = (report: Report.MutationTestResult): ReadonlyArray<string> =>
   Object.values(report.files).flatMap((file) =>
@@ -66,9 +61,9 @@ const checkpointSettledIds = async (
   const text = await readGuestFile(checkpointFile).catch(() => undefined)
   return text === undefined
     ? []
-    : Result.match(decodeReport(DecodeReportCommand.make({ file: checkpointFile, text })), {
+    : Result.match(decodeReport(text), {
       onFailure: (): ReadonlyArray<string> => [],
-      onSuccess: (decoded) => settledIdsOf(decoded.report),
+      onSuccess: settledIdsOf,
     })
 }
 
