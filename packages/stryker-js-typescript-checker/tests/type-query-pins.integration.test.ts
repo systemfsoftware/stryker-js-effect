@@ -221,6 +221,106 @@ const panicBesideACheck: Effect.Effect<
   return { answers: response.files.map(outcomeText), statuses }
 })
 
+const ownPidOf: Effect.Effect<number, never, FileSystem.FileSystem> = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const target = yield* fs.readLink('/proc/self')
+  const parts = target.split('/')
+  return Number(parts[parts.length - 1])
+}).pipe(Effect.orDie)
+
+const parentPidOf = (pid: number): Effect.Effect<number | undefined, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const stat = yield* fs.readFileString(`/proc/${pid}/stat`).pipe(Effect.orElseSucceed(() => ''))
+    const closing = stat.lastIndexOf(')')
+    return closing === -1 ? undefined : Number(stat.slice(closing + 2).split(' ')[1])
+  }).pipe(Effect.orDie)
+
+const descendantPidsOf = (root: number): Effect.Effect<ReadonlyArray<number>, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const names = yield* fs.readDirectory('/proc')
+    const pairs = yield* Effect.forEach(
+      names.filter((name) => /^\d+$/u.test(name)),
+      (name) => Effect.map(parentPidOf(Number(name)), (parent) => ({ pid: Number(name), parent })),
+      { concurrency: 'unbounded' },
+    )
+    const collected: Array<number> = []
+    const frontier: Array<number> = [root]
+    for (const parent of frontier) {
+      for (const pair of pairs) {
+        if (pair.parent === parent && !collected.includes(pair.pid)) {
+          collected.push(pair.pid)
+          frontier.push(pair.pid)
+        }
+      }
+    }
+    return collected
+  }).pipe(Effect.orDie)
+
+const tsgoServerPids: Effect.Effect<ReadonlyArray<number>, never, FileSystem.FileSystem> = Effect.gen(function*() {
+  const fs = yield* FileSystem.FileSystem
+  const servers: Array<number> = []
+  for (const pid of yield* descendantPidsOf(yield* ownPidOf)) {
+    const cmdline = yield* fs.readFileString(`/proc/${pid}/cmdline`).pipe(Effect.orElseSucceed(() => ''))
+    if (cmdline.includes('--api')) servers.push(pid)
+  }
+  return servers
+}).pipe(Effect.orDie)
+
+const signalPid = (pid: number, signal: 'SIGSTOP' | 'SIGKILL'): Effect.Effect<void> =>
+  Effect.sync(() => {
+    globalThis.process.kill(pid, signal)
+  })
+
+const frozenServer: Effect.Effect<
+  {
+    readonly answers: ReadonlyArray<Readonly<Record<string, string>>>
+    readonly refusals: ReadonlyArray<{ readonly reason: string; readonly namesTheTimeout: boolean }>
+  },
+  never,
+  HostPorts
+> = Effect.gen(function*() {
+  const fixture = yield* fixtureOf('type-query-reasons')
+  const typeQuery = yield* TypeQuery.TypeQuery
+  const warmed = yield* readQueryFile(fixture, 'second.ts', [])
+  yield* Effect.orDie(typeQuery.query(requestOf(fixture, [warmed])))
+  const frozen = yield* tsgoServerPids
+  yield* Effect.forEach(frozen, (pid) => signalPid(pid, 'SIGSTOP'), { discard: true })
+  const response = yield* Effect.ensuring(
+    Effect.gen(function*() {
+      const victim = yield* readQueryFile(fixture, 'second.ts', [
+        { siteId: 'letter', line: 1, text: `'a'`, candidates: ['""'] },
+      ])
+      const next = yield* readQueryFile(fixture, 'reasons.ts', [
+        { siteId: 'unannotated', line: 1, text: '1', candidates: ['""'] },
+      ])
+      return yield* Effect.orDie(typeQuery.query(requestOf(fixture, [victim, next])))
+    }),
+    Effect.forEach(frozen, (pid) => signalPid(pid, 'SIGKILL'), { discard: true }),
+  )
+  return {
+    answers: response.files.map((outcome) =>
+      Match.valueTags(outcome, {
+        FileAnswered: (answered) => Object.fromEntries(answered.sites.flatMap(siteAnswersOf)),
+        FileRefused: () => ({}),
+      })
+    ),
+    refusals: response.files.flatMap((outcome) =>
+      Match.valueTags(
+        outcome,
+        {
+          FileAnswered: (): ReadonlyArray<{ readonly reason: string; readonly namesTheTimeout: boolean }> => [],
+          FileRefused: (refused) => [{
+            reason: refused.reason,
+            namesTheTimeout: refused.nextAction.includes('timed out'),
+          }],
+        },
+      )
+    ),
+  }
+}).pipe(Effect.provide(TypeQueryLive), Effect.scoped)
+
 const refusals = Effect.gen(function*() {
   const fixture = yield* fixtureOf('type-query')
   const file = yield* readQueryFile(fixture, 'sites.ts', SITES)
@@ -351,6 +451,22 @@ Feature('Answering type queries on a tsgo server of their own', { timeout: 120_0
           expect({ ...s.seen, answers: s.seen.answers.map((outcome) => Object.values(outcome)) }).toEqual({
             answers: [['FileRefused server-crashed'], ['NotAssignable "" to "a" | "b"']],
             statuses: { [PLAIN_BROKEN_ID]: 'compileError', [PLAIN_PASSED_ID]: 'passed' },
+          })
+        ),
+      ),
+    )
+
+    scenario(
+      'A file on a wedged tsgo server is refused on the query grace and the next file is answered on a fresh server',
+      Gherkin.Do.pipe(
+        When('a file is answered, its server wedges mid-query, and that file and the next are queried')(
+          'seen',
+          () => frozenServer,
+        ),
+        Then('the wedged file is refused naming the timeout and the next file is answered')((s, expect) =>
+          expect(s.seen).toEqual({
+            answers: [{}, { 'unannotated ""': 'Unknown no-contextual-type' }],
+            refusals: [{ reason: 'server-crashed', namesTheTimeout: true }],
           })
         ),
       ),

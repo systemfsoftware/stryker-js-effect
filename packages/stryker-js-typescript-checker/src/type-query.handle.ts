@@ -172,6 +172,9 @@ interface Server {
 }
 
 const CLOSE_GRACE = '1 second'
+const QUERY_GRACE = '30 seconds'
+const QUERY_TIMED_OUT_NEXT_ACTION =
+  `The query timed out after ${QUERY_GRACE} and its tsgo server was discarded. Retry the file; the next file is answered on a fresh tsgo server.`
 
 const closeApi = (api: API): Effect.Effect<void> =>
   Effect.tryPromise(() => api.close()).pipe(Effect.timeoutOption(CLOSE_GRACE), Effect.ignore)
@@ -228,6 +231,12 @@ const discardServer = (servers: Servers, server: Server): Effect.Effect<void> =>
       )),
     (removed) => Boolean.match(removed, { onFalse: () => Effect.void, onTrue: () => closeServer(server) }),
   )
+
+const discardAndAnswer = (
+  servers: Servers,
+  server: Server,
+  outcome: TypeQuery.FileOutcome,
+): Effect.Effect<TypeQuery.FileOutcome> => Effect.as(discardServer(servers, server), outcome)
 
 const isCurrent = (servers: Servers, server: Server): Effect.Effect<boolean> =>
   Effect.map(
@@ -808,6 +817,20 @@ const notInProject = (fileName: string): TypeQuery.FileOutcome => ({
   nextAction: NOT_IN_PROJECT_NEXT_ACTION,
 })
 
+const serverCrashed = (fileName: string): TypeQuery.FileOutcome => ({
+  _tag: 'FileRefused',
+  fileName,
+  reason: 'server-crashed',
+  nextAction: SERVER_CRASHED_NEXT_ACTION,
+})
+
+const queryTimedOut = (fileName: string): TypeQuery.FileOutcome => ({
+  _tag: 'FileRefused',
+  fileName,
+  reason: 'server-crashed',
+  nextAction: QUERY_TIMED_OUT_NEXT_ACTION,
+})
+
 const projectAndFile = (
   server: Server,
   file: TypeQuery.TypeQueryFile,
@@ -879,17 +902,15 @@ const serveFile = (
         Boolean.match(current, {
           onFalse: () => Effect.suspend(() => serveFile(servers, tsconfigFile, file)),
           onTrue: () =>
-            processFile(server, file).pipe(
-              Effect.catchTag('ServerCrash', () =>
-                Effect.as(
-                  discardServer(servers, server),
-                  {
-                    _tag: 'FileRefused',
-                    fileName: file.fileName,
-                    reason: 'server-crashed',
-                    nextAction: SERVER_CRASHED_NEXT_ACTION,
-                  } satisfies TypeQuery.FileOutcome,
-                )),
+            Effect.timeoutOption(processFile(server, file), QUERY_GRACE).pipe(
+              Effect.matchEffect({
+                onFailure: () => discardAndAnswer(servers, server, serverCrashed(file.fileName)),
+                onSuccess: (settled) =>
+                  Option.match(settled, {
+                    onNone: () => discardAndAnswer(servers, server, queryTimedOut(file.fileName)),
+                    onSome: (outcome) => Effect.succeed(outcome),
+                  }),
+              }),
             ),
         })),
     ))
