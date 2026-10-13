@@ -738,11 +738,26 @@ describe('compareSides', () => {
       ]
       const without = decisionOf(subject, commandOf(base))
       const withLegacy = decisionOf(subject, commandOf([...base, legacy]))
+      const skipped = [...base, skippedOf(OTHER_PROJECT, 'no tsconfig')]
+      const withoutOnSkipped = decisionOf(subject, commandOf(skipped))
+      const withLegacyOnSkipped = decisionOf(
+        subject,
+        commandOf([
+          ...skipped,
+          TypeQueryServers.make({
+            schemaVersion: legacy.schemaVersion,
+            side: legacy.side,
+            project: OTHER_PROJECT,
+            peakLiveServers: legacy.peakLiveServers,
+          }),
+        ]),
+      )
       const withBoot = decisionOf(subject, commandOf([...base, bootOf('main', OTHER_PROJECT, 'dry run failed')]))
       return [
         S.is(ParityHolds)(without),
         S.is(ParityHolds)(withLegacy),
         JSON.stringify(without) === JSON.stringify(withLegacy),
+        JSON.stringify(withoutOnSkipped) === JSON.stringify(withLegacyOnSkipped),
         S.is(ParityBroken)(withBoot),
       ].every((holds) => holds)
     },

@@ -277,14 +277,16 @@ const when = <A>(condition: boolean, value: A): ReadonlyArray<A> =>
 const isTypeQueryServers = S.is(TypeQueryServers)
 
 /**
- * Every line's project, except the decode-only legacy {@link TypeQueryServers} row: it is the one line no
- * current producer emits, so counting a stale one would invent a project the shard never observed.
+ * Every line except the decode-only legacy {@link TypeQueryServers} row: no current producer emits it, so a
+ * stale one must neither invent a project nor change what a project's own lines say.
  */
+const isCurrentLine = (line: ParityLine): boolean => !isTypeQueryServers(line)
+
 const projectsOf = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<string> =>
-  Arr.dedupe(lines.filter((line) => !isTypeQueryServers(line)).map((line) => line.project))
+  Arr.dedupe(lines.filter(isCurrentLine).map((line) => line.project))
 
 const linesOf = (lines: ReadonlyArray<ParityLine>, project: string): ReadonlyArray<ParityLine> =>
-  lines.filter((line) => line.project === project)
+  lines.filter((line) => Boolean.every([line.project === project, isCurrentLine(line)]))
 
 const verdictsIn = (lines: ReadonlyArray<ParityLine>): ReadonlyArray<Verdict> =>
   lines.filter((line): line is Verdict => isVerdict(line))

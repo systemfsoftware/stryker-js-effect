@@ -8,8 +8,7 @@ The checker-parity lane's driver, private to this repository. It drives both che
 
 - `plan --deadline <seconds>` — slices the corpus into shards sized to the leg budget.
 - `run` — drives both checker sides over one corpus shard (its `--main-worker` and `--branch-worker` are both required) and writes `shard-<k>.ndjson` plus `scope-<k>.json`.
-- `compare` — decodes every `*.ndjson` under its inputs and decides parity.
-- `report` — renders the decision for the lane's checks.
+- `compare` — decodes each shard's `shard-<k>.ndjson` with its `scope-<k>.json` and decides parity.
 - `costs` — folds recent runs' leg measurements into the cost table.
 - `trigger` — decides whether the lane runs for a change.
 
