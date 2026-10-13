@@ -1,5 +1,5 @@
 #!/usr/bin/env -S deno run --allow-env --allow-read --allow-write
-import { access, appendFile } from 'node:fs/promises'
+import { access, appendFile, readFile } from 'node:fs/promises'
 import process from 'node:process'
 
 export interface StepResult {
@@ -22,8 +22,11 @@ export interface Run {
 
 export type MatrixReason = 'MATRIX_MISSING' | 'MATRIX_NOT_DOWNLOADED' | 'MATRIX_INCOMPLETE'
 
+export type JudgedReason = 'DROP_AUDIT_NOTHING_JUDGED' | 'DROP_AUDIT_REPORT_UNREADABLE'
+
 export type DropAuditReason =
   | MatrixReason
+  | JudgedReason
   | 'DROP_AUDIT_OK'
   | 'DROP_AUDIT_INSTALL_FAILED'
   | 'DROP_AUDIT_BUILD_FAILED'
@@ -50,6 +53,7 @@ export const JOB_ORDER: ReadonlyArray<string> = [
   'matrix-check',
   'build',
   'audit',
+  'judged',
   'audit-summary',
   'upload',
 ]
@@ -65,6 +69,28 @@ export const matrixReasonOf = (
   if (killMatrix !== 'success') return 'MATRIX_MISSING'
   if (!downloaded) return 'MATRIX_NOT_DOWNLOADED'
   return absent.length > 0 ? 'MATRIX_INCOMPLETE' : undefined
+}
+
+const dropCountOf = (entry: unknown): number | undefined =>
+  typeof entry === 'object' && entry !== null && 'drops' in entry && typeof entry.drops === 'number'
+    ? entry.drops
+    : undefined
+
+export const judgedReasonOf = (report: string | undefined): JudgedReason | undefined => {
+  if (report === undefined) return 'DROP_AUDIT_REPORT_UNREADABLE'
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(report)
+  } catch {
+    return 'DROP_AUDIT_REPORT_UNREADABLE'
+  }
+  if (typeof parsed !== 'object' || parsed === null || !('projects' in parsed) || !Array.isArray(parsed.projects)) {
+    return 'DROP_AUDIT_REPORT_UNREADABLE'
+  }
+  const counts = parsed.projects.map(dropCountOf)
+  const known = counts.filter((count): count is number => count !== undefined)
+  if (known.length !== counts.length) return 'DROP_AUDIT_REPORT_UNREADABLE'
+  return known.reduce((total, count) => total + count, 0) === 0 ? 'DROP_AUDIT_NOTHING_JUDGED' : undefined
 }
 
 export const firstFailedStep = (steps: Steps): { readonly id: string; readonly outcome: string } | undefined => {
@@ -89,6 +115,7 @@ export const verdictOf = (steps: Steps, run: Run): Verdict => {
   const check = `KILL_MATRIX=success MATRIX_DIR=${run.matrixDir} PROJECTS=${
     run.projects.join(',')
   } node scripts/drop-audit-verdict.ts matrix-check`
+  const judged = `AUDIT_OUT=${run.auditOut} node scripts/drop-audit-verdict.ts judged`
   const failed = firstFailedStep(steps)
   if (failed === undefined) return { reason: 'DROP_AUDIT_OK', next: '' }
   if (failed.outcome === 'cancelled') {
@@ -145,7 +172,7 @@ export const verdictOf = (steps: Steps, run: Run): Verdict => {
           return {
             reason: 'DROP_AUDIT_FAILED',
             next:
-              `stryker audit exited 1: a Fail line in the audit output above (and artifact drop-audit-${run.runNumber}) names a dropped mutant whose dominator has a killer the dropped mutant lacks. ${reproduce}`,
+              `stryker audit exited 1: it counted a failed pair, an unattested rule or an orphaned test, and its summary line above gives each count; artifact drop-audit-${run.runNumber} holds every entry with its reason and next action. A failed pair is a dropped mutant whose dominator has a killer the dropped mutant lacks. ${reproduce}`,
           }
         case '2':
           return {
@@ -159,6 +186,29 @@ export const verdictOf = (steps: Steps, run: Run): Verdict => {
             next: `stryker audit exited ${
               outputs['status'] ?? 'with no recorded status'
             }, outside its exit classes 1 (a drop failed) and 2 (refused input): an interrupt or a crash. ${reproduce}`,
+          }
+      }
+    }
+    case 'judged': {
+      const reproduce = `Reproduce with: ${fetch} && ${build} && ${audit} && ${judged}`
+      switch (outputs['reason']) {
+        case 'DROP_AUDIT_NOTHING_JUDGED':
+          return {
+            reason: 'DROP_AUDIT_NOTHING_JUDGED',
+            next:
+              `stryker audit passed, but its report counts no dropped mutant in any audited project, so it verified nothing. Next action: read each project's matrixMutants and drops in ${run.auditOut} (artifact drop-audit-${run.runNumber}): no matrix mutants means the kill matrix recorded none; mutants with no drops means the default policy drops none of them. ${reproduce}`,
+          }
+        case 'DROP_AUDIT_REPORT_UNREADABLE':
+          return {
+            reason: 'DROP_AUDIT_REPORT_UNREADABLE',
+            next:
+              `stryker audit exited 0 but ${run.auditOut} is missing or holds no per-project drop counts. Next action: run the reproduce command and read the file it writes. ${reproduce}`,
+          }
+        default:
+          return {
+            reason: 'DROP_AUDIT_UNCLASSIFIED',
+            next:
+              `Step judged failed without writing a reason. Next action: open step judged of this job. ${reproduce}`,
           }
       }
     }
@@ -238,12 +288,19 @@ if (import.meta.main) {
       process.stdout.write(`${reason}\n`)
       process.exitCode = 1
     }
+  } else if (mode === 'judged') {
+    const reason = judgedReasonOf(await readFile(run.auditOut, 'utf8').catch(() => undefined))
+    if (reason !== undefined) {
+      await writeOutput(`reason=${reason}\n`)
+      process.stdout.write(`${reason}\n`)
+      process.exitCode = 1
+    }
   } else if (mode === 'verdict') {
     const verdict = verdictOf(stepsOf(env('STEPS') || '{}'), run)
     await writeOutput(`reason=${verdict.reason}\nnext<<NEXT_EOF\n${verdict.next}\nNEXT_EOF\n`)
     process.stdout.write(`${verdict.reason}\n`)
   } else {
-    process.stderr.write('usage: drop-audit-verdict.ts matrix-check | verdict\n')
+    process.stderr.write('usage: drop-audit-verdict.ts matrix-check | judged | verdict\n')
     process.exitCode = 2
   }
 }

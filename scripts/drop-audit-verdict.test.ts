@@ -3,6 +3,7 @@ import {
   type DropAuditReason,
   firstFailedStep,
   JOB_ORDER,
+  judgedReasonOf,
   matrixReasonOf,
   type Run,
   type Steps,
@@ -111,6 +112,9 @@ Deno.test('each failed step maps to its own code, with a reproduce command or a 
     [withStep('matrix-check', 'failure', { reason: 'MATRIX_INCOMPLETE', absent: 'packages/b' }), 'MATRIX_INCOMPLETE'],
     [withStep('build', 'failure'), 'DROP_AUDIT_BUILD_FAILED'],
     [withStep('audit', 'failure', { status: '1' }), 'DROP_AUDIT_FAILED'],
+    [withStep('judged', 'failure', { reason: 'DROP_AUDIT_NOTHING_JUDGED' }), 'DROP_AUDIT_NOTHING_JUDGED'],
+    [withStep('judged', 'failure', { reason: 'DROP_AUDIT_REPORT_UNREADABLE' }), 'DROP_AUDIT_REPORT_UNREADABLE'],
+    [withStep('judged', 'failure'), 'DROP_AUDIT_UNCLASSIFIED'],
     [withStep('audit', 'failure', { status: '2' }), 'DROP_AUDIT_REFUSED'],
     [withStep('upload', 'failure'), 'DROP_AUDIT_UPLOAD_FAILED'],
     [withStep('checkout', 'failure'), 'DROP_AUDIT_UNCLASSIFIED'],
@@ -146,5 +150,35 @@ Deno.test('a STEPS value that is not a JSON object is refused, never read as no 
       threw = true
     }
     assert(threw, `stepsOf(${json}) throws`)
+  }
+})
+
+const reportWith = (drops: ReadonlyArray<number>): string =>
+  JSON.stringify({
+    _tag: 'DropAuditPassed',
+    projects: drops.map((count, index) => ({ project: `packages/${index}`, matrixMutants: 10, drops: count })),
+  })
+
+Deno.test('a passing audit that counts no dropped mutant in any project judged nothing', () => {
+  assertEqual(judgedReasonOf(reportWith([0, 0])), 'DROP_AUDIT_NOTHING_JUDGED')
+  assertEqual(judgedReasonOf(reportWith([])), 'DROP_AUDIT_NOTHING_JUDGED')
+})
+
+Deno.test('one project with drops is enough, so a small project with none does not fail the corpus', () => {
+  assertEqual(judgedReasonOf(reportWith([0, 3])), undefined)
+})
+
+Deno.test('a missing or shapeless audit report is unreadable, never read as judged', () => {
+  for (
+    const report of [undefined, 'not json', '{}', '{"projects":{}}', '{"projects":[{"project":"packages/a"}]}']
+  ) {
+    assertEqual(judgedReasonOf(report), 'DROP_AUDIT_REPORT_UNREADABLE')
+  }
+})
+
+Deno.test('an exit-1 audit names all three of its causes', () => {
+  const { next } = verdictOf(withStep('audit', 'failure', { status: '1' }), run)
+  for (const cause of ['failed pair', 'unattested rule', 'orphaned test']) {
+    assert(next.includes(cause), `exit 1 names ${cause}: ${next}`)
   }
 })

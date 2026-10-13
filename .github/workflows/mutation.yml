@@ -461,6 +461,10 @@ jobs:
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
 
+      - id: judged
+        name: Check the audit judged at least one dropped mutant
+        run: node scripts/drop-audit-verdict.ts judged
+
       - id: audit-summary
         name: Copy the audit's output to the summary (report only)
         if: ${{ !cancelled() && steps.audit.outcome != 'skipped' && hashFiles('audit.txt') != '' }}
