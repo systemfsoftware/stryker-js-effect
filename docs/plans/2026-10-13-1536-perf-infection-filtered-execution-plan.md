@@ -98,8 +98,8 @@ The gain on this corpus is likely smaller than Bench's signal floor: non-overlap
 
 - R15. Filtering counts as lossless on the bench corpus only when one Bench run meets both conditions. First, on every leg, with side A the `--full` run without filtering and side B the same corpus with filtering on, every mutant's status in every side-B run equals its status in every side-A run. Second, the enterprise leg's side B skips a share of covered pairs above zero, so parity is not reached by filtering nothing.
 - R16. Each such run reports, per leg, the skipped share of covered (mutant, test) pairs and the number of mutants decided `not-infected`, computed from the runs' own reports and streams. Efficacy floor (the goal's): any skipped share above zero satisfies parity's non-vacuity condition (R15), while a share under 5% counts as presence, not effective filtering. Every report of the share states which side of 5% it lands on.
-- R17. Every speed or overhead claim cites a CI Bench comparison against main. The recording layer must not produce a `total` regression on any leg.
-- R18. The instrument phase's share of wall clock is read from the first four green main Bench push runs after #316's merge commit `77fbae31950985ba7ef073f75fd43cccc1061803`, as the median of the four runs' shares, by the procedure in the Verification Contract, and that reading decides whether the T9 native-core track restarts.
+- R17. Every speed or overhead claim cites a CI Bench comparison against main, and meets Bench's own rule: the side-A and side-B samples do not overlap and the median moves by at least max(3% of A, 10 ms). Beating the median of a baseline alone is insufficient, because single main runs vary widely (typescript-checker's fourth baseline run took 33.5 s against about 46 s for the other three). The recording layer must not produce a `total` regression on any leg.
+- R18. The instrument phase's share of wall clock is read from main Bench push runs after U1 lands, as the median of four runs' shares, by the procedure in the Verification Contract, and that reading decides whether the T9 native-core track restarts. The first four green main push runs after #316 (`77fbae31950985ba7ef073f75fd43cccc1061803`) are the pre-U1 baseline: they read `instrument` as about 0 ms on every leg because the mark is misplaced (KTD9), so they cannot decide T9.
 
 ### Acceptance Examples
 
@@ -228,9 +228,9 @@ Stack and measurement sequence:
 
 ```mermaid
 flowchart TB
-  M316[#316 merges] --> T9[Median instrument share over the first four green main Bench push runs: R18]
+  M316[#316 merges] --> T9[Pre-U1 baseline: median of four main push runs, instrument about 0 ms]
   M316 --> U1[U1 own PR: instrument mark]
-  U1 --> T9b[Real instrument share over four push runs, if the upper bound crossed the threshold]
+  U1 --> T9b[T9 decision: median instrument share over four main push runs after U1, R18]
   M316 --> L1[Layer 1: U2-U6 record]
   L1 --> B1[Main Bench push run: recording overhead, R17]
   B1 --> L2[Layer 2: U7-U9 filter, opt-in]
@@ -462,15 +462,23 @@ No sabotage checks: root forbids hand-applied mutants and planted bugs, so test 
 ### Reading the instrument share for T9 (R18)
 
 1. `M` is #316's merge commit, `77fbae31950985ba7ef073f75fd43cccc1061803`.
-2. List the first four successful `bench.yml` runs on `main` with event `push` whose head is `M` or a descendant, oldest first: `gh run list --workflow bench.yml --branch main --event push --status success --json databaseId,headSha,createdAt`. Record their run ids and head SHAs. A push run benches only the legs Turbo marks affected, so a leg absent from one of those runs takes its four samples from the earliest later successful push runs in which it ran, and the plan records which run ids fed which leg. The four run ids are [unverified] until those runs exist (source: the `gh run list` above). Green main samples known so far: 38429923569 and 38430066932; they count toward the four only if they are the earliest green push runs at or after `M`.
-3. Download each run's `bench-report-<slug>` artifacts with `gh run download <run id> -p 'bench-report-*'` and read each leg's `phase` rows (`prepare`, `instrument`, `total`) for side B, the pushed commit. Each side's samples carry `ms` and `shareOfTotal` per interleaved run.
-4. Per run and leg, the run's share is the median of its side-B samples. Before U1 lands, that share is the upper bound `U` = `(prepare.ms + instrument.ms) / total.ms`, because the engine counts instrumentation under `prepare` until then (KTD9). After U1 lands, it is `S` = `instrument.ms / total.ms`, read from the first four green main push runs on or after U1's merge commit by the same steps.
-5. The baseline per leg is the median of the four run shares, which for four values is the mean of the middle two (the same rule as Bench's `medianOfSorted`).
-6. Decide with the proposed threshold of 4.5%: T9's target cuts instrument time to a third, which saves two thirds of `S`. That saving is a Bench signal only when it reaches 3% of `total`, so `S` must be at least 4.5%. If `U` is below 4.5% on every leg, T9 stays parked. If any leg's `U` reaches 4.5%, the decision waits for `S` after U1.
-7. Re-read `S` the same way after layer 1 merges, because KTD2's helper adds instrument work.
-8. Record the run ids, per-leg four shares, the median-of-four, and the T9 decision in U1's PR body and in this plan's T9 section.
+2. The pre-U1 baseline is the first four successful `bench.yml` runs on `main` with event `push` at or after `M` (root's reading, 2026-10-13): 38429923569 (`77fbae31`), 38430066932 (`7b6b8272`), 38436282117 (`ca2f062f`) and 38436508210 (`efd19962`). For later readings, list runs with `gh run list --workflow bench.yml --branch main --event push --status success --json databaseId,headSha,createdAt`, oldest first. A push run benches only the legs Turbo marks affected, so a leg absent from one of the four takes its sample from the earliest later successful push run in which it ran, and the reading records which run ids fed which leg.
+3. Download each run's `bench-report-<slug>` artifacts with `gh run download <run id> -p 'bench-report-*'` and read each leg's `phase` rows for side B, the pushed commit. Each side carries four interleaved samples with `ms` and `shareOfTotal`.
+4. Per run and leg, take the median of its four side-B samples. Per leg, the baseline is the median of the four run values, which for four values is the mean of the middle two (the same rule as Bench's `medianOfSorted`).
+5. Pre-U1 baseline (root's median-of-four over the runs in step 2):
 
-A preview from A/A dispatch 38375500452, not a main push and so not the deciding run: `U` is 1.6% (typescript-checker), 2.7% (vitest-runner), 4.1% (e2e-core) and 4.6% (enterprise). Enterprise sits just over the proposed threshold, so the decision will probably need U1.
+   | Leg                | total  | mutation-test | dry-run | check | instrument |
+   | ------------------ | ------ | ------------- | ------- | ----- | ---------- |
+   | typescript-checker | 45.8 s | 39.0 s        | 5.9 s   | 5.0 s | 0.5 ms     |
+   | vitest-runner      | 29.5 s | 22.7 s        | 5.9 s   | 5.6 s | 0 ms       |
+   | e2e-core           | 15.6 s | 9.6 s         | 5.3 s   | n/a   | 0.2 ms     |
+   | enterprise         | 11.3 s | 8.9 s         | 1.7 s   | 5.5 s | 0 ms       |
+
+   `instrument` reads about 0 ms on every leg because the mark fires after instrumentation and the sandbox copy (KTD9). This table is the baseline later T10 layers compare against; it does not decide T9. typescript-checker's fourth run took 33.5 s against about 46 s for the other three, so a T10 speed claim must clear R17's non-overlapping-samples rule, not only beat these medians.
+6. The T9 reading is `S` = `instrument.ms / total.ms`, taken by steps 3 and 4 from the first four green main push runs on or after U1's merge commit. Their run ids are [unverified] until U1 merges and those runs exist.
+7. Decide with the proposed threshold of 4.5%: T9's target cuts instrument time to a third, which saves two thirds of `S`. That saving is a Bench signal only when it reaches 3% of `total`, so `S` must be at least 4.5% on some leg for T9 to restart.
+8. Re-read `S` the same way after layer 1 merges, because KTD2's helper adds instrument work.
+9. Record the four post-U1 run ids, per-leg run values, the median-of-four `S` and the T9 decision in a comment on U1's PR and in this plan's T9 section.
 
 ---
 
@@ -481,7 +489,7 @@ A preview from A/A dispatch 38375500452, not a main push and so not the deciding
 - Before U10: one side-B Bench run on the layer-2 head meets R15 (zero status mismatches on every leg, and a skipped share above zero on the enterprise leg), with skipped share and `not-infected` counts reported per leg (R16).
 - Layer 3 (T10's acceptance): `infectionFilter` defaults to on, and U10's main Bench push run also shows zero mismatches.
 - U10's Done reports the measured skipped share per leg from those real Bench runs (run ids cited) and states whether it is at or above 5% (effective) or under 5% (presence only). Under 5%, the Done names the next widening layer: a new unit after U10 that adds probed mutator kinds under the same R2 proof and "unproven means infected" rule. That widening is never folded into an existing unit. U1's Done has no filter to measure, so it reports the R18 instrument share instead and says skipped share is not applicable to U1.
-- R18's reading is recorded with the four run ids, per-leg run shares and median-of-four `U` (and `S` once U1 lands), and the T9 decision stated.
+- R18's reading is recorded with the four post-U1 run ids, per-leg run values and median-of-four `S`, beside the pre-U1 baseline runs 38429923569, 38430066932, 38436282117 and 38436508210, and the T9 decision stated.
 - Every speed claim in a PR body cites a Bench run id and verdict. `no-signal` is written as `no-signal`.
 - Every confirmed review finding has a fixing commit on the reported head.
 - No abandoned-attempt code, scratch scripts or throwaway evidence left in the diff.
@@ -512,7 +520,7 @@ A preview from A/A dispatch 38375500452, not a main push and so not the deciding
 
 ### Unverified anchors
 
-- The first four green main Bench push run ids after `77fbae31` (R18). Source: `gh run list --workflow bench.yml --branch main --event push --status success`.
+- The first four green main Bench push run ids on or after U1's merge commit (R18's deciding reading). Source: `gh run list --workflow bench.yml --branch main --event push --status success`.
 - Bench artifact names, report schema `2.0` and the phase-row shape on `main` at `77fbae31` (read only on #316's branch and A/A run 38375500452). Source: `.github/workflows/bench.yml` and the bench report schema file at `77fbae31`.
 - The harness anchors `test/bench/src/run-bench.service.ts:76-99` and `test/bench/src/prepare-side.service.ts:144-169` (read on #316's branch). Source: the same files at `77fbae31`.
 - The goal brief's verbatim DOES NOT COUNT list. Source: root's T10 goal brief.
