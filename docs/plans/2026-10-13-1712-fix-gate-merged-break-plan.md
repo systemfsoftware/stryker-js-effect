@@ -5,12 +5,12 @@ status: active
 date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
-supersedes: docs/plans/2026-10-13-0803-fix-gate-merged-break-plan.md
+supersedes: docs/plans/2026-10-13-1452-fix-gate-merged-break-plan.md
 ---
 
 # fix: stryker gate judges a merged report against each project's thresholds.break
 
-This revision corrects R1-R3 and U1 to the shipped gate mechanism, which compares each project's score to its recorded break inline instead of through `classifyExit` (full-path review run 20261013-061137-3bcdcd0e, finding 5).
+This revision corrects R1-R3 and U1 to the shipped gate mechanism, which compares each project's score to its recorded break inline instead of through `classifyExit` (full-path review run 20261013-061137-3bcdcd0e, finding 5). Revision 5 corrects U1 to the shipped failure output: `ScoreBelowBreak`'s message is the counts line only, and each breach line, note and the next action are printed once, by the gate's log (full-path review run 20261013-160959-b35ac35e, finding 1).
 
 This third revision also clears the three schema-laws findings the same review run (`20261013-061137-3bcdcd0e`) marked on this branch's head. See "Revision 3" below for A (`thresholds` required), B (`BreakBreach` struct check) and C (`S.Natural`).
 
@@ -84,7 +84,7 @@ Clears the three schema-laws violations that review marked on this branch's head
 
 ## Implementation
 
-- U1 (landed `d360a08a1`, revised). `gate-score-break.workflow.ts`: `ProjectScore { project, score, thresholds: ProjectThresholds }`, where `ProjectThresholds = Recorded { break } | Unrecorded`. `ScoreAtOrAboveBreak { unscored, unrecorded }` exposes `lines`; `ScoreBelowBreak { breaches, projects, unscored, unrecorded }` prints the same lines inside its message. Each project's verdict comes from `breachOf`, which builds a `BreakBreach` only when `percentage < threshold` (revision 3, B).
+- U1 (landed `d360a08a1`, revised). `gate-score-break.workflow.ts`: `ProjectScore { project, score, thresholds: ProjectThresholds }`, where `ProjectThresholds = Recorded { break } | Unrecorded`. `ScoreAtOrAboveBreak { unscored, unrecorded }` exposes `lines`; `ScoreBelowBreak { breaches, projects, unscored, unrecorded }` exposes the same `lines`, and its message is the counts line only, so the bounded exit summary never repeats a breach line (revision 5). Each project's verdict comes from `breachOf`, which builds a `BreakBreach` only when `percentage < threshold` (revision 3, B).
 - U2 (landed `e581c9fa0`, revised). `MergedProject { project, thresholds: MergedProjectThresholds, files }`, where `MergedProjectThresholds = Recorded VerdictThresholds | Unrecorded`; `shard-merge.ts` writes the `Unrecorded` variant when no shard stream of the project has a `verdict` line.
 - U3 (landed `e581c9fa0`, revised). `gate-report.schema.ts` and `run-request.cell.ts`: `thresholds` is required (revision 3, A), the cell passes thresholds through, and logs the decision's `lines`.
 - U4 (landed `e581c9fa0`). A2, READMEs, changeset.
