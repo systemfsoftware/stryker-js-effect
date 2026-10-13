@@ -258,6 +258,28 @@ Feature('Scoping a mutation run to the changed lines since a git ref', { timeout
     )
 
     scenario(
+      'An unknown ref fails the run for a person with the configuration class and writes no report',
+      Gherkin.Do.pipe(
+        Given('a repository holding a committed stryker project')('repo', () => prepareRepo()),
+        When('the run is scoped to a ref the repository does not have')(
+          'observed',
+          (s) =>
+            Effect.gen(function*() {
+              const ran = yield* runSince(s.repo.root, UNKNOWN_REF, 'human')
+              return { ran, reportExists: yield* fileExists(s.repo.root, REPORT_FILE) }
+            }),
+        ),
+        Then('the run exits with the configuration class and writes no report')((s, expect) =>
+          expect({
+            exitCode: s.observed.ran.exitCode,
+            namesClass: s.observed.ran.stderr.includes('exit 2 (ConfigError)'),
+            reportExists: s.observed.reportExists,
+          }).toEqual({ exitCode: 2, namesClass: true, reportExists: false })
+        ),
+      ),
+    )
+
+    scenario(
       'A plan scoped to a ref with shell metacharacters reaches git as one literal argument',
       Gherkin.Do.pipe(
         Given('a repository holding a committed stryker project')('repo', () => prepareRepo()),
