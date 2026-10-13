@@ -126,5 +126,3 @@ class OutputModeProbeTag extends Context.Service<
 const OutputModeProbe = OutputModeProbeTag
 
 export { OutputModeProbe }
-
-export const OutputModeProbeLive = OutputModeProbe.layer

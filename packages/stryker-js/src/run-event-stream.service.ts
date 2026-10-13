@@ -122,7 +122,7 @@ export class RunEventDrain extends Context.Service<RunEventDrain, RunEventDrainS
     }),
   )
 
-  static readonly fileLayer: Layer.Layer<
+  static readonly layerFile: Layer.Layer<
     RunEventDrain,
     never,
     Stdio.Stdio | FileSystem.FileSystem | Path.Path
@@ -134,8 +134,6 @@ export class RunEventDrain extends Context.Service<RunEventDrain, RunEventDrainS
     ),
   )
 }
-
-export const RunEventDrainLive = RunEventDrain.layer
 
 const encodeUtf8 = (line: string) => new TextEncoder().encode(line)
 
