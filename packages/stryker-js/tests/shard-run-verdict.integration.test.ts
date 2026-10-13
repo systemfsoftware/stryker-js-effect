@@ -208,6 +208,49 @@ Feature('Running one shard of a shard plan', { timeout: 180_000 })
     )
 
     scenario(
+      "A shard whose child dies outside configuration exits with the child's runtime class",
+      Gherkin.Do.pipe(
+        Given('a fixture whose two projects are planned into one shard')('fixture', () => prepareFixture()),
+        When("the second project's test command fails and the shard runs for a person")(
+          'ran',
+          (s) =>
+            Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              const path = yield* Path.Path
+              yield* fs.writeFileString(
+                path.join(s.fixture.root, 'second', 'stryker.config.mjs'),
+                `export default {
+  testRunner: 'command',
+  commandRunner: { command: 'exit 7' },
+  mutate: ['src/**/*.js'],
+  coverageAnalysis: 'off',
+  concurrency: 1,
+  reporters: [],
+  thresholds: { high: 80, low: 60, break: 100 },
+}
+`,
+              )
+              return yield* runSingleShard(s.fixture.root, 'human')
+            }).pipe(Effect.orDie),
+        ),
+        Then('the run fails with the runtime class, naming the second project, its exit class and its error')((
+          s,
+          expect,
+        ) =>
+          expect({
+            exitCode: s.ran.exitCode,
+            namesTheProject: s.ran.stderr.includes('shard child for second failed with exit code 3'),
+            namesTheChildClass: s.ran.stderr.includes('exit 3 (RuntimeError)'),
+          }).toStrictEqual({
+            exitCode: 3,
+            namesTheProject: true,
+            namesTheChildClass: true,
+          })
+        ),
+      ),
+    )
+
+    scenario(
       'A shard run whose plan cannot be read fails for a person naming the reason and the class',
       Gherkin.Do.pipe(
         Given('a directory that holds no plan')('root', () => prepareEmptyRoot()),
