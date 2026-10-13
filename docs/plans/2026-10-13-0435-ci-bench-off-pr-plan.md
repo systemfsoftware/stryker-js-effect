@@ -6,7 +6,7 @@ topic: bench-off-pr
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0416-ci-bench-off-pr-plan.md
+supersedes: docs/plans/2026-10-13-0434-ci-bench-off-pr-plan.md
 ---
 
 # Bench Off The PR Path - Plan
@@ -201,7 +201,7 @@ Not caches: `workload-digest.service.ts` (proves both sides ran one workload; sk
 - U8. **LegTime as a data union (#9).** Files: `test/e2e-core/src/bench-report.schema.ts`, `test/bench/src/main.ts`, and the `render-bench-report` law. `LegTime = S.TaggedUnion({ LegMeasured, LegNotMeasured })`; consumers use `LegTime.cases.*`. The encoded shape is unchanged.
 - U9. **Refine the leg's elapsed time and the report's ref (#10).** Files: `test/bench/src/leg-clock.schema.ts` (`wallMs` finite and `>= 0`), `test/e2e-core/src/bench-report.schema.ts` (`ref: S.NonEmptyString`, matching `SummarizeBenchCommand.ref`), and `test/bench/src/main.ts` (`BENCH_REF` read with `Config.NonEmptyString`, so an empty value takes the `environment-incomplete` path).
 - U10. **Refusal properties beside every refinement this PR adds or changes (#12).** In `test/bench`: `run-path.schema.ts`, `leg-clock.schema.ts`, `plan-run-path.workflow.ts`, `settle-run-path.workflow.ts` and `measure-leg.workflow.ts`. In e2e-core, per KD13: `bench-report.schema.ts`, `bench-summary.schema.ts`, `bench-run.schema.ts` and `summarize-bench.workflow.ts`. Each block draws from the unrefined base, adds boundary seeds, and compares the decode verdict with an independent predicate. Each `subject` is a private predicate (`in-source-test-targets-private`; precedent `annotation.schema.ts:104-140`).
-- U11. **Dispatch concurrency (#15).** File: `.github/workflows/bench.yml`. The group is `bench-${{ github.event_name == 'push' && github.sha || github.run_id }}` with `cancel-in-progress: false`. A comment states why side A is `HEAD^1` (KD14).
+- U11. **Dispatch concurrency (#15).** File: `.github/workflows/bench.yml`. The group is `bench-${{ github.event_name == 'push' && github.sha || github.run_id }}` with `cancel-in-progress: false`. Why side A is `HEAD^1` (KD14) is stated in U12's header.
 - U12. **Cost header (#14).** File: `.github/workflows/bench.yml`. The header states the run shape every push starts, why side A is `HEAD^1` (KD14), its per-run job-minutes with run ids, the per-day figure at the measured 7-day first-parent merge count and window, and whether the lane can starve PR CI. Every number comes from the PR body's measured Bench cost section (job timestamps); nothing is rerun. U11's rationale comment moved here: the comment reviewer refuses inline workflow comments, and this header is the comment the rule requires.
 
 ### Test Admission
