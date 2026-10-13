@@ -38,6 +38,7 @@ export class GitRefUnresolved extends S.TaggedError<GitRefUnresolved>()('GitRefU
 export class GitCommandFailed extends S.TaggedError<GitCommandFailed>()('GitCommandFailed', {
   command: S.String,
   detail: S.String,
+  cause: S.optional(S.Unknown),
 }) {
   readonly exitClass = 'ConfigError' as const
 

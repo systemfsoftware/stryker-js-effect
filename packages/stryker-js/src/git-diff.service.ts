@@ -145,7 +145,7 @@ const runGit = (
     return { stdout, stderr, exitCode }
   }).pipe(
     Effect.catchTag('PlatformError', (cause) =>
-      Effect.fail(GitCommandFailed.make({ command: args.join(' '), detail: cause.message }))),
+      Effect.fail(GitCommandFailed.make({ command: args.join(' '), detail: cause.message, cause }))),
   )
 
 const resolveBase = (input: GitDiffInput): Effect.Effect<string, GitDiffError, GitEnv> =>
