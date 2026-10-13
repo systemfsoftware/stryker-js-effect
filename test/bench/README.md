@@ -19,8 +19,9 @@ The bench job runs one job per selected leg (`BENCH_ENTRY`); each builds side A
 and the pushed commit (side B) on the same runner, runs both interleaved over
 that entry's workload, and reads every number from each run's own NDJSON.
 
-Time is measured, never enforced. The bench has no deadline of its own: GitHub's
-60-minute job timeout is the only thing that stops a hung setup or run. The
+Time is measured, never enforced. The bench has no deadline of its own: each
+leg job's 20-minute timeout is the only thing that stops a hung setup or run
+(the plan job keeps 60). The
 job's first step records its start (`JOB_STARTED_AT`), and the report shows the
 leg's wall time from that mark to the report write next to the 10-minute
 target; running over the target never changes the exit code or the verdict
@@ -38,7 +39,7 @@ a `Bench phase-only slowdown` notice that says no leg total crossed the
 regression threshold and names the slower cells.
 
 Both upload steps run on `always()`, so an aborted or failed leg still uploads
-its report and run streams. A job GitHub kills at 60 minutes may leave no
+its report and run streams. A leg job GitHub kills at 20 minutes may leave no
 `bench-report.json`; its timed-out conclusion is then the only signal. The
 `::error` annotation carries the first line of an abort reason; the full reason
 is in the report JSON and the step summary.
