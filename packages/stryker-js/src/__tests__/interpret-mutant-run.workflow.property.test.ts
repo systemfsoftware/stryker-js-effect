@@ -25,7 +25,7 @@ const coveringTestMissing = (command: MutantRunObservation): boolean =>
 const twiceOrLargest = (timeoutMs: number): number => Number.isFinite(timeoutMs * 2) ? timeoutMs * 2 : Number.MAX_VALUE
 
 it.prop(
-  '∀c_Observation_≡AFirstWallClockExpiryConfirmsUnderTwiceTheDeadline',
+  '∀c_Observation_≡AFirstAttemptThatReplacedItsWorkerConfirmsUnderTwiceTheDeadline',
   { of: [MutantRunObservation], subject: interpretMutantRun },
   (subject, [command]) =>
     Result.match(subject(command), {

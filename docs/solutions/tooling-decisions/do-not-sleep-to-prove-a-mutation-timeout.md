@@ -47,6 +47,7 @@ if reason is hit-limit prefix and mutant is the named trap -> Timeout
 if reason is hit-limit prefix and mutant is not the trap -> Killed
 if status is timeout and reason is wall-clock, first attempt -> recycle the worker, run again under twice the deadline
 if status is timeout and reason is wall-clock, confirmation -> Timeout (reproduced), recycle the worker, continue the run
+if status is timeout and reason is worker-never-started, first attempt -> recycle the worker, run again under twice the deadline
 if status is timeout and reason is worker-never-started, confirmation -> RuntimeError, recycle the worker, continue the run
 else -> classify from covering-test pass or fail
 ```
