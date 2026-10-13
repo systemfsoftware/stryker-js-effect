@@ -12,6 +12,7 @@ import * as Queue from 'effect/Queue'
 import * as Scope from 'effect/Scope'
 
 import type { MutatorSelectionDecoded } from '../decode-mutator-selection.workflow.js'
+import type { EmptyDirectory } from '../empty-directory.service.js'
 import type { PlannedDiff } from '../git-diff.schema.js'
 import type { MergedCatalog } from '../plan-mutator-catalogs.workflow.js'
 import type { LoadedPlugins } from '../Plugins.schema.js'
@@ -58,7 +59,11 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
   span: PhaseSpan,
   reporters: readonly string[],
   raw: PrepareRaw,
-): Effect.fn.Return<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> {
+): Effect.fn.Return<
+  PrepareDone,
+  StageError,
+  Scope.Scope | EmptyDirectory | WorkerLauncher | FileSystem.FileSystem | Path.Path
+> {
   yield* admitPreparedProject(raw)
   const temporaryDirectoryPath = yield* Effect.map(
     Layer.build(TemporaryDirectory.layer(raw.options)),
@@ -96,14 +101,24 @@ const applyPrepare = Effect.fn(SpanTaxonomy.Spans.prepareApply.name)(function*(
 const writePrepare = (
   reporters: readonly string[],
   raw: PrepareRaw,
-): Effect.Effect<PrepareDone, StageError, Scope.Scope | WorkerLauncher | FileSystem.FileSystem | Path.Path> =>
-  withPhaseSpan(SpanTaxonomy.Spans.preparePhase, {}, (span) => applyPrepare(span, reporters, raw))
+): Effect.Effect<
+  PrepareDone,
+  StageError,
+  Scope.Scope | EmptyDirectory | WorkerLauncher | FileSystem.FileSystem | Path.Path
+> => withPhaseSpan(SpanTaxonomy.Spans.preparePhase, {}, (span) => applyPrepare(span, reporters, raw))
 
 export const prepareCell: Cell.Cell<
   ReadProjectDone,
   PrepareDone,
   StageError,
-  Scope.Scope | RunEnvironment | RunEvents | WorkerLauncher | FileSystem.FileSystem | Path.Path | Reporter
+  | Scope.Scope
+  | RunEnvironment
+  | RunEvents
+  | EmptyDirectory
+  | WorkerLauncher
+  | FileSystem.FileSystem
+  | Path.Path
+  | Reporter
 > = Sandwich.named(SpanTaxonomy.Spans.prepare.name)(readPrepare)
   .decide(planPrepare)
   .write({
