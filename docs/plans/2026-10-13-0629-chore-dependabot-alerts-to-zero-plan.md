@@ -5,7 +5,7 @@ date: 2026-10-13
 artifact_contract: ce-unified-plan/v1
 product_contract_source: ce-brainstorm
 execution: code
-supersedes: docs/plans/2026-10-13-0556-chore-dependabot-alerts-to-zero-plan.md as of 3330c31f (each earlier revision of this plan was renamed to the next dated file on this branch; `git show 3330c31f:docs/plans/2026-10-13-0556-chore-dependabot-alerts-to-zero-plan.md` reads it)
+supersedes: docs/plans/2026-10-13-0603-chore-dependabot-alerts-to-zero-plan.md as of e22b1bfd (each earlier revision of this plan was renamed to the next dated file on this branch; `git show e22b1bfd:docs/plans/2026-10-13-0603-chore-dependabot-alerts-to-zero-plan.md` reads it)
 ---
 
 # Bring main to zero Dependabot alerts by removing what does not belong and bumping what does - Plan
@@ -76,7 +76,7 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 ### Key Technical Decisions
 
 - KTD1. **The alert count is reconstructed from lockfiles and advisories.** Parse each Dependabot-scanned npm lockfile, query `GET /advisories?ecosystem=npm&affects=<names>` for reviewed, non-withdrawn advisories, and match versions with semver. `GET /repos/{repo}/dependency-graph/compare/{base}...{head}` reads manifests only: for U1 it lists the removed subtree `package.json` entries with no vulnerabilities, because the subtree lockfile is not one of its inputs, so it corroborates the removal, not the alert count. A token with Dependabot read access is the only reader of the alerts list itself. Governs R8.
-- KTD2. **Each citation is anchored by blame.** The release a citation was verified against is the subtree version in the tree of the commit that wrote the line: `effect@4.0.0-rc.116` (`d62dd0d65252e5d3635538f0e41adc7c08aa9beb`) for the plans of 2026-09-21 and 2026-09-23, `effect@4.0.0-rc.117` (`14a3f140095fdebbff9162944fe7d4ea83e054e6`) for the later four. Both SHAs equal the upstream tags and the `git-subtree-split` trailers of the squash commits `6315eb9e` and `a07187c6`, the second parents of the subtree merges `57044e93` and `9a16f8ec`. Bare file names in the same sentences (`Cause.ts:77`, `Effect.ts:13535`) are citations into the subtree too. Prose that pointed at the vendored source as the live reference (the mutant-quality plan's KTD11) now names the version `pnpm-lock.yaml` locks and links the `effect` sources upstream at the `effect@4.0.0` tag (`67ba4e46a11ccda0b6761578bfd22c04ae00167d`). Governs R2.
+- KTD2. **Each citation is anchored by blame before this branch.** The release a citation was verified against is the subtree version in the tree of the commit that last wrote the line before this branch, read with `git blame 25120175 -- <plan>` (this branch's own rewrites move later blame onto commits whose tree no longer holds that version): `effect@4.0.0-rc.116` (`d62dd0d65252e5d3635538f0e41adc7c08aa9beb`) for the plans of 2026-09-21 and 2026-09-23, `effect@4.0.0-rc.117` (`14a3f140095fdebbff9162944fe7d4ea83e054e6`) for the later four. Both SHAs equal the upstream tags and the `git-subtree-split` trailers of the squash commits `6315eb9e` and `a07187c6`, the second parents of the subtree merges `57044e93` and `9a16f8ec`. Bare file names in the same sentences (`Cause.ts:77`, `Effect.ts:13535`) are citations into the subtree too. Prose that pointed at the vendored source as the live reference (the mutant-quality plan's KTD11) now names the version `pnpm-lock.yaml` locks and links the `effect` sources upstream at the `effect@4.0.0` tag (`67ba4e46a11ccda0b6761578bfd22c04ae00167d`). Governs R2.
 - KTD3. **U1 changes the tree in two commits.** The docs repoint lands first and the subtree deletion with its `subtrees.toml` entry second, so no commit on the branch deletes the subtree while a plan still cites it, and on the branch all 28 subtree alerts map to the deletion commit. Later commits on the branch edit plan text only, and the Removal is total gate holds on each of them. The repository allows merge commits, squash, and rebase. A merge commit or rebase keeps the deletion commit on main, and it closes the 28; a squash folds the branch into one commit that closes the 28. Governs R1, R8.
 - KTD4. **U2's removals are proven dead before deletion.** `@opentelemetry/sdk-node` is declared by `stryker-js-typescript-checker` and `stryker-js-vitest-runner` and imported by neither (the only `NodeSDK` import is `packages/toolchain/vitest-config/lib/otel.js:3`); both bundles set `deps.alwaysBundle: [/./]`, and neither `inlinedDependencies` lists it. `concurrently` is declared by `stryker-js` and `stryker-js-vitest-runner` and invoked by neither. Governs R4.
 - KTD5. **U2 bumps `concurrently` to 10.0.6.** 10.0.5 pins `shell-quote` 1.9.0 exactly; 10.0.6 pins 1.12.0. It stays a dependency: root `prepare` and `packages/ignorers/kit` `api:check` run it. Governs R5.
@@ -116,20 +116,21 @@ The subtree is a squash of upstream `Effect-TS/effect` at `effect@4.0.0-rc.117`.
 
 ## Verification Contract
 
-| Gate                                 | Command                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Units      |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| Formatting                           | `pnpm format:check`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | U1, U2     |
-| Typecheck, tests, build, api reports | `pnpm check:ci`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | U1, U2     |
-| Changeset intent                     | the `Changeset Check` workflow (`.github/workflows/changeset-check.yml`) on the PR                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | U1, U2     |
-| Dogfood install                      | `nix build .#stryker-published --out-link .sfs-deps && pnpm install --frozen-lockfile`                                                                                                                                                                                                                                                                                                                                                                                                                                                               | U1, U2     |
-| Removal is total                     | U1: the script below exits 0, with no `FAIL` line from checks 0-2. U2: no edited `package.json` declares a removed dependency, and `pnpm why -r <name>` shows no edge from those importers                                                                                                                                                                                                                                                                                                                                                           | U1, U2     |
-| Prose references                     | U1: check 3 passes: every line outside this plan that names a vendored or subtree `effect` also cites the installed `node_modules/.pnpm/effect@<version>` package or the `dprint.json` exclude                                                                                                                                                                                                                                                                                                                                                       | U1         |
-| Citations resolve                    | U1: check 4 passes: each Effect-TS permalink the branch adds pins the commit of an `effect@` tag its line names, resolves upstream, keeps its `#L` anchor inside the file, and every `` `symbol` N `` or `` `symbol` (N) `` pair cited against that file holds the symbol at line N. By hand: for the rc.116 and rc.117 links the upstream object equals `<path>` in the squash commit (`6315eb9e` for rc.116, `a07187c6` for rc.117). Line numbers are true at the release named beside them; the locked `effect@4.0.0` may number them differently | U1         |
-| Alerts closed                        | the alert count on main, read with Dependabot access (KTD1) once the dependency graph shows the merge commit, since Dependabot retires an alert only when it rescans the manifest                                                                                                                                                                                                                                                                                                                                                                    | U1, U2, U3 |
+| Gate                                 | Command                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Units      |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| Formatting                           | `pnpm format:check`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | U1, U2     |
+| Typecheck, tests, build, api reports | `pnpm check:ci`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | U1, U2     |
+| Changeset intent                     | the `Changeset Check` workflow (`.github/workflows/changeset-check.yml`) on the PR                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | U1, U2     |
+| Dogfood install                      | `nix build .#stryker-published --out-link .sfs-deps && pnpm install --frozen-lockfile`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | U1, U2     |
+| Removal is total                     | U1: the script below exits 0, with no `FAIL` line from checks 0-2. U2: no edited `package.json` declares a removed dependency, and `pnpm why -r <name>` shows no edge from those importers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | U1, U2     |
+| Prose references                     | U1: check 3 passes: every line outside this plan that names a vendored or subtree `effect` also cites `node_modules/.pnpm/<the effect version pnpm-lock.yaml locks>/` or the `dprint.json` exclude                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | U1         |
+| Citations resolve                    | U1: check 4 passes. Every Effect-TS source link under `docs/`, outside this plan, pins a 40-hex commit; that commit is an `effect@` tag, and the tag is the release named in backticks nearest the link; the path resolves upstream; a `#L` anchor lies inside the file and its lines hold a symbol named in backticks before the link; and every `` `symbol` N `` or `` `symbol` (N) `` pair cited against the file holds the symbol at line N. By hand: for the rc.116 and rc.117 links the upstream object equals `<path>` in the squash commit (`6315eb9e` for rc.116, `a07187c6` for rc.117). Line numbers are true at the release named beside them; the locked `effect@4.0.0` may number them differently | U1         |
+| Alerts closed                        | the alert count on main, read with Dependabot access (KTD1) once the dependency graph shows the merge commit, since Dependabot retires an alert only when it rescans the manifest                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | U1, U2, U3 |
 
-The U1 script, kept out of the table so that no pipe is escaped. Run it with `bash`; it prints a `FAIL` line for every failed check and exits 1 if any failed. Nothing in it is a count or list copied from this plan: each check derives its expectation from the deleted tree at `25120175`, from upstream tags, or from the cited files.
+The U1 script, kept out of the table so that no pipe is escaped. Run it with `bash` from the repository root, before or after merge; it reads the whole tree, not a diff. It prints a `FAIL` line for every failed check and exits 1 if any failed, including when an input it derives from (the deleted tree at `25120175`, the lockfile, the upstream tags, the cited links) yields nothing. Nothing in it is a count or list copied from this plan.
 
 ```bash
+export LC_ALL=C
 fail=0
 bad() { echo "FAIL: $*"; fail=1; }
 prefixes() { awk -F/ '{p=$1; print p; for (i = 2; i <= NF; i++) { p = p "/" $i; print p }}'; }
@@ -138,43 +139,61 @@ test -z "$(git ls-files repos | grep '^repos/effec[t]/')" || bad 'subtree files 
 ! git grep -qE '^name = "effec[t]"' -- subtrees.toml || bad 'subtrees.toml entry'
 # check 1
 ! git grep -nI -e 'repos/effec[t]' || bad 'literal subtree path'
-# check 2: paths that existed only in the deleted subtree, written relative to its root
+# check 2: any path, or path suffix, that existed only in the deleted subtree, outside pinned links
+git cat-file -e 25120175:repos/"effect" || bad 'deleted tree 25120175 unreadable'
 only="$(comm -23 <(git ls-tree -r --name-only 25120175:repos/"effect" | prefixes | grep / | sort -u) <(git ls-files | prefixes | sort -u))"
-toks="$(git grep -hI '' | sed -E 's#\[[^]]*\]\(https://github\.com/Effect-TS/effect/(blob|tree)/[0-9a-f]{40}/[^)]*\)##g' | grep -oE '[A-Za-z0-9_.@-]+(/[A-Za-z0-9_.@-]+)+' | sort -u)"
+test "$(printf '%s\n' "$only" | grep -c .)" -gt 1000 || bad 'deleted tree listed too few paths'
+toks="$(git grep -hI '' | sed -E 's#\[[^]]*\]\(https://github\.com/Effect-TS/effect/(blob|tree)/[0-9a-f]{40}/[^)]*\)##g; s#https://github\.com/Effect-TS/effect/(blob|tree)/[0-9a-f]{40}/[^) `>]*##g' | grep -oE '[A-Za-z0-9_.@-]+(/[A-Za-z0-9_.@-]+)+' | sed -E 's/\.+$//' | awk -F/ '{s=$NF; for (i = NF - 1; i >= 1; i--) { s = $i "/" s; print s }}' | sort -u)"
 hits="$(comm -12 <(printf '%s\n' "$only") <(printf '%s\n' "$toks"))"
 test -z "$hits" || bad "paths relative to the subtree: $hits"
 # check 3
+locked="$(grep -oE '^  effect@[^:(]+' pnpm-lock.yaml | head -1 | sed 's/^  //')"
+test -n "$locked" || bad 'no effect version in pnpm-lock.yaml'
 while IFS= read -r hit; do
   [ -z "$hit" ] && continue
-  printf '%s\n' "$hit" | grep -qE 'node_modules/\.pnpm/effect@|dprint\.json' || bad "prose: $hit"
+  printf '%s\n' "$hit" | grep -qE "node_modules/\\.pnpm/$locked/|dprint\\.json" || bad "prose: $hit"
 done <<< "$(git grep -nIiE 'vendored[^.]{0,60}effec[t]|subtree[^.]{0,30}effec[t]|effect[^.]{0,20}subtree' | grep -v 'chore-dependabot-alerts-to-zero-plan\.md:')"
-# check 4. BASE: the merge base before landing; after landing, the main commit before the PR's
-# first commit. Annotated tags resolve through their peeled ^{} line.
-BASE="$(git merge-base origin/main HEAD)"
+# check 4. Annotated tags resolve through their peeled ^{} line.
+! git grep -nIE 'github\.com/Effect-TS/effect/(blob|tree)/([^0-9a-f]|[0-9a-f]{0,39}[^0-9a-f])|raw\.githubusercontent\.com/Effect-TS' -- docs ':!*chore-dependabot-alerts-to-zero-plan.md' || bad 'Effect-TS link not pinned to a 40-hex commit'
 tags="$(git ls-remote --tags https://github.com/Effect-TS/effect 'effect@*' | sed -E 's#\^\{\}$##')"
+test -n "$tags" || bad 'no effect@ tags upstream'
 url_re='https://github.com/Effect-TS/effect/(blob|tree)/[0-9a-f]{40}/[^) `]+'
+cited="$(git grep -hIE "$url_re" -- docs ':!*chore-dependabot-alerts-to-zero-plan.md')"
+test -n "$cited" || bad 'no Effect-TS link to check'
+idents() { grep -oE '`[^`]+`' | tr -d '`' | grep -vE '^effect@|/|\.ts' | sed -E 's/\(.*//; s/.*\.//' | grep -E '^[A-Za-z_][A-Za-z0-9_]*$'; }
 while IFS= read -r line; do
   [ -z "$line" ] && continue
-  urls="$(printf '%s\n' "$line" | grep -oE "$url_re")"
-  npaths="$(printf '%s\n' "$urls" | sed -E 's/#.*//' | sort -u | wc -l)"
-  for u in $(printf '%s\n' "$urls" | sort -u); do
-    kind="$(printf '%s' "$u" | sed -E 's#^https://github.com/Effect-TS/effect/(blob|tree)/.*#\1#')"
+  tagpos="$(printf '%s\n' "$line" | grep -obE '`effect@[^`]+`' | tr -d '`')"
+  prev=0; seg_ids=""
+  npaths="$(printf '%s\n' "$line" | grep -oE "$url_re" | sed -E 's/#.*//' | sort -u | wc -l)"
+  while IFS=: read -r pos u; do
+    end=$((pos + ${#u}))
+    seg="${line:prev:pos-prev}"
+    ids="$(printf '%s\n' "$seg" | idents)"
+    [ -n "$ids" ] && seg_ids="$ids"
     sha="$(printf '%s' "$u" | sed -E 's#^https://github.com/Effect-TS/effect/(blob|tree)/([0-9a-f]{40})/.*#\2#')"
+    kind="$(printf '%s' "$u" | sed -E 's#^https://github.com/Effect-TS/effect/(blob|tree)/.*#\1#')"
     path="$(printf '%s' "$u" | sed -E 's#^https://github.com/Effect-TS/effect/(blob|tree)/[0-9a-f]{40}/([^#]*).*#\2#')"
     tag="$(printf '%s\n' "$tags" | awk -v s="$sha" '$1 == s { sub("refs/tags/", "", $2); print $2; exit }')"
+    near="$(printf '%s\n' "$tagpos" | awk -F: -v a="$pos" -v b="$end" 'NF { d = ($1 < a) ? a - $1 : $1 - b; if (best == "" || d < best) { best = d; t = $2 } } END { print t }')"
+    if [ "$npaths" -eq 1 ]; then pairs="$line"; else pairs="${line:end}"; pairs="${pairs%%https://github.com/Effect-TS/effect/*}"; fi
+    prev=$end
     if [ -z "$tag" ]; then bad "$u pins no effect@ tag"; continue; fi
-    printf '%s\n' "$line" | grep -qF "\`$tag\`" || bad "$u: \`$tag\` is not named on its line"
+    [ "$near" = "$tag" ] || bad "$u is $tag, but the nearest release named beside it is ${near:-none}"
     gh api "repos/Effect-TS/effect/contents/$path?ref=$sha" --silent || { bad "$u: path missing"; continue; }
     [ "$kind" = blob ] || continue
     body="$(gh api "repos/Effect-TS/effect/contents/$path?ref=$sha" -H 'Accept: application/vnd.github.raw')"
-    last="$(printf '%s' "$u" | grep -oE '#L[0-9]+(-L[0-9]+)?$' | grep -oE '[0-9]+$')"
-    if [ -n "$last" ] && [ "$last" -gt "$(printf '%s\n' "$body" | wc -l)" ]; then bad "$u: anchor past end of file"; fi
-    if [ "$npaths" -eq 1 ]; then seg="$line"; else seg="${line#*"$u"}"; seg="${seg%%https://github.com/Effect-TS/effect/*}"; fi
     while read -r sym n; do
       [ -z "$sym" ] && continue
       printf '%s\n' "$body" | sed -n "${n}p" | grep -qE "(^|[^A-Za-z0-9_])$sym([^A-Za-z0-9_]|\$)" || bad "$u: line $n does not hold $sym"
-    done <<< "$(printf '%s\n' "$seg" | grep -oE '`[A-Za-z_][A-Za-z0-9_]*` \(?[0-9]{2,6}' | sed -E 's#`([^`]+)` \(?([0-9]+)#\1 \2#')"
-  done
-done <<< "$(git diff "$BASE" HEAD -- docs | grep '^+' | grep -E "$url_re")"
+    done <<< "$(printf '%s\n' "$pairs" | grep -oE '`[A-Za-z_][A-Za-z0-9_]*` \(?[0-9]{2,6}' | sed -E 's#`([^`]+)` \(?([0-9]+)#\1 \2#')"
+    anchor="$(printf '%s' "$u" | grep -oE '#L[0-9]+(-L[0-9]+)?$' | tr -d '#L')"
+    [ -n "$anchor" ] || continue
+    from="${anchor%-*}"; to="${anchor#*-}"
+    [ "$to" -le "$(printf '%s\n' "$body" | wc -l)" ] || { bad "$u: anchor past end of file"; continue; }
+    test -n "$seg_ids" || { bad "$u: no symbol named before the anchor"; continue; }
+    printf '%s\n' "$body" | sed -n "${from},${to}p" | grep -qwF "$seg_ids" || bad "$u: lines $anchor hold none of: $(printf '%s ' $seg_ids)"
+  done <<< "$(printf '%s\n' "$line" | grep -obE "$url_re")"
+done <<< "$cited"
 exit "$fail"
 ```
